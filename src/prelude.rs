@@ -7,8 +7,8 @@
 //!
 //! Macro tiers（公开用法见仓库 `docs/使用.md`）：
 //! - daily: `keyframe!`, `views!`, `with_cloned!`
-//! - advanced: `component!`
-//! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`
+//! - advanced: `widget!`
+//! - framework: `tree!`, `impl_widget!`, `semantic_handler!`
 
 // 直接导出推荐的 uix-lang 编译期入口宏，避开同名 crate 自引用。
 pub use uix_derive::{uix, uix_app, uix_items};
@@ -16,7 +16,7 @@ pub use uix_derive::{uix, uix_app, uix_items};
 // core
 
 pub use crate::core::{
-    ComponentId, Constraints, EdgeInsets, Errc, Error, ErrorSeverity, Point, Rect, Size, WindowId,
+    Constraints, EdgeInsets, Errc, Error, ErrorSeverity, Point, Rect, Size, WidgetId, WindowId,
 };
 
 // UI-facing input values and platform graphics selection
@@ -39,8 +39,7 @@ pub use crate::data::SettingsService;
 
 // ui
 
-pub use crate::component;
-pub use crate::impl_widget_component;
+pub use crate::impl_widget;
 pub use crate::keyframe;
 pub use crate::semantic_handler;
 pub use crate::t;
@@ -57,6 +56,7 @@ pub use crate::ui::theme::style::{
     TypographyToken,
 };
 pub use crate::ui::widget_runtime::focus_trap::FocusTrap;
+pub use crate::widget;
 // 公开 UIX 生成代码与手写消费者共享的背景图层值契约。
 pub use crate::ui::theme::style::{
     BackgroundAxisPosition, BackgroundImage, BackgroundPosition, BackgroundRepeat,
@@ -80,18 +80,18 @@ pub use crate::ui::theme::{
 };
 pub use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute,
-    ClickEvent, ComponentConfig, ComponentConfigSnapshot, ComponentHandle, ComponentOverrides,
-    ComponentTokenOverrides, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult,
-    FocusHandle, FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration,
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale,
-    LocaleProvider, PaintContext, Placement, PositionInsets, PositionMode, SemanticAction,
-    SemanticActionKind, SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel,
-    SnapshotField, SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
-    SystemEvent, SystemEventKind, ThemeTokens, TokenProvider, TransformOrigin,
-    TransformOriginValue, UserSelect, WidgetChildren, WidgetComponent, WindowControl,
-    WindowResizeEdge, copy_to_clipboard, en_us, read_text_from_clipboard, render_empty_for,
-    use_config, use_locale, window_control, window_control_named, window_drag_region,
-    window_resize_region, with_config, with_locale, zh_cn,
+    ClickEvent, Config, ConfigProvider, EmptyContext, EmptyRenderer, EventResult, FocusHandle,
+    FocusHandleError, HandlerId, HandlerOptions, HandlerRegistration, IBoxShadowTokens,
+    IColorTokens, ISpacingTokens, ITypographyTokens, IntoWidgetNode, Locale, LocaleProvider,
+    PaintContext, Placement, PositionInsets, PositionMode, SemanticAction, SemanticActionKind,
+    SemanticEvent, SemanticKind, SemanticPayload, SnapshotCollapsePanel, SnapshotField,
+    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue, SystemEvent,
+    SystemEventKind, ThemeTokens, TokenProvider, TransformOrigin, TransformOriginValue, UserSelect,
+    Widget, WidgetChildren, WidgetConfig, WidgetConfigSnapshot, WidgetHandle, WidgetOverrides,
+    WidgetTokenOverrides, WindowControl, WindowResizeEdge, copy_to_clipboard, en_us,
+    read_text_from_clipboard, render_empty_for, use_config, use_locale, window_control,
+    window_control_named, window_drag_region, window_resize_region, with_config, with_locale,
+    zh_cn,
 };
 // 在便捷导入面公开标准窗口控制组合构造器。
 pub use crate::ui::window_controls;

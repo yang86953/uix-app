@@ -8,7 +8,7 @@
 //!
 //! | 模块 | 职责 | 依赖 |
 //! |------|------|------|
-//! | [`identity`] | 稳定身份与代际失效（`ComponentId` / `WindowId`） | 无 |
+//! | [`identity`] | 稳定身份与代际失效（`WidgetId` / `WindowId`） | 无 |
 //! | [`geometry`] | logical 坐标、尺寸、矩形和约束 | 无 |
 //! | [`damage`] | 增量失效与提交前后真相 | `geometry`（窄契约） |
 //! | [`error`] | typed error 和统一结果语义 | 无 |
@@ -19,8 +19,8 @@
 //! 任何恢复旧路径的改动都会编译失败。
 //!
 //! ```compile_fail
-//! // 旧平铺路径不得复活：ComponentId 归 identity 模块。
-//! use uix::core::component_id::ComponentId;
+//! // 旧平铺路径不得复活：WidgetId 归 identity 模块。
+//! use uix::core::widget_id::WidgetId;
 //! ```
 //!
 //! ```compile_fail

@@ -3,7 +3,7 @@ use super::*;
 /// 尚未挂载到 [`WidgetTree`] 的组件、子树与声明期元数据。
 pub struct WidgetNode {
     /// 此节点拥有的组件实例。
-    pub widget: Box<dyn WidgetComponent>,
+    pub widget: Box<dyn Widget>,
     /// 按声明顺序排列的直接子节点。
     pub children: Vec<WidgetNode>,
     pub(crate) provider_context: ProviderContext,
@@ -39,14 +39,14 @@ pub struct WidgetNode {
     // 保存捕获阶段交接的节点私有 Effect。
     pub(crate) captured_effects: Vec<crate::ui::reactive::state::Effect>,
     // 保留内联组件的非视觉状态作用域标记。
-    pub(crate) uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+    pub(crate) uix_widget_scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
     // 保存声明节点捕获、待实际节点身份建立后转交树的动画源。
     pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
 }
 
 impl WidgetNode {
     /// 使用给定组件和直接子节点创建声明节点。
-    pub fn new(widget: Box<dyn WidgetComponent>, children: Vec<WidgetNode>) -> Self {
+    pub fn new(widget: Box<dyn Widget>, children: Vec<WidgetNode>) -> Self {
         Self {
             widget,
             children,
@@ -78,7 +78,7 @@ impl WidgetNode {
             captured_effects: Vec::new(),
             // 新建命令式节点默认没有捕获的动画源。
             animated_sources: Vec::new(),
-            uix_component_scopes: Vec::new(),
+            uix_widget_scopes: Vec::new(),
         }
     }
     /// 设置用于同级协调的稳定 key。
@@ -92,7 +92,7 @@ impl WidgetNode {
         self
     }
     /// 创建没有直接子节点的声明节点。
-    pub fn leaf(widget: Box<dyn WidgetComponent>) -> Self {
+    pub fn leaf(widget: Box<dyn Widget>) -> Self {
         Self {
             widget,
             children: vec![],
@@ -124,7 +124,7 @@ impl WidgetNode {
             captured_effects: Vec::new(),
             // 叶节点默认没有捕获的动画源。
             animated_sources: Vec::new(),
-            uix_component_scopes: Vec::new(),
+            uix_widget_scopes: Vec::new(),
         }
     }
     /// 设置此节点在同级中的绘制和命中层级。
@@ -287,12 +287,12 @@ impl WidgetNode {
     }
 
     // 把声明节点承载的全部内联组件作用域传递到树节点。
-    pub(crate) fn with_uix_component_scopes(
+    pub(crate) fn with_uix_widget_scopes(
         mut self,
-        scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+        scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
     ) -> Self {
         // 保留原始顺序，使嵌套展开身份可精确比较。
-        self.uix_component_scopes = scopes;
+        self.uix_widget_scopes = scopes;
         // 返回带有生命周期元数据的节点。
         self
     }

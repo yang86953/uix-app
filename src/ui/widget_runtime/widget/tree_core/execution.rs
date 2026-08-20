@@ -9,14 +9,14 @@ impl WidgetTree {
     pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
 
     // 使用已捕获根绑定的存储创建窗口树，避免首次构建与后续协调分裂状态所有权。
-    pub(crate) fn with_component_state_store(
+    pub(crate) fn with_widget_state_store(
         // 接收首次根捕获已经使用的窗口私有存储。
-        store: crate::ui::component_state::ComponentStateStore,
+        store: crate::ui::widget_state::WidgetStateStore,
     ) -> Self {
         // 在构造时注入捕获根指定的窗口私有存储，其余资源沿用默认值。
         let tree = Self {
             // 保持窗口树对组件状态存储的单一所有权。
-            component_state_store: store,
+            widget_state_store: store,
             // 复用其余默认运行时资源。
             ..Self::default()
         };
@@ -25,45 +25,44 @@ impl WidgetTree {
     }
 
     // 返回当前树唯一拥有的组件私有状态存储句柄。
-    pub(crate) fn component_state_store(&self) -> crate::ui::component_state::ComponentStateStore {
+    pub(crate) fn widget_state_store(&self) -> crate::ui::widget_state::WidgetStateStore {
         // 克隆轻量共享句柄而不复制任何状态。
-        self.component_state_store.clone()
+        self.widget_state_store.clone()
     }
 
     // 开始适配器的构建或协调事务并推迟作用域状态清理。
-    fn begin_component_state_transaction(&mut self) {
+    fn begin_widget_state_transaction(&mut self) {
         // 已停止树没有可恢复的协调边界，调用方必须先停止本轮工作。
         assert!(self.accepts_coordination_work());
         // 最外层事务独占初始化本轮发布事实。
-        if self.component_state_transaction_depth == 0 {
+        if self.widget_state_transaction_depth == 0 {
             // 从运行态进入协调态，嵌套入口不会覆盖这个状态。
             self.execution_state.begin_coordination();
         }
         // 允许嵌套构建入口而不提前释放仍会在本轮重挂载的状态。
-        self.component_state_transaction_depth =
-            self.component_state_transaction_depth.saturating_add(1);
+        self.widget_state_transaction_depth = self.widget_state_transaction_depth.saturating_add(1);
     }
 
     // 结束适配器事务；最终作用域解析由最外层成功入口统一执行。
-    fn end_component_state_transaction(&mut self) {
+    fn end_widget_state_transaction(&mut self) {
         // 防御性忽略不成对结束，避免测试辅助路径下溢。
-        if self.component_state_transaction_depth == 0 {
+        if self.widget_state_transaction_depth == 0 {
             // 没有事务时无需再次清理。
             return;
         }
         // 释放一层事务深度。
-        self.component_state_transaction_depth -= 1;
+        self.widget_state_transaction_depth -= 1;
     }
 
     // 在异常展开路径恢复一层事务深度，保留既有挂载状态且不执行破坏性清理。
-    fn abort_component_state_transaction(&mut self) {
+    fn abort_widget_state_transaction(&mut self) {
         // 没有活跃事务时保持调用幂等。
-        if self.component_state_transaction_depth == 0 {
+        if self.widget_state_transaction_depth == 0 {
             // 提前返回避免深度下溢。
             return;
         }
         // 仅撤销当前入口增加的一层深度。
-        self.component_state_transaction_depth -= 1;
+        self.widget_state_transaction_depth -= 1;
     }
 
     // 返回树是否仍可接收会调用用户组件的外部工作。
@@ -94,16 +93,16 @@ impl WidgetTree {
             "已停止的 WidgetTree 不能继续发布协调修改"
         );
         // 协调外的既有直接 API 保持原语义，不伪造事务发布事实。
-        if self.component_state_transaction_depth > 0 {
+        if self.widget_state_transaction_depth > 0 {
             // 嵌套 mutator 只能把外层发布标记单调置位。
             self.execution_state.mark_publish_started();
         }
     }
 
     // 丢弃当前失败或停止协调留下的全部暂存 journal。
-    pub(super) fn discard_pending_component_state_journal(&mut self) {
+    pub(super) fn discard_pending_widget_state_journal(&mut self) {
         // 取走全部回执以在本函数结束前触发其精确回滚。
-        let receipts = std::mem::take(&mut self.component_state_pending_receipts);
+        let receipts = std::mem::take(&mut self.widget_state_pending_receipts);
         // 回执 Drop 释放尚未接纳的组件私有状态槽位。
         drop(receipts);
         // 取走全部未提交动画源替换以保留旧树绑定。
@@ -113,10 +112,10 @@ impl WidgetTree {
     }
 
     // 在异常安全边界内执行一次组件状态建树或协调事务。
-    pub(crate) fn with_component_state_transaction<R>(
+    pub(crate) fn with_widget_state_transaction<R>(
         &mut self,
         // 接收由本事务及其声明子树创建的待确认状态 journal。
-        receipts: Vec<crate::ui::component_state::ComponentStateCaptureReceipt>,
+        receipts: Vec<crate::ui::widget_state::WidgetStateCaptureReceipt>,
         // 接收事务期间唯一可变访问当前树的同步闭包。
         action: impl FnOnce(&mut Self) -> R,
     ) -> R {
@@ -125,42 +124,42 @@ impl WidgetTree {
             // 消费输入集合，让错误 store 回执在过滤时立即 Drop 回滚。
             .into_iter()
             // 禁止其他树或一次性捕获的状态 journal 被当前树接纳。
-            .filter(|receipt| receipt.belongs_to(&self.component_state_store))
+            .filter(|receipt| receipt.belongs_to(&self.widget_state_store))
             // 收集可安全加入本树最外层事务的回执。
             .collect::<Vec<_>>();
         // 记录进入本层前的回执边界，供 panic 精确回滚本层及成功嵌套层。
-        let checkpoint = self.component_state_pending_receipts.len();
+        let checkpoint = self.widget_state_pending_receipts.len();
         // 记录进入本层前的动画源替换边界，供 panic 保留既有树绑定。
         let animation_checkpoint = self.pending_animated_source_owner_updates.len();
         // 开启一层延迟清理事务。
-        self.begin_component_state_transaction();
+        self.begin_widget_state_transaction();
         // 将本层声明捕获产生的 journal 交给当前树暂存。
-        self.component_state_pending_receipts.extend(receipts);
+        self.widget_state_pending_receipts.extend(receipts);
         // 把 action 与最外层全部提交收敛到同一异常边界。
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             // 先运行本层唯一允许改写当前树的同步操作。
             let value = action(self);
             // 正常返回后关闭当前事务层。
-            self.end_component_state_transaction();
+            self.end_widget_state_transaction();
             // 仅最外层可以接纳全部递归积累的 journal。
-            if self.component_state_transaction_depth == 0 {
+            if self.widget_state_transaction_depth == 0 {
                 // 内层 panic 即使被调用方捕获也会保留 poison，禁止提交。
                 if self.is_fail_stopped() {
                     // 停止树不能保留任何未提交状态或动画临时资源。
-                    self.discard_pending_component_state_journal();
+                    self.discard_pending_widget_state_journal();
                 } else {
                     // 最终动画与 receipt 接纳本身也是不可回滚发布点。
                     self.execution_state.mark_publish_started();
                     // 在最外层成功后才让动画源替换进入真实树注册表。
                     self.commit_pending_animated_source_owner_updates();
                     // 取走全部已成功挂载的回执，避免后续 Drop 回滚。
-                    let receipts = std::mem::take(&mut self.component_state_pending_receipts);
+                    let receipts = std::mem::take(&mut self.widget_state_pending_receipts);
                     // 收集事务成功后仍由实际节点承载的最终作用域真相。
-                    let live_scopes = self.component_state_live_scopes();
+                    let live_scopes = self.widget_state_live_scopes();
                     // 原子提交 live claim、释放缺席 claim 并保留其他外部未决捕获。
-                    crate::ui::component_state::resolve_component_state_receipts(
+                    crate::ui::widget_state::resolve_widget_state_receipts(
                         // 传入当前窗口树唯一的状态存储。
-                        &self.component_state_store,
+                        &self.widget_state_store,
                         // 传入最外层事务积累的完整回执批次。
                         receipts,
                         // 传入最终运行时树承载的作用域集合。
@@ -182,9 +181,9 @@ impl WidgetTree {
                 // 在恢复深度前读取共享外层的单调发布事实。
                 let publish_started = self.execution_state.publish_started();
                 // shutdown 可能已经取走整批回执，因此只在检查点仍有效时分割。
-                let receipts = if checkpoint <= self.component_state_pending_receipts.len() {
+                let receipts = if checkpoint <= self.widget_state_pending_receipts.len() {
                     // 取走本层开始后加入的回执，包含所有成功的嵌套事务回执。
-                    self.component_state_pending_receipts.split_off(checkpoint)
+                    self.widget_state_pending_receipts.split_off(checkpoint)
                 } else {
                     // shutdown 已负责释放全部回执，异常恢复不得用越界 panic 覆盖原 payload。
                     Vec::new()
@@ -204,12 +203,12 @@ impl WidgetTree {
                 // 释放未提交来源，确保异常路径不会产生树作用域绑定。
                 drop(updates);
                 // 避免基于半完成树执行破坏性 prune。
-                self.abort_component_state_transaction();
+                self.abort_widget_state_transaction();
                 // 已发布或最终提交中的 panic 不能恢复半完成树。
                 if publish_started {
                     // 所有外部入口随后必须拒绝继续访问树。
                     self.execution_state.poison();
-                } else if self.component_state_transaction_depth == 0 {
+                } else if self.widget_state_transaction_depth == 0 {
                     // 发布前 panic 保留旧树并重新开放下一轮独立协调。
                     self.execution_state.finish_coordination();
                 }
@@ -364,16 +363,16 @@ impl WidgetTree {
         // 取消关闭前尚未提交的全部动画源替换，同时保持活跃事务检查点有效。
         self.cancel_pending_animated_source_owner_updates(|_| true);
         // 取走未提交回执，事务内 checkpoint 仍需要稳定向量长度直到栈展开。
-        let pending_receipts = std::mem::take(&mut self.component_state_pending_receipts);
+        let pending_receipts = std::mem::take(&mut self.widget_state_pending_receipts);
         // 取走未提交动画更新，同样避免 shutdown 压缩活跃事务检查点。
         let pending_animation_updates =
             std::mem::take(&mut self.pending_animated_source_owner_updates);
         // 关闭后没有活跃事务深度可继续持有暂存状态。
-        self.component_state_transaction_depth = 0;
+        self.widget_state_transaction_depth = 0;
         // 释放全部捕获的动画源，并由绑定包装器解除源端所有权。
         self.animated_sources.clear();
         // 关闭后不再保留任何组件动画活动标记。
-        self.active_component_animations.clear();
+        self.active_widget_animations.clear();
         // 清空动画遍历暂存，避免关闭后的旧节点身份继续存活。
         self.animation_ids_scratch.clear();
         // 释放仍由未移除节点持有的 State 租约与 Effect。
@@ -428,11 +427,11 @@ impl WidgetTree {
         self.root_id = None;
         // 清空真实节点以释放其组件和任意剩余用户资源。
         self.nodes.clear();
-        // 清空可重用槽位，关闭树不会再次分配 ComponentId。
+        // 清空可重用槽位，关闭树不会再次分配 WidgetId。
         self.free_slots.clear();
         // 清空下一槽位游标，保持 shutdown 后内部状态一致。
         self.next_slot = 0;
-        // 使旧 ComponentId generation 不再匹配未来所有者。
+        // 使旧 WidgetId generation 不再匹配未来所有者。
         for generation in &mut self.generations {
             // 递增 generation 使任何保留旧身份都失效。
             *generation = generation.wrapping_add(1);
@@ -447,7 +446,7 @@ impl WidgetTree {
             self.automation_recorder = None;
         }
         // 窗口关闭后不再允许任何组件私有状态继续存活。
-        self.component_state_store.clear();
+        self.widget_state_store.clear();
         // 所有活跃事务栈离开前暂存回执必须继续存活，避免 action 在 shutdown 后复用 provisional State。
         drop(pending_receipts);
         // 动画草稿在真实 owner 全部清理后统一释放。

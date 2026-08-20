@@ -303,7 +303,7 @@ fn validates_typography_defaults_and_attribute_contract() {
 
 // 验证 ThemeToggle 生成只调用现有公开组件与 View API。
 #[test]
-fn generates_theme_toggle_from_public_component() {
+fn generates_theme_toggle_from_public_widget() {
     // 构造带公共样式的文档化 ThemeToggle。
     let snapshot = generate(r#"<ThemeToggle margin="4px" />"#)
         // ThemeToggle 与公共样式必须生成成功。
@@ -854,9 +854,9 @@ fn rejects_percentage_dimension_without_rust_equivalent() {
     assert!(error.message.contains("百分比") && error.message.contains("等价"));
 }
 
-// 验证 setState 明确需要后续 Component 上下文。
+// 验证 setState 明确需要后续 Widget 上下文。
 #[test]
-fn rejects_set_state_without_component_context() {
+fn rejects_set_state_without_widget_context() {
     // 解析包含 setState 的按钮事件。
     let document = parse_document(
         // 使用当前表达式 Gate 已接受的命名参数形式。
@@ -865,9 +865,9 @@ fn rejects_set_state_without_component_context() {
     // 语法层应接受组件内置操作。
     .expect("setState 语法本身应合法");
     // 当前核心 View 生成必须拒绝缺失状态上下文。
-    let error = generate_view(&document.root).expect_err("setState 需要 Component Gate");
-    // 诊断必须明确 Component state 上下文。
-    assert!(error.message.contains("Component state"));
+    let error = generate_view(&document.root).expect_err("setState 需要 Widget Gate");
+    // 诊断必须明确 Widget state 上下文。
+    assert!(error.message.contains("Widget state"));
 }
 
 // 验证带 key 的循环要求唯一直接行根。

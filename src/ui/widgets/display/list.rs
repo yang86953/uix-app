@@ -2,15 +2,15 @@
 //!
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入真实子 View 测量入口。
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 引入子树布局、身份与快照契约。
-use crate::ui::{ComponentId, LayoutChild, SnapshotFields, WidgetTree};
+use crate::ui::{LayoutChild, SnapshotFields, WidgetId, WidgetTree};
 // 引入一次性交接声明子树所需的内部可变单元。
 use std::cell::{Cell, RefCell};
 
@@ -24,7 +24,7 @@ pub fn list_item_height(size: ControlSize) -> f32 {
 }
 
 // List — 列表组件。
-component! {
+widget! {
     /// 按顺序展示文本项及可选头部、尾部和加载入口的列表组件。
     pub struct List {
         header: String,
@@ -67,7 +67,7 @@ component! {
     }
 
     // 节点型插槽在同一测量周期用真实子树自然尺寸撑开 List。
-    measure_from_children => (&self, constraints: Constraints, children: &[ComponentId], tree: &WidgetTree)
+    measure_from_children => (&self, constraints: Constraints, children: &[WidgetId], tree: &WidgetTree)
         -> Option<Size>
     {
         // 没有节点型插槽时继续复用纯文本固有尺寸路径。
@@ -135,7 +135,7 @@ component! {
     }
 
     // 以自然高度测量三个插槽，最终宽度由 List 内容框统一拉伸。
-    measure_children => (&self, _frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // 异常基数不能按位置猜测插槽角色。
@@ -149,7 +149,7 @@ component! {
 
     // 按 header、文本条目、footer、load-more 的正常流顺序排列真实插槽。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 只有声明角色、实际子节点与测量结果一一对应时才允许布局。
         if children.len() != self.slot_view_count() || children.len() != self.child_count {
@@ -432,11 +432,7 @@ impl List {
     }
 
     // 按固定角色顺序测量当前全部真实插槽。
-    fn measure_slot_children(
-        &self,
-        children: &[ComponentId],
-        tree: &WidgetTree,
-    ) -> Vec<LayoutChild> {
+    fn measure_slot_children(&self, children: &[WidgetId], tree: &WidgetTree) -> Vec<LayoutChild> {
         // 每个插槽用无约束自然测量建立自身高度和最小宽度。
         children
             // 按运行时直接子节点顺序遍历。

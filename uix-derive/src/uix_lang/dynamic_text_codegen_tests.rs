@@ -36,17 +36,17 @@ fn lowers_only_interpolated_text_to_dynamic_label() {
 
 // 验证组件状态只在结构、事件或 DynamicLabel 实际使用位置读取。
 #[test]
-fn avoids_unconditional_component_state_reads() {
+fn avoids_unconditional_widget_state_reads() {
     // 构造同时覆盖动态 tick、结构 page 与事件 count 的组件。
     let document = parse_document(
         r#"
-        <Component name="Demo" props="tick: State<number>, page: State<number>, count: State<number>">
+        <Widget name="Demo" props="tick: State<number>, page: State<number>, count: State<number>">
           <Column>
             <Text>tick: {tick}</Text>
             <If {page == 0}><Text>首页</Text></If>
             <Button @click="setState(count: count + 1)">增加</Button>
           </Column>
-        </Component>
+        </Widget>
         <Demo tick={tick} page={page} count={count} />
         "#,
     )

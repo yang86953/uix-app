@@ -18,10 +18,10 @@ use crate::app::queues::agent_command_queue::{
     DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
 };
 use crate::app::window_semantics::WindowSemanticSnapshot;
-use crate::core::{ComponentId, Point, Rect, WindowId};
+use crate::core::{Point, Rect, WidgetId, WindowId};
 use crate::ui::accessibility::semantic_snapshot::{SemanticNode, SemanticTarget};
-use crate::ui::component_snapshot::AccessibilityState;
 use crate::ui::semantic_action::SemanticAction;
+use crate::ui::widget_snapshot::AccessibilityState;
 use crate::ui::{KeyCode, KeyMod};
 
 pub(crate) const AGENT_PROTOCOL_SCHEMA: &str = "uix.agent.v1";

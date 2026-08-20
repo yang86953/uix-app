@@ -1,7 +1,7 @@
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入调用方拥有的上传队列状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
@@ -22,7 +22,7 @@ use std::rc::Rc;
 // Upload
 // ════════════════════════════════════════════════════════════════════════════
 
-component! {
+widget! {
     /// 拥有文件队列、筛选、拖放和应用侧上传状态写回的组件。
     pub struct Upload {
         accept: String,

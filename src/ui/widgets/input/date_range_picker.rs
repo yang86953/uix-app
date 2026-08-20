@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::sync::Arc;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
@@ -16,9 +15,10 @@ use crate::ui::widgets::input::date_picker::{
     Date, DisabledDate, add_days, days_in_month, next_month, prev_month,
 };
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 
 // 声明 DateRangePicker 的表面约束几何模块。
 mod geometry;
@@ -93,7 +93,7 @@ impl PresetDate {
     }
 }
 
-component! {
+widget! {
     /// 通过两次日期命中或具名预设提交日期范围。
     pub struct DateRangePicker {
         start_value: Cell<Date>,
@@ -310,7 +310,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change.take().map(|(start, end)| {
             SemanticEvent::change(id, format!("{} / {}", start.format(), end.format()))
         })
@@ -477,7 +477,7 @@ component! {
         date_range_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
             // 读取最近记录的表面或首次有限回退。
             let surface = self.surface_or_fallback(frame);
@@ -494,7 +494,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建日期范围面板登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际组合面板缓存。
         self.remember_popup_rect(frame, surface);
         // 复用统一的组合面板登记逻辑。

@@ -10,24 +10,23 @@ pub(crate) use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::widget;
 // 复用共享布局边界的有限化与 margin 归一规则。
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::reactive::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetComponent,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, Widget, WidgetId, WidgetTree,
 };
 
 pub use crate::platform::windowing::ScrollDirection;
 
-component! {
+widget! {
     /// A scrollable viewport that clips its children.
     pub struct ScrollView {
         pub(crate) children: WidgetChildren,
@@ -57,7 +56,7 @@ component! {
     }
 
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }
 
@@ -298,7 +297,7 @@ component! {
         }
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // gutter 依据上一轮 content_bounds / max_scroll；首帧无溢出信息时先满宽，
@@ -314,7 +313,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 在组件布局边界清除无界哨兵与非有限 frame 分量。
         let frame = Rect::new(
@@ -653,13 +652,13 @@ impl ScrollView {
     }
 
     /// 追加一个由此滚动视图拥有的子组件。
-    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
+    pub fn child(self, w: impl Widget + 'static) -> Self {
         self.children.add(w);
         self
     }
 
     /// 替换此滚动视图拥有的全部子组件。
-    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
         self.children.set_all(widgets);
         self
     }

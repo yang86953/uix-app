@@ -1,10 +1,10 @@
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::layout::LayoutChild;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
-use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
+use crate::ui::{SnapshotFields, WidgetId, WidgetTree};
+use crate::widget;
 
 /// 表单校验状态：未校验/成功/警告/错误/校验中。
 ///
@@ -28,7 +28,7 @@ pub enum ValidateStatus {
 // 保持 `crate::ui::form::FormLayout` 公开路径兼容并消除手工映射。
 pub use crate::ui::widget_runtime::config::FormLayout;
 
-component! {
+widget! {
     /// 表单项组件：标签、校验状态条、帮助文本与内容区布局。
     pub struct FormItem {
         label: String,
@@ -67,7 +67,7 @@ component! {
     }
 
     // 测量子项：以内容区为约束逐一测量。
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let content = self.content_rect(frame);
@@ -85,7 +85,7 @@ component! {
 
     // 布局子项：全部铺满内容区。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         let content = self.content_rect(frame);
         children.iter().map(|child| (child.id, content)).collect()
@@ -390,7 +390,7 @@ impl FormItem {
     }
 }
 
-component! {
+widget! {
     /// 表单容器组件：按布局排列表单项，支持行内/水平/垂直排布。
     pub struct Form {
         label_width: f32,
@@ -412,7 +412,7 @@ component! {
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
     // 测量子项：按布局方向逐个测量并累积位置。
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let mut measured = Vec::with_capacity(children.len());
@@ -471,7 +471,7 @@ component! {
 
     // 布局子项：按测量尺寸顺序摆放。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         let mut result = Vec::with_capacity(children.len());
         match self.layout {

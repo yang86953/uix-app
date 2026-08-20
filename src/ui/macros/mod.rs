@@ -1,6 +1,6 @@
 //! Macros — 组件式 widget 定义。
 
-/// 为组件生成 `WidgetComponent` 胶水代码（能力位 + 上转型）。
+/// 为组件生成 `Widget` 胶水代码（能力位 + 上转型）。
 ///
 /// 组件本身是数据 struct；按需 `impl WidgetLayout / WidgetRender / …`，
 /// 未覆盖的方法使用 trait 默认实现。
@@ -8,7 +8,7 @@
 /// ```ignore
 /// pub struct Button { text: String, ... }
 ///
-/// impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
+/// impl_widget!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
 ///
 /// impl WidgetLayout for Button {
 ///     fn measure(&self, constraints: Constraints) -> Size { ... }
@@ -18,14 +18,14 @@
 /// }
 /// ```
 #[macro_export]
-macro_rules! impl_widget_component {
+macro_rules! impl_widget {
     (
         $T:ty;
         $($cap:ident),+ $(,)?
         // 可选 tab 索引采用 Rust 2024 表达式片段语义。
         $(; tab_index => $tab:expr)?
     ) => {
-        impl $crate::ui::__private::traits::WidgetComponent for $T {
+        impl $crate::ui::__private::traits::Widget for $T {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
@@ -38,7 +38,7 @@ macro_rules! impl_widget_component {
             fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
                 let mut caps = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
-                    impl_widget_component!(@insert_cap caps $cap);
+                    impl_widget!(@insert_cap caps $cap);
                 )+
                 caps
             }
@@ -48,7 +48,7 @@ macro_rules! impl_widget_component {
                 }
             )?
             $(
-                impl_widget_component!(@upcast $cap);
+                impl_widget!(@upcast $cap);
             )+
         }
     };
@@ -186,7 +186,7 @@ macro_rules! wc_upcast {
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __component_text_input_upcast_method {
+macro_rules! __widget_text_input_upcast_method {
     (text_input_cursor_rect; $T:ty) => {
         $crate::wc_upcast!($T; WidgetTextInput);
     };
@@ -199,7 +199,7 @@ macro_rules! __component_text_input_upcast_method {
 /// （SMC-04：声明期 View 子节点端口归 System 私有边界）。
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __component_view_children_impl {
+macro_rules! __widget_view_children_impl {
     ($T:ty; build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
         impl $crate::ui::__private::traits::ViewChildrenProvider for $T {
             fn build_view_children($($p)*) -> $ret $body
@@ -211,7 +211,7 @@ macro_rules! __component_view_children_impl {
 /// 如果方法是 `build`，生成 `fn build(params) -> Ret { body }`。
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __component_build_method {
+macro_rules! __widget_build_method {
     (__semantic_actions_decl; ($($actions:tt)*) $body:block) => {
         // E-05：`semantic_actions => [...]` 槽位生成的声明方法；$actions 为
         // `&[...]` 表达式（由前置分支包装），直接作为返回值。
@@ -222,7 +222,7 @@ macro_rules! __component_build_method {
     (build; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn build($($p)*) -> $ret $body
     };
-    // 核心子节点通知不属于可选能力 trait，直接生成 WidgetComponent 方法。
+    // 核心子节点通知不属于可选能力 trait，直接生成 Widget 方法。
     (on_children_changed; ($($p:tt)*) $body:block) => {
         // 保留声明中的参数与方法体，让组件自行同步派生运行态。
         fn on_children_changed($($p)*) $body
@@ -252,7 +252,7 @@ macro_rules! __component_build_method {
 /// 每个 trait 只生成一次 upcast（主方法负责）。
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __component_upcast_method {
+macro_rules! __widget_upcast_method {
     (measure; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
     (flex_grow; $T:ty) => {};
     (flex_shrink; $T:ty) => {};
@@ -294,5 +294,5 @@ macro_rules! __component_upcast_method {
     ($other:ident; $T:ty) => {};
 }
 
-mod component;
 mod helpers;
+mod widget;

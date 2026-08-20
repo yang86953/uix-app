@@ -4,17 +4,16 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::ui::SnapshotFields;
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
+use crate::widget;
 
-component! {
+widget! {
     /// Splitter — 可拖拽分割面板容器。
     ///
     /// 子面板之间显示拖拽手柄，支持水平（左右排列）和垂直（上下排列）方向。
@@ -46,7 +45,7 @@ component! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }
 
@@ -132,7 +131,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -195,7 +194,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));

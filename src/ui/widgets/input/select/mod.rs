@@ -194,10 +194,10 @@ impl SelectValueBinding {
 }
 
 mod builder;
-mod component;
 mod methods;
+mod widget;
 
-pub use component::*;
+pub use widget::*;
 
 /// 为自定义选项 View 附加选择器交互处理器的构建结果。
 pub struct SelectOptionView {

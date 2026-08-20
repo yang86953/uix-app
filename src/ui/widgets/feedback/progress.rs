@@ -1,12 +1,12 @@
 //! ProgressBar widget - deterministic and indeterminate progress indicators.
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 use std::rc::Rc;
 
 /// Progress display type.
@@ -23,7 +23,7 @@ pub enum ProgressType {
 pub enum ProgressMode {
     /// Fixed percentage (0.0 - 1.0).
     Determinate(f32),
-    /// Indeterminate bar. Animation is driven outside the component.
+    /// Indeterminate bar. Animation is driven outside the widget.
     Indeterminate,
 }
 
@@ -54,7 +54,7 @@ impl ProgressNormalizationReason {
     }
 }
 
-component! {
+widget! {
     /// ProgressBar widget.
     pub struct ProgressBar {
         progress: f32,

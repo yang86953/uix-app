@@ -55,7 +55,7 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一�
   12 个公开页面入口；页头显示 `run_interval` 驱动的 live tick。
 - 已注册标签全部在 `.uix` 中展示：通用、布局、输入、数据展示、反馈、导航与框架
   六类内置组件（见覆盖清单页）。
-- 声明式状态：12 个页面各自声明为 `<Component>`；双向绑定（输入、勾选、选择、日期、
+- 声明式状态：12 个页面各自声明为 `<Widget>`；双向绑定（输入、勾选、选择、日期、
   分页、步骤、受控 Modal / Drawer）直接使用组件私有 state 与 `setState`，类型化
   state 注解覆盖基础类型（`u32` / `usize` / `f32` / `i32`）、语义类型（Date / Time /
   Color / Point / CascaderValue / HashSet&lt;String&gt; / Option&lt;String&gt; / Vec&lt;String&gt; /

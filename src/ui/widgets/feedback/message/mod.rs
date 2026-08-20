@@ -10,7 +10,6 @@ pub use self::item::{MessageHandle, MessageItem};
 
 use std::rc::Rc;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::platform::capabilities::StatusLevel;
@@ -18,12 +17,13 @@ use crate::ui::animation::AnimationConfig;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
+use crate::widget;
 
 // 引入关闭原因以区分用户关闭与到期关闭。
 use super::declaration::FeedbackCloseReason;
 use super::toast_motion::{ToastMotion, ToastMotionEntry, ToastQueue};
 
-component! {
+widget! {
     /// 全局浮动提示容器。
     pub struct Message {
         queue: ToastQueue<MessageItem>,
@@ -259,7 +259,7 @@ component! {
         self.hit_bounds(frame).unwrap_or_else(Rect::zero)
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         let frame = self.remember_frame(frame);
         self.sync_motion();
         let item_count = self.motion.borrow().len();

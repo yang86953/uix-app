@@ -16,7 +16,7 @@ pub(super) fn apply_dynamic_style(
     binding: &DynamicStyleBinding,
 ) -> Result<TokenStream, Diagnostic> {
     // 重建最近组件作用域标识符。
-    let component_scope = Ident::new(&binding.component_scope_name, Span::call_site());
+    let widget_scope = Ident::new(&binding.widget_scope_name, Span::call_site());
     // 重建闭合样式枚举名称。
     let enum_ident = Ident::new(&binding.enum_name, Span::call_site());
     // 创建内部节点作用域局部变量。
@@ -130,13 +130,13 @@ pub(super) fn apply_dynamic_style(
         // 组合循环实例路径、节点 key 与静态声明身份。
         let #identity = #identity_value;
         // 从最近组件作用域派生当前实际节点的状态作用域。
-        let #node_scope = ::uix::ui::__private::uix_component_child_scope(
-            &#component_scope,
+        let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
+            &#widget_scope,
             #declaration_id,
             #identity,
         );
         // 在窗口私有组件状态存储中取得动态样式枚举。
-        let #state = ::uix::ui::__private::uix_component_state(
+        let #state = ::uix::ui::__private::uix_widget_state(
             &#node_scope,
             #field_id,
             || #enum_ident::#original,
@@ -150,6 +150,6 @@ pub(super) fn apply_dynamic_style(
         // 当前枚举分支应用完整 Style 字段并承载生命周期标记。
         (match #current {
             #(#style_arms),*
-        }).uix_component_scope(#node_scope, 0)
+        }).uix_widget_scope(#node_scope, 0)
     }})
 }

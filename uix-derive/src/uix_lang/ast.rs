@@ -37,7 +37,7 @@ pub(crate) struct Element {
     // 保存从开始标签到结束标签的完整跨度。
     pub(crate) span: SourceSpan,
     // 保存由组件展开附加到实际 View 根节点的私有状态作用域标记。
-    pub(crate) component_scopes: Vec<ComponentScopeMarker>,
+    pub(crate) widget_scopes: Vec<WidgetScopeMarker>,
     // 保存 For 每次迭代都必须重新克隆的拥有型事件捕获名称。
     pub(crate) for_iteration_clones: Vec<String>,
     // 保存 For 每次迭代在构建实际子树前执行的组件准备语句。
@@ -46,7 +46,7 @@ pub(crate) struct Element {
 
 // 表示一个应在最终 ViewNode 外层应用的组件状态装饰。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ComponentScopeMarker {
+pub(crate) enum WidgetScopeMarker {
     // 保存普通组件根的生命周期作用域标记。
     Scope {
         // 保存生成阶段创建的卫生作用域局部变量名称。
@@ -68,7 +68,7 @@ pub(crate) enum ComponentScopeMarker {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AnimationBinding {
     // 保存最近组件或文档根状态作用域名称。
-    pub(crate) component_scope_name: String,
+    pub(crate) widget_scope_name: String,
     // 保存节点类型与静态位置形成的子作用域声明标识。
     pub(crate) declaration_id: u64,
     // 保存当前节点所属最近 For 实例路径。
@@ -178,7 +178,7 @@ pub(crate) enum AnimationPropertyKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TransitionBinding {
     // 保存最近组件或文档根状态作用域名称。
-    pub(crate) component_scope_name: String,
+    pub(crate) widget_scope_name: String,
     // 保存节点类型与静态位置形成的子作用域声明标识。
     pub(crate) declaration_id: u64,
     // 保存当前节点所属最近 For 实例路径。
@@ -247,7 +247,7 @@ pub(crate) enum AttributeValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DynamicStyleBinding {
     // 保存最近组件作用域的卫生局部变量名称。
-    pub(crate) component_scope_name: String,
+    pub(crate) widget_scope_name: String,
     // 保存节点类型与静态位置共同形成的子作用域声明标识。
     pub(crate) declaration_id: u64,
     // 保存子作用域内动态样式状态的稳定字段标识。

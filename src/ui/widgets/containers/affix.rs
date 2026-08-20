@@ -6,18 +6,18 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::widget_runtime::widget::WidgetCore;
+use crate::widget;
 // Affix 的定制布局复用共享布局数值与 margin 归一化规则。
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
-use crate::ui::{ComponentId, SnapshotFields, WidgetComponent, WidgetTree};
+use crate::ui::{SnapshotFields, Widget, WidgetId, WidgetTree};
 
-component! {
+widget! {
     /// 在最近滚动视口内吸顶的子树容器。
     pub struct Affix {
         children: WidgetChildren,
@@ -47,13 +47,13 @@ component! {
         }
     }
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let max_width = if frame.w > 0.0 { frame.w } else { f32::MAX };
@@ -66,7 +66,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         if children.is_empty() {
             // 空布局不再保留旧子树占位。

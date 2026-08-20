@@ -4,11 +4,11 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::widget;
 // 导入共享的物理内容外尺寸计算。
 use crate::ui::SnapshotFields;
 use crate::ui::layout::LayoutChild;
@@ -16,7 +16,7 @@ use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, flex::compute_flex_layout,
 };
-use crate::ui::{ComponentId, WidgetComponent, WidgetTree};
+use crate::ui::{Widget, WidgetId, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,7 +43,7 @@ impl SpaceSize {
     }
 }
 
-component! {
+widget! {
     /// Space — a flex container that adds uniform gap between its children.
     pub struct Space {
         children: WidgetChildren,
@@ -98,11 +98,11 @@ component! {
         // Space itself is invisible; children are rendered by the tree.
     }
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let constraints = self.child_constraints(frame);
@@ -114,7 +114,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         if children.is_empty() {
             self.cached_content_size.set(Size::zero());
@@ -196,13 +196,13 @@ impl Space {
     }
 
     /// 追加一个由此容器拥有的子组件。
-    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
+    pub fn child(self, w: impl Widget + 'static) -> Self {
         self.children.add(w);
         self
     }
 
     /// 替换此容器拥有的全部子组件。
-    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
         self.children.set_all(widgets);
         self
     }

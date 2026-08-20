@@ -5,12 +5,12 @@
 //! 1. **数据 struct** — 组件首先是承载字段的结构体。
 //! 2. **可选能力 trait** — 按需实现 `WidgetLayout` / `WidgetRender` /
 //!    `EventHandler` / `WidgetLifecycle`；未实现的方法走 trait 默认行为。
-//! 3. **`WidgetComponent` 胶水** — 用 `impl_widget_component!` 声明实现了哪些能力。
+//! 3. **`Widget` 胶水** — 用 `impl_widget!` 声明实现了哪些能力。
 //!
 //! ```ignore
 //! pub struct Button { text: String, ... }
 //!
-//! impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
+//! impl_widget!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
 //!
 //! impl WidgetLayout for Button {
 //!     fn measure(&self, constraints: Constraints) -> Size { ... }
@@ -20,7 +20,7 @@
 //! }
 //! ```
 
-use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Rect, Size, WidgetId};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
 use crate::draw::scene::PicturePolicy;
 use crate::ui::event::{SemanticEvent, WindowAction};
@@ -72,7 +72,7 @@ impl WidgetCapabilities {
 }
 
 /// 组件核心标识 — 所有 widget 必须实现。
-pub trait WidgetComponent: 'static {
+pub trait Widget: 'static {
     /// 以动态类型借用组件。
     fn as_any(&self) -> &dyn Any;
     /// 以动态类型可变借用组件。
@@ -80,8 +80,8 @@ pub trait WidgetComponent: 'static {
     /// 将组件所有权转换为动态类型。
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
     /// 返回自动化和语义快照使用的稳定字段。
-    fn snapshot_fields(&self) -> crate::ui::component_snapshot::SnapshotFields {
-        crate::ui::component_snapshot::snapshot_fields_from_any(self.as_any())
+    fn snapshot_fields(&self) -> crate::ui::widget_snapshot::SnapshotFields {
+        crate::ui::widget_snapshot::snapshot_fields_from_any(self.as_any())
     }
     /// 返回此 widget 实现了哪些能力。
     fn capabilities(&self) -> WidgetCapabilities;
@@ -90,7 +90,7 @@ pub trait WidgetComponent: 'static {
         true
     }
     /// 构建并交出组件直接拥有的子组件。
-    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+    fn build(&self) -> Vec<Box<dyn Widget>> {
         vec![]
     }
     /// 在直接子节点集合变化后同步组件拥有的派生运行态。
@@ -99,10 +99,10 @@ pub trait WidgetComponent: 'static {
         let _ = child_count;
     }
     /// 声明期 View 子节点能力端口（SMC-04：由 System 私有边界
-    /// `ViewChildrenProvider` 承载，避免 component → view 依赖）。
+    /// `ViewChildrenProvider` 承载，避免 widget → view 依赖）。
     ///
     /// 返回 `Some` 表示该组件持有完整 ViewNode 子树（含 handlers 与样式）；
-    /// 实现经 `component!` 宏的 `build_view_children` 方法自动生成。
+    /// 实现经 `widget!` 宏的 `build_view_children` 方法自动生成。
     fn as_view_children(&self) -> Option<&dyn crate::ui::adapter::ViewChildrenProvider> {
         None
     }
@@ -118,7 +118,7 @@ pub trait WidgetComponent: 'static {
         true
     }
 
-    /// 组件声明的无障碍动作（E-05）：`component!` 的 `semantic_actions` 槽位
+    /// 组件声明的无障碍动作（E-05）：`widget!` 的 `semantic_actions` 槽位
     /// 生成此方法；在 role 推断之外声明自定义能力（如连续值 `Adjust`）。
     /// 声明进入语义快照，并经窗口 owner thread 的自动化执行器路由。
     fn declared_semantic_actions(&self) -> &'static [crate::ui::SemanticAction] {
@@ -181,7 +181,7 @@ pub trait WidgetComponent: 'static {
 /// `app` uses this trait to activate the platform IME only for the focused
 /// text editor and to position the native composition/candidate UI without
 /// depending on a concrete widget type.
-pub trait WidgetTextInput: WidgetComponent {
+pub trait WidgetTextInput: Widget {
     /// 判断组件当前是否接受平台文本输入。
     fn accepts_text_input(&self) -> bool {
         true
@@ -194,7 +194,7 @@ pub trait WidgetTextInput: WidgetComponent {
 }
 
 /// 布局行为：尺寸、弹性、子节点排列。
-pub trait WidgetLayout: WidgetComponent {
+pub trait WidgetLayout: Widget {
     /// 在给定约束下测量组件固有尺寸。
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::zero())
@@ -208,7 +208,7 @@ pub trait WidgetLayout: WidgetComponent {
     fn measure_from_children(
         &self,
         _constraints: Constraints,
-        _children: &[ComponentId],
+        _children: &[WidgetId],
         _tree: &WidgetTree,
     ) -> Option<Size> {
         None
@@ -258,7 +258,7 @@ pub trait WidgetLayout: WidgetComponent {
     fn measure_children(
         &self,
         _frame: Rect,
-        children: &[ComponentId],
+        children: &[WidgetId],
         _tree: &WidgetTree,
     ) -> Vec<LayoutChild> {
         children
@@ -274,14 +274,14 @@ pub trait WidgetLayout: WidgetComponent {
         frame: Rect,
         children: &[LayoutChild],
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         let _ = (frame, children, tree);
         Vec::new()
     }
 }
 
 /// 渲染行为：绘制、覆盖层、脏区域。
-pub trait WidgetRender: WidgetComponent {
+pub trait WidgetRender: Widget {
     /// 在已排列矩形内绘制组件内容。
     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree);
     /// 判断组件绘制是否依赖当前主题色板。
@@ -316,7 +316,7 @@ pub trait WidgetRender: WidgetComponent {
         false
     }
     /// 创建可选的浮层登记。
-    fn overlay_entry(&self, _id: ComponentId, _frame: Rect) -> Option<OverlayEntry> {
+    fn overlay_entry(&self, _id: WidgetId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }
     /// 使用当前逻辑表面创建浮层登记，供依赖窗口边界的定位组件覆盖。
@@ -324,7 +324,7 @@ pub trait WidgetRender: WidgetComponent {
         // 借用当前渲染组件。
         &self,
         // 接收浮层所属组件标识。
-        id: ComponentId,
+        id: WidgetId,
         // 接收组件布局矩形。
         frame: Rect,
         // 接收当前逻辑表面矩形。
@@ -337,7 +337,7 @@ pub trait WidgetRender: WidgetComponent {
 }
 
 /// 事件行为：输入事件处理、滚动偏移、命中测试。
-pub trait EventHandler: WidgetComponent {
+pub trait EventHandler: Widget {
     /// 处理一个已路由到组件的系统事件。
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
@@ -357,7 +357,7 @@ pub trait EventHandler: WidgetComponent {
         None
     }
     /// 将系统事件转换为组件语义事件。
-    fn semantic_event(&self, _id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    fn semantic_event(&self, _id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
     }
     /// 取走本次已处理事件产生的布局请求。
@@ -423,7 +423,7 @@ pub trait EventHandler: WidgetComponent {
 }
 
 /// 生命周期行为。
-pub trait WidgetLifecycle: WidgetComponent {
+pub trait WidgetLifecycle: Widget {
     /// 组件实例完成初始化时调用。
     fn on_init(&mut self) {}
     /// 组件附加到树时调用。
@@ -445,7 +445,7 @@ pub trait WidgetLifecycle: WidgetComponent {
 }
 
 /// Animation behavior advanced by the centralized App loop.
-pub trait WidgetAnimation: WidgetComponent {
+pub trait WidgetAnimation: Widget {
     /// Advances animation state by `dt` seconds.
     ///
     /// Returns `true` while another frame is required. Implementations should
@@ -467,7 +467,7 @@ pub trait IntoWidgetNode {
     fn into_node(self) -> WidgetNode;
 }
 
-impl<T: WidgetComponent + 'static> IntoWidgetNode for T {
+impl<T: Widget + 'static> IntoWidgetNode for T {
     fn into_node(self) -> WidgetNode {
         WidgetNode::leaf(Box::new(self))
     }

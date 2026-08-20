@@ -3,14 +3,14 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
-use crate::ui::{ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent};
+use crate::ui::{EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId};
+use crate::widget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AlertTarget {
@@ -35,7 +35,7 @@ struct AlertLayout {
     close: Rect,
 }
 
-component! {
+widget! {
     /// Alert — 带类型颜色的警示条。
     pub struct Alert {
         message: String,
@@ -189,7 +189,7 @@ component! {
         self.layout_requested.replace(false)
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         if self.pending_action.replace(false) {
             Some(SemanticEvent::submit(id, self.action_label.clone()))
         } else {

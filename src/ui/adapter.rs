@@ -15,25 +15,25 @@
 //! - render 期读取的 State / Computed 绑定窄 Paint；DynamicLabel 还会在 layout 后
 //!   主动探测闭包依赖。
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
-use crate::ui::component_patch::{
-    builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
-    patch_builtin_widget,
-};
-use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
+use crate::ui::widget_patch::{
+    builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
+    patch_builtin_widget,
+};
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
+use crate::ui::widget_snapshot::SnapshotFields;
 // 引入动态子树组件以识别各自的私有协调边界。
 use crate::ui::widgets::{Calendar, Carousel, Image, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
-use crate::ui::{ComponentId, WidgetTree};
+use crate::ui::{WidgetId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
 #[path = "adapter/capture_guards.rs"]
@@ -59,15 +59,15 @@ mod coordination;
 mod style;
 /// 声明期 View 子节点能力端口（System 私有边界）。
 ///
-/// `component → view` 依赖环消除（SMC-04）：`build_view_children` 从
-/// `WidgetComponent` 移出，由本边界 trait 承载；树构建经 `as_view_children`
-/// 上转型消费，widgets 经 `component!` 宏实现。
-pub trait ViewChildrenProvider: WidgetComponent {
+/// `widget → view` 依赖环消除（SMC-04）：`build_view_children` 从
+/// `Widget` 移出，由本边界 trait 承载；树构建经 `as_view_children`
+/// 上转型消费，widgets 经 `widget!` 宏实现。
+pub trait ViewChildrenProvider: Widget {
     /// 构建由组件声明并交给运行时树展开的 View 子节点。
     fn build_view_children(&self) -> Vec<ViewNode>;
 }
 /// 读取组件的声明期 View 子节点（无端口时为空）。
-pub(crate) fn view_children(widget: &dyn WidgetComponent) -> Vec<ViewNode> {
+pub(crate) fn view_children(widget: &dyn Widget) -> Vec<ViewNode> {
     widget
         .as_view_children()
         .map(|provider| provider.build_view_children())
@@ -89,7 +89,7 @@ impl ViewAdapter {
     pub(crate) fn expand(root: ViewNode) -> WidgetNode {
         // Decompose a ViewNode to keep traversal state on the heap.
         struct Frame {
-            widget: Box<dyn WidgetComponent>,
+            widget: Box<dyn Widget>,
             style: Style,
             // 保存非根声明节点交接给运行时树的 State 绑定。
             captured_state_binds:
@@ -121,7 +121,7 @@ impl ViewAdapter {
             handlers: Vec<HandlerRegistration>,
             system_event_handlers: Vec<SystemEventHandlerRegistration>,
             render_handlers: Vec<RenderHandlerRegistration>,
-            uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+            uix_widget_scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
             remaining_children: std::vec::IntoIter<ViewNode>,
             processed_children: Vec<WidgetNode>,
         }
@@ -156,11 +156,11 @@ impl ViewAdapter {
                 handlers,
                 system_event_handlers,
                 render_handlers,
-                uix_component_scopes,
+                uix_widget_scopes,
                 // 回执已经在建树或协调入口转移，展开不能提前提交或回滚它们。
-                component_state_receipts: _,
+                widget_state_receipts: _,
                 // 捕获根的状态存储已经在建树入口接管，子树展开不再传播。
-                component_state_store: _,
+                widget_state_store: _,
             } = node;
             let anchor = std::time::Instant::now();
             for (rank, child) in children.iter_mut().enumerate() {
@@ -197,7 +197,7 @@ impl ViewAdapter {
                 system_event_handlers,
                 render_handlers,
                 // 把声明根的完整组件作用域链交给 WidgetNode 构建阶段。
-                uix_component_scopes,
+                uix_widget_scopes,
                 remaining_children: children.into_iter(),
                 processed_children: Vec::new(),
             }
@@ -272,7 +272,7 @@ impl ViewAdapter {
             wnode = wnode.with_animated_sources(frame.animated_sources);
 
             // 将声明节点的嵌套组件作用域保留到运行时树。
-            wnode = wnode.with_uix_component_scopes(frame.uix_component_scopes);
+            wnode = wnode.with_uix_widget_scopes(frame.uix_widget_scopes);
 
             wnode.with_provider_context(frame.provider_context)
         }
@@ -298,7 +298,7 @@ impl ViewAdapter {
         }
     }
 
-    fn reconcile_existing(tree: &mut WidgetTree, id: ComponentId, node: ViewNode) {
+    fn reconcile_existing(tree: &mut WidgetTree, id: WidgetId, node: ViewNode) {
         let ViewNode {
             widget,
             children,
@@ -329,10 +329,10 @@ impl ViewAdapter {
             handlers,
             system_event_handlers,
             render_handlers,
-            uix_component_scopes,
+            uix_widget_scopes,
             // 回执已经在建树或协调入口转移，原位协调不能提前提交或回滚它们。
-            component_state_receipts: _,
-            component_state_store: _,
+            widget_state_receipts: _,
+            widget_state_store: _,
         } = node;
         let context_changed = tree
             .get(id)
@@ -343,7 +343,7 @@ impl ViewAdapter {
             // 原位协调必须同时更新可继承的光标声明。
             current.set_cursor(cursor);
             // 更新非视觉元数据，使现有节点身份与声明根严格一致。
-            current.set_uix_component_scopes(uix_component_scopes);
+            current.set_uix_widget_scopes(uix_widget_scopes);
             // 用本轮捕获的 Effect 完整替换此节点的旧声明实例。
             current.replace_captured_effects(captured_effects);
         }
@@ -364,14 +364,14 @@ impl ViewAdapter {
             .as_any()
             .downcast_ref::<Calendar>()
             .is_some_and(Calendar::owns_custom_cell_children)
-            || tree.is_calendar_cell_component(id);
+            || tree.is_calendar_cell_widget(id);
         // Anchor 容器必须在 live owner 完成原位同步后动态捕获，不能调用新声明组件的工厂。
         let anchor_container = {
             // 导航 capability 启用时识别新声明或 live 节点中的 Anchor owner。
             #[cfg(feature = "navigation")]
             {
                 // 新声明与原位复用均需进入 Anchor 专属协调边界。
-                widget.as_any().is::<Anchor>() || tree.is_anchor_container_component(id)
+                widget.as_any().is::<Anchor>() || tree.is_anchor_container_widget(id)
             }
             // 导航 capability 关闭时没有 Anchor owner，保留普通子树协调语义。
             #[cfg(not(feature = "navigation"))]
@@ -381,21 +381,19 @@ impl ViewAdapter {
             }
         };
         // Transfer 条目必须在 live owner 完成原位同步后由所属树动态捕获。
-        let transfer_items =
-            widget.as_any().is::<Transfer>() || tree.is_transfer_item_component(id);
+        let transfer_items = widget.as_any().is::<Transfer>() || tree.is_transfer_item_widget(id);
         // Carousel 自定义箭头必须在 live owner patch 后与 authored slides 一次性协调。
         let carousel_custom_arrows = widget.as_any().is::<Carousel>()
             // 原位复用时也识别当前 live Carousel owner。
-            || tree.is_carousel_custom_arrows_component(id);
+            || tree.is_carousel_custom_arrows_widget(id);
         // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
         let image_children = widget.as_any().is::<Image>();
         // 专属 owner 的延迟子树不能再由无树 store 的通用 ViewChildren 入口执行。
-        let component_view_children =
-            if calendar_cells || anchor_container || carousel_custom_arrows {
-                Vec::new()
-            } else {
-                view_children(widget.as_ref())
-            };
+        let widget_view_children = if calendar_cells || anchor_container || carousel_custom_arrows {
+            Vec::new()
+        } else {
+            view_children(widget.as_ref())
+        };
         let next_accessibility = widget.snapshot_fields().accessibility();
         let next_disabled = accessibility_override
             .as_ref()
@@ -412,7 +410,7 @@ impl ViewAdapter {
             && tree
                 .managers()
                 .focus
-                .focused_component()
+                .focused_widget()
                 .is_some_and(|focused| tree.is_descendant_of(focused, id))
         {
             // 旧组件仍启用时先交付 FocusOut，清理键盘按压和控件视觉；
@@ -462,10 +460,10 @@ impl ViewAdapter {
         // 表格 capability 启用时才协调泛型单元格或扩展行动态子树。
         #[cfg(feature = "table")]
         let table_children_changed = if tree.has_table_cell_renderer(id) {
-            Some(tree.refresh_table_cell_component(id))
+            Some(tree.refresh_table_cell_widget(id))
         } else if tree.has_table_expand_renderer(id) {
             // 交给动态刷新入口，确保扩展行 receipt 进入独立事务协调。
-            Some(tree.refresh_table_expand_component(id))
+            Some(tree.refresh_table_expand_widget(id))
         } else {
             None
         };
@@ -475,7 +473,7 @@ impl ViewAdapter {
         let select_options = tree.has_select_option_renderer(id);
         // VirtualScroll 的物化行由专用 keyed 动态协调器拥有。
         let virtual_scroll_items = tree.has_virtual_scroll_renderer(id);
-        let collapse_content = tree.is_collapse_content_component(id);
+        let collapse_content = tree.is_collapse_content_widget(id);
         // 在 live Image 完成 patch 后捕获错误 View，避免用新声明的默认加载状态覆盖运行时失败。
         let image_error_view = if image_children {
             // 只为当前活跃 Image owner 请求完整的动态捕获输出。
@@ -485,22 +483,22 @@ impl ViewAdapter {
             None
         };
         if select_options {
-            tree.invalidate_select_option_component(id);
+            tree.invalidate_select_option_widget(id);
         }
         let mut children_changed = if let Some(changed) = table_children_changed {
             changed
         } else if select_options {
-            tree.refresh_select_option_component(id)
+            tree.refresh_select_option_widget(id)
         } else if collapse_content {
-            tree.refresh_collapse_content_component(id)
+            tree.refresh_collapse_content_widget(id)
         } else if calendar_cells {
-            tree.refresh_calendar_cell_component(id)
+            tree.refresh_calendar_cell_widget(id)
         } else if anchor_container {
             // 导航 capability 启用时由 live Anchor 统一协调 authored 与动态容器。
             #[cfg(feature = "navigation")]
             {
                 // live Anchor 已完成 patch，此处才捕获最新工厂并合并 authored children。
-                tree.reconcile_anchor_container_component(id, children)
+                tree.reconcile_anchor_container_widget(id, children)
             }
             // 导航 capability 关闭时该分支不可达，保留穷尽表达式类型。
             #[cfg(not(feature = "navigation"))]
@@ -510,15 +508,15 @@ impl ViewAdapter {
             }
         } else if transfer_items {
             // live Transfer 已完成 patch，此处以 pane 与业务 key 协调全部自定义条目。
-            tree.refresh_transfer_item_component(id)
+            tree.refresh_transfer_item_widget(id)
         } else if carousel_custom_arrows {
             // live Carousel 已完成 patch，此处合并 authored slides 与固定自定义箭头。
-            tree.reconcile_carousel_custom_arrows_component(id, children)
+            tree.reconcile_carousel_custom_arrows_widget(id, children)
         } else if image_children {
             // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
             let mut children = children;
             // placeholder 仍由声明 Image 的一次性 build_view_children 语义提供。
-            children.extend(component_view_children);
+            children.extend(widget_view_children);
             // 运行时错误 View 只在 Image 失败且 handler 启用时参与完整子树协调。
             let has_error_view = image_error_view.is_some();
             // 保持当前错误实例的 State、Effect、动画与 receipt 作为同一嵌套事务交接。
@@ -530,7 +528,7 @@ impl ViewAdapter {
                 // 节点仍可能因错误工厂 panic 前的外部重入而不可寻址。
                 .get(id)
                 // 只允许当前运行时 Image 接收物化事实。
-                .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
             {
                 // 有错误声明时标记已物化，避免 layout 重复执行用户工厂。
                 if has_error_view {
@@ -553,7 +551,7 @@ impl ViewAdapter {
                     // 读取协调后仍存活的父组件。
                     .get(id)
                     // 确认类型未因生命周期回调重入发生变化。
-                    .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                    .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
                 {
                     // 与 on_children_changed 的真实缺席清理语义保持一致。
                     image.clear_error_view_materialized();
@@ -566,10 +564,10 @@ impl ViewAdapter {
             false
         } else {
             let mut children = children;
-            children.extend(component_view_children);
+            children.extend(widget_view_children);
             Self::reconcile_children(tree, id, children, stagger_enter)
         };
-        children_changed |= tree.refresh_virtual_scroll_component(id, None);
+        children_changed |= tree.refresh_virtual_scroll_widget(id, None);
         if children_changed {
             paint_changed = true;
             layout_changed = true;
@@ -588,7 +586,7 @@ impl ViewAdapter {
 
     fn reconcile_handlers(
         tree: &mut WidgetTree,
-        id: ComponentId,
+        id: WidgetId,
         handlers: Vec<HandlerRegistration>,
     ) -> bool {
         let next_signatures = tree
@@ -611,7 +609,7 @@ impl ViewAdapter {
             return false;
         }
 
-        tree.handler_table().clear_component(id);
+        tree.handler_table().clear_widget(id);
         if let Some(current) = tree.get_mut(id) {
             current.set_handler_signatures(next_signatures);
         }
@@ -680,8 +678,8 @@ impl ViewAdapter {
 
     fn patch_widget(
         tree: &mut WidgetTree,
-        id: ComponentId,
-        widget: Box<dyn WidgetComponent>,
+        id: WidgetId,
+        widget: Box<dyn Widget>,
     ) -> WidgetPatchImpact {
         let Some(current) = tree.get_mut(id) else {
             // 节点已不存在时没有可上报的 patch 影响。
@@ -689,9 +687,9 @@ impl ViewAdapter {
         };
 
         // 先判断运行时受控值是否需要同步。
-        let runtime_changed = builtin_widget_runtime_changed(current.component(), widget.as_ref());
+        let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
         // 在 patch 前只抓取一次当前组件公开快照。
-        let current_fields = current.component().snapshot_fields();
+        let current_fields = current.widget().snapshot_fields();
         // 在 patch 前只抓取一次新版组件公开快照。
         let next_fields = widget.snapshot_fields();
         // 排除含运行时字段的特殊快照，再回退到完整快照比较。
@@ -703,7 +701,7 @@ impl ViewAdapter {
         let layout_changed = config_changed
             && builtin_widget_layout_changed(&current_fields, &next_fields).unwrap_or(true);
         // 只有实际完成原位 patch 或替换后才报告失效影响。
-        match patch_builtin_widget(current.component_mut(), widget) {
+        match patch_builtin_widget(current.widget_mut(), widget) {
             // 原位同步成功时返回精细分类结果。
             Ok(true) => WidgetPatchImpact {
                 // 任意声明配置变化至少需要重绘。
@@ -714,7 +712,7 @@ impl ViewAdapter {
             // 无类型化 patch 时替换同型组件并沿用相同分类。
             Err(widget) => {
                 // 用新版组件替换无法类型化同步的旧实现。
-                current.replace_component(widget);
+                current.replace_widget(widget);
                 // 返回替换后的精细失效分类。
                 WidgetPatchImpact {
                     // 任意声明配置变化至少需要重绘。
@@ -730,7 +728,7 @@ impl ViewAdapter {
 
     fn reconcile_children(
         tree: &mut WidgetTree,
-        parent_id: ComponentId,
+        parent_id: WidgetId,
         children: Vec<ViewNode>,
         stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     ) -> bool {
@@ -738,7 +736,7 @@ impl ViewAdapter {
             .get(parent_id)
             .map(|node| node.children().to_vec())
             .unwrap_or_default();
-        let mut old_by_key: HashMap<String, ComponentId> = HashMap::new();
+        let mut old_by_key: HashMap<String, WidgetId> = HashMap::new();
         for &child_id in &old_children {
             if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
                 old_by_key.insert(key.to_string(), child_id);

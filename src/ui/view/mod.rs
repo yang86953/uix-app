@@ -8,19 +8,19 @@ use crate::draw::Color;
 use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::widget_runtime::provider_context::{ProviderContext, current_provider_context};
 // 让声明节点携带内联组件的非视觉状态作用域标记。
-use crate::ui::component_state::{
-    // 引入随声明根延迟提交的私有状态写入回执。
-    ComponentStateCaptureReceipt,
-    // 引入窗口私有状态存储和组件作用域标记。
-    ComponentStateStore,
-    UixComponentScope,
-    UixComponentScopeMarker,
-};
 use crate::ui::event::system_event_handler::{SystemEventFilter, SystemEventHandlerRegistration};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 use crate::ui::widget_runtime::view_transform::ViewTransform;
+use crate::ui::widget_state::{
+    UixWidgetScope,
+    UixWidgetScopeMarker,
+    // 引入随声明根延迟提交的私有状态写入回执。
+    WidgetStateCaptureReceipt,
+    // 引入窗口私有状态存储和组件作用域标记。
+    WidgetStateStore,
+};
 // 引入声明根显式交接的 State 绑定与 Effect 类型。
 use crate::ui::reactive::state::{Effect, StatePaintBind};
 use crate::ui::theme::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
@@ -48,7 +48,7 @@ pub trait View: 'static {
 
 /// 中间节点表示。
 pub struct ViewNode {
-    pub(crate) widget: Box<dyn WidgetComponent>,
+    pub(crate) widget: Box<dyn Widget>,
     pub(crate) children: Vec<ViewNode>,
     // 保存当前捕获根读取的结构性 State 绑定，建树时由所属 WidgetTree 提交。
     pub(crate) captured_state_binds: Vec<Arc<dyn StatePaintBind>>,
@@ -82,11 +82,11 @@ pub struct ViewNode {
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
     // 保存承载此根的全部内联组件作用域，不参与视觉或语义快照。
-    pub(crate) uix_component_scopes: Vec<UixComponentScopeMarker>,
+    pub(crate) uix_widget_scopes: Vec<UixWidgetScopeMarker>,
     // 仅由捕获根携带，用于把首次构建绑定到同一窗口状态存储。
-    pub(crate) component_state_store: Option<ComponentStateStore>,
+    pub(crate) widget_state_store: Option<WidgetStateStore>,
     // 保存尚未由成功树事务接纳的组件状态写入回执。
-    pub(crate) component_state_receipts: Vec<ComponentStateCaptureReceipt>,
+    pub(crate) widget_state_receipts: Vec<WidgetStateCaptureReceipt>,
 }
 
 impl View for ViewNode {
@@ -101,7 +101,7 @@ impl ViewNode {
     }
 
     /// 从不带声明子节点的组件创建叶节点。
-    pub fn leaf(widget: impl WidgetComponent + 'static) -> Self {
+    pub fn leaf(widget: impl Widget + 'static) -> Self {
         Self {
             widget: Box::new(widget),
             children: vec![],
@@ -134,15 +134,15 @@ impl ViewNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
-            uix_component_scopes: Vec::new(),
-            component_state_store: None,
+            uix_widget_scopes: Vec::new(),
+            widget_state_store: None,
             // 非捕获构造路径没有需要延迟提交的私有状态写入。
-            component_state_receipts: Vec::new(),
+            widget_state_receipts: Vec::new(),
         }
     }
 
     /// 从组件及其声明式直接子节点创建节点。
-    pub fn new(widget: impl WidgetComponent + 'static, children: Vec<ViewNode>) -> Self {
+    pub fn new(widget: impl Widget + 'static, children: Vec<ViewNode>) -> Self {
         Self {
             widget: Box::new(widget),
             children,
@@ -175,33 +175,33 @@ impl ViewNode {
             handlers: Vec::new(),
             system_event_handlers: Vec::new(),
             render_handlers: Vec::new(),
-            uix_component_scopes: Vec::new(),
-            component_state_store: None,
+            uix_widget_scopes: Vec::new(),
+            widget_state_store: None,
             // 非捕获构造路径没有需要延迟提交的私有状态写入。
-            component_state_receipts: Vec::new(),
+            widget_state_receipts: Vec::new(),
         }
     }
 
     /// 为内联组件展开根追加非视觉的私有状态作用域标记。
     #[doc(hidden)]
-    pub fn uix_component_scope(mut self, scope: UixComponentScope, root_ordinal: u64) -> Self {
+    pub fn uix_widget_scope(mut self, scope: UixWidgetScope, root_ordinal: u64) -> Self {
         // 追加而非覆盖，以保留多个内联组件共享同一实际根的身份。
-        self.uix_component_scopes
-            .push(UixComponentScopeMarker::new(scope, root_ordinal));
+        self.uix_widget_scopes
+            .push(UixWidgetScopeMarker::new(scope, root_ordinal));
         // 返回携带完整作用域栈的原节点。
         self
     }
 
     // 由捕获适配器绑定首次构建的窗口私有状态存储。
-    pub(crate) fn set_component_state_store(&mut self, store: ComponentStateStore) {
+    pub(crate) fn set_widget_state_store(&mut self, store: WidgetStateStore) {
         // 仅根节点需要保存存储所有权线索。
-        self.component_state_store = Some(store);
+        self.widget_state_store = Some(store);
     }
 
     // 让捕获适配器把一次组件状态 journal 的所有权附到声明根。
-    pub(crate) fn push_component_state_receipt(&mut self, receipt: ComponentStateCaptureReceipt) {
+    pub(crate) fn push_widget_state_receipt(&mut self, receipt: WidgetStateCaptureReceipt) {
         // 保持捕获顺序，以便统一在树事务成功后接纳全部写入。
-        self.component_state_receipts.push(receipt);
+        self.widget_state_receipts.push(receipt);
     }
 
     /// 设置文本颜色。

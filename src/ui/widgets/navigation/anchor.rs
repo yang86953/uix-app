@@ -2,18 +2,18 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 use std::rc::Rc;
 
-component! {
+widget! {
     /// Anchor — 锚点导航条。
     ///
     /// 传入 LinkItem 列表，点击跳转到对应锚点，滚动时高亮当前锚点。
@@ -45,7 +45,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         if !self.container_enabled {
             return Vec::new();
@@ -118,7 +118,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         let idx = self.pending_change.take()?;
         let href = self
             .items
@@ -187,7 +187,7 @@ component! {
 pub struct AnchorItem {
     /// 显示文本
     pub label: String,
-    /// 锚点标识（对应目标 component 的 ID 或 key）
+    /// 锚点标识（对应目标 widget 的 ID 或 key）
     pub href: String,
 }
 

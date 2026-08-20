@@ -282,5 +282,5 @@ pub fn use_locale() -> Locale {
 
 /// 在作用域内使用指定语言配置执行闭包。
 pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
-    crate::ui::widget_runtime::provider_context::with_component_locale(locale, f)
+    crate::ui::widget_runtime::provider_context::with_widget_locale(locale, f)
 }

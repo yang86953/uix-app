@@ -3,7 +3,7 @@
 // 引入通用矩形几何。
 use crate::core::Rect;
 // 引入布局子项、组件标识与只读组件树。
-use crate::ui::{ComponentId, LayoutChild, WidgetTree};
+use crate::ui::{LayoutChild, WidgetId, WidgetTree};
 
 // 引入固定列共享绘制顺序。
 use super::geometry::COLUMN_PAINT_ORDER;
@@ -22,7 +22,7 @@ impl Table {
         children: &[LayoutChild],
         // 接收用于写入父级片段元数据的组件树。
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         // 保存最新 frame 供可见行与滚动范围解析复用。
         self.last_frame.set(Some(frame));
         // 泛型 View 列存在时优先布局物化单元格子树。
@@ -72,7 +72,7 @@ impl Table {
         children: &[LayoutChild],
         // 接收用于更新节点片段元数据的组件树。
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         // 解析动态子树当前实际物化的行窗口。
         let (start, end) = self
             // 优先使用刷新阶段已经记录的物化范围。
@@ -206,7 +206,7 @@ impl Table {
         // 接收只读树；节点内部用 RefCell 保存布局元数据。
         tree: &WidgetTree,
         // 接收目标子节点标识。
-        child_id: ComponentId,
+        child_id: WidgetId,
         // 接收无裁剪、空裁剪或多个实际片段。
         regions: Option<Vec<Rect>>,
     ) {

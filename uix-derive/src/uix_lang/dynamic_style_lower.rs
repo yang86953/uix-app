@@ -2,7 +2,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 // 引入组件展开器与字段绑定。
-use super::component_codegen::{Bindings, ComponentExpander};
+use super::widget_codegen::{Bindings, WidgetExpander};
 // 引入动态样式与表达式 AST。
 use super::{
     Attribute, AttributeValue, Diagnostic, DynamicStyleBinding, DynamicStyleKey,
@@ -93,7 +93,7 @@ fn expression_uses_set_style(expression: &Expression) -> bool {
 }
 
 // 实现动态样式目标解析、作用域校验与 setter 降低。
-impl ComponentExpander {
+impl WidgetExpander {
     // 把当前核心 View 的 setStyle 调用改写为闭合类型化状态分支。
     pub(super) fn prepare_dynamic_style(
         // 可变借用文档展开状态。
@@ -126,7 +126,7 @@ impl ComponentExpander {
                 // 返回组件外观副作用位置诊断。
                 return Err(Diagnostic::new(
                     attribute.span,
-                    "setStyle 只能在 Component 的事件处理器中使用",
+                    "setStyle 只能在 Widget 的事件处理器中使用",
                     "把 setStyle('className') 移入当前 View 的 @click、@mouseEnter 或 @mouseLeave",
                 ));
             }
@@ -147,13 +147,13 @@ impl ComponentExpander {
                 "把事件与 setStyle 放到 If 或 For 内的 Button、Container 等实际元素上",
             ));
         }
-        // 动态样式必须归属最近的 UIX Component。
-        let Some(component_scope) = self.component_scope_stack.last().cloned() else {
+        // 动态样式必须归属最近的 UIX Widget。
+        let Some(widget_scope) = self.widget_scope_stack.last().cloned() else {
             // 返回组件边界诊断。
             return Err(Diagnostic::new(
                 element.span,
-                "setStyle 只能在 UIX Component 内使用",
-                "声明 Component，并把事件 View 放入该 Component 的直接或嵌套核心子树",
+                "setStyle 只能在 UIX Widget 内使用",
+                "声明 Widget，并把事件 View 放入该 Widget 的直接或嵌套核心子树",
             ));
         };
         // 去重目标类并保持首次出现顺序。
@@ -269,18 +269,18 @@ impl ComponentExpander {
             }
         }
         // 使用节点类型与静态跨度形成跨构建稳定声明身份。
-        let declaration_id = Self::stable_component_id(&format!(
+        let declaration_id = Self::stable_widget_id(&format!(
             "dynamic-style:{}:{}:{}",
             element.name, element.span.start, element.span.end
         ));
         // 动态样式元数据作为最终 View 装饰包裹事件表达式。
         expanded
-            .component_scopes
-            .push(super::ComponentScopeMarker::DynamicStyle(
+            .widget_scopes
+            .push(super::WidgetScopeMarker::DynamicStyle(
                 // 保存闭合状态、身份与分支。
                 DynamicStyleBinding {
                     // 保存最近组件作用域名称。
-                    component_scope_name: component_scope.to_string(),
+                    widget_scope_name: widget_scope.to_string(),
                     // 保存稳定子作用域声明标识。
                     declaration_id,
                     // 子作用域内只需要一个动态样式字段。
@@ -305,7 +305,7 @@ impl ComponentExpander {
 // 为指定目标的每个源码调用点分配独占 setter 名称。
 fn allocate_setters(
     // 接收展开器以生成卫生名称。
-    expander: &mut ComponentExpander,
+    expander: &mut WidgetExpander,
     // 接收保留重复项的源码顺序目标列表。
     targets: &[(String, SourceSpan)],
     // 接收需要匹配的目标类名。
@@ -350,7 +350,7 @@ fn take_dynamic_key(
     // 接收组件字段绑定。
     bindings: &Bindings,
     // 接收展开器以复用表达式字段降低。
-    expander: &mut ComponentExpander,
+    expander: &mut WidgetExpander,
 ) -> Result<Option<DynamicStyleKey>, Diagnostic> {
     // 查找可选 key 属性。
     let Some(index) = element

@@ -1,7 +1,7 @@
 // 引入被测场景管线与帧输入输出类型。
 use super::*;
 // 引入稳定节点身份、图形错误码与测试几何。
-use crate::core::{ComponentId, Errc};
+use crate::core::{Errc, WidgetId};
 // 引入无副作用画布，避免测试创建真实图形设备。
 use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
 // 引入场景绘制上下文和节点身份。
@@ -14,9 +14,9 @@ use crate::draw::scene::NodeId;
 use crate::draw::Canvas2D;
 
 // 固定唯一测试节点，避免每个用例重复构造场景树。
-const ROOT_NODE: NodeId = ComponentId::new(1);
+const ROOT_NODE: NodeId = WidgetId::new(1);
 // 固定 overlay 子节点，供 clean refresh 两阶段事务测试。
-const OVERLAY_NODE: NodeId = ComponentId::new(2);
+const OVERLAY_NODE: NodeId = WidgetId::new(2);
 
 // 描述本次调用应注入失败的 backdrop 生命周期边界。
 #[derive(Clone, Copy, PartialEq, Eq)]

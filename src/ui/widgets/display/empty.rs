@@ -1,10 +1,10 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 
 const MIN_WIDTH: f32 = 160.0;
 const MAX_WIDTH: f32 = 320.0;
@@ -20,7 +20,7 @@ const ICON_SIZE: f32 = 32.0;
 // 空状态图标与文字间距（12.0）；breadcrumb 为 4.0，语境不同。
 const ICON_TEXT_GAP: f32 = 12.0;
 
-component! {
+widget! {
     /// Empty — 空状态展示。
     pub struct Empty {
         description: String,

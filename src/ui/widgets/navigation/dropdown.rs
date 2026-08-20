@@ -1,16 +1,16 @@
 //! Dropdown widget.
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 组合 Dropdown 使用组件树的公开子节点测量边界。
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 引入直接 trigger 子节点的布局快照类型。
 use crate::ui::layout::LayoutChild;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 use std::cell::RefCell;
@@ -126,7 +126,7 @@ struct VisibleDropdownItem {
     depth: usize,
 }
 
-component! {
+widget! {
     /// Click-triggered dropdown menu.
     pub struct Dropdown {
         label: String,
@@ -184,7 +184,7 @@ component! {
     }
 
     // 使用 trigger 子节点自然尺寸完成一次受限测量。
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // trigger 只占据组件顶部交互区域。
@@ -210,7 +210,7 @@ component! {
 
     // 让唯一 trigger View 填充 Dropdown 的触发区域。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 没有 trigger 时不产生伪布局。
         let Some(child) = children.first() else { return Vec::new(); };
@@ -338,7 +338,7 @@ component! {
         EventResult::Handled
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -455,7 +455,7 @@ component! {
     }
 
     // 打开时登记浮层，保证外部点击关闭与 Esc 路由在 OverlayStack 生效。
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }

@@ -83,12 +83,12 @@ pub(super) fn range_endpoint(
     // 提供缺省端点值。
     default: f64,
     // 指定诊断中的组件名称。
-    component: &str,
+    widget: &str,
 ) -> Result<TokenStream, Diagnostic> {
     // 显式端点沿用统一有限 f64 生成契约。
     if let Some(attribute) = find_attribute(element, name) {
         // 生成类型明确的动态或静态端点。
-        return f64_value(attribute, &format!("{component} {name}"));
+        return f64_value(attribute, &format!("{widget} {name}"));
     }
     // 缺失属性映射为文档声明的 f64 默认值。
     Ok(quote! { #default })
@@ -174,12 +174,12 @@ pub(super) fn validate_literal_range(
     // 借用声明范围的滑块元素。
     element: &Element,
     // 指定诊断中的组件名称。
-    component: &str,
+    widget: &str,
 ) -> Result<(), Diagnostic> {
     // 读取可比较的静态最小值，缺失时采用文档默认值。
-    let minimum = literal_endpoint(element, "min", 0.0, component)?;
+    let minimum = literal_endpoint(element, "min", 0.0, widget)?;
     // 读取可比较的静态最大值，缺失时采用文档默认值。
-    let maximum = literal_endpoint(element, "max", 100.0, component)?;
+    let maximum = literal_endpoint(element, "max", 100.0, widget)?;
     // 任一动态端点都交给运行时公开归一化契约。
     let (Some(minimum), Some(maximum)) = (minimum, maximum) else {
         // 动态范围无法在编译期比较。
@@ -195,7 +195,7 @@ pub(super) fn validate_literal_range(
         // 指向完整 Slider。
         element.span,
         // 说明实际反向范围。
-        format!("{component} min={minimum} 不能大于 max={maximum}"),
+        format!("{widget} min={minimum} 不能大于 max={maximum}"),
         // 给出修复建议。
         "调整 min/max，使 min <= max",
     ))
@@ -210,7 +210,7 @@ fn literal_endpoint(
     // 提供缺失属性的静态默认值。
     default: f64,
     // 指定诊断中的组件名称。
-    component: &str,
+    widget: &str,
 ) -> Result<Option<f64>, Diagnostic> {
     // 缺失属性可直接参与静态范围比较。
     let Some(attribute) = find_attribute(element, name) else {
@@ -223,7 +223,7 @@ fn literal_endpoint(
         return Ok(None);
     }
     // 解析并返回静态有限端点。
-    parse_literal_f64(attribute, &format!("{component} {name}")).map(Some)
+    parse_literal_f64(attribute, &format!("{widget} {name}")).map(Some)
 }
 
 // 校验静态步长为正。
@@ -231,7 +231,7 @@ pub(super) fn validate_literal_step(
     // 借用步长属性。
     attribute: &Attribute,
     // 指定诊断中的组件名称。
-    component: &str,
+    widget: &str,
 ) -> Result<(), Diagnostic> {
     // 动态表达式由运行时 step 归一化。
     if !matches!(attribute.value, AttributeValue::Literal(_)) {
@@ -239,7 +239,7 @@ pub(super) fn validate_literal_step(
         return Ok(());
     }
     // 复用有限数值解析。
-    let value = parse_literal_f64(attribute, &format!("{component} step"))?;
+    let value = parse_literal_f64(attribute, &format!("{widget} step"))?;
     // 正有限值符合运行时步进契约。
     if value > 0.0 {
         // 返回校验成功。
@@ -250,7 +250,7 @@ pub(super) fn validate_literal_step(
         // 指向非法 step。
         attribute.span,
         // 说明步长约束。
-        format!("{component} step 必须大于 0"),
+        format!("{widget} step 必须大于 0"),
         // 给出修复建议。
         "使用正的有限步长",
     ))

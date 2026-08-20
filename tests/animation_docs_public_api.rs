@@ -59,16 +59,16 @@ mod animation_bind {
     }
 }
 
-// 隔离 animation-component 围栏中的指令式动画组件。
-mod animation_component {
+// 隔离 animation-widget 围栏中的指令式动画组件。
+mod animation_widget {
     // 引入文档承诺的公开组件、动画与绘制 prelude。
     use uix::prelude::*;
 
     // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-component";
+    pub(super) const COMPILE_ID: &str = "animation-widget";
 
     // 声明由逐窗 frame opportunity 推进的脉冲圆环。
-    component! {
+    widget! {
         // 公开 PulseRing 类型及其相位时间。
         pub struct PulseRing {
             // 保存累计动画秒数。
@@ -208,7 +208,7 @@ fn animation_rust_fences_compile_as_external_consumers() {
         // 登记动画属性绑定围栏。
         animation_bind::COMPILE_ID,
         // 登记指令式组件动画围栏。
-        animation_component::COMPILE_ID,
+        animation_widget::COMPILE_ID,
         // 登记挂载与离场动画围栏。
         animation_enter::COMPILE_ID,
         // 登记属性 Transition 围栏。
@@ -225,7 +225,7 @@ fn animation_rust_fences_compile_as_external_consumers() {
             // 属性绑定围栏标识。
             "animation-bind",
             // 组件动画围栏标识。
-            "animation-component",
+            "animation-widget",
             // 挂载过渡围栏标识。
             "animation-enter",
             // 属性 Transition 围栏标识。

@@ -6,11 +6,11 @@ use crate::platform::windowing::ControlSize;
 pub use crate::ui::render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 use crate::ui::theme::style::StyleSet;
 use crate::ui::theme::{Theme, TokenPatch};
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 
 /// 组件全局默认配置。
 #[derive(Clone)]
-pub struct ComponentConfig {
+pub struct WidgetConfig {
     /// 默认控件尺寸。
     pub size: ControlSize,
     /// 默认禁用状态。
@@ -18,19 +18,19 @@ pub struct ComponentConfig {
     /// 当前主题。
     pub theme: Option<Theme>,
     /// 组件级覆盖。
-    pub overrides: ComponentOverrides,
+    pub overrides: WidgetOverrides,
     /// 按组件类型应用的设计令牌补丁。
-    pub component_tokens: ComponentTokenOverrides,
+    pub widget_tokens: WidgetTokenOverrides,
     /// 数据组件为空时使用的 View factory。
     pub empty_renderer: Option<EmptyRenderer>,
 }
 
-impl PartialEq for ComponentConfig {
+impl PartialEq for WidgetConfig {
     fn eq(&self, other: &Self) -> bool {
         self.size == other.size
             && self.disabled == other.disabled
             && self.overrides == other.overrides
-            && self.component_tokens == other.component_tokens
+            && self.widget_tokens == other.widget_tokens
             && match (&self.empty_renderer, &other.empty_renderer) {
                 (Some(left), Some(right)) => left.is_same_renderer(right),
                 (None, None) => true,
@@ -44,27 +44,27 @@ impl PartialEq for ComponentConfig {
     }
 }
 
-impl Default for ComponentConfig {
+impl Default for WidgetConfig {
     fn default() -> Self {
         Self {
             size: ControlSize::Medium,
             disabled: false,
             theme: None,
-            overrides: ComponentOverrides::default(),
-            component_tokens: ComponentTokenOverrides::default(),
+            overrides: WidgetOverrides::default(),
+            widget_tokens: WidgetTokenOverrides::default(),
             empty_renderer: None,
         }
     }
 }
 
-impl ComponentConfig {
+impl WidgetConfig {
     /// 创建中等尺寸、启用交互且不含主题或组件覆盖的默认配置。
     pub fn new() -> Self {
         Self::default()
     }
 
     /// 设置作用域内组件默认使用的标准控件尺寸。
-    pub fn component_size(mut self, size: ControlSize) -> Self {
+    pub fn widget_size(mut self, size: ControlSize) -> Self {
         self.size = size;
         self
     }
@@ -82,20 +82,20 @@ impl ComponentConfig {
     }
 
     /// 替换作用域内全部窄组件属性覆盖。
-    pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
+    pub fn overrides(mut self, overrides: WidgetOverrides) -> Self {
         self.overrides = overrides;
         self
     }
 
     /// 为指定组件类型插入或替换设计令牌补丁。
-    pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
-        self.component_tokens.insert::<T>(patch);
+    pub fn widget_tokens<T: Widget>(mut self, patch: TokenPatch) -> Self {
+        self.widget_tokens.insert::<T>(patch);
         self
     }
 }
 
 /// 应用级组件默认配置。
-pub type Config = ComponentConfig;
+pub type Config = WidgetConfig;
 
 pub(crate) const fn control_height(size: ControlSize) -> f32 {
     match size {
@@ -107,29 +107,29 @@ pub(crate) const fn control_height(size: ControlSize) -> f32 {
 
 /// 按组件类型索引的设计令牌补丁集合。
 #[derive(Clone, Default, PartialEq)]
-pub struct ComponentTokenOverrides {
+pub struct WidgetTokenOverrides {
     patches: HashMap<TypeId, Arc<TokenPatch>>,
 }
 
-impl ComponentTokenOverrides {
+impl WidgetTokenOverrides {
     /// 创建不含任何组件类型补丁的集合。
     pub fn new() -> Self {
         Self::default()
     }
 
     /// 为指定组件类型插入或替换设计令牌补丁。
-    pub fn insert<T: WidgetComponent>(&mut self, patch: TokenPatch) {
+    pub fn insert<T: Widget>(&mut self, patch: TokenPatch) {
         self.patches.insert(TypeId::of::<T>(), Arc::new(patch));
     }
 
     /// 消费集合并为指定组件类型插入或替换设计令牌补丁。
-    pub fn with<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
+    pub fn with<T: Widget>(mut self, patch: TokenPatch) -> Self {
         self.insert::<T>(patch);
         self
     }
 
-    pub(crate) fn get(&self, component: TypeId) -> Option<Arc<TokenPatch>> {
-        self.patches.get(&component).cloned()
+    pub(crate) fn get(&self, widget: TypeId) -> Option<Arc<TokenPatch>> {
+        self.patches.get(&widget).cloned()
     }
 
     pub(crate) fn extend(&mut self, other: Self) {
@@ -139,7 +139,7 @@ impl ComponentTokenOverrides {
 
 /// 组件级属性覆盖。
 #[derive(Clone, Default, PartialEq)]
-pub struct ComponentOverrides {
+pub struct WidgetOverrides {
     /// 按钮组件使用的默认属性覆盖。
     pub button: ButtonOverrides,
     /// 输入框组件使用的默认属性覆盖。
@@ -192,11 +192,11 @@ pub enum FormLayout {
 }
 
 /// 获取当前生效的组件配置。
-pub fn use_config() -> ComponentConfig {
+pub fn use_config() -> WidgetConfig {
     crate::ui::widget_runtime::provider_context::current_provider_context().config
 }
 
 /// 在作用域内使用指定配置执行闭包。
-pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
-    crate::ui::widget_runtime::provider_context::with_component_config(config, f)
+pub fn with_config<T>(config: &WidgetConfig, f: impl FnOnce() -> T) -> T {
+    crate::ui::widget_runtime::provider_context::with_widget_config(config, f)
 }

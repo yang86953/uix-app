@@ -31,7 +31,7 @@ impl WidgetTree {
             if let Some(owner) = self
                 .managers()
                 .focus
-                .focused_component()
+                .focused_widget()
                 .and_then(|focused| self.active_focus_trap_ancestor(focused))
             {
                 if let Some(next) = self.focus_next_in_scope(owner, forward) {
@@ -59,7 +59,7 @@ impl WidgetTree {
             }
         }
 
-        let Some(target) = self.managers().focus.focused_component() else {
+        let Some(target) = self.managers().focus.focused_widget() else {
             return EventResult::NotHandled;
         };
         // all 的 Ctrl+A 由树层扩展到最近显式整体边界。
@@ -99,7 +99,7 @@ impl WidgetTree {
         while let Some(id) = current {
             let node = self.get(id)?;
             if node
-                .component()
+                .widget()
                 .as_any()
                 .downcast_ref::<crate::ui::widget_runtime::focus_trap::FocusTrap>()
                 .is_some_and(crate::ui::widget_runtime::focus_trap::FocusTrap::is_active)
@@ -121,7 +121,7 @@ impl WidgetTree {
                 return EventResult::Handled;
             }
             self.keyboard_activation = None;
-            if self.managers().focus.focused_component() != Some(target)
+            if self.managers().focus.focused_widget() != Some(target)
                 || !self.focus_target_available(target)
             {
                 return EventResult::NotHandled;
@@ -154,7 +154,7 @@ impl WidgetTree {
     }
 
     fn dispatch_unarmed_key_up(&mut self, event: &SystemEvent) -> EventResult {
-        let Some(target) = self.managers().focus.focused_component() else {
+        let Some(target) = self.managers().focus.focused_widget() else {
             return EventResult::NotHandled;
         };
         self.invalidate_paint(target);

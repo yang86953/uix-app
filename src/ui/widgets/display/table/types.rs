@@ -1,7 +1,7 @@
 //! Table 公开类型与常量 — table 子模块。
 //!
 //! 列配置、排序/分页契约、数据表格与回调类型；不包含任何组件实现。
-//! [`Table`]（component! 宏）定义在父模块，[`TableBuilder`] 在 [`super::builder`]。
+//! [`Table`]（widget! 宏）定义在父模块，[`TableBuilder`] 在 [`super::builder`]。
 
 use std::error::Error;
 use std::fmt;

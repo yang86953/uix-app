@@ -2,12 +2,12 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 
 // 时间线条目高度（60.0）；time_picker/cascader 选择列项为 32.0，语境不同。
 const ITEM_HEIGHT: f32 = 60.0;
@@ -36,7 +36,7 @@ pub struct TimelineItem {
 }
 
 // Timeline — 时间线组件。
-component! {
+widget! {
     /// 按声明顺序展示状态节点、标签与描述的时间线组件。
     pub struct Timeline {
         items: Vec<TimelineItem>,

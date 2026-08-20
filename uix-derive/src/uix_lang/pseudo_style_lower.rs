@@ -4,15 +4,15 @@ use proc_macro2::Ident;
 use quote::quote;
 
 // 引入组件展开器、字段绑定与状态句柄位判断。
-use super::component_codegen::{Bindings, ComponentExpander, is_state_handle_attribute};
+use super::widget_codegen::{Bindings, WidgetExpander, is_state_handle_attribute};
 // 引入元素、属性值、诊断与伪类绑定 AST。
 use super::{
-    Attribute, AttributeValue, ComponentScopeMarker, Diagnostic, Document, Element, Node,
-    PseudoStyleBinding, PseudoStyleCondition,
+    Attribute, AttributeValue, Diagnostic, Document, Element, Node, PseudoStyleBinding,
+    PseudoStyleCondition, WidgetScopeMarker,
 };
 
 // 实现状态伪类的编译期事实绑定。
-impl ComponentExpander {
+impl WidgetExpander {
     // 为直接使用 hover、animation 或 transition 的文档根建立状态生命周期作用域。
     pub(super) fn begin_document_style_scope(
         // 可变借用展开器以登记准备语句和作用域。
@@ -41,7 +41,7 @@ impl ComponentExpander {
         // 为当前宏文档根生成卫生作用域名称。
         let scope = self.fresh_ident("document_scope", &document.root.name);
         // 使用根标签与源码跨度形成稳定声明身份。
-        let declaration_id = Self::stable_component_id(&format!(
+        let declaration_id = Self::stable_widget_id(&format!(
             // 固定身份前缀并纳入源码位置。
             "document-style-state:{}:{}:{}",
             // 使用根标签名称。
@@ -54,13 +54,13 @@ impl ComponentExpander {
         // 在展开前取得窗口私有的既有组件状态作用域。
         self.push_setup(quote! {
             // 复用组件状态存储作为文档根样式状态生命周期所有者。
-            let #scope = ::uix::ui::__private::uix_component_scope(
+            let #scope = ::uix::ui::__private::uix_widget_scope(
                 concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
                 #declaration_id,
             );
         });
         // 让根子树展开期间能派生逐节点 hover、animation 与 transition 状态。
-        self.component_scope_stack.push(scope.clone());
+        self.widget_scope_stack.push(scope.clone());
         // 保存作用域供展开后附加生命周期标记。
         Some(scope)
     }
@@ -80,9 +80,9 @@ impl ComponentExpander {
             return;
         };
         // 弹出刚才创建的文档根作用域。
-        self.component_scope_stack.pop();
+        self.widget_scope_stack.pop();
         // 追加普通组件作用域标记而不改变运行时契约。
-        root.component_scopes.push(ComponentScopeMarker::Scope {
+        root.widget_scopes.push(WidgetScopeMarker::Scope {
             // 保存卫生作用域名称。
             scope_name: scope.to_string(),
             // 文档只有一个实际根。
@@ -135,12 +135,12 @@ impl ComponentExpander {
             None
         } else {
             // hover 必须位于组件或文档根提供的既有状态作用域中。
-            let Some(scope) = self.component_scope_stack.last() else {
+            let Some(scope) = self.widget_scope_stack.last() else {
                 // 返回作用域诊断。
                 return Err(Diagnostic::new(
                     element.span,
                     ":hover 状态伪类缺少声明式生命周期所有者",
-                    "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Component",
+                    "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Widget",
                 ));
             };
             // 保存卫生作用域名称供代码生成恢复。
@@ -174,7 +174,7 @@ impl ComponentExpander {
             Some((condition, styles.checked))
         };
         // 使用节点类型与静态跨度形成跨构建稳定声明身份。
-        let declaration_id = Self::stable_component_id(&format!(
+        let declaration_id = Self::stable_widget_id(&format!(
             "pseudo-style:{}:{}:{}",
             element.name, element.span.start, element.span.end
         ));

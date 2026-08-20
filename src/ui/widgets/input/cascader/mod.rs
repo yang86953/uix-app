@@ -66,10 +66,10 @@ pub(crate) struct CascaderSearchResult {
     loading: bool,
 }
 
-mod component;
 mod methods;
+mod widget;
 
-pub use component::*;
+pub use widget::*;
 
 fn collect_search_results(
     options: &[CascaderOption],

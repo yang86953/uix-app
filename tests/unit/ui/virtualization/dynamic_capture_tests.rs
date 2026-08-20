@@ -1,7 +1,7 @@
 // 导入被测 VirtualScroll 运行时组件。
 use super::{VirtualScroll, VirtualScrollBuilder};
 // 导入创建真实 UIX 私有组件状态所需的隐藏运行时入口。
-use crate::ui::component_state::{uix_component_scope, uix_component_state};
+use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入按 key 读取虚拟行运行时身份所需的树节点接口。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入 View 构建与协调入口。
@@ -11,7 +11,7 @@ use crate::ui::view::ViewNode;
 // 导入最小行组件。
 use crate::ui::widgets::Label;
 // 导入动画、组件身份、Effect 与 State 行为观察类型。
-use crate::ui::{Animated, ComponentId, Easing, Effect, State, WidgetTree};
+use crate::ui::{Animated, Easing, Effect, State, WidgetId, WidgetTree};
 // 导入跨 renderer 调用保存每个绝对索引状态句柄的映射。
 use std::collections::HashMap;
 // 导入测试闭包共享可变记录所需的单线程所有权容器。
@@ -49,9 +49,9 @@ fn captured_row(
     // 读取当前索引动画值，使本行声明捕获其 AnimatedSource。
     let _ = animations[index].value();
     // 为同一静态行组件调用申请当前动态命名空间内的作用域。
-    let scope = uix_component_scope("virtual-scroll-dynamic-row-test", 1);
+    let scope = uix_widget_scope("virtual-scroll-dynamic-row-test", 1);
     // 取得或初始化当前绝对索引对应的组件私有状态。
-    let private_state = uix_component_state(&scope, 1, || 0_i32);
+    let private_state = uix_widget_state(&scope, 1, || 0_i32);
     // 保存最新捕获句柄供测试跨刷新直接观察槽身份与值。
     captured_states
         // 锁定共享映射仅覆盖本次同步写入。
@@ -63,7 +63,7 @@ fn captured_row(
     // 构造不自行设置根 key 的行节点，身份由 VirtualScroll 键工厂权威注入。
     ViewNode::leaf(Label::new(format!("row-{index}")))
         // 让实际挂载行节点承载该组件私有状态作用域。
-        .uix_component_scope(scope, 0)
+        .uix_widget_scope(scope, 0)
 }
 
 // 读取指定虚拟行的运行时组件身份。
@@ -71,11 +71,11 @@ fn row_id(
     // 接收被检查的运行时树。
     tree: &WidgetTree,
     // 接收 VirtualScroll 宿主身份。
-    root: ComponentId,
+    root: WidgetId,
     // 接收目标绝对索引。
     index: usize,
     // 返回当前带对应稳定 key 的实际行身份。
-) -> ComponentId {
+) -> WidgetId {
     // 构造 renderer 为当前绝对索引声明的运行时 key。
     let expected_key = format!("virtual-scroll-item:{index}");
     // 遍历宿主当前实际物化的直接子节点。
@@ -178,9 +178,9 @@ fn keyed_reorder_view(
                     // 脱离顺序锁后继续构建 View。
                     .clone();
                 // 为同一静态行组件声明取得当前动态业务命名空间作用域。
-                let scope = uix_component_scope("virtual-scroll-keyed-reorder-test", 1);
+                let scope = uix_widget_scope("virtual-scroll-keyed-reorder-test", 1);
                 // 在业务键命名空间内取得或初始化私有状态。
-                let state = uix_component_state(&scope, 1, || 0_i32);
+                let state = uix_widget_state(&scope, 1, || 0_i32);
                 // 回传业务项与私有状态句柄的最新映射。
                 row_states
                     // 锁定记录映射只覆盖单次写入。
@@ -192,7 +192,7 @@ fn keyed_reorder_view(
                 // 返回不自行设置根 key 的唯一业务行节点。
                 ViewNode::leaf(Label::new(name))
                     // 让挂载行承载当前组件私有状态作用域。
-                    .uix_component_scope(scope, 0)
+                    .uix_widget_scope(scope, 0)
             },
         )
 }
@@ -202,11 +202,11 @@ fn business_row_id(
     // 接收被检查的运行时树。
     tree: &WidgetTree,
     // 接收 VirtualScroll 宿主身份。
-    root: ComponentId,
+    root: WidgetId,
     // 接收原始业务键。
     key: &str,
     // 返回当前业务项的真实组件身份。
-) -> ComponentId {
+) -> WidgetId {
     // 生成与运行时业务身份模式一致的规范 key。
     let expected = format!("virtual-scroll-business:{key}");
     // 遍历宿主直接物化子项寻找规范业务 key。
@@ -349,7 +349,7 @@ fn virtual_scroll_dynamic_capture_preserves_each_index_and_releases_removed_rows
         // VirtualScroll 根必须仍可寻址。
         .expect("VirtualScroll 根必须存在")
         // 取得运行时组件可变引用。
-        .component_mut()
+        .widget_mut()
         // 转换为可变类型擦除接口。
         .as_any_mut()
         // 恢复真实 VirtualScroll 类型。
@@ -361,7 +361,7 @@ fn virtual_scroll_dynamic_capture_preserves_each_index_and_releases_removed_rows
         // 保存确定性偏移。
         .set(10.0);
     // 通过生产刷新入口物化索引一与二并移除索引零。
-    assert!(tree.refresh_virtual_scroll_component(root, Some(20.0)));
+    assert!(tree.refresh_virtual_scroll_widget(root, Some(20.0)));
     // 重叠索引一必须继续复用原运行时组件身份。
     assert_eq!(row_id(&tree, root, 1), first_row_one);
     // 重叠索引一必须复用同一私有状态值。
@@ -386,7 +386,7 @@ fn virtual_scroll_dynamic_capture_preserves_each_index_and_releases_removed_rows
         // VirtualScroll 根必须仍可寻址。
         .expect("VirtualScroll 根必须存在")
         // 取得运行时组件可变引用。
-        .component_mut()
+        .widget_mut()
         // 转换为可变类型擦除接口。
         .as_any_mut()
         // 恢复真实 VirtualScroll 类型。
@@ -398,12 +398,12 @@ fn virtual_scroll_dynamic_capture_preserves_each_index_and_releases_removed_rows
         // 恢复到首个窗口。
         .set(0.0);
     // 刷新后重新物化索引零与一。
-    assert!(tree.refresh_virtual_scroll_component(root, Some(20.0)));
+    assert!(tree.refresh_virtual_scroll_widget(root, Some(20.0)));
     // 真实移出再进入的索引零必须重新初始化私有状态。
     assert_eq!(captured_state(&captured_states, 0).get(), 0);
 }
 
-// 验证业务稳定键在重排后同时保留 ComponentId 与组件私有 State。
+// 验证业务稳定键在重排后同时保留 WidgetId 与组件私有 State。
 #[test]
 // 将两个业务项交换绝对索引，检查所有权随业务键而非位置移动。
 fn virtual_scroll_keyed_reorder_preserves_business_identity_and_private_state() {
@@ -461,9 +461,9 @@ fn virtual_scroll_keyed_reorder_preserves_business_identity_and_private_state() 
         // 新版声明读取交换后的业务顺序。
         keyed_reorder_view(Arc::clone(&order), Arc::clone(&states)),
     );
-    // a 交换到索引一后仍必须复用原 ComponentId。
+    // a 交换到索引一后仍必须复用原 WidgetId。
     assert_eq!(business_row_id(&tree, root, "a"), a_id);
-    // b 交换到索引零后仍必须复用原 ComponentId。
+    // b 交换到索引零后仍必须复用原 WidgetId。
     assert_eq!(business_row_id(&tree, root, "b"), b_id);
     // 读取协调后回传的业务状态映射。
     let states = states
@@ -640,7 +640,7 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
         // 根必须仍可寻址。
         .expect("VirtualScroll 根必须存在")
         // 取得运行时组件。
-        .component_mut()
+        .widget_mut()
         // 进入类型擦除可变接口。
         .as_any_mut()
         // 恢复 VirtualScroll 类型。
@@ -652,7 +652,7 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
         // 推进一行。
         .set(10.0);
     // 物化新窗口并让索引零进入离场。
-    assert!(tree.refresh_virtual_scroll_component(root, Some(20.0)));
+    assert!(tree.refresh_virtual_scroll_widget(root, Some(20.0)));
     // 新窗口会重新声明索引一与二两行。
     assert_eq!(render_calls.load(std::sync::atomic::Ordering::Relaxed), 4);
     // 离场墓碑必须仍在树中供动画绘制。
@@ -663,7 +663,7 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
     // 父子链包含一个墓碑和两个活动行。
     assert_eq!(tree.get(root).expect("根必须存在").children().len(), 3);
     // 相同窗口再次刷新不得把墓碑误计为活动行并重调 renderer。
-    assert!(!tree.refresh_virtual_scroll_component(root, Some(20.0)));
+    assert!(!tree.refresh_virtual_scroll_widget(root, Some(20.0)));
     // renderer 调用次数保持不变。
     assert_eq!(render_calls.load(std::sync::atomic::Ordering::Relaxed), 4);
     // 对当前树执行真实布局以验证活动子集的绝对索引映射。
@@ -694,7 +694,7 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
         // 根必须仍可寻址。
         .expect("VirtualScroll 根必须存在")
         // 取得运行时组件。
-        .component_mut()
+        .widget_mut()
         // 进入类型擦除可变接口。
         .as_any_mut()
         // 恢复 VirtualScroll 类型。
@@ -706,7 +706,7 @@ fn virtual_scroll_leave_rows_do_not_shift_or_rebuild_active_window() {
         // 恢复首个窗口。
         .set(0.0);
     // 同 key 重入必须协调回当前活动窗口。
-    assert!(tree.refresh_virtual_scroll_component(root, Some(20.0)));
+    assert!(tree.refresh_virtual_scroll_widget(root, Some(20.0)));
     // 索引零必须复用原组件身份而非分配新节点。
     assert_eq!(row_id(&tree, root, 0), row_zero);
     // 重入会取消尚未完成的离场状态。

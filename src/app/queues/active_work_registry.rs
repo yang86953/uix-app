@@ -21,13 +21,13 @@ pub(crate) enum ActiveWorkKind {
 pub(crate) struct ActiveWorkRegistry {
     entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
     managed_animation_registrations: BTreeMap<NodeId, (Option<Instant>, bool)>,
-    open_component_animations: BTreeMap<NodeId, bool>,
+    open_widget_animations: BTreeMap<NodeId, bool>,
     managed_timers: BTreeMap<TimerId, bool>,
     managed_app_timers: BTreeMap<TimerId, bool>,
     timer_sync_marker: bool,
     app_timer_sync_marker: bool,
     animated_source_sync_marker: bool,
-    component_animation_sync_marker: bool,
+    widget_animation_sync_marker: bool,
 }
 
 impl ActiveWorkRegistry {
@@ -51,7 +51,7 @@ impl ActiveWorkRegistry {
     pub(crate) fn unregister(&mut self, kind: ActiveWorkKind) -> bool {
         if let ActiveWorkKind::Animation(id) = kind {
             self.managed_animation_registrations.remove(&id);
-            self.open_component_animations.remove(&id);
+            self.open_widget_animations.remove(&id);
         }
         if let ActiveWorkKind::Timer(id) = kind {
             self.managed_timers.remove(&id);
@@ -73,14 +73,14 @@ impl ActiveWorkRegistry {
                 .insert(id, (deadline, marker));
         }
         let entries = &mut self.entries;
-        let open_component_animations = &self.open_component_animations;
+        let open_widget_animations = &self.open_widget_animations;
         self.managed_animation_registrations
             .retain(|&id, (_, seen_marker)| {
                 if *seen_marker == marker {
                     return true;
                 }
                 let kind = ActiveWorkKind::Animation(id);
-                if open_component_animations.contains_key(&id) {
+                if open_widget_animations.contains_key(&id) {
                     entries.insert(kind, None);
                 } else {
                     entries.remove(&kind);
@@ -89,7 +89,7 @@ impl ActiveWorkRegistry {
             });
         for (&id, &(deadline, _)) in &self.managed_animation_registrations {
             let kind = ActiveWorkKind::Animation(id);
-            if self.open_component_animations.contains_key(&id) {
+            if self.open_widget_animations.contains_key(&id) {
                 self.entries.insert(kind, None);
             } else {
                 self.entries.insert(kind, deadline);
@@ -97,18 +97,18 @@ impl ActiveWorkRegistry {
         }
     }
 
-    pub(crate) fn sync_component_animations<I>(&mut self, ids: I)
+    pub(crate) fn sync_widget_animations<I>(&mut self, ids: I)
     where
         I: IntoIterator<Item = NodeId>,
     {
-        self.component_animation_sync_marker = !self.component_animation_sync_marker;
-        let marker = self.component_animation_sync_marker;
+        self.widget_animation_sync_marker = !self.widget_animation_sync_marker;
+        let marker = self.widget_animation_sync_marker;
         for id in ids {
-            self.open_component_animations.insert(id, marker);
+            self.open_widget_animations.insert(id, marker);
         }
         let entries = &mut self.entries;
         let managed_animation_registrations = &self.managed_animation_registrations;
-        self.open_component_animations.retain(|&id, seen_marker| {
+        self.open_widget_animations.retain(|&id, seen_marker| {
             if *seen_marker == marker {
                 return true;
             }
@@ -120,14 +120,14 @@ impl ActiveWorkRegistry {
             }
             false
         });
-        for &id in self.open_component_animations.keys() {
+        for &id in self.open_widget_animations.keys() {
             self.entries.insert(ActiveWorkKind::Animation(id), None);
         }
     }
 
     pub(crate) fn manages_animation(&self, id: NodeId) -> bool {
         self.managed_animation_registrations.contains_key(&id)
-            || self.open_component_animations.contains_key(&id)
+            || self.open_widget_animations.contains_key(&id)
     }
 
     pub(crate) fn park_animated_deadlines(&mut self) {

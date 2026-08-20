@@ -7,9 +7,9 @@
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
+use crate::widget;
 // 保存单行真实 shaping 字形，以便方向感知命中。
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 // 引入可停靠字素簇边界与显式字符索引。
@@ -19,7 +19,7 @@ use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
 use crate::ui::{SnapshotFields, SnapshotSource};
 
@@ -73,7 +73,7 @@ fn addon_width(text: &str) -> f32 {
     }
 }
 
-component! {
+widget! {
     /// 拥有文本编辑、选区、校验展示与可选双向绑定的输入组件。
     pub struct Input {
         value: String,
@@ -359,7 +359,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         if let Some(value) = self.pending_submit.borrow_mut().take() {
             return Some(SemanticEvent::submit(id, value));
         }

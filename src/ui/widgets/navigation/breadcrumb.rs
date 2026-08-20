@@ -1,13 +1,13 @@
 //! Breadcrumb widget — 面包屑导航路径。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
 };
+use crate::widget;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 
@@ -86,7 +86,7 @@ impl BreadcrumbItem {
     }
 }
 
-component! {
+widget! {
     /// Breadcrumb — 导航路径指示器。
     pub struct Breadcrumb {
         items: Vec<BreadcrumbItem>,
@@ -182,7 +182,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         let index = self.pending_change.take()?;
         self.items
             .get(index)

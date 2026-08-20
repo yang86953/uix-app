@@ -111,9 +111,9 @@ pub fn demo_flex() {
         .with_align(AlignItems::Center);
 
     let children = vec![
-        LayoutChild::new(ComponentId::new(0), Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
-        LayoutChild::new(ComponentId::new(1), Size::new(100.0, 200.0)).with_flex(2.0, 1.0),
-        LayoutChild::new(ComponentId::new(2), Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+        LayoutChild::new(WidgetId::new(0), Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+        LayoutChild::new(WidgetId::new(1), Size::new(100.0, 200.0)).with_flex(2.0, 1.0),
+        LayoutChild::new(WidgetId::new(2), Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
     ];
 
     let container = Rect::new(0.0, 0.0, 400.0, 300.0);

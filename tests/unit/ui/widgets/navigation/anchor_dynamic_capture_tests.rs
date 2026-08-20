@@ -3,7 +3,7 @@ use super::Anchor;
 // 导入真实声明协调与建树入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态 scope 与槽位创建入口。
-use crate::ui::component_state::{uix_component_scope, uix_component_state};
+use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入运行时节点读取所需的核心契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入最小动态声明节点类型。
@@ -12,8 +12,8 @@ use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
 // 导入动态捕获、生命周期与异常测试所需类型。
 use crate::ui::{
-    Animated, ComponentId, Easing, Effect, SnapshotFields, State, Transition, WidgetCapabilities,
-    WidgetComponent, WidgetTree,
+    Animated, Easing, Effect, SnapshotFields, State, Transition, Widget, WidgetCapabilities,
+    WidgetId, WidgetTree,
 };
 // 导入手写发布异常组件所需的类型擦除接口。
 use std::any::Any;
@@ -27,7 +27,7 @@ fn anchor_root(
     // 接收已经成功挂载的运行时树。
     tree: &WidgetTree,
     // 返回当前唯一根身份。
-) -> ComponentId {
+) -> WidgetId {
     // Anchor 测试均只建立一个根组件。
     tree.root_id().expect("Anchor 必须拥有运行时根")
 }
@@ -37,9 +37,9 @@ fn container_child(
     // 接收运行时树。
     tree: &WidgetTree,
     // 接收 Anchor owner 身份。
-    root: ComponentId,
+    root: WidgetId,
     // 返回当前动态容器身份。
-) -> ComponentId {
+) -> WidgetId {
     // 仅查找 Anchor 专属固定 key，避免误把 authored 子节点当作动态容器。
     tree.get(root)
         .expect("Anchor owner 必须存在")
@@ -72,14 +72,14 @@ fn sync_runtime_anchor(
     // 接收当前运行时树。
     tree: &mut WidgetTree,
     // 接收仍属于该树的 Anchor owner。
-    root: ComponentId,
+    root: WidgetId,
     // 接收将安装到 live owner 的新版声明。
     next: Anchor,
 ) {
     // 仅当前真实 Anchor 可以接纳测试指定的 factory。
     tree.get_mut(root)
         .expect("Anchor owner 必须存在")
-        .component_mut()
+        .widget_mut()
         .as_any_mut()
         .downcast_mut::<Anchor>()
         .expect("运行时 owner 必须是 Anchor")
@@ -115,9 +115,9 @@ fn captured_anchor(
         // 每次真实容器物化或父协调重捕获都必须可观察。
         renderer_calls.fetch_add(1, Ordering::Relaxed);
         // 为固定动态容器声明稳定组件私有 scope。
-        let scope = uix_component_scope("anchor-container-dynamic-capture-test", 1);
+        let scope = uix_widget_scope("anchor-container-dynamic-capture-test", 1);
         // 在 owner、容器槽与固定 key 限定的命名空间中获取状态。
-        let state = uix_component_state(&scope, 1, || 0_i32);
+        let state = uix_widget_state(&scope, 1, || 0_i32);
         // 读取私有状态以登记当前动态容器的结构性协调依赖。
         let _ = state.get();
         // 记录本轮捕获到的状态句柄。
@@ -138,7 +138,7 @@ fn captured_anchor(
         // 读取动画值以让动态捕获移交动画源所有权。
         let _ = animation.value();
         // 建立承载私有 scope 的最小容器节点。
-        let node = ViewNode::leaf(Label::new(label)).uix_component_scope(scope, 0);
+        let node = ViewNode::leaf(Label::new(label)).uix_widget_scope(scope, 0);
         // 仅在需要留场测试时为根节点增加非零过渡。
         match leave {
             // 长离场使测试能够观察 pending-removal 阶段。
@@ -153,7 +153,7 @@ fn captured_anchor(
 struct PanicOnBuild;
 
 // 为异常测试提供运行时组件最低契约。
-impl WidgetComponent for PanicOnBuild {
+impl Widget for PanicOnBuild {
     // 返回当前组件的只读类型擦除引用。
     fn as_any(&self) -> &dyn Any {
         // 当前测试组件无需额外状态。
@@ -179,7 +179,7 @@ impl WidgetComponent for PanicOnBuild {
     }
 
     // 在已进入不可逆发布区后触发稳定异常。
-    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+    fn build(&self) -> Vec<Box<dyn Widget>> {
         // 用稳定消息区分预发布 factory panic。
         panic!("Anchor 容器发布阶段 build 异常")
     }
@@ -234,7 +234,7 @@ fn anchor_container_dynamic_capture_materializes_complete_outputs() {
     // 状态更新必须请求 owner 树协调。
     assert!(tree.take_reconcile_requested());
     // 对已物化容器的直接刷新不得再次调用工厂。
-    assert!(!tree.refresh_anchor_container_component(root));
+    assert!(!tree.refresh_anchor_container_widget(root));
     // 空刷新必须保持初建的一次调用，不能创建后丢弃临时动态输出。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 1);
     // 固定动态子节点身份必须保持不变。
@@ -388,7 +388,7 @@ fn anchor_container_dynamic_capture_parent_reconcile_reuses_id_and_state() {
     );
     // 同类型同 owner 协调不得替换 Anchor 根。
     assert_eq!(anchor_root(&tree), root);
-    // 固定 key 必须复用原动态容器 ComponentId。
+    // 固定 key 必须复用原动态容器 WidgetId。
     assert_eq!(container_child(&tree, root), child);
     // 新版 factory 必须真实执行一次。
     assert_eq!(next_calls.load(Ordering::Relaxed), 1);
@@ -498,7 +498,7 @@ fn anchor_container_dynamic_capture_releases_on_disable_replace_and_shutdown() {
 
 // 验证固定 key 容器在非零 leave 期间保留资源并在重入时取消离场。
 #[test]
-// 重入必须复用同一 ComponentId 与已提交 State。
+// 重入必须复用同一 WidgetId 与已提交 State。
 fn anchor_container_dynamic_capture_leave_reentry_reuses_id_and_state() {
     // 建立状态记录。
     let states = Arc::new(Mutex::new(None));
@@ -566,7 +566,7 @@ fn anchor_container_dynamic_capture_rejects_invalid_owners_and_fail_stop() {
     // 读取非 Anchor 根身份。
     let non_anchor_root = non_anchor_tree.root_id().expect("Label 必须拥有根");
     // 非 Anchor owner 必须安全拒绝。
-    assert!(!non_anchor_tree.refresh_anchor_container_component(non_anchor_root));
+    assert!(!non_anchor_tree.refresh_anchor_container_widget(non_anchor_root));
     // 建立 stale owner 工厂调用记录。
     let stale_calls = Arc::new(AtomicUsize::new(0));
     // 挂载可观察的 Anchor。
@@ -588,7 +588,7 @@ fn anchor_container_dynamic_capture_rejects_invalid_owners_and_fail_stop() {
     // 真实移除 owner 使该 identity 失效。
     stale_tree.remove(stale_root);
     // stale owner 必须拒绝刷新。
-    assert!(!stale_tree.refresh_anchor_container_component(stale_root));
+    assert!(!stale_tree.refresh_anchor_container_widget(stale_root));
     // stale 拒绝不得调用 factory。
     assert_eq!(stale_calls.load(Ordering::Relaxed), 1);
     // 建立 owner leave 场景的工厂调用记录。
@@ -613,7 +613,7 @@ fn anchor_container_dynamic_capture_rejects_invalid_owners_and_fail_stop() {
     // 让 Anchor owner 本身进入 pending-removal。
     assert!(leave_tree.start_leave_transition(leave_root));
     // 离场 owner 必须拒绝刷新。
-    assert!(!leave_tree.refresh_anchor_container_component(leave_root));
+    assert!(!leave_tree.refresh_anchor_container_widget(leave_root));
     // 离场拒绝不得调用 factory。
     assert_eq!(leave_calls.load(Ordering::Relaxed), 1);
     // 建立正常 Anchor 以制造可观察的发布后异常。
@@ -649,7 +649,7 @@ fn anchor_container_dynamic_capture_rejects_invalid_owners_and_fail_stop() {
     // 首次失败工厂必须只执行一次。
     assert_eq!(fail_calls.load(Ordering::Relaxed), 1);
     // fail-stop 后刷新必须拒绝。
-    assert!(!fail_tree.refresh_anchor_container_component(fail_root));
+    assert!(!fail_tree.refresh_anchor_container_widget(fail_root));
     // fail-stop 拒绝不得再次调用 factory。
     assert_eq!(fail_calls.load(Ordering::Relaxed), 1);
 }
@@ -714,7 +714,7 @@ fn anchor_container_dynamic_capture_rejects_factory_owned_root_key() {
     // 捕获 factory root key 违反固定动态身份约束的异常。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // 直接刷新让 key 校验发生在动态事务发布前。
-        let _ = tree.refresh_anchor_container_component(root);
+        let _ = tree.refresh_anchor_container_widget(root);
     }));
     // 非法 key 必须被明确拒绝。
     assert!(result.is_err());
@@ -738,7 +738,7 @@ fn anchor_container_dynamic_capture_rejects_factory_owned_root_key() {
         Anchor::new(Vec::new()).container(|| ViewNode::leaf(Label::new("recovered"))),
     );
     // 安全 factory 必须能直接完成首次发布。
-    assert!(tree.refresh_anchor_container_component(root));
+    assert!(tree.refresh_anchor_container_widget(root));
     // 恢复后必须拥有唯一固定动态容器。
     let _ = container_child(&tree, root);
 }
@@ -769,9 +769,9 @@ fn anchor_container_dynamic_capture_pre_publish_panic_rolls_back_and_retries() {
                 // 记录 factory 确实进入捕获边界。
                 failed_calls.fetch_add(1, Ordering::Relaxed);
                 // 声明与恢复工厂相同的私有 scope。
-                let scope = uix_component_scope("anchor-container-pre-publish-panic-test", 1);
+                let scope = uix_widget_scope("anchor-container-pre-publish-panic-test", 1);
                 // 创建仍未提交的 provisional State。
-                let state = uix_component_state(&scope, 1, || 0_i32);
+                let state = uix_widget_state(&scope, 1, || 0_i32);
                 // 写入可辨识值以检查恢复不会复用错误 journal。
                 state.set(23);
                 // 回传 provisional 句柄供异常后诊断。
@@ -786,7 +786,7 @@ fn anchor_container_dynamic_capture_pre_publish_panic_rolls_back_and_retries() {
     // 捕获 factory 返回 ViewNode 前的异常。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // 直接刷新让 panic 发生在 append 发布前。
-        let _ = tree.refresh_anchor_container_component(root);
+        let _ = tree.refresh_anchor_container_widget(root);
     }));
     // factory panic 必须向调用方传播。
     assert!(result.is_err());
@@ -825,20 +825,20 @@ fn anchor_container_dynamic_capture_pre_publish_panic_rolls_back_and_retries() {
                 // 记录恢复 factory 实际执行。
                 recovered_calls.fetch_add(1, Ordering::Relaxed);
                 // 使用与失败工厂相同的动态组件 scope。
-                let scope = uix_component_scope("anchor-container-pre-publish-panic-test", 1);
+                let scope = uix_widget_scope("anchor-container-pre-publish-panic-test", 1);
                 // 正确回滚后必须重新得到初值 State。
-                let state = uix_component_state(&scope, 1, || 0_i32);
+                let state = uix_widget_state(&scope, 1, || 0_i32);
                 // 保存恢复后的状态句柄。
                 *recovered_states
                     .lock()
                     .unwrap_or_else(|error| error.into_inner()) = Some(state);
                 // 返回承载同一 scope 的最小容器。
-                ViewNode::leaf(Label::new("recovered")).uix_component_scope(scope, 0)
+                ViewNode::leaf(Label::new("recovered")).uix_widget_scope(scope, 0)
             }
         }),
     );
     // 安全 factory 必须通过直接刷新实际发布固定动态容器。
-    assert!(tree.refresh_anchor_container_component(root));
+    assert!(tree.refresh_anchor_container_widget(root));
     // 安全 factory 必须恰好执行一次。
     assert_eq!(recovered_calls.load(Ordering::Relaxed), 1);
     // 恢复必须取得新建初值而不是失败 factory 写入的二十三。

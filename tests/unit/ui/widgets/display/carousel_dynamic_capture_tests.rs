@@ -3,7 +3,7 @@ use super::Carousel;
 // 导入真实声明建树和原位协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态 scope 与槽位创建入口。
-use crate::ui::component_state::{uix_component_scope, uix_component_state};
+use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入运行时节点读取与组件 patch 所需契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入最小声明节点类型。
@@ -11,7 +11,7 @@ use crate::ui::view::ViewNode;
 // 导入幻灯片与箭头测试承载组件。
 use crate::ui::widgets::Label;
 // 导入动态捕获、动画、Effect 与树生命周期测试能力。
-use crate::ui::{Animated, ComponentId, Easing, Effect, State, Transition, WidgetTree};
+use crate::ui::{Animated, Easing, Effect, State, Transition, WidgetId, WidgetTree};
 // 导入同线程保存 previous/next 动作所需容器。
 use std::cell::RefCell;
 // 导入工厂动作与记录的共享所有权。
@@ -26,7 +26,7 @@ fn carousel_root(
     // 接收已经完成真实挂载的运行时树。
     tree: &WidgetTree,
     // 返回唯一根组件身份。
-) -> ComponentId {
+) -> WidgetId {
     // 本文件每棵测试树只声明一个 Carousel 根。
     tree.root_id().expect("Carousel 必须拥有运行时根")
 }
@@ -36,9 +36,9 @@ fn custom_arrows_child(
     // 接收当前运行时树。
     tree: &WidgetTree,
     // 接收仍属于该树的 Carousel owner。
-    root: ComponentId,
+    root: WidgetId,
     // 返回固定动态箭头身份。
-) -> ComponentId {
+) -> WidgetId {
     // 只按产品保留 key 查找，避免把 authored slide 当作箭头。
     tree.get(root)
         // owner 在查找期间必须保持可寻址。
@@ -47,7 +47,7 @@ fn custom_arrows_child(
         .children()
         // 借用子节点序列。
         .iter()
-        // 复制轻量 ComponentId。
+        // 复制轻量 WidgetId。
         .copied()
         // 查找唯一固定身份。
         .find(|child| {
@@ -105,7 +105,7 @@ fn sync_runtime_carousel(
     // 接收当前运行时树。
     tree: &mut WidgetTree,
     // 接收实际 Carousel owner。
-    root: ComponentId,
+    root: WidgetId,
     // 接收下一版组件声明。
     next: Carousel,
 ) {
@@ -114,7 +114,7 @@ fn sync_runtime_carousel(
         // owner 必须仍然有效。
         .expect("Carousel owner 必须存在")
         // 取得组件可变契约。
-        .component_mut()
+        .widget_mut()
         // 下转型入口不泄漏到产品公开 API。
         .as_any_mut()
         // 验证运行时类型。
@@ -158,9 +158,9 @@ fn captured_carousel(
         // 回传不泄漏 Carousel 实现的下一页窄动作。
         *next_action.borrow_mut() = Some(next);
         // 为固定动态箭头声明稳定组件私有 scope。
-        let scope = uix_component_scope("carousel-custom-arrows-dynamic-capture-test", 1);
+        let scope = uix_widget_scope("carousel-custom-arrows-dynamic-capture-test", 1);
         // 在 owner、槽位与固定 key 限定的命名空间中取得 State。
-        let state = uix_component_state(&scope, 1, || 0_i32);
+        let state = uix_widget_state(&scope, 1, || 0_i32);
         // 保存本轮状态句柄供协调后断言。
         *renderer_states
             // 取得短期写锁。
@@ -183,7 +183,7 @@ fn captured_carousel(
         // 读取动画值以让捕获事务交接 AnimatedSource。
         let _ = animation.value();
         // 建立承载私有 scope 的最小箭头根。
-        let node = ViewNode::leaf(Label::new(label)).uix_component_scope(scope, 0);
+        let node = ViewNode::leaf(Label::new(label)).uix_widget_scope(scope, 0);
         // 仅在生命周期测试中安装非零 leave。
         match leave {
             // 非零 leave 允许观察墓碑与同 key 重入。
@@ -241,7 +241,7 @@ fn carousel_custom_arrows_dynamic_capture_reuses_identity_and_complete_outputs()
             // owner 必须存在。
             .expect("Carousel owner 必须存在")
             // 取得只读组件。
-            .component()
+            .widget()
             // 进入类型擦除读取。
             .as_any()
             // 恢复 Carousel。
@@ -279,7 +279,7 @@ fn carousel_custom_arrows_dynamic_capture_reuses_identity_and_complete_outputs()
             // owner 仍必须存在。
             .expect("Carousel owner 必须存在")
             // 读取组件。
-            .component()
+            .widget()
             // 下转型入口。
             .as_any()
             // 恢复 Carousel。
@@ -327,7 +327,7 @@ fn carousel_custom_arrows_dynamic_capture_reuses_identity_and_complete_outputs()
     );
     // 同类型父协调必须保留 Carousel owner。
     assert_eq!(carousel_root(&tree), root);
-    // 固定 key 必须复用原箭头 ComponentId。
+    // 固定 key 必须复用原箭头 WidgetId。
     assert_eq!(custom_arrows_child(&tree, root), arrows);
     // 新工厂只执行一次。
     assert_eq!(next_calls.load(Ordering::Relaxed), 1);
@@ -339,7 +339,7 @@ fn carousel_custom_arrows_dynamic_capture_reuses_identity_and_complete_outputs()
             // 读取 live owner。
             .expect("Carousel owner 必须存在")
             // 读取运行时组件。
-            .component()
+            .widget()
             // 进入下转型。
             .as_any()
             // 恢复 Carousel。
@@ -372,7 +372,7 @@ fn carousel_custom_arrows_dynamic_capture_reuses_identity_and_complete_outputs()
 
 // 验证固定箭头 leave 墓碑、同 key 重入与 shutdown 生命周期。
 #[test]
-// 重入必须复用 ComponentId 和已提交私有 State。
+// 重入必须复用 WidgetId 和已提交私有 State。
 fn carousel_custom_arrows_dynamic_capture_leave_reentry_and_shutdown() {
     // 建立共享状态记录。
     let states = Arc::new(Mutex::new(None));
@@ -445,7 +445,7 @@ fn carousel_custom_arrows_dynamic_capture_leave_reentry_and_shutdown() {
             actions,
         )),
     );
-    // 同 key 重入不得分配新 ComponentId。
+    // 同 key 重入不得分配新 WidgetId。
     assert_eq!(custom_arrows_child(&tree, root), arrows);
     // 重入必须取消 pending-removal。
     assert!(
@@ -466,7 +466,7 @@ fn carousel_custom_arrows_dynamic_capture_leave_reentry_and_shutdown() {
     // shutdown 必须释放全部动态动画工作。
     assert!(tree.animated_source_registrations().is_empty());
     // shutdown 后刷新必须在工厂调用前拒绝。
-    assert!(!tree.refresh_carousel_custom_arrows_component(root));
+    assert!(!tree.refresh_carousel_custom_arrows_widget(root));
     // 拒绝不得额外调用应用工厂。
     assert_eq!(calls.load(Ordering::Relaxed), 2);
 }
@@ -524,7 +524,7 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
     // 捕获发布前根 key 校验失败。
     let invalid_key = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // 首次刷新尚未改写真实子树。
-        let _ = tree.refresh_carousel_custom_arrows_component(root);
+        let _ = tree.refresh_carousel_custom_arrows_widget(root);
     }));
     // 非法工厂根 key 必须被明确拒绝。
     assert!(invalid_key.is_err());
@@ -555,9 +555,9 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
         // 启用失败工厂。
         Carousel::new().arrows(move |_, _| -> ViewNode {
             // 声明与恢复工厂相同的私有 scope。
-            let scope = uix_component_scope("carousel-custom-arrows-pre-publish-panic-test", 1);
+            let scope = uix_widget_scope("carousel-custom-arrows-pre-publish-panic-test", 1);
             // 创建尚未提交的 provisional State。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 写入可辨识错误值。
             state.set(77);
             // 回传 provisional 句柄供异常后诊断。
@@ -573,7 +573,7 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
     // 捕获工厂直接 panic。
     let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // 动态捕获应在 append 发布前失败。
-        let _ = tree.refresh_carousel_custom_arrows_component(root);
+        let _ = tree.refresh_carousel_custom_arrows_widget(root);
     }));
     // 工厂 panic 必须向调用方传播。
     assert!(failed.is_err());
@@ -594,9 +594,9 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
         // 启用恢复工厂。
         Carousel::new().arrows(move |_, _| {
             // 使用失败工厂相同的动态组件 scope。
-            let scope = uix_component_scope("carousel-custom-arrows-pre-publish-panic-test", 1);
+            let scope = uix_widget_scope("carousel-custom-arrows-pre-publish-panic-test", 1);
             // 正确回滚后必须重新取得初值 State。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 回传恢复状态句柄。
             *renderer_recovered_states
                 // 取得记录锁。
@@ -604,11 +604,11 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
                 // 恢复 poisoned 锁数据。
                 .unwrap_or_else(|error| error.into_inner()) = Some(state);
             // 返回承载同一 scope 的合法根。
-            ViewNode::leaf(Label::new("recovered-arrows")).uix_component_scope(scope, 0)
+            ViewNode::leaf(Label::new("recovered-arrows")).uix_widget_scope(scope, 0)
         }),
     );
     // 安全刷新必须成功发布固定动态箭头。
-    assert!(tree.refresh_carousel_custom_arrows_component(root));
+    assert!(tree.refresh_carousel_custom_arrows_widget(root));
     // 恢复不得复用失败 journal 写入的七十七。
     assert_eq!(captured_state(&recovered_states).get(), 0);
     // 保存已恢复的固定箭头身份。
@@ -616,5 +616,5 @@ fn carousel_custom_arrows_dynamic_capture_rejects_invalid_identity_and_rolls_bac
     // 真实移除 Carousel owner 使 generation 失效。
     tree.remove(root);
     // stale owner 必须在调用任何工厂前拒绝刷新。
-    assert!(!tree.refresh_carousel_custom_arrows_component(root));
+    assert!(!tree.refresh_carousel_custom_arrows_widget(root));
 }

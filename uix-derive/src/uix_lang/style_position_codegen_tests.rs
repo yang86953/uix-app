@@ -74,7 +74,7 @@ fn pseudo_position_inset_generates_single_edge_reset() {
         r#"
         positioned { position: absolute; top: 8px; left: 12px; }
         positioned:hover { top: auto; }
-        <Component name="Positioned"><Text class="positioned">定位</Text></Component>
+        <Widget name="Positioned"><Text class="positioned">定位</Text></Widget>
         <Positioned />
         "#,
     )

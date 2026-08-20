@@ -8,9 +8,9 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收拥有动态子节点的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子节点的实际父节点身份。
-        parent_id: crate::ui::ComponentId,
+        parent_id: crate::ui::WidgetId,
         // 接收将被离场或移除的直接子节点身份。
-        child_id: crate::ui::ComponentId,
+        child_id: crate::ui::WidgetId,
         // 返回本轮是否开始了新的移除工作。
     ) -> bool {
         // 失败或关闭树不得再改变动态子树生命周期。
@@ -40,7 +40,7 @@ impl crate::ui::adapter::ViewAdapter {
             return false;
         }
         // 用独立事务包住首次离场或立即删除，统一发布后 panic 的 fail-stop 语义。
-        tree.with_component_state_transaction(Vec::new(), |tree| {
+        tree.with_widget_state_transaction(Vec::new(), |tree| {
             // 任何交互取消、离场状态或结构删除前先进入不可逆发布区。
             tree.mark_coordination_publish_started();
             // 有 leave 动画时保留节点及其 State、Effect、动画源直到真实 remove。
@@ -58,9 +58,9 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收拥有动态子节点的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子节点的实际父节点身份。
-        parent_id: crate::ui::ComponentId,
+        parent_id: crate::ui::WidgetId,
         // 接收将恢复为活跃状态的直接子节点身份。
-        child_id: crate::ui::ComponentId,
+        child_id: crate::ui::WidgetId,
         // 返回本轮是否实际取消了离场。
     ) -> bool {
         // 失败或关闭树不得恢复任何动态子树入口。
@@ -90,7 +90,7 @@ impl crate::ui::adapter::ViewAdapter {
             return false;
         }
         // 用独立事务包住离场取消，统一发布后 panic 的 fail-stop 语义。
-        tree.with_component_state_transaction(Vec::new(), |tree| {
+        tree.with_widget_state_transaction(Vec::new(), |tree| {
             // 清除 pending removal 会改变真实运行态，必须先进入发布区。
             tree.mark_coordination_publish_started();
             // 恢复同 key 原节点及其既有 State、Effect 与动画源所有权。
@@ -105,7 +105,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收将被追加子树的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子树所属的运行时父节点。
-        parent_id: crate::ui::ComponentId,
+        parent_id: crate::ui::WidgetId,
         // 接收本轮声明的单个动态子树。
         mut child: crate::ui::view::ViewNode,
         // 返回是否已经把子树发布到运行时树。
@@ -123,14 +123,14 @@ impl crate::ui::adapter::ViewAdapter {
             "动态 View 追加 parent 不属于宿主 WidgetTree"
         );
         // 在消费声明节点前转移其完整子树的所有 journal 回执。
-        let receipts = crate::ui::adapter::capture_guards::take_component_state_receipts(
+        let receipts = crate::ui::adapter::capture_guards::take_widget_state_receipts(
             // 让动态子树及其全部后代共用同一提交批次。
             &mut child,
         );
         // 在事务发布线前完成纯声明展开，异常时既有运行时树仍可继续服务。
         let child = Self::expand(child);
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
-        tree.with_component_state_transaction(receipts, |tree| {
+        tree.with_widget_state_transaction(receipts, |tree| {
             // 动态子树的首个结构改写进入不可逆发布区，panic 后必须 fail-stop。
             tree.mark_coordination_publish_started();
             // 追加已经完成纯展开的错误子树。
@@ -145,7 +145,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收将被协调的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子树所属的运行时父节点。
-        parent_id: crate::ui::ComponentId,
+        parent_id: crate::ui::WidgetId,
         // 接收本轮声明的完整动态子树。
         mut children: Vec<crate::ui::view::ViewNode>,
         // 返回结构是否发生变化。
@@ -163,13 +163,12 @@ impl crate::ui::adapter::ViewAdapter {
             "动态 View 协调 parent 不属于宿主 WidgetTree"
         );
         // 在消费声明节点前转移所有 journal 回执。
-        let receipts =
-            crate::ui::adapter::capture_guards::take_component_state_receipts_from_children(
-                // 让动态子树及其全部后代共用同一提交批次。
-                &mut children,
-            );
+        let receipts = crate::ui::adapter::capture_guards::take_widget_state_receipts_from_children(
+            // 让动态子树及其全部后代共用同一提交批次。
+            &mut children,
+        );
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
-        let changed = tree.with_component_state_transaction(receipts, |tree| {
+        let changed = tree.with_widget_state_transaction(receipts, |tree| {
             // 动态子树的首个结构改写进入不可逆发布区，panic 后必须 fail-stop。
             tree.mark_coordination_publish_started();
             // 协调动态子树并保留既有的无动画替换语义。

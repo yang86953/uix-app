@@ -132,19 +132,19 @@ pub(super) fn create_secondary_window(
             Locale::default()
         }
     };
-    // DI 未注册 ComponentConfig 时回退默认配置并记录缺失（保持回退行为）。
-    let component_config = match container.resolve_clone::<ComponentConfig>() {
-        Some(component_config) => component_config,
+    // DI 未注册 WidgetConfig 时回退默认配置并记录缺失（保持回退行为）。
+    let widget_config = match container.resolve_clone::<WidgetConfig>() {
+        Some(widget_config) => widget_config,
         None => {
             tracing::warn!(
-                ty = %std::any::type_name::<ComponentConfig>(),
+                ty = %std::any::type_name::<WidgetConfig>(),
                 "DI resolve failed, falling back to default"
             );
-            ComponentConfig::default()
+            WidgetConfig::default()
         }
     };
     let wrapped_root = move || {
-        with_config(&component_config, || {
+        with_config(&widget_config, || {
             with_locale(&locale, || {
                 let root_node = root();
                 // 副窗与主窗复用同一应用根默认值和逐窗反馈浮层组装入口。

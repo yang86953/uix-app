@@ -2,11 +2,11 @@
 //!
 //! # SMC 边界（SMC-04）
 //!
-//! 组件树的通用遍历/布局/事件代码（component Module）不得引用具体组件
+//! 组件树的通用遍历/布局/事件代码（widget Module）不得引用具体组件
 //! （widgets Module）。本文件把这些「树 → 具体组件」的语义访问点集中到
-//! System 私有边界：component 经本边界消费 widgets 提供的窄语义
+//! System 私有边界：widget 经本边界消费 widgets 提供的窄语义
 //! （Modal 生命周期、viewport 滚动轴、显式尺寸锁、导航兄弟联动），
-//! 依赖方向为 `component → System 私有边界 → widgets`，与
+//! 依赖方向为 `widget → System 私有边界 → widgets`，与
 //! `tree_dynamic` / `render_handler` / `adapter` 同类。
 
 use crate::ui::widget_runtime::widget::{WidgetCore, WidgetId, WidgetTree};
@@ -32,7 +32,7 @@ pub(crate) fn nearest_viewport_overflow_axes(
         let parent = tree.get(parent_id)?;
         if parent.children_clip(parent.frame()).is_some() {
             let axes = parent
-                .component()
+                .widget()
                 .as_any()
                 .downcast_ref::<ScrollView>()
                 .map(|scroll_view| {
@@ -52,20 +52,20 @@ pub(crate) fn phase2_explicit_size_locks(tree: &WidgetTree, id: WidgetId) -> (bo
     let Some(node) = tree.get(id) else {
         return (false, false);
     };
-    let component = node.component().as_any();
-    if let Some(container) = component.downcast_ref::<Container>() {
+    let widget = node.widget().as_any();
+    if let Some(container) = widget.downcast_ref::<Container>() {
         return (
             container.style.width.is_some(),
             container.style.height.is_some(),
         );
     }
-    if let Some(grid) = component.downcast_ref::<Grid>() {
+    if let Some(grid) = widget.downcast_ref::<Grid>() {
         return (grid.style.width.is_some(), grid.style.height.is_some());
     }
-    if let Some(space) = component.downcast_ref::<Space>() {
+    if let Some(space) = widget.downcast_ref::<Space>() {
         return space.explicit_size_locks();
     }
-    component
+    widget
         .downcast_ref::<ScrollView>()
         .map(ScrollView::explicit_size_locks)
         .unwrap_or((false, false))
@@ -77,7 +77,7 @@ pub(crate) fn modal_was_present(tree: &WidgetTree, id: WidgetId) -> bool {
     #[cfg(feature = "feedback")]
     {
         tree.get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Modal>())
             .is_some_and(Modal::is_present)
     }
     // 关闭反馈能力时通用动画流程不再识别 Modal。
@@ -94,7 +94,7 @@ pub(crate) fn modal_closed_for_destruction(tree: &WidgetTree, id: WidgetId) -> b
     #[cfg(feature = "feedback")]
     {
         tree.get(id).is_some_and(|node| {
-            node.component()
+            node.widget()
                 .as_any()
                 .downcast_ref::<Modal>()
                 .is_some_and(|modal| modal.should_destroy_on_close() && !modal.is_present())
@@ -118,7 +118,7 @@ pub(crate) fn apply_modal_context_requests(tree: &mut WidgetTree, path: &[Widget
             .copied()
             .filter(|&id| {
                 tree.get(id)
-                    .and_then(|node| node.component().as_any().downcast_ref::<Modal>())
+                    .and_then(|node| node.widget().as_any().downcast_ref::<Modal>())
                     .is_some_and(|modal| modal.take_context_close_request())
             })
             .collect();
@@ -128,7 +128,7 @@ pub(crate) fn apply_modal_context_requests(tree: &mut WidgetTree, path: &[Widget
 
         for id in requested {
             if let Some(node) = tree.get_mut(id) {
-                if let Some(modal) = node.component_mut().as_any_mut().downcast_mut::<Modal>() {
+                if let Some(modal) = node.widget_mut().as_any_mut().downcast_mut::<Modal>() {
                     modal.close();
                     node.set_active(true);
                 }
@@ -154,11 +154,7 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 获取浮层 owner 节点的可变引用。
             .get_mut(owner)
             // 下转到具体反馈组件。
-            .and_then(|node| {
-                node.component_mut()
-                    .as_any_mut()
-                    .downcast_mut::<Popconfirm>()
-            })
+            .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<Popconfirm>())
         {
             // 用户外部点击必须执行一次 @cancel 后再离场。
             popconfirm.cancel_action();
@@ -168,7 +164,7 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 获取浮层 owner 节点的可变引用。
             .get_mut(owner)
             // 下转到具体反馈组件。
-            .and_then(|node| node.component_mut().as_any_mut().downcast_mut::<Popover>())
+            .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<Popover>())
         {
             // 用户外部点击关闭已打开的 Popover 弹层。
             popover.close();
@@ -182,7 +178,7 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
             // 获取浮层 owner 节点的可变引用。
             .get_mut(owner)
             // 下转到具体导航组件。
-            .and_then(|node| node.component_mut().as_any_mut().downcast_mut::<Dropdown>())
+            .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<Dropdown>())
         {
             // 用户外部点击关闭已打开的 Dropdown 菜单。
             dropdown.close();
@@ -204,7 +200,7 @@ pub(crate) fn pointer_focus_target(tree: &WidgetTree, target: WidgetId) -> Widge
         // 判断当前指针目标是否为在场的组合 Popconfirm owner。
         let restores_trigger = tree.get(target).is_some_and(|node| {
             // 下转到具体反馈组件并读取窄语义。
-            node.component()
+            node.widget()
                 .as_any()
                 .downcast_ref::<Popconfirm>()
                 // 离场期间仍需把气泡按钮点击后的焦点交还 trigger。
@@ -226,10 +222,10 @@ pub(crate) fn pointer_focus_target(tree: &WidgetTree, target: WidgetId) -> Widge
 }
 
 /// 文本输入组件的当前值（语义快照 value_text 用）。
-pub(crate) fn component_input_value(
-    component: &dyn crate::ui::widget_runtime::traits::WidgetComponent,
+pub(crate) fn widget_input_value(
+    widget: &dyn crate::ui::widget_runtime::traits::Widget,
 ) -> Option<String> {
-    component
+    widget
         .as_any()
         .downcast_ref::<crate::ui::widgets::Input>()
         .map(|input| input.current_value().to_owned())
@@ -238,7 +234,7 @@ pub(crate) fn component_input_value(
 /// 节点是否为窗口交互拖拽区域（自定义标题栏拖拽）。
 pub(crate) fn is_drag_region(tree: &WidgetTree, id: WidgetId) -> bool {
     tree.get(id).is_some_and(|node| {
-        node.component()
+        node.widget()
             .as_any()
             .downcast_ref::<WindowInteractionRegion>()
             .is_some_and(WindowInteractionRegion::is_drag_region)
@@ -250,7 +246,7 @@ pub(crate) fn invalidate_nav_siblings(tree: &mut WidgetTree, clicked: WidgetId) 
     #[cfg(feature = "navigation")]
     {
         let is_nav = tree.get(clicked).is_some_and(|node| {
-            node.component().as_any().type_id() == std::any::TypeId::of::<NavItem>()
+            node.widget().as_any().type_id() == std::any::TypeId::of::<NavItem>()
         });
         if !is_nav {
             return;
@@ -290,7 +286,7 @@ pub(crate) fn focus_replacement_after_child_visibility(
         // 确认父节点确实是 Tabs，避免改变其他容器的通用行为。
         let tabs = tree
             .get(tabs_id)?
-            .component()
+            .widget()
             .as_any()
             .downcast_ref::<Tabs>()?;
         // 找到切换后处于活动状态的直接面板。

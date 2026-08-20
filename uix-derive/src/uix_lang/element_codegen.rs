@@ -185,15 +185,15 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Alert" => generate_alert(element),
         // 进度条映射到有限 fraction、显式模式与 line/circle 形态契约。
         "ProgressBar" => generate_progress_bar(element),
-        // 三类基础图表映射到现有静态 Chart Component。
+        // 三类基础图表映射到现有静态 Chart Widget。
         "BarChart" | "LineChart" | "PieChart" => generate_basic_chart(element),
-        // 三类静态高级图表映射到现有 Chart Module Component。
+        // 三类静态高级图表映射到现有 Chart Module Widget。
         "AreaChart" | "ScatterChart" | "FunnelChart" => generate_static_chart(element),
-        // 矩形树图与仪表盘映射到现有 Chart Module Component。
+        // 矩形树图与仪表盘映射到现有 Chart Module Widget。
         "Treemap" | "Gauge" => generate_hierarchy_gauge_chart(element),
-        // 热力图与瀑布图映射到现有 Chart Module Component。
+        // 热力图与瀑布图映射到现有 Chart Module Widget。
         "Heatmap" | "WaterfallChart" => generate_matrix_delta_chart(element),
-        // 雷达图与组合图映射到现有 Chart Module Component。
+        // 雷达图与组合图映射到现有 Chart Module Widget。
         "RadarChart" | "ComboChart" => generate_series_chart(element),
         // 确认气泡映射到唯一真实 trigger、六向位置与同步操作回调契约。
         "Popconfirm" => generate_popconfirm(element),
@@ -227,13 +227,13 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Col" => generate_orphan_col(element),
         // 图标映射到公开 Icon 组件。
         "Icon" => generate_icon(element),
-        // 分割线映射到现有 Divider Component。
+        // 分割线映射到现有 Divider Widget。
         "Divider" => generate_divider(element),
-        // 间距容器映射到现有 Space Component。
+        // 间距容器映射到现有 Space Widget。
         "Space" => generate_space(element),
-        // 排版文本映射到现有 Typography Component。
+        // 排版文本映射到现有 Typography Widget。
         "Typography" => generate_typography(element),
-        // 主题切换映射到现有 ThemeToggle Component。
+        // 主题切换映射到现有 ThemeToggle Widget。
         "ThemeToggle" => generate_theme_toggle(element),
         // 按钮组映射到静态直接 Button 子项的连体组合。
         "ButtonGroup" => generate_button_group(element),
@@ -241,7 +241,7 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "WindowControl" => generate_window_control(element),
         // 标题栏拖拽区映射到 window_chrome 公开包装函数。
         "WindowDragRegion" => generate_window_drag_region(element),
-        // 浮动按钮映射到现有 FloatButton Component。
+        // 浮动按钮映射到现有 FloatButton Widget。
         "FloatButton" => generate_float_button(element),
         // 浮动按钮组映射到保留直接子按钮事件的 View 组合入口。
         "FloatButtonGroup" => generate_float_button_group(element),

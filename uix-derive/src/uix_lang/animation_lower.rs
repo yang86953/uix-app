@@ -2,16 +2,16 @@
 use std::collections::BTreeMap;
 
 // 引入组件展开器。
-use super::component_codegen::ComponentExpander;
+use super::widget_codegen::WidgetExpander;
 // 引入动画 AST、样式属性、元素与诊断。
 use super::{
     AnimationBinding, AnimationDirection, AnimationEasing, AnimationFillMode, AnimationPlayback,
     AnimationPropertyBinding, AnimationPropertyFrame, AnimationPropertyKind, AttributeValue,
-    ComponentScopeMarker, Diagnostic, Element, StyleProperty,
+    Diagnostic, Element, StyleProperty, WidgetScopeMarker,
 };
 
 // 实现静态 animation 属性到持久化 Animated 绑定的降低。
-impl ComponentExpander {
+impl WidgetExpander {
     // 消费合并后的 animation 简写并附加最终 View 装饰。
     pub(super) fn prepare_animation(
         // 可变借用展开器以读取关键帧注册表与作用域栈。
@@ -82,7 +82,7 @@ impl ComponentExpander {
             )
         })?;
         // animation 必须位于组件或文档根状态作用域内。
-        let Some(component_scope) = self.component_scope_stack.last().cloned() else {
+        let Some(widget_scope) = self.widget_scope_stack.last().cloned() else {
             // 返回生命周期所有者诊断。
             return Err(Diagnostic::new(
                 // 指向完整 animation 属性。
@@ -90,7 +90,7 @@ impl ComponentExpander {
                 // 陈述失败原因。
                 "animation 缺少声明式生命周期所有者",
                 // 给出合法使用边界。
-                "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Component",
+                "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Widget",
             ));
         };
         // 按闭合字段顺序收集各自关键帧。
@@ -158,7 +158,7 @@ impl ComponentExpander {
             });
         }
         // 使用节点类型与静态跨度形成跨构建稳定声明身份。
-        let declaration_id = Self::stable_component_id(&format!(
+        let declaration_id = Self::stable_widget_id(&format!(
             // 固定身份前缀并纳入节点源码位置。
             "animation:{}:{}:{}",
             // 使用节点类型。
@@ -171,11 +171,11 @@ impl ComponentExpander {
         // 把动画元数据作为最终 View 装饰附加。
         element
             // 借用装饰列表。
-            .component_scopes
+            .widget_scopes
             // 追加 animation 装饰。
-            .push(ComponentScopeMarker::Animation(AnimationBinding {
+            .push(WidgetScopeMarker::Animation(AnimationBinding {
                 // 保存最近生命周期作用域。
-                component_scope_name: component_scope.to_string(),
+                widget_scope_name: widget_scope.to_string(),
                 // 保存稳定节点声明身份。
                 declaration_id,
                 // 继承最近 For 的实际实例路径。

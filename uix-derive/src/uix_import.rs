@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 // 引入纯 UIX 文档、声明、节点与诊断契约。
 use crate::uix_lang::{
-    ComponentDeclaration, Declaration, Diagnostic, Document, Element, ImportDeclaration, Node,
-    SourceSpan,
+    Declaration, Diagnostic, Document, Element, ImportDeclaration, Node, SourceSpan,
+    WidgetDeclaration,
 };
 
 // 保存已经解析并完成导入合并的文件文档。
@@ -81,7 +81,7 @@ enum DeclarationKind {
     // 保存关键帧动画命名空间。
     Keyframes,
     // 保存组件命名空间。
-    Component,
+    Widget,
     // 保存 record 命名空间。
     Record,
 }
@@ -258,13 +258,13 @@ impl ImportResolver {
                 // export 只控制文件边界，不进入纯 codegen 文档。
                 Declaration::Export(export) => {
                     // 保存每个公开组件与同一指令跨度。
-                    for component in export.components {
+                    for widget in export.widgets {
                         // 跨多个 export 指令重复也必须被拒绝。
                         if export_requests
                             // 遍历已有导出名。
                             .iter()
                             // 比较组件名称。
-                            .any(|(name, _)| name == &component)
+                            .any(|(name, _)| name == &widget)
                         {
                             // 返回当前文件内定向诊断。
                             return Err(import_error(
@@ -273,13 +273,13 @@ impl ImportResolver {
                                 // 锚定重复 export。
                                 export.span,
                                 // 报告具体重复名称。
-                                format!("@export 重复列出组件 {component}"),
+                                format!("@export 重复列出组件 {widget}"),
                                 // 要求每个组件只公开一次。
                                 "每个组件只导出一次",
                             ));
                         }
                         // 保存首次导出请求。
-                        export_requests.push((component, export.span));
+                        export_requests.push((widget, export.span));
                     }
                 }
                 // 其他声明保持当前文件来源并进入合并器。
@@ -304,19 +304,19 @@ impl ImportResolver {
             }
         }
         // 收集完成递归合并后实际存在的组件名。
-        let component_names = merge
+        let widget_names = merge
             // 遍历唯一声明。
             .declarations
             // 借用声明序列。
             .iter()
             // 只保留组件名称。
-            .filter_map(|entry| component_name(&entry.declaration))
+            .filter_map(|entry| widget_name(&entry.declaration))
             // 收集成确定性集合。
             .collect::<BTreeSet<_>>();
         // 每个 export 必须指向当前编译单元实际组件。
-        for (component, span) in &export_requests {
+        for (widget, span) in &export_requests {
             // 已存在时继续。
-            if component_names.contains(component.as_str()) {
+            if widget_names.contains(widget.as_str()) {
                 // 验证下一项。
                 continue;
             }
@@ -327,9 +327,9 @@ impl ImportResolver {
                 // 锚定具体 export。
                 *span,
                 // 报告缺失组件。
-                format!("@export 指定的组件 {component} 不存在"),
+                format!("@export 指定的组件 {widget} 不存在"),
                 // 给出定义或删除两种动作。
-                "在同一导入单元中定义该 Component，或从 @export 删除该名称",
+                "在同一导入单元中定义该 Widget，或从 @export 删除该名称",
             ));
         }
         // 返回可缓存文件单元。
@@ -485,13 +485,13 @@ fn select_imported_declarations(
             // 报告目标未公开组件。
             format!("导入文件 {} 没有 @export", import.path),
             // 要求目标显式声明公开组件。
-            "在目标文件添加 @export('ComponentName')",
+            "在目标文件添加 @export('WidgetName')",
         ));
     }
     // 取得本次 import 的初始公开组件集合。
-    let requested = if let Some(component) = &import.component {
+    let requested = if let Some(widget) = &import.widget {
         // 具名导入必须命中目标 export。
-        if !unit.exports.contains(component) {
+        if !unit.exports.contains(widget) {
             // 返回缺失公开组件诊断。
             return Err(import_error(
                 // 归属 importing 文件。
@@ -499,19 +499,19 @@ fn select_imported_declarations(
                 // 锚定具名 import。
                 import.span,
                 // 展示具体名称与目标。
-                format!("组件 {component} 未由 {} 导出", import.path),
+                format!("组件 {widget} 未由 {} 导出", import.path),
                 // 给出目标 export 修复动作。
-                format!("在目标文件添加 @export('{component}')，或改为已导出的组件名"),
+                format!("在目标文件添加 @export('{widget}')，或改为已导出的组件名"),
             ));
         }
         // 只从指定公开组件开始依赖闭包。
-        vec![component.clone()]
+        vec![widget.clone()]
     } else {
         // 无选择器时使用目标全部显式 export。
         unit.exports.clone()
     };
     // 建立目标单元全部组件声明索引。
-    let components = unit
+    let widgets = unit
         // 遍历完成合并的声明。
         .declarations
         // 借用声明序列。
@@ -519,7 +519,7 @@ fn select_imported_declarations(
         // 只收集组件声明。
         .filter_map(|entry| match &entry.declaration {
             // 保存名称到声明的映射。
-            Declaration::Component(component) => Some((component.name.clone(), component)),
+            Declaration::Widget(widget) => Some((widget.name.clone(), widget)),
             // 其他声明不参与组件依赖闭包。
             _ => None,
         })
@@ -537,7 +537,7 @@ fn select_imported_declarations(
             continue;
         }
         // export 存在性已经由目标单元校验保证。
-        let Some(component) = components.get(&name) else {
+        let Some(widget) = widgets.get(&name) else {
             // 防御性返回目标单元不一致错误。
             return Err(import_error(
                 // 归属 importing 文件。
@@ -547,11 +547,11 @@ fn select_imported_declarations(
                 // 报告具体缺失组件。
                 format!("导入单元缺少组件 {name}"),
                 // 给出重新构建 export 的动作。
-                "修复目标文件的 @export 与 Component 声明",
+                "修复目标文件的 @export 与 Widget 声明",
             ));
         };
         // 收集组件体中对同单元自定义组件的引用。
-        collect_component_dependencies(component, &components, &mut pending);
+        collect_widget_dependencies(widget, &widgets, &mut pending);
     }
     // 按目标单元原始合并顺序投影声明。
     Ok(unit
@@ -562,7 +562,7 @@ fn select_imported_declarations(
         // 保留支持声明和选定组件。
         .filter(|entry| match &entry.declaration {
             // 组件必须位于依赖闭包。
-            Declaration::Component(component) => selected.contains(&component.name),
+            Declaration::Widget(widget) => selected.contains(&widget.name),
             // 样式、主题、关键帧与 record 是所选组件的编译期支持声明。
             Declaration::StyleClass(_)
             | Declaration::Theme(_)
@@ -578,18 +578,18 @@ fn select_imported_declarations(
 }
 
 // 收集一个组件体引用的同单元组件名称。
-fn collect_component_dependencies(
+fn collect_widget_dependencies(
     // 接收待扫描组件。
-    component: &ComponentDeclaration,
+    widget: &WidgetDeclaration,
     // 接收同单元组件索引。
-    components: &BTreeMap<String, &ComponentDeclaration>,
+    widgets: &BTreeMap<String, &WidgetDeclaration>,
     // 接收待扫描栈。
     pending: &mut Vec<String>,
 ) {
     // 遍历组件所有直接节点。
-    for node in &component.children {
+    for node in &widget.children {
         // 递归扫描元素树。
-        collect_node_dependencies(node, components, pending);
+        collect_node_dependencies(node, widgets, pending);
     }
 }
 
@@ -598,7 +598,7 @@ fn collect_node_dependencies(
     // 接收当前节点。
     node: &Node,
     // 接收同单元组件索引。
-    components: &BTreeMap<String, &ComponentDeclaration>,
+    widgets: &BTreeMap<String, &WidgetDeclaration>,
     // 接收待扫描栈。
     pending: &mut Vec<String>,
 ) {
@@ -608,14 +608,14 @@ fn collect_node_dependencies(
         return;
     };
     // 同名本地组件进入依赖闭包。
-    if components.contains_key(&element.name) {
+    if widgets.contains_key(&element.name) {
         // 保存待扫描名称。
         pending.push(element.name.clone());
     }
     // 继续扫描该元素全部子节点。
     for child in &element.children {
         // 递归发现深层引用。
-        collect_node_dependencies(child, components, pending);
+        collect_node_dependencies(child, widgets, pending);
     }
 }
 
@@ -644,9 +644,9 @@ fn declaration_identity(declaration: &Declaration) -> Option<(DeclarationKind, S
             Some((DeclarationKind::Keyframes, keyframes.name.clone()))
         }
         // 组件使用组件命名空间。
-        Declaration::Component(component) => {
+        Declaration::Widget(widget) => {
             // 返回组件名称。
-            Some((DeclarationKind::Component, component.name.clone()))
+            Some((DeclarationKind::Widget, widget.name.clone()))
         }
         // record 使用 record 命名空间。
         Declaration::Record(record) => Some((DeclarationKind::Record, record.name.clone())),
@@ -666,7 +666,7 @@ fn declaration_kind_name(kind: DeclarationKind) -> &'static str {
         // 关键帧文案。
         DeclarationKind::Keyframes => "关键帧",
         // 组件文案。
-        DeclarationKind::Component => "组件",
+        DeclarationKind::Widget => "组件",
         // record 文案。
         DeclarationKind::Record => "Record",
     }
@@ -687,18 +687,18 @@ fn declaration_span(declaration: &Declaration) -> SourceSpan {
         // 返回关键帧跨度。
         Declaration::Keyframes(value) => value.span,
         // 返回组件跨度。
-        Declaration::Component(value) => value.span,
+        Declaration::Widget(value) => value.span,
         // 返回 record 跨度。
         Declaration::Record(value) => value.span,
     }
 }
 
 // 返回可借用的组件名称。
-fn component_name(declaration: &Declaration) -> Option<&str> {
+fn widget_name(declaration: &Declaration) -> Option<&str> {
     // 只接受组件声明。
     match declaration {
         // 返回组件名称。
-        Declaration::Component(component) => Some(component.name.as_str()),
+        Declaration::Widget(widget) => Some(widget.name.as_str()),
         // 其他声明没有组件名称。
         _ => None,
     }

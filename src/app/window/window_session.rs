@@ -81,7 +81,7 @@ pub(crate) struct ViewFactorySlot {
 impl ViewFactorySlot {
     pub(crate) fn build(
         &self,
-        store: crate::ui::component_state::ComponentStateStore,
+        store: crate::ui::widget_state::WidgetStateStore,
     ) -> Option<ViewNode> {
         self.factory
             .as_ref()

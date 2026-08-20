@@ -60,7 +60,7 @@ fn rejects_missing_or_uncontrolled_files_and_action() {
     // 诊断必须点名公开状态类型。
     assert!(literal.message.contains("State<Vec<UploadFile>>"));
 
-    // action 会把网络传输错误归属给 UI Component。
+    // action 会把网络传输错误归属给 UI Widget。
     let action = generate(r#"<Upload files={upload_files} action="/api/upload" />"#)
         // 首版必须返回明确所有权诊断。
         .expect_err("Upload action 必须被拒绝");

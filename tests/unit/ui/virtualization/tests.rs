@@ -15,7 +15,7 @@ use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
 
 // 收集根节点直接子项的稳定 key 与组件标识。
-fn keyed_children(tree: &WidgetTree, root: ComponentId) -> HashMap<String, ComponentId> {
+fn keyed_children(tree: &WidgetTree, root: WidgetId) -> HashMap<String, WidgetId> {
     // 读取虚拟滚动当前物化的直接子项。
     let children = tree.get(root).expect("virtual root exists").children();
     // 只收集带稳定 key 的可复用行。
@@ -32,7 +32,7 @@ fn keyed_children(tree: &WidgetTree, root: ComponentId) -> HashMap<String, Compo
 
 // 验证可见窗口滑动后重叠 key 继续复用原组件身份。
 #[test]
-fn overlapping_materialized_rows_retain_component_ids() {
+fn overlapping_materialized_rows_retain_widget_ids() {
     // 构造带业务稳定 key 的固定行高虚拟列表。
     let view = VirtualScroll::new()
         .item_count(100)
@@ -58,15 +58,15 @@ fn overlapping_materialized_rows_retain_component_ids() {
     // 将运行态偏移推进两行，使新窗口变为索引一到五。
     let scroll = tree
         .get_mut(root)
-        .expect("virtual root component")
-        .component_mut()
+        .expect("virtual root widget")
+        .widget_mut()
         .as_any_mut()
         .downcast_mut::<VirtualScroll>()
-        .expect("virtual scroll component");
+        .expect("virtual scroll widget");
     // 写入事件路径会产生的有限滚动偏移。
     scroll.scroll_offset.set(20.0);
     // 刷新物化窗口并要求结构确实发生变化。
-    assert!(tree.refresh_virtual_scroll_component(root, Some(30.0)));
+    assert!(tree.refresh_virtual_scroll_widget(root, Some(30.0)));
     // 收集刷新后的稳定 key 与组件标识。
     let after = keyed_children(&tree, root);
 
@@ -160,7 +160,7 @@ fn renderer_updates_patch_rows_without_replacing_ids() {
     let first = after
         .get("virtual-scroll-item:0")
         .and_then(|id| tree.get(*id))
-        .and_then(|node| node.component().as_any().downcast_ref::<Label>())
+        .and_then(|node| node.widget().as_any().downcast_ref::<Label>())
         .expect("first virtual label");
     // 原组件必须呈现新版 renderer 文本。
     assert_eq!(first.text(), "new-0");
@@ -255,7 +255,7 @@ fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
     // 模拟不可信恢复状态写入无穷偏移。
     scroll.scroll_offset.set(f32::INFINITY);
     // 构造一个无需读取树内容的布局子项。
-    let children = [LayoutChild::new(ComponentId::new(1), Size::new(10.0, 10.0))];
+    let children = [LayoutChild::new(WidgetId::new(1), Size::new(10.0, 10.0))];
     // 空树足以覆盖虚拟行的纯几何放置路径。
     let tree = WidgetTree::new();
     // 输入同时包含非法坐标、宽度与高度。
@@ -320,9 +320,9 @@ fn variable_scroll_layout_uses_measured_item_frames() {
     scroll.materialized_range.set(Some((0, 3)));
     // 为前三个项目提供不同的测量高度。
     let children = [
-        LayoutChild::new(ComponentId::new(1), Size::new(10.0, 10.0)),
-        LayoutChild::new(ComponentId::new(2), Size::new(10.0, 20.0)),
-        LayoutChild::new(ComponentId::new(3), Size::new(10.0, 5.0)),
+        LayoutChild::new(WidgetId::new(1), Size::new(10.0, 10.0)),
+        LayoutChild::new(WidgetId::new(2), Size::new(10.0, 20.0)),
+        LayoutChild::new(WidgetId::new(3), Size::new(10.0, 5.0)),
     ];
     // 使用有限视口直接调用虚拟列表布局入口。
     let positions = scroll.layout_children(

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
 
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 use crate::ui::widget_runtime::app_state::{AppState, AppStateInner, FocusRequest};
 
 /// 应用持有、由声明式 View 绑定的编程式焦点句柄。
@@ -16,7 +16,7 @@ pub struct FocusHandle {
 
 #[derive(Default)]
 struct FocusHandleInner {
-    bindings: HashMap<ComponentId, Weak<Mutex<AppStateInner>>>,
+    bindings: HashMap<WidgetId, Weak<Mutex<AppStateInner>>>,
 }
 
 /// [`FocusHandle`] 无法登记焦点命令的原因。
@@ -79,7 +79,7 @@ impl FocusHandle {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
-    pub(crate) fn bind(&self, id: ComponentId, app_state: &AppState) {
+    pub(crate) fn bind(&self, id: WidgetId, app_state: &AppState) {
         self.inner
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -87,7 +87,7 @@ impl FocusHandle {
             .insert(id, Arc::downgrade(&app_state.inner));
     }
 
-    pub(crate) fn unbind(&self, id: ComponentId) {
+    pub(crate) fn unbind(&self, id: WidgetId) {
         self.inner
             .lock()
             .unwrap_or_else(|error| error.into_inner())

@@ -29,7 +29,7 @@ impl WidgetTree {
         parent_frame: Rect,
         // 接收父组件测量完成的全部直接子项。
         measured: Vec<LayoutChild>,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         // 保留继续参与 flex/grid 或定制布局的子项。
         let mut in_flow = Vec::with_capacity(measured.len());
         // 保留需要树级求解的 out-of-flow 子项标识。
@@ -72,7 +72,7 @@ impl WidgetTree {
         // 可变访问所属组件树。
         &mut self,
         // 接收需要更新的实际节点标识。
-        id: ComponentId,
+        id: WidgetId,
         // 接收新声明的完整定位值。
         position: PositionedLayout,
     ) -> bool {
@@ -110,14 +110,14 @@ impl WidgetTree {
     }
 
     // 判断节点是否是相对根视口合成的 fixed 根。
-    pub(crate) fn node_is_fixed(&self, id: ComponentId) -> bool {
+    pub(crate) fn node_is_fixed(&self, id: WidgetId) -> bool {
         // 只有显式 Fixed 模式截断祖先滚动与裁剪路径。
         self.get(id)
             .is_some_and(|node| node.position().mode == PositionMode::Fixed)
     }
 
     // 返回节点定位偏移与作者视觉变换合成后的最终矩阵。
-    pub(crate) fn positioned_visual_transform(&self, id: ComponentId) -> Transform {
+    pub(crate) fn positioned_visual_transform(&self, id: WidgetId) -> Transform {
         // 读取节点自己的作者变换，缺失时使用单位矩阵。
         let authored = self
             // 查找当前实际节点。
@@ -133,7 +133,7 @@ impl WidgetTree {
     }
 
     // 根据包含块和四边值求解脱流节点 frame。
-    fn out_of_flow_rect(&self, id: ComponentId) -> Option<Rect> {
+    fn out_of_flow_rect(&self, id: WidgetId) -> Option<Rect> {
         // 读取当前节点定位声明。
         let position = self.get(id)?.position();
         // 仅处理 absolute 与 fixed。
@@ -207,7 +207,7 @@ impl WidgetTree {
     }
 
     // 选择 absolute 最近定位祖先或 fixed 根视口 frame。
-    fn position_containing_block(&self, id: ComponentId, mode: PositionMode) -> Option<Rect> {
+    fn position_containing_block(&self, id: WidgetId, mode: PositionMode) -> Option<Rect> {
         // fixed 始终使用当前根客户区。
         if mode == PositionMode::Fixed {
             // 返回根节点实际 frame。
@@ -232,7 +232,7 @@ impl WidgetTree {
     }
 
     // 计算 relative/sticky 不改变正常流 frame 的视觉偏移。
-    fn position_visual_offset(&self, id: ComponentId) -> Point {
+    fn position_visual_offset(&self, id: WidgetId) -> Point {
         // 读取节点定位声明。
         let Some(position) = self.get(id).map(|node| node.position()) else {
             // 失效节点没有偏移。
@@ -276,7 +276,7 @@ impl WidgetTree {
     }
 
     // 计算 sticky 相对最近 viewport 的滚动补偿并限制在父边界内。
-    fn sticky_offset(&self, id: ComponentId, position: PositionedLayout) -> Point {
+    fn sticky_offset(&self, id: WidgetId, position: PositionedLayout) -> Point {
         // 读取 sticky 节点正常流 frame。
         let Some(frame) = self.get(id).map(|node| node.frame()) else {
             // 失效节点没有补偿。
@@ -335,7 +335,7 @@ impl WidgetTree {
     }
 
     // 查找最近 viewport frame 并累计祖先滚动偏移。
-    fn nearest_position_viewport(&self, id: ComponentId) -> (Rect, Point) {
+    fn nearest_position_viewport(&self, id: WidgetId) -> (Rect, Point) {
         // 根视口是没有滚动容器时的确定回退。
         let root_frame = self
             // 读取当前根。

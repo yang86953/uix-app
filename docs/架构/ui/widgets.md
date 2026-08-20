@@ -20,11 +20,11 @@
 
 ## 组件：基础组件
 
-Button、Label、Typography、Icon、Container 等基础组件只组合 component、layout、event、theme 和 painting 能力，不私有化通用机制。
+Button、Label、Typography、Icon、Container 等基础 widget 只组合 widget、layout、event、theme 和 painting 能力，不私有化通用机制。
 
 ## 组件：复合组件
 
-Form、Table、Tree、Modal、Menu 等复合组件分别复用 form、virtualization、overlay 等目标模块。每个组件通过 `WidgetComponent` 暴露必要能力，运行态只由组件实例和树 side table 持有；公开教程与参数表归[使用 · 组件](../../使用/界面构建/组件.md)。
+Form、Table、Tree、Modal、Menu 等复合组件分别复用 form、virtualization、overlay 等目标模块。每个组件通过 `Widget` 暴露必要能力，运行态只由组件实例和树 side table 持有；公开教程与参数表归[使用 · 组件](../../使用/界面构建/组件.md)。
 
 ## 模块不变量
 

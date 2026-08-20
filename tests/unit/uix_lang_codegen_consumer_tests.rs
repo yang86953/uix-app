@@ -629,9 +629,9 @@ fn dynamic_style_compiles_against_public_uix_api() {
         r##"
         normalCard { padding: 4px; backgroundColor: #ffffff; }
         hoverCard { padding: 12px; backgroundColor: #eeeeee; }
-        <Component name="HoverCard">
+        <Widget name="HoverCard">
           <Text class="normalCard" style="color: #1677ff;" @click="setStyle('hoverCard')" @mouseEnter="setStyle('hoverCard')" @mouseLeave="setStyle('')">Hover</Text>
-        </Component>
+        </Widget>
         <HoverCard />
         "##
     );
@@ -647,9 +647,9 @@ fn pseudo_styles_compile_against_public_uix_api() {
         stateful:hover { backgroundColor: #colorFillTertiary; }
         stateful:checked { borderColor: #colorPrimary; borderWidth: 2px; }
         stateful:disabled { opacity: 0.5; }
-        <Component name="Stateful" state="checked: bool = false, disabled: bool = false">
+        <Widget name="Stateful" state="checked: bool = false, disabled: bool = false">
           <Checkbox class="stateful" text="状态" checked={checked} disabled={disabled} />
-        </Component>
+        </Widget>
         <Stateful />
         "##
     );
@@ -657,34 +657,34 @@ fn pseudo_styles_compile_against_public_uix_api() {
 
 // 验证组件私有状态、共享状态、回调与组合在真实公开 API 中通过类型检查。
 #[test]
-fn generated_components_compile_against_public_uix_api() {
+fn generated_widgets_compile_against_public_uix_api() {
     // 创建 Rust 侧持有的共享 number 状态。
     let shared_count = State::new(4_f64);
     // 展开多层组件并要求最终结果为公开 ViewNode。
     let _view: ViewNode = uix_derive::__uix_view_internal!(
         r#"
-        <Component name="Counter" props="label: String, onConfirm: () -> bool" state="count: 0">
+        <Widget name="Counter" props="label: String, onConfirm: () -> bool" state="count: 0">
           <Column>
             <Text>{label}: {count}</Text>
             <Button @click="setState(count: count + 1)">+1</Button>
             <Button @click="onConfirm()">Confirm</Button>
           </Column>
-        </Component>
-        <Component name="Panel" props="title: String, onClose: () -> bool">
+        </Widget>
+        <Widget name="Panel" props="title: String, onClose: () -> bool">
           <Counter label={title} onConfirm={onClose} />
-        </Component>
-        <Component name="SharedCounter" props="count: State<number>">
+        </Widget>
+        <Widget name="SharedCounter" props="count: State<number>">
           <Column>
             <Text>Shared: {count}</Text>
             <Button @click="setState(count: count + 1)">Share +1</Button>
           </Column>
-        </Component>
-        <Component name="Message" state="text: 'A'">
+        </Widget>
+        <Widget name="Message" state="text: 'A'">
           <Button @click="setState(text: 'B')">{text}</Button>
-        </Component>
-        <Component name="SearchAction" props="onSearch: (String)">
+        </Widget>
+        <Widget name="SearchAction" props="onSearch: (String)">
           <Button @click="onSearch('needle')">Search</Button>
-        </Component>
+        </Widget>
         <Column>
           <Panel title="Clicks" onClose={confirm_delete} />
           <SharedCounter count={shared_count} />
@@ -728,7 +728,7 @@ fn generated_handle_bindings_and_typed_states_compile_against_public_uix_api() {
     let _view: ViewNode = uix!(
         r#"
         // 声明组件读取调用点步骤数据的外部依赖。
-        <Component name="Controlled" state="feedback_open: bool = false, checked: bool = true, low: number = 20, high: number = 80, rating: u32 = 7, current: usize = 1, page: usize = 1" external="steps_data">
+        <Widget name="Controlled" state="feedback_open: bool = false, checked: bool = true, low: number = 20, high: number = 80, rating: u32 = 7, current: usize = 1, page: usize = 1" external="steps_data">
           <Column>
             <Modal open={feedback_open} title="受控">
               <Button @click="setState(feedback_open: false)">关闭</Button>
@@ -742,7 +742,7 @@ fn generated_handle_bindings_and_typed_states_compile_against_public_uix_api() {
             <Button @click="setState(rating: rating + 1)">评分 +1</Button>
             <Button @click="setState(current: 2)">跳到第 3 步</Button>
           </Column>
-        </Component>
+        </Widget>
         <Controlled />
         "#
     );
@@ -765,7 +765,7 @@ fn data_literals_and_constructor_chains_compile_against_public_uix_api() {
     let _view: ViewNode = uix!(
         r#"
         // 声明组件读取调用点级联与树选择状态的外部依赖。
-        <Component name="Data" state="city: 'cn', gender: 'female', steps: usize = 1" external="region, tree_key">
+        <Widget name="Data" state="city: 'cn', gender: 'female', steps: usize = 1" external="region, tree_key">
           <Column>
             <Select value={city} options={[SelectOption('中国', 'cn'), SelectOption('美国', 'us')]} width="200px" />
             <Cascader value={region} options={[CascaderOption('浙江', 'zj').children([CascaderOption('杭州', 'hz')])]} width="240px" />
@@ -777,7 +777,7 @@ fn data_literals_and_constructor_chains_compile_against_public_uix_api() {
             <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('导航').active()]} />
             <Anchor items={[AnchorItem('基础', '#basic')]} />
           </Column>
-        </Component>
+        </Widget>
         <Data />
         "#
     );
@@ -791,7 +791,7 @@ fn record_items_and_semantic_states_compile_against_public_uix_api() {
     crate::uix_items!(
         r#"
         <Record name="ProfileForm" fields="email: String, accepted: bool, volume: number" />
-        <Component name="Semantic" state="selected_date: Date = Date(2026, 8, 10), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), scroll: Point = Point(0, 0), region: CascaderValue = { labels: [], values: [] }, cities: HashSet<String> = [], profile: ProfileForm = { email: 'a@b.com', accepted: true, volume: 30.0 }">
+        <Widget name="Semantic" state="selected_date: Date = Date(2026, 8, 10), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), scroll: Point = Point(0, 0), region: CascaderValue = { labels: [], values: [] }, cities: HashSet<String> = [], profile: ProfileForm = { email: 'a@b.com', accepted: true, volume: 30.0 }">
           <Column>
             <DatePicker value={selected_date} width="200px" />
             <TimePicker value={selected_time} width="160px" />
@@ -802,7 +802,7 @@ fn record_items_and_semantic_states_compile_against_public_uix_api() {
               <FormInputItem field="email" label="邮箱" rules="required" />
             </Form>
           </Column>
-        </Component>
+        </Widget>
         <Semantic />
         "#
     );
@@ -830,9 +830,9 @@ fn declarative_transition_compiles_against_public_uix_api() {
           opacity: 0.5;
           backgroundColor: rgb(30, 40, 50);
         }
-        <Component name="TransitionCard">
+        <Widget name="TransitionCard">
           <Text class="card">平滑卡片</Text>
-        </Component>
+        </Widget>
         <TransitionCard />
         "#
     );
@@ -840,16 +840,16 @@ fn declarative_transition_compiles_against_public_uix_api() {
 
 // 验证通用组件新登记属性只调用公开 ButtonBuilder、ControlSize 与 Label API。
 #[test]
-fn general_component_properties_compile_against_public_uix_api() {
+fn general_widget_properties_compile_against_public_uix_api() {
     // 展开带组件私有布尔状态的按钮和可选择标签。
     let _view: ViewNode = uix!(
         r#"
-        <Component name="CommonProperties" state="busy: bool = true, can_select: bool = true">
+        <Widget name="CommonProperties" state="busy: bool = true, can_select: bool = true">
           <Column>
             <Button size="large" loading={busy}>处理中</Button>
             <Label selectable={can_select}>可选择文字</Label>
           </Column>
-        </Component>
+        </Widget>
         <CommonProperties />
         "#
     );

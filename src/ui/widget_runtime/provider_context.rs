@@ -1,11 +1,11 @@
-use crate::ui::widget_runtime::config::ComponentConfig;
+use crate::ui::widget_runtime::config::WidgetConfig;
 use crate::ui::widget_runtime::locale::Locale;
 use std::cell::RefCell;
 
 /// 在 View 构建时捕获、随节点保存的 Provider 上下文。
 #[derive(Clone, Default, PartialEq)]
 pub(crate) struct ProviderContext {
-    pub(crate) config: ComponentConfig,
+    pub(crate) config: WidgetConfig,
     pub(crate) locale: Locale,
 }
 
@@ -37,13 +37,13 @@ pub(crate) fn with_provider_context<T>(context: &ProviderContext, f: impl FnOnce
     f()
 }
 
-pub(crate) fn with_component_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
+pub(crate) fn with_widget_config<T>(config: &WidgetConfig, f: impl FnOnce() -> T) -> T {
     let mut context = current_provider_context();
     context.config = config.clone();
     with_provider_context(&context, f)
 }
 
-pub(crate) fn with_component_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
+pub(crate) fn with_widget_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
     let mut context = current_provider_context();
     context.locale = locale.clone();
     with_provider_context(&context, f)

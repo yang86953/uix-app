@@ -23,9 +23,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::ui::WidgetTree;
 use crate::ui::reactive::state::{Computed, State};
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::traits::{
-    WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
-};
+use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities, WidgetLayout, WidgetRender};
 use std::any::Any;
 
 // 拆分命令式节点嵌入转换，保持组合器主体在文件规模约束内。
@@ -429,7 +427,7 @@ struct Canvas {
     paint: Box<CanvasPaint>,
 }
 
-impl WidgetComponent for Canvas {
+impl Widget for Canvas {
     fn as_any(&self) -> &dyn Any {
         self
     }

@@ -22,7 +22,7 @@ pub(crate) fn generate_theme_toggle(element: &Element) -> Result<TokenStream, Di
             "使用 <ThemeToggle />",
         ));
     }
-    // 复用现有公开 ThemeToggle Component 默认契约。
+    // 复用现有公开 ThemeToggle Widget 默认契约。
     let base = quote! {
         // 把组件包装成公开叶 View。
         ::uix::prelude::ViewNode::leaf(::uix::prelude::ThemeToggle::new())

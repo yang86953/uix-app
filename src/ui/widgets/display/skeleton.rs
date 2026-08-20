@@ -1,10 +1,10 @@
 //! 骨架屏加载占位组件。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,7 +18,7 @@ pub enum SkeletonShape {
     Text,
 }
 
-component! {
+widget! {
     /// 可选用流光动画的加载占位组件。
     pub struct Skeleton {
         shape: SkeletonShape,

@@ -1,14 +1,14 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 use std::cell::RefCell;
 use std::fmt::Display;
 use std::rc::Rc;
@@ -103,7 +103,7 @@ where
     }
 }
 
-component! {
+widget! {
     /// Tabs widget with a tab bar and content switching.
     pub struct Tabs {
         tabs: Vec<Tab>,
@@ -225,7 +225,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -397,7 +397,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         if self.active_index >= self.tabs.len() { return Vec::new(); }
         let Some(child) = children.first() else { return Vec::new(); };
@@ -499,18 +499,18 @@ impl Tabs {
         I: IntoIterator<Item = (L, K)>,
         L: Into<String>,
     {
-        let mut component = Self::new();
+        let mut widget = Self::new();
         let mut values = Vec::new();
         for (label, key) in tabs {
-            component.tabs.push(Tab {
+            widget.tabs.push(Tab {
                 label: label.into(),
                 key: key.to_string(),
                 icon: String::new(),
             });
             values.push(key);
         }
-        component.bind_values(state, values);
-        component
+        widget.bind_values(state, values);
+        widget
     }
     /// 设置标签栏相对内容面板的位置。
     pub fn position(mut self, pos: TabPosition) -> Self {

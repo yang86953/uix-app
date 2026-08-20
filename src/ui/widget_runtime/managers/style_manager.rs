@@ -1,9 +1,9 @@
 use crate::core::EdgeInsets;
 use crate::draw::Color;
 
-/// Legacy component style preset.
+/// Legacy widget style preset.
 ///
-/// Prefer `ui::style::Style` for new component authoring. This preset remains
+/// Prefer `ui::style::Style` for new widget authoring. This preset remains
 /// only for explicit `WidgetManagers` override paths.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetStylePreset {
@@ -40,7 +40,7 @@ impl Default for WidgetStylePreset {
     }
 }
 
-/// Legacy component Style manager — properties separate from layout.
+/// Legacy widget Style manager — properties separate from layout.
 ///
 /// Prefer `ui::style::Style` for new code.
 #[derive(Default, Clone)]

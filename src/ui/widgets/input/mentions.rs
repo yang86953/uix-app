@@ -1,14 +1,14 @@
 //! Mentions 提及输入组件——输入 `@` 触发候选列表。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入提及输入完整文本的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
@@ -39,7 +39,7 @@ const MAX_POPUP_HEIGHT: f32 = 280.0;
 const MIN_POPUP_WIDTH: f32 = 200.0;
 const FONT_SIZE: f32 = 13.0;
 
-component! {
+widget! {
     /// Mentions——`@` 提及输入框。
     ///
     /// 输入 `@` 后按当前光标位置过滤候选，提交后替换活动查询并保留其余正文。
@@ -283,7 +283,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -493,7 +493,7 @@ component! {
         mentions_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.suggesting.then(|| {
             // 读取当前候选行数供表面回退与弹层解析共用。
             let row_count = self.filtered.len();
@@ -512,7 +512,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建提及弹层登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际弹层缓存。
         self.remember_popup_rect(frame, surface, self.filtered.len());
         // 复用统一的提及弹层登记逻辑。

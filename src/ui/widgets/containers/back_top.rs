@@ -1,15 +1,15 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入事件、键盘、声明式状态与组件树公开契约。
 use crate::ui::{EventResult, KeyCode, State, SystemEvent, WidgetTree};
 
 const DEFAULT_VISIBILITY_HEIGHT: f32 = 400.0;
 
-component! {
+widget! {
     /// BackTop — 回到顶部按钮。
     pub struct BackTop {
         /// 滚动超过此高度才显示

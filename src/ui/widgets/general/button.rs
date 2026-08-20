@@ -6,7 +6,7 @@ use super::icon::Icon;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::draw::geometry::path::{FillRule, Path, PathBuilder};
-use crate::impl_widget_component;
+use crate::impl_widget;
 use crate::platform::windowing::{ControlSize, KeyCode, MouseButton};
 use crate::ui::animation::{Animation, Easing};
 use crate::ui::theme::style::{ColorValue, PaletteColor, Style, StyleSet, StyleState, apply_style};
@@ -255,7 +255,7 @@ fn line_intersection(
     ))
 }
 
-/// 按钮组件。业务绑定不存放在组件内，由 HandlerTable 按 ComponentId 管理。
+/// 按钮组件。业务绑定不存放在组件内，由 HandlerTable 按 WidgetId 管理。
 pub struct Button {
     text: String,
     button_size: ControlSize,
@@ -278,7 +278,7 @@ pub struct Button {
     pub(crate) style: Arc<Style>,
 }
 
-impl_widget_component!(Button; Layout, Render, Event, Animation; tab_index => 1);
+impl_widget!(Button; Layout, Render, Event, Animation; tab_index => 1);
 
 impl SnapshotSource for Button {
     fn snapshot_fields(&self) -> SnapshotFields {

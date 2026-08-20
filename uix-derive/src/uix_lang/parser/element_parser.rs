@@ -9,7 +9,7 @@ use super::control_binding::{parse_control_binding, require_control_binding};
 
 pub(super) fn parse_element(
     cursor: &mut Cursor<'_>,
-    allow_component_declaration: bool,
+    allow_widget_declaration: bool,
 ) -> Result<Element, Diagnostic> {
     // 保存元素起点。
     let start = cursor.offset();
@@ -49,20 +49,20 @@ pub(super) fn parse_element(
             "把标签名首字母改为大写，例如 <Button />",
         ));
     }
-    // Component 只能作为顶层声明出现。
-    if name == "Component" && !allow_component_declaration {
+    // Widget 只能作为顶层声明出现。
+    if name == "Widget" && !allow_widget_declaration {
         // 返回非法嵌套或根位置诊断。
         return Err(Diagnostic::new(
             // 指向保留标签名。
             name_span,
             // 陈述失败原因。
-            "<Component> 只能出现在顶层声明区",
+            "<Widget> 只能出现在顶层声明区",
             // 给出修复建议。
-            "把 Component 定义移动到文档根元素之前",
+            "把 Widget 定义移动到文档根元素之前",
         ));
     }
     // Record 只能作为顶层声明出现。
-    if name == "Record" && !allow_component_declaration {
+    if name == "Record" && !allow_widget_declaration {
         // 返回非法嵌套或根位置诊断。
         return Err(Diagnostic::new(
             // 指向保留标签名。
@@ -98,7 +98,7 @@ pub(super) fn parse_element(
                 // 保存完整跨度。
                 span: cursor.span_from(start),
                 // 源码元素尚未经过组件展开，因此没有私有状态作用域标记。
-                component_scopes: Vec::new(),
+                widget_scopes: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有循环事件捕获契约。
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
@@ -322,7 +322,7 @@ pub(super) fn parse_element(
                 // 保存完整跨度。
                 span: cursor.span_from(start),
                 // 源码元素尚未经过组件展开，因此没有私有状态作用域标记。
-                component_scopes: Vec::new(),
+                widget_scopes: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有循环事件捕获契约。
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。

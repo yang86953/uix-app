@@ -13,16 +13,16 @@
 //! | `animation` | 动画（Animated / Keyframe / Spring / Transition）与 Animatable 契约 | reactive（Animated 绑定 State） |
 //! | `overlay` | 浮层注册表与 Placement 定位 | 无（只依赖 core） |
 //! | `theme` | 主题令牌、设计令牌与 Style 样式系统 | layout（样式引用布局枚举） |
-//! | `accessibility` | 无障碍语义快照与覆盖 | component（语义树消费）、component_snapshot（类型） |
-//! | `component` | 组件运行时：WidgetTree / WidgetNode / 组件契约 / 管理器 / 配置与 i18n | reactive、event、layout、animation、theme、overlay、accessibility（全部单向窄契约） |
-//! | `view` | 声明式 View DSL：View / ViewNode / 扩展 trait / Provider 组件 | component、reactive、event、animation、theme、accessibility |
-//! | `virtualization` | 虚拟滚动（VirtualScroll / VirtualScrollBuilder） | view、component |
-//! | `widgets` | 内置组件库与声明式组合子（combinators） | component、view、reactive、event、animation、layout、theme、overlay、accessibility |
-//! | `form` | 类型化表单模型与表单组件 | widgets、component、view、reactive、event |
+//! | `accessibility` | 无障碍语义快照与覆盖 | widget（语义树消费）、widget_snapshot（类型） |
+//! | `widget` | 组件运行时：WidgetTree / WidgetNode / 组件契约 / 管理器 / 配置与 i18n | reactive、event、layout、animation、theme、overlay、accessibility（全部单向窄契约） |
+//! | `view` | 声明式 View DSL：View / ViewNode / 扩展 trait / Provider 组件 | widget、reactive、event、animation、theme、accessibility |
+//! | `virtualization` | 虚拟滚动（VirtualScroll / VirtualScrollBuilder） | view、widget |
+//! | `widgets` | 内置组件库与声明式组合子（combinators） | widget、view、reactive、event、animation、layout、theme、overlay、accessibility |
+//! | `form` | 类型化表单模型与表单组件 | widgets、widget、view、reactive、event |
 //!
 //! 兄弟隔离约束（SMC-04）：reactive / layout / overlay 对任何兄弟
 //! Module 引用为 0；event / animation / theme / accessibility 只消费依赖基座
-//! （reactive / component / layout）；component 不引用 view / widgets / form /
+//! （reactive / widget / layout）；widget 不引用 view / widgets / form /
 //! virtualization（双向环已拆：build_view_children 归边界端口、Provider 组件归
 //! view、tree_measure 收编 child_from_tree、DynamicLabel 归组件侧）；
 //! widgets 为消费汇聚点（仅下行引用，无被引用反向边）。
@@ -31,17 +31,17 @@
 //!
 //! | 归属 | 内容 |
 //! |------|------|
-//! | `adapter` | ViewAdapter：ViewNode → WidgetNode 展开与 reconcile（view/component/widgets 粘合） |
+//! | `adapter` | ViewAdapter：ViewNode → WidgetNode 展开与 reconcile（view/widget/widgets 粘合） |
 //! | `render_handler` | 节点级渲染注册表（表格单元格 / 展开 / 下拉选项 / 虚拟列表项）与空态渲染回调（EmptyRenderer / render_empty_for） |
-//! | `style_paint` | Style 绘制辅助（跨 component/widgets 的视觉应用，theme::style 再导出） |
+//! | `style_paint` | Style 绘制辅助（跨 widget/widgets 的视觉应用，theme::style 再导出） |
 //! | `tree_dynamic` | 动态内容刷新协调：表格单元格 / 日历格子 / 折叠内容 / Select 选项 / 虚拟列表 |
 //! | `text_selection` | 跨组件文字拖选协调（Typography / Label / RichText 参与者） |
 //! | `tree_widget_hooks` | 树对具体组件语义的访问点（Modal 生命周期 / viewport 滚动轴 / 显式尺寸锁 / 导航兄弟联动） |
-//! | `component_snapshot` | 组件配置与无障碍快照（component 产出、widgets 描述、automation 消费） |
+//! | `widget_snapshot` | 组件配置与无障碍快照（widget 产出、widgets 描述、automation 消费） |
 //! | `semantic_action` | 语义动作执行器（automation / agent / accessibility 共用） |
-//! | `transform_origin` | View 与 component 共享的公开二维变换原点值契约 |
+//! | `transform_origin` | View 与 widget 共享的公开二维变换原点值契约 |
 //! | `automation` | 测试替身（`test-harness` feature） |
-//! | [`macros`] | 公开宏定义（`component!` / `views!` / `impl_widget_component!` 等） |
+//! | [`macros`] | 公开宏定义（`widget!` / `views!` / `impl_widget!` 等） |
 //!
 //! 业务流向由 System 编排（公开面收口于本根），Module 之间除上表窄契约外
 //! 零依赖；禁止 Module 直接引用、持有、发现或回调兄弟 Module 的私有实现。
@@ -53,8 +53,6 @@ pub(crate) mod adapter;
 pub(crate) mod animation;
 #[cfg(feature = "test-harness")]
 pub(crate) mod automation;
-pub(crate) mod component_patch;
-pub(crate) mod component_snapshot;
 pub(crate) mod event;
 #[allow(hidden_glob_reexports)] // SMC-04：Module 为 pub(crate)，glob 再导出仅为根级 API。
 pub(crate) mod form;
@@ -63,7 +61,9 @@ pub(crate) mod i18n;
 pub(crate) mod layout;
 pub mod macros;
 pub(crate) mod overlay;
+pub(crate) mod widget_patch;
 pub(crate) mod widget_runtime;
+pub(crate) mod widget_snapshot;
 // 公开 UI System 自有的布局定位模式与四边值契约。
 mod position;
 pub(crate) mod reactive;
@@ -87,7 +87,7 @@ pub(crate) mod view;
 pub(crate) mod virtualization;
 pub(crate) mod widgets;
 
-pub use crate::core::ComponentId;
+pub use crate::core::WidgetId;
 pub use crate::platform::capabilities::StatusLevel;
 pub use crate::platform::windowing::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
@@ -98,34 +98,31 @@ pub use animation::{
     Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,
     KeyframePlayback, Spring, SpringAnimation, Transition,
 };
-pub use component_snapshot::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute,
-    ComponentConfigSnapshot, SelectionSnapshot, SnapshotCollapsePanel, SnapshotField,
-    SnapshotFields, SnapshotSource, SnapshotTransferItem, SnapshotValue,
-};
 pub(crate) use widget_runtime::children;
 pub use widget_runtime::clipboard::{copy_to_clipboard, read_text_from_clipboard};
 pub use widget_runtime::config::{
-    ComponentConfig, ComponentOverrides, ComponentTokenOverrides, Config, use_config, with_config,
+    Config, WidgetConfig, WidgetOverrides, WidgetTokenOverrides, use_config, with_config,
 };
 pub use widget_runtime::focus_trap::FocusTrap;
 pub use widget_runtime::locale::{Locale, en_us, use_locale, with_locale, zh_cn};
 pub use widget_runtime::traits::{
-    EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
-    WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTextInput,
+    EventHandler, IntoWidgetNode, Widget, WidgetAnimation, WidgetCapabilities, WidgetLayout,
+    WidgetLifecycle, WidgetRender, WidgetTextInput,
 };
 pub(crate) use widget_runtime::widget::WidgetTree;
 pub use widget_runtime::{
-    AppState, ComponentHandle, FocusHandle, FocusHandleError, PaintContext, WidgetChildren,
+    AppState, FocusHandle, FocusHandleError, PaintContext, WidgetChildren, WidgetHandle,
+};
+pub use widget_snapshot::{
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, SelectionSnapshot,
+    SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource, SnapshotTransferItem,
+    SnapshotValue, WidgetConfigSnapshot,
 };
 // 树组件 capability 启用时才从 UI 门面导出树节点快照模型。
 #[cfg(feature = "tree-widgets")]
 // 该类型与 Tree 和 TreeSelect 的快照变体共享同一边界。
-pub use component_snapshot::SnapshotTreeNode;
+pub use widget_snapshot::SnapshotTreeNode;
 // 表格 capability 启用时才从 UI 门面导出专属快照列模型。
-#[cfg(feature = "table")]
-// 保持启用场景下既有的两个公开类型路径。
-pub use component_snapshot::{SnapshotTableColumn, SnapshotTableColumnGroup};
 pub use event::{
     ClickEvent, EventResult, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable,
     SemanticEvent, SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
@@ -136,6 +133,9 @@ pub use layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
     LayoutChild, LayoutEngine, LayoutOutput,
 };
+#[cfg(feature = "table")]
+// 保持启用场景下既有的两个公开类型路径。
+pub use widget_snapshot::{SnapshotTableColumn, SnapshotTableColumnGroup};
 // 导出统一 overlay backdrop 请求及区域策略。
 pub use overlay::{
     OverlayBackdropBlur, OverlayBackdropRegion, OverlayEntry, OverlayId, OverlayKind, OverlayStack,
@@ -206,12 +206,12 @@ pub use widget_runtime::managers::{
 };
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]
-pub mod component_state;
+pub mod widget_state;
 // 提供 UI 线程窗口循环期间的主题切换请求通道。
 #[doc(hidden)]
 pub mod theme_request;
 
-// Public component traits and exported macros mention these opaque bridge
+// Public widget traits and exported macros mention these opaque bridge
 // types. Keep them nameable without making the runtime module hierarchy an
 // application-facing API.
 #[doc(hidden)]
@@ -223,9 +223,9 @@ pub mod __private {
     }
     pub use super::widget_runtime::widget::{WidgetNode, WidgetTree};
     // 重导出代码生成器使用的私有组件状态桥接。
-    pub use super::component_snapshot::snapshot_fields_from_any;
-    pub use super::component_state::{
-        UixComponentScope, uix_component_child_scope, uix_component_scope, uix_component_state,
+    pub use super::widget_snapshot::snapshot_fields_from_any;
+    pub use super::widget_state::{
+        UixWidgetScope, uix_widget_child_scope, uix_widget_scope, uix_widget_state,
     };
     // 重导出 UIX transition 生成器使用的目标比较与原位重定向桥接。
     pub use super::view::declarative_transition::{

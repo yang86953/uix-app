@@ -1,6 +1,5 @@
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
@@ -8,6 +7,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetCore;
+use crate::widget;
 // 引入受控状态句柄与 Drawer 既有事件、树契约。
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
@@ -57,7 +57,7 @@ impl ControlledDrawerOpen {
     }
 }
 
-component! {
+widget! {
     /// Sliding drawer panel.
     pub struct Drawer {
         title: String,
@@ -410,7 +410,7 @@ component! {
         ctx.pop_clip();
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }
@@ -436,7 +436,7 @@ component! {
     }
 
     // 使用真实表面解析 masked Drawer，非 mask Drawer 则保持面板命中区域。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 不在呈现生命周期时不登记 overlay。
         if !self.is_present() {
             // 关闭态只保留普通触发器。
@@ -480,7 +480,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         if !self.is_present() {
             return Vec::new();

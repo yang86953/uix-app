@@ -2,16 +2,16 @@
 //!
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入自动完成文本的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
@@ -36,7 +36,7 @@ const MIN_POPUP_WIDTH: f32 = 200.0;
 const FONT_SIZE: f32 = 13.0;
 
 // AutoComplete — 自动完成输入框。
-component! {
+widget! {
     /// 拥有输入文本、过滤候选与弹层交互状态的自动完成组件。
     pub struct AutoComplete {
         placeholder: String,
@@ -237,7 +237,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -459,7 +459,7 @@ component! {
         autocomplete_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
             // 读取当前候选行数供表面回退与弹层解析共用。
             let row_count = self.filtered.len();
@@ -478,7 +478,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建自动完成弹层登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际弹层缓存。
         self.remember_popup_rect(frame, surface, self.filtered.len());
         // 复用统一的自动完成弹层登记逻辑。

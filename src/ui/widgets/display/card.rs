@@ -3,7 +3,6 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
@@ -13,6 +12,7 @@ use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, LayoutChild,
     flex::compute_flex_layout,
 };
+use crate::widget;
 // 导入共享的子项物理内容尺寸计算，避免 Card 自行复制 Flex 边距语义。
 use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -21,11 +21,10 @@ use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constr
 // 接收 ViewAdapter 传入的通用尺寸样式窄契约。
 use crate::ui::theme::style::Style;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
 
-component! {
+widget! {
     /// 支持阴影层级、悬停高亮和内容内边距的卡片组件。
     pub struct Card {
         title: Option<String>,
@@ -56,7 +55,7 @@ component! {
 
     tab_index => (&self) -> i32 { i32::from(!self.actions.is_empty()) }
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }
 
@@ -130,7 +129,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_submit
             .borrow_mut()
             .take()
@@ -303,7 +302,7 @@ component! {
         }
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // 先按当前卡片几何计算 body 可用宽度与纵向起点。
@@ -332,7 +331,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 空子树没有可缓存的内容范围。
         if children.is_empty() {
@@ -710,12 +709,12 @@ impl Card {
         &self.actions
     }
     /// 在卡片末尾追加一个子组件。
-    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
+    pub fn child(self, w: impl Widget + 'static) -> Self {
         self.children.add(w);
         self
     }
     /// 替换卡片中的全部子组件。
-    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
         self.children.set_all(widgets);
         self
     }

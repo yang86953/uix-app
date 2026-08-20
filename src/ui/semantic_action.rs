@@ -10,11 +10,11 @@
 
 use std::fmt;
 
-use crate::core::{ComponentId, Point};
+use crate::core::{Point, WidgetId};
 use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
-use crate::ui::component_snapshot::AccessibilityRole;
 use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widget_runtime::widget::{EventResult, WidgetTree};
+use crate::ui::widget_snapshot::AccessibilityRole;
 use crate::ui::widgets::Input;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -137,37 +137,37 @@ impl fmt::Debug for SemanticAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SemanticActionError {
-    NodeNotFound(ComponentId),
+    NodeNotFound(WidgetId),
     UnsupportedAction {
-        target: ComponentId,
+        target: WidgetId,
         action: SemanticActionKind,
     },
-    NotVisible(ComponentId),
-    Disabled(ComponentId),
+    NotVisible(WidgetId),
+    Disabled(WidgetId),
     SelectionDisabled {
-        target: ComponentId,
+        target: WidgetId,
         index: usize,
     },
     InvalidValue {
-        target: ComponentId,
+        target: WidgetId,
         action: SemanticActionKind,
     },
     Blocked {
-        target: ComponentId,
-        blocker: ComponentId,
+        target: WidgetId,
+        blocker: WidgetId,
     },
     NotHandled {
-        target: ComponentId,
+        target: WidgetId,
         action: SemanticActionKind,
     },
 }
 
 impl WidgetTree {
-    pub(crate) fn supported_semantic_actions(&self, id: ComponentId) -> Vec<SemanticActionKind> {
+    pub(crate) fn supported_semantic_actions(&self, id: WidgetId) -> Vec<SemanticActionKind> {
         let Some(node) = self.get(id) else {
             return Vec::new();
         };
-        let snapshot = node.component_snapshot(id);
+        let snapshot = node.widget_snapshot(id);
         let accessibility = snapshot.accessibility();
         let selection = snapshot.selection();
         let role = accessibility.role;
@@ -181,7 +181,7 @@ impl WidgetTree {
         let accepts_text = node
             .as_text_input()
             .is_some_and(|client| client.accepts_text_input());
-        let is_input = node.component().as_any().is::<Input>();
+        let is_input = node.widget().as_any().is::<Input>();
         let can_focus = node.is_focusable()
             || (node.accepts_events()
                 && matches!(
@@ -197,9 +197,9 @@ impl WidgetTree {
                 ));
 
         let mut actions = Vec::new();
-        // 组件声明（E-05）：`component!` 的 `semantic_actions` 槽位在 role 推断
+        // 组件声明（E-05）：`widget!` 的 `semantic_actions` 槽位在 role 推断
         // 之外补充自定义能力（如连续值 `Adjust`）。
-        for declared in node.component().declared_semantic_actions() {
+        for declared in node.widget().declared_semantic_actions() {
             let kind = declared.kind();
             if !actions.contains(&kind) {
                 actions.push(kind);
@@ -244,7 +244,7 @@ impl WidgetTree {
         actions
     }
 
-    pub(crate) fn blocking_modal_for(&self, id: ComponentId) -> Option<ComponentId> {
+    pub(crate) fn blocking_modal_for(&self, id: WidgetId) -> Option<WidgetId> {
         self.overlay_stack
             .top()
             .filter(|entry| entry.is_modal())
@@ -254,7 +254,7 @@ impl WidgetTree {
 
     pub(crate) fn perform_semantic_action(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         action: &SemanticAction,
     ) -> Result<(), SemanticActionError> {
         // 停止树必须在读取节点快照或用户 handler 前拒绝语义动作。
@@ -271,7 +271,7 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Err(SemanticActionError::NodeNotFound(id));
         };
-        let accessibility = node.component_snapshot(id).accessibility();
+        let accessibility = node.widget_snapshot(id).accessibility();
         let role = accessibility.role;
         let actions = self.supported_semantic_actions(id);
         if !actions.contains(&action_kind) {
@@ -314,7 +314,7 @@ impl WidgetTree {
             SemanticAction::Focus => {
                 self.set_keyboard_focus_visible(true);
                 self.set_focus(Some(id));
-                if self.managers().focus.focused_component() == Some(id) {
+                if self.managers().focus.focused_widget() == Some(id) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -336,7 +336,7 @@ impl WidgetTree {
             // 步进由 `Increment` / `Decrement` 动作驱动；min/max 已进入语义快照。
             SemanticAction::Adjust { .. } => {
                 self.set_focus(Some(id));
-                if self.managers().focus.focused_component() == Some(id) {
+                if self.managers().focus.focused_widget() == Some(id) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -370,7 +370,7 @@ impl WidgetTree {
         }
     }
 
-    fn focus_and_press(&mut self, id: ComponentId, key: KeyCode) -> EventResult {
+    fn focus_and_press(&mut self, id: WidgetId, key: KeyCode) -> EventResult {
         self.set_focus(Some(id));
         self.press_key(key)
     }
@@ -393,13 +393,13 @@ impl WidgetTree {
 
     fn select_option(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         role: AccessibilityRole,
         value: &str,
     ) -> Result<EventResult, SemanticActionError> {
         let selection = self
             .get(id)
-            .map(|node| node.component_snapshot(id))
+            .map(|node| node.widget_snapshot(id))
             .and_then(|snapshot| snapshot.selection())
             .ok_or(SemanticActionError::NotHandled {
                 target: id,
@@ -426,7 +426,7 @@ impl WidgetTree {
         }
 
         self.set_focus(Some(id));
-        if self.managers().focus.focused_component() != Some(id) {
+        if self.managers().focus.focused_widget() != Some(id) {
             return Ok(EventResult::NotHandled);
         }
 
@@ -473,7 +473,7 @@ impl WidgetTree {
 
         let selected = self
             .get(id)
-            .map(|node| node.component_snapshot(id))
+            .map(|node| node.widget_snapshot(id))
             .and_then(|snapshot| snapshot.selection())
             .is_some_and(|selection| selection.selected_indices.as_slice() == [index]);
         Ok(if selected {
@@ -483,9 +483,9 @@ impl WidgetTree {
         })
     }
 
-    fn set_input_value(&mut self, id: ComponentId, value: &str) -> EventResult {
+    fn set_input_value(&mut self, id: WidgetId, value: &str) -> EventResult {
         let Some(current_value) = self.get(id).and_then(|node| {
-            node.component()
+            node.widget()
                 .as_any()
                 .downcast_ref::<Input>()
                 .map(|input| input.current_value().to_owned())

@@ -2,7 +2,6 @@
 //!
 //! 预设色板选择，点击触发弹出面板。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
@@ -10,9 +9,10 @@ use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
 // 声明颜色面板的私有表面几何模块。
@@ -34,7 +34,7 @@ const PANEL_CELL: f32 = 24.0;
 const PANEL_PADDING: f32 = 8.0;
 
 // ColorPicker — 颜色选择器。
-component! {
+widget! {
     /// 通过窗口内预设色面板选择并提交颜色值的组件。
     pub struct ColorPicker {
         value: Cell<Color>,
@@ -200,7 +200,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.to_string()))
@@ -350,7 +350,7 @@ component! {
         self.presentation_dirty_rect(frame)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
             // 读取最近登记的表面或首帧有限回退。
             let surface = self.surface_or_fallback(frame);
@@ -366,7 +366,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建颜色面板登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际面板缓存。
         self.remember_popup_rect(frame, surface);
         // 复用统一的颜色面板登记逻辑。

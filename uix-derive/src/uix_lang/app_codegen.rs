@@ -8,8 +8,8 @@ use quote::quote;
 
 // 引入应用入口生成所需的完整 UIX 语法树。
 use super::{
-    Attribute, AttributeValue, ComponentStateInitial, ControlBinding, Declaration, Diagnostic,
-    Document, Element, Expression, ExpressionKind, Node, SourceSpan,
+    Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element,
+    Expression, ExpressionKind, Node, SourceSpan, WidgetStateInitial,
 };
 // 引入共享 View、颜色与完整主题 token 生成事实。
 use super::{generate_document_view, parse_color};
@@ -395,22 +395,22 @@ fn validate_theme_requests(
     // 验证全部组件声明，即使组件稍后才被展开。
     for declaration in &document.declarations {
         // 只处理组件体与私有状态表达式。
-        if let Declaration::Component(component) = declaration {
+        if let Declaration::Widget(widget) = declaration {
             // 验证组件有序子节点。
-            for node in &component.children {
+            for node in &widget.children {
                 // 验证单个节点。
                 validate_node_theme_requests(node, themes)?;
             }
             // 验证组件私有状态初始表达式。
-            for state in &component.states {
+            for state in &widget.states {
                 // 提取可包含调用的表达式。
                 let expression = match &state.initial {
                     // 普通表达式直接借用。
-                    ComponentStateInitial::Expression(expression) => Some(expression),
+                    WidgetStateInitial::Expression(expression) => Some(expression),
                     // 类型化表达式直接借用。
-                    ComponentStateInitial::TypedExpression(_, expression) => Some(expression),
+                    WidgetStateInitial::TypedExpression(_, expression) => Some(expression),
                     // 空数组没有调用。
-                    ComponentStateInitial::EmptyArray => None,
+                    WidgetStateInitial::EmptyArray => None,
                 };
                 // 存在表达式时递归验证。
                 if let Some(expression) = expression {

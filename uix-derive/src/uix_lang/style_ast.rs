@@ -1,5 +1,5 @@
 // 引入共享元素与源码跨度。
-use super::{ComponentDeclaration, RecordDeclaration, SourceSpan};
+use super::{RecordDeclaration, SourceSpan, WidgetDeclaration};
 
 // 表示根元素之前按源码顺序出现的顶层声明。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +15,7 @@ pub(crate) enum Declaration {
     // 保存具名关键帧动画声明。
     Keyframes(KeyframesDeclaration),
     // 保存已经验证 props、state 与视图体的顶层组件定义。
-    Component(ComponentDeclaration),
+    Widget(WidgetDeclaration),
     // 保存语言面声明的类型化业务模型。
     Record(RecordDeclaration),
 }
@@ -26,7 +26,7 @@ pub(crate) struct ImportDeclaration {
     // 保存 .uix 相对或绝对路径。
     pub(crate) path: String,
     // 保存可选的单个组件名。
-    pub(crate) component: Option<String>,
+    pub(crate) widget: Option<String>,
     // 保存完整指令跨度。
     pub(crate) span: SourceSpan,
 }
@@ -35,7 +35,7 @@ pub(crate) struct ImportDeclaration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExportDeclaration {
     // 保存源码顺序中的组件名。
-    pub(crate) components: Vec<String>,
+    pub(crate) widgets: Vec<String>,
     // 保存完整指令跨度。
     pub(crate) span: SourceSpan,
 }

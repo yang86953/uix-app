@@ -1,7 +1,7 @@
 // 显式公开本文件的主演示页面组件。
 @export('HomePage', 'RuntimePage')
 
-<Component name="HomePage" props="page: State<number>, count: State<number>" state="likes: 0">
+<Widget name="HomePage" props="page: State<number>, count: State<number>" state="likes: 0">
   // 组织首页内容。
   <Column gap="16px">
     // 展示首页主卡片与统一演示标题。
@@ -93,10 +93,10 @@
   // 结束首页内容。
   </Column>
 // 结束首页组件。
-</Component>
+</Widget>
 
 // 声明应用能力组件：展示 App Timer、响应式状态、多窗口与应用主题。
-<Component name="RuntimePage" props="tick: State<number>, count: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
+<Widget name="RuntimePage" props="tick: State<number>, count: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
   // 组织应用能力内容。
   <Column gap="16px">
     // 展示应用能力标题。
@@ -180,13 +180,13 @@
     // 结束多窗口卡片。
     </Card>
     // 展示 PicturePolicy 与自定义组件边界。
-    <Alert message="PicturePolicy 与 component! 自定义组件保留 Rust API 边界，不在声明文件复制运行时所有权。" type="info" />
+    <Alert message="PicturePolicy 与 widget! 自定义组件保留 Rust API 边界，不在声明文件复制运行时所有权。" type="info" />
     // 展示编译期生成说明。
     <Alert message="uix! 在编译期生成公开 ViewNode，不引入运行时解释器。" type="success" />
   // 结束应用能力内容。
   </Column>
 // 结束应用能力组件。
-</Component>
+</Widget>
 
 // 提供页面文档独立解析所需的唯一根。
 <Text>主演示页面组件库</Text>

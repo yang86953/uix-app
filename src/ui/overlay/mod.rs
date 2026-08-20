@@ -1,4 +1,4 @@
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 use crate::core::{Point, Rect};
 
 /// overlay backdrop 模糊使用的逻辑区域来源。
@@ -109,7 +109,7 @@ impl OverlayId {
 /// 一项待排序、命中和管理的浮层登记。
 pub struct OverlayEntry {
     id: OverlayId,
-    owner: ComponentId,
+    owner: WidgetId,
     kind: OverlayKind,
     bounds: Option<Rect>,
     z_index: i32,
@@ -123,7 +123,7 @@ pub struct OverlayEntry {
 
 impl OverlayEntry {
     /// 为组件所有者和语义类别创建默认浮层登记。
-    pub fn new(owner: ComponentId, kind: OverlayKind) -> Self {
+    pub fn new(owner: WidgetId, kind: OverlayKind) -> Self {
         Self {
             id: OverlayId(0),
             owner,
@@ -189,7 +189,7 @@ impl OverlayEntry {
     }
 
     /// 返回拥有该浮层的组件标识。
-    pub fn owner(&self) -> ComponentId {
+    pub fn owner(&self) -> WidgetId {
         self.owner
     }
 
@@ -249,7 +249,7 @@ impl OverlayStack {
     }
 
     /// 使用默认设置登记指定组件的浮层。
-    pub fn push(&mut self, owner: ComponentId, kind: OverlayKind) -> OverlayId {
+    pub fn push(&mut self, owner: WidgetId, kind: OverlayKind) -> OverlayId {
         self.push_entry(OverlayEntry::new(owner, kind))
     }
 
@@ -270,7 +270,7 @@ impl OverlayStack {
     }
 
     /// 移除并返回指定组件拥有的全部浮层。
-    pub fn remove_for_owner(&mut self, owner: ComponentId) -> Vec<OverlayEntry> {
+    pub fn remove_for_owner(&mut self, owner: WidgetId) -> Vec<OverlayEntry> {
         let mut removed = Vec::new();
         self.entries.retain(|entry| {
             if entry.owner == owner {

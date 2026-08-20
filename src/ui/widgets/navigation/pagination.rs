@@ -2,14 +2,14 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入 current 与 pageSize 的声明式状态句柄。
 use crate::ui::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 use std::cell::Cell;
@@ -22,7 +22,7 @@ const PAGINATION_TOTAL_WIDTH: f32 = 100.0;
 const PAGINATION_SIZE_WIDTH: f32 = 80.0;
 
 // Pagination — 分页器。
-component! {
+widget! {
     /// 拥有页码、每页条数与可选受控状态的分页导航组件。
     pub struct Pagination {
         total: usize,
@@ -136,7 +136,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change.take().map(|change| match change {
             PaginationChange::Page(page) => SemanticEvent::change(id, page.to_string()),
             PaginationChange::PageSize(page_size) => {

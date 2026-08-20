@@ -148,7 +148,7 @@ fn keyed_roles_survive_reconcile_when_other_slot_changes() {
     let next = tree.get(root).expect("List 根必须可读").children().to_vec();
     // 新增页尾后必须产生三个角色。
     assert_eq!(next.len(), 3);
-    // 固定页首 key 必须保留原 ComponentId。
+    // 固定页首 key 必须保留原 WidgetId。
     assert_eq!(next[0], first[0]);
     // 固定加载入口 key 不得因中间插槽插入而错配。
     assert_eq!(next[2], first[1]);
@@ -196,7 +196,7 @@ fn empty_data_replaces_list_and_drops_declared_slots() {
             // 根节点必须可读。
             .expect("Empty 根必须可读")
             // 读取具体组件类型。
-            .component()
+            .widget()
             // 进入动态类型检查。
             .as_any()
             // 验证现有 Empty 组件。

@@ -1,6 +1,6 @@
 //! 纹理上传资源身份、区域、载荷与紧密布局的共享契约测试。
 
-// 引入父 Transfer Component 的上传值对象及其共享依赖。
+// 引入父 Transfer Widget 的上传值对象及其共享依赖。
 use super::{
     RhiExtent, RhiTextureRegion, RhiTextureUpload, TextureDesc, TextureFormat, TextureHandle,
 };

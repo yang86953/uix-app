@@ -2,11 +2,11 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::widget;
 
 use super::advanced::{
     BrushConfig, ChartSeries, InteractionConfig, LegendPosition, TooltipConfig, TooltipDatum,
@@ -37,7 +37,7 @@ impl LineData {
     }
 }
 
-component! {
+widget! {
     /// 按有序数据点绘制折线、标记与坐标轴的图表组件。
     pub struct LineChart {
         data: Vec<LineData>,

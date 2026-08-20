@@ -5,11 +5,11 @@ use crate::core::{EdgeInsets, Point};
 // 引入真实按钮指针事件所需的原生输入类型。
 use crate::platform::windowing::{KeyMod, MouseButton};
 // 引入适配器、组件与布局 trait 入口。
-use crate::ui::widget_runtime::traits::{WidgetComponent, WidgetLayout};
+use crate::ui::widget_runtime::traits::{Widget, WidgetLayout};
 // 引入测试读取子身份与写入根 frame 所需的组件树核心契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入 Badge 独立状态节点的无障碍角色。
-use crate::ui::component_snapshot::AccessibilityRole;
+use crate::ui::widget_snapshot::AccessibilityRole;
 // 引入真实声明树物化入口。
 use crate::ui::adapter::ViewAdapter;
 // 引入事件结果、系统事件、ViewNode 与公开按钮。
@@ -81,9 +81,9 @@ fn zero_child_compatibility_and_single_child_margin_layout() {
         // 使用显式 ViewNode 保留完整子树身份。
         .child(ViewNode::leaf(Button::new("消息")));
     // 模拟组件树登记唯一直接子节点。
-    WidgetComponent::on_children_changed(&mut composite, 1);
+    Widget::on_children_changed(&mut composite, 1);
     // 创建一个稳定的测试子身份与自然尺寸。
-    let mut child = LayoutChild::new(ComponentId::new(7), Size::new(40.0, 30.0));
+    let mut child = LayoutChild::new(WidgetId::new(7), Size::new(40.0, 30.0));
     // 设置四侧 margin 以验证正常流外尺寸。
     child.margin = EdgeInsets::new(2.0, 3.0, 4.0, 5.0);
     // 空树足以满足当前布局入口未读取树的契约。
@@ -212,7 +212,7 @@ fn accessibility_and_snapshot_keep_child_semantics_independent() {
         // 交给真实按钮保留自己的名称。
         .child(ViewNode::leaf(Button::new("账户")));
     // 模拟组件树已经登记唯一真实子节点。
-    WidgetComponent::on_children_changed(&mut status, 1);
+    Widget::on_children_changed(&mut status, 1);
     // 读取组合 Badge 自己的快照字段。
     let fields = status.snapshot_fields();
     // 状态装饰必须作为独立 Status 语义发布。
@@ -270,10 +270,7 @@ fn child_keeps_click_focus_and_keyed_reconcile_identity() {
     // 执行一次真实父子布局。
     tree.layout();
     // 组合 Badge 自身不得进入 Tab 顺序。
-    assert_eq!(
-        WidgetComponent::tab_index(tree.get(root).unwrap().component()),
-        0
-    );
+    assert_eq!(Widget::tab_index(tree.get(root).unwrap().widget()), 0);
     // 在真实子按钮内部按下主指针。
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
@@ -316,7 +313,7 @@ fn child_keeps_click_focus_and_keyed_reconcile_identity() {
                 .child(ViewNode::leaf(Button::new("新通知")).key("badge-child")),
         ),
     );
-    // 相同 key 必须保留原真实子 ComponentId。
+    // 相同 key 必须保留原真实子 WidgetId。
     assert_eq!(tree.get(root).unwrap().children()[0], first_child);
     // 协调为零子节点叶 Badge。
     ViewAdapter::reconcile(&mut tree, ViewNode::leaf(Badge::new().count(1)));

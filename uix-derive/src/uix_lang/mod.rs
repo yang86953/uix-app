@@ -77,53 +77,53 @@ mod codegen_tests;
 mod reference_examples_tests;
 // 集中验证通用 Button 与 Label 的文档属性生成和拒绝路径。
 #[cfg(test)]
-mod general_component_codegen_tests;
-// 定义 Component、props 与 state 的结构化 AST。
-mod component_ast;
-// 定义 Component 声明头与 external 白名单解析。
-mod component_declaration_parser;
-// 定义 Component props 与私有状态的类型化 Rust 绑定。
-mod component_binding_codegen;
+mod general_widget_codegen_tests;
+// 定义 Widget、props 与 state 的结构化 AST。
+mod widget_ast;
+// 定义 Widget 声明头与 external 白名单解析。
+mod widget_declaration_parser;
+// 定义 Widget props 与私有状态的类型化 Rust 绑定。
+mod widget_binding_codegen;
 // 定义 Option、集合与嵌套 record 的递归类型化初始值生成。
-mod component_typed_value_codegen;
+mod widget_typed_value_codegen;
 // 集中验证扩展集合、Some 与嵌套 record 初始值。
 #[cfg(test)]
-mod component_typed_value_tests;
-// 定义 Component 有序 computed 派生值的静态绑定。
-mod component_computed_codegen;
+mod widget_typed_value_tests;
+// 定义 Widget 有序 computed 派生值的静态绑定。
+mod widget_computed_codegen;
 // 定义完整文档中的组件调用展开。
-mod component_codegen;
-// 定义 Component Slot 调用方投影与模板内联。
-mod component_slot_codegen;
-// 定义 Component 模板 Slot 声明验证。
-mod component_slot_parser;
+mod widget_codegen;
+// 定义 Widget Slot 调用方投影与模板内联。
+mod widget_slot_codegen;
+// 定义 Widget 模板 Slot 声明验证。
+mod widget_slot_parser;
 // 集中验证组件展开、状态与拒绝路径。
 #[cfg(test)]
-mod component_codegen_tests;
-// 集中验证 For 内 Component 的逐实例身份与插槽作用域。
+mod widget_codegen_tests;
+// 集中验证 For 内 Widget 的逐实例身份与插槽作用域。
 #[cfg(test)]
-mod component_for_codegen_tests;
+mod widget_for_codegen_tests;
 // 集中验证默认与具名 Slot 的展开和诊断。
 #[cfg(test)]
-mod component_slot_tests;
+mod widget_slot_tests;
 // 定义组件字段表达式改写与 setState 降低。
-mod component_expression_lower;
+mod widget_expression_lower;
 // 定义组件内 setStyle 的作用域校验与表达式降低。
 mod dynamic_style_lower;
 // 定义状态伪类到既有 hover、disabled 与 checked 事实的降低。
 mod pseudo_style_lower;
-// 定义 Component 声明级语法与类型白名单解析。
-mod component_parser;
-// 定义 Component prop 类型后缀与受限默认表达式解析。
-mod component_prop_default_parser;
+// 定义 Widget 声明级语法与类型白名单解析。
+mod widget_parser;
+// 定义 Widget prop 类型后缀与受限默认表达式解析。
+mod widget_prop_default_parser;
 // 定义组件调用属性完整性、唯一性与必填校验。
-mod component_call_validator;
-// 集中验证 Component props、state 与名称诊断。
+mod widget_call_validator;
+// 集中验证 Widget props、state 与名称诊断。
 #[cfg(test)]
-mod component_tests;
-// 集中验证 Component prop 默认值、覆盖与必填诊断。
+mod widget_tests;
+// 集中验证 Widget prop 默认值、覆盖与必填诊断。
 #[cfg(test)]
-mod component_prop_default_tests;
+mod widget_prop_default_tests;
 // 定义包含位置、原因与修复建议的解析诊断。
 mod diagnostic;
 // 定义顶层指令、样式类与主题解析。
@@ -625,28 +625,28 @@ pub(crate) use window_control_codegen::generate_window_control;
 // 向核心元素生成器暴露 WindowDragRegion 专用映射。
 pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 // 向组件解析与代码生成暴露结构化组件声明。
-pub(crate) use component_ast::*;
+pub(crate) use widget_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
     DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
     is_registered_data_type, normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
-pub(crate) use component_codegen::generate_document_view;
+pub(crate) use widget_codegen::generate_document_view;
 // 向过程宏入口暴露 App builder 生成函数。
 pub(crate) use app_codegen::generate_document_app;
 // 向后续转换 Gate 暴露稳定诊断类型。
 pub(crate) use diagnostic::*;
-// 向文档解析器暴露 Component 声明验证入口。
-pub(crate) use component_declaration_parser::parse_component_declaration;
+// 向文档解析器暴露 Widget 声明验证入口。
+pub(crate) use widget_declaration_parser::parse_widget_declaration;
 // 向文档解析器暴露 Record 声明验证入口。
-pub(crate) use component_parser::parse_record_declaration;
+pub(crate) use widget_parser::parse_record_declaration;
 // 向 uix_items! 与组件绑定暴露 record 生成与类型映射入口。
 pub(crate) use record_codegen::{generate_record_items, value_type_tokens};
 // 向文档解析器暴露顶层声明入口。
 pub(crate) use declaration_parser::{
-    parse_at_declaration, parse_style_class, register_declaration_name,
-    starts_component_declaration, starts_record_declaration,
+    parse_at_declaration, parse_style_class, register_declaration_name, starts_record_declaration,
+    starts_widget_declaration,
 };
 // 向核心解析器暴露表达式 AST。
 pub(crate) use expression_ast::*;

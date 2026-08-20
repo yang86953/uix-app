@@ -5,7 +5,7 @@ use crate::core::Rect;
 // 导入真实声明树建树与原位协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态作用域与状态槽创建入口。
-use crate::ui::component_state::{uix_component_scope, uix_component_state};
+use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入读取运行时节点组件与子节点所需的树节点契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入声明错误子树的最小节点类型。
@@ -16,8 +16,6 @@ use crate::ui::widgets::Label;
 use crate::ui::{
     // 导入动态错误子树需要交接的动画源。
     Animated,
-    // 导入稳定运行时组件身份。
-    ComponentId,
     // 导入动画缓动函数。
     Easing,
     // 导入动态错误子树需要交接的 Effect。
@@ -26,10 +24,12 @@ use crate::ui::{
     SnapshotFields,
     // 导入组件私有状态的公开句柄。
     State,
+    // 导入发布阶段异常组件的核心契约。
+    Widget,
     // 导入手写异常组件的空能力集合。
     WidgetCapabilities,
-    // 导入发布阶段异常组件的核心契约。
-    WidgetComponent,
+    // 导入稳定运行时组件身份。
+    WidgetId,
     // 导入唯一拥有动态错误子树的运行时树。
     WidgetTree,
 };
@@ -45,7 +45,7 @@ fn image_root(
     // 接收已经由 Image 建树入口创建的运行时树。
     tree: &WidgetTree,
     // 返回当前唯一根身份。
-) -> ComponentId {
+) -> WidgetId {
     // 图片根必须在测试读取前已经成功挂载。
     tree.root_id().expect("Image 必须拥有运行时根")
 }
@@ -55,7 +55,7 @@ fn set_controlled_error(
     // 接收当前运行时树以取得实际 Image owner。
     tree: &WidgetTree,
     // 接收本轮应进入错误视图分支的根身份。
-    root: ComponentId,
+    root: WidgetId,
     // 接收图片服务返回的稳定错误文本，组件状态命名空间固定使用 uix:image:error。
     error: &str,
 ) {
@@ -64,7 +64,7 @@ fn set_controlled_error(
     // 从运行时类型擦除接口恢复私有 Image 组件。
     let image = node
         // 取得根节点当前组件引用。
-        .component()
+        .widget()
         // 进入类型擦除只读接口。
         .as_any()
         // 恢复 Image 的私有加载状态入口。
@@ -87,14 +87,14 @@ fn clear_controlled_error(
     // 接收当前运行时树以取得实际 Image owner。
     tree: &WidgetTree,
     // 接收本轮应取消错误视图分支的根身份。
-    root: ComponentId,
+    root: WidgetId,
 ) {
     // 读取根节点，测试中的 Image owner 必须仍然可寻址。
     let node = tree.get(root).expect("Image 根必须存在");
     // 从运行时类型擦除接口恢复私有 Image 组件。
     let image = node
         // 取得根节点当前组件引用。
-        .component()
+        .widget()
         // 进入类型擦除只读接口。
         .as_any()
         // 恢复 Image 的私有加载状态入口。
@@ -166,9 +166,9 @@ fn captured_error_image(
             // 读取动画值以登记本错误子树专属的动画源。
             let _ = animation.value();
             // 为静态错误子组件声明稳定 scope marker。
-            let scope = uix_component_scope("image-dynamic-error-test", 1);
+            let scope = uix_widget_scope("image-dynamic-error-test", 1);
             // 在动态 owner、错误槽位与固定 uix:image:error 命名空间内取得私有状态。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 锁定共享槽位只覆盖本轮最新句柄写入。
             *states
                 // 进入测试专用状态记录。
@@ -178,7 +178,7 @@ fn captured_error_image(
             // 返回不自设根 key 的错误节点，产品 Image 负责注入固定子节点身份。
             ViewNode::leaf(Label::new("error"))
                 // 让已挂载错误子树承载组件私有状态 scope。
-                .uix_component_scope(scope, 0)
+                .uix_widget_scope(scope, 0)
         })
 }
 
@@ -186,7 +186,7 @@ fn captured_error_image(
 struct PanicOnBuild;
 
 // 为发布后异常回归实现不带布局、绘制或事件能力的组件契约。
-impl WidgetComponent for PanicOnBuild {
+impl Widget for PanicOnBuild {
     // 暴露只读类型擦除引用。
     fn as_any(&self) -> &dyn Any {
         // 返回当前测试组件。
@@ -212,7 +212,7 @@ impl WidgetComponent for PanicOnBuild {
     }
 
     // 在动态事务已经进入发布区后触发用户组件 build 异常。
-    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+    fn build(&self) -> Vec<Box<dyn Widget>> {
         // 使用稳定消息便于失败时定位确切注入点。
         panic!("Image 错误子树发布阶段 build 异常")
     }
@@ -256,7 +256,7 @@ fn image_error_dynamic_capture_materializes_and_reuses_complete_outputs() {
     // 在同一 Image 实例上进入确定性错误状态。
     set_controlled_error(&tree, root, "controlled error");
     // 首次刷新必须物化受控错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 错误工厂必须恰好执行一次。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 1);
     // Image 必须拥有唯一错误子节点。
@@ -286,7 +286,7 @@ fn image_error_dynamic_capture_materializes_and_reuses_complete_outputs() {
     // 写入私有状态以验证重复刷新不会丢失已提交槽。
     captured_state(&states).set(7);
     // 重复刷新不得重建已经物化的错误子树。
-    assert!(!tree.refresh_image_error_component(root));
+    assert!(!tree.refresh_image_error_widget(root));
     // 工厂调用次数不得因空刷新增加。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 1);
     // 同一私有状态槽必须继续保留已写入值。
@@ -331,7 +331,7 @@ fn image_error_dynamic_capture_survives_same_source_parent_reconcile() {
     // 进入确定性错误状态。
     set_controlled_error(&tree, root, "controlled error");
     // 物化唯一错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 保存首次错误子树的运行时身份。
     let child = tree.get(root).expect("Image 根必须存在").children()[0];
     // 在私有状态槽中写入可区分值。
@@ -356,7 +356,7 @@ fn image_error_dynamic_capture_survives_same_source_parent_reconcile() {
     );
     // 根组件应继续使用原运行时 owner。
     assert_eq!(image_root(&tree), root);
-    // 已物化错误子树必须继续使用原 ComponentId。
+    // 已物化错误子树必须继续使用原 WidgetId。
     assert_eq!(
         tree.get(root).expect("Image 根必须存在").children(),
         &[child]
@@ -399,7 +399,7 @@ fn image_error_dynamic_capture_clear_and_rebuild_resets_private_state() {
     // 进入确定性错误状态。
     set_controlled_error(&tree, root, "controlled error");
     // 首次刷新物化 custom 错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 错误子树必须已经注册一个 Effect。
     assert_eq!(effect_runs.load(Ordering::Relaxed), 1);
     // 首次错误子树必须已经发布其动画源所有权。
@@ -411,7 +411,7 @@ fn image_error_dynamic_capture_clear_and_rebuild_resets_private_state() {
     // 同一 handler 直接离开 Error 状态，触发运行时解除路径。
     clear_controlled_error(&tree, root);
     // 空载刷新必须报告实际移除了已物化错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 已解除的错误子树必须从实际运行时 children 中移除。
     assert!(
         tree.get(root)
@@ -436,7 +436,7 @@ fn image_error_dynamic_capture_clear_and_rebuild_resets_private_state() {
     // 同一 handler 再次进入相同受控错误，必须建立新的动态实例。
     set_controlled_error(&tree, root, "controlled error");
     // 清除后再次错误必须重新物化子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 错误工厂必须在第二次真实错误时再次执行。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 2);
     // 真实移除后的重新错误必须从私有状态初值开始。
@@ -470,9 +470,9 @@ fn image_error_factory_pre_publish_panic_rolls_back_and_recovers_same_owner() {
             // 读取动画以验证捕获守卫会在 panic 时丢弃临时输出。
             let _ = failed_animation.value();
             // 为失败与恢复工厂声明同一静态组件 scope。
-            let scope = uix_component_scope("image-error-pre-publish-panic-test", 1);
+            let scope = uix_widget_scope("image-error-pre-publish-panic-test", 1);
             // 在固定错误子树命名空间中创建 provisional 私有状态。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 写入非初值以区分错误保留与正确回滚。
             state.set(23);
             // 保存失败状态句柄供异常返回后直接观察。
@@ -493,7 +493,7 @@ fn image_error_factory_pre_publish_panic_rolls_back_and_recovers_same_owner() {
     // 捕获错误工厂向上传播的发布前异常。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // 首次错误刷新会在 capture 内执行失败工厂。
-        let _ = tree.refresh_image_error_component(root);
+        let _ = tree.refresh_image_error_widget(root);
     }));
     // 工厂异常必须继续传播给调用方。
     assert!(result.is_err());
@@ -531,9 +531,9 @@ fn image_error_factory_pre_publish_panic_rolls_back_and_recovers_same_owner() {
             // 记录安全工厂实际执行。
             recovered_calls.fetch_add(1, Ordering::Relaxed);
             // 使用与失败工厂完全相同的组件 scope。
-            let scope = uix_component_scope("image-error-pre-publish-panic-test", 1);
+            let scope = uix_widget_scope("image-error-pre-publish-panic-test", 1);
             // 正确回滚后同一动态命名空间必须重新创建初值状态。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 保存恢复工厂取得的状态句柄。
             *safe_states
                 // 锁定共享记录只覆盖本次句柄写入。
@@ -543,7 +543,7 @@ fn image_error_factory_pre_publish_panic_rolls_back_and_recovers_same_owner() {
             // 返回可成功发布的最小错误子节点。
             ViewNode::leaf(Label::new("recovered"))
                 // 让真实节点声明同一私有状态 scope。
-                .uix_component_scope(scope, 0)
+                .uix_widget_scope(scope, 0)
         })),
     );
     // 恢复协调必须继续复用原 Image owner。
@@ -596,9 +596,9 @@ fn image_error_child_post_publish_build_panic_fail_stops_and_shutdown_releases()
             // 读取强引用计数，确保 sidecar 真实捕获关闭资源。
             let _ = Arc::strong_count(&renderer_shutdown_resource);
             // 为发布失败的错误子组件声明稳定 scope。
-            let scope = uix_component_scope("image-error-post-publish-panic-test", 1);
+            let scope = uix_widget_scope("image-error-post-publish-panic-test", 1);
             // 创建本轮发布候选私有状态。
-            let state = uix_component_state(&scope, 1, || 0_i32);
+            let state = uix_widget_state(&scope, 1, || 0_i32);
             // 读取状态以让 provisional bind 进入捕获输出。
             let _ = state.get();
             // 保存状态句柄供失败后行为观察。
@@ -623,7 +623,7 @@ fn image_error_child_post_publish_build_panic_fail_stops_and_shutdown_releases()
             // 返回会在真实 build_child_node 阶段触发异常的组件。
             ViewNode::leaf(PanicOnBuild)
                 // 让发布候选节点承载同一私有状态 scope。
-                .uix_component_scope(scope, 0)
+                .uix_widget_scope(scope, 0)
         });
     // 先挂载尚未错误的正常 Image owner。
     let mut tree = ViewAdapter::build(ViewNode::leaf(image));
@@ -638,7 +638,7 @@ fn image_error_child_post_publish_build_panic_fail_stops_and_shutdown_releases()
     // 捕获动态子节点真实 build 阶段传播的异常。
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // append_dynamic_child 会在发布事务内调用 PanicOnBuild。
-        let _ = tree.refresh_image_error_component(root);
+        let _ = tree.refresh_image_error_widget(root);
     }));
     // 发布阶段 build 异常必须继续传播给调用方。
     assert!(result.is_err());
@@ -665,7 +665,7 @@ fn image_error_child_post_publish_build_panic_fail_stops_and_shutdown_releases()
     // Effect 运行次数必须保持在创建时的一次。
     assert_eq!(effect_runs.load(Ordering::Relaxed), 1);
     // 后续迟到刷新必须在调用工厂前被拒绝。
-    assert!(!tree.refresh_image_error_component(root));
+    assert!(!tree.refresh_image_error_widget(root));
     // 被拒绝刷新不得再次执行应用工厂。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 1);
     // shutdown 前 Image 工厂 sidecar 仍持有关闭资源。
@@ -685,7 +685,7 @@ fn image_error_dynamic_capture_rejects_non_image_and_shutdown_owners() {
     // 读取普通根身份。
     let non_image_root = non_image_tree.root_id().expect("Label 必须拥有根");
     // 非 Image 节点必须安全返回 false。
-    assert!(!non_image_tree.refresh_image_error_component(non_image_root));
+    assert!(!non_image_tree.refresh_image_error_widget(non_image_root));
     // 建立带错误工厂的独立 Image 树。
     let mut image_tree = ViewAdapter::build(
         // 工厂即使存在也不得在 shutdown 后执行。
@@ -696,8 +696,8 @@ fn image_error_dynamic_capture_rejects_non_image_and_shutdown_owners() {
     );
     // 保存关闭前 Image owner 身份作为陈旧调用目标。
     let image_root = image_root(&image_tree);
-    // 关闭树使所有旧 ComponentId 与动态 renderer 所有权失效。
+    // 关闭树使所有旧 WidgetId 与动态 renderer 所有权失效。
     image_tree.shutdown();
     // shutdown 后的陈旧 Image owner 必须安全返回 false。
-    assert!(!image_tree.refresh_image_error_component(image_root));
+    assert!(!image_tree.refresh_image_error_widget(image_root));
 }

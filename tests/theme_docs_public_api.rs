@@ -93,7 +93,7 @@ mod theme_custom {
             // 创建继承外层配置的 Provider。
             ConfigProvider::new()
                 // 只覆盖 Button 的主色与圆角令牌。
-                .component_tokens::<Button>(TokenPatch {
+                .widget_tokens::<Button>(TokenPatch {
                     // 覆盖 Button 主色。
                     color_primary: Some(Color::hex("#722ed1")),
                     // 覆盖 Button 圆角。
@@ -117,8 +117,8 @@ mod theme_custom_app {
     // 暴露当前模块对应的文档编译标识。
     pub(super) const COMPILE_ID: &str = "theme-custom-app";
 
-    // 为围栏中的 render 片段提供最小公开 component 宿主。
-    component! {
+    // 为围栏中的 render 片段提供最小公开 widget 宿主。
+    widget! {
         // 声明无业务状态的主题表面组件。
         pub struct ThemedSurface {}
         // 声明最小公开构造入口。

@@ -1,4 +1,4 @@
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 use crate::ui::widget_runtime::provider_context::with_provider_context;
@@ -22,15 +22,15 @@ use crate::ui::widgets::navigation::Anchor;
 
 impl WidgetTree {
     // 判断当前节点是否仍是拥有动态条目 renderer 的 Transfer。
-    pub(crate) fn is_transfer_item_component(&self, id: ComponentId) -> bool {
+    pub(crate) fn is_transfer_item_widget(&self, id: WidgetId) -> bool {
         // 仅接受当前树中可寻址的实际 Transfer 节点。
         self.get(id)
             // 不把陈旧槽位或其他组件误判为条目动态 owner。
-            .is_some_and(|node| node.component().as_any().is::<Transfer>())
+            .is_some_and(|node| node.widget().as_any().is::<Transfer>())
     }
 
     // 为当前树中活跃的 Transfer owner 捕获并协调全部自定义条目。
-    pub(crate) fn refresh_transfer_item_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_transfer_item_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的条目 renderer。
         if !self.accepts_coordination_work() {
             // 保留既有运行时子树等待受控 teardown。
@@ -42,7 +42,7 @@ impl WidgetTree {
             return false;
         }
         // 固定入口只接受当前树中实际存在的 Transfer owner。
-        if !self.is_transfer_item_component(id) {
+        if !self.is_transfer_item_widget(id) {
             // 非 Transfer 或陈旧 generation 不执行任何应用代码。
             return false;
         }
@@ -55,7 +55,7 @@ impl WidgetTree {
             // 让条目 renderer 观察与宿主声明相同的 Provider 值。
             with_provider_context(&provider_context, || {
                 // 仅允许已验证的实际 Transfer 执行条目工厂。
-                node.component()
+                node.widget()
                     // 不向 renderer 暴露 WidgetTree 或其他组件实现。
                     .as_any()
                     // 再次按具体类型收窄，抵御陈旧身份误投递。
@@ -75,16 +75,16 @@ impl WidgetTree {
 
     // 判断当前节点是否仍是拥有专属动态容器的 Anchor。
     #[cfg(feature = "navigation")]
-    pub(crate) fn is_anchor_container_component(&self, id: ComponentId) -> bool {
+    pub(crate) fn is_anchor_container_widget(&self, id: WidgetId) -> bool {
         // 仅接受当前树中可寻址的实际 Anchor 节点。
         self.get(id)
             // 不把任意同槽位组件误判为动态容器 owner。
-            .is_some_and(|node| node.component().as_any().is::<Anchor>())
+            .is_some_and(|node| node.widget().as_any().is::<Anchor>())
     }
 
     // 为当前树中活跃的 Anchor owner 捕获并物化首次动态内容容器。
     #[cfg(feature = "navigation")]
-    pub(crate) fn refresh_anchor_container_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_anchor_container_widget(&mut self, id: WidgetId) -> bool {
         // 停止或失败树不得再调用应用容器工厂。
         if !self.accepts_coordination_work() {
             // 保留既有运行时子树，等待受控 teardown。
@@ -96,7 +96,7 @@ impl WidgetTree {
             return false;
         }
         // 固定入口只接受当前树中实际存在的 Anchor owner。
-        if !self.is_anchor_container_component(id) {
+        if !self.is_anchor_container_widget(id) {
             // 非 Anchor 或陈旧 id 不能触发任何结构更新。
             return false;
         }
@@ -114,7 +114,7 @@ impl WidgetTree {
             // 读取已经通过 owner 类型检查的实际节点。
             .get(id)
             // 恢复具体 Anchor 以查询声明开关与工厂是否同时存在。
-            .and_then(|node| node.component().as_any().downcast_ref::<Anchor>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Anchor>())
             // 只有完整声明才需要保留或首次创建动态容器。
             .is_some_and(Anchor::needs_container_view);
         // 禁用或缺少工厂时只移除旧框架容器，不执行应用代码。
@@ -137,7 +137,7 @@ impl WidgetTree {
             // 在原 Anchor 的 provider 可见范围内执行用户工厂。
             with_provider_context(&provider_context, || {
                 // 已验证类型仍使用可选 downcast 抵御同步重入。
-                node.component()
+                node.widget()
                     // 不向树外泄漏 Anchor 的具体实现。
                     .as_any()
                     // 只让当前 live Anchor 调用其私有工厂。
@@ -157,11 +157,11 @@ impl WidgetTree {
 
     // 在父声明协调完成 live Anchor patch 后，将 authored children 与当前动态容器原子协调。
     #[cfg(feature = "navigation")]
-    pub(crate) fn reconcile_anchor_container_component(
+    pub(crate) fn reconcile_anchor_container_widget(
         // 借用目标运行时树以执行同一嵌套事务。
         &mut self,
         // 接收已经完成 live Anchor 原位同步的真实组件身份。
-        id: ComponentId,
+        id: WidgetId,
         // 接收当前父声明提供的全部 authored 直接子节点。
         mut authored_children: Vec<crate::ui::view::ViewNode>,
         // 返回运行时直接子节点结构是否发生改变。
@@ -177,7 +177,7 @@ impl WidgetTree {
             return false;
         }
         // 重新确认当前槽位仍属于 live Anchor，防止错误状态命名空间接管。
-        if !self.is_anchor_container_component(id) {
+        if !self.is_anchor_container_widget(id) {
             // 安全拒绝本轮过期父协调。
             return false;
         }
@@ -200,7 +200,7 @@ impl WidgetTree {
             // 让捕获沿用 Anchor 声明期可见的 provider 值。
             with_provider_context(&provider_context, || {
                 // 使用可选 downcast 抵御用户工厂触发的同步重入。
-                node.component()
+                node.widget()
                     // 保持具体组件访问仅在树私有协调器内。
                     .as_any()
                     // 只调用 live Anchor 保存的最新容器工厂。
@@ -218,16 +218,16 @@ impl WidgetTree {
         ViewAdapter::reconcile_dynamic_children(self, id, authored_children)
     }
 
-    pub(crate) fn is_calendar_cell_component(&self, id: ComponentId) -> bool {
+    pub(crate) fn is_calendar_cell_widget(&self, id: WidgetId) -> bool {
         self.get(id).is_some_and(|node| {
-            node.component()
+            node.widget()
                 .as_any()
                 .downcast_ref::<Calendar>()
                 .is_some_and(Calendar::owns_custom_cell_children)
         })
     }
 
-    pub(crate) fn refresh_calendar_cell_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_calendar_cell_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的动态单元格 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
@@ -238,7 +238,7 @@ impl WidgetTree {
         // 确认 owner 仍是 Calendar，保留 custom 切回 plain 时的旧子树清理机会。
         let owner_is_calendar = self.get(id).is_some_and(|node| {
             // 这里只验证组件类型；是否仍需日期格由刷新差异计算决定。
-            node.component().as_any().is::<Calendar>()
+            node.widget().as_any().is::<Calendar>()
         });
         // 确认 owner 及其祖先尚未进入延迟离场阶段。
         let owner_is_leaving = self.is_pending_removal_subtree(id);
@@ -252,7 +252,7 @@ impl WidgetTree {
         let refresh = self.get(id).and_then(|node| {
             let provider_context = node.provider_context().clone();
             with_provider_context(&provider_context, || {
-                node.component()
+                node.widget()
                     .as_any()
                     .downcast_ref::<Calendar>()?
                     // 让日期格工厂在 owner、槽位和日期身份限定的捕获边界中执行。
@@ -266,26 +266,26 @@ impl WidgetTree {
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, views);
         if let Some(calendar) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Calendar>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Calendar>())
         {
             calendar.mark_cells_materialized(entries);
         }
         changed
     }
 
-    pub(crate) fn is_collapse_content_component(&self, id: ComponentId) -> bool {
+    pub(crate) fn is_collapse_content_widget(&self, id: WidgetId) -> bool {
         self.get(id)
-            .is_some_and(|node| node.component().as_any().is::<Collapse>())
+            .is_some_and(|node| node.widget().as_any().is::<Collapse>())
     }
 
-    pub(crate) fn refresh_collapse_content_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_collapse_content_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的折叠内容 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
             return false;
         }
         let refresh = self.get(id).and_then(|node| {
-            node.component()
+            node.widget()
                 .as_any()
                 .downcast_ref::<Collapse>()?
                 .content_views_for_refresh(node.children().len())
@@ -297,7 +297,7 @@ impl WidgetTree {
         ViewAdapter::reconcile_dynamic_children(self, id, views);
         if let Some(collapse) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Collapse>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Collapse>())
         {
             collapse.mark_content_materialized(entries);
         }
@@ -308,7 +308,7 @@ impl WidgetTree {
     fn image_error_capture_context(
         &self,
         // 接收将执行错误工厂的运行时 Image 节点身份。
-        id: ComponentId,
+        id: WidgetId,
     ) -> Option<crate::ui::adapter::DynamicViewCaptureContext> {
         // 失败或关闭树不得再调用应用提供的错误视图 renderer。
         if !self.accepts_coordination_work() {
@@ -322,7 +322,7 @@ impl WidgetTree {
             // 只读取当前树的实际运行时组件类型。
             .get(id)
             // 确认组件仍保持 Image 身份。
-            .is_some_and(|node| node.component().as_any().is::<Image>());
+            .is_some_and(|node| node.widget().as_any().is::<Image>());
         // 确认 owner 及其祖先尚未进入延迟离场阶段。
         let owner_is_leaving = self.is_pending_removal_subtree(id);
         // 迟到事件、陈旧 generation、非 Image 与离场节点都必须静默拒绝刷新。
@@ -338,7 +338,7 @@ impl WidgetTree {
     pub(crate) fn image_error_view_for_reconcile(
         &self,
         // 接收当前正在被父级协调的运行时节点身份。
-        id: ComponentId,
+        id: WidgetId,
     ) -> Option<crate::ui::view::ViewNode> {
         // 先取得只对当前活跃 Image owner 有效的树私有捕获能力。
         let capture_context = self.image_error_capture_context(id)?;
@@ -349,7 +349,7 @@ impl WidgetTree {
             // 在声明组件相同的 provider 可见范围内构建动态错误 View。
             with_provider_context(&provider_context, || {
                 // 只允许已验证的 Image 使用本 owner 专属捕获能力。
-                node.component()
+                node.widget()
                     // 不泄漏具体组件实现给树外部调用方。
                     .as_any()
                     // 已由签发前检查确认的转换仍使用可选路径抵御并发式重入。
@@ -360,7 +360,7 @@ impl WidgetTree {
         })
     }
 
-    pub(crate) fn refresh_image_error_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_image_error_widget(&mut self, id: WidgetId) -> bool {
         // 先取得只对当前活跃 Image owner 有效的树私有捕获能力。
         let capture_context = match self.image_error_capture_context(id) {
             // 活跃 owner 可以继续完成本轮错误 View 捕获。
@@ -371,7 +371,7 @@ impl WidgetTree {
         // 读取当前错误需求与同 key 直接子节点，运行时树是实际物化状态的权威来源。
         let Some((needs_error_view, error_child)) = self.get(id).and_then(|node| {
             // 再次确认组件仍为 Image，抵御工厂重入造成的陈旧身份。
-            let image = node.component().as_any().downcast_ref::<Image>()?;
+            let image = node.widget().as_any().downcast_ref::<Image>()?;
             // 只在 Image handler 与当前 Error 状态同时成立时保留错误子树。
             let needs_error_view = image.needs_error_view();
             // 在直接子节点中查找固定错误 key，包括尚未结束 leave 的节点。
@@ -411,7 +411,7 @@ impl WidgetTree {
                     // 读取 remove 后仍存活的父组件。
                     .get(id)
                     // 确认类型未因重入发生变化。
-                    .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                    .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
                 {
                     // 实际子节点缺席与 on_children_changed 的清理语义保持一致。
                     image.clear_error_view_materialized();
@@ -429,7 +429,7 @@ impl WidgetTree {
                 // 只读取仍属于当前 owner 的实际运行时组件。
                 .get(id)
                 // 确认类型仍是 Image 后更新其私有派生状态。
-                .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+                .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
             {
                 // 保持后续布局不会重复执行用户工厂或追加重复节点。
                 image.mark_error_view_materialized();
@@ -444,7 +444,7 @@ impl WidgetTree {
             // 在声明组件相同的 provider 可见范围内构建动态错误 View。
             with_provider_context(&provider_context, || {
                 // 只允许当前 Image 在未物化时请求首次错误子树。
-                node.component()
+                node.widget()
                     // 不泄漏具体组件实现给树外部调用方。
                     .as_any()
                     // 已由签发前检查确认的转换仍使用可选路径抵御并发式重入。
@@ -463,7 +463,7 @@ impl WidgetTree {
         }
         if let Some(image) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Image>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
         {
             image.mark_error_view_materialized();
         }
@@ -472,10 +472,10 @@ impl WidgetTree {
 
     // 表格 capability 启用时才记录扩展行子树物化状态。
     #[cfg(feature = "table")]
-    pub(crate) fn mark_table_expand_materialized(&self, id: ComponentId) {
+    pub(crate) fn mark_table_expand_materialized(&self, id: WidgetId) {
         if let Some(table) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Table>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Table>())
         {
             table.mark_expanded_child_materialized();
         }
@@ -483,7 +483,7 @@ impl WidgetTree {
 
     // 表格 capability 启用时才刷新扩展行动态子树。
     #[cfg(feature = "table")]
-    pub(crate) fn refresh_table_expand_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_table_expand_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的表格扩展行 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
@@ -494,12 +494,12 @@ impl WidgetTree {
             // 保留既有墓碑直到真实移除，不在离场阶段重建展开行子树。
             return false;
         }
-        // 陈旧 id 或非 Table owner 不能借用同一 component 槽位的 renderer。
+        // 陈旧 id 或非 Table owner 不能借用同一 widget 槽位的 renderer。
         if !self
             // 只读取当前运行时节点的实际组件类型。
             .get(id)
             // 让 Table 是本刷新入口唯一允许的 owner 类型。
-            .is_some_and(|node| node.component().as_any().is::<Table>())
+            .is_some_and(|node| node.widget().as_any().is::<Table>())
         {
             // 拒绝非 Table owner，避免状态写入错误的动态命名空间。
             return false;
@@ -510,7 +510,7 @@ impl WidgetTree {
 
         let Some((expanded_row, materialized_row, child_count, expanded)) =
             self.get(id).and_then(|node| {
-                let table = node.component().as_any().downcast_ref::<Table>()?;
+                let table = node.widget().as_any().downcast_ref::<Table>()?;
                 let expanded_row = table.expanded_row();
                 // 同时读取行快照与对应稳定键，缺少任一项时都不得执行用户 renderer。
                 let expanded = expanded_row.and_then(|index| {
@@ -562,9 +562,9 @@ impl WidgetTree {
         true
     }
 
-    pub(crate) fn refresh_virtual_scroll_component(
+    pub(crate) fn refresh_virtual_scroll_widget(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         viewport_height: Option<f32>,
     ) -> bool {
         // 失败或关闭树不得再调用应用提供的虚拟列表 renderer。
@@ -582,7 +582,7 @@ impl WidgetTree {
         }
 
         let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
-            let scroll = node.component().as_any().downcast_ref::<VirtualScroll>()?;
+            let scroll = node.widget().as_any().downcast_ref::<VirtualScroll>()?;
             let height = viewport_height
                 .filter(|height| *height > 0.0)
                 .unwrap_or_else(|| scroll.configured_viewport_height());
@@ -626,7 +626,7 @@ impl WidgetTree {
         // 成功协调后记录当前物化范围，避免同一窗口重复构建。
         if let Some(scroll) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<VirtualScroll>())
         {
             scroll.mark_children_materialized(range);
         }
@@ -636,7 +636,7 @@ impl WidgetTree {
 
     // 表格 capability 启用时才刷新泛型单元格动态子树。
     #[cfg(feature = "table")]
-    pub(crate) fn refresh_table_cell_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_table_cell_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的表格单元格 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
@@ -647,12 +647,12 @@ impl WidgetTree {
             // 保留既有墓碑直到真实移除，不在离场阶段重建单元格树。
             return false;
         }
-        // 陈旧 id 或非 Table owner 不能借用同一 component 槽位的 renderer。
+        // 陈旧 id 或非 Table owner 不能借用同一 widget 槽位的 renderer。
         if !self
             // 只读取当前运行时节点的实际组件类型。
             .get(id)
             // 让 Table 是本刷新入口唯一允许的 owner 类型。
-            .is_some_and(|node| node.component().as_any().is::<Table>())
+            .is_some_and(|node| node.widget().as_any().is::<Table>())
         {
             // 拒绝非 Table owner，避免状态写入错误的动态命名空间。
             return false;
@@ -662,7 +662,7 @@ impl WidgetTree {
         }
 
         let Some((range, needs_refresh)) = self.get(id).and_then(|node| {
-            let table = node.component().as_any().downcast_ref::<Table>()?;
+            let table = node.widget().as_any().downcast_ref::<Table>()?;
             let range = table.cell_view_range_for_frame(node.frame());
             // 离场墓碑仍保留在直接 children 链中，但不属于当前活动物化窗口。
             let mounted_children = node
@@ -687,7 +687,7 @@ impl WidgetTree {
         }
 
         let Some((row_keys, view_columns)) = self.get(id).and_then(|node| {
-            let table = node.component().as_any().downcast_ref::<Table>()?;
+            let table = node.widget().as_any().downcast_ref::<Table>()?;
             Some((table.row_keys().to_vec(), table.view_columns().to_vec()))
         }) else {
             return false;
@@ -707,14 +707,14 @@ impl WidgetTree {
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
         if let Some(table) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Table>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Table>())
         {
             table.mark_cells_materialized(range);
         }
         changed
     }
 
-    pub(crate) fn refresh_select_option_component(&mut self, id: ComponentId) -> bool {
+    pub(crate) fn refresh_select_option_widget(&mut self, id: WidgetId) -> bool {
         // 失败或关闭树不得再调用应用提供的选择项 renderer。
         if !self.accepts_coordination_work() {
             // 直接拒绝本轮刷新，保留等待 owner teardown 的既有资源。
@@ -730,7 +730,7 @@ impl WidgetTree {
             // 只读取当前运行时节点的实际组件类型。
             .get(id)
             // 让 Select 成为本刷新入口唯一允许的 owner 类型。
-            .is_some_and(|node| node.component().as_any().is::<Select>())
+            .is_some_and(|node| node.widget().as_any().is::<Select>())
         {
             // 拒绝非 Select owner，避免状态写入错误的动态命名空间。
             return false;
@@ -740,7 +740,7 @@ impl WidgetTree {
         }
 
         let Some((indices, labels, needs_refresh)) = self.get(id).and_then(|node| {
-            let select = node.component().as_any().downcast_ref::<Select>()?;
+            let select = node.widget().as_any().downcast_ref::<Select>()?;
             let indices = select.custom_option_indices();
             let labels = select.custom_option_labels(&indices);
             // 离场墓碑仍保留在直接 children 链中，但不属于当前活动选项窗口。
@@ -777,17 +777,17 @@ impl WidgetTree {
         let changed = ViewAdapter::reconcile_dynamic_children(self, id, children);
         if let Some(select) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Select>())
         {
             select.mark_custom_options_materialized(indices);
         }
         changed
     }
 
-    pub(crate) fn invalidate_select_option_component(&self, id: ComponentId) {
+    pub(crate) fn invalidate_select_option_widget(&self, id: WidgetId) {
         if let Some(select) = self
             .get(id)
-            .and_then(|node| node.component().as_any().downcast_ref::<Select>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Select>())
         {
             select.invalidate_custom_option_materialization();
         }
@@ -795,22 +795,22 @@ impl WidgetTree {
 
     // 表格 capability 启用时才查询扩展行 renderer。
     #[cfg(feature = "table")]
-    pub(crate) fn has_table_expand_renderer(&self, id: ComponentId) -> bool {
+    pub(crate) fn has_table_expand_renderer(&self, id: WidgetId) -> bool {
         self.render_handler_table.contains_table_expand(id)
     }
 
     // 表格 capability 启用时才查询泛型单元格 renderer。
     #[cfg(feature = "table")]
-    pub(crate) fn has_table_cell_renderer(&self, id: ComponentId) -> bool {
+    pub(crate) fn has_table_cell_renderer(&self, id: WidgetId) -> bool {
         self.render_handler_table.contains_table_cells(id)
     }
 
-    pub(crate) fn has_select_option_renderer(&self, id: ComponentId) -> bool {
+    pub(crate) fn has_select_option_renderer(&self, id: WidgetId) -> bool {
         self.render_handler_table.contains_select_options(id)
     }
 
     // 供声明树协调器区分 VirtualScroll 动态子树与普通空子列表。
-    pub(crate) fn has_virtual_scroll_renderer(&self, id: ComponentId) -> bool {
+    pub(crate) fn has_virtual_scroll_renderer(&self, id: WidgetId) -> bool {
         // sidecar 中存在行 renderer 即表示子项由虚拟窗口专用入口拥有。
         self.render_handler_table.contains_virtual_scroll_item(id)
     }

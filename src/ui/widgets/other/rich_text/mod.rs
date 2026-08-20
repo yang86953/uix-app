@@ -21,16 +21,16 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields,
-    SystemEvent, UserSelect, WidgetTree,
+    EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    UserSelect, WidgetId, WidgetTree,
 };
+use crate::widget;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据类型
@@ -183,7 +183,7 @@ enum RichTextPointerAction {
 // Widget
 // ════════════════════════════════════════════════════════════════════════════
 
-component! {
+widget! {
     /// 富文本显示组件
     ///
     /// 支持带样式的分段文本、内联代码、可点击链接、自动换行和文字选择。
@@ -504,7 +504,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_submit.borrow_mut().take().map(|url| {
             // E-07：on_link 便捷回调与既有 SemanticKind::Submit 语义事件共存。
             if let Some(callback) = &self.on_link {

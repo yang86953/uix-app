@@ -62,7 +62,7 @@ use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::view::ViewNode;
 use crate::ui::{
-    AppState, ComponentConfig, Locale, SystemEvent, WidgetTree, with_config, with_locale,
+    AppState, Locale, SystemEvent, WidgetConfig, WidgetTree, with_config, with_locale,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -186,7 +186,7 @@ impl App {
     }
 
     /// 设置所有窗口根 View 的组件默认配置；子树可由 `ConfigProvider` 覆写。
-    pub fn config(mut self, config: ComponentConfig) -> Self {
+    pub fn config(mut self, config: WidgetConfig) -> Self {
         self.container.singleton(config);
         self
     }
@@ -602,15 +602,15 @@ impl App {
                 Locale::default()
             }
         };
-        // DI 未注册 ComponentConfig 时回退默认配置并记录缺失（保持回退行为）。
-        let component_config = match self.container.resolve_clone::<ComponentConfig>() {
-            Some(component_config) => component_config,
+        // DI 未注册 WidgetConfig 时回退默认配置并记录缺失（保持回退行为）。
+        let widget_config = match self.container.resolve_clone::<WidgetConfig>() {
+            Some(widget_config) => widget_config,
             None => {
                 tracing::warn!(
-                    ty = %std::any::type_name::<ComponentConfig>(),
+                    ty = %std::any::type_name::<WidgetConfig>(),
                     "DI resolve failed, falling back to default"
                 );
-                ComponentConfig::default()
+                WidgetConfig::default()
             }
         };
 
@@ -620,7 +620,7 @@ impl App {
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
             move || {
-                with_config(&component_config, || {
+                with_config(&widget_config, || {
                     with_locale(&locale, || {
                         // 初始主窗通过统一入口应用根背景默认值并组装逐窗反馈浮层。
                         prepare_app_root(

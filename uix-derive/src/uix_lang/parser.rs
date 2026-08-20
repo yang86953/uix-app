@@ -4,10 +4,9 @@ mod control_binding;
 mod element_parser;
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    ComponentStateInitial, ComponentValueType, Cursor, Declaration, Diagnostic, Document,
-    SourceSpan, parse_at_declaration, parse_component_declaration, parse_record_declaration,
-    parse_style_class, register_declaration_name, starts_component_declaration,
-    starts_record_declaration,
+    Cursor, Declaration, Diagnostic, Document, SourceSpan, WidgetStateInitial, WidgetValueType,
+    parse_at_declaration, parse_record_declaration, parse_style_class, parse_widget_declaration,
+    register_declaration_name, starts_record_declaration, starts_widget_declaration,
 };
 // 引入拆分后的元素解析入口。
 use element_parser::parse_element;
@@ -32,7 +31,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
     // 保存已声明关键帧名。
     let mut keyframe_names = HashSet::new();
     // 保存已声明组件名。
-    let mut component_names = HashSet::new();
+    let mut widget_names = HashSet::new();
     // 解析根元素之前的声明区。
     loop {
         // @ 前缀开始导入、导出或主题声明。
@@ -48,14 +47,12 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
         {
             // 解析具名样式类。
             Some(parse_style_class(&mut cursor)?)
-        // 解析并验证顶层 Component 声明。
-        } else if starts_component_declaration(&cursor) {
+        // 解析并验证顶层 Widget 声明。
+        } else if starts_widget_declaration(&cursor) {
             // 先复用通用元素解析器读取组件体。
             let element = parse_element(&mut cursor, true)?;
-            // 再验证 Component 元数据与字段类型。
-            Some(Declaration::Component(parse_component_declaration(
-                element,
-            )?))
+            // 再验证 Widget 元数据与字段类型。
+            Some(Declaration::Widget(parse_widget_declaration(element)?))
         // 解析并验证顶层 Record 声明。
         } else if starts_record_declaration(&cursor) {
             // 先复用通用元素解析器读取自闭合 record 标签。
@@ -82,7 +79,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             // 传递关键帧名称集合。
             &mut keyframe_names,
             // 传递组件名称集合。
-            &mut component_names,
+            &mut widget_names,
         )?;
         // 保存声明顺序。
         declarations.push(declaration);
@@ -115,8 +112,8 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
                 .peek()
                 // 验证标识符首字符。
                 .is_some_and(|value| value.is_ascii_alphabetic() || value == '_')
-            // Component 也属于顶层声明。
-            || starts_component_declaration(&cursor);
+            // Widget 也属于顶层声明。
+            || starts_widget_declaration(&cursor);
         // 为声明顺序提供专用诊断。
         if declaration_after_root {
             // 返回声明位置诊断。
@@ -126,7 +123,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
                 // 陈述失败原因。
                 "顶层声明必须位于根元素之前",
                 // 给出修复建议。
-                "把 @import、@export、@theme、样式类或 Component 移到文档开头",
+                "把 @import、@export、@theme、样式类或 Widget 移到文档开头",
             ));
         }
         // 返回第二根或尾随内容诊断。
@@ -174,11 +171,11 @@ fn validate_record_references(document: &Document) -> Result<(), Diagnostic> {
         // 按声明类别校验。
         match declaration {
             // 组件私有 state 的类型注解可能引用 record。
-            Declaration::Component(component) => {
+            Declaration::Widget(widget) => {
                 // 遍历组件 state。
-                for state in &component.states {
+                for state in &widget.states {
                     // 只有类型化初始值带类型引用。
-                    if let ComponentStateInitial::TypedExpression(value_type, _) = &state.initial {
+                    if let WidgetStateInitial::TypedExpression(value_type, _) = &state.initial {
                         // 校验类型中的 record 引用。
                         validate_value_type_record(value_type, &record_names, state.span)?;
                     }
@@ -203,7 +200,7 @@ fn validate_record_references(document: &Document) -> Result<(), Diagnostic> {
 // 递归校验单个类型中的 record 引用。
 fn validate_value_type_record(
     // 接收待校验类型。
-    value_type: &ComponentValueType,
+    value_type: &WidgetValueType,
     // 接收已声明 record 名集合。
     record_names: &HashSet<&str>,
     // 接收诊断定位跨度。
@@ -212,9 +209,9 @@ fn validate_value_type_record(
     // 提取直接 record 或 Vec<Record> 的引用名称。
     let name = match value_type {
         // 直接 record 引用。
-        ComponentValueType::Record(name) => name,
+        WidgetValueType::Record(name) => name,
         // record 集合元素引用。
-        ComponentValueType::VecOfRecord(name) => name,
+        WidgetValueType::VecOfRecord(name) => name,
         // 基础类型没有嵌套引用。
         _ => return Ok(()),
     };

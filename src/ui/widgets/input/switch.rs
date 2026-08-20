@@ -1,19 +1,19 @@
 //! Switch — on/off toggle switch.
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
 const THUMB_INSET: f32 = 2.0;
 
-component! {
+widget! {
     /// 支持受控布尔状态、标签和键盘切换的开关组件。
     pub struct Switch {
         // 展示名称，供无障碍播报与语义快照使用。
@@ -102,7 +102,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|checked| SemanticEvent::change(id, checked.to_string()))

@@ -10,9 +10,9 @@ impl WidgetTree {
     }
 
     /// 拆除现有树，并将组件及其构建出的后代安装为新根。
-    pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
+    pub fn set_root(&mut self, widget: Box<dyn Widget>) -> WidgetId {
         // 公开换根会调用用户 build 与生命周期，必须统一进入 panic 事务边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 事务内部使用不会再次建立独立提交点的核心实现。
             tree.set_root_with_context(widget, current_provider_context(), true)
         })
@@ -20,10 +20,10 @@ impl WidgetTree {
 
     pub(super) fn set_root_with_context(
         &mut self,
-        widget: Box<dyn WidgetComponent>,
+        widget: Box<dyn Widget>,
         provider_context: ProviderContext,
         include_view_children: bool,
-    ) -> ComponentId {
+    ) -> WidgetId {
         // 换根会立即拆除既有运行时树，先线性化不可回滚发布。
         self.mark_coordination_publish_started();
         if let Some(root) = self.root_id {
@@ -33,7 +33,7 @@ impl WidgetTree {
         // 完整换根会销毁全部运行时节点，先逐个释放它们的动画源所有权。
         self.clear_node_animated_source_owners();
 
-        // Hard reset: clear the old tree and invalidate every previous ComponentId.
+        // Hard reset: clear the old tree and invalidate every previous WidgetId.
         self.nodes.clear();
         self.free_slots.clear();
         for generation in &mut self.generations {
@@ -44,7 +44,7 @@ impl WidgetTree {
         self.handler_table.clear();
         self.render_handler_table.clear();
         self.overlay_stack.clear();
-        self.active_component_animations.clear();
+        self.active_widget_animations.clear();
         self.managers.clear_overrides();
         self.focus_handles.clear();
         self.reset_interaction_state();
@@ -80,32 +80,28 @@ impl WidgetTree {
         // 公开直接换根不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
             // 此时 root 已注册为真实 Transfer owner，可安全捕获自定义条目。
-            self.refresh_transfer_item_component(id);
+            self.refresh_transfer_item_widget(id);
             // 此时 root 已注册为真实 Carousel owner，可安全捕获自定义箭头。
-            self.refresh_carousel_custom_arrows_component(id);
+            self.refresh_carousel_custom_arrows_widget(id);
             // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
-            self.refresh_calendar_cell_component(id);
+            self.refresh_calendar_cell_widget(id);
             // 导航 capability 启用时也物化 root Anchor 的首次动态容器。
             #[cfg(feature = "navigation")]
             // 此时 root 已是 live owner，捕获能力绑定本树私有状态存储。
-            self.refresh_anchor_container_component(id);
+            self.refresh_anchor_container_widget(id);
         }
         self.push_layout_invalidation(id);
         id
     }
 
     /// 将组件及其构建出的后代添加到指定父节点下。
-    pub fn add_child(
-        &mut self,
-        parent_id: ComponentId,
-        child: Box<dyn WidgetComponent>,
-    ) -> ComponentId {
+    pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn Widget>) -> WidgetId {
         let provider_context = self
             .get(parent_id)
             .map(|parent| parent.provider_context().clone())
             .unwrap_or_else(current_provider_context);
         // 公开加子节点会调用用户 build、attach 与父节点通知，统一捕获发布异常。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 事务内部直接调用核心插入实现，避免产生第二个线性化点。
             tree.add_child_with_context(parent_id, child, provider_context, true)
         })
@@ -113,11 +109,11 @@ impl WidgetTree {
 
     pub(super) fn add_child_with_context(
         &mut self,
-        parent_id: ComponentId,
-        child: Box<dyn WidgetComponent>,
+        parent_id: WidgetId,
+        child: Box<dyn Widget>,
         provider_context: ProviderContext,
         include_view_children: bool,
-    ) -> ComponentId {
+    ) -> WidgetId {
         // 插入子节点会改写真实槽位与父子结构，先记录发布事实。
         self.mark_coordination_publish_started();
         self.tree_version += 1;
@@ -153,15 +149,15 @@ impl WidgetTree {
         // 公开直接加子节点不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
             // 此时 child 已连接父树，可安全捕获 Transfer 自定义条目。
-            self.refresh_transfer_item_component(child_id);
+            self.refresh_transfer_item_widget(child_id);
             // 此时 child 已连接父树，可安全捕获 Carousel 自定义箭头。
-            self.refresh_carousel_custom_arrows_component(child_id);
+            self.refresh_carousel_custom_arrows_widget(child_id);
             // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
-            self.refresh_calendar_cell_component(child_id);
+            self.refresh_calendar_cell_widget(child_id);
             // 导航 capability 启用时也物化直接追加 Anchor 的首次动态容器。
             #[cfg(feature = "navigation")]
             // 此时 child 已连接父树，捕获与离场检查使用真实 owner。
-            self.refresh_anchor_container_component(child_id);
+            self.refresh_anchor_container_widget(child_id);
         }
 
         // 结构变化：Layout 失效向上传播。
@@ -179,7 +175,7 @@ impl WidgetTree {
             return;
         }
         // 生命周期可见性切换可能执行用户回调，统一进入树事务异常边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 事务内部执行唯一一次真实可见性发布。
             tree.set_node_visibility_in_transaction(id, visible);
         });
@@ -204,9 +200,9 @@ impl WidgetTree {
     // WidgetNode tree building.
 
     /// 使用声明式节点及其后代重建组件树。
-    pub fn build(&mut self, node: WidgetNode) -> ComponentId {
+    pub fn build(&mut self, node: WidgetNode) -> WidgetId {
         // 公开 WidgetNode 建树仍可能调用组件生命周期与动态 renderer。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 整树构建会替换根与节点结构，先记录不可回滚发布事实。
             tree.mark_coordination_publish_started();
             // 直接重建整树前释放旧根持有的结构性 State 租约。
@@ -218,23 +214,23 @@ impl WidgetTree {
 
     pub(crate) fn build_child_node(&mut self, parent_id: WidgetId, node: WidgetNode) -> WidgetId {
         // crate 内动态入口也必须共享相同 panic 边界，防止未来调用者漏包事务。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 在当前或嵌套事务内递归建立子树。
             tree.build_node(node, Some(parent_id))
         })
     }
 
     /// 用新的声明式节点列表替换指定父节点的全部子树。
-    pub fn set_children(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
+    pub fn set_children(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
         // 公开子列表替换可能触发生命周期与 renderer，统一建立事务边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 在同一事务中完成全部旧子节点移除与新子树构建。
             tree.set_children_in_transaction(parent_id, children);
         });
     }
 
     // 在既有事务内完成子列表的不可回滚发布。
-    fn set_children_in_transaction(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
+    fn set_children_in_transaction(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
         // 子列表替换会移除并重建真实节点，先记录不可回滚发布事实。
         self.mark_coordination_publish_started();
         let old_children: Vec<WidgetId> = self
@@ -277,19 +273,19 @@ impl WidgetTree {
             render_handlers,
             captured_state_binds,
             captured_effects,
-            uix_component_scopes,
+            uix_widget_scopes,
             animated_sources,
         } = node;
         let id = match parent {
             Some(parent) => self.add_child_with_context(parent, widget, provider_context, false),
             None => self.set_root_with_context(widget, provider_context, false),
         };
-        let component_view_children = self
+        let widget_view_children = self
             .get(id)
             .map(|current| {
                 let provider_context = current.provider_context().clone();
                 with_provider_context(&provider_context, || {
-                    crate::ui::adapter::view_children(current.component())
+                    crate::ui::adapter::view_children(current.widget())
                 })
             })
             .unwrap_or_default();
@@ -318,7 +314,7 @@ impl WidgetTree {
             // 把成功挂载节点拥有的 Effect 与其真实生命周期绑定。
             node.replace_captured_effects(captured_effects);
             // 保存声明展开携带的全部组件私有状态作用域。
-            node.set_uix_component_scopes(uix_component_scopes);
+            node.set_uix_widget_scopes(uix_widget_scopes);
         }
         // 在构建任何后代前让当前节点取得稳定有效选择策略。
         self.set_node_user_select(id, user_select);
@@ -341,11 +337,11 @@ impl WidgetTree {
             self.handler_table.register(id, handler);
         }
         self.render_handler_table
-            .replace_component(id, render_handlers);
+            .replace_widget(id, render_handlers);
         // 初建 authored slide 不得占用 Carousel 固定动态箭头的保留 key。
         assert!(
             // 非 Carousel 节点不受该专属身份约束。
-            !self.is_carousel_custom_arrows_component(id)
+            !self.is_carousel_custom_arrows_widget(id)
                 // Carousel 的全部 authored 直接子节点必须避开框架固定 key。
                 || children.iter().all(|child| {
                     // 只比较同一父级 keyed 协调使用的直接根 key。
@@ -363,7 +359,7 @@ impl WidgetTree {
         #[cfg(feature = "navigation")]
         assert!(
             // 非 Anchor 节点不受该专属动态容器身份约束。
-            !self.is_anchor_container_component(id)
+            !self.is_anchor_container_widget(id)
                 // Anchor 的声明直接子节点不得伪装为框架动态容器。
                 || children.iter().all(|child| {
                     // 只比较同一父级 keyed 协调使用的直接根 key。
@@ -376,27 +372,27 @@ impl WidgetTree {
         for child in children {
             self.build_node(child, Some(id));
         }
-        for child in component_view_children {
+        for child in widget_view_children {
             self.build_node(ViewAdapter::expand(child), Some(id));
         }
-        self.refresh_virtual_scroll_component(id, None);
+        self.refresh_virtual_scroll_widget(id, None);
         // 表格 capability 启用时才刷新泛型单元格子树。
         #[cfg(feature = "table")]
-        self.refresh_table_cell_component(id);
+        self.refresh_table_cell_widget(id);
         // 表格 capability 启用时才刷新扩展行子树。
         #[cfg(feature = "table")]
-        self.refresh_table_expand_component(id);
-        self.refresh_select_option_component(id);
+        self.refresh_table_expand_widget(id);
+        self.refresh_select_option_widget(id);
         // Transfer 注册为真实 owner 后立即物化自定义条目并交接私有运行时输出。
-        self.refresh_transfer_item_component(id);
+        self.refresh_transfer_item_widget(id);
         // Carousel 注册为真实 owner 后立即物化固定自定义箭头。
-        self.refresh_carousel_custom_arrows_component(id);
+        self.refresh_carousel_custom_arrows_widget(id);
         // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
-        self.refresh_calendar_cell_component(id);
+        self.refresh_calendar_cell_widget(id);
         // 导航 capability 启用时在 authored children 挂载后物化 Anchor 动态容器。
         #[cfg(feature = "navigation")]
         // 初建路径使用窄追加，绝不以仅含容器的 reconcile 吞掉 authored children。
-        self.refresh_anchor_container_component(id);
+        self.refresh_anchor_container_widget(id);
         // 节点及其所有递归子树成功建立后，才提交该节点捕获的动画源所有权。
         self.replace_node_animated_sources(id, animated_sources);
         id

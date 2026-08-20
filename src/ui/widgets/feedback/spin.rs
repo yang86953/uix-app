@@ -1,12 +1,12 @@
 //! 提供动画加载指示器。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::draw::painting::PaintPass;
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,7 +20,7 @@ pub enum SpinSize {
     Large,
 }
 
-component! {
+widget! {
     /// 显示可延迟启动的动画加载指示器。
     pub struct Spin {
         size: SpinSize,
@@ -38,7 +38,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         if !self.wrapper_mode {
             return Vec::new();

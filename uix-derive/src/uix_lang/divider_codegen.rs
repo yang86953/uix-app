@@ -22,7 +22,7 @@ pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnos
             "使用 <Divider />，并通过 text 属性声明标签文字",
         ));
     }
-    // 从现有公开 Divider Component 默认契约开始构建。
+    // 从现有公开 Divider Widget 默认契约开始构建。
     let mut divider = quote! { ::uix::prelude::Divider::new() };
     // 按源码顺序应用 Divider 专有属性。
     for attribute in &element.attributes {
@@ -82,7 +82,7 @@ pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnos
             _ => {}
         }
     }
-    // 把现有 WidgetComponent 包装成公开 ViewNode。
+    // 把现有 Widget 包装成公开 ViewNode。
     let base = quote! { ::uix::prelude::ViewNode::leaf(#divider) };
     // 专有属性消费后继续复用统一样式与事件诊断路径。
     apply_common_attributes(

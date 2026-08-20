@@ -1,7 +1,7 @@
 //! View 声明样式到具体组件私有配置的适配边界。
 
 // 引入组件公开运行契约。
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 // 引入 UI System 拥有的统一样式值。
 use crate::ui::theme::style::Style;
 // 引入窗口交互区域的专用样式适配入口。
@@ -16,11 +16,11 @@ use super::ViewAdapter;
 impl ViewAdapter {
     // 把声明样式应用到当前具体组件并保留组件私有语义。
     pub(crate) fn apply_style(
-        mut widget: Box<dyn WidgetComponent>,
+        mut widget: Box<dyn Widget>,
         style: &Style,
         flex_grow_override: Option<f32>,
         flex_shrink_override: Option<f32>,
-    ) -> Box<dyn WidgetComponent> {
+    ) -> Box<dyn Widget> {
         let style_is_default = style == &Style::default();
         if style_is_default && flex_grow_override.is_none() && flex_shrink_override.is_none() {
             return widget;

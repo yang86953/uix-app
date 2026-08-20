@@ -301,7 +301,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
 
 // 只在测试构建中编译共享文本度量契约。
 #[cfg(test)]
-// 将纯算法测试限制在拥有实现的 UI component Module 内。
+// 将纯算法测试限制在拥有实现的 UI widget Module 内。
 // 将测试实现统一存放在根 tests 目录。
 #[path = "../../../tests/unit/ui/widget_runtime/paint_context__text_measure_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。

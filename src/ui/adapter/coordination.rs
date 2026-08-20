@@ -13,16 +13,16 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收现有运行时树。
         tree: &WidgetTree,
         // 接收待复用节点身份。
-        id: crate::ui::ComponentId,
+        id: crate::ui::WidgetId,
         // 接收新一轮声明节点。
         node: &ViewNode,
     ) -> bool {
         // 类型相同仍需要求内联组件作用域列表完全一致。
         tree.get(id).is_some_and(|current| {
             // 组件具体类型必须保持一致。
-            current.component().as_any().type_id() == node.widget_type_id()
+            current.widget().as_any().type_id() == node.widget_type_id()
                 // 根序号与嵌套顺序共同决定实际组件实例身份。
-                && current.uix_component_scopes() == node.uix_component_scopes.as_slice()
+                && current.uix_widget_scopes() == node.uix_widget_scopes.as_slice()
         })
     }
 
@@ -65,12 +65,12 @@ impl crate::ui::adapter::ViewAdapter {
     pub(crate) fn build_nodes(mut root: ViewNode) -> WidgetTree {
         // 复用捕获根携带的存储，保证首次构建与后续协调归属同一窗口。
         let mut tree = root
-            .component_state_store
+            .widget_state_store
             .take()
-            .map(WidgetTree::with_component_state_store)
+            .map(WidgetTree::with_widget_state_store)
             .unwrap_or_default();
         // 在纯展开前转移全部 journal，保证展开 panic 时回执自动回滚。
-        let receipts = crate::ui::adapter::capture_guards::take_component_state_receipts(&mut root);
+        let receipts = crate::ui::adapter::capture_guards::take_widget_state_receipts(&mut root);
         // 在建树成功前仅暂存根动画源，避免展开 panic 提前替换所有权。
         let animated_sources = std::mem::take(&mut root.animated_sources);
         // 在展开前取出根结构绑定，避免消费声明根后丢失交接所有权。
@@ -80,7 +80,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 纯声明展开在事务发布线前完成，失败时新建树与回执会一同释放。
         let wnode = Self::expand(root);
         // 事务只覆盖运行时发布，panic 会由 WidgetTree 的私有状态机接管。
-        tree.with_component_state_transaction(receipts, |tree| {
+        tree.with_widget_state_transaction(receipts, |tree| {
             // 从此行起运行时结构可能已不可逆，必须进入 fail-stop 保护范围。
             tree.mark_coordination_publish_started();
             // 挂载完整 WidgetNode 树。
@@ -105,7 +105,7 @@ impl crate::ui::adapter::ViewAdapter {
             return;
         }
         // 复用目标树的存储，防止测试协调分配新的私有状态。
-        let store = tree.component_state_store();
+        let store = tree.widget_state_store();
         // 在取得存储后完成一次声明根捕获。
         let root = Self::capture_root_with_store(store, || view.build());
         // 用带有复用状态的根协调目标树。
@@ -120,7 +120,7 @@ impl crate::ui::adapter::ViewAdapter {
             return;
         }
         // 在消费声明树前转移全部 journal，保证纯展开异常仍由回执回滚。
-        let receipts = crate::ui::adapter::capture_guards::take_component_state_receipts(&mut root);
+        let receipts = crate::ui::adapter::capture_guards::take_widget_state_receipts(&mut root);
         // 在协调成功前仅暂存根动画源，保留 panic 前的旧根注册。
         let animated_sources = std::mem::take(&mut root.animated_sources);
         // 在准备阶段取出根结构绑定，保持事务发布线之后只处理运行时写入。
@@ -134,7 +134,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 用私有计划把纯展开严格留在首次不可逆发布前。
         enum ReconcilePlan {
             // 保留既有节点身份并协调其可变状态。
-            Reuse(crate::ui::ComponentId, ViewNode),
+            Reuse(crate::ui::WidgetId, ViewNode),
             // 使用已完成的纯展开结果替换根节点。
             Replace(crate::ui::widget_runtime::widget::WidgetNode),
         }
@@ -146,7 +146,7 @@ impl crate::ui::adapter::ViewAdapter {
             None => ReconcilePlan::Replace(Self::expand(root)),
         };
         // 事务覆盖整次发布，允许同轮类型替换继续复用捕获到的状态。
-        tree.with_component_state_transaction(receipts, |tree| {
+        tree.with_widget_state_transaction(receipts, |tree| {
             // 此后任意 panic 都必须把已触及的运行时树置为 fail-stop。
             tree.mark_coordination_publish_started();
             // 按准备阶段确定的唯一计划发布运行时变更。

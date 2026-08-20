@@ -1,6 +1,5 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
@@ -8,11 +7,12 @@ use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
-component! {
+widget! {
     /// 支持受控勾选状态、标签和禁用语义的复选框组件。
     pub struct Checkbox {
         checked: bool,
@@ -99,7 +99,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|checked| SemanticEvent::change(id, checked.to_string()))

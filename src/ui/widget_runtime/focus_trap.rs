@@ -1,15 +1,15 @@
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
+use crate::widget;
 use std::collections::HashSet;
 
 /// 按给定顺序返回相邻焦点并在两端循环；无当前项时从导航方向起点开始。
 pub fn next_focus_in_order(
-    focusable: &[ComponentId],
-    current: Option<ComponentId>,
+    focusable: &[WidgetId],
+    current: Option<WidgetId>,
     forward: bool,
-) -> Option<ComponentId> {
+) -> Option<WidgetId> {
     if focusable.is_empty() {
         return None;
     }
@@ -31,13 +31,13 @@ pub fn next_focus_in_order(
     }
 }
 
-component! {
+widget! {
     /// Dispatch-managed focus trap metadata and cycling helper.
     pub struct FocusTrap {
         /// Whether focus trapping is active.
         active: bool,
         /// Focusable widgets captured after layout.
-        focusable_ids: HashSet<ComponentId>,
+        focusable_ids: HashSet<WidgetId>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -45,7 +45,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         children.iter().map(|child| (child.id, frame)).collect()
     }
@@ -84,16 +84,16 @@ impl FocusTrap {
     }
 
     /// Updates the focusable widget list after layout.
-    pub fn update_focusable(&mut self, ids: HashSet<ComponentId>) {
+    pub fn update_focusable(&mut self, ids: HashSet<WidgetId>) {
         self.focusable_ids = ids;
     }
 
     /// 按组件身份排序后返回作用域内的相邻焦点；禁用或空作用域返回 `None`。
-    pub fn next_focus(&self, current: Option<ComponentId>, forward: bool) -> Option<ComponentId> {
+    pub fn next_focus(&self, current: Option<WidgetId>, forward: bool) -> Option<WidgetId> {
         if !self.active {
             return None;
         }
-        let mut sorted: Vec<ComponentId> = self.focusable_ids.iter().copied().collect();
+        let mut sorted: Vec<WidgetId> = self.focusable_ids.iter().copied().collect();
         sorted.sort();
         next_focus_in_order(&sorted, current, forward)
     }

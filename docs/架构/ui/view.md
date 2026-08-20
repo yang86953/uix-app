@@ -14,11 +14,11 @@
 | `ViewNode` | struct | 组件类型、key、子树、handler 与 Provider 上下文 |
 | `ViewAdapter` | internal adapter | ViewNode 到 WidgetNode/patch 的桥 |
 | combinators | functions/builders | 声明组件、样式、事件、动画与子树 |
-| `component!` 等宏 | macro | 生成组件样板和能力实现 |
+| `widget!` 等宏 | macro | 生成 widget 样板和能力实现 |
 
 ## 组件：ViewNode
 
-ViewNode 是声明快照，不是持久组件。reconcile 以父范围内“同类型 + 同 key”保留 ComponentId 和运行态；类型或 key 变化才销毁重建。
+ViewNode 是声明快照，不是持久组件。reconcile 以父范围内“同类型 + 同 key”保留 WidgetId 和运行态；类型或 key 变化才销毁重建。
 
 ViewNode 保存 owned 声明值、稳定 key 和 side-table 登记签名，不拥有 `WidgetNode`、平台对象或可变 handler。相同父范围内重复 key 属于歧义输入，必须在改写现有树前返回 typed error，不能按遍历顺序任意接管旧身份。
 

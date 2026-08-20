@@ -5,9 +5,9 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
+use crate::widget;
 // 引入排版快照契约。
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::clipboard;
@@ -20,8 +20,8 @@ use crate::ui::theme::style::{
 };
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
-    ColorValue, ComponentId, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent,
-    UserSelect, WidgetTree,
+    ColorValue, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, UserSelect,
+    WidgetId, WidgetTree,
 };
 
 use super::icon::Icon;
@@ -45,7 +45,7 @@ pub enum TypographyType {
     Text,
 }
 
-component! {
+widget! {
     /// 按标题、段落或普通文本语义绘制并支持行内样式的排版组件。
     pub struct Typography {
         content: String,
@@ -207,7 +207,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_submit
             .replace(false)
             .then(|| SemanticEvent::submit(id, "copied"))

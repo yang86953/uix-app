@@ -3,7 +3,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::component;
 use crate::core::error::{Error, Result as CoreResult};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
@@ -13,6 +12,7 @@ use crate::ui::animation::AnimationConfig;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SystemEvent};
+use crate::widget;
 
 // 引入关闭原因以区分用户关闭与到期关闭。
 use super::declaration::FeedbackCloseReason;
@@ -24,7 +24,7 @@ mod layout;
 pub use self::item::{NotificationHandle, NotificationItem};
 use self::layout::{fade_color, finite_or_zero, transitioned_rect, union_nonempty};
 
-component! {
+widget! {
     /// 拥有窗口内通知队列、过渡动画与放置方向的浮层宿主组件。
     pub struct Notification {
         queue: ToastQueue<NotificationItem>,
@@ -276,7 +276,7 @@ component! {
         self.hit_bounds(frame).unwrap_or_else(Rect::zero)
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         let frame = self.remember_frame(frame);
         self.sync_motion();
         let bounds = self.motion_paint_bounds(frame);

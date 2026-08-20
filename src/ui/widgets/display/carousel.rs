@@ -4,15 +4,14 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 
 use crate::ui::children::WidgetChildren;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetComponent,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
 use crate::ui::{SemanticKind, SemanticPayload, SnapshotFields};
 
@@ -198,7 +197,7 @@ struct DotStrip {
     dot_height: f32,
 }
 
-component! {
+widget! {
     /// Displays one child at a time with dot and arrow controls.
     pub struct Carousel {
         children: WidgetChildren,
@@ -234,7 +233,7 @@ component! {
         if self.fixed_width.is_some() || self.fixed_height.is_some() { 0.0 } else { 1.0 }
     }
 
-    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
+    build => (&self) -> Vec<Box<dyn Widget>> {
         let children = self.children.take();
         if !children.is_empty() {
             self.runtime.set_child_count(children.len());
@@ -352,7 +351,7 @@ component! {
 
     wants_capture_phase => (&self) -> bool { true }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.runtime
             .pending_change
             .take()
@@ -496,7 +495,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         let frame = Self::normalized_frame(frame);
         self.last_frame

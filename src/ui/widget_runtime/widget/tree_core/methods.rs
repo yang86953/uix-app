@@ -8,34 +8,32 @@ use crate::ui::widget_runtime::managers::WidgetManagers;
 
 impl WidgetTree {
     // 在事务外实际移除节点后立即释放不再被任何节点承载的作用域状态。
-    pub(crate) fn prune_component_state_scopes_if_idle(&mut self) {
+    pub(crate) fn prune_widget_state_scopes_if_idle(&mut self) {
         // leave 过渡或协调事务期间必须保留状态直到最终树稳定。
-        if self.component_state_transaction_depth == 0 {
+        if self.widget_state_transaction_depth == 0 {
             // 删除真正缺席的条件分支状态。
-            self.prune_component_state_scopes();
+            self.prune_widget_state_scopes();
         }
     }
 
     // 收集实际仍挂载的作用域并交给窗口私有存储执行清理。
-    fn prune_component_state_scopes(&mut self) {
+    fn prune_widget_state_scopes(&mut self) {
         // 收集当前实际运行时树承载的全部作用域。
-        let live_scopes = self.component_state_live_scopes();
+        let live_scopes = self.widget_state_live_scopes();
         // 仅删除本树中已没有承载节点的私有状态。
-        self.component_state_store.retain_scopes(&live_scopes);
+        self.widget_state_store.retain_scopes(&live_scopes);
     }
 
     // 收集当前实际运行时树仍承载的全部组件私有状态作用域。
-    pub(super) fn component_state_live_scopes(
-        &self,
-    ) -> std::collections::HashSet<UixComponentScope> {
+    pub(super) fn widget_state_live_scopes(&self) -> std::collections::HashSet<UixWidgetScope> {
         // 建立不受节点遍历借用影响的作用域集合。
-        let mut live_scopes = std::collections::HashSet::<UixComponentScope>::new();
+        let mut live_scopes = std::collections::HashSet::<UixWidgetScope>::new();
         // 遍历所有尚未从树中实际删除的节点。
         for &id in self.traverse().iter() {
             // 读取当前节点保留的全部嵌套组件标记。
             if let Some(node) = self.get(id) {
                 // 一个实际节点可能同时承载多层内联组件作用域。
-                for marker in node.uix_component_scopes() {
+                for marker in node.uix_widget_scopes() {
                     // 记录作用域身份而忽略仅用于节点身份的根序号。
                     live_scopes.insert(marker.scope().clone());
                 }
@@ -54,7 +52,7 @@ impl WidgetTree {
             return;
         }
         self.keyboard_focus_visible = visible;
-        if let Some(focused) = self.managers.focus.focused_component() {
+        if let Some(focused) = self.managers.focus.focused_widget() {
             self.invalidate_paint(focused);
         }
     }
@@ -107,7 +105,7 @@ impl WidgetTree {
     /// 接管 AppState 句柄并事务化同步当前已挂载节点快照。
     pub fn set_app_state(&mut self, app_state: AppState) {
         // AppState 快照会调用组件快照能力，公开入口必须建立异常事务边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 外部注册一旦开始便不可回滚，先记录真实资源发布。
             tree.mark_coordination_publish_started();
             // 接管新的应用状态共享句柄。
@@ -191,7 +189,7 @@ impl WidgetTree {
                     }
                 }
                 crate::ui::widget_runtime::app_state::FocusRequest::Blur => {
-                    if self.managers.focus.focused_component() == Some(id) {
+                    if self.managers.focus.focused_widget() == Some(id) {
                         self.set_focus(None);
                     }
                 }
@@ -232,7 +230,7 @@ impl WidgetTree {
         .and_then(|rect| self.node_visual_rect(id, rect));
         app_state.register(
             id,
-            node.component_snapshot(id),
+            node.widget_snapshot(id),
             self.invalidation_handle(),
             rect,
         );
@@ -262,7 +260,7 @@ impl WidgetTree {
     }
 
     /// 分配属于本树作用域且带 generation 的新组件标识。
-    pub fn alloc_id(&mut self) -> ComponentId {
+    pub fn alloc_id(&mut self) -> WidgetId {
         // 停止树不得再分配能够逃逸到调用方的新组件身份。
         assert!(self.accepts_coordination_work());
         if let Some(slot) = self.free_slots.pop() {
@@ -303,9 +301,9 @@ impl WidgetTree {
     /// 安装根组件及其直接子组件，并返回根组件标识。
     pub fn set_root_with_children(
         &mut self,
-        widget: Box<dyn WidgetComponent>,
-        children: Vec<Box<dyn WidgetComponent>>,
-    ) -> ComponentId {
+        widget: Box<dyn Widget>,
+        children: Vec<Box<dyn Widget>>,
+    ) -> WidgetId {
         let id = self.set_root(widget);
         for child in children {
             self.add_child(id, child);
@@ -316,10 +314,10 @@ impl WidgetTree {
     /// 向父节点添加组件及其直接子组件，并返回新组件标识。
     pub fn add_child_with_children(
         &mut self,
-        parent_id: ComponentId,
-        widget: Box<dyn WidgetComponent>,
-        children: Vec<Box<dyn WidgetComponent>>,
-    ) -> ComponentId {
+        parent_id: WidgetId,
+        widget: Box<dyn Widget>,
+        children: Vec<Box<dyn Widget>>,
+    ) -> WidgetId {
         let id = self.add_child(parent_id, widget);
         for child in children {
             self.add_child(id, child);
@@ -416,7 +414,7 @@ impl WidgetTree {
         self.root_id.and_then(|id| self.get(id))
     }
     /// 返回当前根组件标识；空树或停止树返回空值。
-    pub fn root_id(&self) -> Option<ComponentId> {
+    pub fn root_id(&self) -> Option<WidgetId> {
         // fail-stop 后不向公开调用方暴露半提交根身份。
         if !self.accepts_coordination_work() {
             // owner teardown 通过树核心私有字段完成，不依赖公开根访问。
@@ -430,10 +428,10 @@ impl WidgetTree {
     }
 
     /// 按树遍历顺序返回首个指定组件类型的标识。
-    pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<ComponentId> {
+    pub fn find_by_type<T: Widget + 'static>(&self) -> Option<WidgetId> {
         for &id in self.traverse().iter() {
             if let Some(node) = self.get(id) {
-                if node.component().as_any().downcast_ref::<T>().is_some() {
+                if node.widget().as_any().downcast_ref::<T>().is_some() {
                     return Some(id);
                 }
             }
@@ -442,11 +440,11 @@ impl WidgetTree {
     }
 
     /// 按树遍历顺序返回全部指定组件类型及其共享借用。
-    pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(ComponentId, &T)> {
+    pub fn find_all_by_type<T: Widget + 'static>(&self) -> Vec<(WidgetId, &T)> {
         let mut results = Vec::new();
         for &id in self.traverse().iter() {
             if let Some(node) = self.get(id) {
-                if let Some(w) = node.component().as_any().downcast_ref::<T>() {
+                if let Some(w) = node.widget().as_any().downcast_ref::<T>() {
                     results.push((id, w));
                 }
             }
@@ -455,19 +453,19 @@ impl WidgetTree {
     }
 
     /// 在异常事务边界内修改首个指定类型的组件并返回其标识。
-    pub fn find_by_type_and_modify<T: WidgetComponent + 'static>(
+    pub fn find_by_type_and_modify<T: Widget + 'static>(
         &mut self,
         f: impl FnOnce(&mut T),
-    ) -> Option<ComponentId> {
+    ) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
         // 公开用户修改闭包必须在异常边界内发布，panic 后不能重新开放半修改组件。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 调用用户闭包前线性化真实组件值即将被改写。
             tree.mark_coordination_publish_started();
             // 只在目标身份与类型仍有效时执行一次用户修改。
             if let Some(node) = tree.get_mut(id) {
                 // 类型查询复用调用前已经确认的稳定组件身份。
-                if let Some(w) = node.component_mut().as_any_mut().downcast_mut::<T>() {
+                if let Some(w) = node.widget_mut().as_any_mut().downcast_mut::<T>() {
                     // 用户闭包异常会由外层事务把树置为 fail-stop。
                     f(w);
                 }
@@ -478,7 +476,7 @@ impl WidgetTree {
     }
 
     /// 使用树作用域、槽位与 generation 安全查询节点。
-    pub fn get(&self, id: ComponentId) -> Option<&BoxedWidget> {
+    pub fn get(&self, id: WidgetId) -> Option<&BoxedWidget> {
         // 停止树不得泄漏可继续调用用户组件的半提交节点引用。
         if !self.accepts_coordination_work() {
             // shutdown 使用树核心私有 raw accessor，不经过公开边界。
@@ -489,14 +487,14 @@ impl WidgetTree {
     }
 
     // 让树核心关闭路径访问已经停止但仍待释放的真实节点。
-    pub(super) fn get_raw(&self, id: ComponentId) -> Option<&BoxedWidget> {
+    pub(super) fn get_raw(&self, id: WidgetId) -> Option<&BoxedWidget> {
         // 先验证树作用域、槽位与 generation，再读取物理节点。
         let slot = self.node_slot_for(id)?;
         // 返回仅限 tree_core 资源释放使用的节点引用。
         self.nodes.get(slot).and_then(|n| n.as_ref())
     }
     /// 使用树作用域、槽位与 generation 安全查询节点的可变借用。
-    pub fn get_mut(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
+    pub fn get_mut(&mut self, id: WidgetId) -> Option<&mut BoxedWidget> {
         // 停止树不得泄漏可直接执行用户组件方法的可变节点引用。
         if !self.accepts_coordination_work() {
             // 调用方必须丢弃旧树并创建新的 owner。
@@ -507,7 +505,7 @@ impl WidgetTree {
     }
 
     // 让树核心关闭路径可变访问已经停止但仍待执行受控生命周期的节点。
-    pub(super) fn get_mut_raw(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
+    pub(super) fn get_mut_raw(&mut self, id: WidgetId) -> Option<&mut BoxedWidget> {
         // 先验证树作用域、槽位与 generation，再读取物理节点。
         let slot = self.node_slot_for(id)?;
         // 返回仅限 tree_core 关闭实现使用的可变节点引用。
@@ -515,7 +513,7 @@ impl WidgetTree {
     }
 
     /// 设置节点的兄弟绘制层级；节点不存在时保持无操作。
-    pub fn set_z_index(&mut self, id: ComponentId, z: i32) -> &mut Self {
+    pub fn set_z_index(&mut self, id: WidgetId, z: i32) -> &mut Self {
         if let Some(n) = self.get_mut(id) {
             n.set_z_index(z);
         }
@@ -523,20 +521,20 @@ impl WidgetTree {
     }
 
     /// 事务化移除节点子树并按逆序执行组件生命周期。
-    pub fn remove(&mut self, id: ComponentId) {
+    pub fn remove(&mut self, id: WidgetId) {
         // 公开移除会执行组件生命周期，必须统一进入 panic 事务边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 在当前事务内递归完成真实移除。
             tree.remove_in_transaction(id);
         });
     }
 
     // 在已建立事务的边界内递归移除节点子树。
-    pub(super) fn remove_in_transaction(&mut self, id: ComponentId) {
+    pub(super) fn remove_in_transaction(&mut self, id: WidgetId) {
         // 节点移除会立即改写真实结构，停止树拒绝且协调事务记录发布事实。
         self.mark_coordination_publish_started();
         self.tree_version += 1;
-        self.active_component_animations.remove(&id);
+        self.active_widget_animations.remove(&id);
 
         let old_visual_bounds = self.visual_subtree_bounds(id);
 
@@ -554,8 +552,8 @@ impl WidgetTree {
                 for child_id in node.children().to_vec() {
                     self.remove_in_transaction(child_id);
                 }
-                self.handler_table.clear_component(id);
-                self.render_handler_table.clear_component(id);
+                self.handler_table.clear_widget(id);
+                self.render_handler_table.clear_widget(id);
                 let owner_was_top_trap = self
                     .overlay_stack
                     .top()
@@ -573,9 +571,9 @@ impl WidgetTree {
                     }
                 }
                 self.managers.remove_overrides(id);
-                self.managers.focus.unregister_component(id);
-                self.managers.interaction.unregister_component(id);
-                self.managers.drag.unregister_component(id);
+                self.managers.focus.unregister_widget(id);
+                self.managers.interaction.unregister_widget(id);
+                self.managers.drag.unregister_widget(id);
                 self.focus_handles.remove(&id);
                 self.invalidate_slot_generation(slot);
                 self.free_slots.push(slot);
@@ -600,20 +598,20 @@ impl WidgetTree {
             self.propagate_layout_invalidation(pid);
         }
         // 事务外的实际移除（含 leave 结束）现在可释放无承载节点的私有状态。
-        self.prune_component_state_scopes_if_idle();
+        self.prune_widget_state_scopes_if_idle();
     }
 
     /// 事务化设置节点及其全部后代的可见性。
-    pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
+    pub fn set_visible(&mut self, id: WidgetId, visible: bool) {
         // 公开可见性传播会执行组件生命周期，统一进入 panic 事务边界。
-        self.with_component_state_transaction(Vec::new(), |tree| {
+        self.with_widget_state_transaction(Vec::new(), |tree| {
             // 在同一事务内发布整棵子树的可见性变化。
             tree.set_visible_in_transaction(id, visible);
         });
     }
 
     // 在已建立事务的边界内发布递归可见性变化。
-    fn set_visible_in_transaction(&mut self, id: ComponentId, visible: bool) {
+    fn set_visible_in_transaction(&mut self, id: WidgetId, visible: bool) {
         // 可见性传播会改写节点与生命周期，先进入统一发布门禁。
         self.mark_coordination_publish_started();
         if !visible {
@@ -651,7 +649,7 @@ impl WidgetTree {
     }
 
     /// 返回树的先序遍历缓存；借用守卫存活期间不得修改树结构。
-    pub fn traverse(&self) -> std::cell::Ref<'_, [ComponentId]> {
+    pub fn traverse(&self) -> std::cell::Ref<'_, [WidgetId]> {
         // 停止树不得通过公开遍历泄漏半提交节点身份集合。
         if !self.accepts_coordination_work() {
             // 清空旧缓存，防止调用方观察 fail-stop 前留下的路径。
@@ -749,7 +747,7 @@ impl WidgetTree {
     }
 
     /// 更新节点 frame，并在几何变化时请求布局与绘制失效传播。
-    pub fn set_frame_dirty(&mut self, id: ComponentId, new_frame: Rect) {
+    pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {
         if !self.apply_frame_paint(id, new_frame) {
             return;
         }
@@ -761,7 +759,7 @@ impl WidgetTree {
     ///
     /// `set_frame_dirty` 会 `push_layout_invalidation`，若在收敛循环里调用，
     /// 会在结果已稳定后仍留下 Layout pending，下一帧无事件也再跑 layout（违反休眠）。
-    pub(crate) fn set_layout_frame(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+    pub(crate) fn set_layout_frame(&mut self, id: WidgetId, new_frame: Rect) -> bool {
         #[cfg(test)]
         let before_h = self
             .get(id)
@@ -790,11 +788,11 @@ impl WidgetTree {
     // 测试目标保留布局帧 trace 取出入口，供布局收敛测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
-    pub(crate) fn take_layout_frame_trace(&self) -> Vec<(u8, ComponentId, i32, i32)> {
+    pub(crate) fn take_layout_frame_trace(&self) -> Vec<(u8, WidgetId, i32, i32)> {
         std::mem::take(&mut *self.layout_frame_trace.borrow_mut())
     }
 
-    pub(crate) fn apply_frame_paint(&mut self, id: ComponentId, new_frame: Rect) -> bool {
+    pub(crate) fn apply_frame_paint(&mut self, id: WidgetId, new_frame: Rect) -> bool {
         // 比较与脏区计算前先归一，避免等价非法输入制造重复失效。
         let new_frame = crate::ui::layout::engine::normalize_layout_rect(new_frame);
         match self.get(id) {

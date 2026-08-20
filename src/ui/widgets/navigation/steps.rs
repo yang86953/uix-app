@@ -3,14 +3,14 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入受控 current 的响应式状态句柄。
 use crate::ui::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 use std::cell::Cell;
@@ -57,7 +57,7 @@ pub struct Step {
 }
 
 // Steps — 步骤条组件。
-component! {
+widget! {
     /// 按声明顺序展示步骤并通过可选受控索引提交进度变化的组件。
     pub struct Steps {
         steps: Vec<Step>,
@@ -131,7 +131,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|idx| SemanticEvent::change(id, idx.to_string()))

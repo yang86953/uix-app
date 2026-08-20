@@ -5,7 +5,7 @@ use crate::ui::{SnapshotFields, SnapshotTreeNode};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use super::component::FlatNode;
+use super::widget::FlatNode;
 use super::{
     DropPosition, TREE_INDENT_WIDTH, TREE_MIN_TITLE_WIDTH, TREE_ROW_HEIGHT, TREE_SLOT_WIDTH, Tree,
     TreeNode, TreePointerAction, TreeRowGeometry,

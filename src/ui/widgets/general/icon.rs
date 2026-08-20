@@ -7,13 +7,13 @@
 
 use std::sync::OnceLock;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::{Color, FontHandle};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 // 引入图标映射组件的封装查找入口。
 use crate::ui::widgets::general::icon_map::find_icon;
 
@@ -61,7 +61,7 @@ pub(crate) fn icon_char(name: &str) -> &'static str {
     }
 }
 
-component! {
+widget! {
     /// Icon widget — renders a single glyph from the Lucide icon font.
     pub struct Icon {
         name: String,
@@ -95,7 +95,7 @@ component! {
 impl Icon {
     /// Paint an icon inside another widget while preserving the parent widget's
     /// font and line-box alignment. This is the embedded rendering entry point
-    /// owned by the `Icon` component; built-in widgets must not draw ad-hoc
+    /// owned by the `Icon` widget; built-in widgets must not draw ad-hoc
     /// Unicode symbols or call `icon_char` directly.
     pub fn paint_in_frame(
         ctx: &mut PaintContext,

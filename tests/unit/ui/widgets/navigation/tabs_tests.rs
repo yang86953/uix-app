@@ -71,7 +71,7 @@ fn switches_child_visibility_and_moves_focus_into_active_panel() {
     );
     // 焦点必须迁移到新面板内第一个可聚焦控件。
     assert_eq!(
-        tree.managers().focus.focused_component(),
+        tree.managers().focus.focused_widget(),
         Some(security_button)
     );
 }
@@ -119,5 +119,5 @@ fn falls_back_to_tabs_bar_when_active_panel_has_no_focusable_child() {
             .parent_visibility_gate()
     );
     // 没有子控件时焦点必须退回标签栏本身。
-    assert_eq!(tree.managers().focus.focused_component(), Some(tabs_id));
+    assert_eq!(tree.managers().focus.focused_widget(), Some(tabs_id));
 }

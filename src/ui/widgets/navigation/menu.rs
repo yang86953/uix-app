@@ -7,15 +7,15 @@ mod compact;
 // typed 受控构造拆分到子模块，保持状态映射边界集中。
 mod controlled;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -244,8 +244,8 @@ impl<K> MenuItem<K> {
     }
 }
 
-// Navigation menu component.
-component! {
+// Navigation menu widget.
+widget! {
     /// 按稳定键管理选择、展开与键盘导航状态的菜单组件。
     pub struct Menu {
         items: Vec<MenuItem>,
@@ -348,7 +348,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()

@@ -222,17 +222,17 @@ fn materialization_window(
     (start, end)
 }
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入 builder 建树时登记 renderer sidecar 所需的内部注册类型。
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
 // 兼容既有公开模块路径，同时让应用闭包实现保留在拆分文件中。
 pub use super::renderer::VirtualScrollBuilder;
 
-component! {
+widget! {
     /// 只物化当前可见范围并拥有滚动与测量缓存的虚拟滚动组件。
     pub struct VirtualScroll {
         item_count: usize,
@@ -342,7 +342,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 父级输入先收敛到有限实际矩形。
         let frame = finite_virtual_rect(frame);

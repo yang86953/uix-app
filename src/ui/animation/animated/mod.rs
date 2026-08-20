@@ -8,7 +8,7 @@ use super::{
 mod playback;
 
 use self::playback::{AnimatedMotion, AnimatedPlayback, LoopMode, normalized_delay};
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 use crate::ui::animation::traits::Animatable;
 use crate::ui::reactive::state::State;
 use std::cell::RefCell;
@@ -25,7 +25,7 @@ thread_local! {
 }
 
 pub(crate) trait AnimatedSource: Send + Sync {
-    fn work_id(&self) -> ComponentId;
+    fn work_id(&self) -> WidgetId;
     fn bind_owner(&self, tree_scope: u64) -> bool;
     fn unbind_owner(&self, tree_scope: u64);
     fn registration(&self) -> AnimatedRegistration;
@@ -65,7 +65,7 @@ fn capture_animated_source(source: Arc<dyn AnimatedSource>) {
 }
 
 struct AnimatedInner<T: Animatable + Sync> {
-    work_id: ComponentId,
+    work_id: WidgetId,
     current: State<T>,
     playback: Mutex<Option<AnimatedPlayback<T>>>,
     owner_tree_scope: Mutex<Option<u64>>,
@@ -78,7 +78,7 @@ impl<T: Animatable + Sync> AnimatedInner<T> {
 }
 
 impl<T: Animatable + Sync> AnimatedSource for AnimatedInner<T> {
-    fn work_id(&self) -> ComponentId {
+    fn work_id(&self) -> WidgetId {
         self.work_id
     }
 
@@ -153,7 +153,7 @@ impl<T: Animatable + Sync> Animated<T> {
     pub fn new(initial: T) -> Self {
         Self {
             inner: Arc::new(AnimatedInner {
-                work_id: ComponentId::new(NEXT_ANIMATED_ID.fetch_add(1, Ordering::Relaxed)),
+                work_id: WidgetId::new(NEXT_ANIMATED_ID.fetch_add(1, Ordering::Relaxed)),
                 current: State::new(initial),
                 playback: Mutex::new(None),
                 owner_tree_scope: Mutex::new(None),
@@ -241,7 +241,7 @@ impl<T: Animatable + Sync> Animated<T> {
         }
     }
 
-    pub(crate) fn group_source_id(&self) -> ComponentId {
+    pub(crate) fn group_source_id(&self) -> WidgetId {
         self.inner.work_id
     }
 

@@ -4,7 +4,7 @@ use std::any::{Any, TypeId};
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 
-use crate::core::{ComponentId, Point, WindowId};
+use crate::core::{Point, WidgetId, WindowId};
 
 // 语义事件保留修饰键与鼠标按钮；按键值只由 system_event 子模块使用。
 use crate::platform::windowing::{KeyMod, MouseButton, WindowResizeEdge};
@@ -188,9 +188,9 @@ pub struct SemanticEvent {
     /// 事件种类。
     pub kind: SemanticKind,
     /// 原始目标组件。
-    pub target: ComponentId,
+    pub target: WidgetId,
     /// 当前正在处理的组件（冒泡过程中变化）。
-    pub current_target: ComponentId,
+    pub current_target: WidgetId,
     /// 事件载荷。
     pub payload: SemanticPayload,
     propagation_stopped: bool,
@@ -199,7 +199,7 @@ pub struct SemanticEvent {
 
 impl SemanticEvent {
     /// 构造语义事件。
-    pub fn new(kind: SemanticKind, target: ComponentId, payload: SemanticPayload) -> Self {
+    pub fn new(kind: SemanticKind, target: WidgetId, payload: SemanticPayload) -> Self {
         Self {
             kind,
             target,
@@ -211,7 +211,7 @@ impl SemanticEvent {
     }
 
     /// 构造单击事件。
-    pub fn click(target: ComponentId, payload: ClickEvent) -> Self {
+    pub fn click(target: WidgetId, payload: ClickEvent) -> Self {
         Self::new(SemanticKind::Click, target, SemanticPayload::Click(payload))
     }
 
@@ -226,7 +226,7 @@ impl SemanticEvent {
     }
 
     /// 构造上下文菜单事件。
-    pub fn context_menu(target: ComponentId, payload: ClickEvent) -> Self {
+    pub fn context_menu(target: WidgetId, payload: ClickEvent) -> Self {
         Self::new(
             SemanticKind::ContextMenu,
             target,
@@ -235,7 +235,7 @@ impl SemanticEvent {
     }
 
     /// 构造文本输入事件。
-    pub fn text_input(target: ComponentId, text: impl Into<String>) -> Self {
+    pub fn text_input(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::TextInput,
             target,
@@ -244,7 +244,7 @@ impl SemanticEvent {
     }
 
     /// 构造输入法组合开始事件。
-    pub fn ime_composition_start(target: ComponentId) -> Self {
+    pub fn ime_composition_start(target: WidgetId) -> Self {
         Self::new(
             SemanticKind::ImeCompositionStart,
             target,
@@ -253,7 +253,7 @@ impl SemanticEvent {
     }
 
     /// 构造输入法组合更新事件。
-    pub fn ime_composition_update(target: ComponentId, text: impl Into<String>) -> Self {
+    pub fn ime_composition_update(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionUpdate,
             target,
@@ -262,7 +262,7 @@ impl SemanticEvent {
     }
 
     /// 构造输入法组合结束事件。
-    pub fn ime_composition_end(target: ComponentId, text: impl Into<String>) -> Self {
+    pub fn ime_composition_end(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionEnd,
             target,
@@ -271,17 +271,17 @@ impl SemanticEvent {
     }
 
     /// 构造复制事件。
-    pub fn copy(target: ComponentId) -> Self {
+    pub fn copy(target: WidgetId) -> Self {
         Self::new(SemanticKind::Copy, target, SemanticPayload::None)
     }
 
     /// 构造剪切事件。
-    pub fn cut(target: ComponentId) -> Self {
+    pub fn cut(target: WidgetId) -> Self {
         Self::new(SemanticKind::Cut, target, SemanticPayload::None)
     }
 
     /// 构造粘贴事件。
-    pub fn paste(target: ComponentId, text: impl Into<String>) -> Self {
+    pub fn paste(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Paste,
             target,
@@ -290,7 +290,7 @@ impl SemanticEvent {
     }
 
     /// 构造值变更事件。
-    pub fn change(target: ComponentId, value: impl Into<String>) -> Self {
+    pub fn change(target: WidgetId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Change,
             target,
@@ -299,7 +299,7 @@ impl SemanticEvent {
     }
 
     /// 构造提交事件。
-    pub fn submit(target: ComponentId, value: impl Into<String>) -> Self {
+    pub fn submit(target: WidgetId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Submit,
             target,
@@ -308,7 +308,7 @@ impl SemanticEvent {
     }
 
     /// 构造文件拖放事件。
-    pub fn file_drop(target: ComponentId, files: Vec<String>, position: Point) -> Self {
+    pub fn file_drop(target: WidgetId, files: Vec<String>, position: Point) -> Self {
         Self::new(
             SemanticKind::FileDrop,
             target,
@@ -317,7 +317,7 @@ impl SemanticEvent {
     }
 
     /// 构造自定义载荷事件。
-    pub fn custom<T: Any + Send>(target: ComponentId, payload: T) -> Self {
+    pub fn custom<T: Any + Send>(target: WidgetId, payload: T) -> Self {
         Self::new(
             SemanticKind::Custom(TypeId::of::<T>()),
             target,
@@ -558,7 +558,7 @@ struct HandlerEntry {
 #[derive(Default)]
 /// 按组件维度组织的事件分发表。
 pub struct HandlerTable {
-    handlers: HashMap<ComponentId, Vec<HandlerEntry>>,
+    handlers: HashMap<WidgetId, Vec<HandlerEntry>>,
     next_id: usize,
 }
 
@@ -569,42 +569,35 @@ impl HandlerTable {
     }
 
     /// 注册处理器并返回句柄。
-    pub fn register(
-        &mut self,
-        component: ComponentId,
-        registration: HandlerRegistration,
-    ) -> HandlerId {
+    pub fn register(&mut self, widget: WidgetId, registration: HandlerRegistration) -> HandlerId {
         let id = HandlerId(self.next_id);
         self.next_id += 1;
-        self.handlers
-            .entry(component)
-            .or_default()
-            .push(HandlerEntry {
-                id,
-                kind: registration.kind,
-                options: registration.options,
-                handler: registration.handler,
-            });
+        self.handlers.entry(widget).or_default().push(HandlerEntry {
+            id,
+            kind: registration.kind,
+            options: registration.options,
+            handler: registration.handler,
+        });
         id
     }
 
     /// 注册原始语义事件处理器。
     pub fn on(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         kind: SemanticKind,
         handler: impl FnMut(&mut SemanticEvent) + 'static,
     ) -> HandlerId {
-        self.register(component, HandlerRegistration::new(kind, Box::new(handler)))
+        self.register(widget, HandlerRegistration::new(kind, Box::new(handler)))
     }
 
     /// 注册单击处理器，自动解包 `ClickEvent` 载荷。
     pub fn on_click(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&ClickEvent) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::Click, move |event| {
+        self.on(widget, SemanticKind::Click, move |event| {
             if let Some(payload) = event.click_payload() {
                 handler(payload);
             }
@@ -614,10 +607,10 @@ impl HandlerTable {
     /// 注册文本输入处理器，自动解包文本载荷。
     pub fn on_text_input(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::TextInput, move |event| {
+        self.on(widget, SemanticKind::TextInput, move |event| {
             if let Some(text) = event.text_payload() {
                 handler(text);
             }
@@ -627,42 +620,34 @@ impl HandlerTable {
     /// 注册输入法组合开始处理器。
     pub fn on_ime_composition_start(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut() + 'static,
     ) -> HandlerId {
-        self.on(
-            component,
-            SemanticKind::ImeCompositionStart,
-            move |_event| {
-                handler();
-            },
-        )
+        self.on(widget, SemanticKind::ImeCompositionStart, move |_event| {
+            handler();
+        })
     }
 
     /// 注册输入法组合更新处理器。
     pub fn on_ime_composition_update(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(
-            component,
-            SemanticKind::ImeCompositionUpdate,
-            move |event| {
-                if let Some(text) = event.text_payload() {
-                    handler(text);
-                }
-            },
-        )
+        self.on(widget, SemanticKind::ImeCompositionUpdate, move |event| {
+            if let Some(text) = event.text_payload() {
+                handler(text);
+            }
+        })
     }
 
     /// 注册输入法组合结束处理器。
     pub fn on_ime_composition_end(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::ImeCompositionEnd, move |event| {
+        self.on(widget, SemanticKind::ImeCompositionEnd, move |event| {
             if let Some(text) = event.text_payload() {
                 handler(text);
             }
@@ -670,23 +655,15 @@ impl HandlerTable {
     }
 
     /// 注册复制处理器。
-    pub fn on_copy(
-        &mut self,
-        component: ComponentId,
-        mut handler: impl FnMut() + 'static,
-    ) -> HandlerId {
-        self.on(component, SemanticKind::Copy, move |_event| {
+    pub fn on_copy(&mut self, widget: WidgetId, mut handler: impl FnMut() + 'static) -> HandlerId {
+        self.on(widget, SemanticKind::Copy, move |_event| {
             handler();
         })
     }
 
     /// 注册剪切处理器。
-    pub fn on_cut(
-        &mut self,
-        component: ComponentId,
-        mut handler: impl FnMut() + 'static,
-    ) -> HandlerId {
-        self.on(component, SemanticKind::Cut, move |_event| {
+    pub fn on_cut(&mut self, widget: WidgetId, mut handler: impl FnMut() + 'static) -> HandlerId {
+        self.on(widget, SemanticKind::Cut, move |_event| {
             handler();
         })
     }
@@ -694,10 +671,10 @@ impl HandlerTable {
     /// 注册粘贴处理器。
     pub fn on_paste(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::Paste, move |event| {
+        self.on(widget, SemanticKind::Paste, move |event| {
             if let Some(text) = event.text_payload() {
                 handler(text);
             }
@@ -707,10 +684,10 @@ impl HandlerTable {
     /// 注册值变更处理器。
     pub fn on_change(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::Change, move |event| {
+        self.on(widget, SemanticKind::Change, move |event| {
             if let Some(value) = event.text_payload() {
                 handler(value);
             }
@@ -720,10 +697,10 @@ impl HandlerTable {
     /// 注册提交处理器。
     pub fn on_submit(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::Submit, move |event| {
+        self.on(widget, SemanticKind::Submit, move |event| {
             if let Some(value) = event.text_payload() {
                 handler(value);
             }
@@ -733,10 +710,10 @@ impl HandlerTable {
     /// 注册文件拖放处理器。
     pub fn on_file_drop(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&[String], Point) + 'static,
     ) -> HandlerId {
-        self.on(component, SemanticKind::FileDrop, move |event| {
+        self.on(widget, SemanticKind::FileDrop, move |event| {
             if let Some((files, position)) = event.file_drop_payload() {
                 handler(files, position);
             }
@@ -746,11 +723,11 @@ impl HandlerTable {
     /// 注册自定义类型处理器。
     pub fn on_custom<T: Any>(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         mut handler: impl FnMut(&T) + 'static,
     ) -> HandlerId {
         self.on(
-            component,
+            widget,
             SemanticKind::Custom(TypeId::of::<T>()),
             move |event| {
                 if let Some(payload) = event.custom_payload::<T>() {
@@ -761,15 +738,15 @@ impl HandlerTable {
     }
 
     /// 移除指定组件上由 `handler_id` 标识的处理器。
-    pub fn remove(&mut self, component: ComponentId, handler_id: HandlerId) {
-        if let Some(entries) = self.handlers.get_mut(&component) {
+    pub fn remove(&mut self, widget: WidgetId, handler_id: HandlerId) {
+        if let Some(entries) = self.handlers.get_mut(&widget) {
             entries.retain(|entry| entry.id != handler_id);
         }
     }
 
     /// 清空指定组件上的全部处理器。
-    pub fn clear_component(&mut self, component: ComponentId) {
-        self.handlers.remove(&component);
+    pub fn clear_widget(&mut self, widget: WidgetId) {
+        self.handlers.remove(&widget);
     }
 
     /// 清空全部分发表。
@@ -778,15 +755,11 @@ impl HandlerTable {
     }
 
     /// 沿组件路径自目标向根分发事件；遇停止传播立即中断。
-    pub fn dispatch_path(
-        &mut self,
-        path: &[ComponentId],
-        event: &mut SemanticEvent,
-    ) -> EventResult {
+    pub fn dispatch_path(&mut self, path: &[WidgetId], event: &mut SemanticEvent) -> EventResult {
         let mut handled = false;
-        for &component in path {
-            event.current_target = component;
-            if self.dispatch_component(component, event) {
+        for &widget in path {
+            event.current_target = widget;
+            if self.dispatch_widget(widget, event) {
                 handled = true;
             }
             if event.propagation_stopped() {
@@ -800,8 +773,8 @@ impl HandlerTable {
         }
     }
 
-    fn dispatch_component(&mut self, component: ComponentId, event: &mut SemanticEvent) -> bool {
-        let Some(entries) = self.handlers.get_mut(&component) else {
+    fn dispatch_widget(&mut self, widget: WidgetId, event: &mut SemanticEvent) -> bool {
+        let Some(entries) = self.handlers.get_mut(&widget) else {
             return false;
         };
 

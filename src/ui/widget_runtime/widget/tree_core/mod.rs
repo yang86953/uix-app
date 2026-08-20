@@ -12,12 +12,12 @@ use crate::ui::widget_runtime::app_state::{AppState, FocusRequest};
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
 use crate::ui::widget_runtime::managers::WidgetManagers;
 // 保存每个窗口树独占的内联组件私有状态。
-use crate::ui::component_state::{
+use crate::ui::widget_state::{
+    UixWidgetScope,
     // 保存待最外层事务接纳的私有状态写入回执。
-    ComponentStateCaptureReceipt,
+    WidgetStateCaptureReceipt,
     // 保存窗口私有状态存储和作用域身份。
-    ComponentStateStore,
-    UixComponentScope,
+    WidgetStateStore,
 };
 // 保存按工作身份去重的来源所有者集合。
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -36,7 +36,7 @@ pub(crate) struct BoundAnimatedSource {
 enum AnimatedSourceOwner {
     // 根协调拥有的声明根动画源。
     Root,
-    // 已分配真实 ComponentId 的节点动画源。
+    // 已分配真实 WidgetId 的节点动画源。
     Node(WidgetId),
 }
 
@@ -111,7 +111,7 @@ pub struct WidgetTree {
     animated_source_owners: BTreeMap<AnimatedSourceOwner, BTreeSet<WidgetId>>,
     // 保存当前嵌套构建事务尚未确认的动画源所有权替换。
     pending_animated_source_owner_updates: Vec<PendingAnimatedSourceOwnerUpdate>,
-    pub(crate) active_component_animations: HashSet<WidgetId>,
+    pub(crate) active_widget_animations: HashSet<WidgetId>,
     pub(crate) animation_ids_scratch: Vec<WidgetId>,
     pub(crate) lifecycle_states_scratch: Vec<(WidgetId, bool)>,
     pub(crate) layout_scratch: tree_layout::LayoutFrameScratch,
@@ -126,11 +126,11 @@ pub struct WidgetTree {
     keyboard_focus_visible: bool,
     pub(crate) keyboard_activation: Option<(WidgetId, KeyCode, KeyMod)>,
     // 由当前树拥有，禁止跨窗口共享内联组件私有状态。
-    pub(crate) component_state_store: ComponentStateStore,
+    pub(crate) widget_state_store: WidgetStateStore,
     // 在适配器构建事务内延迟清理，避免同轮替换误删复用状态。
-    pub(crate) component_state_transaction_depth: usize,
+    pub(crate) widget_state_transaction_depth: usize,
     // 保存当前嵌套事务尚未在最外层成功后接纳的状态 journal。
-    pub(crate) component_state_pending_receipts: Vec<ComponentStateCaptureReceipt>,
+    pub(crate) widget_state_pending_receipts: Vec<WidgetStateCaptureReceipt>,
     #[cfg(feature = "test-harness")]
     pub(crate) automation_recorder: Option<crate::ui::automation::AutomationRecorder>,
     /// layout() 内实际改写 frame 次数（回归：收敛后二次 layout 应为 0）。
@@ -147,7 +147,7 @@ pub struct WidgetTree {
     pub(crate) layout_expand_ops: std::cell::Cell<u32>,
     /// 测试探针：记录 `(phase, id, before_h, after_h)` 的 frame 写入。
     #[cfg(test)]
-    pub(crate) layout_frame_trace: std::cell::RefCell<Vec<(u8, ComponentId, i32, i32)>>,
+    pub(crate) layout_frame_trace: std::cell::RefCell<Vec<(u8, WidgetId, i32, i32)>>,
 }
 
 impl Default for WidgetTree {
@@ -189,7 +189,7 @@ impl Default for WidgetTree {
             animated_source_owners: BTreeMap::new(),
             // 初始树没有等待事务提交的动画源所有权替换。
             pending_animated_source_owner_updates: Vec::new(),
-            active_component_animations: HashSet::new(),
+            active_widget_animations: HashSet::new(),
             animation_ids_scratch: Vec::new(),
             lifecycle_states_scratch: Vec::new(),
             layout_scratch: tree_layout::LayoutFrameScratch::default(),
@@ -203,10 +203,10 @@ impl Default for WidgetTree {
             window_focused: true,
             keyboard_focus_visible: true,
             keyboard_activation: None,
-            component_state_store: ComponentStateStore::new(),
-            component_state_transaction_depth: 0,
+            widget_state_store: WidgetStateStore::new(),
+            widget_state_transaction_depth: 0,
             // 初始树没有等待事务确认的组件状态 journal。
-            component_state_pending_receipts: Vec::new(),
+            widget_state_pending_receipts: Vec::new(),
             #[cfg(feature = "test-harness")]
             automation_recorder: None,
             #[cfg(test)]

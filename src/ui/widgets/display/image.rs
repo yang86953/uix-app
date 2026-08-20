@@ -5,7 +5,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::renderer::Invalidation;
@@ -16,13 +15,14 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::paint_scope::current_paint_widget;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
+use crate::widget;
 // 引入同一 display Module 拥有的图片浮层调色板。
 use super::image_presentation::ImageOverlayPalette;
 // 引入 Image 私有加载生命周期状态。
 use super::image_state::ImageLoadState;
 
 // Image — 图片显示组件。
-component! {
+widget! {
     /// 拥有资源加载、占位、错误内容与模态预览生命周期的图片组件。
     pub struct Image {
         src: String,
@@ -63,7 +63,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         children.iter().map(|child| (child.id, frame)).collect()
     }
@@ -160,7 +160,7 @@ component! {
         }
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<OverlayEntry> {
         self.preview_open.then(|| {
             OverlayEntry::new(id, OverlayKind::Modal)
                 .bounds(self.surface_rect(frame))

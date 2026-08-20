@@ -140,7 +140,7 @@ fn style_background_pseudo_state_keeps_background_deltas() {
         r#"
         backdrop { backgroundImage: url('normal.png'); backgroundPosition: left top; }
         backdrop:hover { backgroundImage: linear-gradient(red, blue); backgroundRepeat: no-repeat; }
-        <Component name="Backdrop"><Text class="backdrop">背景</Text></Component>
+        <Widget name="Backdrop"><Text class="backdrop">背景</Text></Widget>
         <Backdrop />
         "#,
     )
