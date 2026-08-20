@@ -431,6 +431,6 @@ pub(super) fn layout_text(
 // 为复杂脚本 shaping 保留不依赖窗口的自动化回归测试。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/text_backends/shaping__tests.rs"]
+#[path = "../../../../../../tests/unit/draw/resources/font/text_backends/shaping__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

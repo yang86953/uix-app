@@ -26,7 +26,7 @@ D3D11_STATE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi
 # 定位 D3D11 局部清理映射。
 D3D11_CLEAR = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs"
 # 定位最终 surface damage 合成边界。
-SURFACE_COMPOSITE = ROOT / "src/draw/backend/gpu/backend/rhi_surface_composite.rs"
+SURFACE_COMPOSITE = ROOT / "src/draw/backend/gpu/execution/rhi_surface_composite.rs"
 
 
 # 集中验证共享原生值域与两个 Adapter 的机械投影。

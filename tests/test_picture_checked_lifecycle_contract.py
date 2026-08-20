@@ -32,13 +32,13 @@ class PictureCheckedLifecycleContractTests(unittest.TestCase):
     # 验证最终 present 在主 surface 提交前检查式结束 Picture。
     def test_gpu_present_uses_checked_picture_end(self) -> None:
         # 读取 GPU 最终 present 状态机。
-        source = (ROOT / "src/draw/backend/gpu/backend/render_present.rs").read_text(encoding="utf-8")
+        source = (ROOT / "src/draw/backend/gpu/execution/render_present.rs").read_text(encoding="utf-8")
         # active Picture 必须通过 Result 边界结束并传播失败。
         self.assertIn("self.try_end_offscreen_paint()?;", source)
     # 验证 GPU Picture 创建不再把 RHI 资源失败降成 None。
     def test_gpu_picture_create_propagates_typed_rhi_failures(self) -> None:
         # 读取 GPU RenderBackend 的唯一 Picture 资源 owner 实现。
-        source = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        source = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 定位检查式创建事务的开始边界。
         start = source.index("fn try_create_offscreen")
         # 定位紧随其后的检查式销毁事务。

@@ -847,7 +847,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取共享 RHI 颜色值对象。
         rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 FrameEncoder 到 FramePlan 的清屏 lowering。
-        lowering = (ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs").read_text(encoding="utf-8")
+        lowering = (ROOT / "src/draw/backend/gpu/execution/rhi_frame.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的 pass 与局部清理 Adapter。
         opengl = (
             # 合并完整 pass 清理实现。

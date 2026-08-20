@@ -103,7 +103,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         renderer = (ROOT / "src/draw/backend/rhi_renderer.rs").read_text(encoding="utf-8")
         msdf = (ROOT / "src/draw/backend/rhi_renderer_msdf.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         trait_start = rhi.index("pub(crate) trait GraphicsDevice")
         trait_end = rhi.index("pub(crate) trait GraphicsSurface", trait_start)
         self.assertNotIn("fn probe(", rhi[trait_start:trait_end])
@@ -149,8 +149,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 FrameEncoder 已能整条降低到 RHI，并把最终 present 留给外层。
     def test_frame_encoder_rhi_segment_contract(self) -> None:
         # 读取编码帧 lowering、调用边界和不触发 present 的 FramePlan 执行器。
-        lowering = (ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs").read_text(encoding="utf-8")
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        lowering = (ROOT / "src/draw/backend/gpu/execution/rhi_frame.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         plan = (ROOT / "src/draw/backend/frame_plan_execution.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 与两套 adapter 的 Additive 类型化实现。
@@ -240,9 +240,9 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 Picture 离屏只保留一个 RHI owner，旧资源族不会复活。
     def test_picture_offscreen_has_one_rhi_owner_without_legacy_family(self) -> None:
         # 读取通用 backend 的离屏生命周期实现。
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 读取 Picture slot 的唯一资源字段。
-        backend_owner = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        backend_owner = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # 读取公共兼容接口和句柄声明。
         present = read_rust_module(ROOT / "src/native/presentation/contracts/mod.rs")
         # 读取 D3D11 adapter context 的完整拆分模块。
@@ -316,7 +316,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验主 FrameEncoder 与 Picture 一样只能走无损 retained RHI。
     def test_main_frame_encoder_has_no_legacy_replace_upload_fallback(self) -> None:
         # 读取主 RenderBackend 的编码帧执行状态机。
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 定位主 FrameEncoder 执行函数的起点。
         start = backend.index("fn try_execute_encoded_frame")
         # 定位紧随其后的 Picture 生命周期入口。
@@ -332,24 +332,24 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 主帧不得因 lowering 缺口放弃 retained target 并切回 swapchain。
         self.assertNotIn("abandon_rhi_surface_texture_for_legacy", main_frame)
         # 旧 FrameEncoder adapter 执行模块必须从源码树删除。
-        self.assertFalse((ROOT / "src/draw/backend/gpu/backend/impl_frame.rs").exists())
+        self.assertFalse((ROOT / "src/draw/backend/gpu/execution/impl_frame.rs").exists())
 
     # 校验主 surface 最终提交和有序边界不再进入 direct swapchain legacy 分支。
     def test_main_surface_has_no_direct_swapchain_legacy_present(self) -> None:
         # 读取最终 present 状态机。
-        present = (ROOT / "src/draw/backend/gpu/backend/render_present.rs").read_text(encoding="utf-8")
+        present = (ROOT / "src/draw/backend/gpu/execution/render_present.rs").read_text(encoding="utf-8")
         # 读取 Picture/effect 前的主 surface 有序边界。
-        lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 读取 canvas 提交模块，确认旧消费者已经物理删除。
         submit = (ROOT / "src/draw/backend/gpu/submit.rs").read_text(encoding="utf-8")
         # 读取 retained surface 生命周期，确认 legacy 放弃 helper 不会复活。
-        retained = (ROOT / "src/draw/backend/gpu/backend/rhi_surface.rs").read_text(encoding="utf-8")
+        retained = (ROOT / "src/draw/backend/gpu/execution/rhi_surface.rs").read_text(encoding="utf-8")
         # 生产 backend 构造必须以能力快照存在性拒绝缺少组合 thin RHI 的 context。
         self.assertIn("has_gpu_baseline()", lifecycle)
         # 最终状态机必须以统一 typed 门禁拒绝未覆盖语义。
         self.assertIn("require_lossless_main_surface_submission", present)
         # 读取 retained RHI 主 surface 提交状态机。
-        rhi_submit = (ROOT / "src/draw/backend/gpu/backend/rhi_submit.rs").read_text(encoding="utf-8")
+        rhi_submit = (ROOT / "src/draw/backend/gpu/execution/rhi_submit.rs").read_text(encoding="utf-8")
         # 空新帧必须在 retained texture 内执行透明初始化。
         self.assertIn("submit_rhi_clear_only", rhi_submit)
         # 最终状态机不得自行构造兼容 Swapchain present 帧。
@@ -472,11 +472,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 Renderer 的 presentation 路由。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的 RHI 准备 helper。
-        gpu_lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        gpu_lifecycle = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 读取 GPU RenderBackend 实现。
-        gpu_backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        gpu_backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 读取 overlay 无帧 RHI 事务。
-        overlay = (ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs").read_text(encoding="utf-8")
+        overlay = (ROOT / "src/draw/backend/gpu/execution/render_backend_backdrop.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的 thin RHI host。
         opengl_host = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # 收集所有直接实现类型化 lifecycle 的测试与原生 context。
@@ -546,13 +546,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验生产 GPU backend 不再保留 hybrid 构造和 native resize 兼容回退。
     def test_gpu_resize_only_uses_factory_prepared_thin_rhi_surface(self) -> None:
         # 读取 GPU backend 的状态字段。
-        backend_state = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        backend_state = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 构造与资源生命周期。
-        lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        lifecycle = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 读取 GPU canvas 的生产与测试构造边界。
         canvas = (ROOT / "src/draw/backend/gpu/canvas.rs").read_text(encoding="utf-8")
         # 读取 RenderBackend 的 resize、initialize 与 Picture 实现。
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 读取构造期已验证的 GPU recipe owner。
         gpu_owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # dormant hybrid 构造入口不得复活。
@@ -707,7 +707,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 graphics backend 拥有的 renderer 能力投影定义。
         raster_caps = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取生产 GPU backend 构造门禁。
-        backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 枚举曾经硬编码 renderer profile 的生产 adapter。
         adapters = (
             # Windows 默认 D3D11 adapter。
@@ -753,7 +753,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取共享 OpenGL surface bridge。
         opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的测试诊断入口。
-        backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 读取 Vulkan 的显式 GFX-R5 诊断辅助。
         vulkan = (ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs").read_text(encoding="utf-8")
         # 兼容 trait 不得重新声明 readback。

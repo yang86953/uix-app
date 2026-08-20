@@ -21,7 +21,7 @@ PROBE = ROOT / "src/draw/backend/gpu/device_probe.rs"
 # 定位 native factory 组合根。
 REGISTRY = ROOT / "src/native/factory/registry.rs"
 # 定位 GPU backend 启动门禁。
-GPU_IMPL = ROOT / "src/draw/backend/gpu/backend/impl_main.rs"
+GPU_IMPL = ROOT / "src/draw/backend/gpu/execution/impl_main.rs"
 # 定位 OpenGL GraphicsDevice host。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 GraphicsDevice 实现。

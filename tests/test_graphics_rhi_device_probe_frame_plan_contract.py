@@ -17,7 +17,7 @@ REGISTRY = ROOT / "src/native/factory/registry.rs"
 # 定位 Drawing GPU Module 的启动探针。
 DEVICE_PROBE = ROOT / "src/draw/backend/gpu/device_probe.rs"
 # 定位 GPU backend 的构造与启动门禁。
-GPU_IMPL = ROOT / "src/draw/backend/gpu/backend/impl_main.rs"
+GPU_IMPL = ROOT / "src/draw/backend/gpu/execution/impl_main.rs"
 # 定位保留候选 recipe 回退语义的 Drawing bootstrap 循环。
 BOOTSTRAP = ROOT / "src/draw/renderer/bootstrap.rs"
 # 定位 OpenGL GraphicsDevice Adapter。

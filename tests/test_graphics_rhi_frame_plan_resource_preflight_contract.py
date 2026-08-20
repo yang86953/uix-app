@@ -14,15 +14,15 @@ ROOT = Path(__file__).resolve().parents[1]
 # 定位 FramePlan 资源预检与原生命令执行边界。
 FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 overlay backdrop 快照与恢复的统一计划边界。
-BACKDROP_EXECUTION = ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs"
+BACKDROP_EXECUTION = ROOT / "src/draw/backend/gpu/execution/render_backend_backdrop.rs"
 # 定位 FramePlan scope 与顶层步骤校验实现。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位原生 lowering 的 move-only 执行 helper。
 RHI_LOWERING = ROOT / "src/draw/backend/gpu/rhi_lowering.rs"
 # 定位 FrameEncoder 的 move-only 执行 helper。
-RHI_FRAME = ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs"
+RHI_FRAME = ROOT / "src/draw/backend/gpu/execution/rhi_frame.rs"
 # 定位 Surface scroll 的 move-only 执行入口。
-RHI_SURFACE_SCROLL = ROOT / "src/draw/backend/gpu/backend/rhi_surface_scroll.rs"
+RHI_SURFACE_SCROLL = ROOT / "src/draw/backend/gpu/execution/rhi_surface_scroll.rs"
 
 
 # 提取指定 Rust 函数的完整花括号范围。

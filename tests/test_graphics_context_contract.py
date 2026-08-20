@@ -105,11 +105,11 @@ class GraphicsContextContractTests(unittest.TestCase):
             # 所有 context 实现都不得恢复静态 capability SPI。
             self.assertNotIn("fn caps(&self)", adapter_source)
         # 读取 GPU backend 的 live metadata 派生边界。
-        gpu_backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        gpu_backend = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # GPU backend 必须从 PresentSurface 派生逻辑元数据。
         self.assertIn("logical_metadata_from_surface", gpu_backend)
         # 读取 GPU backend 构造、回读与 surface 采纳路径。
-        gpu_lifecycle = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        gpu_lifecycle = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # GPU backend 不得重新读取分离的 context width。
         self.assertNotIn("gpu_ctx.width()", gpu_lifecycle)
         # GPU backend 不得重新读取分离的 context height。
@@ -310,7 +310,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取生产 GPU backend 的 resize 消费者。
         gpu_backend = (
             # 固定 GPU backend 生命周期实现路径。
-            ROOT / "src/draw/backend/gpu/backend/render_backend.rs"
+            ROOT / "src/draw/backend/gpu/execution/render_backend.rs"
         ).read_text(encoding="utf-8")
         # GPU backend 必须通过已验证 recipe owner 执行专用生命周期事务。
         self.assertIn("self.gpu_ctx.resize_surface(logical_w, logical_h)?", gpu_backend)
@@ -324,7 +324,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取 GPU owner 的唯一 native 边界实现。
         owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的状态定义。
-        backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # 读取唯一 renderer 装配入口。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取 native factory 使用的正交 recipe owner。
@@ -516,7 +516,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         self.assertNotIn("forward_result!(test_present", thread_bound)
         # 读取 GPU backend 的最终 surface 入口。
         gpu_backend = (
-            ROOT / "src/draw/backend/gpu/backend/render_backend.rs"
+            ROOT / "src/draw/backend/gpu/execution/render_backend.rs"
         ).read_text(encoding="utf-8")
         # backend 必须借用组合 RHI 后调用 surface 探测。
         self.assertIn("context.test_present()", gpu_backend)
@@ -538,7 +538,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取 GPU owner 事务实现。
         backdrop = (
             # 固定独立 backdrop 模块路径。
-            ROOT / "src/draw/backend/gpu/backend/render_backend_backdrop.rs"
+            ROOT / "src/draw/backend/gpu/execution/render_backend_backdrop.rs"
         ).read_text(encoding="utf-8")
         # 读取通用 RHI blur wrapper，确认 overlay 不形成平行 shader 路径。
         blur_renderer = (ROOT / "src/draw/backend/rhi_renderer_blur.rs").read_text(

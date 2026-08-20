@@ -147,11 +147,11 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
         # Offscreen 构造器必须从类型上拒绝任何 present 参数。
         self.assertIn("pub(crate) fn offscreen() -> Self", plan)
         # 读取两条 retained TextureMove helper。
-        frame = (ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs").read_text(encoding="utf-8")
+        frame = (ROOT / "src/draw/backend/gpu/execution/rhi_frame.rs").read_text(encoding="utf-8")
         # 读取通用 mixed lowering 的 TextureMove helper。
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         # 读取空 retained target 初始化 helper。
-        soft = (ROOT / "src/draw/backend/gpu/backend/rhi_surface_soft.rs").read_text(encoding="utf-8")
+        soft = (ROOT / "src/draw/backend/gpu/execution/rhi_surface_soft.rs").read_text(encoding="utf-8")
         # FrameEncoder move boundary 只能取得 Device。
         self.assertIn("fn execute_frame_texture_move(\n    device: &mut dyn GraphicsDevice", frame)
         # 通用 mixed move boundary 只能取得 Device。
@@ -168,9 +168,9 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
         # 读取 sampled 最终合成入口。
         sampled = (ROOT / "src/draw/backend/rhi_renderer_sampled.rs").read_text(encoding="utf-8")
         # 读取 test-harness 的 Drawing 回读边界。
-        backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/impl_main.rs").read_text(encoding="utf-8")
         # 读取 retained/Picture soft staging helper。
-        soft = (ROOT / "src/draw/backend/gpu/backend/rhi_surface_soft.rs").read_text(encoding="utf-8")
+        soft = (ROOT / "src/draw/backend/gpu/execution/rhi_surface_soft.rs").read_text(encoding="utf-8")
         # FramePlan 钩子必须只接收 Surface 角色。
         self.assertIn("before_present: &mut dyn FnMut(&mut dyn GraphicsSurface)", execution)
         # FramePlan 不得把完整组合 context 交给观察器。
