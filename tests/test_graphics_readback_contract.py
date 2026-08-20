@@ -58,7 +58,7 @@ class GraphicsReadbackContractTests(unittest.TestCase):
         # 读取唯一 FramePlan surface 执行事务。
         plan = (ROOT / "src/draw/backend/frame_plan_execution.rs").read_text(encoding="utf-8")
         # 读取 retained texture 到 swapchain 的最终合成边界。
-        submit = (ROOT / "src/draw/backend/gpu/backend/rhi_surface_final.rs").read_text(encoding="utf-8")
+        submit = (ROOT / "src/draw/backend/gpu/execution/rhi_surface_final.rs").read_text(encoding="utf-8")
         # 截取带观察钩子的 FramePlan 方法。
         method = plan[
             # 从新事务入口开始。
@@ -119,9 +119,9 @@ class GraphicsReadbackContractTests(unittest.TestCase):
         # 读取 Drawing 层公开的测试快照契约。
         contract = (ROOT / "src/draw/backend/contract.rs").read_text(encoding="utf-8")
         # 读取主表面滚动到共享 FramePlan 的 lowering 边界。
-        scroll = (ROOT / "src/draw/backend/gpu/backend/rhi_surface_scroll.rs").read_text(encoding="utf-8")
+        scroll = (ROOT / "src/draw/backend/gpu/execution/rhi_surface_scroll.rs").read_text(encoding="utf-8")
         # 读取最终 surface 回读附加执行证据的唯一边界。
-        final = (ROOT / "src/draw/backend/gpu/backend/rhi_surface_final.rs").read_text(encoding="utf-8")
+        final = (ROOT / "src/draw/backend/gpu/execution/rhi_surface_final.rs").read_text(encoding="utf-8")
         # 公开结果只能携带 API 无关的执行次数。
         self.assertIn("pub executed_texture_moves: usize", contract)
         # 计数必须发生在共享 FramePlan 成功执行之后。
@@ -150,7 +150,7 @@ class GraphicsReadbackContractTests(unittest.TestCase):
         # 读取 Device 原语到 Drawing 私有能力的唯一投影。
         projection = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取 Drawing backend 对外能力组合边界。
-        backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
+        backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES Device Adapter 的事实能力声明。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device Adapter 的事实能力声明。

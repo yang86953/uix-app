@@ -15,6 +15,8 @@ use std::time::Duration;
 const SOFT_FALLBACK_IDLE_PRESENT_GRACE: u8 = 2;
 pub(crate) const SOFT_FALLBACK_IDLE_TIME_GRACE: Duration = Duration::from_millis(250);
 // Drawing GPU Module 私有拥有固定 pipeline 的 FramePlan 启动探针。
+// 保留 `gpu::backend` 逻辑路径，实行与呈现实现物理归入 execution。
+#[path = "execution/mod.rs"]
 pub(crate) mod backend;
 mod device_probe;
 // 隐藏 graphics backend 私有的 renderer 能力投影实现。
