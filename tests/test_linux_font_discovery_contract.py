@@ -21,9 +21,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位被测 Linux fontconfig 生产实现。
-FONTS_SOURCE = ROOT / "src" / "native" / "backends" / "linux" / "system_info" / "fonts.rs"
+FONTS_SOURCE = ROOT / "src" / "native" / "backends" / "linux" / "host" / "system_info" / "fonts.rs"
 # 定位 LinuxSystemInfo 的 trait 接线实现。
-SYSTEM_INFO_SOURCE = ROOT / "src" / "native" / "backends" / "linux" / "system_info" / "mod.rs"
+SYSTEM_INFO_SOURCE = ROOT / "src" / "native" / "backends" / "linux" / "host" / "system_info" / "mod.rs"
 
 
 # 定义 Linux CJK 字体发现回归测试。
