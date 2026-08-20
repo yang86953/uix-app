@@ -11,7 +11,7 @@ pub use super::measurement_cache::{
 };
 
 // 将跨组件复用的等高列表滚动状态隔离到独立模块。
-#[path = "virtual_scroll/list_scroll.rs"]
+#[path = "list_scroll.rs"]
 // 编译并保持共享滚动状态的原有公开路径。
 mod list_scroll;
 // 从虚拟滚动模块继续导出共享列表滚动状态。
@@ -794,13 +794,13 @@ impl From<VirtualScrollBuilder> for crate::ui::view::ViewNode {
 // 仅在测试构建中加载虚拟滚动动态子树契约。
 #[cfg(test)]
 // 显式指向 virtualization 目录中的同级测试文件。
-#[path = "../../../tests/unit/ui/virtualization/tests.rs"]
+#[path = "../../../../tests/unit/ui/virtualization/tests.rs"]
 // 将回归测试隔离到独立文件，保持实现文件聚焦。
 mod tests;
 
 // 仅在库测试中编译 VirtualScroll 动态私有状态与完整捕获交接门禁。
 #[cfg(test)]
 // 显式指向 virtualization 目录中的同级动态测试文件。
-#[path = "../../../tests/unit/ui/virtualization/dynamic_capture_tests.rs"]
+#[path = "../../../../tests/unit/ui/virtualization/dynamic_capture_tests.rs"]
 // 挂载生产 renderer 接线的行为测试模块。
 mod dynamic_capture_tests;

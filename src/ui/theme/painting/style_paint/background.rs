@@ -238,6 +238,6 @@ fn tile_axis(start: f32, end: f32, anchor: f32, tile: f32, repeated: bool) -> Ve
 // 只在测试构建中编译背景纯几何与 Style 传播契约。
 #[cfg(test)]
 // 将测试保持在独立文件以控制生产代码体积。
-#[path = "../../../tests/unit/ui/style_paint/background_tests.rs"]
+#[path = "../../../../../tests/unit/ui/style_paint/background_tests.rs"]
 // 编译背景运行时契约测试。
 mod tests;

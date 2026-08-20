@@ -36,25 +36,25 @@ use crate::ui::widgets::navigation::Anchor;
 use crate::ui::{WidgetId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
-#[path = "adapter/capture_guards.rs"]
+#[path = "capture_guards.rs"]
 // 编译捕获守卫与回执转移的私有实现模块。
 mod capture_guards;
 // 仅向 UI 内部 renderer 边界重导出不可伪造的动态捕获能力。
 pub(crate) use capture_guards::DynamicViewCaptureContext;
 // 拆分交错入场计算，保持适配器主体在文件规模约束内。
-#[path = "adapter/stagger.rs"]
+#[path = "stagger.rs"]
 // 编译交错入场配置的私有实现模块。
 mod stagger;
 // 拆分动态子树协调的事务边界，保持适配器主体在文件规模约束内。
-#[path = "adapter/dynamic_reconcile.rs"]
+#[path = "dynamic_reconcile.rs"]
 // 编译动态子树协调事务的私有实现模块。
 mod dynamic_reconcile;
 // 拆分根协调的发布边界，避免适配器主体超过文件规模上限。
-#[path = "adapter/coordination.rs"]
+#[path = "coordination.rs"]
 // 编译根构建与协调的私有事务入口。
 mod coordination;
 // 拆分具体组件样式适配，保持协调主体低于文件规模上限。
-#[path = "adapter/style.rs"]
+#[path = "style.rs"]
 // 编译统一 Style 到 widgets 私有配置的单向适配入口。
 mod style;
 /// 声明期 View 子节点能力端口（System 私有边界）。
