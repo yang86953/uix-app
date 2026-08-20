@@ -1,5 +1,5 @@
 // 引入共享表达式、节点与源码跨度。
-use super::{Expression, Node, SourceSpan};
+use super::{ActionBody, Expression, Node, SourceSpan};
 
 // 表示完成声明级验证的自定义组件。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,13 +24,13 @@ pub(crate) struct WidgetDeclaration {
     pub(crate) span: SourceSpan,
 }
 
-// 表示一个无参数、单表达式且在事件位置静态展开的同步 action。
+// 表示一个无参数且在事件位置静态展开的同步 action。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WidgetAction {
     // 保存组件内唯一的 action 名称。
     pub(crate) name: String,
-    // 保存已经通过受限语法验证的 action 表达式。
-    pub(crate) expression: Expression,
+    // 保存兼容单表达式或独立 do 语句块主体。
+    pub(crate) body: ActionBody,
     // 保存所属 actions 属性跨度。
     pub(crate) span: SourceSpan,
 }

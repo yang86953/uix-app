@@ -112,21 +112,32 @@ impl WidgetExpander {
             }
             // 进入 action 静态展开链。
             self.action_expansion_stack.push(action.name.clone());
-            // 用声明期单表达式替换调用节点。
-            *expression = action.expression;
-            // action 主体继承事件副作用权限并复用同一字段绑定。
-            let result = self.transform_expression_inner(
-                // 继续降低已内联主体。
-                expression,
-                // 使用当前组件字段绑定。
-                bindings,
-                // action 只从事件进入，因此允许 setState。
-                true,
-                // action 主体不是句柄位属性。
-                false,
-                // 沿用调用位置的字面量规范化策略。
-                normalize_literals,
-            );
+            // 单表达式保持原有直接内联；do 块进入独立语句降低路径。
+            let result =
+                match action.body {
+                    // 兼容主体直接替换调用表达式。
+                    super::ActionBody::Expression(action_expression) => {
+                        *expression = action_expression;
+                        self.transform_expression_inner(
+                            expression,
+                            bindings,
+                            true,
+                            false,
+                            normalize_literals,
+                        )
+                    }
+                    // 多语句主体保留独立 AST，并建立本次调用独占标签。
+                    super::ActionBody::Block(mut block) => {
+                        let label = self.fresh_ident("action_return", &action.name).to_string();
+                        let result = self.transform_action_block(&mut block, bindings);
+                        if result.is_ok() {
+                            expression.kind = ExpressionKind::LoweredAction(Box::new(
+                                super::LoweredActionBlock { label, block },
+                            ));
+                        }
+                        result
+                    }
+                };
             // 无论成功或失败都恢复外层 action 调用链。
             self.action_expansion_stack.pop();
             // 返回 action 主体降低结果。
@@ -264,6 +275,8 @@ impl WidgetExpander {
         }
         // 按表达式形状递归改写。
         match &mut expression.kind {
+            // action 块中的全部表达式已由独立降低路径处理。
+            ExpressionKind::LoweredAction(_) => {}
             // 组件字段标识符替换为卫生名称。
             ExpressionKind::Identifier(name) => {
                 // 当前 For 或闭包局部变量优先遮蔽同名组件字段。
@@ -432,8 +445,14 @@ impl WidgetExpander {
             }
             // 调用递归改写目标与参数，数据构造链保持字面量形状。
             ExpressionKind::Call { callee, arguments } => {
-                // 已登记数据类型构造链的参数交给公开 &str/枚举 API。
-                let chain_normalizes = !is_data_constructor_chain(callee);
+                // setStyle 必须保留编译期字符串字面量供实际 View 动态样式 Gate 消费。
+                let preserves_style_literal = matches!(
+                    &callee.kind,
+                    ExpressionKind::Identifier(name) if name == "setStyle"
+                );
+                // 数据构造链与 setStyle 参数保持作者字面量形状。
+                let chain_normalizes =
+                    !is_data_constructor_chain(callee) && !preserves_style_literal;
                 // 数组下标操作的首参数保持 usize 可推断整数形状。
                 let preserves_first_index = matches!(
                     // 只检查直接成员操作名称。
@@ -521,6 +540,58 @@ impl WidgetExpander {
         }
         // 报告表达式改写成功。
         Ok(())
+    }
+
+    // 在独立词法作用域中按源码顺序降低一个 action 语句块。
+    fn transform_action_block(
+        &mut self,
+        block: &mut super::ActionBlock,
+        bindings: &Bindings,
+    ) -> Result<(), Diagnostic> {
+        // 当前块从空局部集合开始，外层块仍保留在栈中。
+        self.local_scope_stack.push(BTreeSet::new());
+        let result = (|| {
+            for statement in &mut block.statements {
+                match statement {
+                    super::ActionStatement::Let {
+                        name, initializer, ..
+                    } => {
+                        // 初始化先读取外层同名绑定，新局部从下一条语句生效。
+                        self.transform_expression_inner(initializer, bindings, true, false, true)?;
+                        self.local_scope_stack
+                            .last_mut()
+                            .expect("action 块作用域已压栈")
+                            .insert(name.clone());
+                    }
+                    super::ActionStatement::Assign { value, .. } => {
+                        self.transform_expression_inner(value, bindings, true, false, true)?;
+                    }
+                    super::ActionStatement::Expression { expression, .. } => {
+                        self.transform_expression_inner(expression, bindings, true, false, true)?;
+                    }
+                    super::ActionStatement::If {
+                        condition,
+                        then_block,
+                        else_block,
+                        ..
+                    } => {
+                        self.transform_expression_inner(condition, bindings, true, false, true)?;
+                        self.transform_action_block(then_block, bindings)?;
+                        if let Some(else_block) = else_block {
+                            self.transform_action_block(else_block, bindings)?;
+                        }
+                    }
+                    super::ActionStatement::Return { value, .. } => {
+                        if let Some(value) = value {
+                            self.transform_expression_inner(value, bindings, true, false, true)?;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.local_scope_stack.pop();
+        result
     }
 
     // 判断标识符是否属于当前组件允许的封闭名称集合。
@@ -775,6 +846,8 @@ fn visit_numbers(expression: &Expression, visitor: &mut impl FnMut(&Expression))
     visitor(expression);
     // 再按结构访问子节点。
     match &expression.kind {
+        // action 块内部数字已由独立语句降低逐表达式处理。
+        ExpressionKind::LoweredAction(_) => {}
         // 一元表达式访问操作数。
         ExpressionKind::Unary { operand, .. } => visit_numbers(operand, visitor),
         // 二元表达式访问两侧。
@@ -848,6 +921,8 @@ fn visit_numbers_mut(expression: &mut Expression, visitor: &mut impl FnMut(&mut 
     visitor(expression);
     // 再按结构访问子节点。
     match &mut expression.kind {
+        // action 块内部数字已由独立语句降低逐表达式处理。
+        ExpressionKind::LoweredAction(_) => {}
         // 一元表达式访问操作数。
         ExpressionKind::Unary { operand, .. } => visit_numbers_mut(operand, visitor),
         // 二元表达式访问两侧。

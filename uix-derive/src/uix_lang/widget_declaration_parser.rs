@@ -128,9 +128,9 @@ pub(crate) fn parse_widget_declaration(
         None => Vec::new(),
     };
     // 解析可选同步业务 action。
-    let actions = match actions_source {
+    let mut actions = match actions_source {
         // 解析存在的 actions。
-        Some((source, span)) => super::widget_parser::parse_actions(source, span)?,
+        Some((source, span)) => super::action_parser::parse_actions(source, span)?,
         // 未声明 actions 时使用空列表。
         None => Vec::new(),
     };
@@ -217,6 +217,17 @@ pub(crate) fn parse_widget_declaration(
             ));
         }
     }
+    // 在完整名称空间建立后验证全部 action 的局部作用域与静态调用图。
+    super::action_semantic::validate_widget_actions(
+        &mut actions,
+        &states
+            .iter()
+            .map(|state| state.name.clone())
+            .chain(props.iter().filter_map(|prop| {
+                matches!(&prop.kind, super::WidgetPropType::State(_)).then(|| prop.name.clone())
+            }))
+            .collect::<HashSet<_>>(),
+    )?;
     // 返回结构化组件声明。
     Ok(WidgetDeclaration {
         // 保存组件名。

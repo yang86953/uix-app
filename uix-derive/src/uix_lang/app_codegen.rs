@@ -499,6 +499,8 @@ fn validate_expression_theme_requests(
 ) -> Result<(), Diagnostic> {
     // 按表达式形状递归。
     match &expression.kind {
+        // action 内联只存在于 Widget 事件，App 主题预检不会接收该形状。
+        ExpressionKind::LoweredAction(_) => Ok(()),
         // 调用先检查 setTheme，再检查全部子表达式。
         ExpressionKind::Call { callee, arguments } => {
             // 识别已经由 parser 限制为单字符串参数的内建调用。

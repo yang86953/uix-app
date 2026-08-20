@@ -15,7 +15,7 @@ use super::{
 // 引入既有核心 View 生成入口。
 use super::generate_view;
 // 引入组件动态样式使用检测。
-use super::dynamic_style_lower::{expression_uses_set_style, nodes_use_set_style};
+use super::dynamic_style_lower::nodes_use_set_style;
 // 引入组件调用属性完整性与必填校验入口。
 use super::widget_call_validator::validate_widget_attributes;
 
@@ -346,6 +346,21 @@ impl WidgetExpander {
             // 普通元素不创建循环路径。
             None
         };
+        // action 必须先在实际事件调用点静态内联，供随后 setStyle 扫描绑定当前 View。
+        for attribute in &mut expanded.attributes {
+            if !attribute.name.starts_with('@') {
+                continue;
+            }
+            if let AttributeValue::Expression(expression) = &mut attribute.value {
+                let active_bindings = self.clone_event_bindings(bindings);
+                self.transform_expression(
+                    &mut expression.expression,
+                    &active_bindings,
+                    true,
+                    false,
+                )?;
+            }
+        }
         // 在 class 被消费前绑定状态伪类与元素既有事实。
         let pseudo_style = self.prepare_pseudo_style(&expanded, bindings)?;
         // 优先降低组件内动态样式，否则走既有静态样式路径。
@@ -366,6 +381,10 @@ impl WidgetExpander {
         self.prepare_transition(&mut expanded)?;
         // 逐个改写普通属性与事件表达式。
         for attribute in &mut expanded.attributes {
+            // 事件已在动态样式扫描前完成字段与 action 降低。
+            if attribute.name.starts_with('@') {
+                continue;
+            }
             // VirtualScroll item 只声明直接 For 的行绑定名称，不读取组件或宿主值。
             if element.name == "VirtualScroll" && attribute.name == "item" {
                 // 保留原标识符，交给 VirtualScroll 契约与直接 For 绑定做一致性校验。
@@ -373,16 +392,6 @@ impl WidgetExpander {
             }
             // 只有表达式属性需要字段改写。
             if let AttributeValue::Expression(expression) = &mut attribute.value {
-                // 事件为字段创建独立克隆。
-                let active_bindings = if attribute.name.starts_with('@') {
-                    // 生成当前事件专用绑定。
-                    self.clone_event_bindings(bindings)
-                } else {
-                    // 普通表达式直接使用当前绑定。
-                    bindings.clone()
-                };
-                // 只有事件属性允许 setState。
-                let allow_set_state = attribute.name.starts_with('@');
                 // 句柄位属性（value/checked/current/open 等）读取 State 句柄而非读值。
                 let handle_mode = is_state_handle_attribute(&element.name, &attribute.name);
                 // 改写 props、state 与 setState。
@@ -390,9 +399,9 @@ impl WidgetExpander {
                     // 可变借用表达式树。
                     &mut expression.expression,
                     // 使用当前属性的字段绑定。
-                    &active_bindings,
+                    bindings,
                     // 传递状态更新作用域。
-                    allow_set_state,
+                    false,
                     // 传递句柄位改写模式。
                     handle_mode,
                 )?;
@@ -604,7 +613,7 @@ impl WidgetExpander {
             || widget
                 .actions
                 .iter()
-                .any(|action| expression_uses_set_style(&action.expression));
+                .any(|action| super::action_semantic::action_body_uses_set_style(&action.body));
         // 预先判断当前组件是否需要自动 hover 私有状态。
         let uses_hover_style = self.styles.nodes_use_hover(&widget.children);
         // 预先判断当前组件是否需要持久化声明式动画。

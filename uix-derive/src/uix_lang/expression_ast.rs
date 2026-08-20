@@ -1,5 +1,5 @@
 // 引入共享源码跨度。
-use super::SourceSpan;
+use super::{LoweredActionBlock, SourceSpan};
 
 // 表示一个已经通过受限语法验证的表达式。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,8 @@ pub(crate) struct Expression {
 // 枚举规范允许的全部表达式结构。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ExpressionKind {
+    // 保存 action 内联阶段的独立标签块桥接；表达式解析器不接受该形状。
+    LoweredAction(Box<LoweredActionBlock>),
     // 保存标识符引用。
     Identifier(String),
     // 保存未改写的数字字面量。

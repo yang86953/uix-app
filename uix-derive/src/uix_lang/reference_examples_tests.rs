@@ -356,8 +356,8 @@ fn specification_examples_generate_as_documents() {
             });
         }
     }
-    // 当前分类后应有三十个规范示例实际进入完整生成路径。
-    assert_eq!(total_examples, 30, "UIX 规范示例数量发生未审查变化");
+    // 新增结构化 action 规范示例后应有三十一个示例进入完整生成路径。
+    assert_eq!(total_examples, 31, "UIX 规范示例数量发生未审查变化");
 }
 
 // 验证已宣告完整实现的目标设计示例持续通过当前完整生成路径。

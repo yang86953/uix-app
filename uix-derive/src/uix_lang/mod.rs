@@ -1,5 +1,13 @@
 // 定义转换器内部共享的带跨度语法树。
 mod ast;
+// 定义独立于普通表达式语法的同步 action 语句 AST。
+mod action_ast;
+// 定义同步 action 声明与 do 语句块解析。
+mod action_parser;
+// 定义同步 action 词法作用域、调用图与递归语义验证。
+mod action_semantic;
+// 定义已降低 action 标签块到纯 Rust 令牌的生成。
+mod action_codegen;
 // 定义静态 animation 简写到持久化 Animated 状态的降低。
 mod animation_lower;
 // 定义静态 animation 装饰的关键帧代码生成。
@@ -629,6 +637,8 @@ pub(crate) use window_control_codegen::generate_window_control;
 pub(crate) use window_drag_region_codegen::generate_window_drag_region;
 // 向组件解析与代码生成暴露结构化组件声明。
 pub(crate) use widget_ast::*;
+// 向 action 解析、语义与降低阶段暴露独立语句 AST。
+pub(crate) use action_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
     DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,

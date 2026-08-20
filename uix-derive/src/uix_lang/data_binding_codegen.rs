@@ -184,6 +184,8 @@ pub(crate) fn is_registered_data_type(name: &str) -> bool {
 pub(crate) fn normalize_number_literals(expression: &mut Expression) {
     // 递归访问当前节点。
     match &mut expression.kind {
+        // action 块已在组件事件降低阶段分别规范化内部表达式。
+        ExpressionKind::LoweredAction(_) => {}
         // 整数形状补充小数点。
         ExpressionKind::Number(source) => {
             // 只改写没有小数点或指数的整数形态。

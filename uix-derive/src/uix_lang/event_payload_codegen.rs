@@ -46,6 +46,8 @@ fn validate_event_payload_fields(
 ) -> Result<(), Diagnostic> {
     // 按表达式形状递归。
     match &expression.kind {
+        // action 语义禁止 $event，内部块无需事件字段映射。
+        ExpressionKind::LoweredAction(_) => Ok(()),
         // 成员访问先校验直接 $event 字段，再递归普通对象。
         ExpressionKind::Member { object, member } => {
             // 直接 $event.字段 必须存在于当前事件登记表。
