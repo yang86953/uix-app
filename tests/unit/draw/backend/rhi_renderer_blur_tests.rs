@@ -2,6 +2,8 @@
 
 // 引入被测 blur 模块可见的 renderer、目标和 RHI 类型。
 use super::*;
+// 引入 Surface Frame 构造所需的最终呈现损伤值。
+use crate::core::PresentDamage;
 // 引入测试 recording context 需要的 device/surface 契约。
 use crate::native::present::rhi::{
     // Blur 方向与 tap 字段位置由共享 RHI 契约唯一声明。
@@ -70,12 +72,20 @@ struct RecordingContext {
     present_count: usize,
     // 允许失败测试在 submit 边界注入 device lost。
     fail_submit: bool,
+    // 允许失败测试在 scratch 销毁边界注入资源错误。
+    fail_destroy: bool,
 }
 
 // 为 recording context 提供确定性初值。
 impl RecordingContext {
     // 构造一个满足通用 GPU 基线的内存记录器。
     fn new(fail_submit: bool) -> Self {
+        // 普通夹具只按调用方要求控制 submit，不注入 cleanup 失败。
+        Self::with_failures(fail_submit, false)
+    }
+
+    // 构造可分别控制主阶段和 cleanup 结果的内存记录器。
+    fn with_failures(fail_submit: bool, fail_destroy: bool) -> Self {
         // 返回不触碰真实图形 API 的 owner-thread context。
         Self {
             // 从非零值开始分配资源。
@@ -106,6 +116,8 @@ impl RecordingContext {
             present_count: 0,
             // 保存调用方选择的失败模式。
             fail_submit,
+            // 保存调用方选择的 cleanup 失败模式。
+            fail_destroy,
         }
     }
 
@@ -193,6 +205,14 @@ impl GraphicsDevice for RecordingContext {
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
         // 保存销毁身份用于与创建记录配对。
         self.destroyed_textures.push(texture);
+        // cleanup 失败模式在记录检查式调用后返回稳定资源错误。
+        if self.fail_destroy {
+            // 使用与 submit 失败不同的分类验证错误优先级。
+            return Err(Error::new(
+                Errc::InvalidState,
+                "recording scratch destroy failed",
+            ));
+        }
         // 记录成功。
         Ok(())
     }
@@ -576,6 +596,115 @@ fn blur_submit_failure_still_destroys_scratch() {
     // 失败路径同样不得 acquire surface。
     assert_eq!(context.acquire_count, 0);
     // 失败路径同样不得 present surface。
+    assert_eq!(context.present_count, 0);
+}
+
+// 验证主阶段成功但 scratch cleanup 失败时返回 cleanup 错误。
+#[test]
+fn blur_cleanup_failure_is_reported_after_successful_submit() {
+    // 创建只在 destroy_texture 边界失败的记录设备。
+    let mut context = RecordingContext::with_failures(false, true);
+    // 创建独立 renderer。
+    let mut renderer = RhiRenderer::default();
+    // 使用稳定 Picture texture 身份。
+    let source = TextureHandle::from_raw(73);
+    // 执行合法双 pass 并取得 cleanup 错误。
+    let error = renderer
+        .execute_blur_without_present(
+            &mut context,
+            source,
+            RhiExtent::new(4, 4),
+            RhiScissor {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 4,
+            },
+            1.0,
+            TextureFormat::Bgra8Unorm,
+            source,
+        )
+        .expect_err("cleanup failure must surface after successful execution");
+    // cleanup 使用独立分类，不能伪装成完整成功。
+    assert_eq!(error.code(), Errc::InvalidState);
+    // 主阶段仍只提交一次。
+    assert_eq!(context.submit_count, 1);
+    // destroy 必须被检查式调用并记录精确 scratch 身份。
+    assert_eq!(context.destroyed_textures, context.created_textures);
+    // cleanup 失败也不得触碰 Surface 生命周期。
+    assert_eq!(context.acquire_count, 0);
+    assert_eq!(context.present_count, 0);
+}
+
+// 验证主阶段与 cleanup 同时失败时保留原始执行错误。
+#[test]
+fn blur_execution_error_precedes_cleanup_error() {
+    // 同时在 submit 与 destroy_texture 边界注入失败。
+    let mut context = RecordingContext::with_failures(true, true);
+    // 创建独立 renderer。
+    let mut renderer = RhiRenderer::default();
+    // 使用稳定 Picture texture 身份。
+    let source = TextureHandle::from_raw(74);
+    // 执行合法双 pass 并取得优先级更高的主阶段错误。
+    let error = renderer
+        .execute_blur_without_present(
+            &mut context,
+            source,
+            RhiExtent::new(4, 4),
+            RhiScissor {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 4,
+            },
+            1.0,
+            TextureFormat::Bgra8Unorm,
+            source,
+        )
+        .expect_err("execution failure must remain primary");
+    // submit 的 device-lost 分类必须优先于 cleanup 的 InvalidState。
+    assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+    // 双失败仍必须尝试精确销毁 scratch。
+    assert_eq!(context.destroyed_textures, context.created_textures);
+    // 主阶段只尝试一次提交且不触碰 Surface。
+    assert_eq!(context.submit_count, 1);
+    assert_eq!(context.acquire_count, 0);
+    assert_eq!(context.present_count, 0);
+}
+
+// 验证 Surface Frame 在计划变化前拒绝显式离屏目标。
+#[test]
+fn surface_frame_rejects_offscreen_pass_before_plan_change() {
+    // 创建同时实现 Device 与 Surface 的记录 context。
+    let mut context = RecordingContext::new(false);
+    // 创建不会改变测试状态的 present 前观察钩子。
+    let mut before_present = |_surface: &mut dyn GraphicsSurface| {};
+    // 创建只能完成完整 present 事务的 Surface Frame。
+    let mut frame = RhiRendererFrame::surface_with_present_hook(
+        &mut context,
+        PresentDamage::Full,
+        &mut before_present,
+    );
+    // 创建目标无关命令包；角色门禁必须先于命令内容和计划变更。
+    let pass = frame.new_pass();
+    // 尝试向 Surface Frame 注入显式纹理目标。
+    let error = frame
+        .push_offscreen_pass(TextureHandle::from_raw(75), LoadAction::Load, pass)
+        .expect_err("Surface Frame must reject an offscreen texture pass");
+    // 使用稳定参数错误表达作用域不匹配。
+    assert_eq!(error.code(), Errc::InvalidArgument);
+    // 拒绝后的计划仍为空，执行必须在任何原生调用前失败。
+    let execution_error = frame
+        .execute()
+        .expect_err("rejected offscreen pass must not mutate the Surface plan");
+    // 空计划保持原有共享验证错误。
+    assert_eq!(execution_error.code(), Errc::InvalidArgument);
+    // 释放组合 context 的独占借用后检查全部负面事实。
+    drop(frame);
+    // 门禁和空计划验证都不得开始 pass、提交、获取或呈现。
+    assert!(context.passes.is_empty());
+    assert_eq!(context.submit_count, 0);
+    assert_eq!(context.acquire_count, 0);
     assert_eq!(context.present_count, 0);
 }
 

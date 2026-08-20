@@ -127,13 +127,13 @@ impl<'a> RhiRendererFrame<'a> {
         }
     }
 
-    // 返回当前帧唯一允许写入的计划目标。
+    // 返回当前帧普通 pass 默认写入的计划目标。
     const fn render_target(&self) -> RenderTargetRef {
-        // 从封闭变体投影目标，不接收第二个选择器。
+        // 从封闭变体投影默认目标，不向 producer 暴露选择器。
         match &self.role {
             // Surface 帧只能写入本次 acquire 的 image。
             RhiRendererFrameRole::Surface { .. } => RenderTargetRef::Surface,
-            // Offscreen 帧只能写入自己保存的纹理目标。
+            // Offscreen 帧的普通 pass 写入自己保存的最终纹理目标。
             RhiRendererFrameRole::Offscreen { target, .. } => RenderTargetRef::Texture(*target),
         }
     }
@@ -155,10 +155,44 @@ impl<'a> RhiRendererFrame<'a> {
         RhiRendererPass::new()
     }
 
-    // 接管命令包并绑定当前帧唯一 target 与本次 load。
+    // 接管命令包并绑定当前帧默认 target 与本次 load。
     pub(crate) fn push_pass(&mut self, load: LoadAction, pass: RhiRendererPass) {
+        // 先取得封闭帧角色拥有的默认目标，避免 producer 参与目标选择。
+        let target = self.render_target();
+        // 统一由 Frame owner 构造真实 pass 并追加到唯一计划。
+        self.push_targeted_pass(target, load, pass);
+    }
+
+    // 为 Offscreen 帧接管一个写入显式纹理的多目标 pass。
+    pub(crate) fn push_offscreen_pass(
+        &mut self,
+        target: TextureHandle,
+        load: LoadAction,
+        pass: RhiRendererPass,
+    ) -> Result<()> {
+        // Surface 帧不得在完整 present 事务内注入第二个离屏目标。
+        if !matches!(&self.role, RhiRendererFrameRole::Offscreen { .. }) {
+            // 在修改计划前返回稳定的作用域错误。
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "offscreen texture pass requires an Offscreen RhiRendererFrame",
+            ));
+        }
+        // 只有通过角色门禁后才把显式纹理绑定到 Frame 自有计划。
+        self.push_targeted_pass(RenderTargetRef::Texture(target), load, pass);
+        // 多目标 pass 已由唯一 Frame owner 接管。
+        Ok(())
+    }
+
+    // 把目标无关命令包绑定为 Frame 自有的真实 pass。
+    fn push_targeted_pass(
+        &mut self,
+        target: RenderTargetRef,
+        load: LoadAction,
+        pass: RhiRendererPass,
+    ) {
         // 只在 Frame owner 内部创建携带目标的真实 RenderPassPlan。
-        let mut plan = RenderPassPlan::new(self.render_target(), load);
+        let mut plan = RenderPassPlan::new(target, load);
         // 保持 producer 已经确定的命令顺序。
         for command in pass.commands {
             // 将目标无关命令逐项转移到当前帧 pass。

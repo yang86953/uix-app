@@ -9,10 +9,9 @@ use crate::native::present::rhi::{
     SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle, BLUR_WEIGHT_COUNT,
 };
 
-// 引入父 renderer 已导入的有序 FramePlan 类型和资源缓存。
+// 引入父 renderer 已导出的目标无关命令与唯一 Frame owner。
 use super::{
-    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RenderPassPlan, RenderTargetRef,
-    RhiRenderer,
+    FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiRenderer, RhiRendererFrame,
 };
 
 // 把 Drawing 的 Blur 事实映射为共享 RHI 常量值对象。
@@ -236,8 +235,8 @@ impl RhiRenderer {
             self.ensure_blur_resources(device)?;
         // 创建本次两个 pass 使用的临时颜色 render target。
         let scratch = device.create_texture(TextureDesc::new(extent, format))?;
-        // 将临时 texture 映射为通用 render target 身份。
-        let scratch_target = RenderTargetRef::Texture(scratch);
+        // 从 scratch 创建成功起由同一 Frame 持有计划，并在末尾统一检查式清理。
+        let mut frame = RhiRendererFrame::offscreen(device, target);
         // 将原始区域规整为经过边界验证的整数 scissor。
         let region = RhiScissor {
             x,
@@ -252,9 +251,8 @@ impl RhiRenderer {
         };
         // 区域 quad 的 NDC 顶点确保 shader 在局部区域内生成正确 UV。
         let vertices = blur_region_vertices(extent, region);
-        // 水平 pass 读取源 texture，写入 scratch texture。
-        let mut horizontal =
-            RenderPassPlan::new(scratch_target, LoadAction::Clear(RhiColor::transparent()));
+        // 水平命令包只描述 source 采样，不自行绑定 scratch target。
+        let mut horizontal = frame.new_pass();
         // 上传当前区域的类型化 NDC 顶点。
         horizontal.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -286,8 +284,8 @@ impl RhiRenderer {
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
-        // 垂直 pass 读取 scratch texture，写回原始 target。
-        let mut vertical = RenderPassPlan::new(RenderTargetRef::Texture(target), LoadAction::Load);
+        // 垂直命令包只描述 scratch 采样，不自行绑定最终 target。
+        let mut vertical = frame.new_pass();
         // 复用相同的类型化区域顶点。
         vertical.push(FramePlanCommand::UploadVertex {
             buffer: vertex_buffer,
@@ -319,16 +317,26 @@ impl RhiRenderer {
             // Blur quad 使用封闭的六顶点非索引范围。
             DrawRange::vertices(6),
         )));
-        // 以严格顺序组装水平和垂直两个 pass。
-        let mut plan = super::FramePlan::offscreen();
-        // 保留 source → scratch 的先后关系。
-        plan.push_pass(horizontal);
-        // 保留 scratch → target 的先后关系。
-        plan.push_pass(vertical);
-        // 只执行离屏或 no-present surface segment，不提前交换主窗口。
-        let execution = super::execute_plan_without_present(device, &plan);
+        // 先由 Offscreen Frame owner 绑定水平 pass 的 scratch 目标。
+        let binding = frame.push_offscreen_pass(
+            scratch,
+            LoadAction::Clear(RhiColor::transparent()),
+            horizontal,
+        );
+        // 绑定失败同样属于必须先保留、再执行 scratch 清理的主阶段错误。
+        let execution = match binding {
+            // 角色门禁成功后绑定最终目标并一次性执行完整双 pass 计划。
+            Ok(()) => {
+                // 垂直 pass 使用 Offscreen Frame 构造时冻结的最终目标。
+                frame.push_pass(LoadAction::Load, vertical);
+                // 唯一 Frame 门面执行一个计划、一次 submit 且不触发 present。
+                frame.execute()
+            }
+            // 不使用提前返回，确保 scratch 仍进入 checked cleanup。
+            Err(error) => Err(error),
+        };
         // 两个 pass 结束后立即检查式释放 scratch texture。
-        let cleanup = device.destroy_texture(scratch);
+        let cleanup = frame.device().destroy_texture(scratch);
         // 优先保留执行失败；清理失败同样不能被当作完整成功。
         match (execution, cleanup) {
             // pass 失败时返回原始执行错误。

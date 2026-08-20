@@ -16,7 +16,9 @@ EXECUTION = ROOT / "src/draw/backend/rhi_renderer_execution.rs"
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 统一 RHI device。
 D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
-# 定位使用 RhiRendererFrame 的核心 producer 源码集合；独立 blur 事务不属于该边界。
+# 定位多目标离屏 blur producer。
+BLUR = ROOT / "src/draw/backend/rhi_renderer_blur.rs"
+# 定位使用 RhiRendererFrame 的全部核心 producer 源码集合。
 PRODUCERS = (
     # 覆盖实体与纹理 quad producer。
     ROOT / "src/draw/backend/rhi_renderer.rs",
@@ -32,6 +34,8 @@ PRODUCERS = (
     ROOT / "src/draw/backend/rhi_renderer_shape.rs",
     # 覆盖 shadow producer。
     ROOT / "src/draw/backend/rhi_renderer_shadow.rs",
+    # 覆盖 source→scratch→target 的多目标离屏 producer。
+    BLUR,
 )
 
 
@@ -61,15 +65,44 @@ class RendererFramePlanOwnerContractTests(unittest.TestCase):
         self.assertNotIn("LoadAction", pass_region)
         # Frame 必须提供无目标的命令包构造器。
         self.assertRegex(source, r"fn\s+new_pass\s*\([^)]*\)\s*->\s*RhiRendererPass")
-        # push_pass 必须在 owner 内绑定目标与 load。
+        # push_pass 必须把默认目标与 load 交给 owner 内部绑定。
         push_start = source.index("pub(crate) fn push_pass")
         push_region = source[push_start : push_start + 700]
-        self.assertIn("RenderPassPlan::new(self.render_target(), load)", push_region)
-        self.assertIn("self.plan.push_pass", push_region)
+        self.assertIn("let target = self.render_target();", push_region)
+        self.assertIn("self.push_targeted_pass(target, load, pass)", push_region)
+        # 真实 RenderPassPlan 只能由 Frame 的私有绑定实现构造和保存。
+        targeted_start = source.index("fn push_targeted_pass")
+        targeted_region = source[targeted_start : targeted_start + 900]
+        self.assertIn("RenderPassPlan::new(target, load)", targeted_region)
+        self.assertIn("self.plan.push_pass", targeted_region)
         # 旧计划 accessor 必须彻底删除。
         self.assertNotIn("plan_mut", source)
         # render_target 只能是 Frame 内部绑定实现，不能成为 producer 入口。
         self.assertNotRegex(source, r"pub\(crate\)\s+const\s+fn\s+render_target")
+
+    # 多目标纹理入口必须保持 Offscreen 角色门禁并由 Frame 绑定目标。
+    def test_offscreen_multi_target_binding_stays_inside_frame(self) -> None:
+        # 读取 Frame owner 与 blur producer。
+        execution = EXECUTION.read_text(encoding="utf-8")
+        blur = BLUR.read_text(encoding="utf-8")
+        # 截取多目标入口，防止其它函数中的相似文本偶然满足断言。
+        start = execution.index("pub(crate) fn push_offscreen_pass")
+        region = execution[start : start + 1400]
+        # Surface/Offscreen 角色判断必须先于任何计划追加。
+        gate = region.index("if !matches!(&self.role, RhiRendererFrameRole::Offscreen")
+        append = region.index("self.push_targeted_pass")
+        self.assertLess(gate, append)
+        self.assertIn("Errc::InvalidArgument", region)
+        self.assertIn("RenderTargetRef::Texture(target)", region)
+        # blur 只能生成命令包并调用 Frame owner，不能拥有真实计划或执行入口。
+        self.assertGreaterEqual(blur.count("frame.new_pass()"), 2)
+        self.assertIn("frame.push_offscreen_pass(", blur)
+        self.assertIn("frame.push_pass(LoadAction::Load, vertical)", blur)
+        self.assertIn("frame.execute()", blur)
+        self.assertNotIn("RenderPassPlan::new", blur)
+        self.assertNotIn("FramePlan::offscreen", blur)
+        self.assertNotIn("plan.push_pass", blur)
+        self.assertNotIn("execute_plan_without_present", blur)
 
     # execute 必须从 self.plan 借用，且签名不得接收外部计划。
     def test_execute_consumes_self_plan(self) -> None:
@@ -83,6 +116,20 @@ class RendererFramePlanOwnerContractTests(unittest.TestCase):
         self.assertIn("let plan = &self.plan;", region)
         # 禁止保留旧的外部计划参数或调用形态。
         self.assertNotRegex(region, r"execute\s*\([^)]*FramePlan")
+
+    # Device-only 计划执行入口只能由 RhiRendererFrame 门面调用。
+    def test_no_present_execution_entry_is_frame_private(self) -> None:
+        # 读取执行组件；一次调用加一次定义应是完整出现集合。
+        execution = EXECUTION.read_text(encoding="utf-8")
+        self.assertEqual(execution.count("execute_plan_without_present("), 2)
+        # 所有 producer 都不得直接取得底层执行入口。
+        for path in PRODUCERS:
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn(
+                "execute_plan_without_present",
+                source,
+                msg=f"producer bypasses frame execution in {path}",
+            )
 
     # 核心 producer 不得通过旧 accessor 或外部计划参数绕过帧所有权。
     def test_core_producers_do_not_use_old_plan_execution_shape(self) -> None:
