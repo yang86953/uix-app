@@ -763,6 +763,6 @@ impl Default for Transfer {
 // 验证 Transfer 排版随主题 token 解析。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
+#[path = "../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod typography_tests;
