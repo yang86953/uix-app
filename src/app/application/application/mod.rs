@@ -883,6 +883,8 @@ mod secondary;
 
 use self::secondary::SecondaryWindowSession;
 
+// 保留 `application::application::runtime` 逻辑路径，运行时物理归入 lifecycle。
+#[path = "../lifecycle/runtime/mod.rs"]
 mod runtime;
 
 pub use runtime::map_ui_event;
