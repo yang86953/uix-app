@@ -2,7 +2,6 @@
 //!
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::{ControlSize, KeyMod};
@@ -10,8 +9,9 @@ use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
 /// 可绑定到 `InputNumber` 的数值类型。
@@ -141,7 +141,7 @@ impl InputNumberValueBinding {
     }
 }
 
-component! {
+widget! {
     /// InputNumber — 数字输入框。
     pub struct InputNumber {
         value: f64,
@@ -256,7 +256,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.to_string()))

@@ -1,6 +1,6 @@
 //! 跨节点文字拖选 — 同父级下连续 Typography / selectable Label / RichText。
 //!
-//! PointerDown 落在某一文字节点后，`pressed_component` 会把后续 PointerMove
+//! PointerDown 落在某一文字节点后，`pressed_widget` 会把后续 PointerMove
 //! 全部派发给该节点；节点内选区无法越过自身边界。本模块在拖选进行中按
 //! 文档序协调兄弟节点的选区，使向上/向下拖动能覆盖相邻文字行。
 //!
@@ -27,7 +27,7 @@ use crate::ui::UserSelect;
 use crate::ui::widgets::other::rich_text::RichText;
 
 pub(crate) fn participates(node: &BoxedWidget) -> bool {
-    let c = node.component();
+    let c = node.widget();
     if let Some(typography) = c.as_any().downcast_ref::<Typography>() {
         // Typography 默认可选，但仍必须服从树级 none 策略。
         return typography.selection_enabled();
@@ -45,7 +45,7 @@ pub(crate) fn participates(node: &BoxedWidget) -> bool {
 }
 
 pub(crate) fn is_dragging(node: &BoxedWidget) -> bool {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.is_cross_text_dragging();
     }
@@ -61,7 +61,7 @@ pub(crate) fn is_dragging(node: &BoxedWidget) -> bool {
 }
 
 fn text_len(node: &BoxedWidget) -> usize {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_len();
     }
@@ -77,7 +77,7 @@ fn text_len(node: &BoxedWidget) -> usize {
 }
 
 fn text_anchor(node: &BoxedWidget) -> usize {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_anchor();
     }
@@ -93,7 +93,7 @@ fn text_anchor(node: &BoxedWidget) -> usize {
 }
 
 fn set_range(node: &BoxedWidget, range: Option<(usize, usize)>) {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         t.set_cross_text_range(range);
         return;
@@ -110,7 +110,7 @@ fn set_range(node: &BoxedWidget, range: Option<(usize, usize)>) {
 }
 
 fn char_at(node: &BoxedWidget, frame_local: Point) -> usize {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.cross_text_char_at(frame_local);
     }
@@ -126,7 +126,7 @@ fn char_at(node: &BoxedWidget, frame_local: Point) -> usize {
 }
 
 fn node_selected_text(node: &BoxedWidget) -> Option<String> {
-    let c = node.component();
+    let c = node.widget();
     if let Some(t) = c.as_any().downcast_ref::<Typography>() {
         return t.selected_text();
     }
@@ -142,9 +142,9 @@ fn node_selected_text(node: &BoxedWidget) -> Option<String> {
 }
 
 // 把树级最终策略同步到实际文本组件的私有选择状态。
-fn apply_component_policy(node: &mut BoxedWidget, policy: UserSelect) {
+fn apply_widget_policy(node: &mut BoxedWidget, policy: UserSelect) {
     // Label 保留自身 selectable 构建器并叠加树级策略。
-    if let Some(label) = node.component_mut().as_any_mut().downcast_mut::<Label>() {
+    if let Some(label) = node.widget_mut().as_any_mut().downcast_mut::<Label>() {
         // 交给组件清理策略关闭时的局部选区。
         label.set_user_select_policy(policy);
         // 一个实际节点只持有一种具体组件。
@@ -153,7 +153,7 @@ fn apply_component_policy(node: &mut BoxedWidget, policy: UserSelect) {
     // Typography 默认允许选择，但仍接受 none/all 的结构约束。
     if let Some(typography) = node
         // 取得组件可变借用。
-        .component_mut()
+        .widget_mut()
         // 访问动态具体类型。
         .as_any_mut()
         // 尝试排版组件下转型。
@@ -168,7 +168,7 @@ fn apply_component_policy(node: &mut BoxedWidget, policy: UserSelect) {
     #[cfg(feature = "rich-text")]
     if let Some(rich_text) = node
         // 取得组件可变借用。
-        .component_mut()
+        .widget_mut()
         // 访问动态具体类型。
         .as_any_mut()
         // 尝试富文本组件下转型。
@@ -216,7 +216,7 @@ impl WidgetTree {
                 // 保存最终策略供事件查询和后代解析。
                 node.set_effective_user_select(effective);
                 // 同步具体文本组件的私有选择状态。
-                apply_component_policy(node, effective);
+                apply_widget_policy(node, effective);
                 // 复制子身份以在释放节点借用后继续遍历。
                 let children = node.children().to_vec();
                 // 返回本轮后续所需的小型值。

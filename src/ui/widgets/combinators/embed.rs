@@ -82,10 +82,10 @@ pub(super) fn adopt_widget_node(
         // 转移渲染处理器。
         render_handlers: node.render_handlers,
         // 保留嵌入节点携带的内联组件状态作用域。
-        uix_component_scopes: node.uix_component_scopes,
+        uix_widget_scopes: node.uix_widget_scopes,
         // 命令式节点不拥有声明根状态存储。
-        component_state_store: None,
+        widget_state_store: None,
         // 命令式节点没有声明捕获产生的待提交组件状态回执。
-        component_state_receipts: Vec::new(),
+        widget_state_receipts: Vec::new(),
     }
 }

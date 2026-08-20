@@ -5,8 +5,8 @@ use crate::ui::{OverlayEntry, OverlayKind};
 impl WidgetTree {
     pub(crate) fn cancel_hidden_interaction(&mut self) {
         let targets = [
-            self.managers().interaction.hovered_component(),
-            self.managers().interaction.pressed_component(),
+            self.managers().interaction.hovered_widget(),
+            self.managers().interaction.pressed_widget(),
             self.managers().drag.target(),
         ];
         let mut cancelled = Vec::new();
@@ -19,7 +19,7 @@ impl WidgetTree {
         if self
             .managers()
             .focus
-            .focused_component()
+            .focused_widget()
             .is_some_and(|focused| !self.focus_target_available(focused))
         {
             self.set_focus(None);
@@ -31,7 +31,7 @@ impl WidgetTree {
         if self
             .managers()
             .focus
-            .focused_component()
+            .focused_widget()
             .is_some_and(|focused| self.is_descendant_of(focused, root))
         {
             self.set_focus(None);
@@ -47,14 +47,14 @@ impl WidgetTree {
         let hovered = self
             .managers()
             .interaction
-            .hovered_component()
+            .hovered_widget()
             .filter(|target| self.is_descendant_of(*target, root));
         let Some(hovered) = hovered else {
             return;
         };
         let leave_is_delivered_by_gesture_cancel =
-            self.managers().interaction.pressed_component() == Some(hovered);
-        self.managers_mut().interaction.set_hovered_component(None);
+            self.managers().interaction.pressed_widget() == Some(hovered);
+        self.managers_mut().interaction.set_hovered_widget(None);
         if !leave_is_delivered_by_gesture_cancel
             && self.dispatch_to(hovered, &SystemEvent::PointerLeave) == EventResult::Handled
         {
@@ -67,7 +67,7 @@ impl WidgetTree {
         let owns_pressed = self
             .managers()
             .interaction
-            .pressed_component()
+            .pressed_widget()
             .is_some_and(|target| self.is_descendant_of(target, root));
         let owns_drag = self
             .managers()
@@ -80,7 +80,7 @@ impl WidgetTree {
     }
 
     pub(super) fn cancel_active_pointer_gesture(&mut self) {
-        let pressed = self.managers().interaction.pressed_component();
+        let pressed = self.managers().interaction.pressed_widget();
         let drag = self.managers().drag.is_dragging().then(|| {
             (
                 self.managers().drag.target(),
@@ -89,7 +89,7 @@ impl WidgetTree {
                 self.managers().drag.mods(),
             )
         });
-        self.managers_mut().interaction.set_pressed_component(None);
+        self.managers_mut().interaction.set_pressed_widget(None);
         self.managers_mut().drag.end_drag();
 
         if let Some((Some(target), pos, button, mods)) = drag {

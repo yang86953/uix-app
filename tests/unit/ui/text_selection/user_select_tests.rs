@@ -35,7 +35,7 @@ fn build_text_tree(policy: UserSelect) -> (WidgetTree, WidgetId, WidgetId, Widge
 
 // none 应关闭整个子树，text 应启用默认不可选 Label。
 #[test]
-fn propagates_none_and_text_to_text_components() {
+fn propagates_none_and_text_to_text_widgets() {
     // 构建禁止选择的文本子树。
     let (none_tree, _, none_label, none_typography) = build_text_tree(UserSelect::None);
     // 默认不可选 Label 在 none 下继续不参与。
@@ -113,7 +113,7 @@ fn reconcile_policy_change_clears_existing_selection() {
         // 读取原 Label 实际节点。
         .get(label)
         // 下转型到具体组件以检查局部状态。
-        .and_then(|node| node.component().as_any().downcast_ref::<Label>())
+        .and_then(|node| node.widget().as_any().downcast_ref::<Label>())
         // 读取拥有型选中文本。
         .and_then(Label::selected_text);
     // 禁止策略不得残留旧高亮范围。

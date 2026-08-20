@@ -6,10 +6,10 @@ use super::{
 // 引入顶层名称去重集合。
 use std::collections::HashSet;
 
-// 判断当前位置是否为保留的顶层 Component 声明。
-pub(crate) fn starts_component_declaration(cursor: &Cursor<'_>) -> bool {
+// 判断当前位置是否为保留的顶层 Widget 声明。
+pub(crate) fn starts_widget_declaration(cursor: &Cursor<'_>) -> bool {
     // 委托共享标签前缀判断。
-    starts_tag_declaration(cursor, "<Component")
+    starts_tag_declaration(cursor, "<Widget")
 }
 
 // 判断当前位置是否为保留的顶层 Record 声明。
@@ -43,7 +43,7 @@ pub(crate) fn register_declaration_name(
     style_names: &mut HashSet<String>,
     theme_names: &mut HashSet<String>,
     keyframe_names: &mut HashSet<String>,
-    component_names: &mut HashSet<String>,
+    widget_names: &mut HashSet<String>,
 ) -> Result<(), Diagnostic> {
     // 样式类名称不得重复。
     if let Declaration::StyleClass(style) = declaration {
@@ -112,18 +112,18 @@ pub(crate) fn register_declaration_name(
         ));
     }
     // 自定义组件名称不得重复。
-    if let Declaration::Component(component) = declaration {
+    if let Declaration::Widget(widget) = declaration {
         // 首次插入成功时通过。
-        if component_names.insert(component.name.clone()) {
+        if widget_names.insert(widget.name.clone()) {
             // 返回成功。
             return Ok(());
         }
         // 返回重复组件诊断。
         return Err(Diagnostic::new(
             // 指向重复声明。
-            component.span,
+            widget.span,
             // 陈述失败原因。
-            format!("组件 {} 重复声明", component.name),
+            format!("组件 {} 重复声明", widget.name),
             // 给出修复建议。
             "合并同名组件或使用不同名称",
         ));
@@ -131,7 +131,7 @@ pub(crate) fn register_declaration_name(
     // record 名与组件共享 PascalCase 命名空间。
     if let Declaration::Record(record) = declaration {
         // 首次插入成功时通过。
-        if component_names.insert(record.name.clone()) {
+        if widget_names.insert(record.name.clone()) {
             // 返回成功。
             return Ok(());
         }
@@ -484,7 +484,7 @@ fn parse_import(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
             // 陈述失败原因。
             "@import 只接受路径和可选组件名",
             // 给出合法示例。
-            "使用 @import('./file.uix') 或 @import('./file.uix', 'Component')",
+            "使用 @import('./file.uix') 或 @import('./file.uix', 'Widget')",
         ));
     }
     // 取得路径参数。
@@ -498,17 +498,17 @@ fn parse_import(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
             // 陈述失败原因。
             "@import 路径必须指向 .uix 文件",
             // 给出合法示例。
-            "使用 @import('./component.uix')",
+            "使用 @import('./widget.uix')",
         ));
     }
     // 提取可选组件名。
-    let component = arguments.get(1).cloned();
+    let widget = arguments.get(1).cloned();
     // 具名导入必须使用 PascalCase 组件名。
-    if component
+    if widget
         // 借用可选名称。
         .as_deref()
         // 验证组件名。
-        .is_some_and(|value| !is_component_name(value))
+        .is_some_and(|value| !is_widget_name(value))
     {
         // 返回组件名诊断。
         return Err(Diagnostic::new(
@@ -517,7 +517,7 @@ fn parse_import(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
             // 陈述失败原因。
             "@import 的组件名必须使用 PascalCase",
             // 给出合法示例。
-            "使用 @import('./file.uix', 'MyComponent')",
+            "使用 @import('./file.uix', 'MyWidget')",
         ));
     }
     // 返回导入声明。
@@ -525,7 +525,7 @@ fn parse_import(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
         // 保存路径。
         path,
         // 保存可选组件。
-        component,
+        widget,
         // 保存完整跨度。
         span: cursor.span_from(start),
     }))
@@ -534,9 +534,9 @@ fn parse_import(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
 // 解析 @export 指令。
 fn parse_export(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Diagnostic> {
     // 读取一个或多个组件名。
-    let components = parse_string_arguments(cursor, "@export")?;
+    let widgets = parse_string_arguments(cursor, "@export")?;
     // 导出列表不能为空。
-    if components.is_empty() {
+    if widgets.is_empty() {
         // 返回空列表诊断。
         return Err(Diagnostic::new(
             // 覆盖完整指令。
@@ -544,31 +544,31 @@ fn parse_export(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
             // 陈述失败原因。
             "@export 至少需要一个组件名",
             // 给出合法示例。
-            "使用 @export('ComponentName')",
+            "使用 @export('WidgetName')",
         ));
     }
     // 验证名称与列表内唯一性。
-    for (index, component) in components.iter().enumerate() {
+    for (index, widget) in widgets.iter().enumerate() {
         // 每个导出名必须使用 PascalCase。
-        if !is_component_name(component) {
+        if !is_widget_name(widget) {
             // 返回名称诊断。
             return Err(Diagnostic::new(
                 // 覆盖完整指令。
                 cursor.span_from(start),
                 // 陈述失败原因。
-                format!("导出组件名 {component} 必须使用 PascalCase"),
+                format!("导出组件名 {widget} 必须使用 PascalCase"),
                 // 给出合法示例。
-                "使用 @export('MyComponent')",
+                "使用 @export('MyWidget')",
             ));
         }
         // 后续列表不能重复当前名称。
-        if components[index + 1..].contains(component) {
+        if widgets[index + 1..].contains(widget) {
             // 返回重复名称诊断。
             return Err(Diagnostic::new(
                 // 覆盖完整指令。
                 cursor.span_from(start),
                 // 陈述失败原因。
-                format!("@export 重复列出组件 {component}"),
+                format!("@export 重复列出组件 {widget}"),
                 // 给出修复建议。
                 "每个组件只导出一次",
             ));
@@ -577,7 +577,7 @@ fn parse_export(cursor: &mut Cursor<'_>, start: usize) -> Result<Declaration, Di
     // 返回导出声明。
     Ok(Declaration::Export(ExportDeclaration {
         // 保存有序组件列表。
-        components,
+        widgets,
         // 保存完整跨度。
         span: cursor.span_from(start),
     }))
@@ -685,7 +685,7 @@ fn parse_string_arguments(
 }
 
 // 验证 PascalCase 组件名。
-fn is_component_name(value: &str) -> bool {
+fn is_widget_name(value: &str) -> bool {
     // 首字符必须是 ASCII 大写字母。
     value
         // 读取首字符。

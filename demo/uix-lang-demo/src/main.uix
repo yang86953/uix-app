@@ -87,14 +87,14 @@ pseudoStateCheck:checked {
 }
 
 // 声明拥有独立动态样式状态的悬停操作组件。
-<Component name="StyleAction">
+<Widget name="StyleAction">
   // 当前 Button 自己接收事件；内联颜色在两个动态 class 分支中保持最高优先级。
   <Button class="normalStyleAction" style="color: #1677FF;" automationId="uix-set-style-action" @mouseEnter="setStyle('hoverStyleAction')" @mouseLeave="setStyle('')">悬停切换 setStyle</Button>
 // 结束动态样式组件。
-</Component>
+</Widget>
 
 // 声明消费既有 disabled 与 checked 状态事实的伪类演示组件。
-<Component name="PseudoStateAction" state="checked: bool = false, disabled: bool = false">
+<Widget name="PseudoStateAction" state="checked: bool = false, disabled: bool = false">
   // 纵向组织状态控件与切换操作。
   <Column gap="8px">
     // Button 的 hover 自动切换，disabled 读取同名布尔事实。
@@ -106,10 +106,10 @@ pseudoStateCheck:checked {
   // 结束状态伪类内容。
   </Column>
 // 结束状态伪类演示组件。
-</Component>
+</Widget>
 
 // 声明阶段五语法小项的真实编译演示组件。
-<Component name="PhaseFiveAction" props="label: String = '阶段 5 默认标题'" state="primary: bool = false, fallback: bool = true, scores: Vec<number> = [1, 2], tags: Vec<String> = ['语法', '类型'], selected: Option<String> = Some('ready')">
+<Widget name="PhaseFiveAction" props="label: String = '阶段 5 默认标题'" state="primary: bool = false, fallback: bool = true, scores: Vec<number> = [1, 2], tags: Vec<String> = ['语法', '类型'], selected: Option<String> = Some('ready')">
   // 纵向组织默认 prop、扩展状态和条件链。
   <Column gap="8px">
     // 省略调用参数时显示 prop 默认值，并读取非空数字集合。
@@ -125,10 +125,10 @@ pseudoStateCheck:checked {
   // 结束阶段五演示内容。
   </Column>
 // 结束阶段五语法小项演示组件。
-</Component>
+</Widget>
 
 // 声明页头标题组件，由共享 page 状态驱动条件标题。
-<Component name="PageTitle" props="page: State<number>">
+<Widget name="PageTitle" props="page: State<number>">
   // 显示首页标题。
   <If {page == 0}><Text fontSize="heading3">首页</Text></If>
   // 显示应用能力页标题。
@@ -154,7 +154,7 @@ pseudoStateCheck:checked {
   // 显示覆盖清单页标题。
   <If {page == 11}><Text fontSize="heading3">覆盖清单</Text></If>
 // 结束页头标题组件。
-</Component>
+</Widget>
 
 // 导入首页与运行时页面。
 @import('./pages/start.uix')
@@ -165,7 +165,7 @@ pseudoStateCheck:checked {
 // 导入框架与覆盖清单页面。
 @import('./pages/reference.uix')
 
-<Component name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
+<Widget name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
   // 使用纵向根布局承载自定义标题栏与应用主体。
   <Column flexGrow={1} style="backgroundColor: #backgroundColor;">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
@@ -315,7 +315,7 @@ pseudoStateCheck:checked {
   // 结束根布局。
   </Column>
 // 结束声明式演示组件。
-</Component>
+</Widget>
 // 声明应用入口的窗口规格与内建初始主题。
 <App title="UIX Demo" size="1200x800" theme="light">
   // 实例化唯一 View 根并传入窗口级持久状态句柄。

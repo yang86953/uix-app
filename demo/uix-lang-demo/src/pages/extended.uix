@@ -4,7 +4,7 @@
 // 声明输入页独占的类型化业务模型并供主入口生成 Rust items。
 <Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
 
-<Component name="InputPage" external="on_name_change, submit_profile" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
+<Widget name="InputPage" external="on_name_change, submit_profile" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
   // 组织输入组件内容。
   <Column gap="16px">
     // 展示输入组件标题。
@@ -152,10 +152,10 @@
   // 结束输入组件内容。
   </Column>
 // 结束输入组件页组件。
-</Component>
+</Widget>
 
 // 声明以默认与具名 Slot 复用的演示面板容器。
-<Component name="DemoSlotPanel" props="title: String">
+<Widget name="DemoSlotPanel" props="title: String">
   // 统一提供主演示面板外观与内容排列。
   <Container class="pagePanel">
     // 组织标题、默认主体与具名操作区。
@@ -171,10 +171,10 @@
   // 结束插槽面板容器。
   </Container>
 // 结束可复用插槽面板组件。
-</Component>
+</Widget>
 
 // 声明数据展示页组件并读取静态表格数据、媒体回调与组件私有状态。
-<Component name="DataPage" external="table_rows, table_columns, calendar_events, is_calendar_date_disabled, calendar_date_cell, on_gallery_change, on_calendar_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = [], calendar_date: Date = Date(2026, 8, 15), calendar_displayed: Date = Date(2026, 9, 1)" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
+<Widget name="DataPage" external="table_rows, table_columns, calendar_events, is_calendar_date_disabled, calendar_date_cell, on_gallery_change, on_calendar_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = [], calendar_date: Date = Date(2026, 8, 15), calendar_displayed: Date = Date(2026, 9, 1)" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -342,10 +342,10 @@
   // 结束数据展示内容。
   </Column>
 // 结束数据展示页组件。
-</Component>
+</Widget>
 
 // 声明反馈组件页组件：受控浮层与确认计数由组件私有 state 驱动。
-<Component name="FeedbackPage" external="on_alert_closed" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
+<Widget name="FeedbackPage" external="on_alert_closed" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
   // 组织反馈组件内容。
   <Column gap="16px">
     // 展示反馈组件标题。
@@ -487,10 +487,10 @@
   // 结束反馈组件内容。
   </Column>
 // 结束反馈组件页组件。
-</Component>
+</Widget>
 
 // 声明图表能力页组件。
-<Component name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines, format_gauge_percent, custom_combo_series">
+<Widget name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines, format_gauge_percent, custom_combo_series">
   // 组织图表能力内容。
   <Column gap="16px">
     // 展示图表能力标题。
@@ -526,10 +526,10 @@
   // 结束图表能力内容。
   </Column>
 // 结束图表能力页组件。
-</Component>
+</Widget>
 
 // 声明其他组件页组件并持有上传队列唯一状态。
-<Component name="OtherPage" state="upload_files: Vec<UploadFile> = []">
+<Widget name="OtherPage" state="upload_files: Vec<UploadFile> = []">
   // 组织其他组件内容。
   <Column gap="16px">
     // 展示其他组件标题。
@@ -599,7 +599,7 @@
   // 结束其他组件内容。
   </Column>
 // 结束其他组件页组件。
-</Component>
+</Widget>
 
 // 提供页面文档独立解析所需的唯一根。
 <Text>主演示页面组件库</Text>

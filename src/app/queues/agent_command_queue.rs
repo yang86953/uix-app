@@ -15,7 +15,7 @@ use std::time::Duration;
 use crate::app::window_semantics::WindowSemanticSnapshot;
 #[cfg(any(test, feature = "agent-control"))]
 use crate::core::Point;
-use crate::core::{ComponentId, WindowId};
+use crate::core::{WidgetId, WindowId};
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionKind};
 #[cfg(any(test, feature = "agent-control"))]
@@ -234,7 +234,7 @@ pub(crate) enum AgentCommandError {
     NotInteractable(String),
     Blocked {
         target: String,
-        blocker: ComponentId,
+        blocker: WidgetId,
     },
     DidNotSettle {
         passes: usize,

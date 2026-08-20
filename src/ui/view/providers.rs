@@ -4,8 +4,8 @@
 //!
 //! `ConfigProvider` / `LocaleProvider` 是 DSL 层注入组件（为一个 View 子树
 //! 注入配置/语言）：归 view Module，组件侧只保留纯配置/语言数据与访问器，
-//! 依赖方向为 `view → component`，消除 component → view 反向边。
-//! 空态渲染回调（`EmptyRenderer`）因跨 component/widgets 消费归 System
+//! 依赖方向为 `view → widget`，消除 widget → view 反向边。
+//! 空态渲染回调（`EmptyRenderer`）因跨 widget/widgets 消费归 System
 //! 私有边界（`render_handler`）。
 
 use crate::platform::windowing::ControlSize;
@@ -13,23 +13,23 @@ use crate::ui::render_handler::{EmptyContext, EmptyRenderer};
 use crate::ui::theme::{Theme, TokenPatch};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::config::{
-    ComponentConfig, ComponentOverrides, ComponentTokenOverrides, use_config, with_config,
+    WidgetConfig, WidgetOverrides, WidgetTokenOverrides, use_config, with_config,
 };
 use crate::ui::widget_runtime::locale::{Locale, en_us, with_locale, zh_cn};
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 
 #[derive(Clone, Default)]
 struct ConfigPatch {
     size: Option<ControlSize>,
     disabled: Option<bool>,
     theme: Option<Theme>,
-    overrides: Option<ComponentOverrides>,
-    component_tokens: ComponentTokenOverrides,
+    overrides: Option<WidgetOverrides>,
+    widget_tokens: WidgetTokenOverrides,
     empty_renderer: Option<EmptyRenderer>,
 }
 
 impl ConfigPatch {
-    fn resolve(self) -> ComponentConfig {
+    fn resolve(self) -> WidgetConfig {
         let mut config = use_config();
         if let Some(size) = self.size {
             config.size = size;
@@ -43,7 +43,7 @@ impl ConfigPatch {
         if let Some(overrides) = self.overrides {
             config.overrides = overrides;
         }
-        config.component_tokens.extend(self.component_tokens);
+        config.widget_tokens.extend(self.widget_tokens);
         if let Some(renderer) = self.empty_renderer {
             config.empty_renderer = Some(renderer);
         }
@@ -78,7 +78,7 @@ impl Default for ConfigProvider<MissingConfigProviderChild> {
 
 impl<F> ConfigProvider<F> {
     /// 覆盖子树中的默认控件尺寸。
-    pub fn component_size(mut self, size: ControlSize) -> Self {
+    pub fn widget_size(mut self, size: ControlSize) -> Self {
         self.patch.size = Some(size);
         self
     }
@@ -96,14 +96,14 @@ impl<F> ConfigProvider<F> {
     }
 
     /// 替换子树的通用组件覆盖配置。
-    pub fn overrides(mut self, overrides: ComponentOverrides) -> Self {
+    pub fn overrides(mut self, overrides: WidgetOverrides) -> Self {
         self.patch.overrides = Some(overrides);
         self
     }
 
     /// 为指定组件类型合并令牌补丁。
-    pub fn component_tokens<T: WidgetComponent>(mut self, patch: TokenPatch) -> Self {
-        self.patch.component_tokens.insert::<T>(patch);
+    pub fn widget_tokens<T: Widget>(mut self, patch: TokenPatch) -> Self {
+        self.patch.widget_tokens.insert::<T>(patch);
         self
     }
 

@@ -4,9 +4,9 @@
 use std::cell::Cell;
 
 // 引入组件声明宏。
-use crate::component;
+use crate::widget;
 // 引入组件身份、约束与矩形类型。
-use crate::core::{ComponentId, Constraints, Rect, Size};
+use crate::core::{Constraints, Rect, Size, WidgetId};
 // 引入绘制上下文。
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入子节点布局快照。
@@ -16,7 +16,7 @@ use crate::ui::State;
 // 引入事件、快照与组件树契约。
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 
-component! {
+widget! {
     /// 组合 Navigation 的侧栏外壳，唯一直接子节点必须是受控 Menu。
     pub struct NavigationShell {
         title: String,
@@ -45,7 +45,7 @@ component! {
 
     // Menu 子节点只占用标题/折叠按钮与版本之间的内容区域。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 缓存实际宽度供指针命中折叠按钮。
         self.last_width.set(frame.w.max(0.0));

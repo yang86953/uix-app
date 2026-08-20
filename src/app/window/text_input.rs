@@ -17,7 +17,7 @@ pub(crate) fn sync_window_text_input(
     platform: &mut dyn Platform,
 ) {
     let requested = state.window_focused.then(|| {
-        let target = tree.managers().focus.focused_component()?;
+        let target = tree.managers().focus.focused_widget()?;
         let client = tree.get(target)?.as_text_input()?;
         client
             .accepts_text_input()

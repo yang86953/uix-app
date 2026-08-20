@@ -1,15 +1,15 @@
 //! Selectable list widget.
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入稳定条目 id 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
 
@@ -420,7 +420,7 @@ impl SelectableList {
     }
 }
 
-component! {
+widget! {
     /// A vertical list with selectable rows.
     pub struct SelectableList {
         /// 按展示顺序持有的可选择条目。
@@ -625,7 +625,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         match self.pending_action.take()? {
             SelectableListAction::Header => {
                 Some(SemanticEvent::submit(id, self.header_button_text.clone()))

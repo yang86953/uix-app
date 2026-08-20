@@ -4,15 +4,15 @@
 //! all consume this model so selectors, redaction, bounds, and action
 //! capabilities cannot drift between control surfaces.
 
-use crate::core::{ComponentId, Point, Rect};
-use crate::ui::component_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
+use crate::core::{Point, Rect, WidgetId};
 use crate::ui::semantic_action::SemanticActionKind;
 use crate::ui::widget_runtime::widget::{WidgetCore, WidgetTree};
+use crate::ui::widget_snapshot::{AccessibilitySnapshot, SelectionSnapshot};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// 自动化与 Agent 共享的稳定语义目标。
 pub enum SemanticTarget {
-    NodeId(ComponentId),
+    NodeId(WidgetId),
     AutomationId(String),
 }
 
@@ -25,8 +25,8 @@ impl SemanticTarget {
     }
 }
 
-impl From<ComponentId> for SemanticTarget {
-    fn from(id: ComponentId) -> Self {
+impl From<WidgetId> for SemanticTarget {
+    fn from(id: WidgetId) -> Self {
         Self::NodeId(id)
     }
 }
@@ -46,9 +46,9 @@ impl From<&str> for SemanticTarget {
 #[derive(Debug, Clone, PartialEq)]
 /// 与具体窗口后端无关的公开语义节点快照。
 pub struct SemanticNode {
-    pub id: ComponentId,
+    pub id: WidgetId,
     pub automation_id: Option<String>,
-    pub parent: Option<ComponentId>,
+    pub parent: Option<WidgetId>,
     pub frame: Rect,
     pub visible_bounds: Option<Rect>,
     pub focused: bool,
@@ -92,7 +92,7 @@ pub(crate) struct SemanticSnapshotBody {
 }
 
 impl WidgetTree {
-    fn exposes_semantic_node(&self, id: ComponentId) -> bool {
+    fn exposes_semantic_node(&self, id: WidgetId) -> bool {
         if self.is_pending_removal_subtree(id) {
             return false;
         }
@@ -108,7 +108,7 @@ impl WidgetTree {
                 return false;
             };
             if parent.accessibility().role == crate::ui::AccessibilityRole::None
-                || !parent.component().exposes_semantic_children()
+                || !parent.widget().exposes_semantic_children()
             {
                 return false;
             }
@@ -123,7 +123,7 @@ impl WidgetTree {
             // 保持公开快照签名，并以合法空体表达无可访问节点。
             return SemanticSnapshotBody::default();
         }
-        let focused = self.managers().focus.focused_component();
+        let focused = self.managers().focus.focused_widget();
         let nodes = self
             .traverse()
             .iter()
@@ -131,12 +131,12 @@ impl WidgetTree {
             .filter(|id| self.exposes_semantic_node(*id))
             .filter_map(|id| {
                 let node = self.get(id)?;
-                let snapshot = node.component_snapshot(id);
+                let snapshot = node.widget_snapshot(id);
                 let mut accessibility = snapshot.accessibility();
                 let selection = snapshot.selection();
                 if !accessibility.state.password {
                     if let Some(value) =
-                        crate::ui::tree_widget_hooks::component_input_value(node.component())
+                        crate::ui::tree_widget_hooks::widget_input_value(node.widget())
                     {
                         accessibility.state.value_text = (!value.is_empty()).then_some(value);
                     }

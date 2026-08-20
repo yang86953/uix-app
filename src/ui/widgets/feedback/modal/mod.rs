@@ -1,13 +1,13 @@
 use crate::ui::widget_runtime::widget::WidgetCore;
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
+use crate::widget;
 use std::rc::Rc;
 
 mod builder;
@@ -77,7 +77,7 @@ pub(crate) enum ModalPointerTarget {
     Ok,
 }
 
-component! {
+widget! {
     /// Modal dialog.
     pub struct Modal {
         pub(crate) title: String,
@@ -456,7 +456,7 @@ component! {
         ctx.pop_clip();
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if self.is_present() && self.overlay {
             Some(
                 crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
@@ -469,7 +469,7 @@ component! {
     }
 
     // 以真实逻辑表面解析 Modal 的 mask bounds，避免无限哨兵区域进入 blur lowering。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, _frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, _frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 关闭或非 overlay 模式不登记表面浮层。
         if !self.is_present() || !self.overlay {
             // 保持与旧 overlay_entry 相同的可见性语义。
@@ -494,7 +494,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
             return Vec::new();

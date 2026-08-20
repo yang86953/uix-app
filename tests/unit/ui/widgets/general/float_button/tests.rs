@@ -29,7 +29,7 @@ fn tracked_group_button(
 ) -> ViewNode {
     // 构造组内按钮声明并登记稳定协调 key。
     ViewNode::leaf(FloatButton::new(icon))
-        // 同 key reconcile 必须保留对应 ComponentId。
+        // 同 key reconcile 必须保留对应 WidgetId。
         .key(key)
         // 无 State 闭包按公开契约在每次 reconcile 时保守替换。
         .on_click_fn(move || {
@@ -67,10 +67,10 @@ fn pointer_click(tree: &mut WidgetTree, pos: Point) {
 }
 
 // 直接向稳定子身份发送主点击，用于隔离 reconcile 后的 HandlerTable 绑定。
-fn semantic_click(tree: &mut WidgetTree, target: crate::core::ComponentId) -> EventResult {
+fn semantic_click(tree: &mut WidgetTree, target: crate::core::WidgetId) -> EventResult {
     // 通过树拥有的语义路由表分发主点击。
     tree.dispatch_semantic(SemanticEvent::click(
-        // 目标必须是当前或已经失效的具体子 ComponentId。
+        // 目标必须是当前或已经失效的具体子 WidgetId。
         target,
         // 构造不依赖布局坐标的标准主点击载荷。
         ClickEvent {
@@ -161,7 +161,7 @@ fn description_badge_hit_damage_and_overlay_share_geometry() {
         // 借用被测按钮。
         &button,
         // 使用稳定测试组件标识。
-        crate::core::ComponentId::new(9),
+        crate::core::WidgetId::new(9),
         // 传入组件 frame。
         frame,
         // 传入当前逻辑表面。
@@ -336,7 +336,7 @@ fn group_button_views_preserve_child_click_handler_and_parent_layout() {
         // 父节点在建树完成后必须仍然存在。
         .expect("组根必须可读取")
         // 借用父组件对象。
-        .component()
+        .widget()
         // 取得运行时类型视图。
         .as_any()
         // 窄化为 FloatButtonGroup。
@@ -352,7 +352,7 @@ fn group_button_views_preserve_child_click_handler_and_parent_layout() {
         // 子节点在建树完成后必须存在。
         .expect("组内按钮必须可读取")
         // 借用子组件对象。
-        .component()
+        .widget()
         // 取得运行时类型视图。
         .as_any()
         // 窄化为 FloatButton。
@@ -361,7 +361,7 @@ fn group_button_views_preserve_child_click_handler_and_parent_layout() {
         .expect("直接子组件必须是 FloatButton");
     // placement 覆盖标记必须在发布前完成。
     assert!(runtime_button.in_group);
-    // 向真实子 ComponentId 分发标准主键点击。
+    // 向真实子 WidgetId 分发标准主键点击。
     let result = tree.dispatch_semantic(SemanticEvent::click(
         // 点击目标是子按钮，不是组父节点。
         child,
@@ -453,7 +453,7 @@ fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
             // 根节点必须仍然存在。
             .expect("展开后父组必须存在")
             // 借用父组件。
-            .component()
+            .widget()
             // 取得类型视图。
             .as_any()
             // 窄化为 FloatButtonGroup。
@@ -526,7 +526,7 @@ fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
     let second_next_weak = Rc::downgrade(&second_next_lifetime);
     // 以相同父类型、触发方式、子类型与 key 提交等价结构的新闭包。
     ViewAdapter::reconcile(
-        // 协调到现有树以保留 ComponentId。
+        // 协调到现有树以保留 WidgetId。
         &mut tree,
         // 构造等价父组声明。
         FloatButtonGroup::new()
@@ -568,7 +568,7 @@ fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
         .children()
         // 转成独立向量。
         .to_vec();
-    // 同 key 同类型的两个子 ComponentId 必须原位保留。
+    // 同 key 同类型的两个子 WidgetId 必须原位保留。
     assert_eq!(reconciled_children, initial_children);
     // 无 State 旧首项闭包必须在协调线性化点释放。
     assert!(first_initial_weak.upgrade().is_none());
@@ -680,7 +680,7 @@ fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
     shutdown_tree.shutdown();
     // shutdown 后处理器探针必须已经释放。
     assert!(shutdown_weak.upgrade().is_none());
-    // shutdown 后旧 ComponentId 不能再触发语义处理器。
+    // shutdown 后旧 WidgetId 不能再触发语义处理器。
     assert_eq!(
         semantic_click(&mut shutdown_tree, shutdown_child),
         EventResult::NotHandled

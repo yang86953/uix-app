@@ -2,16 +2,16 @@
 
 mod methods;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入展开面板稳定 key 集合的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel,
-    SnapshotFields, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel, SnapshotFields,
+    SystemEvent, WidgetId, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -83,7 +83,7 @@ pub(crate) struct CollapseContentEntry {
     content: String,
 }
 
-component! {
+widget! {
     /// Collapse — 可折叠面板组。
     pub struct Collapse {
         pub(crate) panels: Vec<CollapsePanel>,
@@ -124,7 +124,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 借用全部已物化内容条目，稳定 key 保留原面板身份。
         let entries = self.materialized_content.borrow();
@@ -246,7 +246,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             // 只为仍存在的面板发布稳定 key。

@@ -1,4 +1,4 @@
-//! Navigation components — NavItem and Navigation sidebar.
+//! Navigation widgets — NavItem and Navigation sidebar.
 //!
 //! Ant Design style sidebar navigation with indicator bar, icons, labels,
 //! hover/active states, and optional subtitle.
@@ -10,14 +10,14 @@ use std::cell::{Cell, RefCell};
 use std::fmt::Display;
 use std::rc::Rc;
 
-use crate::component;
-use crate::core::{ComponentId, Constraints, Rect, Size};
+use crate::core::{Constraints, Rect, Size, WidgetId};
 use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
+use crate::widget;
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
@@ -48,7 +48,7 @@ fn paint_nav_item_bg(
 }
 
 // NavItem — 侧边栏导航项
-component! {
+widget! {
     /// 展示图标与标签并通过稳定键发布导航动作的侧边栏条目组件。
     pub struct NavItem {
         label: String,
@@ -101,7 +101,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()

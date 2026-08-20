@@ -52,7 +52,7 @@ impl Default for App {
         // 默认语言单例消除主窗和次窗首次解析时的预期失败告警。
         container.singleton(Locale::default());
         // 默认组件配置与语言共享同一应用级生命周期。
-        container.singleton(ComponentConfig::default());
+        container.singleton(WidgetConfig::default());
 
         // 把所有初始 owner 和配置收敛到唯一 App 值。
         Self {

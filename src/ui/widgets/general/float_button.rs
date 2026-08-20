@@ -15,11 +15,11 @@ mod tests;
 pub use group::FloatButtonGroupView;
 
 // 引入单一几何解析入口与输入输出类型。
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 use geometry::{FloatButtonGeometry, FloatButtonGeometryInput, resolve_float_button_geometry};
 // 浮动按钮使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::SnapshotFields;
@@ -35,7 +35,7 @@ const FLOAT_BUTTON_GROUP_TRIGGER_SIZE: f32 = 40.0;
 const FLOAT_BUTTON_GROUP_GAP: f32 = 8.0;
 
 // FloatButton — 浮动操作按钮。
-component! {
+widget! {
     /// 锚定窗口逻辑表面并支持图标、说明、提示与徽标的浮动操作按钮。
     pub struct FloatButton {
         icon: String,
@@ -117,13 +117,13 @@ component! {
         self.geometry(frame).paint_bounds
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<OverlayEntry> {
         // 旧入口仅作为当前缓存表面的兼容委托。
         self.overlay_for_surface(id, frame, self.last_surface.get())
     }
 
     // 显式接收当前窗口逻辑表面，避免复用旧尺寸下的锚点。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, frame: Rect, surface: Rect) -> Option<OverlayEntry> {
         // 保存组件树本帧提供的权威表面。
         self.last_surface.set(surface);
         // 使用同一表面解析浮层登记区域。
@@ -364,7 +364,7 @@ impl FloatButton {
         // 借用当前组件。
         &self,
         // 接收组件树稳定标识。
-        id: crate::ui::ComponentId,
+        id: crate::ui::WidgetId,
         // 接收组件布局矩形。
         frame: Rect,
         // 接收当前窗口逻辑表面。
@@ -455,7 +455,7 @@ enum FloatButtonGroupPressTarget {
     Trigger,
 }
 
-component! {
+widget! {
     /// 一组可展开的浮动操作按钮。
     pub struct FloatButtonGroup {
         #[snapshot(skip)]
@@ -502,7 +502,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         let progress = self.expansion_progress();
         children

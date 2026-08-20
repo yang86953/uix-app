@@ -54,7 +54,7 @@ mod framework_provider {
             // 创建继承上层配置的作用域。
             ConfigProvider::new()
                 // 覆写子树默认控件尺寸。
-                .component_size(ControlSize::Large)
+                .widget_size(ControlSize::Large)
                 // 覆写子树默认禁用状态。
                 .disabled(true)
                 // 在配置作用域内构建唯一子树。
@@ -84,7 +84,7 @@ mod framework_overrides {
     // 编译组件构造覆盖与类型索引令牌补丁。
     fn compile_example() {
         // 创建空的组件构造覆盖集合。
-        let mut overrides = ComponentOverrides::default();
+        let mut overrides = WidgetOverrides::default();
         // 为子树中的 Input 统一注入货币前缀。
         overrides.input.prefix = Some("¥".to_string());
 
@@ -105,7 +105,7 @@ mod framework_overrides {
             // 创建继承上层值的配置作用域。
             ConfigProvider::new()
                 // 为 Button 类型安装主色与圆角补丁。
-                .component_tokens::<Button>(TokenPatch {
+                .widget_tokens::<Button>(TokenPatch {
                     // 覆写按钮品牌主色。
                     color_primary: Some(Color::hex("#722ed1")),
                     // 覆写按钮默认圆角。

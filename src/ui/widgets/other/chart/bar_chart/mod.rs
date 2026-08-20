@@ -3,11 +3,11 @@
 use std::any::Any;
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::widget;
 
 use super::advanced::{
     BrushConfig, ChartSeries, InteractionConfig, LegendPosition, TooltipConfig, TooltipTrigger,
@@ -19,7 +19,7 @@ mod plot;
 pub use self::data::BarData;
 use self::plot::map_x;
 
-component! {
+widget! {
     /// 按具名数据项绘制柱形、坐标轴与可选数值标签的图表组件。
     pub struct BarChart {
         data: Vec<BarData>,

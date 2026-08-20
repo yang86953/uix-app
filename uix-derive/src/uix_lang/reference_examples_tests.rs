@@ -74,7 +74,7 @@ fn fenced_uix_examples(source: &str, display_path: &str) -> Vec<(usize, String)>
 
 // 验证每个组件参考 UIX 示例都能经过完整解析与 View 生成。
 #[test]
-fn component_reference_examples_generate_as_documents() {
+fn widget_reference_examples_generate_as_documents() {
     // 从过程宏 crate 定位仓库根目录。
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     // 组件参考目录是本门禁的唯一事实输入。
@@ -210,10 +210,10 @@ fn generate_document_source(document: &str) -> Result<(), Diagnostic> {
     }
 }
 
-// 为指南中的完整 App、普通 View 与阶段性 Component 片段补齐文档形状。
+// 为指南中的完整 App、普通 View 与阶段性 Widget 片段补齐文档形状。
 fn generate_guide_example(example: &str) -> Result<(), Diagnostic> {
-    // 仅声明 Component 的教程步骤缺少文档根，需要补无业务语义的稳定 View 根。
-    let document = if example.contains("<Component") && !example.contains("<App") {
+    // 仅声明 Widget 的教程步骤缺少文档根，需要补无业务语义的稳定 View 根。
+    let document = if example.contains("<Widget") && !example.contains("<App") {
         // 保留全部声明并追加独立空容器，以验证组件声明的完整生成。
         format!("{example}\n<Container />")
     } else {
@@ -233,7 +233,7 @@ fn guide_examples_generate_through_public_entry_shapes() {
     let guide_paths = [
         // 快速开始覆盖首个 View、计数器 App 及主题 App。
         repository_root.join("docs/uix-lang/指南/快速开始.md"),
-        // 教程覆盖逐步 Component 片段与最终 App。
+        // 教程覆盖逐步 Widget 片段与最终 App。
         repository_root.join("docs/uix-lang/指南/教程.md"),
     ];
     // 记录跨指南示例总数，防止输入意外退化为空。
@@ -290,8 +290,8 @@ fn materialize_specification_example(example: &str) -> String {
         // 返回完整 App 原文。
         return example.to_owned();
     }
-    // Component 与 Record 是顶层声明，不能被普通容器包裹。
-    let starts_with_declaration = first_code_line.starts_with("<Component")
+    // Widget 与 Record 是顶层声明，不能被普通容器包裹。
+    let starts_with_declaration = first_code_line.starts_with("<Widget")
         // Record 同样属于根元素之前的声明。
         || first_code_line.starts_with("<Record")
         // 主题和模块指令使用 @ 前缀。

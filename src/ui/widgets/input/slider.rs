@@ -3,12 +3,12 @@
 use std::cell::Cell;
 use std::ops::RangeInclusive;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
 use crate::ui::SnapshotFields;
 use crate::ui::widgets::TooltipPlacement;
@@ -16,7 +16,7 @@ use crate::ui::widgets::tooltip_primitives::{
     paint_tooltip_bubble, tooltip_bubble_rect, tooltip_fallback_surface,
 };
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
 
 pub(super) fn decimal_places(value: f64) -> i32 {
@@ -35,7 +35,7 @@ pub(super) fn decimal_places(value: f64) -> i32 {
     (fraction - exponent).max(0)
 }
 
-component! {
+widget! {
     /// Horizontal slider.
     pub struct Slider {
         min: f64,
@@ -133,7 +133,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.to_string()))
@@ -299,7 +299,7 @@ component! {
         dirty
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         let (placement, target) = self.tooltip_target(frame)?;
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
@@ -315,7 +315,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建滑块提示登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 缓存当前逻辑表面，使登记与随后绘制使用同一边界。
         self.surface_rect.set(Some(surface));
         // 复用统一的滑块提示登记逻辑。

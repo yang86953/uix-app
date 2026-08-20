@@ -192,7 +192,7 @@ struct FormModelInner {
 
 /// 应用侧表单模型；克隆后仍共享字段值、校验状态与字段焦点句柄。
 ///
-/// 自定义校验闭包只保留在这个应用侧句柄中，不进入 widget component。
+/// 自定义校验闭包只保留在这个应用侧句柄中，不进入 widget widget。
 #[derive(Clone)]
 pub struct FormModel {
     inner: Rc<FormModelInner>,

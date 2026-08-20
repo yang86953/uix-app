@@ -1,6 +1,6 @@
 use crate::core::Point;
 use crate::platform::windowing::{KeyMod, MouseButton};
-use crate::ui::ComponentId;
+use crate::ui::WidgetId;
 
 /// Result of a drag target operation.
 /// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
@@ -12,7 +12,7 @@ pub(crate) enum DragEventResult {
     Ignored,
 }
 
-/// Manages drag-and-drop for a component.
+/// Manages drag-and-drop for a widget.
 pub struct DragManager {
     dragging: bool,
     drag_start_pos: Point,
@@ -21,7 +21,7 @@ pub struct DragManager {
     last_pos: Point,
     button: MouseButton,
     mods: KeyMod,
-    target: Option<ComponentId>,
+    target: Option<WidgetId>,
 }
 
 impl Default for DragManager {
@@ -57,7 +57,7 @@ impl DragManager {
     /// 记录尚未越过激活阈值的候选拖拽手势及其输入上下文。
     pub fn begin_gesture(
         &mut self,
-        target: Option<ComponentId>,
+        target: Option<WidgetId>,
         pos: Point,
         button: MouseButton,
         mods: KeyMod,
@@ -113,7 +113,7 @@ impl DragManager {
     }
 
     /// 返回当前手势关联的目标组件身份。
-    pub fn target(&self) -> Option<ComponentId> {
+    pub fn target(&self) -> Option<WidgetId> {
         self.target
     }
 
@@ -148,8 +148,8 @@ impl DragManager {
     }
 
     /// 当被注销组件是当前目标时结束拖拽手势。
-    pub fn unregister_component(&mut self, component_id: ComponentId) {
-        if self.target == Some(component_id) {
+    pub fn unregister_widget(&mut self, widget_id: WidgetId) {
+        if self.target == Some(widget_id) {
             self.end_drag();
         }
     }

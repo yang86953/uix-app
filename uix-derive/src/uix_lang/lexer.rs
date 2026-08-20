@@ -252,7 +252,7 @@ impl<'a> Cursor<'a> {
                 // 陈述失败原因。
                 "指令参数必须使用单引号字符串",
                 // 给出合法示例。
-                "使用 @import('./component.uix')",
+                "使用 @import('./widget.uix')",
             ));
         }
         // 保存解码内容。

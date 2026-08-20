@@ -1,6 +1,5 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
@@ -9,11 +8,12 @@ use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
-component! {
+widget! {
     /// Rate — 星级评分，点击选择分值。
     pub struct Rate {
         count: usize,
@@ -86,7 +86,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.to_string()))

@@ -18,7 +18,7 @@ use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::PlatformWindow;
 use crate::ui::theme::{DynTokens, Theme};
 use crate::ui::widget_runtime::clipboard;
-use crate::ui::{ComponentId, SystemEvent, WidgetTree};
+use crate::ui::{SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
@@ -399,7 +399,7 @@ where
         !platform_window.is_visible(),
     );
     // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
-    let last_debug_hover = Cell::new(None::<ComponentId>);
+    let last_debug_hover = Cell::new(None::<WidgetId>);
     let mut fallback_loop_state = WindowLoopState::Active;
 
     let running = Cell::new(true);

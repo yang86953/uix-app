@@ -75,14 +75,14 @@ fn nested_imports_resolve_relative_to_each_importer_and_track_every_file() {
         // 放在共享子目录。
         "shared/helper.uix",
         // 显式导出 Helper 并提供合法根。
-        "@export('Helper')\n<Component name=\"Helper\"><Text>共享</Text></Component>\n<Helper />",
+        "@export('Helper')\n<Widget name=\"Helper\"><Text>共享</Text></Widget>\n<Helper />",
     );
     // 写入中层页面并相对自身导入 helper。
     fixture.write(
         // 放在 pages 子目录。
         "pages/page.uix",
         // Page 依赖 Helper，根只用于单文件语法完整性。
-        "@import('../shared/helper.uix', 'Helper')\n@export('Page')\n<Component name=\"Page\"><Helper /></Component>\n<Page />",
+        "@import('../shared/helper.uix', 'Helper')\n@export('Page')\n<Widget name=\"Page\"><Helper /></Widget>\n<Page />",
     );
     // 写入 App 根文件。
     let root = fixture.write(
@@ -119,7 +119,7 @@ fn named_import_selects_one_export() {
         // 保存组件库。
         "library.uix",
         // 同时导出 Alpha 与 Beta。
-        "@export('Alpha', 'Beta')\n<Component name=\"Alpha\"><Text>A</Text></Component>\n<Component name=\"Beta\"><Text>B</Text></Component>\n<Alpha />",
+        "@export('Alpha', 'Beta')\n<Widget name=\"Alpha\"><Text>A</Text></Widget>\n<Widget name=\"Beta\"><Text>B</Text></Widget>\n<Alpha />",
     );
     // 根文件只选择 Beta。
     let root = fixture.write(
@@ -147,7 +147,7 @@ fn imports_require_explicit_existing_exports() {
         // 保存私有组件库。
         "private.uix",
         // 只定义组件。
-        "<Component name=\"Private\"><Text>P</Text></Component>\n<Private />",
+        "<Widget name=\"Private\"><Text>P</Text></Widget>\n<Private />",
     );
     // 根文件尝试导入私有文件。
     let no_export = fixture.write(
@@ -166,7 +166,7 @@ fn imports_require_explicit_existing_exports() {
         // 保存公开组件库。
         "public.uix",
         // 明确只公开 Public。
-        "@export('Public')\n<Component name=\"Public\"><Text>P</Text></Component>\n<Public />",
+        "@export('Public')\n<Widget name=\"Public\"><Text>P</Text></Widget>\n<Public />",
     );
     // 根文件请求不存在的 export。
     let missing = fixture.write(
@@ -191,14 +191,14 @@ fn duplicate_component_names_are_rejected() {
         // 保存组件库。
         "page.uix",
         // 定义公开 Page。
-        "@export('Page')\n<Component name=\"Page\"><Text>导入</Text></Component>\n<Page />",
+        "@export('Page')\n<Widget name=\"Page\"><Text>导入</Text></Widget>\n<Page />",
     );
     // 根文件同时本地定义同名 Page。
     let root = fixture.write(
         // 保存冲突入口。
         "main.uix",
         // import 后的本地同名声明必须失败。
-        "@import('./page.uix')\n<Component name=\"Page\"><Text>本地</Text></Component>\n<App><Page /></App>",
+        "@import('./page.uix')\n<Widget name=\"Page\"><Text>本地</Text></Widget>\n<App><Page /></App>",
     );
     // 解析必须返回重复组件诊断。
     let error = resolve_file(&root).expect_err("duplicate components must fail");
@@ -216,14 +216,14 @@ fn circular_imports_are_rejected_with_dependency_chain() {
         // 保存 A 文件。
         "a.uix",
         // A 导入 B 并导出 AView。
-        "@import('./b.uix')\n@export('AView')\n<Component name=\"AView\"><Text>A</Text></Component>\n<AView />",
+        "@import('./b.uix')\n@export('AView')\n<Widget name=\"AView\"><Text>A</Text></Widget>\n<AView />",
     );
     // 写入 B 到 A 的回边。
     fixture.write(
         // 保存 B 文件。
         "b.uix",
         // B 导入 A 并导出 BView。
-        "@import('./a.uix')\n@export('BView')\n<Component name=\"BView\"><Text>B</Text></Component>\n<BView />",
+        "@import('./a.uix')\n@export('BView')\n<Widget name=\"BView\"><Text>B</Text></Widget>\n<BView />",
     );
     // 解析循环图必须失败。
     let error = resolve_file(&root).expect_err("cycle must fail");
@@ -257,7 +257,7 @@ fn component_names(declarations: &[Declaration]) -> Vec<&str> {
         // 只提取 Component。
         .filter_map(|declaration| match declaration {
             // 返回组件名借用。
-            Declaration::Component(component) => Some(component.name.as_str()),
+            Declaration::Widget(component) => Some(component.name.as_str()),
             // 其他声明不计入。
             _ => None,
         })

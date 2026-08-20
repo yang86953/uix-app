@@ -6,7 +6,6 @@ use std::cell::Cell;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
@@ -16,9 +15,10 @@ use crate::ui::widgets::input::date_calendar::{
     hit_month_navigation_in_rect,
 };
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 
 // 声明 DatePicker 的表面约束几何模块。
 mod geometry;
@@ -191,7 +191,7 @@ pub(crate) fn first_weekday(year: i32, month: usize) -> usize {
     ((zeller + 5) % 7) as usize
 }
 
-component! {
+widget! {
     /// DatePicker — 日期选择器。
     pub struct DatePicker {
         value: Cell<Date>,
@@ -374,7 +374,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.format()))
@@ -508,7 +508,7 @@ component! {
         date_picker_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
             // 读取最近记录的表面或首次有限回退。
             let surface = self.surface_or_fallback(frame);
@@ -525,7 +525,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建日期面板登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际面板缓存。
         self.remember_popup_rect(frame, surface);
         // 复用统一的日期面板登记逻辑。

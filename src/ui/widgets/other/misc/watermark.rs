@@ -1,14 +1,14 @@
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, ThemeTokens, WidgetTree};
+use crate::widget;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Watermark
 // ════════════════════════════════════════════════════════════════════════════
 
-component! {
+widget! {
     /// 在组件区域内按配置间距、偏移与角度平铺文字的水印组件。
     pub struct Watermark {
         text: String,

@@ -17,7 +17,7 @@ fn transition_all_generates_persistent_hover_retarget() {
           opacity: 0.5;
           backgroundColor: rgb(30, 40, 50);
         }
-        <Component name="Card"><Text class="card">卡片</Text></Component>
+        <Widget name="Card"><Text class="card">卡片</Text></Widget>
         <Card />
         "#,
     )
@@ -60,9 +60,9 @@ fn transition_specific_property_wraps_set_style_targets() {
         r#"
         compact { width: 20px; transition: width 1s linear 0s; }
         expanded { width: 80px; }
-        <Component name="Resizable">
+        <Widget name="Resizable">
           <Text class="compact" @click="setStyle('expanded')">调整</Text>
-        </Component>
+        </Widget>
         <Resizable />
         "#,
     )
@@ -110,7 +110,7 @@ fn transition_rejects_missing_fixed_dimension_targets() {
         r#"
         compact { width: 20px; transition: width 200ms; }
         colored { color: rgb(10, 20, 30); }
-        <Component name="Resizable"><Text class="compact" @click="setStyle('colored')" /></Component>
+        <Widget name="Resizable"><Text class="compact" @click="setStyle('colored')" /></Widget>
         <Resizable />
         "#,
     )

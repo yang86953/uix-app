@@ -2,17 +2,17 @@
 use std::collections::BTreeSet;
 
 // 引入组件展开器。
-use super::component_codegen::ComponentExpander;
+use super::widget_codegen::WidgetExpander;
 // 引入动画值验证入口。
 use super::style_value_codegen::{animation_color_value, animation_f32_value};
 // 引入 transition 降低所需 AST 与诊断。
 use super::{
-    AnimationEasing, AnimationPropertyKind, AttributeValue, ComponentScopeMarker, Diagnostic,
-    DynamicStyleBinding, Element, StyleProperty, TransitionBinding,
+    AnimationEasing, AnimationPropertyKind, AttributeValue, Diagnostic, DynamicStyleBinding,
+    Element, StyleProperty, TransitionBinding, WidgetScopeMarker,
 };
 
 // 实现 transition 简写消费、状态分支矩阵验证与最终装饰附加。
-impl ComponentExpander {
+impl WidgetExpander {
     // 从最终基础样式或动态完整分支提取 transition。
     pub(super) fn prepare_transition(
         // 可变借用展开器以读取组件作用域和 For 实例路径。
@@ -61,9 +61,9 @@ impl ComponentExpander {
         // 保存动态样式原始分支与全部完整目标分支。
         let mut dynamic_branches = Vec::new();
         // 检查并消费动态分支里的 transition。
-        for marker in &mut element.component_scopes {
+        for marker in &mut element.widget_scopes {
             // 只处理 setStyle 动态元数据。
-            let ComponentScopeMarker::DynamicStyle(binding) = marker else {
+            let WidgetScopeMarker::DynamicStyle(binding) = marker else {
                 // 继续下一装饰。
                 continue;
             };
@@ -108,9 +108,9 @@ impl ComponentExpander {
                 .collect();
         }
         // 伪类差异不得改变 transition 配置本身。
-        for marker in &element.component_scopes {
+        for marker in &element.widget_scopes {
             // 只检查伪类叠加元数据。
-            let ComponentScopeMarker::PseudoStyle(binding) = marker else {
+            let WidgetScopeMarker::PseudoStyle(binding) = marker else {
                 // 继续下一装饰。
                 continue;
             };
@@ -163,11 +163,11 @@ impl ComponentExpander {
         // animation 与 transition 同时拥有同一节点 Animated 值会形成竞争播放器。
         if element
             // 遍历既有装饰。
-            .component_scopes
+            .widget_scopes
             // 借用迭代器。
             .iter()
             // 查找 animation 绑定。
-            .any(|marker| matches!(marker, ComponentScopeMarker::Animation(_)))
+            .any(|marker| matches!(marker, WidgetScopeMarker::Animation(_)))
         {
             // 返回明确组合诊断。
             return Err(transition_diagnostic(
@@ -195,7 +195,7 @@ impl ComponentExpander {
         // 追加动态完整分支。
         candidate_sets.extend(dynamic_branches.iter().skip(1).cloned());
         // 追加伪类差异字段。
-        append_pseudo_candidates(&element.component_scopes, &mut candidate_sets);
+        append_pseudo_candidates(&element.widget_scopes, &mut candidate_sets);
         // 解析 `all` 或单一具体属性的实际字段集合。
         let properties = resolve_transition_properties(selection, &candidate_sets, &transition)?;
         // 验证基础值、动态完整分支和全部显式目标值。
@@ -212,7 +212,7 @@ impl ComponentExpander {
             &transition,
         )?;
         // transition 必须归属最近组件或文档根状态作用域。
-        let Some(component_scope) = self.component_scope_stack.last().cloned() else {
+        let Some(widget_scope) = self.widget_scope_stack.last().cloned() else {
             // 返回生命周期所有者诊断。
             return Err(transition_diagnostic(
                 // 指向 transition 简写。
@@ -220,11 +220,11 @@ impl ComponentExpander {
                 // 陈述失败原因。
                 "transition 缺少声明式生命周期所有者",
                 // 给出合法使用边界。
-                "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Component",
+                "从 uix! 或 uix_app! 文档根展开该 View，或把它放入 Widget",
             ));
         };
         // 使用节点类型与源码位置形成跨构建稳定声明身份。
-        let declaration_id = Self::stable_component_id(&format!(
+        let declaration_id = Self::stable_widget_id(&format!(
             // 固定 transition 身份前缀。
             "transition:{}:{}:{}",
             // 纳入节点类型。
@@ -237,11 +237,11 @@ impl ComponentExpander {
         // transition 最后包裹全部动态与伪类目标样式。
         element
             // 借用最终装饰列表。
-            .component_scopes
+            .widget_scopes
             // 追加目标比较绑定。
-            .push(ComponentScopeMarker::Transition(TransitionBinding {
+            .push(WidgetScopeMarker::Transition(TransitionBinding {
                 // 保存最近生命周期作用域。
-                component_scope_name: component_scope.to_string(),
+                widget_scope_name: widget_scope.to_string(),
                 // 保存稳定声明身份。
                 declaration_id,
                 // 继承最近 For 实际路径。
@@ -291,14 +291,14 @@ fn take_dynamic_transitions(
 // 把伪类差异字段复制到值验证候选集合。
 fn append_pseudo_candidates(
     // 借用全部元素装饰。
-    markers: &[ComponentScopeMarker],
+    markers: &[WidgetScopeMarker],
     // 可变借用候选字段集合。
     candidates: &mut Vec<Vec<StyleProperty>>,
 ) {
     // 遍历装饰查找伪类元数据。
     for marker in markers {
         // 只处理伪类装饰。
-        let ComponentScopeMarker::PseudoStyle(binding) = marker else {
+        let WidgetScopeMarker::PseudoStyle(binding) = marker else {
             // 继续下一装饰。
             continue;
         };

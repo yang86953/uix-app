@@ -26,7 +26,7 @@ pub(super) fn parse_for_iteration_setup(
                     // 说明内部逐迭代准备语句损坏。
                     "For 组件准备语句无法恢复",
                     // 该错误不能由 UIX 作者修改源码规避。
-                    "报告 UIX 编译器内部错误并附上当前 Component 与 For 声明",
+                    "报告 UIX 编译器内部错误并附上当前 Widget 与 For 声明",
                 )
             })
         })

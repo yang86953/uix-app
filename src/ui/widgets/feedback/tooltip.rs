@@ -1,8 +1,8 @@
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 反馈组件复用基础层提示气泡原语。
 use crate::ui::SnapshotFields;
 use crate::ui::widgets::tooltip_primitives::{
@@ -13,7 +13,7 @@ use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 // 复用基础层交互模型，并保持 feedback::tooltip 的既有公开路径。
 pub use crate::ui::widgets::overlay_types::{TooltipPlacement, TriggerMode};
 
-component! {
+widget! {
     /// 按指定触发方式显示说明文本的浮层提示。
     pub struct Tooltip {
         text: String,
@@ -49,7 +49,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         let frame = Self::normalize_frame(frame);
         self.last_frame.set(frame);
@@ -257,7 +257,7 @@ component! {
         )
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }
@@ -276,7 +276,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建提示浮层登记。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 缓存当前表面，使 dirty、旧入口和动画检查消费同一几何。
         self.surface_rect.set(Some(Self::normalize_frame(surface)));
         // 复用统一的浮层登记逻辑。

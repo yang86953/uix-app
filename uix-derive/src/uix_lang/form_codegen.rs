@@ -749,14 +749,14 @@ fn generate_model_rules(element: &Element) -> Result<Vec<TokenStream>, Diagnosti
 }
 
 // 解析当前字段组件登记的唯一 required 规则。
-fn parse_required_rule(element: &Element, component: &str) -> Result<bool, Diagnostic> {
+fn parse_required_rule(element: &Element, widget: &str) -> Result<bool, Diagnostic> {
     // 没有 rules 时保持非必填默认值。
     let Some(attribute) = find_attribute(element, "rules") else {
         // 返回关闭状态。
         return Ok(false);
     };
     // 规则必须在编译期确定。
-    let rules = literal_string(attribute, &format!("{component} rules"))?;
+    let rules = literal_string(attribute, &format!("{widget} rules"))?;
     // 选择字段当前只允许唯一 required 规则。
     if rules.trim() == "required" {
         // 返回已启用状态。
@@ -765,7 +765,7 @@ fn parse_required_rule(element: &Element, component: &str) -> Result<bool, Diagn
     // 返回精确规则诊断。
     Err(Diagnostic::new(
         attribute.span,
-        format!("{component} rules 包含未登记或重复规则 {rules:?}"),
+        format!("{widget} rules 包含未登记或重复规则 {rules:?}"),
         "当前只使用 required",
     ))
 }

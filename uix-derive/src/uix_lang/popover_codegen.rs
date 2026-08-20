@@ -120,7 +120,7 @@ pub(crate) fn generate_popover(element: &Element) -> Result<TokenStream, Diagnos
     }
     // 把唯一静态 View 交给运行时组件拥有触发与显隐生命周期。
     widget = quote! { (#widget).trigger_view(#trigger) };
-    // 使用公开叶节点入口物化 WidgetComponent，子树仍由运行时提供器构建。
+    // 使用公开叶节点入口物化 Widget，子树仍由运行时提供器构建。
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 消费 Popover 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(

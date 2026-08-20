@@ -2,7 +2,6 @@
 //!
 //! 月视图展示日期，支持选中日期、月份切换。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, Radius};
@@ -10,8 +9,9 @@ use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, State, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, State, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -76,7 +76,7 @@ pub(crate) struct CalendarCellEntry {
     factory_generation: u64,
 }
 
-component! {
+widget! {
     /// Internal viewport that confines a custom date-cell View to one grid slot.
     struct CalendarCellHost {
         _date: Date,
@@ -87,7 +87,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         children.iter().map(|child| (child.id, frame)).collect()
     }
@@ -98,7 +98,7 @@ component! {
 }
 
 // Calendar — 日历组件。
-component! {
+widget! {
     /// 拥有月份导航、日期选择与键盘焦点状态的月历组件。
     pub struct Calendar {
         year: Cell<i32>,
@@ -131,7 +131,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         let geometry = CalendarGeometry::new(
             Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0)),
@@ -255,7 +255,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|date| SemanticEvent::change(id, date.format()))

@@ -126,7 +126,7 @@ pub(super) fn generate_conditional_chain(
             // 传递外层输出向量。
             output,
             // 传递控制元素继承的组件作用域标记。
-            &branch.element.component_scopes,
+            &branch.element.widget_scopes,
         )?;
         // 按条件分支或无条件兜底生成当前尾部。
         generated_tail = Some(if let Some(condition) = branch.condition {

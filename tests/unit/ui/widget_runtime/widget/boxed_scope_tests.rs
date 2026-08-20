@@ -10,7 +10,7 @@ use std::sync::Arc;
 // 确认组件 panic 不会把临时令牌泄漏给后续兄弟节点。
 #[test]
 // 执行 TokenScope panic 展开回归。
-fn panic_during_component_scope_restores_sibling_tokens() {
+fn panic_during_widget_scope_restores_sibling_tokens() {
     // 创建兄弟节点正常使用的根主题令牌。
     let root = Theme::antd_light().tokens_arc();
     // 记录根主题字号，作为 panic 后的期望值。
@@ -47,7 +47,7 @@ fn panic_during_component_scope_restores_sibling_tokens() {
                 // 确认 panic 前组件确实看到临时背景模糊半径。
                 assert_eq!(tokens.backdrop_blur_radius(), 19.0);
                 // 模拟组件绘制失败。
-                panic!("component render panic");
+                panic!("widget render panic");
                 // 结束模拟组件操作。
             },
             // 使用进入组件前的快照恢复根作用域。

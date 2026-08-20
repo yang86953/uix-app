@@ -83,32 +83,32 @@ pub(crate) fn generate_float_button(element: &Element) -> Result<TokenStream, Di
         }
     }
     // 从现有公开运行时组件开始构造。
-    let mut component = quote! {
+    let mut widget = quote! {
         // UIX 始终显式设置文档默认 Placement。
         (::uix::prelude::FloatButton::new(#icon)).placement(#placement)
     };
     // 有说明文字时调用公开构建器。
     if let Some(value) = description {
         // 追加 description 配置。
-        component = quote! { (#component).description(#value) };
+        widget = quote! { (#widget).description(#value) };
     }
     // 有提示文字时调用公开构建器。
     if let Some(value) = tooltip {
         // 追加 tooltip 配置。
-        component = quote! { (#component).tooltip(#value) };
+        widget = quote! { (#widget).tooltip(#value) };
     }
     // 有数字徽标时调用公开构建器。
     if let Some(value) = badge_count {
         // 追加 count 配置。
-        component = quote! { (#component).badge(#value) };
+        widget = quote! { (#widget).badge(#value) };
     }
     // 有圆点徽标时调用公开构建器。
     if let Some(value) = badge_dot {
         // 追加 dot 配置。
-        component = quote! { (#component).badge_dot(#value) };
+        widget = quote! { (#widget).badge_dot(#value) };
     }
-    // 把运行时 Component 包装成公开叶 View。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#component) };
+    // 把运行时 Widget 包装成公开叶 View。
+    let base = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 继续复用统一样式、事件与未知属性诊断路径。
     apply_common_attributes(
         // 传入 FloatButton 基础 View。

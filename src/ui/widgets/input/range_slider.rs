@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::ops::RangeInclusive;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
@@ -11,8 +10,9 @@ use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 
 use super::slider::decimal_places;
 
@@ -25,7 +25,7 @@ pub enum RangeSliderThumb {
     End,
 }
 
-component! {
+widget! {
     /// Horizontal two-thumb range slider returned by [`Slider::range`](super::Slider::range).
     pub struct RangeSlider {
         min: f64,
@@ -136,7 +136,7 @@ component! {
     }
 
     // 语义事件：取出待发范围变更并上报 change。
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change.take().map(|(start, end)| {
             SemanticEvent::change(id, format!("{start}..{end}"))
         })

@@ -22,7 +22,7 @@ impl WidgetTree {
     /// 返回 Layout 失效影响的子树先序遍历顺序。
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
-    pub fn layout_traverse(&self) -> Vec<ComponentId> {
+    pub fn layout_traverse(&self) -> Vec<WidgetId> {
         // 已停止的树不得向外暴露可能处于半提交状态的布局遍历。
         if !self.accepts_external_work() {
             // 没有可安全执行的布局节点。
@@ -35,7 +35,7 @@ impl WidgetTree {
 
     pub(crate) fn fill_layout_traversal(
         &self,
-        result: &mut Vec<ComponentId>,
+        result: &mut Vec<WidgetId>,
         scratch: &mut LayoutTraversalScratch,
     ) {
         result.clear();
@@ -285,7 +285,7 @@ impl WidgetTree {
         changes: &mut Vec<(WidgetId, bool)>,
     ) -> bool {
         // 保留同步前的焦点，待全部门控更新后按组件约定迁移。
-        let focused_before = self.managers().focus.focused_component();
+        let focused_before = self.managers().focus.focused_widget();
         changes.clear();
         for &parent_id in order {
             let Some(parent) = self.get(parent_id) else {
@@ -479,7 +479,7 @@ impl WidgetTree {
     }
 
     pub(crate) fn focus_affects_active(&self, id: WidgetId) -> bool {
-        let mut current = self.managers().focus.focused_component();
+        let mut current = self.managers().focus.focused_widget();
         while let Some(current_id) = current {
             if current_id == id {
                 return true;

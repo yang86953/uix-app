@@ -2,7 +2,7 @@ use crate::ui::reactive::state::State;
 use std::any::Any;
 use std::collections::HashMap;
 
-/// Manages component-local state values.
+/// Manages widget-local state values.
 #[derive(Default)]
 pub struct StateManager {
     states: HashMap<String, Box<dyn Any + Send + Sync>>,

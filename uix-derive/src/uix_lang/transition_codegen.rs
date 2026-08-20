@@ -16,7 +16,7 @@ pub(super) fn apply_transition(
     binding: &TransitionBinding,
 ) -> TokenStream {
     // 重建最近组件或文档根作用域标识符。
-    let component_scope = Ident::new(&binding.component_scope_name, Span::call_site());
+    let widget_scope = Ident::new(&binding.widget_scope_name, Span::call_site());
     // 创建最终目标 View 局部变量。
     let target_view = Ident::new("__uix_transition_target_view", Span::mixed_site());
     // 创建实例路径局部变量。
@@ -76,16 +76,16 @@ pub(super) fn apply_transition(
             &#instance_path,
         );
         // 从最近组件作用域派生实际节点 transition 子作用域。
-        let #node_scope = ::uix::ui::__private::uix_component_child_scope(
+        let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
             // 借用最近组件或文档根作用域。
-            &#component_scope,
+            &#widget_scope,
             // 使用稳定声明编号。
             #declaration_id,
             // 使用包含实际 key 的身份。
             #identity,
         );
         // 在窗口私有组件状态存储中复用 transition 运行时。
-        let #state = ::uix::ui::__private::uix_component_state(
+        let #state = ::uix::ui::__private::uix_widget_state(
             // 借用实际节点子作用域。
             &#node_scope,
             // 子作用域内 transition 只占用固定字段零。
@@ -136,7 +136,7 @@ pub(super) fn apply_transition(
             }
         };
         // 让实际节点承载 transition 私有状态生命周期。
-        #target_view.uix_component_scope(#node_scope, 0)
+        #target_view.uix_widget_scope(#node_scope, 0)
     }}
 }
 

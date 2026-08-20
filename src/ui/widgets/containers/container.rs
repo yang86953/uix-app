@@ -3,11 +3,11 @@
 use crate::ui::widget_runtime::widget::WidgetCore;
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::scene::PicturePolicy;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::widget;
 // 导入共享布局入口与内容外尺寸计算。
 use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild, content_size_from_children};
 
@@ -16,10 +16,10 @@ use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken, apply_style,
 };
-use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
+use crate::ui::{WidgetId, WidgetTree};
 
-component! {
+widget! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
     ///
     /// 所有视觉效果统一通过 `style: Style` 配置。布局引擎从 `style.margin`
@@ -117,7 +117,7 @@ component! {
         apply_style(ctx, visual, s);
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         let s = &self.style;
@@ -147,7 +147,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 直接调用空子布局时也清除缓存，保持组件布局契约自洽。
         if children.is_empty() {

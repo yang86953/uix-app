@@ -13,7 +13,7 @@
 | `SystemEvent` / `SystemEventKind` | enum | 键鼠、文本、IME、窗口、计时等统一 UI 事件 |
 | `SemanticEvent` / `SemanticKind` / `SemanticPayload` | struct/enum | Click、Change、Submit 等应用语义 |
 | `EventResult` | enum | 控制是否继续传播和默认处理 |
-| `HandlerTable` / `HandlerRegistration` | struct | 按 `ComponentId` 保存语义 handler |
+| `HandlerTable` / `HandlerRegistration` | struct | 按 `WidgetId` 保存语义 handler |
 | `SystemEventHandlerRegistration` | crate 内 struct | 组件 system handler、过滤器和生命周期签名 |
 | `SemanticAction` | crate 内 enum | Agent/自动化复用的 focus、invoke、set-value 等动作 |
 | `WindowAction` | enum | 由组件请求并交给所属窗口消费的窗口操作 |
@@ -42,9 +42,9 @@ platform UiEvent
 
 ## 组件：HandlerTable
 
-应用回调按 `ComponentId` 存在 `HandlerTable`，组件只保存稳定 handler signature。reconcile 比较 signature 以复用或替换登记；节点移除、换根或 generation 失效时同步删除，避免闭包进入组件快照或泄漏。
+应用回调按 `WidgetId` 存在 `HandlerTable`，组件只保存稳定 handler signature。reconcile 比较 signature 以复用或替换登记；节点移除、换根或 generation 失效时同步删除，避免闭包进入组件快照或泄漏。
 
-语义事件在目标窗口 UI 线程同步消费，`Handled` 只在默认行为或目标 handler 实际消费当前事件后建立。跨线程 `ComponentHandle` 只能返回 queued/accepted 类投递结果；排队和 wake 成功不表示回调已经执行，也不能伪装成 `Handled`。
+语义事件在目标窗口 UI 线程同步消费，`Handled` 只在默认行为或目标 handler 实际消费当前事件后建立。跨线程 `WidgetHandle` 只能返回 queued/accepted 类投递结果；排队和 wake 成功不表示回调已经执行，也不能伪装成 `Handled`。
 
 ## 默认行为与安全
 

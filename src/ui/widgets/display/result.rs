@@ -5,11 +5,11 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::widget;
 
 // 无主题上下文路径（命中测试/动作区测量）使用的默认字号，与 token font_size 默认值一致。
 const RESULT_ACTION_FONT_SIZE: f32 = 14.0;
@@ -68,7 +68,7 @@ struct ResultGeometry {
 }
 
 // ResultView — 结果页组件。
-component! {
+widget! {
     /// 展示状态图标、标题、副标题和可选操作文本的结果页。
     pub struct ResultView {
         type_: ResultType,

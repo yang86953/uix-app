@@ -2,8 +2,8 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
+use crate::widget;
 // 图片编解码 capability 启用时才需要在路径加载后触发重绘。
 use crate::draw::Color;
 #[cfg(feature = "image-codecs")]
@@ -18,7 +18,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_scope::current_paint_widget;
 use crate::ui::widget_runtime::widget::WidgetTree;
 
-component! {
+widget! {
     /// 展示图片或自适应后备文字的头像组件。
     pub struct Avatar {
         text: String,

@@ -3,12 +3,12 @@
 //! 默认不可选中：导航/标题等 UI 文案不应出现拖选高亮。
 //! 需要复制选区时调用 `.selectable()`。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::TextLayoutOptions;
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
 use crate::ui::theme::style::Style;
@@ -25,7 +25,7 @@ fn normalized_label_font_size(size: f32) -> f32 {
     }
 }
 
-component! {
+widget! {
     /// 支持主题样式、固定尺寸与可选文本选择的单样式标签组件。
     pub struct Label {
         /// 标签当前持有并参与布局、绘制与选择的文本。

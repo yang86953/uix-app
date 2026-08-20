@@ -22,7 +22,7 @@ mod visual_metadata;
 // 编译声明值与 used-value 的节点私有存储入口。
 mod user_select_metadata;
 pub struct BoxedWidget {
-    component: Box<dyn WidgetComponent>,
+    widget: Box<dyn Widget>,
     caps: WidgetCapabilities,
     provider_context: ProviderContext,
     id: WidgetId,
@@ -65,7 +65,7 @@ pub struct BoxedWidget {
     // 由此实际节点拥有并随真实移除释放的捕获 Effect。
     effects: Vec<crate::ui::reactive::state::Effect>,
     // 保存实际挂载节点承载的全部内联组件状态作用域。
-    uix_component_scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+    uix_widget_scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
 }
 
 // 在可能展开 panic 的操作之后恢复调用方提供的可变状态。
@@ -92,23 +92,23 @@ fn run_with_unwind_restore<T, R>(
 }
 
 impl BoxedWidget {
-    pub fn new(component: Box<dyn WidgetComponent>) -> Self {
-        Self::new_with_context(component, current_provider_context())
+    pub fn new(widget: Box<dyn Widget>) -> Self {
+        Self::new_with_context(widget, current_provider_context())
     }
 
     pub(crate) fn new_with_context(
-        mut component: Box<dyn WidgetComponent>,
+        mut widget: Box<dyn Widget>,
         provider_context: ProviderContext,
     ) -> Self {
         let caps = with_provider_context(&provider_context, || {
-            let caps = component.capabilities();
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+            let caps = widget.capabilities();
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
             caps
         });
         Self {
-            component,
+            widget,
             caps,
             provider_context,
             id: WidgetId::default(),
@@ -149,14 +149,14 @@ impl BoxedWidget {
             paint_state_binds: std::cell::RefCell::new(Vec::new()),
             // 新节点在接收 View 捕获输出前不拥有 Effect。
             effects: Vec::new(),
-            uix_component_scopes: Vec::new(),
+            uix_widget_scopes: Vec::new(),
         }
     }
-    pub fn component(&self) -> &dyn WidgetComponent {
-        &*self.component
+    pub fn widget(&self) -> &dyn Widget {
+        &*self.widget
     }
-    pub fn component_mut(&mut self) -> &mut dyn WidgetComponent {
-        &mut *self.component
+    pub fn widget_mut(&mut self) -> &mut dyn Widget {
+        &mut *self.widget
     }
 
     pub(crate) fn provider_context(&self) -> &ProviderContext {
@@ -167,16 +167,13 @@ impl BoxedWidget {
         self.provider_context = provider_context;
     }
 
-    fn with_component_context<T>(&self, f: impl FnOnce(&dyn WidgetComponent) -> T) -> T {
-        with_provider_context(&self.provider_context, || f(&*self.component))
+    fn with_widget_context<T>(&self, f: impl FnOnce(&dyn Widget) -> T) -> T {
+        with_provider_context(&self.provider_context, || f(&*self.widget))
     }
 
-    fn with_component_context_mut<T>(
-        &mut self,
-        f: impl FnOnce(&mut dyn WidgetComponent) -> T,
-    ) -> T {
+    fn with_widget_context_mut<T>(&mut self, f: impl FnOnce(&mut dyn Widget) -> T) -> T {
         let provider_context = self.provider_context.clone();
-        with_provider_context(&provider_context, || f(&mut *self.component))
+        with_provider_context(&provider_context, || f(&mut *self.widget))
     }
 
     /// 通知组件其直接子节点集合已经完成一次结构变更。
@@ -184,10 +181,10 @@ impl BoxedWidget {
         // 先读取稳定的子节点数量，避免组件回调与节点向量产生重叠借用。
         let child_count = self.children.len();
         // 在节点自己的 ProviderContext 中同步组件派生运行态。
-        self.with_component_context_mut(|component| component.on_children_changed(child_count));
+        self.with_widget_context_mut(|widget| widget.on_children_changed(child_count));
     }
 
-    pub(crate) fn replace_component(&mut self, mut component: Box<dyn WidgetComponent>) {
+    pub(crate) fn replace_widget(&mut self, mut widget: Box<dyn Widget>) {
         let was_attached = self.attached;
         let was_mounted = self.mounted;
         let was_active = self.active;
@@ -206,13 +203,13 @@ impl BoxedWidget {
         }
 
         self.caps = with_provider_context(&self.provider_context, || {
-            let caps = component.capabilities();
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+            let caps = widget.capabilities();
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
             caps
         });
-        self.component = component;
+        self.widget = widget;
         self.destroyed = false;
 
         if was_attached {
@@ -262,20 +259,18 @@ impl BoxedWidget {
     }
 
     // 返回节点身份与状态清理所需的完整内联组件作用域列表。
-    pub(crate) fn uix_component_scopes(
-        &self,
-    ) -> &[crate::ui::component_state::UixComponentScopeMarker] {
+    pub(crate) fn uix_widget_scopes(&self) -> &[crate::ui::widget_state::UixWidgetScopeMarker] {
         // 借用不参与渲染的元数据。
-        &self.uix_component_scopes
+        &self.uix_widget_scopes
     }
 
     // 在构建或协调时替换节点的内联组件作用域元数据。
-    pub(crate) fn set_uix_component_scopes(
+    pub(crate) fn set_uix_widget_scopes(
         &mut self,
-        scopes: Vec<crate::ui::component_state::UixComponentScopeMarker>,
+        scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
     ) {
         // 整体替换以保持声明树和挂载树一致。
-        self.uix_component_scopes = scopes;
+        self.uix_widget_scopes = scopes;
     }
 
     pub(crate) fn set_enter_animation(
@@ -390,22 +385,19 @@ impl BoxedWidget {
     }
 
     pub(crate) fn accessibility(&self) -> AccessibilitySnapshot {
-        let base = self.with_component_context(|component| {
-            let fields = component.snapshot_fields();
-            Self::component_accessibility(component, &fields)
+        let base = self.with_widget_context(|widget| {
+            let fields = widget.snapshot_fields();
+            Self::widget_accessibility(widget, &fields)
         });
         self.apply_accessibility_override(base)
     }
 
-    fn component_accessibility(
-        component: &dyn WidgetComponent,
-        fields: &SnapshotFields,
-    ) -> AccessibilitySnapshot {
+    fn widget_accessibility(widget: &dyn Widget, fields: &SnapshotFields) -> AccessibilitySnapshot {
         let mut accessibility = fields.accessibility();
-        if let Some(label) = component
+        if let Some(label) = widget
             .as_any()
-            .downcast_ref::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>(
-        ) {
+            .downcast_ref::<crate::ui::widget_runtime::dynamic_label::DynamicLabel>()
+        {
             let text = label.semantic_text();
             accessibility.role = crate::ui::AccessibilityRole::Text;
             accessibility.name = (!text.is_empty()).then_some(text);
@@ -420,50 +412,50 @@ impl BoxedWidget {
             .unwrap_or(base)
     }
 
-    pub(crate) fn component_snapshot(&self, id: ComponentId) -> ComponentConfigSnapshot {
-        self.with_component_context(|component| {
-            let fields = component.snapshot_fields();
-            let accessibility = self
-                .apply_accessibility_override(Self::component_accessibility(component, &fields));
-            ComponentConfigSnapshot::from_component_fields(id, component, fields)
+    pub(crate) fn widget_snapshot(&self, id: WidgetId) -> WidgetConfigSnapshot {
+        self.with_widget_context(|widget| {
+            let fields = widget.snapshot_fields();
+            let accessibility =
+                self.apply_accessibility_override(Self::widget_accessibility(widget, &fields));
+            WidgetConfigSnapshot::from_widget_fields(id, widget, fields)
                 .with_accessibility(accessibility)
         })
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {
-        self.component.as_render()
+        self.widget.as_render()
     }
     pub fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
-        self.component.as_render_mut()
+        self.widget.as_render_mut()
     }
     pub fn as_event(&self) -> Option<&dyn EventHandler> {
-        self.component.as_event()
+        self.widget.as_event()
     }
     pub fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
-        self.component.as_event_mut()
+        self.widget.as_event_mut()
     }
     pub fn as_layout(&self) -> Option<&dyn WidgetLayout> {
-        self.component.as_layout()
+        self.widget.as_layout()
     }
 
     pub fn as_text_input(&self) -> Option<&dyn WidgetTextInput> {
-        self.component.as_text_input()
+        self.widget.as_text_input()
     }
 
     pub fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> {
-        self.component.as_lifecycle()
+        self.widget.as_lifecycle()
     }
 
     pub fn as_lifecycle_mut(&mut self) -> Option<&mut dyn WidgetLifecycle> {
-        self.component.as_lifecycle_mut()
+        self.widget.as_lifecycle_mut()
     }
 
     // ═══ 便捷分发方法 ═══
 
     pub fn measure(&self, constraints: Constraints) -> Size {
         // 先在组件上下文中执行组件自己的测量逻辑。
-        let measured = self.with_component_context(|component| {
-            component
+        let measured = self.with_widget_context(|widget| {
+            widget
                 .as_layout()
                 .map(|layout| layout.measure(constraints))
                 .unwrap_or_default()
@@ -475,9 +467,9 @@ impl BoxedWidget {
     // 在固有尺寸容器内读取组件不受 Flex basis 归零影响的自然内容尺寸。
     pub(crate) fn measure_natural(&self, constraints: Constraints) -> Size {
         // 在组件 ProviderContext 中调用布局能力的自然测量窄契约。
-        let measured = self.with_component_context(|component| {
+        let measured = self.with_widget_context(|widget| {
             // 无布局能力的节点继续返回稳定零尺寸。
-            component
+            widget
                 // 通过能力上转型隔离具体组件类型。
                 .as_layout()
                 // 自然测量只改变尺寸语义，不改变父子所有权。
@@ -490,25 +482,25 @@ impl BoxedWidget {
     }
 
     pub fn flex_grow(&self) -> f32 {
-        self.component()
+        self.widget()
             .as_layout()
             .map(|l| l.flex_grow())
             .unwrap_or(0.0)
     }
     pub fn flex_shrink(&self) -> f32 {
-        self.component()
+        self.widget()
             .as_layout()
             .map(|l| l.flex_shrink())
             .unwrap_or(0.0)
     }
     pub fn child_overflow_expands_parent(&self) -> bool {
-        self.component()
+        self.widget()
             .as_layout()
             .map(|layout| layout.child_overflow_expands_parent())
             .unwrap_or(true)
     }
     pub fn children_clip(&self, frame: Rect) -> Option<Rect> {
-        self.component()
+        self.widget()
             .as_render()
             .and_then(|r| r.children_clip(frame))
     }
@@ -525,13 +517,13 @@ impl BoxedWidget {
         self.parent_clip_regions.borrow().clone()
     }
     pub fn dirty_rect(&self, frame: Rect) -> Rect {
-        self.component()
+        self.widget()
             .as_render()
             .map(|r| r.dirty_rect(frame))
             .unwrap_or(frame)
     }
-    pub fn overlay_entry(&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        self.component()
+    pub fn overlay_entry(&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.widget()
             .as_render()
             .and_then(|r| r.overlay_entry(id, frame))
     }
@@ -540,7 +532,7 @@ impl BoxedWidget {
         // 借用装箱组件。
         &self,
         // 传入浮层所属组件标识。
-        id: ComponentId,
+        id: WidgetId,
         // 传入组件布局矩形。
         frame: Rect,
         // 传入当前逻辑表面矩形。
@@ -548,48 +540,46 @@ impl BoxedWidget {
         // 返回组件生成的可选浮层登记。
     ) -> Option<crate::ui::OverlayEntry> {
         // 获取组件渲染能力。
-        self.component()
+        self.widget()
             // 仅渲染组件能够声明浮层。
             .as_render()
             // 将当前表面连同组件几何交给渲染能力。
             .and_then(|render| render.overlay_entry_for_surface(id, frame, surface))
     }
     pub fn scroll_delta(&self, frame: Rect) -> Option<(f32, f32)> {
-        self.component()
-            .as_event()
-            .and_then(|e| e.scroll_delta(frame))
+        self.widget().as_event().and_then(|e| e.scroll_delta(frame))
     }
     pub fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> {
-        self.component()
+        self.widget()
             .as_event()
             .and_then(|e| e.scroll_delta_for_dirty())
     }
     pub fn scroll_composite_viewport(&self, frame: Rect) -> Rect {
-        self.component()
+        self.widget()
             .as_event()
             .and_then(|e| e.scroll_composite_viewport(frame))
             .and_then(|viewport| viewport.intersect(&frame))
             .unwrap_or(frame)
     }
     pub fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
-        self.component()
+        self.widget()
             .as_event()
             .and_then(|e| e.viewport_scroll_offset())
     }
     pub fn scroll_descendant_by(&mut self, dx: f32, dy: f32) -> bool {
-        self.component_mut()
+        self.widget_mut()
             .as_event_mut()
             .is_some_and(|event| event.scroll_descendant_by(dx, dy))
     }
     pub fn active_timer(&self) -> Option<(u64, std::time::Duration)> {
-        self.component().as_event().and_then(|e| e.active_timer())
+        self.widget().as_event().and_then(|e| e.active_timer())
     }
     pub fn wants_capture_phase(&self) -> bool {
         self.system_event_handlers
             .iter()
             .any(SystemEventHandlerRegistration::wants_capture_phase)
             || self
-                .component()
+                .widget()
                 .as_event()
                 .is_some_and(|e| e.wants_capture_phase())
     }
@@ -598,23 +588,23 @@ impl BoxedWidget {
             .iter()
             .any(SystemEventHandlerRegistration::wants_continuous_pointer_move)
             || self
-                .component()
+                .widget()
                 .as_event()
                 .is_some_and(|e| e.wants_continuous_pointer_move())
     }
     pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
-        self.component()
+        self.widget()
             .as_event()
             .map(|e| e.hit_test_frame(actual_frame))
             .unwrap_or(actual_frame)
     }
     pub fn hit_test_children(&self) -> bool {
-        self.component()
+        self.widget()
             .as_event()
             .is_none_or(|event| event.hit_test_children())
     }
     pub fn hit_test_3d(&self, ray: &Ray3D, spatial: &SpatialContext, frame: Rect) -> bool {
-        self.component()
+        self.widget()
             .as_event()
             .map(|e| e.hit_test_3d(ray, spatial, frame))
             .unwrap_or(false)
@@ -629,46 +619,46 @@ impl BoxedWidget {
                 Some(EventResult::NotHandled) => {}
             }
         }
-        let component_result = self.with_component_context_mut(|component| {
-            component
+        let widget_result = self.with_widget_context_mut(|widget| {
+            widget
                 .as_event_mut()
                 .map(|handler| handler.on_event(event))
                 .unwrap_or(EventResult::NotHandled)
         });
-        if component_result == EventResult::NotHandled && bubbled {
+        if widget_result == EventResult::NotHandled && bubbled {
             EventResult::Bubbled
         } else {
-            component_result
+            widget_result
         }
     }
     pub(crate) fn on_focus_within(&mut self, focused: bool) -> EventResult {
-        self.with_component_context_mut(|component| {
-            component
+        self.with_widget_context_mut(|widget| {
+            widget
                 .as_event_mut()
                 .map(|handler| handler.on_focus_within(focused))
                 .unwrap_or(EventResult::NotHandled)
         })
     }
     pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
-        self.with_component_context_mut(|component| {
-            component
+        self.with_widget_context_mut(|widget| {
+            widget
                 .as_event_mut()
                 .and_then(|event| event.take_window_action())
         })
     }
     pub(crate) fn take_layout_request(&mut self) -> bool {
-        self.with_component_context_mut(|component| {
-            component
+        self.with_widget_context_mut(|widget| {
+            widget
                 .as_event_mut()
                 .is_some_and(|event| event.take_layout_request())
         })
     }
     pub fn semantic_event(
         &self,
-        id: ComponentId,
+        id: WidgetId,
         event: &SystemEvent,
     ) -> Option<crate::ui::event::SemanticEvent> {
-        self.component()
+        self.widget()
             .as_event()
             .and_then(|e| e.semantic_event(id, event))
     }
@@ -696,15 +686,15 @@ impl BoxedWidget {
     }
 
     pub(crate) fn child_visible(&self, index: usize) -> bool {
-        self.with_component_context(|component| {
-            component
+        self.with_widget_context(|widget| {
+            widget
                 .as_layout()
                 .is_none_or(|layout| layout.child_visible(index))
         })
     }
 
     pub(crate) fn accepts_events(&self) -> bool {
-        self.component.as_event().is_some() || !self.system_event_handlers.is_empty()
+        self.widget.as_event().is_some() || !self.system_event_handlers.is_empty()
     }
 
     pub(crate) fn is_interaction_enabled(&self) -> bool {
@@ -736,71 +726,71 @@ impl BoxedWidget {
         self.destroyed = destroyed;
     }
     pub fn uses_palette(&self) -> bool {
-        self.component()
+        self.widget()
             .as_render()
             .is_some_and(|render| render.uses_palette())
     }
     pub fn picture_policy(&self) -> PicturePolicy {
-        self.component().picture_policy()
+        self.widget().picture_policy()
     }
     pub fn has_dynamic_content(&self) -> bool {
-        self.component().has_dynamic_content()
+        self.widget().has_dynamic_content()
     }
     pub fn has_interactive_state(&self) -> bool {
         self.caps.contains(WidgetCapabilities::EVENT) || !self.system_event_handlers.is_empty()
     }
     pub fn on_attach(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_attach();
             }
         });
     }
     pub fn on_mount(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_mount();
             }
         });
     }
     pub fn on_active(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_active();
             }
         });
     }
     pub fn on_inactive(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_inactive();
             }
         });
     }
     pub fn on_theme_changed(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_theme_changed();
             }
         });
     }
     pub fn on_unmount(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_unmount();
             }
         });
     }
     pub fn on_detach(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_detach();
             }
         });
     }
     pub fn on_destroy(&mut self) {
-        self.with_component_context_mut(|component| {
-            if let Some(lifecycle) = component.as_lifecycle_mut() {
+        self.with_widget_context_mut(|widget| {
+            if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_destroy();
             }
         });
@@ -813,9 +803,7 @@ impl BoxedWidget {
     ) {
         let config = &self.provider_context.config;
         let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
-        let patch = config
-            .component_tokens
-            .get(self.component.as_any().type_id());
+        let patch = config.widget_tokens.get(self.widget.as_any().type_id());
         let previous_scope = ctx.replace_token_scope(theme, patch);
         // 将组件绘制包进必定恢复 TokenScope 的 panic 展开边界。
         run_with_unwind_restore(
@@ -824,9 +812,9 @@ impl BoxedWidget {
             // 在临时主题作用域内执行组件绘制。
             |ctx| {
                 // 保持 ProviderContext 与组件调用约定不变。
-                self.with_component_context(|component| {
+                self.with_widget_context(|widget| {
                     // 仅调用具备绘制能力的组件。
-                    if let Some(render) = component.as_render() {
+                    if let Some(render) = widget.as_render() {
                         // 把当前临时作用域中的上下文交给组件。
                         render.render(frame, ctx, tree);
                     }
@@ -840,22 +828,22 @@ impl BoxedWidget {
 
 impl WidgetCore for BoxedWidget {
     #[cfg(any(test, feature = "test-harness"))]
-    fn id(&self) -> ComponentId {
+    fn id(&self) -> WidgetId {
         self.id
     }
-    fn set_id(&mut self, id: ComponentId) {
+    fn set_id(&mut self, id: WidgetId) {
         self.id = id;
     }
-    fn parent(&self) -> Option<ComponentId> {
+    fn parent(&self) -> Option<WidgetId> {
         self.parent
     }
-    fn set_parent(&mut self, id: Option<ComponentId>) {
+    fn set_parent(&mut self, id: Option<WidgetId>) {
         self.parent = id;
     }
-    fn children(&self) -> &[ComponentId] {
+    fn children(&self) -> &[WidgetId] {
         &self.children
     }
-    fn children_mut(&mut self) -> &mut Vec<ComponentId> {
+    fn children_mut(&mut self) -> &mut Vec<WidgetId> {
         &mut self.children
     }
     fn frame(&self) -> Rect {
@@ -866,7 +854,7 @@ impl WidgetCore for BoxedWidget {
         self.frame = crate::ui::layout::engine::normalize_layout_rect(rect);
     }
     fn visible(&self) -> bool {
-        self.visible && self.parent_visible && self.with_component_context(WidgetComponent::visible)
+        self.visible && self.parent_visible && self.with_widget_context(Widget::visible)
     }
     fn set_visible(&mut self, v: bool) {
         self.visible = v;
@@ -879,7 +867,7 @@ impl WidgetCore for BoxedWidget {
     }
     fn tab_index(&self) -> i32 {
         self.tab_index_override
-            .unwrap_or_else(|| self.with_component_context(WidgetComponent::tab_index))
+            .unwrap_or_else(|| self.with_widget_context(Widget::tab_index))
     }
     fn set_tab_index(&mut self, v: i32) {
         self.set_tab_index_override(Some(v));

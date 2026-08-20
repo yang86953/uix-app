@@ -1,7 +1,7 @@
 //! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
 
 use crate::core::DirtyRegion;
-use crate::core::{ComponentId, Point, Rect};
+use crate::core::{Point, Rect, WidgetId};
 use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::PicturePolicy;
@@ -165,7 +165,7 @@ impl ScenePaint for WidgetTree {
         // 只在节点仍存在时读取显式能力位。
         self.get(id)
             // 从 UI 组件的渲染 capability 读取二阶段声明。
-            .and_then(|node| node.component().as_render())
+            .and_then(|node| node.widget().as_render())
             // 没有节点或渲染能力时保持安全默认值。
             .is_some_and(|render| render.paint_after_children())
     }
@@ -198,7 +198,7 @@ impl ScenePaint for WidgetTree {
     }
 
     fn focused_node(&self) -> Option<NodeId> {
-        self.managers().focus.focused_component()
+        self.managers().focus.focused_widget()
     }
 
     fn node_focusable(&self, id: NodeId) -> bool {
@@ -248,5 +248,5 @@ impl ScenePaint for WidgetTree {
     }
 }
 
-// ComponentId 与 NodeId 同型
-const _: () = assert!(std::mem::size_of::<ComponentId>() == std::mem::size_of::<NodeId>());
+// WidgetId 与 NodeId 同型
+const _: () = assert!(std::mem::size_of::<WidgetId>() == std::mem::size_of::<NodeId>());

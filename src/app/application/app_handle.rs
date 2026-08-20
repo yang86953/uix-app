@@ -11,14 +11,14 @@ pub(crate) use crate::core::WindowId;
 use crate::core::{Errc, Error, Result};
 // 反馈 capability 启用时才构造反馈浮层根组件。
 #[cfg(feature = "feedback")]
-use crate::core::{ComponentId, Constraints, Rect, Size};
+use crate::core::{Constraints, Rect, Size, WidgetId};
 use crate::diagnostics::Diagnostics;
 // test-harness 只把一次性规范像素票据暴露给应用。
 #[cfg(feature = "test-harness")]
 use crate::draw::SurfaceReadbackTicket;
 // 反馈 capability 启用时才生成反馈浮层根组件实现。
 #[cfg(feature = "feedback")]
-use crate::impl_widget_component;
+use crate::impl_widget;
 use crate::ui::adapter::ViewAdapter;
 // 反馈 capability 启用时才实现反馈浮层根布局。
 #[cfg(feature = "feedback")]
@@ -47,7 +47,7 @@ pub(crate) struct AppOverlayRoot;
 
 // 反馈 capability 启用时才生成反馈浮层根组件能力集合。
 #[cfg(feature = "feedback")]
-impl_widget_component!(AppOverlayRoot; Layout);
+impl_widget!(AppOverlayRoot; Layout);
 
 // 反馈 capability 启用时才参与反馈浮层布局。
 #[cfg(feature = "feedback")]
@@ -61,7 +61,7 @@ impl WidgetLayout for AppOverlayRoot {
         frame: Rect,
         children: &[crate::ui::LayoutChild],
         _tree: &crate::ui::WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         children.iter().map(|child| (child.id, frame)).collect()
     }
 }

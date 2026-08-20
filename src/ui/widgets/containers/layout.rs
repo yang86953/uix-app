@@ -2,10 +2,10 @@
 //!
 //! 组合使用构建标准页面布局。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入共享子节点测量入口。
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::widget_runtime::widget::WidgetTree;
@@ -14,9 +14,9 @@ use crate::ui::layout::engine::normalize_layout_size;
 // 引入唯一 Flex 算法与布局方向契约。
 use crate::ui::layout::{FlexDirection, FlexLayout, LayoutChild, LayoutEngine};
 // 引入组件标识与快照字段。
-use crate::ui::{ComponentId, SnapshotFields};
+use crate::ui::{SnapshotFields, WidgetId};
 
-component! {
+widget! {
     /// Layout — 页面布局容器（flex 列）。
     pub struct Layout {
         bg_color: Option<Color>,
@@ -33,7 +33,7 @@ component! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // 复用布局壳统一的有限子节点测量入口。
@@ -41,7 +41,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 把方向与子项事实交给共享 FlexLayout。
         layout_shell_children(self.direction, frame, children)
@@ -54,7 +54,7 @@ component! {
     }
 }
 
-component! {
+widget! {
     /// Header — 页面顶部栏。
     pub struct Header {
         height: f32,
@@ -83,13 +83,13 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         // Header 内容按纵向来源顺序排列。
         layout_shell_children(FlexDirection::Column, frame, children)
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // Header 与其他布局壳区域共享测量契约。
@@ -97,7 +97,7 @@ component! {
     }
 }
 
-component! {
+widget! {
     /// Sider — 侧边栏。
     pub struct Sider {
         width: f32,
@@ -122,13 +122,13 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         // Sider 内容按纵向来源顺序排列。
         layout_shell_children(FlexDirection::Column, frame, children)
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // Sider 与其他布局壳区域共享测量契约。
@@ -136,7 +136,7 @@ component! {
     }
 }
 
-component! {
+widget! {
     /// Content — 内容区。
     pub struct Content {
         bg_color: Option<Color>,
@@ -159,13 +159,13 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         // Content 内容按纵向来源顺序排列。
         layout_shell_children(FlexDirection::Column, frame, children)
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // Content 与其他布局壳区域共享测量契约。
@@ -173,7 +173,7 @@ component! {
     }
 }
 
-component! {
+widget! {
     /// Footer — 页面底部栏。
     pub struct Footer {
         height: f32,
@@ -195,13 +195,13 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         // Footer 内容按纵向来源顺序排列。
         layout_shell_children(FlexDirection::Column, frame, children)
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // Footer 与其他布局壳区域共享测量契约。
@@ -214,7 +214,7 @@ fn measure_shell_children(
     // 接收父区域边框盒。
     frame: Rect,
     // 接收来源顺序组件标识。
-    children: &[ComponentId],
+    children: &[WidgetId],
     // 借用当前组件树完成受约束测量。
     tree: &WidgetTree,
 ) -> Vec<LayoutChild> {
@@ -242,7 +242,7 @@ fn layout_shell_children(
     frame: Rect,
     // 接收已经测量的有序子项。
     children: &[LayoutChild],
-) -> Vec<(ComponentId, Rect)> {
+) -> Vec<(WidgetId, Rect)> {
     // 只覆盖方向，其余对齐和伸缩规则沿用共享默认值。
     let engine = FlexLayout {
         // 应用 Layout 或固定区域方向。

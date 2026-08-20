@@ -1,11 +1,11 @@
 //! Ant Design 风格的水平或垂直分隔线，支持可选文本。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
+use crate::widget;
 
 /// 水平分隔线的文本位置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum DividerDirection {
     Vertical,
 }
 
-component! {
+widget! {
     /// 支持可选标签的分隔线组件。
     pub struct Divider {
         text: Option<String>,

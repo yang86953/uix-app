@@ -2,12 +2,12 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
+use crate::widget;
 
 // 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
 const DEFAULT_WIDTH: f32 = 600.0;
@@ -44,7 +44,7 @@ pub struct DescriptionsItem {
 }
 
 // Descriptions — 描述列表。
-component! {
+widget! {
     /// 以标签和值组成的网格展示只读字段信息。
     pub struct Descriptions {
         title: String,

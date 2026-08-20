@@ -15,7 +15,7 @@ fn auto_height_tracks_body_content_but_fixed_height_does_not() {
     // 创建与首页卡片相同的定宽、自动高度配置。
     let card = Card::new().title("快捷导航").size(220.0, 0.0);
     // 构造高度超过默认 body 可用高度的自然尺寸子项。
-    let child = LayoutChild::new(ComponentId::new(1), Size::new(188.0, 102.0));
+    let child = LayoutChild::new(WidgetId::new(1), Size::new(188.0, 102.0));
     // 布局入口不读取树节点，因此空树足以承载本次组件契约测试。
     let tree = WidgetTree::new();
     // 用旧默认高度执行 bootstrap 布局，模拟首次展示。

@@ -2,11 +2,11 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::widget;
 
 use super::advanced::{
     BrushConfig, InteractionConfig, LabelPosition, LegendPosition, RoseStyle, TooltipConfig,
@@ -35,7 +35,7 @@ impl PieData {
     }
 }
 
-component! {
+widget! {
     /// 按具名数据项绘制饼图、环图或南丁格尔玫瑰图的组件。
     pub struct PieChart {
         data: Vec<PieData>,

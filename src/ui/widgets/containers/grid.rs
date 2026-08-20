@@ -4,18 +4,18 @@ use std::borrow::Cow;
 // Grid 在布局轮次间保存由轨道求解得到的固有内容尺寸。
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::Color;
 use crate::draw::scene::PicturePolicy;
 use crate::ui::layout::engine::{BoxModel, GridLayout, LayoutChild};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::widget;
 
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::theme::style::{ColorValue, DisplayMode, Style, apply_style as paint_style};
-use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
+use crate::ui::{WidgetId, WidgetTree};
 
 const RESPONSIVE_GRID_UNITS: usize = 24;
 
@@ -247,7 +247,7 @@ impl Default for Col {
     }
 }
 
-component! {
+widget! {
     /// Grid container widget.
     pub struct Grid {
         /// 控制网格容器尺寸、间距、对齐与伸缩行为的统一样式。
@@ -294,7 +294,7 @@ component! {
         paint_style(ctx, visual, &self.style);
     }
 
-    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         if self.style.grid_template_columns.is_empty() || children.is_empty() {
@@ -334,7 +334,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         if self.style.grid_template_columns.is_empty() || children.is_empty() {
             // 无有效轨道或子项时清除旧内容缓存。

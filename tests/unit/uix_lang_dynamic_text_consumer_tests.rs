@@ -13,14 +13,14 @@ fn dynamic_text_compiles_against_public_uix_api() {
     // 展开完整组件文档并只依赖公开 prelude。
     let _view: ViewNode = uix!(
         r#"
-        <Component name="DynamicStatus" props="tick: State<number>, page: State<number>, count: State<number>">
+        <Widget name="DynamicStatus" props="tick: State<number>, page: State<number>, count: State<number>">
           <Column>
             <Text fontSize="small" automationId="live-tick">tick: {tick}s</Text>
             <Text automationId="live-count">count: {count}</Text>
             <If {page == 0}><Text>首页</Text></If>
             <Button @click="setState(count: count + 1)">增加</Button>
           </Column>
-        </Component>
+        </Widget>
         <DynamicStatus tick={tick} page={page} count={count} />
         "#
     );

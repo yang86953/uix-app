@@ -2,7 +2,7 @@ use super::*;
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
-    pub fn hit_test(&self, pos: Point) -> Option<ComponentId> {
+    pub fn hit_test(&self, pos: Point) -> Option<WidgetId> {
         // 已停止的树不得用半提交的节点关系计算命中目标。
         if !self.accepts_external_work() {
             // 对事件入口报告没有可交互目标。
@@ -20,7 +20,7 @@ impl WidgetTree {
         &self,
         ray: &crate::draw::geometry::spatial::Ray3D,
         spatial: &crate::draw::geometry::spatial::SpatialContext,
-    ) -> Option<ComponentId> {
+    ) -> Option<WidgetId> {
         // 已停止的树不得用半提交的节点关系计算三维命中目标。
         if !self.accepts_external_work() {
             // 对事件入口报告没有可交互目标。
@@ -223,7 +223,7 @@ impl WidgetTree {
         if self
             .managers()
             .focus
-            .focused_component()
+            .focused_widget()
             .is_some_and(|focused| !self.focus_target_available(focused))
         {
             self.set_focus(None);
@@ -287,7 +287,7 @@ impl WidgetTree {
                     self.managers_mut().drag.update_drag(*pos);
                 }
 
-                if let Some(drag_target) = self.managers().interaction.pressed_component() {
+                if let Some(drag_target) = self.managers().interaction.pressed_widget() {
                     // 文字拖选：pressed 捕获会把 Move 锁在起点节点，须在树层
                     // 协调同父级兄弟行，才能向上/向下扩展选区。
                     if self
@@ -303,7 +303,7 @@ impl WidgetTree {
                     return result;
                 }
 
-                let current_hover = self.managers().interaction.hovered_component();
+                let current_hover = self.managers().interaction.hovered_widget();
 
                 if let Some(hovered) = current_hover.filter(|hovered| {
                     self.get(*hovered)
@@ -348,7 +348,7 @@ impl WidgetTree {
                     }
                     self.managers_mut()
                         .interaction
-                        .set_hovered_component(new_hover);
+                        .set_hovered_widget(new_hover);
                 }
                 let result = if let Some(t) = new_hover {
                     if new_hover != old_hover
@@ -370,7 +370,7 @@ impl WidgetTree {
                 let target = self
                     .overlay_target_at(*pos)
                     .or_else(|| self.hit_test(*pos))
-                    .or(self.managers().interaction.hovered_component())
+                    .or(self.managers().interaction.hovered_widget())
                     .or(self.root_id);
                 if let Some(t) = target {
                     // 捕获阶段：ScrollView 等祖先先处理；Handled 时由 capture 侧登记动画与视口重绘，
@@ -386,7 +386,7 @@ impl WidgetTree {
             SystemEvent::KeyDown { key, mods } => self.dispatch_key_down(event, *key, *mods),
             SystemEvent::KeyUp { key, .. } => self.dispatch_key_up(event, *key),
             SystemEvent::TextInput { text } => {
-                if let Some(t) = self.managers().focus.focused_component() {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
@@ -409,7 +409,7 @@ impl WidgetTree {
             SystemEvent::ImeCompositionStart
             | SystemEvent::ImeCompositionUpdate { .. }
             | SystemEvent::ImeCompositionEnd { .. } => {
-                if let Some(t) = self.managers().focus.focused_component() {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
@@ -440,7 +440,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
-                if let Some(t) = self.managers().focus.focused_component() {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t) {
                         // 跨文本选区复制语义未被消费：记录日志，行为不变。
@@ -469,7 +469,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::FocusIn | SystemEvent::FocusOut => {
-                if let Some(t) = self.managers().focus.focused_component() {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -503,8 +503,8 @@ impl WidgetTree {
                 let target = self
                     .managers()
                     .interaction
-                    .hovered_component()
-                    .or(self.managers().focus.focused_component())
+                    .hovered_widget()
+                    .or(self.managers().focus.focused_widget())
                     .or(self.root_id);
                 if let Some(target) = target {
                     let result = self.dispatch_to(target, event);

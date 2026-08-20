@@ -3,17 +3,17 @@ use std::cell::{Cell, RefCell};
 // 同步窄回调与一次性 ViewNode 句柄共享组件生命周期。
 use std::rc::Rc;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 复用组件树唯一的子节点测量入口。
 use crate::ui::SnapshotFields;
-use crate::ui::component_snapshot::SnapshotPopconfirm;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_snapshot::SnapshotPopconfirm;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SystemEvent,
+    EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SystemEvent, WidgetId,
     WidgetTree,
 };
 
@@ -59,7 +59,7 @@ pub enum PopconfirmPlacement {
     BottomRight,
 }
 
-component! {
+widget! {
     /// 拥有唯一触发器、确认气泡和一次性确认或取消动作的组合组件。
     pub struct Popconfirm {
         title: String,
@@ -108,7 +108,7 @@ component! {
     }
 
     // 组合模式在父级测量本轮直接读取唯一 trigger 的自然尺寸。
-    measure_from_children => (&self, constraints: Constraints, children: &[ComponentId], tree: &WidgetTree)
+    measure_from_children => (&self, constraints: Constraints, children: &[WidgetId], tree: &WidgetTree)
         -> Option<Size>
     {
         // 兼容自绘模式继续使用普通 intrinsic measure。
@@ -157,7 +157,7 @@ component! {
     }
 
     // 使用唯一 trigger 子节点的自然尺寸完成本轮测量。
-    measure_children => (&self, _frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // UIX 门禁保证唯一直接子树；运行时只消费第一项以保持确定性。
@@ -174,7 +174,7 @@ component! {
 
     // 以本轮自然尺寸安排唯一 trigger，并记录同帧锚点事实。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 没有组合 trigger 时清除尺寸并保持零子布局。
         let Some(child) = children.first() else {
@@ -362,7 +362,7 @@ component! {
         EventResult::Handled
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_submit
             .replace(false)
             .then(|| SemanticEvent::submit(id, "confirm"))
@@ -564,7 +564,7 @@ component! {
         ctx.pop_clip();
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }
@@ -587,7 +587,7 @@ component! {
 
 
     // 布局阶段以当前逻辑表面刷新确认气泡几何，再沿用既有登记策略。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 记录与本次 OverlayStack 重建一致的表面边界。
         self.surface_rect.set(Self::normalize_frame(surface));
         // 复用统一的浮层登记逻辑。

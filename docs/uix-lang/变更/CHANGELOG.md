@@ -11,7 +11,7 @@
 ### 已实现能力基线
 
 - **入口宏**：`uix!`（内嵌源码与 `.uix` 文件入口）、`uix_app!`（`<App>` 根）、`uix_items!`（`<Record>` 模块级结构体）。
-- **语法面**：顶层声明区（样式类、`@theme`、`<Component>`、`<Record>`、`@import` / `@export`）；`<If>` / `<ElseIf>` / `<Else>` 相邻条件链；`<For>` 循环（索引、`key` 身份）；受限表达式子集；数据类型构造链与对象字面量；`setState` / `setTheme` / `setStyle` 内置操作；句柄位绑定。
+- **语法面**：顶层声明区（样式类、`@theme`、`<Widget>`、`<Record>`、`@import` / `@export`）；`<If>` / `<ElseIf>` / `<Else>` 相邻条件链；`<For>` 循环（索引、`key` 身份）；受限表达式子集；数据类型构造链与对象字面量；`setState` / `setTheme` / `setStyle` 内置操作；句柄位绑定。
 - **样式与主题**：样式类、内联样式、`extends` 组合；`:hover/:disabled/:checked` 差异叠加；`@theme` 完整 `DesignTokens` 白名单；类型化 `#token` 引用；`setTheme` 与 `setStyle` 切换。
 - **组件矩阵**：通用、布局、输入、展示、反馈、导航、图表七类共 108 个标签已登记（含仅作为 `Row` / `Grid` 直接子项使用的 `Col`；完整分类见 [README](../README.md#状态声明) 与各组件参考）。
 - **模块系统**：`@import` / `@export`（具名/全量、递归依赖、增量编译）。
@@ -21,17 +21,17 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
-| 2026-08-17 | Component / For | 实现 For 内 props、private state、computed、事件、状态样式与 Slot 投影的逐实例语义；key/位置完整路径同时约束组件状态复用和卸载清理 | [Gitea #22](http://100.79.245.29:3000/admin/uix-app/issues/22) |
+| 2026-08-17 | Widget / For | 实现 For 内 props、private state、computed、事件、状态样式与 Slot 投影的逐实例语义；key/位置完整路径同时约束组件状态复用和卸载清理 | [Gitea #22](http://100.79.245.29:3000/admin/uix-app/issues/22) |
 | 2026-08-17 | 样式 / 阴影 | 为 `boxShadow` 登记可选正负 spread，保持既有四段语法的零 spread 兼容语义 | [Gitea #5](http://100.79.245.29:3000/admin/uix-app/issues/5) |
 | 2026-08-16 | 组件 / 图表 | 为 `ScatterChart` 登记互斥的 `bubbleData`、`BubbleData` 构造器与 `bubbleScale`，保持动态集合精确类型检查 | #1097 |
 | 2026-08-15 | 组件 / 图表 | 为十二类图表登记 `legend`、`animation`、`interactive`、`brush` 与 `tooltip` 共同配置，并保留运行时图表组件的交互状态唯一所有权 | #1096 |
 | 2026-08-15 | 样式 / 背景 | 实现本地单层背景图、固定方向双色渐变、剩余空间定位与四种图片重复方式；接入 Style、ImageService、状态差异和真实宏消费者 | #1068 |
 | 2026-08-15 | 样式 / 布局 | 将与 Flex/Grid 架构冲突的 float/clear 从伪规划项收敛为明确非目标，并提供属性级编译诊断与可执行替代建议 | #1069 |
-| 2026-08-15 | 语法 / Component / 事件 | 实现相邻 If/ElseIf/Else 短路链、按事件登记的 `$event` 字段校验、prop 默认值与必填诊断，以及 Vec<number>/Vec<Record>、Some 和嵌套 record 集合初始值 | #1014 |
+| 2026-08-15 | 语法 / Widget / 事件 | 实现相邻 If/ElseIf/Else 短路链、按事件登记的 `$event` 字段校验、prop 默认值与必填诊断，以及 Vec<number>/Vec<Record>、Some 和嵌套 record 集合初始值 | #1014 |
 | 2026-08-15 | 样式 / 主题 | 实现 hover、disabled、checked 状态伪类差异叠加；`@theme` 对齐完整运行时设计 token 字段并增加类型化 `#tokenName` 校验 | #1010 |
-| 2026-08-15 | Component / Slot | 实现默认与具名内容插槽、调用方作用域投影、嵌套转发及 For 内纯组件展开；补充主演示容器复用 | #1013 |
-| 2026-08-15 | 表达式 / Component | 实现不可变数组操作扩展、单参数受限闭包与按声明顺序求值的 computed 派生值；补充真实宏消费者和主演示 | #1012 |
-| 2026-08-15 | 编译契约 / Component | `uix!` 与 `uix_app!` 写入确定性生成文件并以来源注释回映表达式；实现 `external` 外部依赖白名单与未声明标识符诊断 | #1011 |
+| 2026-08-15 | Widget / Slot | 实现默认与具名内容插槽、调用方作用域投影、嵌套转发及 For 内纯组件展开；补充主演示容器复用 | #1013 |
+| 2026-08-15 | 表达式 / Widget | 实现不可变数组操作扩展、单参数受限闭包与按声明顺序求值的 computed 派生值；补充真实宏消费者和主演示 | #1012 |
+| 2026-08-15 | 编译契约 / Widget | `uix!` 与 `uix_app!` 写入确定性生成文件并以来源注释回映表达式；实现 `external` 外部依赖白名单与未声明标识符诊断 | #1011 |
 | 2026-08 | 文档 | 文档体系按「规范 / 参考 / 指南 / 变更」重构；规范拆分九篇，新增术语表、事件参考、版本策略 | #2157-#2161 前置 |
 
 ### 历史设计记录

@@ -7,7 +7,7 @@ use crate::draw::resources::image::BitmapHandle;
 // 导入真实建树、协调与动态 owner 生命周期入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入错误工厂中的组件私有状态 scope 与槽创建入口。
-use crate::ui::component_state::{uix_component_scope, uix_component_state};
+use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入读取节点组件、父子关系与离场状态的核心契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入声明错误子树的 ViewNode。
@@ -15,7 +15,7 @@ use crate::ui::view::ViewNode;
 // 导入最小占位与错误子组件。
 use crate::ui::widgets::Label;
 // 导入动画、Effect、状态、过渡与树级身份类型。
-use crate::ui::{Animated, ComponentId, Easing, Effect, State, Transition, WidgetTree};
+use crate::ui::{Animated, Easing, Effect, State, Transition, WidgetId, WidgetTree};
 // 导入调用与副作用次数的原子记录。
 use std::sync::atomic::{AtomicUsize, Ordering};
 // 导入跨工厂协调轮次共享的测试记录。
@@ -26,7 +26,7 @@ fn image_root(
     // 接收已经成功挂载的运行时树。
     tree: &WidgetTree,
     // 返回当前 Image 根身份。
-) -> ComponentId {
+) -> WidgetId {
     // 每个测试都只创建一个声明根。
     tree.root_id().expect("Image 必须拥有运行时根")
 }
@@ -36,7 +36,7 @@ fn runtime_image(
     // 接收拥有目标 Image 的运行时树。
     tree: &WidgetTree,
     // 接收目标 Image 的实际组件身份。
-    root: ComponentId,
+    root: WidgetId,
     // 返回只读 Image 组件引用。
 ) -> &Image {
     // 目标节点在正常测试阶段必须仍可寻址。
@@ -44,7 +44,7 @@ fn runtime_image(
         // 缺失 owner 属于产品生命周期错误。
         .expect("Image owner 必须存在")
         // 取得节点当前组件。
-        .component()
+        .widget()
         // 进入类型擦除只读接口。
         .as_any()
         // 恢复 Image 私有类型。
@@ -58,7 +58,7 @@ fn set_load_state(
     // 接收拥有 Image owner 的运行时树。
     tree: &WidgetTree,
     // 接收目标 Image 身份。
-    root: ComponentId,
+    root: WidgetId,
     // 接收本轮确定性加载状态。
     state: ImageLoadState,
 ) {
@@ -78,11 +78,11 @@ fn child_with_key(
     // 接收运行时树。
     tree: &WidgetTree,
     // 接收 Image owner 身份。
-    root: ComponentId,
+    root: WidgetId,
     // 接收产品定义的直接子节点 key。
     key: &str,
     // 返回当前匹配子节点身份。
-) -> ComponentId {
+) -> WidgetId {
     // 遍历 Image 当前直接子节点。
     tree.get(root)
         // Image owner 必须仍然存在。
@@ -138,9 +138,9 @@ fn error_view(
     // 返回完整捕获输出的错误声明节点。
 ) -> ViewNode {
     // 为当前错误子组件声明稳定 scope marker。
-    let scope = uix_component_scope(scope_name, 1);
+    let scope = uix_widget_scope(scope_name, 1);
     // 在 Image 固定动态命名空间中取得组件私有状态。
-    let state = uix_component_state(&scope, 1, || 0_i32);
+    let state = uix_widget_state(&scope, 1, || 0_i32);
     // 保存本轮捕获状态句柄。
     *states
         // 锁定共享记录只覆盖句柄写入。
@@ -163,7 +163,7 @@ fn error_view(
     // 构造带 scope 的最小错误节点。
     let node = ViewNode::leaf(Label::new(label))
         // 让真实节点声明私有状态 scope。
-        .uix_component_scope(scope, 0);
+        .uix_widget_scope(scope, 0);
     // 仅在测试要求离场时追加非零过渡。
     match leave {
         // 非零 leave 使错误清除后节点保留为 pending removal。
@@ -199,7 +199,7 @@ fn image_placeholder_identity_survives_error_append_and_clear() {
         ImageLoadState::Error("controlled error".to_owned()),
     );
     // Error 刷新必须追加错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 追加后 placeholder 继续复用初建身份。
     assert_eq!(
         child_with_key(&tree, root, "uix:image:placeholder"),
@@ -210,7 +210,7 @@ fn image_placeholder_identity_survives_error_append_and_clear() {
     // Error 解除为 Empty。
     set_load_state(&tree, root, ImageLoadState::Empty);
     // 刷新必须只移除错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // placeholder 身份在错误解除后仍保持不变。
     assert_eq!(
         child_with_key(&tree, root, "uix:image:placeholder"),
@@ -279,7 +279,7 @@ fn image_error_leave_reentry_reuses_visible_child_and_private_state() {
         ImageLoadState::Error("controlled error".to_owned()),
     );
     // 首次刷新物化错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 保存错误子树身份。
     let child = child_with_key(&tree, root, Image::ERROR_CHILD_KEY);
     // 写入可区分私有状态。
@@ -289,7 +289,7 @@ fn image_error_leave_reentry_reuses_visible_child_and_private_state() {
     // 解除 Error 状态。
     set_load_state(&tree, root, ImageLoadState::Empty);
     // 刷新应启动非零 leave。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 错误子树必须进入 pending removal。
     assert!(
         tree.get(child)
@@ -316,7 +316,7 @@ fn image_error_leave_reentry_reuses_visible_child_and_private_state() {
         ImageLoadState::Error("controlled error".to_owned()),
     );
     // 重入刷新必须取消离场。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 同 key 重入继续复用原错误子节点身份。
     assert_eq!(child_with_key(&tree, root, Image::ERROR_CHILD_KEY), child);
     // 重入后节点不再 pending removal。
@@ -388,7 +388,7 @@ fn image_parent_reconcile_replaces_factory_outputs_and_source_reset_releases_chi
         ImageLoadState::Error("controlled error".to_owned()),
     );
     // 物化首版错误子树。
-    assert!(tree.refresh_image_error_component(root));
+    assert!(tree.refresh_image_error_widget(root));
     // 保存固定错误子节点 identity。
     let child = child_with_key(&tree, root, Image::ERROR_CHILD_KEY);
     // 写入跨工厂替换应保留的私有状态。
@@ -440,7 +440,7 @@ fn image_parent_reconcile_replaces_factory_outputs_and_source_reset_releases_chi
             )
         })),
     );
-    // 固定错误子树 key 必须复用原 ComponentId。
+    // 固定错误子树 key 必须复用原 WidgetId。
     assert_eq!(child_with_key(&tree, root, Image::ERROR_CHILD_KEY), child);
     // 新工厂必须取得同一已提交私有 State 值。
     assert_eq!(captured_state(&next_states).get(), 23);
@@ -546,7 +546,7 @@ fn image_owner_removal_shutdown_and_pending_refresh_release_and_reject() {
             .pending_removal()
     );
     // owner 自身 pending-removal 时动态刷新必须拒绝。
-    assert!(!tree.refresh_image_error_component(root));
+    assert!(!tree.refresh_image_error_widget(root));
     // 被拒绝刷新不得调用应用工厂。
     assert_eq!(factory_calls.load(Ordering::Relaxed), 0);
     // 显式真实 remove owner。

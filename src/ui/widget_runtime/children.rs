@@ -2,39 +2,39 @@
 //!
 //! Many container widgets (Card, Space, ScrollView) need to store child
 //! widgets during builder construction and release them when the widget
-//! tree calls `WidgetComponent::build()`. This module provides a common helper
-//! that eliminates the duplicated `RefCell<Option<Vec<Box<dyn WidgetComponent>>>>`
+//! tree calls `Widget::build()`. This module provides a common helper
+//! that eliminates the duplicated `RefCell<Option<Vec<Box<dyn Widget>>>>`
 //! pattern.
 //!
 //! # Usage
 //!
-//! In your `component!` struct, include a field:
+//! In your `widget!` struct, include a field:
 //! ```ignore
 //! children: WidgetChildren,
 //! ```
 //!
 //! In `build()`:
 //! ```ignore
-//! build => (&self) -> Vec<Box<dyn WidgetComponent>> { self.children.take() }
+//! build => (&self) -> Vec<Box<dyn Widget>> { self.children.take() }
 //! ```
 //!
 //! In the manual `impl` block (for builder pattern):
 //! ```ignore
-//! pub fn child(self, w: impl WidgetComponent + 'static) -> Self { self.children.add(self, w) }
-//! pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self { self.children.set_all(self, widgets) }
+//! pub fn child(self, w: impl Widget + 'static) -> Self { self.children.add(self, w) }
+//! pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self { self.children.set_all(self, widgets) }
 //! ```
 
-use crate::ui::WidgetComponent;
+use crate::ui::Widget;
 use std::cell::RefCell;
 
 /// Stores child widgets during builder construction and releases them
-/// on demand (typically from `WidgetComponent::build()`).
+/// on demand (typically from `Widget::build()`).
 ///
 /// Once children are taken by `take()`, subsequent calls return an empty
 /// vec — safe because the widget tree already holds references.
 #[derive(Default)]
 pub struct WidgetChildren {
-    inner: RefCell<Option<Vec<Box<dyn WidgetComponent>>>>,
+    inner: RefCell<Option<Vec<Box<dyn Widget>>>>,
 }
 
 impl WidgetChildren {
@@ -49,12 +49,12 @@ impl WidgetChildren {
     ///
     /// Returns an empty vec if no children were set or if children
     /// were already taken (idempotent).
-    pub fn take(&self) -> Vec<Box<dyn WidgetComponent>> {
+    pub fn take(&self) -> Vec<Box<dyn Widget>> {
         self.inner.borrow_mut().take().unwrap_or_default()
     }
 
     /// Add a single child widget. Lazily initializes the storage.
-    pub fn add(&self, child: impl WidgetComponent + 'static) {
+    pub fn add(&self, child: impl Widget + 'static) {
         self.inner
             .borrow_mut()
             .get_or_insert_with(Vec::new)
@@ -62,7 +62,7 @@ impl WidgetChildren {
     }
 
     /// Add a boxed child widget. Lazily initializes the storage.
-    pub fn add_boxed(&self, child: Box<dyn WidgetComponent>) {
+    pub fn add_boxed(&self, child: Box<dyn Widget>) {
         self.inner
             .borrow_mut()
             .get_or_insert_with(Vec::new)
@@ -70,7 +70,7 @@ impl WidgetChildren {
     }
 
     /// Set all children at once, replacing any existing.
-    pub fn set_all(&self, children: Vec<Box<dyn WidgetComponent>>) {
+    pub fn set_all(&self, children: Vec<Box<dyn Widget>>) {
         *self.inner.borrow_mut() = Some(children);
     }
 

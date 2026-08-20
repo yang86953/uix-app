@@ -65,7 +65,7 @@ UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译�
 | `styleName { ... }` 样式类 | 编译期展开 `extends` 与同名属性覆盖，再精确更新 `Style` | 已实现（限已登记样式属性） |
 | `@theme light { ... }` | App 作用域 `Theme` / `ThemeTokens` | 已实现（完整 `DesignTokens` 白名单） |
 | `<App title="..." size="...">` | 现有 `App` builder + 根工厂 | 已实现（由 `uix_app!` 返回，不调用 `run`） |
-| `<Component name="X">` | 编译期展开 props、state、computed、Slot、external、回调与组件体 | 已实现（Slot 内容在调用方作用域内联；computed 按声明顺序求值） |
+| `<Widget name="X">` | 编译期展开 props、state、computed、Slot、external、回调与组件体 | 已实现（Slot 内容在调用方作用域内联；computed 按声明顺序求值） |
 | `<If>...<ElseIf>...<Else>` | 编译期生成相邻短路条件链 | 已实现（允许空白与注释间隔） |
 | `@event="$event.field"` | 按事件登记表校验并投影载荷字段 | 已实现（未知字段在 Rust 生成前诊断） |
 | `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 | 已实现（须位于容器内） |

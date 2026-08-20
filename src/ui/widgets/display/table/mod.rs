@@ -3,14 +3,14 @@
 //! 子模块划分（P2 行数治理）：`types` 公开类型、`builder` 构建器、
 //! `table_a` / `table_b` 组件实现、`tests` 测试。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, LayoutChild, SemanticEvent, SystemEvent, WidgetTree,
+    EventResult, KeyCode, LayoutChild, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
@@ -41,7 +41,7 @@ pub use types::{
     TableDataColumn, TableDataError, TableEmptyRenderer, TablePagination, TableRow,
 };
 
-component! {
+widget! {
     /// 拥有列、行、选择、展开、排序与虚拟滚动状态的数据表格组件。
     pub struct Table {
         columns: Vec<TableColumn>,
@@ -315,7 +315,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -771,7 +771,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 由独立辅助统一生成完整 View frame 与父级片段裁剪。
         self.layout_table_children(frame, children, tree)

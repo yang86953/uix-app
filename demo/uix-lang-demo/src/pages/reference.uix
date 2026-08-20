@@ -1,7 +1,7 @@
 // 显式公开本文件的主演示页面组件。
 @export('FrameworkPage', 'GalleryPage')
 
-<Component name="FrameworkPage">
+<Widget name="FrameworkPage">
   // 组织框架能力内容。
   <Column gap="16px">
     // 展示框架能力标题。
@@ -77,14 +77,14 @@
     // 结束编译期生成面板。
     </Container>
     // 说明 Provider 边界。
-    <Alert message="LocaleProvider、ConfigProvider、ComponentOverrides 保留 Rust API 边界。" type="info" />
+    <Alert message="LocaleProvider、ConfigProvider、WidgetOverrides 保留 Rust API 边界。" type="info" />
   // 结束框架能力内容。
   </Column>
 // 结束框架能力页组件。
-</Component>
+</Widget>
 
 // 声明覆盖清单页组件。
-<Component name="GalleryPage">
+<Widget name="GalleryPage">
   // 组织覆盖清单内容。
   <Column gap="16px">
     // 展示覆盖清单标题。
@@ -140,7 +140,7 @@
   // 结束覆盖清单内容。
   </Column>
 // 结束覆盖清单页组件。
-</Component>
+</Widget>
 
 // 提供页面文档独立解析所需的唯一根。
 <Text>主演示页面组件库</Text>

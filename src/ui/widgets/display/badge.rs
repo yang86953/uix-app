@@ -7,9 +7,9 @@ use std::cell::{Cell, RefCell};
 // 引入组合子树声明期所有权所需的共享句柄。
 use std::rc::Rc;
 
-use crate::component;
+use crate::widget;
 // 引入组件与子树布局使用的身份、约束和几何类型。
-use crate::core::{ComponentId, Constraints, Rect, Size};
+use crate::core::{Constraints, Rect, Size, WidgetId};
 use crate::draw::geometry::spatial::PhysicalUnit;
 // 引入组合装饰器所需的子节点后绘制阶段。
 use crate::draw::painting::PaintPass;
@@ -160,7 +160,7 @@ fn finite_badge_offset(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
 }
 
-component! {
+widget! {
     /// 在可选子内容上叠加数字、圆点或文字角标的装饰组件。
     pub struct Badge {
         count: i32,
@@ -235,7 +235,7 @@ component! {
     }
 
     // 使用唯一真实子节点自己的布局契约取得自然尺寸与 margin。
-    measure_children => (&self, _frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // 只有精确一个直接子节点才满足组合契约。
@@ -256,7 +256,7 @@ component! {
 
     // 安排唯一子节点并把其 margin 外尺寸写回父级测量缓存。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
-        -> Vec<(ComponentId, Rect)>
+        -> Vec<(WidgetId, Rect)>
     {
         // 精确基数是运行时组合的必要条件。
         if !self.composite || children.len() != 1 || self.child_count != 1 {

@@ -1,7 +1,7 @@
 // 引入受测私有同步与选择入口。
 use super::{SelectableItem, SelectableList};
 // 引入语义事件与受控状态测试类型。
-use crate::ui::{ComponentId, EventHandler, SemanticKind, SemanticPayload, State, SystemEvent};
+use crate::ui::{EventHandler, SemanticKind, SemanticPayload, State, SystemEvent, WidgetId};
 
 // 构造两个具有稳定 id 的列表条目。
 fn items() -> Vec<SelectableItem> {
@@ -49,7 +49,7 @@ fn controlled_selection_writes_state_before_single_change() {
     assert_eq!(active.get(), Some("beta".to_string()));
     // 从组件取走本次变化事件。
     let event = list
-        .semantic_event(ComponentId::new(7), &SystemEvent::FocusIn)
+        .semantic_event(WidgetId::new(7), &SystemEvent::FocusIn)
         .expect("用户选择应产生 Change 事件");
 
     // 事件类型必须是统一的 Change。
@@ -58,7 +58,7 @@ fn controlled_selection_writes_state_before_single_change() {
     assert!(matches!(event.payload, SemanticPayload::Text(value) if value == "beta"));
     // 同一次选择不得被重复发布。
     assert!(
-        list.semantic_event(ComponentId::new(7), &SystemEvent::FocusIn)
+        list.semantic_event(WidgetId::new(7), &SystemEvent::FocusIn)
             .is_none()
     );
 }

@@ -38,7 +38,7 @@ fn animation_generates_persistent_bindings_for_supported_properties() {
     // 完整文档生成必须成功。
     let tokens = generate(source).expect("支持矩阵与完整简写应生成运行时绑定");
     // 每个字段都必须复用组件私有状态。
-    assert_eq!(tokens.matches("uix_component_state").count(), 6);
+    assert_eq!(tokens.matches("uix_widget_state").count(), 6);
     // 关键帧序列必须交给完整播放配置入口。
     assert_eq!(tokens.matches("animate_keyframes_with").count(), 6);
     // 完整简写必须生成交替方向。
@@ -127,7 +127,7 @@ fn animation_rejects_pseudo_state_lifecycle() {
         @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
         base { opacity: 1; }
         base:hover { animation: fade 1s; }
-        <Component name="AnimatedText"><Text class="base" /></Component>
+        <Widget name="AnimatedText"><Text class="base" /></Widget>
         <AnimatedText />
         "#,
     )

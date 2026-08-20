@@ -9,7 +9,7 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
-use crate::core::{ComponentId, EdgeInsets, Rect, Size};
+use crate::core::{EdgeInsets, Rect, Size, WidgetId};
 use crate::draw::geometry::spatial::AABB3D;
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ impl BoxModel {
 #[derive(Debug, Clone)]
 pub struct LayoutChild {
     /// 子组件在布局树中的稳定标识。
-    pub id: ComponentId,
+    pub id: WidgetId,
     /// 子组件在当前约束下测得的自然尺寸。
     pub measured_size: Size,
     /// 主轴存在剩余空间时的伸展权重。
@@ -106,7 +106,7 @@ pub struct LayoutChild {
 
 impl LayoutChild {
     /// 使用组件标识和自然尺寸创建默认布局子项。
-    pub fn new(id: ComponentId, measured_size: Size) -> Self {
+    pub fn new(id: WidgetId, measured_size: Size) -> Self {
         Self {
             id,
             measured_size,

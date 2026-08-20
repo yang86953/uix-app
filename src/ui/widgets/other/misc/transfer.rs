@@ -1,11 +1,11 @@
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
-    SnapshotTransferItem, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SnapshotTransferItem,
+    SystemEvent, WidgetId, WidgetTree,
 };
+use crate::widget;
 // 引入 Transfer 私有排版值契约消费的主题接口。
 use crate::ui::ThemeTokens;
 // 引入组件局部状态与待发变化记录所需的单线程容器。
@@ -99,7 +99,7 @@ enum TransferPane {
     Target,
 }
 
-component! {
+widget! {
     /// 在来源与目标双栏之间按稳定条目身份移动数据的穿梭框组件。
     pub struct Transfer {
         source: Vec<TransferItem>,
@@ -131,7 +131,7 @@ component! {
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
         let row_h = ROW_H;
@@ -193,7 +193,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()

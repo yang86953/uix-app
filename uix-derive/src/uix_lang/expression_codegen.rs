@@ -462,16 +462,16 @@ fn generate_call(
     // 接收可选事件载荷变量。
     event: Option<&Ident>,
 ) -> Result<TokenStream, Diagnostic> {
-    // setState 由下一 Component Gate 统一生成。
+    // setState 由下一 Widget Gate 统一生成。
     if matches!(&callee.kind, ExpressionKind::Identifier(name) if name == "setState") {
         // 返回明确的阶段边界诊断。
         return Err(Diagnostic::new(
             // 指向完整调用。
             span,
             // 说明当前尚无状态上下文。
-            "setState 需要 Component state 代码生成上下文",
+            "setState 需要 Widget state 代码生成上下文",
             // 指向后续合法位置。
-            "在 Component 内使用 setState，并由组件代码生成阶段处理",
+            "在 Widget 内使用 setState，并由组件代码生成阶段处理",
         ));
     }
     // setStyle 必须先由组件动态样式阶段降低为闭合 setter。
@@ -479,8 +479,8 @@ fn generate_call(
         // 返回明确组件边界诊断，禁止回退到调用方同名函数。
         return Err(Diagnostic::new(
             span,
-            "setStyle 需要 Component 动态样式代码生成上下文",
-            "在 Component 当前 View 的事件中使用 setStyle('className')",
+            "setStyle 需要 Widget 动态样式代码生成上下文",
+            "在 Widget 当前 View 的事件中使用 setStyle('className')",
         ));
     }
     // setTheme 是框架内置操作：生成主题请求通道调用，不依赖调用方同名函数。

@@ -2,8 +2,6 @@
 use super::{Calendar, Date};
 // 引入交互、语义事件与响应式状态测试契约。
 use crate::ui::{
-    // 引入组件身份与事件分发接口。
-    ComponentId,
     EventHandler,
     // 引入键盘输入值。
     KeyCode,
@@ -14,6 +12,8 @@ use crate::ui::{
     // 引入受控状态与系统事件。
     State,
     SystemEvent,
+    // 引入组件身份与事件分发接口。
+    WidgetId,
 };
 
 // 验证受控构造器建立日期、月份与焦点的同一投影。
@@ -65,7 +65,7 @@ fn controlled_selection_writes_state_before_single_change() {
     // 取走本次日期变化语义事件。
     let event = calendar
         // 使用稳定测试组件身份读取 Change。
-        .semantic_event(ComponentId::new(11), &SystemEvent::FocusIn)
+        .semantic_event(WidgetId::new(11), &SystemEvent::FocusIn)
         // 用户提交必须产生事件。
         .expect("受控日期选择应产生 Change");
     // 事件种类必须使用公共 Change 契约。
@@ -77,7 +77,7 @@ fn controlled_selection_writes_state_before_single_change() {
         // 第二次读取应为空。
         calendar
             // 复用相同组件身份读取队列。
-            .semantic_event(ComponentId::new(11), &SystemEvent::FocusIn)
+            .semantic_event(WidgetId::new(11), &SystemEvent::FocusIn)
             // 断言事件已经消费。
             .is_none()
     );

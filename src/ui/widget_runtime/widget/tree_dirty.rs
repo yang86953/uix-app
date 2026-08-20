@@ -195,7 +195,7 @@ impl WidgetTree {
     }
 
     /// 标记节点 Paint 失效（精确 dirty_rect）。
-    pub fn invalidate_paint(&mut self, id: ComponentId) {
+    pub fn invalidate_paint(&mut self, id: WidgetId) {
         if self.get(id).is_none() {
             return;
         }
@@ -232,7 +232,7 @@ impl WidgetTree {
     }
 
     /// 标记指定矩形 Paint 失效。
-    pub fn invalidate_paint_rect(&mut self, id: ComponentId, rect: Rect) {
+    pub fn invalidate_paint_rect(&mut self, id: WidgetId, rect: Rect) {
         if self.get(id).is_none() {
             return;
         }
@@ -245,7 +245,7 @@ impl WidgetTree {
     }
 
     /// 将指定节点及其全部后代批量标记为绘制失效。
-    pub fn invalidate_paint_subtree(&mut self, id: ComponentId) {
+    pub fn invalidate_paint_subtree(&mut self, id: WidgetId) {
         let ids: Vec<WidgetId> = {
             let mut result = vec![id];
             if let Some(node) = self.get(id) {
@@ -335,7 +335,7 @@ impl WidgetTree {
         for &id in self.traverse().iter() {
             let type_id = self
                 .get(id)
-                .map(|n| n.component().as_any().type_id())
+                .map(|n| n.widget().as_any().type_id())
                 .unwrap_or(std::any::TypeId::of::<()>());
             if type_id == std::any::TypeId::of::<DynamicLabel>() {
                 let paint_rect = self.get(id).and_then(|n| {
@@ -353,7 +353,7 @@ impl WidgetTree {
                     }
                 });
                 if let Some(node) = self.get(id) {
-                    if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
+                    if let Some(dl) = node.widget().as_any().downcast_ref::<DynamicLabel>() {
                         // 以可在 panic 时自动恢复的作用域探测闭包依赖。
                         let capture = StateBindCaptureGuard::begin(id, handle.clone(), paint_rect);
                         // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）。
@@ -411,7 +411,7 @@ impl WidgetTree {
         // 独占访问节点和所属树的请求端口。
         &mut self,
         // 接收实际已挂载节点标识。
-        id: ComponentId,
+        id: WidgetId,
         // 接收该节点本轮声明捕获的 State 源。
         state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
     ) {

@@ -23,9 +23,9 @@ fn generates_record_structs_for_uix_items() {
     let document = parse_document(
         r#"
 <Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
-<Component name="Page" state="profile: Profile = { email: 'a@b.com', level: '中级', accepted: true, channel: '邮件', notifications: false, volume: 30.0 }">
+<Widget name="Page" state="profile: Profile = { email: 'a@b.com', level: '中级', accepted: true, channel: '邮件', notifications: false, volume: 30.0 }">
   <Text>表单页</Text>
-</Component>
+</Widget>
 <Page />
 "#,
     )
@@ -84,7 +84,7 @@ fn parses_record_initial_object_with_array_fields() {
 fn rejects_invalid_record_declarations_and_references() {
     // 未声明 record 的 state 引用必须失败。
     let error = parse_document(
-        r#"<Component name="Bad" state="profile: Profile = { a: 'x' }"><Text>A</Text></Component><Bad />"#,
+        r#"<Widget name="Bad" state="profile: Profile = { a: 'x' }"><Text>A</Text></Widget><Bad />"#,
     )
     // 未声明引用必须失败。
     .expect_err("未声明 record 引用必须失败");
@@ -96,7 +96,7 @@ fn rejects_invalid_record_declarations_and_references() {
     );
     // record 与组件共享命名空间，重名必须失败。
     let error = parse_document(
-        r#"<Record name="Same" fields="a: String" /><Component name="Same"><Text>A</Text></Component><Same />"#,
+        r#"<Record name="Same" fields="a: String" /><Widget name="Same"><Text>A</Text></Widget><Same />"#,
     )
     // 重名声明必须失败。
     .expect_err("record 与组件重名必须失败");
@@ -104,7 +104,7 @@ fn rejects_invalid_record_declarations_and_references() {
     assert!(error.message.contains("重复声明"), "{}", error.message);
     // 未知 record 字段类型（非 PascalCase）必须失败。
     let error = parse_document(
-        r#"<Record name="Bad" fields="a: dateTime" /><Component name="Page"><Text>A</Text></Component><Page />"#,
+        r#"<Record name="Bad" fields="a: dateTime" /><Widget name="Page"><Text>A</Text></Widget><Page />"#,
     )
     // 未知字段类型必须失败。
     .expect_err("未知 record 字段类型必须失败");
@@ -116,7 +116,7 @@ fn rejects_invalid_record_declarations_and_references() {
     );
     // record 字段引用未声明的 PascalCase 类型同样必须失败。
     let error = parse_document(
-        r#"<Record name="Bad" fields="a: DateTime" /><Component name="Page"><Text>A</Text></Component><Page />"#,
+        r#"<Record name="Bad" fields="a: DateTime" /><Widget name="Page"><Text>A</Text></Widget><Page />"#,
     )
     // 未声明 record 引用必须失败。
     .expect_err("record 字段引用未声明类型必须失败");

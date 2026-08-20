@@ -6,7 +6,7 @@ use crate::draw::resources::font::font_service::FontService;
 use crate::draw::FontHandle;
 // 引入事件与测量契约。
 use crate::ui::event::SystemEvent;
-use crate::ui::widget_runtime::traits::{EventHandler, WidgetComponent, WidgetLayout};
+use crate::ui::widget_runtime::traits::{EventHandler, Widget, WidgetLayout};
 // 引入键盘、修饰键与指针按钮。
 use crate::ui::{KeyCode, KeyMod, MouseButton};
 
@@ -26,7 +26,7 @@ fn on_link_callback_fires_when_submit_emitted() {
     rich.pending_submit
         .replace(Some("https://example.com".to_string()));
 
-    let event = rich.semantic_event(ComponentId::default(), &dummy_event());
+    let event = rich.semantic_event(WidgetId::default(), &dummy_event());
     assert!(event.is_some(), "应发出 Submit 语义事件");
     assert_eq!(*calls.borrow(), vec!["https://example.com".to_string()]);
 }
@@ -37,7 +37,7 @@ fn on_link_not_called_without_pending_submit() {
     let hook = calls.clone();
     let rich = RichText::new().on_link(move |_| *hook.borrow_mut() += 1);
 
-    let event = rich.semantic_event(ComponentId::default(), &dummy_event());
+    let event = rich.semantic_event(WidgetId::default(), &dummy_event());
     assert!(event.is_none());
     assert_eq!(*calls.borrow(), 0, "无待提交链接时不应触发回调");
 }
@@ -50,7 +50,7 @@ fn on_link_and_submit_semantic_event_coexist() {
     rich.pending_submit
         .replace(Some("https://uix.dev/route".to_string()));
 
-    let Some(event) = rich.semantic_event(ComponentId::default(), &dummy_event()) else {
+    let Some(event) = rich.semantic_event(WidgetId::default(), &dummy_event()) else {
         panic!("Submit 语义事件保留");
     };
     assert_eq!(

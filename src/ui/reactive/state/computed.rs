@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 // 引入绘制失效端点类型。
-use crate::core::{ComponentId, Rect};
+use crate::core::{Rect, WidgetId};
 // 引入绘制失效队列句柄类型。
 use crate::draw::renderer::InvalidationQueueHandle;
 
@@ -226,12 +226,12 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     /// 绑定派生值的精确 Paint 失效端点。
     pub fn bind_paint_invalidation(
         &self,
-        component_id: ComponentId,
+        widget_id: WidgetId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
         // 公开直接绑定保留既有持续站点语义。
-        bind_persistent_paint_site(&self.inner.paint_sites, component_id, queue, rect);
+        bind_persistent_paint_site(&self.inner.paint_sites, widget_id, queue, rect);
     }
 
     // 增加一份由实际节点拥有的派生绘制订阅。
@@ -239,14 +239,14 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 借用当前派生源。
         &self,
         // 接收实际组件的代际身份。
-        component_id: ComponentId,
+        widget_id: WidgetId,
         // 接收所属窗口失效队列。
         queue: InvalidationQueueHandle,
         // 接收当前精确绘制范围。
         rect: Option<Rect>,
     ) {
         // 在派生源共享站点集合中增加节点租约计数。
-        super::retain_paint_site(&self.inner.paint_sites, component_id, queue, rect);
+        super::retain_paint_site(&self.inner.paint_sites, widget_id, queue, rect);
     }
 
     // 释放一份实际节点拥有的派生绘制订阅。
@@ -254,12 +254,12 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 借用当前派生源。
         &self,
         // 接收正在离开的组件身份。
-        component_id: ComponentId,
+        widget_id: WidgetId,
         // 接收用于区分窗口端点的失效队列。
         queue: &InvalidationQueueHandle,
     ) {
         // 最后一份租约离开时移除站点和窗口队列强引用。
-        super::release_paint_site(&self.inner.paint_sites, component_id, queue);
+        super::release_paint_site(&self.inner.paint_sites, widget_id, queue);
     }
 
     /// 返回对外稳定的派生槽身份。

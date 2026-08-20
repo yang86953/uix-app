@@ -37,7 +37,7 @@ impl WidgetTree {
             // 保留当前注册，避免陈旧协调结果误解绑有效节点。
             return;
         }
-        // 节点协调在事务内暂存、在事务外立即替换自身 ComponentId 分区。
+        // 节点协调在事务内暂存、在事务外立即替换自身 WidgetId 分区。
         self.request_animated_source_owner_update(AnimatedSourceOwner::Node(id), sources);
     }
 
@@ -50,7 +50,7 @@ impl WidgetTree {
         // 停止树不得重新绑定动画源或建立新的 owner 分区。
         assert!(self.accepts_coordination_work());
         // 构建或协调事务期间不得改变既有树绑定。
-        if self.component_state_transaction_depth > 0 {
+        if self.widget_state_transaction_depth > 0 {
             // 记录待最外层成功后提交的所有权快照。
             self.pending_animated_source_owner_updates
                 .push(PendingAnimatedSourceOwnerUpdate {
@@ -100,7 +100,7 @@ impl WidgetTree {
         matches_owner: impl Fn(AnimatedSourceOwner) -> bool,
     ) {
         // 活跃事务的检查点依赖队列长度单调不减。
-        if self.component_state_transaction_depth > 0 {
+        if self.widget_state_transaction_depth > 0 {
             // 原位访问全部待提交项而不压缩向量。
             for update in &mut self.pending_animated_source_owner_updates {
                 // 不匹配的所有者继续保留原始请求。
@@ -325,12 +325,12 @@ impl WidgetTree {
         let visible_and_active = self.is_effectively_visible(id) && node.active();
         let view_transition =
             node.view_transition_active() && (node.pending_removal() || visible_and_active);
-        let component_animation = visible_and_active
+        let widget_animation = visible_and_active
             && !self.is_pending_removal_subtree(id)
             && node
                 .capabilities()
                 .contains(crate::ui::widget_runtime::traits::WidgetCapabilities::ANIMATION);
-        (view_transition || component_animation).then_some(node.frame())
+        (view_transition || widget_animation).then_some(node.frame())
     }
 
     // 测试目标保留活动过渡 id 观测入口，供动画生命周期测试按需调用。
@@ -421,7 +421,7 @@ impl WidgetTree {
                 continue;
             }
             let Some(frame) = self.active_animation_frame(id) else {
-                self.active_component_animations.remove(&id);
+                self.active_widget_animations.remove(&id);
                 updates.push((id, false));
                 continue;
             };
@@ -463,10 +463,10 @@ impl WidgetTree {
                 // 停止态不得进入组件提供的动画实现。
                 break;
             }
-            let (component_still_active, dirty) = self
+            let (widget_still_active, dirty) = self
                 .get_mut(id)
                 .and_then(|node| {
-                    let animation = node.component_mut().as_animation_mut()?;
+                    let animation = node.widget_mut().as_animation_mut()?;
                     let still_active = animation.update_animation(dt);
                     let dirty = animation.dirty_bounds(frame);
                     Some((still_active, dirty))
@@ -482,7 +482,7 @@ impl WidgetTree {
                 // 停止态不得调用应用提供的动态 renderer。
                 break;
             }
-            let dynamic_children_changed = self.refresh_select_option_component(id);
+            let dynamic_children_changed = self.refresh_select_option_widget(id);
             // 动态刷新可能捕获协调 panic，因此返回后必须复核树状态。
             if !self.accepts_external_work() {
                 // 首个停止态不得继续处理当前或后续动画身份。
@@ -500,17 +500,17 @@ impl WidgetTree {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
             }
-            if component_still_active {
-                self.active_component_animations.insert(id);
+            if widget_still_active {
+                self.active_widget_animations.insert(id);
             } else {
-                self.active_component_animations.remove(&id);
+                self.active_widget_animations.remove(&id);
             }
 
             if dirty.w > 0.0 && dirty.h > 0.0 {
                 self.invalidate_paint_rect(id, dirty);
             }
             widget_overlays_changed |= !self.widget_overlay_is_current(id);
-            updates.push((id, view_still_active || component_still_active));
+            updates.push((id, view_still_active || widget_still_active));
             if remove_now {
                 completed_removals.push(id);
             }
@@ -554,9 +554,9 @@ impl WidgetTree {
         updates
     }
 
-    pub(crate) fn component_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
+    pub(crate) fn widget_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {
         // 已停止的树不得向调度器暴露活动组件动画。
-        self.active_component_animations
+        self.active_widget_animations
             .iter()
             .copied()
             // 非运行态在迭代层返回空集合，避免扩大内部 API 契约。

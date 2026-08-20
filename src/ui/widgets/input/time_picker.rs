@@ -5,15 +5,15 @@
 use std::cell::Cell;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 
 // 声明时间面板的私有几何解析模块。
 mod geometry;
@@ -76,7 +76,7 @@ impl Time {
     }
 }
 
-component! {
+widget! {
     /// TimePicker — 时间选择器。
     pub struct TimePicker {
         value: Cell<Time>,
@@ -266,7 +266,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|value| SemanticEvent::change(id, value.format()))
@@ -453,7 +453,7 @@ component! {
         time_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.open.get().then(|| {
             // 读取最近记录的表面或首次有限回退。
             let surface = self.surface_or_fallback(frame);
@@ -471,7 +471,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建时间面板登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 仅在打开状态刷新表面与实际时间面板缓存。
         if self.open.get() {
             // 缓存组件树提供的真实表面。

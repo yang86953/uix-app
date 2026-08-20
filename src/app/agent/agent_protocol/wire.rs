@@ -78,24 +78,24 @@ pub(super) fn parse_target(value: &Value) -> Result<SemanticTarget, WireError> {
         (Some(id), None) if !id.is_empty() && id.len() <= MAX_AUTOMATION_ID_BYTES => {
             Ok(SemanticTarget::AutomationId(id.to_owned()))
         }
-        (None, Some(id)) => parse_component_id(id).map(SemanticTarget::NodeId),
+        (None, Some(id)) => parse_widget_id(id).map(SemanticTarget::NodeId),
         _ => Err(WireError::invalid(
             "target requires exactly one valid automation_id or node_id",
         )),
     }
 }
 
-pub(super) fn parse_component_id(value: &str) -> Result<ComponentId, WireError> {
+pub(super) fn parse_widget_id(value: &str) -> Result<WidgetId, WireError> {
     let parts = value.split(':').collect::<Vec<_>>();
     match parts.as_slice() {
-        [slot, generation] => Ok(ComponentId::from_parts(
+        [slot, generation] => Ok(WidgetId::from_parts(
             slot.parse()
                 .map_err(|_| WireError::invalid("node_id slot is invalid"))?,
             generation
                 .parse()
                 .map_err(|_| WireError::invalid("node_id generation is invalid"))?,
         )),
-        [tree_scope, slot, generation] => Ok(ComponentId::from_scoped_parts(
+        [tree_scope, slot, generation] => Ok(WidgetId::from_scoped_parts(
             tree_scope
                 .parse()
                 .map_err(|_| WireError::invalid("node_id tree scope is invalid"))?,

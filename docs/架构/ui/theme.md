@@ -15,9 +15,9 @@
 | `ThemeTokens` / `TokenProvider` | trait | 定义组件读取令牌的最小契约 |
 | `Style` / `BackgroundImage` / `BackgroundPosition` / `BackgroundRepeat` | value | 保存可级联的视觉声明及单层背景纯值 |
 | `TokenPatch` | struct | 只覆写显式字段，其余委托父主题 |
-| `ComponentConfig` | struct | 保存组件行为与尺寸默认值 |
-| `ConfigProvider` | View component | 覆写子树中的组件配置或 token patch |
-| `Locale` / `LocaleProvider` | struct/View component | 提供内置组件文案与子树本地化覆写 |
+| `WidgetConfig` | struct | 保存组件行为与尺寸默认值 |
+| `ConfigProvider` | View widget | 覆写子树中的 widget 配置或 token patch |
+| `Locale` / `LocaleProvider` | struct/View widget | 提供内置 widget 文案与子树本地化覆写 |
 | `ProviderContext` | internal value | 绑定节点构建、测量、绘制和语义阶段的同一上下文 |
 
 ## 组件：ThemePrimitives / DesignTokens

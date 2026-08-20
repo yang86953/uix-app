@@ -19,7 +19,7 @@ pub(super) fn apply_animation(
     binding: &AnimationBinding,
 ) -> Result<TokenStream, Diagnostic> {
     // 重建最近组件或文档根作用域标识符。
-    let component_scope = Ident::new(&binding.component_scope_name, Span::call_site());
+    let widget_scope = Ident::new(&binding.widget_scope_name, Span::call_site());
     // 创建节点私有动画作用域名称。
     let node_scope = Ident::new("__uix_animation_scope", Span::mixed_site());
     // 创建节点稳定身份名称。
@@ -86,7 +86,7 @@ pub(super) fn apply_animation(
         // 生成状态复用、首次播放初始化与 View 值绑定。
         property_steps.push(quote! {
             // 在窗口私有组件状态存储中复用当前字段的 Animated 句柄。
-            let #state = ::uix::ui::__private::uix_component_state(
+            let #state = ::uix::ui::__private::uix_widget_state(
                 // 使用实际节点动画子作用域。
                 &#node_scope,
                 // 使用字段稳定编号。
@@ -119,9 +119,9 @@ pub(super) fn apply_animation(
         // 组合当前节点在 For 或静态树中的稳定身份。
         let #identity = #identity_value;
         // 从最近组件作用域派生实际节点动画状态作用域。
-        let #node_scope = ::uix::ui::__private::uix_component_child_scope(
+        let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
             // 使用最近组件或文档根作用域。
-            &#component_scope,
+            &#widget_scope,
             // 使用静态节点声明标识。
             #declaration_id,
             // 使用实际实例身份。
@@ -132,7 +132,7 @@ pub(super) fn apply_animation(
         // 按字段顺序绑定所有持久化动画值。
         #(#property_steps)*
         // 让实际节点承载动画私有状态生命周期。
-        #animated_view.uix_component_scope(#node_scope, 0)
+        #animated_view.uix_widget_scope(#node_scope, 0)
     }})
 }
 

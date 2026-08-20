@@ -4,16 +4,16 @@
 
 > **接口**：声明 core 基础契约中的目标 `identity` 边界及其组件契约。core 的 System 定级仍由[系统列表](../系统列表.md#core基础契约system-定级待定)持有。依赖：无。导出：跨 ui、graphics、platform、app 传递的稳定身份值。
 
-> **当前实现线索**：`src/core/identity/component_id.rs`、`src/core/identity/window_id.rs`；路径可重构，identity 边界保持稳定。
+> **当前实现线索**：`src/core/identity/widget_id.rs`、`src/core/identity/window_id.rs`；路径可重构，identity 边界保持稳定。
 
 ## 组件清单
 
 | 组件 | 类型 | 职责 |
 |---|---|---|
-| `ComponentId` | struct | 以 `tree_scope + slot + generation` 标识组件节点 |
+| `WidgetId` | struct | 以 `tree_scope + slot + generation` 标识组件节点 |
 | `WindowId` | struct | 以进程内 `u64` 标识应用窗口 |
 
-## 组件：ComponentId
+## 组件：WidgetId
 
 `slot` 支持槽位复用，`generation` 使旧句柄在槽位复用后失效，`tree_scope` 隔离不同 WidgetTree。它只表达身份，不持有节点或延长生命周期。
 

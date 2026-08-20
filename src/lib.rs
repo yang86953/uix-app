@@ -118,7 +118,7 @@
 //!
 //! ```compile_fail
 //! // traits 目录已拆解：组件契约归 component（SMC-04）。
-//! use uix::ui::traits::WidgetComponent;
+//! use uix::ui::traits::Widget;
 //! ```
 //!
 //! ```compile_fail

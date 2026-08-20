@@ -8,15 +8,15 @@ use std::sync::Arc;
 // 保存由宿主树验证后签发的动态 View 捕获能力，避免 renderer 接触状态存储细节。
 pub(crate) struct DynamicViewCaptureContext {
     // 保存所属 WidgetTree 的唯一组件状态存储句柄。
-    store: crate::ui::component_state::ComponentStateStore,
+    store: crate::ui::widget_state::WidgetStateStore,
     // 保存实际拥有延迟 renderer 的运行时组件身份。
-    owner: crate::ui::ComponentId,
+    owner: crate::ui::WidgetId,
 }
 
 // 只通过已验证能力执行动态 View 捕获，调用方不能自行组合 store 与 owner。
 impl DynamicViewCaptureContext {
     // 返回签发能力时已经校验的 renderer 宿主身份。
-    pub(crate) fn owner(&self) -> crate::ui::ComponentId {
+    pub(crate) fn owner(&self) -> crate::ui::WidgetId {
         // 调用方只能读取固定 owner，不能替换其状态存储归属。
         self.owner
     }
@@ -38,7 +38,7 @@ impl DynamicViewCaptureContext {
         F: FnOnce() -> crate::ui::view::ViewNode,
     {
         // 用签发时固定的 owner、槽位与业务键建立稳定动态实例身份。
-        let namespace = crate::ui::component_state::ComponentStateCaptureNamespace::new(
+        let namespace = crate::ui::widget_state::WidgetStateCaptureNamespace::new(
             // 依次组合不可伪造的宿主身份与调用方提供的局部身份。
             self.owner, // 保留静态 renderer 槽位。
             slot,       // 消费本次捕获的稳定业务键。
@@ -65,11 +65,11 @@ impl crate::ui::adapter::ViewAdapter {
         F: FnOnce() -> crate::ui::view::ViewNode,
     {
         // 为直接捕获创建独立状态所有者，随后由根节点转交给 WidgetTree。
-        let store = crate::ui::component_state::ComponentStateStore::new();
+        let store = crate::ui::widget_state::WidgetStateStore::new();
         // 安装临时捕获上下文以隔离每个根的私有状态。
         let mut node = Self::capture_root_with_store(store.clone(), build_root);
         // 把首次捕获使用的存储随根节点传递给建树入口。
-        node.set_component_state_store(store);
+        node.set_widget_state_store(store);
         // 返回已捕获并标注状态所有权的根。
         node
     }
@@ -77,7 +77,7 @@ impl crate::ui::adapter::ViewAdapter {
     // 使用既有窗口树存储捕获根，供每次 reconcile 复用状态身份。
     pub(crate) fn capture_root_with_store<F>(
         // 接收所属窗口树的状态存储。
-        store: crate::ui::component_state::ComponentStateStore,
+        store: crate::ui::widget_state::WidgetStateStore,
         // 接收根 View 构建闭包。
         build_root: F,
     ) -> crate::ui::view::ViewNode
@@ -94,7 +94,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收同时拥有运行时节点与组件状态存储的宿主树。
         tree: &crate::ui::WidgetTree,
         // 接收实际拥有延迟 renderer 的运行时组件身份。
-        owner: crate::ui::ComponentId,
+        owner: crate::ui::WidgetId,
         // 返回不暴露内部 store 的窄捕获能力。
     ) -> DynamicViewCaptureContext {
         // 动态 owner 必须是当前宿主树中仍可寻址且尚未离场的实际节点。
@@ -108,7 +108,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 固定本次能力的树私有 store 与实际 owner，后续调用不能替换任一身份。
         DynamicViewCaptureContext {
             // 仅从已验证 owner 的宿主树取得唯一状态存储。
-            store: tree.component_state_store(),
+            store: tree.widget_state_store(),
             // 保存已经通过当前树 generation 校验的 owner。
             owner,
         }
@@ -119,7 +119,7 @@ impl crate::ui::adapter::ViewAdapter {
         // 接收同时拥有运行时节点与唯一组件状态存储的宿主树。
         tree: &crate::ui::WidgetTree,
         // 接收实际拥有该延迟工厂实例的运行时节点。
-        owner: crate::ui::ComponentId,
+        owner: crate::ui::WidgetId,
         // 接收区分同一宿主下不同工厂槽位的静态名称。
         slot: &'static str,
         // 接收工厂执行前即可确定的稳定业务键。
@@ -142,9 +142,9 @@ impl crate::ui::adapter::ViewAdapter {
     // 用可选动态命名空间统一静态根与延迟工厂的捕获生命周期。
     fn capture_root_with_optional_namespace<F>(
         // 接收本次捕获所属树的唯一组件状态存储。
-        store: crate::ui::component_state::ComponentStateStore,
+        store: crate::ui::widget_state::WidgetStateStore,
         // 接收静态根的空命名空间或延迟实例的稳定命名空间。
-        namespace: Option<crate::ui::component_state::ComponentStateCaptureNamespace>,
+        namespace: Option<crate::ui::widget_state::WidgetStateCaptureNamespace>,
         // 接收本次需要同步执行的声明 View 工厂。
         build_root: F,
         // 返回显式携带全部捕获输出的声明根。
@@ -161,16 +161,16 @@ impl crate::ui::adapter::ViewAdapter {
             // 延迟工厂必须在宿主与业务键共同限定的命名空间中捕获。
             Some(namespace) => {
                 // 把树 store、稳定动态身份与工厂作为一个捕获协议执行。
-                crate::ui::component_state::with_component_state_capture_in_namespace(
+                crate::ui::widget_state::with_widget_state_capture_in_namespace(
                     // 依次传入宿主存储、动态身份与一次性延迟工厂。
                     store, namespace, build_root,
                 )
             }
             // 静态根继续使用没有动态命名空间的既有捕获契约。
-            None => crate::ui::component_state::with_component_state_capture(store, build_root),
+            None => crate::ui::widget_state::with_widget_state_capture(store, build_root),
         };
         // 把未提交 journal 附着到声明根，等待 WidgetTree 事务成功后接纳。
-        node.push_component_state_receipt(receipt);
+        node.push_widget_state_receipt(receipt);
         // 正常结束并取得当前根专属的 State、Effect 与动画输出。
         let output = capture_guard.finish();
         // 追加当前帧的 State 绑定，保留 build_root 已携带的内层捕获输出。
@@ -185,11 +185,11 @@ impl crate::ui::adapter::ViewAdapter {
 }
 
 // 迭代取走一个声明根及全部后代尚未提交的组件状态回执。
-pub(super) fn take_component_state_receipts(
+pub(super) fn take_widget_state_receipts(
     // 接收将要被展开或协调的声明根。
     root: &mut crate::ui::view::ViewNode,
     // 返回转移到适配器事务边界的全部回执。
-) -> Vec<crate::ui::component_state::ComponentStateCaptureReceipt> {
+) -> Vec<crate::ui::widget_state::WidgetStateCaptureReceipt> {
     // 建立不会消耗线程调用栈的待访问节点栈。
     let mut nodes = vec![root];
     // 汇总整棵声明树的未提交 journal。
@@ -197,7 +197,7 @@ pub(super) fn take_component_state_receipts(
     // 深度优先访问每个声明节点。
     while let Some(node) = nodes.pop() {
         // 先转移当前节点的回执，避免展开时过早触发 Drop 回滚。
-        receipts.append(&mut node.component_state_receipts);
+        receipts.append(&mut node.widget_state_receipts);
         // 将全部直接子节点压入显式栈，避免深树递归。
         nodes.extend(node.children.iter_mut());
     }
@@ -206,17 +206,17 @@ pub(super) fn take_component_state_receipts(
 }
 
 // 逐个取走一组动态子树尚未提交的组件状态回执。
-pub(super) fn take_component_state_receipts_from_children(
+pub(super) fn take_widget_state_receipts_from_children(
     // 接收动态协调即将消费的所有声明子节点。
     children: &mut [crate::ui::view::ViewNode],
     // 返回属于同一动态协调事务的全部回执。
-) -> Vec<crate::ui::component_state::ComponentStateCaptureReceipt> {
+) -> Vec<crate::ui::widget_state::WidgetStateCaptureReceipt> {
     // 建立动态协调的回执汇总。
     let mut receipts = Vec::new();
     // 收集每个动态子树的回执。
     for child in children {
         // 将完整子树的回执交给当前事务。
-        receipts.append(&mut take_component_state_receipts(child));
+        receipts.append(&mut take_widget_state_receipts(child));
     }
     // 交还完整的成功提交候选集。
     receipts

@@ -19,7 +19,7 @@ pub(crate) enum GroupItemTiming {
 }
 
 trait AnimationGroupControl: Send + Sync {
-    fn source_id(&self) -> crate::core::ComponentId;
+    fn source_id(&self) -> crate::core::WidgetId;
     fn timing(&self) -> GroupItemTiming;
     fn schedule_at(&self, delay: Duration, now: Instant);
     fn pause_at(&self, now: Instant);
@@ -34,7 +34,7 @@ impl<T> AnimationGroupControl for Animated<T>
 where
     T: Animatable + Sync,
 {
-    fn source_id(&self) -> crate::core::ComponentId {
+    fn source_id(&self) -> crate::core::WidgetId {
         self.group_source_id()
     }
 

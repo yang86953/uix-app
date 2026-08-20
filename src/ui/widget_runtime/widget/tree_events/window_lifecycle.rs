@@ -59,7 +59,7 @@ impl WidgetTree {
         }
         self.window_focused = false;
         // 无聚焦组件时无需下发失焦事件。
-        let Some(focused) = self.managers().focus.focused_component() else {
+        let Some(focused) = self.managers().focus.focused_widget() else {
             return;
         };
 
@@ -83,7 +83,7 @@ impl WidgetTree {
         let Some(focused) = self
             .managers()
             .focus
-            .focused_component()
+            .focused_widget()
             .filter(|&id| self.focus_target_available(id))
         else {
             return;

@@ -3,11 +3,11 @@ use super::{Dropdown, DropdownItem};
 // 引入事件行为 trait 以读取 Change 事实和焦点范围通知。
 use crate::ui::widget_runtime::traits::EventHandler;
 // 引入组件基础 trait 以验证 trigger 子树挂载生命周期。
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::traits::Widget;
 // 引入组件渲染 trait 以验证浮层登记契约。
 use crate::ui::widget_runtime::traits::WidgetRender;
 // 引入稳定测试组件身份与指针坐标。
-use crate::core::{ComponentId, Point, Rect};
+use crate::core::{Point, Rect, WidgetId};
 // 引入触发枚举、输入事件和语义载荷。
 use crate::ui::{EventResult, KeyMod, MouseButton, SemanticPayload, SystemEvent, TriggerMode};
 // 使用真实按钮 View builder 验证组合 trigger 所有权入口。
@@ -29,7 +29,7 @@ fn change_payload(dropdown: &Dropdown) -> String {
     // 读取一次待发语义事件。
     let event = dropdown
         // 使用稳定测试身份消费选择事实。
-        .semantic_event(ComponentId::default(), &dummy_event())
+        .semantic_event(WidgetId::default(), &dummy_event())
         // 有效选择必须发布 Change。
         .expect("Dropdown 选择应产生 Change");
     // 只接受稳定 key 文本载荷。
@@ -145,7 +145,7 @@ fn composite_trigger_modes_and_child_lifecycle_are_owned() {
         // 使用公开 focus 触发枚举。
         .trigger(TriggerMode::Focus);
     // 通过 System 私有子树提供器读取 owner 持有的完整 ViewNode。
-    let provider = WidgetComponent::as_view_children(&focus_dropdown)
+    let provider = Widget::as_view_children(&focus_dropdown)
         // 组合 Dropdown 必须公开子树建造能力端口。
         .expect("组合 Dropdown 应提供 trigger ViewNode");
     // 首次物化必须恰好交付一个 trigger 子树。
@@ -153,9 +153,9 @@ fn composite_trigger_modes_and_child_lifecycle_are_owned() {
     // 同一声明句柄不能重复挂载已经取走的子树。
     assert!(provider.build_view_children().is_empty());
     // 模拟唯一 trigger 子树完成挂载。
-    WidgetComponent::on_children_changed(&mut focus_dropdown, 1);
+    Widget::on_children_changed(&mut focus_dropdown, 1);
     // 组合 owner 不与内部 trigger 重复进入 Tab 顺序。
-    assert_eq!(WidgetComponent::tab_index(&focus_dropdown), 0);
+    assert_eq!(Widget::tab_index(&focus_dropdown), 0);
     // 子树获得焦点时打开下拉层。
     assert_eq!(
         EventHandler::on_focus_within(&mut focus_dropdown, true),
@@ -168,9 +168,9 @@ fn composite_trigger_modes_and_child_lifecycle_are_owned() {
     // 关闭事实立即可见，离场动画可继续呈现。
     assert!(!focus_dropdown.is_open());
     // 模拟 trigger 子树卸载释放。
-    WidgetComponent::on_children_changed(&mut focus_dropdown, 0);
+    Widget::on_children_changed(&mut focus_dropdown, 0);
     // 缺失子树时 owner 恢复可聚焦入口，避免失去恢复路径。
-    assert_eq!(WidgetComponent::tab_index(&focus_dropdown), 1);
+    assert_eq!(Widget::tab_index(&focus_dropdown), 1);
 
     // contextMenu 模式只接受右键触发。
     let mut context_dropdown = Dropdown::new("").trigger(TriggerMode::ContextMenu);
@@ -219,7 +219,7 @@ fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     // 打开状态必须生成浮层登记。
     let overlay = WidgetRender::overlay_entry(
         &dropdown,
-        ComponentId::default(),
+        WidgetId::default(),
         Rect::new(40.0, 50.0, 160.0, 32.0),
     )
     // 在场状态必须返回登记。
@@ -242,7 +242,7 @@ fn open_dropdown_registers_popover_overlay_with_outside_dismiss() {
     assert!(
         WidgetRender::overlay_entry(
             &dropdown,
-            ComponentId::default(),
+            WidgetId::default(),
             Rect::new(40.0, 50.0, 160.0, 32.0),
         )
         .is_none()

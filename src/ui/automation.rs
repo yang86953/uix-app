@@ -4,14 +4,13 @@ use std::fmt;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use crate::core::{ComponentId, Point, Rect, WindowId};
+use crate::core::{Point, Rect, WidgetId, WindowId};
 use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 pub use crate::ui::SelectionSnapshot as AutomationSelection;
 pub use crate::ui::accessibility::semantic_snapshot::{
     SemanticNode as AutomationNode, SemanticTarget as AutomationTarget,
 };
 use crate::ui::adapter::ViewAdapter;
-use crate::ui::component_snapshot::{AccessibilityRole, AccessibilityState};
 use crate::ui::event::SystemEvent;
 use crate::ui::semantic_action::SemanticActionError;
 pub use crate::ui::semantic_action::{
@@ -19,6 +18,7 @@ pub use crate::ui::semantic_action::{
 };
 use crate::ui::view::ViewNode;
 use crate::ui::widget_runtime::widget::{EventResult, WidgetCore, WidgetTree};
+use crate::ui::widget_snapshot::{AccessibilityRole, AccessibilityState};
 
 pub const AUTOMATION_DIR_ENV: &str = "UIX_AUTOMATION_DIR";
 pub const AUTOMATION_SCHEMA: &str = "uix.automation.v1";
@@ -139,11 +139,11 @@ pub enum AutomationError {
     Disabled(String),
     Obscured {
         automation_id: String,
-        hit: Option<ComponentId>,
+        hit: Option<WidgetId>,
     },
     Blocked {
         automation_id: String,
-        blocker: ComponentId,
+        blocker: WidgetId,
     },
     UnsupportedAction {
         automation_id: String,
@@ -475,7 +475,7 @@ impl TestApp {
                 }
                 // 复用测试窗口树拥有的状态存储以模拟真实窗口协调。
                 let root =
-                    ViewAdapter::capture_root_with_store(self.tree.component_state_store(), || {
+                    ViewAdapter::capture_root_with_store(self.tree.widget_state_store(), || {
                         (self.build_root)()
                     });
                 ViewAdapter::reconcile_nodes(&mut self.tree, root);

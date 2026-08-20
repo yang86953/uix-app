@@ -4,7 +4,7 @@
 //!
 //! `DynamicLabel` 是框架级基础设施（原 `view::combinators::DynamicLabel`）：
 //! 树（tree_dirty / 无障碍）需要在 build 期识别并绑定其 State 依赖，归
-//! component Module 避免 component → view / widgets 依赖。
+//! widget Module 避免 widget → view / widgets 依赖。
 
 use std::any::Any;
 
@@ -12,9 +12,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::scene::PicturePolicy;
 use crate::ui::theme::style::Style;
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::traits::{
-    WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
-};
+use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities, WidgetLayout, WidgetRender};
 use crate::ui::widget_runtime::widget::WidgetTree;
 
 /// 响应式标签的内部 Widget 实现。
@@ -45,7 +43,7 @@ impl DynamicLabel {
     }
 }
 
-impl WidgetComponent for DynamicLabel {
+impl Widget for DynamicLabel {
     fn as_any(&self) -> &dyn Any {
         self
     }

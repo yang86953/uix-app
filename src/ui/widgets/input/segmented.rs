@@ -1,18 +1,18 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
-component! {
+widget! {
     /// Segmented — 水平分段选择器。
     pub struct Segmented {
         options: Vec<String>,
@@ -92,7 +92,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|idx| SemanticEvent::change(id, idx.to_string()))

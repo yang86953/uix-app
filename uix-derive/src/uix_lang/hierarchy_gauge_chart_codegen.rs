@@ -61,7 +61,7 @@ pub(crate) fn generate_hierarchy_gauge_chart(
         // 按标签和属性选择精确公开构建器。
         widget = apply_chart_attribute(widget, attribute)?;
     }
-    // 把现有 Chart Component 物化为叶 View。
+    // 把现有 Chart Widget 物化为叶 View。
     let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)

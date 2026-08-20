@@ -5,19 +5,19 @@ use crate::ui::widget_runtime::focus_trap::next_focus_in_order;
 
 impl WidgetTree {
     /// 聚焦遍历中首个指定组件类型的节点，并返回其身份。
-    pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
+    pub fn focus_by_type<T: Widget + 'static>(&mut self) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
         self.set_focus(Some(id));
         Some(id)
     }
 
     /// 返回当前焦点节点是否属于指定组件类型。
-    pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
+    pub fn is_focused_type<T: Widget + 'static>(&self) -> bool {
         self.managers
             .focus
-            .focused_component()
+            .focused_widget()
             .and_then(|id| self.get(id))
-            .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
+            .map(|node| node.widget().as_any().downcast_ref::<T>().is_some())
             .unwrap_or(false)
     }
 
@@ -30,17 +30,17 @@ impl WidgetTree {
 
     pub(crate) fn replace_render_handlers(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         handlers: Vec<RenderHandlerRegistration>,
     ) {
         // 停止树不得重新持有延迟渲染闭包。
         assert!(self.accepts_coordination_work());
-        self.render_handler_table.replace_component(id, handlers);
+        self.render_handler_table.replace_widget(id, handlers);
     }
 
     pub(crate) fn replace_system_event_handlers(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         handlers: Vec<crate::ui::event::system_event_handler::SystemEventHandlerRegistration>,
     ) {
         // 停止树不得重新持有系统事件闭包。
@@ -50,14 +50,14 @@ impl WidgetTree {
         }
     }
 
-    pub(crate) fn set_tab_index_override(&mut self, id: ComponentId, tab_index: Option<i32>) {
+    pub(crate) fn set_tab_index_override(&mut self, id: WidgetId, tab_index: Option<i32>) {
         if let Some(node) = self.get_mut(id) {
             node.set_tab_index_override(tab_index);
         }
         self.register_focusable(id);
     }
 
-    pub(crate) fn set_focus_handle(&mut self, id: ComponentId, handle: Option<FocusHandle>) {
+    pub(crate) fn set_focus_handle(&mut self, id: WidgetId, handle: Option<FocusHandle>) {
         // 停止树不得把旧身份重新绑定到外部 AppState。
         assert!(self.accepts_coordination_work());
         let unchanged = self
@@ -95,7 +95,7 @@ impl WidgetTree {
     // Tab focus navigation.
 
     /// 按 Tab 顺序收集当前可见、未移除且允许聚焦的节点。
-    pub fn collect_focusable(&self) -> Vec<ComponentId> {
+    pub fn collect_focusable(&self) -> Vec<WidgetId> {
         let mut result = self
             .managers
             .focus
@@ -169,14 +169,14 @@ impl WidgetTree {
     }
 
     /// 返回当前焦点在 Tab 顺序中的相邻目标，但不直接改变焦点。
-    pub fn focus_next(&self, forward: bool) -> Option<ComponentId> {
+    pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
         let focusable = self.collect_focusable();
-        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
+        self.next_focus_from_order(&focusable, self.managers.focus.focused_widget(), forward)
     }
 
     pub(crate) fn focus_next_in_scope(&self, root: WidgetId, forward: bool) -> Option<WidgetId> {
         let focusable = self.collect_focusable_within(root);
-        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
+        self.next_focus_from_order(&focusable, self.managers.focus.focused_widget(), forward)
     }
 
     pub(crate) fn remember_focus_before_trap(&mut self, owner: WidgetId) {
@@ -187,7 +187,7 @@ impl WidgetTree {
         {
             return;
         }
-        let current = self.managers.focus.focused_component();
+        let current = self.managers.focus.focused_widget();
         let restore = current.filter(|&id| !self.is_descendant_of(id, owner));
         self.focus_trap_restore.push((owner, restore));
     }

@@ -166,7 +166,7 @@ pub(crate) fn sync_animation_registrations(
     let mut managed_registrations = tree.animated_source_registrations();
     tree.extend_view_transition_registrations(&mut managed_registrations);
     active_work.sync_animated_sources(managed_registrations);
-    active_work.sync_component_animations(tree.component_animation_ids());
+    active_work.sync_widget_animations(tree.widget_animation_ids());
 
     // 逐条应用调用方报告的动画启停变化，未由注册表管理的才单独登记。
     for &(id, animating) in animation_updates {

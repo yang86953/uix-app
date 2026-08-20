@@ -1,7 +1,7 @@
 // 引入受测稳定面板与折叠组。
 use super::{Collapse, CollapsePanel};
 // 引入语义事件与受控状态测试类型。
-use crate::ui::{ComponentId, EventHandler, SemanticKind, SemanticPayload, State, SystemEvent};
+use crate::ui::{EventHandler, SemanticKind, SemanticPayload, State, SystemEvent, WidgetId};
 
 // 构造两个具有显式稳定 key 的面板。
 fn panels() -> Vec<CollapsePanel> {
@@ -75,7 +75,7 @@ fn controlled_toggle_writes_state_before_single_change() {
     assert_eq!(active.get(), vec!["beta".to_string()]);
     // 取走本次切换事件。
     let event = collapse
-        .semantic_event(ComponentId::new(9), &SystemEvent::FocusIn)
+        .semantic_event(WidgetId::new(9), &SystemEvent::FocusIn)
         .expect("用户切换应产生 Change 事件");
 
     // 事件类型必须是统一 Change。
@@ -85,7 +85,7 @@ fn controlled_toggle_writes_state_before_single_change() {
     // 同一次切换不得重复发布。
     assert!(
         collapse
-            .semantic_event(ComponentId::new(9), &SystemEvent::FocusIn)
+            .semantic_event(WidgetId::new(9), &SystemEvent::FocusIn)
             .is_none()
     );
 }

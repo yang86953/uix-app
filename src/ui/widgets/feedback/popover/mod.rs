@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::component;
+use crate::widget;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
@@ -65,7 +65,7 @@ pub enum PopoverTrigger {
     Focus,
 }
 
-component! {
+widget! {
     /// 拥有唯一触发器并按配置交互显示窗口内内容气泡的组合组件。
     pub struct Popover {
         title: String,
@@ -103,7 +103,7 @@ component! {
     hit_test_children => (&self) -> bool { false }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+        -> Vec<(crate::ui::WidgetId, Rect)>
     {
         children.iter().map(|child| (child.id, Self::normalize_frame(frame))).collect()
     }
@@ -375,7 +375,7 @@ component! {
         self.transition_dirty_rect(frame)
     }
 
-    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }
@@ -396,7 +396,7 @@ component! {
     }
 
     // 布局阶段以当前逻辑表面刷新气泡几何，再沿用既有登记策略。
-    overlay_entry_for_surface => (&self, id: crate::ui::ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: crate::ui::WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 记录与本次 OverlayStack 重建一致的表面边界。
         self.surface_rect.set(Self::normalize_frame(surface));
         // 复用统一的浮层登记与动画扫掠逻辑。

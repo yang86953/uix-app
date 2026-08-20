@@ -2,12 +2,12 @@
 //!
 //! # SMC 边界（SMC-04）
 //!
-//! 布局引擎（layout Module）保持对 component 零依赖：从 WidgetTree 构建
-//! `LayoutChild` 的辅助归 component Module（本文件），widgets 经
+//! 布局引擎（layout Module）保持对 widget 零依赖：从 WidgetTree 构建
+//! `LayoutChild` 的辅助归 widget Module（本文件），widgets 经
 //! `crate::ui::widget_runtime::tree_measure` 消费；依赖方向为
-//! `widgets → component → layout`。
+//! `widgets → widget → layout`。
 
-use crate::core::{ComponentId, Constraints};
+use crate::core::{Constraints, WidgetId};
 use crate::ui::layout::LayoutChild;
 use crate::ui::widget_runtime::widget::WidgetTree;
 
@@ -15,28 +15,28 @@ use crate::ui::widget_runtime::widget::WidgetTree;
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。
 pub(crate) fn child_from_tree_with_constraints(
-    component_id: ComponentId,
+    widget_id: WidgetId,
     tree: &WidgetTree,
     constraints: Constraints,
 ) -> LayoutChild {
     // 普通父布局使用组件声明的 Flex basis 测量策略。
-    child_from_tree_with_measure_mode(component_id, tree, constraints, false)
+    child_from_tree_with_measure_mode(widget_id, tree, constraints, false)
 }
 
 /// 从 WidgetTree 节点构建自然尺寸子项，忽略子组件的 Flex basis 归零策略。
 pub(crate) fn child_from_tree_with_natural_constraints(
-    component_id: ComponentId,
+    widget_id: WidgetId,
     tree: &WidgetTree,
     constraints: Constraints,
 ) -> LayoutChild {
     // 固有尺寸父容器显式请求子树自然内容尺寸。
-    child_from_tree_with_measure_mode(component_id, tree, constraints, true)
+    child_from_tree_with_measure_mode(widget_id, tree, constraints, true)
 }
 
 // 用单一分发路径构造 LayoutChild，避免普通测量与自然测量的元数据发生漂移。
 fn child_from_tree_with_measure_mode(
     // 接收需要测量的稳定组件标识。
-    component_id: ComponentId,
+    widget_id: WidgetId,
     // 接收当前布局事实所属的组件树。
     tree: &WidgetTree,
     // 接收父级提供的尺寸约束。
@@ -44,28 +44,28 @@ fn child_from_tree_with_measure_mode(
     // 标记是否绕过子组件的 Flex basis 策略。
     natural: bool,
 ) -> LayoutChild {
-    let node = tree.get(component_id);
+    let node = tree.get(widget_id);
     // 透明包装节点可在同一轮读取直接子测量，避免用上一帧缓存猜测固有尺寸。
     let pref = node
         // 优先请求组件明确声明的直接子节点代理测量。
-        .and_then(|component| component.measure_from_children(constraints, tree))
+        .and_then(|widget| widget.measure_from_children(constraints, tree))
         // 普通组件继续使用原有阶段无关测量入口。
         .or_else(|| {
             // 普通路径保留 Flex basis，自然路径只读取内容固有尺寸。
-            node.map(|component| {
+            node.map(|widget| {
                 // 根据调用方声明选择唯一测量语义。
                 if natural {
                     // 固有尺寸容器需要子树真实内容尺寸。
-                    component.measure_natural(constraints)
+                    widget.measure_natural(constraints)
                 } else {
                     // 普通父布局继续使用组件的 Flex basis。
-                    component.measure(constraints)
+                    widget.measure(constraints)
                 }
             })
         })
         // 节点已经失效时保持有限零尺寸。
         .unwrap_or_default();
-    let layout = node.and_then(|component| component.as_layout());
+    let layout = node.and_then(|widget| widget.as_layout());
     let grow = layout.map(|layout| layout.flex_grow()).unwrap_or(0.0);
     let shrink = layout.map(|layout| layout.flex_shrink()).unwrap_or(1.0);
     let margin = layout
@@ -77,7 +77,7 @@ fn child_from_tree_with_measure_mode(
     let grid_row_span = layout.map(|l| l.grid_row_span().max(1)).unwrap_or(1);
 
     LayoutChild {
-        id: component_id,
+        id: widget_id,
         measured_size: pref,
         flex_grow: grow,
         flex_shrink: shrink,

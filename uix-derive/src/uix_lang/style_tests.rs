@@ -8,7 +8,7 @@ use super::{
 #[test]
 fn parses_top_level_declarations_in_source_order() {
     // 构造导入、导出、样式、主题、组件和根元素文档。
-    let source = "@import('./card.uix', 'Card')\n@export('LocalCard', 'Panel')\nbaseCard { color: #primaryColor; padding: 8px; }\nfeatureCard { extends: baseCard; borderLeft: 4px solid #2196F3; }\n@theme light { primaryColor: #2196F3; backgroundColor: #fff; }\n<Component name=\"LocalCard\"><Text>卡片</Text></Component>\n<App theme=\"light\"><LocalCard /></App>";
+    let source = "@import('./card.uix', 'Card')\n@export('LocalCard', 'Panel')\nbaseCard { color: #primaryColor; padding: 8px; }\nfeatureCard { extends: baseCard; borderLeft: 4px solid #2196F3; }\n@theme light { primaryColor: #2196F3; backgroundColor: #fff; }\n<Widget name=\"LocalCard\"><Text>卡片</Text></Widget>\n<App theme=\"light\"><LocalCard /></App>";
     // 解析完整文档。
     let document = parse_document(source).expect("顶层声明文档应成功解析");
     // 六个声明必须全部保留。
@@ -18,14 +18,14 @@ fn parses_top_level_declarations_in_source_order() {
         // 借用首个声明。
         &document.declarations[0],
         // 验证路径与组件名。
-        Declaration::Import(value) if value.path == "./card.uix" && value.component.as_deref() == Some("Card")
+        Declaration::Import(value) if value.path == "./card.uix" && value.widget.as_deref() == Some("Card")
     ));
     // 第二个声明必须保留导出顺序。
     assert!(matches!(
         // 借用导出声明。
         &document.declarations[1],
         // 验证两个名称顺序。
-        Declaration::Export(value) if value.components == ["LocalCard", "Panel"]
+        Declaration::Export(value) if value.widgets == ["LocalCard", "Panel"]
     ));
     // 第三个声明必须是基础样式类。
     assert!(matches!(
@@ -48,12 +48,12 @@ fn parses_top_level_declarations_in_source_order() {
         // 验证主题名。
         Declaration::Theme(value) if value.name == "light"
     ));
-    // 第六个声明必须是完成声明级验证的 Component。
+    // 第六个声明必须是完成声明级验证的 Widget。
     assert!(matches!(
         // 借用组件声明。
         &document.declarations[5],
         // 验证组件声明名。
-        Declaration::Component(value) if value.name == "LocalCard"
+        Declaration::Widget(value) if value.name == "LocalCard"
     ));
     // 根元素必须在声明之后独立保存。
     assert_eq!(document.root.name, "App");
@@ -230,10 +230,10 @@ fn rejects_duplicate_names_and_properties() {
 // 验证声明区边界不允许声明嵌套或后置。
 #[test]
 fn rejects_declarations_outside_top_level_zone() {
-    // Component 嵌套在根元素中必须失败。
-    let error = parse_document("<App><Component name=\"Nested\" /></App>")
+    // Widget 嵌套在根元素中必须失败。
+    let error = parse_document("<App><Widget name=\"Nested\" /></App>")
         // 非法嵌套必须失败。
-        .expect_err("嵌套 Component 必须失败");
+        .expect_err("嵌套 Widget 必须失败");
     // 诊断必须指出顶层声明区。
     assert!(error.message.contains("顶层声明区"));
     // 主题指令嵌套在根元素中必须失败。
@@ -317,24 +317,24 @@ fn preserves_utf8_style_diagnostic_position() {
     assert_eq!(error.span.column, 10);
 }
 
-// 验证 Component 声明中的普通子元素仍保持顺序。
+// 验证 Widget 声明中的普通子元素仍保持顺序。
 #[test]
-fn preserves_component_children_after_declaration_validation() {
+fn preserves_widget_children_after_declaration_validation() {
     // 解析顶层组件定义和根元素。
     let document = parse_document(
-        "<Component name=\"Card\"><Container><Text>内容</Text></Container></Component><App><Card /></App>",
+        "<Widget name=\"Card\"><Container><Text>内容</Text></Container></Widget><App><Card /></App>",
     )
     // 组件结构必须成功。
-    .expect("顶层 Component 应完成声明级验证");
+    .expect("顶层 Widget 应完成声明级验证");
     // 提取组件声明。
-    let Declaration::Component(component) = &document.declarations[0] else {
+    let Declaration::Widget(widget) = &document.declarations[0] else {
         // 结构不匹配时失败。
-        panic!("首个声明应为 Component");
+        panic!("首个声明应为 Widget");
     };
     // 组件必须保留一个 Container 子节点。
     assert!(matches!(
         // 借用首个子节点。
-        &component.children[0],
+        &widget.children[0],
         // 验证标签名。
         Node::Element(value) if value.name == "Container"
     ));

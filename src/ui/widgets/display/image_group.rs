@@ -2,14 +2,14 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields,
-    SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields, SystemEvent,
+    WidgetId, WidgetTree,
 };
+use crate::widget;
 // 引入同一 display Module 拥有的图片浮层调色板。
 use super::image_presentation::ImageOverlayPalette;
 
@@ -30,7 +30,7 @@ struct PreviewGeometry {
     thumbnails: Vec<(usize, Rect)>,
 }
 
-component! {
+widget! {
     /// 图片组画廊：展示本地图片、缩略图列表及当前窗口内的模态预览。
     pub struct ImageGroup {
         images: Vec<String>,
@@ -94,7 +94,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<crate::ui::SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<crate::ui::SemanticEvent> {
         self.pending_index
             .take()
             .map(|index| crate::ui::SemanticEvent::change(id, index.to_string()))
@@ -108,7 +108,7 @@ component! {
         }
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<OverlayEntry> {
         self.preview_open.then(|| {
             OverlayEntry::new(id, OverlayKind::Modal)
                 .bounds(self.surface_rect(frame))

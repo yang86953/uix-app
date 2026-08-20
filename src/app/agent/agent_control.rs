@@ -14,7 +14,7 @@ use crate::app::queues::agent_command_queue::AgentWindowAction;
 use crate::app::queues::window_agent_state::AgentWindowOps;
 use crate::app::queues::window_agent_state::{AgentCommandExecutor, AgentWindowOpsError};
 use crate::app::window_semantics::{WindowSemanticSnapshot, WindowSemanticState};
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::{SemanticAction, SemanticActionError};
@@ -234,7 +234,7 @@ fn validate_command(
 fn resolve_target(
     snapshot: &WindowSemanticSnapshot,
     target: &SemanticTarget,
-) -> Result<ComponentId, AgentCommandError> {
+) -> Result<WidgetId, AgentCommandError> {
     match target {
         SemanticTarget::NodeId(id) => snapshot
             .nodes

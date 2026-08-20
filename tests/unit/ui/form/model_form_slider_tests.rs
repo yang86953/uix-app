@@ -3,7 +3,7 @@
 // 引入当前 form Module 的公开契约。
 use super::*;
 // 引入稳定组件快照字段枚举。
-use crate::ui::component_snapshot::SnapshotFields;
+use crate::ui::widget_snapshot::SnapshotFields;
 // 引入公开视图构建契约。
 use crate::ui::view::View;
 // 引入受控字段状态。

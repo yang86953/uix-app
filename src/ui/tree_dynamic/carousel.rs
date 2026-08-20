@@ -1,5 +1,5 @@
 // 导入带 generation 的树内组件身份。
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 // 导入动态捕获与 receipt 感知的子树协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入宿主声明期 Provider 上下文恢复能力。
@@ -14,19 +14,19 @@ use crate::ui::widgets::display::Carousel;
 // 为 WidgetTree 增加 Carousel 私有动态箭头协调边界。
 impl WidgetTree {
     // 判断当前组件身份是否仍属于一个 live Carousel 槽位。
-    pub(crate) fn is_carousel_custom_arrows_component(&self, id: ComponentId) -> bool {
+    pub(crate) fn is_carousel_custom_arrows_widget(&self, id: WidgetId) -> bool {
         // 只接受当前树中可寻址的实际 Carousel，拒绝陈旧 generation 与其他组件。
         self.get(id)
             // 收窄到产品定义的合法动态箭头 owner 类型。
-            .is_some_and(|node| node.component().as_any().is::<Carousel>())
+            .is_some_and(|node| node.widget().as_any().is::<Carousel>())
     }
 
     // 在已挂载 Carousel 下首次物化或恢复固定动态箭头子树。
-    pub(crate) fn refresh_carousel_custom_arrows_component(
+    pub(crate) fn refresh_carousel_custom_arrows_widget(
         // 借用拥有状态 store、节点和动态事务的真实树。
         &mut self,
         // 接收已经注册到当前树的 Carousel owner 身份。
-        id: ComponentId,
+        id: WidgetId,
         // 返回本轮是否改变了直接子树结构或离场状态。
     ) -> bool {
         // 关闭或 fail-stop 树不得再次执行应用箭头工厂。
@@ -43,7 +43,7 @@ impl WidgetTree {
             return false;
         }
         // 固定入口只允许当前树中的实际 Carousel 使用。
-        if !self.is_carousel_custom_arrows_component(id) {
+        if !self.is_carousel_custom_arrows_widget(id) {
             // 非 Carousel 或过期 generation 不执行任何用户代码。
             return false;
         }
@@ -62,7 +62,7 @@ impl WidgetTree {
             // 读取已通过 owner 类型检查的真实节点。
             .get(id)
             // 收窄到 Carousel 私有声明状态。
-            .and_then(|node| node.component().as_any().downcast_ref::<Carousel>())
+            .and_then(|node| node.widget().as_any().downcast_ref::<Carousel>())
             // show_arrows、custom 标志与工厂必须同时有效。
             .is_some_and(Carousel::needs_custom_arrows_view);
         // 禁用或移除工厂时只删除旧固定动态箭头，不调用应用代码。
@@ -86,7 +86,7 @@ impl WidgetTree {
             // 恢复与 Carousel 声明一致的 ProviderContext。
             with_provider_context(&provider_context, || {
                 // 再次读取当前节点，防御用户同步重入引发的身份变化。
-                node.component()
+                node.widget()
                     // 不把 WidgetTree 或其他组件实现泄漏给箭头工厂。
                     .as_any()
                     // 只允许实际 Carousel 读取其私有工厂。
@@ -105,11 +105,11 @@ impl WidgetTree {
     }
 
     // 在父 Carousel 原位 patch 后统一协调 authored slides 与最新箭头工厂输出。
-    pub(crate) fn reconcile_carousel_custom_arrows_component(
+    pub(crate) fn reconcile_carousel_custom_arrows_widget(
         // 借用当前运行时树与唯一动态状态 store。
         &mut self,
         // 接收已完成 live patch 的 Carousel owner。
-        id: ComponentId,
+        id: WidgetId,
         // 接收调用方本轮声明的全部幻灯片根。
         mut authored_children: Vec<crate::ui::view::ViewNode>,
         // 返回直接子树结构是否改变。
@@ -128,7 +128,7 @@ impl WidgetTree {
             return false;
         }
         // 重新确认 live 槽位仍属于 Carousel。
-        if !self.is_carousel_custom_arrows_component(id) {
+        if !self.is_carousel_custom_arrows_widget(id) {
             // 防止过期父声明接管其他组件的状态命名空间。
             return false;
         }
@@ -151,7 +151,7 @@ impl WidgetTree {
             // 让动态箭头观察与 Carousel 相同的声明期 Provider 值。
             with_provider_context(&provider_context, || {
                 // 运行时再次收窄 owner 类型以抵御同步重入。
-                node.component()
+                node.widget()
                     // 保持具体组件访问局限在树私有协调器内。
                     .as_any()
                     // 只调用当前 live Carousel 保存的工厂。

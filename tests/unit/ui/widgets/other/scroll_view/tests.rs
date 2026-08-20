@@ -8,7 +8,7 @@ use crate::ui::WidgetLayout;
 // 构造带自然尺寸与外边距的布局子项。
 fn child(id: usize, size: Size, margin: EdgeInsets) -> LayoutChild {
     // 创建指定标识与自然尺寸的子项描述。
-    let mut child = LayoutChild::new(ComponentId::new(id), size);
+    let mut child = LayoutChild::new(WidgetId::new(id), size);
     // 写入应由父滚动容器消费的外边距。
     child.margin = margin;
     // 返回完整子项描述。

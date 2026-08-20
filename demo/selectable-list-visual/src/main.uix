@@ -13,7 +13,7 @@ acceptancePanel {
 }
 
 // 声明可空稳定 id 受控的 SelectableList 验收面板。
-<Component name="SelectableListAcceptance" state="active_id: Option<String> = None">
+<Widget name="SelectableListAcceptance" state="active_id: Option<String> = None">
   // 纵向排列说明、受控列表与核对清单。
   <Column gap="20px">
     // 展示验收标题。
@@ -27,7 +27,7 @@ acceptancePanel {
   // 结束验收内容。
   </Column>
 // 结束验收面板组件。
-</Component>
+</Widget>
 
 // 声明独立真窗应用入口。
 <App title="UIX SelectableList 视觉验收" size="760x480" theme="light">

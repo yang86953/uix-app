@@ -5,7 +5,7 @@ use crate::core::Point;
 // 引入事件与语义事件 trait。
 use crate::ui::widget_runtime::traits::EventHandler;
 // 引入事件身份、输入和载荷类型。
-use crate::ui::{ComponentId, KeyMod, MouseButton, SemanticPayload, SystemEvent};
+use crate::ui::{KeyMod, MouseButton, SemanticPayload, SystemEvent, WidgetId};
 
 // 构造点击首个可见面包屑条目的输入。
 fn click_first_item() -> SystemEvent {
@@ -25,7 +25,7 @@ fn selection_payload(breadcrumb: &Breadcrumb, event: &SystemEvent) -> String {
     // 从组件窄语义输出取得 Change 事件。
     let semantic = breadcrumb
         // 使用稳定测试组件身份读取待发事实。
-        .semantic_event(ComponentId::default(), event)
+        .semantic_event(WidgetId::default(), event)
         // 点击有效条目必须建立选择事实。
         .expect("有效 Breadcrumb 点击应产生 Change");
     // 只接受 Breadcrumb 登记的文本载荷。

@@ -16,7 +16,7 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Vec::new();
         };
-        let Some(layout) = node.component().as_layout() else {
+        let Some(layout) = node.widget().as_layout() else {
             return Vec::new();
         };
         let mut measured = layout.measure_children(frame, children, self);
@@ -72,7 +72,7 @@ impl WidgetTree {
             if viewport_h <= 0.0 {
                 continue;
             }
-            self.refresh_virtual_scroll_component(id, Some(viewport_h));
+            self.refresh_virtual_scroll_widget(id, Some(viewport_h));
         }
     }
 
@@ -82,7 +82,7 @@ impl WidgetTree {
         ids.clear();
         ids.extend(self.traverse().iter().copied());
         for id in ids.iter().copied() {
-            if self.refresh_table_cell_component(id) {
+            if self.refresh_table_cell_widget(id) {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
             }
@@ -93,7 +93,7 @@ impl WidgetTree {
         ids.clear();
         ids.extend(self.traverse().iter().copied());
         for id in ids.iter().copied() {
-            if self.refresh_image_error_component(id) {
+            if self.refresh_image_error_widget(id) {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
             }
@@ -104,7 +104,7 @@ impl WidgetTree {
         ids.clear();
         ids.extend(self.traverse().iter().copied());
         for id in ids.iter().copied() {
-            if self.refresh_collapse_content_component(id) {
+            if self.refresh_collapse_content_widget(id) {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
             }

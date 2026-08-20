@@ -3,8 +3,6 @@ use std::io::ErrorKind;
 
 // 引入核心公开值类型以从使用方视角锁定基础契约。
 use uix::core::{
-    // 引入组件身份和尺寸约束类型。
-    ComponentId,
     Constraints,
     // 引入边距、错误码、错误值与严重度类型。
     EdgeInsets,
@@ -15,6 +13,8 @@ use uix::core::{
     Point,
     Rect,
     Size,
+    // 引入组件身份和尺寸约束类型。
+    WidgetId,
     WindowId,
     // 结束核心公开值类型导入。
 };
@@ -24,24 +24,24 @@ use uix::core::{
 // 验证组件身份和窗口身份保留稳定的值语义。
 fn identity_values_preserve_public_parts_and_ordering() {
     // 默认组件身份应指向零号槽位的初始代际。
-    let default_component = ComponentId::default();
+    let default_widget = WidgetId::default();
     // 核对默认组件身份的槽位。
-    assert_eq!(default_component.slot(), 0);
+    assert_eq!(default_widget.slot(), 0);
     // 核对默认组件身份的代际。
-    assert_eq!(default_component.generation(), 0);
+    assert_eq!(default_widget.generation(), 0);
     // 核对无树作用域组件身份的稳定文本格式。
-    assert_eq!(default_component.to_string(), "0:0");
+    assert_eq!(default_widget.to_string(), "0:0");
 
     // 创建同一槽位的后续代际身份。
-    let recycled_component = ComponentId::from_parts(7, 3);
+    let recycled_widget = WidgetId::from_parts(7, 3);
     // 核对公开槽位读取保持构造值。
-    assert_eq!(recycled_component.slot(), 7);
+    assert_eq!(recycled_widget.slot(), 7);
     // 核对公开代际读取保持构造值。
-    assert_eq!(recycled_component.generation(), 3);
+    assert_eq!(recycled_widget.generation(), 3);
     // 核对代际参与身份顺序，避免旧身份与新身份混淆。
-    assert!(ComponentId::new(7) < recycled_component);
+    assert!(WidgetId::new(7) < recycled_widget);
     // 核对带代际身份的稳定文本格式。
-    assert_eq!(recycled_component.to_string(), "7:3");
+    assert_eq!(recycled_widget.to_string(), "7:3");
 
     // 应用根窗口身份应与原始零值保持一致。
     assert_eq!(WindowId::root(), WindowId::ROOT);

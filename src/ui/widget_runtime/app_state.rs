@@ -2,12 +2,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
-use crate::core::{ComponentId, Rect};
+use crate::core::{Rect, WidgetId};
 use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
 use crate::platform::windowing::EventLoopWaker;
-use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::SemanticEvent;
-use crate::ui::widget_runtime::component_handle::ComponentHandle;
+use crate::ui::widget_runtime::widget_handle::WidgetHandle;
+use crate::ui::widget_snapshot::WidgetConfigSnapshot;
 
 #[derive(Clone, Default)]
 /// 可克隆的应用级组件快照与受控句柄注册表。
@@ -19,9 +19,9 @@ pub struct AppState {
 
 pub(crate) struct AppStateInner {
     owner_thread: ThreadId,
-    components: HashMap<ComponentId, AppStateEntry>,
-    semantic_events: VecDeque<(ComponentId, SemanticEvent)>,
-    focus_requests: VecDeque<(ComponentId, FocusRequest)>,
+    widgets: HashMap<WidgetId, AppStateEntry>,
+    semantic_events: VecDeque<(WidgetId, SemanticEvent)>,
+    focus_requests: VecDeque<(WidgetId, FocusRequest)>,
     event_loop_waker: EventLoopWaker,
 }
 
@@ -33,7 +33,7 @@ pub(crate) enum FocusRequest {
 }
 
 struct AppStateEntry {
-    snapshot: ComponentConfigSnapshot,
+    snapshot: WidgetConfigSnapshot,
     invalidation: InvalidationQueueHandle,
     rect: Option<Rect>,
 }
@@ -46,8 +46,8 @@ impl AppState {
 
     pub(crate) fn register(
         &self,
-        id: ComponentId,
-        snapshot: ComponentConfigSnapshot,
+        id: WidgetId,
+        snapshot: WidgetConfigSnapshot,
         invalidation: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
@@ -57,7 +57,7 @@ impl AppState {
             .register(id, snapshot, invalidation, rect);
     }
 
-    pub(crate) fn unregister(&self, id: ComponentId) {
+    pub(crate) fn unregister(&self, id: WidgetId) {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -65,12 +65,12 @@ impl AppState {
     }
 
     /// 返回当前仍登记的组件句柄。
-    pub fn get_handle(&self, id: ComponentId) -> Option<ComponentHandle> {
+    pub fn get_handle(&self, id: WidgetId) -> Option<WidgetHandle> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .contains(id)
-            .then(|| ComponentHandle::from_app_state(id, Arc::downgrade(&self.inner)))
+            .then(|| WidgetHandle::from_app_state(id, Arc::downgrade(&self.inner)))
     }
 
     pub(crate) fn set_event_loop_waker(&self, waker: EventLoopWaker) {
@@ -83,7 +83,7 @@ impl AppState {
     pub(crate) fn drain_semantic_events_for_scope_into(
         &self,
         tree_scope: u64,
-        matched: &mut Vec<(ComponentId, SemanticEvent)>,
+        matched: &mut Vec<(WidgetId, SemanticEvent)>,
     ) {
         self.inner
             .lock()
@@ -101,7 +101,7 @@ impl AppState {
     pub(crate) fn drain_focus_requests_for_scope_into(
         &self,
         tree_scope: u64,
-        matched: &mut Vec<(ComponentId, FocusRequest)>,
+        matched: &mut Vec<(WidgetId, FocusRequest)>,
     ) {
         self.inner
             .lock()
@@ -117,7 +117,7 @@ impl AppState {
     }
 
     /// 返回指定组件当前配置快照的 owned 副本。
-    pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
+    pub fn get_snapshot(&self, id: WidgetId) -> Option<WidgetConfigSnapshot> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -125,7 +125,7 @@ impl AppState {
     }
 
     /// 判断指定组件身份当前是否仍登记。
-    pub fn contains(&self, id: ComponentId) -> bool {
+    pub fn contains(&self, id: WidgetId) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -161,7 +161,7 @@ impl Default for AppStateInner {
     fn default() -> Self {
         Self {
             owner_thread: std::thread::current().id(),
-            components: HashMap::new(),
+            widgets: HashMap::new(),
             semantic_events: VecDeque::new(),
             focus_requests: VecDeque::new(),
             event_loop_waker: EventLoopWaker::default(),
@@ -173,19 +173,19 @@ impl AppStateInner {
     fn assert_owner_thread(&self) {
         assert!(
             std::thread::current().id() == self.owner_thread,
-            "AppState and lookup ComponentHandle must be used on the UI thread; use AppHandle::post_to_ui from background threads"
+            "AppState and lookup WidgetHandle must be used on the UI thread; use AppHandle::post_to_ui from background threads"
         );
     }
 
     fn register(
         &mut self,
-        id: ComponentId,
-        snapshot: ComponentConfigSnapshot,
+        id: WidgetId,
+        snapshot: WidgetConfigSnapshot,
         invalidation: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
         self.assert_owner_thread();
-        self.components.insert(
+        self.widgets.insert(
             id,
             AppStateEntry {
                 snapshot,
@@ -195,9 +195,9 @@ impl AppStateInner {
         );
     }
 
-    fn unregister(&mut self, id: ComponentId) {
+    fn unregister(&mut self, id: WidgetId) {
         self.assert_owner_thread();
-        self.components.remove(&id);
+        self.widgets.remove(&id);
         self.semantic_events.retain(|(target, _)| *target != id);
         self.focus_requests.retain(|(target, _)| *target != id);
     }
@@ -207,27 +207,27 @@ impl AppStateInner {
         self.event_loop_waker = waker;
     }
 
-    pub(crate) fn snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
+    pub(crate) fn snapshot(&self, id: WidgetId) -> Option<WidgetConfigSnapshot> {
         self.map_snapshot(id, Clone::clone)
     }
 
     pub(crate) fn map_snapshot<R>(
         &self,
-        id: ComponentId,
-        map: impl FnOnce(&ComponentConfigSnapshot) -> R,
+        id: WidgetId,
+        map: impl FnOnce(&WidgetConfigSnapshot) -> R,
     ) -> Option<R> {
-        self.components.get(&id).map(|entry| map(&entry.snapshot))
+        self.widgets.get(&id).map(|entry| map(&entry.snapshot))
     }
 
-    pub(crate) fn invalidate(&self, id: ComponentId) -> Option<EventLoopWaker> {
-        let entry = self.components.get(&id)?;
+    pub(crate) fn invalidate(&self, id: WidgetId) -> Option<EventLoopWaker> {
+        let entry = self.widgets.get(&id)?;
         invalidate_paint_handle(&entry.invalidation, id, entry.rect);
         Some(self.event_loop_waker.clone())
     }
 
     pub(crate) fn emit_semantic_event(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         event: SemanticEvent,
     ) -> Option<EventLoopWaker> {
         if !self.contains(id) {
@@ -239,10 +239,10 @@ impl AppStateInner {
 
     pub(crate) fn enqueue_focus_request(
         &mut self,
-        id: ComponentId,
+        id: WidgetId,
         request: FocusRequest,
     ) -> Option<EventLoopWaker> {
-        if !self.components.contains_key(&id) {
+        if !self.widgets.contains_key(&id) {
             return None;
         }
         self.focus_requests.push_back((id, request));
@@ -252,7 +252,7 @@ impl AppStateInner {
     fn drain_semantic_events_for_scope_into(
         &mut self,
         tree_scope: u64,
-        matched: &mut Vec<(ComponentId, SemanticEvent)>,
+        matched: &mut Vec<(WidgetId, SemanticEvent)>,
     ) {
         self.assert_owner_thread();
         matched.clear();
@@ -279,7 +279,7 @@ impl AppStateInner {
     fn drain_focus_requests_for_scope_into(
         &mut self,
         tree_scope: u64,
-        matched: &mut Vec<(ComponentId, FocusRequest)>,
+        matched: &mut Vec<(WidgetId, FocusRequest)>,
     ) {
         self.assert_owner_thread();
         matched.clear();
@@ -303,15 +303,15 @@ impl AppStateInner {
             .any(|(id, _)| id.tree_scope() == tree_scope)
     }
 
-    pub(crate) fn contains(&self, id: ComponentId) -> bool {
-        self.components.contains_key(&id)
+    pub(crate) fn contains(&self, id: WidgetId) -> bool {
+        self.widgets.contains_key(&id)
     }
 
     fn len(&self) -> usize {
-        self.components.len()
+        self.widgets.len()
     }
 
     fn is_empty(&self) -> bool {
-        self.components.is_empty()
+        self.widgets.is_empty()
     }
 }

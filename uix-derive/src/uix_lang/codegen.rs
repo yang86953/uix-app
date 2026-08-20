@@ -4,8 +4,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, ComponentScopeMarker, ControlBinding, Diagnostic, Element, ExpressionNode, Node,
-    SourceSpan,
+    Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SourceSpan,
+    WidgetScopeMarker,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -18,7 +18,7 @@ use super::conditional_chain_codegen::generate_conditional_chain;
 // 引入 For 实际实例路径内部标识符读取。
 use super::for_identity_codegen::{internal_control_ident, optional_internal_control_ident};
 // 引入最终 ViewNode 的组件状态装饰应用。
-use super::view_decoration_codegen::apply_component_scopes;
+use super::view_decoration_codegen::apply_widget_scopes;
 // 引入受限表达式与事件处理器生成入口。
 use super::generate_expression;
 // 引入属性值与绑定名称的共享生成入口。
@@ -49,7 +49,7 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
     // 通过公开 View trait 统一物化为 ViewNode。
     let view = quote! { ::uix::prelude::View::build(#view) };
     // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
-    apply_component_scopes(view, &element.component_scopes)
+    apply_widget_scopes(view, &element.widget_scopes)
 }
 
 // 生成文本元素。
@@ -260,7 +260,7 @@ pub(super) fn generate_icon(element: &Element) -> Result<TokenStream, Diagnostic
         // 应用图标尺寸。
         icon = quote! { (#icon).size(#size) };
     }
-    // 把 WidgetComponent 包装为公开 ViewNode。
+    // 把 Widget 包装为公开 ViewNode。
     let base = quote! { ::uix::prelude::ViewNode::leaf(#icon) };
     // 应用其余公共属性与事件。
     apply_common_attributes(base, &element.attributes, &["name", "size"])
@@ -587,7 +587,7 @@ fn generate_control(
                 // 传递完整控制跨度。
                 element.span,
                 // 传递控制元素继承的组件作用域标记。
-                &element.component_scopes,
+                &element.widget_scopes,
                 // 传递循环子树拥有型事件捕获的逐迭代克隆契约。
                 &element.for_iteration_clones,
                 // 传递循环子树按依赖顺序生成的逐迭代准备语句。
@@ -617,10 +617,10 @@ pub(super) fn generate_scoped_child_statements(
     // 接收外层目标子节点向量。
     output: &Ident,
     // 接收控制元素继承的组件私有状态作用域标记。
-    component_scopes: &[ComponentScopeMarker],
+    widget_scopes: &[WidgetScopeMarker],
 ) -> Result<TokenStream, Diagnostic> {
     // 没有组件私有状态作用域时保留既有直接追加路径。
-    if component_scopes.is_empty() {
+    if widget_scopes.is_empty() {
         // 生成原有的有序子节点追加语句。
         return generate_child_statements(children, output);
     }
@@ -629,7 +629,7 @@ pub(super) fn generate_scoped_child_statements(
     // 先生成控制分支内的全部子节点。
     let generated_children = generate_child_statements(children, &scoped_output)?;
     // 把控制元素自己的作用域标记应用到每个实际根节点。
-    let scoped_view = apply_component_scopes(quote! { __uix_scoped_view }, component_scopes)?;
+    let scoped_view = apply_widget_scopes(quote! { __uix_scoped_view }, widget_scopes)?;
     // 返回缓冲、标记和追加的完整控制流语句。
     Ok(quote! {
         // 为当前控制分支收集实际生成的 View 根节点。
@@ -666,7 +666,7 @@ fn generate_for(
     // 接收完整 For 跨度。
     span: SourceSpan,
     // 接收控制元素继承的组件私有状态作用域标记。
-    component_scopes: &[ComponentScopeMarker],
+    widget_scopes: &[WidgetScopeMarker],
     // 接收每次迭代都必须重新克隆的拥有型事件捕获名称。
     iteration_clones: &[String],
     // 接收每次迭代在构建子树前执行的组件准备语句。
@@ -731,7 +731,7 @@ fn generate_for(
         // 生成唯一行根 View。
         let view = generate_node_view(renderable[0])?;
         // 把 For 控制元素继承的组件作用域同步附到当前行根。
-        let view = apply_component_scopes(view, component_scopes)?;
+        let view = apply_widget_scopes(view, widget_scopes)?;
         // 生成 key 表达式。
         let key = generate_expression(&key.expression, None)?;
         // 创建只求值一次的行 key 局部变量。
@@ -770,7 +770,7 @@ fn generate_for(
         };
         // 无 key 时按位置追加全部循环子节点。
         // 对无 key 的所有实际行根传播控制元素继承的组件作用域。
-        let children = if component_scopes.is_empty() {
+        let children = if widget_scopes.is_empty() {
             // 保留既有直接追加路径。
             generate_child_statements(children, output)?
         } else {
@@ -781,7 +781,7 @@ fn generate_for(
                 // 传递循环外层的目标子节点向量。
                 output,
                 // 传递当前 For 控制元素继承的组件作用域标记。
-                component_scopes,
+                widget_scopes,
             )?
         };
         // 先声明位置路径，再生成当前项全部子节点。

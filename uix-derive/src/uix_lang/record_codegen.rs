@@ -4,7 +4,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 
 // 引入组件类型、文档声明与诊断。
-use super::{ComponentValueType, Declaration, Diagnostic, Document, rust_identifier};
+use super::{Declaration, Diagnostic, Document, WidgetValueType, rust_identifier};
 
 // 生成文档内全部 record 的模块级结构体声明，供 uix_items! 与 Rust 侧引用。
 pub(crate) fn generate_record_items(document: &Document) -> Result<TokenStream, Diagnostic> {
@@ -58,58 +58,58 @@ pub(crate) fn generate_record_items(document: &Document) -> Result<TokenStream, 
 }
 
 // 把语言类型映射为 Rust 类型令牌。
-pub(crate) fn value_type_tokens(value_type: ComponentValueType) -> TokenStream {
+pub(crate) fn value_type_tokens(value_type: WidgetValueType) -> TokenStream {
     // 按白名单类型生成令牌。
     match value_type {
         // String 对应拥有所有权的字符串。
-        ComponentValueType::String => quote! { ::std::string::String },
+        WidgetValueType::String => quote! { ::std::string::String },
         // number 对应规范约定的 f64。
-        ComponentValueType::Number => quote! { f64 },
+        WidgetValueType::Number => quote! { f64 },
         // bool 对应 Rust 布尔类型。
-        ComponentValueType::Bool => quote! { bool },
+        WidgetValueType::Bool => quote! { bool },
         // u32 对应无符号计数类型。
-        ComponentValueType::U32 => quote! { u32 },
+        WidgetValueType::U32 => quote! { u32 },
         // usize 对应索引类型。
-        ComponentValueType::USize => quote! { usize },
+        WidgetValueType::USize => quote! { usize },
         // f32 对应单精度浮点类型。
-        ComponentValueType::F32 => quote! { f32 },
+        WidgetValueType::F32 => quote! { f32 },
         // i32 对应有符号整数类型。
-        ComponentValueType::I32 => quote! { i32 },
+        WidgetValueType::I32 => quote! { i32 },
         // Date 对应公开日期语义类型。
-        ComponentValueType::Date => quote! { ::uix::prelude::Date },
+        WidgetValueType::Date => quote! { ::uix::prelude::Date },
         // Time 对应公开时间语义类型。
-        ComponentValueType::Time => quote! { ::uix::prelude::Time },
+        WidgetValueType::Time => quote! { ::uix::prelude::Time },
         // Color 对应公开颜色语义类型。
-        ComponentValueType::Color => quote! { ::uix::prelude::Color },
+        WidgetValueType::Color => quote! { ::uix::prelude::Color },
         // Point 对应公开坐标语义类型。
-        ComponentValueType::Point => quote! { ::uix::prelude::Point },
+        WidgetValueType::Point => quote! { ::uix::prelude::Point },
         // CascaderValue 对应公开级联路径类型。
-        ComponentValueType::CascaderValue => quote! { ::uix::prelude::CascaderValue },
+        WidgetValueType::CascaderValue => quote! { ::uix::prelude::CascaderValue },
         // 多选集合对应字符串 HashSet。
-        ComponentValueType::HashSetOfString => {
+        WidgetValueType::HashSetOfString => {
             quote! { ::std::collections::HashSet<::std::string::String> }
         }
         // 字符串向量对应 Vec<String>。
-        ComponentValueType::VecOfString => quote! { ::std::vec::Vec<::std::string::String> },
+        WidgetValueType::VecOfString => quote! { ::std::vec::Vec<::std::string::String> },
         // 数值向量对应 Vec<f64>。
-        ComponentValueType::VecOfNumber => quote! { ::std::vec::Vec<f64> },
+        WidgetValueType::VecOfNumber => quote! { ::std::vec::Vec<f64> },
         // record 向量引用文档生成的模块级结构体。
-        ComponentValueType::VecOfRecord(name) => {
+        WidgetValueType::VecOfRecord(name) => {
             // 验证名称可映射为 Rust 标识符。
             let ident = syn::parse_str::<Ident>(&name).expect("record 名已在解析期验证");
             // 返回 record 元素向量类型。
             quote! { ::std::vec::Vec<#ident> }
         }
         // 上传队列对应 Vec<UploadFile>。
-        ComponentValueType::VecOfUploadFile => {
+        WidgetValueType::VecOfUploadFile => {
             quote! { ::std::vec::Vec<::uix::prelude::UploadFile> }
         }
         // 可空字符串对应 Option<String>。
-        ComponentValueType::OptionalString => {
+        WidgetValueType::OptionalString => {
             quote! { ::std::option::Option<::std::string::String> }
         }
         // record 名直接引用模块级结构体。
-        ComponentValueType::Record(name) => {
+        WidgetValueType::Record(name) => {
             // 验证名称可映射为 Rust 标识符。
             let ident = syn::parse_str::<Ident>(&name).expect("record 名已在解析期验证");
             // 返回模块级类型标识符。

@@ -2,16 +2,16 @@
 
 use std::cell::Cell;
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, PrimaryHue, SemanticEvent, SystemEvent,
-    ThemeTokens,
+    EventResult, KeyCode, MouseButton, PrimaryHue, SemanticEvent, SystemEvent, ThemeTokens,
+    WidgetId,
 };
+use crate::widget;
 
 const DEFAULT_TAG_FONT_SIZE: f32 = 12.0;
 
@@ -123,7 +123,7 @@ struct TagGeometry {
     text: Rect,
 }
 
-component! {
+widget! {
     /// 展示可关闭或可勾选短文本状态的标签组件。
     pub struct Tag {
         text: String,
@@ -259,7 +259,7 @@ component! {
         self.layout_requested.replace(false)
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_action.replace(None).map(|action| {
             let payload = match action {
                 TagAction::Closed => "closed",

@@ -10,7 +10,7 @@ use super::{Diagnostic, Element, boolean_value, literal_string, numeric_value};
 
 // 生成文档化 Space 标签对应的公开 Rust View。
 pub(crate) fn generate_space(element: &Element) -> Result<TokenStream, Diagnostic> {
-    // 从现有公开 Space Component 默认契约开始构建。
+    // 从现有公开 Space Widget 默认契约开始构建。
     let mut space = quote! { ::uix::prelude::Space::new() };
     // 按源码顺序应用 Space 专有属性。
     for attribute in &element.attributes {

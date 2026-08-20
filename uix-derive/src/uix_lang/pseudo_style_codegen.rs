@@ -22,7 +22,7 @@ pub(super) fn apply_pseudo_style(
     // hover 最先叠加，checked 与 disabled 可在其上覆盖。
     if !binding.hover.is_empty() {
         // hover 必须已经取得组件作用域名称。
-        let component_scope = Ident::new(
+        let widget_scope = Ident::new(
             binding
                 .hover_scope_name
                 .as_deref()
@@ -59,13 +59,13 @@ pub(super) fn apply_pseudo_style(
             // 为当前实际节点计算稳定身份。
             let #identity = #identity_value;
             // 从最近组件作用域派生 hover 私有子作用域。
-            let #node_scope = ::uix::ui::__private::uix_component_child_scope(
-                &#component_scope,
+            let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
+                &#widget_scope,
                 #declaration_id,
                 #identity,
             );
             // 复用窗口私有组件状态存储保存 hover 事实。
-            let #state = ::uix::ui::__private::uix_component_state(
+            let #state = ::uix::ui::__private::uix_widget_state(
                 &#node_scope,
                 0,
                 || false,
@@ -97,7 +97,7 @@ pub(super) fn apply_pseudo_style(
             // 状态变体只覆盖自己声明的字段。
             (if #current { #hovered } else { #styled })
                 // 把 hover 私有状态生命周期绑定到实际节点。
-                .uix_component_scope(#node_scope, 0)
+                .uix_widget_scope(#node_scope, 0)
         }};
     }
     // checked 在 hover 之上叠加。

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::core::ComponentId;
+use crate::core::WidgetId;
 // 引入由宿主树签发的窄动态捕获能力。
 use crate::ui::adapter::DynamicViewCaptureContext;
 use crate::ui::view::ViewNode;
@@ -32,38 +32,38 @@ pub(crate) enum RenderHandlerRegistration {
 pub(crate) struct RenderHandlerTable {
     // 表格 capability 启用时才存储扩展行 renderer。
     #[cfg(feature = "table")]
-    table_expand: HashMap<ComponentId, ExpandRenderer>,
+    table_expand: HashMap<WidgetId, ExpandRenderer>,
     // 表格 capability 启用时才存储泛型单元格 renderer。
     #[cfg(feature = "table")]
-    table_cells: HashMap<ComponentId, TableCellRenderer>,
-    select_options: HashMap<ComponentId, SelectOptionRenderer>,
-    virtual_scroll_item: HashMap<ComponentId, VirtualScrollRenderer>,
+    table_cells: HashMap<WidgetId, TableCellRenderer>,
+    select_options: HashMap<WidgetId, SelectOptionRenderer>,
+    virtual_scroll_item: HashMap<WidgetId, VirtualScrollRenderer>,
 }
 
 impl RenderHandlerTable {
-    pub(crate) fn replace_component(
+    pub(crate) fn replace_widget(
         &mut self,
-        component: ComponentId,
+        widget: WidgetId,
         handlers: Vec<RenderHandlerRegistration>,
     ) {
-        self.clear_component(component);
+        self.clear_widget(widget);
         for handler in handlers {
             match handler {
                 // 表格 capability 启用时才注册扩展行 renderer。
                 #[cfg(feature = "table")]
                 RenderHandlerRegistration::TableExpand(renderer) => {
-                    self.table_expand.insert(component, renderer);
+                    self.table_expand.insert(widget, renderer);
                 }
                 // 表格 capability 启用时才注册泛型单元格 renderer。
                 #[cfg(feature = "table")]
                 RenderHandlerRegistration::TableCells(renderer) => {
-                    self.table_cells.insert(component, renderer);
+                    self.table_cells.insert(widget, renderer);
                 }
                 RenderHandlerRegistration::SelectOptions(renderer) => {
-                    self.select_options.insert(component, renderer);
+                    self.select_options.insert(widget, renderer);
                 }
                 RenderHandlerRegistration::VirtualScrollItem(renderer) => {
-                    self.virtual_scroll_item.insert(component, renderer);
+                    self.virtual_scroll_item.insert(widget, renderer);
                 }
             }
         }
@@ -317,15 +317,15 @@ impl RenderHandlerTable {
         )
     }
 
-    pub(crate) fn clear_component(&mut self, component: ComponentId) {
+    pub(crate) fn clear_widget(&mut self, widget: WidgetId) {
         // 表格 capability 启用时才清理扩展行 renderer。
         #[cfg(feature = "table")]
-        self.table_expand.remove(&component);
+        self.table_expand.remove(&widget);
         // 表格 capability 启用时才清理泛型单元格 renderer。
         #[cfg(feature = "table")]
-        self.table_cells.remove(&component);
-        self.select_options.remove(&component);
-        self.virtual_scroll_item.remove(&component);
+        self.table_cells.remove(&widget);
+        self.select_options.remove(&widget);
+        self.virtual_scroll_item.remove(&widget);
     }
 
     pub(crate) fn clear(&mut self) {
@@ -341,55 +341,55 @@ impl RenderHandlerTable {
 
     // 表格 capability 启用时才查询扩展行 renderer。
     #[cfg(feature = "table")]
-    pub(crate) fn contains_table_expand(&self, component: ComponentId) -> bool {
-        self.table_expand.contains_key(&component)
+    pub(crate) fn contains_table_expand(&self, widget: WidgetId) -> bool {
+        self.table_expand.contains_key(&widget)
     }
 
-    pub(crate) fn contains_virtual_scroll_item(&self, component: ComponentId) -> bool {
-        self.virtual_scroll_item.contains_key(&component)
+    pub(crate) fn contains_virtual_scroll_item(&self, widget: WidgetId) -> bool {
+        self.virtual_scroll_item.contains_key(&widget)
     }
 
     // 表格 capability 启用时才查询泛型单元格 renderer。
     #[cfg(feature = "table")]
-    pub(crate) fn contains_table_cells(&self, component: ComponentId) -> bool {
-        self.table_cells.contains_key(&component)
+    pub(crate) fn contains_table_cells(&self, widget: WidgetId) -> bool {
+        self.table_cells.contains_key(&widget)
     }
 
-    pub(crate) fn contains_select_options(&self, component: ComponentId) -> bool {
-        self.select_options.contains_key(&component)
+    pub(crate) fn contains_select_options(&self, widget: WidgetId) -> bool {
+        self.select_options.contains_key(&widget)
     }
 }
 
 // ── 空态渲染回调（System 私有边界）───────────────────────────────
 //
-// `EmptyRenderer` 由 ComponentConfig（component）持有、widgets 消费、
+// `EmptyRenderer` 由 WidgetConfig（widget）持有、widgets 消费、
 // 用户闭包产出 ViewNode（view）：跨 Module 契约归本边界（SMC-04）。
 
 use crate::ui::view::View;
-use crate::ui::widget_runtime::config::{ComponentConfig, use_config};
-use crate::ui::widget_runtime::traits::WidgetComponent;
+use crate::ui::widget_runtime::config::{WidgetConfig, use_config};
+use crate::ui::widget_runtime::traits::Widget;
 
 /// 标识正在请求空态 View 的数据组件。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EmptyContext {
-    component_name: &'static str,
+    widget_name: &'static str,
 }
 
 impl EmptyContext {
-    fn of<T: WidgetComponent>() -> Self {
+    fn of<T: Widget>() -> Self {
         let full_name = std::any::type_name::<T>();
         Self {
-            component_name: full_name.rsplit("::").next().map_or(full_name, |name| name),
+            widget_name: full_name.rsplit("::").next().map_or(full_name, |name| name),
         }
     }
 
     /// 返回请求空态视图的组件短类型名。
-    pub fn component_name(self) -> &'static str {
-        self.component_name
+    pub fn widget_name(self) -> &'static str {
+        self.widget_name
     }
 }
 
-/// 由 `ComponentConfig` 持有的可克隆空态 View factory。
+/// 由 `WidgetConfig` 持有的可克隆空态 View factory。
 #[derive(Clone)]
 pub struct EmptyRenderer {
     renderer: Arc<dyn Fn(EmptyContext) -> ViewNode + Send + Sync>,
@@ -408,7 +408,7 @@ impl EmptyRenderer {
     }
 
     /// 为指定组件类型构建一棵空态视图节点树。
-    pub fn render<T: WidgetComponent>(&self) -> ViewNode {
+    pub fn render<T: Widget>(&self) -> ViewNode {
         (self.renderer)(EmptyContext::of::<T>())
     }
 
@@ -418,13 +418,13 @@ impl EmptyRenderer {
 }
 
 /// 为指定组件类型构建当前配置的空态 View。
-pub fn render_empty_for<T: WidgetComponent>() -> Option<ViewNode> {
+pub fn render_empty_for<T: Widget>() -> Option<ViewNode> {
     use_config()
         .empty_renderer
         .map(|renderer| renderer.render::<T>())
 }
 
-impl ComponentConfig {
+impl WidgetConfig {
     /// 为数据组件设置空态 View factory（方法定义随跨 Module 契约归本边界）。
     pub fn render_empty<F, V>(mut self, renderer: F) -> Self
     where

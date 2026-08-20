@@ -21,12 +21,12 @@ impl BoxedWidget {
         // 接收父节点已分配的布局 frame。
         frame: Rect,
         // 接收声明顺序中的全部直接子节点。
-        children: &[ComponentId],
+        children: &[WidgetId],
         // 接收定位元数据与包含块的只读树快照。
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<(WidgetId, Rect)> {
         // 在所有定制父布局的共同入口移除整棵有效不可见子树。
-        let visible_children: Vec<ComponentId> = children
+        let visible_children: Vec<WidgetId> = children
             // 保留声明顺序，确保恢复可见后的布局索引保持稳定。
             .iter()
             // 后续布局只需要复制轻量组件标识。
@@ -36,9 +36,9 @@ impl BoxedWidget {
             // 物化切片以继续兼容现有 WidgetLayout 接口。
             .collect();
         // 在当前组件的 Provider 上下文中调用其布局能力。
-        self.with_component_context(|component| {
+        self.with_widget_context(|widget| {
             // 没有布局能力的组件不产生子节点位置。
-            component
+            widget
                 // 读取可选布局能力。
                 .as_layout()
                 // 对存在的布局能力执行统一定位协调。

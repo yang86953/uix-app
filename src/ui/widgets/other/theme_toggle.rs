@@ -2,16 +2,16 @@
 //!
 //! 点击切换暗色/亮色主题，通过 `Cell<bool>` 通知外部代码。
 
-use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
 };
+use crate::widget;
 use std::cell::Cell;
 
-component! {
+widget! {
     /// ThemeToggle — 主题切换按钮。
     pub struct ThemeToggle {
         #[snapshot(skip)]
@@ -54,7 +54,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change.take().map(|dark| {
             SemanticEvent::change(id, if dark { "dark" } else { "light" })
         })

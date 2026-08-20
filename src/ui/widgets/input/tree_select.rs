@@ -1,15 +1,15 @@
-use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::widget;
 // 引入稳定节点 key 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields,
-    SnapshotTreeNode, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SnapshotTreeNode,
+    SystemEvent, WidgetId, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
 
@@ -31,7 +31,7 @@ const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
 const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 const MIN_DROPDOWN_WIDTH: f32 = 200.0;
 
-component! {
+widget! {
     /// 通过窗口内树形弹层选择并绑定稳定节点键的组件。
     pub struct TreeSelect {
         placeholder: String,
@@ -224,7 +224,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()
@@ -452,7 +452,7 @@ component! {
         tree_select_surface_rect(frame, popup, surface)
     }
 
-    overlay_entry => (&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.is_present().then(|| {
             // 读取当前行数供表面回退与弹层解析共用。
             let row_count = self.flatten_nodes().len();
@@ -471,7 +471,7 @@ component! {
     }
 
     // 使用组件树提供的同帧表面创建树选择弹层登记。
-    overlay_entry_for_surface => (&self, id: ComponentId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry_for_surface => (&self, id: WidgetId, frame: Rect, surface: Rect) -> Option<crate::ui::OverlayEntry> {
         // 在旧登记入口执行前刷新表面与实际弹层缓存。
         self.remember_popup_rect(frame, surface, self.flatten_nodes().len());
         // 复用统一的树选择弹层登记逻辑。

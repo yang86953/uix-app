@@ -1,7 +1,7 @@
 //! 高级图表组件：面积、散点、气泡、雷达、热力、漏斗、瀑布、
 //! 组合、树图与仪表盘，共用 `ChartPlaceholder` 合成组件。
 //!
-//! 拆分为子模块：`component`（组件宏块）、`builder`（构造方法）、
+//! 拆分为子模块：`widget`（组件宏块）、`builder`（构造方法）、
 //! `helpers`（数据与交互）、`paint_series` / `paint_advanced`（绘制）。
 
 use std::fmt;
@@ -15,14 +15,14 @@ use super::bar_chart::BarData;
 use super::line_chart::LineData;
 
 mod builder;
-mod component;
 mod helpers;
+mod widget;
 // 将热力图色阶插值拆为无状态绘制辅助，不引入新的图表状态 owner。
 mod heatmap_color;
 mod paint_advanced;
 mod paint_series;
 
-pub use component::*;
+pub use widget::*;
 
 #[derive(Debug, Clone, PartialEq)]
 /// 图表系列：系列名称 + 数据。
@@ -648,7 +648,7 @@ macro_rules! chart_entry {
         impl $name {
             #[allow(
                 clippy::new_ret_no_self,
-                reason = "the public chart entry selects a kind on the shared chart component"
+                reason = "the public chart entry selects a kind on the shared chart widget"
             )]
             #[doc = concat!("构造 ", stringify!($kind), " 图表组件。")]
             pub fn new() -> ChartPlaceholder {

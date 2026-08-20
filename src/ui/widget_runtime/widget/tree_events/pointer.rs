@@ -198,7 +198,7 @@ impl WidgetTree {
         // 表格 capability 启用时才刷新扩展行与泛型单元格子树。
         #[cfg(feature = "table")]
         let table_children_changed =
-            self.refresh_table_expand_component(id) | self.refresh_table_cell_component(id);
+            self.refresh_table_expand_widget(id) | self.refresh_table_cell_widget(id);
         // 表格 capability 关闭时不保留专属动态刷新分支。
         #[cfg(not(feature = "table"))]
         let table_children_changed = false;
@@ -206,12 +206,12 @@ impl WidgetTree {
         let virtual_scroll_viewport_height = self.get(id).map(|node| node.frame().h);
         // 合并可选表格刷新与常驻动态组件刷新结果。
         let dynamic_children_changed = table_children_changed
-            | self.refresh_select_option_component(id)
+            | self.refresh_select_option_widget(id)
             // Transfer 的选择或跨 pane 移动必须在同一事件内重建动态条目身份。
-            | self.refresh_transfer_item_component(id)
-            | self.refresh_calendar_cell_component(id)
+            | self.refresh_transfer_item_widget(id)
+            | self.refresh_calendar_cell_widget(id)
             // Wheel 改变偏移后必须在同一事件中物化新窗口，不能等待无关布局。
-            | self.refresh_virtual_scroll_component(id, virtual_scroll_viewport_height);
+            | self.refresh_virtual_scroll_widget(id, virtual_scroll_viewport_height);
         if dynamic_children_changed {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);
@@ -505,7 +505,7 @@ impl WidgetTree {
             // 保持故障现场，等待所属窗口执行受控 teardown。
             return;
         }
-        let old_focus = self.managers().focus.focused_component();
+        let old_focus = self.managers().focus.focused_widget();
         if new_focus == old_focus {
             return;
         }
@@ -527,7 +527,7 @@ impl WidgetTree {
                 }
             }
         }
-        self.managers_mut().focus.set_focused_component(new_focus);
+        self.managers_mut().focus.set_focused_widget(new_focus);
         if let Some(new) = new_focus {
             self.invalidate_paint(new);
             if self.window_focused {

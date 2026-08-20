@@ -43,7 +43,7 @@ mod event_keyboard {
     pub(super) const COMPILE_ID: &str = "event-keyboard";
 
     // 声明只在 Enter 按下后激活的自定义组件。
-    component! {
+    widget! {
         // 公开 ShortcutPad 类型及其激活状态。
         pub struct ShortcutPad {
             // 保存 Enter 是否已触发。
@@ -139,7 +139,7 @@ mod event_semantic_actions {
     }
 
     // 声明无需私有 WidgetTree 类型的无障碍调整动作组件。
-    component! {
+    widget! {
         // 公开音量滑块及其当前值。
         pub struct VolumeSlider {
             // 保存归一化音量值。
