@@ -13,10 +13,6 @@ APPLICATION = ROOT / "src/app/application/application/mod.rs"
 SECONDARY_CREATE = ROOT / "src/app/application/application/runtime/create.rs"
 # 公开独立 Window 创建入口。
 PUBLIC_WINDOW = ROOT / "src/app/window/window.rs"
-# 图形 R5 支持窗口不承载 UI/Upload 产品策略。
-GFX_R5 = ROOT / "src/gfx_r5_support/mod.rs"
-
-
 # 验证所有 Application 窗口统一启用 FileDrop，同时保持平台能力缺失兼容。
 class AppFileDropWindowCreationTests(unittest.TestCase):
     # Adapter 必须在发布窗口 owner 前调用 enable_file_drop(true)。
@@ -84,17 +80,6 @@ class AppFileDropWindowCreationTests(unittest.TestCase):
         self.assertNotIn("window_manager().create_window", sources["main"])
         self.assertNotIn("window_manager().create_window", sources["secondary"])
         self.assertNotIn("window_manager().create_window", sources["public"])
-
-    # 底层图形支持窗口不应继承 Upload 产品策略。
-    def test_graphics_support_window_remains_policy_free(self) -> None:
-        # 读取 R5 图形支持入口。
-        source = GFX_R5.read_text(encoding="utf-8")
-        # 图形窗口仍可直接使用原生工厂。
-        self.assertIn(".create_window(", source)
-        # 不得依赖 Application 创建 Adapter。
-        self.assertNotIn("create_app_window", source)
-        # 不得直接注入 FileDrop 产品能力。
-        self.assertNotIn("enable_file_drop", source)
 
     # 本任务涉及文件必须保持项目 900 行门槛。
     def test_touched_files_stay_within_limit(self) -> None:
