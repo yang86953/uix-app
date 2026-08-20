@@ -22,21 +22,21 @@ type StateBindCapture = (
 );
 
 // 拆分结构性绑定租约，保持响应式状态主体低于规模上限。
-#[path = "state/reconcile_lease.rs"]
+#[path = "reconcile_lease.rs"]
 // 编译结构性绑定租约的私有实现模块。
 mod reconcile_lease;
 // 向树与节点生命周期边界暴露租约类型。
 pub(crate) use reconcile_lease::ReconcileBindLease;
 
 // 拆分绘制绑定租约，保持响应式状态主体低于规模上限。
-#[path = "state/paint_lease.rs"]
+#[path = "paint_lease.rs"]
 // 编译绘制绑定租约与捕获作用域的私有实现模块。
 mod paint_lease;
 // 向树与节点生命周期边界暴露绘制租约和捕获作用域。
 pub(crate) use paint_lease::{PaintBindLease, StateBindCaptureGuard};
 
 // 将副作用订阅与状态主体拆分，保持各文件规模受控。
-#[path = "state/effect.rs"]
+#[path = "effect.rs"]
 // 编译 State 私有的 Effect 自动订阅实现。
 mod effect;
 // 向响应式模块公开副作用句柄而不泄漏私有租约。
@@ -45,7 +45,7 @@ pub use effect::Effect;
 pub(crate) use effect::EffectDependency;
 
 // 将派生值生命周期拆分到私有模块，保持状态主体低于规模上限。
-#[path = "state/computed.rs"]
+#[path = "computed.rs"]
 // 编译 Computed 的上游租约与下游失效传播实现。
 mod computed;
 // 保持既有响应式公开派生值入口不变。

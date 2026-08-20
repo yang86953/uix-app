@@ -1,24 +1,24 @@
 use super::*;
 // 拆分节点 Effect 生命周期辅助方法，保持 BoxedWidget 主文件低于规模上限。
-#[path = "boxed/effects.rs"]
+#[path = "effects.rs"]
 // 编译节点 Effect 生命周期的私有实现模块。
 mod captured_effects;
 // 拆分节点 State 租约辅助方法，保持主体低于规模上限。
-#[path = "boxed/state_binds.rs"]
+#[path = "state_binds.rs"]
 // 编译节点 State 租约生命周期的私有实现模块。
 mod captured_state_binds;
 // 拆分透明包装节点的同轮子测量分发，保持主文件低于规模上限。
-#[path = "boxed/layout_measure.rs"]
+#[path = "layout_measure.rs"]
 mod layout_measure;
 // 拆分定位元数据与子布局求解，保持主体低于规模上限。
-#[path = "boxed/position_layout.rs"]
+#[path = "position_layout.rs"]
 mod position_layout;
 // 拆分视觉变换与光标元数据访问，保持主体文件低于规模上限。
-#[path = "boxed/visual_metadata.rs"]
+#[path = "visual_metadata.rs"]
 // 编译运行时节点视觉元数据的私有实现模块。
 mod visual_metadata;
 // 拆分文字选择元数据访问，保持主体文件低于规模上限。
-#[path = "boxed/user_select_metadata.rs"]
+#[path = "user_select_metadata.rs"]
 // 编译声明值与 used-value 的节点私有存储入口。
 mod user_select_metadata;
 pub struct BoxedWidget {
@@ -877,6 +877,6 @@ impl WidgetCore for BoxedWidget {
 // 仅在测试构建中编译 TokenScope 展开回归。
 #[cfg(test)]
 // 将子模块显式定位到 widget 目录中的独立测试文件。
-#[path = "../../../../tests/unit/ui/widget_runtime/widget/boxed_scope_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widget_runtime/widget/boxed_scope_tests.rs"]
 // 从独立文件加载作用域恢复测试，保持本文件低于行数上限。
 mod boxed_scope_tests;

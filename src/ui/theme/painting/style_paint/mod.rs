@@ -5,17 +5,17 @@ use crate::draw::Radius;
 use crate::ui::theme::style::Style;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 隔离边框线型到 draw 公共描边契约的几何映射。
-#[path = "style_paint/border.rs"]
+#[path = "border.rs"]
 // 编译 UI System 私有的边框绘制实现。
 mod border;
 // 隔离背景图层值到 draw 公共绘制契约的映射。
-#[path = "style_paint/background.rs"]
+#[path = "background.rs"]
 // 编译 UI System 私有的背景图层绘制实现。
 mod background;
 // 隔离 spread 几何的单元测试。
 #[cfg(test)]
 // 从独立文件编译 spread 几何契约。
-#[path = "../../tests/unit/ui/style_paint/spread_tests.rs"]
+#[path = "../../../../../tests/unit/ui/style_paint/spread_tests.rs"]
 // 注册样式阴影扩张测试模块。
 mod spread_tests;
 

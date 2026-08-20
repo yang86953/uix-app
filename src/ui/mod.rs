@@ -49,39 +49,55 @@
 #[allow(hidden_glob_reexports)]
 // SMC-04：Module 为 pub(crate)，公开面收口于本根；glob 再导出仅为根级 API。
 pub(crate) mod accessibility;
+#[path = "coordination/adapter/mod.rs"]
 pub(crate) mod adapter;
 pub(crate) mod animation;
 #[cfg(feature = "test-harness")]
+#[path = "accessibility/actions/automation.rs"]
 pub(crate) mod automation;
 pub(crate) mod event;
 #[allow(hidden_glob_reexports)] // SMC-04：Module 为 pub(crate)，glob 再导出仅为根级 API。
 pub(crate) mod form;
+#[path = "theme/i18n.rs"]
 pub(crate) mod i18n;
 #[allow(hidden_glob_reexports)] // SMC-04：Module 为 pub(crate)，glob 再导出仅为根级 API。
 pub(crate) mod layout;
 pub mod macros;
 pub(crate) mod overlay;
+#[path = "coordination/widget_patch.rs"]
 pub(crate) mod widget_patch;
 pub(crate) mod widget_runtime;
 pub(crate) mod widget_snapshot;
 // 公开 UI System 自有的布局定位模式与四边值契约。
+#[path = "layout/position.rs"]
 mod position;
 pub(crate) mod reactive;
+#[path = "coordination/render_handler.rs"]
 pub(crate) mod render_handler;
+#[path = "accessibility/actions/semantic_action.rs"]
 pub(crate) mod semantic_action;
+#[path = "theme/painting/style_paint/mod.rs"]
 pub(crate) mod style_paint;
 // 集中生成并绘制文本装饰线段，保持 draw System 的中性边界。
+#[path = "theme/painting/text_decoration.rs"]
 pub(crate) mod text_decoration;
 // 将 UI 字体族列表单向解析为 draw System 字体句柄。
+#[path = "theme/painting/text_family.rs"]
 pub(crate) mod text_family;
 // 将 UI 字重单向适配为 draw System 的常规或合成粗体字形提交。
+#[path = "event/text_selection/mod.rs"]
 pub(crate) mod text_selection;
+#[path = "theme/painting/text_weight.rs"]
 pub(crate) mod text_weight;
 pub(crate) mod theme;
+#[path = "layout/transform_origin.rs"]
 pub(crate) mod transform_origin;
+#[path = "coordination/tree_dynamic/mod.rs"]
 pub(crate) mod tree_dynamic;
+#[path = "coordination/tree_widget_hooks.rs"]
 pub(crate) mod tree_widget_hooks;
 // 公开 UI System 自有的文字选择策略值契约。
+#[path = "event/user_select.rs"]
 mod user_select;
 pub(crate) mod view;
 pub(crate) mod virtualization;
@@ -206,9 +222,11 @@ pub use widget_runtime::managers::{
 };
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]
+#[path = "widget_runtime/state.rs"]
 pub mod widget_state;
 // 提供 UI 线程窗口循环期间的主题切换请求通道。
 #[doc(hidden)]
+#[path = "theme/theme_request.rs"]
 pub mod theme_request;
 
 // Public widget traits and exported macros mention these opaque bridge

@@ -886,7 +886,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # UI 背景图层必须在进入 Drawing 原语前冻结组件背景盒裁剪。
     def test_radial_background_is_clipped_by_ui_box_semantics(self) -> None:
         # 读取 UI System 私有的背景图层映射。
-        background = (ROOT / "src/ui/style_paint/background.rs").read_text(encoding="utf-8")
+        background = (ROOT / "src/ui/theme/painting/style_paint/background.rs").read_text(encoding="utf-8")
         # 截取径向背景分支，避免图片路径中的裁剪掩盖回归。
         radial = background[
             # 从径向分支开始。
