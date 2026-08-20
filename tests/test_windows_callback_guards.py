@@ -7,7 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLATFORM_WINDOWS = ROOT / "src/platform/imp/windows.rs"
+# 平台公开门面的 Windows Provider 归属 host 功能域。
+PLATFORM_WINDOWS = ROOT / "src/platform/host/providers/windows.rs"
 LEGACY_DISPLAY = ROOT / "src/native/backends/windows/display.rs"
 # 读取 Windows 窗口过程的 owner-thread failure queue 边界。
 WND_PROC = ROOT / "src/native/backends/windows/wnd_proc.rs"

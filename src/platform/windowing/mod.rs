@@ -5,6 +5,9 @@
 //! `EventLoopWaker`，不再直接引用 `crate::native` 私有边界内的实现文件。
 //! 类型所有权仍归 native（实现侧经 `pub use` 再导出，公开路径不变）。
 
+// UI 线程策略属于 windowing 域，根模块仅再导出稳定入口。
+pub(crate) mod ui_thread;
+
 use std::sync::Arc;
 
 use crate::core::error::Result;

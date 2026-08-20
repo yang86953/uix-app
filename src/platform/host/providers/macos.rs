@@ -11,19 +11,6 @@ use crate::platform::services::{
     AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
 };
 
-pub(crate) struct State;
-
-impl State {
-    pub(crate) fn new() -> Result<Self> {
-        Ok(Self)
-    }
-}
-
-pub(crate) fn is_main_thread() -> Result<bool> {
-    // SAFETY: pthread_main_np has no arguments or ownership side effects.
-    Ok(unsafe { pthread_main_np() } != 0)
-}
-
 pub(crate) fn os_info() -> Result<OsInfo> {
     let version = sysctl_string(c"kern.osproductversion").ok();
     let build = sysctl_string(c"kern.osversion").ok();
@@ -102,16 +89,6 @@ pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
         ));
     }
     Ok(values.into_boxed_slice())
-}
-
-// macOS 主线程栈足够深，直接在当前线程执行闭包并返回其结果。
-pub(crate) fn run_on_ui_thread<F, R>(_thread_name: &str, run: F) -> R
-where
-    // 与 Windows 契约保持同一签名，闭包与返回值都可跨线程发送。
-    F: FnOnce() -> R + Send + 'static,
-    R: Send,
-{
-    run()
 }
 
 pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
@@ -342,7 +319,6 @@ fn non_empty(value: String) -> Option<String> {
 #[link(name = "System")]
 // Rust 2024 要求显式标记外部符号声明块的调用安全边界。
 unsafe extern "C" {
-    fn pthread_main_np() -> i32;
     fn sysctlbyname(
         name: *const c_char,
         old_value: *mut c_void,
