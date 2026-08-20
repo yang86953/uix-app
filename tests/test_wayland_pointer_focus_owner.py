@@ -7,7 +7,7 @@ from pathlib import Path
 # 计算仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland 子模块目录。
-WAYLAND = ROOT / "src/native/backends/linux/wayland"
+WAYLAND = ROOT / "src/native/backends/linux/windowing/wayland"
 # 定位 pointer callback adapter。
 SEAT = WAYLAND / "seat.rs"
 # 定位 pointer focus owner Component。

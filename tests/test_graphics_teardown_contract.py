@@ -39,7 +39,7 @@ LEGACY_CONTEXTS = {
     ),
     "wgl": (
         # WGL 的共享 lifecycle/shutdown 实现已拆到同目录的 forwarding module。
-        ROOT / "src/native/presentation/graphics/opengl/platform",
+        ROOT / "src/native/presentation/graphics/opengl/adapter",
         True,
     ),
 }
@@ -273,7 +273,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 soft fallback 只保留 draw 私有 staging，不再进入逐 UI adapter。
     def test_soft_fallback_uses_only_draw_private_rhi_staging(self) -> None:
         # 读取公共兼容接口与同目录声明。
-        present = read_rust_module(ROOT / "src/native/present")
+        present = read_rust_module(ROOT / "src/native/presentation/contracts")
         # 读取 D3D11 adapter 的 context 与 pipeline 拆分模块。
         d3d11_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/context")
         # 读取 D3D11 adapter 的底层 pipeline 拆分模块。
@@ -376,7 +376,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 legacy clear/bind 只剩 thin RHI 所需的低层 target 恢复。
     def test_legacy_clear_and_bind_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与 capability profile。
-        present = read_rust_module(ROOT / "src/native/present")
+        present = read_rust_module(ROOT / "src/native/presentation/contracts")
         # 读取 owner-thread 转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 D3D11 兼容 trait 实现。
@@ -610,7 +610,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
-        present = read_rust_module(ROOT / "src/native/present")
+        present = read_rust_module(ROOT / "src/native/presentation/contracts")
         # 读取 graphics backend 私有的 renderer 能力投影。
         raster_caps = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 转发门面。
