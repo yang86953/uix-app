@@ -28,6 +28,7 @@ renderer、scene、painting、UI 和应用不得取得 raw GPU/native handle。p
 | `GpuBackend` | struct | 把规范图形语义降低为统一 `FramePlan` 并驱动 thin RHI |
 | `SoftwareRasterizer` | struct | 以同一规范语义产生 CPU 像素 |
 | `FramePlan` / pass / draw packet | values | 有序、backend-neutral 的设备执行计划 |
+| `RhiRendererFrame` / `RhiRendererPass` | internal owner / value | 由一次 Surface 或 Offscreen 执行唯一持有计划，把 producer 的目标无关命令包绑定到合法目标并消费一次执行资格 |
 | `NativeRasterCaps` | value | 从一次实际 `GraphicsDeviceCapabilities` 快照派生的 renderer 能力 |
 | `SoftFallbackTile` | staging value | 语义等价且有界的局部 CPU fallback 输入 |
 | Picture/effect planner | internal components | 编排离屏资源、采样合成、blur 和清理事务 |
@@ -74,7 +75,8 @@ WindowSession
 
 ## 帧执行与提交
 
-- 同窗一帧只有一条有序计划、至多一次主 surface acquire 和一次最终 present。Picture、快照、blur 与资源维护可以 submit device 命令，但不得自行 acquire/present 主 surface。
+- 同窗一帧只有一条有序计划、至多一次主 surface acquire 和一次最终 present。每次 Surface 或 Offscreen 执行都由唯一 `RhiRendererFrame` 持有并执行自己的 `FramePlan`；producer 只能生成目标无关的 `RhiRendererPass` 命令包，不能直接构造真实 pass、持有计划或调用底层执行器。
+- `RhiRendererFrame` 的封闭角色决定默认目标：Surface 角色只能写入本次 acquire 的 surface，Offscreen 角色默认写入构造时冻结的最终 texture。只有 Offscreen 角色可在计划变化前通过门禁加入显式纹理目标；Surface 角色尝试注入离屏目标必须返回 typed `InvalidArgument`，且不得改变计划。
 - `GraphicsDevice::submit` 返回的 `SubmissionHandle` 是组合 context 的类型化事务身份；最终 `GraphicsSurface::present` 只接受同一 context 最近一次成功提交。身份签发与校验由共享 RHI 状态机定义，Adapter 不得忽略参数或维护另一套计数规则。
 - render-pass 生命周期由共享 `RhiPassState` 原子拥有：活动目标、物理 extent、scissor 与 sampled texture/sampler 绑定随 begin/end 共同建立和清除。槽位限制、pass 内外命令位置及 render target 反馈环在这里统一拒绝；Adapter 只保留 framebuffer/RTV 等原生编码对象，不得维护平行 `pass_open` 或绑定镜像。
 - texture copy/move 的格式、非空区域、checked 边界和资源关系由共享传输契约一次验证；普通 copy 只允许不同的同格式可渲染颜色纹理，同资源区域搬移必须走具有 scratch/memmove 语义的 move。两端坐标始终是左上原点，Adapter 不得通过私有翻转或饱和运算改写它。
@@ -109,7 +111,7 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 - begin/flush/end/blit 都是 checked 边界。主 surface present 前若仍有活动 Picture，必须先成功结束；未实现操作返回 typed `NotImplemented`，不能 no-op 后报告成功。
 - 无像素贡献的空源、空目标或全透明 blit 是 canonical no-op；非空越界源、无效变换或不能保持语义的输入返回 typed error。
 - backdrop blur 同时维护未模糊 clean texture 和从其派生的 effect texture；策略、半径、区域、主题、surface 或 generation 变化时从 clean 重新派生，不能累计模糊旧结果。
-- blur 的 source→scratch→target pass 不取得主 surface，不额外 present；成功与失败都按检查式事务释放 scratch。任一步失败保留 invalidation，并停止当前帧最终提交。
+- blur 的 source→scratch→target 两个 pass 由同一个 Offscreen `RhiRendererFrame` 持有：水平 pass 经角色门禁绑定 scratch，垂直 pass 写入构造时冻结的最终 target，完整计划只执行一次 submit，且不取得主 surface、不额外 present。scratch 在主阶段成功或失败后都执行检查式释放；主阶段失败优先返回原始错误，主阶段成功而清理失败时返回清理错误。任一步失败保留 invalidation，并停止当前帧最终提交。
 
 ## 恢复与失败分类
 
@@ -139,5 +141,6 @@ backend 变更需要按风险提供以下证据；实时环境矩阵、结果和
 
 - UI 图形语义只有一个生产定义；native Adapter 只提供 thin RHI / PixelUpload 原语。
 - 同一 surface generation 只有一个 backend owner、一条帧计划和一个最终 present 责任边界。
+- 每次 Surface 或 Offscreen 执行只有一个 `RhiRendererFrame` 计划 owner；pass producer 不拥有目标选择、计划追加或底层执行资格。
 - capability 来自实际原语和 probe，不能由平台名、编译 feature 或旧缓存推断。
 - 任一 fallback、恢复或优化都不能改变像素语义、跳过 typed failure、消费失败帧 damage 或建立第二条生命周期。
