@@ -125,8 +125,8 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
     # 检查 EGL shutdown_started 发布顺序与所有权门禁。
     def test_egl_shutdown_and_borrow_gate_order(self) -> None:
         # 读取 EGL owner 与拆分后的 RHI 实现。
-        egl = source("src/native/presentation/graphics/opengl/platform/egl.rs")
-        egl_rhi = source("src/native/presentation/graphics/opengl/platform/egl_rhi.rs")
+        egl = source("src/native/presentation/graphics/opengl/adapter/egl.rs")
+        egl_rhi = source("src/native/presentation/graphics/opengl/adapter/egl_rhi.rs")
         # shutdown_started 必须存在并在 cleanup 前发布。
         self.assertIn("shutdown_started: bool", egl)
         # 构造成功的 EGL owner 必须从 active 状态开始。
@@ -160,9 +160,9 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
     # 检查 WGL shutdown_started 发布顺序与所有权门禁。
     def test_wgl_shutdown_and_borrow_gate_order(self) -> None:
         # 读取 WGL owner 与拆分后的生命周期实现。
-        wgl = source("src/native/presentation/graphics/opengl/platform/wgl.rs")
-        wgl_graphics = source("src/native/presentation/graphics/opengl/platform/wgl_graphics.rs")
-        wgl_rhi = source("src/native/presentation/graphics/opengl/platform/wgl_rhi.rs")
+        wgl = source("src/native/presentation/graphics/opengl/adapter/wgl.rs")
+        wgl_graphics = source("src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs")
+        wgl_rhi = source("src/native/presentation/graphics/opengl/adapter/wgl_rhi.rs")
         # shutdown_started 必须存在并在原生 cleanup 前发布。
         self.assertIn("shutdown_started: bool", wgl)
         # 构造成功的 WGL owner 必须从 active 状态开始。
@@ -193,13 +193,13 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
     # 检查 D3D11 仍保留同一 active 生命周期对照。
     def test_d3d11_active_gate_remains_cross_backend_baseline(self) -> None:
         # 读取 D3D11 context 生命周期实现。
-        d3d = source("src/native/presentation/graphics/d3d11/platform/context/graphics.rs")
+        d3d = source("src/native/presentation/graphics/d3d11/adapter/context/graphics.rs")
         # 读取 D3D11 Device 注入实现。
-        d3d_device = source("src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs")
+        d3d_device = source("src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs")
         # 读取 D3D11 健康维护 helper，保持门禁责任集中在 owner helper。
-        d3d_health = source("src/native/presentation/graphics/d3d11/platform/context/rhi_health.rs")
+        d3d_health = source("src/native/presentation/graphics/d3d11/adapter/context/rhi_health.rs")
         # 读取 D3D11 Surface 注入实现。
-        d3d_surface = source("src/native/presentation/graphics/d3d11/platform/context/rhi.rs")
+        d3d_surface = source("src/native/presentation/graphics/d3d11/adapter/context/rhi.rs")
         # D3D11 rhi_context 必须先执行既有 active 门禁。
         context = function_body(d3d, "rhi_context")
         # 共享跨后端契约要求门禁早于借出 self。
@@ -264,7 +264,7 @@ class GraphicsRhiActiveLifecycleContractTest(unittest.TestCase):
             surface_injection.index("self.rhi_surface_lost_for_test = true"),
         )
         # 读取 D3D11 Surface 实现作为 native 调用前门禁对照。
-        surface = source("src/native/presentation/graphics/d3d11/platform/context/rhi.rs")
+        surface = source("src/native/presentation/graphics/d3d11/adapter/context/rhi.rs")
         # 当前 D3D11 的全部 native Surface 入口都必须保持 active 门禁。
         for entry in ("acquire", "resize", "read_surface_pixels", "present", "test_present"):
             # 截取对应 Surface 入口。

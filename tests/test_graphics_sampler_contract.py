@@ -16,9 +16,9 @@ class GraphicsSamplerContractTests(unittest.TestCase):
     # 共享采样契约必须同时拥有纹理格式与过滤要求。
     def test_shared_sampling_contract_owns_format_and_filter(self) -> None:
         # 读取薄 RHI sampler 描述。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 采样契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取所有生产 Renderer 的 sampler 构造调用。
         renderer = "\n".join(
             # 逐个读取普通图片、coverage、MSDF 与 Blur 资源所有者。
@@ -85,11 +85,11 @@ class GraphicsSamplerContractTests(unittest.TestCase):
         # 读取 OpenGL draw Adapter。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 D3D11 sampler 资源表。
-        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 sampler 创建实现。
-        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs").read_text(encoding="utf-8")
+        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_resources.rs").read_text(encoding="utf-8")
         # 读取 D3D11 draw Adapter。
-        d3d11_draw = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11_draw = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         # OpenGL sampler 资源必须保留共享描述。
         self.assertIn("struct OpenGlRhiSampler", opengl_device)
         # OpenGL 资源表必须保存创建时的 SamplerDesc。
@@ -116,9 +116,9 @@ class GraphicsSamplerContractTests(unittest.TestCase):
         # 读取 OpenGL sampler 原生映射。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 公共导入与 sampler 原生映射。
-        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 sampler 创建实现。
-        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs").read_text(encoding="utf-8")
+        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_resources.rs").read_text(encoding="utf-8")
         # OpenGL 只允许读取共享 filter 访问器作为过滤事实。
         self.assertIn("match desc.filter()", opengl)
         # D3D11 只允许读取共享 filter 访问器作为过滤事实。

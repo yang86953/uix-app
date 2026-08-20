@@ -5,6 +5,7 @@ use std::ffi::c_void;
 use crate::core::{Error, Result};
 use crate::native::present::GraphicsContextCandidate;
 
+#[path = "adapter/mod.rs"]
 pub(crate) mod platform;
 
 #[cfg_attr(test, allow(dead_code))]

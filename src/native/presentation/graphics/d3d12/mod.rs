@@ -8,6 +8,7 @@ use crate::native::present::GraphicsContextCandidate;
 #[cfg(all(test, feature = "d3d12"))]
 use crate::native::present::GpuRecipeContext;
 
+#[path = "adapter/mod.rs"]
 pub(crate) mod platform;
 
 #[cfg_attr(test, allow(dead_code))]

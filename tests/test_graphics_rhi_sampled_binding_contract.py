@@ -14,11 +14,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 采样绑定。
-DRAW_PACKET = ROOT / "src/native/present/rhi/draw_packet.rs"
+DRAW_PACKET = ROOT / "src/native/presentation/rhi/draw_packet.rs"
 # 定位独立的 Draw 条件采样资源契约。
-DRAW_SAMPLING = ROOT / "src/native/present/rhi/draw_sampling.rs"
+DRAW_SAMPLING = ROOT / "src/native/presentation/rhi/draw_sampling.rs"
 # 定位薄 RHI Device 契约。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位类型化 FramePlan 命令。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 生产与执行源码。
@@ -33,11 +33,11 @@ OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL draw 的完整绑定读取路径。
 OPENGL_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 Device 的生命周期门禁与只读预检入口。
-D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 Adapter 的共享状态写入路径。
-D3D11_RESOURCES = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs"
+D3D11_RESOURCES = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_resources.rs"
 # 定位 D3D11 draw 的完整绑定读取路径。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 # 列出全部生产采样命令的 Drawing 源文件。
 PRODUCERS = (
     # 通用颜色采样路径。

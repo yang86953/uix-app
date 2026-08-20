@@ -6,9 +6,9 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland WindowBackend Adapter。
-WAYLAND_WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WAYLAND_WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位 Wayland TextInputSession Adapter。
-WAYLAND_TEXT_INPUT = ROOT / "src/native/backends/linux/wayland/text_input.rs"
+WAYLAND_TEXT_INPUT = ROOT / "src/native/backends/linux/windowing/wayland/text_input.rs"
 # 定位共享 PlatformWindow 事务实现。
 SHARED_WINDOW = ROOT / "src/native/windowing/shared/window.rs"
 

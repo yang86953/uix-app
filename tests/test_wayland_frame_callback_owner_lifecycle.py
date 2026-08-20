@@ -6,11 +6,11 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 frame callback 私有 Component。
-FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
+FRAME_CALLBACK = ROOT / "src/native/backends/linux/windowing/wayland/frame_callback.rs"
 # 定位 WindowBackend 编排入口。
-WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位逐窗 callback teardown 编排。
-WINDOW_SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
+WINDOW_SHUTDOWN = ROOT / "src/native/backends/linux/windowing/wayland/window_callback_shutdown.rs"
 
 
 # 验证 active request 与 wl_callback 由同一 Component 管理。

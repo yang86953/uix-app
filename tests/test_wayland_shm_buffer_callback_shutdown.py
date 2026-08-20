@@ -6,9 +6,9 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 SHM buffer RAII Component。
-SHM_BUFFER = ROOT / "src/native/backends/linux/wayland/shm_buffer.rs"
+SHM_BUFFER = ROOT / "src/native/backends/linux/windowing/wayland/shm_buffer.rs"
 # 定位 SHM buffer 构造与 Release callback 注册入口。
-PRESENTER = ROOT / "src/native/backends/linux/wayland/presenter.rs"
+PRESENTER = ROOT / "src/native/backends/linux/windowing/wayland/presenter.rs"
 
 
 # 验证 wl_buffer::Release callback owner 随 ShmBuffer 生命周期释放。

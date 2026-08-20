@@ -32,6 +32,8 @@ pub(crate) mod backends;
 pub(crate) mod capabilities;
 pub(crate) mod factory;
 pub(crate) mod platform;
+// 保留 `native::present` 逻辑路径，物理实现归入 presentation 契约组。
+#[path = "presentation/contracts/mod.rs"]
 pub(crate) mod present;
 pub(crate) mod presentation;
 #[cfg(feature = "test-harness")]

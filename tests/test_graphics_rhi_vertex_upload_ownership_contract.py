@@ -15,7 +15,7 @@ VALIDATION = ROOT / "src/draw/backend/frame_plan_validation.rs"
 # 定位共享顶点 payload 值对象。
 UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位共享 DrawRange 值对象。
-DRAW_PACKET = ROOT / "src/native/present/rhi/draw_packet.rs"
+DRAW_PACKET = ROOT / "src/native/presentation/rhi/draw_packet.rs"
 # 定位共享顶点 payload 工厂。
 RENDERER = ROOT / "src/draw/backend/rhi_renderer.rs"
 # 定位独立 Gradient lowering。
@@ -31,7 +31,7 @@ FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 OpenGL ES Buffer Adapter。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 D3D11 Buffer Adapter。
-D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 
 
 # 截取一个稳定函数范围，避免其它函数偶然满足断言。

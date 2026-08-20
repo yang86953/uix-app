@@ -6,7 +6,7 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 text-input Module。
-TEXT_INPUT = ROOT / "src/native/backends/linux/wayland/text_input.rs"
+TEXT_INPUT = ROOT / "src/native/backends/linux/windowing/wayland/text_input.rs"
 
 
 # 验证 closed backend 不再允许 IME session 状态复活。

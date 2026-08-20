@@ -11,11 +11,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 D3D11 Device Adapter。
-D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 局部清理 Component。
-D3D11_CLEAR = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_clear.rs"
+D3D11_CLEAR = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs"
 # 定位 D3D11 context 构造边界。
-D3D11_CONSTRUCTION = ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs"
+D3D11_CONSTRUCTION = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs"
 # 定位 OpenGL Device capability 实现。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
 

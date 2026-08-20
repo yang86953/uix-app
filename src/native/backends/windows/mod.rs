@@ -45,6 +45,7 @@ pub(crate) mod notification;
 // Windows 平台实现只由 crate 内部工厂构造。
 pub(crate) mod platform;
 // 系统信息后端只供 crate 内部服务使用。
+#[path = "host/system_info/mod.rs"]
 pub(crate) mod system_info;
 // 文本输入后端只供 crate 内部窗口系统使用。
 pub(crate) mod text_input;

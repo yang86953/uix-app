@@ -13,9 +13,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 pipeline 契约。
-PIPELINE = ROOT / "src/native/present/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位共享基础图元 ABI。
-PRIMITIVE = ROOT / "src/native/present/rhi/primitive.rs"
+PRIMITIVE = ROOT / "src/native/presentation/rhi/primitive.rs"
 # 定位 Drawing 到共享 uniform 的唯一 lowering。
 UNIFORM = ROOT / "src/draw/backend/rhi_renderer_uniform.rs"
 # 定位 coverage 资源与顶点 lowering。
@@ -25,11 +25,11 @@ OPENGL_SHADERS = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shad
 # 定位 OpenGL ES 固定状态与 pipeline 分支。
 OPENGL_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 shader 常量与 pipeline 分支。
-D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 # 定位 D3D11 shader helper 与 draw 分支。
-D3D11_TEXTURED = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/rhi_textured.rs"
+D3D11_TEXTURED = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/rhi_textured.rs"
 # 定位 D3D11 资源/契约消费边界。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 
 
 # 截取两个稳定声明之间的源码，避免其它 pipeline 偶然满足断言。

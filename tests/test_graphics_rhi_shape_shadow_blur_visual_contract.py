@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # 定位 OpenGL shader 常量所在文件。
 OPENGL_SHADERS = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
 # 定位 D3D11 shader 常量所在文件。
-D3D11_SHADERS = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11_SHADERS = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 
 
 # 从 Rust raw string 自身边界提取唯一 shader 常量内容。

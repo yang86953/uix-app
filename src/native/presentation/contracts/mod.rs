@@ -257,7 +257,7 @@ impl FromStr for GraphicsSelection {
 
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/native/present/mod__graphics_selection_tests.rs"]
+#[path = "../../../../tests/unit/native/present/mod__graphics_selection_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod graphics_selection_tests;
 
@@ -309,6 +309,8 @@ impl std::fmt::Debug for NativeSurfaceHandle {
 
 /// GPU graphics context lifecycle and presentation contract.
 // 薄 RHI 作为迁移期 platform 私有契约，不向使用方公开原生句柄。
+// 保留 `native::present::rhi` 逻辑路径，共享 RHI 实现物理归入 presentation/rhi。
+#[path = "../rhi/mod.rs"]
 pub(crate) mod rhi;
 
 // 生产 GPU recipe 通过构造期验证的窄 owner 进入 draw backend。

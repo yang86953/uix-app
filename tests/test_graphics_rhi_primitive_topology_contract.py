@@ -14,15 +14,15 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 pipeline 契约。
-SHARED = ROOT / "src/native/present/rhi/pipeline.rs"
+SHARED = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位 OpenGL Adapter draw 编码。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 pipeline 统一状态绑定。
-D3D11_MODULE = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11_MODULE = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 # 定位 D3D11 draw 分派边界。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 # 定位不得继续私自绑定拓扑的 shader helper 目录。
-D3D11_HELPERS = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline"
+D3D11_HELPERS = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline"
 
 
 # 集中验证共享拓扑所有权和两个原生翻译入口。

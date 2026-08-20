@@ -10,11 +10,11 @@ from pathlib import Path
 # 固定仓库根目录，供源码契约读取使用。
 ROOT = Path(__file__).resolve().parents[1]
 # 固定拆分后的 Vulkan context 组合模块位置。
-VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/platform/context"
+VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/adapter/context"
 # 固定 Vulkan 共享 device 管理实现位置。
-VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/platform/device.rs"
+VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/adapter/device.rs"
 # 固定 Vulkan fault 映射实现位置。
-VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/platform/fault.rs"
+VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/adapter/fault.rs"
 # 组合读取拆分目录中的 Rust 源码，保持稳定的路径顺序。
 def read_rust_module(path: Path) -> str:
     # 单文件模块直接按 UTF-8 读取。
@@ -35,7 +35,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 live drawable 元数据只通过单一 PresentSurface 快照传播。
     def test_context_drawable_metadata_is_atomic_present_surface(self) -> None:
         # 读取 context 能力模型与构造器。
-        contracts = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        contracts = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 截取 crate-private GraphicsContextCaps 的字段定义并锁定其边界。
         caps_start = contracts.index("pub(crate) struct GraphicsContextCaps")
         # 以构造器实现起点作为结构体字段终点。
@@ -45,7 +45,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 动态 DPR 不得继续伪装成 capability 字段。
         self.assertNotIn("device_pixel_ratio", caps_struct)
         # 读取统一 context trait。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # context 必须显式提供完整 surface 快照。
         self.assertIn("fn present_surface(&self) -> PresentSurface;", facade)
         # 通用 trait 不得继续拆分暴露 drawable 宽度。
@@ -84,17 +84,17 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 逐个核对所有 context 实现都显式提供 surface 元数据。
         for adapter in (
             # D3D11 生产 context。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 测试期 context。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # WGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs",
             # Vulkan PixelUpload context。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # Metal PixelUpload context。
-            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
             # GPU-native 测试 fake。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
         ):
@@ -132,7 +132,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 recipe 派生查询不会继续扩张通用 context 门面。
     def test_context_recipe_queries_are_not_duplicated_by_adapters(self) -> None:
         # 读取统一 context trait。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # backend 身份不得恢复为派生 trait 查询。
         self.assertNotIn("fn graphics_backend(&self)", facade)
         # 静态 recipe 能力已经退出兼容 context SPI。
@@ -146,13 +146,13 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 逐个核对曾重复声明 backend 的 adapter 已删除派生实现。
         for adapter in (
             # D3D11 生产 context。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # WGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs",
             # Vulkan PixelUpload context。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # GPU-native 测试 fake。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
         ):
@@ -170,7 +170,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取 registry 的 recipe 校验与构造实现。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
         # 读取 presentation 侧的 adapter candidate 交接契约。
-        present = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        present = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 截取 registry 生产实现，排除测试 context。
         registry_contract = registry[: registry.index("#[cfg(test)]")]
         # 读取线程亲和 wrapper 的静态快照构造边界。
@@ -181,7 +181,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 截取 thread-bound 生产实现，排除测试模块。
         thread_bound_contract = thread_bound[: thread_bound.index("#[cfg(test)]")]
         # 读取顶层正交 recipe owner 的生产分派。
-        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(
+        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(
             # 保持源码契约读取编码稳定。
             encoding="utf-8"
         )
@@ -230,9 +230,9 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 两个当前生产 adapter 必须在具体创建层组装 candidate。
         for adapter_factory in (
             # Windows 参考 D3D11 adapter 创建层。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/mod.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/mod.rs",
             # Windows/Linux 共用的 OpenGL ES 平台创建层。
-            ROOT / "src/native/presentation/graphics/opengl/platform/mod.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/mod.rs",
         ):
             # 读取 adapter 平台创建实现。
             adapter_source = adapter_factory.read_text(encoding="utf-8")
@@ -246,7 +246,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 thin RHI 与 surface resize 只通过原子 GPU recipe 视图传播。
     def test_gpu_recipe_context_keeps_rhi_and_lifecycle_atomic(self) -> None:
         # 读取统一 context trait 与原生 resize helper。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 定位共享 lifecycle trait 的起点。
         lifecycle_start = facade.index("pub(crate) trait GraphicsContextLifecycle")
         # 以 GPU recipe trait 起点作为共享 lifecycle 定义终点。
@@ -288,11 +288,11 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 三个生产 GPU-native adapter 都必须显式暴露并实现原子视图。
         for adapter in (
             # D3D11 生产 context。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # WGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL 生产 context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs",
         ):
             # 读取当前 native adapter 的完整 recipe 实现。
             adapter_source = adapter.read_text(encoding="utf-8")
@@ -322,13 +322,13 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验生产 GPU backend 只持有构造期已验证的 recipe owner。
     def test_gpu_backend_uses_validated_recipe_owner(self) -> None:
         # 读取 GPU owner 的唯一 native 边界实现。
-        owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的状态定义。
         backend = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
         # 读取唯一 renderer 装配入口。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取 native factory 使用的正交 recipe owner。
-        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取正交 owner 的生产实现，排除测试 context。
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
@@ -431,18 +431,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 测试窗口也不得保留平行 GPU context 状态。
         self.assertNotIn("gpu_ctx", fake_window)
         # live context 的 present recipe 不得混入没有 context 的 app-only presenter。
-        present_contract = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        present_contract = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 删除没有任何构造者的 CpuPresenter 枚举值。
         self.assertNotIn("CpuPresenter", present_contract)
 
     # 校验 CPU PixelUpload presentation 只持有构造期已验证的 recipe owner。
     def test_pixel_upload_presentation_uses_validated_recipe_owner(self) -> None:
         # 读取 PixelUpload owner 的唯一 native 边界实现。
-        owner = (ROOT / "src/native/present/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/native/presentation/contracts/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 presentation 状态机。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 owner 分派。
-        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取正交 owner 的生产实现，排除测试 context。
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
@@ -479,28 +479,28 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 通用 context 不得继续声明 surface 专属探测。
         self.assertNotIn("fn test_present(&mut self)", facade)
         # 读取 thin RHI 契约。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # GraphicsSurface 必须显式声明无帧探测入口。
         self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", rhi)
         # 默认 surface 必须通过 typed RHI 错误拒绝未实现能力。
         self.assertIn('rhi_not_implemented("test_present")', rhi)
         # 读取 D3D11 兼容 context 实现。
         d3d11_context = (
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs"
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs"
         ).read_text(encoding="utf-8")
         # D3D11 context 门面不得重复实现无帧探测。
         self.assertNotIn("fn test_present(&mut self)", d3d11_context)
         # 读取 D3D11 thin RHI surface 实现。
         d3d11_surface = (
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs"
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
         ).read_text(encoding="utf-8")
         # 读取 D3D11 冻结 swapchain adapter 实现。
         d3d11_swapchain = (
-            ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs"
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/swapchain.rs"
         ).read_text(encoding="utf-8")
         # Windows 专属探测必须落在 GraphicsSurface 实现中。
         self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", d3d11_surface)
@@ -628,7 +628,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         for filename, context_name, shutdown in adapters:
             # 读取当前平台 context 的完整源码。
             source = (
-                ROOT / f"src/native/presentation/graphics/opengl/platform/{filename}"
+                ROOT / f"src/native/presentation/graphics/opengl/adapter/{filename}"
             ).read_text(encoding="utf-8")
             # 截取目标 context 的 Drop 实现之后的源码。
             drop_body = source[source.index(f"impl Drop for {context_name}") :]
@@ -645,7 +645,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_wgl_bootstrap_context_uses_checked_shutdown(self) -> None:
         # 读取生产 WGL adapter 的完整源码。
         source = (
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs"
         ).read_text(encoding="utf-8")
         # 截取 bootstrap owner 实现与 Drop 之间的检查式生命周期主体。
         bootstrap = source[
@@ -674,7 +674,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_wgl_construction_rollback_checks_target_hdc_release(self) -> None:
         # 读取生产 WGL adapter 的完整源码。
         source = (
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs"
         ).read_text(encoding="utf-8")
         # 截取正式 WglContext 构造事务，避免把 bootstrap 检查误算为覆盖。
         # 先定位正式构造函数起点，避免命中更早的 bootstrap 生命周期入口。
@@ -696,7 +696,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_wgl_pending_context_owns_failed_construction_cleanup(self) -> None:
         # 读取生产 WGL adapter 的完整源码。
         source = (
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs"
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs"
         ).read_text(encoding="utf-8")
         # 临时 owner 必须显式记录句柄与 current 状态。
         self.assertIn("struct PendingWglContext", source)
@@ -713,7 +713,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     def test_egl_construction_guard_owns_all_native_rollback(self) -> None:
         # 读取生产 EGL adapter 的完整源码。
         source = (
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs"
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs"
         ).read_text(encoding="utf-8")
         # 截取构造 guard，避免把正式 EglContext shutdown 误算为创建回滚。
         guard = source[
@@ -751,11 +751,11 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取独立的 Vulkan 构造 owner 实现。
         guard_source = (
             ROOT
-            / "src/native/presentation/graphics/vulkan/platform/context/construction.rs"
+            / "src/native/presentation/graphics/vulkan/adapter/context/construction.rs"
         ).read_text(encoding="utf-8")
         # 读取 VulkanContext 构造函数接线。
         methods_source = (
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/methods.rs"
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/methods.rs"
         ).read_text(encoding="utf-8")
         # 只截取正式 context 交付前的构造函数，排除运行期 shutdown 清理。
         constructor = methods_source[
@@ -794,7 +794,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 D3D11 checked shutdown 提交关闭事实并由 Drop 兜底。
     def test_d3d11_checked_shutdown_is_idempotent_and_drop_bound(self) -> None:
         # 读取 D3D11 context 状态、生命周期与 native 方法实现。
-        context_dir = ROOT / "src/native/presentation/graphics/d3d11/platform/context"
+        context_dir = ROOT / "src/native/presentation/graphics/d3d11/adapter/context"
         # 单独读取状态定义。
         state = (context_dir / "mod.rs").read_text(encoding="utf-8")
         # 单独读取 checked shutdown 实现。

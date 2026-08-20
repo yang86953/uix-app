@@ -11,13 +11,13 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口与句柄定义。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位共享资源表 Component。
-RESOURCE_TABLE = ROOT / "src/native/present/rhi/resource_table.rs"
+RESOURCE_TABLE = ROOT / "src/native/presentation/rhi/resource_table.rs"
 # 定位 D3D11 资源设备实现。
-D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 拆分资源生命周期实现。
-D3D11_RESOURCES = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs"
+D3D11_RESOURCES = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_resources.rs"
 # 定位 OpenGL 资源设备实现。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL 资源查询实现。

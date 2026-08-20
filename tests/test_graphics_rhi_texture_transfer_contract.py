@@ -16,9 +16,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位共享纹理区域与传输 Component。
-TRANSFER = ROOT / "src/native/present/rhi/transfer.rs"
+TRANSFER = ROOT / "src/native/presentation/rhi/transfer.rs"
 # 定位 OpenGL 子区域上传 Adapter。
 OPENGL_UPLOAD = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_upload.rs"
 # 定位 OpenGL 普通复制 Adapter。
@@ -30,13 +30,13 @@ OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL 重叠安全移动 Adapter。
 OPENGL_MOVE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_copy.rs"
 # 定位 D3D11 上传、复制与移动 Adapter。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 FramePlan 的类型化传输门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 到 GraphicsDevice 的唯一执行器。
 FRAME_PLAN_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位共享 texture 资源表与真实描述预检。
-TEXTURE_TABLE = ROOT / "src/native/present/rhi/texture_resource_table.rs"
+TEXTURE_TABLE = ROOT / "src/native/presentation/rhi/texture_resource_table.rs"
 
 
 # 集中锁定纹理传输几何的所有权与跨后端机械映射。

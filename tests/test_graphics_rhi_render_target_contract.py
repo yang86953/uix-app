@@ -11,23 +11,23 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位封闭 render target Component。
-TARGET = ROOT / "src/native/present/rhi/render_target.rs"
+TARGET = ROOT / "src/native/presentation/rhi/render_target.rs"
 # 定位共享 texture 资源表。
-TEXTURE_TABLE = ROOT / "src/native/present/rhi/texture_resource_table.rs"
+TEXTURE_TABLE = ROOT / "src/native/presentation/rhi/texture_resource_table.rs"
 # 定位 acquired Surface frame 契约。
-PRESENT = ROOT / "src/native/present/rhi/present_transaction.rs"
+PRESENT = ROOT / "src/native/presentation/rhi/present_transaction.rs"
 # 定位共享 pass 状态机。
-PASS_STATE = ROOT / "src/native/present/rhi/pass_state.rs"
+PASS_STATE = ROOT / "src/native/presentation/rhi/pass_state.rs"
 # 定位类型化 FramePlan。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 Renderer 封闭 Surface/Offscreen 帧。
 RENDERER_FRAME = ROOT / "src/draw/backend/rhi_renderer_execution.rs"
 # 定位 D3D11 Device Adapter。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 context 组合入口。
-D3D11_CONTEXT = ROOT / "src/native/presentation/graphics/d3d11/platform/context/mod.rs"
+D3D11_CONTEXT = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/mod.rs"
 # 定位 OpenGL Device Adapter。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL raster bridge。

@@ -6,11 +6,11 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 clipboard Component。
-CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+CLIPBOARD = ROOT / "src/native/backends/linux/windowing/wayland/clipboard.rs"
 # 定位 callback registry compatibility adapter。
-COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
+COMPAT = ROOT / "src/native/backends/linux/windowing/wayland/compat.rs"
 # 定位 WaylandBackend owner 字段。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证 data-source callback 随 selection 生命周期消费。

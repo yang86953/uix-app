@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_INPUT = ROOT / "src/native/backends/macos/text_input_view.rs"
 # macOS platform 已拆分为目录 module，测试读取其组合入口。
-PLATFORM = ROOT / "src/native/backends/macos/platform/mod.rs"
+PLATFORM = ROOT / "src/native/backends/macos/host/mod.rs"
 
 CALLBACKS = (
     "view_dealloc",

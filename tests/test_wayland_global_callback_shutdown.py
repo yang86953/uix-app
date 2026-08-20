@@ -6,9 +6,9 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland backend 主 Module。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 # 定位运行期失败关闭入口。
-EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
+EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
 
 
 # 验证 backend-global callback owners 的确定性关闭契约。

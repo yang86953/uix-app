@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 GraphicsDevice 公开契约。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位 native factory 组合根。
 REGISTRY = ROOT / "src/native/factory/registry.rs"
 # 定位 Drawing GPU Module 的启动探针。
@@ -23,7 +23,7 @@ BOOTSTRAP = ROOT / "src/draw/renderer/bootstrap.rs"
 # 定位 OpenGL GraphicsDevice Adapter。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 GraphicsDevice Adapter。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 
 
 # 提取指定 Rust 函数的完整花括号范围。

@@ -6,7 +6,7 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 clipboard Module。
-CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+CLIPBOARD = ROOT / "src/native/backends/linux/windowing/wayland/clipboard.rs"
 
 
 # 验证 closed backend 不再允许 clipboard 状态复活。

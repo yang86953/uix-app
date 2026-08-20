@@ -15,7 +15,7 @@ from typing import Iterable
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 RHI trait。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位 Drawing GPU Module probe 实现。
 PROBE = ROOT / "src/draw/backend/gpu/device_probe.rs"
 # 定位 native factory 组合根。
@@ -25,7 +25,7 @@ GPU_IMPL = ROOT / "src/draw/backend/gpu/backend/impl_main.rs"
 # 定位 OpenGL GraphicsDevice host。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 GraphicsDevice 实现。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 
 
 # 从候选词中匹配一个稳定的共享 scope 名称，避免锁死局部变量名。

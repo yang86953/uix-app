@@ -14,15 +14,15 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享颜色与清理输出契约。
-SHARED = ROOT / "src/native/present/rhi/color.rs"
+SHARED = ROOT / "src/native/presentation/rhi/color.rs"
 # 定位 OpenGL 整目标清理入口。
 OPENGL_FULL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL 局部清理与状态翻译。
 OPENGL_RECT = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_clear.rs"
 # 定位 D3D11 整目标清理入口。
-D3D11_FULL = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_FULL = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 局部清理与契约验收。
-D3D11_RECT = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_clear.rs"
+D3D11_RECT = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs"
 
 
 # 集中验证整目标与局部颜色清理的共享输出状态。

@@ -6,7 +6,7 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland 窗口工厂 Module。
-WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
+WINDOW_FACTORY = ROOT / "src/native/backends/linux/windowing/wayland/window.rs"
 
 
 # 验证 closed Wayland backend 不会通过窗口工厂复活协议状态。

@@ -6,9 +6,9 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland 事件循环 owner。
-EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
+EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
 # 定位 Wayland backend 最终 Drop owner。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证运行期致命失败与最终 Drop 的职责边界。

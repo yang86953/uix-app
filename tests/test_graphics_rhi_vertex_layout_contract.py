@@ -14,15 +14,15 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享顶点布局 Component。
-SHARED = ROOT / "src/native/present/rhi/vertex_layout.rs"
+SHARED = ROOT / "src/native/presentation/rhi/vertex_layout.rs"
 # 定位共享 pipeline 组合契约。
-PIPELINE = ROOT / "src/native/present/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位 OpenGL 顶点属性映射。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 OpenGL 独立布局 Adapter Component。
 OPENGL_LAYOUT = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_vertex_layout.rs"
 # 定位 D3D11 输入布局映射。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/pipeline.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/pipeline.rs"
 
 
 # 集中验证共享属性事实与两个 Adapter 的机械消费关系。

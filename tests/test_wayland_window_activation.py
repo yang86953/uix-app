@@ -6,15 +6,15 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位逐窗 activation Component。
-ACTIVATION = ROOT / "src/native/backends/linux/wayland/window_activation.rs"
+ACTIVATION = ROOT / "src/native/backends/linux/windowing/wayland/window_activation.rs"
 # 定位 WindowOps 同步能力入口。
-WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位逐窗 callback teardown Component。
-SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
+SHUTDOWN = ROOT / "src/native/backends/linux/windowing/wayland/window_callback_shutdown.rs"
 # 定位兼容 callback registry adapter。
-COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
+COMPAT = ROOT / "src/native/backends/linux/windowing/wayland/compat.rs"
 # 定位 Wayland 子模块声明。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证 Wayland raise 使用真实异步 token 并受逐窗生命周期约束。
