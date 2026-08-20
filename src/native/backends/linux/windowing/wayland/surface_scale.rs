@@ -499,6 +499,6 @@ pub(crate) fn bind_surface_scale_events(
 #[cfg(test)]
 // 单元测试验证多 output、动态更新与逐窗事件路由。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/native/backends/linux/wayland/surface_scale__tests.rs"]
+#[path = "../../../../../../tests/unit/native/backends/linux/wayland/surface_scale__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

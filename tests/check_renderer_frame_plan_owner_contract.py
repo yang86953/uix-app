@@ -15,7 +15,7 @@ EXECUTION = ROOT / "src/draw/backend/rhi_renderer_execution.rs"
 # 定位 OpenGL 统一 RHI host。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 统一 RHI device。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位使用 RhiRendererFrame 的核心 producer 源码集合；独立 blur 事务不属于该边界。
 PRODUCERS = (
     # 覆盖实体与纹理 quad producer。

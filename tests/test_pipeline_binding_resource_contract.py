@@ -14,9 +14,9 @@ class PipelineBindingResourceContractTests(unittest.TestCase):
     # 生产构造器必须只对共享 RHI Module 可见。
     def test_shared_resource_table_is_the_only_production_issuer(self) -> None:
         # 读取不可拆的 pipeline 身份定义。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取唯一保存真实 kind 与 Adapter 私有资源的共享表。
-        resource_table = (ROOT / "src/native/present/rhi/pipeline_resource_table.rs").read_text(encoding="utf-8")
+        resource_table = (ROOT / "src/native/presentation/rhi/pipeline_resource_table.rs").read_text(encoding="utf-8")
         # 生产构造器只能由共享 RHI Module 调用。
         self.assertIn("pub(super) const fn new(", pipeline)
         # 可控伪造入口必须显式限制为单元测试构建。

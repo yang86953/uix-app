@@ -112,6 +112,6 @@ fn hex_value(byte: u8) -> Option<u8> {
 // 纯解析测试不依赖真实 compositor。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/native/backends/linux/wayland/file_drop_uri__tests.rs"]
+#[path = "../../../../../../tests/unit/native/backends/linux/wayland/file_drop_uri__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

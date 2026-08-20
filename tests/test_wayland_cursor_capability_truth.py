@@ -6,13 +6,13 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland cursor Adapter。
-WAYLAND_CURSOR = ROOT / "src/native/backends/linux/wayland/cursor.rs"
+WAYLAND_CURSOR = ROOT / "src/native/backends/linux/windowing/wayland/cursor.rs"
 # 定位 cursor intent Component。
-CURSOR_STATE = ROOT / "src/native/backends/linux/wayland/cursor_state.rs"
+CURSOR_STATE = ROOT / "src/native/backends/linux/windowing/wayland/cursor_state.rs"
 # 定位 seat callback 与 pointer capability 编排。
-WAYLAND_SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
+WAYLAND_SEAT = ROOT / "src/native/backends/linux/windowing/wayland/seat.rs"
 # 定位可选 cursor-shape global 的 composition root。
-WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+WAYLAND_BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 # 定位 App pointer-cursor 交接 Component。
 APP_CURSOR = ROOT / "src/app/event_loop/pointer_cursor.rs"
 

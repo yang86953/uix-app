@@ -14,13 +14,13 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawRange 值域契约。
-SHARED = ROOT / "src/native/present/rhi/draw_packet.rs"
+SHARED = ROOT / "src/native/presentation/rhi/draw_packet.rs"
 # 定位 FramePlan 统一门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL 有符号原生命令映射。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 无符号原生命令映射。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 
 
 # 集中验证共享值域、FramePlan 和两个 Adapter 的同一门禁。

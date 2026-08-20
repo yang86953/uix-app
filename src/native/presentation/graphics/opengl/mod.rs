@@ -8,6 +8,7 @@ use std::rc::Rc;
 use crate::core::{Error, Result};
 use crate::native::present::GraphicsContextCandidate;
 
+#[path = "adapter/mod.rs"]
 pub(crate) mod platform;
 pub(crate) mod raster;
 // WGL/EGL context 通过这一层共享同一套 FramePlan/RHI host 实现。

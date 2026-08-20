@@ -6,23 +6,23 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 文件拖放 Component 拥有 offer 与 URI read 生命周期。
-FILE_DROP = ROOT / "src/native/backends/linux/wayland/file_drop.rs"
+FILE_DROP = ROOT / "src/native/backends/linux/windowing/wayland/file_drop.rs"
 # URI Component 隔离本地 file URI 解析。
-FILE_DROP_URI = ROOT / "src/native/backends/linux/wayland/file_drop_uri.rs"
+FILE_DROP_URI = ROOT / "src/native/backends/linux/windowing/wayland/file_drop_uri.rs"
 # 窗口 Adapter 校验能力与逐窗开关。
-FILE_DROP_WINDOW = ROOT / "src/native/backends/linux/wayland/file_drop_window.rs"
+FILE_DROP_WINDOW = ROOT / "src/native/backends/linux/windowing/wayland/file_drop_window.rs"
 # composition root 持有唯一共享 Component。
-WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+WAYLAND_BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 # seat Adapter 分类 DataOffer、Selection 与 DnD 事件。
-WAYLAND_SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
+WAYLAND_SEAT = ROOT / "src/native/backends/linux/windowing/wayland/seat.rs"
 # owner-thread event loop 轮询 URI pipe。
-WAYLAND_EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
+WAYLAND_EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
 # 窗口操作入口暴露真实 enable_file_drop 能力。
-WAYLAND_WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WAYLAND_WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 窗口工厂注入共享状态与协议可用性。
-WAYLAND_WINDOW = ROOT / "src/native/backends/linux/wayland/window.rs"
+WAYLAND_WINDOW = ROOT / "src/native/backends/linux/windowing/wayland/window.rs"
 # Drop Adapter 负责逐窗最终清理。
-SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
+SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/windowing/wayland/surface_registration.rs"
 # 验证 Wayland FileDrop 只有在真实协议、窗口资格与完成传输成立后产生事件。
 class WaylandFileDropLifecycleTests(unittest.TestCase):
     # composition root 必须只有一个共享状态 owner，并传给每个窗口。

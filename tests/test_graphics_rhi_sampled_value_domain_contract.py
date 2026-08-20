@@ -15,17 +15,17 @@ VERTEX_UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位共享 FramePlan 验证。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位共享采样格式与过滤契约。
-PIPELINE = ROOT / "src/native/present/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位 OpenGL shader 常量。
 OPENGL_SHADERS = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
 # 定位 OpenGL draw 的共享采样门禁消费点。
 OPENGL_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 coverage shader 常量。
-D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 # 定位 D3D11 MSDF shader 常量。
-D3D11_MSDF = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/msdf_shader.rs"
+D3D11_MSDF = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/msdf_shader.rs"
 # 定位 D3D11 draw 的共享采样门禁消费点。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 
 
 # 截取两个稳定声明之间的源码，避免其它代码偶然满足断言。

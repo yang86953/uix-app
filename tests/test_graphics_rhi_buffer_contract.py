@@ -14,11 +14,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位共享 Buffer Component。
-BUFFER = ROOT / "src/native/present/rhi/buffer.rs"
+BUFFER = ROOT / "src/native/presentation/rhi/buffer.rs"
 # 定位共享 Buffer 资源表 Component。
-BUFFER_TABLE = ROOT / "src/native/present/rhi/buffer_resource_table.rs"
+BUFFER_TABLE = ROOT / "src/native/presentation/rhi/buffer_resource_table.rs"
 # 定位 FramePlan 命令闭集。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 到 Device 的唯一执行边界。
@@ -30,7 +30,7 @@ OPENGL_BRIDGE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs"
 # 定位 OpenGL GraphicsDevice host。
 OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 D3D11 Buffer Adapter。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 
 
 # 集中锁定 Buffer 事实所有权、共同值域与跨后端机械映射。

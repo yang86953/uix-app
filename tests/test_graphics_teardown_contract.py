@@ -6,9 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GRAPHICS = ROOT / "src/native/presentation/graphics/mod.rs"
 # 读取拆分后的 Vulkan context 组合模块和 shutdown 实现。
-VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/platform/context"
-VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/platform/device.rs"
-VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/platform/fault.rs"
+VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/adapter/context"
+VULKAN_DEVICE = ROOT / "src/native/presentation/graphics/vulkan/adapter/device.rs"
+VULKAN_FAULT = ROOT / "src/native/presentation/graphics/vulkan/adapter/fault.rs"
 REGISTRIES = (
     ROOT / "src/native/factory/registry_linux.rs",
     ROOT / "src/native/factory/registry_macos.rs",
@@ -17,24 +17,24 @@ REGISTRIES = (
 # 维护当前所有原生 context 的 checked shutdown 证据位置。
 LEGACY_CONTEXTS = {
     "d3d11": (
-        ROOT / "src/native/presentation/graphics/d3d11/platform/context",
+        ROOT / "src/native/presentation/graphics/d3d11/adapter/context",
         False,
     ),
     "d3d12": (
-        ROOT / "src/native/presentation/graphics/d3d12/platform/context",
+        ROOT / "src/native/presentation/graphics/d3d12/adapter/context",
         True,
     ),
     "metal": (
-        ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+        ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
         False,
     ),
     "vulkan": (
-        ROOT / "src/native/presentation/graphics/vulkan/platform/context",
+        ROOT / "src/native/presentation/graphics/vulkan/adapter/context",
         True,
     ),
     "egl": (
         # EGL 原生 owner 与拆分后的 lifecycle/RHI 组合共同构成完整模块。
-        (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs", ROOT / "src/native/presentation/graphics/opengl/platform/egl_rhi.rs"),
+        (ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs", ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs"),
         True,
     ),
     "wgl": (
@@ -97,7 +97,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验薄 RHI 在首帧前完成能力探针，并拥有 MSDF atlas 的显式释放边界。
     def test_rhi_probe_and_msdf_atlas_contract(self) -> None:
         # 读取通用 RHI、Drawing probe、renderer 和 backend shutdown 的实现。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
         probe = (ROOT / "src/draw/backend/gpu/device_probe.rs").read_text(encoding="utf-8")
         renderer = (ROOT / "src/draw/backend/rhi_renderer.rs").read_text(encoding="utf-8")
@@ -123,14 +123,14 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验原生扇形已经进入统一 RHI，而不是继续走 legacy draw_sectors。
     def test_native_sector_rhi_contract(self) -> None:
         # 读取扇形 lowering、共享 pipeline 契约和两套 adapter 的类型化实现。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         gl_pipeline = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_pipeline.rs").read_text(encoding="utf-8")
         gl_shaders = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
-        d3d_shader = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/rhi_sector.rs").read_text(encoding="utf-8")
+        d3d_shader = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/rhi_sector.rs").read_text(encoding="utf-8")
         # 共享契约必须拥有 Sector 身份与唯一 uniform 布局。
         self.assertIn("Sector,", pipeline)
         self.assertIn("Self::Sector => SECTOR_UNIFORM_BYTES", pipeline)
@@ -154,8 +154,8 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         plan = (ROOT / "src/draw/backend/frame_plan_execution.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 与两套 adapter 的 Additive 类型化实现。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 主要 FrameEncoder 命令必须进入同一个 lowering，而不是逐操作兼容门面。
         self.assertIn("FrameCommand::CpuSegment", lowering)
@@ -206,7 +206,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         shadow = (ROOT / "src/draw/backend/rhi_renderer_shadow.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         submit = (ROOT / "src/draw/backend/gpu/submit.rs").read_text(encoding="utf-8")
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # lowering 必须缩放并保留 corners，不能恢复轴对齐拒绝门禁。
         self.assertIn("scale_rhi_corners(value.corners", lowering)
@@ -223,7 +223,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         queue = (ROOT / "src/draw/backend/gpu/queue.rs").read_text(encoding="utf-8")
         lowering = (ROOT / "src/draw/backend/gpu/rhi_lowering.rs").read_text(encoding="utf-8")
         renderer = (ROOT / "src/draw/backend/rhi_renderer.rs").read_text(encoding="utf-8")
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         shaders = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 两类 native gradient DTO 和通用 payload 必须带真实四角。
@@ -244,9 +244,9 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 Picture slot 的唯一资源字段。
         backend_owner = (ROOT / "src/draw/backend/gpu/backend/mod.rs").read_text(encoding="utf-8")
         # 读取公共兼容接口和句柄声明。
-        present = read_rust_module(ROOT / "src/native/present/mod.rs")
+        present = read_rust_module(ROOT / "src/native/presentation/contracts/mod.rs")
         # 读取 D3D11 adapter context 的完整拆分模块。
-        d3d11 = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/context/mod.rs")
+        d3d11 = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/context/mod.rs")
         # 读取 OpenGL ES raster 的完整拆分模块。
         opengl = read_rust_module(ROOT / "src/native/presentation/graphics/opengl/raster/mod.rs")
         # Picture slot 必须直接保存必需的单一 RHI texture。
@@ -275,13 +275,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取公共兼容接口与同目录声明。
         present = read_rust_module(ROOT / "src/native/present")
         # 读取 D3D11 adapter 的 context 与 pipeline 拆分模块。
-        d3d11_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/context")
+        d3d11_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/context")
         # 读取 D3D11 adapter 的底层 pipeline 拆分模块。
-        d3d11_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline")
+        d3d11_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline")
         # 读取 D3D12 adapter 的 context 拆分模块。
-        d3d12_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/context")
+        d3d12_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/adapter/context")
         # 读取 D3D12 adapter 的底层 pipeline 拆分模块。
-        d3d12_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/platform/pipeline")
+        d3d12_pipeline = read_rust_module(ROOT / "src/native/presentation/graphics/d3d12/adapter/pipeline")
         # 读取 OpenGL ES context 与 raster pipeline 的组合源码。
         opengl = read_rust_module(ROOT / "src/native/presentation/graphics/opengl")
         # 读取通用 renderer 私有的 soft tile 打包模块。
@@ -380,13 +380,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 owner-thread 转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 D3D11 兼容 trait 实现。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs").read_text(encoding="utf-8")
         # 读取 D3D12 兼容 trait 实现。
-        d3d12 = (ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs").read_text(encoding="utf-8")
+        d3d12 = (ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs").read_text(encoding="utf-8")
         # 读取 WGL 兼容 trait 实现。
-        wgl = (ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs").read_text(encoding="utf-8")
+        wgl = (ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs").read_text(encoding="utf-8")
         # 读取 EGL 兼容 trait 实现。
-        egl = (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs").read_text(encoding="utf-8")
+        egl = (ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs").read_text(encoding="utf-8")
         # 逐一检查被删除的高层 clear/bind 方法。
         for method in ("clear_render_target", "clear_rects", "bind_swapchain_target"):
             # 公共门面不得重新声明已退出的逐 UI 方法。
@@ -402,7 +402,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # capability profile 不得继续宣称已删除的局部清理入口。
         self.assertNotIn("pub clear_rects:", present)
         # 读取 D3D11 thin RHI 共用的低层 target 恢复 helper。
-        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
+        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs").read_text(encoding="utf-8")
         # D3D11 最终 present 与 RHI acquire 仍须能恢复 swapchain RTV。
         self.assertIn("pub(super) fn bind_swapchain_target", d3d11_methods)
         # 读取 OpenGL thin RHI 共用的低层 framebuffer 恢复 helper。
@@ -413,7 +413,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 native context 构造成功即就绪，不再保留二阶段初始化门面。
     def test_initialize_compatibility_entry_leaves_graphics_context(self) -> None:
         # 读取公共图形上下文 trait。
-        graphics_trait = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        graphics_trait = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 registry 的单候选构造路径。
@@ -423,17 +423,17 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # fake context 必须模拟构造即就绪事实。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
             # D3D11 context 不再保留空初始化实现。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 context 不再保留空初始化实现。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # Vulkan context 不再保留空初始化实现。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # Metal context 在构造阶段进入就绪态。
-            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
             # WGL context 由 constructor 完成原生初始化。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL context 由 constructor 完成原生初始化。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
         )
         # 公共 trait 不得重新声明二阶段初始化入口。
         self.assertNotIn("fn initialize(", graphics_trait)
@@ -462,7 +462,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验平台 current 语义只存在于 adapter 私有 RHI host，不再穿透通用 renderer。
     def test_make_current_compatibility_entry_leaves_renderer_and_graphics_context(self) -> None:
         # 读取公共图形上下文 trait。
-        graphics_trait = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        graphics_trait = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread context wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取通用 backend 契约。
@@ -484,17 +484,17 @@ class GraphicsTeardownContractTests(unittest.TestCase):
             # fake context 不得保留调用计数旁路。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
             # D3D11 context 的 target 绑定只属于低层 RHI helper。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 context 的 command list 开始只属于 adapter 内部。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # Vulkan context 不再提供空 current 实现。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # Metal context 不再提供空 current 实现。
-            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
             # WGL trait wrapper 不再暴露 current。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL trait wrapper 不再暴露 current。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
         )
         # 共享 lifecycle 不得重新声明平台 current 方法。
         self.assertNotIn("fn make_current(", graphics_trait)
@@ -538,7 +538,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # fake context 不得继续记录已删除的调用事实。
         self.assertNotIn("make_current_calls", contexts[0].read_text(encoding="utf-8"))
         # WGL 原生 helper 必须保留给 OpenGlRhiHost 使用。
-        wgl_native = (ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs").read_text(encoding="utf-8")
+        wgl_native = (ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs").read_text(encoding="utf-8")
         # helper 不进入公共 trait，只在 adapter 内维护。
         self.assertIn("fn make_current_result(&self)", wgl_native)
         # EGL 同样保留 adapter 私有 helper。
@@ -554,7 +554,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 RenderBackend 的 resize、initialize 与 Picture 实现。
         backend = (ROOT / "src/draw/backend/gpu/backend/render_backend.rs").read_text(encoding="utf-8")
         # 读取构造期已验证的 GPU recipe owner。
-        gpu_owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        gpu_owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # dormant hybrid 构造入口不得复活。
         self.assertNotIn("pub(crate) fn new(gpu_ctx", lifecycle)
         # 构造器不得重新按模式分叉。
@@ -618,20 +618,20 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取四个原生 context 的 trait 实现。
         adapters = (
             # D3D11 context 的类型化 lifecycle 实现。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 context 的类型化 lifecycle 实现。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # WGL context 的类型化 lifecycle 实现。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL context 的类型化 lifecycle 实现。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
         )
         # 读取 adapter 私有 pipeline 目录，确认无消费者实现也已物理退出。
         private_pipelines = (
             # D3D11 只应保留薄 RHI packet 编码。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline",
             # D3D12 尚无薄 RHI，旧逐 UI pipeline 目录应不存在。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/pipeline",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/pipeline",
             # OpenGL raster 只应保留 retained RHI owner 与 surface bridge。
             ROOT / "src/native/presentation/graphics/opengl/raster",
         )
@@ -701,7 +701,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 renderer 能力只从 thin RHI 快照派生，不恢复 adapter 平行声明。
     def test_native_raster_caps_are_derived_from_thin_rhi(self) -> None:
         # 读取迁移期 graphics context trait。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 包装层。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 graphics backend 拥有的 renderer 能力投影定义。
@@ -711,11 +711,11 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 枚举曾经硬编码 renderer profile 的生产 adapter。
         adapters = (
             # Windows 默认 D3D11 adapter。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # Windows OpenGL ES/WGL adapter。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # Linux OpenGL ES/EGL adapter。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
         )
         # 公共 context 门面不得重新声明 renderer 能力查询。
         self.assertNotIn("fn native_raster_caps(", facade)
@@ -741,21 +741,21 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
     def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:
         # 读取兼容 graphics context trait。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 兼容转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 thin RHI 角色契约。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取已经按 Device 与 Surface 拆开的能力契约。
-        capabilities = (ROOT / "src/native/present/rhi/capabilities.rs").read_text(encoding="utf-8")
+        capabilities = (ROOT / "src/native/presentation/rhi/capabilities.rs").read_text(encoding="utf-8")
         # 读取 D3D11 surface 与 capability 实现。
-        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs").read_text(encoding="utf-8")
         # 读取共享 OpenGL surface bridge。
         opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的测试诊断入口。
         backend = (ROOT / "src/draw/backend/gpu/backend/impl_main.rs").read_text(encoding="utf-8")
         # 读取 Vulkan 的显式 GFX-R5 诊断辅助。
-        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs").read_text(encoding="utf-8")
+        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs").read_text(encoding="utf-8")
         # 兼容 trait 不得重新声明 readback。
         self.assertNotIn("fn read_pixels(", facade)
         # owner-thread 兼容 wrapper 不得转发 readback。
@@ -763,17 +763,17 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 逐个核对原生 context wrapper 已退出旧入口。
         for adapter in (
             # D3D11 兼容实现。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 兼容实现。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # Vulkan 兼容实现。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # Metal 兼容实现。
-            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
             # WGL 兼容实现。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL 兼容实现。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
             # 测试 context 兼容实现。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
         ):
@@ -808,15 +808,15 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验通用 context resize 已拆分为 GPU RHI 与 CPU PixelUpload 两条 typed 契约。
     def test_context_resize_is_split_by_surface_recipe(self) -> None:
         # 读取兼容 context 与 PixelUpload surface trait。
-        facade = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 PixelUpload 生命周期。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 recipe owner。
-        recipe_owner = (ROOT / "src/native/present/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 D3D11 context 私有生命周期实现。
-        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
+        d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs").read_text(encoding="utf-8")
         # 通用 context trait 不得继续声明无 recipe 区分的 resize。
         self.assertNotIn("fn resize(&mut self", facade)
         # PixelUpload 必须拥有独立的专用 surface trait。
@@ -839,13 +839,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 逐个核对 GPU context 与测试 fake 已退出兼容 resize wrapper。
         for adapter in (
             # D3D11 GPU context。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 测试期 GPU context。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # WGL GPU context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL GPU context。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
             # GPU-native test fake。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
         ):
@@ -854,9 +854,9 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # D3D11 已无消费者的逻辑兼容 helper 必须物理删除。
         self.assertNotIn("fn resize_surface_logical(", d3d11_methods)
         # 读取 Vulkan PixelUpload context 实现。
-        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs").read_text(encoding="utf-8")
+        vulkan = (ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs").read_text(encoding="utf-8")
         # 读取 Metal PixelUpload context 实现。
-        metal = (ROOT / "src/native/presentation/graphics/metal/platform/context.rs").read_text(encoding="utf-8")
+        metal = (ROOT / "src/native/presentation/graphics/metal/adapter/context.rs").read_text(encoding="utf-8")
         # 两个 PixelUpload adapter 必须实现专用 surface trait。
         self.assertIn("impl PixelUploadSurface for VulkanContext", vulkan)
         # Metal 同样必须实现专用 surface trait。

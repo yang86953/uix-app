@@ -138,7 +138,7 @@ fn assert_source_order(source: &str, markers: &[&str]) {
 fn native_shape_shaders_encode_the_shared_contract() {
     // 在非 Windows 测试目标也读取 D3D11 shader 源以形成跨平台门禁。
     let d3d_source = include_str!(
-        "../../../../../src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+        "../../../../../src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
     );
     // 提取 D3D11 Shape shader 常量。
     let d3d_shape = source_section(d3d_source, "const RECT_HLSL", "const GLYPH_HLSL");

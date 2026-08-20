@@ -9,9 +9,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位拆分后的 macOS presenter 实现。
-PRESENTER = ROOT / "src/native/backends/macos/platform/presenter.rs"
+PRESENTER = ROOT / "src/native/backends/macos/presentation/presenter.rs"
 # 定位拆分后的 macOS 应用事件实现。
-APP_EVENT = ROOT / "src/native/backends/macos/platform/app_event.rs"
+APP_EVENT = ROOT / "src/native/backends/macos/windowing/app_event.rs"
 
 
 # 聚合 macOS platform 拆分边界的源码契约。

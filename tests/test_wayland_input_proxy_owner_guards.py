@@ -7,9 +7,9 @@ from pathlib import Path
 # 计算仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 capability callback adapter。
-SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
+SEAT = ROOT / "src/native/backends/linux/windowing/wayland/seat.rs"
 # 定位无状态代理 owner Component。
-OWNER = ROOT / "src/native/backends/linux/wayland/input_proxy_owner.rs"
+OWNER = ROOT / "src/native/backends/linux/windowing/wayland/input_proxy_owner.rs"
 
 
 # 验证 Wayland capability 绑定 owner 的检查式生命周期。

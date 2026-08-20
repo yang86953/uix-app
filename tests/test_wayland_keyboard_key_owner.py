@@ -6,11 +6,11 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 keyboard Key owner Component。
-OWNER = ROOT / "src/native/backends/linux/wayland/keyboard_key_owner.rs"
+OWNER = ROOT / "src/native/backends/linux/windowing/wayland/keyboard_key_owner.rs"
 # 定位 Wayland seat 协议 adapter。
-SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
+SEAT = ROOT / "src/native/backends/linux/windowing/wayland/seat.rs"
 # 定位 Wayland 模块登记表。
-MODULE = ROOT / "src/native/backends/linux/wayland/mod.rs"
+MODULE = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证 keyboard Key 的 owner 边界、锁序与提交顺序。

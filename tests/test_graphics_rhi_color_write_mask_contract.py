@@ -14,11 +14,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 pipeline 状态。
-SHARED = ROOT / "src/native/present/rhi/pipeline.rs"
+SHARED = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位 OpenGL Adapter 输出状态翻译。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 Adapter 输出状态翻译。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/pipeline.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/pipeline.rs"
 
 
 # 集中验证共享写掩码所有权和两个原生翻译入口。

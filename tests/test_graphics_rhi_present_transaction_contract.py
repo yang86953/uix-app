@@ -11,17 +11,17 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口和 Surface trait。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位共享呈现事务 Component。
-TRANSACTION = ROOT / "src/native/present/rhi/present_transaction.rs"
+TRANSACTION = ROOT / "src/native/presentation/rhi/present_transaction.rs"
 # 定位共享提交序列 Component。
-SUBMISSION = ROOT / "src/native/present/rhi/submission.rs"
+SUBMISSION = ROOT / "src/native/presentation/rhi/submission.rs"
 # 定位 FramePlan 最终执行事务。
 FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 D3D11 Surface Adapter。
-D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs"
+D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
 # 定位 D3D11 Device 到 Surface 门禁 bridge。
-D3D11_SUBMIT = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_submit.rs"
+D3D11_SUBMIT = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_submit.rs"
 # 定位 OpenGL Surface Adapter。
 OPENGL_SURFACE = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL pipeline bridge。

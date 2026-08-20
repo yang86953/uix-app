@@ -13,15 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 # 定位 Drawing 核心的最终 damage 规范。
 CORE_DAMAGE = ROOT / "src/core/damage/mod.rs"
 # 定位共享 Surface 呈现事务。
-TRANSACTION = ROOT / "src/native/present/rhi/present_transaction.rs"
+TRANSACTION = ROOT / "src/native/presentation/rhi/present_transaction.rs"
 # 定位 D3D11 Surface 与提交 bridge。
-D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs"
+D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
 # 定位 D3D11 共享门禁转发。
-D3D11_SUBMIT = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_submit.rs"
+D3D11_SUBMIT = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_submit.rs"
 # 定位 D3D11 swapchain Adapter。
-D3D11_SWAPCHAIN = ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs"
+D3D11_SWAPCHAIN = ROOT / "src/native/presentation/graphics/d3d11/adapter/swapchain.rs"
 # 定位 D3D11 context 呈现收口。
-D3D11_METHODS = ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs"
+D3D11_METHODS = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs"
 # 定位 OpenGL Surface Adapter。
 OPENGL_SURFACE = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 OpenGL owner-thread bridge。

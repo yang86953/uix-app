@@ -6,11 +6,11 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland 0.31 兼容层。
-COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
+COMPAT = ROOT / "src/native/backends/linux/windowing/wayland/compat.rs"
 # 定位逐窗 frame callback 注册入口。
-WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位 frame request 消费 Component。
-FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
+FRAME_CALLBACK = ROOT / "src/native/backends/linux/windowing/wayland/frame_callback.rs"
 
 
 # 验证 one-shot 协议 callback owner 只消费一次。

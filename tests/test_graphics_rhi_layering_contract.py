@@ -59,7 +59,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 管线身份与 ABI 必须由共享 RHI 契约拥有，Adapter 只做翻译。
     def test_pipeline_contract_is_shared_and_typed(self) -> None:
         # 读取共享 pipeline 契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取两套当前生产 Adapter 的 draw 翻译层。
         adapters = rust_sources(ADAPTER_ROOTS[0]) + rust_sources(ADAPTER_ROOTS[1])
         # 共享层必须使用封闭类型表达 pipeline 身份。
@@ -139,9 +139,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 原生 context 激活与设备健康检查必须保持两个正交生命周期契约。
     def test_device_activation_and_health_are_orthogonal(self) -> None:
         # 读取薄 RHI Device 契约。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取唯一生产 GPU recipe owner。
-        owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 Drawing GPU Module 私有的 FramePlan 启动探针。
         probe = (ROOT / "src/draw/backend/gpu/device_probe.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device Adapter 门面。
@@ -175,19 +175,19 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Device submit 与 Surface present 必须共享同一提交身份状态机。
     def test_submission_sequence_is_shared_by_both_adapters(self) -> None:
         # 读取薄 RHI 组合入口。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 API 无关提交序列契约。
-        submission = (ROOT / "src/native/present/rhi/submission.rs").read_text(encoding="utf-8")
+        submission = (ROOT / "src/native/presentation/rhi/submission.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device 提交实现。
         opengl_device = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Surface 呈现实现。
         opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device 状态。
-        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device 提交与校验实现。
-        d3d11_submit = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_submit.rs").read_text(encoding="utf-8")
+        d3d11_submit = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_submit.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Surface 呈现实现。
-        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs").read_text(encoding="utf-8")
         # 薄 RHI 必须装配独立的共享提交状态机。
         self.assertIn("mod submission;", rhi)
         # 共享类型必须同时拥有下一身份和最近提交两个事实。
@@ -219,17 +219,17 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Render pass 生命周期、几何门禁和资源冲突必须由共享 RHI 状态机拥有。
     def test_render_pass_state_is_shared_by_both_adapters(self) -> None:
         # 读取薄 RHI 组合入口。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 API 无关的 pass 状态机。
-        pass_state = (ROOT / "src/native/present/rhi/pass_state.rs").read_text(encoding="utf-8")
+        pass_state = (ROOT / "src/native/presentation/rhi/pass_state.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device Adapter 状态和命令实现。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device Adapter 状态和 pass 实现。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 资源绑定实现。
-        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_resources.rs").read_text(encoding="utf-8")
+        d3d11_resources = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_resources.rs").read_text(encoding="utf-8")
         # 读取 D3D11 pass 收尾实现。
-        d3d11_submit = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_submit.rs").read_text(encoding="utf-8")
+        d3d11_submit = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_submit.rs").read_text(encoding="utf-8")
         # 薄 RHI 必须装配独立共享状态机。
         self.assertIn("mod pass_state;", rhi)
         # 共享状态机必须拥有唯一活动 pass 事实。
@@ -265,21 +265,21 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Device 与 Surface 的能力事实必须由各自角色拥有，组合 context 只负责同源借用。
     def test_device_and_surface_capabilities_are_orthogonal(self) -> None:
         # 读取两个角色的共享能力值。
-        capabilities = (ROOT / "src/native/present/rhi/capabilities.rs").read_text(encoding="utf-8")
+        capabilities = (ROOT / "src/native/presentation/rhi/capabilities.rs").read_text(encoding="utf-8")
         # 读取两个薄 RHI trait。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device Adapter。
-        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11_device = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Surface Adapter。
-        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device profile。
         opengl_device = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Surface host。
         opengl_surface = (ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs").read_text(encoding="utf-8")
         # 读取两个 Adapter 把 Surface 事实冻结为 registry recipe 的创建边界。
-        adapter_factories = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in ("src/native/presentation/graphics/d3d11/platform/mod.rs", "src/native/presentation/graphics/opengl/platform/mod.rs"))
+        adapter_factories = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in ("src/native/presentation/graphics/d3d11/adapter/mod.rs", "src/native/presentation/graphics/opengl/adapter/mod.rs"))
         # 读取 GPU owner 对静态 recipe 与实际 Surface 的一致性门禁。
-        gpu_owner = (ROOT / "src/native/present/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        gpu_owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 Drawing Renderer 私有的能力投影。
         raster_capabilities = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # Device 与 Surface 必须拥有不同的类型身份。
@@ -335,7 +335,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Gradient 的仿射字段与 alpha 语义必须由共享契约拥有，Adapter 只能机械映射。
     def test_gradient_uniform_and_alpha_semantics_are_shared(self) -> None:
         # 读取共享 Gradient 值对象。
-        gradient = (ROOT / "src/native/present/rhi/gradient.rs").read_text(encoding="utf-8")
+        gradient = (ROOT / "src/native/presentation/rhi/gradient.rs").read_text(encoding="utf-8")
         # 读取 Drawing 到 FramePlan 的 Gradient lowering。
         renderer = (ROOT / "src/draw/backend/rhi_renderer_gradient.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的共享字段映射。
@@ -343,7 +343,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 OpenGL Gradient shader。
         opengl_shader = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Gradient shader。
-        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs").read_text(encoding="utf-8")
+        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs").read_text(encoding="utf-8")
         # 共享层必须拥有固定值对象而非仅声明字节数。
         self.assertIn("pub(crate) struct RhiGradientRasterParams", gradient)
         # Renderer 必须使用共享构造器派生仿射边和线性长度。
@@ -383,7 +383,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 OpenGL 的固定 Shape shader。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 读取 D3D11 的固定 Shape shader。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs").read_text(encoding="utf-8")
         # 截取 OpenGL Shape 片元阶段，排除其它 pipeline 的局部变量。
         opengl_shape = opengl[
             # 从 Shape 片元常量开始。
@@ -405,13 +405,13 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Shadow 的仿射字段、资源生命周期和 Adapter 映射必须由独立共享契约拥有。
     def test_shadow_uniform_and_resources_are_shared_and_typed(self) -> None:
         # 读取共享 Shadow 值对象。
-        shadow = (ROOT / "src/native/present/rhi/shadow.rs").read_text(encoding="utf-8")
+        shadow = (ROOT / "src/native/presentation/rhi/shadow.rs").read_text(encoding="utf-8")
         # 读取 Shadow 到 FramePlan 的唯一 command lowering。
         renderer = (ROOT / "src/draw/backend/rhi_renderer_shadow.rs").read_text(encoding="utf-8")
         # 读取混合 painter-order 路径，确认其没有复制 ABI 公式。
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 大小契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的共享字段映射。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 共享层必须拥有固定值对象而不是仅声明六个匿名 float4。
@@ -455,17 +455,17 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Blur 的尺寸、区域、方向、tap 与权重必须由一个共享类型化 ABI 拥有。
     def test_blur_uniform_is_shared_typed_and_complete(self) -> None:
         # 读取共享 Blur 值对象。
-        blur = (ROOT / "src/native/present/rhi/blur.rs").read_text(encoding="utf-8")
+        blur = (ROOT / "src/native/presentation/rhi/blur.rs").read_text(encoding="utf-8")
         # 读取 Drawing 的高斯核构造与 FramePlan lowering。
         renderer = (ROOT / "src/draw/backend/rhi_renderer_blur.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 大小契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的共享字段映射。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Blur shader 字段声明。
         opengl_shader = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Blur cbuffer 字段声明。
-        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs").read_text(encoding="utf-8")
+        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs").read_text(encoding="utf-8")
         # 共享层必须拥有完整 304 字节值对象而非匿名数组大小。
         self.assertIn("pub(crate) struct RhiBlurRasterParams", blur)
         # Drawing 只负责产生归一化核，字段排列必须交给共享构造器。
@@ -509,17 +509,17 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # MSDF 的 viewport、atlas extent 与距离范围必须由共享类型化 ABI 拥有。
     def test_msdf_uniform_is_shared_typed_and_api_neutral(self) -> None:
         # 读取共享 MSDF 值对象。
-        msdf = (ROOT / "src/native/present/rhi/msdf.rs").read_text(encoding="utf-8")
+        msdf = (ROOT / "src/native/presentation/rhi/msdf.rs").read_text(encoding="utf-8")
         # 读取 Drawing 的 MSDF atlas 与 FramePlan lowering。
         renderer = (ROOT / "src/draw/backend/rhi_renderer_msdf.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 大小契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的共享字段映射。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 OpenGL MSDF 片元输出公式。
         opengl_shader = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 读取 D3D11 MSDF cbuffer 字段声明。
-        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/msdf_shader.rs").read_text(encoding="utf-8")
+        d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/msdf_shader.rs").read_text(encoding="utf-8")
         # 共享层必须拥有完整三十二字节值对象。
         self.assertIn("pub(crate) struct RhiMsdfRasterParams", msdf)
         # Drawing 必须把实际 atlas extent 作为类型化 RHI 尺寸传入共享构造器。
@@ -569,7 +569,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 基础 Mesh、sampled/coverage 与 Sector 常量也必须由共享类型化 ABI 拥有。
     def test_basic_primitive_uniforms_are_shared_and_typed(self) -> None:
         # 读取基础图元共享值对象。
-        primitive = (ROOT / "src/native/present/rhi/primitive.rs").read_text(encoding="utf-8")
+        primitive = (ROOT / "src/native/presentation/rhi/primitive.rs").read_text(encoding="utf-8")
         # 读取 Drawing 到共享 ABI 的集中映射。
         uniform = (ROOT / "src/draw/backend/rhi_renderer_uniform.rs").read_text(encoding="utf-8")
         # 读取多个 painter-order 执行入口。
@@ -577,7 +577,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取混合 painter-order 执行入口。
         mixed = (ROOT / "src/draw/backend/rhi_renderer_mixed.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 大小契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 的共享字段映射。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 三类常量必须各自拥有封闭值对象。
@@ -651,11 +651,11 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Pipeline 原生句柄与共享语义必须不可拆，并在 FramePlan 前置核对上传布局。
     def test_pipeline_binding_closes_frame_plan_layout_contract(self) -> None:
         # 读取共享 pipeline 身份与 ABI 契约。
-        pipeline = (ROOT / "src/native/present/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取只接受绑定 pipeline 的 draw packet。
-        draw_packet = (ROOT / "src/native/present/rhi/draw_packet.rs").read_text(encoding="utf-8")
+        draw_packet = (ROOT / "src/native/presentation/rhi/draw_packet.rs").read_text(encoding="utf-8")
         # 读取 Device 创建与销毁的公共边界。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 FramePlan 的前序上传布局验证组件。
         validation = (ROOT / "src/draw/backend/frame_plan_validation.rs").read_text(encoding="utf-8")
         # 读取 FramePlan 验证入口。
@@ -663,7 +663,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 OpenGL 最终资源表核对。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 D3D11 最终资源表核对。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8") + (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs").read_text(encoding="utf-8")
         # PipelineBinding 必须原子保存类型本身、opaque handle 与共享 kind。
         self.assertTrue(all(marker in pipeline for marker in ("pub(crate) struct PipelineBinding", "handle: PipelineHandle", "kind: PipelineKind")))
         # DrawPacket 必须私有保存完整绑定并只提供只读投影。
@@ -709,15 +709,15 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 纹理复制与移动必须共享同一格式、范围、资源关系和左上原点契约。
     def test_texture_transfer_contract_is_shared_and_top_left(self) -> None:
         # 读取 RHI 组合入口。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取共享纹理传输契约。
-        transfer = (ROOT / "src/native/present/rhi/transfer.rs").read_text(encoding="utf-8")
+        transfer = (ROOT / "src/native/presentation/rhi/transfer.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 普通复制实现。
         opengl_copy = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 重叠安全移动实现。
         opengl_move = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_copy.rs").read_text(encoding="utf-8")
         # 读取 D3D11 的复制与移动实现。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # RHI 必须显式装配唯一传输契约。
         self.assertIn("mod transfer;", rhi)
         # 共享类型化区域必须拥有唯一 checked_add 边界算法。
@@ -746,21 +746,21 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 颜色编码与混合值域必须由共享 RHI 冻结，原生 Adapter 不得启用隐式 sRGB 转换。
     def test_color_transfer_and_blend_domain_are_shared(self) -> None:
         # 读取共享颜色契约。
-        color = (ROOT / "src/native/present/rhi/color.rs").read_text(encoding="utf-8")
+        color = (ROOT / "src/native/presentation/rhi/color.rs").read_text(encoding="utf-8")
         # 读取 Device 与 Surface 已拆分的 capability 值。
-        capabilities = (ROOT / "src/native/present/rhi/capabilities.rs").read_text(encoding="utf-8")
+        capabilities = (ROOT / "src/native/presentation/rhi/capabilities.rs").read_text(encoding="utf-8")
         # 读取 OpenGL texture 格式映射。
         opengl_texture = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_resources.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 混合状态映射。
         opengl_draw = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs").read_text(encoding="utf-8")
         # 读取 Linux EGL surface 配置。
-        egl = (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs").read_text(encoding="utf-8")
+        egl = (ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs").read_text(encoding="utf-8")
         # 读取 Windows WGL surface 配置。
-        wgl = (ROOT / "src/native/presentation/graphics/opengl/platform/wgl.rs").read_text(encoding="utf-8")
+        wgl = (ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs").read_text(encoding="utf-8")
         # 读取 D3D11 texture 格式映射。
-        d3d11_texture = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11_texture = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 swapchain 格式映射。
-        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs").read_text(encoding="utf-8")
+        d3d11_surface = (ROOT / "src/native/presentation/graphics/d3d11/adapter/swapchain.rs").read_text(encoding="utf-8")
         # 共享层必须命名 RGB 编码，不能把 Unorm 当作完整颜色语义。
         self.assertIn("pub(crate) enum RhiRgbEncoding", color)
         # 共享层必须命名混合运算值域。
@@ -787,15 +787,15 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # Viewport 与 scissor 的目标范围必须由共享 RHI 值契约统一判定。
     def test_target_geometry_validation_is_shared_across_adapters(self) -> None:
         # 读取独立共享 RHI 几何 Component。
-        geometry = (ROOT / "src/native/present/rhi/geometry.rs").read_text(encoding="utf-8")
+        geometry = (ROOT / "src/native/presentation/rhi/geometry.rs").read_text(encoding="utf-8")
         # 读取唯一拥有目标范围门禁的共享 pass 状态机。
-        pass_state = (ROOT / "src/native/present/rhi/pass_state.rs").read_text(encoding="utf-8")
+        pass_state = (ROOT / "src/native/presentation/rhi/pass_state.rs").read_text(encoding="utf-8")
         # 读取 DrawPacket 独占的动态栅格值对象。
-        draw_raster = (ROOT / "src/native/present/rhi/draw_raster.rs").read_text(encoding="utf-8")
+        draw_raster = (ROOT / "src/native/presentation/rhi/draw_raster.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的 pass 状态翻译。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs").read_text(encoding="utf-8")
         # 读取 D3D11 的 pass 状态翻译。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_state.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_state.rs").read_text(encoding="utf-8")
         # Viewport 与 scissor 必须各自拥有一个共享目标边界方法。
         self.assertEqual(geometry.count("fits_within(self, extent: RhiExtent) -> bool"), 2)
         # 物理 viewport 必须在共享层冻结为整像素，禁止 Adapter 各自量化。
@@ -821,11 +821,11 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 局部清屏必须复用共享目标边界，Adapter 只保留原生清理编码差异。
     def test_clear_rect_reuses_shared_target_geometry_contract(self) -> None:
         # 读取唯一拥有局部清理门禁的共享 pass 状态机。
-        pass_state = (ROOT / "src/native/present/rhi/pass_state.rs").read_text(encoding="utf-8")
+        pass_state = (ROOT / "src/native/presentation/rhi/pass_state.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的局部清屏翻译。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_clear.rs").read_text(encoding="utf-8")
         # 读取 D3D11 的局部清屏翻译。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_clear.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs").read_text(encoding="utf-8")
         # 共享状态机必须拥有唯一目标边界判定。
         self.assertIn("scissor.fits_within(extent)", pass_state)
         # OpenGL ES 必须把颜色和矩形一起委托给共享门禁。
@@ -845,7 +845,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
     # 清屏颜色必须在共享 RHI 边界成为预乘值，Adapter 只能读取通道。
     def test_clear_color_premultiplication_has_one_shared_owner(self) -> None:
         # 读取共享 RHI 颜色值对象。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 FrameEncoder 到 FramePlan 的清屏 lowering。
         lowering = (ROOT / "src/draw/backend/gpu/backend/rhi_frame.rs").read_text(encoding="utf-8")
         # 读取 OpenGL ES 的 pass 与局部清理 Adapter。
@@ -858,9 +858,9 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取 D3D11 的 pass 与局部清理 Adapter。
         d3d11 = (
             # 合并完整 pass 清理实现。
-            (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+            (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
             # 合并局部清理实现。
-            + (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_clear.rs").read_text(encoding="utf-8")
+            + (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs").read_text(encoding="utf-8")
         )
         # 颜色通道必须保持私有，禁止任一 Adapter 绕过值对象构造。
         self.assertIn("pub(crate) struct RhiColor([f32; 4]);", rhi)

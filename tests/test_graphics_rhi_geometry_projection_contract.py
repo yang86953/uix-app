@@ -14,17 +14,17 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享目标几何 Component。
-GEOMETRY = ROOT / "src/native/present/rhi/geometry.rs"
+GEOMETRY = ROOT / "src/native/presentation/rhi/geometry.rs"
 # 定位共享 pass 状态机。
-PASS_STATE = ROOT / "src/native/present/rhi/pass_state.rs"
+PASS_STATE = ROOT / "src/native/presentation/rhi/pass_state.rs"
 # 定位 OpenGL 状态映射。
 OPENGL_STATE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL texture 上传映射。
 OPENGL_UPLOAD = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_upload.rs"
 # 定位 D3D11 状态映射。
-D3D11_STATE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_state.rs"
+D3D11_STATE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_state.rs"
 # 定位 D3D11 局部清理映射。
-D3D11_CLEAR = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_clear.rs"
+D3D11_CLEAR = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_clear.rs"
 # 定位最终 surface damage 合成边界。
 SURFACE_COMPOSITE = ROOT / "src/draw/backend/gpu/backend/rhi_surface_composite.rs"
 

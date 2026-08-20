@@ -7,7 +7,7 @@ from pathlib import Path
 # 计算仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland text-input adapter。
-TEXT_INPUT = ROOT / "src/native/backends/linux/wayland/text_input.rs"
+TEXT_INPUT = ROOT / "src/native/backends/linux/windowing/wayland/text_input.rs"
 # 定位共享 IME 事件 Component。
 IME_EVENTS = ROOT / "src/native/windowing/shared/ime_events.rs"
 

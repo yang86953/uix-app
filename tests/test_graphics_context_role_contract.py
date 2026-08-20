@@ -15,7 +15,7 @@ class GraphicsContextRoleContractTests(unittest.TestCase):
     # 校验组合契约本身不再继承任何角色。
     def test_context_is_a_pure_composition_contract(self) -> None:
         # 读取薄 RHI 角色定义。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 截取组合根契约定义与 blanket 实现之间的正文。
         context_contract = rhi[
             # 从组合 trait 的唯一声明开始。

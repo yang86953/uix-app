@@ -6,11 +6,11 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 text-input Module。
-TEXT_INPUT = ROOT / "src/native/backends/linux/wayland/text_input.rs"
+TEXT_INPUT = ROOT / "src/native/backends/linux/windowing/wayland/text_input.rs"
 # 定位运行期失败关闭边沿。
-EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
+EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
 # 定位 Wayland backend 最终 Drop。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证 text-input session 与 callback owner 的关闭顺序。

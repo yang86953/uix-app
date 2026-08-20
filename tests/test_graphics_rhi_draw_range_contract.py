@@ -14,17 +14,17 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 与 DrawRange 契约。
-SHARED = ROOT / "src/native/present/rhi/draw_packet.rs"
+SHARED = ROOT / "src/native/presentation/rhi/draw_packet.rs"
 # 定位 DrawPacket 独占的动态栅格契约。
-RASTER = ROOT / "src/native/present/rhi/draw_raster.rs"
+RASTER = ROOT / "src/native/presentation/rhi/draw_raster.rs"
 # 定位 FramePlan 绘制命令门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL 绘制 Adapter。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 绘制分派 Adapter。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 # 定位 D3D11 原生命令 helper。
-D3D11_HELPERS = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline"
+D3D11_HELPERS = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline"
 # 列出全部生产 DrawPacket 的 Drawing 与探针源文件。
 PRODUCERS = (
     # 通用 renderer 主路径。
@@ -154,7 +154,7 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # 读取独立动态栅格值对象。
         raster = RASTER.read_text(encoding="utf-8")
         # 读取薄 Device 公共边界。
-        device = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        device = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取两个 Adapter 的最终 Draw 编码入口。
         adapters = OPENGL.read_text(encoding="utf-8") + D3D11_DRAW.read_text(encoding="utf-8")
         # 共享值对象必须私有保存 viewport 与显式 scissor。

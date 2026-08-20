@@ -14,13 +14,13 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 pipeline 契约。
-PIPELINE = ROOT / "src/native/present/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
 # 定位 OpenGL draw 状态翻译。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 D3D11 公共状态映射。
-D3D11_MODULE = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11_MODULE = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 # 定位 D3D11 draw 分派边界。
-D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device_draw.rs"
+D3D11_DRAW = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 
 
 # 集中验证共享颜色抖动语义和两个 Device Adapter 的状态翻译。

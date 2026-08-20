@@ -39,11 +39,11 @@ class GraphicsReadbackContractTests(unittest.TestCase):
     # 校验原生 Adapter 只能返回统一范围与像素格式。
     def test_rhi_readback_normalizes_region_rows_and_channels(self) -> None:
         # 读取薄 RHI 共享结果契约。
-        rhi = (ROOT / "src/native/present/rhi.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 私有通道与行序适配。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs").read_text(encoding="utf-8")
         # 读取 D3D11 surface Adapter。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs").read_text(encoding="utf-8")
         # 共享结果必须显式保存请求区域与规范像素。
         self.assertIn("struct RhiSurfaceReadback", rhi)
         # 所有 Adapter 必须先执行同一范围验证。
@@ -154,7 +154,7 @@ class GraphicsReadbackContractTests(unittest.TestCase):
         # 读取 OpenGL ES Device Adapter 的事实能力声明。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Device Adapter 的事实能力声明。
-        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs").read_text(encoding="utf-8")
+        d3d11 = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs").read_text(encoding="utf-8")
         # Device 的可选纹理移动事实必须直接进入 Drawing 私有投影。
         self.assertIn("rhi_texture_region_move: capabilities.texture_region_move", projection)
         # 两个生产 Adapter 都必须显式声明它们实际实现的共享原语。

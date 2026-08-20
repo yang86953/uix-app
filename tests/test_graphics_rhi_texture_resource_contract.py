@@ -11,17 +11,17 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/present/rhi.rs"
+RHI = ROOT / "src/native/presentation/rhi/mod.rs"
 # 定位共享纹理资源契约。
-TEXTURE = ROOT / "src/native/present/rhi/texture.rs"
+TEXTURE = ROOT / "src/native/presentation/rhi/texture.rs"
 # 定位共享纹理上传契约。
-TRANSFER = ROOT / "src/native/present/rhi/transfer.rs"
+TRANSFER = ROOT / "src/native/presentation/rhi/transfer.rs"
 # 定位 OpenGL 资源表与上传 Adapter。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL 原生上传 Adapter。
 OPENGL_UPLOAD = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_upload.rs"
 # 定位 D3D11 资源表与上传 Adapter。
-D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi_device.rs"
+D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 
 
 # 集中锁定纹理资源与上传语义的唯一所有者。

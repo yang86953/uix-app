@@ -6,7 +6,7 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 Wayland clipboard Adapter。
-CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+CLIPBOARD = ROOT / "src/native/backends/linux/windowing/wayland/clipboard.rs"
 
 
 # 验证 set_text 只在真实 selection 请求后提交本地状态。

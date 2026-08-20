@@ -25,9 +25,9 @@ class GraphicsPresentContractTests(unittest.TestCase):
     # 校验共享 context lifecycle 不承载 PixelUpload 与 swapchain payload。
     def test_recipe_specific_present_contract_leaves_graphics_context(self) -> None:
         # 读取 present value 与 presenter 定义。
-        present_module = (ROOT / "src/native/present/mod.rs").read_text(encoding="utf-8")
+        present_module = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 读取 recipe 专用视图和共享生命周期契约。
-        graphics_traits = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        graphics_traits = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 截取共享 lifecycle 本身，避免专用 trait 方法干扰负断言。
         lifecycle_start = graphics_traits.index("pub(crate) trait GraphicsContextLifecycle")
         # 以 GPU recipe trait 作为 lifecycle 定义终点。
@@ -69,22 +69,22 @@ class GraphicsPresentContractTests(unittest.TestCase):
         # 收集只应实现 PixelUploadSurface 的 adapter。
         pixel_upload_contexts = (
             # Vulkan 只承接 CPU pixels 与专用 swapchain 生命周期。
-            ROOT / "src/native/presentation/graphics/vulkan/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # Metal 只承接 CAMetalLayer CPU upload。
-            ROOT / "src/native/presentation/graphics/metal/platform/context.rs",
+            ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
         )
         # 收集不再需要兼容 present 的 GPU context 与 fake。
         gpu_contexts = (
             # fake context 不再记录无生产消费者的统一 present。
             ROOT / "src/native/test_harness/fake_graphics_context.rs",
             # D3D11 最终提交由 thin RHI GraphicsSurface 持有。
-            ROOT / "src/native/presentation/graphics/d3d11/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 测试期 context 不再伪造统一 payload。
-            ROOT / "src/native/presentation/graphics/d3d12/platform/context/graphics.rs",
+            ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs",
             # WGL 最终提交由共享 OpenGL thin RHI surface 持有。
-            ROOT / "src/native/presentation/graphics/opengl/platform/wgl_graphics.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_graphics.rs",
             # EGL 最终提交同样由共享 OpenGL thin RHI surface 持有。
-            ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs",
+            ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs",
         )
         # 每个 PixelUpload adapter 都必须只在专用 trait 中提交 pixels。
         for context in pixel_upload_contexts:
@@ -108,22 +108,22 @@ class GraphicsPresentContractTests(unittest.TestCase):
     # 校验未接线的 Wayland 平行 GPU presenter 已被物理移除。
     def test_wayland_parallel_gpu_presenter_is_removed(self) -> None:
         # 固定曾经承载平行 GPU presenter 的文件路径。
-        wayland_presenter = ROOT / "src/native/backends/linux/wayland/gpu_presenter.rs"
+        wayland_presenter = ROOT / "src/native/backends/linux/windowing/wayland/gpu_presenter.rs"
         # 零构造调用的平行提交模块不得继续编译或制造第二 owner。
         self.assertFalse(wayland_presenter.exists())
         # 读取 Wayland 子模块清单。
-        wayland_module = (ROOT / "src/native/backends/linux/wayland/mod.rs").read_text(
+        wayland_module = (ROOT / "src/native/backends/linux/windowing/wayland/mod.rs").read_text(
             # 保持源码读取编码稳定。
             encoding="utf-8"
         )
         # 子模块清单不得恢复已删除的平行 presenter。
         self.assertNotIn("mod gpu_presenter", wayland_module)
         # 读取统一 context trait。
-        graphics_traits = (ROOT / "src/native/present/traits.rs").read_text(encoding="utf-8")
+        graphics_traits = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 通用 context 不得再暴露平行 swapchain 提交视图。
         self.assertNotIn("SwapchainPresentation", graphics_traits)
         # 读取 EGL 的生产 context 实现。
-        egl = (ROOT / "src/native/presentation/graphics/opengl/platform/egl.rs").read_text(encoding="utf-8")
+        egl = (ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs").read_text(encoding="utf-8")
         # EGL 不得保留第二套 swapchain 提交 owner。
         self.assertNotIn("SwapchainPresentation", egl)
         # 读取共享 OpenGL thin RHI surface 实现。

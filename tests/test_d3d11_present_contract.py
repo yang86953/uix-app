@@ -12,13 +12,13 @@ class D3d11PresentContractTests(unittest.TestCase):
     # 验证所有 D3D11 能力消费者都从同一 swapchain 事实投影。
     def test_discard_swapchain_has_one_present_capability_source(self) -> None:
         # 读取交换链创建与事实契约模块。
-        swapchain = (ROOT / "src/native/presentation/graphics/d3d11/platform/swapchain.rs").read_text(encoding="utf-8")
+        swapchain = (ROOT / "src/native/presentation/graphics/d3d11/adapter/swapchain.rs").read_text(encoding="utf-8")
         # 读取静态 recipe 能力投影所在的平台适配模块。
-        platform = (ROOT / "src/native/presentation/graphics/d3d11/platform/mod.rs").read_text(encoding="utf-8")
+        platform = (ROOT / "src/native/presentation/graphics/d3d11/adapter/mod.rs").read_text(encoding="utf-8")
         # 读取 coherency 投影所在的 context 方法模块。
-        methods = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/methods.rs").read_text(encoding="utf-8")
+        methods = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs").read_text(encoding="utf-8")
         # 读取薄 RHI Surface 能力投影。
-        rhi_surface = (ROOT / "src/native/presentation/graphics/d3d11/platform/context/rhi.rs").read_text(encoding="utf-8")
+        rhi_surface = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs").read_text(encoding="utf-8")
         # 唯一事实必须由 swapchain 模块提供，按 tracked 与 legacy 两个形态固化。
         self.assertIn("pub(crate) const fn tracked_swap_chain_contract()", swapchain)
         self.assertIn("pub(crate) const fn legacy_swap_chain_contract()", swapchain)

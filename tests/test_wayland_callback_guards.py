@@ -7,32 +7,32 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EVENT_LOOP = ROOT / "src/native/backends/linux/wayland/event_loop.rs"
-COMPAT = ROOT / "src/native/backends/linux/wayland/compat.rs"
+EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
+COMPAT = ROOT / "src/native/backends/linux/windowing/wayland/compat.rs"
 # 读取 wl_output callback 与显示状态 owner 的接线。
-WAYLAND_BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+WAYLAND_BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 # 读取单窗口 callback adapter 的 backend source 注入点。
-WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/wayland/window.rs"
+WAYLAND_WINDOW_FACTORY = ROOT / "src/native/backends/linux/windowing/wayland/window.rs"
 # 读取 Wayland clipboard data_source callback。
-WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/wayland/clipboard.rs"
+WAYLAND_CLIPBOARD = ROOT / "src/native/backends/linux/windowing/wayland/clipboard.rs"
 # 读取 Wayland seat 的 data-device callback 委托边界。
-WAYLAND_SEAT = ROOT / "src/native/backends/linux/wayland/seat.rs"
+WAYLAND_SEAT = ROOT / "src/native/backends/linux/windowing/wayland/seat.rs"
 # 读取 Wayland frame callback 私有 Component。
-WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/wayland/frame_callback.rs"
+WAYLAND_FRAME_CALLBACK = ROOT / "src/native/backends/linux/windowing/wayland/frame_callback.rs"
 # 读取 Wayland surface 跨注册表注销 Component。
-WAYLAND_SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
+WAYLAND_SURFACE_REGISTRATION = ROOT / "src/native/backends/linux/windowing/wayland/surface_registration.rs"
 # 读取 Wayland 指针激活授权 Component。
-WAYLAND_POINTER_ACTIVATION = ROOT / "src/native/backends/linux/wayland/pointer_activation.rs"
+WAYLAND_POINTER_ACTIVATION = ROOT / "src/native/backends/linux/windowing/wayland/pointer_activation.rs"
 # 读取逐窗移动与缩放授权消费及协议提交 Component。
-WAYLAND_WINDOW_INTERACTION = ROOT / "src/native/backends/linux/wayland/window_interaction.rs"
+WAYLAND_WINDOW_INTERACTION = ROOT / "src/native/backends/linux/windowing/wayland/window_interaction.rs"
 # 读取 Linux 平台的 owner-thread 失败提取边界。
 PLATFORM = ROOT / "src/native/backends/linux/platform.rs"
 # 定位 Wayland 窗口操作与装饰模式实现。
-WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位逐窗 surface descriptor、装饰映射与注销身份 Component。
-WAYLAND_WINDOW_SURFACE = ROOT / "src/native/backends/linux/wayland/window_surface.rs"
+WAYLAND_WINDOW_SURFACE = ROOT / "src/native/backends/linux/windowing/wayland/window_surface.rs"
 # 定位逐窗 xdg-shell callback teardown Component。
-WINDOW_CALLBACK_SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
+WINDOW_CALLBACK_SHUTDOWN = ROOT / "src/native/backends/linux/windowing/wayland/window_callback_shutdown.rs"
 # 定位实际启用自定义标题栏的主演示入口（uix-lang-demo）。
 GUI_DEMO = ROOT / "demo/uix-lang-demo/src/main.rs"
 

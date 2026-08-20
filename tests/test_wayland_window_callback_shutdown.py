@@ -6,13 +6,13 @@ import unittest
 # 解析测试文件所在仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位逐窗 callback shutdown Component。
-SHUTDOWN = ROOT / "src/native/backends/linux/wayland/window_callback_shutdown.rs"
+SHUTDOWN = ROOT / "src/native/backends/linux/windowing/wayland/window_callback_shutdown.rs"
 # 定位显式窗口关闭编排。
-WINDOW_OPS = ROOT / "src/native/backends/linux/wayland/window_ops.rs"
+WINDOW_OPS = ROOT / "src/native/backends/linux/windowing/wayland/window_ops.rs"
 # 定位无返回通道的 Drop adapter。
-REGISTRATION = ROOT / "src/native/backends/linux/wayland/surface_registration.rs"
+REGISTRATION = ROOT / "src/native/backends/linux/windowing/wayland/surface_registration.rs"
 # 定位 Wayland 子模块声明。
-BACKEND = ROOT / "src/native/backends/linux/wayland/mod.rs"
+BACKEND = ROOT / "src/native/backends/linux/windowing/wayland/mod.rs"
 
 
 # 验证逐窗 xdg-shell callback owners 的确定性关闭契约。

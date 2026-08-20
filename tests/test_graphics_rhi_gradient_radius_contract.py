@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位当前仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 Gradient 值对象。
-GRADIENT = ROOT / "src/native/present/rhi/gradient.rs"
+GRADIENT = ROOT / "src/native/presentation/rhi/gradient.rs"
 # 定位 FramePlan Uniform 载荷门禁。
 UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位 FramePlan 顶层验证。
@@ -19,7 +19,7 @@ FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL ES shader 源。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
 # 定位 D3D11 shader 源。
-D3D11 = ROOT / "src/native/presentation/graphics/d3d11/platform/pipeline/mod.rs"
+D3D11 = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
 
 
 # 截取两个声明之间的唯一源码范围。

@@ -12,6 +12,8 @@ pub(crate) mod d3d12;
 pub(crate) mod metal;
 #[cfg(feature = "opengles")]
 pub(crate) mod opengl;
+// 保留 `graphics::platform` 逻辑路径，原生 surface 物理归入 surface。
+#[path = "surface/mod.rs"]
 pub(crate) mod platform;
 #[cfg(all(feature = "vulkan", any(test, windows)))]
 pub(crate) mod vulkan;
