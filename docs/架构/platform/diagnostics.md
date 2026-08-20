@@ -35,10 +35,10 @@ Diagnostics 的首个 Rust SMC 纵切已经把公开 System 契约与私有实�
 | SMC 角色 | 源码落点 | 所有权与职责 |
 |---|---|---|
 | System | `src/diagnostics/mod.rs` 的 `Diagnostics` | 对外提供报告、快照和恢复登记/尝试；持有 runtime id、配置，并编排三个私有 Module |
-| 私有 Module | `src/diagnostics/reporting.rs` 的 `ReportingModule` | 由一个 Diagnostics 实例拥有；编排报告构建、容量存储和结构化事件发射，不向外暴露实现 |
+| 私有 Module | `src/diagnostics/reporting/mod.rs` 的 `ReportingModule` | 由一个 Diagnostics 实例拥有；编排报告构建、容量存储和结构化事件发射，不向外暴露实现 |
 | 私有 Module | `src/diagnostics/recovery.rs` 的 `RecoveryModule` | 由同一 Diagnostics 实例拥有；持有精确 `Errc` handler 和 RAII 注册生命周期，不访问 reporting Module |
 | 私有 Module | `src/diagnostics/crash.rs` 的 crash Module | 由同一 Diagnostics 实例拥有；持有有界 `CrashReport` 模型、原子写入与框架 panic hook，不访问 reporting / recovery Module |
-| Component | `reporting.rs` 的 `ReportDraftBuilder` | 单一负责 typed Error 的预算、脱敏、cause 截断和按策略捕获 backtrace |
+| Component | `reporting/mod.rs` 的 `ReportDraftBuilder` | 单一负责 typed Error 的预算、脱敏、cause 截断和按策略捕获 backtrace |
 | Component | `reporting/store.rs` 的 `ReportStore` | 单一负责 ReportId 顺序、固定容量保留和淘汰计数 |
 | Component | `reporting/emit.rs` 的 emission guard/event emitter | 单一负责 tracing 结构化事件、递归抑制和 subscriber panic 隔离 |
 | Component | `recovery.rs` 的 `RecoveryGuard` | 单一负责同线程递归恢复保护；不拥有 handler 或 System 状态 |
