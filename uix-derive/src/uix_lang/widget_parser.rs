@@ -1,8 +1,8 @@
 // 引入组件字段 AST、通用元素、表达式解析与诊断。
 use super::{
-    AttributeValue, Diagnostic, Element, RecordDeclaration, RecordField, SourceSpan,
+    AttributeValue, Diagnostic, Element, RecordDeclaration, RecordField, SourceSpan, WidgetAction,
     WidgetComputed, WidgetProp, WidgetPropType, WidgetState, WidgetStateInitial, WidgetValueType,
-    parse_expression,
+    expression_uses_event, parse_expression,
 };
 // 引入名称去重集合。
 use std::collections::HashSet;
@@ -184,6 +184,80 @@ pub(super) fn parse_computed(
     }
     // 返回完整有序派生列表。
     Ok(computed)
+}
+
+// 解析源码顺序中的无参数单表达式同步 action。
+pub(super) fn parse_actions(
+    // 接收 actions 声明源码。
+    source: &str,
+    // 接收所属属性跨度。
+    span: SourceSpan,
+) -> Result<Vec<WidgetAction>, Diagnostic> {
+    // 空字符串表示组件没有业务 action。
+    if source.trim().is_empty() {
+        // 返回空 action 列表。
+        return Ok(Vec::new());
+    }
+    // 保存源码顺序中的 action 声明。
+    let mut actions = Vec::new();
+    // 保存已出现名称以拒绝重复 action。
+    let mut names = HashSet::new();
+    // 按顶层逗号切分 action，调用参数内部逗号保持完整。
+    for entry in split_top_level(source, span, false)? {
+        // 切分 action 名称与单表达式源码。
+        let (name, expression_source) = split_field(entry, "action", span)?;
+        // action 名称必须可映射为 Rust 局部标识符。
+        validate_field_name(name, span)?;
+        // 框架内置操作不能被组件 action 遮蔽。
+        if matches!(name, "setState" | "setStyle" | "setTheme" | "submitForm") {
+            // 返回保留名称诊断。
+            return Err(Diagnostic::new(
+                // 指向 actions 属性。
+                span,
+                // 说明与语言内置名称冲突。
+                format!("action {name} 使用了保留的语言内置名称"),
+                // 给出普通业务 action 命名建议。
+                "使用 save、submit 或 increment 等业务名称",
+            ));
+        }
+        // 相同 action 名称只能声明一次。
+        if !names.insert(name) {
+            // 返回重复 action 诊断。
+            return Err(Diagnostic::new(
+                // 指向 actions 属性。
+                span,
+                // 说明重复名称。
+                format!("action {name} 重复声明"),
+                // 给出改名动作。
+                "合并同名 action 或使用不同名称",
+            ));
+        }
+        // 使用共享受限表达式语法解析首阶段 action 主体。
+        let expression = parse_expression(expression_source, span)?;
+        // 无参数 action 不允许隐式取得事件载荷。
+        if expression_uses_event(&expression) {
+            // 返回参数边界诊断。
+            return Err(Diagnostic::new(
+                // 指向 actions 属性。
+                span,
+                // 说明当前 action 没有事件参数。
+                format!("action {name} 不能隐式引用 $event"),
+                // 给出当前可用边界。
+                "在事件属性中直接处理 $event，或等待登记带参数 action",
+            ));
+        }
+        // 保存已验证 action。
+        actions.push(WidgetAction {
+            // 保存声明名称。
+            name: name.to_string(),
+            // 保存单表达式主体。
+            expression,
+            // 保存所属属性跨度。
+            span,
+        });
+    }
+    // 返回完整 action 列表。
+    Ok(actions)
 }
 
 // 解析基础值、State<T> 或回调类型。

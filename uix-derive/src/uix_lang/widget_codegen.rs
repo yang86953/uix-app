@@ -15,7 +15,7 @@ use super::{
 // 引入既有核心 View 生成入口。
 use super::generate_view;
 // 引入组件动态样式使用检测。
-use super::dynamic_style_lower::nodes_use_set_style;
+use super::dynamic_style_lower::{expression_uses_set_style, nodes_use_set_style};
 // 引入组件调用属性完整性与必填校验入口。
 use super::widget_call_validator::validate_widget_attributes;
 
@@ -106,6 +106,10 @@ pub(super) struct WidgetExpander {
     pub(super) external_scope_stack: Vec<BTreeSet<String>>,
     // 保存当前 computed 表达式尚不可引用的派生名称。
     pub(super) pending_computed_scope_stack: Vec<BTreeSet<String>>,
+    // 保存最近 UIX Widget 可在事件位置调用的同步 action。
+    pub(super) action_scope_stack: Vec<BTreeMap<String, super::WidgetAction>>,
+    // 保存正在静态展开的 action 调用链以拒绝递归。
+    pub(super) action_expansion_stack: Vec<String>,
     // 保存当前组件调用已经在调用方作用域展开的插槽内容。
     pub(super) slot_projection_stack: Vec<BTreeMap<String, Vec<Node>>>,
     // 保存嵌套 For 引入的词法局部标识符。
@@ -200,6 +204,10 @@ impl WidgetExpander {
             external_scope_stack: Vec::new(),
             // 文档根不在 computed 有序求值期间。
             pending_computed_scope_stack: Vec::new(),
+            // 文档根没有组件 action。
+            action_scope_stack: Vec::new(),
+            // 初始没有正在展开的 action。
+            action_expansion_stack: Vec::new(),
             // 文档根没有等待模板占位消费的插槽内容。
             slot_projection_stack: Vec::new(),
             // 文档根没有 For 词法局部变量。
@@ -591,7 +599,12 @@ impl WidgetExpander {
             // 注册表检查保证存在。
             .expect("组件存在性已在调用前确认");
         // 预先判断当前组件是否声明动态样式私有状态。
-        let uses_dynamic_style = nodes_use_set_style(&widget.children);
+        let uses_dynamic_style = nodes_use_set_style(&widget.children)
+            // action 内的 setStyle 也必须取得同一组件运行时作用域。
+            || widget
+                .actions
+                .iter()
+                .any(|action| expression_uses_set_style(&action.expression));
         // 预先判断当前组件是否需要自动 hover 私有状态。
         let uses_hover_style = self.styles.nodes_use_hover(&widget.children);
         // 预先判断当前组件是否需要持久化声明式动画。
@@ -632,6 +645,8 @@ impl WidgetExpander {
         self.stack.push(widget.name.clone());
         // 标记当前调用是否已进入被调用组件的 external 作用域。
         let mut pushed_external = false;
+        // 标记当前调用是否已进入被调用组件的 action 作用域。
+        let mut pushed_actions = false;
         // 标记当前调用是否已压入调用方插槽投影。
         let mut pushed_slots = false;
         // 在闭包内展开以确保错误路径也弹栈。
@@ -727,6 +742,20 @@ impl WidgetExpander {
                 .push(widget.external.iter().cloned().collect());
             // 记录错误路径也需要恢复被调用组件作用域。
             pushed_external = true;
+            // action 只在所属 Widget 模板的事件表达式中可见。
+            self.action_scope_stack.push(
+                widget
+                    // 借用声明中的有序 action。
+                    .actions
+                    // 遍历全部声明。
+                    .iter()
+                    // 复制为按名称静态查询的有序映射。
+                    .map(|action| (action.name.clone(), action.clone()))
+                    // 收集当前 action 作用域。
+                    .collect(),
+            );
+            // 记录错误路径也需要恢复 action 作用域。
+            pushed_actions = true;
             // 按声明顺序生成私有状态。
             for state in &widget.states {
                 // 生成 State 句柄与读值。
@@ -767,6 +796,11 @@ impl WidgetExpander {
         if pushed_external {
             // 弹出被调用组件外部符号白名单。
             self.external_scope_stack.pop();
+        }
+        // 已进入被调用组件时恢复调用方 action 作用域。
+        if pushed_actions {
+            // 弹出被调用组件的 action 表。
+            self.action_scope_stack.pop();
         }
         // 已进入插槽投影上下文时恢复外层组件投影。
         if pushed_slots {

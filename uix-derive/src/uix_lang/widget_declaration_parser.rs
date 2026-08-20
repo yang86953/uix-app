@@ -34,6 +34,8 @@ pub(crate) fn parse_widget_declaration(
     let mut state_source = None;
     // 保存可选 computed 声明及跨度。
     let mut computed_source = None;
+    // 保存可选 actions 声明及跨度。
+    let mut actions_source = None;
     // 保存可选 external 声明及跨度。
     let mut external_source = None;
     // 验证 Widget 只包含已登记声明属性。
@@ -59,7 +61,7 @@ pub(crate) fn parse_widget_declaration(
                 // 说明不接受运行期表达式。
                 format!("Widget {} 必须使用字符串字面量", attribute.name),
                 // 给出规范形式。
-                "使用 name、props、state、computed 或 external 的字符串字面量",
+                "使用 name、props、state、computed、actions 或 external 的字符串字面量",
             ));
         };
         // 按保留属性名保存源码。
@@ -72,6 +74,8 @@ pub(crate) fn parse_widget_declaration(
             "state" => state_source = Some((value.as_str(), attribute.span)),
             // 保存 computed 声明。
             "computed" => computed_source = Some((value.as_str(), attribute.span)),
+            // 保存同步 action 声明。
+            "actions" => actions_source = Some((value.as_str(), attribute.span)),
             // 保存 external 声明。
             "external" => external_source = Some((value.as_str(), attribute.span)),
             // 其他属性不属于 Widget 元数据。
@@ -83,7 +87,7 @@ pub(crate) fn parse_widget_declaration(
                     // 说明未知元数据。
                     format!("Widget 不支持属性 {}", attribute.name),
                     // 给出允许集合。
-                    "只使用 name、props、state、computed 与 external",
+                    "只使用 name、props、state、computed、actions 与 external",
                 ));
             }
         }
@@ -121,6 +125,13 @@ pub(crate) fn parse_widget_declaration(
         // 解析存在的 computed。
         Some((source, span)) => parse_computed(source, span)?,
         // 未声明 computed 时使用空列表。
+        None => Vec::new(),
+    };
+    // 解析可选同步业务 action。
+    let actions = match actions_source {
+        // 解析存在的 actions。
+        Some((source, span)) => super::widget_parser::parse_actions(source, span)?,
+        // 未声明 actions 时使用空列表。
         None => Vec::new(),
     };
     // 解析可选外部符号白名单。
@@ -176,6 +187,36 @@ pub(crate) fn parse_widget_declaration(
             ));
         }
     }
+    // action 与全部组件字段及 external 共享静态名称空间。
+    for action in &actions {
+        // 查找同名 prop、state 或 computed。
+        if props.iter().any(|prop| prop.name == action.name)
+            || states.iter().any(|state| state.name == action.name)
+            || computed.iter().any(|derived| derived.name == action.name)
+        {
+            // 返回跨类别重复诊断。
+            return Err(Diagnostic::new(
+                // 指向 actions 声明。
+                action.span,
+                // 说明 action 名称冲突。
+                format!("action {} 与组件字段同名", action.name),
+                // 给出明确改名动作。
+                "为 action 与 prop、state、computed 使用不同名称",
+            ));
+        }
+        // action 不能遮蔽显式 Rust 外部依赖。
+        if external.iter().any(|name| name == &action.name) {
+            // 返回本地与外部依赖冲突诊断。
+            return Err(Diagnostic::new(
+                // 指向 actions 声明。
+                action.span,
+                // 说明 external 被遮蔽。
+                format!("action {} 与 external 外部符号同名", action.name),
+                // 给出明确改名动作。
+                "重命名 action 或删除同名 external 声明",
+            ));
+        }
+    }
     // 返回结构化组件声明。
     Ok(WidgetDeclaration {
         // 保存组件名。
@@ -186,6 +227,8 @@ pub(crate) fn parse_widget_declaration(
         states,
         // 保存有序 computed 派生值。
         computed,
+        // 保存有序同步 action。
+        actions,
         // 保存已验证插槽声明。
         slots,
         // 保存外部符号白名单。

@@ -121,6 +121,9 @@ mod widget_call_validator;
 // 集中验证 Widget props、state 与名称诊断。
 #[cfg(test)]
 mod widget_tests;
+// 集中验证同步 action 声明、静态展开与拒绝路径。
+#[cfg(test)]
+mod widget_action_tests;
 // 集中验证 Widget prop 默认值、覆盖与必填诊断。
 #[cfg(test)]
 mod widget_prop_default_tests;
