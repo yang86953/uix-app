@@ -23,6 +23,8 @@ mod header;
 mod table_a;
 mod table_b;
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/display/table/tests.rs"]
 mod tests;
 pub(crate) mod types;
 

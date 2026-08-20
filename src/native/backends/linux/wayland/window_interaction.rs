@@ -230,36 +230,7 @@ pub(super) fn begin_resize_drag(
 
 // 纯单元测试验证公共方向与 xdg-shell 枚举的一一映射。
 #[cfg(test)]
-mod tests {
-    // 引入当前模块的私有方向映射。
-    use super::*;
-
-    // 八个方向不得互换或退化为无方向值。
-    #[test]
-    fn maps_all_resize_edges_to_xdg_shell_edges() {
-        // 按公共枚举顺序声明完整期望映射。
-        let cases = [
-            // 上边映射。
-            (WindowResizeEdge::Top, XdgResizeEdge::Top),
-            // 下边映射。
-            (WindowResizeEdge::Bottom, XdgResizeEdge::Bottom),
-            // 左边映射。
-            (WindowResizeEdge::Left, XdgResizeEdge::Left),
-            // 右边映射。
-            (WindowResizeEdge::Right, XdgResizeEdge::Right),
-            // 左上角映射。
-            (WindowResizeEdge::TopLeft, XdgResizeEdge::TopLeft),
-            // 右上角映射。
-            (WindowResizeEdge::TopRight, XdgResizeEdge::TopRight),
-            // 左下角映射。
-            (WindowResizeEdge::BottomLeft, XdgResizeEdge::BottomLeft),
-            // 右下角映射。
-            (WindowResizeEdge::BottomRight, XdgResizeEdge::BottomRight),
-        ];
-        // 逐一检查所有方向映射。
-        for (edge, expected) in cases {
-            // 当前方向必须产生文档化的 xdg-shell 枚举。
-            assert_eq!(resize_edge(edge), expected);
-        }
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/native/backends/linux/wayland/window_interaction__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

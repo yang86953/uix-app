@@ -8,6 +8,8 @@ mod geometry;
 mod group;
 // 测试模块集中验证公开 authored config 与共享几何契约。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/general/float_button/tests.rs"]
 mod tests;
 // 公开保留子 View 事件所有权的浮动按钮组包装器。
 pub use group::FloatButtonGroupView;

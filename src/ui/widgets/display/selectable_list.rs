@@ -855,4 +855,6 @@ component! {
 
 // 集中验证稳定 id 受控绑定与非受控兼容边界。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/display/selectable_list/tests.rs"]
 mod tests;

@@ -43,20 +43,7 @@ impl NamedThemes {
 
 // 集中验证内建名称与文档覆盖语义。
 #[cfg(test)]
-mod tests {
-    // 引入父模块主题表。
-    use super::*;
-
-    // 验证文档同名主题覆盖内建预设。
-    #[test]
-    fn document_theme_overrides_builtin_name() {
-        // 创建包含内建主题的默认表。
-        let mut themes = NamedThemes::default();
-        // 用暗色值覆盖 light 名称。
-        themes.insert("light".to_string(), Theme::antd_dark());
-        // 精确名称应返回覆盖后的暗色值。
-        assert!(themes.resolve("light").expect("light 应存在").is_dark());
-        // 未登记名称必须保持失败而非静默回退。
-        assert!(themes.resolve("missing").is_none());
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../tests/unit/app/application/named_themes__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

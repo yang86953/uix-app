@@ -239,10 +239,7 @@ pub mod __private {
 }
 
 #[cfg(feature = "test-harness")]
-pub mod test_harness {
-    pub use super::automation::{
-        AUTOMATION_DIR_ENV, AUTOMATION_SCHEMA, AutomationAction, AutomationActionKind,
-        AutomationError, AutomationErrorCode, AutomationNode, AutomationSelection,
-        AutomationSnapshot, AutomationTarget, TestApp,
-    };
-}
+// 将测试支撑实现统一存放在根 tests 目录。
+#[path = "../../tests/support/ui/test_harness.rs"]
+// 保留 UI 测试支撑公开模块的原有契约。
+pub mod test_harness;

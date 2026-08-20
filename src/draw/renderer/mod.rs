@@ -11,6 +11,8 @@ mod runtime;
 pub mod scene_pipeline;
 pub mod session;
 #[cfg(feature = "test-harness")]
+// 将测试支撑实现统一存放在根 tests 目录。
+#[path = "../../../tests/support/draw/renderer/test_harness.rs"]
 pub(crate) mod test_harness;
 
 pub use crate::draw::outcome::{GraphicsFailure, RenderOutcome};

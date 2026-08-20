@@ -344,6 +344,6 @@ impl RhiRenderer {
 // 将两阶段命令事实与资源生命周期测试拆到独立文件。
 #[cfg(test)]
 // 测试与本模块共享私有 blur ABI，但不进入生产构建。
-#[path = "rhi_renderer_blur_tests.rs"]
+#[path = "../../../tests/unit/draw/backend/rhi_renderer_blur_tests.rs"]
 // 编译离屏 blur 的 recording-context 回归。
 mod tests;

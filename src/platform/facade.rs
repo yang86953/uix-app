@@ -437,16 +437,7 @@ fn non_empty(value: String) -> Option<String> {
 
 // 仅在纯 OpenGL ES 构建中验证兼容失败分支，避免触发真实平台资源。
 #[cfg(all(test, feature = "opengles", not(feature = "d3d11")))]
-mod tests {
-    // 引入本模块私有分派组件和公开错误码。
-    use super::{Errc, GraphicsBackend, enumerate_gpu_adapters};
-
-    // 纯 OpenGL ES 构建必须返回稳定的类型化未实现错误。
-    #[test]
-    fn opengles_only_adapter_enumeration_is_typed_not_implemented() {
-        // 调用无状态分派组件，不创建窗口、设备或 Platform 单例。
-        let result = enumerate_gpu_adapters(GraphicsBackend::OpenGlEs);
-        // 同时约束失败类型和禁止伪造空成功结果。
-        assert!(matches!(result, Err(error) if error.code() == Errc::NotImplemented));
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../tests/unit/platform/facade__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

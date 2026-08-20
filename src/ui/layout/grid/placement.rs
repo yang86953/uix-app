@@ -280,4 +280,6 @@ pub(super) fn place_grid_children(
 
 // 放置算法的资源上限与极值输入回归。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/layout/grid/placement/tests.rs"]
 mod tests;

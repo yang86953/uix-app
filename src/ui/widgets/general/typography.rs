@@ -843,4 +843,6 @@ impl Typography {
 
 // 只在单元测试目标验证主题值与统一文本样式适配契约。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/general/typography/tests.rs"]
 mod tests;

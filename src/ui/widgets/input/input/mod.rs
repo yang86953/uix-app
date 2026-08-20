@@ -397,7 +397,7 @@ mod methods;
 // 仅在单元测试中编译输入控件字素簇交互回归。
 #[cfg(test)]
 // 使用独立文件避免继续膨胀核心控件模块。
-#[path = "grapheme_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/input/grapheme_tests.rs"]
 // 注册输入控件字素簇测试模块。
 mod grapheme_tests;
 

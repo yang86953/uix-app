@@ -268,68 +268,7 @@ impl ActiveWorkRegistry {
 // 活动工作公平预算的直接观测只编译进单元测试目标。
 #[cfg(test)]
 // 测试留在 registry Component 内，避免把私有调度结构暴露给集成测试。
-mod tests {
-    // 复用活动工作类型与 registry 实现。
-    use super::*;
-
-    // 验证两类 timer 各自受预算约束，同时非回调维护工作不被积压阻塞。
-    #[test]
-    // 执行批量到期工作跨轮保留场景。
-    fn due_timer_budget_preserves_remainder_for_the_next_turn() {
-        // 使用同一时刻构造全部到期登记。
-        let now = Instant::now();
-        // 创建一个窗口独占的活动工作注册表。
-        let mut registry = ActiveWorkRegistry::new();
-        // 登记不应被 timer 预算阻塞的图形维护工作。
-        registry.register(ActiveWorkKind::GraphicsMaintenance, now);
-        // 为两种 timer 各登记三个到期回调。
-        for id in 1..=3 {
-            // 登记 Widget timer 到期事实。
-            registry.register(ActiveWorkKind::Timer(id), now);
-            // 登记 App timer 到期事实。
-            registry.register(ActiveWorkKind::AppTimer(id), now);
-        }
-        // 复用输出缓冲保存本轮取得执行资格的工作。
-        let mut due = Vec::new();
-
-        // 第一轮为每种 timer 只提供两个回调预算。
-        registry.drain_due_into_with_budget(now, &mut due, 2);
-        // 非回调维护工作必须在第一轮被正常消费。
-        assert!(due.contains(&ActiveWorkKind::GraphicsMaintenance));
-        // 第一轮只允许两个 Widget timer 回调离开 registry。
-        assert_eq!(
-            due.iter()
-                .filter(|work| matches!(work, ActiveWorkKind::Timer(_)))
-                .count(),
-            2
-        );
-        // 第一轮只允许两个 App timer 回调离开 registry。
-        assert_eq!(
-            due.iter()
-                .filter(|work| matches!(work, ActiveWorkKind::AppTimer(_)))
-                .count(),
-            2
-        );
-        // 两类 timer 的剩余项保持到期 deadline，使下一轮无需外部新 wake。
-        assert_eq!(registry.next_deadline(), Some(now));
-
-        // 第二轮继续取得上一轮保留的工作。
-        registry.drain_due_into_with_budget(now, &mut due, 2);
-        // 第二轮恰好取得一个剩余 Widget timer。
-        assert_eq!(
-            due.iter()
-                .filter(|work| matches!(work, ActiveWorkKind::Timer(_)))
-                .count(),
-            1
-        );
-        // 第二轮恰好取得一个剩余 App timer。
-        assert_eq!(
-            due.iter()
-                .filter(|work| matches!(work, ActiveWorkKind::AppTimer(_)))
-                .count(),
-            1
-        );
-        // 全部到期工作被两轮精确消费后 registry 为空。
-        assert!(registry.is_empty());
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../tests/unit/app/queues/active_work_registry__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

@@ -432,16 +432,7 @@ impl Drop for CoTaskMemWide {
 
 // 纯函数测试只覆盖 XML 安全边界，不触发系统通知。
 #[cfg(test)]
-mod tests {
-    // 引入被测转义组件。
-    use super::escape_notification_xml;
-
-    // 所有 XML 元字符都必须被实体化。
-    #[test]
-    fn notification_text_is_xml_escaped() {
-        // 同时覆盖五种 XML 元字符和普通 Unicode 文本。
-        let escaped = escape_notification_xml("UIX <&> \"完成\" '好'");
-        // 断言载荷不能注入标签或属性边界。
-        assert_eq!(escaped, "UIX &lt;&amp;&gt; &quot;完成&quot; &apos;好&apos;");
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/platform/imp/windows/notification__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

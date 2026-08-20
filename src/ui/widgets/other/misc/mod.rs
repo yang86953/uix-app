@@ -12,6 +12,8 @@ mod upload_presentation;
 mod upload_types;
 // 聚焦验证 Upload 受控队列、稳定身份与类型化事实。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_tests.rs"]
 mod upload_tests;
 mod watermark;
 

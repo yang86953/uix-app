@@ -866,4 +866,6 @@ impl Default for ScrollView {
 // 仅在测试构建中加载 ScrollView 的内部布局契约。
 #[cfg(test)]
 // 将测试放在独立文件中，避免主实现文件接近九百行上限。
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/other/scroll_view/tests.rs"]
 mod tests;
