@@ -20,7 +20,10 @@ use super::graphics::{GpuAdapterInfo, GraphicsBackend};
 #[cfg(all(windows, feature = "d3d11"))]
 use super::graphics::GpuDeviceType;
 use super::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
-use super::imp;
+// 能力 Provider 只实现 host 功能域的 OS 差异。
+use super::capabilities::providers;
+// runtime 只负责 Platform 实例的线程与生命周期约束。
+use super::runtime;
 // 引入平台服务值与系统通知身份、能力状态契约。
 use super::services::{
     AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
@@ -34,7 +37,7 @@ static INSTANCE_LIVE: AtomicBool = AtomicBool::new(false);
 /// 明确不可跨线程移动或共享。
 pub struct Platform {
     owner_thread: ThreadId,
-    state: Option<imp::State>,
+    state: Option<runtime::State>,
     // 由应用显式提供的通知身份；Platform 仅拥有配置，不执行系统登记。
     notification_app_user_model_id: Option<AppUserModelId>,
     _thread_affinity: PhantomData<Rc<()>>,
@@ -43,7 +46,7 @@ pub struct Platform {
 impl Platform {
     /// 在进程主线程创建唯一的存活平台实例。
     pub fn new() -> Result<Self> {
-        if !imp::is_main_thread()? {
+        if !runtime::is_main_thread()? {
             return Err(Error::new(
                 Errc::InvalidState,
                 "Platform::new must be called on the process main thread",
@@ -51,7 +54,7 @@ impl Platform {
         }
 
         let mut claim = InstanceClaim::acquire()?;
-        let state = imp::State::new()?;
+        let state = runtime::State::new()?;
         claim.commit();
         Ok(Self {
             owner_thread: thread::current().id(),
@@ -65,7 +68,7 @@ impl Platform {
     /// 即时采集操作系统描述。
     pub fn os_info(&self) -> Result<OsInfo> {
         self.ensure_owner("Platform::os_info")?;
-        let value = imp::os_info()?;
+        let value = providers::os_info()?;
         if value.name().trim().is_empty() {
             return Err(Error::new(
                 Errc::PlatformError,
@@ -91,7 +94,7 @@ impl Platform {
                 format!("Platform::cpu_info: available_parallelism failed: {source}"),
             )
         })?;
-        let (vendor, model) = imp::cpu_metadata();
+        let (vendor, model) = providers::cpu_metadata();
         Ok(CpuInfo::new(
             architecture.to_owned(),
             logical_cores,
@@ -103,7 +106,7 @@ impl Platform {
     /// 即时采集系统物理内存。
     pub fn memory_info(&self) -> Result<MemoryInfo> {
         self.ensure_owner("Platform::memory_info")?;
-        let value = imp::memory_info()?;
+        let value = providers::memory_info()?;
         if value.total_bytes() == 0 || value.available_bytes() > value.total_bytes() {
             return Err(Error::new(
                 Errc::PlatformError,
@@ -116,7 +119,7 @@ impl Platform {
     /// 即时枚举显示器。
     pub fn displays(&self) -> Result<Box<[DisplayInfo]>> {
         self.ensure_owner("Platform::displays")?;
-        let values = imp::displays()?;
+        let values = providers::displays()?;
         for value in values.iter() {
             let bounds = value.bounds();
             if !value.scale().is_finite()
@@ -147,7 +150,7 @@ impl Platform {
     /// 查询 OS-known user directory；不会创建目录。
     pub fn special_dir(&self, directory: SpecialDir) -> Result<PathBuf> {
         self.ensure_owner("Platform::special_dir")?;
-        imp::special_dir(directory)
+        providers::special_dir(directory)
     }
 
     /// 同步打开允许多选的文件选择对话框。
@@ -163,7 +166,7 @@ impl Platform {
         // 标题必须满足三平台公共输入契约。
         super::file_dialog::validate_title("Platform::open_files", title)?;
         // Provider 返回 owned 路径；取消保持成功空值。
-        imp::open_files(title, filters)
+        providers::open_files(title, filters)
     }
 
     /// 同步打开单路径保存对话框。
@@ -179,7 +182,7 @@ impl Platform {
         // 标题必须满足三平台公共输入契约。
         super::file_dialog::validate_title("Platform::save_file", title)?;
         // Provider 返回 owned 路径；取消保持成功空值。
-        imp::save_file(title, filters)
+        providers::save_file(title, filters)
     }
 
     /// 同步打开单路径目录选择对话框。
@@ -189,7 +192,7 @@ impl Platform {
         // 标题必须满足三平台公共输入契约。
         super::file_dialog::validate_title("Platform::open_folder", title)?;
         // Provider 返回 owned 路径；取消保持成功空值。
-        imp::open_folder(title)
+        providers::open_folder(title)
     }
 
     /// 配置部署层已经登记的 Windows AUMID。
@@ -211,7 +214,7 @@ impl Platform {
         // 能力探测必须与其他平台查询一样运行在 owner thread。
         self.ensure_owner("Platform::system_notification_capability")?;
         // 把只读身份借用交给目标平台 Provider 探测。
-        imp::system_notification_capability(self.notification_app_user_model_id.as_ref())
+        providers::system_notification_capability(self.notification_app_user_model_id.as_ref())
     }
 
     /// 同步发送一条系统通知。
@@ -232,7 +235,7 @@ impl Platform {
         // 在发送前读取可解释的能力状态，禁止未配置或未登记时伪成功。
         match self.system_notification_capability()? {
             // 就绪时才进入目标平台 Adapter。
-            SystemNotificationCapability::Available => imp::show_notification(
+            SystemNotificationCapability::Available => providers::show_notification(
                 // Windows 使用身份，其他平台明确忽略该参数。
                 self.notification_app_user_model_id.as_ref(),
                 // 通知值只借用到同步调用结束。

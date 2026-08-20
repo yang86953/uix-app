@@ -1,4 +1,7 @@
-//! 平台公开面的能力状态契约 — 状态级别。
+//! 宿主机信息与 OS 服务功能域。
+
+// OS 能力采集与系统服务实现只在 host 功能域内部可见。
+pub(crate) mod providers;
 
 /// 通用状态级别。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

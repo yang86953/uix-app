@@ -21,147 +21,6 @@ mod notification;
 // 向上层门面重导出通知能力查询与发送入口。
 pub(crate) use notification::{show_notification, system_notification_capability};
 
-const COINIT_APARTMENTTHREADED: u32 = 0x2;
-const RPC_E_CHANGED_MODE: i32 = 0x8001_0106_u32 as i32;
-const TH32CS_SNAPTHREAD: u32 = 0x0000_0004;
-const THREAD_QUERY_LIMITED_INFORMATION: u32 = 0x0800;
-const INVALID_HANDLE_VALUE: *mut c_void = -1_isize as *mut c_void;
-
-/// 当前 owner thread 持有的 Windows apartment 初始化配额。
-pub(crate) struct State {
-    com_initialized: bool,
-}
-
-impl State {
-    pub(crate) fn new() -> Result<Self> {
-        // SAFETY: null reserved pointer is required by COM; this call is balanced
-        // by State::drop on the same thread for every successful HRESULT.
-        let result = unsafe { CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED) };
-        match result {
-            0 | 1 => Ok(Self {
-                com_initialized: true,
-            }),
-            RPC_E_CHANGED_MODE => Err(Error::new(
-                Errc::InvalidState,
-                "Platform::new: owner thread already uses an incompatible COM apartment",
-            )),
-            value => Err(Error::new(
-                Errc::PlatformError,
-                format!("Platform::new: CoInitializeEx failed with HRESULT 0x{value:08X}"),
-            )),
-        }
-    }
-}
-
-impl Drop for State {
-    fn drop(&mut self) {
-        if self.com_initialized {
-            // SAFETY: Platform is !Send and State is dropped on the owner thread;
-            // this balances the successful CoInitializeEx in State::new.
-            unsafe { CoUninitialize() };
-            self.com_initialized = false;
-        }
-    }
-}
-
-// Windows 主线程默认栈较小；深层 ViewNode 树的构建、协调与布局递归需要
-// 有界大栈 UI 线程，与应用入口约定的容量一致。
-const UI_THREAD_STACK_BYTES: usize = 8 * 1024 * 1024;
-
-// 在命名的大栈 UI 线程上运行闭包，并把线程结果或 panic 恢复到调用方。
-pub(crate) fn run_on_ui_thread<F, R>(thread_name: &str, run: F) -> R
-where
-    // 闭包与返回值都进入独立线程，必须可发送且不借用调用栈。
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    // 用目标名与固定大栈创建专用 UI 线程。
-    let ui_thread = match std::thread::Builder::new()
-        .name(thread_name.to_owned())
-        .stack_size(UI_THREAD_STACK_BYTES)
-        .spawn(run)
-    {
-        // 返回已创建的 UI 线程。
-        Ok(ui_thread) => ui_thread,
-        // 线程创建失败属于不可恢复的平台错误，文案带线程名便于诊断。
-        Err(error) => panic!("spawn UI thread {thread_name:?}: {error}"),
-    };
-    // 等待 UI 线程结束；panic 按原样恢复到调用线程。
-    match ui_thread.join() {
-        // 返回闭包结果。
-        Ok(result) => result,
-        // 把子线程 panic 负载恢复到当前线程继续展开。
-        Err(payload) => std::panic::resume_unwind(payload),
-    }
-}
-
-pub(crate) fn is_main_thread() -> Result<bool> {
-    // Windows exposes no direct main-thread predicate. The initial process
-    // thread is the live process thread with the earliest creation timestamp.
-    // SAFETY: all snapshot and thread handles are closed on every exit path.
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if snapshot == INVALID_HANDLE_VALUE || snapshot.is_null() {
-            return Err(last_error("CreateToolhelp32Snapshot"));
-        }
-        let snapshot_guard = HandleGuard(snapshot);
-        let process_id = GetCurrentProcessId();
-        let current_thread_id = GetCurrentThreadId();
-        let mut entry = ThreadEntry32 {
-            size: std::mem::size_of::<ThreadEntry32>() as u32,
-            ..ThreadEntry32::default()
-        };
-        if Thread32First(snapshot_guard.0, &mut entry) == 0 {
-            return Err(last_error("Thread32First"));
-        }
-
-        let mut earliest: Option<(u64, u32)> = None;
-        loop {
-            if entry.owner_process_id == process_id {
-                let handle = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, 0, entry.thread_id);
-                if !handle.is_null() {
-                    let handle = HandleGuard(handle);
-                    let mut creation = FileTime::default();
-                    let mut exit = FileTime::default();
-                    let mut kernel = FileTime::default();
-                    let mut user = FileTime::default();
-                    if GetThreadTimes(handle.0, &mut creation, &mut exit, &mut kernel, &mut user)
-                        != 0
-                    {
-                        let timestamp = creation.as_u64();
-                        if earliest.as_ref().is_none_or(|&(old, id)| {
-                            timestamp < old || (timestamp == old && entry.thread_id < id)
-                        }) {
-                            earliest = Some((timestamp, entry.thread_id));
-                        }
-                    }
-                }
-            }
-
-            entry.size = std::mem::size_of::<ThreadEntry32>() as u32;
-            if Thread32Next(snapshot_guard.0, &mut entry) == 0 {
-                let source = std::io::Error::last_os_error();
-                if source.raw_os_error() != Some(18) {
-                    return Err(Error::new(
-                        Errc::PlatformError,
-                        format!("Platform::new: Thread32Next failed: {source}"),
-                    ));
-                }
-                break;
-            }
-        }
-
-        earliest
-            .map(|(_, thread_id)| thread_id == current_thread_id)
-            .ok_or_else(|| {
-                Error::new(
-                    Errc::PlatformError,
-                    "Platform::new: could not identify the process main thread",
-                )
-            })
-    }
-}
-
 pub(crate) fn os_info() -> Result<OsInfo> {
     // SAFETY: RtlGetVersion fills the correctly-sized POD structure.
     unsafe {
@@ -504,19 +363,6 @@ fn last_error(operation: &str) -> Error {
     Error::new(code, format!("Platform: {operation} failed: {source}"))
 }
 
-struct HandleGuard(*mut c_void);
-
-impl Drop for HandleGuard {
-    fn drop(&mut self) {
-        if !self.0.is_null() && self.0 != INVALID_HANDLE_VALUE {
-            // SAFETY: HandleGuard uniquely owns a closeable Win32 handle.
-            unsafe {
-                let _ = CloseHandle(self.0);
-            }
-        }
-    }
-}
-
 struct CoTaskMemPath(*mut u16);
 
 impl Drop for CoTaskMemPath {
@@ -527,31 +373,6 @@ impl Drop for CoTaskMemPath {
             unsafe { CoTaskMemFree(self.0.cast()) };
         }
     }
-}
-
-#[repr(C)]
-#[derive(Default)]
-struct FileTime {
-    low: u32,
-    high: u32,
-}
-
-impl FileTime {
-    fn as_u64(&self) -> u64 {
-        (u64::from(self.high) << 32) | u64::from(self.low)
-    }
-}
-
-#[repr(C)]
-#[derive(Default)]
-struct ThreadEntry32 {
-    size: u32,
-    usage: u32,
-    thread_id: u32,
-    owner_process_id: u32,
-    base_priority: i32,
-    delta_priority: i32,
-    flags: u32,
 }
 
 #[repr(C)]
@@ -640,8 +461,6 @@ const FOLDERID_DOWNLOADS: Guid = Guid {
 #[link(name = "ole32")]
 // SAFETY: 声明与 ole32 的 Win32 ABI 一致，调用方按线程配对 COM 初始化并只释放 COM 分配的内存。
 unsafe extern "system" {
-    fn CoInitializeEx(reserved: *mut c_void, coinit: u32) -> i32;
-    fn CoUninitialize();
     fn CoTaskMemFree(memory: *mut c_void);
 }
 
@@ -665,19 +484,5 @@ unsafe extern "system" {
 #[link(name = "kernel32")]
 // SAFETY: 本块声明与 kernel32 ABI 一致，调用方负责所有句柄、结构尺寸和输出指针的有效性。
 unsafe extern "system" {
-    fn CloseHandle(handle: *mut c_void) -> i32;
-    fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> *mut c_void;
-    fn GetCurrentProcessId() -> u32;
-    fn GetCurrentThreadId() -> u32;
-    fn GetThreadTimes(
-        thread: *mut c_void,
-        creation: *mut FileTime,
-        exit: *mut FileTime,
-        kernel: *mut FileTime,
-        user: *mut FileTime,
-    ) -> i32;
     fn GlobalMemoryStatusEx(memory: *mut MemoryStatusEx) -> i32;
-    fn OpenThread(access: u32, inherit_handle: i32, thread_id: u32) -> *mut c_void;
-    fn Thread32First(snapshot: *mut c_void, entry: *mut ThreadEntry32) -> i32;
-    fn Thread32Next(snapshot: *mut c_void, entry: *mut ThreadEntry32) -> i32;
 }
