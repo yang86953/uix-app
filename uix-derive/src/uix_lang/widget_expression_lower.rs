@@ -47,6 +47,91 @@ impl WidgetExpander {
         // 标记是否把字符串规范化为 String、把整数补为 f64 形状。
         normalize_literals: bool,
     ) -> Result<(), Diagnostic> {
+        // 识别当前 Widget 中静态声明的无参数 action 调用。
+        let action_call = match &expression.kind {
+            // 首阶段只接受直接名称调用。
+            ExpressionKind::Call { callee, arguments } => match &callee.kind {
+                // 在最近 Widget action 作用域中查找声明。
+                ExpressionKind::Identifier(name) if !self.is_local_identifier(name) => self
+                    // 借用最近 action 表。
+                    .action_scope_stack
+                    // 只查询当前 Widget，不穿透嵌套组件边界。
+                    .last()
+                    // 查找并复制声明，避免后续可变借用冲突。
+                    .and_then(|actions| actions.get(name))
+                    // 同时保留调用参数数量供边界诊断。
+                    .cloned()
+                    .map(|action| (action, arguments.len())),
+                // 词法局部、成员调用与其他目标不属于组件 action。
+                _ => None,
+            },
+            // 非调用表达式不需要 action 展开。
+            _ => None,
+        };
+        // action 在编译期内联，不生成运行时名称查找或分发表。
+        if let Some((action, argument_count)) = action_call {
+            // action 只属于事件业务流程位置。
+            if !allow_set_state {
+                // 返回作用域诊断。
+                return Err(Diagnostic::new(
+                    // 指向 action 调用。
+                    expression.span,
+                    // 说明同步 action 的允许位置。
+                    format!("action {} 只能在 Widget 的事件处理器中调用", action.name),
+                    // 给出合法事件形状。
+                    format!("使用 @click=\"{}()\" 等事件属性", action.name),
+                ));
+            }
+            // 第一阶段 action 不接受调用参数。
+            if argument_count != 0 {
+                // 返回参数边界诊断。
+                return Err(Diagnostic::new(
+                    // 指向完整调用。
+                    expression.span,
+                    // 说明当前参数契约。
+                    format!("action {} 当前不接受参数", action.name),
+                    // 给出无参数调用方式。
+                    format!("使用 {}()；带参数 action 将在后续阶段登记", action.name),
+                ));
+            }
+            // 拒绝 action 直接或间接递归展开。
+            if self.action_expansion_stack.contains(&action.name) {
+                // 构造闭环调用路径。
+                let mut cycle = self.action_expansion_stack.clone();
+                // 追加再次进入的 action。
+                cycle.push(action.name.clone());
+                // 返回递归诊断。
+                return Err(Diagnostic::new(
+                    // 指向形成闭环的 action 表达式。
+                    expression.span,
+                    // 展示确定调用路径。
+                    format!("action 递归调用不受支持：{}", cycle.join(" -> ")),
+                    // 给出拆环建议。
+                    "移除 action 自调用或循环调用，把重复数据处理改为受限数组操作",
+                ));
+            }
+            // 进入 action 静态展开链。
+            self.action_expansion_stack.push(action.name.clone());
+            // 用声明期单表达式替换调用节点。
+            *expression = action.expression;
+            // action 主体继承事件副作用权限并复用同一字段绑定。
+            let result = self.transform_expression_inner(
+                // 继续降低已内联主体。
+                expression,
+                // 使用当前组件字段绑定。
+                bindings,
+                // action 只从事件进入，因此允许 setState。
+                true,
+                // action 主体不是句柄位属性。
+                false,
+                // 沿用调用位置的字面量规范化策略。
+                normalize_literals,
+            );
+            // 无论成功或失败都恢复外层 action 调用链。
+            self.action_expansion_stack.pop();
+            // 返回 action 主体降低结果。
+            return result;
+        }
         // State 普通读值位置改写为就地 get()，避免组件入口无条件建立结构依赖。
         if let ExpressionKind::Identifier(name) = &expression.kind {
             // 当前 For 或闭包局部变量仍优先遮蔽组件字段。

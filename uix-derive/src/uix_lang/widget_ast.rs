@@ -12,6 +12,8 @@ pub(crate) struct WidgetDeclaration {
     pub(crate) states: Vec<WidgetState>,
     // 保存源码顺序中的派生值。
     pub(crate) computed: Vec<WidgetComputed>,
+    // 保存源码顺序中的同步业务 action。
+    pub(crate) actions: Vec<WidgetAction>,
     // 保存组件模板中已经完成唯一性验证的插槽声明。
     pub(crate) slots: Vec<WidgetSlot>,
     // 保存组件体获准引用的 Rust 外部符号。
@@ -19,6 +21,17 @@ pub(crate) struct WidgetDeclaration {
     // 保存组件视图体的有序节点。
     pub(crate) children: Vec<Node>,
     // 保存完整 Widget 声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示一个无参数、单表达式且在事件位置静态展开的同步 action。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WidgetAction {
+    // 保存组件内唯一的 action 名称。
+    pub(crate) name: String,
+    // 保存已经通过受限语法验证的 action 表达式。
+    pub(crate) expression: Expression,
+    // 保存所属 actions 属性跨度。
     pub(crate) span: SourceSpan,
 }
 

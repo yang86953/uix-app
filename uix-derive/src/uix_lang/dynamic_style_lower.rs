@@ -35,7 +35,7 @@ fn node_uses_set_style(node: &Node) -> bool {
 }
 
 // 判断表达式树是否包含框架内置 setStyle 调用。
-fn expression_uses_set_style(expression: &Expression) -> bool {
+pub(super) fn expression_uses_set_style(expression: &Expression) -> bool {
     // 当前节点为直接调用时立即命中。
     if matches!(
         &expression.kind,

@@ -50,7 +50,7 @@ UIX 的方向是让使用方以 uix-lang 完成普通应用开发，Rust 主要�
 
 ## 状态声明
 
-当前发布基线仍以界面声明、组件状态和事件表达式为主；语言内 action、异步业务流程、类型化服务与开发期动态解析属于目标设计，不能把本页产品方向理解为已完成声明。
+当前发布基线仍以界面声明、组件状态和事件表达式为主；首阶段无参数单表达式同步 action 已登记，异步业务流程、类型化服务与开发期动态解析仍属于目标设计，不能把本页产品方向理解为已全部完成。
 
 公开 `uix!` 已支持内嵌源码与相对调用 crate 的 `.uix` 文件并在编译期生成 `ViewNode`；三个公开宏的文件入口都已支持相对当前文件的嵌套 `@import`、显式 `@export`、全量或具名组件选择，并追踪全部递归依赖。公开 `uix_app!` 已支持 `<App>` 根的 `title` / `size` / `theme` / `settings`、同文档主题与现有 `App` builder 组装。
 
@@ -69,6 +69,7 @@ UIX Lang 是 UIX Rust API 的文本投影，**转换由 uix-app 框架在编译�
 | `@theme light { ... }` | App 作用域 `Theme` / `ThemeTokens` | 已实现（完整 `DesignTokens` 白名单） |
 | `<App title="..." size="...">` | 现有 `App` builder + 根工厂 | 已实现（由 `uix_app!` 返回，不调用 `run`） |
 | `<Widget name="X">` | 编译期展开 props、state、computed、Slot、external、回调与组件体 | 已实现（Slot 内容在调用方作用域内联；computed 按声明顺序求值） |
+| `actions="save: expression"` | 在事件调用位静态内联并生成 Rust | 已实现（无参数、单表达式、仅事件位置；递归与非法引用编译诊断） |
 | `<If>...<ElseIf>...<Else>` | 编译期生成相邻短路条件链 | 已实现（允许空白与注释间隔） |
 | `@event="$event.field"` | 按事件登记表校验并投影载荷字段 | 已实现（未知字段在 Rust 生成前诊断） |
 | `<For {item} in {items}>` | `for` 循环生成 `ViewNode` 列表 | 已实现（须位于容器内） |
