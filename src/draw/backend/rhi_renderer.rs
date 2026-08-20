@@ -26,8 +26,6 @@ use super::frame_plan::{
 mod execution;
 // 向 GPU 组合边界公开封闭 Renderer 帧与无目标 pass 命令包。
 pub(crate) use execution::{RhiRendererFrame, RhiRendererPass};
-// 在离屏多阶段 renderer 中复用 Device-only 执行入口。
-use execution::execute_plan_without_present;
 
 // 将覆盖率 lowering 拆到独立文件，保持通用 renderer 主文件在单文件行数边界内。
 #[path = "rhi_renderer_coverage.rs"]
