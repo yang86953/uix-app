@@ -15,7 +15,7 @@ use crate::ui::LayoutChild;
 
 // 把定位行为验收放在独立文件，避免机制实现与测试共同逼近文件上限。
 #[cfg(test)]
-#[path = "position_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_layout/position_tests.rs"]
 mod tests;
 
 impl WidgetTree {

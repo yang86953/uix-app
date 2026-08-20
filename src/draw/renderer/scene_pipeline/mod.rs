@@ -97,6 +97,8 @@ mod pipeline;
 mod surface;
 // 单元测试锁定 backdrop typed failure 的场景边界传播。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/draw/renderer/scene_pipeline/tests.rs"]
 mod tests;
 
 use self::damage::*;

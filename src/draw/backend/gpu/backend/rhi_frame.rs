@@ -37,7 +37,7 @@ use glyph::append_glyph_outlines;
 
 // 将 FrameEncoder RHI lowering 单元测试拆到尾部文件，保持实现文件不超过行数边界。
 #[cfg(test)]
-#[path = "rhi_frame_test_tail.rs"]
+#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_frame_test_tail.rs"]
 mod tests;
 
 // 保存一条已经完成物理坐标 lowering 的 FrameEncoder 计划。

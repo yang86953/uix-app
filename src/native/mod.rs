@@ -35,6 +35,8 @@ pub(crate) mod platform;
 pub(crate) mod present;
 pub(crate) mod presentation;
 #[cfg(feature = "test-harness")]
+// 将测试支撑实现统一存放在根 tests 目录。
+#[path = "../../tests/support/native/test_harness/mod.rs"]
 pub(crate) mod test_harness;
 pub(crate) mod windowing;
 

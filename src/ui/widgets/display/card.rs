@@ -848,5 +848,5 @@ fn conservative_text_height(ctx: &mut PaintContext, text: &str, font_size: f32) 
 
 // 把 Card 组件级回归测试拆分到独立文件，保持实现文件低于规模上限。
 #[cfg(test)]
-#[path = "card_tests.rs"]
+#[path = "../../../../tests/unit/ui/widgets/display/card_tests.rs"]
 mod tests;

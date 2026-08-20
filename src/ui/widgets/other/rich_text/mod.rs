@@ -162,9 +162,13 @@ mod thematic_break;
 mod shaped_advance;
 // 将 UAX #14 富文本验收矩阵放入独立测试模块，保持生产文件规模受控。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/line_break_tests.rs"]
 mod line_break_tests;
 // 验证跨样式段的 UAX #9 视觉 run 布局。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/bidi_layout_tests.rs"]
 mod bidi_layout_tests;
 
 pub use self::parse::{layout_rich_text_segments, parse_rich_text};
@@ -799,5 +803,5 @@ component! {
 }
 
 #[cfg(test)]
-#[path = "mod_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/mod_tests.rs"]
 mod tests;

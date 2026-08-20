@@ -1,6 +1,5 @@
 // 引入生成代码承诺调用的公开 prelude。
 use crate::prelude::*;
-
 // 表示消费者循环中的拥有所有权数据项。
 #[derive(Clone)]
 struct ConsumerItem {
@@ -9,7 +8,6 @@ struct ConsumerItem {
     // 保存可插值名称。
     name: String,
 }
-
 // 定义 UIX Form 首批使用的类型化业务模型。
 #[derive(Clone)]
 struct ProfileForm {
@@ -26,16 +24,13 @@ struct ProfileForm {
     // 保存音量滑块 f64 字段。
     volume: f64,
 }
-
 // 提供无事件参数的 Rust 侧回调。
 fn on_confirm() {}
-
 // 提供带 bool 返回值的组件回调 prop。
 fn confirm_delete() -> bool {
     // 返回确定的确认结果。
     true
 }
-
 // 提供带 String 参数的组件回调 prop。
 fn submit_search(
     // 接收组件传出的拥有所有权字符串。

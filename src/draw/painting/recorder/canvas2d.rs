@@ -645,24 +645,7 @@ impl Canvas2D for FrameRecordingCanvas {
 
 // 验证 Additive 形状从 Canvas2D 记录到参考像素的完整语义（外置测试文件）。
 #[cfg(test)]
-mod tests {
-    // 引入当前 recorder 实现和 Canvas2D 依赖类型。
-    use super::*;
-    // 引入命令枚举以审计实际记录载荷。
-    use crate::draw::painting::FrameCommand;
-
-    // 加载 Additive 基础形状的独立回归测试。
-    include!("canvas2d_shape_tests.rs");
-
-    // 继续在同一测试模块内加载纯平移 transform 的独立回归测试。
-    include!("canvas2d_test_tail.rs");
-
-    // 继续在同一测试模块内加载 Additive sampled soft 分段回归测试。
-    include!("canvas2d_additive_soft_tests.rs");
-
-    // 继续加载 Additive 仿射描边 sampled soft 分段回归测试。
-    include!("canvas2d_additive_stroke_soft_tests.rs");
-
-    // 继续在同一测试模块内加载 Additive opacity 的独立回归测试。
-    include!("canvas2d_opacity_tests.rs");
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/draw/painting/recorder/canvas2d__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;

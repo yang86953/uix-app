@@ -98,7 +98,7 @@ pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
 // 把布局内部回归测试放入独立文件，维持生产组件规模上限。
 #[cfg(test)]
 // 指向布局模块的私有测试实现。
-#[path = "rich_text_layout_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/rich_text_layout_tests.rs"]
 mod tests;
 
 // 估算布局（不依赖 FontService）。

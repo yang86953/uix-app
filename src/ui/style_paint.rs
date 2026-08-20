@@ -15,7 +15,7 @@ mod background;
 // 隔离 spread 几何的单元测试。
 #[cfg(test)]
 // 从独立文件编译 spread 几何契约。
-#[path = "style_paint/spread_tests.rs"]
+#[path = "../../tests/unit/ui/style_paint/spread_tests.rs"]
 // 注册样式阴影扩张测试模块。
 mod spread_tests;
 

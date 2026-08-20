@@ -838,6 +838,6 @@ impl RenderBackend for GpuBackend {
 // 仅在库单测构建中注册拆分后的后端契约测试。
 #[cfg(test)]
 // 固定同目录测试文件，避免主实现文件突破行数边界。
-#[path = "render_backend_tests.rs"]
+#[path = "../../../../../tests/unit/draw/backend/gpu/backend/render_backend_tests.rs"]
 // 保持测试模块私有，不扩展生产 API。
 mod tests;

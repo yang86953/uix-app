@@ -731,4 +731,6 @@ impl crate::ui::view::View for List {
 // 把节点插槽布局、交互、协调与 Empty 回归限制在 List 模块内部。
 #[cfg(test)]
 // 测试子模块可以读取私有角色缓存而不扩大公开 API。
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/display/list/tests.rs"]
 mod tests;

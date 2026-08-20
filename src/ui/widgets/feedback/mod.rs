@@ -29,6 +29,8 @@ pub mod popover;
 pub mod progress;
 // 集中验证 ProgressBar fraction、模式、动画与可观察归一化契约。
 #[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/feedback/progress_tests.rs"]
 mod progress_tests;
 pub mod spin;
 pub(crate) mod toast_motion;
@@ -49,20 +51,7 @@ pub use tooltip::*;
 
 // 验证反馈组件共享的主题颜色动画契约。
 #[cfg(test)]
-mod color_tests {
-    // 引入被测 alpha 衰减入口。
-    use super::fade_token_color;
-    // 引入测试颜色值。
-    use crate::draw::Color;
-
-    // 动画必须缩放而不是覆盖主题 token 的基础 alpha。
-    #[test]
-    fn fade_token_color_scales_existing_alpha() {
-        // 构造携带基础透明度的主题遮罩色。
-        let mask = Color::from_rgba(1, 2, 3, 160);
-        // 半程动画必须得到基础 alpha 的一半。
-        assert_eq!(fade_token_color(mask, 0.5), Color::from_rgba(1, 2, 3, 80));
-        // 超出范围的动画值必须限制为完整 token。
-        assert_eq!(fade_token_color(mask, 2.0), mask);
-    }
-}
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/feedback/mod__color_tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod color_tests;

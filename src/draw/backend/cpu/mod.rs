@@ -8,7 +8,7 @@ pub(crate) mod offscreen;
 // 将 Picture blur 与后续合成的 CPU 回归拆到独立测试文件。
 #[cfg(test)]
 // 保持生产模块主体低于单文件行数边界。
-#[path = "blur_tests.rs"]
+#[path = "../../../../tests/unit/draw/backend/cpu/blur_tests.rs"]
 // 仅在测试构建中编译离屏模糊契约。
 mod blur_tests;
 
