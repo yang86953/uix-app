@@ -71,7 +71,7 @@ crate 内编排入口（不属公开 API，由 app 组装层调用）：
 | 入口 | 位置 | 语义 |
 |---|---|---|
 | `Diagnostics::install_panic_hook` | `src/diagnostics/mod.rs` | 绑定 runtime 的 panic hook；`App::run` 在配置加载前安装 |
-| `drain_platform_pending_failures` | `src/app/application/application/runtime/mod.rs` | App owner-thread 任务边界取出 callback/worker 失败，先恢复后报告 |
+| `drain_platform_pending_failures` | `src/app/application/lifecycle/runtime/mod.rs` | App owner-thread 任务边界取出 callback/worker 失败，先恢复后报告 |
 
 ## Callback → owner-thread 边界
 

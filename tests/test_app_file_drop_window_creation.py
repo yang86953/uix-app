@@ -10,7 +10,7 @@ WINDOW_CREATION = ROOT / "src/app/window/window_creation.rs"
 # 主窗创建入口。
 APPLICATION = ROOT / "src/app/application/application/mod.rs"
 # 运行时次窗创建入口。
-SECONDARY_CREATE = ROOT / "src/app/application/application/runtime/create.rs"
+SECONDARY_CREATE = ROOT / "src/app/application/lifecycle/runtime/create.rs"
 # 公开独立 Window 创建入口。
 PUBLIC_WINDOW = ROOT / "src/app/window/window.rs"
 # 验证所有 Application 窗口统一启用 FileDrop，同时保持平台能力缺失兼容。

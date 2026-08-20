@@ -43,7 +43,7 @@
 - `AppRuntime` 持有 Diagnostics System 实例，`AppHandle` 只取得可 clone 的公开句柄（`AppHandle::diagnostics`），不暴露平台内部对象。
 - `App::run` 在配置加载前安装绑定 Diagnostics runtime 的 panic hook：配置 `crash_report_directory` 时原子写入有界 CrashReport，未配置时行为等同默认；始终转发 previous hook，不吞 panic。
 - 注入点：`App::new().diagnostics(DiagnosticsConfig)` 以配置注入（报告容量、崩溃目录、backtrace 策略）；`App::new().diagnostics_runtime(Diagnostics)` 注入已构建的共享 runtime 实例。
-- App owner-thread 任务边界调用 `drain_platform_pending_failures`（`src/app/application/application/runtime/mod.rs`）：先对每个取出的失败 `attempt_recovery`，注册 handler 返回 `Recovered` 时不再 report（仅 tracing 观察），`Unhandled` / `Failed` 才最终 report 一次——「不能恢复的才报告」。
+- App owner-thread 任务边界调用 `drain_platform_pending_failures`（`src/app/application/lifecycle/runtime/mod.rs`）：先对每个取出的失败 `attempt_recovery`，注册 handler 返回 `Recovered` 时不再 report（仅 tracing 观察），`Unhandled` / `Failed` 才最终 report 一次——「不能恢复的才报告」。
 
 公开用法见[运行保障](../../使用/框架设施/运行保障.md)。
 
