@@ -26,6 +26,7 @@ mod construction;
 mod graphics;
 mod methods;
 mod rhi_device;
+mod rhi_pipeline;
 mod rhi_texture;
 mod swapchain;
 mod transfer;

@@ -1,0 +1,167 @@
+#version 450
+
+// Vulkan 薄 RHI 顶点阶段的唯一源码；构建产物按共享 PipelineKind 选择宏变体。
+
+#if defined(UIX_MESH)
+layout(set = 0, binding = 0, std140) uniform MeshUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 color;
+} u;
+layout(location = 0) in vec2 a_pos;
+
+void main() {
+    vec2 ndc = (a_pos / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+}
+
+#elif defined(UIX_SAMPLED)
+layout(set = 0, binding = 0, std140) uniform SampledUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec2 a_uv;
+layout(location = 2) in vec4 a_color;
+layout(location = 0) out vec2 v_uv;
+layout(location = 1) out vec4 v_color;
+
+void main() {
+    vec2 ndc = (a_pos / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_uv = a_uv;
+    v_color = a_color;
+}
+
+#elif defined(UIX_GRADIENT)
+layout(set = 0, binding = 0, std140) uniform GradientUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 origin_edge_x;
+    vec4 edge_y;
+    vec4 color_a;
+    vec4 color_b;
+    vec4 params;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_local;
+
+void main() {
+    vec2 position = u.origin_edge_x.xy
+        + a_pos.x * u.origin_edge_x.zw
+        + a_pos.y * u.edge_y.xy;
+    vec2 ndc = (position / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_local = a_pos;
+}
+
+#elif defined(UIX_SHAPE)
+layout(set = 0, binding = 0, std140) uniform ShapeUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 rect;
+    vec4 color;
+    vec4 radius;
+    vec4 stroke;
+    vec4 draw_rect;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_local;
+layout(location = 1) out vec2 v_rect_size;
+
+void main() {
+    vec2 position = u.draw_rect.xy + a_pos * u.draw_rect.zw;
+    vec2 ndc = (position / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_local = a_pos * u.draw_rect.zw;
+    v_rect_size = u.rect.zw;
+}
+
+#elif defined(UIX_SHADOW)
+layout(set = 0, binding = 0, std140) uniform ShadowUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 rect;
+    vec4 color;
+    vec4 radius;
+    vec4 params;
+    vec4 size;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_local;
+layout(location = 1) out vec2 v_rect_size;
+
+void main() {
+    vec2 blur = max(u.params.zw, vec2(0.0));
+    vec2 body_size = max(u.size.xy, vec2(0.0001));
+    vec2 expanded_size = body_size + 2.0 * blur;
+    vec2 axis_x = u.rect.zw / max(expanded_size.x, 0.0001);
+    vec2 axis_y = u.params.xy / max(expanded_size.y, 0.0001);
+    vec2 draw_origin = u.rect.xy - axis_x - axis_y;
+    vec2 draw_edge_x = u.rect.zw + axis_x * 2.0;
+    vec2 draw_edge_y = u.params.xy + axis_y * 2.0;
+    vec2 position = draw_origin + a_pos.x * draw_edge_x + a_pos.y * draw_edge_y;
+    vec2 ndc = (position / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_local = a_pos * (expanded_size + vec2(2.0));
+    v_rect_size = body_size;
+}
+
+#elif defined(UIX_BLUR)
+layout(set = 0, binding = 0, std140) uniform BlurUniforms {
+    vec4 sizes;
+    vec4 region;
+    vec4 dir_taps;
+    vec4 weights[16];
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_uv;
+
+void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+    vec2 unit = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
+    v_uv = (u.region.xy + unit * u.region.zw) / u.sizes.zw;
+}
+
+#elif defined(UIX_MSDF)
+layout(set = 0, binding = 0, std140) uniform MsdfUniforms {
+    vec2 viewport;
+    vec2 texture_size;
+    vec4 range_pad;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec2 a_uv;
+layout(location = 2) in vec4 a_color;
+layout(location = 0) out vec2 v_uv;
+layout(location = 1) out vec4 v_color;
+
+void main() {
+    vec2 ndc = (a_pos / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_uv = a_uv;
+    v_color = a_color;
+}
+
+#elif defined(UIX_SECTOR)
+layout(set = 0, binding = 0, std140) uniform SectorUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 rect;
+    vec4 color;
+    vec4 angles;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_local;
+layout(location = 1) out vec2 v_rect_size;
+
+void main() {
+    vec2 position = u.rect.xy + a_pos * u.rect.zw;
+    vec2 ndc = (position / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_local = a_pos * u.rect.zw;
+    v_rect_size = u.rect.zw;
+}
+
+#else
+#error "必须选择一个 Vulkan RHI 顶点变体"
+#endif
