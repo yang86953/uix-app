@@ -1,6 +1,6 @@
 //! UIX Lang 完成名称分类后的可查询语义 IR。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::CompileTarget;
 use crate::projection_schema::{ComponentCategory, UI_PROJECTION_SCHEMA};
@@ -201,10 +201,63 @@ impl TypedUiIr {
         requirements
     }
 
-    // 只允许 Rust Emitter 消费已经进入 IR 的原始结构事实。
-    pub(crate) const fn document(&self) -> &Document {
-        &self.document
+    // 为 Rust Emitter 克隆文档，并把每个可生成元素标上真实源码身份。
+    pub(crate) fn emission_document(&self) -> Document {
+        let mut document = self.document.clone();
+        let custom_widgets = self
+            .declarations
+            .iter()
+            .filter(|declaration| declaration.kind == TypedDeclarationKind::Widget)
+            .map(|declaration| declaration.name.clone())
+            .collect::<BTreeSet<_>>();
+        let widget_sources = self
+            .declarations
+            .iter()
+            .filter(|declaration| declaration.kind == TypedDeclarationKind::Widget)
+            .map(|declaration| (declaration.name.as_str(), declaration.span.source_id))
+            .collect::<BTreeMap<_, _>>();
+        for declaration in &mut document.declarations {
+            if let Declaration::Widget(widget) = declaration {
+                if let Some(source_id) = widget_sources.get(widget.name.as_str()).copied() {
+                    annotate_nodes(&mut widget.children, source_id, &custom_widgets);
+                }
+            }
+        }
+        annotate_element(
+            &mut document.root,
+            self.root.span.source_id,
+            &custom_widgets,
+        );
+        document
     }
+
+    // 返回自定义组件名称到真实声明来源的确定映射。
+    pub(crate) fn widget_source_ids(&self) -> BTreeMap<String, u64> {
+        self.declarations
+            .iter()
+            .filter(|declaration| declaration.kind == TypedDeclarationKind::Widget)
+            .map(|declaration| (declaration.name.clone(), declaration.span.source_id.value()))
+            .collect()
+    }
+}
+
+fn annotate_nodes(nodes: &mut [Node], source_id: SourceId, custom_widgets: &BTreeSet<String>) {
+    for node in nodes {
+        if let Node::Element(element) = node {
+            annotate_element(element, source_id, custom_widgets);
+        }
+    }
+}
+
+fn annotate_element(element: &mut Element, source_id: SourceId, custom_widgets: &BTreeSet<String>) {
+    if element.name != "App" && !custom_widgets.contains(&element.name) {
+        element.attributes.push(Attribute {
+            name: crate::uix_lang::SOURCE_ID_ATTRIBUTE.to_string(),
+            value: AttributeValue::Literal(source_id.value().to_string()),
+            span: element.span,
+        });
+    }
+    annotate_nodes(&mut element.children, source_id, custom_widgets);
 }
 
 fn collect_node_capabilities(node: &TypedNode, requirements: &mut Vec<CapabilityRequirement>) {

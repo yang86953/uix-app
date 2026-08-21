@@ -802,10 +802,17 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
             ),
         });
     }
+    let document = ir.emission_document();
+    let root_source = ir.root().span.source_id.value();
+    let widget_sources = ir.widget_source_ids();
     let tokens = match ir.target() {
-        CompileTarget::View => with_source_markers(|| generate_document_view(ir.document())),
-        CompileTarget::App => with_source_markers(|| generate_document_app(ir.document())),
-        CompileTarget::Items => generate_record_items(ir.document()),
+        CompileTarget::View => with_source_markers(root_source, widget_sources, || {
+            generate_document_view(&document)
+        }),
+        CompileTarget::App => with_source_markers(root_source, widget_sources, || {
+            generate_document_app(&document)
+        }),
+        CompileTarget::Items => generate_record_items(&document),
     }
     .map_err(|diagnostic| LoweringDiagnostic {
         code: "UIX2000",
@@ -835,10 +842,10 @@ impl RustEmitter {
             .source
             .parse::<TokenStream>()
             .map_err(|error| format!("无法解析已清理来源标记的 Rust 输出：{error}"))?;
-        Ok(EmittedRust {
-            tokens,
-            source_map: mapped.source_map,
-        })
+        let normalized = tokens.to_string();
+        let mut source_map = mapped.source_map;
+        source_map.normalize_generated_offsets(&mapped.source, &normalized)?;
+        Ok(EmittedRust { tokens, source_map })
     }
 }
 
@@ -868,6 +875,8 @@ fn capability_enabled(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{
         CompileTarget, CompilerSystem, DiagnosticPhase, QueryEntry, QueryKind, check_inline,
         compile_inline, format_inline,
@@ -919,6 +928,33 @@ mod tests {
             .check_inline_auto("<App title=\"Auto\"><Text>Hello</Text></App>", "<app-auto>")
             .expect("App 根应自动选择 App");
         assert_eq!(app.ir.target(), CompileTarget::App);
+    }
+
+    #[test]
+    fn source_map_preserves_recursive_import_sources() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/uix_lang/imports/root.uix");
+        let output = CompilerSystem::new()
+            .compile_file(&root, CompileTarget::View)
+            .expect("递归导入闭包必须可编译");
+        let sources = output
+            .source_map
+            .entries()
+            .iter()
+            .map(|entry| entry.source_name.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            sources
+                .iter()
+                .any(|source| source.ends_with("pages/page.uix")),
+            "SourceMap 必须保留直接导入来源：{sources:?}"
+        );
+        assert!(
+            sources
+                .iter()
+                .any(|source| source.ends_with("shared/helper.uix")),
+            "SourceMap 必须保留递归导入来源：{sources:?}"
+        );
     }
 
     #[test]

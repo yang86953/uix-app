@@ -4,8 +4,8 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SourceSpan,
-    WidgetScopeMarker,
+    Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SOURCE_ID_ATTRIBUTE,
+    SourceSpan, WidgetScopeMarker, mark_source_tokens, with_source_marker_id,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -32,6 +32,18 @@ mod for_setup;
 use for_setup::parse_for_iteration_setup;
 // 生成一个可直接消费的公开 UIX View 表达式。
 pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic> {
+    let source_id = element
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == SOURCE_ID_ATTRIBUTE)
+        .and_then(|attribute| match &attribute.value {
+            super::AttributeValue::Literal(value) => value.parse::<u64>().ok(),
+            super::AttributeValue::Expression(_) | super::AttributeValue::InlineStyle(_) => None,
+        });
+    with_source_marker_id(source_id, || generate_view_for_source(element))
+}
+
+fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 控制节点只能在父元素的有序子节点列表中展开。
     if matches!(element.name.as_str(), "If" | "ElseIf" | "Else" | "For") {
         // 返回根控制节点形状诊断。
@@ -45,11 +57,16 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
         ));
     }
     // 普通元素委托映射矩阵生成。
-    let view = generate_element(element)?;
+    let mut generated_element = element.clone();
+    generated_element
+        .attributes
+        .retain(|attribute| attribute.name != SOURCE_ID_ATTRIBUTE);
+    let view = generate_element(&generated_element)?;
     // 通过公开 View trait 统一物化为 ViewNode。
     let view = quote! { ::uix::prelude::View::build(#view) };
     // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
-    apply_widget_scopes(view, &element.widget_scopes)
+    let view = apply_widget_scopes(view, &element.widget_scopes)?;
+    Ok(mark_source_tokens(view, element.span))
 }
 
 // 生成文本元素。

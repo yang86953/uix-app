@@ -1,5 +1,5 @@
-// 引入线程局部的生成文件标记开关。
-use std::cell::Cell;
+// 引入线程局部的生成文件标记上下文与确定映射。
+use std::{cell::RefCell, collections::BTreeMap};
 
 // 引入过程宏令牌与标识符类型。
 use proc_macro2::{Ident, TokenStream};
@@ -17,22 +17,63 @@ use super::{
 // 保存当前线程是否正在为生成文件输出来源标记。
 thread_local! {
     // 纯 codegen 默认不携带仅供写盘消费的内部令牌。
-    static SOURCE_MARKERS_ENABLED: Cell<bool> = const { Cell::new(false) };
+    static SOURCE_MARKERS: RefCell<SourceMarkerContext> = RefCell::new(SourceMarkerContext::default());
+}
+
+#[derive(Default)]
+struct SourceMarkerContext {
+    enabled: bool,
+    current_source: Option<u64>,
+    widget_sources: BTreeMap<String, u64>,
 }
 
 // 在一次宏入口代码生成期间启用来源标记。
-pub(crate) fn with_source_markers<T>(operation: impl FnOnce() -> T) -> T {
+pub(crate) fn with_source_markers<T>(
+    root_source: u64,
+    widget_sources: BTreeMap<String, u64>,
+    operation: impl FnOnce() -> T,
+) -> T {
     // 在当前过程宏线程内切换标记状态。
-    SOURCE_MARKERS_ENABLED.with(|enabled| {
-        // 保存嵌套调用前的原状态。
-        let previous = enabled.replace(true);
+    SOURCE_MARKERS.with(|context| {
+        // 保存嵌套调用前的完整上下文。
+        let previous = context.replace(SourceMarkerContext {
+            enabled: true,
+            current_source: Some(root_source),
+            widget_sources,
+        });
         // 执行完整文档代码生成。
         let result = operation();
         // 恢复调用前状态，避免污染后续纯 codegen。
-        enabled.set(previous);
+        context.replace(previous);
         // 返回原始生成结果。
         result
     })
+}
+
+// 在元素或组件模板生成期间临时切换到精确源码身份。
+pub(crate) fn with_source_marker_id<T>(source_id: Option<u64>, operation: impl FnOnce() -> T) -> T {
+    SOURCE_MARKERS.with(|context| {
+        let previous = {
+            let mut context = context.borrow_mut();
+            let previous = context.current_source;
+            if context.enabled && source_id.is_some() {
+                context.current_source = source_id;
+            }
+            previous
+        };
+        let result = operation();
+        context.borrow_mut().current_source = previous;
+        result
+    })
+}
+
+// 按类型化声明登记切换到当前自定义组件模板来源。
+pub(crate) fn with_widget_source_marker<T>(name: &str, operation: impl FnOnce() -> T) -> T {
+    let source_id = SOURCE_MARKERS.with(|context| {
+        let context = context.borrow();
+        context.widget_sources.get(name).copied()
+    });
+    with_source_marker_id(source_id, operation)
 }
 
 // 把已验证表达式转换为 Rust 表达式令牌。
@@ -45,7 +86,7 @@ pub(crate) fn generate_expression(
     // 先生成不含定位包装的完整表达式。
     let generated = generate_expression_inner(expression, event)?;
     // 仅在生成文件入口为最外层加入源码位置标记。
-    Ok(maybe_mark_source_expression(generated, expression.span))
+    Ok(mark_source_tokens(generated, expression.span))
 }
 
 // 生成不携带文件来源标记的规范表达式令牌。
@@ -176,9 +217,19 @@ pub(super) fn generate_expression_inner(
 // 用稳定内部令牌标记一段用户表达式的 UIX 源位置。
 fn mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStream {
     // 把一基行列编码为不会与用户标识符冲突的卫生名称。
+    let source_id = SOURCE_MARKERS.with(|context| context.borrow().current_source);
+    let marker_name = source_id.map_or_else(
+        || format!("__uix_source_marker_{}_{}", span.line, span.column),
+        |source_id| {
+            format!(
+                "__uix_source_marker_{source_id:016x}_{}_{}",
+                span.line, span.column
+            )
+        },
+    );
     let marker = Ident::new(
         // 生成文件写入器会把该令牌替换为真实映射注释。
-        &format!("__uix_source_marker_{}_{}", span.line, span.column),
+        &marker_name,
         // 使用混合卫生避免参与调用方名称解析。
         proc_macro2::Span::mixed_site(),
     );
@@ -192,11 +243,11 @@ fn mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStre
 }
 
 // 根据当前入口上下文选择原始或带来源标记的表达式。
-fn maybe_mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStream {
+pub(crate) fn mark_source_tokens(generated: TokenStream, span: SourceSpan) -> TokenStream {
     // 查询当前线程的生成文件模式。
-    SOURCE_MARKERS_ENABLED.with(|enabled| {
+    SOURCE_MARKERS.with(|context| {
         // 生成文件模式需要写入可替换标记。
-        if enabled.get() {
+        if context.borrow().enabled {
             // 返回带来源标记的表达式。
             mark_source_expression(generated, span)
         } else {
@@ -220,7 +271,7 @@ pub(crate) fn generate_handler_expression(
             // 生成可调用标识符。
             let handler = generate_identifier(name, expression.span, event)?;
             // 返回带 UIX 源位置标记的零参数调用。
-            return Ok(maybe_mark_source_expression(
+            return Ok(mark_source_tokens(
                 // 生成原始零参数调用。
                 quote! { (#handler)() },
                 // 沿用事件表达式跨度。

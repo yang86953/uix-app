@@ -13,7 +13,7 @@ use crate::projection_schema::UI_PROJECTION_SCHEMA;
 use super::{
     Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element,
     ExpressionKind, ExpressionNode, KeyframesDeclaration, Node, RecordDeclaration,
-    StyleClassResolver, WidgetDeclaration, WidgetScopeMarker,
+    StyleClassResolver, WidgetDeclaration, WidgetScopeMarker, with_widget_source_marker,
 };
 // 引入既有核心 View 生成入口。
 use super::generate_view;
@@ -662,7 +662,7 @@ impl WidgetExpander {
         // 标记当前调用是否已压入调用方插槽投影。
         let mut pushed_slots = false;
         // 在闭包内展开以确保错误路径也弹栈。
-        let result = (|| {
+        let result = with_widget_source_marker(&widget.name, || {
             // 在进入被调用组件作用域前先按调用方绑定展开全部插槽内容。
             let projections = self.prepare_slot_projections(
                 // 传递完整组件调用节点。
@@ -803,7 +803,7 @@ impl WidgetExpander {
             }
             // 返回附带作用域标记的组件展开结果。
             Ok(nodes)
-        })();
+        });
         // 已进入被调用组件时恢复调用方 external 作用域。
         if pushed_external {
             // 弹出被调用组件外部符号白名单。
