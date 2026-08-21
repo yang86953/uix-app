@@ -11,6 +11,18 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
 
+[features]
+default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+image-codecs = []
+qrcode = []
+form-pattern = []
+rich-text = []
+charts = []
+table = []
+navigation = []
+feedback = []
+tree-widgets = []
+
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"

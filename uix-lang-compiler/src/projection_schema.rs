@@ -1,7 +1,7 @@
 //! UIX Lang 可枚举 UI 投影事实的唯一登记入口。
 
 /// 当前 schema 的独立版本；缓存与工具协议必须把它计入身份。
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 /// 当前语言基线版本。
 pub const LANGUAGE_VERSION: &str = "0.0.1";
 
@@ -148,6 +148,15 @@ pub struct CapabilitySpec {
     pub cargo_feature: &'static str,
 }
 
+/// 描述只有出现特定组件属性时才需要的 capability。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeCapabilitySpec {
+    pub id: &'static str,
+    pub component: &'static str,
+    pub attribute: &'static str,
+    pub capability: &'static str,
+}
+
 /// 提供 Compiler System 唯一拥有的只读 UI 投影 schema。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UiProjectionSchema;
@@ -269,6 +278,22 @@ impl UiProjectionSchema {
     pub fn capability(self, name: &str) -> Option<&'static CapabilitySpec> {
         CAPABILITIES.iter().find(|entry| entry.name == name)
     }
+
+    /// 返回全部属性级 capability 门禁。
+    pub const fn attribute_capabilities(self) -> &'static [AttributeCapabilitySpec] {
+        ATTRIBUTE_CAPABILITIES
+    }
+
+    /// 查询一个组件属性是否要求独立 capability。
+    pub fn attribute_capability(
+        self,
+        component: &str,
+        attribute: &str,
+    ) -> Option<&'static AttributeCapabilitySpec> {
+        ATTRIBUTE_CAPABILITIES
+            .iter()
+            .find(|entry| entry.component == component && entry.attribute == attribute)
+    }
 }
 
 macro_rules! component {
@@ -331,7 +356,7 @@ const COMPONENTS: &[ComponentSpec] = &[
     component!("DateRangePicker", Input, "generate_date_range_picker"),
     component!("TimePicker", Input, "generate_time_picker"),
     component!("ColorPicker", Input, "generate_color_picker"),
-    component!("Avatar", Display, "generate_avatar", Some("image-codecs")),
+    component!("Avatar", Display, "generate_avatar"),
     component!("Badge", Display, "generate_badge"),
     component!("Image", Display, "generate_image", Some("image-codecs")),
     component!(
@@ -823,6 +848,13 @@ const CAPABILITIES: &[CapabilitySpec] = &[
     capability!("tree-widgets"),
 ];
 
+const ATTRIBUTE_CAPABILITIES: &[AttributeCapabilitySpec] = &[AttributeCapabilitySpec {
+    id: "capability-use.Avatar.src",
+    component: "Avatar",
+    attribute: "src",
+    capability: "image-codecs",
+}];
+
 const EVENTS: &[EventSpec] = &[
     EventSpec {
         id: "event.click",
@@ -1131,6 +1163,11 @@ mod tests {
                 .iter()
                 .map(|entry| entry.id)
                 .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .attribute_capabilities()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
         ] {
             assert_eq!(
                 entries.iter().copied().collect::<BTreeSet<_>>().len(),
@@ -1154,6 +1191,7 @@ mod tests {
         assert_eq!(UI_PROJECTION_SCHEMA.handle_slots().len(), 39);
         assert_eq!(UI_PROJECTION_SCHEMA.slots().len(), 5);
         assert_eq!(UI_PROJECTION_SCHEMA.capabilities().len(), 9);
+        assert_eq!(UI_PROJECTION_SCHEMA.attribute_capabilities().len(), 1);
         assert_eq!(
             UI_PROJECTION_SCHEMA.component("App").unwrap().status,
             RegistrationStatus::Available

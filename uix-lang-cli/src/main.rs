@@ -2,7 +2,7 @@
 
 use serde_json::json;
 use std::{env, fs, path::PathBuf, process::ExitCode};
-use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem};
+use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem, QueryEntry, QueryKind};
 
 mod lsp;
 
@@ -171,19 +171,13 @@ fn query(args: &[String]) -> Result<u8, String> {
         return Err("uix query 需要类别".into());
     };
     let json_output = args.iter().any(|arg| arg == "--json");
-    let schema = CompilerSystem::new().schema();
-    let entries = match kind.as_str() {
-        "components" => schema.components().iter().map(|e| json!({"id":e.id,"name":e.name,"status":format!("{:?}",e.status),"category":e.category.label(),"emitter":e.emitter,"capability":e.capability})).collect::<Vec<_>>(),
-        "attributes" => schema.common_attributes().iter().map(|e| json!({"id":e.id,"name":e.name,"value_kind":format!("{:?}",e.value_kind)})).collect(),
-        "events" => schema.events().iter().map(|e| json!({"id":e.id,"name":e.name,"fields":e.fields})).collect(),
-        "styles" => schema.style_properties().iter().map(|e| json!({"id":e.id,"name":e.name,"value_kind":format!("{:?}",e.value_kind)})).collect(),
-        "themes" => schema.theme_tokens().iter().map(|e| json!({"id":e.id,"name":e.name,"kind":format!("{:?}",e.kind),"alias_for":e.alias_for})).collect(),
-        "handles" => schema.handle_slots().iter().map(|e| json!({"id":e.id,"component":e.component,"attribute":e.attribute,"value_type":e.value_type})).collect(),
-        "slots" => schema.slots().iter().map(|e| json!({"id":e.id,"component":e.component,"name":e.name,"multiple":e.multiple})).collect(),
-        "capabilities" => schema.capabilities().iter().map(|e| json!({"id":e.id,"name":e.name,"cargo_feature":e.cargo_feature})).collect(),
-        "data" => schema.data_constructors().iter().map(|e| json!({"id":e.id,"name":e.name,"rust_path":e.rust_path,"method":e.method,"normalize_numbers":e.normalize_numbers,"capability":e.capability})).collect(),
-        _ => return Err(format!("未知 query 类别: {kind}")),
-    };
+    let kind = QueryKind::parse(kind).ok_or_else(|| format!("未知 query 类别: {kind}"))?;
+    let entries = CompilerSystem::new()
+        .query(kind)
+        .entries
+        .into_iter()
+        .map(query_entry_json)
+        .collect::<Vec<_>>();
     if json_output {
         println!(
             "{}",
@@ -195,6 +189,39 @@ fn query(args: &[String]) -> Result<u8, String> {
         }
     }
     Ok(0)
+}
+
+fn query_entry_json(entry: QueryEntry) -> serde_json::Value {
+    match entry {
+        QueryEntry::Component(e) => {
+            json!({"id":e.id,"name":e.name,"status":format!("{:?}",e.status),"category":e.category.label(),"emitter":e.emitter,"capability":e.capability})
+        }
+        QueryEntry::Attribute(e) => {
+            json!({"id":e.id,"name":e.name,"value_kind":format!("{:?}",e.value_kind)})
+        }
+        QueryEntry::Event(e) => json!({"id":e.id,"name":e.name,"fields":e.fields}),
+        QueryEntry::Style(e) => {
+            json!({"id":e.id,"name":e.name,"value_kind":format!("{:?}",e.value_kind)})
+        }
+        QueryEntry::Theme(e) => {
+            json!({"id":e.id,"name":e.name,"kind":format!("{:?}",e.kind),"alias_for":e.alias_for})
+        }
+        QueryEntry::Handle(e) => {
+            json!({"id":e.id,"component":e.component,"attribute":e.attribute,"value_type":e.value_type})
+        }
+        QueryEntry::Slot(e) => {
+            json!({"id":e.id,"component":e.component,"name":e.name,"multiple":e.multiple})
+        }
+        QueryEntry::Capability(e) => {
+            json!({"id":e.id,"name":e.name,"cargo_feature":e.cargo_feature})
+        }
+        QueryEntry::AttributeCapability(e) => {
+            json!({"id":e.id,"component":e.component,"attribute":e.attribute,"capability":e.capability})
+        }
+        QueryEntry::Data(e) => {
+            json!({"id":e.id,"name":e.name,"rust_path":e.rust_path,"method":e.method,"normalize_numbers":e.normalize_numbers,"capability":e.capability})
+        }
+    }
 }
 
 fn print_diagnostic(error: &CompilerDiagnostic, json_output: bool) -> Result<(), String> {

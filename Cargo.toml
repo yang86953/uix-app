@@ -34,7 +34,7 @@ opt-level = 3
 codegen-units = 16
 
 [dependencies]
-uix-derive = { path = "uix-derive", version = "0.0.1" }
+uix-derive = { path = "uix-derive", version = "0.0.1", default-features = false }
 ab_glyph = "0.2.32"
 # 使用纯 Rust OpenType shaping，保留源文本 cluster 与复杂脚本定位。
 rustybuzz = "0.20.1"
@@ -129,24 +129,24 @@ vulkan = ["dep:ash"]
 metal = []
 settings-serde = ["dep:serde", "dep:serde_json"]
 # 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
-image-codecs = ["dep:image"]
+image-codecs = ["dep:image", "uix-derive/image-codecs"]
 # 二维码组件独占编码依赖，关闭后同时收缩模块与公开门面。
-qrcode = ["dep:qrcode"]
+qrcode = ["dep:qrcode", "uix-derive/qrcode"]
 # 表单正则 pattern 规则独占 regex 依赖，基础校验能力不受影响。
-form-pattern = ["dep:regex"]
+form-pattern = ["dep:regex", "uix-derive/form-pattern"]
 # 富文本组件、解析布局与快照公开面作为一个可独立关闭的源码能力。
 # 注意：富文本的图片插入需同时启用 image-codecs，否则对应构建/渲染路径不可用。
-rich-text = []
+rich-text = ["uix-derive/rich-text"]
 # 图表组件族、数据模型、patch 与快照公开面作为一个可独立关闭的源码能力。
-charts = []
+charts = ["uix-derive/charts"]
 # 数据表格组件族、泛型数据模型、动态渲染与快照公开面作为一个可独立关闭的源码能力。
-table = []
+table = ["uix-derive/table"]
 # 导航组件族、交互联动、patch 与快照公开面作为一个可独立关闭的源码能力。
-navigation = []
+navigation = ["uix-derive/navigation"]
 # 反馈组件族、全局门面、应用通知浮层与 Modal 树钩子作为一个可独立关闭的源码能力。
-feedback = []
+feedback = ["uix-derive/feedback"]
 # 树展示、树节点模型、树选择器、patch 与快照公开面作为一个可独立关闭的源码能力。
-tree-widgets = []
+tree-widgets = ["uix-derive/tree-widgets"]
 agent-control = [
     "dep:serde_json",
     "windows/Win32_Security",
