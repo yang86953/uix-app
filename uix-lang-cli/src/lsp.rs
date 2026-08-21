@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem};
+use uix_lang_compiler::{CompilerDiagnostic, CompilerSystem};
 
 #[derive(Default)]
 struct Session {
@@ -125,19 +125,9 @@ fn diagnostic_notification(session: &Session, request: &Value) -> Value {
     let system = CompilerSystem::new();
     let result = if let Some(path) = path.as_ref() {
         let overlays = overlay_documents(session);
-        match system.check_file_with_overlays(path, &overlays, CompileTarget::View) {
-            Err(error) if error.message.contains("<App>") => system
-                .check_file_with_overlays(path, &overlays, CompileTarget::App)
-                .err(),
-            result => result.err(),
-        }
+        system.check_file_with_overlays_auto(path, &overlays).err()
     } else {
-        match system.check_inline(&text, &name, CompileTarget::View) {
-            Err(error) if error.message.contains("<App>") => {
-                system.check_inline(&text, &name, CompileTarget::App).err()
-            }
-            result => result.err(),
-        }
+        system.check_inline_auto(&text, &name).err()
     };
     let diagnostics = result.into_iter().map(lsp_diagnostic).collect::<Vec<_>>();
     json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":uri,"diagnostics":diagnostics}})

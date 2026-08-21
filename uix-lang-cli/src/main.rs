@@ -35,13 +35,7 @@ fn check(args: &[String]) -> Result<u8, String> {
     let system = CompilerSystem::new();
     for file in files {
         let result = if target == TargetArg::Auto {
-            match system.check_file(&file, CompileTarget::View) {
-                Ok(output) => Ok(output),
-                Err(error) if error.message.contains("<App>") => {
-                    system.check_file(&file, CompileTarget::App)
-                }
-                Err(error) => Err(error),
-            }
+            system.check_file_auto(&file)
         } else {
             system.check_file(&file, target.compile_target().expect("非 auto target"))
         };
