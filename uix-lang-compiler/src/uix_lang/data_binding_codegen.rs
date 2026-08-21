@@ -1,7 +1,10 @@
 // 引入过程宏标识符与令牌流。
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
+
+// 引入 Compiler System 唯一的数据构造登记表。
+use crate::projection_schema::UI_PROJECTION_SCHEMA;
 
 // 引入表达式语法树节点。
 use super::{Expression, ExpressionKind};
@@ -16,170 +19,23 @@ pub(crate) struct DataConstructorSpec {
     pub(crate) normalize_numbers: bool,
 }
 
-// 登记当前公开契约允许在语言面直接构造的结构化数据类型名。
-const DATA_TYPE_NAMES: &[&str] = &[
-    // 下拉选择器选项。
-    "SelectOption",
-    // 级联选择器选项。
-    "CascaderOption",
-    // 树与树选择器节点。
-    "TreeNode",
-    // 时间轴事件项。
-    "TimelineItem",
-    // 可选中列表条目。
-    "SelectableItem",
-    // 折叠面板条目。
-    "CollapsePanel",
-    // 步骤条步骤。
-    "Step",
-    // 描述列表条目。
-    "DescriptionsItem",
-    // 面包屑条目。
-    "BreadcrumbItem",
-    // 锚点导航目标。
-    "AnchorItem",
-    // 标签页元数据。
-    "Tab",
-    // 菜单树条目。
-    "MenuItem",
-    // keyed 下拉菜单选项。
-    "DropdownItem",
-    // 柱状图分类数据。
-    "BarData",
-    // 折线图分类数据。
-    "LineData",
-    // 饼图分类数据。
-    "PieData",
-    // 散点图坐标数据。
-    "ScatterData",
-    // 气泡图三维数据。
-    "BubbleData",
-    // 漏斗图阶段数据。
-    "FunnelData",
-    // 矩形树图层级节点。
-    "TreemapNode",
-    // 仪表盘色带区间。
-    "GaugeRange",
-    // 热力图矩阵单元。
-    "HeatmapCell",
-    // 瀑布图变化项。
-    "WaterfallData",
-    // 通用图表系列。
-    "ChartSeries",
-    // 自定义组合图系列。
-    "ComboSeries",
-    // 雷达图维度轴。
-    "RadarAxis",
-    // 雷达图维度值。
-    "RadarData",
-    // 日期语义类型。
-    "Date",
-    // 时间语义类型。
-    "Time",
-    // 颜色语义类型。
-    "Color",
-    // 坐标语义类型。
-    "Point",
-];
-
 // 查找语言面类型名对应的公开构造规格。
 pub(crate) fn data_constructor_spec(name: &str) -> Option<DataConstructorSpec> {
-    // 按语言面类型名生成公开构造规格。
-    let (path, method, normalize_numbers) = match name {
-        // 映射下拉选项。
-        "SelectOption" => (quote! { ::uix::prelude::SelectOption }, None, false),
-        // 映射级联选项。
-        "CascaderOption" => (quote! { ::uix::prelude::CascaderOption }, None, false),
-        // 映射树节点。
-        "TreeNode" => (quote! { ::uix::prelude::TreeNode }, None, false),
-        // 映射时间轴事件。
-        "TimelineItem" => (quote! { ::uix::prelude::TimelineItem }, None, false),
-        // 映射可选中列表条目。
-        "SelectableItem" => (quote! { ::uix::prelude::SelectableItem }, None, false),
-        // 映射折叠面板条目。
-        "CollapsePanel" => (quote! { ::uix::prelude::CollapsePanel }, None, false),
-        // 映射步骤。
-        "Step" => (quote! { ::uix::prelude::Step }, None, false),
-        // 映射描述条目。
-        "DescriptionsItem" => (quote! { ::uix::prelude::DescriptionsItem }, None, false),
-        // 映射面包屑条目。
-        "BreadcrumbItem" => (quote! { ::uix::prelude::BreadcrumbItem }, None, false),
-        // 映射锚点目标。
-        "AnchorItem" => (quote! { ::uix::prelude::AnchorItem }, None, false),
-        // 映射标签页元数据。
-        "Tab" => (quote! { ::uix::prelude::Tab }, None, false),
-        // 菜单项使用显式 label/key 构造入口。
-        "MenuItem" => (
-            quote! { ::uix::prelude::MenuItem },
-            Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
-            false,
-        ),
-        // 下拉选项使用显式 label/key 构造入口。
-        "DropdownItem" => (
-            quote! { ::uix::prelude::DropdownItem },
-            Some(Ident::new("from_text", proc_macro2::Span::mixed_site())),
-            false,
-        ),
-        // 柱状图数据构造器接收 f32 数值。
-        "BarData" => (quote! { ::uix::prelude::BarData }, None, true),
-        // 折线图数据构造器接收 f32 数值。
-        "LineData" => (quote! { ::uix::prelude::LineData }, None, true),
-        // 饼图数据构造器接收 f32 数值与颜色。
-        "PieData" => (quote! { ::uix::prelude::PieData }, None, true),
-        // 散点图数据构造器接收两个 f32 坐标。
-        "ScatterData" => (quote! { ::uix::prelude::ScatterData }, None, true),
-        // 气泡图数据构造器接收两个坐标与气泡大小。
-        "BubbleData" => (quote! { ::uix::prelude::BubbleData }, None, true),
-        // 漏斗图数据构造器接收 f32 阶段值。
-        "FunnelData" => (quote! { ::uix::prelude::FunnelData }, None, true),
-        // 矩形树图节点构造器接收 f32 权重并允许 children 链。
-        "TreemapNode" => (quote! { ::uix::prelude::TreemapNode }, None, true),
-        // 仪表盘色带构造器接收两个 f32 边界与颜色。
-        "GaugeRange" => (quote! { ::uix::prelude::GaugeRange }, None, true),
-        // 热力图单元由表达式生成层单独规范化第三个 f32 参数。
-        "HeatmapCell" => (quote! { ::uix::prelude::HeatmapCell }, None, false),
-        // 瀑布图数据由表达式生成层单独映射数值与类型参数。
-        "WaterfallData" => (quote! { ::uix::prelude::WaterfallData }, None, false),
-        // 通用图表系列保留内部数据集合的独立构造规则。
-        "ChartSeries" => (quote! { ::uix::prelude::ChartSeries }, None, false),
-        // 自定义组合图系列保留 LineData 集合并由 Rust 核对泛型。
-        "ComboSeries" => (quote! { ::uix::prelude::ComboSeries }, None, false),
-        // 雷达轴由表达式生成层把最小/最大值组合为闭区间。
-        "RadarAxis" => (quote! { ::uix::prelude::RadarAxis }, None, false),
-        // 雷达维度值构造器接收 f32 数值。
-        "RadarData" => (quote! { ::uix::prelude::RadarData }, None, true),
-        // 日期构造 year/month/day。
-        "Date" => (quote! { ::uix::prelude::Date }, None, false),
-        // 时间构造 hour/minute。
-        "Time" => (quote! { ::uix::prelude::Time }, None, false),
-        // 颜色使用 hex 构造函数。
-        "Color" => (
-            quote! { ::uix::prelude::Color },
-            Some(Ident::new("hex", proc_macro2::Span::mixed_site())),
-            false,
-        ),
-        // 坐标参数规范化为 f32 形状。
-        "Point" => (quote! { ::uix::prelude::Point }, None, true),
-        // 其他类型名不在登记表。
-        _ => return None,
-    };
-    // 返回完整构造规格。
+    let projection = UI_PROJECTION_SCHEMA.data_constructor(name)?;
+    let path = syn::parse_str::<syn::Path>(projection.rust_path).ok()?;
+    let method =
+        (projection.method != "new").then(|| Ident::new(projection.method, Span::mixed_site()));
     Some(DataConstructorSpec {
-        // 保存公开路径。
-        path,
-        // 保存构造函数名。
+        path: quote! { #path },
         method,
-        // 保存数字规范化策略。
-        normalize_numbers,
+        normalize_numbers: projection.normalize_numbers,
     })
 }
 
 // 判断语言面类型名是否属于已登记数据类型。
 pub(crate) fn is_registered_data_type(name: &str) -> bool {
-    // 按精确名称查找登记表。
-    DATA_TYPE_NAMES.contains(&name)
+    UI_PROJECTION_SCHEMA.data_constructor(name).is_some()
 }
-
 // 把表达式树中的整数数字字面量规范化为小数形状。
 pub(crate) fn normalize_number_literals(expression: &mut Expression) {
     // 递归访问当前节点。

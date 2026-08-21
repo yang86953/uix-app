@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use proc_macro2::TokenStream;
 
+/// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
+pub mod projection_schema;
 mod uix_import;
 #[cfg(test)]
 mod uix_import_tests;

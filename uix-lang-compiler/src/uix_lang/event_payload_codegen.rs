@@ -1,26 +1,11 @@
 // 引入过程宏卫生标识符与令牌流。
 use proc_macro2::{Ident, TokenStream};
 
+// 引入 Compiler System 唯一事件载荷登记表。
+use crate::projection_schema::UI_PROJECTION_SCHEMA;
+
 // 引入表达式 AST、诊断与既有处理器生成入口。
 use super::{Diagnostic, Expression, ExpressionKind, generate_handler_expression};
-
-// 保存事件名到允许顶层载荷字段的唯一登记表。
-const EVENT_PAYLOAD_FIELDS: &[(&str, &[&str])] = &[
-    // 点击载荷公开逻辑坐标。
-    ("@click", &["x", "y"]),
-    // 值变化事件统一公开当前变化事实。
-    ("@change", &["value"]),
-    // 选择事件统一公开当前选择事实。
-    ("@select", &["value"]),
-    // 表单提交事件统一公开提交模型。
-    ("@submit", &["value"]),
-    // 关闭事件统一公开关闭事实。
-    ("@close", &["value"]),
-    // 键盘按下公开逻辑键与稳定调试代码。
-    ("@keyDown", &["key", "code"]),
-    // 键盘抬起使用同一字段集合。
-    ("@keyUp", &["key", "code"]),
-];
 
 // 校验事件字段后复用既有受限表达式处理器生成。
 pub(crate) fn generate_event_handler_expression(
@@ -173,12 +158,8 @@ fn validate_event_payload_fields(
 
 // 查询指定事件的已登记顶层载荷字段。
 fn registered_fields(event_name: &str) -> &'static [&'static str] {
-    // 在线性小表中查找精确事件名。
-    EVENT_PAYLOAD_FIELDS
-        // 遍历静态登记条目。
-        .iter()
-        // 选择名称完全匹配的事件。
-        .find_map(|(name, fields)| (*name == event_name).then_some(*fields))
-        // 未登记事件没有结构化字段。
+    UI_PROJECTION_SCHEMA
+        .event(event_name)
+        .map(|entry| entry.fields)
         .unwrap_or(&[])
 }
