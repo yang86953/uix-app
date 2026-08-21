@@ -9,6 +9,8 @@ use proc_macro2::TokenStream;
 
 /// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
 pub mod projection_schema;
+/// 导出稳定源码身份、内容摘要与导入边契约。
+pub mod source_graph;
 mod uix_import;
 #[cfg(test)]
 mod uix_import_tests;
@@ -39,6 +41,8 @@ pub struct CompileOutput {
     pub tokens: TokenStream,
     /// 保存根文件及递归导入闭包中的规范路径；内嵌输入为空。
     pub tracked_files: Vec<PathBuf>,
+    /// 保存本次编译读取的稳定源码图。
+    pub source_graph: source_graph::SourceGraph,
 }
 
 /// 保存与入口机制无关的结构化语言诊断。
@@ -98,6 +102,7 @@ pub fn compile_inline(
     Ok(CompileOutput {
         tokens,
         tracked_files: Vec::new(),
+        source_graph: source_graph::SourceGraph::inline(source_name, source),
     })
 }
 
@@ -113,6 +118,7 @@ pub fn compile_file(
     Ok(CompileOutput {
         tokens,
         tracked_files: resolved.tracked_files,
+        source_graph: resolved.source_graph,
     })
 }
 
