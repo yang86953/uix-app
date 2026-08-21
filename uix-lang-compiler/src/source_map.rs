@@ -24,6 +24,12 @@ pub struct SourceMap {
     entries: Vec<SourceMapEntry>,
 }
 
+/// 保存已移除内部 marker 的合法 Rust token 文本及对应映射。
+pub(crate) struct MappedGenerated {
+    pub(crate) source: String,
+    pub(crate) source_map: SourceMap,
+}
+
 impl SourceMap {
     /// 返回生成顺序中的全部映射条目。
     pub fn entries(&self) -> &[SourceMapEntry] {
@@ -37,39 +43,72 @@ impl SourceMap {
             .find(|entry| offset >= entry.generated_start && offset < entry.generated_end)
     }
 
-    pub(crate) fn from_generated(
-        generated: &str,
+    pub(crate) fn from_marked(
+        marked: &str,
         source_graph: &SourceGraph,
         ir: &TypedUiIr,
-    ) -> Self {
-        let mut markers = marker_positions(generated);
+    ) -> MappedGenerated {
+        let markers = marker_positions(marked);
         if markers.is_empty() {
-            markers.push((0, 1, 1));
-        }
-        let mut entries = Vec::with_capacity(markers.len());
-        for (index, (generated_start, line, column)) in markers.iter().copied().enumerate() {
-            let generated_end = markers
-                .get(index + 1)
-                .map(|entry| entry.0)
-                .unwrap_or(generated.len());
             let (source_id, source_name, source_start, semantic_node_id) =
-                resolve_source(source_graph, ir, line, column);
+                resolve_source(source_graph, ir, 1, 1);
+            return MappedGenerated {
+                source: marked.to_string(),
+                source_map: Self {
+                    entries: vec![SourceMapEntry {
+                        generated_start: 0,
+                        generated_end: marked.len(),
+                        source_id,
+                        source_name,
+                        source_start,
+                        line: 1,
+                        column: 1,
+                        semantic_node_id,
+                    }],
+                },
+            };
+        }
+        let mut source = String::with_capacity(marked.len());
+        let mut entries: Vec<SourceMapEntry> = Vec::with_capacity(markers.len());
+        let mut cursor = 0usize;
+        for marker in markers {
+            source.push_str(&marked[cursor..marker.start]);
+            if let Some(previous) = entries.last_mut() {
+                previous.generated_end = source.len();
+            }
+            let (source_id, source_name, source_start, semantic_node_id) =
+                resolve_source(source_graph, ir, marker.line, marker.column);
             entries.push(SourceMapEntry {
-                generated_start,
-                generated_end,
+                generated_start: source.len(),
+                generated_end: 0,
                 source_id,
                 source_name,
                 source_start,
-                line,
-                column,
+                line: marker.line,
+                column: marker.column,
                 semantic_node_id,
             });
+            cursor = marker.end;
         }
-        Self { entries }
+        source.push_str(&marked[cursor..]);
+        if let Some(previous) = entries.last_mut() {
+            previous.generated_end = source.len();
+        }
+        MappedGenerated {
+            source,
+            source_map: Self { entries },
+        }
     }
 }
 
-fn marker_positions(generated: &str) -> Vec<(usize, usize, usize)> {
+struct Marker {
+    start: usize,
+    end: usize,
+    line: usize,
+    column: usize,
+}
+
+fn marker_positions(generated: &str) -> Vec<Marker> {
     let mut markers = Vec::new();
     let mut cursor = 0usize;
     while let Some(relative) = generated[cursor..].find(MARKER_PREFIX) {
@@ -92,7 +131,12 @@ fn marker_positions(generated: &str) -> Vec<(usize, usize, usize)> {
             cursor = column_end;
             continue;
         };
-        markers.push((start, line, column));
+        markers.push(Marker {
+            start,
+            end: column_end,
+            line,
+            column,
+        });
         cursor = column_end;
     }
     markers
@@ -106,6 +150,7 @@ fn resolve_source(
 ) -> (SourceId, String, usize, Option<String>) {
     let root = source_graph.root();
     let mut fallback = None;
+    let mut best: Option<(usize, SourceId, String, usize, String)> = None;
     for file in source_graph.files() {
         let Some(offset) = offset_at(&file.source, line, column) else {
             continue;
@@ -114,8 +159,17 @@ fn resolve_source(
             fallback = Some((file.id, file.path.clone(), offset));
         }
         if let Some(node) = ir.semantic_node_at(file.id, offset) {
-            return (file.id, file.path.clone(), offset, Some(node.id));
+            let length = node.span.end.saturating_sub(node.span.start);
+            if best
+                .as_ref()
+                .is_none_or(|(best_length, ..)| length < *best_length)
+            {
+                best = Some((length, file.id, file.path.clone(), offset, node.id));
+            }
         }
+    }
+    if let Some((_, source_id, source_name, source_start, semantic_node_id)) = best {
+        return (source_id, source_name, source_start, Some(semantic_node_id));
     }
     if let Some((source_id, source_name, source_start)) = fallback {
         return (source_id, source_name, source_start, None);
@@ -163,8 +217,9 @@ mod tests {
         let document = parse_document(source).expect("测试源码必须可解析");
         let ir = lower_document(document, CompileTarget::View, source_id, &[])
             .expect("测试源码必须可降低");
-        let map = SourceMap::from_generated("{ __uix_source_marker_1_16 save ( ) }", &graph, &ir);
-        let entry = &map.entries()[0];
+        let mapped = SourceMap::from_marked("{ __uix_source_marker_1_16 save ( ) }", &graph, &ir);
+        assert!(!mapped.source.contains("__uix_source_marker"));
+        let entry = &mapped.source_map.entries()[0];
         assert_eq!(entry.source_id, SourceId::from_source_name("demo.uix"));
         assert!(
             entry
