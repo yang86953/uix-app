@@ -24,6 +24,8 @@ EGL_HOST = ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs"
 EGL_RHI_HOST = ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs"
 # 定位 WGL 原生 host。
 WGL_HOST = ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_rhi.rs"
+# 定位 WGL 原生 owner。
+WGL_NATIVE = ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs"
 
 
 # 集中锁定跨 Adapter resize 的前置值域和成功后 token 语义。
@@ -88,29 +90,34 @@ class GraphicsRhiSurfaceResizeContractTests(unittest.TestCase):
         # OpenGL 不得保留平台私有的非法 extent 诊断。
         self.assertNotIn("OpenGL RHI surface extent", opengl)
 
-    # EGL 与 WGL 只能机械消费已验证事务，不得重新解释无符号输入。
-    def test_opengl_hosts_only_consume_validated_resize(self) -> None:
+    # EGL 与 WGL 只能机械消费共享重建事务，不得拥有第二份代际状态。
+    def test_opengl_hosts_only_consume_shared_lifecycle_transaction(self) -> None:
         # 读取 OpenGL host trait。
         opengl = OPENGL_SURFACE.read_text(encoding="utf-8")
         # 读取 EGL owner 与拆分后的 RHI host 实现。
         egl = EGL_HOST.read_text(encoding="utf-8") + EGL_RHI_HOST.read_text(encoding="utf-8")
         # 读取 WGL 实现。
-        wgl = WGL_HOST.read_text(encoding="utf-8")
-        # host trait 必须接收封闭事务而非裸 extent。
+        wgl = WGL_HOST.read_text(encoding="utf-8") + WGL_NATIVE.read_text(
+            encoding="utf-8"
+        )
+        # host trait 必须接收共享生命周期签发的封闭重建事务。
         self.assertIn(
-            "fn rhi_resize_surface(&mut self, resize: RhiSurfaceResizeTransaction)",
+            "recreate: RhiSurfaceRecreateTransaction",
             opengl,
         )
-        # EGL 必须从事务读取唯一 extent。
-        self.assertIn("let extent = resize.extent();", egl)
-        # EGL 的原生宽高必须来自事务投影。
-        self.assertIn("let (width, height) = resize.native_size_i32();", egl)
-        # WGL 必须从同一事务读取 extent。
-        self.assertIn("let extent = resize.extent();", wgl)
-        # EGL 不得保留第二套无效尺寸错误文本。
-        self.assertNotIn("EGL RHI surface extent is invalid", egl)
-        # WGL 不得接收裸 RhiExtent resize 参数。
-        self.assertNotIn("fn rhi_resize_surface(&mut self, extent: RhiExtent)", wgl)
+        # OpenGL blanket 必须由共享生命周期开启、提交或回滚事务。
+        self.assertIn(".begin_recreate(requested, reason)?", opengl)
+        self.assertIn(".commit_recreate(transaction, actual)", opengl)
+        self.assertIn(".abort_recreate(transaction)", opengl)
+        # EGL 的原生宽高必须来自共享重建事务投影。
+        self.assertIn("let (width, height) = recreate.native_size_i32();", egl)
+        # WGL 必须从同一封闭事务读取 extent。
+        self.assertIn("let extent = recreate.requested();", wgl)
+        # 两个平台不得再保存或推进私有 Surface generation。
+        self.assertNotIn("surface_generation", egl)
+        self.assertNotIn("surface_generation", wgl)
+        # Surface token 必须直接来自共享生命周期。
+        self.assertIn("self.rhi_surface_lifecycle().token()", opengl)
 
 
 # 支持直接执行这一精确契约测试。

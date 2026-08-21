@@ -1,18 +1,16 @@
 //! WGL/EGL context 到 OpenGL ES 薄 RHI 的共享 host 实现。
 
 // 引入最终 present damage、保留证明和通用结果类型。
-use crate::core::{PresentCoherency, PresentDamage, Result};
-// 仅 test-harness surface lost 注入需要专用错误分类和构造器。
-#[cfg(feature = "test-harness")]
-use crate::core::{Errc, Error};
+use crate::core::{Errc, Error, PresentCoherency, PresentDamage, Result};
 // 引入薄 RHI 的所有组合 trait 与命令类型。
 use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent,
-    RhiPresentTransaction, RhiScissor, RhiSurfaceReadback, RhiSurfaceResizeTransaction,
-    RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceFrame, SurfaceToken,
-    TextureCopy, TextureDesc, TextureHandle, TextureMove,
+    RhiPresentTransaction, RhiScissor, RhiSurfaceLifecycle, RhiSurfaceReadback,
+    RhiSurfaceRecreateCommit, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
+    RhiSurfaceResizeTransaction, RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle,
+    SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL surface test_present 的共享结果类型。
 use crate::native::present::PresentTestResult;
@@ -29,12 +27,58 @@ pub(crate) trait OpenGlRhiHost {
     fn rhi_pipeline(&self) -> &OpenGlRasterPipeline;
     // 让后续 RHI GL 命令在 owner thread 的 native context 上执行。
     fn rhi_make_current(&mut self) -> Result<()>;
-    // 读取当前 surface generation。
-    fn rhi_generation(&self) -> u64;
-    // 消费已验证事务并按物理 extent 重建宿主 surface。
-    fn rhi_resize_surface(&mut self, resize: RhiSurfaceResizeTransaction) -> Result<()>;
+    // 借用唯一拥有 generation、extent 与重建顺序的共享生命周期。
+    fn rhi_surface_lifecycle(&self) -> &RhiSurfaceLifecycle;
+    // 可变借用同一个共享生命周期 owner。
+    fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle;
+    // 判断原生 drawable 与已验证 resize 请求是否已经完全一致。
+    fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool>;
+    // 机械消费共享重建事务并返回原生操作产生的实际 extent。
+    fn rhi_recreate_surface(
+        &mut self,
+        recreate: RhiSurfaceRecreateTransaction,
+    ) -> Result<RhiExtent>;
     // 将最近一次 RHI submit 交换到原生窗口。
     fn rhi_swap_buffers(&mut self, damage: PresentDamage) -> Result<()>;
+
+    // 以唯一共享事务包住一次原生 Surface 重建。
+    fn rhi_run_surface_recreate(
+        &mut self,
+        requested: RhiExtent,
+        reason: RhiSurfaceRecreateReason,
+    ) -> Result<RhiSurfaceRecreateCommit> {
+        // 共享状态机必须先冻结旧 token 并进入 Recreating。
+        let transaction = self
+            .rhi_surface_lifecycle_mut()
+            .begin_recreate(requested, reason)?;
+        // Adapter 只能消费封闭事务并报告实际原生结果。
+        match self.rhi_recreate_surface(transaction) {
+            // 成功后由共享状态机一次发布 generation 与 extent。
+            Ok(actual) => self
+                .rhi_surface_lifecycle_mut()
+                .commit_recreate(transaction, actual),
+            // 失败后保留旧 token，但将其标记为不可继续 acquire。
+            Err(error) => match self.rhi_surface_lifecycle_mut().abort_recreate(transaction) {
+                // 回滚状态成功时传播原生主错误。
+                Ok(()) => Err(error),
+                // 状态回滚失败优先暴露共享生命周期违约并链接原生错误。
+                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+            },
+        }
+    }
+
+    // 对 acquire/present 的一次 SurfaceLost 执行一次代际重建并结束旧帧。
+    fn rhi_recover_rejected_frame(
+        &mut self,
+        reason: RhiSurfaceRecreateReason,
+        source: Error,
+    ) -> Result<()> {
+        // 恢复沿用最后一次成功发布的物理 extent，不制造替代尺寸。
+        let requested = self.rhi_surface_lifecycle().token().extent;
+        // 成功事务把旧帧收敛为 GraphicsSurfaceChanged，供上层保持 dirty 后重试。
+        self.rhi_run_surface_recreate(requested, reason)?
+            .complete_frame(source)
+    }
 }
 
 // 将共享 RHI device 原语转发给 WGL/EGL context。
@@ -254,25 +298,39 @@ where
 
     // 返回当前代际和物理 surface extent。
     fn token(&self) -> SurfaceToken {
-        SurfaceToken::new(
-            self.rhi_generation(),
-            self.rhi_pipeline().rhi_surface_extent(),
-        )
+        // EGL/WGL 不再拼装第二份 generation 或 extent。
+        self.rhi_surface_lifecycle().token()
     }
 
     // 获取当前 swapchain target，并确保 GL context current。
     fn acquire(&mut self) -> Result<SurfaceFrame> {
         // 在取得 native surface frame 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
-        self.rhi_make_current()?;
         // 测试故障在真实 OpenGL surface acquire 边界返回 typed surface lost。
         #[cfg(feature = "test-harness")]
         if self.rhi_pipeline_mut().rhi_take_surface_lost_for_test() {
             // 记录稳定 lower marker，便于真窗恢复用例核对边界。
             tracing::warn!("OpenGL RHI test surface lost");
-            return Err(Error::new(
+            let error = Error::new(
                 Errc::GraphicsSurfaceLost,
                 "OpenGL RHI test surface lost before acquire",
+            );
+            // 同一一次性故障只进入一个共享重建事务。
+            self.rhi_recover_rejected_frame(RhiSurfaceRecreateReason::AcquisitionRejected, error)?;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "OpenGL acquire recovery returned without a retry error",
+            ));
+        }
+        // 恢复 current 失败时只对明确的 SurfaceLost 执行本地受控重建。
+        if let Err(error) = self.rhi_make_current() {
+            if error.code() != Errc::GraphicsSurfaceLost {
+                return Err(error);
+            }
+            self.rhi_recover_rejected_frame(RhiSurfaceRecreateReason::AcquisitionRejected, error)?;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "OpenGL acquire recovery returned without a retry error",
             ));
         }
         Ok(SurfaceFrame::new(self.token()))
@@ -284,8 +342,19 @@ where
         self.rhi_ensure_active()?;
         // 在进入 EGL 或 WGL 前冻结旧 token 并执行唯一共同值域验证。
         let resize = RhiSurfaceResizeTransaction::validate(extent, self.token())?;
-        // 原生 host 只能消费字段封闭的已验证事务。
-        self.rhi_resize_surface(resize)?;
+        // 只有完整原生 drawable 事实不一致时才建立新代际。
+        if !self.rhi_surface_matches(resize)? {
+            // generation、extent 和原生操作顺序只由共享生命周期发布。
+            let commit =
+                self.rhi_run_surface_recreate(resize.extent(), RhiSurfaceRecreateReason::Resize)?;
+            // 显式 resize 只能产生 Ready，不接受恢复原因对应的帧语义。
+            if !matches!(commit, RhiSurfaceRecreateCommit::Ready(_)) {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "OpenGL resize produced a non-ready surface commit",
+                ));
+            }
+        }
         // 发布前统一验证请求 extent 与 generation 后置条件。
         resize.complete(self.token())
     }
@@ -317,16 +386,6 @@ where
     fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {
         // 在执行 native present 前先拒绝已关闭 owner。
         self.rhi_ensure_active()?;
-        // surface lost 必须在共享 adapter present 前消费，而不是静默交换。
-        #[cfg(feature = "test-harness")]
-        if self.rhi_pipeline_mut().rhi_take_surface_lost_for_test() {
-            // 记录与 acquire 共用的 lower marker。
-            tracing::warn!("OpenGL RHI test surface lost");
-            return Err(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "OpenGL RHI test surface lost before present",
-            ));
-        }
         // 在原生交换前读取当前 drawable 的代际与 extent。
         let current_token = self.token();
         // 从当前 OpenGL Surface profile 冻结完整交换能力。
@@ -341,9 +400,36 @@ where
             present_coherency,
         )?;
         // 共享门禁成功后才恢复 owner-thread current context，失败事务不得产生原生副作用。
-        self.rhi_make_current()?;
+        if let Err(error) = self.rhi_make_current() {
+            if error.code() != Errc::GraphicsSurfaceLost {
+                return Err(error);
+            }
+            return self
+                .rhi_recover_rejected_frame(RhiSurfaceRecreateReason::PresentationRejected, error);
+        }
+        // surface lost 必须在有效 present 事务的真实交换边界消费。
+        #[cfg(feature = "test-harness")]
+        if self.rhi_pipeline_mut().rhi_take_surface_lost_for_test() {
+            // 记录与 acquire 共用的 lower marker。
+            tracing::warn!("OpenGL RHI test surface lost");
+            return self.rhi_recover_rejected_frame(
+                RhiSurfaceRecreateReason::PresentationRejected,
+                Error::new(
+                    Errc::GraphicsSurfaceLost,
+                    "OpenGL RHI test surface lost before present",
+                ),
+            );
+        }
         // Adapter 只消费门禁发布的 damage 执行原生交换。
-        self.rhi_swap_buffers(present.into_damage())
+        match self.rhi_swap_buffers(present.into_damage()) {
+            // 真正交换成功后当前帧提交完成。
+            Ok(()) => Ok(()),
+            // 只有 typed SurfaceLost 进入同一次共享代际重建。
+            Err(error) if error.code() == Errc::GraphicsSurfaceLost => self
+                .rhi_recover_rejected_frame(RhiSurfaceRecreateReason::PresentationRejected, error),
+            // 设备或其它平台错误继续交给既有上层恢复唯一 owner。
+            Err(error) => Err(error),
+        }
     }
 
     // OpenGL 当前没有 surface 可恢复性探测，但关闭后必须优先拒绝调用。

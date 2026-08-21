@@ -9,6 +9,8 @@ use crate::native::{Error, Result};
 impl GraphicsContextLifecycle for WglContext {
     // 返回 WGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // generation 只读取共享生命周期，不再由 WGL 私有字段维护。
+        let generation = self.surface_lifecycle.token().generation;
         // 逻辑宽度无效时保留既有安全比例。
         let device_pixel_ratio = if self.logical_width <= 0 {
             // 避免除零并保留可验证的 identity 映射。
@@ -25,8 +27,8 @@ impl GraphicsContextLifecycle for WglContext {
             self.height,
             // 记录上方计算的稳定 DPR。
             device_pixel_ratio,
-            // resize 重建时推进的 generation 拒绝迟到帧。
-            self.surface_generation,
+            // 共享重建事务发布的 generation 拒绝迟到帧。
+            generation,
         )
     }
 

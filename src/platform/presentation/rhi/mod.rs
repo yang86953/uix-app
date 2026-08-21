@@ -127,6 +127,7 @@ pub(crate) use resize_transaction::RhiSurfaceResizeTransaction;
 // 向 Surface Adapter 暴露唯一的 API 无关重建状态机与事务结果。
 pub(crate) use surface_lifecycle::{
     RhiSurfaceLifecycle, RhiSurfaceRecreateCommit, RhiSurfaceRecreateReason,
+    RhiSurfaceRecreateTransaction,
 };
 // 显式 Vulkan 验证 feature 复用同一共享状态机，不复制测试实现。
 #[cfg(feature = "vulkan-parity-test")]

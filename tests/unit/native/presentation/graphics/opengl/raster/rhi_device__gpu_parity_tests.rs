@@ -4,13 +4,19 @@ use glow::HasContext as _;
 use khronos_egl as egl;
 
 use super::*;
+use crate::core::{Errc, Error, PresentDamage};
 use crate::draw::backend::rhi_renderer::consistency::{
     CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyBlurScenario, ConsistencySample,
     ConsistencyScene, blur_subregion_scenario, canonical_scenes, validate_canonical_scenes,
 };
+use crate::native::presentation::graphics::opengl::NativeOpenGlRuntime;
+use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
+use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 use crate::platform::presentation::rhi::{
-    DrawBufferBindings, DrawRange, DrawRasterState, DrawSamplingBinding, PipelineKind,
-    RhiBufferUpload, RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureFormat,
+    DrawBufferBindings, DrawRange, DrawRasterState, DrawSamplingBinding, GraphicsDevice,
+    GraphicsSurface, PipelineKind, RhiBufferUpload, RhiPresentTransaction, RhiSurfaceLifecycle,
+    RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction, RhiSurfaceResizeTransaction,
+    RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureFormat,
 };
 
 // EGL_MESA_platform_surfaceless 的公开平台枚举；只用于无窗口测试 display。
@@ -22,6 +28,7 @@ struct HeadlessEgl {
     display: egl::Display,
     context: Option<egl::Context>,
     surface: Option<egl::Surface>,
+    config: Option<egl::Config>,
     active: bool,
     platform: &'static str,
     version: (egl::Int, egl::Int),
@@ -83,6 +90,7 @@ impl HeadlessEgl {
             display,
             context: None,
             surface: None,
+            config: None,
             active: true,
             platform,
             version,
@@ -117,6 +125,7 @@ impl HeadlessEgl {
             )
             .expect("OpenGL consistency EGL config query must succeed")
             .expect("OpenGL consistency requires an RGBA8 GLES3 pbuffer config");
+        owner.config = Some(config);
         let surface = owner
             .api
             .create_pbuffer_surface(
@@ -168,6 +177,27 @@ impl HeadlessEgl {
         }
     }
 
+    // 重新绑定当前 owner 的 context 与 pbuffer。
+    fn make_current(&self) -> Result<(), egl::Error> {
+        self.api
+            .make_current(self.display, self.surface, self.surface, self.context)
+    }
+
+    // 按共享事务已验证的尺寸替换真实 EGL pbuffer。
+    fn recreate_pbuffer(&mut self, width: i32, height: i32) -> Result<(), egl::Error> {
+        self.api.make_current(self.display, None, None, None)?;
+        if let Some(surface) = self.surface.take() {
+            self.api.destroy_surface(self.display, surface)?;
+        }
+        let surface = self.api.create_pbuffer_surface(
+            self.display,
+            self.config.expect("headless EGL config must remain alive"),
+            &[egl::WIDTH, width, egl::HEIGHT, height, egl::NONE],
+        )?;
+        self.surface = Some(surface);
+        self.make_current()
+    }
+
     // 在 RHI 资源释放后按 current→context→surface→display 逆序关闭测试 owner。
     fn shutdown(&mut self) {
         if !self.active {
@@ -208,6 +238,241 @@ impl Drop for HeadlessEgl {
         let _ = self.api.terminate(self.display);
         self.active = false;
     }
+}
+
+// 真实 EGL pbuffer 对生产 OpenGL Surface blanket 实现的最小原生 host。
+struct HeadlessOpenGlSurfaceHost<'a> {
+    egl: &'a mut HeadlessEgl,
+    pipeline: OpenGlRasterPipeline,
+    surface_lifecycle: RhiSurfaceLifecycle,
+    fail_current_once: bool,
+    fail_swap_once: bool,
+    recreate_count: u64,
+}
+
+impl<'a> HeadlessOpenGlSurfaceHost<'a> {
+    // 在已经 current 的真实 EGL context 上建立生产 raster pipeline。
+    fn new(egl: &'a mut HeadlessEgl, extent: RhiExtent) -> Self {
+        let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(extent);
+        let initialize = surface_lifecycle
+            .begin_recreate(extent, RhiSurfaceRecreateReason::Initialize)
+            .expect("headless surface initialize transaction must begin");
+        let runtime = NativeOpenGlRuntime::from_loader(|name| {
+            egl.api
+                .get_proc_address(name)
+                .map(|function| function as *const std::ffi::c_void)
+                .unwrap_or(std::ptr::null())
+        });
+        let pipeline = OpenGlRasterPipeline::new(
+            runtime,
+            extent.width as i32,
+            extent.height as i32,
+            extent.width as i32,
+            extent.height as i32,
+        )
+        .expect("headless production OpenGL pipeline must initialize");
+        surface_lifecycle
+            .commit_recreate(initialize, extent)
+            .expect("headless surface initialize transaction must commit");
+        Self {
+            egl,
+            pipeline,
+            surface_lifecycle,
+            fail_current_once: false,
+            fail_swap_once: false,
+            recreate_count: 0,
+        }
+    }
+
+    // 在 EGL teardown 前检查式释放生产 pipeline 资源。
+    fn release(&mut self) {
+        self.pipeline.release();
+    }
+}
+
+impl OpenGlRhiHost for HeadlessOpenGlSurfaceHost<'_> {
+    fn rhi_ensure_active(&self) -> crate::core::Result<()> {
+        if self.egl.active {
+            Ok(())
+        } else {
+            Err(Error::new(
+                Errc::InvalidState,
+                "headless EGL owner is inactive",
+            ))
+        }
+    }
+
+    fn rhi_pipeline_mut(&mut self) -> &mut OpenGlRasterPipeline {
+        &mut self.pipeline
+    }
+
+    fn rhi_pipeline(&self) -> &OpenGlRasterPipeline {
+        &self.pipeline
+    }
+
+    fn rhi_make_current(&mut self) -> crate::core::Result<()> {
+        if std::mem::take(&mut self.fail_current_once) {
+            return Err(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "headless EGL acquire boundary injected surface loss",
+            ));
+        }
+        self.egl.make_current().map_err(|error| {
+            Error::new(
+                Errc::GraphicsSurfaceLost,
+                format!("headless EGL make current failed: {error:?}"),
+            )
+        })
+    }
+
+    fn rhi_surface_lifecycle(&self) -> &RhiSurfaceLifecycle {
+        &self.surface_lifecycle
+    }
+
+    fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle {
+        &mut self.surface_lifecycle
+    }
+
+    fn rhi_surface_matches(
+        &self,
+        resize: RhiSurfaceResizeTransaction,
+    ) -> crate::core::Result<bool> {
+        Ok(self.pipeline.rhi_surface_extent() == resize.extent())
+    }
+
+    fn rhi_recreate_surface(
+        &mut self,
+        recreate: RhiSurfaceRecreateTransaction,
+    ) -> crate::core::Result<RhiExtent> {
+        let (width, height) = recreate.native_size_i32();
+        self.egl.recreate_pbuffer(width, height).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("headless EGL pbuffer recreate failed: {error:?}"),
+            )
+        })?;
+        self.pipeline.resize_swapchain(width, height, width, height);
+        self.recreate_count = self.recreate_count.saturating_add(1);
+        Ok(recreate.requested())
+    }
+
+    fn rhi_swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+        if std::mem::take(&mut self.fail_swap_once) {
+            return Err(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "headless EGL swap boundary injected surface loss",
+            ));
+        }
+        self.egl
+            .api
+            .swap_buffers(
+                self.egl.display,
+                self.egl
+                    .surface
+                    .expect("headless EGL surface must remain alive"),
+            )
+            .map_err(|error| {
+                Error::new(
+                    Errc::GraphicsSurfaceLost,
+                    format!("headless EGL swap failed: {error:?}"),
+                )
+            })
+    }
+}
+
+// 执行一次真实 surface acquire、clear、submit 与 EGL swap 边界。
+fn present_headless_surface(host: &mut HeadlessOpenGlSurfaceHost<'_>) {
+    let frame = GraphicsSurface::acquire(host).expect("headless surface acquire must succeed");
+    GraphicsDevice::begin_render_pass(
+        host,
+        frame.target(),
+        LoadAction::Clear(RhiColor::from_straight_rgba([0.125, 0.25, 0.5, 1.0])),
+    )
+    .expect("headless surface pass must begin");
+    GraphicsDevice::end_render_pass(host).expect("headless surface pass must end");
+    let submission =
+        GraphicsDevice::submit(host).expect("headless surface submit must reach native GL");
+    GraphicsSurface::present(
+        host,
+        RhiPresentTransaction::new(frame, submission, PresentDamage::Full),
+    )
+    .expect("headless surface present must reach eglSwapBuffers");
+}
+
+// 在真实 Mesa EGL pbuffer 上验证生产 OpenGL Surface 生命周期。
+fn run_surface_lifecycle_test(egl: &mut HeadlessEgl) {
+    let initial_extent = CONSISTENCY_EXTENT;
+    let resized_extent = RhiExtent::new(initial_extent.width + 16, initial_extent.height + 8);
+    let mut host = HeadlessOpenGlSurfaceHost::new(egl, initial_extent);
+    let initial_token = GraphicsSurface::token(&host);
+
+    // 正常路径必须经过真实 acquire/submit/eglSwapBuffers。
+    present_headless_surface(&mut host);
+
+    // resize 由共享事务推进一次 generation，并使旧 acquired frame 失效。
+    let stale_frame = GraphicsSurface::acquire(&mut host).expect("stale frame must acquire");
+    let resized = GraphicsSurface::resize(&mut host, resized_extent)
+        .expect("headless EGL resize transaction must succeed");
+    assert_eq!(resized.generation, initial_token.generation + 1);
+    assert_eq!(resized.extent, resized_extent);
+    assert_eq!(host.recreate_count, 1);
+    let submission = GraphicsDevice::submit(&mut host)
+        .expect("stale-token validation needs a latest submission");
+    let stale_error = GraphicsSurface::present(
+        &mut host,
+        RhiPresentTransaction::new(stale_frame, submission, PresentDamage::Full),
+    )
+    .expect_err("pre-resize frame token must be rejected");
+    assert_eq!(stale_error.code(), Errc::GraphicsSurfaceLost);
+
+    // 零尺寸在共享生命周期前置门禁拒绝，且不得触碰原生 pbuffer。
+    let recreate_before_invalid = host.recreate_count;
+    let zero_error = GraphicsSurface::resize(&mut host, RhiExtent::new(0, resized_extent.height))
+        .expect_err("zero surface extent must be rejected");
+    assert_eq!(zero_error.code(), Errc::InvalidArgument);
+    assert_eq!(host.recreate_count, recreate_before_invalid);
+
+    // acquire SurfaceLost 只触发一次共享 generation 重建。
+    let before_acquire_recovery = GraphicsSurface::token(&host);
+    host.fail_current_once = true;
+    let acquire_error = GraphicsSurface::acquire(&mut host)
+        .expect_err("injected acquire surface loss must request a retry");
+    assert_eq!(acquire_error.code(), Errc::GraphicsSurfaceChanged);
+    assert_eq!(
+        GraphicsSurface::token(&host).generation,
+        before_acquire_recovery.generation + 1
+    );
+    assert_eq!(host.recreate_count, recreate_before_invalid + 1);
+
+    // present SurfaceLost 同样只建立一个新代际，随后真实交换恢复成功。
+    let frame = GraphicsSurface::acquire(&mut host).expect("recovered surface must acquire");
+    GraphicsDevice::begin_render_pass(
+        &mut host,
+        frame.target(),
+        LoadAction::Clear(RhiColor::transparent()),
+    )
+    .expect("recovered surface pass must begin");
+    GraphicsDevice::end_render_pass(&mut host).expect("recovered surface pass must end");
+    let submission = GraphicsDevice::submit(&mut host).expect("recovered submit must succeed");
+    let before_present_recovery = GraphicsSurface::token(&host);
+    host.fail_swap_once = true;
+    let present_error = GraphicsSurface::present(
+        &mut host,
+        RhiPresentTransaction::new(frame, submission, PresentDamage::Full),
+    )
+    .expect_err("injected present surface loss must request a retry");
+    assert_eq!(present_error.code(), Errc::GraphicsSurfaceChanged);
+    assert_eq!(
+        GraphicsSurface::token(&host).generation,
+        before_present_recovery.generation + 1
+    );
+    assert_eq!(host.recreate_count, recreate_before_invalid + 2);
+    present_headless_surface(&mut host);
+
+    eprintln!(
+        "OpenGL surface lifecycle verified: real acquire/submit/EGL swap, resize, stale token, zero extent, acquire+present recovery"
+    );
+    host.release();
 }
 
 // 保存一个共享场景机械映射后的 OpenGL RHI 身份，不拥有像素语义。
@@ -586,5 +851,7 @@ pub(super) fn run_gpu_parity_test() {
     );
     rhi.release(&gl);
     drop(gl);
+    // 复用同一个真实 Mesa EGL owner 验证生产 Surface blanket 生命周期。
+    run_surface_lifecycle_test(&mut egl);
     egl.shutdown();
 }
