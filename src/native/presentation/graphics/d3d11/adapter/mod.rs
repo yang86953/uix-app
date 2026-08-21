@@ -41,7 +41,7 @@ pub(crate) fn create(
         // 从实际 Surface capability 冻结 registry 需要的构造期 recipe 快照。
         let caps = context_caps(
             // 只读取 Surface 角色拥有的同源 swapchain 保留证明。
-            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+            crate::platform::presentation::rhi::GraphicsSurface::surface_capabilities(&ctx)
                 // recipe 只复制选择与门禁所需的静态字段。
                 .present_coherency,
         );

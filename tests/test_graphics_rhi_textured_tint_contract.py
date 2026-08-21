@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # 定位共享顶点上传契约。
 UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位共享 pipeline 契约。
-PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/platform/presentation/rhi/pipeline.rs"
 # 定位 OpenGL ES shader。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
 # 定位 OpenGL ES pipeline 到 shader 的机械选择边界。

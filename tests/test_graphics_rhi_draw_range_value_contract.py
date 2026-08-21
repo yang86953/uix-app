@@ -14,7 +14,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawRange 值域契约。
-SHARED = ROOT / "src/native/presentation/rhi/draw_packet.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/draw_packet.rs"
 # 定位 FramePlan 统一门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL 有符号原生命令映射。

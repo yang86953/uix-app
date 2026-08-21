@@ -1,8 +1,7 @@
 //! GPU graphics contexts.
 //!
-//! 默认生产渲染使用原生 D3D11（Windows）；启用 `opengles` feature 时，
-//! WGL/EGL OpenGL ES adapter 也进入生产 registry，并复用同一套薄 RHI。
-//! D3D12、Vulkan 与 Metal 仍受各自 feature/target 门控，尚未完成同等测试。
+//! Vulkan 是三平台优先生产 API；D3D11 与 OpenGL ES 作为兼容候选，继续
+//! 复用 `platform::presentation` 的同一套图形契约。D3D12 与 Metal 暂缓。
 
 #[cfg(feature = "d3d11")]
 pub(crate) mod d3d11;
@@ -15,5 +14,5 @@ pub(crate) mod opengl;
 // 保留 `graphics::platform` 逻辑路径，原生 surface 物理归入 surface。
 #[path = "surface/mod.rs"]
 pub(crate) mod platform;
-#[cfg(all(feature = "vulkan", any(test, windows)))]
+#[cfg(feature = "vulkan")]
 pub(crate) mod vulkan;

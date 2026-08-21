@@ -1,8 +1,8 @@
 //! CPU 渲染后端 — PixelSurface + CpuCanvas2D。
 
 pub(crate) mod canvas_2d;
-// 仅 Windows Vulkan 测试支撑构建需要空实现，避免普通生产构建编译它。
-#[cfg(any(test, all(windows, feature = "vulkan", feature = "test-harness")))]
+// 测试支撑使用 API 无关空实现，避免 Drawing 因目标系统产生不同源码分支。
+#[cfg(any(test, feature = "test-harness"))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
 // 将 Picture blur 与后续合成的 CPU 回归拆到独立测试文件。

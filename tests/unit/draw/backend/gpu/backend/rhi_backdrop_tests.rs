@@ -15,7 +15,7 @@ use super::render_backend_backdrop::{
     restore_rhi_overlay_backdrop,
 };
 // 引入 recording context 所需的薄 RHI 契约和值类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     // draw packet 只用于拒绝意外绘制调用。
     DrawPacket,
     // device trait 提供被测资源原语。

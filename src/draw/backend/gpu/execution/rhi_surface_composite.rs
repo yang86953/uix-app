@@ -5,7 +5,7 @@ use crate::core::PresentDamage;
 // 引入 sampled quad 与薄 RHI 的 surface 绘制值。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
 // 引入 load action、extent 与整数 scissor。
-use crate::native::present::rhi::{LoadAction, RhiColor, RhiExtent, RhiScissor};
+use crate::platform::presentation::rhi::{LoadAction, RhiColor, RhiExtent, RhiScissor};
 
 // 与 core damage 归一化和 D3D11 adapter 上限保持一致。
 const MAX_SURFACE_COMPOSITE_RECTS: usize = 64;

@@ -7,7 +7,7 @@
         SurfaceFrame, SurfaceToken,
     };
     // 引入测试 Surface 尺寸。
-    use crate::native::present::rhi::RhiExtent;
+    use crate::platform::presentation::rhi::RhiExtent;
 
     // 固定测试 Surface token。
     const TOKEN: SurfaceToken = SurfaceToken::new(4, RhiExtent::new(80, 50));

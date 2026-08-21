@@ -1,7 +1,7 @@
     // 引入被测辅助函数。
     use super::normalize_upload_payload;
     // 引入共享纹理格式。
-    use crate::native::present::rhi::TextureFormat;
+    use crate::platform::presentation::rhi::TextureFormat;
 
     // 锁定 BGRA 载荷进入 RGBA8 存储前只交换红蓝通道。
     #[test]

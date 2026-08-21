@@ -1,7 +1,7 @@
     // 引入被测纯转换函数。
     use super::physical_clear_scissor;
     // 引入物理目标范围。
-    use crate::native::present::rhi::RhiExtent;
+    use crate::platform::presentation::rhi::RhiExtent;
     // 引入父模块已收敛的逻辑清理记录。
     use super::GpuSolidRect;
 

@@ -18,12 +18,12 @@ use crate::draw::backend::contract::RenderBackend;
 use crate::draw::backend::contract::SurfaceReadback;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
-use crate::native::present::rhi::GraphicsDevice;
+use crate::platform::presentation::rhi::GraphicsDevice;
 // 测试读回能力启用时才引入窄 Surface 角色与统一区域描述。
 #[cfg(feature = "test-harness")]
-use crate::native::present::rhi::{GraphicsSurface, RhiScissor};
+use crate::platform::presentation::rhi::{GraphicsSurface, RhiScissor};
 // 引入 platform 构造期验证的 context recipe owner。
-use crate::native::present::GpuRecipeOwner;
+use crate::platform::presentation::GpuRecipeOwner;
 // 引入所属 graphics backend Module 的 renderer 能力投影。
 use super::super::NativeRasterCaps;
 

@@ -9,7 +9,7 @@ use glow::HasContext as _;
 use crate::core::error::{Errc, Error, Result};
 // 引入 Surface 提供的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, DrawRasterState, LoadAction, PipelineBinding,
     PipelineColorWriteMask, PipelineDesc, PipelineDitherState, PipelineKind, RenderTargetHandle,
     RhiBufferResource, RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,

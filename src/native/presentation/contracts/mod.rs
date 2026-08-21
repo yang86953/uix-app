@@ -308,10 +308,10 @@ impl std::fmt::Debug for NativeSurfaceHandle {
 }
 
 /// GPU graphics context lifecycle and presentation contract.
-// 薄 RHI 作为迁移期 platform 私有契约，不向使用方公开原生句柄。
-// 保留 `native::present::rhi` 逻辑路径，共享 RHI 实现物理归入 presentation/rhi。
-#[path = "../rhi/mod.rs"]
-pub(crate) mod rhi;
+// 迁移期只保留兼容别名；共享 RHI 的唯一所有者是 platform::presentation。
+// 新代码必须直接依赖 platform 边界，禁止从 native 实现路径取得图形契约。
+#[allow(unused_imports)]
+pub(crate) use crate::platform::presentation::rhi;
 
 // 生产 GPU recipe 通过构造期验证的窄 owner 进入 draw backend。
 mod gpu_recipe_owner;

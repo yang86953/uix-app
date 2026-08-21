@@ -5,7 +5,7 @@ use crate::core::{DamageRegion, Errc, Error};
 // 引入 RenderBackend trait，使 present 状态机可以结束 active offscreen。
 use crate::draw::backend::contract::RenderBackend;
 // 引入薄 RHI device 维护原语，确保最终提交前检查设备健康状态。
-use crate::native::present::rhi::GraphicsDevice;
+use crate::platform::presentation::rhi::GraphicsDevice;
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;

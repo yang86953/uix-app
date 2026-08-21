@@ -1,7 +1,7 @@
 // 导入被测载荷与共享 viewport。
 use super::*;
 // 导入构造基础 Uniform 所需的共享 viewport。
-use crate::native::present::rhi::RhiViewport;
+use crate::platform::presentation::rhi::RhiViewport;
 
 // 索引载荷必须拒绝空值并保持共享格式、数量和字节大小一致。
 #[test]

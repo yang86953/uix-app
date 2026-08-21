@@ -14,9 +14,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享采样覆盖值对象。
-SHARED = ROOT / "src/native/presentation/rhi/multisample.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/multisample.rs"
 # 定位共享 pipeline 契约。
-PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/platform/presentation/rhi/pipeline.rs"
 # 定位 EGL Surface 配置。
 EGL = ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs"
 # 定位 OpenGL draw 状态翻译。

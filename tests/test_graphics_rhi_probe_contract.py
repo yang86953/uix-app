@@ -15,7 +15,7 @@ from typing import Iterable
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 RHI trait。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位 Drawing GPU Module probe 实现。
 PROBE = ROOT / "src/draw/backend/gpu/device_probe.rs"
 # 定位 native factory 组合根。

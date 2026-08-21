@@ -14,11 +14,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 采样绑定。
-DRAW_PACKET = ROOT / "src/native/presentation/rhi/draw_packet.rs"
+DRAW_PACKET = ROOT / "src/platform/presentation/rhi/draw_packet.rs"
 # 定位独立的 Draw 条件采样资源契约。
-DRAW_SAMPLING = ROOT / "src/native/presentation/rhi/draw_sampling.rs"
+DRAW_SAMPLING = ROOT / "src/platform/presentation/rhi/draw_sampling.rs"
 # 定位薄 RHI Device 契约。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位类型化 FramePlan 命令。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 生产与执行源码。

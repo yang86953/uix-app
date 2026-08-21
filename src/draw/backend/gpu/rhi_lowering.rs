@@ -11,7 +11,7 @@ use crate::draw::backend::rhi_renderer::{
     RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsDevice, LoadAction, RhiExtent, RhiViewport, TextureHandle, TextureMove,
 };
 
@@ -639,7 +639,7 @@ impl NativeGpuCanvas2D {
         load: LoadAction,
         // 接收唯一离屏纹理目标。
         target: TextureHandle,
-        viewport: crate::native::present::rhi::RhiViewport,
+        viewport: crate::platform::presentation::rhi::RhiViewport,
         scale_x: f32,
         scale_y: f32,
         allow_soft_prefix: bool,

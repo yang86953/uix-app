@@ -17,7 +17,7 @@ use crate::draw::painting::{
 };
 // 引入薄 RHI 的执行类型。
 // 引入薄 RHI 的执行、目标和纹理搬移类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsDevice, LoadAction, RhiColor, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
     TextureMove,
 };

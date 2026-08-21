@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 // 引入最终执行计划所需的 viewport、资源和 context 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, GraphicsDevice, PipelineBinding, PipelineDesc, PipelineKind,
     RhiExtent, RhiMsdfRasterParams, RhiScissor, RhiTextureRegion, RhiTextureUpload, RhiViewport,
     SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle,

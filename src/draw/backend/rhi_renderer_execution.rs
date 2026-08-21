@@ -5,7 +5,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入只属于最终 Surface present 的 damage。
 use crate::core::PresentDamage;
 // 引入组合 context、正交 Device/Surface 角色与显式纹理目标。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction, TextureHandle,
 };
 

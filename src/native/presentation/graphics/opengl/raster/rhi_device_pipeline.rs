@@ -10,7 +10,7 @@ use glow::HasContext as _;
 
 // 引入统一错误、结果和封闭 pipeline 语义。
 use crate::core::error::{Errc, Error, Result};
-use crate::native::present::rhi::PipelineKind;
+use crate::platform::presentation::rhi::PipelineKind;
 
 // 按封闭 pipeline 语义选择 OpenGL ES shader 对。
 pub(super) fn shader_sources(kind: PipelineKind) -> (&'static str, &'static str) {

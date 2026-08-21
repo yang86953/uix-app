@@ -8,7 +8,6 @@ use crate::native::present::GraphicsContextCandidate;
 #[path = "adapter/mod.rs"]
 pub(crate) mod platform;
 
-#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

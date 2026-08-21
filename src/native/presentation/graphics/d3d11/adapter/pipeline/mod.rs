@@ -13,7 +13,7 @@ use std::ffi::CStr;
 
 use crate::core::{Errc, Error, Result};
 // 引入跨 Adapter 共享的 pipeline 固定状态语义。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     IndexFormat, PIPELINE_DEPTH_STENCIL_DISABLED, PIPELINE_RASTER_2D, PipelineBlend,
     PipelineBlendFactor, PipelineBlendOperation, PipelineColorWriteMask, PipelineCullMode,
     PipelineDepthClip, PipelineDepthState, PipelineDepthStencilState, PipelineDitherState,

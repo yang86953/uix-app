@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 // 引入框架错误类型和最终 damage。
 use crate::core::error::{Errc, Error, Result};
 // 引入测试计划依赖的薄 RHI 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawSamplingBinding,
     GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface, IndexBufferBinding, IndexFormat,
     LoadAction, PipelineBinding, PipelineHandle, PipelineKind, RenderTargetHandle, RhiBufferUpload,

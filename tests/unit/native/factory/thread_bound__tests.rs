@@ -34,7 +34,7 @@
         fn rhi_context(
             // 借用测试 owner。
             &mut self,
-        ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
             // 本组测试只验证 resize 元数据事务。
             Err(Error::new(
                 // 使用稳定状态错误表达测试边界。

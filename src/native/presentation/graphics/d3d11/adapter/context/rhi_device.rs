@@ -10,7 +10,7 @@
 // 引入统一错误和结果类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、命令和能力类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRasterState, GraphicsDevice,
     GraphicsDeviceCapabilities, LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle,
     RhiBufferResource, RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
@@ -704,7 +704,7 @@ impl GraphicsDevice for D3d11Context {
     }
 
     // 提交 D3D11 immediate context 当前命令序列。
-    fn submit(&mut self) -> Result<crate::native::present::rhi::SubmissionHandle> {
+    fn submit(&mut self) -> Result<crate::platform::presentation::rhi::SubmissionHandle> {
         // 关闭后的 owner 必须先于提交 helper 拒绝命令提交。
         self.ensure_active()?;
         // 提交实现拆在独立 submit 模块，保持本文件处于行数上限内。

@@ -9,7 +9,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入最终呈现的 damage 值。
 use crate::core::PresentDamage;
 // 引入 platform 私有的薄 RHI 原语。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawPacket, GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiScissor,
     SubmissionHandle, SurfaceToken, TextureCopy, TextureHandle, TextureMove,
 };
@@ -46,21 +46,21 @@ pub(crate) enum FramePlanCommand {
     // 在 pass 内按 painter order 上传一个类型化顶点流。
     UploadVertex {
         // 保存目标顶点 buffer。
-        buffer: crate::native::present::rhi::BufferHandle,
+        buffer: crate::platform::presentation::rhi::BufferHandle,
         // 保存声明布局和有限浮点值组成的顶点载荷。
         data: FrameVertexPayload,
     },
     // 在 pass 内按 painter order 上传一个类型化索引流。
     UploadIndex {
         // 保存目标索引 buffer。
-        buffer: crate::native::present::rhi::BufferHandle,
+        buffer: crate::platform::presentation::rhi::BufferHandle,
         // 保存不可拆分的索引格式与元素载荷。
         data: FrameIndexPayload,
     },
     // 在 pass 内完整上传一个类型化 Uniform 值对象。
     UploadUniform {
         // 保存目标 Uniform buffer。
-        buffer: crate::native::present::rhi::BufferHandle,
+        buffer: crate::platform::presentation::rhi::BufferHandle,
         // 保存与 PipelineContract 闭集一致的 Uniform 载荷。
         data: FrameUniformPayload,
     },

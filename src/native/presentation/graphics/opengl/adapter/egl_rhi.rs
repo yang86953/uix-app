@@ -7,7 +7,7 @@ use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享 OpenGL RHI host 生命周期契约。
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 // 引入共享 Surface resize 事务。
-use crate::native::present::rhi::RhiSurfaceResizeTransaction;
+use crate::platform::presentation::rhi::RhiSurfaceResizeTransaction;
 // 引入共享 OpenGL raster pipeline 类型。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入统一错误与结果类型。
@@ -57,7 +57,7 @@ impl crate::native::present::GpuRecipeContext for EglContext {
     fn rhi_context(
         // 借用当前 EGL owner。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error> {
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi, Error> {
         // 在借出 Device/Surface 组合能力前先执行 owner 生命周期门禁。
         self.ensure_rhi_active()?;
         // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。

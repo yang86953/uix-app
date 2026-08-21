@@ -3,7 +3,7 @@
 // 引入统一结果类型。
 use crate::core::error::Result;
 // 引入 draw packet 与有限资源语义。
-use crate::native::present::rhi::{BufferUsage, DrawPacket, PipelineKind, SampledTextureBinding};
+use crate::platform::presentation::rhi::{BufferUsage, DrawPacket, PipelineKind, SampledTextureBinding};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
 use super::{D3d11Context, D3d11IndexBinding, rhi_invalid};

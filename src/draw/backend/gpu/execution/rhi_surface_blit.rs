@@ -6,7 +6,7 @@ use crate::core::{Errc, Error, Rect};
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入通用 sampled quad 和薄 RHI 的 pass/load 类型。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
-use crate::native::present::rhi::{LoadAction, RhiColor, RhiScissor, RhiViewport, TextureHandle};
+use crate::platform::presentation::rhi::{LoadAction, RhiColor, RhiScissor, RhiViewport, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;

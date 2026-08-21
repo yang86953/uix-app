@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
 >
-> **当前实现线索**：共享生命周期、thin RHI、类型化 candidate/owner、registry 与线程绑定位于 `src/native/presentation/contracts/` 和 `src/native/factory/`；原生 Adapter 位于 `src/native/presentation/graphics/` 及各平台 context。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
+> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan PixelUpload 是三平台首个生产优先参考路径，其他 API 暂缓扩展。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
 
 ## 责任边界
 

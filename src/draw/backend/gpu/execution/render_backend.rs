@@ -16,9 +16,9 @@ use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder,
 };
-use crate::native::present::PresentTestResult;
+use crate::platform::presentation::PresentTestResult;
 // 引入迁移期 RHI 的离屏纹理描述。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     LoadAction, RhiColor, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
 };
 

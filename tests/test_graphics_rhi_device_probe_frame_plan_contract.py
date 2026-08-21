@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位 GraphicsDevice 公开契约。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位 native factory 组合根。
 REGISTRY = ROOT / "src/native/factory/registry.rs"
 # 定位 Drawing GPU Module 的启动探针。

@@ -8,7 +8,7 @@
     // 引入统一逻辑矩形类型。
     use crate::core::Rect;
     // 引入 opaque texture 句柄验证 Picture 身份不被替换。
-    use crate::native::present::rhi::TextureHandle;
+    use crate::platform::presentation::rhi::TextureHandle;
 
     // 逻辑离屏纹理的 fractional region 应只做整数覆盖取整。
     #[test]

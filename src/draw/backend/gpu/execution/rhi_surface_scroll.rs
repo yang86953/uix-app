@@ -5,7 +5,7 @@ use crate::core::{Errc, Error};
 // 引入只写入 retained texture 的 FramePlan 类型。
 use crate::draw::backend::frame_plan::FramePlan;
 // 引入薄 RHI 的组合 context、目标和搬移原语。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     RhiExtent, RhiTextureTransfer, TextureHandle, TextureMove,
 };
 

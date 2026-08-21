@@ -1,7 +1,7 @@
     // 引入本模块的显式 extent 几何与裁剪换算。
     use super::{rhi_physical_geometry, rhi_physical_scissor};
     // 引入 API 无关的物理范围与裁剪值。
-    use crate::native::present::rhi::{RhiExtent, RhiScissor};
+    use crate::platform::presentation::rhi::{RhiExtent, RhiScissor};
 
     // 证明 Drawing 只凭显式目标 extent 就能统一计算 viewport、DPI 与裁剪。
     #[test]

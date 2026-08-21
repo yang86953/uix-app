@@ -2,7 +2,7 @@
 
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
     DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
     RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
@@ -98,7 +98,7 @@ impl RhiRenderer {
         &mut self,
         device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
         SamplerHandle,

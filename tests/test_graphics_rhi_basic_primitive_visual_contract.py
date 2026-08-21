@@ -13,9 +13,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 pipeline 契约。
-PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/platform/presentation/rhi/pipeline.rs"
 # 定位共享基础图元 ABI。
-PRIMITIVE = ROOT / "src/native/presentation/rhi/primitive.rs"
+PRIMITIVE = ROOT / "src/platform/presentation/rhi/primitive.rs"
 # 定位 Drawing 到共享 uniform 的唯一 lowering。
 UNIFORM = ROOT / "src/draw/backend/rhi_renderer_uniform.rs"
 # 定位 coverage 资源与顶点 lowering。

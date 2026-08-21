@@ -4,7 +4,7 @@
 use crate::core::error::Result;
 // 引入 Surface 冻结的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDeviceCapabilities, LoadAction, PipelineBinding,
     PipelineDesc, RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiExtent,
     RhiPresentTransaction, RhiScissor, RhiTextureUpload, SamplerDesc, SamplerHandle,
@@ -157,7 +157,7 @@ impl OpenGlRasterPipeline {
     // 在当前 pass 内清理一个物理矩形。
     pub(crate) fn rhi_clear_rect(
         &mut self,
-        color: crate::native::present::rhi::RhiColor,
+        color: crate::platform::presentation::rhi::RhiColor,
         scissor: RhiScissor,
     ) -> Result<()> {
         // 让 OpenGL RHI helper 仅按本命令的显式矩形执行清理。

@@ -3,7 +3,7 @@
     // 引入稳定错误分类。
     use crate::core::Errc;
     // 引入 DrawPacket 与 Buffer 共享值对象。
-    use crate::native::present::rhi::{
+    use crate::platform::presentation::rhi::{
         BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
         DrawSamplingBinding, IndexBufferBinding, IndexFormat, PipelineBinding, PipelineHandle,
         PipelineKind, RhiBufferUploadPreflight, RhiViewport,

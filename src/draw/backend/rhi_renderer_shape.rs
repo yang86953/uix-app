@@ -1,7 +1,7 @@
 //! 通用 GPU Renderer 的圆角与描边矩形 lowering。
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
     DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind,
     RhiShapeRasterParams, RhiViewport,

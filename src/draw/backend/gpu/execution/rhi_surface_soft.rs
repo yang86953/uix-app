@@ -7,7 +7,7 @@ use crate::draw::backend::frame_plan::{FramePlan, RenderPassPlan, RenderTargetRe
 // 引入通用图片 quad 载荷、RHI renderer 与封闭帧角色。
 use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiRendererFrame, RhiTexturedQuad};
 // 引入薄 RHI 的 Device、load、target 与 viewport 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsDevice, LoadAction, RhiColor, RhiViewport, TextureHandle,
 };
 

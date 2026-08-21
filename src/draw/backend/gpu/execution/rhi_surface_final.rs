@@ -5,7 +5,7 @@ use crate::core::{Errc, Error, PresentDamage};
 // 引入已有纹理 sampled quad 的通用 RHI 载荷。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
 // 引入物理 viewport 与 retained texture 句柄。
-use crate::native::present::rhi::{RhiViewport, TextureHandle};
+use crate::platform::presentation::rhi::{RhiViewport, TextureHandle};
 
 // 引入当前唯一 GPU backend owner。
 use super::GpuBackend;
@@ -98,7 +98,7 @@ impl GpuBackend {
             {
                 // 构造只观察当前 Surface 的一次性钩子。
                 let mut before_present =
-                    |surface: &mut dyn crate::native::present::rhi::GraphicsSurface| {
+                    |surface: &mut dyn crate::platform::presentation::rhi::GraphicsSurface| {
                         // 未安排请求时不调用任何同步 GPU 回读。
                         if readback_requested {
                             // 标记同步 surface 回读即将进入 Adapter，便于定位 GPU 等待边界。

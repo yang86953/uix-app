@@ -45,9 +45,9 @@ use crate::draw::backend::rhi_renderer::RhiRenderer;
 // test-harness 在 backend 内暂存最终合成后的规范像素结果。
 #[cfg(feature = "test-harness")]
 use crate::draw::backend::SurfaceReadback;
-use crate::native::present::GpuRecipeOwner;
+use crate::platform::presentation::GpuRecipeOwner;
 // 引入迁移期 RHI 的离屏纹理句柄。
-use crate::native::present::rhi::TextureHandle;
+use crate::platform::presentation::rhi::TextureHandle;
 
 use super::canvas::NativeGpuCanvas2D;
 
@@ -83,7 +83,7 @@ pub struct GpuBackend {
     /// 保存跨帧 retained surface 的 RHI 颜色纹理。
     pub(crate) rhi_surface_texture: Option<TextureHandle>,
     /// 记录 retained texture 所属的 surface generation 和 extent。
-    pub(crate) rhi_surface_token: Option<crate::native::present::rhi::SurfaceToken>,
+    pub(crate) rhi_surface_token: Option<crate::platform::presentation::rhi::SurfaceToken>,
     /// 标记 FrameEncoder 已写入 retained texture、等待最终合成 present。
     pub(crate) rhi_surface_frame_pending_present: bool,
     // 标记下一次最终合成需要在 present 前读取真实 surface。
@@ -100,7 +100,7 @@ pub struct GpuBackend {
     /// 保存从干净背景复制并应用当前 blur 策略的 RHI 纹理。
     pub(crate) rhi_overlay_backdrop_effect_texture: Option<TextureHandle>,
     /// 记录 overlay 背景纹理所属的 surface generation 和 extent。
-    pub(crate) rhi_overlay_backdrop_token: Option<crate::native::present::rhi::SurfaceToken>,
+    pub(crate) rhi_overlay_backdrop_token: Option<crate::platform::presentation::rhi::SurfaceToken>,
 }
 
 pub(super) struct NativeGpuOffscreen {

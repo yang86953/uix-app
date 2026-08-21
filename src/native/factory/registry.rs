@@ -272,15 +272,12 @@ pub(crate) fn active_recipes_by_priority(
         .iter()
         .filter(|entry| matches_probe_request(entry, requested))
         .collect::<Vec<_>>();
-    // GPU-native raster is the primary rendering tier.  A CPU raster recipe
-    // may still use a GPU for presentation, but it must remain behind every
-    // usable native raster candidate so Auto never selects PixelUpload merely
-    // because that API has a higher platform priority. Stable sort preserves
-    // declaration order for equal priorities inside the same tier.
+    // 平台 registry 的显式优先级先决定参考 API；同优先级才让 GPU-native
+    // 先于 PixelUpload。这样三平台可以统一选择 Vulkan，同时保留兼容后端回退。
     entries.sort_by_key(|entry| {
         (
-            entry.raster != RasterMode::GpuNative,
             std::cmp::Reverse(entry.priority),
+            entry.raster != RasterMode::GpuNative,
         )
     });
     entries

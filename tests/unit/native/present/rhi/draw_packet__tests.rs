@@ -1,7 +1,7 @@
     // 引入当前模块私有值对象。
     use super::*;
     // 引入测试 packet 使用的共享 pipeline kind。
-    use crate::native::present::rhi::{PipelineKind, RhiViewport};
+    use crate::platform::presentation::rhi::{PipelineKind, RhiViewport};
 
     // 构造使用固定测试资源身份和调用方范围的完整 packet。
     fn packet(range: DrawRange) -> DrawPacket {
@@ -10,7 +10,7 @@
             // 使用测试专用的 SolidMesh pipeline 身份。
             PipelineBinding::for_test(
                 // 使用稳定非零 pipeline 句柄。
-                crate::native::present::rhi::PipelineHandle::from_raw(1),
+                crate::platform::presentation::rhi::PipelineHandle::from_raw(1),
                 // 选择具有八字节顶点和三十二字节 Uniform 的契约。
                 PipelineKind::SolidMesh,
             ),

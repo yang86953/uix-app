@@ -11,9 +11,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口与句柄定义。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位共享资源表 Component。
-RESOURCE_TABLE = ROOT / "src/native/presentation/rhi/resource_table.rs"
+RESOURCE_TABLE = ROOT / "src/platform/presentation/rhi/resource_table.rs"
 # 定位 D3D11 资源设备实现。
 D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 D3D11 拆分资源生命周期实现。

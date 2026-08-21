@@ -11,7 +11,7 @@ use crate::core::error::{Errc, Error};
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,
     RhiSurfaceReadback, RhiSurfaceResizeTransaction, SurfaceFrame, SurfaceToken,
 };

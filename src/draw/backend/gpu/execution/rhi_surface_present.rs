@@ -5,7 +5,7 @@ use crate::core::{DamageRegion, Errc, Error};
 // 引入统一 FramePlan 的目标类型。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 pass/load 和纹理目标类型。
-use crate::native::present::rhi::{LoadAction, RhiColor, TextureHandle};
+use crate::platform::presentation::rhi::{LoadAction, RhiColor, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;

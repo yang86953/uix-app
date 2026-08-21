@@ -5,7 +5,7 @@ use crate::core::error::{Error, Result};
 // 引入 FramePlan 的纹理 target 引用。
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入薄 RHI 的 surface token、纹理描述和颜色格式。
-use crate::native::present::rhi::{TextureDesc, TextureFormat, TextureHandle};
+use crate::platform::presentation::rhi::{TextureDesc, TextureFormat, TextureHandle};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;

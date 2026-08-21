@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 Sector ABI 定义。
-PRIMITIVE = ROOT / "src/native/presentation/rhi/primitive.rs"
+PRIMITIVE = ROOT / "src/platform/presentation/rhi/primitive.rs"
 # 定位 Drawing 到共享 ABI 的唯一 renderer lowering。
 UNIFORM = ROOT / "src/draw/backend/rhi_renderer_uniform.rs"
 # 定位 OpenGL ES shader 源码。

@@ -9,7 +9,7 @@ fn rhi_resize_extent_for_logical(
     logical_width: i32,
     logical_height: i32,
     device_pixel_ratio: f32,
-) -> Result<crate::native::present::rhi::RhiExtent, Error> {
+) -> Result<crate::platform::presentation::rhi::RhiExtent, Error> {
     // 拒绝不能稳定转换为物理像素的 DPR，避免伪造 surface extent。
     if !device_pixel_ratio.is_finite() || device_pixel_ratio <= 0.0 {
         // 保持失败为 typed state error，让恢复层保留当前帧。
@@ -37,7 +37,7 @@ fn rhi_resize_extent_for_logical(
         ));
     }
     // 返回经过范围检查的物理 extent。
-    Ok(crate::native::present::rhi::RhiExtent::new(
+    Ok(crate::platform::presentation::rhi::RhiExtent::new(
         physical_width as u32,
         physical_height as u32,
     ))
@@ -64,7 +64,7 @@ pub(crate) trait GpuRecipeContext: GraphicsContextLifecycle {
     fn rhi_context(
         // 借用 GPU recipe owner。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error>;
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi, Error>;
 
     // 按逻辑窗口尺寸重建同一 owner 的 thin RHI surface 并推进代际。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<(), Error>;
