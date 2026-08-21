@@ -109,6 +109,8 @@ impl VulkanContext {
             extent,
             command_pool,
             command_buffer,
+            // 资源表必须先于任何 Drawing 资源创建完成初始化。
+            rhi_device: VulkanRhiDevice::new(),
             upload: UploadBuffer {
                 buffer: vk::Buffer::null(),
                 memory: vk::DeviceMemory::null(),
@@ -561,6 +563,8 @@ impl VulkanContext {
             Err(_) => {}
         }
         accept_device_wait_for_shutdown(wait_result)?;
+        // Drawing 资源依赖 Vulkan device，必须在 command pool 与 device 父对象前逆序回收。
+        self.rhi_device.shutdown(&self.device);
         // SAFETY: device 已 idle（或 device lost），销毁的 child 对象均存活且不再被提交引用；分配器传 None。
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {

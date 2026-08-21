@@ -25,11 +25,13 @@ use super::surface::{
 mod construction;
 mod graphics;
 mod methods;
+mod rhi_device;
 mod swapchain;
 mod transfer;
 
 // 构造函数只通过私有 guard 完成失败回滚与成功句柄移交。
 use construction::PendingVulkanContext;
+use rhi_device::VulkanRhiDevice;
 
 #[cfg(test)]
 pub(crate) use swapchain::PresentCompletion;
@@ -174,6 +176,8 @@ pub struct VulkanContext {
     extent: vk::Extent2D,
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
+    // 持有由 platform 类型化资源表签发身份的 Vulkan RHI Device 状态。
+    rhi_device: VulkanRhiDevice,
     upload: UploadBuffer,
     image_available: vk::Semaphore,
     render_finished: Vec<vk::Semaphore>,
