@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 
-use crate::core::{Error, Result};
+use crate::core::{Error, PresentCoherency, Result};
 use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 
 #[cfg(any(unix, windows))]
@@ -30,11 +30,11 @@ pub(crate) mod surface;
 #[cfg(any(unix, windows))]
 pub use context::VulkanContext;
 
-// 组装 Vulkan PixelUpload adapter 的静态 recipe 能力。
+// 组装 Vulkan GPU-native swapchain adapter 的静态 recipe 能力。
 #[cfg(any(unix, windows))]
 fn context_caps() -> GraphicsContextCaps {
-    // Vulkan 当前使用 CPU raster 与专用 swapchain 上传提交。
-    GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
+    // Vulkan swapchain 不承诺跨 image 像素保留，因此固定要求完整帧。
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::Vulkan, PresentCoherency::FullOnly)
 }
 
 #[cfg(any(unix, windows))]
@@ -48,9 +48,15 @@ pub(crate) fn create(
     VulkanContext::new(surface, width, height).map(|ctx| {
         // 从 adapter 创建模块的唯一事实函数组装静态 capability。
         let caps = context_caps();
-        // 把 context 与同源快照封装为 registry candidate。
-        GraphicsContextCandidate::pixel_upload(Box::new(ctx), caps)
+        // 把同一 owner 的 GraphicsDevice + GraphicsSurface 作为 GPU-native candidate。
+        GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
+}
+
+// 显式测试 feature 才允许 crate 根调用真实 GPU 离屏 parity harness。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) fn run_gpu_parity_test() {
+    context::run_gpu_parity_test();
 }
 
 #[cfg(not(any(unix, windows)))]

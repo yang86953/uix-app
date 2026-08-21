@@ -51,6 +51,19 @@ impl<T> RhiPipelineResourceTable<T> {
         Ok(&entry.resource)
     }
 
+    // 解析仍存活且语义匹配的 pipeline，并只向 Adapter 暴露原生资源可变借用。
+    pub(crate) fn get_mut(&mut self, binding: PipelineBinding) -> Result<&mut T> {
+        // 先由通用表验证句柄仍属于当前资源表。
+        let entry = self.entries.get_mut(binding.handle())?;
+        // 可变入口必须与只读入口执行相同的 kind 身份门禁。
+        if entry.kind != binding.kind() {
+            // 错配不触碰资源内容，保持稳定共享错误。
+            return Err(stale_kind());
+        }
+        // 只有身份与语义同时匹配时才允许 Adapter 物化原生变体。
+        Ok(&mut entry.resource)
+    }
+
     // 检查语义后取出资源，使成功销毁立即失效绑定。
     pub(crate) fn take(&mut self, binding: PipelineBinding) -> Result<T> {
         // 先验证句柄存在与真实 kind，失败不得移除资源。

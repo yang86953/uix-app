@@ -29,6 +29,24 @@ impl RhiTextureResource for VulkanRhiTexture {
     }
 }
 
+impl VulkanRhiTexture {
+    pub(super) const fn image(&self) -> vk::Image {
+        self.image
+    }
+
+    pub(super) const fn view(&self) -> vk::ImageView {
+        self.view
+    }
+
+    pub(super) fn layout(&self) -> vk::ImageLayout {
+        self.layout.get()
+    }
+
+    pub(super) fn set_layout(&self, layout: vk::ImageLayout) {
+        self.layout.set(layout);
+    }
+}
+
 // 保存只在一次纹理上传期间存活的 HOST_COHERENT staging Buffer。
 struct VulkanTextureStaging {
     buffer: vk::Buffer,
@@ -265,7 +283,13 @@ pub(super) fn update_texture(
             depth: 1,
         });
     let result = immediate.execute(device, queue, queue_family_index, |command| {
-        transition_image(device, command, texture.image, old_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        transition_image(
+            device,
+            command,
+            texture.image,
+            old_layout,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        );
         // SAFETY: staging 与 texture 存活；区域和载荷已由 platform 验证。
         unsafe {
             device.cmd_copy_buffer_to_image(
@@ -286,7 +310,9 @@ pub(super) fn update_texture(
     });
     destroy_staging(device, staging);
     if result.is_ok() {
-        texture.layout.set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        texture
+            .layout
+            .set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
     }
     result
 }
@@ -300,6 +326,38 @@ pub(super) fn copy_texture(
     destination: &VulkanRhiTexture,
     bounds: RhiTextureTransferBounds,
 ) -> Result<()> {
+    immediate.execute(device, queue, queue_family_index, |command| {
+        record_texture_copy_commands(device, command, source, destination, bounds);
+    })?;
+    source.layout.set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    destination
+        .layout
+        .set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    Ok(())
+}
+
+// 把 FramePlan texture copy 录入当前帧 command buffer，保持与 pass 的总顺序。
+pub(super) fn record_texture_copy(
+    device: &ash::Device,
+    command: vk::CommandBuffer,
+    source: &VulkanRhiTexture,
+    destination: &VulkanRhiTexture,
+    bounds: RhiTextureTransferBounds,
+) {
+    record_texture_copy_commands(device, command, source, destination, bounds);
+    source.layout.set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+    destination
+        .layout
+        .set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+}
+
+fn record_texture_copy_commands(
+    device: &ash::Device,
+    command: vk::CommandBuffer,
+    source: &VulkanRhiTexture,
+    destination: &VulkanRhiTexture,
+    bounds: RhiTextureTransferBounds,
+) {
     let source_layout = source.layout.get();
     let destination_layout = destination.layout.get();
     let (source_x, source_y, width, height) = bounds.source().native_rect_u32();
@@ -322,38 +380,45 @@ pub(super) fn copy_texture(
             height,
             depth: 1,
         });
-    immediate.execute(device, queue, queue_family_index, |command| {
-        transition_image(device, command, source.image, source_layout, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
-        transition_image(device, command, destination.image, destination_layout, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-        // SAFETY: 源与目标是不同资源，格式和范围已由 platform TextureCopy 验证。
-        unsafe {
-            device.cmd_copy_image(
-                command,
-                source.image,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                destination.image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                std::slice::from_ref(&region),
-            );
-        }
-        transition_image(
-            device,
+    transition_image(
+        device,
+        command,
+        source.image,
+        source_layout,
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+    );
+    transition_image(
+        device,
+        command,
+        destination.image,
+        destination_layout,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+    );
+    // SAFETY: 源与目标是不同资源，格式和范围已由 platform TextureCopy 验证。
+    unsafe {
+        device.cmd_copy_image(
             command,
             source.image,
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
-        transition_image(
-            device,
-            command,
             destination.image,
             vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            std::slice::from_ref(&region),
         );
-    })?;
-    source.layout.set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    destination.layout.set(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-    Ok(())
+    }
+    transition_image(
+        device,
+        command,
+        source.image,
+        vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    );
+    transition_image(
+        device,
+        command,
+        destination.image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    );
 }
 
 fn create_staging(
@@ -473,7 +538,10 @@ fn transition_image(
 
 fn layout_source(layout: vk::ImageLayout) -> (vk::PipelineStageFlags, vk::AccessFlags) {
     match layout {
-        vk::ImageLayout::UNDEFINED => (vk::PipelineStageFlags::TOP_OF_PIPE, vk::AccessFlags::empty()),
+        vk::ImageLayout::UNDEFINED => (
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::AccessFlags::empty(),
+        ),
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => (
             vk::PipelineStageFlags::FRAGMENT_SHADER,
             vk::AccessFlags::SHADER_READ,
@@ -490,7 +558,10 @@ fn layout_source(layout: vk::ImageLayout) -> (vk::PipelineStageFlags, vk::Access
             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
             vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         ),
-        _ => (vk::PipelineStageFlags::ALL_COMMANDS, vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE),
+        _ => (
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE,
+        ),
     }
 }
 
@@ -512,6 +583,9 @@ fn layout_destination(layout: vk::ImageLayout) -> (vk::PipelineStageFlags, vk::A
             vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
             vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         ),
-        _ => (vk::PipelineStageFlags::ALL_COMMANDS, vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE),
+        _ => (
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE,
+        ),
     }
 }

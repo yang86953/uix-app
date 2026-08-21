@@ -84,6 +84,16 @@ impl VulkanContext {
         // 所有前置资源创建完成后一次性移交给正式 VulkanContext。
         let (surface, command_pool, image_available, frame_fence) = pending.into_handles();
 
+        // 帧内 Uniform 快照偏移必须满足当前物理设备的 descriptor 对齐限制。
+        // SAFETY: physical_device 来自同一存活 instance 的 adapter 选择结果。
+        let uniform_alignment = unsafe {
+            runtime
+                .instance()
+                .get_physical_device_properties(physical_device)
+                .limits
+                .min_uniform_buffer_offset_alignment
+                .max(1)
+        };
         let mut ctx = Self {
             runtime: Some(runtime),
             device_lease: Some(device_lease),
@@ -104,13 +114,14 @@ impl VulkanContext {
             swapchain_loader,
             swapchain: vk::SwapchainKHR::null(),
             swapchain_images: Vec::new(),
+            swapchain_image_views: Vec::new(),
             image_layouts: Vec::new(),
             swapchain_format: vk::Format::UNDEFINED,
             extent,
             command_pool,
             command_buffer,
             // 资源表必须先于任何 Drawing 资源创建完成初始化。
-            rhi_device: VulkanRhiDevice::new(),
+            rhi_device: VulkanRhiDevice::new(uniform_alignment),
             upload: UploadBuffer {
                 buffer: vk::Buffer::null(),
                 memory: vk::DeviceMemory::null(),
@@ -121,6 +132,9 @@ impl VulkanContext {
             present_fences: PresentFenceSet::empty(),
             present_lifetime: PresentLifetime::new(),
             frame_fence,
+            acquired_frame: None,
+            submitted_frame: None,
+            surface_generation: 0,
             native_surface,
             logical_width: drawable.logical_width,
             logical_height: drawable.logical_height,
@@ -225,6 +239,9 @@ impl VulkanContext {
         let maintenance1 = self.swapchain_maintenance1_enabled();
         if old_swapchain != vk::SwapchainKHR::null() {
             self.wait_for_frame_fence("vkWaitForFences before swapchain recreate")?;
+            // reset command buffer 会释放上一帧对旧 image view/framebuffer 的引用。
+            self.rhi_device
+                .prepare_frame(&self.device, self.command_buffer)?;
             if maintenance1 {
                 self.present_fences.wait_and_reset_all(&self.device)?;
             } else {
@@ -258,13 +275,12 @@ impl VulkanContext {
         let surface_format = choose_surface_format(&formats);
         let present_mode = choose_present_mode(&present_modes);
         let extent = choose_extent(caps, extent);
-        if !caps
-            .supported_usage_flags
-            .contains(vk::ImageUsageFlags::TRANSFER_DST)
-        {
+        let required_usage =
+            vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        if !caps.supported_usage_flags.contains(required_usage) {
             return Err(Error::new(
                 Errc::PlatformError,
-                "VulkanContext: surface swapchain images do not support TRANSFER_DST",
+                "VulkanContext: surface swapchain images do not support transfer and color attachment usage",
             ));
         }
         let composite_alpha =
@@ -295,7 +311,7 @@ impl VulkanContext {
             .image_color_space(surface_format.color_space)
             .image_extent(extent)
             .image_array_layers(1)
-            .image_usage(vk::ImageUsageFlags::TRANSFER_DST)
+            .image_usage(required_usage)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
             .composite_alpha(composite_alpha)
@@ -324,9 +340,19 @@ impl VulkanContext {
             }
             return Err(error);
         }
+        let mut new_image_views =
+            match create_swapchain_image_views(&self.device, &new_images, surface_format.format) {
+                Ok(views) => views,
+                Err(error) => {
+                    // SAFETY: new_swapchain 尚未移交正式 owner。
+                    unsafe { self.swapchain_loader.destroy_swapchain(new_swapchain, None) };
+                    return Err(error);
+                }
+            };
         let new_image_layouts = match allocate_image_layouts(new_images.len()) {
             Ok(layouts) => layouts,
             Err(error) => {
+                destroy_image_views(&self.device, &mut new_image_views);
                 // SAFETY: new_swapchain 仍存活且分配失败后不再使用。
                 unsafe {
                     self.swapchain_loader.destroy_swapchain(new_swapchain, None);
@@ -340,6 +366,7 @@ impl VulkanContext {
             match allocate_presented_images(new_images.len()) {
                 Ok(presented) => presented,
                 Err(error) => {
+                    destroy_image_views(&self.device, &mut new_image_views);
                     // SAFETY: new_swapchain 仍存活且分配失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
@@ -358,6 +385,7 @@ impl VulkanContext {
             match create_render_finished_semaphores(&self.device, new_images.len()) {
                 Ok(semaphores) => semaphores,
                 Err(error) => {
+                    destroy_image_views(&self.device, &mut new_image_views);
                     // SAFETY: new_swapchain 仍存活且创建失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
@@ -374,6 +402,7 @@ impl VulkanContext {
                 Err(error) => {
                     let mut semaphores = new_render_finished;
                     destroy_semaphores(&self.device, &mut semaphores);
+                    destroy_image_views(&self.device, &mut new_image_views);
                     // SAFETY: new_swapchain 仍存活且 fence 创建失败后不再使用。
                     unsafe {
                         self.swapchain_loader.destroy_swapchain(new_swapchain, None);
@@ -392,6 +421,8 @@ impl VulkanContext {
             )
         };
         if old_swapchain != vk::SwapchainKHR::null() {
+            // framebuffer 已在上方 reset 后释放，旧 view 不再被命令引用。
+            destroy_image_views(&self.device, &mut self.swapchain_image_views);
             if maintenance1 {
                 // SAFETY: 每个成功 present 的 maintenance1 fence 均已等待完成。
                 unsafe {
@@ -409,9 +440,15 @@ impl VulkanContext {
         self.present_lifetime.begin_generation(new_presented_images);
         self.swapchain = new_swapchain;
         self.swapchain_images = new_images;
+        self.swapchain_image_views = new_image_views;
         self.image_layouts = new_image_layouts;
         self.swapchain_format = surface_format.format;
         self.extent = extent;
+        self.acquired_frame = None;
+        self.submitted_frame = None;
+        if old_swapchain != vk::SwapchainKHR::null() {
+            self.surface_generation = self.surface_generation.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -565,6 +602,10 @@ impl VulkanContext {
         accept_device_wait_for_shutdown(wait_result)?;
         // Drawing 资源依赖 Vulkan device，必须在 command pool 与 device 父对象前逆序回收。
         self.rhi_device.shutdown(&self.device);
+        // RHI framebuffer 已释放后才能销毁 swapchain image views。
+        destroy_image_views(&self.device, &mut self.swapchain_image_views);
+        self.acquired_frame = None;
+        self.submitted_frame = None;
         // SAFETY: device 已 idle（或 device lost），销毁的 child 对象均存活且不再被提交引用；分配器传 None。
         unsafe {
             if self.upload.buffer != vk::Buffer::null() {
