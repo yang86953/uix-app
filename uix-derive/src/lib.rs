@@ -17,14 +17,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields};
 
-// 编译期语言转换器按 Gate 逐步接入，当前先编译并测试核心解析事实层。
-#[allow(dead_code)]
-mod uix_lang;
-// 在过程宏边界唯一解析 UIX 文件依赖图。
-mod uix_import;
-// 集中覆盖文件导入、导出与失败契约。
-#[cfg(test)]
-mod uix_import_tests;
 // 定义公开 uix! 的内嵌与文件编译期入口。
 mod uix_entry;
 // 定义 UIX 生成文件、来源注释与 include! 边界。

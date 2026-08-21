@@ -1,5 +1,5 @@
 // 引入文档解析与组件感知代码生成入口。
-use super::{generate_document_view, parse_document, ActionBody, Declaration, ExpressionKind};
+use super::{ActionBody, Declaration, ExpressionKind, generate_document_view, parse_document};
 
 // 去除生成令牌中的空白，稳定核对静态 action 展开结果。
 fn normalized(tokens: impl ToString) -> String {
@@ -200,9 +200,11 @@ fn rejects_invalid_action_local_bindings() {
         r#"<Widget name="Bad" state="count: 0" actions="run: do { count = count + 1; }"><Button @click="run()">运行</Button></Widget><Bad />"#,
     )
     .expect_err("state 直接赋值必须失败");
-    assert!(state_assignment
-        .message
-        .contains("state count 不能直接赋值"));
+    assert!(
+        state_assignment
+            .message
+            .contains("state count 不能直接赋值")
+    );
 
     let shared_state_assignment = parse_document(
         r#"<Widget name="Bad" props="count: State<number>" actions="run: do { count = count + 1; }"><Button @click="run()">运行</Button></Widget><Bad count={shared} />"#,
