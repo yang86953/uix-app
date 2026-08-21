@@ -101,6 +101,8 @@ pub enum Errc {
     GraphicsOutOfMemory = 506,
     /// 表示图形输出当前被遮挡。
     GraphicsOccluded = 507,
+    /// 表示 Surface 已受控重建，未提交帧应在新代际重试。
+    GraphicsSurfaceChanged = 508,
 
     /// 应用自定义错误码的起始值。
     AppDomainBase = 1000,
@@ -198,6 +200,7 @@ impl fmt::Display for Errc {
             Errc::GraphicsDeviceLost => "graphics_device_lost",
             Errc::GraphicsOutOfMemory => "graphics_out_of_memory",
             Errc::GraphicsOccluded => "graphics_occluded",
+            Errc::GraphicsSurfaceChanged => "graphics_surface_changed",
             Errc::AppDomainBase => "app_domain_base",
         };
         write!(f, "{}", name)

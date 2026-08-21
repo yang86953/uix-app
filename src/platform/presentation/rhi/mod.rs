@@ -59,6 +59,8 @@ mod buffer_resource_table;
 mod present_transaction;
 // SurfaceResizeTransaction Component 统一 resize 前置值域与成功后的 token 门禁。
 mod resize_transaction;
+// SurfaceLifecycle Component 统一原生重建、代际推进与当前帧收尾语义。
+mod surface_lifecycle;
 // RenderTarget Component 封闭 Surface 与 texture 两种互斥目标身份。
 mod render_target;
 // 向 Drawing System 与各原生 Adapter 暴露同一份类型化 pipeline 契约。
@@ -122,6 +124,13 @@ pub(crate) use buffer_resource_table::{RhiBufferResource, RhiBufferResourceTable
 pub(crate) use present_transaction::{RhiPresentTransaction, SurfaceFrame, ValidatedRhiPresent};
 // 向两个 Surface Adapter 暴露唯一的类型化 resize 事务。
 pub(crate) use resize_transaction::RhiSurfaceResizeTransaction;
+// 向 Surface Adapter 暴露唯一的 API 无关重建状态机与事务结果。
+pub(crate) use surface_lifecycle::{
+    RhiSurfaceLifecycle, RhiSurfaceRecreateCommit, RhiSurfaceRecreateReason,
+};
+// 显式 Vulkan 验证 feature 复用同一共享状态机，不复制测试实现。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) use surface_lifecycle::run_surface_lifecycle_contract_test;
 // 向 FramePlan、pass 状态与 Adapter 暴露不含裸哨兵的目标身份。
 pub(crate) use render_target::RenderTargetHandle;
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。

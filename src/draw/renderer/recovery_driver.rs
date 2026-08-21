@@ -145,6 +145,11 @@ impl RecoveryDriver {
     }
 
     fn record_failure(&mut self, mut failure: GraphicsFailure) {
+        // platform 已经成功重建 Surface 时只保留当前帧 dirty，不再重复销毁整个 recipe。
+        if matches!(failure, GraphicsFailure::SurfaceChanged(_)) {
+            self.reset_present_probe_conflicts();
+            return;
+        }
         // Occlusion is a healthy swapchain availability state. Rebuilding a
         // surface cannot make another window stop covering this one.
         if matches!(failure, GraphicsFailure::Occluded(_)) {
@@ -258,8 +263,10 @@ impl RenderTarget for RecoveryDriver {
         if let Some(failure) = &self.terminal_failure {
             return Err(failure.error().clone());
         }
-        let width = width.max(1);
-        let height = height.max(1);
+        // WindowDriver 已把零尺寸 Surface 置为暂停；恢复层不得创建 1x1 替身。
+        if width <= 0 || height <= 0 {
+            return Ok(());
+        }
         // A failed resize invalidates the old surface just as much as a
         // failed present. Recovery must rebuild for the requested extent,
         // not silently recreate the previous one.

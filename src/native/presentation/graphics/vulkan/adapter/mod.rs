@@ -59,6 +59,12 @@ pub(crate) fn run_gpu_parity_test() {
     context::run_gpu_parity_test();
 }
 
+// 显式测试 feature 执行不创建原生对象的连续帧同步契约。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) fn run_present_completion_contract_test() {
+    context::run_present_completion_contract_test();
+}
+
 #[cfg(not(any(unix, windows)))]
 #[allow(dead_code)]
 pub(crate) fn create(

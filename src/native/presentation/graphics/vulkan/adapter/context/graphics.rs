@@ -17,7 +17,7 @@ impl GraphicsContextLifecycle for VulkanContext {
             // 从同一状态计算逻辑到物理的 DPR。
             self.width as f32 / self.logical_width.max(1) as f32,
             // 与 GraphicsSurface token 共用唯一代际事实。
-            self.surface_generation,
+            self.surface_lifecycle.token().generation,
         )
     }
 }

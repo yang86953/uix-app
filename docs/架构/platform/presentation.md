@@ -34,6 +34,7 @@ platform window owner
 | `GpuRecipeContext` | internal interface | 不可拆分的 thin RHI、GPU surface 与当前 image 身份 |
 | `PixelUploadSurface` | internal interface | CPU 像素 resize、上传与最终提交 |
 | `GraphicsDevice` / `GraphicsSurface` | thin RHI interfaces | GPU 资源、pass、submit、resize、probe、present 与可选 readback |
+| `RhiSurfaceLifecycle` | internal state machine | 原子拥有 swapchain generation、重建事务及当前帧成功/重试语义 |
 | `GraphicsDeviceCapabilities` / `GraphicsSurfaceCapabilities` | values | 分别陈述设备原语，以及 Surface 的呈现一致性与可选原语事实 |
 | `Presenter` | submit interface | 建立本帧最终 OS present 结果 |
 | `SurfaceToken` / `PresentSurface` | generation/snapshot values | 隔离重建、迟到 callback，并原子描述 extent、DPR 与 transform |
@@ -53,6 +54,12 @@ registry 只陈述可构造候选；graphics System 决定使用、恢复和 fal
 - resize 只在底层成功后原子发布新的 `PresentSurface` 和 generation；失败保留旧快照及 typed 原因，不能部分刷新 extent、DPR 或 transform。
 - 错误线程 Drop 不调用原生 API。正常关闭必须在 owner thread 停止新操作、隔离 callback、checked shutdown surface/device；失败交给最终责任边界观察。
 - recipe owner、surface token、present image 和 callback source 使用同一 generation。旧代帧、资源或 callback 只能 stale，不能重定向到新 surface。
+
+`RhiSurfaceLifecycle` 的稳定状态转换为 `Uninitialized → Recreating → Active`，以及 `Active/Invalidated → Recreating → Active/Invalidated`；只有原生重建成功提交才发布新 extent 并推进 generation。窗口零尺寸不进入原生重建事务：逐窗调度器进入 `Suspended(ZeroExtent)`，保留 dirty，且 GPU backend 不创建 1×1 替身；恢复到正尺寸后才执行正常 resize。
+
+- acquire 或 present 返回 `OUT_OF_DATE` 且未证明本帧已呈现时，Adapter 只映射为拒绝原因；受控重建成功后返回 `GraphicsSurfaceChanged`，当前 dirty 帧用新 token 重建 `FramePlan` 并立即重试，不触发整 recipe fallback。
+- `SUBOPTIMAL` 表示当前 present 已接受：先登记本帧同步完成事实，再为后续帧重建并推进 generation；当前帧仍是成功 present，不能改写为失败或重复消费 damage。
+- 原生重建失败进入 `Invalidated` 并保留旧 token 仅供诊断；后续只能开始新的受控重建。失败必须保留原生状态与重建错误来源链，不能继续 acquire 旧代际或静默丢帧。
 
 ## GraphicsDevice 与 GraphicsSurface
 

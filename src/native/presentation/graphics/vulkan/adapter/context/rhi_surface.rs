@@ -140,10 +140,7 @@ impl GraphicsSurface for VulkanContext {
     }
 
     fn token(&self) -> SurfaceToken {
-        SurfaceToken::new(
-            self.surface_generation,
-            RhiExtent::new(self.extent.width, self.extent.height),
-        )
+        self.surface_lifecycle.token()
     }
 
     fn acquire(&mut self) -> Result<SurfaceFrame> {
@@ -169,6 +166,7 @@ impl GraphicsSurface for VulkanContext {
                 return match self.recreate_after_surface_change(
                     "vkAcquireNextImageKHR RHI",
                     vk::Result::ERROR_OUT_OF_DATE_KHR,
+                    crate::platform::presentation::rhi::RhiSurfaceRecreateReason::AcquisitionRejected,
                 ) {
                     Err(error) => Err(error),
                     Ok(()) => Err(invalid_state(
@@ -214,10 +212,13 @@ impl GraphicsSurface for VulkanContext {
         let resize = RhiSurfaceResizeTransaction::validate(extent, self.token())?;
         if resize.extent() != self.token().extent {
             let dpr = self.width.max(1) as f32 / self.logical_width.max(1) as f32;
-            self.recreate_swapchain(vk::Extent2D {
-                width: resize.extent().width,
-                height: resize.extent().height,
-            })?;
+            self.recreate_swapchain(
+                vk::Extent2D {
+                    width: resize.extent().width,
+                    height: resize.extent().height,
+                },
+                crate::platform::presentation::rhi::RhiSurfaceRecreateReason::Resize,
+            )?;
             self.width = self.extent.width as i32;
             self.height = self.extent.height as i32;
             self.logical_width = (self.width as f32 / dpr.max(0.0001)).round().max(1.0) as i32;
@@ -283,6 +284,7 @@ impl GraphicsSurface for VulkanContext {
                     self.recreate_after_surface_change(
                         "vkQueuePresentKHR RHI",
                         vk::Result::SUBOPTIMAL_KHR,
+                        crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentedNeedsRecreate,
                     )
                 } else {
                     Ok(())
@@ -291,9 +293,22 @@ impl GraphicsSurface for VulkanContext {
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_after_surface_change(
                 "vkQueuePresentKHR RHI",
                 vk::Result::ERROR_OUT_OF_DATE_KHR,
+                crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentationRejected,
             ),
-            Err(vk::Result::SUBOPTIMAL_KHR) => self
-                .recreate_after_surface_change("vkQueuePresentKHR RHI", vk::Result::SUBOPTIMAL_KHR),
+            Err(vk::Result::SUBOPTIMAL_KHR) => {
+                // SUBOPTIMAL 已接受本次 present；先登记同步对象，再重建后续代际。
+                let image_slot = submitted.image_index as usize;
+                if submitted.present_fence.is_some() {
+                    self.present_fences.mark_submitted(image_slot)?;
+                } else {
+                    self.present_lifetime.mark_presented(image_slot)?;
+                }
+                self.recreate_after_surface_change(
+                    "vkQueuePresentKHR RHI",
+                    vk::Result::SUBOPTIMAL_KHR,
+                    crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentedNeedsRecreate,
+                )
+            }
             Err(error) => Err(vk_err("vkQueuePresentKHR RHI", error)),
         }
     }

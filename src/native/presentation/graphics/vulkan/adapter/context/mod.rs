@@ -43,6 +43,12 @@ pub(crate) fn run_gpu_parity_test() {
     rhi_device::run_gpu_parity_test();
 }
 
+// 显式测试 feature 复用 Vulkan 每图像 present 完成状态机。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) fn run_present_completion_contract_test() {
+    swapchain::run_present_completion_contract_test();
+}
+
 #[cfg(test)]
 pub(crate) use swapchain::PresentCompletion;
 pub(crate) use swapchain::allocate_image_layouts;
@@ -216,7 +222,8 @@ pub struct VulkanContext {
     frame_fence: vk::Fence,
     acquired_frame: Option<VulkanAcquiredFrame>,
     submitted_frame: Option<VulkanSubmittedFrame>,
-    surface_generation: u64,
+    // API 无关状态机唯一拥有 Surface generation、extent 与重建事务顺序。
+    surface_lifecycle: crate::platform::presentation::rhi::RhiSurfaceLifecycle,
     native_surface: *mut c_void,
     logical_width: i32,
     logical_height: i32,

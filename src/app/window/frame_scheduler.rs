@@ -409,6 +409,17 @@ impl FrameScheduler {
         self.ready = None;
         self.rebase_animation = true;
 
+        // Surface 已在 platform 内完成受控重建，立即用新代际重试且不消耗恢复预算。
+        if matches!(failure, GraphicsFailure::SurfaceChanged(_)) {
+            self.recovery_attempt = 0;
+            self.clear_occlusion_probe();
+            self.surface_state = SurfaceState::Recovering {
+                retry_at: now,
+                attempt: 0,
+            };
+            return;
+        }
+
         if matches!(failure, GraphicsFailure::Occluded(_)) {
             self.surface_state = SurfaceState::Suspended(SurfaceSuspendReason::Occluded);
             self.recovery_attempt = 0;
