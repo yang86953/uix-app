@@ -39,6 +39,7 @@ use crate::native::platform::*;
 use crate::native::present::*;
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::platform::display::IDisplay;
+use crate::platform::system::console::IConsole;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::native::{Errc, Error};

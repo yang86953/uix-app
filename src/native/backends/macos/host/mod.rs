@@ -10,8 +10,7 @@ use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
 use crate::native::capabilities::system::{
-    ConsoleColor, IConsole, IFileSystem, ISystemInfo, MemoryInfo, OsInfo, SpecialDir,
-    TerminalCapabilities,
+    IFileSystem, ISystemInfo, MemoryInfo, OsInfo, SpecialDir,
 };
 use crate::native::platform::Platform;
 use crate::native::present::validate_pixel_buffer;
@@ -320,7 +319,7 @@ impl Platform for MacosPlatform {
         &mut self.notification
     }
 
-    fn console(&mut self) -> &mut dyn IConsole {
+    fn console(&mut self) -> &mut dyn crate::platform::system::console::IConsole {
         &mut self.console
     }
 

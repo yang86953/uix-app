@@ -1,4 +1,4 @@
-//! 尚未迁移的 native 系统服务协议 — 文件、控制台与系统信息。
+//! 尚未迁移的 native 系统服务协议 — 文件与系统信息。
 
 use crate::core::error::{Errc, Error, Result};
 
@@ -57,29 +57,6 @@ pub(crate) struct OsInfo {
     pub(crate) version: String,
     pub(crate) build: String,
     pub(crate) is_64bit: bool,
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 终端颜色 / 能力
-// ════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub(crate) enum ConsoleColor {
-    Default = 0,
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-    Fatal,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct TerminalCapabilities {
-    pub(crate) has_color: bool,
-    pub(crate) has_raw_mode: bool,
-    pub(crate) has_cursor_control: bool,
 }
 
 /// 通用状态级别（类型已收口到 platform 公开面，此处保持 native 路径可解析）。
@@ -141,16 +118,6 @@ where
     fn scan_fallback_font_path(&self) -> Option<String> {
         ISystemInfo::scan_fallback_font_path(self)
     }
-}
-
-pub(crate) trait IConsole {
-    fn write(&mut self, text: &str) -> Result<()>;
-    fn write_line(&mut self, text: &str) -> Result<()>;
-    fn set_color(&mut self, color: ConsoleColor) -> Result<()>;
-    fn reset_color(&mut self) -> Result<()>;
-    fn show_terminal_cursor(&mut self, visible: bool) -> Result<()>;
-    fn set_terminal_title(&mut self, title: &str) -> Result<()>;
-    fn capabilities(&self) -> TerminalCapabilities;
 }
 
 #[cfg(test)]

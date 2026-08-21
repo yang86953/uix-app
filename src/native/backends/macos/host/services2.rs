@@ -1,6 +1,7 @@
 // 导入 macOS Platform System 根模块统一拥有的契约与基础服务类型。
 use super::*;
 use crate::platform::system::INotification;
+use crate::platform::system::console::{ConsoleColor, IConsole, TerminalCapabilities};
 
 impl INotification for MacosNotification {
     fn show(&mut self, _title: &str, _message: &str) -> Result<()> {

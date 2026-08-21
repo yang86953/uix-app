@@ -1,8 +1,7 @@
 //! Fake 控制台 — 记录所有输出到内存缓冲区，支持断言。
 
 use crate::core::error::Result;
-use crate::native::capabilities::system::IConsole;
-use crate::native::capabilities::system::{ConsoleColor, TerminalCapabilities};
+use crate::platform::system::console::{ConsoleColor, IConsole, TerminalCapabilities};
 
 /// 控制台状态（公开字段，测试可直接读取断言）
 #[derive(Debug, Clone)]
