@@ -1,6 +1,6 @@
 [workspace]
 # 过程宏 crate 作为工作区成员，与库共享同一锁文件与解析图。
-members = ["uix-derive"]
+members = ["uix-derive", "uix-lang-compiler"]
 
 [package]
 name = "uix"

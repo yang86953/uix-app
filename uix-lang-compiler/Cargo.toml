@@ -1,16 +1,16 @@
 [package]
-name = "uix-derive"
+name = "uix-lang-compiler"
 version = "0.0.1"
 edition = "2024"
 publish = false
 license-file = "../LICENSE"
-description = "UIX derive macros: Display for route keys"
-
-[lib]
-proc-macro = true
+description = "UIX Lang shared build-time compiler system"
 
 [dependencies]
-uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.1" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
