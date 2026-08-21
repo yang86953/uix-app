@@ -4,6 +4,8 @@ use serde_json::json;
 use std::{env, fs, path::PathBuf, process::ExitCode};
 use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem};
 
+mod lsp;
+
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
         Ok(code) => ExitCode::from(code),
@@ -23,6 +25,7 @@ fn run(args: Vec<String>) -> Result<u8, String> {
         "fmt" => format_files(&args[1..]),
         "compile" => compile(&args[1..]),
         "query" => query(&args[1..]),
+        "lsp" => lsp::run_stdio(),
         _ => Err(usage()),
     }
 }
