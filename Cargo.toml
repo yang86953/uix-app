@@ -128,6 +128,8 @@ opengles = ["dep:glow", "dep:khronos-egl"]
 vulkan = ["dep:ash"]
 # 仅为真实 GPU 离屏像素一致性测试开放 crate 内 Vulkan harness。
 vulkan-parity-test = ["vulkan"]
+# 仅为 Linux 真实 EGL/GLES 离屏像素一致性测试开放 crate 内 OpenGL harness。
+opengl-parity-test = ["opengles"]
 metal = []
 settings-serde = ["dep:serde", "dep:serde_json"]
 # 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
@@ -177,6 +179,12 @@ required-features = ["agent-control"]
 name = "vulkan_gpu_parity"
 path = "tests/vulkan_gpu_parity.rs"
 required-features = ["vulkan-parity-test"]
+
+[[test]]
+# 使用真实 Linux EGL/GLES context 执行同一共享全图元离屏像素一致性检查。
+name = "opengl_gpu_parity"
+path = "tests/opengl_gpu_parity.rs"
+required-features = ["opengl-parity-test"]
 
 [lints.clippy]
 unwrap_used = "warn"

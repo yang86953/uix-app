@@ -87,3 +87,9 @@ mod rhi_device;
 // 将 OpenGlRasterPipeline 的 RHI bridge 暴露给 WGL/EGL context。
 #[path = "rhi.rs"]
 mod rhi;
+
+// 真实 EGL/GLES 一致性测试仍复用私有 RHI Device，不建立第二套绘制实现。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+pub(crate) fn run_gpu_parity_test() {
+    rhi_device::run_gpu_parity_test();
+}

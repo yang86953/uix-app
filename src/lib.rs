@@ -210,6 +210,12 @@ pub use uix_derive::{Display, uix, uix_app, uix_items};
 pub fn __run_vulkan_gpu_parity_test() {
     native::presentation::graphics::vulkan::platform::run_gpu_parity_test();
 }
+// 只为显式 Linux GPU parity 测试目标转发 crate 内 OpenGL ES/EGL harness。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[doc(hidden)]
+pub fn __run_opengl_gpu_parity_test() {
+    native::presentation::graphics::opengl::run_gpu_parity_test();
+}
 // 只为显式 Vulkan 验证目标转发 API 无关 Surface 生命周期契约。
 #[cfg(feature = "vulkan-parity-test")]
 #[doc(hidden)]
