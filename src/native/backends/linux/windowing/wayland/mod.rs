@@ -45,6 +45,8 @@ pub(crate) mod pointer_button_owner;
 // 指针焦点 Component 事务化提交 Enter、Motion 与 Leave 的共享 owners。
 pub(crate) mod pointer_focus_owner;
 pub(crate) mod presenter;
+// resize 约束 Component 独占用户约束、有效尺寸状态机与 xdg_toplevel Adapter。
+pub(crate) mod resize_constraints;
 pub(crate) mod seat;
 pub(crate) mod shm_buffer;
 // surface registration Component 原子注销窗口的两份共享注册事实。

@@ -11,6 +11,9 @@ BACKENDS = (
     ROOT / "src/native/backends/windows/window_ops.rs",
     ROOT / "src/native/backends/macos/windowing/window_ops.rs",
 )
+WAYLAND = BACKENDS[0]
+WAYLAND_DIR = WAYLAND.parent
+WAYLAND_RESIZE_CONSTRAINTS = WAYLAND_DIR / "resize_constraints.rs"
 
 
 def braced_block(source: str, marker: str) -> str:
@@ -93,6 +96,29 @@ class WindowCapabilityContractTests(unittest.TestCase):
         for value in gated_values:
             self.assertIn(f"WindowCapability::{value}", source)
         self.assertGreaterEqual(source.count("require_capability("), 27)
+
+    def test_wayland_set_resizable_capability_and_constraint_adapter_are_unique(self) -> None:
+        source = WAYLAND.read_text(encoding="utf-8")
+        start = source.index("const WAYLAND_WINDOW_CAPABILITIES")
+        end = source.index("]);", start)
+        capability_values = re.findall(
+            r"WindowCapability::([A-Z][A-Za-z0-9]+)", source[start:end]
+        )
+        self.assertEqual(len(capability_values), 16)
+        self.assertEqual(capability_values.count("SetResizable"), 1)
+        self.assertNotIn(
+            "WindowCapability::SetResizable.unsupported_error()", source
+        )
+
+        protocol_call_owners = set()
+        for path in WAYLAND_DIR.rglob("*.rs"):
+            candidate = path.read_text(encoding="utf-8")
+            if ".set_min_size(" in candidate or ".set_max_size(" in candidate:
+                protocol_call_owners.add(path.relative_to(ROOT).as_posix())
+        self.assertEqual(
+            protocol_call_owners,
+            {WAYLAND_RESIZE_CONSTRAINTS.relative_to(ROOT).as_posix()},
+        )
 
     def test_upper_layers_do_not_branch_on_operating_system(self) -> None:
         forbidden = re.compile(r"target_os|cfg!\(\s*(?:windows|unix)|std::os::|winapi|wayland|AppKit|Win32")
