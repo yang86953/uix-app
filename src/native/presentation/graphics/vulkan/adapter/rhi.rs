@@ -132,6 +132,25 @@ pub(super) const fn index_type(format: IndexFormat) -> vk::IndexType {
     }
 }
 
+// 返回所有 Vulkan 颜色 Image 操作共用的单 mip、单 layer 子资源范围。
+pub(super) fn color_subresource_range() -> vk::ImageSubresourceRange {
+    vk::ImageSubresourceRange::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1)
+}
+
+// 返回所有 Vulkan 颜色复制操作共用的单 mip、单 layer 子资源层。
+pub(super) fn color_subresource_layers() -> vk::ImageSubresourceLayers {
+    vk::ImageSubresourceLayers::default()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .mip_level(0)
+        .base_array_layer(0)
+        .layer_count(1)
+}
+
 fn primitive_topology(topology: PipelinePrimitiveTopology) -> vk::PrimitiveTopology {
     match topology {
         PipelinePrimitiveTopology::TriangleList => vk::PrimitiveTopology::TRIANGLE_LIST,

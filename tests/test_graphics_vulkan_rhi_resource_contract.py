@@ -41,9 +41,9 @@ class VulkanRhiResourceContractTests(unittest.TestCase):
         device = DEVICE.read_text(encoding="utf-8")
 
         self.assertIn("dynamic_buffers: true", device)
+        self.assertIn("texture_upload: true", device)
+        self.assertIn("texture_copy: true", device)
         for capability in (
-            "texture_upload",
-            "texture_copy",
             "sampled_textures",
             "render_to_texture",
             "scissor",
@@ -53,7 +53,6 @@ class VulkanRhiResourceContractTests(unittest.TestCase):
         for operation in (
             "begin_render_pass",
             "draw",
-            "copy_texture",
             "end_render_pass",
             "submit",
         ):

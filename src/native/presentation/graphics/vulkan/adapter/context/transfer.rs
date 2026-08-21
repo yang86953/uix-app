@@ -6,6 +6,7 @@ use ash::vk;
 
 use crate::core::{Errc, Error, Result};
 
+use super::super::rhi::color_subresource_range;
 use super::{UploadBuffer, VulkanContext, invalid, staging_size, vk_err};
 
 pub(crate) fn allocate_cpu_shadow(pixel_count: usize) -> Result<Vec<u32>> {
@@ -327,13 +328,4 @@ pub(super) fn find_memory_type(
         Errc::PlatformError,
         format!("VulkanContext: no {purpose} memory type"),
     ))
-}
-
-fn color_subresource_range() -> vk::ImageSubresourceRange {
-    vk::ImageSubresourceRange::default()
-        .aspect_mask(vk::ImageAspectFlags::COLOR)
-        .base_mip_level(0)
-        .level_count(1)
-        .base_array_layer(0)
-        .layer_count(1)
 }
