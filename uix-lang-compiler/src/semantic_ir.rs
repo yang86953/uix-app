@@ -126,6 +126,15 @@ pub struct SemanticNodeInfo {
     pub span: IrSpan,
 }
 
+/// 保存一处由 schema 判定的 capability 使用。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityRequirement {
+    pub capability: &'static str,
+    pub component: String,
+    pub attribute: Option<String>,
+    pub span: IrSpan,
+}
+
 /// 保存 Compiler System 语义阶段的确定性结果。
 #[derive(Debug, Clone)]
 pub struct TypedUiIr {
@@ -173,9 +182,61 @@ impl TypedUiIr {
         best
     }
 
+    /// 返回源码顺序中的全部组件与属性级 capability 要求。
+    pub fn capability_requirements(&self) -> Vec<CapabilityRequirement> {
+        let mut requirements = Vec::new();
+        for declaration in &self.declarations {
+            for node in &declaration.body {
+                collect_node_capabilities(node, &mut requirements);
+            }
+        }
+        collect_element_capabilities(&self.root, &mut requirements);
+        requirements
+    }
+
     // 只允许 Rust Emitter 消费已经进入 IR 的原始结构事实。
     pub(crate) const fn document(&self) -> &Document {
         &self.document
+    }
+}
+
+fn collect_node_capabilities(node: &TypedNode, requirements: &mut Vec<CapabilityRequirement>) {
+    if let TypedNode::Element(element) = node {
+        collect_element_capabilities(element, requirements);
+    }
+}
+
+fn collect_element_capabilities(
+    element: &TypedElement,
+    requirements: &mut Vec<CapabilityRequirement>,
+) {
+    if matches!(element.kind, TypedElementKind::Builtin { .. }) {
+        if let Some(capability) = UI_PROJECTION_SCHEMA
+            .component(&element.name)
+            .and_then(|component| component.capability)
+        {
+            requirements.push(CapabilityRequirement {
+                capability,
+                component: element.name.clone(),
+                attribute: None,
+                span: element.span,
+            });
+        }
+        for attribute in &element.attributes {
+            if let Some(requirement) =
+                UI_PROJECTION_SCHEMA.attribute_capability(&element.name, &attribute.name)
+            {
+                requirements.push(CapabilityRequirement {
+                    capability: requirement.capability,
+                    component: element.name.clone(),
+                    attribute: Some(attribute.name.clone()),
+                    span: attribute.span,
+                });
+            }
+        }
+    }
+    for child in &element.children {
+        collect_node_capabilities(child, requirements);
     }
 }
 
@@ -480,5 +541,22 @@ mod tests {
             .expect("事件属性必须可由位置查询");
         assert_eq!(click.name, "@click");
         assert_eq!(click.kind, super::SemanticNodeKind::Attribute);
+    }
+
+    #[test]
+    fn semantic_ir_collects_component_and_attribute_capabilities() {
+        let document = parse_document(
+            "<Column><Avatar text=\"A\" /><Avatar src=\"a.png\" /><QRCode value=\"x\" /></Column>",
+        )
+        .expect("测试源码必须通过解析");
+        let source = SourceId::from_source_name("capability.uix");
+        let ir =
+            lower_document(document, CompileTarget::View, source, &[]).expect("语义 IR 必须建立");
+        let requirements = ir.capability_requirements();
+        assert_eq!(requirements.len(), 2);
+        assert_eq!(requirements[0].capability, "image-codecs");
+        assert_eq!(requirements[0].attribute.as_deref(), Some("src"));
+        assert_eq!(requirements[1].capability, "qrcode");
+        assert!(requirements[1].attribute.is_none());
     }
 }

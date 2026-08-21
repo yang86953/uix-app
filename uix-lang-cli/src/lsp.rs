@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem};
 
 #[derive(Default)]

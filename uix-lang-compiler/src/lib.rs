@@ -31,7 +31,7 @@ mod uix_lang;
 
 use uix_import::{ImportDiagnostic, reject_inline_imports, resolve_file};
 use uix_lang::{
-    Diagnostic, generate_document_app, generate_document_view, generate_record_items,
+    Diagnostic, SourceSpan, generate_document_app, generate_document_view, generate_record_items,
     parse_document, with_source_markers,
 };
 
@@ -44,6 +44,108 @@ pub enum CompileTarget {
     App,
     /// 生成文档内全部模块级 Record 项。
     Items,
+}
+
+/// 区分 Compiler System 可查询的 UI 投影登记类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryKind {
+    Components,
+    Attributes,
+    Events,
+    Styles,
+    Themes,
+    Handles,
+    Slots,
+    Capabilities,
+    CapabilityUses,
+    Data,
+}
+
+impl QueryKind {
+    /// 解析 CLI、LSP 与其他 Adapter 共用的稳定类别名。
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "components" => Some(Self::Components),
+            "attributes" => Some(Self::Attributes),
+            "events" => Some(Self::Events),
+            "styles" => Some(Self::Styles),
+            "themes" => Some(Self::Themes),
+            "handles" => Some(Self::Handles),
+            "slots" => Some(Self::Slots),
+            "capabilities" => Some(Self::Capabilities),
+            "capability-uses" => Some(Self::CapabilityUses),
+            "data" => Some(Self::Data),
+            _ => None,
+        }
+    }
+
+    /// 返回稳定协议名称。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Components => "components",
+            Self::Attributes => "attributes",
+            Self::Events => "events",
+            Self::Styles => "styles",
+            Self::Themes => "themes",
+            Self::Handles => "handles",
+            Self::Slots => "slots",
+            Self::Capabilities => "capabilities",
+            Self::CapabilityUses => "capability-uses",
+            Self::Data => "data",
+        }
+    }
+}
+
+/// 保存 query 命令返回的一条只读 schema 登记。
+#[derive(Debug, Clone, Copy)]
+pub enum QueryEntry {
+    Component(&'static projection_schema::ComponentSpec),
+    Attribute(&'static projection_schema::AttributeSpec),
+    Event(&'static projection_schema::EventSpec),
+    Style(&'static projection_schema::StyleSpec),
+    Theme(&'static projection_schema::ThemeTokenSpec),
+    Handle(&'static projection_schema::HandleSpec),
+    Slot(&'static projection_schema::SlotSpec),
+    Capability(&'static projection_schema::CapabilitySpec),
+    AttributeCapability(&'static projection_schema::AttributeCapabilitySpec),
+    Data(&'static projection_schema::DataConstructorSpec),
+}
+
+/// 保存 Compiler System 的确定性 schema 查询结果。
+#[derive(Debug, Clone)]
+pub struct QueryOutput {
+    pub kind: QueryKind,
+    pub entries: Vec<QueryEntry>,
+}
+
+/// 保存可用于阶段缓存与增量失效判定的完整编译身份。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompilationKey {
+    pub root_content_hash: u64,
+    pub dependency_hash: u64,
+    pub language_version: &'static str,
+    pub schema_version: u32,
+    pub capabilities: Vec<&'static str>,
+    pub compiler_version: &'static str,
+    pub target: CompileTarget,
+}
+
+impl CompilationKey {
+    fn new(source_graph: &source_graph::SourceGraph, target: CompileTarget) -> Self {
+        let root_content_hash = source_graph
+            .file(source_graph.root())
+            .map(|file| file.content_hash)
+            .unwrap_or_default();
+        Self {
+            root_content_hash,
+            dependency_hash: source_graph.dependency_hash(),
+            language_version: UI_PROJECTION_SCHEMA.language_version(),
+            schema_version: UI_PROJECTION_SCHEMA.version(),
+            capabilities: enabled_capabilities(),
+            compiler_version: env!("CARGO_PKG_VERSION"),
+            target,
+        }
+    }
 }
 
 /// 标识诊断首次成立的 Compiler System 阶段。
@@ -87,6 +189,8 @@ pub struct CompileOutput {
     pub ir: TypedUiIr,
     /// 保存生成 Rust token 文本到 UIX 源码及语义节点的映射。
     pub source_map: SourceMap,
+    /// 保存本次 AOT 结果的完整增量身份。
+    pub compilation_key: CompilationKey,
 }
 
 /// 保存不产生公开 Rust 输出的共享检查结果。
@@ -98,6 +202,8 @@ pub struct CheckOutput {
     pub source_graph: source_graph::SourceGraph,
     /// 保存检查通过后的类型化 UI IR。
     pub ir: TypedUiIr,
+    /// 保存本次检查结果的完整增量身份。
+    pub compilation_key: CompilationKey,
 }
 
 /// 保存 formatter 的无损结果与来源身份。
@@ -198,6 +304,63 @@ impl CompilerSystem {
         let source = fs::read_to_string(&canonical)
             .map_err(|error| source_io_diagnostic(&canonical, error))?;
         format_named_source(&source, canonical.display().to_string())
+    }
+
+    /// 查询共享 UI 投影 schema，不允许 Adapter 维护副本。
+    pub fn query(self, kind: QueryKind) -> QueryOutput {
+        let entries = match kind {
+            QueryKind::Components => self
+                .schema
+                .components()
+                .iter()
+                .map(QueryEntry::Component)
+                .collect(),
+            QueryKind::Attributes => self
+                .schema
+                .common_attributes()
+                .iter()
+                .map(QueryEntry::Attribute)
+                .collect(),
+            QueryKind::Events => self.schema.events().iter().map(QueryEntry::Event).collect(),
+            QueryKind::Styles => self
+                .schema
+                .style_properties()
+                .iter()
+                .map(QueryEntry::Style)
+                .collect(),
+            QueryKind::Themes => self
+                .schema
+                .theme_tokens()
+                .iter()
+                .map(QueryEntry::Theme)
+                .collect(),
+            QueryKind::Handles => self
+                .schema
+                .handle_slots()
+                .iter()
+                .map(QueryEntry::Handle)
+                .collect(),
+            QueryKind::Slots => self.schema.slots().iter().map(QueryEntry::Slot).collect(),
+            QueryKind::Capabilities => self
+                .schema
+                .capabilities()
+                .iter()
+                .map(QueryEntry::Capability)
+                .collect(),
+            QueryKind::CapabilityUses => self
+                .schema
+                .attribute_capabilities()
+                .iter()
+                .map(QueryEntry::AttributeCapability)
+                .collect(),
+            QueryKind::Data => self
+                .schema
+                .data_constructors()
+                .iter()
+                .map(QueryEntry::Data)
+                .collect(),
+        };
+        QueryOutput { kind, entries }
     }
 }
 
@@ -358,6 +521,11 @@ pub fn format_file(path: &Path) -> Result<FormatOutput, CompilerDiagnostic> {
     CompilerSystem::new().format_file(path)
 }
 
+/// 查询共享 UI 投影 schema。
+pub fn query(kind: QueryKind) -> QueryOutput {
+    CompilerSystem::new().query(kind)
+}
+
 fn format_named_source(
     source: &str,
     source_name: String,
@@ -416,7 +584,13 @@ fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, Comp
         &resolved.declaration_sources,
     )
     .map_err(|diagnostic| {
-        semantic_diagnostic(&resolved.source_graph, path, source_id, diagnostic)
+        semantic_diagnostic(
+            &resolved.source_graph,
+            path,
+            source_id,
+            "UIX2000",
+            diagnostic,
+        )
     })?;
     Ok(AnalyzedUnit {
         tracked_files: resolved.tracked_files,
@@ -427,13 +601,14 @@ fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, Comp
 
 // 让 AOT 与 check 执行同一完整 lowering Gate，AOT 额外进入 Rust Emitter。
 fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDiagnostic> {
-    let source_id = analyzed.source_graph.root();
-    let plan = lower_rust_plan(&analyzed.ir).map_err(|diagnostic| {
+    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
+    let plan = lower_rust_plan(&analyzed.ir).map_err(|failure| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
-            source_id,
-            diagnostic,
+            failure.source_id,
+            failure.code,
+            failure.diagnostic,
         )
     })?;
     let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir);
@@ -443,32 +618,36 @@ fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDia
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
         source_map: emitted.source_map,
+        compilation_key,
     })
 }
 
 // 检查阶段执行完整 lowering Gate，但不进入 Rust Emitter。
 fn check_analyzed(analyzed: AnalyzedUnit) -> Result<CheckOutput, CompilerDiagnostic> {
-    let source_id = analyzed.source_graph.root();
-    lower_rust_plan(&analyzed.ir).map_err(|diagnostic| {
+    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
+    lower_rust_plan(&analyzed.ir).map_err(|failure| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
-            source_id,
-            diagnostic,
+            failure.source_id,
+            failure.code,
+            failure.diagnostic,
         )
     })?;
     Ok(CheckOutput {
         tracked_files: analyzed.tracked_files,
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
+        compilation_key,
     })
 }
 
-// 把语义错误绑定到本次源码图根；声明级来源会在后续 IR 节点中继续细化。
+// 把 lowering 错误绑定到本次源码图中的真实节点来源。
 fn semantic_diagnostic(
     source_graph: &source_graph::SourceGraph,
     fallback: &Path,
     source_id: SourceId,
+    code: &'static str,
     diagnostic: Diagnostic,
 ) -> CompilerDiagnostic {
     let source_name = source_graph
@@ -479,7 +658,7 @@ fn semantic_diagnostic(
         source_name,
         source_id,
         DiagnosticPhase::Semantic,
-        "UIX2000",
+        code,
         diagnostic,
     )
 }
@@ -489,13 +668,49 @@ struct RustUiPlan {
     tokens: TokenStream,
 }
 
+struct LoweringDiagnostic {
+    code: &'static str,
+    source_id: SourceId,
+    diagnostic: Diagnostic,
+}
+
 // 把类型化 UI IR 降低为 Rust UI 计划；check 与 AOT 必须共同执行本阶段。
-fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, Diagnostic> {
+fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
+    if let Some(requirement) = ir
+        .capability_requirements()
+        .into_iter()
+        .find(|requirement| !capability_enabled(requirement.capability))
+    {
+        let subject = requirement
+            .attribute
+            .as_deref()
+            .map(|attribute| format!("组件 {} 的属性 {attribute}", requirement.component))
+            .unwrap_or_else(|| format!("组件 {}", requirement.component));
+        return Err(LoweringDiagnostic {
+            code: "UIX2001",
+            source_id: requirement.span.source_id,
+            diagnostic: Diagnostic::new(
+                SourceSpan {
+                    start: requirement.span.start,
+                    end: requirement.span.end,
+                    line: requirement.span.line,
+                    column: requirement.span.column,
+                },
+                format!("{subject} 需要 capability {}", requirement.capability),
+                format!("在 uix 依赖上启用 Cargo feature {}", requirement.capability),
+            ),
+        });
+    }
     let tokens = match ir.target() {
         CompileTarget::View => with_source_markers(|| generate_document_view(ir.document())),
         CompileTarget::App => with_source_markers(|| generate_document_app(ir.document())),
         CompileTarget::Items => generate_record_items(ir.document()),
-    }?;
+    }
+    .map_err(|diagnostic| LoweringDiagnostic {
+        code: "UIX2000",
+        source_id: ir.root().span.source_id,
+        diagnostic,
+    })?;
     Ok(RustUiPlan { tokens })
 }
 
@@ -521,10 +736,35 @@ impl RustEmitter {
     }
 }
 
+fn enabled_capabilities() -> Vec<&'static str> {
+    UI_PROJECTION_SCHEMA
+        .capabilities()
+        .iter()
+        .filter(|capability| capability_enabled(capability.name))
+        .map(|capability| capability.name)
+        .collect()
+}
+
+fn capability_enabled(name: &str) -> bool {
+    match name {
+        "image-codecs" => cfg!(feature = "image-codecs"),
+        "qrcode" => cfg!(feature = "qrcode"),
+        "form-pattern" => cfg!(feature = "form-pattern"),
+        "rich-text" => cfg!(feature = "rich-text"),
+        "charts" => cfg!(feature = "charts"),
+        "table" => cfg!(feature = "table"),
+        "navigation" => cfg!(feature = "navigation"),
+        "feedback" => cfg!(feature = "feedback"),
+        "tree-widgets" => cfg!(feature = "tree-widgets"),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CompileTarget, CompilerSystem, DiagnosticPhase, check_inline, compile_inline, format_inline,
+        CompileTarget, CompilerSystem, DiagnosticPhase, QueryEntry, QueryKind, check_inline,
+        compile_inline, format_inline,
     };
     use crate::source_graph::SourceId;
 
@@ -538,6 +778,13 @@ mod tests {
         assert_eq!(
             view.source_map.entries()[0].source_id,
             view.source_graph.root()
+        );
+        assert_eq!(
+            view.compilation_key.root_content_hash,
+            view.source_graph
+                .file(view.source_graph.root())
+                .expect("根源码必须存在")
+                .content_hash
         );
 
         let app = compile_inline("<App><Text>Hello</Text></App>", "<app>", CompileTarget::App)
@@ -596,7 +843,7 @@ mod tests {
     #[test]
     fn compiler_system_owns_schema_and_returns_typed_ir() {
         let system = CompilerSystem::new();
-        assert_eq!(system.schema().version(), 2);
+        assert_eq!(system.schema().version(), 3);
         let checked = system
             .check_inline("<Text>Hello</Text>", "typed.uix", CompileTarget::View)
             .expect("合法文档必须通过检查");
@@ -617,5 +864,57 @@ mod tests {
             format_inline(&first.formatted, "fmt.uix").expect("格式化结果必须可再次格式化");
         assert!(!second.changed);
         assert_eq!(second.formatted, first.formatted);
+    }
+
+    #[test]
+    fn compiler_system_query_and_incremental_key_share_schema_versions() {
+        let system = CompilerSystem::new();
+        let queried = system.query(QueryKind::Components);
+        assert_eq!(queried.kind.as_str(), "components");
+        assert!(matches!(queried.entries[0], QueryEntry::Component(_)));
+
+        let first = system
+            .check_inline("<Text>A</Text>", "key.uix", CompileTarget::View)
+            .expect("合法源码必须可检查");
+        let changed = system
+            .check_inline("<Text>B</Text>", "key.uix", CompileTarget::View)
+            .expect("变更源码必须可检查");
+        assert_ne!(first.compilation_key, changed.compilation_key);
+        assert_eq!(
+            first.compilation_key.schema_version,
+            system.schema().version()
+        );
+        assert_eq!(
+            first.compilation_key.language_version,
+            system.schema().language_version()
+        );
+    }
+
+    #[cfg(not(feature = "qrcode"))]
+    #[test]
+    fn missing_capability_is_a_shared_semantic_diagnostic() {
+        let source = "<QRCode value=\"hello\" />";
+        let aot = compile_inline(source, "capability.uix", CompileTarget::View)
+            .expect_err("未启用 qrcode 时 AOT 必须拒绝组件");
+        let check = check_inline(source, "capability.uix", CompileTarget::View)
+            .expect_err("未启用 qrcode 时 check 必须拒绝组件");
+        assert_eq!(aot, check);
+        assert_eq!(aot.code, "UIX2001");
+        assert!(aot.message.contains("qrcode"));
+    }
+
+    #[cfg(not(feature = "image-codecs"))]
+    #[test]
+    fn attribute_capability_does_not_reject_unrelated_component_shape() {
+        check_inline("<Avatar text=\"UI\" />", "avatar.uix", CompileTarget::View)
+            .expect("纯文字 Avatar 不依赖 image-codecs");
+        let error = check_inline(
+            "<Avatar src=\"avatar.png\" />",
+            "avatar.uix",
+            CompileTarget::View,
+        )
+        .expect_err("Avatar src 必须要求 image-codecs");
+        assert_eq!(error.code, "UIX2001");
+        assert!(error.message.contains("src"));
     }
 }
