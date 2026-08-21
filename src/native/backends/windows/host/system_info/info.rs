@@ -7,9 +7,8 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use crate::native::backends::windows::util::to_utf8;
-use crate::native::capabilities::system::ISystemInfo;
-use crate::native::capabilities::system::{MemoryInfo, OsInfo};
 use crate::native::{Errc, Error, Result};
+use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsSystemInfo

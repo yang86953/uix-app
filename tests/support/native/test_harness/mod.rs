@@ -64,6 +64,7 @@ use crate::native::platform::*;
 use crate::native::windowing::shared::OsEventSource;
 use crate::platform::display::IDisplay;
 use crate::platform::system::console::IConsole;
+use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};

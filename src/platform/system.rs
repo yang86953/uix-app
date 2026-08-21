@@ -4,6 +4,8 @@ use crate::core::Result;
 
 // 控制台值与端口由独立中立叶唯一持有。
 pub(crate) mod console;
+// 系统信息值与端口由独立中立叶唯一持有。
+pub(crate) mod info;
 
 /// 低层原生文件对话框端口；公开门面负责值转换与输入验证。
 pub(crate) trait IFileDialog {
