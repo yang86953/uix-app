@@ -560,7 +560,7 @@ impl App {
             self.runtime
                 .set_agent_confirm_ui(move |request| handler(request));
         }
-        // 推迟 ShowWindow 到首帧 present 成功：否则 Vulkan/字体/首 layout 期间用户看到白屏。
+        // 推迟 ShowWindow 到首帧 present 成功：否则图形初始化、字体和首 layout 期间用户看到白屏。
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);

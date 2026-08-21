@@ -16,9 +16,9 @@ use crate::core::WindowId;
 // 引入类型化错误结果。
 #[cfg(feature = "feedback")]
 use crate::core::{Errc, Error, Result};
-// 引入原生错误通知转换来源。
+// 引入平台中立的错误通知值。
 #[cfg(feature = "feedback")]
-use crate::native::notification::ToastEntry;
+use crate::platform::services::ToastEntry;
 // 引入声明租约、关闭事实与配置。
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::feedback::declaration::{

@@ -110,7 +110,7 @@ impl RhiRenderer {
             // 复用已有 blur uniform。
             uniform
         } else {
-            // 按 D3D11 和其他 adapter 的 16-byte cbuffer ABI 创建资源。
+            // 按所有 adapter 共用的 16-byte 常量缓冲 ABI 创建资源。
             let uniform = device.create_buffer(BufferDesc::uniform(
                 // 常量容量只来自共享 Blur Uniform ABI。
                 PipelineKind::BlurPass.contract().uniform.size_bytes(),

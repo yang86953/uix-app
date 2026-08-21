@@ -45,7 +45,7 @@ use crate::draw::backend::rhi_renderer::RhiRenderer;
 // test-harness 在 backend 内暂存最终合成后的规范像素结果。
 #[cfg(feature = "test-harness")]
 use crate::draw::backend::SurfaceReadback;
-use crate::platform::presentation::GpuRecipeOwner;
+use crate::platform::presentation::rhi::GpuRecipeOwner;
 // 引入迁移期 RHI 的离屏纹理句柄。
 use crate::platform::presentation::rhi::TextureHandle;
 
@@ -78,7 +78,7 @@ pub struct GpuBackend {
     soft_fallback_idle_deadline: Option<Instant>,
     soft_used_in_last_present: bool,
     pub(crate) shutdown: bool,
-    /// D3D11 参考 adapter 的迁移期 FramePlan resource cache。
+    /// 参考 adapter 共用的 FramePlan resource cache。
     pub(crate) rhi_renderer: Option<RhiRenderer>,
     /// 保存跨帧 retained surface 的 RHI 颜色纹理。
     pub(crate) rhi_surface_texture: Option<TextureHandle>,

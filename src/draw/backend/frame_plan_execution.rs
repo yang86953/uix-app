@@ -251,7 +251,7 @@ where
 
     // 在资源预检完成后激活 Device，再按计划顺序执行全部步骤。
     pub(super) fn execute(mut self, steps: &[FramePlanStep]) -> Result<()> {
-        // 在第一条原生命令前激活当前 owner；OpenGL 在此恢复正确 context。
+        // 在第一条原生命令前激活当前 owner；需要线程 current 状态的 adapter 在此恢复。
         self.device.activate()?;
         // 激活成功后再执行设备健康 preflight，失败计划不得进入任何命令。
         self.device.maintain()?;

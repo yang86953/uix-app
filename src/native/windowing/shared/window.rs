@@ -43,6 +43,11 @@ pub(crate) trait WindowOps {
     fn os_set_size(&mut self, w: i32, h: i32) -> Result<()>;
     fn native_handle(&self) -> *mut std::ffi::c_void;
 
+    // 返回窗口系统当前客户区；默认复用上层缓存的逻辑尺寸。
+    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
+        (fallback_width, fallback_height)
+    }
+
     // ── 窗口外观 ─────────────────────────────────────────
     fn os_center_on_screen(&mut self) -> Result<()> {
         unimpl("os_center_on_screen")
@@ -372,6 +377,14 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     fn properties_mut(&mut self) -> &mut dyn IWindowProperties {
         self
     }
+
+    fn client_logical_extent(&self) -> (i32, i32) {
+        self.ops.client_logical_extent(
+            state_read!(self.state, width),
+            state_read!(self.state, height),
+        )
+    }
+
     fn presenter(&mut self) -> &mut dyn IPresenter {
         self.presenter.as_mut()
     }

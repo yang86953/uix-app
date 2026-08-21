@@ -91,10 +91,10 @@ fn rhi_physical_scissor(
         // 不返回 full-surface 的 None，避免越界绘制。
         return None;
     }
-    // 物理坐标已经夹到 u32 extent，转换为 D3D11 可接受的 i32。
+    // 物理坐标已经夹到 u32 extent，转换为共享 RHI 可接受的 i32。
     // 防止异常超大 drawable 在窄的 native RECT 类型中回绕。
     let max_i32 = i32::MAX as f32;
-    // 返回已经限制到 D3D11 整数坐标范围的裁剪。
+    // 返回已经限制到共享原生整数坐标范围的裁剪。
     Some(RhiScissor {
         x: x0.min(max_i32) as i32,
         y: y0.min(max_i32) as i32,

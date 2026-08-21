@@ -19,9 +19,9 @@ use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackRequest};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
 // 引入 factory 已验证的正交 recipe owner。
-use crate::platform::presentation::GraphicsRecipeOwner;
+use crate::platform::presentation::rhi::GraphicsRecipeOwner;
 // 引入 PixelUpload presentation 的窄 owner 与 present 状态。
-use crate::platform::presentation::{PixelUploadRecipeOwner, PresentTestResult};
+use crate::platform::presentation::rhi::{PixelUploadRecipeOwner, PresentTestResult};
 
 /// 最终呈现由谁完成。
 enum Presentation {
@@ -463,7 +463,7 @@ impl RenderTarget for Renderer {
     // 将测试故障安排到 backend-managed GPU 的真实 RHI 设备边界。
     #[cfg(feature = "test-harness")]
     fn inject_graphics_device_lost_for_test(&mut self) -> Result<(), Error> {
-        // PixelUpload 和外部 presenter 没有当前 D3D11 RHI 注入契约。
+        // PixelUpload 和外部 presenter 没有当前 GPU RHI 注入契约。
         if !matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
             return Err(Error::new(
                 Errc::NotImplemented,
@@ -477,7 +477,7 @@ impl RenderTarget for Renderer {
     // 将测试 surface-lost 安排到 backend-managed GPU 的真实 RHI surface 边界。
     #[cfg(feature = "test-harness")]
     fn inject_graphics_surface_lost_for_test(&mut self) -> Result<(), Error> {
-        // PixelUpload 和外部 presenter 没有当前 D3D11 RHI 注入契约。
+        // PixelUpload 和外部 presenter 没有当前 GPU RHI 注入契约。
         if !matches!(self.presentation.kind(), PresentationKind::BackendManaged) {
             return Err(Error::new(
                 Errc::NotImplemented,

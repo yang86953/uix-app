@@ -117,6 +117,11 @@ pub trait PlatformWindow {
     fn show_system_menu(&mut self) -> Result<()>;
     fn is_visible(&self) -> bool;
 
+    /// 返回窗口系统当前确认的逻辑客户区；默认使用中立属性快照。
+    fn client_logical_extent(&self) -> (i32, i32) {
+        (self.properties().width(), self.properties().height())
+    }
+
     /// Returns the latest exact compositor visibility when the backend can
     /// query it. This is intentionally distinct from `is_visible`: a window
     /// may be onscreen while fully covered by other windows.

@@ -139,9 +139,9 @@ impl NativeGpuCanvas2D {
         };
     }
 
-    // D3D11 测试目标保留 native mesh 数量观测入口，供提交顺序测试按需调用。
+    // 原生测试目标保留 mesh 数量观测入口，供提交顺序测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
-    #[cfg(all(test, feature = "d3d11"))]
+    #[cfg(test)]
     pub(crate) fn pending_mesh_count(&self) -> usize {
         self.pending_native
             .iter()

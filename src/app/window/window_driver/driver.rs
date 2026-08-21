@@ -185,7 +185,7 @@ impl WindowDriver {
                         self.cancel_outstanding_native_frame(platform_window);
                         // A native lifecycle signal will wake this window on
                         // exposure, so this path deliberately registers no
-                        // DXGI-style availability probe deadline.
+                        // 原生 surface 可用性探测 deadline。
                         self.frame_scheduler.suspend(SurfaceSuspendReason::Occluded);
                         tree.mark_full_frame_dirty();
                     }

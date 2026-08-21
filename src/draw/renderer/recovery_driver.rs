@@ -15,7 +15,7 @@ use crate::draw::renderer::{
     GraphicsFailure, GraphicsRecovery, GraphicsRecoveryAction, RenderOutcome,
 };
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
-use crate::platform::presentation::PresentTestResult;
+use crate::platform::presentation::rhi::PresentTestResult;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -179,7 +179,7 @@ impl RecoveryDriver {
             failure = GraphicsFailure::SurfaceLost(Error::new(
                 // 使用既有 surface-lost 分类进入有界整后端恢复序列。
                 crate::core::Errc::GraphicsSurfaceLost,
-                // 保留稳定诊断文本，避免依赖具体 DXGI HRESULT 字符串。
+                // 保留稳定诊断文本，避免依赖具体原生错误字符串。
                 "present probe reported available but repeated presentation remained occluded",
             ));
         } else {
@@ -288,7 +288,7 @@ impl RenderTarget for RecoveryDriver {
                 .as_ref()
                 .is_some_and(GraphicsFaultSignal::take_device_lost)
         {
-            // 先尝试把注入送到真实 backend；D3D11 会在最终 present 预检报告失败。
+            // 先尝试把注入送到真实 backend；原生 adapter 会在最终 present 预检报告失败。
             match self.engine.inject_graphics_device_lost_for_test() {
                 Ok(()) => {}
                 Err(error) if error.code() == crate::core::Errc::NotImplemented => {
@@ -316,7 +316,7 @@ impl RenderTarget for RecoveryDriver {
                 .as_ref()
                 .is_some_and(GraphicsFaultSignal::take_surface_lost)
         {
-            // 让 D3D11 在下一次 RHI acquire 返回 GraphicsSurfaceLost。
+            // 让原生 adapter 在下一次 RHI acquire 返回 GraphicsSurfaceLost。
             match self.engine.inject_graphics_surface_lost_for_test() {
                 Ok(()) => {}
                 Err(error) if error.code() == crate::core::Errc::NotImplemented => {
@@ -617,7 +617,7 @@ impl Drop for RecoveryDriver {
 }
 
 // 确定性验证共享 device loss 仍由两个窗口各自消费一次，不引入全局恢复协调。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(feature = "graphics-parity-test")]
 pub(crate) fn run_multi_window_device_loss_contract_test() {
     use crate::core::Errc;
     use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
@@ -645,7 +645,7 @@ pub(crate) fn run_multi_window_device_loss_contract_test() {
             if self.shared_lost.load(Ordering::Acquire) {
                 return RenderOutcome::Failed(GraphicsFailure::DeviceLost(Error::new(
                     Errc::GraphicsDeviceLost,
-                    "shared Vulkan device lost in deterministic window test",
+                    "shared graphics device lost in deterministic window test",
                 )));
             }
             RenderOutcome::FrameReady(DamageRegion::full())

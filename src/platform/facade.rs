@@ -16,9 +16,6 @@ use crate::core::{Errc, Error, Result};
 
 // 引入跨 feature 保持公开的 adapter 描述与 backend 身份。
 use super::graphics::{GpuAdapterInfo, GraphicsBackend};
-// 仅 Windows D3D11 原生枚举需要设备类别。
-#[cfg(all(windows, feature = "d3d11"))]
-use super::graphics::GpuDeviceType;
 use super::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 // 能力 Provider 只实现 host 功能域的 OS 差异。
 use super::capabilities::providers;
@@ -277,43 +274,9 @@ impl Platform {
     }
 }
 
-// 按已编译 backend 直接返回枚举结果或类型化的不支持错误。
-#[cfg(any(
-    feature = "d3d11",
-    feature = "vulkan",
-    feature = "d3d12",
-    feature = "metal",
-    feature = "opengles"
-))]
 fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
-    // 直接返回 feature 对应结果，避免无成功分支时保留幽灵值。
-    match backend {
-        // Windows D3D11 继续使用 DXGI，并把临时 Vec 转为 owned slice。
-        #[cfg(all(windows, feature = "d3d11"))]
-        GraphicsBackend::Direct3D11 => Ok(enumerate_dxgi_adapters()?.into_boxed_slice()),
-        // 其他已启用 backend 保持类型化的未实现契约。
-        #[cfg(any(
-            all(feature = "d3d11", not(windows)),
-            feature = "vulkan",
-            feature = "d3d12",
-            feature = "metal",
-            feature = "opengles"
-        ))]
-        _ => Err(not_implemented_backend(backend)),
-    }
-}
-
-// 没有图形 feature 时 GraphicsBackend 不可构造，空 match 是唯一穷尽控制流。
-#[cfg(not(any(
-    feature = "d3d11",
-    feature = "vulkan",
-    feature = "d3d12",
-    feature = "metal",
-    feature = "opengles"
-)))]
-fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
-    // 不制造 backend 值、typed failure 或幽灵成功；调用在安全 Rust 中不可发生。
-    match backend {}
+    // 公开门面只传递中立选择值；原生 factory 负责选择并注入对应 Adapter。
+    crate::native::factory::enumerate_gpu_adapters(backend)
 }
 
 impl Drop for Platform {
@@ -356,78 +319,6 @@ impl Drop for InstanceClaim {
             INSTANCE_LIVE.store(false, Ordering::Release);
         }
     }
-}
-
-/// 通过 DXGI 枚举 D3D11 图形适配器（替代已移除的 wgpu 枚举）。
-#[cfg(all(windows, feature = "d3d11"))]
-fn enumerate_dxgi_adapters() -> Result<Vec<GpuAdapterInfo>, Error> {
-    use windows::Win32::Graphics::Dxgi::{
-        CreateDXGIFactory1, DXGI_ADAPTER_DESC1, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND,
-        IDXGIFactory1,
-    };
-
-    // SAFETY: CreateDXGIFactory1 返回进程级 DXGI 工厂，无需传入句柄。
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(|error| {
-        Error::new(
-            Errc::PlatformError,
-            format!("Platform::gpu_adapters: CreateDXGIFactory1 failed: {error}"),
-        )
-    })?;
-    let mut adapters = Vec::new();
-    for index in 0.. {
-        // SAFETY: EnumAdapters1 返回的 adapter 由 factory 管理生命周期，仅在本函数内查询。
-        let adapter = match unsafe { factory.EnumAdapters1(index) } {
-            Ok(adapter) => adapter,
-            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
-            Err(error) => {
-                return Err(Error::new(
-                    Errc::PlatformError,
-                    format!("Platform::gpu_adapters: EnumAdapters1 failed: {error}"),
-                ));
-            }
-        };
-        // SAFETY: desc 为输出缓冲，GetDesc1 调用期间有效。
-        let desc: DXGI_ADAPTER_DESC1 = unsafe { adapter.GetDesc1() }.map_err(|error| {
-            Error::new(
-                Errc::PlatformError,
-                format!("Platform::gpu_adapters: GetDesc1 failed: {error}"),
-            )
-        })?;
-        // DXGI 无法直接区分集成/独显；仅识别软件适配器（WARP/基本显示）。
-        let software =
-            desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || desc.VendorId == 0x1414;
-        adapters.push(GpuAdapterInfo::new(
-            GraphicsBackend::Direct3D11,
-            if software {
-                GpuDeviceType::Software
-            } else {
-                GpuDeviceType::Unknown
-            },
-            non_empty(String::from_utf16_lossy(&desc.Description)),
-            (desc.VendorId != 0).then_some(desc.VendorId),
-            (desc.DeviceId != 0).then_some(desc.DeviceId),
-            None,
-        ));
-    }
-    Ok(adapters)
-}
-
-// 只有兼容失败分支存在时才需要构造该诊断错误。
-#[cfg(any(
-    all(feature = "d3d11", not(windows)),
-    feature = "vulkan",
-    feature = "d3d12",
-    feature = "metal",
-    feature = "opengles"
-))]
-fn not_implemented_backend(backend: GraphicsBackend) -> Error {
-    Error::new(
-        Errc::NotImplemented,
-        format!(
-            "Platform::gpu_adapters: {:?} has no native enumerator on this target",
-            backend
-        ),
-    )
 }
 
 fn normalize_text(value: Option<String>) -> Option<String> {

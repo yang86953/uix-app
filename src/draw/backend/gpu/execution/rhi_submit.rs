@@ -300,7 +300,7 @@ impl GpuBackend {
             // 首帧主 surface 的透明初始化。
             LoadAction::Clear(RhiColor::transparent())
         } else {
-            // 保留 D3D11 backbuffer 的已有像素。
+            // 保留原生 backbuffer 的已有像素。
             LoadAction::Load
         };
         // 先生成与兼容 present 一致的 damage 计划。
@@ -411,7 +411,7 @@ impl GpuBackend {
             // 首帧主 surface 的透明初始化。
             LoadAction::Clear(RhiColor::transparent())
         } else {
-            // 保留 D3D11 backbuffer 的已有像素。
+            // 保留原生 backbuffer 的已有像素。
             LoadAction::Load
         };
         // 先生成与兼容 present 一致的 damage 计划。
@@ -518,7 +518,7 @@ impl GpuBackend {
             // 首帧主 surface 的透明初始化。
             LoadAction::Clear(RhiColor::transparent())
         } else {
-            // 保留 D3D11 backbuffer 的已有像素。
+            // 保留原生 backbuffer 的已有像素。
             LoadAction::Load
         };
         // 先生成与兼容 present 一致的 damage 计划。
@@ -628,7 +628,7 @@ impl GpuBackend {
             // 首帧主 surface 的透明初始化。
             LoadAction::Clear(RhiColor::transparent())
         } else {
-            // 保留 D3D11 backbuffer 的已有像素。
+            // 保留原生 backbuffer 的已有像素。
             LoadAction::Load
         };
         // 先生成与兼容 present 一致的 damage 计划。
@@ -733,7 +733,7 @@ impl GpuBackend {
             // 首帧主 surface 的透明初始化。
             LoadAction::Clear(RhiColor::transparent())
         } else {
-            // 保留 D3D11 backbuffer 的已有像素。
+            // 保留原生 backbuffer 的已有像素。
             LoadAction::Load
         };
         // 先生成与兼容 present 一致的 damage 计划。

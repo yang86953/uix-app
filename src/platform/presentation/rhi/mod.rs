@@ -4,11 +4,18 @@
 //! `draw_glyphs`、`draw_rounded_rect` 或其他 UI 高层操作。资源表、pipeline ABI、
 //! pass/surface 状态机、提交事务、错误与坐标语义只在此处定义一次；Vulkan、
 //! D3D11、OpenGL 等 Adapter 只能实现原生映射。
+
 #![allow(dead_code)]
+
+// Drawing 的唯一向下入口同时暴露 recipe 选择值与 opaque owner；具体实现仍由
+// native factory 创建，Drawing 不能越过本门面取得任何 Adapter 类型。
+pub(crate) use super::{
+    GpuRecipeOwner, GraphicsApi, GraphicsRecipe, GraphicsRecipeOwner, GraphicsSelection,
+    NativeSurfaceHandle, PixelUploadRecipeOwner, PresentTestResult, describe_backend_availability,
+    gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
+};
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};
-// 引入无帧 surface 探测的统一结果类型。
-use super::PresentTestResult;
 // 将 Shape 像素语义拆到独立共享契约文件，避免主 RHI 文件越过行数边界。
 mod shape;
 // 将 Gradient 仿射几何、颜色和模式参数收归共享 ABI 值对象。

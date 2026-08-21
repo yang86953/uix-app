@@ -195,14 +195,10 @@ fn engine_logical_extent(engine: &mut dyn RenderTarget) -> Option<(f32, f32)> {
     (width > 0 && height > 0).then_some((width as f32, height as f32))
 }
 
-/// 以 HWND 实际客户区为准；properties 在样式/DPI 变更窗口期可能滞后。
+/// 读取平台窗口协议提供的当前逻辑客户区。
 pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow) -> (i32, i32) {
-    // 拆解窗口属性与原生句柄后交给 platform 公开窄 API 计算逻辑客户区。
-    crate::platform::presentation::native_client_logical_extent(
-        platform_window.properties().width(),
-        platform_window.properties().height(),
-        platform_window.native_handle().native_window(),
-    )
+    // OS 查询与尺寸换算都封装在 PlatformWindow 实现中。
+    platform_window.client_logical_extent()
 }
 
 pub(crate) fn ensure_surface_matches_window(

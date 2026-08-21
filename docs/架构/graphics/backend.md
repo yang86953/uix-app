@@ -4,7 +4,7 @@
 
 > **接口**：声明 graphics System 的 CPU/GPU 执行、能力协商、资源代际与降级契约。基础依赖：[platform/presentation](../platform/presentation.md)；[painting](painting.md)、[scene](scene.md)与[renderer](renderer.md)的输入由 graphics System 编排，Module 间不直接持有实例。导出：renderer 内部 `RenderBackend`。
 >
-> **当前实现线索**：通用执行位于 `src/draw/backend/`；API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 recipe、registry、线程绑定与原生 Adapter 位于 platform System 的私有实现 `src/native/`。路径只用于定位迁移，不构成公开 API。
+> **当前实现线索**：通用执行位于 `src/draw/backend/`；API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 recipe、registry、线程绑定与原生 Adapter 位于 platform System 的私有实现 `src/native/`。永久源码依赖规则见[图形源码边界](source-boundary.md)。路径只用于定位迁移，不构成公开 API。
 
 ## 责任边界
 

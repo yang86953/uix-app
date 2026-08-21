@@ -16,7 +16,7 @@ use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
     EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder,
 };
-use crate::platform::presentation::PresentTestResult;
+use crate::platform::presentation::rhi::PresentTestResult;
 // 引入迁移期 RHI 的离屏纹理描述。
 use crate::platform::presentation::rhi::{
     LoadAction, RhiColor, RhiExtent, RhiViewport, TextureDesc, TextureFormat,
@@ -131,7 +131,7 @@ impl RenderBackend for GpuBackend {
         // 生产 GPU adapter 只由薄 RHI surface 执行实际重建和代际推进。
         // 已验证 owner 通过 recipe 专用视图执行唯一 surface resize 事务。
         self.gpu_ctx.resize_surface(logical_w, logical_h)?;
-        // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
+        // 原生 adapter 会按窗口客户区校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
         self.adopt_factory_drawable_extent();
         Ok(())

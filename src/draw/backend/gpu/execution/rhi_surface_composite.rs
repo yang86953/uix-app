@@ -7,7 +7,7 @@ use crate::draw::backend::rhi_renderer::RhiSampledQuad;
 // 引入 load action、extent 与整数 scissor。
 use crate::platform::presentation::rhi::{LoadAction, RhiColor, RhiExtent, RhiScissor};
 
-// 与 core damage 归一化和 D3D11 adapter 上限保持一致。
+// 与 core damage 归一化和共享 adapter 上限保持一致。
 const MAX_SURFACE_COMPOSITE_RECTS: usize = 64;
 
 // 保存一次最终合成已经统一验证的 draw/present 事实。

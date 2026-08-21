@@ -596,7 +596,7 @@ impl WindowDriver {
             let scroll_move = tree.scroll_region_moves();
             let hover_pos = debug_mode.get().then(|| cursor_pos.get());
             let metrics_ref = metrics.map(Cell::get);
-            // 原生 swapchain 必须在首个 GPU Present 前进入可见状态，避免 DXGI 将隐藏窗口视为 occluded。
+            // 原生 swapchain 必须在首个 GPU Present 前进入可见状态，避免隐藏窗口被视为 occluded。
             if self.deferred_show && !engine.capabilities().uses_external_presenter() {
                 // 只提前执行可见性切换，保留首帧成功后的统一 show/raise 收尾和失败重试状态。
                 match platform_window.show() {

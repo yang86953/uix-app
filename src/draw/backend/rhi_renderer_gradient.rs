@@ -124,7 +124,7 @@ impl RhiRenderer {
         });
         // 每个渐变只更新常量并保留 painter order。
         for gradient in gradients {
-            // 上传类型化 GradientConstants，保持 D3D11 16-byte 对齐布局。
+            // 上传类型化 GradientConstants，保持共享 16-byte 对齐布局。
             pass.push(FramePlanCommand::UploadUniform {
                 buffer: uniform_buffer,
                 data: FrameUniformPayload::Gradient(Self::gradient_uniform(viewport, gradient)),
