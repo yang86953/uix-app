@@ -86,7 +86,7 @@ impl crate::platform::windowing::ICursor for MacosCursor {
 // 显示组件仅对 macOS Platform System 内部可见。
 pub(super) struct MacosDisplay;
 
-impl IDisplay for MacosDisplay {
+impl crate::platform::display::IDisplay for MacosDisplay {
     fn dpi_scale(&self) -> Result<f32> {
         // SAFETY: NSScreen returns AppKit-owned objects and scalar values; Rust
         // copies the scale factor immediately.
@@ -104,11 +104,11 @@ impl IDisplay for MacosDisplay {
         Ok(unsafe { cocoa::screen_count() as i32 })
     }
 
-    fn info(&self, index: i32) -> Result<DisplayInfo> {
+    fn info(&self, index: i32) -> Result<crate::platform::display::DisplayInfo> {
         // SAFETY: screen_info copies the selected NSScreen frame and scale into
         // plain Rust values and falls back to the main screen for invalid indexes.
         let screen = unsafe { cocoa::screen_info(index.max(0) as usize) };
-        Ok(DisplayInfo {
+        Ok(crate::platform::display::DisplayInfo {
             bounds: screen.bounds,
             dpi_scale: screen.scale as f32,
             is_primary: true,

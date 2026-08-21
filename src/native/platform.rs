@@ -1,10 +1,10 @@
 //! 平台聚合协议 — 统一访问各功能域子系统。
 
 use crate::core::Error;
-use crate::native::capabilities::display::IDisplay;
 use crate::native::capabilities::system::{
     IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
 };
+use crate::platform::display::IDisplay;
 use crate::platform::windowing::event::{EventBus, IEventLoop};
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::window::IWindowManager;

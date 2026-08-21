@@ -1,12 +1,12 @@
-
 use super::*;
 use crate::core::Errc;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
 use crate::native::capabilities::*;
 use crate::native::platform::Platform;
-use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
+use crate::platform::display::IDisplay;
 use crate::platform::windowing::event::{EventBus, IEventLoop};
 use crate::platform::windowing::window::IWindowManager;
+use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

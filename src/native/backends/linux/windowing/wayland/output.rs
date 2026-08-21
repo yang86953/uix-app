@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::core::Rect;
-use crate::native::capabilities::display::DisplayInfo;
+use crate::platform::display::DisplayInfo;
 
 /// 通过 wl_output 事件收集的单显示器信息。
 #[derive(Debug, Clone)]

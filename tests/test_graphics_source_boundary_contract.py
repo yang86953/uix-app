@@ -25,7 +25,7 @@ PRIVATE_SURFACE_STATE = re.compile(
     r"\b(?:surface_generation|recreate_generation|recreate_pending|needs_recreate)\b"
 )
 
-# app 尚未完成非图形 platform contract 的物理迁移；只允许这些精确协议与组合入口。
+# app 尚未完成其余非图形 platform contract 的物理迁移；显示协议不再进入例外集。
 APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::AcceptedAgentStream",
     "crate::native::agent_transport::AgentEndpoint",
@@ -35,6 +35,16 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::fill_secure_random",
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
+}
+# native Platform 根尚未迁移，但只能继续取得这些未迁移的精确系统服务合同。
+NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
+NATIVE_PLATFORM_PROTOCOLS = {
+    "crate::native::capabilities::system::IConsole",
+    "crate::native::capabilities::system::IFileDialog",
+    "crate::native::capabilities::system::IFileSystem",
+    "crate::native::capabilities::system::INotification",
+    "crate::native::capabilities::system::ISystemInfo",
+    "crate::native::capabilities::system::ITimer",
 }
 
 # 固定平台无关事件协议的唯一物理归属。
@@ -110,6 +120,28 @@ INPUT_IMPLEMENTERS = {
     ),
     ROOT / "tests/support/native/test_harness/fake_text_input.rs": (
         "impl ITextInput for FakeTextInput",
+    ),
+}
+# 固定平台中立显示协议的唯一物理归属。
+DISPLAY_ROOT = SRC / "platform/display.rs"
+# native 不再保留显示协议定义或兼容模块。
+LEGACY_DISPLAY_ROOT = SRC / "native/capabilities/display.rs"
+# 显示能力值与端口只能由 platform 叶定义。
+DISPLAY_DEFINITIONS = (
+    "pub(crate) struct DisplayInfo",
+    "pub(crate) trait IDisplay",
+)
+# 三个平台与 fake 必须直接消费同一个 platform 显示合同。
+DISPLAY_IMPLEMENTERS = {
+    SRC / "native/backends/windows/display.rs": "impl IDisplay for WindowsDisplay",
+    SRC / "native/backends/macos/host/services.rs": (
+        "impl crate::platform::display::IDisplay for MacosDisplay"
+    ),
+    SRC / "native/backends/linux/windowing/wayland/display.rs": (
+        "impl IDisplay for WaylandBackend"
+    ),
+    ROOT / "tests/support/native/test_harness/fake_display.rs": (
+        "impl IDisplay for FakeDisplay"
     ),
 }
 # 固定平台中立 CPU presenter 合同的唯一物理归属。
@@ -240,6 +272,11 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
         )
 
+    def test_native_platform_compatibility_is_limited_to_unmigrated_services(self) -> None:
+        # Display 已迁往 platform；Platform 根不得用宽泛 capabilities 导入把它带回。
+        observed = native_paths(source(NATIVE_PLATFORM_ROOT))
+        self.assertEqual(observed, NATIVE_PLATFORM_PROTOCOLS)
+
     def test_platform_windowing_event_is_the_only_source_definition(self) -> None:
         # 旧 native 物理模块必须消失，内部调用方统一消费新权威路径。
         self.assertFalse(LEGACY_EVENT_ROOT.exists())
@@ -359,6 +396,40 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 self.assertIn("crate::platform::windowing", implementation_source)
                 for implementation in implementations:
                     self.assertIn(implementation, implementation_source)
+
+    def test_platform_display_is_the_only_capability_definition(self) -> None:
+        # 删除旧物理模块，生产与测试 Rust 源码均不得继续消费旧路径。
+        self.assertFalse(LEGACY_DISPLAY_ROOT.exists())
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+        for path in rust_sources:
+            with self.subTest(legacy_display_reference=relative(path)):
+                self.assertNotIn(
+                    "crate::native::capabilities::display", source(path)
+                )
+
+        # 权威叶只依赖 core Result/Rect，不得反向取得 native 实现。
+        owner_source = source(DISPLAY_ROOT)
+        self.assertNotIn("crate::native", owner_source)
+        self.assertIn("use crate::core::{Rect, Result};", owner_source)
+
+        # 显示能力合同各自只有一个定义，禁止后端或 fake 复制 trait/value。
+        all_sources = {path: source(path) for path in rust_sources}
+        for marker in DISPLAY_DEFINITIONS:
+            locations = [
+                path for path, text in all_sources.items() if marker in text
+            ]
+            with self.subTest(display_definition=marker):
+                self.assertEqual(locations, [DISPLAY_ROOT])
+
+        # Platform 根、三平台与 fake 都直接绑定 platform 权威路径。
+        self.assertIn(
+            "use crate::platform::display::IDisplay;", source(NATIVE_PLATFORM_ROOT)
+        )
+        for path, implementation in DISPLAY_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(display_implementation=relative(path)):
+                self.assertIn("crate::platform::display", implementation_source)
+                self.assertIn(implementation, implementation_source)
 
     def test_platform_presenter_is_the_only_source_definition(self) -> None:
         # trait 只能由 platform leaf 定义，native 仅保留精确兼容重导出。

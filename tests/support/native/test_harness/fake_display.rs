@@ -2,8 +2,7 @@
 
 use crate::core::geometry::Rect;
 use crate::native::Result;
-use crate::native::capabilities::display::DisplayInfo;
-use crate::native::capabilities::display::IDisplay;
+use crate::platform::display::{DisplayInfo, IDisplay};
 use std::cell::Cell;
 
 #[derive(Debug)]
