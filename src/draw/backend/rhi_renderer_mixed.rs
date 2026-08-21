@@ -78,7 +78,7 @@ pub(super) fn sampled_vertices(quad: &RhiSampledQuad) -> [f32; 48] {
 }
 
 // 构造任意四角、UV 和 tint 交错排列的六顶点数组。
-fn textured_vertices_values(
+pub(super) fn textured_vertices_values(
     corners: [[f32; 2]; 4],
     color: [f32; 4],
     u0: f32,

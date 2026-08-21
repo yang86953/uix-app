@@ -40,7 +40,7 @@ fn blur_uniform(
 }
 
 // 为当前物理区域生成 blur shader 使用的 NDC 全屏子矩形。
-fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> FrameVertexPayload {
+pub(super) fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> FrameVertexPayload {
     // 将左上角坐标转换到 D3D11 的 NDC 横坐标。
     let left = region.x as f32 / extent.width as f32 * 2.0 - 1.0;
     // 将右下边界转换到 D3D11 的 NDC 横坐标。

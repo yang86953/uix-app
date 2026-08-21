@@ -63,6 +63,11 @@ mod msdf;
 #[path = "rhi_renderer_uniform.rs"]
 mod uniform;
 
+// 在测试构建中提供 API 无关的全图元像素规范；原生 Adapter 只能执行和回读。
+#[cfg(any(test, feature = "vulkan-parity-test"))]
+#[path = "rhi_renderer_consistency.rs"]
+pub(crate) mod consistency;
+
 // 重新导出阴影 quad，使 GPU submit 只依赖 renderer 的迁移载荷。
 pub(crate) use shadow::RhiShadow;
 // 重新导出混合 RHI 操作，使 Canvas lowering 只依赖 renderer 语义。
