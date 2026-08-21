@@ -30,6 +30,7 @@ use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::{
     NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
+use crate::platform::windowing::WindowCapability;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::theme::Theme;
 use crate::ui::widget_runtime::clipboard;

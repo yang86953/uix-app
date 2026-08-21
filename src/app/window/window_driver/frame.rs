@@ -429,6 +429,9 @@ impl WindowDriver {
         if self.frame_scheduler.is_renderable()
             && !self.frame_scheduler.has_outstanding_request()
             && active_work.animation_ids().next().is_some()
+            && platform_window
+                .capabilities()
+                .supports(WindowCapability::RequestNativeFrame)
         {
             if let Some(token) = self.frame_scheduler.request_animation_frame(frame_time) {
                 animation_frame_token = Some(token);

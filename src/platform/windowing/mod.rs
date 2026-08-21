@@ -6,6 +6,8 @@
 
 // 平台无关事件契约与纯分发逻辑集中在 windowing 的 event 边界。
 pub(crate) mod event;
+// 窗口可选能力值由中立叶唯一持有，禁止后端自定义平行布尔合同。
+mod capability;
 // 光标、键盘与文本输入的中立协议由独立叶模块唯一持有。
 pub(crate) mod input;
 // UI 线程策略属于 windowing 域，根模块仅再导出稳定入口。
@@ -17,6 +19,7 @@ use crate::core::error::Result;
 
 // 保留既有公开唤醒句柄路径；唯一源码定义位于 event 子模块。
 pub use event::EventLoopWaker;
+pub use capability::{WindowCapabilities, WindowCapability};
 // 聚合层与实现统一消费同一组输入合同。
 pub(crate) use input::{ICursor, IKeyboard, ITextInput};
 

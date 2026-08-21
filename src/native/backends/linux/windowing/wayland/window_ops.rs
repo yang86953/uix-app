@@ -47,18 +47,20 @@ use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
-use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
 use crate::native::windowing::shared::window_mode::{
     NativeMaximizeTransition, NativeWindowModeState,
 };
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
-// 直接从共享窗口模块引入 Wayland 需要的未实现操作，避免其他目标产生未使用重导出。
-use crate::native::windowing::shared::window::{WindowOps, unimpl};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
+// 引入所有后端均须显式实现的共享窗口操作端口。
+use crate::native::windowing::shared::window::WindowOps;
 // 引入跨平台共享的窗口状态。
 use crate::native::windowing::shared::WindowState;
-use crate::platform::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
+use crate::platform::windowing::window::{
+    NativeFrameRequest, NativeFrameRequestPhase, WindowOcclusionState,
+};
 // 引入平台中立的窗口缩放方向供 Wayland adapter 转交。
-use crate::platform::windowing::WindowResizeEdge;
+use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
 
 use super::compat::WaylandDispatchState;
 // 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
@@ -73,6 +75,24 @@ use super::surface_registration::register_window_surface;
 use super::surface_scale::{
     WaylandOutputScaleRegistry, WaylandWindowScaleState, bind_surface_scale_events,
 };
+
+const WAYLAND_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from_slice(&[
+    WindowCapability::RequestClose,
+    WindowCapability::BeginMoveDrag,
+    WindowCapability::BeginResizeDrag,
+    WindowCapability::ResizeNotify,
+    WindowCapability::SetMinimumSize,
+    WindowCapability::SetMaximumSize,
+    WindowCapability::Maximize,
+    WindowCapability::Minimize,
+    WindowCapability::Restore,
+    WindowCapability::HideSystemTitleBar,
+    WindowCapability::SetFullscreen,
+    WindowCapability::RequestNativeFrame,
+    WindowCapability::NativeFramePresented,
+    WindowCapability::CancelNativeFrame,
+    WindowCapability::NativeSurface,
+]);
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -436,6 +456,22 @@ impl WaylandWindowOps {
 }
 
 impl WindowOps for WaylandWindowOps {
+    fn capabilities(&self) -> WindowCapabilities {
+        let mut capabilities = WAYLAND_WINDOW_CAPABILITIES;
+        if self.xdg_activation.is_some() {
+            capabilities = capabilities.with(WindowCapability::Raise);
+        }
+        if self.xdg_decoration.is_some() {
+            capabilities = capabilities.with(WindowCapability::ShowSystemTitleBar);
+        }
+        if self.file_drop_available {
+            capabilities = capabilities
+                .with(WindowCapability::EnableFileDrop)
+                .with(WindowCapability::DisableFileDrop);
+        }
+        capabilities
+    }
+
     fn os_show(&mut self) -> Result<()> {
         let surface = self
             .surface
@@ -544,33 +580,31 @@ impl WindowOps for WaylandWindowOps {
             return Ok(());
         }
         // 无装饰协议时无法保证 compositor 提供系统标题栏。
-        Err(Error::new(
-            // 使用未实现分类保留能力缺失语义。
-            Errc::NotImplemented,
-            // 给调用方稳定说明缺失的 Wayland 扩展。
-            "xdg-decoration is unavailable for server-side title bar",
-        ))
+        Err(WindowCapability::ShowSystemTitleBar.unsupported_error())
     }
 
     fn os_center_on_screen(&mut self) -> Result<()> {
-        unimpl("os_center_on_screen")
+        Err(WindowCapability::CenterOnScreen.unsupported_error())
     }
 
     fn os_raise(&mut self) -> Result<()> {
+        if self.xdg_activation.is_none() {
+            return Err(WindowCapability::Raise.unsupported_error());
+        }
         // 同步入口只建立异步请求，不伪造 compositor 已授予焦点。
         self.request_activation()
     }
 
     fn os_lower(&mut self) -> Result<()> {
-        unimpl("os_lower") // Wayland 不支持程序化窗口层级
+        Err(WindowCapability::Lower.unsupported_error())
     }
 
     fn os_set_icon(&mut self, _path: &str) -> Result<()> {
-        unimpl("os_set_icon")
+        Err(WindowCapability::SetWindowIcon.unsupported_error())
     }
 
     fn os_flash(&mut self) -> Result<()> {
-        unimpl("os_flash")
+        Err(WindowCapability::FlashWindow.unsupported_error())
     }
 
     // ── 尺寸/位置 ─────────────────────────────────────────
@@ -612,7 +646,7 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_set_position(&mut self, _x: i32, _y: i32) -> Result<()> {
-        unimpl("os_set_position") // Wayland 不允许客户端设置窗口位置
+        Err(WindowCapability::SetPosition.unsupported_error())
     }
 
     /// 窗口尺寸变化通知。更新 xdg_surface 窗口几何和输入区域，
@@ -690,10 +724,14 @@ impl WindowOps for WaylandWindowOps {
         self.frame_callback.cancel_checked(token)
     }
 
+    fn os_native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
+        Ok(())
+    }
+
     // ── 窗口状态 ──────────────────────────────────────────
 
     fn os_set_resizable(&mut self, _resizable: bool) -> Result<()> {
-        unimpl("os_set_resizable") // compositor 控制
+        Err(WindowCapability::SetResizable.unsupported_error())
     }
 
     fn os_maximize(&mut self) -> Result<()> {
@@ -725,7 +763,7 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_set_borderless(&mut self, _borderless: bool) -> Result<()> {
-        unimpl("os_set_borderless")
+        Err(WindowCapability::SetBorderless.unsupported_error())
     }
 
     fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()> {
@@ -742,32 +780,32 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_set_always_on_top(&mut self, _on: bool) -> Result<()> {
-        unimpl("os_set_always_on_top")
+        Err(WindowCapability::SetAlwaysOnTop.unsupported_error())
     }
 
     fn os_set_opacity(&mut self, _opacity: f32) -> Result<()> {
-        unimpl("os_set_opacity")
+        Err(WindowCapability::SetWindowOpacity.unsupported_error())
     }
 
     // ── 特性开关 ──────────────────────────────────────────
 
     fn os_start_text_input(&mut self) -> Result<()> {
-        // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造启用状态。
-        Err(Error::new(
-            Errc::NotImplemented,
-            "WaylandWindowOps::os_start_text_input: use Platform::text_input().start()",
-        ))
+        Err(WindowCapability::StartTextInput.unsupported_error())
     }
 
     fn os_stop_text_input(&mut self) -> Result<()> {
-        // 旧窗口入口没有持有 TextInputSession，必须诚实拒绝而非伪造停用状态。
-        Err(Error::new(
-            Errc::NotImplemented,
-            "WaylandWindowOps::os_stop_text_input: use Platform::text_input().stop()",
-        ))
+        Err(WindowCapability::StopTextInput.unsupported_error())
     }
 
     fn os_enable_file_drop(&mut self, enable: bool) -> Result<()> {
+        if !self.file_drop_available {
+            let capability = if enable {
+                WindowCapability::EnableFileDrop
+            } else {
+                WindowCapability::DisableFileDrop
+            };
+            return Err(capability.unsupported_error());
+        }
         // Adapter 同时校验 surface、协议能力与共享状态健康度。
         super::file_drop_window::set_window_capability(
             // 传入 backend 唯一拖放 Component。
@@ -787,5 +825,17 @@ impl WindowOps for WaylandWindowOps {
 
     fn native_handle(&self) -> *mut std::ffi::c_void {
         self.surface_c_ptr()
+    }
+
+    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
+        (fallback_width, fallback_height)
+    }
+
+    fn os_show_system_menu(&mut self) -> Result<()> {
+        Err(WindowCapability::ShowSystemMenu.unsupported_error())
+    }
+
+    fn os_occlusion_state(&self) -> WindowOcclusionState {
+        WindowOcclusionState::Unknown
     }
 }

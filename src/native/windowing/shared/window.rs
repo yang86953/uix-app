@@ -2,188 +2,81 @@
 // platform/shared/window.rs — 窗口实现共享层
 //
 // 作用：
-//   WindowOps trait         — 平台只需实现 6 个必须方法，其余能力有 typed 默认
+//   WindowOps trait         — 后端显式实现全部方法并声明真实能力集合
 //   PlatformWindowCore<O>   — 与 WindowOps 组合，自动获得 PlatformWindow +
 //                             IWindowProperties + INativeHandle 的完整实现
 //
 // 公开接口（IWindowProperties / INativeHandle / IWindowManager / PlatformWindow）
-// 已迁移至 crate::native::traits 功能模块。
+// 由 crate::platform::windowing 中立边界持有。
 // ============================================================================
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::error::{Errc, Error, Result};
+use crate::core::error::{Error, Result};
 use crate::platform::presentation::IPresenter;
 // 引入帧令牌与原生指针动作的不可解释激活身份。
-use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::state::WindowState;
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::platform::windowing::window::{
     INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
 // 共享窗口核心只转交平台中立的调整大小方向。
-use crate::platform::windowing::WindowResizeEdge;
+use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowOps — 平台特有的窗口操作
 //
-// 必须实现（6 个）：os_show, os_hide, os_close, os_set_title, os_set_size, native_handle
-// 其余可选能力有默认实现：返回 Err(NotImplemented)。
+// 所有方法均须由后端显式实现；能力集合决定共享核心是否允许委托可选方法。
 //
 // 与 PlatformWindowCore<O> 组合使用，自动获得 PlatformWindow +
 // IWindowProperties + INativeHandle 三个 trait 的完整实现。
 // ════════════════════════════════════════════════════════════════════════════
 
 pub(crate) trait WindowOps {
-    // ── 必须实现（无默认，编译期强制）────────────────────────────
+    fn capabilities(&self) -> WindowCapabilities;
     fn os_show(&mut self) -> Result<()>;
     fn os_hide(&mut self) -> Result<()>;
     fn os_close(&mut self) -> Result<()>;
     fn os_set_title(&mut self, title: &str) -> Result<()>;
     fn os_set_size(&mut self, w: i32, h: i32) -> Result<()>;
     fn native_handle(&self) -> *mut std::ffi::c_void;
-
-    // 返回窗口系统当前客户区；默认复用上层缓存的逻辑尺寸。
-    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
-        (fallback_width, fallback_height)
-    }
-
-    // ── 窗口外观 ─────────────────────────────────────────
-    fn os_center_on_screen(&mut self) -> Result<()> {
-        unimpl("os_center_on_screen")
-    }
-    fn os_raise(&mut self) -> Result<()> {
-        unimpl("os_raise")
-    }
-    fn os_lower(&mut self) -> Result<()> {
-        unimpl("os_lower")
-    }
-    fn os_set_icon(&mut self, _p: &str) -> Result<()> {
-        unimpl("os_set_icon")
-    }
-    fn os_flash(&mut self) -> Result<()> {
-        unimpl("os_flash")
-    }
-
-    // ── 尺寸约束 ─────────────────────────────────────────
-    fn os_set_min_size(&mut self, _w: i32, _h: i32) -> Result<()> {
-        unimpl("os_set_min_size")
-    }
-    fn os_set_max_size(&mut self, _w: i32, _h: i32) -> Result<()> {
-        unimpl("os_set_max_size")
-    }
-    fn os_set_position(&mut self, _x: i32, _y: i32) -> Result<()> {
-        unimpl("os_set_position")
-    }
-
-    // ── 窗口状态 ─────────────────────────────────────────
-    fn os_set_resizable(&mut self, _r: bool) -> Result<()> {
-        unimpl("os_set_resizable")
-    }
-    fn os_maximize(&mut self) -> Result<()> {
-        unimpl("os_maximize")
-    }
-    fn os_minimize(&mut self) -> Result<()> {
-        unimpl("os_minimize")
-    }
-    fn os_restore(&mut self) -> Result<()> {
-        unimpl("os_restore")
-    }
-    fn os_set_system_title_bar_visible(&mut self, _visible: bool) -> Result<()> {
-        unimpl("os_set_system_title_bar_visible")
-    }
-    fn os_set_borderless(&mut self, _b: bool) -> Result<()> {
-        unimpl("os_set_borderless")
-    }
-    fn os_set_fullscreen(&mut self, _f: bool) -> Result<()> {
-        unimpl("os_set_fullscreen")
-    }
-    fn os_set_always_on_top(&mut self, _on: bool) -> Result<()> {
-        unimpl("os_set_always_on_top")
-    }
-    fn os_set_opacity(&mut self, _o: f32) -> Result<()> {
-        unimpl("os_set_opacity")
-    }
-
-    // ── 特性开关 ─────────────────────────────────────────
-    fn os_start_text_input(&mut self) -> Result<()> {
-        unimpl("os_start_text_input")
-    }
-    fn os_stop_text_input(&mut self) -> Result<()> {
-        unimpl("os_stop_text_input")
-    }
-    fn os_enable_file_drop(&mut self, _e: bool) -> Result<()> {
-        unimpl("os_enable_file_drop")
-    }
-
-    // ── 几何通知 ─────────────────────────────────────────
-    fn os_resize_notify(&mut self, _w: i32, _h: i32) -> Result<()> {
-        Ok(())
-    }
-
-    fn os_request_native_frame(&mut self, _request: NativeFrameRequest) -> Result<bool> {
-        Ok(false)
-    }
-
-    fn os_native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
-        Ok(())
-    }
-
-    fn os_cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
-        Ok(())
-    }
-
-    fn os_request_close(&mut self) -> Result<()> {
-        unimpl("os_request_close")
-    }
-
-    // 默认窗口操作拒绝未由具体平台实现的交互移动。
-    fn os_begin_move_drag(
-        // 默认实现不解释也不伪造平台输入激活身份。
-        &mut self,
-        // 参数只供需要协议授权的平台后端使用。
-        _pointer_activation: Option<PointerActivationId>,
-        // 保持既有未实现失败契约。
-    ) -> Result<()> {
-        unimpl("os_begin_move_drag")
-    }
-
-    // 默认窗口操作拒绝未由具体平台实现的交互缩放。
+    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32);
+    fn os_center_on_screen(&mut self) -> Result<()>;
+    fn os_raise(&mut self) -> Result<()>;
+    fn os_lower(&mut self) -> Result<()>;
+    fn os_set_icon(&mut self, path: &str) -> Result<()>;
+    fn os_flash(&mut self) -> Result<()>;
+    fn os_set_min_size(&mut self, w: i32, h: i32) -> Result<()>;
+    fn os_set_max_size(&mut self, w: i32, h: i32) -> Result<()>;
+    fn os_set_position(&mut self, x: i32, y: i32) -> Result<()>;
+    fn os_set_resizable(&mut self, resizable: bool) -> Result<()>;
+    fn os_maximize(&mut self) -> Result<()>;
+    fn os_minimize(&mut self) -> Result<()>;
+    fn os_restore(&mut self) -> Result<()>;
+    fn os_set_system_title_bar_visible(&mut self, visible: bool) -> Result<()>;
+    fn os_set_borderless(&mut self, borderless: bool) -> Result<()>;
+    fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()>;
+    fn os_set_always_on_top(&mut self, on: bool) -> Result<()>;
+    fn os_set_opacity(&mut self, opacity: f32) -> Result<()>;
+    fn os_start_text_input(&mut self) -> Result<()>;
+    fn os_stop_text_input(&mut self) -> Result<()>;
+    fn os_enable_file_drop(&mut self, enable: bool) -> Result<()>;
+    fn os_resize_notify(&mut self, w: i32, h: i32) -> Result<()>;
+    fn os_request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool>;
+    fn os_native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()>;
+    fn os_cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()>;
+    fn os_request_close(&mut self) -> Result<()>;
+    fn os_begin_move_drag(&mut self, pointer_activation: Option<PointerActivationId>)
+    -> Result<()>;
     fn os_begin_resize_drag(
-        // 默认实现不解释平台中立的缩放方向。
         &mut self,
-        // 参数只供支持原生交互缩放的平台后端使用。
-        _edge: WindowResizeEdge,
-        // 参数只供需要协议授权的平台后端使用。
-        _pointer_activation: Option<PointerActivationId>,
-        // 保持与其他可选窗口能力一致的未实现失败契约。
-    ) -> Result<()> {
-        // 使用稳定方法名向调用方暴露能力缺失。
-        unimpl("os_begin_resize_drag")
-    }
-
-    fn os_show_system_menu(&mut self) -> Result<()> {
-        unimpl("os_show_system_menu")
-    }
-
-    /// Exact compositor visibility, when the native window system exposes it.
-    fn os_occlusion_state(&self) -> WindowOcclusionState {
-        WindowOcclusionState::Unknown
-    }
-
-    /// Wayland wl_surface C 指针（EGL 初始化用）。非 Wayland 返回 null。
-    fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
-}
-
-/// 报告未实现的窗口操作。
-pub(crate) fn unimpl(method: &str) -> Result<()> {
-    tracing::debug!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method);
-    Err(Error::new(
-        Errc::NotImplemented,
-        format!("WindowOps::{method} is not supported on this platform"),
-    ))
+        edge: WindowResizeEdge,
+        pointer_activation: Option<PointerActivationId>,
+    ) -> Result<()>;
+    fn os_show_system_menu(&mut self) -> Result<()>;
+    fn os_occlusion_state(&self) -> WindowOcclusionState;
+    fn native_surface_ptr(&self) -> *mut std::ffi::c_void;
 }
 
 pub(crate) fn validate_window_extent(operation: &str, width: i32, height: i32) -> Result<()> {
@@ -270,6 +163,14 @@ impl<O: WindowOps> PlatformWindowCore<O> {
     pub(crate) fn state_rc(&self) -> Rc<RefCell<WindowState>> {
         Rc::clone(&self.state)
     }
+
+    fn require_capability(&self, capability: WindowCapability) -> Result<()> {
+        if self.ops.capabilities().supports(capability) {
+            Ok(())
+        } else {
+            Err(capability.unsupported_error())
+        }
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -279,6 +180,10 @@ impl<O: WindowOps> PlatformWindowCore<O> {
 impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     fn window_id(&self) -> crate::core::WindowId {
         state_read!(self.state, window_id)
+    }
+
+    fn capabilities(&self) -> WindowCapabilities {
+        self.ops.capabilities()
     }
 
     fn show(&mut self) -> Result<()> {
@@ -301,6 +206,7 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         Ok(())
     }
     fn request_close(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::RequestClose)?;
         self.ops.os_request_close()
     }
     // 共享窗口只负责把当前事件上下文转交平台实现。
@@ -311,6 +217,7 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         pointer_activation: Option<PointerActivationId>,
         // 直接返回平台后端的提交或忽略结果。
     ) -> Result<()> {
+        self.require_capability(WindowCapability::BeginMoveDrag)?;
         // 将一次性上下文原样交给唯一的 OS 操作所有者。
         self.ops.os_begin_move_drag(pointer_activation)
     }
@@ -324,31 +231,45 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         pointer_activation: Option<PointerActivationId>,
         // 直接返回平台后端的提交或忽略结果。
     ) -> Result<()> {
+        self.require_capability(WindowCapability::BeginResizeDrag)?;
         // 将两个一次性参数原样交给唯一的 OS 操作所有者。
         self.ops.os_begin_resize_drag(edge, pointer_activation)
     }
     fn show_system_menu(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::ShowSystemMenu)?;
         self.ops.os_show_system_menu()
     }
     fn is_visible(&self) -> bool {
         state_read!(self.state, visible)
     }
     fn occlusion_state(&self) -> WindowOcclusionState {
-        self.ops.os_occlusion_state()
+        if self
+            .ops
+            .capabilities()
+            .supports(WindowCapability::ExactOcclusionState)
+        {
+            self.ops.os_occlusion_state()
+        } else {
+            WindowOcclusionState::Unknown
+        }
     }
     fn set_title(&mut self, title: &str) -> Result<()> {
         self.ops.os_set_title(title)
     }
     fn center_on_screen(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::CenterOnScreen)?;
         self.ops.os_center_on_screen()
     }
     fn raise(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::Raise)?;
         self.ops.os_raise()
     }
     fn lower(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::Lower)?;
         self.ops.os_lower()
     }
     fn set_window_icon(&mut self, icon_path: &str) -> Result<()> {
+        self.require_capability(WindowCapability::SetWindowIcon)?;
         if icon_path.trim().is_empty() {
             return Err(Error::invalid_arg(
                 "set_window_icon: path must not be empty",
@@ -362,9 +283,11 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         self.ops.os_set_icon(icon_path)
     }
     fn flash_window(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::FlashWindow)?;
         self.ops.os_flash()
     }
     fn resize_notify(&mut self, width: i32, height: i32) -> Result<()> {
+        self.require_capability(WindowCapability::ResizeNotify)?;
         self.ops.os_resize_notify(width, height)?;
         self.presenter.resize(width, height)?;
         state_write!(self.state, width, width);
@@ -379,10 +302,19 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     }
 
     fn client_logical_extent(&self) -> (i32, i32) {
-        self.ops.client_logical_extent(
+        let fallback = (
             state_read!(self.state, width),
             state_read!(self.state, height),
-        )
+        );
+        if self
+            .ops
+            .capabilities()
+            .supports(WindowCapability::ExactClientLogicalExtent)
+        {
+            self.ops.client_logical_extent(fallback.0, fallback.1)
+        } else {
+            fallback
+        }
     }
 
     fn presenter(&mut self) -> &mut dyn IPresenter {
@@ -393,18 +325,29 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
-        self.ops.native_surface_ptr()
+        if self
+            .ops
+            .capabilities()
+            .supports(WindowCapability::NativeSurface)
+        {
+            self.ops.native_surface_ptr()
+        } else {
+            std::ptr::null_mut()
+        }
     }
 
     fn request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        self.require_capability(WindowCapability::RequestNativeFrame)?;
         self.ops.os_request_native_frame(request)
     }
 
     fn native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.require_capability(WindowCapability::NativeFramePresented)?;
         self.ops.os_native_frame_presented(token)
     }
 
     fn cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.require_capability(WindowCapability::CancelNativeFrame)?;
         self.ops.os_cancel_native_frame(token)
     }
 }
@@ -434,6 +377,7 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        self.require_capability(WindowCapability::SetMinimumSize)?;
         let maximum = self.state.borrow().maximum_size;
         validate_window_extent_constraints("set_minimum_size", w, h, Some((w, h)), maximum)?;
         self.ops.os_set_min_size(w, h)?;
@@ -441,6 +385,7 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         Ok(())
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        self.require_capability(WindowCapability::SetMaximumSize)?;
         let minimum = self.state.borrow().minimum_size;
         validate_window_extent_constraints("set_maximum_size", w, h, minimum, Some((w, h)))?;
         self.ops.os_set_max_size(w, h)?;
@@ -455,6 +400,7 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         )
     }
     fn set_position(&mut self, x: i32, y: i32) -> Result<()> {
+        self.require_capability(WindowCapability::SetPosition)?;
         self.ops.os_set_position(x, y)?;
         state_write!(self.state, pos_x, x);
         state_write!(self.state, pos_y, y);
@@ -462,6 +408,7 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     }
 
     fn set_resizable(&mut self, r: bool) -> Result<()> {
+        self.require_capability(WindowCapability::SetResizable)?;
         self.ops.os_set_resizable(r)?;
         state_write!(self.state, resizable, r);
         Ok(())
@@ -473,33 +420,44 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         state_read!(self.state, minimized)
     }
     fn maximize(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::Maximize)?;
         self.ops.os_maximize()?;
         state_write!(self.state, maximized, true);
         state_write!(self.state, minimized, false);
         Ok(())
     }
     fn minimize(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::Minimize)?;
         self.ops.os_minimize()?;
         state_write!(self.state, minimized, true);
         state_write!(self.state, maximized, false);
         Ok(())
     }
     fn restore(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::Restore)?;
         self.ops.os_restore()?;
         state_write!(self.state, maximized, false);
         state_write!(self.state, minimized, false);
         Ok(())
     }
     fn set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
+        let capability = if visible {
+            WindowCapability::ShowSystemTitleBar
+        } else {
+            WindowCapability::HideSystemTitleBar
+        };
+        self.require_capability(capability)?;
         self.ops.os_set_system_title_bar_visible(visible)
     }
     fn set_borderless(&mut self, b: bool) -> Result<()> {
+        self.require_capability(WindowCapability::SetBorderless)?;
         self.ops.os_set_borderless(b)?;
         state_write!(self.state, borderless, b);
         Ok(())
     }
 
     fn set_fullscreen(&mut self, f: bool) -> Result<()> {
+        self.require_capability(WindowCapability::SetFullscreen)?;
         if f == state_read!(self.state, fullscreen) {
             return Ok(());
         }
@@ -511,11 +469,13 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         state_read!(self.state, fullscreen)
     }
     fn set_always_on_top(&mut self, on: bool) -> Result<()> {
+        self.require_capability(WindowCapability::SetAlwaysOnTop)?;
         self.ops.os_set_always_on_top(on)?;
         state_write!(self.state, always_on_top, on);
         Ok(())
     }
     fn set_window_opacity(&mut self, opacity: f32) -> Result<()> {
+        self.require_capability(WindowCapability::SetWindowOpacity)?;
         if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
             return Err(Error::invalid_arg(
                 "window opacity must be a finite value in 0.0..=1.0",
@@ -526,16 +486,24 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         Ok(())
     }
     fn start_text_input(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::StartTextInput)?;
         self.ops.os_start_text_input()?;
         state_write!(self.state, text_input_active, true);
         Ok(())
     }
     fn stop_text_input(&mut self) -> Result<()> {
+        self.require_capability(WindowCapability::StopTextInput)?;
         self.ops.os_stop_text_input()?;
         state_write!(self.state, text_input_active, false);
         Ok(())
     }
     fn enable_file_drop(&mut self, enable: bool) -> Result<()> {
+        let capability = if enable {
+            WindowCapability::EnableFileDrop
+        } else {
+            WindowCapability::DisableFileDrop
+        };
+        self.require_capability(capability)?;
         self.ops.os_enable_file_drop(enable)?;
         state_write!(self.state, file_drop_enabled, enable);
         Ok(())
@@ -551,3 +519,7 @@ impl<O: WindowOps> INativeHandle for PlatformWindowCore<O> {
         self.ops.native_handle()
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/native/windowing/shared/window_capability__tests.rs"]
+mod capability_tests;
