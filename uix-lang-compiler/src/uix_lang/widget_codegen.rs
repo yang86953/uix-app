@@ -6,6 +6,9 @@ use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入 Compiler System 唯一句柄位登记。
+use crate::projection_schema::UI_PROJECTION_SCHEMA;
+
 // 引入组件、文档、表达式与视图 AST。
 use super::{
     Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element,
@@ -895,47 +898,8 @@ fn is_renderable_node(node: &Node) -> bool {
 // 使受控组件（Modal/Drawer）与双向绑定（value/checked/current）可以直接
 // 使用组件私有状态，而不再被迫由 Rust 侧创建状态槽。
 pub(super) fn is_state_handle_attribute(element_name: &str, attribute_name: &str) -> bool {
-    // 按元素登记需要 State 句柄的属性集合。
-    let handle_attributes: &[&str] = match element_name {
-        // 受控浮层读取 State<bool> 打开状态。
-        "Modal" | "Drawer" => &["open"],
-        // 双向绑定输入控件读取 State<String>。
-        "Input" | "InputGroup" | "AutoComplete" | "Mentions" => &["value"],
-        // 双向绑定数值控件读取 State<T>。
-        "InputNumber" | "Slider" | "Rate" => &["value"],
-        // 双向绑定勾选控件读取 State<bool>。
-        "Checkbox" | "Switch" => &["checked"],
-        // 双向绑定选择控件读取 State<String> 或集合状态。
-        "Radio" | "Segmented" | "Select" | "TreeSelect" => &["value"],
-        // 双向绑定结构化路径与颜色状态。
-        "Cascader" | "ColorPicker" => &["value"],
-        // 双向绑定输入日期、日历日期与时间状态。
-        "DatePicker" | "Calendar" | "TimePicker" => &["value"],
-        // 区间滑块读取对象形式的双 State<f64> 句柄。
-        "RangeSlider" | "DateRangePicker" => &["value"],
-        // 步骤条与分页器读取 State<usize> 受控状态。
-        "Steps" => &["current"],
-        "Pagination" => &["current", "pageSize"],
-        // 标签页读取 State<String> 活动 key 句柄。
-        "Tabs" => &["activeKey"],
-        // 可选中列表读取 State<Option<String>> 稳定活动 id 句柄。
-        "SelectableList" => &["active"],
-        // 折叠组读取 State<Vec<String>> 展开 key 集合句柄。
-        "Collapse" => &["activeKeys"],
-        // 上传组件读取 State<Vec<UploadFile>> 唯一队列句柄。
-        "Upload" => &["files"],
-        // 菜单读取 typed 单选与展开状态句柄。
-        "Menu" => &["selectedKey", "openKeys"],
-        // Navigation 复用 Menu 的选择/展开句柄并额外读取整栏折叠句柄。
-        "Navigation" => &["activeKey", "openKeys", "collapsed"],
-        // 滚动容器与固钉组件读取滚动状态。
-        "ScrollView" => &["offset"],
-        "Affix" | "BackTop" | "FloatButtonBackTop" => &["scrollY"],
-        // 类型化表单读取 State<M> 模型句柄。
-        "Form" => &["model"],
-        // 其余元素没有句柄位属性。
-        _ => &[],
-    };
-    // 判断当前属性名是否在句柄位集合。
-    handle_attributes.contains(&attribute_name)
+    // 句柄位由 UI 投影 schema 唯一登记，组件展开器只做查询。
+    UI_PROJECTION_SCHEMA
+        .handle_slot(element_name, attribute_name)
+        .is_some()
 }

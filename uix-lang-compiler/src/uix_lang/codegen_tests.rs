@@ -657,17 +657,14 @@ fn rejects_event_parameter_outside_handler() {
     assert!(error.message.contains("只能在事件处理器中使用"));
 }
 
-// 验证文档规划中内置组件返回所属类别诊断。
+// 验证 App 已登记入口不能误入 View 目标。
 #[test]
-fn rejects_planned_builtin_with_document_category() {
-    // 解析仍登记为规划中的 App 入口。
-    let document = parse_document(r#"<App />"#)
-        // 规划状态不影响标签语法合法性。
-        .expect("语法本身应合法");
-    // 代码生成必须返回规划中诊断。
-    let error = generate_view(&document.root).expect_err("规划中组件必须失败");
-    // 诊断必须明确组件状态和所属标签语法文档。
-    assert!(error.message.contains("规划中") && error.message.contains("App 应用入口"));
+fn rejects_app_from_view_target_with_directed_entry_diagnostic() {
+    // 完整 View 目标必须返回定向入口诊断。
+    let error = generate_test_document_view(r#"<App />"#).expect_err("App 不能由 View 目标生成");
+    // 诊断必须明确正确公开入口。
+    assert!(error.message.contains("不能生成 <App> 应用入口"));
+    assert!(error.suggestion.contains("uix_app!"));
 }
 
 // 验证 Rust-only DataTable 不被伪装成未来 UIX 标签。

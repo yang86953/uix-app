@@ -36,10 +36,10 @@ mod tests {
     use super::supported_builtin_hint;
 
     #[test]
-    fn planned_app_and_supported_hint_share_projection_schema() {
+    fn app_and_supported_hint_share_projection_schema() {
         let app = UI_PROJECTION_SCHEMA.component("App").expect("App 应已登记");
-        assert_eq!(app.status, RegistrationStatus::Planned);
+        assert_eq!(app.status, RegistrationStatus::Available);
         let names = supported_builtin_hint().split('、').count();
-        assert_eq!(names, 108);
+        assert_eq!(names, 109);
     }
 }

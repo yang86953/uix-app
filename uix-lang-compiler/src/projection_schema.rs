@@ -1,7 +1,7 @@
 //! UIX Lang 可枚举 UI 投影事实的唯一登记入口。
 
 /// 当前 schema 的独立版本；缓存与工具协议必须把它计入身份。
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 /// 当前语言基线版本。
 pub const LANGUAGE_VERSION: &str = "0.0.1";
 
@@ -73,6 +73,81 @@ pub struct DataConstructorSpec {
     pub capability: Option<&'static str>,
 }
 
+/// 区分 UI 投影输入在语言面的值形状。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionValueKind {
+    String,
+    Number,
+    Boolean,
+    Enumeration,
+    Expression,
+    InlineStyle,
+    Data,
+    StateHandle,
+    Any,
+}
+
+/// 描述全部 View 通用属性的稳定输入契约。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub value_kind: ProjectionValueKind,
+}
+
+/// 描述一项已支持样式属性及其值类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StyleSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub value_kind: ProjectionValueKind,
+}
+
+/// 区分运行时设计 token 的闭合字段类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeTokenKind {
+    Color,
+    String,
+    Number,
+    Shadow,
+    Boolean,
+}
+
+/// 描述 `@theme` 可写和样式可引用的设计 token。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThemeTokenSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub kind: ThemeTokenKind,
+    pub alias_for: Option<&'static str>,
+}
+
+/// 描述必须接收 `State<T>` 而不是普通值的组件属性位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HandleSpec {
+    pub id: &'static str,
+    pub component: &'static str,
+    pub attribute: &'static str,
+    pub value_type: &'static str,
+}
+
+/// 描述内置组件拥有的命名子节点插槽。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotSpec {
+    pub id: &'static str,
+    pub component: &'static str,
+    pub name: &'static str,
+    pub multiple: bool,
+}
+
+/// 描述 Cargo feature 与 UI 投影能力的稳定对应。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapabilitySpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub cargo_feature: &'static str,
+}
+
 /// 提供 Compiler System 唯一拥有的只读 UI 投影 schema。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UiProjectionSchema;
@@ -129,6 +204,70 @@ impl UiProjectionSchema {
     /// 按精确语言类型名查询数据构造映射。
     pub fn data_constructor(self, name: &str) -> Option<&'static DataConstructorSpec> {
         DATA_CONSTRUCTORS.iter().find(|entry| entry.name == name)
+    }
+
+    /// 返回全部 View 共用属性。
+    pub const fn common_attributes(self) -> &'static [AttributeSpec] {
+        COMMON_ATTRIBUTES
+    }
+
+    /// 按名称查询 View 共用属性。
+    pub fn common_attribute(self, name: &str) -> Option<&'static AttributeSpec> {
+        COMMON_ATTRIBUTES.iter().find(|entry| entry.name == name)
+    }
+
+    /// 返回完整已支持样式属性表。
+    pub const fn style_properties(self) -> &'static [StyleSpec] {
+        STYLE_PROPERTIES
+    }
+
+    /// 按名称查询已支持样式属性。
+    pub fn style_property(self, name: &str) -> Option<&'static StyleSpec> {
+        STYLE_PROPERTIES.iter().find(|entry| entry.name == name)
+    }
+
+    /// 返回完整主题 token 表。
+    pub const fn theme_tokens(self) -> &'static [ThemeTokenSpec] {
+        THEME_TOKENS
+    }
+
+    /// 按名称查询主题 token 或兼容别名。
+    pub fn theme_token(self, name: &str) -> Option<&'static ThemeTokenSpec> {
+        THEME_TOKENS.iter().find(|entry| entry.name == name)
+    }
+
+    /// 返回全部 State 句柄位。
+    pub const fn handle_slots(self) -> &'static [HandleSpec] {
+        HANDLE_SLOTS
+    }
+
+    /// 查询一个组件属性是否为 State 句柄位。
+    pub fn handle_slot(self, component: &str, attribute: &str) -> Option<&'static HandleSpec> {
+        HANDLE_SLOTS
+            .iter()
+            .find(|entry| entry.component == component && entry.attribute == attribute)
+    }
+
+    /// 返回全部内置命名插槽。
+    pub const fn slots(self) -> &'static [SlotSpec] {
+        SLOTS
+    }
+
+    /// 查询组件的命名插槽。
+    pub fn slot(self, component: &str, name: &str) -> Option<&'static SlotSpec> {
+        SLOTS
+            .iter()
+            .find(|entry| entry.component == component && entry.name == name)
+    }
+
+    /// 返回全部可独立门禁的语言能力。
+    pub const fn capabilities(self) -> &'static [CapabilitySpec] {
+        CAPABILITIES
+    }
+
+    /// 按语言能力名查询 Cargo feature。
+    pub fn capability(self, name: &str) -> Option<&'static CapabilitySpec> {
+        CAPABILITIES.iter().find(|entry| entry.name == name)
     }
 }
 
@@ -351,10 +490,337 @@ const COMPONENTS: &[ComponentSpec] = &[
         id: "component.App",
         name: "App",
         category: ComponentCategory::Application,
-        status: RegistrationStatus::Planned,
-        emitter: None,
+        status: RegistrationStatus::Available,
+        emitter: Some("generate_document_app"),
         capability: None,
     },
+];
+
+macro_rules! attribute {
+    ($name:literal, $kind:ident) => {
+        AttributeSpec {
+            id: concat!("attribute.common.", $name),
+            name: $name,
+            value_kind: ProjectionValueKind::$kind,
+        }
+    };
+}
+
+// 与 ViewNode 公共生成入口逐项对齐；组件专属属性由对应 Component Module 追加。
+const COMMON_ATTRIBUTES: &[AttributeSpec] = &[
+    attribute!("gap", Number),
+    attribute!("padding", Number),
+    attribute!("margin", Number),
+    attribute!("width", Number),
+    attribute!("height", Number),
+    attribute!("flexGrow", Number),
+    attribute!("flexShrink", Number),
+    attribute!("color", Any),
+    attribute!("backgroundColor", Any),
+    attribute!("fontSize", Any),
+    attribute!("automationId", String),
+    attribute!("key", Any),
+    attribute!("align", Enumeration),
+    attribute!("justify", Enumeration),
+    attribute!("class", String),
+    attribute!("style", InlineStyle),
+];
+
+macro_rules! style {
+    ($name:literal, $kind:ident) => {
+        StyleSpec {
+            id: concat!("style.", $name),
+            name: $name,
+            value_kind: ProjectionValueKind::$kind,
+        }
+    };
+}
+
+// 本表是 style Gate 接受属性名的唯一公开事实；顺序按布局、盒模型、文字与视觉分组。
+const STYLE_PROPERTIES: &[StyleSpec] = &[
+    style!("display", Enumeration),
+    style!("flexDirection", Enumeration),
+    style!("justifyContent", Enumeration),
+    style!("alignItems", Enumeration),
+    style!("alignSelf", Enumeration),
+    style!("gap", Number),
+    style!("flexGrow", Number),
+    style!("flexShrink", Number),
+    style!("flexWrap", Boolean),
+    style!("gridTemplateColumns", Data),
+    style!("gridTemplateRows", Data),
+    style!("gridColumnGap", Number),
+    style!("gridRowGap", Number),
+    style!("gridColumnSpan", Number),
+    style!("gridRowSpan", Number),
+    style!("width", Any),
+    style!("height", Any),
+    style!("margin", Data),
+    style!("padding", Data),
+    style!("marginTop", Number),
+    style!("marginRight", Number),
+    style!("marginBottom", Number),
+    style!("marginLeft", Number),
+    style!("paddingTop", Number),
+    style!("paddingRight", Number),
+    style!("paddingBottom", Number),
+    style!("paddingLeft", Number),
+    style!("borderColor", Any),
+    style!("borderWidth", Data),
+    style!("borderStyle", Enumeration),
+    style!("borderTopWidth", Number),
+    style!("borderRightWidth", Number),
+    style!("borderBottomWidth", Number),
+    style!("borderLeftWidth", Number),
+    style!("borderRadius", Number),
+    style!("color", Any),
+    style!("fontSize", Any),
+    style!("fontFamily", String),
+    style!("fontWeight", Any),
+    style!("lineHeight", Any),
+    style!("textAlign", Enumeration),
+    style!("textDecoration", Enumeration),
+    style!("backgroundColor", Any),
+    style!("backgroundImage", String),
+    style!("backgroundPosition", Any),
+    style!("backgroundRepeat", Enumeration),
+    style!("backgroundColor:hover", Any),
+    style!("backgroundColor:focus", Any),
+    style!("backgroundColor:active", Any),
+    style!("opacity", Number),
+    style!("overflow", Enumeration),
+    style!("boxShadow", Data),
+    style!("visible", Boolean),
+    style!("z-index", Number),
+    style!("transform", Data),
+    style!("transformOrigin", Data),
+    style!("cursor", Enumeration),
+    style!("userSelect", Enumeration),
+    style!("position", Enumeration),
+    style!("top", Any),
+    style!("right", Any),
+    style!("bottom", Any),
+    style!("left", Any),
+];
+
+macro_rules! theme_token {
+    ($name:literal, $kind:ident) => {
+        ThemeTokenSpec {
+            id: concat!("theme.", $name),
+            name: $name,
+            kind: ThemeTokenKind::$kind,
+            alias_for: None,
+        }
+    };
+    ($name:literal, $kind:ident, $target:literal) => {
+        ThemeTokenSpec {
+            id: concat!("theme.", $name),
+            name: $name,
+            kind: ThemeTokenKind::$kind,
+            alias_for: Some($target),
+        }
+    };
+}
+
+const THEME_TOKENS: &[ThemeTokenSpec] = &[
+    theme_token!("colorPrimary", Color),
+    theme_token!("colorPrimaryHover", Color),
+    theme_token!("colorPrimaryActive", Color),
+    theme_token!("colorPrimaryBg", Color),
+    theme_token!("colorPrimaryBorder", Color),
+    theme_token!("colorBgContainer", Color),
+    theme_token!("colorBgElevated", Color),
+    theme_token!("colorBgRaised", Color),
+    theme_token!("colorBgOverlay", Color),
+    theme_token!("colorBgLayout", Color),
+    theme_token!("colorBgSpotlight", Color),
+    theme_token!("colorBgMask", Color),
+    theme_token!("colorBorder", Color),
+    theme_token!("colorBorderSecondary", Color),
+    theme_token!("colorFill", Color),
+    theme_token!("colorFillSecondary", Color),
+    theme_token!("colorFillTertiary", Color),
+    theme_token!("colorFillQuaternary", Color),
+    theme_token!("colorText", Color),
+    theme_token!("colorTextSecondary", Color),
+    theme_token!("colorTextTertiary", Color),
+    theme_token!("colorTextQuaternary", Color),
+    theme_token!("colorWhite", Color),
+    theme_token!("colorBlack", Color),
+    theme_token!("colorShadow", Color),
+    theme_token!("colorShadowSecondary", Color),
+    theme_token!("colorSuccess", Color),
+    theme_token!("colorSuccessBg", Color),
+    theme_token!("colorSuccessBorder", Color),
+    theme_token!("colorWarning", Color),
+    theme_token!("colorWarningBg", Color),
+    theme_token!("colorWarningBorder", Color),
+    theme_token!("colorError", Color),
+    theme_token!("colorErrorBg", Color),
+    theme_token!("colorErrorBorder", Color),
+    theme_token!("colorInfo", Color),
+    theme_token!("colorInfoBg", Color),
+    theme_token!("colorInfoBorder", Color),
+    theme_token!("colorLink", Color),
+    theme_token!("colorLinkHover", Color),
+    theme_token!("colorLinkActive", Color),
+    theme_token!("fontFamily", String),
+    theme_token!("motionEasingDefault", String),
+    theme_token!("motionEasingIn", String),
+    theme_token!("motionEasingOut", String),
+    theme_token!("motionEasingInOut", String),
+    theme_token!("fontSizeSM", Number),
+    theme_token!("fontSize", Number),
+    theme_token!("fontSizeLG", Number),
+    theme_token!("fontSizeXL", Number),
+    theme_token!("fontSizeHeading1", Number),
+    theme_token!("fontSizeHeading2", Number),
+    theme_token!("fontSizeHeading3", Number),
+    theme_token!("fontSizeHeading4", Number),
+    theme_token!("fontSizeHeading5", Number),
+    theme_token!("fontWeightRegular", Number),
+    theme_token!("fontWeightMedium", Number),
+    theme_token!("fontWeightSemibold", Number),
+    theme_token!("fontWeightBold", Number),
+    theme_token!("lineHeight", Number),
+    theme_token!("paddingXXS", Number),
+    theme_token!("paddingXS", Number),
+    theme_token!("paddingSM", Number),
+    theme_token!("padding", Number),
+    theme_token!("paddingMD", Number),
+    theme_token!("paddingLG", Number),
+    theme_token!("paddingXL", Number),
+    theme_token!("borderRadius", Number),
+    theme_token!("borderRadiusSM", Number),
+    theme_token!("borderRadiusLG", Number),
+    theme_token!("borderRadiusXL", Number),
+    theme_token!("borderRadiusRound", Number),
+    theme_token!("controlHeightSM", Number),
+    theme_token!("controlHeight", Number),
+    theme_token!("controlHeightLG", Number),
+    theme_token!("backdropBlurRadius", Number),
+    theme_token!("motionDurationFast", Number),
+    theme_token!("motionDurationMid", Number),
+    theme_token!("motionDurationSlow", Number),
+    theme_token!("screenXS", Number),
+    theme_token!("screenSM", Number),
+    theme_token!("screenMD", Number),
+    theme_token!("screenLG", Number),
+    theme_token!("screenXL", Number),
+    theme_token!("screenXXL", Number),
+    theme_token!("boxShadow", Shadow),
+    theme_token!("boxShadowSecondary", Shadow),
+    theme_token!("isDark", Boolean),
+    theme_token!("primaryColor", Color, "colorPrimary"),
+    theme_token!("backgroundColor", Color, "colorBgLayout"),
+];
+
+macro_rules! handle {
+    ($component:literal, $attribute:literal, $ty:literal) => {
+        HandleSpec {
+            id: concat!("handle.", $component, ".", $attribute),
+            component: $component,
+            attribute: $attribute,
+            value_type: $ty,
+        }
+    };
+}
+
+const HANDLE_SLOTS: &[HandleSpec] = &[
+    handle!("Modal", "open", "State<bool>"),
+    handle!("Drawer", "open", "State<bool>"),
+    handle!("Input", "value", "State<String>"),
+    handle!("InputGroup", "value", "State<String>"),
+    handle!("AutoComplete", "value", "State<String>"),
+    handle!("Mentions", "value", "State<String>"),
+    handle!("InputNumber", "value", "State<T>"),
+    handle!("Slider", "value", "State<f64>"),
+    handle!("Rate", "value", "State<u32>"),
+    handle!("Checkbox", "checked", "State<bool>"),
+    handle!("Switch", "checked", "State<bool>"),
+    handle!("Radio", "value", "State<Option<String>>"),
+    handle!("Segmented", "value", "State<String>"),
+    handle!("Select", "value", "State<String>"),
+    handle!("TreeSelect", "value", "State<String>"),
+    handle!("Cascader", "value", "State<CascaderValue>"),
+    handle!("ColorPicker", "value", "State<Color>"),
+    handle!("DatePicker", "value", "State<Date>"),
+    handle!("Calendar", "value", "State<Date>"),
+    handle!("TimePicker", "value", "State<Time>"),
+    handle!("RangeSlider", "value", "RangeState<f64>"),
+    handle!("DateRangePicker", "value", "DateRangeState"),
+    handle!("Steps", "current", "State<usize>"),
+    handle!("Pagination", "current", "State<usize>"),
+    handle!("Pagination", "pageSize", "State<usize>"),
+    handle!("Tabs", "activeKey", "State<String>"),
+    handle!("SelectableList", "active", "State<Option<String>>"),
+    handle!("Collapse", "activeKeys", "State<Vec<String>>"),
+    handle!("Upload", "files", "State<Vec<UploadFile>>"),
+    handle!("Menu", "selectedKey", "State<Option<String>>"),
+    handle!("Menu", "openKeys", "State<Vec<String>>"),
+    handle!("Navigation", "activeKey", "State<Option<String>>"),
+    handle!("Navigation", "openKeys", "State<Vec<String>>"),
+    handle!("Navigation", "collapsed", "State<bool>"),
+    handle!("ScrollView", "offset", "State<f32>"),
+    handle!("Affix", "scrollY", "State<f32>"),
+    handle!("BackTop", "scrollY", "State<f32>"),
+    handle!("FloatButtonBackTop", "scrollY", "State<f32>"),
+    handle!("Form", "model", "State<M>"),
+];
+
+const SLOTS: &[SlotSpec] = &[
+    SlotSpec {
+        id: "slot.List.header",
+        component: "List",
+        name: "header",
+        multiple: false,
+    },
+    SlotSpec {
+        id: "slot.List.footer",
+        component: "List",
+        name: "footer",
+        multiple: false,
+    },
+    SlotSpec {
+        id: "slot.List.loadMore",
+        component: "List",
+        name: "loadMore",
+        multiple: false,
+    },
+    SlotSpec {
+        id: "slot.Image.placeholder",
+        component: "Image",
+        name: "placeholder",
+        multiple: false,
+    },
+    SlotSpec {
+        id: "slot.Image.error",
+        component: "Image",
+        name: "error",
+        multiple: false,
+    },
+];
+
+macro_rules! capability {
+    ($name:literal) => {
+        CapabilitySpec {
+            id: concat!("capability.", $name),
+            name: $name,
+            cargo_feature: $name,
+        }
+    };
+}
+
+const CAPABILITIES: &[CapabilitySpec] = &[
+    capability!("image-codecs"),
+    capability!("qrcode"),
+    capability!("form-pattern"),
+    capability!("rich-text"),
+    capability!("charts"),
+    capability!("table"),
+    capability!("navigation"),
+    capability!("feedback"),
+    capability!("tree-widgets"),
 ];
 
 const EVENTS: &[EventSpec] = &[
@@ -392,6 +858,31 @@ const EVENTS: &[EventSpec] = &[
         id: "event.keyUp",
         name: "@keyUp",
         fields: &["key", "code"],
+    },
+    EventSpec {
+        id: "event.mouseEnter",
+        name: "@mouseEnter",
+        fields: &[],
+    },
+    EventSpec {
+        id: "event.mouseLeave",
+        name: "@mouseLeave",
+        fields: &[],
+    },
+    EventSpec {
+        id: "event.confirm",
+        name: "@confirm",
+        fields: &[],
+    },
+    EventSpec {
+        id: "event.cancel",
+        name: "@cancel",
+        fields: &[],
+    },
+    EventSpec {
+        id: "event.ok",
+        name: "@ok",
+        fields: &[],
     },
 ];
 
@@ -608,6 +1099,44 @@ mod tests {
             data_ids.len(),
             UI_PROJECTION_SCHEMA.data_constructors().len()
         );
+
+        for entries in [
+            UI_PROJECTION_SCHEMA
+                .common_attributes()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .style_properties()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .theme_tokens()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .handle_slots()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .slots()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            UI_PROJECTION_SCHEMA
+                .capabilities()
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+        ] {
+            assert_eq!(
+                entries.iter().copied().collect::<BTreeSet<_>>().len(),
+                entries.len()
+            );
+        }
     }
 
     #[test]
@@ -617,12 +1146,41 @@ mod tests {
             .iter()
             .filter(|entry| entry.status == RegistrationStatus::Available)
             .count();
-        assert_eq!(available, 108);
+        assert_eq!(available, 109);
         assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 31);
-        assert_eq!(UI_PROJECTION_SCHEMA.events().len(), 7);
+        assert_eq!(UI_PROJECTION_SCHEMA.events().len(), 12);
+        assert_eq!(UI_PROJECTION_SCHEMA.style_properties().len(), 63);
+        assert_eq!(UI_PROJECTION_SCHEMA.theme_tokens().len(), 90);
+        assert_eq!(UI_PROJECTION_SCHEMA.handle_slots().len(), 39);
+        assert_eq!(UI_PROJECTION_SCHEMA.slots().len(), 5);
+        assert_eq!(UI_PROJECTION_SCHEMA.capabilities().len(), 9);
         assert_eq!(
             UI_PROJECTION_SCHEMA.component("App").unwrap().status,
-            RegistrationStatus::Planned
+            RegistrationStatus::Available
+        );
+    }
+
+    #[test]
+    fn schema_exposes_style_theme_handle_slot_and_capability_queries() {
+        assert!(UI_PROJECTION_SCHEMA.style_property("transform").is_some());
+        assert_eq!(
+            UI_PROJECTION_SCHEMA
+                .theme_token("primaryColor")
+                .and_then(|entry| entry.alias_for),
+            Some("colorPrimary")
+        );
+        assert_eq!(
+            UI_PROJECTION_SCHEMA
+                .handle_slot("Pagination", "pageSize")
+                .map(|entry| entry.value_type),
+            Some("State<usize>")
+        );
+        assert!(UI_PROJECTION_SCHEMA.slot("Image", "error").is_some());
+        assert_eq!(
+            UI_PROJECTION_SCHEMA
+                .capability("charts")
+                .map(|entry| entry.cargo_feature),
+            Some("charts")
         );
     }
 }

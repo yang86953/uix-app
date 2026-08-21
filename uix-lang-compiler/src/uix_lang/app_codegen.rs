@@ -6,6 +6,9 @@ use proc_macro2::TokenStream;
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入 Compiler System 唯一主题 token 登记。
+use crate::projection_schema::UI_PROJECTION_SCHEMA;
+
 // 引入应用入口生成所需的完整 UIX 语法树。
 use super::{
     Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element,
@@ -300,6 +303,15 @@ fn generate_named_theme(
     let mut token_updates = Vec::new();
     // 按声明顺序验证完整运行时 token 白名单。
     for property in &theme.properties {
+        // 名称支持面由 schema 裁决，生成器只负责已登记字段映射。
+        if UI_PROJECTION_SCHEMA.theme_token(&property.name).is_none() {
+            // 未登记名称在生成前失败并保留原始 SourceSpan。
+            return Err(Diagnostic::new(
+                property.span,
+                format!("主题 token {} 尚未登记", property.name),
+                "使用 UiProjectionSchema 已公开的 camelCase token 名",
+            ));
+        }
         // 两个历史别名继续驱动基元色板推导。
         match property.name.as_str() {
             // 主色同步更新 primary 与 info 基元。
