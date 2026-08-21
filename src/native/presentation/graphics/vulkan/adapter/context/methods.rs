@@ -34,7 +34,6 @@ impl VulkanContext {
         let physical_device = device_lease.physical_device();
         let adapter_info = device_lease.info().clone();
         let device = device_lease.device().clone();
-        let queue = device_lease.queue();
         let swapchain_loader = ash::khr::swapchain::Device::new(&instance, &device);
         let command_pool_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue_family_index)
@@ -110,7 +109,6 @@ impl VulkanContext {
             physical_device,
             adapter_info,
             device,
-            queue,
             swapchain_loader,
             swapchain: vk::SwapchainKHR::null(),
             swapchain_images: Vec::new(),
@@ -166,12 +164,15 @@ impl VulkanContext {
     }
 
     pub(super) fn active_device(&self) -> Result<Rc<VulkanDevice>> {
-        self.device_lease.as_ref().cloned().ok_or_else(|| {
+        let device = self.device_lease.as_ref().cloned().ok_or_else(|| {
             Error::new(
                 Errc::InvalidState,
                 "VulkanContext: operation requested after shutdown",
             )
-        })
+        })?;
+        // 所有业务入口在触碰旧代原生对象前统一观察共享 device 的 lost 事实。
+        device.ensure_healthy()?;
+        Ok(device)
     }
 
     fn swapchain_maintenance1_enabled(&self) -> bool {
@@ -180,28 +181,28 @@ impl VulkanContext {
             .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
-    #[cfg(any(test, all(windows, feature = "vulkan")))]
+    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
     pub(crate) fn shared_device_identity(&self) -> usize {
         self.device_lease
             .as_ref()
             .map_or(0, |device| Rc::as_ptr(device) as usize)
     }
 
-    #[cfg(any(test, all(windows, feature = "vulkan")))]
+    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
     pub(crate) fn device_fault_reporting_enabled_for_test(&self) -> bool {
         self.device_lease
             .as_ref()
             .is_some_and(|device| device.fault_reporting_enabled())
     }
 
-    #[cfg(any(test, all(windows, feature = "vulkan")))]
+    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
     pub(crate) fn swapchain_maintenance1_enabled_for_test(&self) -> bool {
         self.device_lease
             .as_ref()
             .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
-    #[cfg(any(test, all(windows, feature = "vulkan")))]
+    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
     pub(crate) fn mark_shared_device_lost_for_test(&self) {
         if let Some(device) = self.device_lease.as_ref() {
             device.mark_lost();
@@ -487,7 +488,7 @@ impl VulkanContext {
         ))
     }
 
-    pub(super) fn present_uploaded_pixels(&mut self) -> Result<()> {
+    pub(super) fn present_uploaded_pixels(&mut self, owner: &VulkanDevice) -> Result<()> {
         // SAFETY: swapchain 存活；超时与信号量参数有效，fence 传 null 表示不等待。
         let (image_index, acquire_suboptimal) = match unsafe {
             self.swapchain_loader.acquire_next_image(
@@ -540,11 +541,17 @@ impl VulkanContext {
             .command_buffers(std::slice::from_ref(&self.command_buffer))
             .signal_semaphores(std::slice::from_ref(&render_finished));
         // SAFETY: submit 引用的 semaphore/command buffer/fence 均存活且状态合法；切片引用在调用期间有效。
-        if let Err(err) = unsafe {
+        let submit_result = owner.with_queue("vkQueueSubmit PixelUpload", |queue| unsafe {
             self.device
-                .queue_submit(self.queue, std::slice::from_ref(&submit), self.frame_fence)
-        } {
-            let fence_recovery = self.restore_signaled_frame_fence();
+                .queue_submit(queue, std::slice::from_ref(&submit), self.frame_fence)
+        })?;
+        if let Err(err) = submit_result {
+            // DEVICE_LOST 后禁止再创建 replacement fence；旧 fence 由 shutdown 直接销毁。
+            let fence_recovery = if err == vk::Result::ERROR_DEVICE_LOST {
+                Ok(())
+            } else {
+                self.restore_signaled_frame_fence()
+            };
             return Err(failed_submit_error(err, fence_recovery));
         }
         if present_fence.is_none() {
@@ -560,14 +567,18 @@ impl VulkanContext {
                 .image_indices(std::slice::from_ref(&image_index))
                 .push_next(&mut fence_info);
             // SAFETY: present 引用的 swapchain/semaphore/fence_info 均存活，切片在调用期间有效。
-            unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
+            owner.with_queue("vkQueuePresentKHR PixelUpload", |queue| unsafe {
+                self.swapchain_loader.queue_present(queue, &present)
+            })?
         } else {
             let present = vk::PresentInfoKHR::default()
                 .wait_semaphores(std::slice::from_ref(&render_finished))
                 .swapchains(std::slice::from_ref(&self.swapchain))
                 .image_indices(std::slice::from_ref(&image_index));
             // SAFETY: present 引用的 swapchain/semaphore 均存活，切片在调用期间有效。
-            unsafe { self.swapchain_loader.queue_present(self.queue, &present) }
+            owner.with_queue("vkQueuePresentKHR PixelUpload", |queue| unsafe {
+                self.swapchain_loader.queue_present(queue, &present)
+            })?
         };
         match present_match {
             Ok(present_suboptimal) => {
@@ -629,12 +640,22 @@ impl VulkanContext {
         if self.shutdown {
             return Ok(());
         }
-        // 当前 context 的提交在返回前已由 frame fence 排空；device lost 时
-        // Vulkan 仍要求显式销毁本窗口拥有的 child object。
-        let device = self.active_device()?;
-        // SAFETY: device 存活；device_wait_idle 无指针参数，等待本 device 全部队列完成。
-        let wait_result = unsafe { self.device.device_wait_idle() };
-        device.observe_wait(wait_result);
+        // shutdown 允许借用已 lost 的旧代 owner，但不得再把它暴露给业务入口。
+        let device = self.device_lease.as_ref().cloned().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "VulkanContext: shutdown requested without a device lease",
+            )
+        })?;
+        // 已知 lost 的 peer 直接进入只销毁 child 的收口路径，不再调用失效 device/queue。
+        let wait_result = if device.is_lost() {
+            Err(vk::Result::ERROR_DEVICE_LOST)
+        } else {
+            // SAFETY: 健康 device 存活；device_wait_idle 无指针参数并排空同 device 全部 queue。
+            let result = unsafe { self.device.device_wait_idle() };
+            device.observe_wait(result);
+            result
+        };
         match wait_result {
             Ok(()) if self.present_fences.enabled() => {
                 self.present_fences.wait_and_reset_all(&self.device)?;

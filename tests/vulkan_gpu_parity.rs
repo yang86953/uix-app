@@ -10,3 +10,9 @@ fn every_pipeline_matches_shared_consistency_scene_on_real_vulkan_device() {
 fn surface_lifecycle_distinguishes_retry_from_presented_rebuild() {
     uix::__run_surface_lifecycle_contract_test();
 }
+
+// 在真实逻辑 device 与确定性窗口夹具上闭合共享丢失恢复合同。
+#[test]
+fn shared_device_loss_reacquires_once_per_window_without_crossing_identity() {
+    uix::__run_vulkan_shared_device_contract_test();
+}
