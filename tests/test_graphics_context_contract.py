@@ -417,11 +417,13 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 windowing 不再重复拥有 renderer 的图形 context。
     def test_platform_window_has_no_graphics_context_owner(self) -> None:
         # 读取窗口公共契约。
-        window_contract = (ROOT / "src/native/windowing/window.rs").read_text(encoding="utf-8")
+        window_contract = (ROOT / "src/platform/windowing/window.rs").read_text(encoding="utf-8")
         # 读取平台共享窗口实现。
         shared_window = (ROOT / "src/native/windowing/shared/window.rs").read_text(encoding="utf-8")
         # 读取测试窗口实现，避免测试门面复活兼容所有权。
-        fake_window = (ROOT / "src/native/test_harness/fake_window.rs").read_text(encoding="utf-8")
+        fake_window = (ROOT / "tests/support/native/test_harness/fake_window.rs").read_text(
+            encoding="utf-8"
+        )
         # 窗口公共契约不得暴露 renderer context 借用入口。
         self.assertNotIn("graphics_context", window_contract)
         # 平台共享窗口不得持有或关闭图形 context。

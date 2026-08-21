@@ -19,7 +19,7 @@ use crate::platform::windowing::event::{FrameRequestToken, UiEvent};
 use crate::native::windowing::shared::native_frame_mailbox::{
     NativeFrameArmResult, NativeFrameMailbox,
 };
-use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
+use crate::platform::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 use super::objc_runtime;
 

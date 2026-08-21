@@ -8,7 +8,7 @@ use crate::native::test_harness::fake_presenter::FakePresenter;
 use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::window::validate_window_extent_constraints;
-use crate::native::windowing::window::{
+use crate::platform::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
     WindowOcclusionState,
 };

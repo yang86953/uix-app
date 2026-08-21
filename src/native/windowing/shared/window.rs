@@ -18,7 +18,7 @@ use crate::platform::presentation::IPresenter;
 // 引入帧令牌与原生指针动作的不可解释激活身份。
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::state::WindowState;
-use crate::native::windowing::window::{
+use crate::platform::windowing::window::{
     INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
 // 共享窗口核心只转交平台中立的调整大小方向。

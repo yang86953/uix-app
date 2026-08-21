@@ -72,7 +72,7 @@
 //! ```
 //!
 //! ```compile_fail
-//! use uix::native::windowing::window::IWindowManager;
+//! use uix::native::windowing::input::IKeyboard;
 //! ```
 //!
 //! ```compile_fail

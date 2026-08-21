@@ -7,13 +7,10 @@ use crate::native::test_harness::FakeWindow;
 // 引入平台中立缩放方向供窗口动作转发断言使用。
 use crate::platform::windowing::WindowResizeEdge;
 // 引入原生事件与平台中立鼠标键。
-use crate::native::windowing::{
-    // UiEvent 提供当前 PointerDown 的激活身份读取。
-    event::UiEvent,
-    // 输入值用于建立与标题栏相同的左键手势。
-    input::{KeyMod, MouseButton},
-    // 结束原生事件与输入类型导入。
-};
+// 输入值用于建立与标题栏相同的左键手势。
+use crate::native::windowing::input::{KeyMod, MouseButton};
+// UiEvent 提供当前 PointerDown 的激活身份读取。
+use crate::platform::windowing::event::UiEvent;
 // 使用简单节点建立可观察的 pressed、drag 与 keyboard focus 状态。
 use crate::ui::widgets::Label;
 

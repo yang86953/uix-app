@@ -2,7 +2,7 @@
 //! only after the associated frame commits.
 
 use crate::platform::windowing::event::FrameRequestToken;
-use crate::native::windowing::window::NativeFrameRequest;
+use crate::platform::windowing::window::NativeFrameRequest;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeFrameArmResult {

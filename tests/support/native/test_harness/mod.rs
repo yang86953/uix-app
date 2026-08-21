@@ -64,6 +64,7 @@ use crate::native::platform::*;
 use crate::native::windowing::shared::OsEventSource;
 use crate::native::windowing::*;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
+use crate::platform::windowing::window::IWindowManager;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakePlatform — 聚合所有 Fake 子系统

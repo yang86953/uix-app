@@ -5,7 +5,7 @@
 //! 由命令执行器转换为 `window_operation_failed` 命令失败。
 
 use crate::app::queues::window_agent_state::{AgentWindowOps, AgentWindowOpsError};
-use crate::native::windowing::window::PlatformWindow;
+use crate::platform::windowing::window::PlatformWindow;
 
 /// 借用平台窗口实现窗口级 Agent 动作。
 pub(crate) struct PlatformWindowAgentOps<'a> {

@@ -1,4 +1,4 @@
-//! 平台公开面的窗口输入契约 — 值类型、事件、剪贴板与事件循环。
+//! 平台公开面的窗口契约 — 窗口、输入值、事件、剪贴板与事件循环。
 //!
 //! 本模块是 platform System 私有边界对 ui/draw/app 的公开输入契约收口：
 //! ui 层经 `crate::platform::windowing` 消费输入值类型、`IClipboard` 与
@@ -8,6 +8,8 @@
 pub(crate) mod event;
 // UI 线程策略属于 windowing 域，根模块仅再导出稳定入口。
 pub(crate) mod ui_thread;
+// 中立窗口生命周期、属性与帧回调协议由独立叶模块唯一持有。
+pub(crate) mod window;
 
 use crate::core::error::Result;
 

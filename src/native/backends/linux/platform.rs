@@ -17,6 +17,7 @@ use crate::native::platform::*;
 use crate::native::windowing::shared::{OsEventSource, WindowState};
 use crate::native::windowing::*;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
+use crate::platform::windowing::window::IWindowManager;
 
 use crate::native::backends::linux::console::LinuxConsole;
 use crate::native::backends::linux::file_dialog::LinuxFileDialog;

@@ -2,7 +2,7 @@
 
 // 引入窗口动作结果与可区分的平台错误码。
 use crate::core::{Errc, Result};
-use crate::native::windowing::window::PlatformWindow;
+use crate::platform::windowing::window::PlatformWindow;
 // 引入当前原生指针事件携带的不可解释激活身份。
 use crate::platform::windowing::event::PointerActivationId;
 use crate::ui::WidgetTree;
