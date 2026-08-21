@@ -19,6 +19,12 @@ mod swapchain;
 // D3D11 上下文只在 crate 内部图形组合边界重导出。
 pub(crate) use context::D3d11Context;
 
+// 显式 parity feature 保持测试入口在 D3D11 platform Adapter 内。
+#[cfg(all(windows, feature = "d3d11-parity-test"))]
+pub(crate) fn run_gpu_parity_test() {
+    context::run_gpu_parity_test();
+}
+
 // 从实际创建的 DXGI swapchain 事实组装 D3D11 静态 recipe 能力。
 #[cfg(windows)]
 fn context_caps(

@@ -21,6 +21,12 @@ pub(crate) fn create(
     platform::create(surface, width, height)
 }
 
+// 显式 Windows parity feature 只转发生产 D3D11 Adapter 的真实 GPU harness。
+#[cfg(all(windows, feature = "d3d11-parity-test"))]
+pub(crate) fn run_gpu_parity_test() {
+    platform::run_gpu_parity_test();
+}
+
 // 测试目标保留 D3D11 WARP 包装入口，供显式后端矩阵按需调用。
 #[cfg_attr(test, allow(dead_code))]
 #[cfg(all(test, feature = "d3d11"))]

@@ -64,7 +64,12 @@ mod msdf;
 mod uniform;
 
 // 在测试构建中提供 API 无关的全图元像素规范；原生 Adapter 只能执行和回读。
-#[cfg(any(test, feature = "vulkan-parity-test", feature = "opengl-parity-test"))]
+#[cfg(any(
+    test,
+    feature = "vulkan-parity-test",
+    feature = "opengl-parity-test",
+    feature = "d3d11-parity-test"
+))]
 #[path = "rhi_renderer_consistency.rs"]
 pub(crate) mod consistency;
 

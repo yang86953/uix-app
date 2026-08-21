@@ -130,6 +130,8 @@ vulkan = ["dep:ash"]
 vulkan-parity-test = ["vulkan"]
 # 仅为 Linux 真实 EGL/GLES 离屏像素一致性测试开放 crate 内 OpenGL harness。
 opengl-parity-test = ["opengles"]
+# 仅为 Windows 真实 D3D11 离屏像素一致性测试开放 crate 内生产 Adapter harness。
+d3d11-parity-test = ["d3d11"]
 metal = []
 settings-serde = ["dep:serde", "dep:serde_json"]
 # 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
@@ -185,6 +187,12 @@ required-features = ["vulkan-parity-test"]
 name = "opengl_gpu_parity"
 path = "tests/opengl_gpu_parity.rs"
 required-features = ["opengl-parity-test"]
+
+[[test]]
+# 使用真实 Windows D3D11 device/context 执行同一共享全图元离屏像素一致性检查。
+name = "d3d11_gpu_parity"
+path = "tests/d3d11_gpu_parity.rs"
+required-features = ["d3d11-parity-test"]
 
 [lints.clippy]
 unwrap_used = "warn"
