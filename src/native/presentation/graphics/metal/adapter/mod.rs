@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
+use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 
 #[cfg(target_os = "macos")]
 pub(crate) mod context;

@@ -18,7 +18,7 @@ use std::thread::{self, ThreadId};
 // 引入线程门禁使用的统一错误与结果。
 use crate::core::{Errc, Error, Result};
 // 引入类型化 recipe context、共享生命周期与呈现值。
-use crate::native::present::{
+use crate::platform::presentation::{
     GpuRecipeContext, GraphicsContextLifecycle, GraphicsRecipeContext, PixelUploadSurface,
     PresentDamage, PresentSurface,
 };

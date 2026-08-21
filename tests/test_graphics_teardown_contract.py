@@ -248,7 +248,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 Picture slot 的唯一资源字段。
         backend_owner = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # 读取公共兼容接口和句柄声明。
-        present = read_rust_module(ROOT / "src/native/presentation/contracts/mod.rs")
+        present = read_rust_module(ROOT / "src/platform/presentation/contracts/mod.rs")
         # 读取 D3D11 adapter context 的完整拆分模块。
         d3d11 = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/context/mod.rs")
         # 读取 OpenGL ES raster 的完整拆分模块。
@@ -277,7 +277,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 soft fallback 只保留 draw 私有 staging，不再进入逐 UI adapter。
     def test_soft_fallback_uses_only_draw_private_rhi_staging(self) -> None:
         # 读取公共兼容接口与同目录声明。
-        present = read_rust_module(ROOT / "src/native/presentation/contracts")
+        present = read_rust_module(ROOT / "src/platform/presentation/contracts")
         # 读取 D3D11 adapter 的 context 与 pipeline 拆分模块。
         d3d11_context = read_rust_module(ROOT / "src/native/presentation/graphics/d3d11/adapter/context")
         # 读取 D3D11 adapter 的底层 pipeline 拆分模块。
@@ -380,7 +380,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 legacy clear/bind 只剩 thin RHI 所需的低层 target 恢复。
     def test_legacy_clear_and_bind_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与 capability profile。
-        present = read_rust_module(ROOT / "src/native/presentation/contracts")
+        present = read_rust_module(ROOT / "src/platform/presentation/contracts")
         # 读取 owner-thread 转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 D3D11 兼容 trait 实现。
@@ -417,7 +417,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 native context 构造成功即就绪，不再保留二阶段初始化门面。
     def test_initialize_compatibility_entry_leaves_graphics_context(self) -> None:
         # 读取公共图形上下文 trait。
-        graphics_trait = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        graphics_trait = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 registry 的单候选构造路径。
@@ -466,7 +466,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验平台 current 语义只存在于 adapter 私有 RHI host，不再穿透通用 renderer。
     def test_make_current_compatibility_entry_leaves_renderer_and_graphics_context(self) -> None:
         # 读取公共图形上下文 trait。
-        graphics_trait = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        graphics_trait = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread context wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取通用 backend 契约。
@@ -558,7 +558,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         # 读取 RenderBackend 的 resize、initialize 与 Picture 实现。
         backend = (ROOT / "src/draw/backend/gpu/execution/render_backend.rs").read_text(encoding="utf-8")
         # 读取构造期已验证的 GPU recipe owner。
-        gpu_owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        gpu_owner = (ROOT / "src/platform/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # dormant hybrid 构造入口不得复活。
         self.assertNotIn("pub(crate) fn new(gpu_ctx", lifecycle)
         # 构造器不得重新按模式分叉。
@@ -614,7 +614,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验逐图元 legacy draw ABI 与平行 capability 表不会重新进入 adapter 门面。
     def test_legacy_draw_methods_leave_the_graphics_context_facade(self) -> None:
         # 读取公共兼容接口与事实型 capability profile。
-        present = read_rust_module(ROOT / "src/native/presentation/contracts")
+        present = read_rust_module(ROOT / "src/platform/presentation/contracts")
         # 读取 graphics backend 私有的 renderer 能力投影。
         raster_caps = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 转发门面。
@@ -705,7 +705,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 renderer 能力只从 thin RHI 快照派生，不恢复 adapter 平行声明。
     def test_native_raster_caps_are_derived_from_thin_rhi(self) -> None:
         # 读取迁移期 graphics context trait。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 包装层。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 graphics backend 拥有的 renderer 能力投影定义。
@@ -745,7 +745,7 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验 surface readback 已成为事实声明的可选 thin RHI 能力。
     def test_surface_readback_is_an_optional_thin_rhi_capability(self) -> None:
         # 读取兼容 graphics context trait。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread 兼容转发门面。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取 thin RHI 角色契约。
@@ -812,13 +812,13 @@ class GraphicsTeardownContractTests(unittest.TestCase):
     # 校验通用 context resize 已拆分为 GPU RHI 与 CPU PixelUpload 两条 typed 契约。
     def test_context_resize_is_split_by_surface_recipe(self) -> None:
         # 读取兼容 context 与 PixelUpload surface trait。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 读取 owner-thread wrapper。
         thread_bound = (ROOT / "src/native/factory/thread_bound.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 PixelUpload 生命周期。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 recipe owner。
-        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/platform/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 D3D11 context 私有生命周期实现。
         d3d11_methods = (ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs").read_text(encoding="utf-8")
         # 通用 context trait 不得继续声明无 recipe 区分的 resize。

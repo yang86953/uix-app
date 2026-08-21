@@ -15,7 +15,7 @@ use super::compat::Main;
 use wayland_client::protocol::{wl_buffer, wl_shm, wl_surface};
 
 use crate::core::{Errc, Error, PresentDamage, PresentSurface, Result};
-use crate::native::present::validate_pixel_buffer;
+use crate::platform::presentation::validate_pixel_buffer;
 // SHM drawable 使用与 EGL 相同的 logical/drawable 原子快照。
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceMetrics;
 use crate::native::windowing::shared::buffer_lease::BufferLease;

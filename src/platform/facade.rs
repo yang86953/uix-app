@@ -275,8 +275,8 @@ impl Platform {
 }
 
 fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[GpuAdapterInfo]>> {
-    // 公开门面只传递中立选择值；原生 factory 负责选择并注入对应 Adapter。
-    crate::native::factory::enumerate_gpu_adapters(backend)
+    // 公开门面只传递中立选择值；唯一组合根负责选择并注入对应 Adapter。
+    super::composition_root::enumerate_gpu_adapters(backend)
 }
 
 impl Drop for Platform {

@@ -3,7 +3,7 @@
 // 引入统一结果与呈现 damage。
 use crate::core::Result;
 // 引入类型化 context、静态 recipe 与原子 surface 快照。
-use crate::native::present::{
+use crate::platform::presentation::{
     GraphicsContextCaps, PixelUploadSurface, PresentDamage, PresentMode, PresentSurface, RasterMode,
 };
 

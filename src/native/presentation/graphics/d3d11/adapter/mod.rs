@@ -3,10 +3,10 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
+use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 // WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d11"))]
-use crate::native::present::GpuRecipeContext;
+use crate::platform::presentation::GpuRecipeContext;
 
 #[cfg(windows)]
 pub(crate) mod context;
@@ -30,7 +30,7 @@ pub(crate) fn run_gpu_parity_test() {
 // 从实际创建的 DXGI swapchain 事实组装 D3D11 静态 recipe 能力。
 #[cfg(windows)]
 fn context_caps(
-    present_coherency: crate::native::present::PresentCoherency,
+    present_coherency: crate::platform::presentation::PresentCoherency,
 ) -> GraphicsContextCaps {
     // 返回由实际 swapchain 一致性证明构成的 adapter 快照。
     GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d11, present_coherency)

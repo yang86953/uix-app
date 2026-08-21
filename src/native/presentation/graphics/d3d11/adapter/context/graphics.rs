@@ -2,12 +2,12 @@ use super::*;
 
 impl GraphicsContextLifecycle for D3d11Context {
     // 把 D3D11 当前 drawable 元数据提供给共享生命周期边界。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // 物理范围与 generation 必须来自同一个共享 token 快照。
         let token = self.surface_lifecycle.token();
         let width = token.extent.width as i32;
         let height = token.extent.height as i32;
-        crate::native::present::PresentSurface::identity(
+        crate::platform::presentation::PresentSurface::identity(
             width,
             height,
             // 从同一 context 状态计算本次快照的 drawable 比例。
@@ -22,9 +22,9 @@ impl GraphicsContextLifecycle for D3d11Context {
 }
 
 // 把 D3D11 thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
-impl crate::native::present::GpuRecipeContext for D3d11Context {
+impl crate::platform::presentation::GpuRecipeContext for D3d11Context {
     // 返回当前可写 swapchain image 身份，供 graphics damage history 规划。
-    fn present_image(&self) -> Option<crate::native::present::PresentImage> {
+    fn present_image(&self) -> Option<crate::platform::presentation::PresentImage> {
         // 只有构造期冻结的 SwapChain3 主路径返回真实 image index。
         self.swap_chain.present_image()
     }
@@ -45,7 +45,7 @@ impl crate::native::present::GpuRecipeContext for D3d11Context {
         // 在可变借用前取得当前完整 surface 快照。
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
+        crate::platform::presentation::resize_native_rhi_surface(self, present_surface, width, height)
     }
 }
 

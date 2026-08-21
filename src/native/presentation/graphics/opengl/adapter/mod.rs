@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::{
+use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
 

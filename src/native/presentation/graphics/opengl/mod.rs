@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::core::{Error, Result};
-use crate::native::present::GraphicsContextCandidate;
+use crate::platform::presentation::GraphicsContextCandidate;
 
 #[path = "adapter/mod.rs"]
 pub(crate) mod platform;

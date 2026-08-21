@@ -2,9 +2,6 @@
 
 use crate::core::error::{Error, Result};
 pub(crate) use crate::core::{PresentCoherency, PresentDamage, PresentImage, PresentSurface};
-// 迁移期只保留精确兼容路径；中立 presenter 合同唯一位于 platform。
-#[allow(unused_imports)]
-pub(crate) use crate::platform::presentation::IPresenter;
 use std::fmt;
 use std::str::FromStr;
 
@@ -238,7 +235,7 @@ mod graphics_selection_tests;
 /// marker prevents safe transfer to another thread.
 ///
 /// ```compile_fail
-/// use uix::native::present::NativeSurfaceHandle;
+/// use uix::platform::presentation::NativeSurfaceHandle;
 ///
 /// fn needs_send<T: Send>(_value: T) {}
 ///
@@ -276,12 +273,6 @@ impl std::fmt::Debug for NativeSurfaceHandle {
             .finish()
     }
 }
-
-/// GPU graphics context lifecycle and presentation contract.
-// 迁移期只保留兼容别名；共享 RHI 的唯一所有者是 platform::presentation。
-// 新代码必须直接依赖 platform 边界，禁止从 native 实现路径取得图形契约。
-#[allow(unused_imports)]
-pub(crate) use crate::platform::presentation::rhi;
 
 // 生产 GPU recipe 通过构造期验证的窄 owner 进入 draw backend。
 mod gpu_recipe_owner;

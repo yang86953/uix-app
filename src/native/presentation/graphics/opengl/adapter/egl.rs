@@ -18,7 +18,7 @@ use std::sync::Arc;
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入 Drop 中调用的 checked shutdown 生命周期契约。
-use crate::native::present::GraphicsContextLifecycle;
+use crate::platform::presentation::GraphicsContextLifecycle;
 use crate::native::{Errc, Error};
 // 引入唯一共享 Surface 生命周期与初始化原因。
 use crate::platform::presentation::rhi::{

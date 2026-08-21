@@ -6,7 +6,7 @@ use super::PixelUploadRecipeOwner;
 // 引入错误分类、coherency 与 surface 值。
 use crate::core::{Errc, PresentCoherency, PresentSurface};
 // 引入类型化 PixelUpload context 与 capability。
-use crate::native::present::{
+use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCaps, GraphicsContextLifecycle, PixelUploadSurface, PresentDamage,
 };
 

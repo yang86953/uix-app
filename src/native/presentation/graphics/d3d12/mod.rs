@@ -3,10 +3,10 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::native::present::GraphicsContextCandidate;
+use crate::platform::presentation::GraphicsContextCandidate;
 // D3D12 WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d12"))]
-use crate::native::present::GpuRecipeContext;
+use crate::platform::presentation::GpuRecipeContext;
 
 #[path = "adapter/mod.rs"]
 pub(crate) mod platform;

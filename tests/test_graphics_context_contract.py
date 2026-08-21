@@ -35,7 +35,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 live drawable 元数据只通过单一 PresentSurface 快照传播。
     def test_context_drawable_metadata_is_atomic_present_surface(self) -> None:
         # 读取 context 能力模型与构造器。
-        contracts = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
+        contracts = (ROOT / "src/platform/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 截取 crate-private GraphicsContextCaps 的字段定义并锁定其边界。
         caps_start = contracts.index("pub(crate) struct GraphicsContextCaps")
         # 以构造器实现起点作为结构体字段终点。
@@ -45,7 +45,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 动态 DPR 不得继续伪装成 capability 字段。
         self.assertNotIn("device_pixel_ratio", caps_struct)
         # 读取统一 context trait。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # context 必须显式提供完整 surface 快照。
         self.assertIn("fn present_surface(&self) -> PresentSurface;", facade)
         # 通用 trait 不得继续拆分暴露 drawable 宽度。
@@ -132,7 +132,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 recipe 派生查询不会继续扩张通用 context 门面。
     def test_context_recipe_queries_are_not_duplicated_by_adapters(self) -> None:
         # 读取统一 context trait。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # backend 身份不得恢复为派生 trait 查询。
         self.assertNotIn("fn graphics_backend(&self)", facade)
         # 静态 recipe 能力已经退出兼容 context SPI。
@@ -174,7 +174,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 读取 registry 的 recipe 校验与构造实现。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
         # 读取 presentation 侧的 adapter candidate 交接契约。
-        present = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
+        present = (ROOT / "src/platform/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 截取 registry 生产实现，排除测试 context。
         registry_contract = registry[: registry.index("#[cfg(test)]")]
         # 读取线程亲和 wrapper 的静态快照构造边界。
@@ -185,7 +185,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 截取 thread-bound 生产实现，排除测试模块。
         thread_bound_contract = thread_bound[: thread_bound.index("#[cfg(test)]")]
         # 读取顶层正交 recipe owner 的生产分派。
-        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(
+        recipe_owner = (ROOT / "src/platform/presentation/contracts/recipe_owner.rs").read_text(
             # 保持源码契约读取编码稳定。
             encoding="utf-8"
         )
@@ -253,7 +253,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验 thin RHI 与 surface resize 只通过原子 GPU recipe 视图传播。
     def test_gpu_recipe_context_keeps_rhi_and_lifecycle_atomic(self) -> None:
         # 读取统一 context trait 与原生 resize helper。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 定位共享 lifecycle trait 的起点。
         lifecycle_start = facade.index("pub(crate) trait GraphicsContextLifecycle")
         # 以 GPU recipe trait 起点作为共享 lifecycle 定义终点。
@@ -329,13 +329,13 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验生产 GPU backend 只持有构造期已验证的 recipe owner。
     def test_gpu_backend_uses_validated_recipe_owner(self) -> None:
         # 读取 GPU owner 的唯一 native 边界实现。
-        owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/platform/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 GPU backend 的状态定义。
         backend = (ROOT / "src/draw/backend/gpu/execution/mod.rs").read_text(encoding="utf-8")
         # 读取唯一 renderer 装配入口。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取 native factory 使用的正交 recipe owner。
-        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/platform/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取正交 owner 的生产实现，排除测试 context。
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
@@ -440,18 +440,18 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 测试窗口也不得保留平行 GPU context 状态。
         self.assertNotIn("gpu_ctx", fake_window)
         # live context 的 present recipe 不得混入没有 context 的 app-only presenter。
-        present_contract = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
+        present_contract = (ROOT / "src/platform/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 删除没有任何构造者的 CpuPresenter 枚举值。
         self.assertNotIn("CpuPresenter", present_contract)
 
     # 校验 CPU PixelUpload presentation 只持有构造期已验证的 recipe owner。
     def test_pixel_upload_presentation_uses_validated_recipe_owner(self) -> None:
         # 读取 PixelUpload owner 的唯一 native 边界实现。
-        owner = (ROOT / "src/native/presentation/contracts/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/platform/presentation/contracts/pixel_upload_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取统一 renderer 的 presentation 状态机。
         runtime = (ROOT / "src/draw/renderer/runtime.rs").read_text(encoding="utf-8")
         # 读取离开 native factory 前的正交 owner 分派。
-        recipe_owner = (ROOT / "src/native/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
+        recipe_owner = (ROOT / "src/platform/presentation/contracts/recipe_owner.rs").read_text(encoding="utf-8")
         # 截取正交 owner 的生产实现，排除测试 context。
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 截取生产 owner 实现，排除测试 context 的 caps 方法。
@@ -488,7 +488,7 @@ class GraphicsContextContractTests(unittest.TestCase):
     # 校验无帧遮挡探测只属于 thin RHI surface 生命周期。
     def test_idle_present_probe_belongs_to_graphics_surface(self) -> None:
         # 读取迁移期 context 门面。
-        facade = (ROOT / "src/native/presentation/contracts/traits.rs").read_text(encoding="utf-8")
+        facade = (ROOT / "src/platform/presentation/contracts/traits.rs").read_text(encoding="utf-8")
         # 通用 context 不得继续声明 surface 专属探测。
         self.assertNotIn("fn test_present(&mut self)", facade)
         # 读取 thin RHI 契约。

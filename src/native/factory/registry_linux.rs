@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
+use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // Vulkan GPU-native swapchain 是优先生产路径；OpenGL ES 只保留兼容候选。

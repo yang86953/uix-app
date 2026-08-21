@@ -6,9 +6,9 @@ use crate::core::error::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
 // 引入离开 native factory 前必须构造的已验证 recipe owner。
-use crate::native::present::GraphicsRecipeOwner;
+use crate::platform::presentation::GraphicsRecipeOwner;
 // 引入 registry 的 recipe 事实、类型化 context 与原生 surface 句柄。
-use crate::native::present::{
+use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, GraphicsRecipeContext,
     GraphicsSelection, NativeSurfaceHandle, PresentMode, RasterMode,
 };

@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::present::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
+use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
 use std::ffi::c_void;
 
 // 生产 GPU 后端：原生 D3D11（wgpu 已移除）。

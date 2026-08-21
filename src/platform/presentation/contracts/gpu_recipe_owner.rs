@@ -5,7 +5,7 @@ use crate::core::Result;
 // 引入正交的 Device、Surface 与完整帧组合契约。
 use crate::platform::presentation::rhi::{GraphicsContextRhi, GraphicsDevice, GraphicsSurface};
 // 引入类型化 GPU context、recipe 事实与呈现模式。
-use crate::native::present::{
+use crate::platform::presentation::{
     GpuRecipeContext, GraphicsContextCaps, PresentImage, PresentMode, PresentSurface, RasterMode,
 };
 

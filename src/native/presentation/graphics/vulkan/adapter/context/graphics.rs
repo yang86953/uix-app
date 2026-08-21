@@ -8,8 +8,8 @@ impl GraphicsContextLifecycle for VulkanContext {
     }
 
     // 返回 Vulkan swapchain 的完整 drawable 快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
-        crate::native::present::PresentSurface::identity(
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
+        crate::platform::presentation::PresentSurface::identity(
             // 记录当前 swapchain 物理宽度。
             self.width,
             // 记录当前 swapchain 物理高度。

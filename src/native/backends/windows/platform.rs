@@ -34,7 +34,7 @@ use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::present::*;
+use crate::platform::presentation::*;
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::platform::display::IDisplay;
 use crate::platform::platform::Platform;

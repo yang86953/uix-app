@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, PresentCoherency, Result};
-use crate::native::present::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
+use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 
 #[cfg(any(unix, windows))]
 pub(crate) mod adapter;
