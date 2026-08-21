@@ -6,10 +6,12 @@ use super::*;
 use crate::core::PresentDamage;
 // 引入测试 recording context 需要的 device/surface 契约。
 use crate::platform::presentation::rhi::{
-    // Blur 方向与 tap 字段位置由共享 RHI 契约唯一声明。
-    BLUR_DIRECTION_TAPS_FLOAT_OFFSET,
+    // Blur 规范 texel step 与 tap 字段位置由共享 RHI 契约唯一声明。
+    BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET,
     // Blur ABI 字节数由共享 RHI 契约唯一声明。
     BLUR_UNIFORM_BYTES,
+    // Blur 源域像素中心 UV 边界由共享 RHI 契约唯一声明。
+    BLUR_UV_BOUNDS_FLOAT_OFFSET,
     // Blur 权重区间位置由共享 RHI 契约唯一声明。
     BLUR_WEIGHTS_FLOAT_OFFSET,
     // device 原语由 mock 显式记录。
@@ -440,7 +442,7 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
     // scratch 必须在提交后检查式销毁。
     assert_eq!(context.destroyed_textures, vec![scratch]);
 
-    // 筛出两个固定 304 字节 BlurConstants 更新。
+    // 筛出两个固定 288 字节 BlurConstants 更新。
     let uniforms: Vec<Vec<f32>> = context
         // 遍历全部 vertex/uniform 上传。
         .updates
@@ -454,20 +456,30 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         .collect();
     // 必须恰好存在水平和垂直两个 uniform。
     assert_eq!(uniforms.len(), 2);
-    // 第一组方向为水平且 tap 半径等于 ceil(radius)。
+    // 第一组 step 为一个横向 source texel，tap 半径等于 ceil(radius)。
     assert_eq!(
-        // 读取共享方向与 tap 半径三项。
-        &uniforms[0][BLUR_DIRECTION_TAPS_FLOAT_OFFSET..BLUR_DIRECTION_TAPS_FLOAT_OFFSET + 3],
-        // 比较水平像素方向与半径。
-        &[1.0, 0.0, 2.0]
+        // 读取共享 texel step 与 tap 半径三项。
+        &uniforms[0][BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET..BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET + 3],
+        // extent 宽度为十，因此横向一步必须是 0.1 UV。
+        &[0.1, 0.0, 2.0]
     );
-    // 第二组方向为垂直且复用同一 tap 半径。
-    assert_eq!(
-        // 读取共享方向与 tap 半径三项。
-        &uniforms[1][BLUR_DIRECTION_TAPS_FLOAT_OFFSET..BLUR_DIRECTION_TAPS_FLOAT_OFFSET + 3],
-        // 比较垂直像素方向与半径。
-        &[0.0, 1.0, 2.0]
-    );
+    // 第二组 step 为一个纵向 source texel且复用同一 tap 半径。
+    let vertical =
+        &uniforms[1][BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET..BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET + 3];
+    assert_eq!(vertical[0], 0.0);
+    assert!((vertical[1] - 1.0 / 6.0).abs() < 1.0e-6);
+    assert_eq!(vertical[2], 2.0);
+    // 两个 pass 只允许在裁后 y=1..5 的像素中心内采样。
+    let expected_bounds = [0.05, 1.5 / 6.0, 0.95, 5.5 / 6.0];
+    for uniform in &uniforms {
+        let bounds = &uniform[BLUR_UV_BOUNDS_FLOAT_OFFSET..BLUR_UV_BOUNDS_FLOAT_OFFSET + 4];
+        assert!(
+            bounds
+                .iter()
+                .zip(expected_bounds)
+                .all(|(actual, expected)| (*actual - expected).abs() < 1.0e-6)
+        );
+    }
     // 两个方向必须复用完全相同的归一化高斯核。
     assert_eq!(
         // 读取水平 pass 的完整共享权重区间。
@@ -485,6 +497,19 @@ fn blur_executes_two_clipped_passes_without_surface_present() {
         .sum();
     // 五个有效 tap 的能量必须归一化为一。
     assert!((weight_sum - 1.0).abs() < 1.0e-6);
+
+    // 两次顶点上传必须复用同一份最终 position/绝对 source UV，不含 shader region 补偿。
+    let vertices: Vec<Vec<f32>> = context
+        .updates
+        .iter()
+        .filter(|bytes| bytes.len() == 6 * 4 * std::mem::size_of::<f32>())
+        .map(|bytes| decode_f32s(bytes))
+        .collect();
+    assert_eq!(vertices.len(), 2);
+    assert_eq!(vertices[0], vertices[1]);
+    assert_eq!(vertices[0][0..4], [-1.0, -1.0, 0.0, 1.0]);
+    assert!((vertices[0][9] - 2.0 / 3.0).abs() < 1.0e-6);
+    assert!((vertices[0][11] - 1.0 / 6.0).abs() < 1.0e-6);
 }
 
 // 验证 overlay wrapper 复用已捕获 texture 并保持最终 present 所有权。

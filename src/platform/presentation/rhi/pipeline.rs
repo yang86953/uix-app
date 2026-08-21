@@ -29,7 +29,7 @@ pub(crate) enum PipelineKind {
     BoxShadow,
     // 复用采样 ABI 并使用独立加法 blend 绘制纹理 quad。
     TexturedQuadAdditive,
-    // 使用 BlurConstants 与全屏区域 quad 执行一个方向的高斯 blur pass。
+    // 使用绝对 source UV 顶点与 BlurConstants 执行一个方向的高斯 blur pass。
     BlurPass,
     // 使用 RGBA8 MSDF 与仿射 quad 绘制可缩放字形。
     MsdfGlyphQuad,
@@ -569,8 +569,8 @@ impl PipelineKind {
             ),
             // Blur pass 直接替换目标区域。
             Self::BlurPass => ui_2d_pipeline_contract(
-                // Blur 使用 NDC position float2 区域 quad。
-                PipelineVertexLayout::PositionF32x2,
+                // Blur 使用共享几何生成的 NDC position 与绝对 source UV。
+                PipelineVertexLayout::PositionUvF32,
                 // Blur 使用固定高斯核常量。
                 PipelineUniformLayout::Blur,
                 // Blur 读取四通道颜色。

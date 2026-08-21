@@ -135,6 +135,24 @@ const POSITION_F32X2_ATTRIBUTES: [PipelineVertexAttribute; 1] = [PipelineVertexA
     0,
 )];
 
+// 定义 position 与 uv 各一个 float2 的唯一属性序列。
+const POSITION_UV_F32_ATTRIBUTES: [PipelineVertexAttribute; 2] = [
+    // 目标位置固定绑定到 location 0。
+    PipelineVertexAttribute::new(
+        0,
+        PipelineVertexSemantic::Position,
+        PipelineVertexFormat::Float32x2,
+        0,
+    ),
+    // 绝对 source UV 固定绑定到 location 1，紧随 position。
+    PipelineVertexAttribute::new(
+        1,
+        PipelineVertexSemantic::TextureCoordinate,
+        PipelineVertexFormat::Float32x2,
+        8,
+    ),
+];
+
 // 定义 position、uv 与 color 布局的唯一属性序列。
 const POSITION_UV_COLOR_F32_ATTRIBUTES: [PipelineVertexAttribute; 3] = [
     // 定义顶点位置属性。
@@ -177,6 +195,8 @@ const POSITION_UV_COLOR_F32_ATTRIBUTES: [PipelineVertexAttribute; 3] = [
 pub(crate) enum PipelineVertexLayout {
     // 只包含 position float2。
     PositionF32x2,
+    // 包含 position float2 与绝对 source uv float2。
+    PositionUvF32,
     // 包含 position float2、uv float2 与 color float4。
     PositionUvColorF32,
 }
@@ -189,6 +209,8 @@ impl PipelineVertexLayout {
         match self {
             // position float2 固定占八字节。
             Self::PositionF32x2 => 8,
+            // position 与 uv 各一个 float2，固定占十六字节。
+            Self::PositionUvF32 => 16,
             // position、uv 与 color 固定占三十二字节。
             Self::PositionUvColorF32 => 32,
         }
@@ -213,6 +235,8 @@ impl PipelineVertexLayout {
         match self {
             // float2 布局只包含 position。
             Self::PositionF32x2 => &POSITION_F32X2_ATTRIBUTES,
+            // Blur 布局只包含 position 与绝对 source UV。
+            Self::PositionUvF32 => &POSITION_UV_F32_ATTRIBUTES,
             // float8 布局包含 position、uv 与 color。
             Self::PositionUvColorF32 => &POSITION_UV_COLOR_F32_ATTRIBUTES,
         }

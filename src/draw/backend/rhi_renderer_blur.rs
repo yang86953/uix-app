@@ -3,10 +3,11 @@
 // 引入稳定错误类型。
 use crate::core::error::{Errc, Error, Result};
 use crate::platform::presentation::rhi::{
-    BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
-    DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
-    RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor, RhiViewport, SampledTextureBinding,
-    SamplerDesc, SamplerHandle, TextureDesc, TextureFormat, TextureHandle, BLUR_WEIGHT_COUNT,
+    BLUR_WEIGHT_COUNT, BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange,
+    DrawRasterState, DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind,
+    RhiBlurDirection, RhiBlurPassGeometry, RhiBlurRasterParams, RhiColor, RhiExtent, RhiScissor,
+    RhiTextureRegion, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
+    TextureFormat, TextureHandle,
 };
 
 // 引入父 renderer 已导出的目标无关命令与唯一 Frame owner。
@@ -16,45 +17,17 @@ use super::{
 
 // 把 Drawing 的 Blur 事实映射为共享 RHI 常量值对象。
 fn blur_uniform(
-    // 接收当前 target 与 source 共用的物理尺寸。
-    extent: RhiExtent,
-    // 接收已经裁到 source 范围的物理区域。
-    region: RhiScissor,
-    // 接收本次 pass 的水平或垂直像素方向。
-    direction: [f32; 2],
+    // 接收已经绑定 source/target extent 与两个区域的共享几何。
+    geometry: RhiBlurPassGeometry,
+    // 接收本次 pass 的封闭水平或垂直方向。
+    direction: RhiBlurDirection,
     // 接收高斯核中心两侧的 tap 半径。
     tap_radius: u32,
     // 接收由 Drawing Blur Module 计算并归一化的完整权重槽。
     weights: &[f32; BLUR_WEIGHT_COUNT],
 ) -> RhiBlurRasterParams {
-    // 由共享值对象唯一排列目标、source、区域、方向和全部权重。
-    RhiBlurRasterParams::new(
-        // 当前实现的两个 pass 都写入完整同尺寸 target。
-        extent,     // 当前 source 与 target 使用同一物理 extent。
-        extent,     // 传入已经裁到纹理范围的物理区域。
-        region,     // 传入本次水平或垂直像素方向。
-        direction,  // 传入高斯核中心两侧的 tap 半径。
-        tap_radius, // 传入已经归一化并零终止的完整权重槽。
-        weights,
-    )
-}
-
-// 为当前物理区域生成 blur shader 使用的 NDC 全屏子矩形。
-pub(super) fn blur_region_vertices(extent: RhiExtent, region: RhiScissor) -> FrameVertexPayload {
-    // 将左上角坐标转换到 D3D11 的 NDC 横坐标。
-    let left = region.x as f32 / extent.width as f32 * 2.0 - 1.0;
-    // 将右下边界转换到 D3D11 的 NDC 横坐标。
-    let right = (region.x + region.width) as f32 / extent.width as f32 * 2.0 - 1.0;
-    // 将顶部坐标转换到左上原点对应的 NDC 纵坐标。
-    let top = 1.0 - region.y as f32 / extent.height as f32 * 2.0;
-    // 将底部边界转换到左上原点对应的 NDC 纵坐标。
-    let bottom = 1.0 - (region.y + region.height) as f32 / extent.height as f32 * 2.0;
-    // 以两个三角形覆盖当前区域，顶点 ABI 为 float2。
-    let vertices = [
-        left, bottom, right, bottom, right, top, left, bottom, right, top, left, top,
-    ];
-    // FramePlan 保存类型化 position-float2，而不是过早编码的字节。
-    FrameVertexPayload::position_f32x2(vertices)
+    // 由共享几何唯一排列源域边界、规范 texel step、tap 半径和权重。
+    geometry.raster_params(direction, tap_radius, weights)
 }
 
 // 为 RhiRenderer 增加 blur 资源缓存和两阶段执行入口。
@@ -116,15 +89,15 @@ impl RhiRenderer {
             self.blur_pipeline = Some(pipeline);
             pipeline
         };
-        // 区域 quad 固定使用六个 float2 顶点。
+        // 区域 quad 固定使用六个 position-float2/uv-float2 顶点。
         let vertex_buffer = if let Some(buffer) = self.blur_vertex_buffer {
             // 复用已有区域 vertex buffer。
             buffer
         } else {
-            // 创建动态位置 buffer，区域坐标由每次 blur 的物理 region 决定。
+            // 创建动态 position/uv buffer，所有坐标只由共享 Blur 几何决定。
             let buffer = device.create_buffer(BufferDesc::vertex(
-                // 保存六个 float2 顶点的精确容量。
-                6 * 2 * std::mem::size_of::<f32>(),
+                // 保存六个 float4 顶点的精确容量。
+                6 * 4 * std::mem::size_of::<f32>(),
                 // 步长只来自共享 Blur 顶点 ABI。
                 PipelineKind::BlurPass.contract().vertex.stride_bytes(),
             ))?;
@@ -196,6 +169,16 @@ impl RhiRenderer {
             // 不改变任何 target 内容。
             return Ok(());
         }
+        // 把裁剪结果收敛为源与目标共用的非空物理区域。
+        let physical_region = RhiTextureRegion::from_xy(
+            x as u32,
+            y as u32,
+            RhiExtent::new(width as u32, height as u32),
+        );
+        // 唯一共享门禁绑定 source extent/region 与 target extent/region。
+        let geometry = RhiBlurPassGeometry::new(extent, physical_region, extent, physical_region)?;
+        // scissor 只从已验证目标区域机械投影。
+        let region = geometry.destination_scissor();
         // 计算与 legacy blur 相同的 sigma 和最多 63 taps。
         let sigma = radius / 3.0;
         let tap_radius = (sigma * 3.0).ceil().min(31.0) as i32;
@@ -237,20 +220,13 @@ impl RhiRenderer {
         let scratch = device.create_texture(TextureDesc::new(extent, format))?;
         // 从 scratch 创建成功起由同一 Frame 持有计划，并在末尾统一检查式清理。
         let mut frame = RhiRendererFrame::offscreen(device, target);
-        // 将原始区域规整为经过边界验证的整数 scissor。
-        let region = RhiScissor {
-            x,
-            y,
-            width,
-            height,
-        };
         // 两个 pass 都使用完整 target viewport，scissor 限制实际改写区域。
         let viewport = RhiViewport {
             width: extent.width as f32,
             height: extent.height as f32,
         };
-        // 区域 quad 的 NDC 顶点确保 shader 在局部区域内生成正确 UV。
-        let vertices = blur_region_vertices(extent, region);
+        // 共享几何一次生成最终 NDC position 与绝对 source UV，shader 不再解释 region。
+        let vertices = FrameVertexPayload::position_uv_f32(geometry.vertex_values());
         // 水平命令包只描述 source 采样，不自行绑定 scratch target。
         let mut horizontal = frame.new_pass();
         // 上传当前区域的类型化 NDC 顶点。
@@ -263,9 +239,8 @@ impl RhiRenderer {
             buffer: uniform_buffer,
             // 共享 RHI 值对象拥有完整 Blur 字段排列。
             data: FrameUniformPayload::Blur(blur_uniform(
-                extent,
-                region,
-                [1.0, 0.0],
+                geometry,
+                RhiBlurDirection::Horizontal,
                 tap_radius as u32,
                 &weights,
             )),
@@ -296,9 +271,8 @@ impl RhiRenderer {
             buffer: uniform_buffer,
             // 垂直 pass 只改变方向，其余共享字段与高斯核保持相同。
             data: FrameUniformPayload::Blur(blur_uniform(
-                extent,
-                region,
-                [0.0, 1.0],
+                geometry,
+                RhiBlurDirection::Vertical,
                 tap_radius as u32,
                 &weights,
             )),

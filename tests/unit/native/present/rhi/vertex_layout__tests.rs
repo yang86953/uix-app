@@ -27,6 +27,23 @@
         assert_eq!(position.offset_bytes(), 0);
     }
 
+    // 锁定 Blur position 与绝对 source UV 的最小共享序列。
+    #[test]
+    fn blur_layout_has_position_and_uv_without_adapter_fields() {
+        let layout = PipelineVertexLayout::PositionUvF32;
+        assert!(layout.is_valid());
+        assert_eq!(layout.stride_bytes(), 16);
+        let attributes = layout.attributes();
+        assert_eq!(attributes.len(), 2);
+        assert_eq!(attributes[0].semantic(), PipelineVertexSemantic::Position);
+        assert_eq!(attributes[0].offset_bytes(), 0);
+        assert_eq!(
+            attributes[1].semantic(),
+            PipelineVertexSemantic::TextureCoordinate
+        );
+        assert_eq!(attributes[1].offset_bytes(), 8);
+    }
+
     // 锁定 position、uv 与 color 的同一跨 Adapter 序列。
     #[test]
     fn textured_layout_has_one_shared_attribute_sequence() {

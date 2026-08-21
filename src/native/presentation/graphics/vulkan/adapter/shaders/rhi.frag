@@ -199,17 +199,16 @@ void main() {
 
 #elif defined(UIX_BLUR)
 layout(set = 0, binding = 0, std140) uniform BlurUniforms {
-    vec4 sizes;
-    vec4 region;
-    vec4 dir_taps;
+    vec4 uv_bounds;
+    vec4 step_taps;
     vec4 weights[16];
 } u;
 layout(set = 0, binding = 1) uniform sampler2D u_texture;
 layout(location = 0) in vec2 v_uv;
 
 void main() {
-    vec2 step_size = u.dir_taps.xy / u.sizes.zw;
-    int radius = int(u.dir_taps.z);
+    vec2 step_size = u.step_taps.xy;
+    int radius = int(u.step_taps.z);
     vec4 color = vec4(0.0);
     for (int index = 0; index < 64; ++index) {
         float weight = u.weights[index / 4][index % 4];
@@ -217,7 +216,8 @@ void main() {
             break;
         }
         vec2 offset = step_size * float(index - radius);
-        color += weight * texture(u_texture, v_uv + offset);
+        vec2 sample_uv = clamp(v_uv + offset, u.uv_bounds.xy, u.uv_bounds.zw);
+        color += weight * texture(u_texture, sample_uv);
     }
     out_color = color;
 }

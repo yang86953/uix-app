@@ -109,19 +109,18 @@ void main() {
 
 #elif defined(UIX_BLUR)
 layout(set = 0, binding = 0, std140) uniform BlurUniforms {
-    vec4 sizes;
-    vec4 region;
-    vec4 dir_taps;
+    vec4 uv_bounds;
+    vec4 step_taps;
     vec4 weights[16];
 } u;
 layout(location = 0) in vec2 a_pos;
+layout(location = 1) in vec2 a_uv;
 layout(location = 0) out vec2 v_uv;
 
 void main() {
     // Drawing Blur 使用 D3D/OpenGL 的上正 NDC；Vulkan viewport 为下正，机械翻转 Y。
     gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);
-    vec2 unit = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
-    v_uv = (u.region.xy + unit * u.region.zw) / u.sizes.zw;
+    v_uv = a_uv;
 }
 
 #elif defined(UIX_MSDF)

@@ -55,3 +55,41 @@ fn every_pipeline_has_one_valid_canonical_scene() {
         vec![PipelineKind::BlurPass]
     );
 }
+
+// Blur 规范场景必须覆盖非零原点、水平/垂直两 pass 及内外边界。
+#[test]
+fn blur_scenario_owns_nonzero_subregion_and_two_pass_invariants() {
+    let scenario = blur_subregion_scenario();
+    assert_eq!(
+        scenario.vertex.layout(),
+        PipelineVertexLayout::PositionUvF32
+    );
+    assert!(scenario.vertex.is_valid());
+    assert!(scenario.horizontal.is_valid());
+    assert!(scenario.vertical.is_valid());
+    assert_eq!(
+        scenario.scissor,
+        RhiScissor {
+            x: 2,
+            y: 34,
+            width: 10,
+            height: 8,
+        }
+    );
+    assert_eq!(scenario.horizontal_samples.len(), 4);
+    assert_eq!(scenario.final_samples.len(), 4);
+    assert!(
+        scenario
+            .horizontal_samples
+            .iter()
+            .chain(&scenario.final_samples)
+            .any(|sample| sample.semantic.contains("outside destination"))
+    );
+    assert!(
+        scenario
+            .horizontal_samples
+            .iter()
+            .chain(&scenario.final_samples)
+            .any(|sample| sample.semantic.contains("source boundary"))
+    );
+}

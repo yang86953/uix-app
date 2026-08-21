@@ -679,6 +679,26 @@ impl D3d11Pipeline {
         let layout = layout
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no input layout"))?;
 
+        // 从共享 position/uv-float4 属性序列创建 Blur 专用输入布局。
+        let blur_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionUvF32)?;
+        let mut layout_blur = None;
+        // SAFETY: blur_elems 完整初始化；blur_vs_blob 在调用期间存活且来自相同 VSMain。
+        unsafe {
+            device
+                .CreateInputLayout(
+                    &blur_elems,
+                    std::slice::from_raw_parts(
+                        blur_vs_blob.GetBufferPointer() as *const u8,
+                        blur_vs_blob.GetBufferSize(),
+                    ),
+                    Some(&mut layout_blur),
+                )
+                .map_err(|e| d3d_error("CreateInputLayout(blur)", e))?;
+        }
+        let layout_blur = layout_blur.ok_or_else(|| {
+            Error::new(Errc::PlatformError, "D3d11Pipeline: no blur input layout")
+        })?;
+
         // 从共享 position/uv/color 属性序列创建采样输入布局。
         let glyph_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionUvColorF32)?;
         let mut layout_glyph = None;
@@ -761,6 +781,7 @@ impl D3d11Pipeline {
             layout,
             // 保存与 BlurCB ABI 匹配的专用顶点 shader。
             vs_blur,
+            layout_blur,
             ps_blur,
             vs_glyph,
             ps_glyph,

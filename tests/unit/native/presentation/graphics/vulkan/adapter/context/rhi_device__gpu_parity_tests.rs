@@ -6,8 +6,8 @@ use ash::vk;
 
 use super::*;
 use crate::draw::backend::rhi_renderer::consistency::{
-    CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyScene, canonical_scenes,
-    validate_canonical_scenes,
+    CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyBlurScenario, ConsistencySample,
+    ConsistencyScene, blur_subregion_scenario, canonical_scenes, validate_canonical_scenes,
 };
 use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawRange, DrawRasterState, DrawSamplingBinding, PipelineKind,
@@ -250,26 +250,287 @@ fn draw_scene(
 
 // 用共享采样点逐类证明 shader 已执行；复杂图元只检查稳定内外/边界不变量。
 fn validate_readback(scenes: &[ConsistencyScene], pixels: &[u8]) {
-    let row_bytes = CONSISTENCY_EXTENT.width as usize * 4;
     for scene in scenes {
-        for sample in &scene.samples {
-            let offset = sample.y as usize * row_bytes + sample.x as usize * 4;
-            let actual: [u8; 4] = pixels[offset..offset + 4]
-                .try_into()
-                .expect("canonical sample must address one RGBA pixel");
-            assert!(
-                sample.accepts(actual),
-                "{} {} at ({}, {}): actual {actual:?}, expected {:?}..={:?}, tolerance {:?}({})",
-                scene.name,
-                sample.semantic,
-                sample.x,
-                sample.y,
-                sample.minimum,
-                sample.maximum,
-                sample.tolerance,
-                sample.tolerance.amount(),
-            );
-        }
+        validate_samples(scene.name, &scene.samples, pixels);
+    }
+}
+
+// 用共享采样点验证一份目标回读，不在 Vulkan harness 私设像素语义。
+fn validate_samples(name: &str, samples: &[ConsistencySample], pixels: &[u8]) {
+    let row_bytes = CONSISTENCY_EXTENT.width as usize * 4;
+    for sample in samples {
+        let offset = sample.y as usize * row_bytes + sample.x as usize * 4;
+        let actual: [u8; 4] = pixels[offset..offset + 4]
+            .try_into()
+            .expect("canonical sample must address one RGBA pixel");
+        assert!(
+            sample.accepts(actual),
+            "{name} {} at ({}, {}): actual {actual:?}, expected {:?}..={:?}, tolerance {:?}({})",
+            sample.semantic,
+            sample.x,
+            sample.y,
+            sample.minimum,
+            sample.maximum,
+            sample.tolerance,
+            sample.tolerance.amount(),
+        );
+    }
+}
+
+// 把共享 Blur pass 输入机械编码成一个 Vulkan draw packet。
+fn draw_blur_pass(
+    rhi: &mut VulkanRhiDevice,
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    device: &ash::Device,
+    command_buffer: vk::CommandBuffer,
+    pipeline: PipelineBinding,
+    vertex: BufferHandle,
+    uniform: BufferHandle,
+    texture: TextureHandle,
+    sampler: SamplerHandle,
+    scenario: &ConsistencyBlurScenario,
+) {
+    let packet = DrawPacket::new(
+        pipeline,
+        DrawBufferBindings::new(vertex, uniform),
+        DrawSamplingBinding::sampled(SampledTextureBinding::for_pipeline(
+            texture, sampler, pipeline,
+        )),
+        DrawRasterState::new(
+            RhiViewport {
+                width: CONSISTENCY_EXTENT.width as f32,
+                height: CONSISTENCY_EXTENT.height as f32,
+            },
+            Some(scenario.scissor),
+        ),
+        DrawRange::vertices(6),
+    );
+    rhi.draw(instance, physical_device, device, command_buffer, packet)
+        .expect("Vulkan blur subregion draw must execute");
+}
+
+// 在真实 Vulkan 设备上执行 source→scratch→target，并回读最终子区域内外边界。
+fn run_blur_subregion_two_pass(
+    rhi: &mut VulkanRhiDevice,
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    device: &ash::Device,
+    queue: vk::Queue,
+    queue_family: u32,
+    command_buffer: vk::CommandBuffer,
+    fence: vk::Fence,
+) {
+    let scenario = blur_subregion_scenario();
+    let contract = PipelineKind::BlurPass.contract();
+    let vertex_bytes = scenario.vertex.encode_ne_bytes();
+    let horizontal_bytes = scenario.horizontal.encode_ne_bytes();
+    let vertical_bytes = scenario.vertical.encode_ne_bytes();
+    let vertex = rhi
+        .create_buffer(
+            instance,
+            physical_device,
+            device,
+            BufferDesc::vertex(vertex_bytes.len(), contract.vertex.stride_bytes()),
+        )
+        .expect("Vulkan blur subregion vertex buffer must be created");
+    let horizontal = rhi
+        .create_buffer(
+            instance,
+            physical_device,
+            device,
+            BufferDesc::uniform(horizontal_bytes.len()),
+        )
+        .expect("Vulkan blur horizontal uniform must be created");
+    let vertical = rhi
+        .create_buffer(
+            instance,
+            physical_device,
+            device,
+            BufferDesc::uniform(vertical_bytes.len()),
+        )
+        .expect("Vulkan blur vertical uniform must be created");
+    rhi.update_buffer(device, RhiBufferUpload::new(vertex, &vertex_bytes))
+        .expect("Vulkan blur subregion vertices must upload");
+    rhi.update_buffer(device, RhiBufferUpload::new(horizontal, &horizontal_bytes))
+        .expect("Vulkan blur horizontal uniform must upload");
+    rhi.update_buffer(device, RhiBufferUpload::new(vertical, &vertical_bytes))
+        .expect("Vulkan blur vertical uniform must upload");
+
+    let source = rhi
+        .create_texture(
+            instance,
+            physical_device,
+            device,
+            TextureDesc::new(scenario.texture.extent, scenario.texture.format),
+        )
+        .expect("Vulkan blur source texture must be created");
+    rhi.update_texture(
+        instance,
+        physical_device,
+        device,
+        queue,
+        queue_family,
+        RhiTextureUpload::full(source, scenario.texture.extent, &scenario.texture.bytes),
+    )
+    .expect("Vulkan blur source texture must upload");
+    let scratch = rhi
+        .create_texture(
+            instance,
+            physical_device,
+            device,
+            TextureDesc::new(CONSISTENCY_EXTENT, TextureFormat::Rgba8Unorm),
+        )
+        .expect("Vulkan blur scratch texture must be created");
+    let target = rhi
+        .create_texture(
+            instance,
+            physical_device,
+            device,
+            TextureDesc::new(CONSISTENCY_EXTENT, TextureFormat::Rgba8Unorm),
+        )
+        .expect("Vulkan blur target texture must be created");
+    let sampler = rhi
+        .create_sampler(device, scenario.texture.sampler)
+        .expect("Vulkan blur sampler must be created");
+    let pipeline = rhi
+        .create_pipeline(
+            device,
+            PipelineDesc {
+                kind: PipelineKind::BlurPass,
+            },
+        )
+        .expect("Vulkan blur pipeline must be created");
+
+    rhi.prepare_frame(device, command_buffer)
+        .expect("Vulkan blur frame must prepare");
+    let scratch_identity = rhi
+        .textures
+        .resolve_render_target(scratch)
+        .expect("Vulkan blur scratch target identity must resolve");
+    let scratch_target = rhi
+        .texture_target(scratch)
+        .expect("Vulkan blur scratch native target must resolve");
+    rhi.begin_render_pass(
+        device,
+        command_buffer,
+        scratch_identity,
+        scratch_target,
+        LoadAction::Clear(RhiColor::transparent()),
+    )
+    .expect("Vulkan blur horizontal pass must begin");
+    draw_blur_pass(
+        rhi,
+        instance,
+        physical_device,
+        device,
+        command_buffer,
+        pipeline,
+        vertex,
+        horizontal,
+        source,
+        sampler,
+        &scenario,
+    );
+    rhi.end_render_pass(device, command_buffer)
+        .expect("Vulkan blur horizontal pass must end");
+
+    let target_identity = rhi
+        .textures
+        .resolve_render_target(target)
+        .expect("Vulkan blur target identity must resolve");
+    let native_target = rhi
+        .texture_target(target)
+        .expect("Vulkan blur native target must resolve");
+    let clear =
+        RhiColor::from_straight_rgba(CONSISTENCY_BACKGROUND.map(|value| value as f32 / 255.0));
+    rhi.begin_render_pass(
+        device,
+        command_buffer,
+        target_identity,
+        native_target,
+        LoadAction::Clear(clear),
+    )
+    .expect("Vulkan blur vertical pass must begin");
+    draw_blur_pass(
+        rhi,
+        instance,
+        physical_device,
+        device,
+        command_buffer,
+        pipeline,
+        vertex,
+        vertical,
+        scratch,
+        sampler,
+        &scenario,
+    );
+    rhi.end_render_pass(device, command_buffer)
+        .expect("Vulkan blur vertical pass must end");
+    rhi.finish_recording(device, command_buffer)
+        .expect("Vulkan blur frame must finish");
+    let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&command_buffer));
+    // SAFETY: 双 pass command buffer 已结束，fence 已在调用前重置。
+    unsafe { device.queue_submit(queue, std::slice::from_ref(&submit), fence) }
+        .expect("Vulkan blur two-pass submission must succeed");
+    // SAFETY: fence 覆盖唯一双 pass submission。
+    unsafe { device.wait_for_fences(&[fence], true, u64::MAX) }
+        .expect("Vulkan blur two-pass submission must complete");
+
+    let byte_count = u64::from(CONSISTENCY_EXTENT.width) * u64::from(CONSISTENCY_EXTENT.height) * 4;
+    let (readback, readback_memory) =
+        create_readback_buffer(instance, physical_device, device, byte_count);
+    // SAFETY: 双 pass 已完成，command buffer 与 fence 可重置用于回读。
+    unsafe {
+        device
+            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+            .expect("Vulkan blur readback command buffer must reset");
+        device
+            .reset_fences(&[fence])
+            .expect("Vulkan blur readback fence must reset");
+    }
+    let begin =
+        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    // SAFETY: command buffer 已重置且没有其它录制者。
+    unsafe { device.begin_command_buffer(command_buffer, &begin) }
+        .expect("Vulkan blur readback must begin");
+    let image = rhi
+        .textures
+        .get(target)
+        .expect("Vulkan blur target must remain alive")
+        .image();
+    record_readback(device, command_buffer, image, readback);
+    // SAFETY: readback 命令完整且位于 render pass 外。
+    unsafe { device.end_command_buffer(command_buffer) }.expect("Vulkan blur readback must finish");
+    let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&command_buffer));
+    // SAFETY: command buffer 已结束且 fence 已重置。
+    unsafe { device.queue_submit(queue, std::slice::from_ref(&submit), fence) }
+        .expect("Vulkan blur readback must submit");
+    // SAFETY: fence 覆盖唯一 readback submission。
+    unsafe { device.wait_for_fences(&[fence], true, u64::MAX) }
+        .expect("Vulkan blur readback must complete");
+    // SAFETY: readback memory 为 HOST_VISIBLE 且映射范围精确。
+    let mapped = unsafe {
+        device
+            .map_memory(readback_memory, 0, byte_count, vk::MemoryMapFlags::empty())
+            .expect("Vulkan blur readback memory must map")
+    };
+    // SAFETY: 映射范围包含固定画布全部 RGBA8 字节。
+    let pixels = unsafe { std::slice::from_raw_parts(mapped.cast::<u8>(), byte_count as usize) };
+    validate_samples("BlurPassTwoPass", &scenario.final_samples, pixels);
+    eprintln!(
+        "Vulkan blur subregion verified: origin=({}, {}), extent={}x{}, {} invariants",
+        scenario.scissor.x,
+        scenario.scissor.y,
+        scenario.scissor.width,
+        scenario.scissor.height,
+        scenario.final_samples.len(),
+    );
+    // SAFETY: GPU 已完成回读，映射指针不再使用。
+    unsafe {
+        device.unmap_memory(readback_memory);
+        device.destroy_buffer(readback, None);
+        device.free_memory(readback_memory, None);
     }
 }
 
@@ -473,6 +734,26 @@ pub(super) fn run_gpu_parity_test() {
             .queue_wait_idle(queue)
             .expect("Vulkan consistency queue must idle");
     }
+    // 复用同一真实设备与命令资源执行独立的水平→垂直 Blur 子区域链路。
+    // SAFETY: 前述 queue 已 idle，command buffer 与 fence 均没有在途使用者。
+    unsafe {
+        device
+            .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::empty())
+            .expect("Vulkan blur command buffer must reset");
+        device
+            .reset_fences(&[fence])
+            .expect("Vulkan blur fence must reset");
+    }
+    run_blur_subregion_two_pass(
+        &mut rhi,
+        &instance,
+        physical_device,
+        &device,
+        queue,
+        queue_family,
+        command_buffer,
+        fence,
+    );
     rhi.shutdown(&device);
     // SAFETY: 所有 RHI child 已销毁，随后按父子顺序释放 harness 对象。
     unsafe {

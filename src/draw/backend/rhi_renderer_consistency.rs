@@ -6,10 +6,10 @@
 use super::{FrameUniformPayload, FrameVertexPayload, RhiOp, RhiRenderer};
 use crate::draw::backend::gpu::pending::PendingNativeOp;
 use crate::platform::presentation::rhi::{
-    BLUR_WEIGHT_COUNT, PipelineKind, PipelineSampling, RhiBlurRasterParams, RhiExtent,
-    RhiGradientRasterParams, RhiMeshRasterParams, RhiMsdfRasterParams, RhiSampledRasterParams,
-    RhiScissor, RhiSectorRasterParams, RhiShadowRasterParams, RhiShapeRasterParams, RhiViewport,
-    SamplerDesc, TextureFormat,
+    BLUR_WEIGHT_COUNT, PipelineKind, PipelineSampling, RhiBlurDirection, RhiBlurPassGeometry,
+    RhiExtent, RhiGradientRasterParams, RhiMeshRasterParams, RhiMsdfRasterParams,
+    RhiSampledRasterParams, RhiScissor, RhiSectorRasterParams, RhiShadowRasterParams,
+    RhiShapeRasterParams, RhiTextureRegion, RhiViewport, SamplerDesc, TextureFormat,
 };
 
 // 使用三行四列固定画布隔离十一类 pipeline，同时只需一次真实 GPU 提交和回读。
@@ -144,6 +144,18 @@ pub(crate) struct ConsistencyScene {
     pub(crate) texture: Option<ConsistencyTexture>,
     pub(crate) scissor: Option<RhiScissor>,
     pub(crate) samples: Vec<ConsistencySample>,
+}
+
+// 保存非零原点 Blur 子区域在水平与垂直两 pass 共用的规范输入和最终断言。
+#[derive(Debug, Clone)]
+pub(crate) struct ConsistencyBlurScenario {
+    pub(crate) vertex: FrameVertexPayload,
+    pub(crate) horizontal: FrameUniformPayload,
+    pub(crate) vertical: FrameUniformPayload,
+    pub(crate) texture: ConsistencyTexture,
+    pub(crate) scissor: RhiScissor,
+    pub(crate) horizontal_samples: Vec<ConsistencySample>,
+    pub(crate) final_samples: Vec<ConsistencySample>,
 }
 
 // 返回十一类 pipeline 的唯一规范场景；顺序同时固定真实 GPU 诊断输出。
@@ -586,67 +598,114 @@ fn shadow_scene() -> ConsistencyScene {
     }
 }
 
-fn blur_scene() -> ConsistencyScene {
-    let full_region = RhiScissor {
-        x: 0,
-        y: 0,
-        width: CONSISTENCY_EXTENT.width as i32,
-        height: CONSISTENCY_EXTENT.height as i32,
-    };
+// 构造水平与垂直两 pass 共用的非零原点、非全尺寸 Blur 子区域。
+pub(crate) fn blur_subregion_scenario() -> ConsistencyBlurScenario {
+    // 选择不与其它规范图元重叠的左下单元格，并保留明确内外边界。
+    let region = RhiTextureRegion::from_xy(2, 34, RhiExtent::new(10, 8));
+    // 同尺寸 source/destination 通过唯一共享门禁生成 position、UV、scissor 与 uniform。
+    let geometry = RhiBlurPassGeometry::new(CONSISTENCY_EXTENT, region, CONSISTENCY_EXTENT, region)
+        .expect("canonical blur subregion must satisfy shared geometry contract");
     let mut weights = [0.0f32; BLUR_WEIGHT_COUNT];
     weights[..3].copy_from_slice(&[0.25, 0.5, 0.25]);
-    // 全目标代表避开既有三端子区域 UV 争议；恒定背景保证其它图元仍可独立覆盖。
+    // 纹理外部保持画布背景，子区域使用不同常量底色以暴露越域 taps。
     let pixel_count = CONSISTENCY_EXTENT.width as usize * CONSISTENCY_EXTENT.height as usize;
     let mut source = Vec::with_capacity(pixel_count * 4);
     for _ in 0..pixel_count {
         source.extend_from_slice(&CONSISTENCY_BACKGROUND);
     }
-    let row_start = (34usize * CONSISTENCY_EXTENT.width as usize + 2) * 4;
-    source[row_start..row_start + 16]
-        .copy_from_slice(&[255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255]);
-    ConsistencyScene {
-        name: "BlurPass",
-        kind: PipelineKind::BlurPass,
-        source: ConsistencySource::DrawingBlur,
-        vertex: super::blur::blur_region_vertices(CONSISTENCY_EXTENT, full_region),
-        uniform: FrameUniformPayload::Blur(RhiBlurRasterParams::new(
-            CONSISTENCY_EXTENT,
-            CONSISTENCY_EXTENT,
-            full_region,
-            [1.0, 0.0],
+    // 填充完整源域，边界期望能区分“钳到域内”与“采到域外背景”。
+    for y in 34usize..42 {
+        for x in 2usize..12 {
+            let offset = (y * CONSISTENCY_EXTENT.width as usize + x) * 4;
+            source[offset..offset + 4].copy_from_slice(&[32, 64, 96, 255]);
+        }
+    }
+    // 单个可区分脉冲同时验证水平、垂直和二维卷积方向。
+    let impulse = (37usize * CONSISTENCY_EXTENT.width as usize + 6) * 4;
+    source[impulse..impulse + 4].copy_from_slice(&[224, 192, 160, 255]);
+
+    ConsistencyBlurScenario {
+        vertex: FrameVertexPayload::position_uv_f32(geometry.vertex_values()),
+        horizontal: FrameUniformPayload::Blur(geometry.raster_params(
+            RhiBlurDirection::Horizontal,
             1,
             &weights,
         )),
-        texture: Some(ConsistencyTexture {
+        vertical: FrameUniformPayload::Blur(geometry.raster_params(
+            RhiBlurDirection::Vertical,
+            1,
+            &weights,
+        )),
+        texture: ConsistencyTexture {
             extent: CONSISTENCY_EXTENT,
             format: TextureFormat::Rgba8Unorm,
             bytes: source,
             sampler: SamplerDesc::linear_clamp(),
-        }),
-        scissor: None,
-        samples: vec![
+        },
+        scissor: geometry.destination_scissor(),
+        horizontal_samples: vec![
+            ConsistencySample::exact(
+                6,
+                37,
+                [128, 128, 128, 255],
+                ConsistencyTolerance::Filtered,
+                "blur horizontal center",
+            ),
+            ConsistencySample::exact(
+                5,
+                37,
+                [80, 96, 112, 255],
+                ConsistencyTolerance::Filtered,
+                "blur horizontal neighbor",
+            ),
             ConsistencySample::exact(
                 2,
                 34,
-                [132, 72, 12, 255],
+                [32, 64, 96, 255],
                 ConsistencyTolerance::Filtered,
-                "blur neighborhood",
+                "blur horizontal source boundary",
             ),
-            ConsistencySample::exact(
-                3,
-                34,
-                [64, 128, 64, 255],
-                ConsistencyTolerance::Filtered,
-                "blur convolution",
-            ),
-            ConsistencySample::exact(
-                4,
-                34,
-                [0, 64, 128, 255],
-                ConsistencyTolerance::Filtered,
-                "blur direction",
-            ),
+            background(1, 34, "blur horizontal outside destination"),
         ],
+        final_samples: vec![
+            ConsistencySample::exact(
+                6,
+                37,
+                [80, 96, 112, 255],
+                ConsistencyTolerance::Filtered,
+                "blur two-pass center",
+            ),
+            ConsistencySample::exact(
+                5,
+                37,
+                [56, 80, 104, 255],
+                ConsistencyTolerance::Filtered,
+                "blur two-pass axial neighbor",
+            ),
+            ConsistencySample::exact(
+                2,
+                34,
+                [32, 64, 96, 255],
+                ConsistencyTolerance::Filtered,
+                "blur two-pass source boundary",
+            ),
+            background(1, 34, "blur two-pass outside destination"),
+        ],
+    }
+}
+
+fn blur_scene() -> ConsistencyScene {
+    // 单 pass 全图元场景直接复用两 pass 场景的水平输入与断言。
+    let scenario = blur_subregion_scenario();
+    ConsistencyScene {
+        name: "BlurPass",
+        kind: PipelineKind::BlurPass,
+        source: ConsistencySource::DrawingBlur,
+        vertex: scenario.vertex,
+        uniform: scenario.horizontal,
+        texture: Some(scenario.texture),
+        scissor: Some(scenario.scissor),
+        samples: scenario.horizontal_samples,
     }
 }
 
