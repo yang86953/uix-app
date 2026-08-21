@@ -75,7 +75,7 @@ bash scripts/build_internal_release.sh
 | 路径 | 内容 |
 |---|---|
 | `src/` | 框架实现与公开 API |
-| `demo/` | 多项目演示工作区：`uix-lang-demo`（`.uix` 主演示）、`cli-demo`（CLI 功能域）与 8 个独立真窗验收程序（`badge-visual` / `selectable-list-visual` / `collapse-visual` / `popconfirm-visual` / `upload-visual` / `backdrop-visual` / `rich-text-visual` / `rich-text-image-visual`） |
+| `demo/` | 只包含 `uix-lang-demo`：以 `.uix` 声明全部已登记组件、展示数据、界面状态与局部交互的全组件主演示 |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 契约、集成与真窗测试入口 |
 | `scripts/` | 内部打包工具 |

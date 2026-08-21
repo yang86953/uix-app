@@ -76,8 +76,8 @@
       <Card title="快捷导航" width="220px">
         // 组织导航按钮。
         <Column gap="6px">
-          // 跳转应用能力页。
-          <Button @click="setState(page: 1)">应用能力</Button>
+          // 跳转语言能力页。
+          <Button @click="setState(page: 1)">语言能力</Button>
           // 跳转通用组件页。
           <Button @click="setState(page: 2)">通用组件</Button>
           // 跳转覆盖清单页。
@@ -95,23 +95,23 @@
 // 结束首页组件。
 </Widget>
 
-// 声明应用能力组件：展示 App Timer、响应式状态、多窗口与应用主题。
-<Widget name="RuntimePage" props="tick: State<number>, count: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
-  // 组织应用能力内容。
+// 声明语言能力组件：全部状态、操作与主题切换都由 uix-lang 表达。
+<Widget name="RuntimePage" state="count: 0">
+  // 组织语言能力内容。
   <Column gap="16px">
-    // 展示应用能力标题。
-    <Text fontSize="heading2">应用能力</Text>
-    // 展示 App Timer 卡片。
-    <Card title="App Timer — run_interval">
-      // 组织计时器内容。
+    // 展示语言能力标题。
+    <Text fontSize="heading2">uix-lang 语言能力</Text>
+    // 展示编译期应用入口卡片。
+    <Card title="AOT App — uix_app!">
+      // 组织编译入口说明。
       <Column gap="8px">
-        // 显示每秒递增的全局 tick。
-        <Text>全局 tick: {tick}（每秒 +1）</Text>
-        // 说明计时器由 Rust 组合根注册。
-        <Text fontSize="small">src/main.rs 的 App.on_start 注册 1s run_interval 更新共享 tick 状态。</Text>
-      // 结束计时器内容。
+        // 显示当前文档的真实生成入口。
+        <Text>src/main.uix 在编译期生成完整 App 与 View 树。</Text>
+        // 说明 Rust 组合根只持有语言边界之外的生命周期。
+        <Text fontSize="small">Rust 薄入口只负责进程参数、字体、平台线程和最终 run()。</Text>
+      // 结束编译入口说明。
       </Column>
-    // 结束 App Timer 卡片。
+    // 结束编译期应用入口卡片。
     </Card>
     // 展示响应式 State 卡片。
     <Card title="响应式 State / setState">
@@ -137,18 +137,18 @@
       <Column gap="8px">
         // 排列主题操作。
         <Container direction="row" gap="12px" align="center">
-          // 通过 Rust 组合根的公开 AppHandle 广播暗色主题。
-          <Button automationId="theme-dark" @click="set_dark_theme()">暗色主题</Button>
-          // 通过 Rust 组合根的公开 AppHandle 广播亮色主题。
-          <Button automationId="theme-light" @click="set_light_theme()">亮色主题</Button>
+          // 通过语言内置操作切换暗色主题。
+          <Button automationId="theme-dark" @click="setTheme('dark')">暗色主题</Button>
+          // 通过语言内置操作切换亮色主题。
+          <Button automationId="theme-light" @click="setTheme('light')">亮色主题</Button>
           // 复用标题栏主题切换组件。
           <ThemeToggle />
         // 结束主题操作。
         </Container>
-        // 显示所有窗口共享的应用主题状态。
-        <Text automationId="runtime-theme-state">{theme_status}</Text>
+        // 显示语言内置主题操作状态说明。
+        <Text automationId="runtime-theme-state">setTheme 与 ThemeToggle 均由 uix-lang 生成。</Text>
         // 说明主题所有权的真实调用路径。
-        <Text fontSize="small">主窗与子窗都经公开 AppHandle.set_theme 更新应用主题；逐窗 View 只消费同一主题事实。</Text>
+        <Text fontSize="small">语言事件只请求主题切换，Application System 继续拥有实际主题生命周期。</Text>
         // 直接演示组件私有动态 class、布局更新与离开恢复。
         <StyleAction />
         // 说明 setStyle 不依赖调用方同名函数或运行时字符串注册表。
@@ -165,22 +165,22 @@
       </Column>
     // 结束主题卡片。
     </Card>
-    // 展示多窗口 Rust 组合边界。
-    <Card title="Multi-window — Rust 组合根">
-      // 组织按需打开入口与可观察状态。
+    // 展示同步 action 与内置操作边界。
+    <Card title="同步 Action — 语言面局部交互">
+      // 组织语言事件与可观察状态。
       <Column gap="10px">
-        // 通过 Rust 回调请求公开 open_window。
-        <Button type="primary" automationId="runtime-open-theme-window" @click="open_theme_window()">打开主题联动窗口</Button>
-        // 显示窗口创建结果。
-        <Text automationId="runtime-multi-window-status">{multi_window_status}</Text>
-        // 说明窗口私有资源不跨窗共享。
-        <Text fontSize="small">open_window 与 WindowConfig 由 Rust 组合根持有；uix-lang 只调用窄回调，不接触 WindowSession、焦点或 swapchain。</Text>
-      // 结束多窗口内容。
+        // 用语言事件更新当前 Widget 的私有状态。
+        <Button type="primary" automationId="runtime-language-action" @click="setState(count: count + 1)">执行语言 Action</Button>
+        // 显示语言状态更新结果。
+        <Text automationId="runtime-language-status">Action 已执行 {count} 次</Text>
+        // 说明语言只拥有局部界面交互。
+        <Text fontSize="small">setState 只更新当前组件的界面状态，不取得服务、窗口或平台资源。</Text>
+      // 结束同步 action 内容。
       </Column>
-    // 结束多窗口卡片。
+    // 结束同步 action 卡片。
     </Card>
     // 展示 PicturePolicy 与自定义组件边界。
-    <Alert message="PicturePolicy 与 widget! 自定义组件保留 Rust API 边界，不在声明文件复制运行时所有权。" type="info" />
+    <Alert message="业务规则、I/O 与应用生命周期保留 Rust API 边界；演示界面完全由 uix-lang 声明。" type="info" />
     // 展示编译期生成说明。
     <Alert message="uix! 在编译期生成公开 ViewNode，不引入运行时解释器。" type="success" />
   // 结束应用能力内容。

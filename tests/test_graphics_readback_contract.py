@@ -180,24 +180,6 @@ class GraphicsReadbackContractTests(unittest.TestCase):
             backend,
         )
 
-    # 校验 backdrop blur 由同一上层程序驱动两个原生 Adapter 并产生像素证据。
-    def test_backdrop_blur_visual_is_api_neutral_and_readback_driven(self) -> None:
-        # 读取独立真窗程序的 capability 配置。
-        cargo = (ROOT / "demo/backdrop-visual/Cargo.toml").read_text(encoding="utf-8")
-        # 读取真窗程序唯一组合根。
-        demo = (ROOT / "demo/backdrop-visual/src/main.rs").read_text(encoding="utf-8")
-        # Windows 与 Linux Adapter 必须由同一依赖目标共同编译。
-        self.assertIn('"d3d11", "opengles"', cargo)
-        # 测试控制面必须保持可选，不能污染普通视觉程序。
-        self.assertIn('test-harness = ["uix/test-harness"]', cargo)
-        # 上层组合根不能硬编码任何具体图形 API。
-        self.assertNotIn(".graphics_backend(", demo)
-        # 自动模式必须从最终 surface 关系验证真实边界混色。
-        self.assertIn("validate_blurred_stripes(&readback)", demo)
-        # runner 必须取得稳定成功标记与规范像素格式。
-        self.assertIn("UIX_BACKDROP_READBACK_OK", demo)
-
-
 # 支持直接运行本契约测试文件。
 if __name__ == "__main__":
     # 执行本文件内的全部测试。
