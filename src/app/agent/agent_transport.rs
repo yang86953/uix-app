@@ -15,7 +15,7 @@ use crate::app::agent::agent_protocol::{
     AGENT_PROTOCOL_SCHEMA, AgentProtocolReply, AgentProtocolSession, MAX_AGENT_CONNECTIONS,
     MAX_AGENT_MESSAGE_BYTES, encode_session_token, framing_error_reply,
 };
-use crate::native::agent_transport::{
+use crate::platform::adapters::transport::{
     AcceptedAgentStream, AgentEndpoint, AgentEndpointWake, AgentStream, AgentStreamCancelIo,
     fill_secure_random,
 };

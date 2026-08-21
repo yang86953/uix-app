@@ -1,7 +1,10 @@
 //! UIX 的稳定原生平台能力公开面。
 //!
-//! `crate::native` 保留 OS、窗口和图形实现；应用只通过本模块的 owned
-//! 描述值与线程亲和 [`Platform`] 消费独立平台能力。
+//! `crate::native` 保留窗口和图形实现；平台私有 adapter 封装已迁入的 OS
+//! 差异，应用只通过本模块的 owned 描述值与线程亲和 [`Platform`] 消费能力。
+
+// 具体 OS adapter 物理归属 Platform System，并按能力 feature 编译。
+pub(crate) mod adapters;
 
 // Platform System 的组合门面保留在根目录，不归属于任何单一功能域。
 mod facade;

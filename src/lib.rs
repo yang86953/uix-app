@@ -67,7 +67,7 @@
 //! ```
 //!
 //! ```compile_fail
-//! // platform 私有 Module 边界不可达：capabilities / windowing / presentation / agent_transport。
+//! // native 私有 Module 边界不可达：capabilities / windowing / presentation。
 //! use uix::native::capabilities;
 //! ```
 //!
@@ -76,8 +76,8 @@
 //! ```
 //!
 //! ```compile_fail
-//! // agent-transport Module 不可达（feature 启用与否都不允许外部引用）。
-//! use uix::native::agent_transport::AgentListener;
+//! // platform 私有 adapter 不可达（feature 启用与否都不允许外部引用）。
+//! use uix::platform::adapters::transport::AgentEndpoint;
 //! ```
 //!
 //! ```compile_fail

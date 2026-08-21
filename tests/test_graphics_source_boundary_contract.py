@@ -24,16 +24,24 @@ UPPER_API = re.compile(
 PRIVATE_SURFACE_STATE = re.compile(
     r"\b(?:surface_generation|recreate_generation|recreate_pending|needs_recreate)\b"
 )
+NATIVE_REFERENCE = re.compile(r"\bcrate::native\b|(?<!crate::)\bnative::")
 
-# app 尚未完成其余非图形 platform contract 的物理迁移；显示协议不再进入例外集。
-APP_NATIVE_PROTOCOLS = {
-    "crate::native::agent_transport::AcceptedAgentStream",
-    "crate::native::agent_transport::AgentEndpoint",
-    "crate::native::agent_transport::AgentEndpointWake",
-    "crate::native::agent_transport::AgentStream",
-    "crate::native::agent_transport::AgentStreamCancelIo",
-    "crate::native::agent_transport::fill_secure_random",
-}
+# Agent transport 的中立合同与 OS adapter 整体归属 platform，native 不保留兼容路径。
+AGENT_TRANSPORT_ROOT = SRC / "platform/adapters/transport"
+AGENT_TRANSPORT_CONTRACT = AGENT_TRANSPORT_ROOT / "mod.rs"
+LEGACY_AGENT_TRANSPORT_ROOT = SRC / "native/agent_transport"
+AGENT_TRANSPORT_APP = SRC / "app/agent/agent_transport.rs"
+AGENT_TRANSPORT_DEFINITIONS = (
+    ("trait", "AgentStreamIo"),
+    ("type", "AgentStream"),
+    ("trait", "AgentStreamCancelIo"),
+    ("struct", "AcceptedAgentStream"),
+)
+AGENT_TRANSPORT_ADAPTERS = (
+    AGENT_TRANSPORT_ROOT / "unsupported.rs",
+    AGENT_TRANSPORT_ROOT / "unix.rs",
+    AGENT_TRANSPORT_ROOT / "windows.rs",
+)
 # 平台启动输入合同不依赖具体实现；唯一组合根叶负责目标选择与对象所有权。
 PLATFORM_COMPOSITION_CONTRACT = SRC / "platform/composition.rs"
 PLATFORM_COMPOSITION_ROOT = SRC / "platform/composition_root.rs"
@@ -405,25 +413,56 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 with self.subTest(source=relative(path)):
                     self.assertIsNone(TARGET_CFG.search(text))
                     self.assertIsNone(UPPER_API.search(text))
-                    if root.name in {"ui", "draw"}:
-                        self.assertNotIn("crate::native", text)
+                    self.assertIsNone(NATIVE_REFERENCE.search(text))
 
-    def test_app_native_compatibility_is_limited_to_exact_protocols(self) -> None:
+    def test_agent_transport_has_one_platform_owned_source_tree(self) -> None:
         observed: set[str] = set()
         for path in rust_files(SRC / "app"):
             observed.update(native_paths(source(path)))
+        self.assertEqual(observed, set())
 
-        unexpected = {
-            path
-            for path in observed
-            if not any(path == allowed or path.startswith(f"{allowed}::") for allowed in APP_NATIVE_PROTOCOLS)
-        }
-        self.assertEqual(unexpected, set())
-        self.assertEqual(
-            {path for path in observed if path in APP_NATIVE_PROTOCOLS},
-            APP_NATIVE_PROTOCOLS,
-            "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
+        # 旧 native 子树必须消失，app 直接消费 platform 私有 adapter。
+        self.assertFalse(LEGACY_AGENT_TRANSPORT_ROOT.exists())
+        app_source = source(AGENT_TRANSPORT_APP)
+        self.assertIn(
+            "use crate::platform::adapters::transport::", app_source
         )
+        self.assertIsNone(NATIVE_REFERENCE.search(app_source))
+
+        # 中立字节流与取消合同只能由 platform adapter 根定义一次。
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        for kind, name in AGENT_TRANSPORT_DEFINITIONS:
+            definition = re.compile(rf"\b{kind}\s+{name}\b")
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(agent_transport_definition=name):
+                self.assertEqual(locations, [AGENT_TRANSPORT_CONTRACT])
+
+        # 每个 cfg 叶只保留一份端点、唤醒与安全随机数实现。
+        for kind, name in (
+            ("struct", "AgentEndpoint"),
+            ("struct", "AgentEndpointWake"),
+            ("fn", "fill_secure_random"),
+        ):
+            definition = re.compile(rf"\b{kind}\s+{name}\b")
+            locations = {
+                path for path, text in all_sources.items() if definition.search(text)
+            }
+            with self.subTest(agent_transport_adapter_definition=name):
+                self.assertEqual(locations, set(AGENT_TRANSPORT_ADAPTERS))
+
+        # platform adapter 子树不得反向依赖 native，OS/API 细节留在对应叶。
+        for path in rust_files(AGENT_TRANSPORT_ROOT):
+            with self.subTest(agent_transport_dependency=relative(path)):
+                self.assertNotIn("crate::native", source(path))
+        unix_source = source(AGENT_TRANSPORT_ROOT / "unix.rs")
+        windows_source = source(AGENT_TRANSPORT_ROOT / "windows.rs")
+        for marker in ("UnixListener", "SO_PEERCRED", 'File::open("/dev/urandom")'):
+            self.assertIn(marker, unix_source)
+        for marker in ("CreateNamedPipeW", "CancelSynchronousIo", "BCryptGenRandom"):
+            self.assertIn(marker, windows_source)
 
         # 三个上层域都不得穿透平台入口选择 factory 或具体 OS 后端。
         for root in UPPER_ROOTS:
