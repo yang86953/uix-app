@@ -1,0 +1,11 @@
+[package]
+name = "uix-lang-cli"
+version = "0.0.1"
+edition = "2024"
+publish = false
+license-file = "../LICENSE"
+description = "UIX Lang command-line toolchain adapter"
+
+[dependencies]
+serde_json = "1"
+uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.1" }
