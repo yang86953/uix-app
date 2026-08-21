@@ -11,6 +11,10 @@ pub(crate) mod adapter;
 #[cfg(any(unix, windows))]
 pub(crate) mod context;
 
+// Vulkan GPU-native 路径只在 Adapter 内机械映射 platform RHI 契约。
+#[allow(dead_code)]
+mod rhi;
+
 #[cfg(any(unix, windows))]
 mod device;
 
