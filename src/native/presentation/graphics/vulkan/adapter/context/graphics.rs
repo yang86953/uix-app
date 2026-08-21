@@ -39,8 +39,6 @@ impl PixelUploadSurface for VulkanContext {
     ) -> Result<()> {
         // 获取当前共享 device lease。
         let device = self.active_device()?;
-        // present 前拒绝已经丢失的 device。
-        device.ensure_healthy()?;
         // 非正 extent 没有可提交像素，保持既有空操作语义。
         if width <= 0 || height <= 0 {
             // 空像素提交成功且不触碰 swapchain。
@@ -51,7 +49,7 @@ impl PixelUploadSurface for VulkanContext {
             // 把 CPU pixels 写入当前 Vulkan upload buffer。
             .upload_pixels(pixels, width, height)
             // 只有上传成功才进入唯一 WSI present。
-            .and_then(|()| self.present_uploaded_pixels());
+            .and_then(|()| self.present_uploaded_pixels(&device));
         // 让共享 device 观察并分类提交结果。
         device.observe(result)
     }
@@ -60,8 +58,6 @@ impl PixelUploadSurface for VulkanContext {
     fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 获取当前共享 device lease。
         let device = self.active_device()?;
-        // resize 前拒绝已经丢失的 device。
-        device.ensure_healthy()?;
         // 执行 Vulkan surface 的实际 resize。
         let result = self.resize_active(width, height);
         // 让共享 device 观察并分类 resize 结果。
@@ -85,7 +81,6 @@ impl VulkanContext {
         height: i32,
     ) -> Result<Vec<u32>> {
         let device = self.active_device()?;
-        device.ensure_healthy()?;
         let result = (|| {
             self.hydrate_cpu_shadow_from_staging()?;
             let expected = (self.width as usize).saturating_mul(self.height as usize);

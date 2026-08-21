@@ -348,7 +348,7 @@ impl DeviceLossState {
         })
     }
 
-    #[cfg(any(test, all(windows, feature = "vulkan")))]
+    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
     pub(super) fn mark_for_test(&self, device_fault_supported: bool) {
         let diagnostic = if device_fault_supported {
             "ERROR_DEVICE_LOST; VK_EXT_device_fault: synthetic external reset"

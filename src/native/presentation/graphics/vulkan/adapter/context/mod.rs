@@ -202,7 +202,6 @@ pub struct VulkanContext {
     physical_device: vk::PhysicalDevice,
     pub(crate) adapter_info: VulkanAdapterInfo,
     device: ash::Device,
-    queue: vk::Queue,
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,

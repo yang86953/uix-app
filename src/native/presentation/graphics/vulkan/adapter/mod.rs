@@ -65,6 +65,13 @@ pub(crate) fn run_present_completion_contract_test() {
     context::run_present_completion_contract_test();
 }
 
+// 显式测试 feature 验证真实共享 device 与每窗口恢复边界。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) fn run_shared_device_contract_test() {
+    device::run_shared_device_contract_test();
+    crate::draw::renderer::recovery_driver::run_multi_window_device_loss_contract_test();
+}
+
 #[cfg(not(any(unix, windows)))]
 #[allow(dead_code)]
 pub(crate) fn create(

@@ -2,7 +2,7 @@
 
 pub(crate) mod canvas_2d;
 // 测试支撑使用 API 无关空实现，避免 Drawing 因目标系统产生不同源码分支。
-#[cfg(any(test, feature = "test-harness"))]
+#[cfg(any(test, feature = "test-harness", feature = "vulkan-parity-test"))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
 // 将 Picture blur 与后续合成的 CPU 回归拆到独立测试文件。

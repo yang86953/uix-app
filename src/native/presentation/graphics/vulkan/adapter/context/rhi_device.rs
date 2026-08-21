@@ -658,14 +658,16 @@ impl GraphicsDevice for VulkanContext {
             .ok_or_else(|| vulkan_rhi_unavailable("update_texture after shutdown"))?
             .instance()
             .clone();
-        let result = self.rhi_device.update_texture(
-            &instance,
-            self.physical_device,
-            &self.device,
-            self.queue,
-            self.adapter_info.queue_family_index,
-            upload,
-        );
+        let result = owner.with_queue("vkQueueSubmit RHI texture upload", |queue| {
+            self.rhi_device.update_texture(
+                &instance,
+                self.physical_device,
+                &self.device,
+                queue,
+                self.adapter_info.queue_family_index,
+                upload,
+            )
+        })?;
         owner.observe(result)
     }
 
@@ -790,7 +792,7 @@ impl GraphicsDevice for VulkanContext {
 
     fn submit(&mut self) -> Result<SubmissionHandle> {
         let owner = self.active_device()?;
-        let result = self.submit_rhi_frame();
+        let result = self.submit_rhi_frame(&owner);
         owner.observe(result)
     }
 
