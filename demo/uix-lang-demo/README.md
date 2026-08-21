@@ -66,7 +66,7 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一�
   `['female', 'male']` 编译为 vec，同一数据绑定可被多个标签按值 clone 复用。
 - 语言能力：props（String / number / bool / State<T> / 回调签名）、样式类继承与内联
   style、If / For 控制流、setTheme 框架内置操作（主题请求通道，无调用方桥接）、
-  不可变数组操作与受限闭包、按顺序求值的 computed 派生值、`<Record>` 类型化业务模型
+  不可变数组操作与受限闭包、按顺序求值的 computed 派生值、`<Record>` 类型化界面数据结构
   （`uix_items!` 生成模块级结构体供 Rust 侧回调引用）。数据展示页以 `filter` 派生有效
   展开项，再由后续 computed 展示剩余数量；同页通过默认与具名 `Slot` 复用统一面板容器。
 - Rust 图表文档列出的十二类图表标签已全部登记类型化静态映射；
@@ -84,11 +84,11 @@ Windows 使用 D3D11；Linux/Wayland 构建使用 EGL OpenGL ES。入口统一�
 `enable_agent_control` 与最终 `run()` 仍由 Rust 薄入口链式配置，没有引入运行时解释器或
 第二套窗口所有者。
 
-Rust 侧只保留三类内容：窗口生命周期状态（页面、计数与秒级 tick）与 App 组合根，以及
-由 Rust 构造的私有类型演示数据（VirtualScroll 的 DemoRow 行）。类型化状态（集合、级联
-路径、日期、时间、颜色、滚动位置与表单模型）全部由语言面组件私有 state 声明；表单
-业务模型由 `<Record>` 声明并经 `uix_items!` 生成模块级结构体，Rust 侧 `submit_profile`
-直接引用该类型。
+UIX Lang 负责十二页的结构、样式、展示数据、界面状态和局部交互；Rust 继续持有窗口生命周期、
+页面与计时驱动、App 组合根、业务处理和私有演示数据（VirtualScroll 的 DemoRow 行）。
+集合、级联路径、日期、时间、颜色、滚动位置与表单草稿等呈现状态由语言面组件私有 state
+声明；`<Record>` 只定义表单界面与 Rust 回调共享的数据形状，并经 `uix_items!` 生成模块级
+结构体，提交和校验逻辑仍由 Rust 侧 `submit_profile` 实现。
 
 根视图背景：`uix!` 生成的普通 `ViewNode` 仍保持透明语义；当它作为窗口根 View 且没有显式
 背景时，`App` 组合根会应用当前主题的 `BgLayout` 默认值。调用方显式设置的背景（包括透明色）
