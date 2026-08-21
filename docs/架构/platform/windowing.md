@@ -12,7 +12,9 @@
 
 > **自动居中边界**：`PlatformWindow::center_on_screen` 保持统一的 typed capability 契约；Wayland 不提供普通客户端绝对定位能力，因此返回 `Errc::NotImplemented`，不得伪造居中成功。App 的主窗、次窗与 `Window::create` 把该错误视为预期能力缺失，不记录 WARN，并由 compositor 使用默认放置；其他执行错误继续记录 WARN。此策略不引入首次 configure 后偏移、异步定位状态或新的窗口生命周期所有者。
 
-> **文件拖放边界**：Application 窗口创建 Adapter 在原生窗口创建后、向调用方发布 owner 前统一调用 `enable_file_drop(true)`。`Errc::NotImplemented` 表示平台稳定缺少该能力，窗口仍可创建；其他启用失败必须关闭尚未发布的窗口并保留 typed 原因链。Windows 通过 `DragAcceptFiles` / `WM_DROPFILES` 交付本地路径；Wayland 只接受 `wl_data_device` 提供的 `text/uri-list` 与 Copy 动作，通过事件循环非阻塞读取并严格解析本地 `file:` URI。平台按 `WindowId` 投递一次 `FileDrop`，ui 再按落点命中 overlay 或主树；selection 替换、drag leave、窗口禁用/关闭和 backend teardown 必须消费 offer、pipe 与 callback owner，不得产生迟到事件。
+> **可选能力边界**：`src/platform/windowing/capability.rs` 是窗口可选操作与精确查询的唯一值权威；`PlatformWindow::capabilities` 返回当前实例的只读集合。共享窗口核心必须在参数验证、共享状态写入、presenter 调用和 concrete adapter 委托之前完成统一门禁；缺失能力稳定返回 `Errc::NotImplemented` 与该中立操作身份。后端必须显式实现全部 `WindowOps` 方法并声明真实能力，协议 global 缺失等实例差异由能力集合动态表达，不允许默认 trait 方法暗示支持。
+
+> **文件拖放边界**：Application 窗口创建 Adapter 在原生窗口创建后、向调用方发布 owner 前先查询 `EnableFileDrop`，仅在支持时调用 `enable_file_drop(true)`。能力稳定缺失时窗口仍可创建；其他启用失败必须关闭尚未发布的窗口并保留 typed 原因链。Windows 通过 `DragAcceptFiles` / `WM_DROPFILES` 交付本地路径；Wayland 只接受 `wl_data_device` 提供的 `text/uri-list` 与 Copy 动作，通过事件循环非阻塞读取并严格解析本地 `file:` URI。平台按 `WindowId` 投递一次 `FileDrop`，ui 再按落点命中 overlay 或主树；selection 替换、drag leave、窗口禁用/关闭和 backend teardown 必须消费 offer、pipe 与 callback owner，不得产生迟到事件。
 
 ## 组件清单
 

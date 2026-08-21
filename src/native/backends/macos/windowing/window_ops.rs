@@ -1,4 +1,21 @@
 use super::*;
+use crate::platform::windowing::event::PointerActivationId;
+use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
+
+const MACOS_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from_slice(&[
+    WindowCapability::RequestClose,
+    WindowCapability::CenterOnScreen,
+    WindowCapability::Raise,
+    WindowCapability::Lower,
+    WindowCapability::ResizeNotify,
+    WindowCapability::StartTextInput,
+    WindowCapability::StopTextInput,
+    WindowCapability::RequestNativeFrame,
+    WindowCapability::NativeFramePresented,
+    WindowCapability::CancelNativeFrame,
+    WindowCapability::ExactOcclusionState,
+    WindowCapability::NativeSurface,
+]);
 
 // 原生窗口操作组件仅由 macOS 窗口工厂构造并交给共享窗口核心持有。
 pub(super) struct MacosWindowOps {
@@ -68,6 +85,10 @@ impl Drop for MacosWindowOps {
 }
 
 impl WindowOps for MacosWindowOps {
+    fn capabilities(&self) -> WindowCapabilities {
+        MACOS_WINDOW_CAPABILITIES
+    }
+
     fn os_show(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_show")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
@@ -154,6 +175,67 @@ impl WindowOps for MacosWindowOps {
         Ok(())
     }
 
+    fn os_set_icon(&mut self, _path: &str) -> crate::core::Result<()> {
+        Err(WindowCapability::SetWindowIcon.unsupported_error())
+    }
+
+    fn os_flash(&mut self) -> crate::core::Result<()> {
+        Err(WindowCapability::FlashWindow.unsupported_error())
+    }
+
+    fn os_set_min_size(&mut self, _w: i32, _h: i32) -> crate::core::Result<()> {
+        Err(WindowCapability::SetMinimumSize.unsupported_error())
+    }
+
+    fn os_set_max_size(&mut self, _w: i32, _h: i32) -> crate::core::Result<()> {
+        Err(WindowCapability::SetMaximumSize.unsupported_error())
+    }
+
+    fn os_set_position(&mut self, _x: i32, _y: i32) -> crate::core::Result<()> {
+        Err(WindowCapability::SetPosition.unsupported_error())
+    }
+
+    fn os_set_resizable(&mut self, _resizable: bool) -> crate::core::Result<()> {
+        Err(WindowCapability::SetResizable.unsupported_error())
+    }
+
+    fn os_maximize(&mut self) -> crate::core::Result<()> {
+        Err(WindowCapability::Maximize.unsupported_error())
+    }
+
+    fn os_minimize(&mut self) -> crate::core::Result<()> {
+        Err(WindowCapability::Minimize.unsupported_error())
+    }
+
+    fn os_restore(&mut self) -> crate::core::Result<()> {
+        Err(WindowCapability::Restore.unsupported_error())
+    }
+
+    fn os_set_system_title_bar_visible(&mut self, visible: bool) -> crate::core::Result<()> {
+        let capability = if visible {
+            WindowCapability::ShowSystemTitleBar
+        } else {
+            WindowCapability::HideSystemTitleBar
+        };
+        Err(capability.unsupported_error())
+    }
+
+    fn os_set_borderless(&mut self, _borderless: bool) -> crate::core::Result<()> {
+        Err(WindowCapability::SetBorderless.unsupported_error())
+    }
+
+    fn os_set_fullscreen(&mut self, _fullscreen: bool) -> crate::core::Result<()> {
+        Err(WindowCapability::SetFullscreen.unsupported_error())
+    }
+
+    fn os_set_always_on_top(&mut self, _on: bool) -> crate::core::Result<()> {
+        Err(WindowCapability::SetAlwaysOnTop.unsupported_error())
+    }
+
+    fn os_set_opacity(&mut self, _opacity: f32) -> crate::core::Result<()> {
+        Err(WindowCapability::SetWindowOpacity.unsupported_error())
+    }
+
     fn os_start_text_input(&mut self) -> crate::core::Result<()> {
         self.ensure_valid_window("os_start_text_input")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
@@ -178,6 +260,19 @@ impl WindowOps for MacosWindowOps {
         }
     }
 
+    fn os_enable_file_drop(&mut self, enable: bool) -> crate::core::Result<()> {
+        let capability = if enable {
+            WindowCapability::EnableFileDrop
+        } else {
+            WindowCapability::DisableFileDrop
+        };
+        Err(capability.unsupported_error())
+    }
+
+    fn os_resize_notify(&mut self, _w: i32, _h: i32) -> crate::core::Result<()> {
+        Ok(())
+    }
+
     fn os_request_native_frame(
         &mut self,
         request: NativeFrameRequest,
@@ -196,6 +291,25 @@ impl WindowOps for MacosWindowOps {
         Ok(())
     }
 
+    fn os_begin_move_drag(
+        &mut self,
+        _pointer_activation: Option<PointerActivationId>,
+    ) -> crate::core::Result<()> {
+        Err(WindowCapability::BeginMoveDrag.unsupported_error())
+    }
+
+    fn os_begin_resize_drag(
+        &mut self,
+        _edge: WindowResizeEdge,
+        _pointer_activation: Option<PointerActivationId>,
+    ) -> crate::core::Result<()> {
+        Err(WindowCapability::BeginResizeDrag.unsupported_error())
+    }
+
+    fn os_show_system_menu(&mut self) -> crate::core::Result<()> {
+        Err(WindowCapability::ShowSystemMenu.unsupported_error())
+    }
+
     fn os_occlusion_state(&self) -> WindowOcclusionState {
         if self.window.is_null() || !self.open.get() {
             return WindowOcclusionState::Unknown;
@@ -207,5 +321,9 @@ impl WindowOps for MacosWindowOps {
 
     fn native_surface_ptr(&self) -> *mut c_void {
         self.layer
+    }
+
+    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
+        (fallback_width, fallback_height)
     }
 }

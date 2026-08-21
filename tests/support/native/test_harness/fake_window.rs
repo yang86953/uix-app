@@ -5,19 +5,50 @@ use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 // 测试窗口适配统一的指针激活上下文签名。
+use crate::native::windowing::shared::window::validate_window_extent_constraints;
 use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
-use crate::native::windowing::shared::window::validate_window_extent_constraints;
 use crate::platform::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,
     WindowOcclusionState,
 };
 // 测试窗口记录平台中立的原生缩放方向。
-use crate::platform::windowing::WindowResizeEdge;
+use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+
+const FAKE_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from_slice(&[
+    WindowCapability::RequestClose,
+    WindowCapability::BeginMoveDrag,
+    WindowCapability::BeginResizeDrag,
+    WindowCapability::ShowSystemMenu,
+    WindowCapability::CenterOnScreen,
+    WindowCapability::Raise,
+    WindowCapability::Lower,
+    WindowCapability::SetWindowIcon,
+    WindowCapability::FlashWindow,
+    WindowCapability::ResizeNotify,
+    WindowCapability::SetMinimumSize,
+    WindowCapability::SetMaximumSize,
+    WindowCapability::SetPosition,
+    WindowCapability::SetResizable,
+    WindowCapability::Maximize,
+    WindowCapability::Minimize,
+    WindowCapability::Restore,
+    WindowCapability::ShowSystemTitleBar,
+    WindowCapability::HideSystemTitleBar,
+    WindowCapability::SetBorderless,
+    WindowCapability::SetFullscreen,
+    WindowCapability::SetAlwaysOnTop,
+    WindowCapability::SetWindowOpacity,
+    WindowCapability::StartTextInput,
+    WindowCapability::StopTextInput,
+    WindowCapability::EnableFileDrop,
+    WindowCapability::DisableFileDrop,
+    WindowCapability::ExactClientLogicalExtent,
+]);
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakeWindowProperties
@@ -340,6 +371,14 @@ impl FakeWindow {
         self
     }
 
+    fn require_capability(&self, capability: WindowCapability) -> Result<()> {
+        if self.capabilities().supports(capability) {
+            Ok(())
+        } else {
+            Err(capability.unsupported_error())
+        }
+    }
+
     /// 清除调用记录（保留当前窗口状态）
     pub fn clear_history(&mut self) {
         self.state.show_calls = 0;
@@ -369,6 +408,23 @@ impl FakeWindow {
 impl PlatformWindow for FakeWindow {
     fn window_id(&self) -> WindowId {
         self.id
+    }
+
+    fn capabilities(&self) -> WindowCapabilities {
+        let mut capabilities = FAKE_WINDOW_CAPABILITIES;
+        if self.state.native_frame_requests_supported {
+            capabilities = capabilities
+                .with(WindowCapability::RequestNativeFrame)
+                .with(WindowCapability::NativeFramePresented)
+                .with(WindowCapability::CancelNativeFrame);
+        }
+        if self.occlusion_signal.is_some() {
+            capabilities = capabilities.with(WindowCapability::ExactOcclusionState);
+        }
+        if !self.native_handle.ptr.is_null() {
+            capabilities = capabilities.with(WindowCapability::NativeSurface);
+        }
+        capabilities
     }
 
     fn show(&mut self) -> Result<()> {
@@ -502,14 +558,17 @@ impl PlatformWindow for FakeWindow {
         std::ptr::null_mut()
     }
     fn request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
+        self.require_capability(WindowCapability::RequestNativeFrame)?;
         self.state.native_frame_requests.push(request);
-        Ok(self.state.native_frame_requests_supported)
+        Ok(true)
     }
     fn native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.require_capability(WindowCapability::NativeFramePresented)?;
         self.state.native_frame_presented.push(token);
         Ok(())
     }
     fn cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()> {
+        self.require_capability(WindowCapability::CancelNativeFrame)?;
         self.state.cancelled_native_frame_requests.push(token);
         Ok(())
     }

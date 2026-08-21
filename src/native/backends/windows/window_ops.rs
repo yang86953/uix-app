@@ -13,12 +13,47 @@ use crate::diagnostics::PendingFailureSource;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 // Windows adapter 直接实现共享窗口核心所定义的私有操作契约。
 use crate::native::windowing::shared::window::WindowOps;
-use crate::platform::windowing::window::NativeFrameRequest;
-use crate::platform::windowing::WindowResizeEdge;
+use crate::platform::windowing::window::{NativeFrameRequest, WindowOcclusionState};
+use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
 
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};
 use super::platform::WindowBinding;
 use super::window_icon::WindowIconState;
+
+const WINDOWS_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from_slice(&[
+    WindowCapability::RequestClose,
+    WindowCapability::BeginMoveDrag,
+    WindowCapability::BeginResizeDrag,
+    WindowCapability::ShowSystemMenu,
+    WindowCapability::CenterOnScreen,
+    WindowCapability::Raise,
+    WindowCapability::Lower,
+    WindowCapability::SetWindowIcon,
+    WindowCapability::FlashWindow,
+    WindowCapability::ResizeNotify,
+    WindowCapability::SetMinimumSize,
+    WindowCapability::SetMaximumSize,
+    WindowCapability::SetPosition,
+    WindowCapability::SetResizable,
+    WindowCapability::Maximize,
+    WindowCapability::Minimize,
+    WindowCapability::Restore,
+    WindowCapability::ShowSystemTitleBar,
+    WindowCapability::HideSystemTitleBar,
+    WindowCapability::SetBorderless,
+    WindowCapability::SetFullscreen,
+    WindowCapability::SetAlwaysOnTop,
+    WindowCapability::SetWindowOpacity,
+    WindowCapability::StartTextInput,
+    WindowCapability::StopTextInput,
+    WindowCapability::EnableFileDrop,
+    WindowCapability::DisableFileDrop,
+    WindowCapability::RequestNativeFrame,
+    WindowCapability::NativeFramePresented,
+    WindowCapability::CancelNativeFrame,
+    WindowCapability::ExactClientLogicalExtent,
+    WindowCapability::NativeSurface,
+]);
 
 fn screen_point_lparam(point: super::bindings::POINT) -> isize {
     let x = point.x as i16 as u16;
@@ -183,6 +218,10 @@ use super::consts::*;
 use super::ffi::*;
 
 impl WindowOps for WindowsWindowOps {
+    fn capabilities(&self) -> WindowCapabilities {
+        WINDOWS_WINDOW_CAPABILITIES
+    }
+
     // ── 窗口生命周期 ──────────────────────────────────────
 
     fn os_show(&mut self) -> Result<()> {
@@ -870,6 +909,10 @@ impl WindowOps for WindowsWindowOps {
         Ok(())
     }
 
+    fn os_resize_notify(&mut self, _width: i32, _height: i32) -> Result<()> {
+        Ok(())
+    }
+
     fn os_request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool> {
         self.ensure_valid_window("os_request_native_frame")?;
         self.frame_pacer.request(request)
@@ -885,6 +928,10 @@ impl WindowOps for WindowsWindowOps {
         Ok(())
     }
 
+    fn os_occlusion_state(&self) -> WindowOcclusionState {
+        WindowOcclusionState::Unknown
+    }
+
     // ── 原生句柄 ──────────────────────────────────────────
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
@@ -893,12 +940,11 @@ impl WindowOps for WindowsWindowOps {
 
     fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
         // Windows 窗口样式或 DPI 正在变化时，以仍有效的客户区查询为准。
-        let drawable =
-            crate::native::presentation::graphics::platform::windows::drawable_size(
-                self.hwnd,
-                fallback_width,
-                fallback_height,
-            );
+        let drawable = crate::native::presentation::graphics::platform::windows::drawable_size(
+            self.hwnd,
+            fallback_width,
+            fallback_height,
+        );
         (drawable.logical_width, drawable.logical_height)
     }
 

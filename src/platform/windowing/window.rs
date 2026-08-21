@@ -4,8 +4,8 @@ use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::platform::presentation::IPresenter;
-use crate::platform::windowing::WindowResizeEdge;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
+use crate::platform::windowing::{WindowCapabilities, WindowResizeEdge};
 
 /// 原生单次帧请求相对当前提交的生效阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +91,8 @@ pub trait IWindowManager {
 /// 平台窗口 — 可见性、标题、层级与呈现器访问。
 pub trait PlatformWindow {
     fn window_id(&self) -> WindowId;
+    /// 返回当前窗口实例在调用时真实具备的只读可选能力集合。
+    fn capabilities(&self) -> WindowCapabilities;
     fn show(&mut self) -> Result<()>;
     fn hide(&mut self) -> Result<()>;
     fn close(&mut self) -> Result<()>;
@@ -143,23 +145,15 @@ pub trait PlatformWindow {
     fn native_handle(&self) -> &dyn INativeHandle;
 
     /// 安排一次原生单次回调；`Ok(false)` 表示不支持该阶段，调度器必须回退。
-    fn request_native_frame(&mut self, _request: NativeFrameRequest) -> Result<bool> {
-        Ok(false)
-    }
+    fn request_native_frame(&mut self, request: NativeFrameRequest) -> Result<bool>;
 
     /// 确认与 `token` 关联的帧已经提交。
     ///
-    /// 需要在呈现后开始原生等待的后端使用此钩子；提交前协议可保留默认空操作。
-    fn native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
-        Ok(())
-    }
+    /// 需要在呈现后开始原生等待的后端使用此钩子；无需动作的后端也须显式声明。
+    fn native_frame_presented(&mut self, token: FrameRequestToken) -> Result<()>;
 
     /// 失效仍在途的原生请求；不能取消 OS 对象的后端至少必须抑制该令牌的交付。
-    fn cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
-        Ok(())
-    }
+    fn cancel_native_frame(&mut self, token: FrameRequestToken) -> Result<()>;
 
-    fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
+    fn native_surface_ptr(&self) -> *mut std::ffi::c_void;
 }
