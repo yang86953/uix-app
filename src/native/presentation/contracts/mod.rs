@@ -2,6 +2,9 @@
 
 use crate::core::error::{Error, Result};
 pub(crate) use crate::core::{PresentCoherency, PresentDamage, PresentImage, PresentSurface};
+// 迁移期只保留精确兼容路径；中立 presenter 合同唯一位于 platform。
+#[allow(unused_imports)]
+pub(crate) use crate::platform::presentation::IPresenter;
 use std::fmt;
 use std::str::FromStr;
 
@@ -45,40 +48,6 @@ pub(crate) fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> 
         ));
     }
     Ok(())
-}
-
-/// CPU pixel presenter.
-pub(crate) trait IPresenter {
-    /// Preservation proof used to gate narrow compositor damage.
-    fn present_coherency(&self) -> PresentCoherency {
-        PresentCoherency::FullOnly
-    }
-
-    /// Current target metadata. A presenter that rebuilds at the same extent
-    /// must override this method with a monotonically changing generation.
-    fn present_surface(
-        &self,
-        drawable_width: i32,
-        drawable_height: i32,
-        device_pixel_ratio: f32,
-    ) -> PresentSurface {
-        PresentSurface::identity(drawable_width, drawable_height, device_pixel_ratio, 0)
-    }
-
-    /// Acquired image identity for [`PresentCoherency::TrackedSwapchain`].
-    fn present_image(&self) -> Option<PresentImage> {
-        None
-    }
-
-    fn present(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        damage: PresentDamage,
-    ) -> Result<(), Error>;
-
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }
 
 /// Raster axis — how Canvas2D content is produced ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).

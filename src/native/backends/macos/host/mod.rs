@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
-use crate::core::{Errc, Error, Rect, Result, WindowId};
+use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::display::{DisplayInfo, IDisplay};
 use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
@@ -15,7 +15,8 @@ use crate::native::capabilities::system::{
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
 };
 use crate::native::platform::Platform;
-use crate::native::present::{IPresenter, PresentDamage, validate_pixel_buffer};
+use crate::native::present::validate_pixel_buffer;
+use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::native::windowing::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
