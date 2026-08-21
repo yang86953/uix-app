@@ -103,6 +103,7 @@ pub(crate) use pass_state::RhiPassState;
 pub(crate) use transfer::{
     RhiTextureOrigin, RhiTextureRegion, RhiTextureRegionBounds, RhiTextureTransfer,
     RhiTextureTransferBounds, RhiTextureUpload, TextureCopy, TextureMove,
+    ValidatedRhiTextureUpload,
 };
 // 重新导出薄 RHI 消费的类型化 Buffer 契约。
 #[allow(unused_imports)]

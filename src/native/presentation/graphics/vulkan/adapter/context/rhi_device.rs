@@ -12,12 +12,17 @@ use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice,
     GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle, RhiBufferResource,
     RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiResourceTable,
-    SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy, UIX_COLOR_CONTRACT,
+    RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload, SamplerDesc, SamplerHandle,
+    SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, UIX_COLOR_CONTRACT,
 };
 
 use super::super::rhi::VulkanSamplerState;
 use super::transfer::find_memory_type;
 use super::{VulkanContext, vk_err};
+use super::rhi_texture::{
+    VulkanImmediateCommands, VulkanRhiTexture, copy_texture, create_texture, destroy_texture,
+    update_texture,
+};
 
 // 保存一个 Vulkan Buffer 及其由 platform 契约冻结的描述。
 struct VulkanRhiBuffer {
@@ -42,14 +47,18 @@ struct VulkanRhiSampler {
 // Vulkan context 唯一拥有的 RHI 资源状态。
 pub(super) struct VulkanRhiDevice {
     buffers: RhiBufferResourceTable<VulkanRhiBuffer>,
+    textures: RhiTextureResourceTable<VulkanRhiTexture>,
     samplers: RhiResourceTable<SamplerHandle, VulkanRhiSampler>,
+    immediate: VulkanImmediateCommands,
 }
 
 impl VulkanRhiDevice {
     pub(super) const fn new() -> Self {
         Self {
             buffers: RhiBufferResourceTable::new(),
+            textures: RhiTextureResourceTable::new(),
             samplers: RhiResourceTable::new(),
+            immediate: VulkanImmediateCommands::new(),
         }
     }
 
@@ -156,6 +165,61 @@ impl VulkanRhiDevice {
         Ok(self.samplers.insert(VulkanRhiSampler { native, desc }))
     }
 
+    fn create_texture(
+        &mut self,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: &ash::Device,
+        desc: TextureDesc,
+    ) -> Result<TextureHandle> {
+        let resource = create_texture(instance, physical_device, device, desc)?;
+        Ok(self.textures.insert(resource))
+    }
+
+    fn update_texture(
+        &mut self,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: &ash::Device,
+        queue: vk::Queue,
+        queue_family_index: u32,
+        upload: RhiTextureUpload<'_>,
+    ) -> Result<()> {
+        let texture = self.textures.get(upload.texture())?;
+        let validated = upload.validate(texture.desc())?;
+        update_texture(
+            instance,
+            physical_device,
+            device,
+            queue,
+            queue_family_index,
+            &mut self.immediate,
+            texture,
+            validated,
+        )
+    }
+
+    fn copy_texture(
+        &mut self,
+        device: &ash::Device,
+        queue: vk::Queue,
+        queue_family_index: u32,
+        copy: TextureCopy,
+    ) -> Result<()> {
+        let source = self.textures.get(copy.source())?;
+        let destination = self.textures.get(copy.destination())?;
+        let bounds = copy.validate_transfer(source.desc(), destination.desc())?;
+        copy_texture(
+            device,
+            queue,
+            queue_family_index,
+            &mut self.immediate,
+            source,
+            destination,
+            bounds,
+        )
+    }
+
     fn destroy_buffer(&mut self, device: &ash::Device, handle: BufferHandle) -> Result<()> {
         let resource = self.buffers.take(handle)?;
         // SAFETY: 资源表刚移交唯一对象，调用方保证没有在途提交引用。
@@ -173,7 +237,15 @@ impl VulkanRhiDevice {
         Ok(())
     }
 
+    fn destroy_texture(&mut self, device: &ash::Device, handle: TextureHandle) -> Result<()> {
+        let resource = self.textures.take(handle)?;
+        destroy_texture(device, resource);
+        Ok(())
+    }
+
     pub(super) fn shutdown(&mut self, device: &ash::Device) {
+        // 即时命令池必须在其记录引用的 Image 资源前完成队列排空；调用方已等待 Device idle。
+        self.immediate.shutdown(device);
         // Sampler 与 Buffer 没有父子关系；均按各自创建逆序回收。
         for sampler in self.samplers.drain_reverse() {
             // SAFETY: device 已 idle 或 lost，资源表移交的对象不会再被引用。
@@ -186,6 +258,9 @@ impl VulkanRhiDevice {
                 device.free_memory(buffer.memory, None);
             }
         }
+        for texture in self.textures.drain_reverse() {
+            destroy_texture(device, texture);
+        }
     }
 }
 
@@ -195,8 +270,8 @@ impl GraphicsDevice for VulkanContext {
         GraphicsDeviceCapabilities {
             color_contract: UIX_COLOR_CONTRACT,
             dynamic_buffers: true,
-            texture_upload: false,
-            texture_copy: false,
+            texture_upload: true,
+            texture_copy: true,
             texture_region_move: false,
             clear_rect: false,
             sampled_textures: false,
@@ -234,6 +309,50 @@ impl GraphicsDevice for VulkanContext {
         self.rhi_device.buffers.validate_upload(upload)
     }
 
+    fn create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
+        let owner = self.active_device()?;
+        let instance = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| vulkan_rhi_unavailable("create_texture after shutdown"))?
+            .instance()
+            .clone();
+        let result = self.rhi_device.create_texture(
+            &instance,
+            self.physical_device,
+            &self.device,
+            desc,
+        );
+        owner.observe(result)
+    }
+
+    fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
+        self.rhi_device.textures.resolve_render_target(texture)
+    }
+
+    fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
+        self.rhi_device.textures.validate_copy(copy)
+    }
+
+    fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        let owner = self.active_device()?;
+        let instance = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| vulkan_rhi_unavailable("update_texture after shutdown"))?
+            .instance()
+            .clone();
+        let result = self.rhi_device.update_texture(
+            &instance,
+            self.physical_device,
+            &self.device,
+            self.queue,
+            self.adapter_info.queue_family_index,
+            upload,
+        );
+        owner.observe(result)
+    }
+
     fn create_sampler(&mut self, desc: SamplerDesc) -> Result<SamplerHandle> {
         let owner = self.active_device()?;
         let result = self.rhi_device.create_sampler(&self.device, desc);
@@ -252,6 +371,12 @@ impl GraphicsDevice for VulkanContext {
         owner.observe(result)
     }
 
+    fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
+        let owner = self.active_device()?;
+        let result = self.rhi_device.destroy_texture(&self.device, texture);
+        owner.observe(result)
+    }
+
     fn begin_render_pass(&mut self, _: RenderTargetHandle, _: LoadAction) -> Result<()> {
         Err(vulkan_rhi_unavailable("begin_render_pass"))
     }
@@ -260,8 +385,15 @@ impl GraphicsDevice for VulkanContext {
         Err(vulkan_rhi_unavailable("draw"))
     }
 
-    fn copy_texture(&mut self, _: TextureCopy) -> Result<()> {
-        Err(vulkan_rhi_unavailable("copy_texture"))
+    fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
+        let owner = self.active_device()?;
+        let result = self.rhi_device.copy_texture(
+            &self.device,
+            self.queue,
+            self.adapter_info.queue_family_index,
+            copy,
+        );
+        owner.observe(result)
     }
 
     fn end_render_pass(&mut self) -> Result<()> {
