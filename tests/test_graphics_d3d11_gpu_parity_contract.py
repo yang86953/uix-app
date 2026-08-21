@@ -33,7 +33,8 @@ class GraphicsD3d11GpuParityContractTests(unittest.TestCase):
         shared = SHARED.read_text(encoding="utf-8")
         harness = HARNESS.read_text(encoding="utf-8")
 
-        self.assertIn('feature = "d3d11-parity-test"', renderer)
+        self.assertIn('feature = "graphics-parity-test"', renderer)
+        self.assertNotIn('feature = "d3d11-parity-test"', renderer)
         self.assertEqual(renderer.count('path = "rhi_renderer_consistency.rs"'), 1)
         self.assertIn("CONSISTENCY_PIPELINES.map(scene_for_pipeline)", shared)
         self.assertIn("canonical_scenes()", harness)
@@ -76,11 +77,20 @@ class GraphicsD3d11GpuParityContractTests(unittest.TestCase):
         cargo = CARGO.read_text(encoding="utf-8")
         entry = ENTRY.read_text(encoding="utf-8")
 
-        self.assertIn('d3d11-parity-test = ["d3d11", "test-harness"]', cargo)
+        self.assertIn(
+            'd3d11-parity-test = ["d3d11", "test-harness", "graphics-parity-test"]',
+            cargo,
+        )
+        self.assertIn('graphics-parity-test = []', cargo)
         self.assertIn('name = "d3d11_gpu_parity"', cargo)
         self.assertIn('required-features = ["d3d11-parity-test"]', cargo)
         self.assertIn("#![cfg(windows)]", entry)
         self.assertIn("__run_d3d11_gpu_parity_test", entry)
+        self.assertIn(
+            "cargo test --no-default-features --features d3d11-parity-test "
+            "--test d3d11_gpu_parity -- --nocapture",
+            entry,
+        )
         for path in (SHARED, RENDERER, HARNESS, D3D11_RHI, ENTRY, Path(__file__)):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
 
