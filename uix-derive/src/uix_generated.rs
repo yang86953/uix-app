@@ -15,8 +15,6 @@ use uix_lang_compiler::source_map::SourceMap;
 
 // 保存生成代码目录名称。
 const GENERATED_DIRECTORY: &str = "uix-lang-gen";
-// 保存表达式来源标记的内部前缀。
-const MARKER_PREFIX: &str = "__uix_source_marker_";
 
 // 把表达式令牌写入稳定生成文件并返回 include! 入口。
 pub(crate) fn emit_generated_expression(
@@ -39,7 +37,7 @@ pub(crate) fn emit_generated_expression(
     let generated = generated.to_string();
     // 构造当前文档与入口类别唯一的稳定文件路径。
     let path = generated_file_path(source_name, entry_kind, &manifest_dir, &generated);
-    // 把内部位置令牌转换为真实 UIX 来源注释。
+    // 按共享 SourceMap 偏移插入真实 UIX 来源注释。
     let rendered = render_generated_source(&generated, source_map)?;
     // 仅在内容变化时写盘，保持增量构建时间戳稳定。
     let _written = write_if_changed(&path, rendered.source.as_bytes())?;
@@ -113,7 +111,7 @@ fn generated_file_path(
         .join(file_name)
 }
 
-// 把内部表达式标记替换为可读行映射注释。
+// 按纯净 Rust token 文本中的共享偏移插入可读来源注释。
 fn render_generated_source(
     generated: &str,
     source_map: &SourceMap,
@@ -122,69 +120,34 @@ fn render_generated_source(
     let mut rendered = String::from("// 此文件由 uix-derive 生成，请勿手工修改。\n");
     let content_start = rendered.len();
     let mut mappings: Vec<RenderedMapping> = Vec::new();
-    let mut marker_index = 0usize;
     // 保存尚未复制的令牌文本起点。
     let mut cursor = 0;
-    // 按源码顺序替换全部内部位置令牌。
-    while let Some(relative) = generated[cursor..].find(MARKER_PREFIX) {
-        // 计算当前标记绝对起点。
-        let start = cursor + relative;
-        // 复制标记前的普通 Rust 令牌。
+    // 按 Compiler System 给出的生成偏移插入来源注释。
+    for (source_index, source_entry) in source_map.entries().iter().enumerate() {
+        let start = source_entry.generated_start;
+        if start < cursor || start > generated.len() || !generated.is_char_boundary(start) {
+            return Err(format!("UIX SourceMap 包含非法生成偏移：{start}"));
+        }
+        // 复制当前映射前的普通 Rust 令牌。
         rendered.push_str(&generated[cursor..start]);
         // 前一标记的映射在下一条来源注释前结束。
         if let Some(previous) = mappings.last_mut() {
             previous.generated_end = rendered.len();
         }
-        // 解析标记中编码的一基行号。
-        let numbers = start + MARKER_PREFIX.len();
-        // 查找行列分隔下划线。
-        let separator = generated[numbers..]
-            // 搜索第一个分隔符。
-            .find('_')
-            // 缺失表示内部标记被意外破坏。
-            .ok_or_else(|| "UIX 生成代码包含损坏的来源行标记".to_string())?
-            // 转换为绝对位置。
-            + numbers;
-        // 把行号文本解析为正整数。
-        let line = generated[numbers..separator]
-            // 解析十进制行号。
-            .parse::<usize>()
-            // 转换为稳定内部错误。
-            .map_err(|_| "UIX 生成代码包含非法来源行号".to_string())?;
-        // 列号从分隔符后开始。
-        let column_start = separator + 1;
-        // 列号只包含连续十进制数字。
-        let column_end = generated[column_start..]
-            // 查找第一个非数字字符。
-            .find(|character: char| !character.is_ascii_digit())
-            // 令牌流保证标识符之后仍有赋值结构。
-            .map(|offset| column_start + offset)
-            // 缺失表示内部标记没有结束。
-            .ok_or_else(|| "UIX 生成代码包含未结束的来源列标记".to_string())?;
-        // 把列号文本解析为正整数。
-        let column = generated[column_start..column_end]
-            // 解析十进制列号。
-            .parse::<usize>()
-            // 转换为稳定内部错误。
-            .map_err(|_| "UIX 生成代码包含非法来源列号".to_string())?;
-        let source_index = marker_index.min(source_map.entries().len().saturating_sub(1));
-        let source_entry = source_map
-            .entries()
-            .get(source_index)
-            .ok_or_else(|| "UIX Emitter 返回了空 SourceMap".to_string())?;
         let mapped_name = source_entry.source_name.replace(['\r', '\n'], "?");
         // 写入位于对应 Rust 表达式前的可读来源注释。
-        rendered.push_str(&format!("\n// [uix-lang] {mapped_name}:{line}:{column}\n"));
+        rendered.push_str(&format!(
+            "\n// [uix-lang] {mapped_name}:{}:{}\n",
+            source_entry.line, source_entry.column
+        ));
         mappings.push(RenderedMapping {
             generated_start: rendered.len(),
             generated_end: 0,
             source_index,
         });
-        marker_index += 1;
-        // 下一轮从已消费标记标识符之后继续。
-        cursor = column_end;
+        cursor = start;
     }
-    // 复制最后一个标记之后的剩余 Rust 令牌。
+    // 复制最后一个映射起点之后的剩余 Rust 令牌。
     rendered.push_str(&generated[cursor..]);
     if let Some(previous) = mappings.last_mut() {
         previous.generated_end = rendered.len();

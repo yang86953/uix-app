@@ -643,7 +643,8 @@ fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDia
             failure.diagnostic,
         )
     })?;
-    let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir);
+    let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir)
+        .map_err(|message| emit_diagnostic(&analyzed.source_graph, message))?;
     Ok(CompileOutput {
         tokens: emitted.tokens,
         tracked_files: analyzed.tracked_files,
@@ -692,6 +693,34 @@ fn semantic_diagnostic(
         DiagnosticPhase::Semantic,
         code,
         diagnostic,
+    )
+}
+
+// 把 Rust Emitter 的内部不变量失败固定到当前根源码，避免向 Adapter 泄漏解析错误。
+fn emit_diagnostic(
+    source_graph: &source_graph::SourceGraph,
+    message: String,
+) -> CompilerDiagnostic {
+    let source_id = source_graph.root();
+    let source_name = source_graph
+        .file(source_id)
+        .map(|file| file.path.clone())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    CompilerDiagnostic::from_language(
+        source_name,
+        source_id,
+        DiagnosticPhase::Emit,
+        "UIX3000",
+        Diagnostic::new(
+            SourceSpan {
+                start: 0,
+                end: 0,
+                line: 1,
+                column: 1,
+            },
+            message,
+            "报告 uix-lang 编译器内部生成错误",
+        ),
     )
 }
 
@@ -759,12 +788,17 @@ impl RustEmitter {
         plan: RustUiPlan,
         source_graph: &source_graph::SourceGraph,
         ir: &TypedUiIr,
-    ) -> EmittedRust {
-        let generated = plan.tokens.to_string();
-        EmittedRust {
-            tokens: plan.tokens,
-            source_map: SourceMap::from_generated(&generated, source_graph, ir),
-        }
+    ) -> Result<EmittedRust, String> {
+        let marked = plan.tokens.to_string();
+        let mapped = SourceMap::from_marked(&marked, source_graph, ir);
+        let tokens = mapped
+            .source
+            .parse::<TokenStream>()
+            .map_err(|error| format!("无法解析已清理来源标记的 Rust 输出：{error}"))?;
+        Ok(EmittedRust {
+            tokens,
+            source_map: mapped.source_map,
+        })
     }
 }
 
@@ -805,6 +839,7 @@ mod tests {
         let view = compile_inline("<Text>Hello</Text>", "<view>", CompileTarget::View)
             .expect("View 编译应成功");
         assert!(view.tokens.to_string().contains("label"));
+        assert!(!view.tokens.to_string().contains("__uix_source_marker"));
         assert!(view.tracked_files.is_empty());
         assert!(!view.source_map.entries().is_empty());
         assert_eq!(
