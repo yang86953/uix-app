@@ -15,12 +15,12 @@ Rust Application System
           ▼
 .uix 文档
   └─ 界面树、样式、展示值、界面状态与局部交互
-          │ 公开宏 + uix-derive AOT
+          │ Compiler System + 公开宏 / uix CLI
           ▼
 Rust UI 代码 ──cargo──> 原生可执行文件
 ```
 
-正式产物不携带 UIX Lang 解释器。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做浏览器式容错或动态降级。完整职责判定见[语言边界](设计/语言边界.md)。
+正式产物不携带 UIX Lang 解释器；LSP 会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。共享 `uix-lang-compiler` Compiler System 统一提供 `compile`、`check`、`format`、`query`，`uix` CLI 另提供 `lsp`。
 
 ## 设计原则
 
@@ -101,4 +101,6 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ## 与 Rust 的映射
 
-UIX Lang 是 UIX Rust API 的编译期文本投影。当前公开宏由 `uix-derive` AOT Adapter 执行转换；目标架构会在不改变 AOT 契约的前提下引入共享前端与 Typed UI IR。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部演进以[编译器架构](设计/编译器架构.md)为准。
+共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`lsp`，三个公开宏均有真实 consumer 验证。
+
+UIX Lang 是 UIX Rust API 的编译期文本投影。公开宏与 `uix` CLI 均通过共享 `uix-lang-compiler` Compiler System；三个宏已有真实 consumer 验证。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部边界以[编译器架构](设计/编译器架构.md)为准。

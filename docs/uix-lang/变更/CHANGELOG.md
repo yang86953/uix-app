@@ -21,6 +21,8 @@
 
 ### 变更记录
 
+| 2026-08-21 | 编译工具链 | 共享 Compiler System、schema v3、SourceGraph/无损 CST/AST/TypedUiIr/Rust Emitter 与同名 `.uixmap.json` 源码映射落地；新增 `uix` 的 check/fmt/compile/query/lsp，LSP 支持内存 overlay 与递归 import；生产仍为纯 AOT，不携带解释器、监听器或 LSP 会话 | [编译器架构](../设计/编译器架构.md) |
+
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
 | 2026-08-21 | 文档治理 | 按事实类型建立唯一文档所有者，分离当前规范、登记参考、长期设计、实施计划与历史记录；补齐闭合结构文法、State 所有权和组件级事件载荷契约，无语言语义变更 | [语言首页](../README.md) |
