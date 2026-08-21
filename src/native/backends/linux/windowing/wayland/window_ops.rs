@@ -69,6 +69,10 @@ use super::frame_callback::{FrameCallbackOwner, deliver_frame_opportunity};
 use super::file_drop::WaylandFileDropState;
 // 引入 Wayland 私有授权注册表及其非致命消费结果。
 use super::pointer_activation::WaylandPointerActivationRegistry;
+// resize 约束 Component 独占用户约束、有效尺寸转换与协议请求编码。
+use super::resize_constraints::{
+    WaylandResizeConstraintAdapter, WaylandResizeConstraintRequest, WaylandResizeConstraintState,
+};
 // 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
 use super::surface_registration::register_window_surface;
 // Wayland HiDPI Component 独占 output 订阅、buffer scale 与共享 surface metrics。
@@ -83,6 +87,7 @@ const WAYLAND_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from
     WindowCapability::ResizeNotify,
     WindowCapability::SetMinimumSize,
     WindowCapability::SetMaximumSize,
+    WindowCapability::SetResizable,
     WindowCapability::Maximize,
     WindowCapability::Minimize,
     WindowCapability::Restore,
@@ -126,6 +131,8 @@ pub(crate) struct WaylandWindowOps {
     // 单一 Component 同时拥有 active request 与在途 wl_callback handle。
     pub(super) frame_callback: FrameCallbackOwner,
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
+    // 单窗口 resize 约束状态由同步入口与 compositor configure 共享。
+    resize_constraints: Rc<RefCell<WaylandResizeConstraintState>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
     /// xdg_activation 协议，用于请求窗口激活（raise）
@@ -137,6 +144,8 @@ pub(crate) struct WaylandWindowOps {
 impl WaylandWindowOps {
     pub(crate) fn new(
         window_id: WindowId,
+        width: i32,
+        height: i32,
         compositor: Main<wl_compositor::WlCompositor>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         // 注入所属 Wayland backend 已有的 callback failure source。
@@ -184,6 +193,10 @@ impl WaylandWindowOps {
             // 新窗口尚未登记原生 frame request 或协议 callback。
             frame_callback: FrameCallbackOwner::new(),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
+            // 只有正的初始 logical 客户区尺寸能成为后续锁定依据。
+            resize_constraints: Rc::new(RefCell::new(WaylandResizeConstraintState::new(
+                width, height,
+            ))),
             xdg_decoration: None,
             xdg_activation,
             // 新窗口尚未建立异步 activation token 请求。
@@ -227,11 +240,13 @@ impl WaylandWindowOps {
 
         let tl_events = events.clone();
         let configured_modes = Arc::clone(&self.configured_modes);
+        // configure 与同步 WindowOps 共享单窗口 resize 约束权威。
+        let resize_constraints = Rc::clone(&self.resize_constraints);
         // configure 回调先发布 logical extent，再排队同一 resize 事实。
         let toplevel_surface_scale = Arc::clone(&self.surface_scale);
         // toplevel callback 复用窗口所属 backend 的同一 failure source。
         let toplevel_failures = self.pending_failures.clone();
-        tl.quick_assign(move |_, event, _| match event {
+        tl.quick_assign(move |toplevel, event, _| match event {
             xdg_toplevel::Event::Close => {
                 // close 事实只在健康事件队列中提交。
                 let Ok(mut queued) = tl_events.lock() else {
@@ -271,6 +286,14 @@ impl WaylandWindowOps {
                     // 停止本次 Configure，禁止访问 recovered 模式状态。
                     return;
                 };
+                // resize 约束 owner 必须在任何窗口事实提交前取得唯一写权限。
+                let Ok(mut constraints) = resize_constraints.try_borrow_mut() else {
+                    let _ = toplevel_failures.enqueue(Error::new(
+                        Errc::InvalidState,
+                        "Wayland xdg_toplevel Configure resize constraints already borrowed",
+                    ));
+                    return;
+                };
                 // 再检查 WindowState 借用，冲突不得以 panic 越过 callback adapter。
                 let Ok(mut state) = window_state.try_borrow_mut() else {
                     // 可重入状态借用冲突必须交给 owner-thread failure source。
@@ -295,6 +318,18 @@ impl WaylandWindowOps {
                     // 尚未改写 modes 或 WindowState，安全结束本次事务。
                     return;
                 };
+                // 正尺寸 configure 同时规划有效尺寸与锁定约束同步。
+                let resize_transition = constraints.plan_effective_extent(w, h);
+                if let Some(resize_transition) = resize_transition {
+                    // callback 参数自身就是仍存活的 xdg_toplevel proxy。
+                    let adapter = WaylandResizeConstraintAdapter::from_proxy(&toplevel);
+                    if let Err(error) = constraints
+                        .commit_after(resize_transition, |request| adapter.apply(request))
+                    {
+                        let _ = toplevel_failures.enqueue(error);
+                        return;
+                    }
+                }
                 // 全部 owner 均可用后才提交模式转换。
                 let transition = modes.apply_configure(is_max, is_full);
                 // 读取刚提交的同源模式快照。
@@ -305,6 +340,9 @@ impl WaylandWindowOps {
                 state.fullscreen = fullscreen;
                 // 有效客户区尺寸继续生成 resize 事实。
                 if w > 0 && h > 0 {
+                    // compositor 已确认的 logical 尺寸立即同步共享窗口事实。
+                    state.width = w;
+                    state.height = h;
                     // presentation 消费事件时可读取同代 drawable 与 DPR。
                     toplevel_surface_scale.set_logical_extent(w, h);
                     // resize 与本次模式快照进入同一事件事务。
@@ -618,31 +656,67 @@ impl WindowOps for WaylandWindowOps {
             .surface
             .as_ref()
             .ok_or_else(|| Self::missing_proxy("os_set_size", "wl_surface"))?;
-        xdg_surface.set_window_geometry(0, 0, w, h);
-        self.input_region = None;
+        // 共享层已验证正尺寸；这里仍禁止无效值污染私有有效尺寸权威。
+        let mut constraints = self.resize_constraints.try_borrow_mut().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "os_set_size: Wayland resize constraints already borrowed",
+            )
+        })?;
+        let transition = constraints.plan_effective_extent(w, h).ok_or_else(|| {
+            Error::invalid_arg(format!(
+                "os_set_size requires a positive extent, got {w}x{h}"
+            ))
+        })?;
+        // 只有锁定尺寸实际变化时 set_size 才额外需要 toplevel proxy。
+        let adapter = match transition.request() {
+            WaylandResizeConstraintRequest::Unchanged => None,
+            _ => Some(WaylandResizeConstraintAdapter::require(
+                self.toplevel.as_ref(),
+                "os_set_size",
+            )?),
+        };
         let region = self.compositor.create_region();
-        region.add(0, 0, w, h);
-        surface.set_input_region(Some(&region));
+        // 所有 fallible preflight 完成后才提交协议输出与私有状态。
+        constraints.commit_after(transition, |request| {
+            xdg_surface.set_window_geometry(0, 0, w, h);
+            region.add(0, 0, w, h);
+            surface.set_input_region(Some(&region));
+            if let Some(adapter) = adapter.as_ref() {
+                adapter.apply(request)?;
+            }
+            Ok(())
+        })?;
+        drop(constraints);
+        // 新 region 只在整个协议事务成功后替换旧 owner。
         self.input_region = Some(region);
         Ok(())
     }
 
     fn os_set_min_size(&mut self, w: i32, h: i32) -> Result<()> {
-        let toplevel = self
-            .toplevel
-            .as_ref()
-            .ok_or_else(|| Self::missing_proxy("os_set_min_size", "xdg_toplevel"))?;
-        toplevel.set_min_size(w, h);
-        Ok(())
+        let adapter =
+            WaylandResizeConstraintAdapter::require(self.toplevel.as_ref(), "os_set_min_size")?;
+        let mut constraints = self.resize_constraints.try_borrow_mut().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "os_set_min_size: Wayland resize constraints already borrowed",
+            )
+        })?;
+        let transition = constraints.plan_set_user_minimum(w, h);
+        constraints.commit_after(transition, |request| adapter.apply(request))
     }
 
     fn os_set_max_size(&mut self, w: i32, h: i32) -> Result<()> {
-        let toplevel = self
-            .toplevel
-            .as_ref()
-            .ok_or_else(|| Self::missing_proxy("os_set_max_size", "xdg_toplevel"))?;
-        toplevel.set_max_size(w, h);
-        Ok(())
+        let adapter =
+            WaylandResizeConstraintAdapter::require(self.toplevel.as_ref(), "os_set_max_size")?;
+        let mut constraints = self.resize_constraints.try_borrow_mut().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "os_set_max_size: Wayland resize constraints already borrowed",
+            )
+        })?;
+        let transition = constraints.plan_set_user_maximum(w, h);
+        constraints.commit_after(transition, |request| adapter.apply(request))
     }
 
     fn os_set_position(&mut self, _x: i32, _y: i32) -> Result<()> {
@@ -652,10 +726,10 @@ impl WindowOps for WaylandWindowOps {
     /// 窗口尺寸变化通知。更新 xdg_surface 窗口几何和输入区域，
     /// 确保 compositor（如 niri）的布局与窗口实际尺寸一致。
     fn os_resize_notify(&mut self, w: i32, h: i32) -> Result<()> {
-        // 同步入口也发布最新 logical extent，避免仅依赖 configure callback。
-        self.surface_scale.set_logical_extent(w, h);
         // 先更新窗口几何与输入区域。
         self.os_set_size(w, h)?;
+        // 协议与 resize 约束状态提交后才发布最新 logical extent。
+        self.surface_scale.set_logical_extent(w, h);
         // 再把当前有效 scale 保持在下一次 surface commit 上。
         self.surface
             // 活动窗口必须仍持有 wl_surface。
@@ -730,8 +804,18 @@ impl WindowOps for WaylandWindowOps {
 
     // ── 窗口状态 ──────────────────────────────────────────
 
-    fn os_set_resizable(&mut self, _resizable: bool) -> Result<()> {
-        Err(WindowCapability::SetResizable.unsupported_error())
+    fn os_set_resizable(&mut self, resizable: bool) -> Result<()> {
+        // 即使本次为幂等调用，也必须先确认窗口仍持有活动 toplevel owner。
+        let adapter =
+            WaylandResizeConstraintAdapter::require(self.toplevel.as_ref(), "os_set_resizable")?;
+        let mut constraints = self.resize_constraints.try_borrow_mut().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "os_set_resizable: Wayland resize constraints already borrowed",
+            )
+        })?;
+        let transition = constraints.plan_set_resizable("os_set_resizable", resizable)?;
+        constraints.commit_after(transition, |request| adapter.apply(request))
     }
 
     fn os_maximize(&mut self) -> Result<()> {

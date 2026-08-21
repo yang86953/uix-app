@@ -58,6 +58,8 @@ impl IWindowManager for WaylandBackend {
 
         let mut ops = WaylandWindowOps::new(
             window_id,
+            width,
+            height,
             self._compositor.clone(),
             self.events.clone(),
             // 所有窗口 callback 复用 backend 已绑定的 owner-thread failure source。
