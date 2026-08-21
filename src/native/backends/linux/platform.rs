@@ -15,6 +15,7 @@ use crate::diagnostics::PendingFailureQueue;
 use crate::native::capabilities::*;
 use crate::native::platform::*;
 use crate::native::windowing::shared::{OsEventSource, WindowState};
+use crate::platform::display::IDisplay;
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 use crate::platform::windowing::window::IWindowManager;

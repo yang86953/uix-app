@@ -5,6 +5,8 @@
 
 // Platform System 的组合门面保留在根目录，不归属于任何单一功能域。
 mod facade;
+// 显示器信息、DPI 与主题查询由平台中立叶唯一持有。
+pub(crate) mod display;
 // Platform System 的实例生命周期与主线程约束集中在根级 runtime 边界。
 mod runtime;
 // host 功能域拥有宿主机信息、文件系统、对话框与通知能力。

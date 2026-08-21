@@ -7,9 +7,8 @@
 use super::ffi::*;
 use super::util::to_wide;
 use crate::core::Rect;
-use crate::native::capabilities::display::DisplayInfo;
-use crate::native::capabilities::display::IDisplay;
 use crate::native::{Errc, Error, Result};
+use crate::platform::display::{DisplayInfo, IDisplay};
 use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
