@@ -30,7 +30,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 
 这些命令只验证当前工作树的对应契约，不等同于正式发布、平台矩阵或交付任务全部完成；带时点的完成状态仍以 Gitea 为准。
 
-图形后端与 Cargo feature 的选择具有平台差异：Windows 默认选择 D3D11，启用 `opengles` 时可构造 WGL/EGL OpenGL ES。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
+默认构建在 Windows、Linux 与 macOS 统一优先选择 Vulkan PixelUpload，以同一 Drawing 语义保证外观和行为一致；D3D11/OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 
 ## Linux 内部候选包
 

@@ -3,7 +3,7 @@
 // 引入共享错误结果类型。
 use crate::core::error::Result;
 // 引入薄 RHI 的设备、命令和 pass 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding, LoadAction,
     RhiGradientRasterParams, RhiViewport,
 };

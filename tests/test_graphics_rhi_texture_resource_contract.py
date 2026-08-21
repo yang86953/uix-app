@@ -11,11 +11,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位共享纹理资源契约。
-TEXTURE = ROOT / "src/native/presentation/rhi/texture.rs"
+TEXTURE = ROOT / "src/platform/presentation/rhi/texture.rs"
 # 定位共享纹理上传契约。
-TRANSFER = ROOT / "src/native/presentation/rhi/transfer.rs"
+TRANSFER = ROOT / "src/platform/presentation/rhi/transfer.rs"
 # 定位 OpenGL 资源表与上传 Adapter。
 OPENGL_DEVICE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL 原生上传 Adapter。

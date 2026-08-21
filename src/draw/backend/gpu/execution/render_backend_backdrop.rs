@@ -10,7 +10,7 @@ use crate::core::Rect;
 // 引入统一的离屏 GPU 命令计划边界。
 use crate::draw::backend::frame_plan::FramePlan;
 // 引入薄 RHI 的资源、复制与代际值。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     // device 原语用于执行资源事务。
     GraphicsDevice,
     // 物理尺寸限定全幅复制范围。

@@ -193,7 +193,7 @@ impl GpuRecipeContext for ThreadBoundGraphicsContext<dyn GpuRecipeContext> {
     fn rhi_context(
         // 借用 thread-bound GPU wrapper。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
         // 先拒绝错误线程，再直接借用类型已证明的 GPU owner。
         self.require_owner("gpu_recipe_rhi_context")?;
         // 保留 adapter 的 typed RHI failure。

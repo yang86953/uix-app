@@ -15,7 +15,7 @@ use crate::draw::renderer::{
     GraphicsFailure, GraphicsRecovery, GraphicsRecoveryAction, RenderOutcome,
 };
 use crate::draw::{Canvas2D, GraphicsCapabilities, RenderTarget, UpdateStrategy};
-use crate::native::present::PresentTestResult;
+use crate::platform::presentation::PresentTestResult;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;

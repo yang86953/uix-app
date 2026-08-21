@@ -15,7 +15,7 @@ VALIDATION = ROOT / "src/draw/backend/frame_plan_validation.rs"
 # 定位共享顶点 payload 值对象。
 UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位共享 DrawRange 值对象。
-DRAW_PACKET = ROOT / "src/native/presentation/rhi/draw_packet.rs"
+DRAW_PACKET = ROOT / "src/platform/presentation/rhi/draw_packet.rs"
 # 定位共享顶点 payload 工厂。
 RENDERER = ROOT / "src/draw/backend/rhi_renderer.rs"
 # 定位独立 Gradient lowering。

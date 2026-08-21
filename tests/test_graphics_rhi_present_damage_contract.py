@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # 定位 Drawing 核心的最终 damage 规范。
 CORE_DAMAGE = ROOT / "src/core/damage/mod.rs"
 # 定位共享 Surface 呈现事务。
-TRANSACTION = ROOT / "src/native/presentation/rhi/present_transaction.rs"
+TRANSACTION = ROOT / "src/platform/presentation/rhi/present_transaction.rs"
 # 定位 D3D11 Surface 与提交 bridge。
 D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
 # 定位 D3D11 共享门禁转发。

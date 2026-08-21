@@ -2,7 +2,7 @@
 use std::sync::Arc;
 
 // 引入被测的透明 RHI 句柄。
-use crate::native::present::rhi::TextureHandle;
+use crate::platform::presentation::rhi::TextureHandle;
 
 // 引入父模块的 atlas page 和 renderer 私有 helper。
 use super::{

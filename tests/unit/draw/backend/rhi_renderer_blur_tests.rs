@@ -5,7 +5,7 @@ use super::*;
 // 引入 Surface Frame 构造所需的最终呈现损伤值。
 use crate::core::PresentDamage;
 // 引入测试 recording context 需要的 device/surface 契约。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     // Blur 方向与 tap 字段位置由共享 RHI 契约唯一声明。
     BLUR_DIRECTION_TAPS_FLOAT_OFFSET,
     // Blur ABI 字节数由共享 RHI 契约唯一声明。

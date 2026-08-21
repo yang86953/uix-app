@@ -1,7 +1,9 @@
-//! platform 图形系统的薄 RHI 契约。
+//! platform System 的 API 无关薄 RHI 契约与共用机制。
 //!
 //! 本模块只描述 UIX 通用 GPU Renderer 需要的底层事实，不携带任何
-//! `draw_glyphs`、`draw_rounded_rect` 或其他 UI 高层操作。
+//! `draw_glyphs`、`draw_rounded_rect` 或其他 UI 高层操作。资源表、pipeline ABI、
+//! pass/surface 状态机、提交事务、错误与坐标语义只在此处定义一次；Vulkan、
+//! D3D11、OpenGL 等 Adapter 只能实现原生映射。
 #![allow(dead_code)]
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};

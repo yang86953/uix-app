@@ -8,7 +8,7 @@ use std::sync::Arc;
 // 引入统一错误类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的资源、能力和执行类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
     DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineDesc, PipelineKind, RhiExtent,
     RhiScissor, RhiTextureUpload, RhiViewport, SampledTextureBinding, SamplerDesc, SamplerHandle,
@@ -209,7 +209,7 @@ pub(crate) struct RhiShapeRect {
 #[derive(Debug, Default)]
 pub(crate) struct RhiRenderer {
     // 缓存 solid mesh pipeline。
-    solid_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    solid_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存可写 vertex buffer。
     vertex_buffer: Option<BufferHandle>,
     // 保存 vertex buffer 当前容量。
@@ -217,11 +217,11 @@ pub(crate) struct RhiRenderer {
     // 缓存 MeshConstants uniform buffer。
     solid_uniform: Option<BufferHandle>,
     // 缓存采样 quad pipeline。
-    textured_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    textured_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存采样 quad 的 Additive pipeline。
-    additive_textured_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    additive_textured_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 R8 glyph coverage pipeline。
-    coverage_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    coverage_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存可写采样 quad vertex buffer。
     textured_vertex_buffer: Option<BufferHandle>,
     // 保存采样 quad vertex buffer 当前容量。
@@ -233,7 +233,7 @@ pub(crate) struct RhiRenderer {
     // 缓存点采样 sampler，保持 R8 glyph coverage 的旧像素语义。
     coverage_sampler: Option<SamplerHandle>,
     // 缓存 MSDF 字形 pipeline。
-    msdf_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    msdf_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 MSDF 字形常量 uniform buffer。
     msdf_uniform: Option<BufferHandle>,
     // 缓存 MSDF 字形的线性 clamp sampler。
@@ -243,32 +243,32 @@ pub(crate) struct RhiRenderer {
     // 保存 MSDF atlas 的内容索引，避免每帧重复创建和上传字形纹理。
     msdf_atlas_cache: std::collections::HashMap<msdf::MsdfCacheKey, msdf::MsdfAtlasEntry>,
     // 缓存渐变 pipeline。
-    gradient_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    gradient_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存单位 quad vertex buffer。
     gradient_vertex_buffer: Option<BufferHandle>,
     // 缓存渐变常量 uniform buffer。
     gradient_uniform: Option<BufferHandle>,
     // 缓存 SrcOver 与 Additive 圆角/描边矩形 pipeline。
     shape_pipeline: Option<(
-        crate::native::present::rhi::PipelineBinding,
-        crate::native::present::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
     )>,
     // 缓存圆角/描边矩形单位 quad vertex buffer。
     shape_vertex_buffer: Option<BufferHandle>,
     // 缓存圆角/描边矩形常量 uniform buffer。
     shape_uniform: Option<BufferHandle>,
     // 缓存阴影 pipeline。
-    shadow_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    shadow_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存阴影单位 quad vertex buffer，生命周期不再依附 Shape 模块。
     shadow_vertex_buffer: Option<BufferHandle>,
     // 缓存阴影常量 uniform buffer，容量由 Shadow 自身契约决定。
     shadow_uniform: Option<BufferHandle>,
     // 缓存原生扇形 pipeline、单位 quad 和常量 uniform。
-    sector_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    sector_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     sector_vertex_buffer: Option<BufferHandle>,
     sector_uniform: Option<BufferHandle>,
     // 缓存 separable blur pipeline。
-    blur_pipeline: Option<crate::native::present::rhi::PipelineBinding>,
+    blur_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 blur 区域 quad 的 float2 vertex buffer。
     blur_vertex_buffer: Option<BufferHandle>,
     // 缓存 BlurConstants uniform buffer。
@@ -285,7 +285,7 @@ impl RhiRenderer {
         device: &mut dyn GraphicsDevice,
         vertex_bytes: usize,
     ) -> Result<(
-        crate::native::present::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
     )> {
@@ -348,7 +348,7 @@ impl RhiRenderer {
         &mut self,
         device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
         SamplerHandle,
@@ -424,7 +424,7 @@ impl RhiRenderer {
     fn ensure_additive_textured_pipeline(
         &mut self,
         device: &mut dyn GraphicsDevice,
-    ) -> Result<crate::native::present::rhi::PipelineBinding> {
+    ) -> Result<crate::platform::presentation::rhi::PipelineBinding> {
         // 已有 pipeline 时直接复用，避免每个图片 quad 重复登记资源。
         if let Some(pipeline) = self.additive_textured_pipeline {
             // 返回已经创建的加法 pipeline。
@@ -445,7 +445,7 @@ impl RhiRenderer {
         &mut self,
         device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::PipelineBinding,
         BufferHandle,
         BufferHandle,
     )> {

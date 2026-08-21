@@ -5,7 +5,7 @@
     // 引入 sampled quad。
     use crate::draw::backend::rhi_renderer::RhiSampledQuad;
     // 引入 RHI 句柄、load action 与 extent。
-    use crate::native::present::rhi::{LoadAction, RhiExtent, TextureHandle};
+    use crate::platform::presentation::rhi::{LoadAction, RhiExtent, TextureHandle};
 
     // 构造覆盖整个测试 surface 的 sampled quad。
     fn full_quad() -> RhiSampledQuad {

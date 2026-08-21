@@ -14,7 +14,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享颜色与清理输出契约。
-SHARED = ROOT / "src/native/presentation/rhi/color.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/color.rs"
 # 定位 OpenGL 整目标清理入口。
 OPENGL_FULL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL 局部清理与状态翻译。

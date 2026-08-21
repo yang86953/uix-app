@@ -5,7 +5,7 @@ use crate::core::Error;
 // 引入通用渐变 payload、renderer 与封闭帧角色。
 use crate::draw::backend::rhi_renderer::{RhiGradientRect, RhiRenderer, RhiRendererFrame};
 // 引入 Device-only lowering 所需的目标、extent 与 pass load 语义。
-use crate::native::present::rhi::{GraphicsDevice, LoadAction, RhiExtent, TextureHandle};
+use crate::platform::presentation::rhi::{GraphicsDevice, LoadAction, RhiExtent, TextureHandle};
 
 // 引入 pending 操作和 submit 模块的物理 lowering helper。
 use super::super::pending::PendingNativeOp;

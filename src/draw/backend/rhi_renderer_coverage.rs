@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
     GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiExtent,
     RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,

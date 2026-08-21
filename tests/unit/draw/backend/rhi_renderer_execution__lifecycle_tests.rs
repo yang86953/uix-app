@@ -8,7 +8,7 @@ use crate::core::error::{Errc, Result};
 // 引入 Renderer pass 夹具所需的最小类型化命令。
 use crate::draw::backend::frame_plan::FramePlanCommand;
 // 引入 RecordingDevice 所需的薄 RHI 原语。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle,
     RhiColor, RhiScissor, SubmissionHandle, TextureCopy, TextureHandle, TextureMove,
 };
@@ -175,7 +175,7 @@ fn renderer_frame_rejects_second_execution_without_resubmit() {
         // 借用唯一 recording device owner。
         &mut device,
         // 传入与计划匹配的纹理身份。
-        crate::native::present::rhi::TextureHandle::from_raw(9),
+        crate::platform::presentation::rhi::TextureHandle::from_raw(9),
     );
     // 向当前帧内部计划追加第一次执行使用的有效 pass。
     append_offscreen_pass(&mut frame);
@@ -223,7 +223,7 @@ fn failed_renderer_frame_execution_is_also_consumed() {
         // 借用唯一 recording device owner。
         &mut device,
         // 传入稳定的离屏纹理身份。
-        crate::native::present::rhi::TextureHandle::from_raw(9),
+        crate::platform::presentation::rhi::TextureHandle::from_raw(9),
     );
     // 新建帧内部的空离屏计划会在任何 Device 访问前稳定验证失败。
     // 首轮失败必须保留计划参数错误。

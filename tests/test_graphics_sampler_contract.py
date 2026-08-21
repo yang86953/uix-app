@@ -16,9 +16,9 @@ class GraphicsSamplerContractTests(unittest.TestCase):
     # 共享采样契约必须同时拥有纹理格式与过滤要求。
     def test_shared_sampling_contract_owns_format_and_filter(self) -> None:
         # 读取薄 RHI sampler 描述。
-        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/platform/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取共享 pipeline 采样契约。
-        pipeline = (ROOT / "src/native/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
+        pipeline = (ROOT / "src/platform/presentation/rhi/pipeline.rs").read_text(encoding="utf-8")
         # 读取所有生产 Renderer 的 sampler 构造调用。
         renderer = "\n".join(
             # 逐个读取普通图片、coverage、MSDF 与 Blur 资源所有者。

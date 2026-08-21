@@ -19,9 +19,9 @@ use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
 use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackRequest};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
 // 引入 factory 已验证的正交 recipe owner。
-use crate::native::present::GraphicsRecipeOwner;
+use crate::platform::presentation::GraphicsRecipeOwner;
 // 引入 PixelUpload presentation 的窄 owner 与 present 状态。
-use crate::native::present::{PixelUploadRecipeOwner, PresentTestResult};
+use crate::platform::presentation::{PixelUploadRecipeOwner, PresentTestResult};
 
 /// 最终呈现由谁完成。
 enum Presentation {

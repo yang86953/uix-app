@@ -3,7 +3,7 @@ use crate::core::Errc;
 // 引入被测共享状态机。
 use super::RhiPassState;
 // 引入构造 pass 输入与资源身份所需的共享值。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawRasterState, LoadAction, RenderTargetHandle, RhiColor, RhiExtent, RhiScissor, RhiViewport,
     TextureHandle,
 };

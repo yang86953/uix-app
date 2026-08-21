@@ -7,7 +7,7 @@
 use glow::HasContext as _;
 // 引入统一结果和 draw packet 语义。
 use crate::core::error::Result;
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
     BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket, DrawSamplingBinding,
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,

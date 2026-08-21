@@ -6,7 +6,7 @@ use crate::core::{PresentCoherency, PresentDamage, Result};
 #[cfg(feature = "test-harness")]
 use crate::core::{Errc, Error};
 // 引入薄 RHI 的所有组合 trait 与命令类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
     GraphicsSurface, GraphicsSurfaceCapabilities, LoadAction, PipelineBinding, PipelineDesc,
     RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiExtent,

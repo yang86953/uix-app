@@ -8,7 +8,7 @@ use crate::draw::backend::frame_plan::{
     RenderTargetRef,
 };
 // 引入探针创建、绘制和销毁所需的共享薄 RHI 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState,
     DrawSamplingBinding, GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind,
     RhiColor, RhiExtent, RhiMeshRasterParams, RhiScissor, RhiShapeRasterParams, RhiTextureRegion,

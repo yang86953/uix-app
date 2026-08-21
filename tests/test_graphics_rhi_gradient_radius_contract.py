@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位当前仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 Gradient 值对象。
-GRADIENT = ROOT / "src/native/presentation/rhi/gradient.rs"
+GRADIENT = ROOT / "src/platform/presentation/rhi/gradient.rs"
 # 定位 FramePlan Uniform 载荷门禁。
 UPLOAD = ROOT / "src/draw/backend/frame_plan_upload.rs"
 # 定位 FramePlan 顶层验证。

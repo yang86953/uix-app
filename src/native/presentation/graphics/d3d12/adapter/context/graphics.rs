@@ -27,7 +27,7 @@ impl crate::native::present::GpuRecipeContext for D3d12Context {
     fn rhi_context(
         // 借用当前 D3D12 owner。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
         // Planned row 不得伪造已经完成的 thin RHI。
         Err(Error::new(
             // 保持为实现缺口而非设备故障。

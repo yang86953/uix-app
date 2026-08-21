@@ -3,7 +3,7 @@
     // 引入统一错误码以验证失败分类。
     use crate::core::Errc;
     // 引入共享 pipeline 身份与语义。
-    use crate::native::present::rhi::{PipelineBinding, PipelineKind};
+    use crate::platform::presentation::rhi::{PipelineBinding, PipelineKind};
 
     // 验证插入时绑定语义来自资源表保存的 kind。
     #[test]

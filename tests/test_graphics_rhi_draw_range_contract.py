@@ -14,9 +14,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 与 DrawRange 契约。
-SHARED = ROOT / "src/native/presentation/rhi/draw_packet.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/draw_packet.rs"
 # 定位 DrawPacket 独占的动态栅格契约。
-RASTER = ROOT / "src/native/presentation/rhi/draw_raster.rs"
+RASTER = ROOT / "src/platform/presentation/rhi/draw_raster.rs"
 # 定位 FramePlan 绘制命令门禁。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 OpenGL 绘制 Adapter。
@@ -154,7 +154,7 @@ class GraphicsRhiDrawRangeContractTests(unittest.TestCase):
         # 读取独立动态栅格值对象。
         raster = RASTER.read_text(encoding="utf-8")
         # 读取薄 Device 公共边界。
-        device = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
+        device = (ROOT / "src/platform/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取两个 Adapter 的最终 Draw 编码入口。
         adapters = OPENGL.read_text(encoding="utf-8") + D3D11_DRAW.read_text(encoding="utf-8")
         # 共享值对象必须私有保存 viewport 与显式 scissor。

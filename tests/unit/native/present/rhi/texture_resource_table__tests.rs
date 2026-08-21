@@ -3,7 +3,7 @@
     // 引入稳定错误分类。
     use crate::core::Errc;
     // 引入测试资源描述所需的共享 RHI 值对象。
-    use crate::native::present::rhi::{
+    use crate::platform::presentation::rhi::{
         RhiExtent, RhiTextureTransfer, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
         TextureMove,
     };

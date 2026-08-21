@@ -11,9 +11,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位共享 resize 事务 Component。
-TRANSACTION = ROOT / "src/native/presentation/rhi/resize_transaction.rs"
+TRANSACTION = ROOT / "src/platform/presentation/rhi/resize_transaction.rs"
 # 定位 D3D11 Surface Adapter。
 D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
 # 定位 OpenGL 共享 Surface Adapter。

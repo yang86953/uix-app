@@ -1,5 +1,5 @@
     // 引入共享纹理区域、传输命令和资源描述。
-    use crate::native::present::rhi::{
+    use crate::platform::presentation::rhi::{
         RhiExtent, RhiTextureRegion, RhiTextureTransfer, TextureCopy, TextureDesc, TextureFormat,
         TextureHandle, TextureMove,
     };

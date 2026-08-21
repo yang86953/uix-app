@@ -6,7 +6,7 @@
     // 引入错误分类、coherency 与 surface 值。
     use crate::core::{Errc, PresentCoherency, PresentSurface};
     // 引入最小记录型 Device/Surface 实现需要的薄 RHI 值和契约。
-    use crate::native::present::rhi::{
+    use crate::platform::presentation::rhi::{
         DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, GraphicsSurface, LoadAction,
         RenderTargetHandle, RhiExtent, RhiPresentTransaction, RhiScissor, RhiViewport,
         SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
@@ -138,7 +138,7 @@
         fn rhi_context(
             // 借用测试 GPU owner。
             &mut self,
-        ) -> crate::core::Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+        ) -> crate::core::Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
             // 不创建第二个 Device 或 Surface 实例。
             Ok(self)
         }

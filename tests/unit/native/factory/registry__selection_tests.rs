@@ -87,8 +87,8 @@ fn unused_factory(
 // 构造同时覆盖 Active、Disabled、GPU-native 与 CPU-present 的候选表。
 const TEST_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
-        // 高优先级 CPU-present 条目用于验证 raster tier 优先级。
-        id: GraphicsApi::D3d11,
+        // 高优先级 Vulkan PixelUpload 条目用于验证平台参考 API 优先级。
+        id: GraphicsApi::Vulkan,
         // CPU-present 故意使用最高数值优先级。
         priority: 100,
         // 自动策略应保留该 Active 条目。
@@ -101,9 +101,9 @@ const TEST_ENTRIES: &[GraphicsBackendEntry] = &[
         create: unused_factory,
     },
     GraphicsBackendEntry {
-        // Vulkan 提供可用的 GPU-native 对照条目。
-        id: GraphicsApi::Vulkan,
-        // 较低数值优先级用于证明 tier 高于 priority。
+        // D3D11 提供可用的 GPU-native 兼容对照条目。
+        id: GraphicsApi::D3d11,
+        // 较低数值优先级用于证明 API priority 是第一排序键。
         priority: 10,
         // 自动策略应保留该 Active 条目。
         status: BackendStatus::Active,
@@ -129,9 +129,9 @@ const TEST_ENTRIES: &[GraphicsBackendEntry] = &[
         create: unused_factory,
     },
     GraphicsBackendEntry {
-        // 第二个 D3D11 条目验证同一 API 可以保留多个 recipe。
-        id: GraphicsApi::D3d11,
-        // 最低数值优先级仍不改变 GPU-native tier 的先行顺序。
+        // OpenGL ES 条目验证同层兼容后端仍按数值优先级排序。
+        id: GraphicsApi::OpenGlEs,
+        // 最低数值优先级排在其余活动条目之后。
         priority: 5,
         // 自动策略应保留该 Active 条目。
         status: BackendStatus::Active,
@@ -145,28 +145,28 @@ const TEST_ENTRIES: &[GraphicsBackendEntry] = &[
 ];
 
 #[test]
-// 验证自动策略只探测 Active recipe，并保持 GPU-native 优先。
-fn automatic_selection_filters_status_and_orders_raster_tiers() {
+// 验证自动策略只探测 Active recipe，并保持平台声明的参考 API 优先。
+fn automatic_selection_filters_status_and_orders_platform_priority() {
     // 执行私有自动候选策略。
     let recipes = active_recipes_by_priority(TEST_ENTRIES, GraphicsSelection::Automatic);
-    // 即使 CPU 条目 priority 更高，GPU-native 仍先于 CPU-present。
+    // Vulkan PixelUpload 的平台优先级高于兼容 GPU-native 条目。
     assert_eq!(
         recipes,
         vec![
             GraphicsRecipe::new(
                 GraphicsApi::Vulkan,
-                RasterMode::GpuNative,
-                PresentMode::Swapchain,
-            ),
-            GraphicsRecipe::new(
-                GraphicsApi::D3d11,
-                RasterMode::GpuNative,
-                PresentMode::Swapchain,
-            ),
-            GraphicsRecipe::new(
-                GraphicsApi::D3d11,
                 RasterMode::Cpu,
                 PresentMode::PixelUpload,
+            ),
+            GraphicsRecipe::new(
+                GraphicsApi::D3d11,
+                RasterMode::GpuNative,
+                PresentMode::Swapchain,
+            ),
+            GraphicsRecipe::new(
+                GraphicsApi::OpenGlEs,
+                RasterMode::GpuNative,
+                PresentMode::Swapchain,
             ),
         ]
     );

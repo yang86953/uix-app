@@ -8,7 +8,7 @@ use crate::core::{Errc, Error, PresentDamage, Result};
 // 引入跨后端共享的 present image 与保留性证明。
 use crate::native::present::{PresentCoherency, PresentImage, PresentTestResult};
 // 引入已经通过 Surface capability 与范围门禁的呈现输入。
-use crate::native::present::rhi::ValidatedRhiPresent;
+use crate::platform::presentation::rhi::ValidatedRhiPresent;
 // 引入 Windows COM 接口转换能力。
 use ::windows::core::Interface;
 // 引入 Windows 基础状态、矩形与窗口句柄。

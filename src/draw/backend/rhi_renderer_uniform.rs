@@ -1,7 +1,7 @@
 //! 通用 GPU Renderer 到共享基础图元 uniform ABI 的映射。
 
 // 引入薄 RHI 拥有的基础图元值对象与物理 viewport。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     RhiMeshRasterParams, RhiSampledRasterParams, RhiSectorRasterParams, RhiViewport,
 };
 

@@ -14,11 +14,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位共享 Buffer Component。
-BUFFER = ROOT / "src/native/presentation/rhi/buffer.rs"
+BUFFER = ROOT / "src/platform/presentation/rhi/buffer.rs"
 # 定位共享 Buffer 资源表 Component。
-BUFFER_TABLE = ROOT / "src/native/presentation/rhi/buffer_resource_table.rs"
+BUFFER_TABLE = ROOT / "src/platform/presentation/rhi/buffer_resource_table.rs"
 # 定位 FramePlan 命令闭集。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 到 Device 的唯一执行边界。

@@ -6,7 +6,7 @@ use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 // 引入 WGL owner 持有的 raster pipeline 类型。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入已经通过共享门禁的 surface resize 事务。
-use crate::native::present::rhi::RhiSurfaceResizeTransaction;
+use crate::platform::presentation::rhi::RhiSurfaceResizeTransaction;
 // 引入共享 present damage 类型。
 use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入窗口 drawable 尺寸换算辅助函数。

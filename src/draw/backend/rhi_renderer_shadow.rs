@@ -1,7 +1,7 @@
 //! 通用 GPU Renderer 的仿射阴影 lowering。
 
 // 引入 RHI 计划执行所需的资源描述与句柄。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
     GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiShadowRasterParams,
     RhiViewport,

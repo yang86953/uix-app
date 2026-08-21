@@ -1,7 +1,7 @@
     // 引入被测共享提交序列。
     use super::RhiSubmissionSequence;
     // 引入构造零值和迟到提交所需的句柄类型。
-    use crate::native::present::rhi::SubmissionHandle;
+    use crate::platform::presentation::rhi::SubmissionHandle;
 
     // 验证初始状态和零值都不能进入 Surface present。
     #[test]

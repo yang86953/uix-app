@@ -14,7 +14,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 DrawPacket 索引绑定契约。
-SHARED = ROOT / "src/native/presentation/rhi/draw_packet.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/draw_packet.rs"
 # 定位 FramePlan 命令闭集。
 FRAME_PLAN = ROOT / "src/draw/backend/frame_plan.rs"
 # 定位 FramePlan 拥有的类型化上传值对象。

@@ -76,7 +76,7 @@ class GraphicsPresentContractTests(unittest.TestCase):
         # 收集不再需要兼容 present 的 GPU context 与 fake。
         gpu_contexts = (
             # fake context 不再记录无生产消费者的统一 present。
-            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            ROOT / "tests/support/native/test_harness/fake_graphics_context.rs",
             # D3D11 最终提交由 thin RHI GraphicsSurface 持有。
             ROOT / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs",
             # D3D12 测试期 context 不再伪造统一 payload。

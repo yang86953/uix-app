@@ -1,7 +1,7 @@
 // 引入当前 Widget 的私有契约。
 use super::*;
 // 引入构造测试 pipeline 的共享值。
-use crate::native::present::rhi::{PipelineHandle, PipelineKind};
+use crate::platform::presentation::rhi::{PipelineHandle, PipelineKind};
 
 // 创建 coverage pipeline 身份。
 const COVERAGE: PipelineBinding = PipelineBinding::for_test(

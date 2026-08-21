@@ -5,7 +5,7 @@ use crate::core::error::{Errc, Error, Result};
 // 引入探针直接依赖的 RHI 契约。
 use super::device_probe::probe_device;
 // 引入启动探针测试所需的共享薄 RHI 契约。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
     PipelineBinding, PipelineDesc, PipelineHandle, PipelineKind, RenderTargetHandle,
     RhiBufferUpload, RhiBufferUploadPreflight, RhiTextureUpload, SamplerDesc, SamplerHandle,

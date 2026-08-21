@@ -39,7 +39,7 @@ pub(crate) fn create(
         // 从实际 WGL Surface capability 冻结静态 recipe 快照。
         let caps = context_caps(
             // 只复制 Surface 角色拥有的呈现一致性事实。
-            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+            crate::platform::presentation::rhi::GraphicsSurface::surface_capabilities(&ctx)
                 // registry 只消费选择与门禁需要的字段。
                 .present_coherency,
         );
@@ -60,7 +60,7 @@ pub(crate) fn create(
         // 从实际 EGL Surface capability 冻结静态 recipe 快照。
         let caps = context_caps(
             // 只复制 Surface 角色拥有的呈现一致性事实。
-            crate::native::present::rhi::GraphicsSurface::surface_capabilities(&ctx)
+            crate::platform::presentation::rhi::GraphicsSurface::surface_capabilities(&ctx)
                 // registry 只消费选择与门禁需要的字段。
                 .present_coherency,
         );

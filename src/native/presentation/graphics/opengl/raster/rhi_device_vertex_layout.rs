@@ -5,7 +5,7 @@ use glow::HasContext as _;
 // 引入统一结果类型。
 use crate::core::error::Result;
 // 引入薄 RHI 拥有的槽位、格式与布局事实。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     PIPELINE_VERTEX_ATTRIBUTE_SLOT_COUNT, PipelineVertexFormat, PipelineVertexLayout,
 };
 // 引入当前 OpenGL Device 的稳定参数错误构造器。

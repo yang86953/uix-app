@@ -11,7 +11,7 @@ use crate::draw::backend::rhi_renderer::{
 };
 use crate::draw::geometry::types::BlendMode;
 // 引入 Device-only lowering 所需的目标、extent、load 和 viewport 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsDevice, LoadAction, RhiExtent, RhiScissor, RhiViewport, TextureHandle,
 };
 

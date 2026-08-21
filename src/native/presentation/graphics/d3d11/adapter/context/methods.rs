@@ -1,6 +1,6 @@
 use super::*;
 // 引入共享 Surface 门禁发布的封闭呈现输入。
-use crate::native::present::rhi::ValidatedRhiPresent;
+use crate::platform::presentation::rhi::ValidatedRhiPresent;
 
 impl D3d11Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {

@@ -11,11 +11,11 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位薄 RHI 组合入口和 Surface trait。
-RHI = ROOT / "src/native/presentation/rhi/mod.rs"
+RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 # 定位共享呈现事务 Component。
-TRANSACTION = ROOT / "src/native/presentation/rhi/present_transaction.rs"
+TRANSACTION = ROOT / "src/platform/presentation/rhi/present_transaction.rs"
 # 定位共享提交序列 Component。
-SUBMISSION = ROOT / "src/native/presentation/rhi/submission.rs"
+SUBMISSION = ROOT / "src/platform/presentation/rhi/submission.rs"
 # 定位 FramePlan 最终执行事务。
 FRAME_EXECUTION = ROOT / "src/draw/backend/frame_plan_execution.rs"
 # 定位 D3D11 Surface Adapter。

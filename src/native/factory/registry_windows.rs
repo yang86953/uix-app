@@ -29,16 +29,13 @@ fn create_d3d11(
 
 #[cfg(feature = "vulkan")]
 fn create_vulkan(
-    _: *mut c_void,
-    _: i32,
-    _: i32,
-    _: PendingFailureQueue,
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
-    // 方案 A：原生 Vulkan 后端仍为 test-only，未注册生产入口。
-    Err(Error::new(
-        Errc::NotImplemented,
-        "graphics backend `vulkan` has no production implementation on Windows",
-    ))
+    // Vulkan 通过统一 PixelUpload recipe 接管 Win32 surface，保证三平台使用同一绘制语义。
+    crate::native::presentation::graphics::vulkan::create(surface, width, height)
 }
 
 #[cfg(not(feature = "vulkan"))]
@@ -87,7 +84,7 @@ const D3D11_STATUS: BackendStatus = if cfg!(feature = "d3d11") {
 };
 
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
-    BackendStatus::Disabled
+    BackendStatus::Active
 } else {
     BackendStatus::Disabled
 };
@@ -109,10 +106,10 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     },
     GraphicsBackendEntry {
         id: GraphicsApi::Vulkan,
-        priority: 20,
+        priority: 100,
         status: VULKAN_STATUS,
-        raster: RasterMode::GpuNative,
-        present: PresentMode::Swapchain,
+        raster: RasterMode::Cpu,
+        present: PresentMode::PixelUpload,
         create: create_vulkan,
     },
     GraphicsBackendEntry {

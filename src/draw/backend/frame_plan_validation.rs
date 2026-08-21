@@ -3,7 +3,7 @@
 // 引入稳定错误类型和结果别名。
 use crate::core::error::{Errc, Error, Result};
 // 引入绘制包与封闭条件采样角色。
-use crate::native::present::rhi::{DrawPacket, DrawSamplingBinding};
+use crate::platform::presentation::rhi::{DrawPacket, DrawSamplingBinding};
 
 // 引入同层计划命令与 pass。
 use super::{FramePlanCommand, RenderPassPlan, RenderTargetRef};

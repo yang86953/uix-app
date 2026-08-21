@@ -5,7 +5,7 @@ use crate::core::error::Result;
 // 引入当前片段的 damage 语义。
 use crate::core::PresentDamage;
 // 引入薄 RHI 的采样与执行类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
     GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction, RhiViewport,
     SampledTextureBinding, TextureHandle,

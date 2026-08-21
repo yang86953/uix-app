@@ -36,7 +36,7 @@ fn rejects_invalid_draw_raster_state_before_adapter() {
         // 保留原条件采样角色。
         packet.sampling(),
         // 注入两个 Adapter 都不得自行量化的完整栅格状态。
-        crate::native::present::rhi::DrawRasterState::new(
+        crate::platform::presentation::rhi::DrawRasterState::new(
             // 使用半像素宽度制造共同值域违例。
             RhiViewport {
                 // 非整像素宽度必须被共享层拒绝。
@@ -96,7 +96,7 @@ fn rejects_invalid_draw_raster_state_before_adapter() {
         // 保留原条件采样角色。
         packet.sampling(),
         // 使用合法 viewport 与非法 scissor 组成完整栅格状态。
-        crate::native::present::rhi::DrawRasterState::new(
+        crate::platform::presentation::rhi::DrawRasterState::new(
             // 复用原 packet 的合法 viewport。
             packet.raster().viewport(),
             // 注入负起点裁剪。

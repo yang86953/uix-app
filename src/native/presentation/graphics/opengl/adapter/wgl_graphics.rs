@@ -43,7 +43,7 @@ impl crate::native::present::GpuRecipeContext for WglContext {
     fn rhi_context(
         // 借用当前 WGL owner。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi, Error> {
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi, Error> {
         // 在借出 Device/Surface 组合能力前先执行 owner 生命周期门禁。
         self.ensure_rhi_active()?;
         // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。

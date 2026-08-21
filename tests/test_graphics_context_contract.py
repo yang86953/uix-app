@@ -96,7 +96,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # Metal PixelUpload context。
             ROOT / "src/native/presentation/graphics/metal/adapter/context.rs",
             # GPU-native 测试 fake。
-            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            ROOT / "tests/support/native/test_harness/fake_graphics_context.rs",
         ):
             # 每个实现必须返回单一 PresentSurface 快照。
             adapter_source = adapter.read_text(encoding="utf-8")
@@ -154,7 +154,7 @@ class GraphicsContextContractTests(unittest.TestCase):
             # Vulkan PixelUpload context。
             ROOT / "src/native/presentation/graphics/vulkan/adapter/context/graphics.rs",
             # GPU-native 测试 fake。
-            ROOT / "src/native/test_harness/fake_graphics_context.rs",
+            ROOT / "tests/support/native/test_harness/fake_graphics_context.rs",
         ):
             # adapter 只能在 caps 构造中陈述 backend 身份。
             adapter_source = adapter.read_text(encoding="utf-8")
@@ -483,7 +483,7 @@ class GraphicsContextContractTests(unittest.TestCase):
         # 通用 context 不得继续声明 surface 专属探测。
         self.assertNotIn("fn test_present(&mut self)", facade)
         # 读取 thin RHI 契约。
-        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/platform/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # GraphicsSurface 必须显式声明无帧探测入口。
         self.assertIn("fn test_present(&mut self) -> Result<PresentTestResult>", rhi)
         # 默认 surface 必须通过 typed RHI 错误拒绝未实现能力。

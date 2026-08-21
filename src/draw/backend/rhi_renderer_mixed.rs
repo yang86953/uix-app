@@ -2,7 +2,7 @@
 // 引入共享错误结果类型。
 use crate::core::error::Result;
 // 引入薄 RHI 的 command、resource 和 target 类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
     GraphicsDevice, LoadAction, RhiExtent, RhiTextureUpload, RhiViewport, SampledTextureBinding,
     TextureDesc, TextureFormat,
@@ -36,7 +36,7 @@ pub(crate) struct RhiSector {
     // 保存已经规整过的直通颜色。
     pub(crate) rgba: [f32; 4],
     // 保存当前扇形的物理裁剪矩形。
-    pub(crate) scissor: Option<crate::native::present::rhi::RhiScissor>,
+    pub(crate) scissor: Option<crate::platform::presentation::rhi::RhiScissor>,
 }
 // 保存一个已经完成几何 lowering 的混合 painter-order 操作。
 pub(crate) enum RhiOp {
@@ -146,9 +146,9 @@ impl RhiRenderer {
         &mut self,
         device: &mut dyn GraphicsDevice,
     ) -> Result<(
-        crate::native::present::rhi::PipelineBinding,
-        crate::native::present::rhi::BufferHandle,
-        crate::native::present::rhi::BufferHandle,
+        crate::platform::presentation::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::BufferHandle,
+        crate::platform::presentation::rhi::BufferHandle,
     )> {
         // 首次使用时创建固定扇形 pipeline。
         let pipeline = if let Some(pipeline) = self.sector_pipeline {
@@ -156,8 +156,8 @@ impl RhiRenderer {
             pipeline
         } else {
             // 只选择通用层定义的扇形 pipeline 语义。
-            let pipeline = device.create_pipeline(crate::native::present::rhi::PipelineDesc {
-                kind: crate::native::present::rhi::PipelineKind::Sector,
+            let pipeline = device.create_pipeline(crate::platform::presentation::rhi::PipelineDesc {
+                kind: crate::platform::presentation::rhi::PipelineKind::Sector,
             })?;
             // 缓存扇形 pipeline 句柄。
             self.sector_pipeline = Some(pipeline);
@@ -171,11 +171,11 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建 position float2 ABI 的 vertex buffer。
-            let buffer = device.create_buffer(crate::native::present::rhi::BufferDesc::vertex(
+            let buffer = device.create_buffer(crate::platform::presentation::rhi::BufferDesc::vertex(
                 // 保存共享类型化 payload 的精确容量。
                 unit_vertices.size_bytes(),
                 // 步长只来自共享 Sector 顶点 ABI。
-                crate::native::present::rhi::PipelineKind::Sector
+                crate::platform::presentation::rhi::PipelineKind::Sector
                     .contract()
                     .vertex
                     .stride_bytes(),
@@ -191,9 +191,9 @@ impl RhiRenderer {
         } else {
             // D3D11 常量布局由 viewport、矩形、颜色和角度四个 float4 组成。
             let uniform =
-                device.create_buffer(crate::native::present::rhi::BufferDesc::uniform(
+                device.create_buffer(crate::platform::presentation::rhi::BufferDesc::uniform(
                     // 常量容量只来自共享 Sector Uniform ABI。
-                    crate::native::present::rhi::PipelineKind::Sector
+                    crate::platform::presentation::rhi::PipelineKind::Sector
                         .contract()
                         .uniform
                         .size_bytes(),

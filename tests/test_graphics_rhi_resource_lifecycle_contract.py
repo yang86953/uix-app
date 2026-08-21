@@ -11,7 +11,7 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享 render-pass 状态机。
-PASS_STATE = ROOT / "src/native/presentation/rhi/pass_state.rs"
+PASS_STATE = ROOT / "src/platform/presentation/rhi/pass_state.rs"
 # 定位 D3D11 资源 Device Adapter。
 D3D11_DEVICE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi_device.rs"
 # 定位 OpenGL 资源 Device Adapter。

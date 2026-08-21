@@ -63,7 +63,7 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         // SolidMesh 不读取纹理，显式选择无采样角色。
         DrawSamplingBinding::none(),
         // 将动态栅格事实与 Draw 一起冻结。
-        crate::native::present::rhi::DrawRasterState::new(
+        crate::platform::presentation::rhi::DrawRasterState::new(
             // 使用与目标一致的物理 viewport。
             RhiViewport {
                 width: 64.0,

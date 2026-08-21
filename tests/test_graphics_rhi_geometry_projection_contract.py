@@ -14,9 +14,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享目标几何 Component。
-GEOMETRY = ROOT / "src/native/presentation/rhi/geometry.rs"
+GEOMETRY = ROOT / "src/platform/presentation/rhi/geometry.rs"
 # 定位共享 pass 状态机。
-PASS_STATE = ROOT / "src/native/presentation/rhi/pass_state.rs"
+PASS_STATE = ROOT / "src/platform/presentation/rhi/pass_state.rs"
 # 定位 OpenGL 状态映射。
 OPENGL_STATE = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device.rs"
 # 定位 OpenGL texture 上传映射。

@@ -30,7 +30,7 @@ impl crate::native::present::GpuRecipeContext for D3d11Context {
     fn rhi_context(
         // 借用当前 D3D11 owner。
         &mut self,
-    ) -> Result<&mut dyn crate::native::present::rhi::GraphicsContextRhi> {
+    ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
         // checked shutdown 后不得重新借出 thin RHI owner。
         self.ensure_active()?;
         // 同一实例完整实现 GraphicsDevice 与 GraphicsSurface。

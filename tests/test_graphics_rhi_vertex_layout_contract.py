@@ -14,9 +14,9 @@ from pathlib import Path
 # 定位仓库根目录。
 ROOT = Path(__file__).resolve().parents[1]
 # 定位共享顶点布局 Component。
-SHARED = ROOT / "src/native/presentation/rhi/vertex_layout.rs"
+SHARED = ROOT / "src/platform/presentation/rhi/vertex_layout.rs"
 # 定位共享 pipeline 组合契约。
-PIPELINE = ROOT / "src/native/presentation/rhi/pipeline.rs"
+PIPELINE = ROOT / "src/platform/presentation/rhi/pipeline.rs"
 # 定位 OpenGL 顶点属性映射。
 OPENGL = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
 # 定位 OpenGL 独立布局 Adapter Component。

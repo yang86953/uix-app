@@ -39,7 +39,7 @@ class GraphicsReadbackContractTests(unittest.TestCase):
     # 校验原生 Adapter 只能返回统一范围与像素格式。
     def test_rhi_readback_normalizes_region_rows_and_channels(self) -> None:
         # 读取薄 RHI 共享结果契约。
-        rhi = (ROOT / "src/native/presentation/rhi/mod.rs").read_text(encoding="utf-8")
+        rhi = (ROOT / "src/platform/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取 OpenGL 私有通道与行序适配。
         opengl = (ROOT / "src/native/presentation/graphics/opengl/raster/pipeline2.rs").read_text(encoding="utf-8")
         # 读取 D3D11 surface Adapter。

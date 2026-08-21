@@ -1,7 +1,7 @@
 //! 通用 GPU renderer 从 platform 薄 RHI 事实派生的私有能力投影。
 
 // 引入 platform presentation 拥有的底层事实快照。
-use crate::native::present::rhi::GraphicsDeviceCapabilities;
+use crate::platform::presentation::rhi::GraphicsDeviceCapabilities;
 
 // 为 renderer 能力投影启用可比较、可复制的值语义。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

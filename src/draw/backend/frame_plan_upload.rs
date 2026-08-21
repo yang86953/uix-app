@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 // 引入已经由共享 RHI 冻结字段语义的各类常量值对象。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     IndexFormat, PipelineUniformLayout, PipelineVertexLayout, RhiBlurRasterParams,
     RhiGradientRasterParams, RhiMeshRasterParams, RhiMsdfRasterParams, RhiSampledRasterParams,
     RhiSectorRasterParams, RhiShadowRasterParams, RhiShapeRasterParams,

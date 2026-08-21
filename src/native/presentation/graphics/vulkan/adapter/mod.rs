@@ -28,15 +28,12 @@ pub use context::VulkanContext;
 
 // 组装 Vulkan PixelUpload adapter 的静态 recipe 能力。
 #[cfg(any(unix, windows))]
-// Vulkan 尚未注册生产入口，保留该函数用于 feature 编译形状与后续接线。
-#[allow(dead_code)]
 fn context_caps() -> GraphicsContextCaps {
     // Vulkan 当前使用 CPU raster 与专用 swapchain 上传提交。
     GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Vulkan)
 }
 
 #[cfg(any(unix, windows))]
-#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,

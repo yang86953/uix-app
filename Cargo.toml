@@ -107,8 +107,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 # 默认启用生产图形后端与九项使用方能力：
-#   Windows 默认 D3D11；Linux 默认无图形后端（CPU-only 软件路径），需 opengles/vulkan 自行启用。
-default = ["d3d11", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+#   三平台默认优先 Vulkan；Windows 保留 D3D11 作为兼容回退。
+default = ["vulkan", "d3d11", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",

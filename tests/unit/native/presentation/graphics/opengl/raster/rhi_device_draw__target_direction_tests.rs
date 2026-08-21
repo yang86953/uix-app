@@ -1,7 +1,7 @@
     // 引入父模块私有目标方向 helper。
     use super::super::target_y_sign;
     // 引入封闭 render target 与 texture 句柄。
-    use crate::native::present::rhi::{RenderTargetHandle, TextureHandle};
+    use crate::platform::presentation::rhi::{RenderTargetHandle, TextureHandle};
 
     // 锁定原生 surface 把左上逻辑坐标映射到 GL 高 Y。
     #[test]

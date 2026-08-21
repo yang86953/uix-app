@@ -8,7 +8,7 @@ use crate::core::error::Result;
 // 引入 Surface 提供的跨呈现像素保留语义。
 use crate::core::PresentCoherency;
 // 引入薄 RHI 的提交句柄和类型化呈现门禁类型。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     RhiPresentTransaction, SubmissionHandle, SurfaceToken, ValidatedRhiPresent,
 };
 

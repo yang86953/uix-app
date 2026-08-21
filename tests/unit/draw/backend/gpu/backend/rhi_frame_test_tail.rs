@@ -10,7 +10,7 @@ use crate::draw::backend::rhi_renderer::RhiOp;
 // 引入测试颜色和底层物理尺寸。
 use crate::draw::Color;
 // 引入测试使用的通用纹理和 viewport 值。
-use crate::native::present::rhi::{RhiColor, RhiExtent, RhiViewport, TextureHandle};
+use crate::platform::presentation::rhi::{RhiColor, RhiExtent, RhiViewport, TextureHandle};
 
 // 页面销毁产生的空 PictureBlit 必须与 CPU 参考执行保持相同的 no-op 语义。
 #[test]

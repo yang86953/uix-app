@@ -1,9 +1,9 @@
     // 引入当前模块与父 RHI 的私有值对象。
     use super::*;
     // 引入 Device capability，测试颜色路径进入正确角色的准入条件。
-    use crate::native::present::rhi::GraphicsDeviceCapabilities;
+    use crate::platform::presentation::rhi::GraphicsDeviceCapabilities;
     // 引入构造 surface token 所需的通用 extent。
-    use crate::native::present::rhi::RhiExtent;
+    use crate::platform::presentation::rhi::RhiExtent;
 
     // 锁定全部颜色目标共享一个编码与混合域。
     #[test]

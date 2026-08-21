@@ -3,7 +3,7 @@
 // 引入统一错误和结果类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入薄 RHI 的 Device、Surface、组合 context、目标句柄与提交句柄。
-use crate::native::present::rhi::{
+use crate::platform::presentation::rhi::{
     GraphicsContextRhi, GraphicsDevice, GraphicsSurface, RenderTargetHandle, RhiBufferUpload,
     RhiBufferUploadPreflight, RhiPresentTransaction, SubmissionHandle,
 };
