@@ -14,14 +14,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::w;
 
 use super::*;
+use crate::core::{Errc, PresentDamage};
 use crate::draw::backend::rhi_renderer::consistency::{
     CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyBlurScenario, ConsistencySample,
     ConsistencyScene, blur_subregion_scenario, canonical_scenes, validate_canonical_scenes,
 };
 use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
-    GraphicsDevice, IndexBufferBinding, IndexFormat, PipelineKind, RhiBufferUpload,
-    RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    GraphicsDevice, GraphicsSurface, IndexBufferBinding, IndexFormat, PipelineKind,
+    RhiBufferUpload, RhiExtent, RhiPresentTransaction, RhiTextureUpload, RhiViewport,
+    SampledTextureBinding,
 };
 
 // 隐藏窗口只为生产 D3D11 context 的真实 swapchain 构造提供 HWND，不进入上层绘制。
@@ -80,6 +82,112 @@ impl Drop for HiddenWindow {
             }
         }
     }
+}
+
+// 在真实 HWND swapchain 上执行 acquire、submit 与 Present/Present1。
+fn present_swapchain_surface(rhi: &mut D3d11Context) {
+    let frame = GraphicsSurface::acquire(rhi).expect("D3D11 surface acquire must succeed");
+    GraphicsDevice::begin_render_pass(
+        rhi,
+        frame.target(),
+        LoadAction::Clear(RhiColor::from_straight_rgba([0.125, 0.25, 0.5, 1.0])),
+    )
+    .expect("D3D11 surface render pass must begin");
+    GraphicsDevice::end_render_pass(rhi).expect("D3D11 surface render pass must end");
+    let submission =
+        GraphicsDevice::submit(rhi).expect("D3D11 surface submit must reach the device context");
+    let present = GraphicsSurface::present(
+        rhi,
+        RhiPresentTransaction::new(frame, submission, PresentDamage::Full),
+    );
+    // 隐藏 HWND 可由 DWM 明确报告 Occluded；该 typed 结果仍证明已到达原生 Present。
+    if let Err(error) = present {
+        assert_eq!(
+            error.code(),
+            Errc::GraphicsOccluded,
+            "D3D11 production swapchain present failed before an allowed hidden-window occlusion"
+        );
+    }
+}
+
+// 在同一隐藏窗口与生产 context 上验证共享 D3D11 Surface 生命周期。
+fn run_surface_lifecycle_test(rhi: &mut D3d11Context) {
+    let initial_token = GraphicsSurface::token(rhi);
+    let resized_extent = RhiExtent::new(
+        initial_token.extent.width + 16,
+        initial_token.extent.height + 8,
+    );
+
+    // 初始化后的正常路径必须真实经过 acquire、submit 与 Present。
+    present_swapchain_surface(rhi);
+
+    // ResizeBuffers 必须由共享事务推进一次 generation，并使旧 frame 失效。
+    let stale_frame = GraphicsSurface::acquire(rhi).expect("D3D11 stale frame must acquire");
+    let resized = GraphicsSurface::resize(rhi, resized_extent)
+        .expect("D3D11 ResizeBuffers transaction must succeed");
+    assert_eq!(resized.generation, initial_token.generation + 1);
+    assert_eq!(resized.extent, resized_extent);
+    let submission = GraphicsDevice::submit(rhi)
+        .expect("D3D11 stale-token validation needs a latest submission");
+    let stale_error = GraphicsSurface::present(
+        rhi,
+        RhiPresentTransaction::new(stale_frame, submission, PresentDamage::Full),
+    )
+    .expect_err("D3D11 pre-resize frame token must be rejected");
+    assert_eq!(stale_error.code(), Errc::GraphicsSurfaceLost);
+
+    // 零尺寸与超出 Win32 i32 的尺寸必须在共享门禁拒绝且不推进 generation。
+    let before_invalid = GraphicsSurface::token(rhi);
+    for invalid in [
+        RhiExtent::new(0, resized_extent.height),
+        RhiExtent::new(i32::MAX as u32 + 1, resized_extent.height),
+    ] {
+        let invalid_error = GraphicsSurface::resize(rhi, invalid)
+            .expect_err("D3D11 invalid surface extent must be rejected");
+        assert_eq!(invalid_error.code(), Errc::InvalidArgument);
+        assert_eq!(GraphicsSurface::token(rhi), before_invalid);
+    }
+
+    // acquire SurfaceLost 只能触发一次同尺寸共享重建，随后真实帧恢复成功。
+    GraphicsSurface::inject_surface_lost_for_test(rhi)
+        .expect("D3D11 acquire surface loss must be scheduled");
+    let acquire_error =
+        GraphicsSurface::acquire(rhi).expect_err("D3D11 acquire surface loss must request a retry");
+    assert_eq!(acquire_error.code(), Errc::GraphicsSurfaceChanged);
+    assert_eq!(
+        GraphicsSurface::token(rhi).generation,
+        before_invalid.generation + 1
+    );
+    present_swapchain_surface(rhi);
+
+    // present SurfaceLost 同样只推进一次 generation，DeviceLost 分类不参与此路径。
+    let frame = GraphicsSurface::acquire(rhi).expect("D3D11 recovered frame must acquire");
+    GraphicsDevice::begin_render_pass(
+        rhi,
+        frame.target(),
+        LoadAction::Clear(RhiColor::transparent()),
+    )
+    .expect("D3D11 recovered surface pass must begin");
+    GraphicsDevice::end_render_pass(rhi).expect("D3D11 recovered surface pass must end");
+    let submission = GraphicsDevice::submit(rhi).expect("D3D11 recovered submit must succeed");
+    let before_present_recovery = GraphicsSurface::token(rhi);
+    GraphicsSurface::inject_surface_lost_for_test(rhi)
+        .expect("D3D11 present surface loss must be scheduled");
+    let present_error = GraphicsSurface::present(
+        rhi,
+        RhiPresentTransaction::new(frame, submission, PresentDamage::Full),
+    )
+    .expect_err("D3D11 present surface loss must request a retry");
+    assert_eq!(present_error.code(), Errc::GraphicsSurfaceChanged);
+    assert_eq!(
+        GraphicsSurface::token(rhi).generation,
+        before_present_recovery.generation + 1
+    );
+    present_swapchain_surface(rhi);
+
+    eprintln!(
+        "D3D11 surface lifecycle verified: initialization, real acquire/submit/present, ResizeBuffers, stale token, zero/invalid extent, acquire+present one-shot recovery"
+    );
 }
 
 // 保存共享场景机械映射后的 D3D11 RHI 身份，不拥有期望像素或容差。
@@ -419,6 +527,7 @@ pub(super) fn run_gpu_parity_test() {
         "D3D11 consistency device: {}",
         rhi.adapter_info.diagnostic_summary()
     );
+    run_surface_lifecycle_test(&mut rhi);
 
     let scenes = canonical_scenes();
     validate_canonical_scenes(&scenes).expect("shared consistency architecture gate must pass");

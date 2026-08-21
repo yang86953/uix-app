@@ -14,11 +14,11 @@ use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, BufferUsage, DrawPacket, DrawRasterState, GraphicsDevice,
     GraphicsDeviceCapabilities, LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle,
     RhiBufferResource, RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
-    RhiColorClearContract, RhiExtent, RhiPassState, RhiPipelineResourceTable, RhiResourceTable,
-    RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
-    RhiTextureUpload, SampledTextureBinding, SamplerAddressMode, SamplerDesc, SamplerFilter,
-    SamplerHandle, SamplerMipMode, TextureCopy, TextureDesc, TextureFormat, TextureHandle,
-    TextureMove, UIX_COLOR_CLEAR_CONTRACT,
+    RhiColorClearContract, RhiPassState, RhiPipelineResourceTable, RhiResourceTable, RhiScissor,
+    RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload,
+    SampledTextureBinding, SamplerAddressMode, SamplerDesc, SamplerFilter, SamplerHandle,
+    SamplerMipMode, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    UIX_COLOR_CLEAR_CONTRACT,
 };
 // 引入 D3D11 的基础资源和绑定类型。
 use ::windows::Win32::Graphics::Direct3D11::{
@@ -537,8 +537,8 @@ impl GraphicsDevice for D3d11Context {
                     self.rtv.as_ref().cloned().ok_or_else(|| {
                         rhi_platform("D3d11 RHI surface has no render target view")
                     })?;
-                // surface extent 以当前物理 drawable 尺寸为准。
-                let extent = RhiExtent::new(self.width.max(1) as u32, self.height.max(1) as u32);
+                // surface extent 只读取共享生命周期已经发布的物理范围。
+                let extent = self.surface_lifecycle.token().extent;
                 (rtv, extent)
             } else {
                 // 离屏 target 必须指向已创建且可渲染的 RHI texture。

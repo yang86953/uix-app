@@ -22,6 +22,8 @@ use crate::core::{Errc, Error, Result};
 // 导入 context 实现直接消费的共享生命周期契约。
 use crate::native::present::GraphicsContextLifecycle;
 use crate::native::presentation::graphics::platform::windows as win_surface;
+// 引入唯一拥有 D3D11 Surface token、extent 与重建顺序的共享生命周期。
+use crate::platform::presentation::rhi::RhiSurfaceLifecycle;
 use ::windows::Win32::Foundation::HMODULE;
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
@@ -145,10 +147,8 @@ pub(crate) struct D3d11Context {
     pub(crate) adapter_info: D3d11AdapterInfo,
     logical_width: i32,
     logical_height: i32,
-    width: i32,
-    height: i32,
-    /// surface 重建代际；同 extent 重建也必须推进该值。
-    surface_generation: u64,
+    // 唯一拥有 Surface generation、物理 extent、事务号与重建状态。
+    surface_lifecycle: RhiSurfaceLifecycle,
     // 记录 checked shutdown 是否已经完整提交，阻止关闭后重新取得 RHI。
     shutdown: bool,
     /// 迁移期薄 RHI 的 D3D11 资源与 pass 状态。

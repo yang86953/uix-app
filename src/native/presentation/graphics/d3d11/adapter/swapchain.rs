@@ -12,7 +12,10 @@ use crate::platform::presentation::rhi::ValidatedRhiPresent;
 // 引入 Windows COM 接口转换能力。
 use ::windows::core::Interface;
 // 引入 Windows 基础状态、矩形与窗口句柄。
-use ::windows::Win32::Foundation::{DXGI_STATUS_OCCLUDED, E_OUTOFMEMORY, FALSE, HWND, RECT, TRUE};
+use ::windows::Win32::Foundation::{
+    DXGI_STATUS_MODE_CHANGE_IN_PROGRESS, DXGI_STATUS_OCCLUDED, E_OUTOFMEMORY, FALSE, HWND, RECT,
+    TRUE,
+};
 // 引入 D3D11 device 接口，交换链只借用它完成创建。
 use ::windows::Win32::Graphics::Direct3D11::ID3D11Device;
 // 引入 swapchain descriptor 使用的共享 DXGI 格式。
@@ -23,12 +26,13 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 };
 // 引入 legacy 与 flip-model swapchain 的 DXGI 接口和值。
 use ::windows::Win32::Graphics::Dxgi::{
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_PRESENT,
-    DXGI_PRESENT_PARAMETERS, DXGI_PRESENT_TEST, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC,
-    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice,
-    IDXGIFactory, IDXGIFactory2, IDXGIOutput, IDXGISwapChain, IDXGISwapChain3,
+    DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
+    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_MODE_CHANGE_IN_PROGRESS,
+    DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_PRESENT, DXGI_PRESENT_PARAMETERS, DXGI_PRESENT_TEST,
+    DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT, DXGI_SWAP_EFFECT_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice, IDXGIFactory, IDXGIFactory2,
+    IDXGIOutput, IDXGISwapChain, IDXGISwapChain3,
 };
 
 // 集中保存实际 D3D11 swapchain 与上层 present 能力之间的冻结事实。
@@ -434,6 +438,8 @@ fn d3d_hresult_code(result: ::windows::core::HRESULT) -> Errc {
         | DXGI_ERROR_DEVICE_REMOVED
         | DXGI_ERROR_DEVICE_RESET
         | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
+        // 桌面访问或显示模式切换失效只重建当前窗口 Surface。
+        DXGI_ERROR_ACCESS_LOST | DXGI_ERROR_MODE_CHANGE_IN_PROGRESS => Errc::GraphicsSurfaceLost,
         // 本地或远程图形内存不足保留独立分类。
         E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
         // 其它 HRESULT 由平台错误通道报告。
@@ -460,6 +466,13 @@ pub(crate) fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Resul
         return Err(Error::new(
             Errc::GraphicsOccluded,
             format!("D3d11Context: swapchain present reported occlusion: {result:?}"),
+        ));
+    }
+    // 模式切换中的成功状态未提交当前帧，按 SurfaceLost 执行一次受控重建。
+    if result == DXGI_STATUS_MODE_CHANGE_IN_PROGRESS {
+        return Err(Error::new(
+            Errc::GraphicsSurfaceLost,
+            format!("D3d11Context: swapchain present reported mode change: {result:?}"),
         ));
     }
     // 其它返回值进入共同 HRESULT 分类。

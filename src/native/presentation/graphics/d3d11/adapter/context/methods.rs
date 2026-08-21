@@ -1,6 +1,9 @@
 use super::*;
-// 引入共享 Surface 门禁发布的封闭呈现输入。
-use crate::platform::presentation::rhi::ValidatedRhiPresent;
+// 引入共享 Surface 生命周期签发的原生重建输入与封闭呈现值。
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
+    ValidatedRhiPresent,
+};
 
 impl D3d11Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
@@ -72,6 +75,13 @@ impl D3d11Context {
     }
 
     pub(super) fn create_rtv(&mut self) -> Result<()> {
+        // 正常 acquire/present 只为共享生命周期已经发布的 extent 建立视图。
+        let extent = self.surface_lifecycle.token().extent;
+        self.create_rtv_for_extent(extent)
+    }
+
+    // 为共享事务已经验证的物理范围机械创建 RTV 与 viewport。
+    fn create_rtv_for_extent(&mut self, extent: RhiExtent) -> Result<()> {
         // SAFETY: swap_chain 由本 context 持有且存活，get_buffer 返回的纹理由接口类型接管。
         let back_buffer: ID3D11Texture2D = unsafe {
             self.swap_chain
@@ -96,37 +106,31 @@ impl D3d11Context {
             self.context
                 .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
         }
-        self.bind_viewport();
+        // 原生重建提交前生命周期仍保留旧 token，因此显式使用事务 extent。
+        let (width, height) = extent.native_size_i32().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidArgument,
+                "D3d11 RTV extent must be representable by the native viewport",
+            )
+        })?;
+        self.bind_viewport_size(width, height);
         self.rtv = Some(rtv);
         Ok(())
     }
 
-    // 直接执行 D3D11 surface 的物理尺寸重建，不再依赖兼容 resize 入口。
-    pub(super) fn resize_surface_extent(
+    // 机械消费共享重建事务，执行 ResizeBuffers/RTV 并报告实际原生 extent。
+    pub(super) fn recreate_surface_native(
         &mut self,
-        physical_width: i32,
-        physical_height: i32,
+        recreate: RhiSurfaceRecreateTransaction,
+        previous: RhiExtent,
         logical_width: i32,
         logical_height: i32,
-    ) -> Result<()> {
+    ) -> Result<RhiExtent> {
         // checked shutdown 后不得重新创建 swapchain surface 资源。
         self.ensure_active()?;
-        // 拒绝无效尺寸，避免把非法参数传给 DXGI。
-        if physical_width <= 0 || physical_height <= 0 {
-            // 返回稳定的参数错误，保持 RHI 和兼容入口一致。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "D3d11 surface extent must be positive",
-            ));
-        }
-        // 尺寸没有变化时无需释放和重建现有 RTV。
-        if physical_width == self.width && physical_height == self.height {
-            // 仍然同步逻辑尺寸，覆盖同物理尺寸下的逻辑元数据变化。
-            self.logical_width = logical_width;
-            self.logical_height = logical_height;
-            // 返回当前 surface 状态。
-            return Ok(());
-        }
+        // 原生宽高只能来自共享生命周期已经验证并封闭的投影。
+        let (physical_width, physical_height) = recreate.native_size_i32();
+        let requested = recreate.requested();
         // 先解除旧 RTV 绑定，满足 ResizeBuffers 的资源生命周期要求。
         self.release_rtv();
         // 让 DXGI 执行 backbuffer 的原生尺寸重建。
@@ -135,19 +139,40 @@ impl D3d11Context {
             self.swap_chain
                 .resize_buffers(physical_width as u32, physical_height as u32)
         } {
-            // 将设备移除、无效参数等 DXGI 结果映射为统一错误。
-            map_dxgi_resize_result(error.code())?;
+            // 将设备移除、Surface 丢失等 DXGI 结果映射为统一错误。
+            let Err(primary) = map_dxgi_resize_result(error.code()) else {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "D3d11 ResizeBuffers failed without a typed error",
+                ));
+            };
+            // ResizeBuffers 失败时原 buffer 仍有效；恢复旧 RTV 后再传播主错误。
+            return match self.create_rtv_for_extent(previous) {
+                Ok(()) => Err(primary),
+                Err(rollback) => Err(primary.with_source(rollback)),
+            };
         }
-        // 提交成功后更新逻辑尺寸元数据。
+        // 新 buffer 建立后必须先恢复 RTV；失败时把原生尺寸回滚到旧 token。
+        if let Err(primary) = self.create_rtv_for_extent(requested) {
+            // SAFETY: 新 RTV 创建失败且当前没有 back-buffer view；旧 extent 来自共享 token。
+            let rollback_resize = unsafe {
+                self.swap_chain
+                    .resize_buffers(previous.width, previous.height)
+            };
+            let rollback = match rollback_resize {
+                Ok(()) => self.create_rtv_for_extent(previous),
+                Err(error) => map_dxgi_resize_result(error.code()),
+            };
+            return match rollback {
+                Ok(()) => Err(primary),
+                Err(rollback) => Err(primary.with_source(rollback)),
+            };
+        }
+        // 只有完整原生重建成功后才提交非生命周期逻辑元数据。
         self.logical_width = logical_width;
         self.logical_height = logical_height;
-        // 保存新的物理 drawable 尺寸。
-        self.width = physical_width;
-        self.height = physical_height;
-        // ResizeBuffers 成功后推进 surface 代际，隔离旧帧和旧 view。
-        self.surface_generation = self.surface_generation.saturating_add(1);
-        // 重新创建 RTV 并恢复默认 swapchain target 绑定。
-        self.create_rtv()
+        // Adapter 不拥有 generation，只报告实际采用的事务请求范围。
+        Ok(requested)
     }
 
     pub(super) fn release_rtv(&mut self) {
@@ -196,7 +221,9 @@ impl D3d11Context {
     }
 
     pub(super) fn bind_viewport(&self) {
-        self.bind_viewport_size(self.width, self.height);
+        // 已发布的物理范围只从共享生命周期读取。
+        let extent = self.surface_lifecycle.token().extent;
+        self.bind_viewport_size(extent.width as i32, extent.height as i32);
     }
 
     pub(super) fn bind_viewport_size(&self, width: i32, height: i32) {
@@ -283,51 +310,78 @@ pub(crate) fn create_with_driver(
     feature_levels: &[D3D_FEATURE_LEVEL],
     driver: D3d11DriverKind,
 ) -> Result<D3d11Context> {
-    let mut device = None;
-    let mut context = None;
-    let mut selected_level = D3D_FEATURE_LEVEL_10_0;
+    // 在任何 D3D11/DXGI 创建动作前建立共享初始化事务。
+    let initial_extent = RhiExtent::new(width as u32, height as u32);
+    let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
+    let surface_initialize =
+        surface_lifecycle.begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)?;
+    // 原生创建阶段仍由局部 COM owner 自动回收，生命周期只决定发布与回滚。
+    let native = (|| -> Result<_> {
+        let mut device = None;
+        let mut context = None;
+        let mut selected_level = D3D_FEATURE_LEVEL_10_0;
 
-    // SAFETY: 无指针输入；feature_levels 切片与输出指针在调用期间有效，driver.native() 为合法驱动类型枚举。
-    unsafe {
-        D3D11CreateDevice(
-            None,
-            driver.native(),
-            HMODULE::default(),
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-            Some(feature_levels),
-            D3D11_SDK_VERSION,
-            Some(&mut device),
-            Some(&mut selected_level),
-            Some(&mut context),
-        )
-    }
-    .map_err(|err| d3d_error("D3D11CreateDevice", err))?;
+        // SAFETY: 无指针输入；feature_levels 切片与输出指针在调用期间有效，driver.native() 为合法驱动类型枚举。
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                driver.native(),
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(feature_levels),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                Some(&mut selected_level),
+                Some(&mut context),
+            )
+        }
+        .map_err(|err| d3d_error("D3D11CreateDevice", err))?;
 
-    let device = device.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d11Context: D3D11CreateDevice returned no device",
-        )
-    })?;
-    let context = context.ok_or_else(|| {
-        Error::new(
-            Errc::PlatformError,
-            "D3d11Context: D3D11CreateDevice returned no device context",
-        )
-    })?;
-    // 使用实际 device 和 adapter 选择 tracked flip 主路径或 legacy 回退。
-    let swap_chain = create_swap_chain(&device, hwnd, width, height)?;
+        let device = device.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: D3D11CreateDevice returned no device",
+            )
+        })?;
+        let context = context.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: D3D11CreateDevice returned no device context",
+            )
+        })?;
+        // 使用实际 device 和 adapter 选择 tracked flip 主路径或 legacy 回退。
+        let swap_chain = create_swap_chain(&device, hwnd, width, height)?;
 
-    let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
-        tracing::warn!(
-            "D3d11Context: adapter diagnostics unavailable: {}",
-            error.what()
-        );
-        D3d11AdapterInfo::unavailable(driver)
-    });
-    let pipeline = D3d11Pipeline::new(&device)?;
-    // 在 context 移入 owner 前冻结薄 RHI 使用的可选原生接口能力。
-    let rhi_device = D3d11RhiDevice::new(&context);
+        let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
+            tracing::warn!(
+                "D3d11Context: adapter diagnostics unavailable: {}",
+                error.what()
+            );
+            D3d11AdapterInfo::unavailable(driver)
+        });
+        let pipeline = D3d11Pipeline::new(&device)?;
+        // 在 context 移入 owner 前冻结薄 RHI 使用的可选原生接口能力。
+        let rhi_device = D3d11RhiDevice::new(&context);
+        Ok((
+            device,
+            context,
+            swap_chain,
+            adapter_info,
+            pipeline,
+            rhi_device,
+            selected_level,
+        ))
+    })();
+    let (device, context, swap_chain, adapter_info, pipeline, rhi_device, selected_level) =
+        match native {
+            Ok(native) => native,
+            Err(error) => {
+                return match surface_lifecycle.abort_recreate(surface_initialize) {
+                    Ok(()) => Err(error),
+                    Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+                };
+            }
+        };
     let mut ctx = D3d11Context {
         device,
         context,
@@ -337,10 +391,8 @@ pub(crate) fn create_with_driver(
         adapter_info,
         logical_width: width,
         logical_height: height,
-        width,
-        height,
-        // 初始 swapchain 属于第一代 surface。
-        surface_generation: 0,
+        // 初始化事务仍处于 Recreating，RTV 成功后才一次发布 token。
+        surface_lifecycle,
         // 构造成功后 context 立即处于可工作状态。
         shutdown: false,
         // 接管已经冻结原生能力且尚未创建资源的薄 RHI 状态。
@@ -352,12 +404,21 @@ pub(crate) fn create_with_driver(
         #[cfg(feature = "test-harness")]
         rhi_surface_lost_for_test: false,
     };
+    // RTV 是初始化事务的一部分，失败时不得发布半初始化 Surface。
+    if let Err(error) = ctx.create_rtv_for_extent(initial_extent) {
+        return match ctx.surface_lifecycle.abort_recreate(surface_initialize) {
+            Ok(()) => Err(error),
+            Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+        };
+    }
+    // 原生 swapchain 与 RTV 完整可用后，由共享生命周期发布初始 token/extent。
+    ctx.surface_lifecycle
+        .commit_recreate(surface_initialize, initial_extent)?;
     tracing::info!(
         "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",
         selected_level,
         ctx.adapter_info.diagnostic_summary()
     );
-    ctx.create_rtv()?;
     Ok(ctx)
 }
 

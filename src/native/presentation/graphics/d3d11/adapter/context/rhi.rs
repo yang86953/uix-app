@@ -3,18 +3,53 @@
 //! 本文件只接入 surface 生命周期；低层 device/pass/draw 由同级 RHI device
 //! 模块实现，UI 语义通过类型化 GPU recipe owner 消费。
 
-// 引入统一结果类型。
-use crate::core::error::Result;
-// 仅 test-harness surface lost 注入需要错误分类和构造器。
-#[cfg(feature = "test-harness")]
-use crate::core::error::{Errc, Error};
+// 引入统一错误分类、错误值和结果类型。
+use crate::core::error::{Errc, Error, Result};
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
 use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::platform::presentation::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,
-    RhiSurfaceReadback, RhiSurfaceResizeTransaction, SurfaceFrame, SurfaceToken,
+    RhiSurfaceReadback, RhiSurfaceRecreateCommit, RhiSurfaceRecreateReason,
+    RhiSurfaceResizeTransaction, SurfaceFrame, SurfaceToken,
 };
+
+// D3D11 context 只编排共享 Surface 事务，原生动作由 methods adapter 机械执行。
+impl super::D3d11Context {
+    // 以共享 begin/commit/abort 包住一次 DXGI/RTV 原生重建。
+    fn run_surface_recreate(
+        &mut self,
+        requested: RhiExtent,
+        reason: RhiSurfaceRecreateReason,
+        logical_width: i32,
+        logical_height: i32,
+    ) -> Result<RhiSurfaceRecreateCommit> {
+        // 旧 extent 只从共享 token 冻结，供原生失败时恢复。
+        let previous = self.surface_lifecycle.token().extent;
+        let transaction = self.surface_lifecycle.begin_recreate(requested, reason)?;
+        match self.recreate_surface_native(transaction, previous, logical_width, logical_height) {
+            // 完整原生重建成功后一次发布 generation 与 extent。
+            Ok(actual) => self.surface_lifecycle.commit_recreate(transaction, actual),
+            // Adapter 已尝试恢复旧原生资源；共享生命周期保留旧 token 并失效它。
+            Err(error) => match self.surface_lifecycle.abort_recreate(transaction) {
+                Ok(()) => Err(error),
+                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+            },
+        }
+    }
+
+    // 对 acquire/present 的一次 SurfaceLost 只执行一次同尺寸共享重建。
+    fn recover_rejected_frame(
+        &mut self,
+        reason: RhiSurfaceRecreateReason,
+        source: Error,
+    ) -> Result<()> {
+        // 恢复沿用最后一次成功发布的真实 extent，不创建 1x1 替身。
+        let requested = self.surface_lifecycle.token().extent;
+        self.run_surface_recreate(requested, reason, self.logical_width, self.logical_height)?
+            .complete_frame(source)
+    }
+}
 
 // 为 D3D11 context 实现 surface acquire/resize/present。
 impl GraphicsSurface for super::D3d11Context {
@@ -29,11 +64,8 @@ impl GraphicsSurface for super::D3d11Context {
 
     // 返回当前 D3D11 swapchain 的 surface 代际和物理 extent。
     fn token(&self) -> SurfaceToken {
-        // 把 context 当前 drawable 尺寸映射为 RHI extent。
-        SurfaceToken::new(
-            self.surface_generation,
-            RhiExtent::new(self.width.max(1) as u32, self.height.max(1) as u32),
-        )
+        // generation 与 extent 直接来自 platform 唯一共享生命周期。
+        self.surface_lifecycle.token()
     }
 
     // 获取当前 backbuffer 的 opaque target，不在此处执行最终 present。
@@ -45,13 +77,27 @@ impl GraphicsSurface for super::D3d11Context {
         if std::mem::take(&mut self.rhi_surface_lost_for_test) {
             // 只在 test-harness 记录 lower boundary，便于真实窗口测试定位。
             tracing::warn!("D3d11 RHI test surface lost");
-            return Err(Error::new(
+            let error = Error::new(
                 Errc::GraphicsSurfaceLost,
                 "D3d11 RHI test surface lost before acquire",
+            );
+            self.recover_rejected_frame(RhiSurfaceRecreateReason::AcquisitionRejected, error)?;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 acquire recovery returned without a retry error",
             ));
         }
         // 确保 backbuffer RTV 已经创建，避免 plan 在第一条 pass 才失败。
-        self.ensure_rtv()?;
+        if let Err(error) = self.ensure_rtv() {
+            if error.code() != Errc::GraphicsSurfaceLost {
+                return Err(error);
+            }
+            self.recover_rejected_frame(RhiSurfaceRecreateReason::AcquisitionRejected, error)?;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11 acquire recovery returned without a retry error",
+            ));
+        }
         // 返回当前代际和保留的 surface target 身份。
         Ok(SurfaceFrame::new(self.token()))
     }
@@ -62,8 +108,6 @@ impl GraphicsSurface for super::D3d11Context {
         self.ensure_active()?;
         // 在触碰 DXGI 前冻结旧 token 并执行唯一共同值域验证。
         let resize = RhiSurfaceResizeTransaction::validate(extent, self.token())?;
-        // 读取共享事务已经证明安全的原生有符号尺寸。
-        let (native_width, native_height) = resize.native_size_i32();
         // 使用当前 DPR 把物理尺寸转换为兼容 context 的逻辑尺寸。
         // 从单一 surface 快照读取 DPR，避免分离元数据发生撕裂。
         let dpr = self.present_surface().device_pixel_ratio.max(0.0001);
@@ -71,8 +115,21 @@ impl GraphicsSurface for super::D3d11Context {
         let logical_width = (resize.extent().width as f32 / dpr).round().max(1.0) as i32;
         // 计算传给 Win32 drawable 查询的逻辑高度。
         let logical_height = (resize.extent().height as f32 / dpr).round().max(1.0) as i32;
-        // 直接进入 D3D11 surface 的物理重建路径，避免 RHI 反向依赖兼容入口。
-        self.resize_surface_extent(native_width, native_height, logical_width, logical_height)?;
+        // 物理范围变化时才进入共享重建事务；同范围不制造新 generation。
+        if resize.extent() != self.token().extent {
+            let commit = self.run_surface_recreate(
+                resize.extent(),
+                RhiSurfaceRecreateReason::Resize,
+                logical_width,
+                logical_height,
+            )?;
+            if !matches!(commit, RhiSurfaceRecreateCommit::Ready(_)) {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "D3d11 resize produced a non-ready surface commit",
+                ));
+            }
+        }
         // 发布前统一验证请求 extent 与 generation 后置条件。
         resize.complete(self.token())
     }
@@ -116,9 +173,23 @@ impl GraphicsSurface for super::D3d11Context {
             present_coherency,
         )?;
         // 重新绑定 swapchain target，恢复兼容 context 的 owner 状态和 RTV 绑定。
-        self.bind_swapchain_target()?;
+        if let Err(error) = self.bind_swapchain_target() {
+            if error.code() != Errc::GraphicsSurfaceLost {
+                return Err(error);
+            }
+            return self
+                .recover_rejected_frame(RhiSurfaceRecreateReason::PresentationRejected, error);
+        }
         // 复用现有的 Present 前后 RTV 生命周期和 DXGI 错误映射。
-        self.present_result(&present)
+        match self.present_result(&present) {
+            Ok(()) => Ok(()),
+            // 只有 SurfaceLost 在当前 context 内进入一次共享重建。
+            Err(error) if error.code() == Errc::GraphicsSurfaceLost => {
+                self.recover_rejected_frame(RhiSurfaceRecreateReason::PresentationRejected, error)
+            }
+            // DeviceLost 与其它错误保持由既有 RecoveryDriver 处理。
+            Err(error) => Err(error),
+        }
     }
 
     // 探测已经因遮挡进入 idle 的 D3D11 swapchain 是否恢复可呈现。

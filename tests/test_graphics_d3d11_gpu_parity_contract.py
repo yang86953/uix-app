@@ -17,6 +17,9 @@ D3D11_RHI = ROOT / (
 D3D11_DRAW = ROOT / (
     "src/native/presentation/graphics/d3d11/adapter/context/rhi_device_draw.rs"
 )
+D3D11_SURFACE = ROOT / (
+    "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
+)
 D3D11_PIPELINES = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline"
 CARGO = ROOT / "Cargo.toml"
 ENTRY = ROOT / "tests/d3d11_gpu_parity.rs"
@@ -73,13 +76,35 @@ class GraphicsD3d11GpuParityContractTests(unittest.TestCase):
         cargo = CARGO.read_text(encoding="utf-8")
         entry = ENTRY.read_text(encoding="utf-8")
 
-        self.assertIn('d3d11-parity-test = ["d3d11"]', cargo)
+        self.assertIn('d3d11-parity-test = ["d3d11", "test-harness"]', cargo)
         self.assertIn('name = "d3d11_gpu_parity"', cargo)
         self.assertIn('required-features = ["d3d11-parity-test"]', cargo)
         self.assertIn("#![cfg(windows)]", entry)
         self.assertIn("__run_d3d11_gpu_parity_test", entry)
         for path in (SHARED, RENDERER, HARNESS, D3D11_RHI, ENTRY, Path(__file__)):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
+
+    def test_same_hidden_window_runner_covers_surface_lifecycle_and_recovery(self) -> None:
+        harness = HARNESS.read_text(encoding="utf-8")
+        surface = D3D11_SURFACE.read_text(encoding="utf-8")
+
+        for marker in (
+            "run_surface_lifecycle_test(&mut rhi)",
+            "GraphicsSurface::acquire(rhi)",
+            "GraphicsDevice::submit(rhi)",
+            "GraphicsSurface::present(",
+            "GraphicsSurface::resize(rhi, resized_extent)",
+            "RhiExtent::new(0, resized_extent.height)",
+            "RhiExtent::new(i32::MAX as u32 + 1, resized_extent.height)",
+            "GraphicsSurface::inject_surface_lost_for_test(rhi)",
+            "Errc::GraphicsSurfaceChanged",
+            "Errc::GraphicsSurfaceLost",
+        ):
+            self.assertIn(marker, harness)
+        self.assertGreaterEqual(harness.count("present_swapchain_surface(rhi);"), 3)
+        self.assertIn("RhiSurfaceRecreateReason::AcquisitionRejected", surface)
+        self.assertIn("RhiSurfaceRecreateReason::PresentationRejected", surface)
+        self.assertNotIn("PixelUpload", harness)
 
 
 if __name__ == "__main__":

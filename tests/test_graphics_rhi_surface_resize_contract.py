@@ -16,6 +16,11 @@ RHI = ROOT / "src/platform/presentation/rhi/mod.rs"
 TRANSACTION = ROOT / "src/platform/presentation/rhi/resize_transaction.rs"
 # 定位 D3D11 Surface Adapter。
 D3D11_SURFACE = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/rhi.rs"
+# 定位 D3D11 context 的唯一状态 owner 与原生方法 Adapter。
+D3D11_CONTEXT = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/mod.rs"
+D3D11_METHODS = ROOT / "src/native/presentation/graphics/d3d11/adapter/context/methods.rs"
+# 定位 D3D11 HRESULT 分类边界。
+D3D11_SWAPCHAIN = ROOT / "src/native/presentation/graphics/d3d11/adapter/swapchain.rs"
 # 定位 OpenGL 共享 Surface Adapter。
 OPENGL_SURFACE = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 # 定位 EGL 原生 host。
@@ -26,6 +31,9 @@ EGL_RHI_HOST = ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.r
 WGL_HOST = ROOT / "src/native/presentation/graphics/opengl/adapter/wgl_rhi.rs"
 # 定位 WGL 原生 owner。
 WGL_NATIVE = ROOT / "src/native/presentation/graphics/opengl/adapter/wgl.rs"
+# 定位窗口与恢复层已有的零尺寸唯一 owner。
+WINDOW_DRIVER = ROOT / "src/app/window/window_driver/driver.rs"
+RECOVERY_DRIVER = ROOT / "src/draw/renderer/recovery_driver.rs"
 
 
 # 集中锁定跨 Adapter resize 的前置值域和成功后 token 语义。
@@ -118,6 +126,79 @@ class GraphicsRhiSurfaceResizeContractTests(unittest.TestCase):
         self.assertNotIn("surface_generation", wgl)
         # Surface token 必须直接来自共享生命周期。
         self.assertIn("self.rhi_surface_lifecycle().token()", opengl)
+
+    # D3D11 必须删除私有 generation/extent，并由共享事务唯一发布 token。
+    def test_d3d11_context_owns_only_one_shared_surface_lifecycle(self) -> None:
+        context = D3D11_CONTEXT.read_text(encoding="utf-8")
+        surface = D3D11_SURFACE.read_text(encoding="utf-8")
+        graphics = (
+            ROOT
+            / "src/native/presentation/graphics/d3d11/adapter/context/graphics.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("surface_lifecycle: RhiSurfaceLifecycle", context)
+        self.assertNotIn("surface_generation", context)
+        self.assertNotIn("    width: i32,", context)
+        self.assertNotIn("    height: i32,", context)
+        self.assertNotIn("surface_generation", surface)
+        self.assertIn("self.surface_lifecycle.token()", surface)
+        self.assertIn("let token = self.surface_lifecycle.token();", graphics)
+
+    # D3D11 编排层必须用 begin/commit/abort 包住机械 DXGI/RTV 动作。
+    def test_d3d11_recreate_sequence_is_owned_by_shared_transaction(self) -> None:
+        surface = D3D11_SURFACE.read_text(encoding="utf-8")
+        methods = D3D11_METHODS.read_text(encoding="utf-8")
+
+        run_start = surface.index("fn run_surface_recreate(")
+        run_end = surface.index("fn recover_rejected_frame(", run_start)
+        recreate = surface[run_start:run_end]
+        self.assertLess(
+            recreate.index(".begin_recreate(requested, reason)?"),
+            recreate.index("self.recreate_surface_native("),
+        )
+        self.assertLess(
+            recreate.index("self.recreate_surface_native("),
+            recreate.index(".commit_recreate(transaction, actual)"),
+        )
+        self.assertIn(".abort_recreate(transaction)", recreate)
+        self.assertIn("recreate: RhiSurfaceRecreateTransaction", methods)
+        self.assertIn("let (physical_width, physical_height) = recreate.native_size_i32();", methods)
+        self.assertIn(".resize_buffers(physical_width as u32, physical_height as u32)", methods)
+        self.assertIn("self.create_rtv_for_extent(previous)", methods)
+        self.assertNotIn("RhiSurfaceLifecycle", methods[methods.index("pub(super) fn recreate_surface_native(") : methods.index("pub(super) fn release_rtv(")])
+        native_recreate = methods[methods.index("pub(super) fn recreate_surface_native(") : methods.index("pub(super) fn release_rtv(")]
+        self.assertNotIn(".generation", native_recreate)
+        self.assertNotIn("saturating_add", native_recreate)
+        initialize = methods[methods.index("pub(crate) fn create_with_driver(") :]
+        self.assertLess(
+            initialize.index("RhiSurfaceRecreateReason::Initialize"),
+            initialize.index("D3D11CreateDevice("),
+        )
+        self.assertIn("surface_lifecycle.abort_recreate(surface_initialize)", initialize)
+        self.assertIn(".commit_recreate(surface_initialize, initial_extent)?", initialize)
+
+    # SurfaceLost 只做一次同尺寸重建，DeviceLost 保持既有设备级恢复。
+    def test_d3d11_surface_recovery_stays_bounded_and_typed(self) -> None:
+        surface = D3D11_SURFACE.read_text(encoding="utf-8")
+        swapchain = D3D11_SWAPCHAIN.read_text(encoding="utf-8")
+
+        self.assertIn("fn recover_rejected_frame(", surface)
+        self.assertIn("self.surface_lifecycle.token().extent", surface)
+        self.assertIn("Err(error) if error.code() == Errc::GraphicsSurfaceLost", surface)
+        self.assertIn("Errc::GraphicsDeviceLost", swapchain)
+        self.assertIn("Errc::GraphicsSurfaceLost", swapchain)
+        self.assertNotIn("GraphicsDeviceLost => self.recover_rejected_frame", surface)
+
+    # 零尺寸暂停沿用 WindowDriver/RecoveryDriver，不在 D3D11 中创建替代 Surface。
+    def test_zero_extent_owner_remains_window_and_recovery_driver(self) -> None:
+        window = WINDOW_DRIVER.read_text(encoding="utf-8")
+        recovery = RECOVERY_DRIVER.read_text(encoding="utf-8")
+        surface = D3D11_SURFACE.read_text(encoding="utf-8")
+
+        self.assertIn(".suspend(SurfaceSuspendReason::ZeroExtent)", window)
+        self.assertIn("if width <= 0 || height <= 0", recovery)
+        self.assertIn("return Ok(());", recovery)
+        self.assertNotIn("RhiExtent::new(1, 1)", surface)
 
 
 # 支持直接执行这一精确契约测试。
