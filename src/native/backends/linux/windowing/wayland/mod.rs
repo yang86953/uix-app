@@ -74,7 +74,7 @@ use self::surface_scale::WaylandOutputScaleRegistry;
 // 引入稳定错误分类，使 wl_output callback 能传播显示状态 owner 损坏。
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::event::*;
+use crate::platform::windowing::event::*;
 use crate::native::windowing::input::{KeyCode, KeyMod};
 use crate::native::windowing::shared::ime_events::ImeCompositionState;
 use crate::native::windowing::shared::input_serial::InputSerial;

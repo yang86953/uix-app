@@ -2,7 +2,7 @@
 use super::TsfEventSink;
 use crate::core::{Errc, WindowId};
 use crate::diagnostics::PendingFailureQueue;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use windows::Win32::Foundation::HWND;

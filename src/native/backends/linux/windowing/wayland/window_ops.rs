@@ -47,7 +47,7 @@ use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 // 引入帧事件、UI 事件与不可解释的指针激活身份。
-use crate::native::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId, UiEvent};
 use crate::native::windowing::shared::window_mode::{
     NativeMaximizeTransition, NativeWindowModeState,
 };
@@ -185,7 +185,7 @@ impl WaylandWindowOps {
         height: i32,
         window_state: Rc<RefCell<WindowState>>,
     ) -> Result<(), Error> {
-        use crate::native::windowing::event::{UiEventPayload, UiEventType};
+        use crate::platform::windowing::event::{UiEventPayload, UiEventType};
         // 初始化阶段只需临时绑定装饰管理器，装饰模式使用模块级统一映射。
         use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1;
 

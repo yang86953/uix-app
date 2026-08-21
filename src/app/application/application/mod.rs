@@ -50,7 +50,7 @@ use crate::draw::target::RenderTarget;
 // recipe 装配输入经 platform 公开面消费；create_platform_with_pending 保留组合根直调。
 use crate::native::factory::create_platform_with_pending;
 use crate::native::platform::Platform;
-use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
 use crate::platform::presentation::{

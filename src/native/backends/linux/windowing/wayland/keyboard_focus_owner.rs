@@ -12,7 +12,7 @@ use crate::core::{Errc, Error, WindowId};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // 焦点边沿在事务内直接提交到已持有队列。
-use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 // keys-down owner 使用平台中立键码。
 use crate::native::windowing::input::KeyCode;
 // surface 路由继续由 window-target Component 唯一拥有。

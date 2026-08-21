@@ -10,7 +10,7 @@ use crate::core::{Errc, Error};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // PointerDown/Up 在事务内直接提交到已持有队列。
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 // 平台中立按钮由 seat adapter 完成 Linux 编号映射。
 use crate::native::windowing::input::MouseButton;
 // 输入 serial owner 继续服务剪贴板等 Wayland 授权操作。

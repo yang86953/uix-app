@@ -7,9 +7,9 @@
 // 公开接口 IEventLoop 已迁移至 crate::native::traits 功能模块。
 // ============================================================================
 
-use crate::native::windowing::event::EventLoopWaker;
-use crate::native::windowing::event::IEventLoop;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::EventLoopWaker;
+use crate::platform::windowing::event::IEventLoop;
+use crate::platform::windowing::event::UiEvent;
 use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════

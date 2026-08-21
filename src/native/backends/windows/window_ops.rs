@@ -10,7 +10,7 @@
 use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
 // Windows 不解释激活身份，但仍实现统一的平台窗口契约。
-use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 // Windows adapter 直接实现共享窗口核心所定义的私有操作契约。
 use crate::native::windowing::shared::window::WindowOps;
 use crate::native::windowing::window::NativeFrameRequest;

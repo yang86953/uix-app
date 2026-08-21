@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use crate::core::{Errc, Error, Result, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::event::{FrameRequestToken, UiEvent};
+use crate::platform::windowing::event::{FrameRequestToken, UiEvent};
 use crate::native::windowing::shared::native_frame_mailbox::{
     NativeFrameArmResult, NativeFrameMailbox,
 };

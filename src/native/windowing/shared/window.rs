@@ -16,7 +16,7 @@ use std::rc::Rc;
 use crate::core::error::{Errc, Error, Result};
 use crate::native::present::IPresenter;
 // 引入帧令牌与原生指针动作的不可解释激活身份。
-use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::state::WindowState;
 use crate::native::windowing::window::{
     INativeHandle, IWindowProperties, NativeFrameRequest, PlatformWindow, WindowOcclusionState,

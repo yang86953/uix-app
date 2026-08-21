@@ -26,7 +26,7 @@ use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
 use crate::native::platform::Platform;
 use crate::platform::presentation::PresentTestResult;
-use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::window::{NativeFrameRequest, PlatformWindow, WindowOcclusionState};
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::theme::Theme;

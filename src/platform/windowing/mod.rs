@@ -1,16 +1,18 @@
-//! 平台公开面的窗口输入契约 — 值类型、剪贴板与事件循环唤醒器。
+//! 平台公开面的窗口输入契约 — 值类型、事件、剪贴板与事件循环。
 //!
 //! 本模块是 platform System 私有边界对 ui/draw/app 的公开输入契约收口：
 //! ui 层经 `crate::platform::windowing` 消费输入值类型、`IClipboard` 与
-//! `EventLoopWaker`，不再直接引用 `crate::native` 私有边界内的实现文件。
-//! 类型所有权仍归 native（实现侧经 `pub use` 再导出，公开路径不变）。
+//! 事件协议，不再直接引用 `crate::native` 私有边界内的实现文件。
 
+// 平台无关事件契约与纯分发逻辑集中在 windowing 的 event 边界。
+pub(crate) mod event;
 // UI 线程策略属于 windowing 域，根模块仅再导出稳定入口。
 pub(crate) mod ui_thread;
 
-use std::sync::Arc;
-
 use crate::core::error::Result;
+
+// 保留既有公开唤醒句柄路径；唯一源码定义位于 event 子模块。
+pub use event::EventLoopWaker;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 鼠标按钮 — 跨层共享
@@ -336,37 +338,4 @@ pub trait IClipboard {
     fn set_text(&mut self, text: &str) -> Result<()>;
     /// 判断剪贴板是否包含可读取文本。
     fn has_text(&self) -> Result<bool>;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 事件循环唤醒器 — 跨层共享
-// ════════════════════════════════════════════════════════════════════════════
-
-#[derive(Clone)]
-/// 可跨线程持有的事件循环唤醒句柄。
-pub struct EventLoopWaker {
-    wake: Arc<dyn Fn() + Send + Sync>,
-}
-
-impl EventLoopWaker {
-    /// 从线程安全的唤醒闭包创建句柄。
-    pub fn new<F>(wake: F) -> Self
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        Self {
-            wake: Arc::new(wake),
-        }
-    }
-
-    /// 请求事件循环尽快处理新工作。
-    pub fn wake(&self) {
-        (self.wake)();
-    }
-}
-
-impl Default for EventLoopWaker {
-    fn default() -> Self {
-        Self::new(|| {})
-    }
 }

@@ -16,6 +16,7 @@ use super::wnd_proc::wnd_proc;
 use crate::core::Point;
 use crate::native::windowing::*;
 use crate::native::{Errc, Error};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload};
 
 const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
 // ════════════════════════════════════════════════════════════════════════════

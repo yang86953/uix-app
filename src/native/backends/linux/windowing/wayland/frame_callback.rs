@@ -13,7 +13,7 @@ use wayland_client::protocol::wl_callback;
 // 引入稳定错误分类、窗口身份与 typed Result。
 use crate::core::{Errc, Error, Result, WindowId};
 // 引入 frame event 与 one-shot request 契约。
-use crate::native::windowing::event::{FrameRequestToken, UiEvent};
+use crate::platform::windowing::event::{FrameRequestToken, UiEvent};
 // 引入当前原生 frame 请求值。
 use crate::native::windowing::window::NativeFrameRequest;
 

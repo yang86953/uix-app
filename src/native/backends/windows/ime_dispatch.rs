@@ -4,7 +4,7 @@
 
 #![cfg(windows)]
 
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 
 use super::text_input::WindowsImeState;
 

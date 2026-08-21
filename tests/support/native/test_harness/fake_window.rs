@@ -6,7 +6,7 @@ use crate::core::geometry::Point;
 use crate::native::present::IPresenter;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 // 测试窗口适配统一的指针激活上下文签名。
-use crate::native::windowing::event::{FrameRequestToken, PointerActivationId};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::native::windowing::shared::window::validate_window_extent_constraints;
 use crate::native::windowing::window::{
     INativeHandle, IWindowManager, IWindowProperties, NativeFrameRequest, PlatformWindow,

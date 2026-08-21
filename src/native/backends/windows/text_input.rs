@@ -15,7 +15,7 @@ use crate::core::{Errc, Error, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::backends::windows::tsf_session::{TsfActivateParams, TsfSession};
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::input::ITextInput;
 use std::collections::VecDeque;
 use std::ptr;

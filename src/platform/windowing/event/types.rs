@@ -1,10 +1,10 @@
 // ============================================================================
-// platform/event.rs — 平台无关事件类型
+// platform/windowing/event/types.rs — 平台无关事件类型
 // ============================================================================
 
 use crate::core::WindowId;
 use crate::core::geometry::Point;
-use crate::native::windowing::input::{KeyCode, KeyMod, MouseButton};
+use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use std::time::Instant;
 
 // ════════════════════════════════════════════════════════════════════════════

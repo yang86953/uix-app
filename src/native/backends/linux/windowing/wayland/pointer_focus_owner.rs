@@ -10,7 +10,7 @@ use crate::core::{Errc, Error, Point};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // PointerMove 事件在事务内直接提交到已持有队列。
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 // Wheel 事件使用平台中立的空键盘修饰快照。
 use crate::native::windowing::input::KeyMod;
 // surface 路由继续由 window-target Component 唯一拥有。

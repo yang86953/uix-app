@@ -1,7 +1,7 @@
 //! 窗口协议 — 窗口创建、属性与生命周期。
 
 // 引入帧令牌与平台中立的单次指针激活身份。
-use super::event::{FrameRequestToken, PointerActivationId};
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;

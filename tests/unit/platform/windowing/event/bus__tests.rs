@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::*;
-use crate::native::windowing::event::types::UiEventPayload;
+use crate::platform::windowing::event::types::UiEventPayload;
 
 /// 构造一个指定类型的 UiEvent（测试负载）。
 fn event_of(kind: UiEventType) -> UiEvent {
