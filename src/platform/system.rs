@@ -2,6 +2,9 @@
 
 use crate::core::Result;
 
+// 控制台值与端口由独立中立叶唯一持有。
+pub(crate) mod console;
+
 /// 低层原生文件对话框端口；公开门面负责值转换与输入验证。
 pub(crate) trait IFileDialog {
     /// 打开文件选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。

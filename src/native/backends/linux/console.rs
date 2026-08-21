@@ -9,8 +9,7 @@
 
 use crate::core::error::Errc;
 use crate::core::error::{Error, Result};
-use crate::native::capabilities::system::IConsole;
-use crate::native::capabilities::system::{ConsoleColor, TerminalCapabilities};
+use crate::platform::system::console::{ConsoleColor, IConsole, TerminalCapabilities};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ANSI color values

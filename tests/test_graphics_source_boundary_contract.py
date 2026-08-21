@@ -36,10 +36,9 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
 }
-# native Platform 根尚未迁移，但只能继续取得剩余三项 native 系统服务合同。
+# native Platform 根尚未迁移，但只能继续取得剩余两项 native 系统服务合同。
 NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
 NATIVE_PLATFORM_PROTOCOLS = {
-    "crate::native::capabilities::system::IConsole",
     "crate::native::capabilities::system::IFileSystem",
     "crate::native::capabilities::system::ISystemInfo",
 }
@@ -81,6 +80,29 @@ SYSTEM_SERVICE_IMPLEMENTERS = {
 }
 # Platform 根及三平台/fake 聚合均需显式消费新权威路径。
 SYSTEM_SERVICE_PLATFORM_ROOTS = (
+    NATIVE_PLATFORM_ROOT,
+    SRC / "native/backends/linux/platform.rs",
+    SRC / "native/backends/windows/platform.rs",
+    SRC / "native/backends/macos/host/mod.rs",
+    ROOT / "tests/support/native/test_harness/mod.rs",
+)
+# 固定平台中立控制台值与端口的唯一物理归属。
+CONSOLE_ROOT = SRC / "platform/system/console.rs"
+# 控制台合同只允许由 system/console 叶定义。
+CONSOLE_DEFINITIONS = (
+    ("enum", "ConsoleColor"),
+    ("struct", "TerminalCapabilities"),
+    ("trait", "IConsole"),
+)
+# Linux、Windows、macOS 与 fake 必须直接实现同一个控制台合同。
+CONSOLE_IMPLEMENTERS = {
+    SRC / "native/backends/linux/console.rs": "impl IConsole for LinuxConsole",
+    SRC / "native/backends/windows/console.rs": "impl IConsole for WindowsConsole",
+    SRC / "native/backends/macos/host/services2.rs": "impl IConsole for MacosConsole",
+    ROOT / "tests/support/native/test_harness/fake_console.rs": "impl IConsole for FakeConsole",
+}
+# Platform 根及三平台/fake 聚合均需显式消费控制台权威路径。
+CONSOLE_PLATFORM_ROOTS = (
     NATIVE_PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
@@ -360,6 +382,49 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         for path in SYSTEM_SERVICE_PLATFORM_ROOTS:
             with self.subTest(system_service_platform_root=relative(path)):
                 self.assertIn("crate::platform::system", source(path))
+
+    def test_platform_console_is_the_only_source_definition(self) -> None:
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+
+        # 生产与 fake 都不得继续消费控制台合同的旧 native 路径。
+        legacy_reference = re.compile(
+            r"crate::native::capabilities::system::"
+            r"(?:ConsoleColor|TerminalCapabilities|IConsole)\b"
+        )
+        for path in rust_sources:
+            with self.subTest(legacy_console_reference=relative(path)):
+                self.assertIsNone(legacy_reference.search(source(path)))
+
+        # 中立叶只依赖 core Result，不取得 native、高层 host 或 facade。
+        owner_source = source(CONSOLE_ROOT)
+        dependencies = set(
+            re.findall(r"\buse\s+(crate::[^;]+);", without_comments(owner_source))
+        )
+        self.assertEqual(dependencies, {"crate::core::Result"})
+
+        # 三类合同各自只能定义一次，禁止复制类型或让 fake 自有协议。
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        for kind, name in CONSOLE_DEFINITIONS:
+            marker = f"pub(crate) {kind} {name}"
+            self.assertIn(marker, owner_source)
+            definition = re.compile(rf"\b{kind}\s+{name}\b")
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(console_definition=name):
+                self.assertEqual(locations, [CONSOLE_ROOT])
+
+        # 三平台与 fake 均直接绑定同一内部 leaf，不增加适配 trait。
+        for path, implementation in CONSOLE_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(console_implementation=relative(path)):
+                self.assertIn("crate::platform::system::console", implementation_source)
+                self.assertIn(implementation, implementation_source)
+
+        # Platform 根与三平台/fake 聚合不经 native 兼容层取得合同。
+        for path in CONSOLE_PLATFORM_ROOTS:
+            with self.subTest(console_platform_root=relative(path)):
+                self.assertIn("crate::platform::system::console", source(path))
 
     def test_platform_windowing_event_is_the_only_source_definition(self) -> None:
         # 旧 native 物理模块必须消失，内部调用方统一消费新权威路径。
