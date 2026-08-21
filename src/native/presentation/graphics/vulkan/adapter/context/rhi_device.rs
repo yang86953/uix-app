@@ -9,20 +9,21 @@ use ash::vk;
 
 use crate::core::{Errc, Error, Result};
 use crate::platform::presentation::rhi::{
-    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice,
-    GraphicsDeviceCapabilities, LoadAction, RenderTargetHandle, RhiBufferResource,
-    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiResourceTable,
-    RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload, SamplerDesc, SamplerHandle,
-    SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, UIX_COLOR_CONTRACT,
+    BufferDesc, BufferHandle, BufferUsage, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities,
+    LoadAction, PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource,
+    RhiBufferResourceTable, RhiBufferUpload, RhiBufferUploadPreflight, RhiPipelineResourceTable,
+    RhiResourceTable, RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload, SamplerDesc,
+    SamplerHandle, SubmissionHandle, TextureCopy, TextureDesc, TextureHandle, UIX_COLOR_CONTRACT,
 };
 
 use super::super::rhi::VulkanSamplerState;
-use super::transfer::find_memory_type;
-use super::{VulkanContext, vk_err};
+use super::rhi_pipeline::VulkanRhiPipeline;
 use super::rhi_texture::{
     VulkanImmediateCommands, VulkanRhiTexture, copy_texture, create_texture, destroy_texture,
     update_texture,
 };
+use super::transfer::find_memory_type;
+use super::{VulkanContext, vk_err};
 
 // 保存一个 Vulkan Buffer 及其由 platform 契约冻结的描述。
 struct VulkanRhiBuffer {
@@ -49,6 +50,7 @@ pub(super) struct VulkanRhiDevice {
     buffers: RhiBufferResourceTable<VulkanRhiBuffer>,
     textures: RhiTextureResourceTable<VulkanRhiTexture>,
     samplers: RhiResourceTable<SamplerHandle, VulkanRhiSampler>,
+    pipelines: RhiPipelineResourceTable<VulkanRhiPipeline>,
     immediate: VulkanImmediateCommands,
 }
 
@@ -58,6 +60,7 @@ impl VulkanRhiDevice {
             buffers: RhiBufferResourceTable::new(),
             textures: RhiTextureResourceTable::new(),
             samplers: RhiResourceTable::new(),
+            pipelines: RhiPipelineResourceTable::new(),
             immediate: VulkanImmediateCommands::new(),
         }
     }
@@ -176,6 +179,15 @@ impl VulkanRhiDevice {
         Ok(self.textures.insert(resource))
     }
 
+    fn create_pipeline(
+        &mut self,
+        device: &ash::Device,
+        desc: PipelineDesc,
+    ) -> Result<PipelineBinding> {
+        let resource = VulkanRhiPipeline::create(device, desc.kind)?;
+        Ok(self.pipelines.insert(desc.kind, resource))
+    }
+
     fn update_texture(
         &mut self,
         instance: &ash::Instance,
@@ -243,9 +255,19 @@ impl VulkanRhiDevice {
         Ok(())
     }
 
+    fn destroy_pipeline(&mut self, device: &ash::Device, binding: PipelineBinding) -> Result<()> {
+        let resource = self.pipelines.take(binding)?;
+        resource.destroy(device);
+        Ok(())
+    }
+
     pub(super) fn shutdown(&mut self, device: &ash::Device) {
         // 即时命令池必须在其记录引用的 Image 资源前完成队列排空；调用方已等待 Device idle。
         self.immediate.shutdown(device);
+        // PipelineLayout 引用 DescriptorSetLayout，必须先按资源创建逆序整体回收。
+        for pipeline in self.pipelines.drain_reverse() {
+            pipeline.destroy(device);
+        }
         // Sampler 与 Buffer 没有父子关系；均按各自创建逆序回收。
         for sampler in self.samplers.drain_reverse() {
             // SAFETY: device 已 idle 或 lost，资源表移交的对象不会再被引用。
@@ -359,6 +381,12 @@ impl GraphicsDevice for VulkanContext {
         owner.observe(result)
     }
 
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
+        let owner = self.active_device()?;
+        let result = self.rhi_device.create_pipeline(&self.device, desc);
+        owner.observe(result)
+    }
+
     fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
         let owner = self.active_device()?;
         let result = self.rhi_device.destroy_buffer(&self.device, buffer);
@@ -374,6 +402,12 @@ impl GraphicsDevice for VulkanContext {
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
         let owner = self.active_device()?;
         let result = self.rhi_device.destroy_texture(&self.device, texture);
+        owner.observe(result)
+    }
+
+    fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        let owner = self.active_device()?;
+        let result = self.rhi_device.destroy_pipeline(&self.device, pipeline);
         owner.observe(result)
     }
 
