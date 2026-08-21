@@ -1,7 +1,7 @@
 //! Fake 文件对话框 — 预设返回值，记录调用参数。
 
 use crate::native::Result;
-use crate::native::capabilities::system::IFileDialog;
+use crate::platform::system::IFileDialog;
 
 #[derive(Debug, Clone, Default)]
 pub struct FakeFileDialogState {

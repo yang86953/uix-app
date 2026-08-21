@@ -1,5 +1,6 @@
 // 导入 macOS Platform System 根模块统一拥有的契约与基础服务类型。
 use super::*;
+use crate::platform::system::INotification;
 
 impl INotification for MacosNotification {
     fn show(&mut self, _title: &str, _message: &str) -> Result<()> {

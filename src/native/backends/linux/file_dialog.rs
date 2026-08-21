@@ -7,7 +7,7 @@
 // Falls back to zenity if neither is detected or available.
 // ============================================================================
 
-use crate::native::capabilities::system::IFileDialog;
+use crate::platform::system::IFileDialog;
 // 引入 platform capabilities Module 统一拥有的外部对话框退出分类。
 use crate::native::capabilities::services::file_dialog_process::{
     ExternalDialogOutcome, classify_external_dialog_exit, parse_confirmed_dialog_path,

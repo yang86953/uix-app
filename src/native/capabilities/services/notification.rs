@@ -14,6 +14,7 @@ use crate::core::error::{Error, Result};
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use crate::native::capabilities::system::StatusLevel;
 use crate::platform::services::NotificationSource;
+use crate::platform::system::INotification;
 use std::collections::VecDeque;
 
 pub(crate) use crate::platform::services::ToastEntry;
@@ -27,7 +28,7 @@ pub(crate) use crate::platform::services::ToastEntry;
 /// ```
 pub struct NotificationService {
     /// 平台通知实现（可选 — headless 模式下为 None）。
-    platform_notifier: Option<Box<dyn crate::native::capabilities::system::INotification>>,
+    platform_notifier: Option<Box<dyn INotification>>,
     /// 应用内 Toast 队列。
     toasts: VecDeque<ToastEntry>,
     /// 同时可见的最大 Toast 数。
@@ -61,7 +62,7 @@ impl NotificationService {
     /// 附加平台通知后端（如 Platform trait 提供）。
     pub fn with_platform(
         mut self,
-        notifier: Box<dyn crate::native::capabilities::system::INotification>,
+        notifier: Box<dyn INotification>,
     ) -> Self {
         self.platform_notifier = Some(notifier);
         self

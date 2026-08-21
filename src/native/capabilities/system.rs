@@ -1,4 +1,4 @@
-//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
+//! 尚未迁移的 native 系统服务协议 — 文件、控制台与系统信息。
 
 use crate::core::error::{Errc, Error, Result};
 
@@ -85,30 +85,11 @@ pub(crate) struct TerminalCapabilities {
 /// 通用状态级别（类型已收口到 platform 公开面，此处保持 native 路径可解析）。
 pub(crate) use crate::platform::capabilities::StatusLevel;
 
-pub(crate) trait IFileDialog {
-    /// 打开文件选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
-    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>>;
-    /// 打开保存对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
-    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>>;
-    /// 打开目录选择对话框。`Ok(None)` 表示用户取消；`Err` 表示对话框本身失败。
-    fn open_folder(&mut self, title: &str) -> Result<Option<String>>;
-}
-
 pub(crate) trait IFileSystem {
     fn get_special_dir(&self, dir: SpecialDir) -> Result<String>;
     fn executable_path(&self) -> Result<String>;
     fn executable_dir(&self) -> Result<String>;
     fn read_file(&self, path: &str) -> Result<Vec<u8>, Error>;
-}
-
-pub(crate) trait INotification {
-    /// 显示系统通知。失败时返回 typed error（如通知区域不可用、notify-send 缺失）。
-    fn show(&mut self, title: &str, message: &str) -> Result<()>;
-}
-
-pub(crate) trait ITimer {
-    fn set(&mut self, interval_ms: u32, repeating: bool) -> Result<u32>;
-    fn clear(&mut self, id: u32) -> Result<()>;
 }
 
 pub(crate) trait ISystemInfo {

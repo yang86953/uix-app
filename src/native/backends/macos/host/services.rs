@@ -1,5 +1,6 @@
 // 导入 macOS Platform System 根模块统一拥有的契约与辅助类型。
 use super::*;
+use crate::platform::system::ITimer;
 
 // 剪贴板组件仅对 macOS Platform System 内部可见。
 pub(super) struct MacosClipboard;

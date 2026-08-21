@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::diagnostics::PendingFailureSource;
-use crate::native::capabilities::system::ITimer;
+use crate::platform::system::ITimer;
 use crate::platform::windowing::event::UiEvent;
 use crate::native::{Errc, Error, Result};
 

@@ -2,6 +2,7 @@
 use super::*;
 // 导入纯逻辑过滤器解析端口。
 use super::file_dialog_filters::parse_allowed_file_types;
+use crate::platform::system::IFileDialog;
 
 // AppKit 确认按钮返回的模态响应码。
 const NS_MODAL_RESPONSE_OK: isize = 1;
