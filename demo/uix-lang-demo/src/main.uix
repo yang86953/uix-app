@@ -131,8 +131,8 @@ pseudoStateCheck:checked {
 <Widget name="PageTitle" props="page: State<number>">
   // 显示首页标题。
   <If {page == 0}><Text fontSize="heading3">首页</Text></If>
-  // 显示应用能力页标题。
-  <If {page == 1}><Text fontSize="heading3">应用能力</Text></If>
+  // 显示语言能力页标题。
+  <If {page == 1}><Text fontSize="heading3">语言能力</Text></If>
   // 显示通用组件页标题。
   <If {page == 2}><Text fontSize="heading3">通用</Text></If>
   // 显示布局组件页标题。
@@ -165,7 +165,7 @@ pseudoStateCheck:checked {
 // 导入框架与覆盖清单页面。
 @import('./pages/reference.uix')
 
-<Widget name="DemoApp" props="page: State<number>, count: State<number>, tick: State<number>, theme_status: State<String>, multi_window_status: State<String>, set_dark_theme: (), set_light_theme: (), open_theme_window: ()">
+<Widget name="DemoApp" state="page: 0, count: 0">
   // 使用纵向根布局承载自定义标题栏与应用主体。
   <Column flexGrow={1} style="backgroundColor: #backgroundColor;">
     // 构造与 API GUI Demo 对齐的自定义标题栏。
@@ -201,8 +201,8 @@ pseudoStateCheck:checked {
           <Text fontSize="small">入门</Text>
           // 导航到首页。
           <Button @click="setState(page: 0)" automationId="sidebar-page-0">首页</Button>
-          // 导航到应用能力页。
-          <Button @click="setState(page: 1)" automationId="sidebar-page-1">应用能力</Button>
+          // 导航到语言能力页。
+          <Button @click="setState(page: 1)" automationId="sidebar-page-1">语言能力</Button>
           // 导航到框架能力页。
           <Button @click="setState(page: 10)" automationId="sidebar-page-10">框架能力</Button>
           // 分隔入门与组件导航。
@@ -248,8 +248,6 @@ pseudoStateCheck:checked {
             <Container flexGrow={1} />
             // 标记实时运行状态。
             <Tag color="success">live</Tag>
-            // 显示 App.on_start 秒级计时器状态。
-            <Text fontSize="small">tick: {tick}s</Text>
             // 标记当前界面来自编译期 uix-lang。
             <Tag color="info">uix-lang</Tag>
           // 结束页头内容容器。
@@ -267,8 +265,8 @@ pseudoStateCheck:checked {
             <Column gap="16px" padding="24px">
               // 按当前页面状态显示首页。
               <If {page == 0}><HomePage page={page} count={count} /></If>
-              // 按当前页面状态显示应用能力页。
-              <If {page == 1}><RuntimePage tick={tick} count={count} theme_status={theme_status} multi_window_status={multi_window_status} set_dark_theme={set_dark_theme} set_light_theme={set_light_theme} open_theme_window={open_theme_window} /></If>
+              // 按当前页面状态显示语言能力页。
+              <If {page == 1}><RuntimePage /></If>
               // 按当前页面状态显示通用组件页。
               <If {page == 2}><GeneralPage /></If>
               // 按当前页面状态显示布局组件页。
@@ -303,7 +301,7 @@ pseudoStateCheck:checked {
             // 展示状态栏图标。
             <Icon name="terminal" size="12px" />
             // 展示状态栏摘要。
-            <Text fontSize="small">UIX GUI 演示 · uix-lang 编译期界面 · Rust App 生命周期 · tick {tick}s</Text>
+            <Text fontSize="small">UIX 全组件演示 · uix-lang 编译期界面 · Rust 仅持有 App 生命周期</Text>
           // 结束状态栏内容。
           </Container>
         // 结束状态栏。
@@ -318,7 +316,7 @@ pseudoStateCheck:checked {
 </Widget>
 // 声明应用入口的窗口规格与内建初始主题。
 <App title="UIX Demo" size="1200x800" theme="light">
-  // 实例化唯一 View 根并传入窗口级持久状态句柄。
-  <DemoApp page={page} count={count} tick={tick} theme_status={theme_status} multi_window_status={multi_window_status} set_dark_theme={set_dark_theme} set_light_theme={set_light_theme} open_theme_window={open_theme_window} />
+  // 实例化唯一 View 根；页面与演示状态全部由语言面拥有。
+  <DemoApp />
 // 结束应用入口。
 </App>

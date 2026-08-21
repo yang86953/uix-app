@@ -177,8 +177,8 @@
 // 结束通用组件页组件。
 </Widget>
 
-// 声明布局组件页组件：持有吸顶演示的滚动位置状态。
-<Widget name="LayoutPage" external="virtual_items" state="scroll_y: f32 = 180, scroll_point: Point = Point(0.0, 0.0)">
+// 声明布局组件页组件：持有滚动位置与虚拟列表示例数据。
+<Widget name="LayoutPage" state="scroll_y: f32 = 180, scroll_point: Point = Point(0.0, 0.0), virtual_items: Vec<String> = ['惰性行 1', '惰性行 2', '惰性行 3', '惰性行 4', '惰性行 5', '惰性行 6']">
   // 组织布局组件内容。
   <Column gap="16px">
     // 展示布局组件标题。
@@ -336,13 +336,13 @@
         // 展示惰性行虚拟滚动。
         <VirtualScroll data={virtual_items} rowHeight="32px" item={item} height="160px">
           // 用 For 模板描述单行结构。
-          <For {item} {index} in {virtual_items} key={item.id}>
+          <For {item} {index} in {virtual_items} key={item}>
             // 展示带稳定 key 的行容器。
             <Container direction="row" gap="8px" padding="4px">
               // 展示行索引。
               <Text>{index}</Text>
               // 展示行内容。
-              <Text>{item.name}</Text>
+              <Text>{item}</Text>
             // 结束行容器。
             </Container>
           // 结束行模板。
@@ -371,7 +371,7 @@
 </Widget>
 
 // 声明导航组件页组件：持有步骤、分页、标签页、菜单与侧栏受控状态。
-<Widget name="NavPage" external="on_page_change, on_anchor_change" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
+<Widget name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
   // 组织导航组件内容。
   <Column gap="16px">
     // 展示导航组件标题。
@@ -395,7 +395,7 @@
         // 结束步骤操作行。
         </Container>
         // 展示含总数、尺寸切换、尺寸选项与跳转入口的双状态分页器。
-        <Pagination total="120" current={page_current} pageSize={page_size} pageSizeOptions="10,20,50" showTotal showSizeChanger showJumper @change="on_page_change($event)" />
+        <Pagination total="120" current={page_current} pageSize={page_size} pageSizeOptions="10,20,50" showTotal showSizeChanger showJumper />
         // 展示隐藏总数的非受控紧凑分页器。
         <Pagination total="120" simple showTotal="false" />
       // 结束步骤内容。
@@ -411,7 +411,7 @@
         // 展示自定义分隔符和折叠阈值的末项激活面包屑。
         <Breadcrumb items={[BreadcrumbItem('首页'), BreadcrumbItem('组件'), BreadcrumbItem('导航').active()]} separator="›" maxItems="3" />
         // 展示关闭活动指示线、带偏移与 href 事件的锚点导航。
-        <Anchor items={[AnchorItem('基础', '#basic'), AnchorItem('高级', '#advanced'), AnchorItem('API', '#api')]} offsetTop="24" showInk="false" @change="on_anchor_change($event)" />
+        <Anchor items={[AnchorItem('基础', '#basic'), AnchorItem('高级', '#advanced'), AnchorItem('API', '#api')]} offsetTop="24" showInk="false" />
       // 结束面包屑内容。
       </Column>
     // 结束面包屑与锚点面板。

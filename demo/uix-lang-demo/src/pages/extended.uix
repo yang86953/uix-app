@@ -1,10 +1,10 @@
 // 显式公开本文件的主演示页面组件。
 @export('InputPage', 'DataPage', 'FeedbackPage', 'ChartsPage', 'OtherPage')
 
-// 声明输入页独占的类型化业务模型并供主入口生成 Rust items。
+// 声明输入页独占的类型化界面模型。
 <Record name="Profile" fields="email: String, level: String, accepted: bool, channel: String, notifications: bool, volume: number" />
 
-<Widget name="InputPage" external="on_name_change, submit_profile" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
+<Widget name="InputPage" external="submit_profile" state="input_name: 'UIX Lang', input_number: i32 = 50, grouped_amount: '12.50', slider_volume: 35, range_start: 20, range_end: 80, rating: u32 = 7, gender: 'female', view_mode: 'grid', city: 'cn', tree_key: 'member', query: 'ap', mention_text: '请联系 @a', switch_enabled: false, checkbox_accepted: true, cities: HashSet<String> = [], region: CascaderValue = { labels: [], values: [] }, selected_date: Date = Date(2026, 8, 10), range_start_date: Date = Date(2026, 8, 1), range_end_date: Date = Date(2026, 8, 31), selected_time: Time = Time(14, 30), selected_color: Color = Color('#1677ff'), profile: Profile = { email: 'owner@example.com', level: '中级', accepted: true, channel: '邮件', notifications: true, volume: 35.0 }">
   // 组织输入组件内容。
   <Column gap="16px">
     // 展示输入组件标题。
@@ -16,7 +16,7 @@
         // 展示面板小节标题。
         <Text fontSize="heading5">Input / InputNumber / InputGroup</Text>
         // 展示双向绑定文本输入。
-        <Input value={input_name} placeholder="请输入文本" type="text" @change="on_name_change($event)" width="320px" />
+        <Input value={input_name} placeholder="请输入文本" type="text" width="320px" />
         // 展示密码输入。
         <Input placeholder="密码输入" type="password" width="320px" automationId="demo-password-input" />
         // 展示多行输入。
@@ -173,8 +173,8 @@
 // 结束可复用插槽面板组件。
 </Widget>
 
-// 声明数据展示页组件并读取静态表格数据、媒体回调与组件私有状态。
-<Widget name="DataPage" external="table_rows, table_columns, calendar_events, is_calendar_date_disabled, calendar_date_cell, on_gallery_change, on_calendar_change" state="selected_item: Option<String> = None, active_panels: Vec<String> = [], calendar_date: Date = Date(2026, 8, 15), calendar_displayed: Date = Date(2026, 9, 1)" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
+// 声明数据展示页组件；展示数据与组件状态全部由语言面表达。
+<Widget name="DataPage" state="selected_item: Option<String> = None, active_panels: Vec<String> = [], calendar_date: Date = Date(2026, 8, 15), calendar_displayed: Date = Date(2026, 9, 1)" computed="visible_panels: active_panels.filter(|key| key.length > 0), remaining: visible_panels.length">
   // 组织数据展示内容。
   <Column gap="16px">
     // 展示数据组件标题。
@@ -251,8 +251,8 @@
       <Column gap="12px">
         // 展示面板小节标题。
         <Text fontSize="heading5">Table — 类型化行列</Text>
-        // 读取 Rust 侧静态 TableRow 与 TableColumn 集合。
-        <Table data={table_rows} columns={table_columns} width="420px" automationId="demo-table" />
+        // 使用空类型化集合展示 Table 自身的空态与布局能力。
+        <Table data={[]} columns={[]} width="420px" automationId="demo-table" />
       // 结束表格演示内容。
       </Column>
     // 结束类型化数据表格面板。
@@ -296,7 +296,7 @@
           // 展示带预览与回退文字的图片。
           <Image src="assets/images/demo.png" alt="demo" fallback="图片加载失败" width="120px" height="84px" radius="8px" preview />
           // 展示带变化事件的图片组。
-          <ImageGroup images={['assets/images/demo.png', 'assets/images/demo.png']} startIndex="0" @change="on_gallery_change($event)" width="280px" />
+          <ImageGroup images={['assets/images/demo.png', 'assets/images/demo.png']} startIndex="0" width="280px" />
         // 结束媒体组件行。
         </Container>
       // 结束媒体内容。
@@ -329,8 +329,8 @@
           <ResultView status="error" title="加载失败" width="200px" />
         // 结束结果状态行。
         </Container>
-        // 展示独立月份、双向选择、事件、禁用策略、日期格 View 与整年导航。
-        <Calendar value={calendar_date} defaultDisplayed={calendar_displayed} cellSize="36px" yearJump events={calendar_events} disabledDate={is_calendar_date_disabled} dateCell={calendar_date_cell} @change="on_calendar_change($event)" width="300px" />
+        // 展示独立月份、双向选择与整年导航。
+        <Calendar value={calendar_date} defaultDisplayed={calendar_displayed} cellSize="36px" yearJump events={[]} width="300px" />
         // 展示可选中 Markdown 富文本。
         <RichText content="**RichText** 与 `QRCode` 均由已注册标签生成。" selectable width="320px" />
       // 结束状态组件内容。
@@ -345,7 +345,7 @@
 </Widget>
 
 // 声明反馈组件页组件：受控浮层与确认计数由组件私有 state 驱动。
-<Widget name="FeedbackPage" external="on_alert_closed" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
+<Widget name="FeedbackPage" state="feedback_open: false, drawer_open: false, confirm_count: 0, cancel_count: 0">
   // 组织反馈组件内容。
   <Column gap="16px">
     // 展示反馈组件标题。
@@ -363,7 +363,7 @@
         // 展示可关闭警告。
         <Alert message="警告: 请注意" type="warning" closable />
         // 展示带关闭事件的错误提示。
-        <Alert message="错误: 失败" type="error" closable @close="on_alert_closed($event)" />
+        <Alert message="错误: 失败" type="error" closable />
       // 结束警告内容。
       </Column>
     // 结束警告提示面板。
@@ -490,21 +490,21 @@
 </Widget>
 
 // 声明图表能力页组件。
-<Widget name="ChartsPage" external="chart_animation, chart_interaction, chart_brush, chart_tooltip, heatmap_color_stops, chart_reference_lines, format_gauge_percent, custom_combo_series">
+<Widget name="ChartsPage">
   // 组织图表能力内容。
   <Column gap="16px">
     // 展示图表能力标题。
     <Text fontSize="heading2">图表</Text>
     // 说明 Rust 图表文档列出的十二类标签已进入声明式生成路径。
     <Alert message="十二类图表标签已登记类型化静态映射、基础坐标图多系列及图例、动画、缩放平移、刷选与 tooltip 共同配置。" type="success" />
-    // 展示类型化柱状图多系列与完整共同高级配置。
-    <BarChart series={[ChartSeries('2025', [BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#1677ff')), BarData('Q3', 150, Color('#1677ff'))]), ChartSeries('2026', [BarData('Q1', 140, Color('#52c41a')), BarData('Q2', 230, Color('#52c41a')), BarData('Q3', 180, Color('#52c41a'))])]} grouped showValue barRadius="3" title="季度产出" legend="bottom" animation={chart_animation} interactive={chart_interaction} brush={chart_brush} tooltip={chart_tooltip()} width="420px" height="260px" />
+    // 展示完全由语言面构造的类型化柱状图多系列。
+    <BarChart series={[ChartSeries('2025', [BarData('Q1', 120, Color('#1677ff')), BarData('Q2', 200, Color('#1677ff')), BarData('Q3', 150, Color('#1677ff'))]), ChartSeries('2026', [BarData('Q1', 140, Color('#52c41a')), BarData('Q2', 230, Color('#52c41a')), BarData('Q3', 180, Color('#52c41a'))])]} grouped showValue barRadius="3" title="季度产出" legend="bottom" width="420px" height="260px" />
     // 展示类型化折线图多系列与线形配置。
     <LineChart series={[ChartSeries('CPU', [LineData('Jan', 40), LineData('Feb', 60), LineData('Mar', 50)]), ChartSeries('内存', [LineData('Jan', 30), LineData('Feb', 50), LineData('Mar', 45)])]} smooth lineWidth="2" dotRadius="4" legend="top" title="月度趋势" width="420px" height="260px" />
     // 展示类型化饼图数据与环形配置。
     <PieChart data={[PieData('产品 A', 40, Color('#1677ff')), PieData('产品 B', 30, Color('#52c41a')), PieData('产品 C', 30, Color('#faad14'))]} donut="0.55" title="产品占比" width="320px" height="280px" />
-    // 展示类型化面积图多系列、参考线与堆叠填充配置。
-    <AreaChart series={[ChartSeries('收入', [LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]), ChartSeries('成本', [LineData('Jan', 40), LineData('Feb', 55), LineData('Mar', 48)])]} stacked smooth fillOpacity="0.3" referenceLines={chart_reference_lines()} legend="top" title="面积趋势" width="420px" height="260px" />
+    // 展示类型化面积图多系列与堆叠填充配置。
+    <AreaChart series={[ChartSeries('收入', [LineData('Jan', 80), LineData('Feb', 120), LineData('Mar', 105)]), ChartSeries('成本', [LineData('Jan', 40), LineData('Feb', 55), LineData('Mar', 48)])]} stacked smooth fillOpacity="0.3" legend="top" title="面积趋势" width="420px" height="260px" />
     // 展示类型化散点多系列与坐标配置。
     <ScatterChart series={[ChartSeries('实验组', [ScatterData('A', 2.5, 6.3), ScatterData('B', 3.1, 5.8)]), ChartSeries('对照组', [ScatterData('C', 4.2, 7.1), ScatterData('D', 3.8, 6.6)])]} xAxis="宽度" yAxis="高度" pointStyle="diamond" legend="bottom" title="样本分布" width="420px" height="260px" />
     // 展示类型化气泡数据、第三维大小与统一缩放配置。
@@ -513,16 +513,16 @@
     <FunnelChart data={[FunnelData('浏览', 5000), FunnelData('点击', 2300), FunnelData('下单', 420), FunnelData('支付', 310)]} showConversionRate labelPosition="right" shape="symmetric" title="转化漏斗" width="420px" height="320px" />
     // 展示递归矩形树节点与间隙配置。
     <Treemap data={[TreemapNode('技术', 45).children([TreemapNode('前端', 20), TreemapNode('后端', 18), TreemapNode('运维', 7)]), TreemapNode('市场', 30), TreemapNode('行政', 15)]} gap="4" labelVisible title="部门占比" width="420px" height="300px" />
-    // 展示仪表盘数值、色带、指针与类型化中心文本格式化器。
-    <Gauge value="68" min="0" max="100" gaugeType="dashboard" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 70, Color('#faad14')), GaugeRange(70, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} format={format_gauge_percent} title="完成率" width="320px" height="260px" />
-    // 展示矩阵热力数据、双轴标签、单元配置与带位置自定义色阶。
-    <Heatmap data={[HeatmapCell(0, 0, 12), HeatmapCell(1, 0, 45), HeatmapCell(2, 0, 28), HeatmapCell(0, 1, 36), HeatmapCell(1, 1, 62), HeatmapCell(2, 1, 51)]} xLabels={['周一', '周二', '周三']} yLabels={['上午', '下午']} colorStops={heatmap_color_stops()} cellGap="2" showValues title="活跃热力" width="420px" height="260px" />
+    // 展示仪表盘数值、色带与指针配置。
+    <Gauge value="68" min="0" max="100" gaugeType="dashboard" rangeColors={[GaugeRange(0, 30, Color('#ff4d4f')), GaugeRange(30, 70, Color('#faad14')), GaugeRange(70, 100, Color('#52c41a'))]} pointerWidth="4" pointerColor={Color('#1677ff')} title="完成率" width="320px" height="260px" />
+    // 展示矩阵热力数据、双轴标签与单元配置。
+    <Heatmap data={[HeatmapCell(0, 0, 12), HeatmapCell(1, 0, 45), HeatmapCell(2, 0, 28), HeatmapCell(0, 1, 36), HeatmapCell(1, 1, 62), HeatmapCell(2, 1, 51)]} xLabels={['周一', '周二', '周三']} yLabels={['上午', '下午']} cellGap="2" showValues title="活跃热力" width="420px" height="260px" />
     // 展示瀑布变化类型、方向与坐标轴配置。
     <WaterfallChart data={[WaterfallData('起始', 1000, 'total'), WaterfallData('收入', 500, 'increase'), WaterfallData('成本', -300, 'decrease'), WaterfallData('税费', -100, 'decrease'), WaterfallData('净利', 1100, 'total')]} xAxis="项目" yAxis="金额" title="利润变化" width="460px" height="280px" />
     // 展示雷达轴闭区间、精确系列与形状配置。
     <RadarChart axes={[RadarAxis('速度', 0, 100), RadarAxis('力量', 0, 100), RadarAxis('耐力', 0, 100), RadarAxis('技巧', 0, 100), RadarAxis('协作', 0, 100)]} series={[ChartSeries('选手 A', [RadarData(85), RadarData(70), RadarData(90), RadarData(60), RadarData(75)]), ChartSeries('选手 B', [RadarData(65), RadarData(85), RadarData(60), RadarData(80), RadarData(70)])]} shape="circle" gridLevels="5" fillOpacity="0.2" title="能力雷达" width="380px" height="320px" />
-    // 展示柱线面积三类自定义系列、左右轴与虚线配置。
-    <ComboChart series={custom_combo_series()} yAxisLeft="访问量" yAxisRight="转化率" title="访问与转化" width="460px" height="280px" />
+    // 展示语言面声明的柱线组合系列与左右轴配置。
+    <ComboChart barSeries={[ChartSeries('访问量', [BarData('Jan', 100, Color('#1677ff')), BarData('Feb', 140, Color('#1677ff')), BarData('Mar', 125, Color('#1677ff'))])]} lineSeries={[ChartSeries('转化率', [LineData('Jan', 20), LineData('Feb', 28), LineData('Mar', 24)])]} yAxisLeft="访问量" yAxisRight="转化率" title="访问与转化" width="460px" height="280px" />
   // 结束图表能力内容。
   </Column>
 // 结束图表能力页组件。

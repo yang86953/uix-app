@@ -8,11 +8,11 @@
 
 - Windows 与 Linux 均纳入 `0.0.1` 首发平台范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES。
 - 提供 Rust 声明式 View、State / Computed、应用壳、本地 Settings 与桌面组件体系。
-- `demo/` 调整为独立多项目工作区：`uix-lang-demo`（仓库主演示，uix-lang 声明式多页应用）与 `cli-demo`（CLI 功能域演示）各自独立构建，bin 名称与运行模式保持不变。
+- `demo/` 精简为只包含 `uix-lang-demo` 的独立工作区；主演示以 uix-lang 声明 12 个页面、全部已登记组件、展示数据、界面状态与局部交互，Rust 薄入口只保留应用生命周期、平台资源和 Form 业务提交回调。
 - 编译产物配置入仓：根包与 demo 工作区显式声明 release/dev/test profile（体积优先 `opt-level="s"`、fat LTO、符号表全剥离、`codegen-units=1`），不再依赖机器级 cargo 配置；release 的过程宏与构建脚本单独提速编译。
 - Windows 默认选择原生 D3D11 图形后端（默认 feature 集启用 `d3d11`），并在有界恢复耗尽后整体回退 Software。
 - 支持多窗口、IME、主题、定时与动画、浮层、结构化语义快照及显式启用的本机 Agent 开发预览。
-- 提供 `uix-lang-demo`、公开 API 使用示例和 8 个独立真窗验收程序（`badge-visual` / `selectable-list-visual` / `collapse-visual` / `popconfirm-visual` / `upload-visual` / `backdrop-visual` / `rich-text-visual` / `rich-text-image-visual`）。
+- 提供唯一的 `uix-lang-demo` 全组件演示；原 CLI 与 8 个独立真窗 demo 已移除，对应组件统一在主演示中以 uix-lang 声明。
 - uix-lang 能力扩展：组件私有 state 支持类型注解（`u32` / `usize` / `f32` / `i32`）；受控组件与双向绑定属性（`open` / `value` / `checked` / `current` 等句柄位）可直接绑定组件私有 state；数据类属性按值 clone 消费，同一绑定可被多个标签复用；`uix-lang-demo` 对齐 API GUI Demo 全部已注册标签，并按页拆分为 12 个声明式页面组件。
 - uix-lang 图表声明补齐类型化气泡数据、基础坐标图多系列、共同高级配置、热力图自定义色阶、四类高级坐标图参考线、仪表盘格式化器与自定义混合系列；集合与回调在生成代码中保持精确公开类型并复用既有运行时绘制契约。
 - uix-lang Tabs 登记 `tabPosition` 与 `scrollable`，支持四向标签栏和沿主轴溢出滚动；生成层只传递声明配置，面板子树、具体几何与滚动偏移仍由运行时 Tabs 独占。
@@ -33,7 +33,7 @@
 
 ### 2026-08-15 功能扩展
 
-- 新增 `rich-text-visual`（RichText 主题分隔线）与 `rich-text-image-visual`（RichText 内联图片）两个独立真窗验收程序，真窗验收程序合计 8 个。
+- RichText 主题分隔线与内联图片能力统一进入 uix-lang 全组件主演示，不再维护独立真窗 demo。
 
 ### 2026-08-15 工程与验证范围
 

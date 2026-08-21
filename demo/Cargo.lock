@@ -40,20 +40,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "backdrop-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
-
-[[package]]
-name = "badge-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
-
-[[package]]
 name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -92,13 +78,6 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "collapse-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
 
 [[package]]
 name = "core_maths"
@@ -398,13 +377,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "popconfirm-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -473,20 +445,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "rich-text-image-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
-
-[[package]]
-name = "rich-text-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
-
-[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -528,13 +486,6 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
-name = "selectable-list-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
 
 [[package]]
 name = "serde"
@@ -748,14 +699,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "uix-cli-demo"
+name = "uix-derive"
 version = "0.0.1"
 dependencies = [
- "uix",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
+ "uix-lang-compiler",
 ]
 
 [[package]]
-name = "uix-derive"
+name = "uix-lang-compiler"
 version = "0.0.1"
 dependencies = [
  "proc-macro2",
@@ -819,13 +774,6 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
-
-[[package]]
-name = "upload-visual"
-version = "0.0.1"
-dependencies = [
- "uix",
-]
 
 [[package]]
 name = "valuable"

@@ -10,8 +10,8 @@ use super::form_slider_codegen::generate_form_slider_field;
 // 引入 Form 语法树、表达式和值映射契约。
 use super::{
     Attribute, AttributeValue, Diagnostic, Element, Expression, ExpressionKind, Node,
-    boolean_value, generate_event_handler_expression, generate_expression, literal_string,
-    rust_identifier, string_value,
+    SOURCE_ID_ATTRIBUTE, boolean_value, generate_event_handler_expression, generate_expression,
+    literal_string, rust_identifier, string_value,
 };
 
 // 生成类型化 Form 与已登记的字段适配器。
@@ -55,6 +55,11 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
             // 返回子树边界诊断。
             return Err(form_shape_diagnostic(element));
         };
+        // Form 直接解释字段子项，因此先移除编译器注入的内部源码标记。
+        let mut child = child.clone();
+        child
+            .attributes
+            .retain(|attribute| attribute.name != SOURCE_ID_ATTRIBUTE);
         // 已登记字段必须位于提交按钮之前。
         if matches!(
             child.name.as_str(),
@@ -77,17 +82,17 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
             // 按字段组件生成对应链片段。
             fields.push(match child.name.as_str() {
                 // 文本字段映射到 FormInputItem。
-                "FormInputItem" => generate_input_field(child)?,
+                "FormInputItem" => generate_input_field(&child)?,
                 // 选择字段映射到 FormSelectItem。
-                "FormSelectItem" => generate_select_field(child)?,
+                "FormSelectItem" => generate_select_field(&child)?,
                 // 布尔字段映射到 FormCheckboxItem。
-                "FormCheckboxItem" => generate_checkbox_field(child)?,
+                "FormCheckboxItem" => generate_checkbox_field(&child)?,
                 // 单选组字段映射到 FormRadioItem。
-                "FormRadioItem" => generate_radio_field(child)?,
+                "FormRadioItem" => generate_radio_field(&child)?,
                 // 开关字段映射到 FormSwitchItem。
-                "FormSwitchItem" => generate_switch_field(child)?,
+                "FormSwitchItem" => generate_switch_field(&child)?,
                 // f64 数值字段映射到 FormSliderItem。
-                "FormSliderItem" => generate_form_slider_field(child)?,
+                "FormSliderItem" => generate_form_slider_field(&child)?,
                 // 前置匹配已穷尽登记字段。
                 _ => unreachable!("已登记 Form 字段分派必须穷尽"),
             });
@@ -97,7 +102,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         // Button 必须是唯一提交入口。
         if child.name == "Button" && submit_button.is_none() {
             // 生成移除内置点击后的按钮。
-            submit_button = Some(generate_submit_button(child)?);
+            submit_button = Some(generate_submit_button(&child)?);
             // 继续处理下一节点。
             continue;
         }

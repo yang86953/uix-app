@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入按钮生成器与公共属性生成器。
 use super::codegen::{apply_common_attributes, generate_button_with_group_position};
-// 引入 ButtonGroup 所需的语法树与诊断。
-use super::{Diagnostic, Element, Node};
+// 引入 ButtonGroup 所需的语法树、源码标记与诊断。
+use super::{Diagnostic, Element, Node, mark_source_tokens};
 
 // 生成文档化 ButtonGroup 标签对应的公开 Rust View。
 pub(crate) fn generate_button_group(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -80,6 +80,8 @@ pub(crate) fn generate_button_group(element: &Element) -> Result<TokenStream, Di
         };
         // 复用完整 Button 属性、事件与公共样式生成路径。
         let generated = generate_button_with_group_position(button, Some(position))?;
+        // 专用父子生成路径也要把子 Button 表达式绑定到精确源码跨度。
+        let generated = mark_source_tokens(generated, button.span);
         // 统一物化为公开 ViewNode 子项。
         generated_buttons.push(quote! { ::uix::prelude::View::build(#generated) });
     }

@@ -294,6 +294,11 @@ pub(super) fn apply_common_attributes(
 ) -> Result<TokenStream, Diagnostic> {
     // 先应用非事件属性，避免提前捕获构建器。
     for attribute in attributes {
+        // 专用父子组件可能直接复用子元素生成器；内部源码身份绝不能进入公开属性矩阵。
+        if attribute.name == SOURCE_ID_ATTRIBUTE {
+            // 当前生成上下文已经持有同一 SourceId，只需消费内部属性。
+            continue;
+        }
         // 跳过元素专有阶段已经消费的属性。
         if consumed.contains(&attribute.name.as_str()) {
             // 继续处理下一属性。
@@ -430,6 +435,11 @@ pub(super) fn apply_common_attributes(
     }
     // 在全部普通属性物化后应用事件。
     for attribute in attributes {
+        // 编译器内部源码身份不是事件，不得进入事件映射。
+        if attribute.name == SOURCE_ID_ATTRIBUTE {
+            // 继续处理下一属性。
+            continue;
+        }
         // 专用生成器已经消费的事件不能再次进入核心点击映射。
         if consumed.contains(&attribute.name.as_str()) {
             // 继续处理下一事件属性。
