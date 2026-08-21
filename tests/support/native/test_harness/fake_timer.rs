@@ -4,7 +4,7 @@
 //! 支持单次和重复定时器，追踪所有 set/clear 操作。
 
 use crate::native::Result;
-use crate::native::capabilities::system::ITimer;
+use crate::platform::system::ITimer;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

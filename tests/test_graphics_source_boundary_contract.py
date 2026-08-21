@@ -36,16 +36,57 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
 }
-# native Platform 根尚未迁移，但只能继续取得这些未迁移的精确系统服务合同。
+# native Platform 根尚未迁移，但只能继续取得剩余三项 native 系统服务合同。
 NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
 NATIVE_PLATFORM_PROTOCOLS = {
     "crate::native::capabilities::system::IConsole",
-    "crate::native::capabilities::system::IFileDialog",
     "crate::native::capabilities::system::IFileSystem",
-    "crate::native::capabilities::system::INotification",
     "crate::native::capabilities::system::ISystemInfo",
-    "crate::native::capabilities::system::ITimer",
 }
+# 固定无附属值类型的基础系统服务协议唯一物理归属。
+SYSTEM_SERVICE_ROOT = SRC / "platform/system.rs"
+SYSTEM_SERVICE_DEFINITIONS = (
+    "pub(crate) trait IFileDialog",
+    "pub(crate) trait INotification",
+    "pub(crate) trait ITimer",
+)
+# Linux、Windows、macOS 与 fake 必须直接实现同一个 platform 合同。
+SYSTEM_SERVICE_IMPLEMENTERS = {
+    SRC / "native/backends/linux/file_dialog.rs": ("impl IFileDialog for LinuxFileDialog",),
+    SRC / "native/backends/linux/notification.rs": (
+        "impl INotification for LinuxNotification",
+    ),
+    SRC / "native/backends/linux/timer.rs": ("impl ITimer for LinuxTimer",),
+    SRC / "native/backends/windows/file_dialog.rs": (
+        "impl IFileDialog for WindowsFileDialog",
+    ),
+    SRC / "native/backends/windows/notification.rs": (
+        "impl INotification for WindowsNotification",
+    ),
+    SRC / "native/backends/windows/timer.rs": ("impl ITimer for WindowsTimer",),
+    SRC / "native/backends/macos/host/file_dialog.rs": (
+        "impl IFileDialog for MacosFileDialog",
+    ),
+    SRC / "native/backends/macos/host/services2.rs": (
+        "impl INotification for MacosNotification",
+    ),
+    SRC / "native/backends/macos/host/services.rs": ("impl ITimer for MacosTimer",),
+    ROOT / "tests/support/native/test_harness/fake_file_dialog.rs": (
+        "impl IFileDialog for FakeFileDialog",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_notification.rs": (
+        "impl INotification for FakeNotification",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_timer.rs": ("impl ITimer for FakeTimer",),
+}
+# Platform 根及三平台/fake 聚合均需显式消费新权威路径。
+SYSTEM_SERVICE_PLATFORM_ROOTS = (
+    NATIVE_PLATFORM_ROOT,
+    SRC / "native/backends/linux/platform.rs",
+    SRC / "native/backends/windows/platform.rs",
+    SRC / "native/backends/macos/host/mod.rs",
+    ROOT / "tests/support/native/test_harness/mod.rs",
+)
 
 # 固定平台无关事件协议的唯一物理归属。
 EVENT_ROOT = SRC / "platform/windowing/event"
@@ -273,9 +314,52 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         )
 
     def test_native_platform_compatibility_is_limited_to_unmigrated_services(self) -> None:
-        # Display 已迁往 platform；Platform 根不得用宽泛 capabilities 导入把它带回。
+        # 已迁往 platform 的合同不得通过宽泛 capabilities 导入带回。
         observed = native_paths(source(NATIVE_PLATFORM_ROOT))
         self.assertEqual(observed, NATIVE_PLATFORM_PROTOCOLS)
+
+    def test_platform_system_is_the_only_base_service_definition(self) -> None:
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+
+        # 生产与 fake 都不得继续消费三个合同的旧 native 路径。
+        legacy_reference = re.compile(
+            r"crate::native::capabilities::system::(?:IFileDialog|INotification|ITimer)\b"
+        )
+        for path in rust_sources:
+            with self.subTest(legacy_system_service_reference=relative(path)):
+                self.assertIsNone(legacy_reference.search(source(path)))
+
+        # 权威叶只依赖 core Result，不得反向依赖 native 或高层 host/facade。
+        owner_source = source(SYSTEM_SERVICE_ROOT)
+        dependencies = set(
+            re.findall(r"\buse\s+(crate::[^;]+);", without_comments(owner_source))
+        )
+        self.assertEqual(dependencies, {"crate::core::Result"})
+
+        # 三个 trait 只能定义一次，禁止复制合同或让 fake 自有协议。
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        for marker in SYSTEM_SERVICE_DEFINITIONS:
+            self.assertIn(marker, owner_source)
+            name = marker.rsplit(" ", 1)[-1]
+            definition = re.compile(rf"\btrait\s+{name}\b")
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(system_service_definition=name):
+                self.assertEqual(locations, [SYSTEM_SERVICE_ROOT])
+
+        # 三平台与 fake 的十二个实现均直接绑定同一内部 leaf。
+        for path, implementations in SYSTEM_SERVICE_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(system_service_implementation=relative(path)):
+                self.assertIn("crate::platform::system", implementation_source)
+                for implementation in implementations:
+                    self.assertIn(implementation, implementation_source)
+
+        # Platform 根与三平台/fake 聚合不经兼容层取得合同。
+        for path in SYSTEM_SERVICE_PLATFORM_ROOTS:
+            with self.subTest(system_service_platform_root=relative(path)):
+                self.assertIn("crate::platform::system", source(path))
 
     def test_platform_windowing_event_is_the_only_source_definition(self) -> None:
         # 旧 native 物理模块必须消失，内部调用方统一消费新权威路径。

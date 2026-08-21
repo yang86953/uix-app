@@ -9,6 +9,8 @@ mod facade;
 pub(crate) mod display;
 // Platform System 的实例生命周期与主线程约束集中在根级 runtime 边界。
 mod runtime;
+// 三项无附属值类型的低层系统服务合同由单一内部叶持有。
+pub(crate) mod system;
 // host 功能域拥有宿主机信息、文件系统、对话框与通知能力。
 #[path = "host/mod.rs"]
 // 保持公开 `platform::capabilities` 模块路径不变。

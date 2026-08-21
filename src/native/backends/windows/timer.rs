@@ -5,7 +5,7 @@
 #![cfg(windows)]
 
 use super::ffi::{KillTimer, SetTimer};
-use crate::native::capabilities::system::ITimer;
+use crate::platform::system::ITimer;
 use crate::native::{Errc, Error, Result};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

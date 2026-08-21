@@ -1,7 +1,7 @@
 //! Fake 通知 — 记录通知历史，支持断言。
 
 use crate::core::error::Result;
-use crate::native::capabilities::system::INotification;
+use crate::platform::system::INotification;
 
 #[derive(Debug, Clone)]
 pub struct NotificationRecord {
