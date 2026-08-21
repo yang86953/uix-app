@@ -3,7 +3,7 @@
 // 复用父平台模块中的 EGL owner 及其私有原生辅助函数。
 use super::EglContext;
 // 引入共享 Surface 生命周期契约。
-use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
+use crate::platform::presentation::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享 OpenGL RHI host 生命周期契约。
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 // 引入共享 Surface 生命周期、resize 与重建事务。
@@ -19,13 +19,13 @@ use crate::native::{Error, Result};
 // 为 EGL owner 实现共享 graphics context 生命周期。
 impl GraphicsContextLifecycle for EglContext {
     // 返回 EGL drawable 的完整 live surface 快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // generation 只读取共享生命周期，不再混入 windowing revision。
         let generation = self.surface_lifecycle.token().generation;
         // resize 事务开始前必须能读取 windowing 刚发布的新 DPR。
         match self.metrics.snapshot() {
             // 健康快照直接报告同代 drawable 与 DPR。
-            Ok(snapshot) => crate::native::present::PresentSurface::identity(
+            Ok(snapshot) => crate::platform::presentation::PresentSurface::identity(
                 // 报告目标物理 drawable 宽度。
                 snapshot.drawable_width,
                 // 报告目标物理 drawable 高度。
@@ -36,7 +36,7 @@ impl GraphicsContextLifecycle for EglContext {
                 generation,
             ),
             // trait 无错误通道时回退到最后一次成功应用的 EGL 状态。
-            Err(_) => crate::native::present::PresentSurface::identity(
+            Err(_) => crate::platform::presentation::PresentSurface::identity(
                 // 最后成功物理宽度。
                 self.width,
                 // 最后成功物理高度。
@@ -57,7 +57,7 @@ impl GraphicsContextLifecycle for EglContext {
 }
 
 // 把 EGL thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
-impl crate::native::present::GpuRecipeContext for EglContext {
+impl crate::platform::presentation::GpuRecipeContext for EglContext {
     // 借用 EGL owner 已实现的组合 thin RHI。
     fn rhi_context(
         // 借用当前 EGL owner。
@@ -74,7 +74,7 @@ impl crate::native::present::GpuRecipeContext for EglContext {
         // 在可变借用前取得当前完整 surface 快照。
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
+        crate::platform::presentation::resize_native_rhi_surface(self, present_surface, width, height)
     }
 }
 

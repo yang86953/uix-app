@@ -3,9 +3,9 @@
 // 引入统一错误与结果类型。
 use crate::core::{Errc, Error, Result};
 // 引入 GPU 与 PixelUpload 的专用 owner。
-use crate::native::present::{GpuRecipeOwner, PixelUploadRecipeOwner};
+use crate::platform::presentation::{GpuRecipeOwner, PixelUploadRecipeOwner};
 // 引入类型化 context 与 recipe 轴。
-use crate::native::present::{GraphicsContextCaps, GraphicsRecipeContext, PresentMode, RasterMode};
+use crate::platform::presentation::{GraphicsContextCaps, GraphicsRecipeContext, PresentMode, RasterMode};
 
 // 保存离开 native factory 前已经完成构造门禁的具体 recipe owner。
 pub(crate) enum GraphicsRecipeOwner {

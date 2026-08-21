@@ -3,7 +3,7 @@
     // 引入测试错误与结果类型。
     use crate::core::{Errc, Error, Result};
     // 引入原子 surface 快照。
-    use crate::native::present::PresentSurface;
+    use crate::platform::presentation::PresentSurface;
 
     // 提供可独立控制 resize 成败的最小 GPU context。
     struct TestRhiLifecycleContext {

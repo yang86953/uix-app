@@ -6,7 +6,7 @@
 use ash::vk;
 
 use crate::core::{Errc, Error, PresentCoherency, Result};
-use crate::native::present::{
+use crate::platform::presentation::{
     GpuRecipeContext, GraphicsContextLifecycle, resize_native_rhi_surface,
 };
 use crate::platform::presentation::rhi::{

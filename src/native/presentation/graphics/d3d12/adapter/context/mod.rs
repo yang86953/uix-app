@@ -9,7 +9,7 @@ use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
 // 导入 context 实现直接消费的共享生命周期契约。
-use crate::native::present::GraphicsContextLifecycle;
+use crate::platform::presentation::GraphicsContextLifecycle;
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D12::*;

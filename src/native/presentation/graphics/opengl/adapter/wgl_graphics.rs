@@ -2,13 +2,13 @@
 use super::WglContext;
 
 // 引入 OpenGL ES 图形 context 的共享生命周期契约。
-use crate::native::present::GraphicsContextLifecycle;
+use crate::platform::presentation::GraphicsContextLifecycle;
 // 引入项目统一错误和结果类型。
 use crate::native::{Error, Result};
 // 为 WGL context 实现共享生命周期合约。
 impl GraphicsContextLifecycle for WglContext {
     // 返回 WGL drawable 的完整 live surface 快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // generation 只读取共享生命周期，不再由 WGL 私有字段维护。
         let generation = self.surface_lifecycle.token().generation;
         // 逻辑宽度无效时保留既有安全比例。
@@ -20,7 +20,7 @@ impl GraphicsContextLifecycle for WglContext {
             self.width as f32 / self.logical_width as f32
         };
         // 同时返回 extent、DPR 与真实 surface generation。
-        crate::native::present::PresentSurface::identity(
+        crate::platform::presentation::PresentSurface::identity(
             // 记录当前物理 drawable 宽度。
             self.width,
             // 记录当前物理 drawable 高度。
@@ -40,7 +40,7 @@ impl GraphicsContextLifecycle for WglContext {
 }
 
 // 把 WGL thin RHI 与逻辑 surface resize 收敛到同一 recipe owner。
-impl crate::native::present::GpuRecipeContext for WglContext {
+impl crate::platform::presentation::GpuRecipeContext for WglContext {
     // 借用 WGL owner 已实现的组合 thin RHI。
     fn rhi_context(
         // 借用当前 WGL owner。
@@ -57,6 +57,6 @@ impl crate::native::present::GpuRecipeContext for WglContext {
         // 在可变借用前取得当前完整 surface 快照。
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::native::present::resize_native_rhi_surface(self, present_surface, width, height)
+        crate::platform::presentation::resize_native_rhi_surface(self, present_surface, width, height)
     }
 }

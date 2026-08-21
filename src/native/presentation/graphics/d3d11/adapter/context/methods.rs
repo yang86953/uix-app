@@ -297,7 +297,7 @@ impl D3d11Context {
     }
 
     // 返回本实例在创建期冻结的 present coherency。
-    pub(crate) fn present_coherency(&self) -> crate::native::present::PresentCoherency {
+    pub(crate) fn present_coherency(&self) -> crate::platform::presentation::PresentCoherency {
         // capability 与实际 swapchain 形态同源，运行期不再探测或漂移。
         self.swap_chain.contract().present_coherency
     }

@@ -72,7 +72,7 @@
 //! ```
 //!
 //! ```compile_fail
-//! use uix::native::present::GraphicsRecipeContext;
+//! use uix::platform::presentation::GraphicsRecipeContext;
 //! ```
 //!
 //! ```compile_fail

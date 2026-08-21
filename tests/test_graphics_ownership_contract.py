@@ -15,7 +15,7 @@ class GraphicsOwnershipContractTests(unittest.TestCase):
     # 验证 renderer 原语不会重新进入 platform presentation。
     def test_canvas_gpu_primitives_belong_to_graphics_backend(self) -> None:
         # 读取 platform presentation 公共契约。
-        present = (ROOT / "src/native/presentation/contracts/mod.rs").read_text(encoding="utf-8")
+        present = (ROOT / "src/platform/presentation/contracts/mod.rs").read_text(encoding="utf-8")
         # 读取 graphics backend 私有原语定义。
         primitives = (ROOT / "src/draw/backend/gpu/primitives.rs").read_text(encoding="utf-8")
         # 逐项锁定原语的唯一物理定义位置。

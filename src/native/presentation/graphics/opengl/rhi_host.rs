@@ -13,7 +13,7 @@ use crate::platform::presentation::rhi::{
     SurfaceFrame, SurfaceToken, TextureCopy, TextureDesc, TextureHandle, TextureMove,
 };
 // 引入 OpenGL surface test_present 的共享结果类型。
-use crate::native::present::PresentTestResult;
+use crate::platform::presentation::PresentTestResult;
 // 引入 OpenGL raster pipeline 的 RHI bridge。
 use super::raster::OpenGlRasterPipeline;
 

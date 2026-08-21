@@ -6,7 +6,7 @@
 // 引入统一错误分类、错误值和结果类型。
 use crate::core::error::{Errc, Error, Result};
 // 引入 context 上已有的 DPR 快照与无帧探测结果。
-use crate::native::present::{GraphicsContextLifecycle, PresentTestResult};
+use crate::platform::presentation::{GraphicsContextLifecycle, PresentTestResult};
 // 引入薄 RHI 的 surface 原语。
 use crate::platform::presentation::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,

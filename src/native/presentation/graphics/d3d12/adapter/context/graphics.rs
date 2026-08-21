@@ -2,9 +2,9 @@ use super::*;
 
 impl GraphicsContextLifecycle for D3d12Context {
     // 返回 D3D12 测试期 context 的完整 drawable 元数据快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // D3D12 尚未承诺跨 resize generation，保留既有零代际语义。
-        crate::native::present::PresentSurface::identity(
+        crate::platform::presentation::PresentSurface::identity(
             // 记录当前物理 backbuffer 宽度。
             self.width,
             // 记录当前物理 backbuffer 高度。
@@ -22,7 +22,7 @@ impl GraphicsContextLifecycle for D3d12Context {
 }
 
 // 为尚未激活的 D3D12 registry row 固化 GPU recipe 类型形状。
-impl crate::native::present::GpuRecipeContext for D3d12Context {
+impl crate::platform::presentation::GpuRecipeContext for D3d12Context {
     // D3D12 在 thin RHI 完成前保持明确的未实现探测结果。
     fn rhi_context(
         // 借用当前 D3D12 owner。

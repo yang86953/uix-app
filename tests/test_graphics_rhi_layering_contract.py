@@ -47,7 +47,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         for path, source in rust_sources(DRAW_ROOT):
             # 使用子测试精确报告越界依赖。
             with self.subTest(path=str(path.relative_to(ROOT))):
-                self.assertNotIn("crate::native::present", source)
+                self.assertNotIn("crate::platform::presentation", source)
 
     # platform System 之外不得通过目标系统条件编译形成多套行为源码。
     def test_upper_systems_have_no_os_specific_source_branches(self) -> None:
@@ -168,7 +168,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取薄 RHI Device 契约。
         rhi = (ROOT / "src/platform/presentation/rhi/mod.rs").read_text(encoding="utf-8")
         # 读取唯一生产 GPU recipe owner。
-        owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        owner = (ROOT / "src/platform/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 Drawing GPU Module 私有的 FramePlan 启动探针。
         probe = (ROOT / "src/draw/backend/gpu/device_probe.rs").read_text(encoding="utf-8")
         # 读取 OpenGL Device Adapter 门面。
@@ -306,7 +306,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         # 读取两个 Adapter 把 Surface 事实冻结为 registry recipe 的创建边界。
         adapter_factories = "\n".join((ROOT / path).read_text(encoding="utf-8") for path in ("src/native/presentation/graphics/d3d11/adapter/mod.rs", "src/native/presentation/graphics/opengl/adapter/mod.rs"))
         # 读取 GPU owner 对静态 recipe 与实际 Surface 的一致性门禁。
-        gpu_owner = (ROOT / "src/native/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
+        gpu_owner = (ROOT / "src/platform/presentation/contracts/gpu_recipe_owner.rs").read_text(encoding="utf-8")
         # 读取 Drawing Renderer 私有的能力投影。
         raster_capabilities = (ROOT / "src/draw/backend/gpu/capabilities.rs").read_text(encoding="utf-8")
         # Device 与 Surface 必须拥有不同的类型身份。

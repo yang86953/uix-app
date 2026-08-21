@@ -1,7 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
 // 引入 fake context 需要实现的最小共享生命周期契约。
-use crate::native::present::GraphicsContextLifecycle;
+use crate::platform::presentation::GraphicsContextLifecycle;
 use std::cell::Cell;
 
 #[derive(Debug, Clone)]
@@ -56,9 +56,9 @@ impl GraphicsContextLifecycle for FakeGraphicsContext {
     }
 
     // 返回测试 context 的完整 drawable 元数据快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // fake 使用 identity DPR 和稳定零 generation。
-        crate::native::present::PresentSurface::identity(
+        crate::platform::presentation::PresentSurface::identity(
             // 读取测试记录的 drawable 宽度。
             self.state.width.get(),
             // 读取测试记录的 drawable 高度。

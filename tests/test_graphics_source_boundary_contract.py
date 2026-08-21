@@ -15,11 +15,22 @@ API_ADAPTER_ROOTS = {
 }
 
 TARGET_CFG = re.compile(
-    r"(?:#\s*\[\s*cfg|cfg!)\s*\([^\n]*(?:windows|unix|target_os|target_env)"
+    r"(?:#\s*\[\s*cfg|cfg!)\s*\([^\n]*"
+    r"(?:windows|unix|target_os|target_family|target_vendor|target_env)"
 )
 UPPER_API = re.compile(
     r"(?i)(?<![-\w])(?:vulkan|d3d11|dxgi|opengl|egl|wgl)(?![-\w])"
     r"|\bash::|\bvk::|\bglow::|\bkhronos_egl::|\bwindows(?:_sys)?::"
+)
+UPPER_CONCRETE_MODULE = re.compile(
+    r"(?i)(?<![A-Za-z0-9_])(?:linux|windows|macos|vulkan|d3d11|dx11|opengl)::"
+)
+UPPER_BACKEND_SELECTION = re.compile(
+    r"\b(?:GraphicsApi|GraphicsBackend)::"
+    r"(?:D3d11|Direct3D11|D3d12|Direct3D12|Vulkan|Metal|OpenGlEs)\b"
+)
+UPPER_OS_API_PATH = re.compile(
+    r"(?i)(?:^|[_-])(?:linux|windows|macos|vulkan|d3d11|dx11|opengl)(?:[_-]|$)"
 )
 PRIVATE_SURFACE_STATE = re.compile(
     r"\b(?:surface_generation|recreate_generation|recreate_pending|needs_recreate)\b"
@@ -45,6 +56,8 @@ AGENT_TRANSPORT_ADAPTERS = (
 # 平台启动输入合同不依赖具体实现；唯一组合根叶负责目标选择与对象所有权。
 PLATFORM_COMPOSITION_CONTRACT = SRC / "platform/composition.rs"
 PLATFORM_COMPOSITION_ROOT = SRC / "platform/composition_root.rs"
+# platform 到 concrete native 的源码依赖只允许这一处，禁止新增局部 allowlist。
+PLATFORM_NATIVE_DEPENDENCY_ALLOWLIST = frozenset({PLATFORM_COMPOSITION_ROOT})
 # Platform 根合同的唯一中立物理归属；native 不保留兼容文件。
 PLATFORM_ROOT = SRC / "platform/platform.rs"
 LEGACY_PLATFORM_ROOT = SRC / "native/platform.rs"
@@ -307,8 +320,9 @@ DISPLAY_IMPLEMENTERS = {
 }
 # 固定平台中立 CPU presenter 合同的唯一物理归属。
 PRESENTER_ROOT = SRC / "platform/presentation/presenter.rs"
-# native 只允许保留这个精确兼容重导出，不再拥有 trait 定义。
-LEGACY_PRESENTER_OWNER = SRC / "native/presentation/contracts/mod.rs"
+# 全部中立呈现合同的 platform 物理归属与已删除 native 旧目录。
+PRESENTATION_CONTRACT_ROOT = SRC / "platform/presentation/contracts/mod.rs"
+LEGACY_PRESENTATION_CONTRACT_ROOT = SRC / "native/presentation/contracts"
 PRESENTER_DEFINITION = re.compile(r"\btrait\s+IPresenter\b")
 LEGACY_PRESENTER_REFERENCE = re.compile(
     r"crate::native::present(?:::IPresenter|::\{[^}]*\bIPresenter\b)", re.DOTALL
@@ -360,6 +374,90 @@ PIPELINE_KINDS = (
     "Sector",
 )
 
+# 图形共同机制的生产定义必须各自只有一个物理权威。
+GRAPHICS_AUTHORITY_DEFINITIONS = (
+    (
+        "PipelineKind",
+        re.compile(r"\benum\s+PipelineKind\b"),
+        SRC / "platform/presentation/rhi/pipeline.rs",
+    ),
+    (
+        "GraphicsDevice",
+        re.compile(r"\btrait\s+GraphicsDevice\b"),
+        SRC / "platform/presentation/rhi/mod.rs",
+    ),
+    (
+        "PresentTestResult",
+        re.compile(r"\benum\s+PresentTestResult\b"),
+        PRESENTATION_CONTRACT_ROOT,
+    ),
+    (
+        "GraphicsContextCaps",
+        re.compile(r"\bstruct\s+GraphicsContextCaps\b"),
+        PRESENTATION_CONTRACT_ROOT,
+    ),
+    (
+        "NativeSurfaceHandle",
+        re.compile(r"\bstruct\s+NativeSurfaceHandle\b"),
+        PRESENTATION_CONTRACT_ROOT,
+    ),
+    (
+        "GraphicsSurface",
+        re.compile(r"\btrait\s+GraphicsSurface\b"),
+        SRC / "platform/presentation/rhi/mod.rs",
+    ),
+    (
+        "RhiSurfaceLifecycle",
+        re.compile(r"\bstruct\s+RhiSurfaceLifecycle\b"),
+        SRC / "platform/presentation/rhi/surface_lifecycle.rs",
+    ),
+    (
+        "RhiSurfaceRecreateReason",
+        re.compile(r"\benum\s+RhiSurfaceRecreateReason\b"),
+        SRC / "platform/presentation/rhi/surface_lifecycle.rs",
+    ),
+    (
+        "RhiPresentTransaction",
+        re.compile(r"\bstruct\s+RhiPresentTransaction\b"),
+        SRC / "platform/presentation/rhi/present_transaction.rs",
+    ),
+    (
+        "RhiBlurPassGeometry",
+        re.compile(r"\bstruct\s+RhiBlurPassGeometry\b"),
+        SRC / "platform/presentation/rhi/blur.rs",
+    ),
+    (
+        "CONSISTENCY_PIPELINES",
+        re.compile(r"\bconst\s+CONSISTENCY_PIPELINES\b"),
+        SRC / "draw/backend/rhi_renderer_consistency.rs",
+    ),
+    (
+        "ConsistencySample",
+        re.compile(r"\bstruct\s+ConsistencySample\b"),
+        SRC / "draw/backend/rhi_renderer_consistency.rs",
+    ),
+    (
+        "canonical_scenes",
+        re.compile(r"\bfn\s+canonical_scenes\b"),
+        SRC / "draw/backend/rhi_renderer_consistency.rs",
+    ),
+    (
+        "validate_canonical_scenes",
+        re.compile(r"\bfn\s+validate_canonical_scenes\b"),
+        SRC / "draw/backend/rhi_renderer_consistency.rs",
+    ),
+    (
+        "blur_subregion_scenario",
+        re.compile(r"\bfn\s+blur_subregion_scenario\b"),
+        SRC / "draw/backend/rhi_renderer_consistency.rs",
+    ),
+    (
+        "RecoveryDriver",
+        re.compile(r"\bstruct\s+RecoveryDriver\b"),
+        SRC / "draw/renderer/recovery_driver.rs",
+    ),
+)
+
 
 def rust_files(root: Path) -> tuple[Path, ...]:
     """返回稳定排序的生产 Rust 文件集合。"""
@@ -407,13 +505,79 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
     """锁定共享上层、platform RHI 与原生 adapter 的单向依赖。"""
 
     def test_upper_sources_are_one_os_and_api_neutral_tree(self) -> None:
+        observed_sources = tuple(
+            sorted(path for root in UPPER_ROOTS for path in rust_files(root))
+        )
+        expected_sources = tuple(
+            sorted(
+                path
+                for path in SRC.rglob("*.rs")
+                if any(path.is_relative_to(root) for root in UPPER_ROOTS)
+            )
+        )
+        self.assertEqual(observed_sources, expected_sources)
+
         for root in UPPER_ROOTS:
             for path in rust_files(root):
                 text = source(path)
+                clean = without_comments(text)
+                path_parts = path.relative_to(root).parts
                 with self.subTest(source=relative(path)):
-                    self.assertIsNone(TARGET_CFG.search(text))
-                    self.assertIsNone(UPPER_API.search(text))
-                    self.assertIsNone(NATIVE_REFERENCE.search(text))
+                    self.assertIsNone(TARGET_CFG.search(clean))
+                    self.assertIsNone(UPPER_API.search(clean))
+                    self.assertIsNone(UPPER_CONCRETE_MODULE.search(clean))
+                    self.assertIsNone(UPPER_BACKEND_SELECTION.search(clean))
+                    self.assertIsNone(NATIVE_REFERENCE.search(clean))
+                    self.assertFalse(
+                        any(
+                            UPPER_OS_API_PATH.search(Path(part).stem)
+                            for part in path_parts
+                        )
+                    )
+
+    def test_ui_and_app_reach_graphics_only_through_drawing(self) -> None:
+        # UI 的绘制上下文只封装 Drawing 的 PaintContext，不取得 RHI 角色。
+        ui_paint = source(SRC / "ui/widget_runtime/paint_context.rs")
+        self.assertIn(
+            "use crate::draw::painting::PaintContext as DrawPaintContext;", ui_paint
+        )
+        for root in (SRC / "ui", SRC / "app"):
+            for path in rust_files(root):
+                with self.subTest(upper_rhi_dependency=relative(path)):
+                    self.assertNotIn(
+                        "crate::platform::presentation::rhi", without_comments(source(path))
+                    )
+
+        # Drawing 的 FramePlan 只经 platform Device/Surface 合同完成提交与呈现。
+        execution = source(SRC / "draw/backend/frame_plan_execution.rs")
+        self.assertIn("FramePlanExecutor::for_surface", execution)
+        self.assertIn(".present(RhiPresentTransaction::new(", execution)
+
+        # Vulkan 只实现同一 Surface 合同，不向上层提供旁路入口。
+        vulkan_surface = source(
+            SRC / "native/presentation/graphics/vulkan/adapter/context/rhi_surface.rs"
+        )
+        self.assertIn("impl GraphicsSurface for VulkanContext", vulkan_surface)
+        self.assertIn("crate::platform::presentation::rhi", vulkan_surface)
+
+    def test_platform_has_one_concrete_native_dependency_allowlist(self) -> None:
+        locations = frozenset(
+            path
+            for path in rust_files(SRC / "platform")
+            if NATIVE_REFERENCE.search(without_comments(source(path)))
+        )
+        self.assertEqual(locations, PLATFORM_NATIVE_DEPENDENCY_ALLOWLIST)
+
+    def test_graphics_shared_mechanisms_have_one_source_authority(self) -> None:
+        all_sources = {
+            path: without_comments(source(path)) for path in rust_files(SRC)
+        }
+        for name, definition, owner in GRAPHICS_AUTHORITY_DEFINITIONS:
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(graphics_authority=name):
+                self.assertEqual(locations, [owner])
 
     def test_agent_transport_has_one_platform_owned_source_tree(self) -> None:
         observed: set[str] = set()
@@ -897,21 +1061,16 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 self.assertIn(implementation, implementation_source)
 
     def test_platform_presenter_is_the_only_source_definition(self) -> None:
-        # trait 只能由 platform leaf 定义，native 仅保留精确兼容重导出。
+        # trait 只能由 platform leaf 定义，native 不保留合同目录或兼容路径。
         rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
         definitions = [
             path for path in rust_sources if PRESENTER_DEFINITION.search(source(path))
         ]
         self.assertEqual(definitions, [PRESENTER_ROOT])
-        self.assertIn(
-            "pub(crate) use crate::platform::presentation::IPresenter;",
-            source(LEGACY_PRESENTER_OWNER),
-        )
+        self.assertFalse(LEGACY_PRESENTATION_CONTRACT_ROOT.exists())
 
         # 上层、窗口协议及所有 native/test 实现必须直接消费 platform 权威路径。
         for path in rust_sources:
-            if path == LEGACY_PRESENTER_OWNER:
-                continue
             with self.subTest(legacy_presenter_reference=relative(path)):
                 self.assertIsNone(LEGACY_PRESENTER_REFERENCE.search(source(path)))
 
@@ -969,6 +1128,12 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 with self.subTest(implementation=relative(path)):
                     self.assertTrue(any(path.is_relative_to(root) for root in API_ADAPTER_ROOTS.values()))
 
+        # 每个生产 API adapter 只能实现一份 Device 与一份 Surface 角色。
+        for name, root in API_ADAPTER_ROOTS.items():
+            adapter = "\n".join(without_comments(source(path)) for path in rust_files(root))
+            with self.subTest(adapter_role_implementations=name):
+                self.assertEqual(len(implementation.findall(adapter)), 2)
+
     def test_vulkan_first_and_gpu_recipe_never_selects_pixel_upload(self) -> None:
         for name in ("linux", "windows", "macos"):
             path = SRC / f"native/factory/registry_{name}.rs"
@@ -1015,9 +1180,11 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             with self.subTest(harness=relative(path)):
                 self.assertIn("canonical_scenes", text)
                 self.assertIn("validate_canonical_scenes", text)
+                self.assertIn("blur_subregion_scenario", text)
                 self.assertIn("sample.tolerance.amount()", text)
                 self.assertNotIn("CONSISTENCY_PIPELINES", text)
                 self.assertNotRegex(text, r"fn\s+canonical_scenes\s*\(")
+                self.assertNotRegex(text, r"fn\s+blur_subregion_scenario\s*\(")
 
     def test_all_three_adapters_consume_shared_surface_lifecycle(self) -> None:
         for name, root in API_ADAPTER_ROOTS.items():
@@ -1035,8 +1202,10 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "src/ui",
             "src/draw",
             "src/platform/presentation/rhi",
+            "src/platform/composition_root.rs",
             "src/native/presentation/graphics",
-            "UI → Drawing Engine → platform 通用 RHI → native 原生 adapter",
+            "UI → Drawing Engine → platform 通用 RHI/Surface 合同 → native 原生 adapter",
+            "共同构成 platform 层",
             "真实 Windows D3D11 尚未执行",
         ):
             with self.subTest(marker=marker):

@@ -11,7 +11,7 @@ use crate::platform::presentation::rhi::{
     RhiSurfaceResizeTransaction,
 };
 // 引入共享 present damage 类型。
-use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
+use crate::platform::presentation::{GraphicsContextLifecycle, PresentDamage};
 // 引入窗口 drawable 尺寸换算辅助函数。
 use crate::native::presentation::graphics::platform::windows::drawable_size_from_hdc;
 // 引入项目统一错误类型。

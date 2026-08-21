@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::present::validate_pixel_buffer;
+use crate::platform::presentation::validate_pixel_buffer;
 use crate::platform::display::IDisplay;
 use crate::platform::platform::Platform;
 use crate::platform::presentation::IPresenter;

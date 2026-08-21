@@ -8,7 +8,7 @@ use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
-use crate::native::present::{
+use crate::platform::presentation::{
     GraphicsContextLifecycle, PixelUploadSurface, PresentDamage, validate_pixel_buffer,
 };
 
@@ -52,9 +52,9 @@ impl GraphicsContextLifecycle for MetalPixelUploadContext {
     }
 
     // 返回 CAMetalLayer PixelUpload 的完整 drawable 快照。
-    fn present_surface(&self) -> crate::native::present::PresentSurface {
+    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // Metal PixelUpload 当前不声明同尺寸重建代际，保留零 generation。
-        crate::native::present::PresentSurface::identity(
+        crate::platform::presentation::PresentSurface::identity(
             // 记录当前 layer 上传宽度。
             self.width,
             // 记录当前 layer 上传高度。

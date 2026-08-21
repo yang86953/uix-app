@@ -54,7 +54,7 @@
             // 遮挡探测本身应成功返回状态。
             .expect("present test occlusion is a recoverable probe result");
         // 调度器必须继续保持 Occluded idle。
-        assert_eq!(result, crate::native::present::PresentTestResult::Occluded);
+        assert_eq!(result, crate::platform::presentation::PresentTestResult::Occluded);
     }
 
     // 验证最终 present 的设备重置进入统一 device-lost 恢复路径。

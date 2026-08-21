@@ -8,9 +8,9 @@
 //!
 //! | 归属 | 内容 |
 //! |------|------|
-//! | [`present`] | 迁移中的原生 recipe 生命周期与私有 `GraphicsApi`；中立 `IPresenter` 由 `platform::presentation` 拥有，`PlatformWindow` 只借用 presenter |
 //! | [`factory`] | 原生图形 recipe 登记与 `available_memory_bytes` 诊断查询；平台聚合改由 `platform::composition_root` 唯一组装 |
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
+//! | [`presentation`] | concrete 图形 API、surface 与 presenter Adapter；中立合同由 `platform::presentation` 拥有 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
 //!
 //! 四个私有 Module（目标边界见仓库 `docs/架构/系统列表.md`）：
@@ -27,9 +27,6 @@
 pub(crate) mod backends;
 pub(crate) mod capabilities;
 pub(crate) mod factory;
-// 保留 `native::present` 逻辑路径，物理实现归入 presentation 契约组。
-#[path = "presentation/contracts/mod.rs"]
-pub(crate) mod present;
 pub(crate) mod presentation;
 #[cfg(feature = "test-harness")]
 // 将测试支撑实现统一存放在根 tests 目录。

@@ -12,7 +12,7 @@
         SubmissionHandle, SurfaceFrame, SurfaceToken, TextureCopy,
     };
     // 引入类型化 GPU context 与 capability。
-    use crate::native::present::{
+    use crate::platform::presentation::{
         GpuRecipeContext, GraphicsApi, GraphicsContextCaps, GraphicsContextLifecycle,
     };
 

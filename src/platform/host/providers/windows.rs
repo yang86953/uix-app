@@ -209,7 +209,7 @@ pub(crate) fn open_files(
     // 编码 OPENFILENAMEW 要求的双 NUL 过滤器列表。
     let filters = crate::platform::file_dialog::windows_filters(filters);
     // 调用 crate 内部 Win32 组件并传播 typed failure。
-    crate::native::backends::windows::file_dialog::choose_files(title, &filters)
+    crate::platform::composition_root::choose_native_files(title, &filters)
         // 把 UTF-8 内部路径复制为平台公开的 owned PathBuf。
         .map(|paths| {
             // 取消保持成功空值。
@@ -238,7 +238,7 @@ pub(crate) fn save_file(
     // 编码 OPENFILENAMEW 要求的双 NUL 过滤器列表。
     let filters = crate::platform::file_dialog::windows_filters(filters);
     // 调用 crate 内部 Win32 组件并传播 typed failure。
-    crate::native::backends::windows::file_dialog::choose_save_file(title, &filters)
+    crate::platform::composition_root::choose_native_save_file(title, &filters)
         // 取消保持空值，确认结果转换为 owned PathBuf。
         .map(|path| path.map(PathBuf::from))
 }
@@ -246,7 +246,7 @@ pub(crate) fn save_file(
 // 把公开目录选择契约适配到 Win32 shell 组件。
 pub(crate) fn open_folder(title: &str) -> Result<Option<PathBuf>> {
     // 调用 crate 内部 Win32 组件并转换 owned 路径。
-    crate::native::backends::windows::file_dialog::choose_folder(title)
+    crate::platform::composition_root::choose_native_folder(title)
         // 取消保持空值，确认结果转换为 owned PathBuf。
         .map(|path| path.map(PathBuf::from))
 }
