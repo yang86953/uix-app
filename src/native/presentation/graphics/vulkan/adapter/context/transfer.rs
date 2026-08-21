@@ -47,6 +47,7 @@ impl VulkanContext {
             self.physical_device,
             requirements.memory_type_bits,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+            "host-visible coherent staging",
         ) {
             Ok(index) => index,
             Err(error) => {
@@ -304,11 +305,12 @@ impl VulkanContext {
     }
 }
 
-fn find_memory_type(
+pub(super) fn find_memory_type(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
     type_bits: u32,
     flags: vk::MemoryPropertyFlags,
+    purpose: &'static str,
 ) -> Result<u32> {
     // SAFETY: instance 存活且 physical_device 有效，查询内存属性为只读操作。
     let props = unsafe { instance.get_physical_device_memory_properties(physical_device) };
@@ -323,7 +325,7 @@ fn find_memory_type(
     }
     Err(Error::new(
         Errc::PlatformError,
-        "VulkanContext: no host-visible coherent staging memory type",
+        format!("VulkanContext: no {purpose} memory type"),
     ))
 }
 
