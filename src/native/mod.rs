@@ -9,7 +9,7 @@
 //! | 归属 | 内容 |
 //! |------|------|
 //! | [`present`] | 迁移中的原生 recipe 生命周期与私有 `GraphicsApi`；中立 `IPresenter` 由 `platform::presentation` 拥有，`PlatformWindow` 只借用 presenter |
-//! | [`factory`] | 组合根：`create_platform_with_pending` / `available_memory_bytes` 与 `GraphicsRecipe` 登记（只负责选择、创建、注入，不拥有领域规则） |
+//! | [`factory`] | 原生图形 recipe 登记与 `available_memory_bytes` 诊断查询；平台聚合改由 `platform::composition_root` 唯一组装 |
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
 //!
@@ -23,7 +23,7 @@
 //! | `diagnostics` | runtime 级观察、报告与恢复协调 | 无（见 `crate::diagnostics`） |
 //! | `agent_transport` | 可选同用户本机 IPC 与 discovery | `windowing` / `diagnostics`（feature `agent-control`） |
 //!
-//! 业务流向由 System 编排（`create_platform_with_pending` 与公开门面），Module 之间除上表
+//! 业务流向由 Platform System 组合根与公开门面编排，Module 之间除上表
 //! 窄契约外零依赖；禁止 Module 直接引用、持有、发现或回调兄弟 Module。
 #[cfg(feature = "agent-control")]
 pub(crate) mod agent_transport;

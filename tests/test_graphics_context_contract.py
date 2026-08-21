@@ -165,8 +165,12 @@ class GraphicsContextContractTests(unittest.TestCase):
 
     # 校验生产 context 构造只接受完整 recipe 与运行时故障队列。
     def test_internal_context_factory_has_no_single_backend_shortcut(self) -> None:
-        # 读取 native factory 的公开组合入口。
+        # 读取只负责图形 recipe 的 native factory。
         factory = (ROOT / "src/native/factory/mod.rs").read_text(encoding="utf-8")
+        # 读取唯一的平台聚合组合根。
+        platform_composition = (ROOT / "src/platform/composition_root.rs").read_text(
+            encoding="utf-8"
+        )
         # 读取 registry 的 recipe 校验与构造实现。
         registry = (ROOT / "src/native/factory/registry.rs").read_text(encoding="utf-8")
         # 读取 presentation 侧的 adapter candidate 交接契约。
@@ -189,10 +193,13 @@ class GraphicsContextContractTests(unittest.TestCase):
         recipe_owner_contract = recipe_owner[: recipe_owner.index("#[cfg(test)]")]
         # 内部 factory 不得恢复只接收 GraphicsApi 的兼容入口。
         self.assertNotIn("fn create_gpu_context_with_backend", factory)
+        # native 图形 factory 不得继续拥有平台聚合创建入口。
+        self.assertNotIn("fn create_platform", factory)
         # 平台组合根不得静默创建脱离 runtime 的空故障队列。
-        self.assertNotIn("fn create_platform()", factory)
-        # 正式平台构造必须显式接收 runtime-scoped 故障队列。
-        self.assertIn("fn create_platform_with_pending", factory)
+        self.assertNotIn("fn create_platform()", platform_composition)
+        # 正式平台构造必须显式消费 runtime-scoped 启动选项。
+        self.assertIn("fn create_platform_with_pending", platform_composition)
+        self.assertIn("options: PendingNativeOptions", platform_composition)
         # registry 不得恢复选择同一 API 首行的 raw surface 构造入口。
         self.assertNotIn("fn try_create_gpu_context", registry)
         # registry 不得把多行 recipe 候选压缩成有损 backend-only 列表。

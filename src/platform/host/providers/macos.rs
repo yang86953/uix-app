@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::core::{Errc, Error, Result};
-use crate::native::backends::macos::platform::MacosPlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
 use crate::platform::platform::Platform as NativePlatform;
+use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 // 引入跨平台通知身份与能力状态契约。
 use crate::platform::services::{
     AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,
@@ -63,7 +63,15 @@ pub(crate) fn memory_info() -> Result<MemoryInfo> {
 }
 
 pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
-    let platform = MacosPlatform::new(crate::diagnostics::PendingFailureQueue::new());
+    let pending_native = PendingNativeOptions::new(crate::diagnostics::PendingFailureQueue::new());
+    let platform: Box<dyn NativePlatform> =
+        create_platform_with_pending(pending_native).map_err(|error| {
+            Error::new(
+                error.code(),
+                format!("Platform::displays: {}", error.message()),
+            )
+            .with_source(error)
+        })?;
     let display = platform.display();
     let count = usize::try_from(display.count()?).map_err(|_| {
         Error::new(

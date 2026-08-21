@@ -47,8 +47,8 @@ use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilde
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
-// recipe 装配输入经 platform 公开面消费；create_platform_with_pending 保留组合根直调。
-use crate::native::factory::create_platform_with_pending;
+// Application 只把运行时故障队列交给平台中立入口，不选择具体原生后端。
+use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 use crate::platform::platform::Platform;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
@@ -472,7 +472,8 @@ impl App {
             }
         });
 
-        let mut platform = match create_platform_with_pending(diagnostics.pending_failure_queue()) {
+        let pending_native = PendingNativeOptions::new(diagnostics.pending_failure_queue());
+        let mut platform = match create_platform_with_pending(pending_native) {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!("create_platform 失败: {:?}", e);
