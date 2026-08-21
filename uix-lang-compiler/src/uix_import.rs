@@ -60,7 +60,7 @@ struct ResolvedUnit {
 }
 
 // 保存递归解析期间的确定状态与唯一缓存。
-struct ImportResolver {
+struct ImportResolver<'a> {
     // 保存当前深度优先解析栈以拒绝循环。
     stack: Vec<PathBuf>,
     // 保存同一展开内已经解析的文件单元。
@@ -71,6 +71,8 @@ struct ImportResolver {
     tracked_set: BTreeSet<PathBuf>,
     // 保存与解析使用同一读取事实的源码图构建器。
     source_graph: SourceGraphBuilder,
+    // 保存 LSP 会话提供的未落盘文件快照；正式 AOT 传入空集合。
+    overlays: &'a BTreeMap<PathBuf, String>,
 }
 
 // 保存已合并声明与各命名空间来源。
@@ -99,8 +101,16 @@ enum DeclarationKind {
 
 // 相对一个真实 .uix 根文件解析完整编译单元。
 pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagnostic> {
+    resolve_file_with_overlays(path, &BTreeMap::new())
+}
+
+// 相对真实路径解析文件，同时让编辑器内存快照覆盖磁盘内容。
+pub(crate) fn resolve_file_with_overlays(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+) -> Result<ResolvedDocument, ImportDiagnostic> {
     // 先取得根文件规范路径，避免同一文件通过不同相对路径绕过循环检测。
-    let canonical = fs::canonicalize(path).map_err(|error| {
+    let canonical = canonical_or_overlay(path, overlays).map_err(|error| {
         // 根文件尚无源码跨度，使用稳定的一行一列入口位置。
         source_error(
             // 保留用户解析后的实际路径。
@@ -114,7 +124,7 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
         )
     })?;
     // 为本次宏展开创建唯一 resolver，不跨调用共享状态。
-    let mut resolver = ImportResolver::new(&canonical);
+    let mut resolver = ImportResolver::new(&canonical, overlays);
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
     // 把带来源声明投影回既有纯 Document 契约。
@@ -184,15 +194,16 @@ pub(crate) fn reject_inline_imports(document: &Document) -> Result<(), Diagnosti
 }
 
 // 实现文件单元递归读取、缓存与循环检测。
-impl ImportResolver {
+impl<'a> ImportResolver<'a> {
     // 为一个真实根文件创建独占源码图解析器。
-    fn new(root: &Path) -> Self {
+    fn new(root: &Path, overlays: &'a BTreeMap<PathBuf, String>) -> Self {
         Self {
             stack: Vec::new(),
             cache: BTreeMap::new(),
             tracked_files: Vec::new(),
             tracked_set: BTreeSet::new(),
             source_graph: SourceGraphBuilder::new(root),
+            overlays,
         }
     }
 
@@ -252,19 +263,23 @@ impl ImportResolver {
             self.tracked_files.push(path.to_path_buf());
         }
         // 读取完整 UTF-8 源码。
-        let source = fs::read_to_string(path).map_err(|error| {
-            // 把文件系统错误归到具体目标文件。
-            source_error(
-                // 展示规范来源。
-                path,
-                // 读取前没有更精确源码位置。
-                entry_span(),
-                // 保留系统原因。
-                format!("无法读取 UIX 文件 {}：{error}", path.display()),
-                // 给出权限与 UTF-8 修复方向。
-                "确认文件存在、可读且为 UTF-8",
-            )
-        })?;
+        let source = if let Some(source) = overlay_source(self.overlays, path) {
+            source.to_owned()
+        } else {
+            fs::read_to_string(path).map_err(|error| {
+                // 把文件系统错误归到具体目标文件。
+                source_error(
+                    // 展示规范来源。
+                    path,
+                    // 读取前没有更精确源码位置。
+                    entry_span(),
+                    // 保留系统原因。
+                    format!("无法读取 UIX 文件 {}：{error}", path.display()),
+                    // 给出权限与 UTF-8 修复方向。
+                    "确认文件存在、可读且为 UTF-8",
+                )
+            })?
+        };
         // SourceGraph 与 parser 消费完全相同的不可变源码快照。
         self.source_graph.insert_file(path, &source);
         // 使用既有纯 parser 解析单文件事实。
@@ -412,7 +427,7 @@ impl ImportResolver {
             base.join(&import.path)
         };
         // 取得规范路径并暴露缺失文件原因。
-        let canonical = fs::canonicalize(&requested).map_err(|error| {
+        let canonical = canonical_or_overlay(&requested, self.overlays).map_err(|error| {
             // 错误归属 import 所在文件与指令。
             import_error(
                 // 展示 importing 文件。
@@ -462,6 +477,56 @@ impl ImportResolver {
         // 选择公开组件及其本地组件依赖。
         select_imported_declarations(importer, import, &unit)
     }
+}
+
+// 优先使用真实规范路径；未落盘文件只允许命中明确的 LSP overlay。
+fn canonical_or_overlay(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+) -> std::io::Result<PathBuf> {
+    match fs::canonicalize(path) {
+        Ok(canonical) => Ok(canonical),
+        Err(error) => {
+            let normalized = normalized_overlay_path(path);
+            if overlay_source(overlays, &normalized).is_some() {
+                Ok(normalized)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+// 按规范或父目录规范化身份查询会话快照。
+fn overlay_source<'a>(overlays: &'a BTreeMap<PathBuf, String>, path: &Path) -> Option<&'a str> {
+    overlays
+        .get(path)
+        .or_else(|| {
+            overlays
+                .iter()
+                .find(|(candidate, _)| normalized_overlay_path(candidate) == path)
+                .map(|(_, source)| source)
+        })
+        .map(String::as_str)
+}
+
+// 为尚不存在的文件使用已存在父目录形成稳定绝对身份。
+fn normalized_overlay_path(path: &Path) -> PathBuf {
+    if let Ok(canonical) = fs::canonicalize(path) {
+        return canonical;
+    }
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|directory| directory.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    };
+    absolute
+        .parent()
+        .and_then(|parent| fs::canonicalize(parent).ok())
+        .and_then(|parent| absolute.file_name().map(|name| parent.join(name)))
+        .unwrap_or(absolute)
 }
 
 // 实现具名声明的跨文件合并与重复诊断。

@@ -160,11 +160,12 @@ fn finish_output(
     entry_kind: &str,
     input: &LitStr,
 ) -> TokenStream {
-    if target == CompileTarget::Items {
-        return tracked_items(output.tokens, &output.tracked_files, input);
-    }
-    let tracked = tracked_expression(output.tokens, &output.tracked_files, input);
-    generated_expression(tracked, source_name, entry_kind, input)
+    let tracked = if target == CompileTarget::Items {
+        tracked_items(output.tokens, &output.tracked_files, input)
+    } else {
+        tracked_expression(output.tokens, &output.tracked_files, input)
+    };
+    generated_expression(tracked, source_name, entry_kind, &output.source_map, input)
 }
 
 // 把预生成表达式写盘并把文件系统错误转换为入口诊断。
@@ -172,9 +173,10 @@ fn generated_expression(
     generated: TokenStream,
     source_name: &str,
     entry_kind: &str,
+    source_map: &uix_lang_compiler::source_map::SourceMap,
     input: &LitStr,
 ) -> TokenStream {
-    match emit_generated_expression(generated, source_name, entry_kind, input) {
+    match emit_generated_expression(generated, source_name, entry_kind, source_map, input) {
         Ok(included) => included,
         Err(error) => entry_error(
             source_name,
@@ -309,14 +311,19 @@ mod tests {
             expand_app_file_at(&app_input, &repository_root),
             expand_items_file_at(&input, &repository_root),
         ];
-        for (index, output) in outputs.into_iter().enumerate() {
+        for output in outputs {
             let tokens = output.to_string();
-            if index < 2 {
-                assert!(tokens.contains("include !"), "{tokens}");
-            } else {
-                assert_eq!(tokens.matches("include_str").count(), 3, "{tokens}");
-            }
+            assert!(tokens.contains("include !"), "{tokens}");
+            let quote_start = tokens.find('"').expect("include! 必须包含生成路径") + 1;
+            let quote_end = tokens[quote_start..]
+                .find('"')
+                .map(|offset| quote_start + offset)
+                .expect("生成路径必须闭合");
+            let generated = std::fs::read_to_string(&tokens[quote_start..quote_end])
+                .expect("生成文件必须可读取");
+            assert_eq!(generated.matches("include_str").count(), 3, "{generated}");
             assert!(!tokens.contains("parse_document"));
+            assert!(!generated.contains("parse_document"));
         }
     }
 }
