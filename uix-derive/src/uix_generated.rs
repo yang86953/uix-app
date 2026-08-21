@@ -10,6 +10,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 // 引入字符串字面量语法节点。
 use syn::LitStr;
+// 引入共享 Emitter 生成的稳定源码映射。
+use uix_lang_compiler::source_map::SourceMap;
 
 // 保存生成代码目录名称。
 const GENERATED_DIRECTORY: &str = "uix-lang-gen";
@@ -24,6 +26,8 @@ pub(crate) fn emit_generated_expression(
     source_name: &str,
     // 接收 View 或 App 入口类别。
     entry_kind: &str,
+    // 接收与原始编译令牌对应的 UIX SourceMap。
+    source_map: &SourceMap,
     // 接收宏调用字面量以保持 include! 调用跨度。
     input: &LitStr,
 ) -> Result<TokenStream, String> {
@@ -36,13 +40,34 @@ pub(crate) fn emit_generated_expression(
     // 构造当前文档与入口类别唯一的稳定文件路径。
     let path = generated_file_path(source_name, entry_kind, &manifest_dir, &generated);
     // 把内部位置令牌转换为真实 UIX 来源注释。
-    let rendered = render_generated_source(&generated, source_name)?;
+    let rendered = render_generated_source(&generated, source_map)?;
     // 仅在内容变化时写盘，保持增量构建时间戳稳定。
-    let _written = write_if_changed(&path, rendered.as_bytes())?;
+    let _written = write_if_changed(&path, rendered.source.as_bytes())?;
+    // SourceMap 与生成 Rust 文件使用同一稳定主名并独立落盘。
+    let map_path = path.with_extension("uixmap.json");
+    let map = render_source_map(source_map, &rendered.mappings)?;
+    let _map_written = write_if_changed(&map_path, &map)?;
     // 把绝对生成路径锚定到宏调用跨度。
     let path_literal = LitStr::new(&path.to_string_lossy(), input.span());
-    // 返回由 rustc 继续展开的稳定 include! 表达式。
-    Ok(quote! { include!(#path_literal) })
+    // 返回由 rustc 继续展开的稳定 include! 入口；items 位置必须自带分号。
+    if entry_kind == "items" {
+        Ok(quote! { include!(#path_literal); })
+    } else {
+        Ok(quote! { include!(#path_literal) })
+    }
+}
+
+// 保存生成 Rust 文本及其中已换算到最终文件字节位置的映射。
+struct RenderedGenerated {
+    source: String,
+    mappings: Vec<RenderedMapping>,
+}
+
+// 保存最终生成文件中的半开范围及其共享 SourceMap 条目序号。
+struct RenderedMapping {
+    generated_start: usize,
+    generated_end: usize,
+    source_index: usize,
 }
 
 // 构造位于 uix-derive OUT_DIR 下的确定生成文件路径。
@@ -89,11 +114,15 @@ fn generated_file_path(
 }
 
 // 把内部表达式标记替换为可读行映射注释。
-fn render_generated_source(generated: &str, source_name: &str) -> Result<String, String> {
-    // 清理可能破坏单行注释的来源控制字符。
-    let source_name = source_name.replace(['\r', '\n'], "?");
+fn render_generated_source(
+    generated: &str,
+    source_map: &SourceMap,
+) -> Result<RenderedGenerated, String> {
     // 为生成文件写入稳定说明头。
     let mut rendered = String::from("// 此文件由 uix-derive 生成，请勿手工修改。\n");
+    let content_start = rendered.len();
+    let mut mappings: Vec<RenderedMapping> = Vec::new();
+    let mut marker_index = 0usize;
     // 保存尚未复制的令牌文本起点。
     let mut cursor = 0;
     // 按源码顺序替换全部内部位置令牌。
@@ -102,6 +131,10 @@ fn render_generated_source(generated: &str, source_name: &str) -> Result<String,
         let start = cursor + relative;
         // 复制标记前的普通 Rust 令牌。
         rendered.push_str(&generated[cursor..start]);
+        // 前一标记的映射在下一条来源注释前结束。
+        if let Some(previous) = mappings.last_mut() {
+            previous.generated_end = rendered.len();
+        }
         // 解析标记中编码的一基行号。
         let numbers = start + MARKER_PREFIX.len();
         // 查找行列分隔下划线。
@@ -134,17 +167,73 @@ fn render_generated_source(generated: &str, source_name: &str) -> Result<String,
             .parse::<usize>()
             // 转换为稳定内部错误。
             .map_err(|_| "UIX 生成代码包含非法来源列号".to_string())?;
+        let source_index = marker_index.min(source_map.entries().len().saturating_sub(1));
+        let source_entry = source_map
+            .entries()
+            .get(source_index)
+            .ok_or_else(|| "UIX Emitter 返回了空 SourceMap".to_string())?;
+        let mapped_name = source_entry.source_name.replace(['\r', '\n'], "?");
         // 写入位于对应 Rust 表达式前的可读来源注释。
-        rendered.push_str(&format!("\n// [uix-lang] {source_name}:{line}:{column}\n"));
+        rendered.push_str(&format!("\n// [uix-lang] {mapped_name}:{line}:{column}\n"));
+        mappings.push(RenderedMapping {
+            generated_start: rendered.len(),
+            generated_end: 0,
+            source_index,
+        });
+        marker_index += 1;
         // 下一轮从已消费标记标识符之后继续。
         cursor = column_end;
     }
     // 复制最后一个标记之后的剩余 Rust 令牌。
     rendered.push_str(&generated[cursor..]);
+    if let Some(previous) = mappings.last_mut() {
+        previous.generated_end = rendered.len();
+    } else if !source_map.entries().is_empty() {
+        mappings.push(RenderedMapping {
+            generated_start: content_start,
+            generated_end: rendered.len(),
+            source_index: 0,
+        });
+    }
     // 保证生成文件以换行结束，便于稳定查看与诊断。
     rendered.push('\n');
     // 返回可直接由 include! 解析的 Rust 源码。
-    Ok(rendered)
+    Ok(RenderedGenerated {
+        source: rendered,
+        mappings,
+    })
+}
+
+// 把最终生成文件范围与共享语义来源编码为稳定 JSON sidecar。
+fn render_source_map(
+    source_map: &SourceMap,
+    mappings: &[RenderedMapping],
+) -> Result<Vec<u8>, String> {
+    let entries = mappings
+        .iter()
+        .filter_map(|mapping| {
+            source_map
+                .entries()
+                .get(mapping.source_index)
+                .map(|source| {
+                    serde_json::json!({
+                        "generated_start": mapping.generated_start,
+                        "generated_end": mapping.generated_end,
+                        "source_id": source.source_id.value(),
+                        "source_name": &source.source_name,
+                        "source_start": source.source_start,
+                        "line": source.line,
+                        "column": source.column,
+                        "semantic_node_id": &source.semantic_node_id,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_vec_pretty(&serde_json::json!({
+        "version": 1,
+        "entries": entries,
+    }))
+    .map_err(|error| format!("无法序列化 UIX SourceMap：{error}"))
 }
 
 // 仅在内容变化时创建目录并写入生成文件。
@@ -223,20 +312,28 @@ mod tests {
     use proc_macro2::Span;
     // 引入父模块私有辅助。
     use super::*;
+    use uix_lang_compiler::{CompileTarget, compile_inline};
 
     // 验证内部来源令牌会变成紧邻表达式的映射注释。
     #[test]
     fn renders_uix_source_comments_before_expressions() {
-        // 构造与表达式生成器一致的内部令牌文本。
-        let generated = "{ __uix_source_marker_12_5 missing_name }";
+        // 通过共享 Compiler System 取得真实令牌与 SourceMap。
+        let output = compile_inline(
+            "<Text>{missing_name}</Text>",
+            "src/main.uix",
+            CompileTarget::View,
+        )
+        .expect("测试 UIX 必须可编译");
+        let generated = output.tokens.to_string();
         // 执行确定性源码渲染。
-        let rendered = render_generated_source(generated, "src/main.uix")
+        let rendered = render_generated_source(&generated, &output.source_map)
             // 内部标记必须成功转换。
             .expect("来源标记应成功渲染");
         // 生成文件必须包含规范映射注释。
-        assert!(rendered.contains("// [uix-lang] src/main.uix:12:5\n missing_name"));
+        assert!(rendered.source.contains("// [uix-lang] src/main.uix:"));
         // 内部标识符不得泄漏到最终 Rust 源码。
-        assert!(!rendered.contains("__uix_source_marker"));
+        assert!(!rendered.source.contains("__uix_source_marker"));
+        assert!(!rendered.mappings.is_empty());
     }
 
     // 验证同一输入复用稳定路径与完全相同的 include! 令牌。
@@ -244,20 +341,31 @@ mod tests {
     fn emits_deterministic_generated_expression_file() {
         // 创建稳定宏输入字面量。
         let input = LitStr::new("src/main.uix", Span::call_site());
-        // 构造带来源标记的最小 Rust 表达式。
-        let generated = "{ __uix_source_marker_2_3 1 }"
-            // 解析为过程宏令牌流。
-            .parse::<TokenStream>()
-            // 测试输入必须合法。
-            .expect("测试令牌应可解析");
+        // 通过共享 Compiler System 构造带真实 SourceMap 的最小表达式。
+        let output = compile_inline("<Text>{1}</Text>", "src/main.uix", CompileTarget::View)
+            .expect("测试 UIX 必须可编译");
+        let generated = output.tokens;
+        let generated_text = generated.to_string();
         // 第一次写入并取得 include! 令牌。
-        let first = emit_generated_expression(generated.clone(), "src/main.uix", "view", &input)
-            // OUT_DIR 应可写。
-            .expect("首次生成应成功");
+        let first = emit_generated_expression(
+            generated.clone(),
+            "src/main.uix",
+            "view",
+            &output.source_map,
+            &input,
+        )
+        // OUT_DIR 应可写。
+        .expect("首次生成应成功");
         // 第二次使用相同输入生成。
-        let second = emit_generated_expression(generated, "src/main.uix", "view", &input)
-            // 相同内容应直接复用。
-            .expect("重复生成应成功");
+        let second = emit_generated_expression(
+            generated,
+            "src/main.uix",
+            "view",
+            &output.source_map,
+            &input,
+        )
+        // 相同内容应直接复用。
+        .expect("重复生成应成功");
         // include! 路径与令牌必须完全确定。
         assert_eq!(first.to_string(), second.to_string());
         // 返回令牌必须只暴露生成文件入口。
@@ -273,7 +381,7 @@ mod tests {
                 // 单测环境缺失时使用编译期目录。
                 .unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string()),
             // 使用与两次写入一致的令牌文本。
-            "{ __uix_source_marker_2_3 1 }",
+            &generated_text,
         );
         // 再次写入磁盘上的相同字节必须报告未改动。
         assert!(
@@ -281,5 +389,9 @@ mod tests {
                 // 文件读取与比较必须成功。
                 .expect("相同内容检查应成功")
         );
+        // 同名 JSON sidecar 必须存在且包含语义节点映射。
+        let map = fs::read_to_string(path.with_extension("uixmap.json"))
+            .expect("SourceMap sidecar 应存在");
+        assert!(map.contains("semantic_node_id"));
     }
 }

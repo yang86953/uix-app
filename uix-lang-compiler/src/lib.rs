@@ -3,6 +3,7 @@
 //! 本 crate 拥有语言解析、导入图、语义检查与 Rust UI 生成；过程宏、命令行和
 //! 编辑器能力只能通过这里的公开编译命令进入，不得维护独立语言规则。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
@@ -29,7 +30,9 @@ mod uix_import_tests;
 #[allow(dead_code)]
 mod uix_lang;
 
-use uix_import::{ImportDiagnostic, reject_inline_imports, resolve_file};
+use uix_import::{
+    ImportDiagnostic, reject_inline_imports, resolve_file, resolve_file_with_overlays,
+};
 use uix_lang::{
     Diagnostic, SourceSpan, generate_document_app, generate_document_view, generate_record_items,
     parse_document, with_source_markers,
@@ -288,6 +291,17 @@ impl CompilerSystem {
         check_analyzed(analyzed)
     }
 
+    /// 检查真实根文件，并让 LSP 会话快照覆盖对应磁盘文件。
+    pub fn check_file_with_overlays(
+        self,
+        path: &Path,
+        overlays: &BTreeMap<PathBuf, String>,
+        target: CompileTarget,
+    ) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file_with_overlays(path, overlays, target)?;
+        check_analyzed(analyzed)
+    }
+
     /// 格式化内嵌 UIX，同时验证 AST 等价。
     pub fn format_inline(
         self,
@@ -477,17 +491,16 @@ fn analyze_inline(
         )
     })?;
     let declaration_sources = vec![source_id; document.declarations.len()];
-    let ir = lower_document(document, target, source_id, &declaration_sources).map_err(
-        |diagnostic| {
+    let ir =
+        lower_document(document, target, source_id, &declaration_sources).map_err(|failure| {
             CompilerDiagnostic::from_language(
                 &source_name,
-                source_id,
+                failure.source_id,
                 DiagnosticPhase::Semantic,
                 "UIX2000",
-                diagnostic,
+                failure.diagnostic,
             )
-        },
-    )?;
+        })?;
     Ok(AnalyzedUnit {
         tracked_files: Vec::new(),
         source_graph,
@@ -576,6 +589,25 @@ fn source_io_diagnostic(path: &Path, error: io::Error) -> CompilerDiagnostic {
 // 建立文件 SourceGraph、AST 与 Typed UI IR。
 fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
+    analyze_resolved_file(resolved, path, target)
+}
+
+// 建立覆盖编辑器内存快照的文件 SourceGraph、AST 与 Typed UI IR。
+fn analyze_file_with_overlays(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    target: CompileTarget,
+) -> Result<AnalyzedUnit, CompilerDiagnostic> {
+    let resolved =
+        resolve_file_with_overlays(path, overlays).map_err(CompilerDiagnostic::from_import)?;
+    analyze_resolved_file(resolved, path, target)
+}
+
+fn analyze_resolved_file(
+    resolved: uix_import::ResolvedDocument,
+    path: &Path,
+    target: CompileTarget,
+) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let source_id = resolved.source_graph.root();
     let ir = lower_document(
         resolved.document,
@@ -583,13 +615,13 @@ fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, Comp
         source_id,
         &resolved.declaration_sources,
     )
-    .map_err(|diagnostic| {
+    .map_err(|failure| {
         semantic_diagnostic(
             &resolved.source_graph,
             path,
-            source_id,
+            failure.source_id,
             "UIX2000",
-            diagnostic,
+            failure.diagnostic,
         )
     })?;
     Ok(AnalyzedUnit {
@@ -916,5 +948,42 @@ mod tests {
         .expect_err("Avatar src 必须要求 image-codecs");
         assert_eq!(error.code, "UIX2001");
         assert!(error.message.contains("src"));
+    }
+
+    #[test]
+    fn overlay_imports_preserve_unsaved_content_and_source_identity() {
+        let directory = std::env::temp_dir().join(format!(
+            "uix-lang-overlay-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("系统时间必须有效")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).expect("临时目录必须可创建");
+        let root = directory.join("root.uix");
+        let card = directory.join("card.uix");
+        std::fs::write(&root, "@import('./card.uix', 'Card')\n<Card />").expect("根文件必须可写");
+        std::fs::write(
+            &card,
+            "@export('Card')\n<Widget name=\"Card\"><Text>Disk</Text></Widget>\n<Text />",
+        )
+        .expect("导入文件必须可写");
+        let overlays = std::collections::BTreeMap::from([(
+            card.clone(),
+            "@export('Card')\n<Widget name=\"Card\"><Mystery /></Widget>\n<Text />".to_string(),
+        )]);
+        let error = CompilerSystem::new()
+            .check_file_with_overlays(&root, &overlays, CompileTarget::View)
+            .expect_err("未保存的未知标签必须产生诊断");
+        assert!(error.message.contains("Mystery"));
+        assert_eq!(
+            error.source_name,
+            std::fs::canonicalize(&card)
+                .expect("导入文件必须可规范化")
+                .display()
+                .to_string()
+        );
+        std::fs::remove_dir_all(&directory).expect("临时目录必须可清理");
     }
 }

@@ -122,21 +122,33 @@ fn diagnostic_notification(session: &Session, request: &Value) -> Value {
         .unwrap_or("");
     let (text, name) = source(session, uri);
     let path = uri_to_path(uri);
-    let result = path
-        .as_ref()
-        .filter(|p| std::fs::read_to_string(p).ok().as_deref() == Some(text.as_str()))
-        .and_then(|p| {
-            CompilerSystem::new()
-                .check_file(p, CompileTarget::View)
-                .err()
-        })
-        .or_else(|| {
-            CompilerSystem::new()
-                .check_inline(&text, &name, CompileTarget::View)
-                .err()
-        });
+    let system = CompilerSystem::new();
+    let result = if let Some(path) = path.as_ref() {
+        let overlays = overlay_documents(session);
+        match system.check_file_with_overlays(path, &overlays, CompileTarget::View) {
+            Err(error) if error.message.contains("<App>") => system
+                .check_file_with_overlays(path, &overlays, CompileTarget::App)
+                .err(),
+            result => result.err(),
+        }
+    } else {
+        match system.check_inline(&text, &name, CompileTarget::View) {
+            Err(error) if error.message.contains("<App>") => {
+                system.check_inline(&text, &name, CompileTarget::App).err()
+            }
+            result => result.err(),
+        }
+    };
     let diagnostics = result.into_iter().map(lsp_diagnostic).collect::<Vec<_>>();
     json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":uri,"diagnostics":diagnostics}})
+}
+
+fn overlay_documents(session: &Session) -> std::collections::BTreeMap<PathBuf, String> {
+    session
+        .documents
+        .iter()
+        .filter_map(|(uri, source)| uri_to_path(uri).map(|path| (path, source.clone())))
+        .collect()
 }
 
 fn lsp_diagnostic(error: CompilerDiagnostic) -> Value {
@@ -302,5 +314,22 @@ mod tests {
         let mut session = Session::default();
         let response = handle(&mut session, &json!({"id":1,"method":"initialize"})).unwrap();
         assert_eq!(response["result"]["capabilities"]["hoverProvider"], true);
+    }
+
+    #[test]
+    fn unsaved_app_document_uses_overlay_and_app_target() {
+        let path = std::env::temp_dir().join(format!("uix-lsp-app-{}.uix", std::process::id()));
+        let uri = format!("file://{}", path.display());
+        let mut session = Session::default();
+        session.documents.insert(
+            uri.clone(),
+            "<App title=\"Overlay\"><Text>Hello</Text></App>".to_string(),
+        );
+        let notification =
+            diagnostic_notification(&session, &json!({"params":{"textDocument":{"uri":uri}}}));
+        assert_eq!(
+            notification["params"]["diagnostics"],
+            serde_json::Value::Array(Vec::new())
+        );
     }
 }

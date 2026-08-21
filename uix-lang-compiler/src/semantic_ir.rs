@@ -135,6 +135,13 @@ pub struct CapabilityRequirement {
     pub span: IrSpan,
 }
 
+/// 保存语义降低失败及其真实源码身份。
+#[derive(Debug)]
+pub(crate) struct SemanticFailure {
+    pub(crate) source_id: SourceId,
+    pub(crate) diagnostic: Diagnostic,
+}
+
 /// 保存 Compiler System 语义阶段的确定性结果。
 #[derive(Debug, Clone)]
 pub struct TypedUiIr {
@@ -330,7 +337,7 @@ pub(crate) fn lower_document(
     target: CompileTarget,
     root_source: SourceId,
     declaration_sources: &[SourceId],
-) -> Result<TypedUiIr, Diagnostic> {
+) -> Result<TypedUiIr, SemanticFailure> {
     let custom_widgets = document
         .declarations
         .iter()
@@ -344,18 +351,25 @@ pub(crate) fn lower_document(
         .iter()
         .enumerate()
         .filter_map(|(index, declaration)| {
-            typed_declaration(
-                declaration,
-                declaration_sources
-                    .get(index)
-                    .copied()
-                    .unwrap_or(root_source),
-                &custom_widgets,
-            )
-            .transpose()
+            let source_id = declaration_sources
+                .get(index)
+                .copied()
+                .unwrap_or(root_source);
+            typed_declaration(declaration, source_id, &custom_widgets)
+                .map_err(|diagnostic| SemanticFailure {
+                    source_id,
+                    diagnostic,
+                })
+                .transpose()
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let root = typed_element(&document.root, root_source, &custom_widgets)?;
+    let root =
+        typed_element(&document.root, root_source, &custom_widgets).map_err(|diagnostic| {
+            SemanticFailure {
+                source_id: root_source,
+                diagnostic,
+            }
+        })?;
     Ok(TypedUiIr {
         target,
         declarations,
