@@ -1,0 +1,266 @@
+"""图形生产源码边界、共享规范与生命周期的递归架构门禁。"""
+
+from pathlib import Path
+import re
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+UPPER_ROOTS = (SRC / "ui", SRC / "draw", SRC / "app")
+API_ADAPTER_ROOTS = {
+    "vulkan": SRC / "native/presentation/graphics/vulkan",
+    "d3d11": SRC / "native/presentation/graphics/d3d11",
+    "opengl": SRC / "native/presentation/graphics/opengl",
+}
+
+TARGET_CFG = re.compile(
+    r"(?:#\s*\[\s*cfg|cfg!)\s*\([^\n]*(?:windows|unix|target_os|target_env)"
+)
+UPPER_API = re.compile(
+    r"(?i)(?<![-\w])(?:vulkan|d3d11|dxgi|opengl|egl|wgl)(?![-\w])"
+    r"|\bash::|\bvk::|\bglow::|\bkhronos_egl::|\bwindows(?:_sys)?::"
+)
+PRIVATE_SURFACE_STATE = re.compile(
+    r"\b(?:surface_generation|recreate_generation|recreate_pending|needs_recreate)\b"
+)
+
+# app 尚未完成非图形 platform contract 的物理迁移；只允许这些精确协议与组合入口。
+APP_NATIVE_PROTOCOLS = {
+    "crate::native::agent_transport::AcceptedAgentStream",
+    "crate::native::agent_transport::AgentEndpoint",
+    "crate::native::agent_transport::AgentEndpointWake",
+    "crate::native::agent_transport::AgentStream",
+    "crate::native::agent_transport::AgentStreamCancelIo",
+    "crate::native::agent_transport::fill_secure_random",
+    "crate::native::factory::create_platform_with_pending",
+    "crate::native::platform::Platform",
+    "crate::native::windowing::event::FrameRequestToken",
+    "crate::native::windowing::event::PointerActivationId",
+    "crate::native::windowing::event::UiEvent",
+    "crate::native::windowing::event::UiEventPayload",
+    "crate::native::windowing::event::UiEventType",
+    "crate::native::windowing::input::ICursor",
+    "crate::native::windowing::window::IWindowManager",
+    "crate::native::windowing::window::NativeFrameRequest",
+    "crate::native::windowing::window::PlatformWindow",
+    "crate::native::windowing::window::WindowOcclusionState",
+}
+
+PIPELINE_KINDS = (
+    "SolidMesh",
+    "TexturedQuad",
+    "GradientRect",
+    "GlyphCoverageQuad",
+    "ShapeRect",
+    "ShapeRectAdditive",
+    "BoxShadow",
+    "TexturedQuadAdditive",
+    "BlurPass",
+    "MsdfGlyphQuad",
+    "Sector",
+)
+
+
+def rust_files(root: Path) -> tuple[Path, ...]:
+    """返回稳定排序的生产 Rust 文件集合。"""
+    return tuple(sorted(root.rglob("*.rs")))
+
+
+def source(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def relative(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def without_comments(text: str) -> str:
+    """移除注释，供依赖路径解析使用；架构专名扫描仍检查原始源码。"""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", "", text)
+
+
+def native_paths(text: str) -> set[str]:
+    """展开简单 use group，并收集 app 中实际使用的 crate::native 路径。"""
+    clean = without_comments(text)
+    paths: set[str] = set()
+    use_pattern = re.compile(r"\buse\s+(crate::native::[^;]+);", re.DOTALL)
+    for match in use_pattern.finditer(clean):
+        body = " ".join(match.group(1).split())
+        if "{" not in body:
+            paths.add(body)
+            continue
+        prefix, items = body.split("{", 1)
+        if "{" in items:
+            raise AssertionError(f"native use 不允许嵌套 group: {body}")
+        prefix = prefix.rstrip()
+        for item in items.rsplit("}", 1)[0].split(","):
+            item = item.strip()
+            if item:
+                paths.add(f"{prefix}{item}")
+    clean = use_pattern.sub("", clean)
+    paths.update(re.findall(r"crate::native(?:::[A-Za-z_][A-Za-z0-9_]*)+", clean))
+    return paths
+
+
+class GraphicsSourceBoundaryContractTests(unittest.TestCase):
+    """锁定共享上层、platform RHI 与原生 adapter 的单向依赖。"""
+
+    def test_upper_sources_are_one_os_and_api_neutral_tree(self) -> None:
+        for root in UPPER_ROOTS:
+            for path in rust_files(root):
+                text = source(path)
+                with self.subTest(source=relative(path)):
+                    self.assertIsNone(TARGET_CFG.search(text))
+                    self.assertIsNone(UPPER_API.search(text))
+                    if root.name in {"ui", "draw"}:
+                        self.assertNotIn("crate::native", text)
+
+    def test_app_native_compatibility_is_limited_to_exact_protocols(self) -> None:
+        observed: set[str] = set()
+        for path in rust_files(SRC / "app"):
+            observed.update(native_paths(source(path)))
+
+        unexpected = {
+            path
+            for path in observed
+            if not any(path == allowed or path.startswith(f"{allowed}::") for allowed in APP_NATIVE_PROTOCOLS)
+        }
+        self.assertEqual(unexpected, set())
+        self.assertEqual(
+            {path for path in observed if path in APP_NATIVE_PROTOCOLS},
+            APP_NATIVE_PROTOCOLS,
+            "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
+        )
+
+    def test_drawing_graphics_dependencies_enter_only_through_platform_rhi(self) -> None:
+        allowed = (
+            "crate::platform::presentation::rhi::",
+            # 字体发现属于非图形 host 协议，不参与绘制调用链。
+            "crate::platform::services::FontSystemInfo",
+        )
+        for path in rust_files(SRC / "draw"):
+            text = without_comments(source(path))
+            with self.subTest(source=relative(path)):
+                self.assertNotIn("crate::native", text)
+                for match in re.finditer(r"crate::platform::", text):
+                    dependency = text[match.start() :]
+                    self.assertTrue(
+                        dependency.startswith(allowed),
+                        f"Drawing 出现未授权 platform 依赖: {relative(path)}",
+                    )
+
+    def test_native_api_details_stay_in_corresponding_adapters(self) -> None:
+        checks = (
+            (re.compile(r"\bash::|\bvk::"), (API_ADAPTER_ROOTS["vulkan"],)),
+            (
+                re.compile(r"\bglow::|\bkhronos_egl::|\begl[A-Z]|\bwgl[A-Z]"),
+                (API_ADAPTER_ROOTS["opengl"],),
+            ),
+            (
+                re.compile(r"windows::Win32::Graphics::Direct3D11|D3D11CreateDevice"),
+                (API_ADAPTER_ROOTS["d3d11"],),
+            ),
+            (
+                re.compile(r"windows::Win32::Graphics::Dxgi|CreateDXGIFactory"),
+                (
+                    API_ADAPTER_ROOTS["d3d11"],
+                    SRC / "native/presentation/graphics/d3d12",
+                ),
+            ),
+        )
+        for path in rust_files(SRC):
+            text = source(path)
+            for pattern, roots in checks:
+                if not pattern.search(text):
+                    continue
+                with self.subTest(source=relative(path), marker=pattern.pattern):
+                    self.assertTrue(any(path.is_relative_to(root) for root in roots))
+
+        factory = "\n".join(source(path) for path in rust_files(SRC / "native/factory"))
+        self.assertNotRegex(factory, r"\b(?:ash|vk|glow|khronos_egl)::")
+        self.assertNotRegex(factory, r"::(?:adapter|context|pipeline|raster)::")
+
+        implementation = re.compile(r"impl(?:<[^>]+>)?\s+Graphics(?:Device|Surface)\s+for")
+        for path in rust_files(SRC):
+            if implementation.search(source(path)):
+                with self.subTest(implementation=relative(path)):
+                    self.assertTrue(any(path.is_relative_to(root) for root in API_ADAPTER_ROOTS.values()))
+
+    def test_vulkan_first_and_gpu_recipe_never_selects_pixel_upload(self) -> None:
+        for name in ("linux", "windows", "macos"):
+            path = SRC / f"native/factory/registry_{name}.rs"
+            text = source(path)
+            blocks = re.findall(r"GraphicsBackendEntry\s*\{(.*?)\n\s*\}", text, re.DOTALL)
+            priorities = [int(value) for value in re.findall(r"priority:\s*(\d+)", text)]
+            vulkan = next(block for block in blocks if "GraphicsApi::Vulkan" in block)
+            vulkan_priority = int(re.search(r"priority:\s*(\d+)", vulkan).group(1))
+            with self.subTest(registry=name):
+                self.assertEqual(vulkan_priority, 100)
+                self.assertEqual(vulkan_priority, max(priorities))
+                self.assertEqual(priorities.count(vulkan_priority), 1)
+
+        runtime = source(SRC / "draw/renderer/runtime.rs")
+        gpu_branch = runtime[runtime.index("GraphicsRecipeOwner::Gpu(owner)") :]
+        gpu_branch = gpu_branch[: gpu_branch.index("GraphicsRecipeOwner::PixelUpload(owner)")]
+        self.assertIn("GpuBackend::new_gpu_only(owner)", gpu_branch)
+        self.assertNotIn("PixelUploadPresentation", gpu_branch)
+
+        frame_plan = source(SRC / "draw/backend/frame_plan_execution.rs")
+        self.assertNotIn("PixelUpload", frame_plan)
+
+    def test_all_native_harnesses_consume_one_canonical_pipeline_spec(self) -> None:
+        pipeline = source(SRC / "platform/presentation/rhi/pipeline.rs")
+        enum_body = pipeline[pipeline.index("enum PipelineKind") :]
+        enum_body = enum_body[: enum_body.index("}")]
+        variants = tuple(re.findall(r"^\s*([A-Z][A-Za-z0-9_]*),\s*$", enum_body, re.MULTILINE))
+        self.assertEqual(variants, PIPELINE_KINDS)
+
+        shared = source(SRC / "draw/backend/rhi_renderer_consistency.rs")
+        spec = shared[shared.index("CONSISTENCY_PIPELINES") :]
+        spec = spec[: spec.index("];", spec.index("["))]
+        canonical = tuple(re.findall(r"PipelineKind::([A-Za-z0-9_]+)", spec))
+        self.assertEqual(canonical, PIPELINE_KINDS)
+        self.assertIn("CONSISTENCY_PIPELINES.map(scene_for_pipeline)", shared)
+
+        harnesses = (
+            ROOT / "tests/unit/native/presentation/graphics/vulkan/adapter/context/rhi_device__gpu_parity_tests.rs",
+            ROOT / "tests/unit/native/presentation/graphics/opengl/raster/rhi_device__gpu_parity_tests.rs",
+            ROOT / "tests/unit/native/presentation/graphics/d3d11/adapter/context/rhi_device__gpu_parity_tests.rs",
+        )
+        for path in harnesses:
+            text = source(path)
+            with self.subTest(harness=relative(path)):
+                self.assertIn("canonical_scenes", text)
+                self.assertIn("validate_canonical_scenes", text)
+                self.assertIn("sample.tolerance.amount()", text)
+                self.assertNotIn("CONSISTENCY_PIPELINES", text)
+                self.assertNotRegex(text, r"fn\s+canonical_scenes\s*\(")
+
+    def test_all_three_adapters_consume_shared_surface_lifecycle(self) -> None:
+        for name, root in API_ADAPTER_ROOTS.items():
+            text = "\n".join(source(path) for path in rust_files(root))
+            with self.subTest(adapter=name):
+                self.assertIn("RhiSurfaceLifecycle", text)
+                self.assertIn("RhiSurfaceLifecycle::uninitialized", text)
+                self.assertIsNone(PRIVATE_SURFACE_STATE.search(text))
+                self.assertNotRegex(text, r"(?:struct|enum)\s+RhiSurfaceLifecycle\b")
+
+    def test_architecture_document_names_current_physical_boundaries(self) -> None:
+        document = source(ROOT / "docs/架构/graphics/source-boundary.md")
+        for marker in (
+            "src/app",
+            "src/ui",
+            "src/draw",
+            "src/platform/presentation/rhi",
+            "src/native/presentation/graphics",
+            "UI → Drawing Engine → platform 通用 RHI → native 原生 adapter",
+            "真实 Windows D3D11 尚未执行",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, document)
+
+
+if __name__ == "__main__":
+    unittest.main()

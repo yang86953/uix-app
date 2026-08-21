@@ -301,7 +301,7 @@ impl FontService {
     pub fn load_default_system_font(
         &mut self,
         size: f32,
-        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
+        system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) {
         if self.user_family_set {
             let family = self.primary_family.clone();
@@ -404,7 +404,7 @@ impl FontService {
     fn load_cjk_fallback(
         &mut self,
         _size: f32,
-        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
+        system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) {
         // 内存剖析开关：跳过 CJK 回退字体加载，量化中文字体常驻对 working set 的贡献。
         if std::env::var_os("UIX_SKIP_CJK_FONT").is_some() {
@@ -459,7 +459,7 @@ impl FontService {
         &mut self,
         family: &str,
         _size: f32,
-        system_info: &dyn crate::native::capabilities::system::ISystemInfo,
+        system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) -> Option<FontHandle> {
         if let Some(p) = system_info.probe_family_font_path(family) {
             if let Some(handle) = self.load_mapped_font(&p) {

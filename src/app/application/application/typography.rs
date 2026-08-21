@@ -5,8 +5,8 @@ use crate::app::application::di::Container;
 // 引入统一 Result 与 resources System 的公开字体契约。
 use crate::core::Result;
 use crate::draw::{FontBundle, FontService};
-// 引入平台系统信息窄接口，仅供未配置字体包的兼容策略使用。
-use crate::native::capabilities::system::ISystemInfo;
+// 引入平台字体发现窄接口，仅供未配置字体包的兼容策略使用。
+use crate::platform::services::FontSystemInfo;
 
 // 复用父模块的 Application 组合根类型。
 use super::App;
@@ -23,13 +23,16 @@ impl App {
 }
 
 // 创建只包含正文与 fallback 的 FontService，返回是否使用了确定性字体包。
-fn initialize_text_font_service(
+fn initialize_text_font_service<T>(
     // 可变借用组合根容器，以便安装后释放大字体配置字节。
     container: &mut Container,
     // 借用平台字体发现能力，但确定性分支不得调用它。
-    system_info: &dyn ISystemInfo,
+    system_info: &T,
     // 返回唯一 FontService owner 与字体来源事实。
-) -> Result<(FontService, bool)> {
+) -> Result<(FontService, bool)>
+where
+    T: FontSystemInfo + ?Sized,
+{
     // 轻量克隆只复制字体资产 Arc，安装完成后原配置即可释放。
     let configured_bundle = container.resolve_clone::<FontBundle>();
     // 一次性配置不得继续留在多窗口 DI 容器中占用第二份大字体引用。
@@ -50,13 +53,16 @@ fn initialize_text_font_service(
 }
 
 // 在任何窗口创建前组装完整应用字体服务。
-pub(super) fn initialize_font_service(
+pub(super) fn initialize_font_service<T>(
     // 消费 App 组合根中的一次性字体配置。
     container: &mut Container,
     // 仅在兼容分支借用平台字体发现能力。
-    system_info: &dyn ISystemInfo,
+    system_info: &T,
     // 返回后续所有窗口共享的唯一字体服务 owner。
-) -> Result<FontService> {
+) -> Result<FontService>
+where
+    T: FontSystemInfo + ?Sized,
+{
     // 记录字体解析与服务组装耗时，不包含窗口或图形设备创建。
     let started_at = std::time::Instant::now();
     // 先建立正文与 fallback 的单一来源。

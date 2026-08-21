@@ -891,6 +891,17 @@ impl WindowOps for WindowsWindowOps {
         self.hwnd
     }
 
+    fn client_logical_extent(&self, fallback_width: i32, fallback_height: i32) -> (i32, i32) {
+        // Windows 窗口样式或 DPI 正在变化时，以仍有效的客户区查询为准。
+        let drawable =
+            crate::native::presentation::graphics::platform::windows::drawable_size(
+                self.hwnd,
+                fallback_width,
+                fallback_height,
+            );
+        (drawable.logical_width, drawable.logical_height)
+    }
+
     fn native_handle(&self) -> *mut std::ffi::c_void {
         self.hwnd
     }

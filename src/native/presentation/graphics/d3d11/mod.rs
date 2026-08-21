@@ -4,6 +4,7 @@ use std::ffi::c_void;
 
 use crate::core::{Error, Result};
 use crate::native::present::GraphicsContextCandidate;
+use crate::platform::graphics::GpuAdapterInfo;
 // D3D11 WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d11"))]
 use crate::native::present::GpuRecipeContext;
@@ -19,6 +20,11 @@ pub(crate) fn create(
     // 向 registry 返回平台层已经组装的 context candidate。
 ) -> Result<GraphicsContextCandidate, Error> {
     platform::create(surface, width, height)
+}
+
+// 原生 factory 只经本模块入口选择 D3D11 adapter，不穿透其内部目录。
+pub(crate) fn enumerate_adapters() -> Result<Box<[GpuAdapterInfo]>> {
+    platform::enumerate_adapters()
 }
 
 // 显式 Windows parity feature 只转发生产 D3D11 Adapter 的真实 GPU harness。

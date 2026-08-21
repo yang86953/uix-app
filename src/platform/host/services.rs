@@ -4,7 +4,79 @@
 use std::collections::HashSet;
 
 // 引入公开的类型化错误，用于在进入平台 Adapter 前验证应用身份。
-use crate::core::{Errc, Error, Result};
+use crate::core::{Errc, Error, ErrorSeverity, Result};
+
+use super::capabilities::StatusLevel;
+
+/// Drawing 字体发现所需的最小平台协议。
+///
+/// OS 实现可以同时提供更多系统信息，但 Drawing 只能依赖这四项字体能力。
+pub trait FontSystemInfo {
+    /// 返回按优先级排列的默认字体路径。
+    fn default_font_paths(&self) -> Result<Vec<String>>;
+
+    /// 返回按优先级排列的 CJK 回退字体路径。
+    fn probe_cjk_font_paths(&self) -> Vec<String>;
+
+    /// 按字体族名查找可加载路径。
+    fn probe_family_font_path(&self, family: &str) -> Option<String>;
+
+    /// 执行受限的最后回退扫描。
+    fn scan_fallback_font_path(&self) -> Option<String>;
+}
+
+/// UI 消费的中立 Toast 值，不持有系统通知 Provider。
+#[derive(Debug, Clone)]
+pub struct ToastEntry {
+    pub id: u64,
+    pub title: String,
+    pub message: String,
+    pub level: StatusLevel,
+    /// 持续时间（毫秒）；零表示手动关闭。
+    pub duration_ms: u32,
+    /// 是否仍应显示。
+    pub visible: bool,
+    /// 条目创建时刻。
+    pub created_at: std::time::Instant,
+}
+
+impl ToastEntry {
+    /// 将非致命框架错误投影为中立 Toast 值。
+    pub fn from_error(id: u64, error: &Error, created_at: std::time::Instant) -> Option<Self> {
+        if error.severity().is_fatal() {
+            return None;
+        }
+        let (title, level, duration_ms) = match error.severity() {
+            ErrorSeverity::Info => ("Info", StatusLevel::Info, 4_000),
+            ErrorSeverity::Warning => ("Warning", StatusLevel::Warning, 5_000),
+            ErrorSeverity::Error => ("Error", StatusLevel::Error, 6_000),
+            ErrorSeverity::Fatal => return None,
+        };
+        let mut message = error.message().to_owned();
+        if let Some(source) = error.source_error() {
+            message.push_str(": ");
+            message.push_str(source.message());
+        }
+        Some(Self {
+            id,
+            title: title.to_owned(),
+            message,
+            level,
+            duration_ms,
+            visible: true,
+            created_at,
+        })
+    }
+}
+
+/// UI 同步通知所需的窄服务协议。
+pub trait NotificationSource {
+    /// 推进过期状态并返回当前条目。
+    fn update_notifications(&mut self) -> Vec<ToastEntry>;
+
+    /// 将非致命错误加入通知源。
+    fn notify_error(&mut self, error: &Error) -> Option<u64>;
+}
 
 /// 文件对话框中的一个命名过滤器。
 ///

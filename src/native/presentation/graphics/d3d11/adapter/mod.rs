@@ -10,6 +10,7 @@ use crate::native::present::GpuRecipeContext;
 
 #[cfg(windows)]
 pub(crate) mod context;
+mod enumeration;
 #[cfg(windows)]
 pub(crate) mod pipeline;
 #[cfg(windows)]
@@ -18,6 +19,7 @@ mod swapchain;
 #[cfg(windows)]
 // D3D11 上下文只在 crate 内部图形组合边界重导出。
 pub(crate) use context::D3d11Context;
+pub(crate) use enumeration::enumerate_adapters;
 
 // 显式 parity feature 保持测试入口在 D3D11 platform Adapter 内。
 #[cfg(all(windows, feature = "d3d11-parity-test"))]

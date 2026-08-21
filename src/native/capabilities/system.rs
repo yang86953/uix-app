@@ -140,6 +140,28 @@ pub(crate) trait ISystemInfo {
     }
 }
 
+// 将完整 OS 系统信息实现收窄为 Drawing 只允许消费的字体发现协议。
+impl<T> crate::platform::services::FontSystemInfo for T
+where
+    T: ISystemInfo + ?Sized,
+{
+    fn default_font_paths(&self) -> Result<Vec<String>> {
+        ISystemInfo::default_font_paths(self)
+    }
+
+    fn probe_cjk_font_paths(&self) -> Vec<String> {
+        ISystemInfo::probe_cjk_font_paths(self)
+    }
+
+    fn probe_family_font_path(&self, family: &str) -> Option<String> {
+        ISystemInfo::probe_family_font_path(self, family)
+    }
+
+    fn scan_fallback_font_path(&self) -> Option<String> {
+        ISystemInfo::scan_fallback_font_path(self)
+    }
+}
+
 pub(crate) trait IConsole {
     fn write(&mut self, text: &str) -> Result<()>;
     fn write_line(&mut self, text: &str) -> Result<()>;

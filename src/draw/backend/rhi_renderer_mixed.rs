@@ -189,7 +189,7 @@ impl RhiRenderer {
             // 复用已有扇形常量 buffer。
             uniform
         } else {
-            // D3D11 常量布局由 viewport、矩形、颜色和角度四个 float4 组成。
+            // 共享常量布局由 viewport、矩形、颜色和角度四个 float4 组成。
             let uniform =
                 device.create_buffer(crate::platform::presentation::rhi::BufferDesc::uniform(
                     // 常量容量只来自共享 Sector Uniform ABI。

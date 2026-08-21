@@ -10,42 +10,13 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
-use crate::core::error::{Error, ErrorSeverity, Result};
+use crate::core::error::{Error, Result};
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use crate::native::capabilities::system::StatusLevel;
+use crate::platform::services::NotificationSource;
 use std::collections::VecDeque;
 
-/// 单条通知条目，作为 Toast 组件的数据源。
-#[derive(Debug, Clone)]
-pub struct ToastEntry {
-    pub id: u64,
-    pub title: String,
-    pub message: String,
-    pub level: StatusLevel,
-    /// 持续时间（毫秒）。0 = 手动关闭。None = 使用默认值。
-    pub duration_ms: u32,
-    /// 是否当前可见（未被关闭）。
-    pub visible: bool,
-    /// 创建时间戳。
-    pub created_at: std::time::Instant,
-}
-
-impl ToastEntry {
-    pub fn from_error(id: u64, error: &Error, created_at: std::time::Instant) -> Option<Self> {
-        if error.severity().is_fatal() {
-            return None;
-        }
-        Some(Self {
-            id,
-            title: toast_title_for_error(error),
-            message: toast_message_for_error(error),
-            level: toast_level_for_error(error),
-            duration_ms: toast_duration_for_error(error),
-            visible: true,
-            created_at,
-        })
-    }
-}
+pub(crate) use crate::platform::services::ToastEntry;
 
 /// 通知服务 — 管理系统通知和应用内 Toast。
 ///
@@ -270,38 +241,14 @@ impl NotificationService {
     }
 }
 
-fn toast_level_for_error(error: &Error) -> StatusLevel {
-    match error.severity() {
-        ErrorSeverity::Info => StatusLevel::Info,
-        ErrorSeverity::Warning => StatusLevel::Warning,
-        ErrorSeverity::Error | ErrorSeverity::Fatal => StatusLevel::Error,
+impl NotificationSource for NotificationService {
+    fn update_notifications(&mut self) -> Vec<ToastEntry> {
+        self.update()
     }
-}
 
-fn toast_duration_for_error(error: &Error) -> u32 {
-    match error.severity() {
-        ErrorSeverity::Info => NotificationService::DURATION_INFO,
-        ErrorSeverity::Warning => NotificationService::DURATION_WARNING,
-        ErrorSeverity::Error | ErrorSeverity::Fatal => NotificationService::DURATION_ERROR,
+    fn notify_error(&mut self, error: &Error) -> Option<u64> {
+        NotificationService::notify_error(self, error)
     }
-}
-
-fn toast_title_for_error(error: &Error) -> String {
-    match error.severity() {
-        ErrorSeverity::Info => "Info".to_string(),
-        ErrorSeverity::Warning => "Warning".to_string(),
-        ErrorSeverity::Error => "Error".to_string(),
-        ErrorSeverity::Fatal => "Fatal".to_string(),
-    }
-}
-
-fn toast_message_for_error(error: &Error) -> String {
-    let mut message = error.message().to_string();
-    if let Some(source) = error.source_error() {
-        message.push_str(": ");
-        message.push_str(source.message());
-    }
-    message
 }
 
 // ════════════════════════════════════════════════════════════════════════════

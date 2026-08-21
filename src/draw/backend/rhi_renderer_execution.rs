@@ -299,7 +299,7 @@ pub(super) fn execute_plan_without_present(
 ) -> Result<()> {
     // 通用 acquire 语义不保证可在 present 前重复取得同一 image。
     if plan.targets_surface() {
-        // 禁止依赖 D3D11/OpenGL 对无 present surface 写入的偶然容忍。
+        // 禁止依赖任何原生 adapter 对无 present surface 写入的偶然容忍。
         return Err(Error::new(
             // 目标生命周期错配属于调用参数错误。
             Errc::InvalidArgument,

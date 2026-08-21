@@ -43,4 +43,3 @@ pub(crate) mod test_harness;
 pub(crate) mod windowing;
 
 pub(crate) use crate::core::error::*;
-pub(crate) use capabilities::services::notification;

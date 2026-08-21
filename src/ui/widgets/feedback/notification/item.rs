@@ -1,7 +1,7 @@
 //! 通知条目与挂载句柄。
 
-use crate::native::notification::ToastEntry;
 use crate::platform::capabilities::StatusLevel;
+use crate::platform::services::ToastEntry;
 
 use super::Notification;
 use crate::ui::widgets::feedback::toast_motion::ToastQueue;
@@ -123,7 +123,7 @@ impl NotificationHandle {
         self.queue.remove_local(id)
     }
 
-    /// 请求移除由 `NotificationService`（`crate::native::notification`，私有边界）提供稳定 ID 的通知。
+    /// 请求移除由通知源协议提供稳定 ID 的通知。
     pub fn dismiss_external(&self, id: u64) -> bool {
         self.queue.remove_external(id)
     }

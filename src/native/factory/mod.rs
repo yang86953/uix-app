@@ -17,11 +17,60 @@ use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::native::capabilities::system::ISystemInfo;
 use crate::native::platform::Platform;
+use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub(crate) use registry::{
     GraphicsRecipe, describe_backend_availability, gpu_recipe_candidates, graphics_runtime_platform,
 };
+
+// 按公开中立选择值挑选唯一原生 adapter；factory 不读取任何 API 句柄。
+#[cfg(any(
+    feature = "d3d11",
+    feature = "vulkan",
+    feature = "d3d12",
+    feature = "metal",
+    feature = "opengles"
+))]
+pub(crate) fn enumerate_gpu_adapters(
+    backend: GraphicsBackend,
+) -> crate::core::Result<Box<[GpuAdapterInfo]>> {
+    match backend {
+        // 具体枚举实现留在对应原生 adapter。
+        #[cfg(feature = "d3d11")]
+        GraphicsBackend::Direct3D11 => {
+            crate::native::presentation::graphics::d3d11::enumerate_adapters()
+        }
+        // 其余已启用 API 尚未提供同步枚举实现。
+        #[cfg(any(
+            feature = "vulkan",
+            feature = "d3d12",
+            feature = "metal",
+            feature = "opengles"
+        ))]
+        _ => Err(Error::new(
+            crate::core::Errc::NotImplemented,
+            format!(
+                "Platform::gpu_adapters: {:?} has no native enumerator on this target",
+                backend
+            ),
+        )),
+    }
+}
+
+// 没有图形 feature 时选择枚举不可构造，空 match 保持编译期闭合。
+#[cfg(not(any(
+    feature = "d3d11",
+    feature = "vulkan",
+    feature = "d3d12",
+    feature = "metal",
+    feature = "opengles"
+)))]
+pub(crate) fn enumerate_gpu_adapters(
+    backend: GraphicsBackend,
+) -> crate::core::Result<Box<[GpuAdapterInfo]>> {
+    match backend {}
+}
 
 // 为测试专用 WARP context 建立线程亲和 wrapper。
 #[cfg(all(test, any(feature = "d3d11", feature = "d3d12")))]

@@ -23,7 +23,7 @@ use crate::platform::presentation::rhi::GraphicsDevice;
 #[cfg(feature = "test-harness")]
 use crate::platform::presentation::rhi::{GraphicsSurface, RhiScissor};
 // 引入 platform 构造期验证的 context recipe owner。
-use crate::platform::presentation::GpuRecipeOwner;
+use crate::platform::presentation::rhi::GpuRecipeOwner;
 // 引入所属 graphics backend Module 的 renderer 能力投影。
 use super::super::NativeRasterCaps;
 

@@ -64,12 +64,7 @@ mod msdf;
 mod uniform;
 
 // 在测试构建中提供 API 无关的全图元像素规范；原生 Adapter 只能执行和回读。
-#[cfg(any(
-    test,
-    feature = "vulkan-parity-test",
-    feature = "opengl-parity-test",
-    feature = "d3d11-parity-test"
-))]
+#[cfg(any(test, feature = "graphics-parity-test"))]
 #[path = "rhi_renderer_consistency.rs"]
 pub(crate) mod consistency;
 
@@ -340,7 +335,7 @@ impl RhiRenderer {
             // 复用已有 uniform。
             uniform
         } else {
-            // D3D11 及其他 adapter 都按 16 字节常量布局对齐。
+            // 所有 adapter 都按共享 16 字节常量布局对齐。
             let uniform = device.create_buffer(BufferDesc::uniform(
                 // 常量容量只来自共享 pipeline Uniform ABI。
                 PipelineKind::SolidMesh.contract().uniform.size_bytes(),
@@ -520,7 +515,7 @@ impl RhiRenderer {
     fn encode_u32s(values: &[u32]) -> Arc<[u8]> {
         // 预留精确容量，避免上传前再次扩容。
         let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-        // D3D11 B8G8R8A8_UNORM 在 Windows 小端内存中与该布局一致。
+        // 原生 BGRA8 目标与该共享字节布局一致。
         for value in values {
             // 保持每个 packed pixel 的原始字节表示。
             bytes.extend_from_slice(&value.to_ne_bytes());

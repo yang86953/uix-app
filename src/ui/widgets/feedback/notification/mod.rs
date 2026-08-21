@@ -6,8 +6,8 @@ use std::rc::Rc;
 use crate::core::error::{Error, Result as CoreResult};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
-use crate::native::notification::{NotificationService, ToastEntry};
 use crate::platform::capabilities::StatusLevel;
+use crate::platform::services::{NotificationSource, ToastEntry};
 use crate::ui::animation::AnimationConfig;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
@@ -500,8 +500,8 @@ impl Notification {
     }
 
     /// 更新服务的过期状态，并将其当前可见 Toast 同步到容器。
-    pub fn replace_from_service(&self, service: &mut NotificationService) {
-        let toasts = service.update();
+    pub fn replace_from_service(&self, service: &mut (impl NotificationSource + ?Sized)) {
+        let toasts = service.update_notifications();
         self.replace_from_toasts(&toasts);
     }
 
@@ -510,7 +510,7 @@ impl Notification {
     /// 致命错误或无需展示的错误返回 `None`。
     pub fn notify_error_from_service(
         &self,
-        service: &mut NotificationService,
+        service: &mut (impl NotificationSource + ?Sized),
         error: &Error,
     ) -> Option<u64> {
         let id = service.notify_error(error);
@@ -523,10 +523,13 @@ impl Notification {
     /// 成功结果保持静默并返回 `None`。
     pub fn notify_result_error_from_service<T>(
         &self,
-        service: &mut NotificationService,
+        service: &mut (impl NotificationSource + ?Sized),
         result: &CoreResult<T>,
     ) -> Option<u64> {
-        let id = service.notify_result_error(result);
+        let id = result
+            .as_ref()
+            .err()
+            .and_then(|error| service.notify_error(error));
         self.replace_from_service(service);
         id
     }

@@ -1,7 +1,7 @@
 //! Drawing System 拥有的 API 无关全图元一致性规范场景。
 //!
 //! 本模块只冻结场景输入、采样点、期望和容差；它不创建原生资源，也不实现
-//! 任一生产光栅算法。Vulkan、D3D11 与 OpenGL 的 GPU harness 必须复用这里的事实。
+//! 任一生产光栅算法。全部原生 GPU harness 必须复用这里的事实。
 
 use super::{FrameUniformPayload, FrameVertexPayload, RhiOp, RhiRenderer};
 use crate::draw::backend::gpu::pending::PendingNativeOp;
