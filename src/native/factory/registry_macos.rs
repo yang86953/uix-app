@@ -6,7 +6,7 @@ use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::native::present::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
 use std::ffi::c_void;
 
-// Vulkan PixelUpload 是优先生产路径；Metal 暂缓并保留诊断条目。
+// Vulkan GPU-native swapchain 是优先生产路径；Metal 暂缓并保留诊断条目。
 
 fn create_metal(
     _: *mut c_void,
@@ -27,7 +27,7 @@ fn create_vulkan(
     height: i32,
     _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
-    // MoltenVK surface 只负责原生 WSI，Drawing 仍复用同一 CPU 规范语义。
+    // MoltenVK surface 只负责原生 WSI，Drawing 仍复用同一 FramePlan 语义。
     crate::native::presentation::graphics::vulkan::create(surface, width, height)
 }
 
@@ -64,8 +64,8 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         id: GraphicsApi::Vulkan,
         priority: 100,
         status: VULKAN_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
         create: create_vulkan,
     },
 ];

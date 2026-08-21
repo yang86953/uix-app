@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
 >
-> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan PixelUpload 是三平台首个生产优先参考路径，其他 API 暂缓扩展。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
+> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan GPU-native swapchain 是三平台首个生产优先参考路径，其他 API 暂缓扩展。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
 
 ## 责任边界
 
@@ -63,6 +63,8 @@ registry 只陈述可构造候选；graphics System 决定使用、恢复和 fal
 组合 owner 通过共享 `RhiSubmissionSequence` 关联两个角色：Device 只从该状态机签发非零 `SubmissionHandle`，Surface 在触碰原生 Present 前只接受同一 owner 最近一次成功提交。OpenGL、D3D11 及后续 Adapter 只调用该共享规则，不得各自维护或跳过提交身份语义。
 
 Device 内部通过共享 `RhiPassState` 管理 API 无关的 render-pass 生命周期。活动目标身份、物理 extent、scissor 和采样绑定必须原子建立与清除；pass 外绑定、非零槽位、目标自采样反馈环和未结束 pass 的 submit 必须在共享层得到同一拒绝结果。Adapter 只保存当前 framebuffer、RTV 等原生对象，并在 end 时显式解除输入与输出绑定，不依赖驱动替调用方解决资源冲突。
+
+共享 FramePlan 允许同一 Buffer 在 painter order 中多次上传和绘制。立即执行 API 可以直接消费更新；延迟执行 API 必须在 Adapter 的统一帧资源层冻结每次 Draw 观察到的 Vertex、Index 与 Uniform 内容，并在覆盖提交的 fence 完成前保持这些快照有效。该机制只能集中实现一次，不得分散复制到各 pipeline 或 UI 操作分支。
 
 每次 `FramePlan` 执行都在目标和结构验证成功后、第一条原生命令前依次调用 `GraphicsDevice::activate` 与 `GraphicsDevice::maintain`。`activate` 只建立原生 owner-context 可用性，OpenGL 在这里恢复对应 current context；`maintain` 只检查设备健康，D3D11 在这里映射 device-removed 状态。资源借用和 checked teardown 同样先 activate，但不得因健康检查失败而失去释放机会；离屏计划不得借用另一个窗口或前一事务遗留的隐式上下文。
 

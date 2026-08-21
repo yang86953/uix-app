@@ -204,6 +204,12 @@ extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
 pub use uix_derive::{Display, uix, uix_app, uix_items};
+// 只为显式 GPU parity 测试目标转发 crate 内 Vulkan harness，不进入默认公开面。
+#[cfg(feature = "vulkan-parity-test")]
+#[doc(hidden)]
+pub fn __run_vulkan_gpu_parity_test() {
+    native::presentation::graphics::vulkan::platform::run_gpu_parity_test();
+}
 // capability 编译合同只在 rustdoc 收集测试时进入 crate，不污染正常使用方公开面。
 #[cfg(doctest)]
 // 隐藏测试载体，用户文档只保留稳定 capability 说明。

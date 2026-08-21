@@ -349,6 +349,54 @@ pub(crate) fn allocate_image_layouts(image_count: usize) -> Result<Vec<vk::Image
     Ok(layouts)
 }
 
+// 为每个 swapchain image 创建唯一颜色 attachment view。
+pub(super) fn create_swapchain_image_views(
+    device: &ash::Device,
+    images: &[vk::Image],
+    format: vk::Format,
+) -> Result<Vec<vk::ImageView>> {
+    let mut views = Vec::new();
+    views.try_reserve_exact(images.len()).map_err(|error| {
+        Error::new(
+            Errc::GraphicsOutOfMemory,
+            format!(
+                "VulkanContext: swapchain image-view allocation for {} images failed: {error}",
+                images.len()
+            ),
+        )
+    })?;
+    for (image_index, image) in images.iter().copied().enumerate() {
+        let create_info = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(format)
+            .components(vk::ComponentMapping::default())
+            .subresource_range(super::super::rhi::color_subresource_range());
+        // SAFETY: image 属于当前 swapchain/device，格式与 swapchain 创建格式一致。
+        match unsafe { device.create_image_view(&create_info, None) } {
+            Ok(view) => views.push(view),
+            Err(error) => {
+                destroy_image_views(device, &mut views);
+                return Err(vk_err(
+                    &format!("vkCreateImageView swapchain[{image_index}]"),
+                    error,
+                ));
+            }
+        }
+    }
+    Ok(views)
+}
+
+// 按创建逆序销毁 swapchain image views。
+pub(super) fn destroy_image_views(device: &ash::Device, views: &mut Vec<vk::ImageView>) {
+    // SAFETY: 每个 view 由当前 device 创建，调用方保证对应 framebuffer 已先释放。
+    unsafe {
+        for view in views.drain(..).rev() {
+            device.destroy_image_view(view, None);
+        }
+    }
+}
+
 pub(super) fn create_render_finished_semaphores(
     device: &ash::Device,
     image_count: usize,

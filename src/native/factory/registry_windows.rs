@@ -34,7 +34,7 @@ fn create_vulkan(
     height: i32,
     _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
-    // Vulkan 通过统一 PixelUpload recipe 接管 Win32 surface，保证三平台使用同一绘制语义。
+    // Vulkan 通过统一 GPU-native recipe 接管 Win32 surface，绘制语义仍由共享 FramePlan 冻结。
     crate::native::presentation::graphics::vulkan::create(surface, width, height)
 }
 
@@ -108,8 +108,8 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         id: GraphicsApi::Vulkan,
         priority: 100,
         status: VULKAN_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
         create: create_vulkan,
     },
     GraphicsBackendEntry {

@@ -141,6 +141,7 @@ impl GraphicsContextCaps {
         test,
         feature = "test-harness",
         all(windows, any(feature = "d3d11", feature = "d3d12")),
+        feature = "vulkan",
         feature = "opengles"
     ))]
     pub(crate) fn gpu_native_swapchain(
@@ -402,7 +403,12 @@ impl GraphicsContextCandidate {
 }
 
 // 共享 RHI resize 只向实际 GPU-native backend 与内部测试重导出。
-#[cfg(any(test, all(windows, feature = "d3d11"), feature = "opengles"))]
+#[cfg(any(
+    test,
+    all(windows, feature = "d3d11"),
+    feature = "vulkan",
+    feature = "opengles"
+))]
 pub(crate) use self::traits::resize_native_rhi_surface;
 // 只向 crate 内图形装配与 backend 暴露已验证 GPU owner。
 pub(crate) use gpu_recipe_owner::GpuRecipeOwner;

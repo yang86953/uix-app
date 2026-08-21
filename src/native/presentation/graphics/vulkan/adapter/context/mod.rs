@@ -26,7 +26,9 @@ mod construction;
 mod graphics;
 mod methods;
 mod rhi_device;
+mod rhi_frame;
 mod rhi_pipeline;
+mod rhi_surface;
 mod rhi_texture;
 mod swapchain;
 mod transfer;
@@ -34,6 +36,12 @@ mod transfer;
 // 构造函数只通过私有 guard 完成失败回滚与成功句柄移交。
 use construction::PendingVulkanContext;
 use rhi_device::VulkanRhiDevice;
+
+// 测试 harness 仍复用私有 RHI Device，不扩大生产 Adapter 接口。
+#[cfg(feature = "vulkan-parity-test")]
+pub(crate) fn run_gpu_parity_test() {
+    rhi_device::run_gpu_parity_test();
+}
 
 #[cfg(test)]
 pub(crate) use swapchain::PresentCompletion;
@@ -43,7 +51,7 @@ pub(crate) use transfer::allocate_cpu_shadow;
 
 use swapchain::{
     PresentFenceSet, PresentLifetime, allocate_presented_images, create_render_finished_semaphores,
-    destroy_semaphores,
+    create_swapchain_image_views, destroy_image_views, destroy_semaphores,
 };
 
 pub(crate) fn vk_err(operation: &str, err: vk::Result) -> Error {
@@ -152,6 +160,25 @@ struct UploadBuffer {
     size: vk::DeviceSize,
 }
 
+// 保存 acquire 后尚未由 Device submit 消费的 swapchain image 同步事实。
+#[derive(Clone, Copy)]
+struct VulkanAcquiredFrame {
+    image_index: u32,
+    acquire_suboptimal: bool,
+    render_finished: vk::Semaphore,
+    present_fence: Option<vk::Fence>,
+    release_count: usize,
+}
+
+// 保存 queue submit 后只允许 Surface present 消费的不可拆原生事实。
+struct VulkanSubmittedFrame {
+    image_index: u32,
+    acquire_suboptimal: bool,
+    render_finished: vk::Semaphore,
+    present_fence: Option<vk::Fence>,
+    submission: crate::platform::presentation::rhi::SubmissionHandle,
+}
+
 pub struct VulkanContext {
     runtime: Option<Rc<VulkanRuntime>>,
     device_lease: Option<Rc<VulkanDevice>>,
@@ -173,6 +200,7 @@ pub struct VulkanContext {
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
+    swapchain_image_views: Vec<vk::ImageView>,
     image_layouts: Vec<vk::ImageLayout>,
     swapchain_format: vk::Format,
     extent: vk::Extent2D,
@@ -186,6 +214,9 @@ pub struct VulkanContext {
     present_fences: PresentFenceSet,
     present_lifetime: PresentLifetime,
     frame_fence: vk::Fence,
+    acquired_frame: Option<VulkanAcquiredFrame>,
+    submitted_frame: Option<VulkanSubmittedFrame>,
+    surface_generation: u64,
     native_surface: *mut c_void,
     logical_width: i32,
     logical_height: i32,

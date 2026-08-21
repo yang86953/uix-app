@@ -1,4 +1,4 @@
-//! Vulkan PixelUpload context 生命周期实现。
+//! Vulkan context 共同生命周期与显式 PixelUpload 兼容入口。
 
 use super::*;
 
@@ -7,9 +7,8 @@ impl GraphicsContextLifecycle for VulkanContext {
         self.shutdown_result()
     }
 
-    // 返回 Vulkan PixelUpload swapchain 的完整 drawable 快照。
+    // 返回 Vulkan swapchain 的完整 drawable 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
-        // FullOnly recipe 不消费 generation，保留此前默认零代际语义。
         crate::native::present::PresentSurface::identity(
             // 记录当前 swapchain 物理宽度。
             self.width,
@@ -17,8 +16,8 @@ impl GraphicsContextLifecycle for VulkanContext {
             self.height,
             // 从同一状态计算逻辑到物理的 DPR。
             self.width as f32 / self.logical_width.max(1) as f32,
-            // 保持 PixelUpload damage tracker 的既有 generation。
-            0,
+            // 与 GraphicsSurface token 共用唯一代际事实。
+            self.surface_generation,
         )
     }
 }
