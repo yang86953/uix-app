@@ -1,7 +1,7 @@
 use crate::app::queues::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window::window_session::WindowTextInputState;
 use crate::core::WindowId;
-use crate::native::platform::Platform;
+use crate::platform::platform::Platform;
 use crate::ui::WidgetTree;
 
 /// Synchronize one window's declarative focus state with the process native IME.

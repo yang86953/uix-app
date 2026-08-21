@@ -34,11 +34,31 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::AgentStreamCancelIo",
     "crate::native::agent_transport::fill_secure_random",
     "crate::native::factory::create_platform_with_pending",
-    "crate::native::platform::Platform",
 }
-# native Platform 根尚未迁移，但不得继续取得任何 native capabilities 合同。
-NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
-NATIVE_PLATFORM_PROTOCOLS: set[str] = set()
+# Platform 根合同的唯一中立物理归属；native 不保留兼容文件。
+PLATFORM_ROOT = SRC / "platform/platform.rs"
+LEGACY_PLATFORM_ROOT = SRC / "native/platform.rs"
+# 三平台、fake 与应用测试桩必须直接实现同一个根合同。
+PLATFORM_ROOT_IMPLEMENTERS = (
+    SRC / "native/backends/linux/platform.rs",
+    SRC / "native/backends/windows/platform.rs",
+    SRC / "native/backends/macos/host/mod.rs",
+    ROOT / "tests/support/native/test_harness/mod.rs",
+    ROOT / "tests/unit/app/application/application/runtime/mod__tests.rs",
+)
+# 原有直接调用者必须消费中立根合同，禁止经 native 兼容路径取得。
+PLATFORM_ROOT_CONSUMERS = (
+    SRC / "app/application/application/mod.rs",
+    SRC / "app/event_loop/event_loop.rs",
+    SRC / "app/event_loop/pointer_cursor.rs",
+    SRC / "app/window/text_input.rs",
+    SRC / "app/window/window.rs",
+    SRC / "app/window/window_driver/mod.rs",
+    SRC / "native/factory/mod.rs",
+    SRC / "platform/host/providers/linux.rs",
+    SRC / "platform/host/providers/macos.rs",
+    *PLATFORM_ROOT_IMPLEMENTERS,
+)
 # 固定无附属值类型的基础系统服务协议唯一物理归属。
 SYSTEM_SERVICE_ROOT = SRC / "platform/system.rs"
 SYSTEM_SERVICE_DEFINITIONS = (
@@ -77,7 +97,7 @@ SYSTEM_SERVICE_IMPLEMENTERS = {
 }
 # Platform 根及三平台/fake 聚合均需显式消费新权威路径。
 SYSTEM_SERVICE_PLATFORM_ROOTS = (
-    NATIVE_PLATFORM_ROOT,
+    PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
     SRC / "native/backends/macos/host/mod.rs",
@@ -114,7 +134,7 @@ FILESYSTEM_IMPLEMENTERS = {
 }
 # Platform 根、三平台聚合、fake 与应用测试桩均直接消费唯一低层端口。
 FILESYSTEM_PLATFORM_ROOTS = (
-    NATIVE_PLATFORM_ROOT,
+    PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
     SRC / "native/backends/macos/host/mod.rs",
@@ -138,7 +158,7 @@ CONSOLE_IMPLEMENTERS = {
 }
 # Platform 根及三平台/fake 聚合均需显式消费控制台权威路径。
 CONSOLE_PLATFORM_ROOTS = (
-    NATIVE_PLATFORM_ROOT,
+    PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
     SRC / "native/backends/macos/host/mod.rs",
@@ -171,7 +191,7 @@ SYSTEM_INFO_IMPLEMENTERS = {
 }
 # Platform 根、三平台聚合与 fake 均需显式消费新权威路径。
 SYSTEM_INFO_PLATFORM_ROOTS = (
-    NATIVE_PLATFORM_ROOT,
+    PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
     SRC / "native/backends/macos/host/mod.rs",
@@ -403,10 +423,42 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
         )
 
-    def test_native_platform_compatibility_is_limited_to_unmigrated_services(self) -> None:
-        # 已迁往 platform 的合同不得通过宽泛 capabilities 导入带回。
-        observed = native_paths(source(NATIVE_PLATFORM_ROOT))
-        self.assertEqual(observed, NATIVE_PLATFORM_PROTOCOLS)
+    def test_platform_root_is_the_only_source_definition(self) -> None:
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+
+        # 旧 native 物理文件必须消失，递归 Rust 源码不得保留兼容路径。
+        self.assertFalse(LEGACY_PLATFORM_ROOT.exists())
+        for path in rust_sources:
+            with self.subTest(legacy_platform_reference=relative(path)):
+                self.assertNotIn("crate::native::platform", source(path))
+
+        # 根 trait 只能定义一次，且中立权威叶不得反向依赖 native。
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        definition = re.compile(r"\btrait\s+Platform\b")
+        locations = [path for path, text in all_sources.items() if definition.search(text)]
+        self.assertEqual(locations, [PLATFORM_ROOT])
+        owner_source = source(PLATFORM_ROOT)
+        dependencies = set(
+            re.findall(r"\buse\s+(crate::[^;]+);", without_comments(owner_source))
+        )
+        self.assertTrue(
+            all(
+                dependency.startswith("crate::core")
+                or dependency.startswith("crate::platform")
+                for dependency in dependencies
+            )
+        )
+        self.assertNotIn("crate::native", owner_source)
+
+        # 三平台只实现、factory 只组装，其余调用者均直接消费中立合同。
+        for path in PLATFORM_ROOT_IMPLEMENTERS:
+            with self.subTest(platform_root_implementer=relative(path)):
+                implementation_source = source(path)
+                self.assertIn("crate::platform::platform::Platform", implementation_source)
+                self.assertIn("impl Platform for", implementation_source)
+        for path in PLATFORM_ROOT_CONSUMERS:
+            with self.subTest(platform_root_consumer=relative(path)):
+                self.assertIn("crate::platform::platform::Platform", source(path))
 
     def test_platform_system_is_the_only_base_service_definition(self) -> None:
         rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
@@ -741,7 +793,7 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
 
         # Platform 根、三平台与 fake 都直接绑定 platform 权威路径。
         self.assertIn(
-            "use crate::platform::display::IDisplay;", source(NATIVE_PLATFORM_ROOT)
+            "use crate::platform::display::IDisplay;", source(PLATFORM_ROOT)
         )
         for path, implementation in DISPLAY_IMPLEMENTERS.items():
             implementation_source = source(path)

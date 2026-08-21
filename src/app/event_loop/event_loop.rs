@@ -13,7 +13,7 @@ use crate::draw::renderer::RenderMetrics;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
-use crate::native::platform::Platform;
+use crate::platform::platform::Platform;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::PlatformWindow;
 use crate::ui::theme::{DynTokens, Theme};

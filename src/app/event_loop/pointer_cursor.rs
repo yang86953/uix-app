@@ -1,7 +1,7 @@
 // capability absence 使用稳定错误码与可重试运行失败区分。
 use crate::core::Errc;
 // 引入平台能力根契约。
-use crate::native::platform::Platform;
+use crate::platform::platform::Platform;
 // 引入 App System 实际调用的窄光标能力端口。
 use crate::platform::windowing::ICursor;
 // 引入平台无关的指针光标枚举。
