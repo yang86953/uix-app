@@ -94,6 +94,38 @@ pub enum TypedNode {
     Interpolation(IrSpan),
 }
 
+/// 区分查询命中的语义节点类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SemanticNodeKind {
+    Declaration,
+    Element,
+    Attribute,
+    Text,
+    Interpolation,
+}
+
+impl SemanticNodeKind {
+    /// 返回供 SourceMap、CLI 与 LSP 使用的稳定名称。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Declaration => "declaration",
+            Self::Element => "element",
+            Self::Attribute => "attribute",
+            Self::Text => "text",
+            Self::Interpolation => "interpolation",
+        }
+    }
+}
+
+/// 保存一个可由源码位置查询的稳定语义节点。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SemanticNodeInfo {
+    pub id: String,
+    pub kind: SemanticNodeKind,
+    pub name: String,
+    pub span: IrSpan,
+}
+
 /// 保存 Compiler System 语义阶段的确定性结果。
 #[derive(Debug, Clone)]
 pub struct TypedUiIr {
@@ -119,9 +151,115 @@ impl TypedUiIr {
         &self.root
     }
 
+    /// 查询覆盖指定源码字节的最窄语义节点。
+    pub fn semantic_node_at(&self, source_id: SourceId, offset: usize) -> Option<SemanticNodeInfo> {
+        let mut best = None;
+        for declaration in &self.declarations {
+            consider_node(
+                &mut best,
+                semantic_info(
+                    SemanticNodeKind::Declaration,
+                    &declaration.name,
+                    declaration.span,
+                ),
+                source_id,
+                offset,
+            );
+            for node in &declaration.body {
+                find_node(node, source_id, offset, &mut best);
+            }
+        }
+        find_element(&self.root, source_id, offset, &mut best);
+        best
+    }
+
     // 只允许 Rust Emitter 消费已经进入 IR 的原始结构事实。
     pub(crate) const fn document(&self) -> &Document {
         &self.document
+    }
+}
+
+fn find_node(
+    node: &TypedNode,
+    source_id: SourceId,
+    offset: usize,
+    best: &mut Option<SemanticNodeInfo>,
+) {
+    match node {
+        TypedNode::Element(element) => find_element(element, source_id, offset, best),
+        TypedNode::Text(span) => consider_node(
+            best,
+            semantic_info(SemanticNodeKind::Text, "#text", *span),
+            source_id,
+            offset,
+        ),
+        TypedNode::Interpolation(span) => consider_node(
+            best,
+            semantic_info(SemanticNodeKind::Interpolation, "#expression", *span),
+            source_id,
+            offset,
+        ),
+    }
+}
+
+fn find_element(
+    element: &TypedElement,
+    source_id: SourceId,
+    offset: usize,
+    best: &mut Option<SemanticNodeInfo>,
+) {
+    consider_node(
+        best,
+        semantic_info(SemanticNodeKind::Element, &element.name, element.span),
+        source_id,
+        offset,
+    );
+    for attribute in &element.attributes {
+        consider_node(
+            best,
+            semantic_info(SemanticNodeKind::Attribute, &attribute.name, attribute.span),
+            source_id,
+            offset,
+        );
+    }
+    for child in &element.children {
+        find_node(child, source_id, offset, best);
+    }
+}
+
+fn consider_node(
+    best: &mut Option<SemanticNodeInfo>,
+    candidate: SemanticNodeInfo,
+    source_id: SourceId,
+    offset: usize,
+) {
+    if candidate.span.source_id != source_id
+        || offset < candidate.span.start
+        || offset >= candidate.span.end
+    {
+        return;
+    }
+    let candidate_len = candidate.span.end.saturating_sub(candidate.span.start);
+    let replace = best
+        .as_ref()
+        .is_none_or(|current| candidate_len < current.span.end.saturating_sub(current.span.start));
+    if replace {
+        *best = Some(candidate);
+    }
+}
+
+fn semantic_info(kind: SemanticNodeKind, name: &str, span: IrSpan) -> SemanticNodeInfo {
+    SemanticNodeInfo {
+        id: format!(
+            "{}.{:016x}.{}.{}",
+            kind.as_str(),
+            span.source_id.value(),
+            span.start,
+            name
+        ),
+        kind,
+        name: name.to_string(),
+        span,
     }
 }
 
@@ -337,5 +475,10 @@ mod tests {
         assert!(matches!(text.kind, TypedElementKind::Builtin { .. }));
         assert_eq!(text.attributes[0].role, TypedAttributeRole::Event);
         assert_eq!(text.attributes[1].role, TypedAttributeRole::Style);
+        let click = ir
+            .semantic_node_at(source, text.attributes[0].span.start)
+            .expect("事件属性必须可由位置查询");
+        assert_eq!(click.name, "@click");
+        assert_eq!(click.kind, super::SemanticNodeKind::Attribute);
     }
 }
