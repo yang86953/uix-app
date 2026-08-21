@@ -153,15 +153,17 @@ pub(crate) use shadow::{
     SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
     SHADOW_VIEWPORT_FLOAT_OFFSET,
 };
-// 向 Drawing System 暴露唯一 Blur 常量构造器、权重数量和固定字节数。
-pub(crate) use blur::{BLUR_UNIFORM_BYTES, BLUR_WEIGHT_COUNT, RhiBlurRasterParams};
+// 向 Drawing System 暴露唯一 Blur 几何门禁、方向、常量和固定字节数。
+pub(crate) use blur::{
+    BLUR_UNIFORM_BYTES, BLUR_WEIGHT_COUNT, RhiBlurDirection, RhiBlurPassGeometry,
+    RhiBlurRasterParams,
+};
 // OpenGL Adapter 与共享契约测试需要按字段核对 Blur 字节 ABI。
 #[cfg(any(feature = "opengles", test))]
 // 不同构建只消费当前 Adapter 需要的字段，统一重导出仍保留完整共享契约。
 #[allow(unused_imports)]
 pub(crate) use blur::{
-    BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
-    BLUR_WEIGHTS_FLOAT_OFFSET,
+    BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET, BLUR_UV_BOUNDS_FLOAT_OFFSET, BLUR_WEIGHTS_FLOAT_OFFSET,
 };
 // 向 Drawing System 暴露唯一 MSDF 常量构造器和固定字节数。
 pub(crate) use msdf::{MSDF_UNIFORM_BYTES, RhiMsdfRasterParams};

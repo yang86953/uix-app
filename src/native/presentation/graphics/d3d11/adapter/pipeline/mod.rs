@@ -327,41 +327,38 @@ SamplerState u_samp : register(s0);
 
 cbuffer BlurCB : register(b0)
 {
-    // xy = target viewport size; zw = source texture size (physical px)
-    float4 u_sizes;
-    // xy = target region origin; zw = region size (physical px)
-    float4 u_region;
-    // xy = pixel sampling direction; z = tap radius (taps = 2r+1)
-    float4 u_dir_taps;
+    // xy/zw = source sampling domain min/max pixel-center UV
+    float4 u_uv_bounds;
+    // xy = normalized one-texel step; z = tap radius (taps = 2r+1)
+    float4 u_step_taps;
     // Gaussian weights ordered [-r..+r], zero-terminated, max 64 taps
     float4 u_weights[16];
 };
 
-struct VSIn { float2 pos : POSITION; };
+struct VSIn { float2 pos : POSITION; float2 uv : TEXCOORD0; };
 struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
 
 VSOut VSMain(VSIn input)
 {
     VSOut o;
     o.pos = float4(input.pos, 0.0, 1.0);
-    // D3D texture (0,0) is top-left; map the region to the source UV space.
-    float2 unit = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);
-    o.uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;
+    o.uv = input.uv;
     return o;
 }
 
-// Separable Gaussian: one pass samples along u_dir_taps.xy.
+// Separable Gaussian: one pass samples along the shared normalized texel step.
 float4 PSMain(VSOut input) : SV_TARGET
 {
-    float2 step = u_dir_taps.xy / u_sizes.zw;
-    int radius = (int)u_dir_taps.z;
+    float2 step = u_step_taps.xy;
+    int radius = (int)u_step_taps.z;
     float4 color = 0;
     for (int i = 0; i < 64; ++i)
     {
         float w = u_weights[i / 4][i % 4];
         if (w <= 0.0) break;
         float2 off = step * (float)(i - radius);
-        color += w * u_tex.Sample(u_samp, input.uv + off);
+        float2 sample_uv = clamp(input.uv + off, u_uv_bounds.xy, u_uv_bounds.zw);
+        color += w * u_tex.Sample(u_samp, sample_uv);
     }
     return color;
 }
@@ -529,6 +526,8 @@ pub(crate) struct D3d11Pipeline {
     layout: ID3D11InputLayout,
     // Blur pass 必须使用读取 BlurCB 的专用 VS，不能复用 BlitCB ABI。
     vs_blur: ID3D11VertexShader,
+    // Blur pass 使用共享 position/uv-float4 输入布局。
+    layout_blur: ID3D11InputLayout,
     /// 可分离高斯模糊像素着色器。
     ps_blur: ID3D11PixelShader,
     vs_glyph: ID3D11VertexShader,

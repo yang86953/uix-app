@@ -178,7 +178,7 @@ class GraphicsRhiShapeShadowBlurVisualContractTests(unittest.TestCase):
             ("fragColor = vec4(u_color.rgb, u_color.a * coverage);", "return float4(u_color.rgb, u_color.a * coverage);"),
         ))
 
-    # Blur 的区域 UV、tap 索引和加权采样必须成对一致。
+    # Blur 的绝对 UV、规范 texel step、域内 clamp 和加权采样必须成对一致。
     def test_blur_region_sampling_and_accumulation_are_equivalent(self) -> None:
         # 读取 OpenGL shader 源码。
         opengl_source = OPENGL_SHADERS.read_text(encoding="utf-8")
@@ -190,16 +190,23 @@ class GraphicsRhiShapeShadowBlurVisualContractTests(unittest.TestCase):
         opengl_fragment = shader_constant(opengl_source, "pub(super) const BLUR_FRAGMENT")
         # 截取 D3D11 Blur 常量。
         d3d11 = shader_constant(d3d11_source, "const BLUR_HLSL")
-        # 锁定 top-left 区域到 source texture 的 UV 映射。
+        # 锁定共享几何已经生成的绝对 source UV 只被透传一次。
         assert_formula_pairs(self, opengl_vertex, d3d11, (
-            ("vec2 unit = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);", "float2 unit = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);"),
-            ("v_uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;", "o.uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;"),
+            ("layout(location = 1) in vec2 a_uv;", "float2 uv : TEXCOORD0;"),
+            ("v_uv = a_uv;", "o.uv = input.uv;"),
         ))
-        # 锁定方向步长和整数 tap radius。
+        # 锁定已经由共享合同除以 source extent 的 texel step 和整数 tap radius。
         assert_formula_pairs(self, opengl_fragment, d3d11, (
-            ("vec2 step_size = u_dir_taps.xy / u_sizes.zw;", "float2 step = u_dir_taps.xy / u_sizes.zw;"),
-            ("int radius = int(u_dir_taps.z);", "int radius = (int)u_dir_taps.z;"),
+            ("vec2 step_size = u_step_taps.xy;", "float2 step = u_step_taps.xy;"),
+            ("int radius = int(u_step_taps.z);", "int radius = (int)u_step_taps.z;"),
         ))
+        # 两端都必须在采样前钳到共享源域像素中心边界。
+        assert_formula_pairs(self, opengl_fragment, d3d11, (
+            ("vec2 sample_uv = clamp(v_uv + offset, u_uv_bounds.xy, u_uv_bounds.zw);", "float2 sample_uv = clamp(input.uv + off, u_uv_bounds.xy, u_uv_bounds.zw);"),
+        ))
+        # shader 不得重新出现 source/destination region 原点公式。
+        self.assertNotIn("u_region", opengl_vertex + opengl_fragment + d3d11)
+        self.assertNotIn("u_sizes", opengl_vertex + opengl_fragment + d3d11)
         # 锁定 OpenGL 顶点的 Y 投影翻转。
         self.assertIn("gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);", opengl_vertex)
         # 锁定 D3D11 顶点直接写入 SV_POSITION 的 API 对应差异。
@@ -222,7 +229,7 @@ class GraphicsRhiShapeShadowBlurVisualContractTests(unittest.TestCase):
         # 锁定以 radius 为中心的 offset 和 texture/Sample 加权累加。
         assert_formula_pairs(self, opengl_fragment, d3d11, (
             ("vec2 offset = step_size * float(index - radius);", "float2 off = step * (float)(i - radius);"),
-            ("color += weight * texture(u_tex, v_uv + offset);", "color += w * u_tex.Sample(u_samp, input.uv + off);"),
+            ("color += weight * texture(u_tex, sample_uv);", "color += w * u_tex.Sample(u_samp, sample_uv);"),
             ("fragColor = color;", "return color;"),
         ))
 

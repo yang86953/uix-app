@@ -35,9 +35,9 @@ impl D3d11Pipeline {
         // 绑定已经由 FramePlan 验证过的 blur shader ABI 和资源。
         // SAFETY: 所有 D3D11 资源由当前 pipeline/device 创建并保持存活，绑定和 Draw 在 immediate context owner thread 执行。
         unsafe {
-            // Blur VS 输入与 RECT position layout 相同。
-            context.IASetInputLayout(&self.layout);
-            // 绑定本次 blur 的 NDC vertex buffer。
+            // Blur VS 只消费共享 position/uv-float4 布局。
+            context.IASetInputLayout(&self.layout_blur);
+            // 绑定本次 blur 的最终 NDC position 与绝对 source UV。
             context.IASetVertexBuffers(
                 0,
                 1,

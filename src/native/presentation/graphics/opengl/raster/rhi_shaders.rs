@@ -422,18 +422,16 @@ void main() {
 }
 "#;
 
-// Blur pass 的 NDC 区域顶点阶段。
+// Blur pass 只透传共享几何已经冻结的 NDC position 与绝对 source UV。
 pub(super) const BLUR_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
-uniform vec4 u_sizes;
-uniform vec4 u_region;
+layout(location = 1) in vec2 a_uv;
 out vec2 v_uv;
 void main() {
     // blur 顶点已是 top-left NDC；纹理目标需把顶部写到 GL 第零行。
     gl_Position = vec4(a_pos.x, -a_pos.y, 0.0, 1.0);
-    vec2 unit = vec2(a_pos.x * 0.5 + 0.5, 0.5 - a_pos.y * 0.5);
-    v_uv = (u_region.xy + unit * u_region.zw) / u_sizes.zw;
+    v_uv = a_uv;
 }
 "#;
 
@@ -441,21 +439,22 @@ void main() {
 pub(super) const BLUR_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 uniform sampler2D u_tex;
-uniform vec4 u_sizes;
-uniform vec4 u_dir_taps;
+uniform vec4 u_uv_bounds;
+uniform vec4 u_step_taps;
 uniform vec4 u_weights[16];
 in vec2 v_uv;
 out vec4 fragColor;
 void main() {
-    vec2 step_size = u_dir_taps.xy / u_sizes.zw;
-    int radius = int(u_dir_taps.z);
+    vec2 step_size = u_step_taps.xy;
+    int radius = int(u_step_taps.z);
     vec4 color = vec4(0.0);
     for (int index = 0; index < 64; ++index) {
         float weight = u_weights[index / 4][index % 4];
         if (weight <= 0.0)
             break;
         vec2 offset = step_size * float(index - radius);
-        color += weight * texture(u_tex, v_uv + offset);
+        vec2 sample_uv = clamp(v_uv + offset, u_uv_bounds.xy, u_uv_bounds.zw);
+        color += weight * texture(u_tex, sample_uv);
     }
     fragColor = color;
 }

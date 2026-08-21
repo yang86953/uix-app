@@ -15,6 +15,8 @@ use crate::platform::presentation::rhi::{
 pub(crate) enum FrameVertexPayload {
     // 保存只含物理位置 float2 的顶点流。
     PositionF32x2(Arc<[f32]>),
+    // 保存目标 NDC position 与绝对 source UV 组成的固定 float4 顶点流。
+    PositionUvF32(Arc<[f32]>),
     // 保存物理位置、UV 与颜色组成的固定 float8 顶点流。
     PositionUvColorF32(Arc<[f32]>),
 }
@@ -25,6 +27,12 @@ impl FrameVertexPayload {
     pub(crate) fn position_f32x2(values: impl Into<Arc<[f32]>>) -> Self {
         // 保留调用方已经冻结的浮点顺序。
         Self::PositionF32x2(values.into())
+    }
+
+    // 构造 position/uv-float4 顶点载荷。
+    pub(crate) fn position_uv_f32(values: impl Into<Arc<[f32]>>) -> Self {
+        // 保留共享 Blur 几何已经冻结的 position 与绝对 UV 顺序。
+        Self::PositionUvF32(values.into())
     }
 
     // 构造 position/uv/color-float8 顶点载荷。
@@ -39,6 +47,8 @@ impl FrameVertexPayload {
         match self {
             // position-float2 对应两个浮点的共享布局。
             Self::PositionF32x2(_) => PipelineVertexLayout::PositionF32x2,
+            // position/uv-float4 对应 Blur 的共享布局。
+            Self::PositionUvF32(_) => PipelineVertexLayout::PositionUvF32,
             // sampled 顶点对应八个浮点的共享布局。
             Self::PositionUvColorF32(_) => PipelineVertexLayout::PositionUvColorF32,
         }
@@ -50,6 +60,8 @@ impl FrameVertexPayload {
         match self {
             // 借出 position-float2 数据。
             Self::PositionF32x2(values) => values,
+            // 借出 position/uv-float4 数据。
+            Self::PositionUvF32(values) => values,
             // 借出 sampled float8 数据。
             Self::PositionUvColorF32(values) => values,
         }
@@ -90,6 +102,8 @@ impl FrameVertexPayload {
         match self {
             // position-float2 不携带颜色，保持原有有限值行为。
             Self::PositionF32x2(_) => true,
+            // Blur position/uv 只要求完整且有限，UV 边界由共享几何门禁产生。
+            Self::PositionUvF32(_) => true,
             // sampled float8 的每个完整顶点都必须携带单位颜色。
             Self::PositionUvColorF32(_) => values.chunks_exact(floats_per_vertex).all(
                 // 逐顶点检查颜色字段而不影响位置与 UV 的值域。

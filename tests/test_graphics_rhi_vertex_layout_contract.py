@@ -39,6 +39,8 @@ class GraphicsRhiVertexLayoutContractTests(unittest.TestCase):
         self.assertIn("struct PipelineVertexAttribute", shared)
         # position/uv/color 必须由同一静态序列定义。
         self.assertIn("const POSITION_UV_COLOR_F32_ATTRIBUTES", shared)
+        # Blur 的 position/uv 最小布局也必须由共享序列定义。
+        self.assertIn("const POSITION_UV_F32_ATTRIBUTES", shared)
         # 两个 Adapter 必须取得同一个只读属性切片。
         self.assertIn("fn attributes(self) -> &'static [PipelineVertexAttribute]", shared)
         # 布局必须统一验证槽位、偏移和 stride。
@@ -77,6 +79,8 @@ class GraphicsRhiVertexLayoutContractTests(unittest.TestCase):
         self.assertIn("if !layout.is_valid()", d3d11)
         # position 输入布局必须由共享枚举选择。
         self.assertIn("d3d11_vertex_elements(PipelineVertexLayout::PositionF32x2)", d3d11)
+        # Blur 输入布局必须由共享 position/uv 枚举选择。
+        self.assertIn("d3d11_vertex_elements(PipelineVertexLayout::PositionUvF32)", d3d11)
         # 采样输入布局必须由共享枚举选择。
         self.assertIn(
             # 锁定完整共享布局选择表达式。

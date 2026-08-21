@@ -8,8 +8,8 @@ use glow::HasContext as _;
 // 引入统一结果和 draw packet 语义。
 use crate::core::error::Result;
 use crate::platform::presentation::rhi::{
-    BLUR_DIRECTION_TAPS_FLOAT_OFFSET, BLUR_REGION_FLOAT_OFFSET, BLUR_SIZES_FLOAT_OFFSET,
-    BLUR_WEIGHT_COUNT, BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket, DrawSamplingBinding,
+    BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET, BLUR_UV_BOUNDS_FLOAT_OFFSET, BLUR_WEIGHT_COUNT,
+    BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket, DrawSamplingBinding,
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
     GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat, MESH_COLOR_FLOAT_OFFSET,
@@ -484,30 +484,23 @@ impl OpenGlRhiDevice {
                     );
                 }
             }
-            // blur 使用 NDC float2 区域和共享 BlurConstants。
+            // blur 使用共享 position/uv-float4 与不含 region 公式的 BlurConstants。
             PipelineKind::BlurPass => {
-                // SAFETY: 该分支已校验共享 Blur ABI、stride=8 且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 使用共享固定容量；资源描述已在 Device bind 边界由共享契约验证；helper 仅在 sampled 原生绑定前校验 pipeline 语义；context 保持 current。
+                // SAFETY: 该分支已校验共享 Blur ABI、stride=16 且 vertex_count>0；program/vao/vertex/texture/sampler 均存活；weights 使用共享固定容量；资源描述已在 Device bind 边界由共享契约验证；helper 仅在 sampled 原生绑定前校验 pipeline 语义；context 保持 current。
                 unsafe {
-                    // 按共享字段索引映射目标与 source texture 尺寸。
+                    // 按共享字段索引映射源采样域像素中心 UV 边界。
                     set_vec4(
                         gl,
                         program,
-                        "u_sizes",
-                        read_vec4(&uniform, BLUR_SIZES_FLOAT_OFFSET)?,
+                        "u_uv_bounds",
+                        read_vec4(&uniform, BLUR_UV_BOUNDS_FLOAT_OFFSET)?,
                     );
-                    // 按共享字段索引映射采样区域原点与尺寸。
+                    // 按共享字段索引映射已归一化 texel step 与 tap 半径。
                     set_vec4(
                         gl,
                         program,
-                        "u_region",
-                        read_vec4(&uniform, BLUR_REGION_FLOAT_OFFSET)?,
-                    );
-                    // 按共享字段索引映射像素方向与 tap 半径。
-                    set_vec4(
-                        gl,
-                        program,
-                        "u_dir_taps",
-                        read_vec4(&uniform, BLUR_DIRECTION_TAPS_FLOAT_OFFSET)?,
+                        "u_step_taps",
+                        read_vec4(&uniform, BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET)?,
                     );
                     // 使用共享权重数量创建精确的 Adapter 临时映射。
                     let mut weights = [0.0f32; BLUR_WEIGHT_COUNT];

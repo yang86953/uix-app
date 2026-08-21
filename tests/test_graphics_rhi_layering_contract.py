@@ -479,7 +479,7 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         for numeric_offset in (4, 8, 12, 16, 20):
             # 每个旧数字偏移都必须从 Shadow 分支消失。
             self.assertNotIn(f"read_vec4(&uniform, {numeric_offset})", opengl_shadow)
-    # Blur 的尺寸、区域、方向、tap 与权重必须由一个共享类型化 ABI 拥有。
+    # Blur 的 source/destination 区域、绝对 UV、texel step 与权重必须由共享门禁拥有。
     def test_blur_uniform_is_shared_typed_and_complete(self) -> None:
         # 读取共享 Blur 值对象。
         blur = (ROOT / "src/platform/presentation/rhi/blur.rs").read_text(encoding="utf-8")
@@ -493,12 +493,15 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         opengl_shader = (ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs").read_text(encoding="utf-8")
         # 读取 D3D11 Blur cbuffer 字段声明。
         d3d11_shader = (ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs").read_text(encoding="utf-8")
-        # 共享层必须拥有完整 304 字节值对象而非匿名数组大小。
+        # 共享层必须同时拥有几何门禁和完整 288 字节值对象。
+        self.assertIn("pub(crate) struct RhiBlurPassGeometry", blur)
         self.assertIn("pub(crate) struct RhiBlurRasterParams", blur)
-        # Drawing 只负责产生归一化核，字段排列必须交给共享构造器。
-        self.assertIn("RhiBlurRasterParams::new(", renderer)
-        # 禁止 Drawing 恢复手工维护的 76-float ABI 数组。
-        self.assertNotIn("let mut values = [0.0f32; 76]", renderer)
+        # Drawing 只负责产生归一化核，几何和字段排列必须交给共享对象。
+        self.assertIn("RhiBlurPassGeometry::new(", renderer)
+        self.assertIn("geometry.raster_params(direction, tap_radius, weights)", renderer)
+        # 禁止 Drawing 恢复手工 region 顶点或 72-float ABI 数组。
+        self.assertNotIn("let left = region.x", renderer)
+        self.assertNotIn("let mut values = [0.0f32; 72]", renderer)
         # PipelineContract 必须引用 Blur 自己的固定 ABI 大小。
         self.assertIn("Self::Blur => BLUR_UNIFORM_BYTES", pipeline)
         # 截取 OpenGL Blur 分支，排除其它 pipeline 的合法字段布局。
@@ -510,12 +513,10 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         ]
         # OpenGL 必须读取共享字段常量，不得保留数字偏移与独立权重数量。
         for field in (
-            # 目标与 source 尺寸字段身份。
-            "BLUR_SIZES_FLOAT_OFFSET",
-            # 采样区域字段身份。
-            "BLUR_REGION_FLOAT_OFFSET",
-            # 方向与 tap 半径字段身份。
-            "BLUR_DIRECTION_TAPS_FLOAT_OFFSET",
+            # 源域像素中心 UV 边界字段身份。
+            "BLUR_UV_BOUNDS_FLOAT_OFFSET",
+            # 已归一化 texel step 与 tap 半径字段身份。
+            "BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET",
             # 权重起始字段身份。
             "BLUR_WEIGHTS_FLOAT_OFFSET",
             # 完整权重数量。
@@ -523,12 +524,15 @@ class GraphicsRhiLayeringContractTests(unittest.TestCase):
         ):
             # 每个共享字段都必须进入 Adapter 映射。
             self.assertIn(field, opengl_blur)
-        # 禁止恢复三个匿名 header float4 偏移。
-        for numeric_offset in (0, 4, 8):
+        # 禁止恢复两个匿名 header float4 偏移。
+        for numeric_offset in (0, 4):
             # 每个旧数字偏移都必须从 Blur 分支消失。
             self.assertNotIn(f"read_vec4(&uniform, {numeric_offset})", opengl_blur)
-        # 禁止 Adapter 重新声明权重从第十二个 float 开始。
-        self.assertNotIn("read_f32(&uniform, 12 + index)", opengl_blur)
+        # 禁止 Adapter 重新声明权重从第八个 float 开始。
+        self.assertNotIn("read_f32(&uniform, 8 + index)", opengl_blur)
+        # Adapter 不得恢复 source/destination region 映射公式。
+        self.assertNotIn("u_region", opengl_blur + opengl_shader + d3d11_shader)
+        self.assertNotIn("u_sizes", opengl_blur + opengl_shader + d3d11_shader)
         # 两套 shader 都必须保留完整十六个 float4 权重数组。
         self.assertIn("uniform vec4 u_weights[16];", opengl_shader)
         # D3D11 cbuffer 必须与同一共享总容量匹配。
