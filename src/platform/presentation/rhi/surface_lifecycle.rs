@@ -62,12 +62,24 @@ pub(crate) struct RhiSurfaceRecreateTransaction {
     id: u64,
     requested: RhiExtent,
     reason: RhiSurfaceRecreateReason,
+    native_width: i32,
+    native_height: i32,
 }
 
 impl RhiSurfaceRecreateTransaction {
     // 返回 Adapter 应交给原生 swapchain 创建入口的请求尺寸。
     pub(crate) const fn requested(self) -> RhiExtent {
         self.requested
+    }
+
+    // 返回已经由共享生命周期证明可进入原生 ABI 的尺寸。
+    pub(crate) const fn native_size_i32(self) -> (i32, i32) {
+        (self.native_width, self.native_height)
+    }
+
+    // 返回 Adapter 机械选择原生重建操作所需的共享原因。
+    pub(crate) const fn reason(self) -> RhiSurfaceRecreateReason {
+        self.reason
     }
 }
 
@@ -109,12 +121,12 @@ impl RhiSurfaceLifecycle {
         requested: RhiExtent,
         reason: RhiSurfaceRecreateReason,
     ) -> Result<RhiSurfaceRecreateTransaction> {
-        if !requested.is_valid() {
+        let Some((native_width, native_height)) = requested.native_size_i32() else {
             return Err(Error::new(
                 Errc::InvalidArgument,
                 "RHI surface recreate extent is invalid",
             ));
-        }
+        };
         match (self.state, reason) {
             (RhiSurfaceLifecycleState::Uninitialized, RhiSurfaceRecreateReason::Initialize) => {}
             (RhiSurfaceLifecycleState::Uninitialized, _) => {
@@ -146,6 +158,8 @@ impl RhiSurfaceLifecycle {
             id,
             requested,
             reason,
+            native_width,
+            native_height,
         })
     }
 

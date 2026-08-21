@@ -5,8 +5,11 @@ use super::WglContext;
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
 // 引入 WGL owner 持有的 raster pipeline 类型。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
-// 引入已经通过共享门禁的 surface resize 事务。
-use crate::platform::presentation::rhi::RhiSurfaceResizeTransaction;
+// 引入共享 Surface 生命周期、resize 与重建事务。
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
+    RhiSurfaceResizeTransaction,
+};
 // 引入共享 present damage 类型。
 use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入窗口 drawable 尺寸换算辅助函数。
@@ -40,25 +43,43 @@ impl OpenGlRhiHost for WglContext {
         self.make_current_result()
     }
 
-    // 返回 WGL surface generation。
-    fn rhi_generation(&self) -> u64 {
-        // 返回 surface 重建时递增的 generation。
-        self.surface_generation
+    // 借用唯一共享 Surface 生命周期。
+    fn rhi_surface_lifecycle(&self) -> &RhiSurfaceLifecycle {
+        &self.surface_lifecycle
     }
 
-    // 将已验证物理 extent 转回窗口逻辑尺寸并进入原生 drawable resize helper。
-    fn rhi_resize_surface(
-        // 借用当前 WGL owner。
+    // 可变借用同一个共享 Surface 生命周期。
+    fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle {
+        &mut self.surface_lifecycle
+    }
+
+    // 判断 WGL drawable 是否已经满足共享 resize 请求。
+    fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool> {
+        // WGL 没有独立逻辑 revision，物理 drawable 一致即可跳过。
+        Ok(self.pipeline.rhi_surface_extent() == resize.extent())
+    }
+
+    // 机械消费共享事务并完成 WGL 原生 Surface 操作。
+    fn rhi_recreate_surface(
         &mut self,
-        // 接收共享门禁冻结的目标 extent。
-        resize: RhiSurfaceResizeTransaction,
-    ) -> Result<(), Error> {
-        // 读取事务中不可替换的请求 extent。
-        let extent = resize.extent();
-        // 相同物理尺寸无需重复重建 drawable。
-        if self.pipeline.rhi_surface_extent() == extent {
-            // 把已满足的 resize 请求视为成功。
-            return Ok(());
+        recreate: RhiSurfaceRecreateTransaction,
+    ) -> Result<RhiExtent, Error> {
+        // 请求 extent 已由共享生命周期验证并封闭保存。
+        let extent = recreate.requested();
+        if recreate.reason() == RhiSurfaceRecreateReason::Initialize {
+            return Err(crate::native::Error::new(
+                crate::native::Errc::InvalidState,
+                "WglContext: initialize transaction reached active host",
+            ));
+        }
+        // acquire/present 丢失必须先重新取得真正的 Win32 HDC Surface。
+        if matches!(
+            recreate.reason(),
+            RhiSurfaceRecreateReason::AcquisitionRejected
+                | RhiSurfaceRecreateReason::PresentationRejected
+                | RhiSurfaceRecreateReason::PresentedNeedsRecreate
+        ) {
+            self.recreate_device_context()?;
         }
         // 读取当前窗口的 device pixel ratio。
         // 从单一 surface 快照读取 DPR，避免分离元数据发生撕裂。
@@ -69,8 +90,10 @@ impl OpenGlRhiHost for WglContext {
         let logical_height = (extent.height as f32 / dpr).round().max(1.0) as i32;
         // 根据 HDC 和逻辑尺寸计算实际 drawable 尺寸。
         let drawable = drawable_size_from_hdc(self.hwnd, self.hdc, logical_width, logical_height);
-        // 交给原生 drawable resize helper 完成 surface generation 更新。
-        self.resize_surface_drawable(drawable)
+        // 交给原生 helper 只更新 drawable 与 pipeline，不复制 generation。
+        self.resize_surface_drawable(drawable)?;
+        // Adapter 只报告原生操作实际产生的正 extent。
+        Ok(RhiExtent::new(self.width as u32, self.height as u32))
     }
 
     // 交换 WGL double-buffer surface。

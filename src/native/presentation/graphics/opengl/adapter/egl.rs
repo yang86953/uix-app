@@ -20,6 +20,10 @@ use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入 Drop 中调用的 checked shutdown 生命周期契约。
 use crate::native::present::GraphicsContextLifecycle;
 use crate::native::{Errc, Error};
+// 引入唯一共享 Surface 生命周期与初始化原因。
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason,
+};
 
 use crate::native::presentation::graphics::platform::linux::{
     WaylandSurfaceHandle, WaylandSurfaceMetrics,
@@ -30,7 +34,7 @@ use crate::native::presentation::graphics::platform::linux::{
 mod egl_rhi;
 
 // 将 EGL 交换错误映射为恢复 FSM 可消费的 surface/device typed failure。
-fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
+fn map_egl_surface_error(operation: &str, error: khronos_egl::Error) -> Error {
     // EGL_BAD_SURFACE 与 EGL_BAD_NATIVE_WINDOW 表示 native surface 已失效。
     let code = match &error {
         khronos_egl::Error::BadSurface | khronos_egl::Error::BadNativeWindow => {
@@ -42,10 +46,12 @@ fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
         _ => Errc::PlatformError,
     };
     // 保留原始 EGL 枚举，便于日志和故障诊断定位。
-    Error::new(
-        code,
-        format!("EglContext: eglSwapBuffers failed: {error:?}"),
-    )
+    Error::new(code, format!("EglContext: {operation} failed: {error:?}"))
+}
+
+// 将交换错误投影到共享恢复 FSM 使用的稳定分类。
+fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
+    map_egl_surface_error("eglSwapBuffers", error)
 }
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
@@ -296,7 +302,7 @@ pub struct EglContext {
     /// khronos-egl v6 的静态 API 实例（static 链接到系统 libEGL）
     egl: khronos_egl::Instance<khronos_egl::Static>,
     display: khronos_egl::Display,
-    _config: khronos_egl::Config,
+    config: khronos_egl::Config,
     context: khronos_egl::Context,
     surface: khronos_egl::Surface,
     egl_window: *mut WlEglWindow,
@@ -312,8 +318,8 @@ pub struct EglContext {
     device_pixel_ratio: f32,
     // windowing 与 EGL 共享的逐窗 surface 元数据。
     metrics: Arc<WaylandSurfaceMetrics>,
-    // surface 重建代际，用于拒绝迟到 FramePlan。
-    surface_generation: u64,
+    // 唯一拥有 Surface generation、extent 与重建事务顺序的共享状态机。
+    surface_lifecycle: RhiSurfaceLifecycle,
     pipeline: OpenGlRasterPipeline,
     // 关闭事务一旦开始便禁止新的业务 RHI 借用，但允许 cleanup 重试。
     shutdown_started: bool,
@@ -344,6 +350,14 @@ impl EglContext {
             // 保留 output registry 已发布的整数 scale。
             current_surface.scale,
         )?;
+        // 在任何 EGL Surface 原生创建前冻结初始化事务。
+        let initial_extent = RhiExtent::new(
+            initial_surface.drawable_width as u32,
+            initial_surface.drawable_height as u32,
+        );
+        let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
+        let surface_initialize = surface_lifecycle
+            .begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)?;
         let egl = egl::Instance::new(egl::Static);
 
         // 1. 获取 display —— Wayland 下传入 display 连接指针
@@ -545,7 +559,7 @@ impl EglContext {
                 },
             );
         // pipeline 初始化失败时同样由构造期唯一 owner 完整回滚 native 资源。
-        let pipeline = match OpenGlRasterPipeline::new(
+        let mut pipeline = match OpenGlRasterPipeline::new(
             // 传入已加载的 GLES runtime。
             runtime,
             // pipeline 场景保持逻辑宽度。
@@ -566,13 +580,21 @@ impl EglContext {
             }
         };
 
+        // 原生 Surface 与 pipeline 都成功后一次发布初始 generation 和 extent。
+        if let Err(error) = surface_lifecycle.commit_recreate(surface_initialize, initial_extent) {
+            // 生命周期提交失败时仍在 current context 上检查式释放 pipeline 资源。
+            pipeline.release();
+            // 构造期 owner 继续逆序回滚全部 EGL 对象。
+            return Err(pending.finish_failure(error));
+        }
+
         // 所有创建步骤成功后才把 native 句柄从 guard 移交给正式 context。
         let (context, surface, egl_window) = pending.into_handles();
 
         Ok(Self {
             egl,
             display,
-            _config: config,
+            config,
             context,
             surface,
             egl_window,
@@ -588,8 +610,8 @@ impl EglContext {
             device_pixel_ratio: initial_surface.scale as f32,
             // 接管 descriptor 克隆的共享 metrics owner。
             metrics: wayland.metrics,
-            // 初始 EGL swapchain 使用 metrics 当前 revision。
-            surface_generation: initial_surface.revision,
+            // 接管已经完成 Initialize 事务的共享生命周期 owner。
+            surface_lifecycle,
             pipeline,
             // 初始 owner 尚未进入关闭事务。
             shutdown_started: false,
@@ -689,15 +711,7 @@ impl EglContext {
                 Some(self.context),
             )
             // 把原生错误收敛为统一平台错误。
-            .map_err(|err| {
-                // 返回稳定错误分类与 EGL 诊断。
-                Error::new(
-                    // current 失败属于平台生命周期错误。
-                    Errc::PlatformError,
-                    // 保留底层 EGL 状态文本。
-                    format!("EglContext: eglMakeCurrent failed: {err:?}"),
-                )
-            })
+            .map_err(|error| map_egl_surface_error("eglMakeCurrent", error))
     }
 
     // 检查 EGL owner 是否仍可被业务 RHI 使用。
@@ -764,16 +778,49 @@ impl EglContext {
             // native swapchain 使用物理高度。
             height,
         );
-        // resize 成功后推进 surface generation，隔离旧 FramePlan。
-        self.surface_generation = self
-            // 先保证每次实际 adapter 状态变化单调递增。
-            .surface_generation
-            // 避免极端长生命周期回绕。
-            .saturating_add(1)
-            // 同时覆盖 windowing metrics 已发布的 revision。
-            .max(snapshot.revision);
-        // 原生 EGL surface resize 已经完成。
+        // generation 只允许在共享生命周期 commit 后发布。
         Ok(())
+    }
+
+    // 在 SurfaceLost 后按原生顺序替换唯一 EGL window surface。
+    fn recreate_window_surface(&mut self) -> Result<(), Error> {
+        use khronos_egl as egl;
+
+        // 先解除旧 draw/read surface，禁止销毁仍为 current 的对象。
+        self.egl
+            .make_current(self.display, None, None, None)
+            .map_err(|error| map_egl_surface_error("eglMakeCurrent(NULL)", error))?;
+        // EGL_BAD_SURFACE 表示旧对象已失效，仍允许继续创建 replacement。
+        match self.egl.destroy_surface(self.display, self.surface) {
+            Ok(()) | Err(egl::Error::BadSurface) => {
+                // 从此点开始 shutdown 不得再次销毁旧句柄。
+                self.surface_destroyed = true;
+            }
+            Err(error) => return Err(map_egl_surface_error("eglDestroySurface", error)),
+        }
+        // 同一个 wl_egl_window 只能在旧 EGLSurface 释放后建立 replacement。
+        let surface = unsafe {
+            // SAFETY: display/config/egl_window 由当前 owner 持有，旧 surface 已解除并销毁。
+            self.egl.create_window_surface(
+                self.display,
+                self.config,
+                self.egl_window as egl::NativeWindowType,
+                None,
+            )
+        }
+        .map_err(|error| map_egl_surface_error("eglCreateWindowSurface", error))?;
+        // 新句柄一经创建便立即交回唯一正式 owner。
+        self.surface = surface;
+        self.surface_destroyed = false;
+        // 最后把既有 GLES context 绑定到 replacement surface。
+        self.egl
+            .make_current(
+                self.display,
+                Some(self.surface),
+                Some(self.surface),
+                Some(self.context),
+            )
+            .map_err(|error| map_egl_surface_error("eglMakeCurrent(recreated)", error))
     }
 }
 

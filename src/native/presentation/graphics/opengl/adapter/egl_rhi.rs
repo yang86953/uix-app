@@ -6,8 +6,11 @@ use super::EglContext;
 use crate::native::present::{GraphicsContextLifecycle, PresentDamage};
 // 引入共享 OpenGL RHI host 生命周期契约。
 use crate::native::presentation::graphics::opengl::rhi_host::OpenGlRhiHost;
-// 引入共享 Surface resize 事务。
-use crate::platform::presentation::rhi::RhiSurfaceResizeTransaction;
+// 引入共享 Surface 生命周期、resize 与重建事务。
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
+    RhiSurfaceResizeTransaction,
+};
 // 引入共享 OpenGL raster pipeline 类型。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入统一错误与结果类型。
@@ -17,6 +20,8 @@ use crate::native::{Error, Result};
 impl GraphicsContextLifecycle for EglContext {
     // 返回 EGL drawable 的完整 live surface 快照。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
+        // generation 只读取共享生命周期，不再混入 windowing revision。
+        let generation = self.surface_lifecycle.token().generation;
         // resize 事务开始前必须能读取 windowing 刚发布的新 DPR。
         match self.metrics.snapshot() {
             // 健康快照直接报告同代 drawable 与 DPR。
@@ -27,8 +32,8 @@ impl GraphicsContextLifecycle for EglContext {
                 snapshot.drawable_height,
                 // Wayland core scale 是当前设备像素比。
                 snapshot.scale as f32,
-                // native 与 metrics 两侧代次取最大值拒绝旧帧。
-                self.surface_generation.max(snapshot.revision),
+                // 返回唯一共享 Surface generation。
+                generation,
             ),
             // trait 无错误通道时回退到最后一次成功应用的 EGL 状态。
             Err(_) => crate::native::present::PresentSurface::identity(
@@ -38,8 +43,8 @@ impl GraphicsContextLifecycle for EglContext {
                 self.height,
                 // 最后成功应用的 DPR。
                 self.device_pixel_ratio,
-                // 最后成功 native surface 代次。
-                self.surface_generation,
+                // 最后成功共享 Surface 代次。
+                generation,
             ),
         }
     }
@@ -97,37 +102,57 @@ impl OpenGlRhiHost for EglContext {
         self.make_current_result()
     }
 
-    // 返回 EGL surface generation。
-    fn rhi_generation(&self) -> u64 {
-        self.surface_generation
+    // 借用唯一共享 Surface 生命周期。
+    fn rhi_surface_lifecycle(&self) -> &RhiSurfaceLifecycle {
+        &self.surface_lifecycle
     }
 
-    // 消费已验证事务并进入 EGL 原生 surface resize helper。
-    fn rhi_resize_surface(
-        // 借用当前 EGL owner。
-        &mut self,
-        // 接收共享门禁冻结的目标 extent 与原生投影。
-        resize: RhiSurfaceResizeTransaction,
-    ) -> Result<(), Error> {
-        // 读取事务中不可替换的请求 extent。
+    // 可变借用同一个共享 Surface 生命周期。
+    fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle {
+        &mut self.surface_lifecycle
+    }
+
+    // 判断 EGL drawable、逻辑尺寸与 DPR 是否已满足 resize 请求。
+    fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool> {
+        // 读取共享 resize 事务冻结的请求 extent。
         let extent = resize.extent();
-        // 物理 extent 相同但 logical extent 或 DPR 改变时仍须同步 pipeline。
+        // 物理 extent 相同但 logical extent 或 DPR 改变时仍须进入共享重建事务。
         let snapshot = self.metrics.snapshot()?;
-        // 只有四项 surface 事实全都一致才可跳过。
-        if self.pipeline.rhi_surface_extent() == extent
+        // 只有四项原生事实全都一致才可跳过。
+        Ok(self.pipeline.rhi_surface_extent() == extent
             && self.logical_width == snapshot.logical_width
             && self.logical_height == snapshot.logical_height
-            && self.device_pixel_ratio == snapshot.scale as f32
-        {
-            // 当前 EGL 与 pipeline 已满足完整请求。
-            return Ok(());
+            && self.device_pixel_ratio == snapshot.scale as f32)
+    }
+
+    // 机械消费共享事务并完成 EGL 原生 Surface 操作。
+    fn rhi_recreate_surface(
+        &mut self,
+        recreate: RhiSurfaceRecreateTransaction,
+    ) -> Result<RhiExtent, Error> {
+        // 原生宽高只能来自共享生命周期已验证的封闭投影。
+        let (width, height) = recreate.native_size_i32();
+        match recreate.reason() {
+            // Initialize 已在构造期完成，不允许第二次进入原生初始化。
+            RhiSurfaceRecreateReason::Initialize => {
+                return Err(crate::native::Error::new(
+                    crate::native::Errc::InvalidState,
+                    "EglContext: initialize transaction reached active host",
+                ));
+            }
+            // resize 只调整 wl_egl_window 与 pipeline，不复制 generation 逻辑。
+            RhiSurfaceRecreateReason::Resize => self.rhi_make_current()?,
+            // acquire/present 丢失必须先替换真正的 EGLSurface。
+            RhiSurfaceRecreateReason::AcquisitionRejected
+            | RhiSurfaceRecreateReason::PresentationRejected
+            | RhiSurfaceRecreateReason::PresentedNeedsRecreate => {
+                self.recreate_window_surface()?;
+            }
         }
-        // 进入 EGL resize helper 前恢复 owner-thread current context。
-        self.rhi_make_current()?;
-        // 读取共享事务已经证明安全的原生有符号尺寸。
-        let (width, height) = resize.native_size_i32();
-        // 使用唯一投影重建原生 surface。
-        self.resize_surface_extent(width, height)
+        // 所有原因最后都把事务请求同步到唯一 drawable/pipeline 元数据。
+        self.resize_surface_extent(width, height)?;
+        // Adapter 只报告原生操作实际产生的正 extent。
+        Ok(RhiExtent::new(self.width as u32, self.height as u32))
     }
 
     // 交换 EGL window surface。

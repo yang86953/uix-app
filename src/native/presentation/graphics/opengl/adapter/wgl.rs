@@ -20,6 +20,10 @@ use crate::native::presentation::graphics::platform::windows::{
     DrawableSize, device_context, drawable_size_from_hdc, release_device_context_checked,
 };
 use crate::native::{Errc, Error};
+// 引入唯一共享 Surface 生命周期与初始化原因。
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason,
+};
 
 // 将 WGL 的 RHI 生命周期实现拆到独立文件，避免平台适配文件继续膨胀。
 #[path = "wgl_rhi.rs"]
@@ -584,8 +588,8 @@ pub struct WglContext {
     logical_height: i32,
     width: i32,
     height: i32,
-    // surface 重建代际，用于拒绝迟到 FramePlan。
-    surface_generation: u64,
+    // 唯一拥有 Surface generation、extent 与重建顺序的共享状态机。
+    surface_lifecycle: RhiSurfaceLifecycle,
     pipeline: OpenGlRasterPipeline,
     // 关闭事务一旦开始便禁止新的业务 RHI 借用，但允许 cleanup 重试。
     shutdown_started: bool,
@@ -620,6 +624,12 @@ impl WglContext {
         }
 
         let result = (|| -> Result<Self, Error> {
+            // 在创建正式 WGL context 前冻结初始 drawable 与初始化事务。
+            let drawable = drawable_size_from_hdc(hwnd, hdc, width, height);
+            let initial_extent = RhiExtent::new(drawable.width as u32, drawable.height as u32);
+            let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
+            let surface_initialize = surface_lifecycle
+                .begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)?;
             // bootstrap 是加载 WGL 扩展期间唯一持有临时 native 资源的 owner。
             let mut bootstrap = BootstrapContext::new()?;
             let choose_pixel_format = load_wgl_fn::<ChoosePixelFormatArbFn>(
@@ -663,7 +673,6 @@ impl WglContext {
             // 只在 native 绑定成功后更新临时 owner 状态。
             pending_context.mark_current();
 
-            let drawable = drawable_size_from_hdc(hwnd, hdc, width, height);
             let runtime =
                 crate::native::presentation::graphics::opengl::NativeOpenGlRuntime::from_loader(
                     |name| {
@@ -678,7 +687,7 @@ impl WglContext {
                         }
                     },
                 );
-            let pipeline = match OpenGlRasterPipeline::new(
+            let mut pipeline = match OpenGlRasterPipeline::new(
                 runtime,
                 drawable.logical_width,
                 drawable.logical_height,
@@ -691,6 +700,15 @@ impl WglContext {
                     return Err(pending_context.finish_failure(error));
                 }
             };
+            // 原生 drawable 与 pipeline 成功后一次发布初始 generation 和 extent。
+            if let Err(error) =
+                surface_lifecycle.commit_recreate(surface_initialize, initial_extent)
+            {
+                // 生命周期提交失败时仍在 current context 上检查式释放 GL 资源。
+                pipeline.release();
+                // 临时 HGLRC owner 继续完成解绑和删除。
+                return Err(pending_context.finish_failure(error));
+            }
             tracing::info!(
                 "WglContext: OpenGL ES context created ({}x{} drawable, logical {}x{}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})",
                 drawable.width,
@@ -709,8 +727,8 @@ impl WglContext {
                 logical_height: drawable.logical_height,
                 width: drawable.width,
                 height: drawable.height,
-                // 初始 WGL swapchain 属于第一代 surface。
-                surface_generation: 0,
+                // 接管已经完成 Initialize 事务的共享生命周期 owner。
+                surface_lifecycle,
                 pipeline,
                 // 初始 owner 尚未进入关闭事务。
                 shutdown_started: false,
@@ -774,13 +792,15 @@ impl WglContext {
         self.shutdown_started = true;
         if !self.hglrc.is_null() {
             // SAFETY: hglrc 非空且存活；先 current 该上下文以便 release GL 资源，再解除 current，最后删除 context；全程同一 owner 线程。
-            if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
-                return Err(windows_diag(
-                    Errc::PlatformError,
-                    "WglContext: wglMakeCurrent during shutdown failed",
-                ));
+            if !self.hdc.is_null() {
+                if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
+                    return Err(windows_diag(
+                        Errc::PlatformError,
+                        "WglContext: wglMakeCurrent during shutdown failed",
+                    ));
+                }
+                self.pipeline.release();
             }
-            self.pipeline.release();
             // SAFETY: 解除 current 传 null/null，不引用任何句柄。
             if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
                 return Err(windows_diag(
@@ -828,11 +848,6 @@ impl WglContext {
     fn resize_surface_drawable(&mut self, drawable: DrawableSize) -> Result<(), Error> {
         // 确保 pipeline 的 viewport 和资源操作仍在 owner-thread context 上。
         self.make_current_result()?;
-        // 记录本次 resize 是否真的改变了 drawable surface。
-        let changed = drawable.logical_width != self.logical_width
-            || drawable.logical_height != self.logical_height
-            || drawable.width != self.width
-            || drawable.height != self.height;
         // 先更新逻辑 drawable 元数据。
         self.logical_width = drawable.logical_width;
         self.logical_height = drawable.logical_height;
@@ -846,11 +861,46 @@ impl WglContext {
             drawable.width,
             drawable.height,
         );
-        // 只有 surface 事实改变时才推进 generation，避免无意义地丢帧。
-        if changed {
-            self.surface_generation = self.surface_generation.saturating_add(1);
+        // generation 只允许在共享生命周期 commit 后发布。
+        Ok(())
+    }
+
+    // 在 SurfaceLost 后按 WGL 原生顺序重新取得唯一窗口 HDC。
+    fn recreate_device_context(&mut self) -> Result<(), Error> {
+        // SAFETY: null/null 只解除当前线程绑定，不引用旧 HDC/HGLRC。
+        if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: wglMakeCurrent(NULL) before surface recreate failed",
+            ));
         }
-        // 原生 OpenGL surface resize 已经完成。
+        if !self.hdc.is_null() {
+            // SAFETY: hwnd/hdc 由当前 owner 配对持有，成功后立即清空旧句柄。
+            if !unsafe { release_device_context_checked(self.hwnd, self.hdc) } {
+                return Err(windows_diag(
+                    Errc::GraphicsSurfaceLost,
+                    "WglContext: surface recreate ReleaseDC failed",
+                ));
+            }
+            self.hdc = ptr::null_mut();
+        }
+        // SAFETY: hwnd 在正式 context 生命周期内仍由窗口 owner 保持存活。
+        let replacement = unsafe { device_context(self.hwnd) };
+        if replacement.is_null() {
+            return Err(windows_diag(
+                Errc::GraphicsSurfaceLost,
+                "WglContext: surface recreate GetDC failed",
+            ));
+        }
+        // 新 HDC 一经取得便立即交回唯一正式 owner。
+        self.hdc = replacement;
+        // SAFETY: replacement 属于同一 HWND，pixel format 固定在窗口上；hglrc 仍存活。
+        if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
+            return Err(windows_diag(
+                Errc::GraphicsSurfaceLost,
+                "WglContext: wglMakeCurrent on recreated surface failed",
+            ));
+        }
         Ok(())
     }
 }
