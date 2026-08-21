@@ -134,7 +134,10 @@ impl VulkanContext {
             frame_fence,
             acquired_frame: None,
             submitted_frame: None,
-            surface_generation: 0,
+            surface_lifecycle:
+                crate::platform::presentation::rhi::RhiSurfaceLifecycle::uninitialized(
+                    crate::platform::presentation::rhi::RhiExtent::new(extent.width, extent.height),
+                ),
             native_surface,
             logical_width: drawable.logical_width,
             logical_height: drawable.logical_height,
@@ -144,7 +147,10 @@ impl VulkanContext {
             shutdown: false,
         };
         let device = ctx.active_device()?;
-        device.observe(ctx.recreate_swapchain(extent))?;
+        device.observe(ctx.recreate_swapchain(
+            extent,
+            crate::platform::presentation::rhi::RhiSurfaceRecreateReason::Initialize,
+        ))?;
         ctx.width = ctx.extent.width as i32;
         ctx.height = ctx.extent.height as i32;
         device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
@@ -213,7 +219,10 @@ impl VulkanContext {
             width: drawable.width as u32,
             height: drawable.height as u32,
         };
-        self.recreate_swapchain(extent)?;
+        self.recreate_swapchain(
+            extent,
+            crate::platform::presentation::rhi::RhiSurfaceRecreateReason::Resize,
+        )?;
         self.logical_width = drawable.logical_width;
         self.logical_height = drawable.logical_height;
         self.width = self.extent.width as i32;
@@ -222,7 +231,33 @@ impl VulkanContext {
         Ok(())
     }
 
-    pub(super) fn recreate_swapchain(&mut self, extent: vk::Extent2D) -> Result<()> {
+    pub(super) fn recreate_swapchain(
+        &mut self,
+        extent: vk::Extent2D,
+        reason: crate::platform::presentation::rhi::RhiSurfaceRecreateReason,
+    ) -> Result<crate::platform::presentation::rhi::RhiSurfaceRecreateCommit> {
+        let transaction = self.surface_lifecycle.begin_recreate(
+            crate::platform::presentation::rhi::RhiExtent::new(extent.width, extent.height),
+            reason,
+        )?;
+        let requested = transaction.requested();
+        match self.recreate_swapchain_native(vk::Extent2D {
+            width: requested.width,
+            height: requested.height,
+        }) {
+            Ok(actual) => self.surface_lifecycle.commit_recreate(transaction, actual),
+            Err(error) => match self.surface_lifecycle.abort_recreate(transaction) {
+                Ok(()) => Err(error),
+                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+            },
+        }
+    }
+
+    // Vulkan 私有实现只创建、交换和释放原生对象，不决定当前帧重试语义。
+    fn recreate_swapchain_native(
+        &mut self,
+        extent: vk::Extent2D,
+    ) -> Result<crate::platform::presentation::rhi::RhiExtent> {
         #[cfg(target_os = "macos")]
         {
             // MoltenVK surface capabilities follow CAMetalLayer.drawableSize.
@@ -446,10 +481,10 @@ impl VulkanContext {
         self.extent = extent;
         self.acquired_frame = None;
         self.submitted_frame = None;
-        if old_swapchain != vk::SwapchainKHR::null() {
-            self.surface_generation = self.surface_generation.saturating_add(1);
-        }
-        Ok(())
+        Ok(crate::platform::presentation::rhi::RhiExtent::new(
+            self.extent.width,
+            self.extent.height,
+        ))
     }
 
     pub(super) fn present_uploaded_pixels(&mut self) -> Result<()> {
@@ -467,6 +502,7 @@ impl VulkanContext {
                 return self.recreate_after_surface_change(
                     "vkAcquireNextImageKHR",
                     vk::Result::ERROR_OUT_OF_DATE_KHR,
+                    crate::platform::presentation::rhi::RhiSurfaceRecreateReason::AcquisitionRejected,
                 );
             }
             Err(err) => return Err(vk_err("vkAcquireNextImageKHR", err)),
@@ -544,6 +580,7 @@ impl VulkanContext {
                     self.recreate_after_surface_change(
                         "vkQueuePresentKHR",
                         vk::Result::SUBOPTIMAL_KHR,
+                        crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentedNeedsRecreate,
                     )
                 } else {
                     Ok(())
@@ -552,25 +589,35 @@ impl VulkanContext {
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_after_surface_change(
                 "vkQueuePresentKHR",
                 vk::Result::ERROR_OUT_OF_DATE_KHR,
+                crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentationRejected,
             ),
             Err(vk::Result::SUBOPTIMAL_KHR) => {
-                self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)
+                // SUBOPTIMAL 已接受本次 present；先登记同步对象，再重建后续代际。
+                if present_fence.is_some() {
+                    self.present_fences.mark_submitted(image_slot)?;
+                } else {
+                    self.present_lifetime.mark_presented(image_slot)?;
+                }
+                self.recreate_after_surface_change(
+                    "vkQueuePresentKHR",
+                    vk::Result::SUBOPTIMAL_KHR,
+                    crate::platform::presentation::rhi::RhiSurfaceRecreateReason::PresentedNeedsRecreate,
+                )
             }
             Err(err) => Err(vk_err("vkQueuePresentKHR", err)),
         }
     }
 
-    /// A swapchain status requires recreation, but the frame that observed it
-    /// was not presented. Return a typed failure after a successful rebuild so
-    /// the engine preserves dirty state and retries on the next frame.
+    /// 原生状态只选择共享重建原因；当前帧成功或重试语义由 platform 状态机决定。
     pub(super) fn recreate_after_surface_change(
         &mut self,
         operation: &str,
         status: vk::Result,
+        reason: crate::platform::presentation::rhi::RhiSurfaceRecreateReason,
     ) -> Result<()> {
         let surface_failure = vk_err(operation, status);
-        match self.recreate_swapchain(self.extent) {
-            Ok(()) => Err(surface_failure),
+        match self.recreate_swapchain(self.extent, reason) {
+            Ok(commit) => commit.complete_frame(surface_failure),
             Err(recreate_failure) => Err(merge_surface_recreate_failure(
                 surface_failure,
                 recreate_failure,

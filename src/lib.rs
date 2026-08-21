@@ -210,6 +210,13 @@ pub use uix_derive::{Display, uix, uix_app, uix_items};
 pub fn __run_vulkan_gpu_parity_test() {
     native::presentation::graphics::vulkan::platform::run_gpu_parity_test();
 }
+// 只为显式 Vulkan 验证目标转发 API 无关 Surface 生命周期契约。
+#[cfg(feature = "vulkan-parity-test")]
+#[doc(hidden)]
+pub fn __run_surface_lifecycle_contract_test() {
+    platform::presentation::rhi::run_surface_lifecycle_contract_test();
+    native::presentation::graphics::vulkan::platform::run_present_completion_contract_test();
+}
 // capability 编译合同只在 rustdoc 收集测试时进入 crate，不污染正常使用方公开面。
 #[cfg(doctest)]
 // 隐藏测试载体，用户文档只保留稳定 capability 说明。

@@ -33,6 +33,8 @@ pub enum RenderOutcome {
 pub enum GraphicsFailure {
     /// 当前呈现 surface 已失效，需要重建 surface 相关资源。
     SurfaceLost(Error),
+    /// platform 已完成受控重建；当前脏帧只需在新代际重试。
+    SurfaceChanged(Error),
     /// 当前图形设备已失效，需要重建设备及其资源。
     DeviceLost(Error),
     /// 图形内存或等价资源不足，不能继续提交当前帧。
@@ -48,6 +50,7 @@ impl GraphicsFailure {
     pub fn from_error(error: Error) -> Self {
         match error.code() {
             Errc::GraphicsSurfaceLost => Self::SurfaceLost(error),
+            Errc::GraphicsSurfaceChanged => Self::SurfaceChanged(error),
             Errc::GraphicsDeviceLost => Self::DeviceLost(error),
             Errc::GraphicsOutOfMemory | Errc::InsufficientResources => Self::OutOfMemory(error),
             Errc::GraphicsOccluded => Self::Occluded(error),
@@ -59,6 +62,7 @@ impl GraphicsFailure {
     pub fn error(&self) -> &Error {
         match self {
             Self::SurfaceLost(error)
+            | Self::SurfaceChanged(error)
             | Self::DeviceLost(error)
             | Self::OutOfMemory(error)
             | Self::Occluded(error)

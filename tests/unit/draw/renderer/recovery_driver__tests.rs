@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
 struct StubTarget {
     frames: u32,
+    resize_calls: Arc<AtomicUsize>,
     fail_next: bool,
     // 单独控制 backdrop 快照失败，验证 begin_frame 外的错误登记。
     fail_backdrop_snapshot: bool,
@@ -17,6 +18,7 @@ impl StubTarget {
     fn new() -> Self {
         Self {
             frames: 0,
+            resize_calls: Arc::new(AtomicUsize::new(0)),
             fail_next: false,
             // 普通 target 不注入 backdrop 失败。
             fail_backdrop_snapshot: false,
@@ -28,6 +30,7 @@ impl StubTarget {
     fn new_failing() -> Self {
         Self {
             frames: 0,
+            resize_calls: Arc::new(AtomicUsize::new(0)),
             fail_next: true,
             // 帧失败用例不同时注入 backdrop 失败。
             fail_backdrop_snapshot: false,
@@ -42,6 +45,8 @@ impl StubTarget {
         Self {
             // 尚未开始任何帧。
             frames: 0,
+            // 独立记录该 target 的 resize 调用。
+            resize_calls: Arc::new(AtomicUsize::new(0)),
             // begin_frame 自身保持成功。
             fail_next: false,
             // 下一次快照调用返回 typed failure。
@@ -51,6 +56,12 @@ impl StubTarget {
             // 测试不需要真实画布。
             canvas: NoopCanvas2D,
         }
+    }
+
+    fn with_resize_counter() -> (Self, Arc<AtomicUsize>) {
+        let target = Self::new();
+        let counter = Arc::clone(&target.resize_calls);
+        (target, counter)
     }
 }
 
@@ -65,6 +76,7 @@ impl RenderTarget for StubTarget {
     }
 
     fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        self.resize_calls.fetch_add(1, AtomicOrdering::SeqCst);
         Ok(())
     }
 
@@ -113,6 +125,40 @@ fn counting_rebuilder(rebuilds: &Arc<AtomicUsize>) -> RenderTargetRebuilder {
             Ok(Box::new(StubTarget::new()) as Box<dyn RenderTarget>)
         },
     )
+}
+
+// platform 已完成的 Surface 重建只重试脏帧，不得再次触发整后端恢复。
+#[test]
+fn surface_changed_does_not_schedule_backend_rebuild() {
+    let rebuilds = Arc::new(AtomicUsize::new(0));
+    let mut driver =
+        RecoveryDriver::new(Box::new(StubTarget::new()), counting_rebuilder(&rebuilds))
+            .with_extent(100, 100);
+    driver.record_failure(GraphicsFailure::from_error(Error::new(
+        Errc::GraphicsSurfaceChanged,
+        "surface generation advanced",
+    )));
+
+    assert!(driver.pending_failure.is_none());
+    assert!(matches!(
+        driver.begin_frame(UpdateStrategy::FullRedraw),
+        RenderOutcome::FrameReady(_)
+    ));
+    assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 0);
+}
+
+// 零尺寸由窗口调度器保持暂停，恢复层不得向底层提交 1x1 resize。
+#[test]
+fn zero_extent_resize_does_not_touch_native_target() {
+    let rebuilds = Arc::new(AtomicUsize::new(0));
+    let (target, resize_calls) = StubTarget::with_resize_counter();
+    let mut driver =
+        RecoveryDriver::new(Box::new(target), counting_rebuilder(&rebuilds)).with_extent(100, 100);
+
+    driver.resize(0, 100).expect("zero extent enters pause");
+
+    assert_eq!(resize_calls.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(rebuilds.load(AtomicOrdering::SeqCst), 0);
 }
 
 // 验证持续的 probe/Present 矛盾会升级为 surface-lost，而不是永久遮挡循环。

@@ -120,8 +120,12 @@ impl RenderBackend for GpuBackend {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let logical_w = width.max(1);
-        let logical_h = height.max(1);
+        // 零尺寸由窗口调度器保持暂停；后端不得把暂停伪装成 1x1 原生 Surface。
+        if width <= 0 || height <= 0 {
+            return Ok(());
+        }
+        let logical_w = width;
+        let logical_h = height;
         // swapchain resize 会推进 surface generation，先释放旧代际 retained texture。
         self.destroy_rhi_surface_texture()?;
         // 生产 GPU adapter 只由薄 RHI surface 执行实际重建和代际推进。
