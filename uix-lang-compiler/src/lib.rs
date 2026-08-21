@@ -6,10 +6,14 @@
 use std::path::{Path, PathBuf};
 
 use proc_macro2::TokenStream;
+use projection_schema::{UI_PROJECTION_SCHEMA, UiProjectionSchema};
+use semantic_ir::{TypedUiIr, lower_document};
 use source_graph::SourceId;
 
 /// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
 pub mod projection_schema;
+/// 导出完成名称、角色和值形状分类的语义 IR。
+pub mod semantic_ir;
 /// 导出稳定源码身份、内容摘要与导入边契约。
 pub mod source_graph;
 mod uix_import;
@@ -20,7 +24,7 @@ mod uix_lang;
 
 use uix_import::{ImportDiagnostic, reject_inline_imports, resolve_file};
 use uix_lang::{
-    Diagnostic, Document, generate_document_app, generate_document_view, generate_record_items,
+    Diagnostic, generate_document_app, generate_document_view, generate_record_items,
     parse_document, with_source_markers,
 };
 
@@ -72,6 +76,94 @@ pub struct CompileOutput {
     pub tracked_files: Vec<PathBuf>,
     /// 保存本次编译读取的稳定源码图。
     pub source_graph: source_graph::SourceGraph,
+    /// 保存与 Rust 输出来自同一次分析的类型化 UI IR。
+    pub ir: TypedUiIr,
+}
+
+/// 保存不产生公开 Rust 输出的共享检查结果。
+#[derive(Debug)]
+pub struct CheckOutput {
+    /// 保存根文件及递归导入闭包中的规范路径。
+    pub tracked_files: Vec<PathBuf>,
+    /// 保存本次检查读取的稳定源码图。
+    pub source_graph: source_graph::SourceGraph,
+    /// 保存检查通过后的类型化 UI IR。
+    pub ir: TypedUiIr,
+}
+
+/// 组合语言 Modules、schema 与公开命令的唯一 System 根。
+#[derive(Debug, Clone, Copy)]
+pub struct CompilerSystem {
+    schema: UiProjectionSchema,
+}
+
+impl Default for CompilerSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CompilerSystem {
+    /// 使用仓库唯一 UI 投影登记创建 Compiler System。
+    pub const fn new() -> Self {
+        Self {
+            schema: UI_PROJECTION_SCHEMA,
+        }
+    }
+
+    /// 返回本 System 持有的只读 UI 投影 schema。
+    pub const fn schema(self) -> UiProjectionSchema {
+        self.schema
+    }
+
+    /// 编译没有文件系统基准目录的内嵌 UIX 源码。
+    pub fn compile_inline(
+        self,
+        source: &str,
+        source_name: impl Into<String>,
+        target: CompileTarget,
+    ) -> Result<CompileOutput, CompilerDiagnostic> {
+        let analyzed = analyze_inline(source, source_name.into(), target)?;
+        compile_analyzed(analyzed)
+    }
+
+    /// 编译一个真实 `.uix` 根文件及其递归导入闭包。
+    pub fn compile_file(
+        self,
+        path: &Path,
+        target: CompileTarget,
+    ) -> Result<CompileOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file(path, target)?;
+        compile_analyzed(analyzed)
+    }
+
+    /// 检查内嵌 UIX 并返回与 AOT 相同的语义结论。
+    pub fn check_inline(
+        self,
+        source: &str,
+        source_name: impl Into<String>,
+        target: CompileTarget,
+    ) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_inline(source, source_name.into(), target)?;
+        check_analyzed(analyzed)
+    }
+
+    /// 检查真实 `.uix` 根及其递归导入闭包。
+    pub fn check_file(
+        self,
+        path: &Path,
+        target: CompileTarget,
+    ) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file(path, target)?;
+        check_analyzed(analyzed)
+    }
+}
+
+// 保存语义阶段成功后供 check 与 AOT 共享的不可变产物。
+struct AnalyzedUnit {
+    tracked_files: Vec<PathBuf>,
+    source_graph: source_graph::SourceGraph,
+    ir: TypedUiIr,
 }
 
 /// 保存与入口机制无关的结构化语言诊断。
@@ -141,7 +233,24 @@ pub fn compile_inline(
     source_name: impl Into<String>,
     target: CompileTarget,
 ) -> Result<CompileOutput, CompilerDiagnostic> {
-    let source_name = source_name.into();
+    CompilerSystem::new().compile_inline(source, source_name, target)
+}
+
+/// 检查没有文件系统基准目录的内嵌 UIX 源码。
+pub fn check_inline(
+    source: &str,
+    source_name: impl Into<String>,
+    target: CompileTarget,
+) -> Result<CheckOutput, CompilerDiagnostic> {
+    CompilerSystem::new().check_inline(source, source_name, target)
+}
+
+// 建立内嵌 SourceGraph、AST 与 Typed UI IR。
+fn analyze_inline(
+    source: &str,
+    source_name: String,
+    target: CompileTarget,
+) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let source_graph = source_graph::SourceGraph::inline(&source_name, source);
     let source_id = source_graph.root();
     let document = parse_document(source).map_err(|diagnostic| {
@@ -162,19 +271,22 @@ pub fn compile_inline(
             diagnostic,
         )
     })?;
-    let tokens = compile_document(&document, target).map_err(|diagnostic| {
-        CompilerDiagnostic::from_language(
-            &source_name,
-            source_id,
-            DiagnosticPhase::Semantic,
-            "UIX2000",
-            diagnostic,
-        )
-    })?;
-    Ok(CompileOutput {
-        tokens,
+    let declaration_sources = vec![source_id; document.declarations.len()];
+    let ir = lower_document(document, target, source_id, &declaration_sources).map_err(
+        |diagnostic| {
+            CompilerDiagnostic::from_language(
+                &source_name,
+                source_id,
+                DiagnosticPhase::Semantic,
+                "UIX2000",
+                diagnostic,
+            )
+        },
+    )?;
+    Ok(AnalyzedUnit {
         tracked_files: Vec::new(),
         source_graph,
+        ir,
     })
 }
 
@@ -183,41 +295,103 @@ pub fn compile_file(
     path: &Path,
     target: CompileTarget,
 ) -> Result<CompileOutput, CompilerDiagnostic> {
+    CompilerSystem::new().compile_file(path, target)
+}
+
+/// 检查一个真实 `.uix` 根文件及其递归导入闭包。
+pub fn check_file(path: &Path, target: CompileTarget) -> Result<CheckOutput, CompilerDiagnostic> {
+    CompilerSystem::new().check_file(path, target)
+}
+
+// 建立文件 SourceGraph、AST 与 Typed UI IR。
+fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
     let source_id = resolved.source_graph.root();
-    let source_name = resolved
-        .source_graph
-        .file(source_id)
-        .map(|file| file.path.clone())
-        .unwrap_or_else(|| path.display().to_string());
-    let tokens = compile_document(&resolved.document, target).map_err(|diagnostic| {
-        CompilerDiagnostic::from_language(
-            source_name,
+    let ir = lower_document(
+        resolved.document,
+        target,
+        source_id,
+        &resolved.declaration_sources,
+    )
+    .map_err(|diagnostic| {
+        semantic_diagnostic(&resolved.source_graph, path, source_id, diagnostic)
+    })?;
+    Ok(AnalyzedUnit {
+        tracked_files: resolved.tracked_files,
+        source_graph: resolved.source_graph,
+        ir,
+    })
+}
+
+// 让 AOT 与 check 执行同一完整语义 Gate，AOT 额外交付 Rust 令牌。
+fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDiagnostic> {
+    let source_id = analyzed.source_graph.root();
+    let tokens = emit_document(&analyzed.ir).map_err(|diagnostic| {
+        semantic_diagnostic(
+            &analyzed.source_graph,
+            Path::new("<unknown>"),
             source_id,
-            DiagnosticPhase::Semantic,
-            "UIX2000",
             diagnostic,
         )
     })?;
     Ok(CompileOutput {
         tokens,
-        tracked_files: resolved.tracked_files,
-        source_graph: resolved.source_graph,
+        tracked_files: analyzed.tracked_files,
+        source_graph: analyzed.source_graph,
+        ir: analyzed.ir,
     })
 }
 
+// 检查阶段复用全部现存语义 Gate，但不向调用者产生 Rust 输出。
+fn check_analyzed(analyzed: AnalyzedUnit) -> Result<CheckOutput, CompilerDiagnostic> {
+    let source_id = analyzed.source_graph.root();
+    emit_document(&analyzed.ir).map_err(|diagnostic| {
+        semantic_diagnostic(
+            &analyzed.source_graph,
+            Path::new("<unknown>"),
+            source_id,
+            diagnostic,
+        )
+    })?;
+    Ok(CheckOutput {
+        tracked_files: analyzed.tracked_files,
+        source_graph: analyzed.source_graph,
+        ir: analyzed.ir,
+    })
+}
+
+// 把语义错误绑定到本次源码图根；声明级来源会在后续 IR 节点中继续细化。
+fn semantic_diagnostic(
+    source_graph: &source_graph::SourceGraph,
+    fallback: &Path,
+    source_id: SourceId,
+    diagnostic: Diagnostic,
+) -> CompilerDiagnostic {
+    let source_name = source_graph
+        .file(source_id)
+        .map(|file| file.path.clone())
+        .unwrap_or_else(|| fallback.display().to_string());
+    CompilerDiagnostic::from_language(
+        source_name,
+        source_id,
+        DiagnosticPhase::Semantic,
+        "UIX2000",
+        diagnostic,
+    )
+}
+
 // 让全部入口共享唯一的解析后生成路径。
-fn compile_document(document: &Document, target: CompileTarget) -> Result<TokenStream, Diagnostic> {
-    match target {
-        CompileTarget::View => with_source_markers(|| generate_document_view(document)),
-        CompileTarget::App => with_source_markers(|| generate_document_app(document)),
-        CompileTarget::Items => generate_record_items(document),
+fn emit_document(ir: &TypedUiIr) -> Result<TokenStream, Diagnostic> {
+    match ir.target() {
+        CompileTarget::View => with_source_markers(|| generate_document_view(ir.document())),
+        CompileTarget::App => with_source_markers(|| generate_document_app(ir.document())),
+        CompileTarget::Items => generate_record_items(ir.document()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileTarget, DiagnosticPhase, compile_inline};
+    use super::{CompileTarget, CompilerSystem, DiagnosticPhase, check_inline, compile_inline};
     use crate::source_graph::SourceId;
 
     #[test]
@@ -268,5 +442,29 @@ mod tests {
         .expect_err("内嵌导入必须失败");
         assert_eq!(import.code, "UIX1100");
         assert_eq!(import.phase, DiagnosticPhase::Import);
+    }
+
+    #[test]
+    fn check_and_aot_share_semantic_diagnostic_contract() {
+        let source = "<Mystery />";
+        let aot = compile_inline(source, "same.uix", CompileTarget::View)
+            .expect_err("AOT 必须拒绝未知标签");
+        let check = check_inline(source, "same.uix", CompileTarget::View)
+            .expect_err("check 必须拒绝未知标签");
+        assert_eq!(aot, check);
+    }
+
+    #[test]
+    fn compiler_system_owns_schema_and_returns_typed_ir() {
+        let system = CompilerSystem::new();
+        assert_eq!(system.schema().version(), 1);
+        let checked = system
+            .check_inline("<Text>Hello</Text>", "typed.uix", CompileTarget::View)
+            .expect("合法文档必须通过检查");
+        assert_eq!(checked.ir.root().name, "Text");
+        assert_eq!(
+            checked.ir.root().span.source_id,
+            checked.source_graph.root()
+        );
     }
 }

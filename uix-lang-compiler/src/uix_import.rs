@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 // 引入纯 UIX 文档、声明、节点与诊断契约。
 use crate::DiagnosticPhase;
-use crate::source_graph::{SourceGraph, SourceGraphBuilder};
+use crate::source_graph::{SourceGraph, SourceGraphBuilder, SourceId};
 use crate::uix_lang::{
     Declaration, Diagnostic, Document, Element, ImportDeclaration, Node, SourceSpan,
     WidgetDeclaration,
@@ -18,6 +18,8 @@ use crate::uix_lang::{
 pub(crate) struct ResolvedDocument {
     // 保存交给既有纯 codegen 的单一文档。
     pub(crate) document: Document,
+    // 保存与合并声明顺序严格对齐的真实来源身份。
+    pub(crate) declaration_sources: Vec<SourceId>,
     // 保存根文件及全部递归导入文件的规范路径。
     pub(crate) tracked_files: Vec<PathBuf>,
     // 保存稳定源码身份、快照与导入边。
@@ -116,6 +118,16 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
     // 把带来源声明投影回既有纯 Document 契约。
+    let declaration_sources = unit
+        // 在消费声明前保留每项真实定义文件。
+        .declarations
+        // 借用全部带来源声明。
+        .iter()
+        // 投影到 SourceGraph 使用的同一身份算法。
+        .map(|entry| SourceId::from_source_name(&entry.source.display().to_string()))
+        // 保持合并后的声明顺序。
+        .collect();
+    // 去除内部来源包装，交给既有 AST 消费者。
     let declarations = unit
         // 消费本次独立单元声明。
         .declarations
@@ -136,6 +148,8 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
             // 根始终只属于入口文件。
             root: unit.root,
         },
+        // 保留声明级文件身份供 Semantic Model 使用。
+        declaration_sources,
         // 交给入口生成全部 include_str!。
         tracked_files: resolver.tracked_files,
         // 交给 Compiler System、check 与 LSP 共享。
