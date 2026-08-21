@@ -75,7 +75,7 @@ use self::surface_scale::WaylandOutputScaleRegistry;
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
 use crate::platform::windowing::event::*;
-use crate::native::windowing::input::{KeyCode, KeyMod};
+use crate::platform::windowing::{KeyCode, KeyMod};
 use crate::native::windowing::shared::ime_events::ImeCompositionState;
 use crate::native::windowing::shared::input_serial::InputSerial;
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;

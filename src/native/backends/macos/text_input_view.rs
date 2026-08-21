@@ -76,7 +76,7 @@ impl Drop for MacosTextInput {
     }
 }
 
-impl crate::native::windowing::input::ITextInput for MacosTextInput {
+impl crate::platform::windowing::ITextInput for MacosTextInput {
     fn set_target_window(
         &mut self,
         window_id: WindowId,

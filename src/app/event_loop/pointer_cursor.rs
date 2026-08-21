@@ -3,7 +3,7 @@ use crate::core::Errc;
 // 引入平台能力根契约。
 use crate::native::platform::Platform;
 // 引入 App System 实际调用的窄光标能力端口。
-use crate::native::windowing::input::ICursor;
+use crate::platform::windowing::ICursor;
 // 引入平台无关的指针光标枚举。
 use crate::platform::windowing::CursorType;
 // 引入单线程事件循环保存的当前光标状态。

@@ -1,11 +1,13 @@
 //! 平台公开面的窗口契约 — 窗口、输入值、事件、剪贴板与事件循环。
 //!
 //! 本模块是 platform System 私有边界对 ui/draw/app 的公开输入契约收口：
-//! ui 层经 `crate::platform::windowing` 消费输入值类型、`IClipboard` 与
-//! 事件协议，不再直接引用 `crate::native` 私有边界内的实现文件。
+//! ui/app 层经 `crate::platform::windowing` 消费输入值、输入服务、
+//! `IClipboard` 与事件协议，不再直接引用 `crate::native` 私有实现文件。
 
 // 平台无关事件契约与纯分发逻辑集中在 windowing 的 event 边界。
 pub(crate) mod event;
+// 光标、键盘与文本输入的中立协议由独立叶模块唯一持有。
+pub(crate) mod input;
 // UI 线程策略属于 windowing 域，根模块仅再导出稳定入口。
 pub(crate) mod ui_thread;
 // 中立窗口生命周期、属性与帧回调协议由独立叶模块唯一持有。
@@ -15,6 +17,8 @@ use crate::core::error::Result;
 
 // 保留既有公开唤醒句柄路径；唯一源码定义位于 event 子模块。
 pub use event::EventLoopWaker;
+// 聚合层与实现统一消费同一组输入合同。
+pub(crate) use input::{ICursor, IKeyboard, ITextInput};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 鼠标按钮 — 跨层共享

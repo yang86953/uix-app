@@ -12,7 +12,7 @@ use crate::diagnostics::PendingFailureSource;
 // PointerMove 事件在事务内直接提交到已持有队列。
 use crate::platform::windowing::event::UiEvent;
 // Wheel 事件使用平台中立的空键盘修饰快照。
-use crate::native::windowing::input::KeyMod;
+use crate::platform::windowing::KeyMod;
 // surface 路由继续由 window-target Component 唯一拥有。
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 

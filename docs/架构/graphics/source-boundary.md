@@ -31,4 +31,4 @@ src/ui、src/app → src/draw → src/platform/presentation/rhi
 ## 当前风险与非图形旧债
 
 - 真实 Windows D3D11 尚未执行；本阶段只完成源码门禁及交叉编译检查，不能替代 Windows 驱动、窗口、resize 与呈现验收。
-- `src/app` 仍通过精确 allowlist 使用 legacy `crate::native` 的 `Platform`、窗口/事件/输入协议、平台创建入口和可选 agent transport。它们没有 OS/API 条件分支，不影响上层一套图形源码，但其 platform contract 物理迁移尚未完成。
+- `src/app` 仍通过精确 allowlist 使用 legacy `crate::native` 的 `Platform`、平台创建入口和可选 agent transport；窗口、事件与输入协议已迁到 `crate::platform::windowing`。剩余入口没有 OS/API 条件分支，不影响上层一套图形源码，但其 platform 根与创建合同物理迁移尚未完成。

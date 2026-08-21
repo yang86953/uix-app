@@ -10,7 +10,7 @@ use crate::core::{Errc, Error};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // 平台中立 KeyMod 是修饰键状态的唯一共享表示。
-use crate::native::windowing::input::KeyMod;
+use crate::platform::windowing::KeyMod;
 
 // held-key owner 继续使用 Wayland 后端私有值类型。
 use super::HeldKeyInfo;

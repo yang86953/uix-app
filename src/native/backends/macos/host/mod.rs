@@ -18,7 +18,7 @@ use crate::native::platform::Platform;
 use crate::native::present::validate_pixel_buffer;
 use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
-use crate::native::windowing::input::{
+use crate::platform::windowing::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};

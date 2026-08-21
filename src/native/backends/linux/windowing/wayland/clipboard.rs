@@ -17,7 +17,7 @@ use wayland_client::protocol::wl_data_source;
 
 // callback typed failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::input::IClipboard;
+use crate::platform::windowing::IClipboard;
 use crate::native::windowing::shared::nonblocking_read::{
     NonBlockingReadAccumulator, NonBlockingReadStatus,
 };

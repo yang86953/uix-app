@@ -2,8 +2,7 @@
 
 use crate::core::Point;
 use crate::native::Result;
-use crate::native::windowing::input::CursorType;
-use crate::native::windowing::input::ICursor;
+use crate::platform::windowing::{CursorType, ICursor};
 
 #[derive(Debug, Clone)]
 pub struct FakeCursorState {

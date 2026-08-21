@@ -14,7 +14,7 @@ use crate::diagnostics::PendingFailureSource;
 // KeyDown、KeyUp 与 TextInput 在事务内直接提交到已持有队列。
 use crate::platform::windowing::event::UiEvent;
 // Component 只消费平台中立键码与修饰快照。
-use crate::native::windowing::input::{KeyCode, KeyMod};
+use crate::platform::windowing::{KeyCode, KeyMod};
 // 输入 serial owner 继续服务剪贴板等 Wayland 授权操作。
 use crate::native::windowing::shared::input_serial::InputSerial;
 // surface 路由继续由 window-target Component 唯一拥有。

@@ -4,7 +4,7 @@ use crate::core::Errc;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
 use crate::native::capabilities::*;
 use crate::native::platform::Platform;
-use crate::native::windowing::*;
+use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::event::{EventBus, IEventLoop};
 use crate::platform::windowing::window::IWindowManager;
 use std::collections::VecDeque;
