@@ -95,6 +95,18 @@ fn nested_imports_resolve_relative_to_each_importer_and_track_every_file() {
     let resolved = resolve_file(&root).expect("nested imports should resolve");
     // 三个真实文件都必须进入 rustc 依赖追踪。
     assert_eq!(resolved.tracked_files.len(), 3);
+    // 同一次读取必须形成根优先三节点与两条直接导入边。
+    assert_eq!(resolved.source_graph.files().len(), 3);
+    assert_eq!(resolved.source_graph.imports().len(), 2);
+    assert_eq!(
+        resolved
+            .source_graph
+            .file(resolved.source_graph.root())
+            .expect("源码图根节点必须存在")
+            .path,
+        root.to_string_lossy()
+    );
+    assert_ne!(resolved.source_graph.dependency_hash(), 0);
     // 组件依赖闭包必须同时包含 Page 与 Helper。
     let components = component_names(&resolved.document.declarations);
     // 核对确定组件集合。

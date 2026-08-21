@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // 引入纯 UIX 文档、声明、节点与诊断契约。
+use crate::source_graph::{SourceGraph, SourceGraphBuilder};
 use crate::uix_lang::{
     Declaration, Diagnostic, Document, Element, ImportDeclaration, Node, SourceSpan,
     WidgetDeclaration,
@@ -18,6 +19,8 @@ pub(crate) struct ResolvedDocument {
     pub(crate) document: Document,
     // 保存根文件及全部递归导入文件的规范路径。
     pub(crate) tracked_files: Vec<PathBuf>,
+    // 保存稳定源码身份、快照与导入边。
+    pub(crate) source_graph: SourceGraph,
 }
 
 // 保存带真实来源文件的入口诊断。
@@ -50,7 +53,6 @@ struct ResolvedUnit {
 }
 
 // 保存递归解析期间的确定状态与唯一缓存。
-#[derive(Default)]
 struct ImportResolver {
     // 保存当前深度优先解析栈以拒绝循环。
     stack: Vec<PathBuf>,
@@ -60,6 +62,8 @@ struct ImportResolver {
     tracked_files: Vec<PathBuf>,
     // 保存依赖路径去重集合。
     tracked_set: BTreeSet<PathBuf>,
+    // 保存与解析使用同一读取事实的源码图构建器。
+    source_graph: SourceGraphBuilder,
 }
 
 // 保存已合并声明与各命名空间来源。
@@ -103,7 +107,7 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
         )
     })?;
     // 为本次宏展开创建唯一 resolver，不跨调用共享状态。
-    let mut resolver = ImportResolver::default();
+    let mut resolver = ImportResolver::new(&canonical);
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
     // 把带来源声明投影回既有纯 Document 契约。
@@ -116,6 +120,8 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
         .map(|entry| entry.declaration)
         // 恢复源码顺序。
         .collect();
+    // 在消费 resolver 前完成稳定源码图。
+    let source_graph = resolver.source_graph.finish();
     // 返回完整文档与依赖列表。
     Ok(ResolvedDocument {
         // 保留根文件唯一根并安装合并声明。
@@ -127,6 +133,8 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
         },
         // 交给入口生成全部 include_str!。
         tracked_files: resolver.tracked_files,
+        // 交给 Compiler System、check 与 LSP 共享。
+        source_graph,
     })
 }
 
@@ -158,6 +166,17 @@ pub(crate) fn reject_inline_imports(document: &Document) -> Result<(), Diagnosti
 
 // 实现文件单元递归读取、缓存与循环检测。
 impl ImportResolver {
+    // 为一个真实根文件创建独占源码图解析器。
+    fn new(root: &Path) -> Self {
+        Self {
+            stack: Vec::new(),
+            cache: BTreeMap::new(),
+            tracked_files: Vec::new(),
+            tracked_set: BTreeSet::new(),
+            source_graph: SourceGraphBuilder::new(root),
+        }
+    }
+
     // 读取一个规范路径并完成其全部导入。
     fn load_unit(&mut self, path: &Path) -> Result<ResolvedUnit, ImportDiagnostic> {
         // 已完成的单元可以在同一宏展开内安全复用定义副本。
@@ -227,6 +246,8 @@ impl ImportResolver {
                 "确认文件存在、可读且为 UTF-8",
             )
         })?;
+        // SourceGraph 与 parser 消费完全相同的不可变源码快照。
+        self.source_graph.insert_file(path, &source);
         // 使用既有纯 parser 解析单文件事实。
         let document = crate::uix_lang::parse_document(&source).map_err(|diagnostic| {
             // 把结构化诊断补充真实文件来源。
@@ -381,6 +402,14 @@ impl ImportResolver {
                 "确认路径相对当前 importing .uix 文件且目标存在、可读、为 UTF-8",
             )
         })?;
+        // 在递归读取前记录当前指令形成的有向边与选择器。
+        self.source_graph.add_import(
+            importer,
+            &canonical,
+            import.widget.clone(),
+            import.span.line,
+            import.span.column,
+        );
         // 在递归调用前用当前 import 跨度提供更准确的循环诊断。
         if let Some(position) = self.stack.iter().position(|entry| entry == &canonical) {
             // 取得当前回路路径片段。
