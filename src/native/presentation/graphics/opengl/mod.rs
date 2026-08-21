@@ -14,6 +14,12 @@ pub(crate) mod raster;
 // WGL/EGL context 通过这一层共享同一套 FramePlan/RHI host 实现。
 pub(crate) mod rhi_host;
 
+// 显式测试 feature 只转发真实 EGL/GLES harness，不扩大生产 Adapter 接口。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+pub(crate) fn run_gpu_parity_test() {
+    raster::run_gpu_parity_test();
+}
+
 // Shader sources are API artefacts: they live with the native GL runtime even
 // while the transitional draw-side canvas still owns program/FBO lifetime.
 
