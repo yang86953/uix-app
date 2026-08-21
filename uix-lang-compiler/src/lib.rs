@@ -10,6 +10,7 @@ use proc_macro2::TokenStream;
 use projection_schema::{UI_PROJECTION_SCHEMA, UiProjectionSchema};
 use semantic_ir::{TypedUiIr, lower_document};
 use source_graph::SourceId;
+use source_map::SourceMap;
 
 mod formatter;
 /// 导出覆盖全部源码字节的无损具体语法流。
@@ -20,6 +21,8 @@ pub mod projection_schema;
 pub mod semantic_ir;
 /// 导出稳定源码身份、内容摘要与导入边契约。
 pub mod source_graph;
+/// 导出 Rust 输出到 UIX 源码与语义节点的确定映射。
+pub mod source_map;
 mod uix_import;
 #[cfg(test)]
 mod uix_import_tests;
@@ -82,6 +85,8 @@ pub struct CompileOutput {
     pub source_graph: source_graph::SourceGraph,
     /// 保存与 Rust 输出来自同一次分析的类型化 UI IR。
     pub ir: TypedUiIr,
+    /// 保存生成 Rust token 文本到 UIX 源码及语义节点的映射。
+    pub source_map: SourceMap,
 }
 
 /// 保存不产生公开 Rust 输出的共享检查结果。
@@ -420,10 +425,10 @@ fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, Comp
     })
 }
 
-// 让 AOT 与 check 执行同一完整语义 Gate，AOT 额外交付 Rust 令牌。
+// 让 AOT 与 check 执行同一完整 lowering Gate，AOT 额外进入 Rust Emitter。
 fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDiagnostic> {
     let source_id = analyzed.source_graph.root();
-    let tokens = emit_document(&analyzed.ir).map_err(|diagnostic| {
+    let plan = lower_rust_plan(&analyzed.ir).map_err(|diagnostic| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
@@ -431,18 +436,20 @@ fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDia
             diagnostic,
         )
     })?;
+    let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir);
     Ok(CompileOutput {
-        tokens,
+        tokens: emitted.tokens,
         tracked_files: analyzed.tracked_files,
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
+        source_map: emitted.source_map,
     })
 }
 
-// 检查阶段复用全部现存语义 Gate，但不向调用者产生 Rust 输出。
+// 检查阶段执行完整 lowering Gate，但不进入 Rust Emitter。
 fn check_analyzed(analyzed: AnalyzedUnit) -> Result<CheckOutput, CompilerDiagnostic> {
     let source_id = analyzed.source_graph.root();
-    emit_document(&analyzed.ir).map_err(|diagnostic| {
+    lower_rust_plan(&analyzed.ir).map_err(|diagnostic| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
@@ -477,12 +484,40 @@ fn semantic_diagnostic(
     )
 }
 
-// 让全部入口共享唯一的解析后生成路径。
-fn emit_document(ir: &TypedUiIr) -> Result<TokenStream, Diagnostic> {
-    match ir.target() {
+// 保存已通过全部语义 Gate、可直接交付 Rust Emitter 的不可变计划。
+struct RustUiPlan {
+    tokens: TokenStream,
+}
+
+// 把类型化 UI IR 降低为 Rust UI 计划；check 与 AOT 必须共同执行本阶段。
+fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, Diagnostic> {
+    let tokens = match ir.target() {
         CompileTarget::View => with_source_markers(|| generate_document_view(ir.document())),
         CompileTarget::App => with_source_markers(|| generate_document_app(ir.document())),
         CompileTarget::Items => generate_record_items(ir.document()),
+    }?;
+    Ok(RustUiPlan { tokens })
+}
+
+// 只负责把已验证计划物化为公开 Rust 输出及 SourceMap。
+struct RustEmitter;
+
+struct EmittedRust {
+    tokens: TokenStream,
+    source_map: SourceMap,
+}
+
+impl RustEmitter {
+    fn emit(
+        plan: RustUiPlan,
+        source_graph: &source_graph::SourceGraph,
+        ir: &TypedUiIr,
+    ) -> EmittedRust {
+        let generated = plan.tokens.to_string();
+        EmittedRust {
+            tokens: plan.tokens,
+            source_map: SourceMap::from_generated(&generated, source_graph, ir),
+        }
     }
 }
 
@@ -499,6 +534,11 @@ mod tests {
             .expect("View 编译应成功");
         assert!(view.tokens.to_string().contains("label"));
         assert!(view.tracked_files.is_empty());
+        assert!(!view.source_map.entries().is_empty());
+        assert_eq!(
+            view.source_map.entries()[0].source_id,
+            view.source_graph.root()
+        );
 
         let app = compile_inline("<App><Text>Hello</Text></App>", "<app>", CompileTarget::App)
             .expect("App 编译应成功");
