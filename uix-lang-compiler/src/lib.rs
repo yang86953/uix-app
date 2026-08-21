@@ -4,12 +4,16 @@
 //! 编辑器能力只能通过这里的公开编译命令进入，不得维护独立语言规则。
 
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 use proc_macro2::TokenStream;
 use projection_schema::{UI_PROJECTION_SCHEMA, UiProjectionSchema};
 use semantic_ir::{TypedUiIr, lower_document};
 use source_graph::SourceId;
 
+mod formatter;
+/// 导出覆盖全部源码字节的无损具体语法流。
+pub mod lossless_cst;
 /// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
 pub mod projection_schema;
 /// 导出完成名称、角色和值形状分类的语义 IR。
@@ -91,6 +95,21 @@ pub struct CheckOutput {
     pub ir: TypedUiIr,
 }
 
+/// 保存 formatter 的无损结果与来源身份。
+#[derive(Debug)]
+pub struct FormatOutput {
+    /// 保存真实文件路径或内嵌来源标签。
+    pub source_name: String,
+    /// 保存与 SourceGraph 相同算法形成的来源身份。
+    pub source_id: SourceId,
+    /// 保存规范化后的 UTF-8 源码。
+    pub formatted: String,
+    /// 表示结果是否与输入字节不同。
+    pub changed: bool,
+    /// 保存格式化结果的无损 CST。
+    pub cst: lossless_cst::LosslessCst,
+}
+
 /// 组合语言 Modules、schema 与公开命令的唯一 System 根。
 #[derive(Debug, Clone, Copy)]
 pub struct CompilerSystem {
@@ -156,6 +175,24 @@ impl CompilerSystem {
     ) -> Result<CheckOutput, CompilerDiagnostic> {
         let analyzed = analyze_file(path, target)?;
         check_analyzed(analyzed)
+    }
+
+    /// 格式化内嵌 UIX，同时验证 AST 等价。
+    pub fn format_inline(
+        self,
+        source: &str,
+        source_name: impl Into<String>,
+    ) -> Result<FormatOutput, CompilerDiagnostic> {
+        format_named_source(source, source_name.into())
+    }
+
+    /// 读取并格式化一个真实 `.uix` 文件，不直接覆盖磁盘。
+    pub fn format_file(self, path: &Path) -> Result<FormatOutput, CompilerDiagnostic> {
+        let canonical =
+            fs::canonicalize(path).map_err(|error| source_io_diagnostic(path, error))?;
+        let source = fs::read_to_string(&canonical)
+            .map_err(|error| source_io_diagnostic(&canonical, error))?;
+        format_named_source(&source, canonical.display().to_string())
     }
 }
 
@@ -303,6 +340,66 @@ pub fn check_file(path: &Path, target: CompileTarget) -> Result<CheckOutput, Com
     CompilerSystem::new().check_file(path, target)
 }
 
+/// 格式化内嵌 UIX，并返回无损 CST 与规范文本。
+pub fn format_inline(
+    source: &str,
+    source_name: impl Into<String>,
+) -> Result<FormatOutput, CompilerDiagnostic> {
+    CompilerSystem::new().format_inline(source, source_name)
+}
+
+/// 读取并格式化一个真实 `.uix` 文件，不直接覆盖磁盘。
+pub fn format_file(path: &Path) -> Result<FormatOutput, CompilerDiagnostic> {
+    CompilerSystem::new().format_file(path)
+}
+
+fn format_named_source(
+    source: &str,
+    source_name: String,
+) -> Result<FormatOutput, CompilerDiagnostic> {
+    let source_id = SourceId::from_source_name(&source_name);
+    let formatted = formatter::format_source(source, source_id).map_err(|failure| {
+        CompilerDiagnostic::from_language(
+            &source_name,
+            source_id,
+            if failure.invariant {
+                DiagnosticPhase::Emit
+            } else {
+                DiagnosticPhase::Syntax
+            },
+            if failure.invariant {
+                "UIX3001"
+            } else {
+                "UIX1000"
+            },
+            failure.diagnostic,
+        )
+    })?;
+    Ok(FormatOutput {
+        source_name,
+        source_id,
+        changed: formatted.formatted != source,
+        formatted: formatted.formatted,
+        cst: formatted.cst,
+    })
+}
+
+fn source_io_diagnostic(path: &Path, error: io::Error) -> CompilerDiagnostic {
+    let source_name = path.display().to_string();
+    CompilerDiagnostic {
+        code: "UIX0001",
+        phase: DiagnosticPhase::Source,
+        source_id: SourceId::from_source_name(&source_name),
+        source_name,
+        start: 0,
+        end: 0,
+        line: 1,
+        column: 1,
+        message: format!("无法读取 UIX 文件 {}：{error}", path.display()),
+        suggestion: "确认文件存在、可读且为 UTF-8".to_string(),
+    }
+}
+
 // 建立文件 SourceGraph、AST 与 Typed UI IR。
 fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
@@ -391,7 +488,9 @@ fn emit_document(ir: &TypedUiIr) -> Result<TokenStream, Diagnostic> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileTarget, CompilerSystem, DiagnosticPhase, check_inline, compile_inline};
+    use super::{
+        CompileTarget, CompilerSystem, DiagnosticPhase, check_inline, compile_inline, format_inline,
+    };
     use crate::source_graph::SourceId;
 
     #[test]
@@ -466,5 +565,17 @@ mod tests {
             checked.ir.root().span.source_id,
             checked.source_graph.root()
         );
+    }
+
+    #[test]
+    fn shared_formatter_returns_lossless_idempotent_result() {
+        let first = format_inline("<Column><Text>A</Text></Column>", "fmt.uix")
+            .expect("合法源码必须可格式化");
+        assert!(first.changed);
+        assert_eq!(first.cst.reconstruct(), first.formatted);
+        let second =
+            format_inline(&first.formatted, "fmt.uix").expect("格式化结果必须可再次格式化");
+        assert!(!second.changed);
+        assert_eq!(second.formatted, first.formatted);
     }
 }
