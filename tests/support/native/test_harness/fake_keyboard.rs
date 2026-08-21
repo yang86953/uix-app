@@ -1,7 +1,6 @@
 //! Fake 键盘 — 可手动设置按键状态，支持 &self 访问。
 
-use crate::native::windowing::input::IKeyboard;
-use crate::native::windowing::input::KeyCode;
+use crate::platform::windowing::{IKeyboard, KeyCode};
 use std::cell::Cell;
 use std::collections::HashSet;
 

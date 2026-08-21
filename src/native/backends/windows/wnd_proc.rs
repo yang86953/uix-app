@@ -12,7 +12,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
 use crate::core::Point;
-use crate::native::windowing::*;
+use crate::platform::windowing::MouseButton;
 use crate::native::{Errc, Error};
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 

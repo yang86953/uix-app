@@ -35,7 +35,6 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::fill_secure_random",
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
-    "crate::native::windowing::input::ICursor",
 }
 
 # 固定平台无关事件协议的唯一物理归属。
@@ -68,6 +67,49 @@ WINDOW_IMPLEMENTERS = {
     ),
     ROOT / "tests/support/native/test_harness/fake_window.rs": (
         "impl IWindowManager for FakeWindowManager"
+    ),
+}
+# 固定平台中立输入服务合同的唯一物理归属。
+INPUT_ROOT = SRC / "platform/windowing/input.rs"
+# native 不再保留输入协议定义或兼容模块。
+LEGACY_INPUT_ROOT = SRC / "native/windowing/input.rs"
+# 三项输入合同只能由 platform 叶模块定义。
+INPUT_DEFINITIONS = (
+    "pub(crate) trait ICursor",
+    "pub(crate) trait IKeyboard",
+    "pub(crate) trait ITextInput",
+)
+# 三个平台与 fake 的真实实现必须直接消费 platform 权威合同。
+INPUT_IMPLEMENTERS = {
+    SRC / "native/backends/windows/cursor.rs": ("impl ICursor for WindowsCursor",),
+    SRC / "native/backends/windows/keyboard.rs": ("impl IKeyboard for WindowsKeyboard",),
+    SRC / "native/backends/windows/text_input.rs": (
+        "impl ITextInput for WindowsTextInput",
+    ),
+    SRC / "native/backends/macos/host/services.rs": (
+        "impl crate::platform::windowing::ICursor for MacosCursor",
+        "impl crate::platform::windowing::IKeyboard for MacosKeyboard",
+    ),
+    SRC / "native/backends/macos/text_input_view.rs": (
+        "impl crate::platform::windowing::ITextInput for MacosTextInput",
+    ),
+    SRC / "native/backends/linux/windowing/wayland/cursor.rs": (
+        "impl ICursor for WaylandBackend",
+    ),
+    SRC / "native/backends/linux/windowing/wayland/keyboard.rs": (
+        "impl IKeyboard for WaylandBackend",
+    ),
+    SRC / "native/backends/linux/windowing/wayland/text_input.rs": (
+        "impl ITextInput for WaylandBackend",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_cursor.rs": (
+        "impl ICursor for FakeCursor",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_keyboard.rs": (
+        "impl IKeyboard for FakeKeyboard",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_text_input.rs": (
+        "impl ITextInput for FakeTextInput",
     ),
 }
 # 固定平台中立 CPU presenter 合同的唯一物理归属。
@@ -279,6 +321,44 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 self.assertIn(
                     "crate::platform::windowing::window", implementation_source
                 )
+
+    def test_platform_input_is_the_only_source_definition(self) -> None:
+        # 删除旧物理模块，生产与测试 Rust 源码不得继续消费兼容路径。
+        self.assertFalse(LEGACY_INPUT_ROOT.exists())
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+        for path in rust_sources:
+            with self.subTest(legacy_input_reference=relative(path)):
+                self.assertNotIn("crate::native::windowing::input", source(path))
+
+        # 权威叶只依赖 core 值与同层输入值，不得反向取得 native 实现。
+        owner_source = source(INPUT_ROOT)
+        self.assertNotIn("crate::native", owner_source)
+        for dependency in (
+            "crate::core::{Error, Point, Rect, WindowId}",
+            "super::{CursorType, KeyCode}",
+        ):
+            with self.subTest(input_dependency=dependency):
+                self.assertIn(dependency, owner_source)
+
+        # 三项协议定义只能出现一次，禁止后端、app 或 fake 复制合同。
+        all_sources = {path: source(path) for path in rust_sources}
+        for marker in INPUT_DEFINITIONS:
+            self.assertIn(marker, owner_source)
+            name = marker.rsplit(" ", 1)[-1]
+            definition = re.compile(rf"\btrait\s+{name}\b")
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(input_definition=name):
+                self.assertEqual(locations, [INPUT_ROOT])
+
+        # Windows、macOS、Wayland 与 fake 均直接绑定同一 platform 合同。
+        for path, implementations in INPUT_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(input_implementation=relative(path)):
+                self.assertIn("crate::platform::windowing", implementation_source)
+                for implementation in implementations:
+                    self.assertIn(implementation, implementation_source)
 
     def test_platform_presenter_is_the_only_source_definition(self) -> None:
         # trait 只能由 platform leaf 定义，native 仅保留精确兼容重导出。

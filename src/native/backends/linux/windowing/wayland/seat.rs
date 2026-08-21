@@ -71,7 +71,7 @@ use super::pointer_focus_owner::{
 use crate::core::{Errc, Error, Point};
 // seat adapter 只把 Linux 键码转换为平台中立键码。
 use crate::native::backends::linux::wayland::keycode::linux_keycode_to_keycode;
-use crate::native::windowing::input::{KeyMod, MouseButton};
+use crate::platform::windowing::{KeyMod, MouseButton};
 
 // 从 owner 槽取出 pointer 代理后，在锁外注销回调并按协议版本释放。
 fn release_pointer_proxy(

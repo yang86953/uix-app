@@ -21,7 +21,7 @@ use crate::diagnostics::PendingFailureSource;
 // keyboard Release 在同一事件队列事务中投递 WindowBlur。
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 // keys-down owner 使用统一框架键码。
-use crate::native::windowing::input::KeyCode;
+use crate::platform::windowing::KeyCode;
 // surface focus 路由继续由共享 window-target Component 拥有。
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 

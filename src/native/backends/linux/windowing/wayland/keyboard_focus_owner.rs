@@ -14,7 +14,7 @@ use crate::diagnostics::PendingFailureSource;
 // 焦点边沿在事务内直接提交到已持有队列。
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 // keys-down owner 使用平台中立键码。
-use crate::native::windowing::input::KeyCode;
+use crate::platform::windowing::KeyCode;
 // surface 路由继续由 window-target Component 唯一拥有。
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 

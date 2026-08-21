@@ -10,9 +10,9 @@ use crate::core::Point;
 // callback invariant failure 进入 backend 统一 pending source。
 use crate::diagnostics::PendingFailureSource;
 // ICursor 是 App System 依赖的唯一窄端口。
-use crate::native::windowing::input::CursorType;
+use crate::platform::windowing::CursorType;
 // 引入窄端口 trait。
-use crate::native::windowing::input::ICursor;
+use crate::platform::windowing::ICursor;
 // typed error 区分能力缺失、关闭与 owner 损坏。
 use crate::native::{Errc, Error, Result};
 

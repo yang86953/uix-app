@@ -12,7 +12,7 @@ use crate::diagnostics::PendingFailureSource;
 // PointerDown/Up 在事务内直接提交到已持有队列。
 use crate::platform::windowing::event::UiEvent;
 // 平台中立按钮由 seat adapter 完成 Linux 编号映射。
-use crate::native::windowing::input::MouseButton;
+use crate::platform::windowing::MouseButton;
 // 输入 serial owner 继续服务剪贴板等 Wayland 授权操作。
 use crate::native::windowing::shared::input_serial::InputSerial;
 // surface 路由继续由 window-target Component 唯一拥有。

@@ -5,8 +5,7 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::native::windowing::input::IKeyboard;
-use crate::native::windowing::input::KeyCode;
+use crate::platform::windowing::{IKeyboard, KeyCode};
 
 // Windows 键盘后端只在 crate 内部平台注册表中构造。
 pub(crate) struct WindowsKeyboard;

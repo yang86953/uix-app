@@ -6,8 +6,7 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use crate::core::Point;
-use crate::native::windowing::input::CursorType;
-use crate::native::windowing::input::ICursor;
+use crate::platform::windowing::{CursorType, ICursor};
 use crate::native::{Errc, Error, Result};
 use std::ptr;
 

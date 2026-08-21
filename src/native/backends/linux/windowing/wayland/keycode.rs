@@ -2,7 +2,7 @@
 // platform/linux/wayland/keycode.rs — Linux 键码 → KeyCode 转换
 // ============================================================================
 
-use crate::native::windowing::input::KeyCode;
+use crate::platform::windowing::KeyCode;
 
 /// 将 Linux evdev 键码映射到平台无关的 KeyCode。
 pub(crate) fn linux_keycode_to_keycode(code: u32) -> KeyCode {

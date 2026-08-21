@@ -18,7 +18,7 @@ use wayland_client::backend::WaylandError;
 
 use crate::core::{Errc, Error};
 use crate::platform::windowing::event::UiEvent;
-use crate::native::windowing::input::KeyMod;
+use crate::platform::windowing::KeyMod;
 
 use super::WaylandBackend;
 use super::keycode::keycode_to_char;
@@ -515,7 +515,7 @@ impl WaylandBackend {
         // compositor 重复间隔与 10ms 限制的结果。
         interval: Duration,
         // 统一框架键码。
-        code: crate::native::windowing::input::KeyCode,
+        code: crate::platform::windowing::KeyCode,
         // 按下时的修饰键快照。
         mods: KeyMod,
         // 重复事件目标窗口。

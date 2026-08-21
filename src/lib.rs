@@ -72,10 +72,6 @@
 //! ```
 //!
 //! ```compile_fail
-//! use uix::native::windowing::input::IKeyboard;
-//! ```
-//!
-//! ```compile_fail
 //! use uix::native::present::GraphicsRecipeContext;
 //! ```
 //!

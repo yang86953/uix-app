@@ -6,7 +6,7 @@ use crate::native::capabilities::system::{
     IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
 };
 use crate::platform::windowing::event::{EventBus, IEventLoop};
-use crate::native::windowing::input::{IClipboard, ICursor, IKeyboard, ITextInput};
+use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::window::IWindowManager;
 
 /// 平台根接口 — 持有并暴露所有 OS 抽象子系统。

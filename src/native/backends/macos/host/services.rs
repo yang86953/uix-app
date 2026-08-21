@@ -51,7 +51,7 @@ impl MacosCursor {
     }
 }
 
-impl ICursor for MacosCursor {
+impl crate::platform::windowing::ICursor for MacosCursor {
     fn set_cursor(&mut self, cursor: CursorType) -> Result<()> {
         self.cursor = cursor;
         Ok(())
@@ -158,7 +158,7 @@ impl MacosKeyboard {
     }
 }
 
-impl IKeyboard for MacosKeyboard {
+impl crate::platform::windowing::IKeyboard for MacosKeyboard {
     fn is_down(&self, key: KeyCode) -> bool {
         self.keys_down.contains(&key)
     }
