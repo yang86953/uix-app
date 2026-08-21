@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的可选 `agent-transport` Module，权威持有同用户本机 IPC、peer 校验和 discovery 原子发布。基础依赖：独立 [diagnostics System](diagnostics.md) 的公开契约；[windowing](windowing.md)事件由 platform System 编排，Module 间不直接持有实例。导出：供 app/agent 使用的字节流与生命周期句柄。
 
-> **当前实现线索**：位于 `src/native/agent_transport/`；受 `agent-control` feature 控制。
+> **当前实现线索**：位于 `src/platform/adapters/transport/`；受 `agent-control` feature 控制。
 
 ## 组件清单
 

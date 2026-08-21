@@ -13,7 +13,7 @@
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |
 //!
-//! 五个私有 Module（目标边界见仓库 `docs/架构/系统列表.md`）：
+//! 四个私有 Module（目标边界见仓库 `docs/架构/系统列表.md`）：
 //!
 //! | Module | 职责 | 窄契约依赖 |
 //! |--------|------|------------|
@@ -21,12 +21,9 @@
 //! | [`windowing`] | 原生窗口、事件源、输入、剪贴板与 IME | 无（只依赖 core） |
 //! | [`presentation`] | surface、图形 recipe 与 presenter | `windowing::window`（取 surface 的窄契约） |
 //! | `diagnostics` | runtime 级观察、报告与恢复协调 | 无（见 `crate::diagnostics`） |
-//! | `agent_transport` | 可选同用户本机 IPC 与 discovery | `windowing` / `diagnostics`（feature `agent-control`） |
 //!
 //! 业务流向由 Platform System 组合根与公开门面编排，Module 之间除上表
 //! 窄契约外零依赖；禁止 Module 直接引用、持有、发现或回调兄弟 Module。
-#[cfg(feature = "agent-control")]
-pub(crate) mod agent_transport;
 pub(crate) mod backends;
 pub(crate) mod capabilities;
 pub(crate) mod factory;
