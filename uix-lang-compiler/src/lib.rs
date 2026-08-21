@@ -256,7 +256,7 @@ impl CompilerSystem {
         source_name: impl Into<String>,
         target: CompileTarget,
     ) -> Result<CompileOutput, CompilerDiagnostic> {
-        let analyzed = analyze_inline(source, source_name.into(), target)?;
+        let analyzed = analyze_inline(source, source_name.into(), Some(target))?;
         compile_analyzed(analyzed)
     }
 
@@ -266,7 +266,7 @@ impl CompilerSystem {
         path: &Path,
         target: CompileTarget,
     ) -> Result<CompileOutput, CompilerDiagnostic> {
-        let analyzed = analyze_file(path, target)?;
+        let analyzed = analyze_file(path, Some(target))?;
         compile_analyzed(analyzed)
     }
 
@@ -277,7 +277,17 @@ impl CompilerSystem {
         source_name: impl Into<String>,
         target: CompileTarget,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        let analyzed = analyze_inline(source, source_name.into(), target)?;
+        let analyzed = analyze_inline(source, source_name.into(), Some(target))?;
+        check_analyzed(analyzed)
+    }
+
+    /// 按根元素自动选择 View 或 App 并检查内嵌 UIX。
+    pub fn check_inline_auto(
+        self,
+        source: &str,
+        source_name: impl Into<String>,
+    ) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_inline(source, source_name.into(), None)?;
         check_analyzed(analyzed)
     }
 
@@ -287,7 +297,13 @@ impl CompilerSystem {
         path: &Path,
         target: CompileTarget,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        let analyzed = analyze_file(path, target)?;
+        let analyzed = analyze_file(path, Some(target))?;
+        check_analyzed(analyzed)
+    }
+
+    /// 按根元素自动选择 View 或 App 并检查真实文件。
+    pub fn check_file_auto(self, path: &Path) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file(path, None)?;
         check_analyzed(analyzed)
     }
 
@@ -298,7 +314,17 @@ impl CompilerSystem {
         overlays: &BTreeMap<PathBuf, String>,
         target: CompileTarget,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        let analyzed = analyze_file_with_overlays(path, overlays, target)?;
+        let analyzed = analyze_file_with_overlays(path, overlays, Some(target))?;
+        check_analyzed(analyzed)
+    }
+
+    /// 按覆盖后的根元素自动选择 View 或 App 并检查 LSP 会话快照。
+    pub fn check_file_with_overlays_auto(
+        self,
+        path: &Path,
+        overlays: &BTreeMap<PathBuf, String>,
+    ) -> Result<CheckOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file_with_overlays(path, overlays, None)?;
         check_analyzed(analyzed)
     }
 
@@ -468,7 +494,7 @@ pub fn check_inline(
 fn analyze_inline(
     source: &str,
     source_name: String,
-    target: CompileTarget,
+    requested_target: Option<CompileTarget>,
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let source_graph = source_graph::SourceGraph::inline(&source_name, source);
     let source_id = source_graph.root();
@@ -490,6 +516,7 @@ fn analyze_inline(
             diagnostic,
         )
     })?;
+    let target = requested_target.unwrap_or_else(|| inferred_target(&document));
     let declaration_sources = vec![source_id; document.declarations.len()];
     let ir =
         lower_document(document, target, source_id, &declaration_sources).map_err(|failure| {
@@ -587,28 +614,32 @@ fn source_io_diagnostic(path: &Path, error: io::Error) -> CompilerDiagnostic {
 }
 
 // 建立文件 SourceGraph、AST 与 Typed UI IR。
-fn analyze_file(path: &Path, target: CompileTarget) -> Result<AnalyzedUnit, CompilerDiagnostic> {
+fn analyze_file(
+    path: &Path,
+    requested_target: Option<CompileTarget>,
+) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
-    analyze_resolved_file(resolved, path, target)
+    analyze_resolved_file(resolved, path, requested_target)
 }
 
 // 建立覆盖编辑器内存快照的文件 SourceGraph、AST 与 Typed UI IR。
 fn analyze_file_with_overlays(
     path: &Path,
     overlays: &BTreeMap<PathBuf, String>,
-    target: CompileTarget,
+    requested_target: Option<CompileTarget>,
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let resolved =
         resolve_file_with_overlays(path, overlays).map_err(CompilerDiagnostic::from_import)?;
-    analyze_resolved_file(resolved, path, target)
+    analyze_resolved_file(resolved, path, requested_target)
 }
 
 fn analyze_resolved_file(
     resolved: uix_import::ResolvedDocument,
     path: &Path,
-    target: CompileTarget,
+    requested_target: Option<CompileTarget>,
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let source_id = resolved.source_graph.root();
+    let target = requested_target.unwrap_or_else(|| inferred_target(&resolved.document));
     let ir = lower_document(
         resolved.document,
         target,
@@ -629,6 +660,15 @@ fn analyze_resolved_file(
         source_graph: resolved.source_graph,
         ir,
     })
+}
+
+// 自动入口只依据成功解析后的根元素，不依赖诊断文案或二次编译。
+fn inferred_target(document: &uix_lang::Document) -> CompileTarget {
+    if document.root.name == "App" {
+        CompileTarget::App
+    } else {
+        CompileTarget::View
+    }
 }
 
 // 让 AOT 与 check 执行同一完整 lowering Gate，AOT 额外进入 Rust Emitter。
@@ -865,6 +905,20 @@ mod tests {
         )
         .expect("Record 编译应成功");
         assert!(items.tokens.to_string().contains("struct User"));
+    }
+
+    #[test]
+    fn auto_check_selects_target_from_parsed_root() {
+        let system = CompilerSystem::new();
+        let view = system
+            .check_inline_auto("<Text>Hello</Text>", "<view-auto>")
+            .expect("普通根应自动选择 View");
+        assert_eq!(view.ir.target(), CompileTarget::View);
+
+        let app = system
+            .check_inline_auto("<App title=\"Auto\"><Text>Hello</Text></App>", "<app-auto>")
+            .expect("App 根应自动选择 App");
+        assert_eq!(app.ir.target(), CompileTarget::App);
     }
 
     #[test]
