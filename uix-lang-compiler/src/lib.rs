@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn compiler_system_owns_schema_and_returns_typed_ir() {
         let system = CompilerSystem::new();
-        assert_eq!(system.schema().version(), 1);
+        assert_eq!(system.schema().version(), 2);
         let checked = system
             .check_inline("<Text>Hello</Text>", "typed.uix", CompileTarget::View)
             .expect("合法文档必须通过检查");

@@ -3,6 +3,9 @@ use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入 Compiler System 唯一样式属性登记。
+use crate::projection_schema::UI_PROJECTION_SCHEMA;
+
 // 引入结构化属性、诊断与样式属性。
 use super::{Attribute, AttributeValue, Diagnostic, StyleProperty};
 // 引入三个背景图层属性到 UI 运行时值的独立映射。
@@ -86,6 +89,19 @@ pub(crate) fn apply_style_properties(
     let mut position_insets = Vec::new();
     // 转换每一个已经解析的样式属性。
     for property in properties {
+        // 支持面先由 schema 裁决；float/clear 保留专用非目标诊断。
+        if UI_PROJECTION_SCHEMA
+            .style_property(&property.name)
+            .is_none()
+            && !matches!(property.name.as_str(), "float" | "clear")
+        {
+            // 未登记名称不能进入任何生成分支。
+            return Err(Diagnostic::new(
+                property.span,
+                format!("样式属性 {} 尚无已登记的 Rust Style 映射", property.name),
+                "核对 UIX 样式属性参考，并先在 UiProjectionSchema 登记后再使用",
+            ));
+        }
         // z-index 直接映射到 View 的绘制与命中顺序。
         if property.name == "z-index" {
             // 解析有符号整数层级并留待样式更新后应用。

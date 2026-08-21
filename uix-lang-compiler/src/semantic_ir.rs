@@ -269,7 +269,7 @@ fn typed_attribute(
     source_id: SourceId,
     control: Option<&ControlBinding>,
 ) -> TypedAttribute {
-    let role = if attribute.name.starts_with("on") {
+    let role = if attribute.name.starts_with('@') {
         TypedAttributeRole::Event
     } else if matches!(
         attribute.name.as_str(),
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn semantic_ir_classifies_components_custom_widgets_and_attribute_roles() {
         let document = parse_document(
-            "<Widget name=\"Greeting\"><Text onClick={save} style=\"color: red;\">Hi</Text></Widget><Greeting />",
+            "<Widget name=\"Greeting\"><Text @click=\"save\" style=\"color: red;\">Hi</Text></Widget><Greeting />",
         )
         .expect("测试源码必须通过解析");
         let source = SourceId::from_source_name("demo.uix");
