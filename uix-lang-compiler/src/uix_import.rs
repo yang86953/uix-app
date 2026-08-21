@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // 引入纯 UIX 文档、声明、节点与诊断契约。
+use crate::DiagnosticPhase;
 use crate::source_graph::{SourceGraph, SourceGraphBuilder};
 use crate::uix_lang::{
     Declaration, Diagnostic, Document, Element, ImportDeclaration, Node, SourceSpan,
@@ -26,6 +27,10 @@ pub(crate) struct ResolvedDocument {
 // 保存带真实来源文件的入口诊断。
 #[derive(Debug)]
 pub(crate) struct ImportDiagnostic {
+    // 保存跨入口稳定的诊断代码。
+    pub(crate) code: &'static str,
+    // 保存失败所属 Compiler System 阶段。
+    pub(crate) phase: DiagnosticPhase,
     // 保存应展示给调用者的具体来源路径。
     pub(crate) source_name: String,
     // 保存既有结构化语言诊断。
@@ -95,7 +100,7 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
     // 先取得根文件规范路径，避免同一文件通过不同相对路径绕过循环检测。
     let canonical = fs::canonicalize(path).map_err(|error| {
         // 根文件尚无源码跨度，使用稳定的一行一列入口位置。
-        import_error(
+        source_error(
             // 保留用户解析后的实际路径。
             path,
             // 使用文件入口起点。
@@ -235,7 +240,7 @@ impl ImportResolver {
         // 读取完整 UTF-8 源码。
         let source = fs::read_to_string(path).map_err(|error| {
             // 把文件系统错误归到具体目标文件。
-            import_error(
+            source_error(
                 // 展示规范来源。
                 path,
                 // 读取前没有更精确源码位置。
@@ -252,6 +257,10 @@ impl ImportResolver {
         let document = crate::uix_lang::parse_document(&source).map_err(|diagnostic| {
             // 把结构化诊断补充真实文件来源。
             ImportDiagnostic {
+                // 单文件语法诊断保持解析阶段身份。
+                code: "UIX1000",
+                // 导入解析器不能把语法错误误报为模块错误。
+                phase: DiagnosticPhase::Syntax,
                 // 保存规范文件路径。
                 source_name: path.display().to_string(),
                 // 保留原始行列、原因与建议。
@@ -761,9 +770,37 @@ fn import_error(
 ) -> ImportDiagnostic {
     // 返回入口诊断。
     ImportDiagnostic {
+        // 文件读取与模块图错误共享稳定模块代码。
+        code: "UIX1100",
+        // 这条辅助入口只构造源码或导入阶段错误。
+        phase: DiagnosticPhase::Import,
         // 保存可读路径。
         source_name: source.display().to_string(),
         // 复用语言层结构化诊断。
+        diagnostic: Diagnostic::new(span, message, suggestion),
+    }
+}
+
+// 构造读取或编码失败的结构化源码诊断。
+fn source_error(
+    // 接收失败所属文件。
+    source: &Path,
+    // 接收文件入口跨度。
+    span: SourceSpan,
+    // 接收失败原因。
+    message: impl Into<String>,
+    // 接收修复建议。
+    suggestion: impl Into<String>,
+) -> ImportDiagnostic {
+    // 返回保持源码阶段身份的入口诊断。
+    ImportDiagnostic {
+        // 读取失败拥有独立稳定代码。
+        code: "UIX0001",
+        // 不把文件系统错误误报为模块语义。
+        phase: DiagnosticPhase::Source,
+        // 保存可读路径。
+        source_name: source.display().to_string(),
+        // 复用语言层位置与文案契约。
         diagnostic: Diagnostic::new(span, message, suggestion),
     }
 }
