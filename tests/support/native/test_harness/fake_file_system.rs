@@ -2,9 +2,8 @@
 //!
 //! 所有读取方法通过 `&self` 访问，使用 `RefCell` 追踪调用历史。
 
-use crate::native::capabilities::system::IFileSystem;
-use crate::native::capabilities::system::SpecialDir;
 use crate::native::{Errc, Error, Result};
+use crate::platform::system::filesystem::{IFileSystem, SpecialDir};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 

@@ -68,7 +68,7 @@
 //!
 //! ```compile_fail
 //! // platform 私有 Module 边界不可达：capabilities / windowing / presentation / agent_transport。
-//! use uix::native::capabilities::system::ISystemInfo;
+//! use uix::native::capabilities;
 //! ```
 //!
 //! ```compile_fail

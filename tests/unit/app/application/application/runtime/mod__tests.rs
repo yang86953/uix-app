@@ -1,10 +1,10 @@
 use super::*;
 use crate::core::Errc;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
-use crate::native::capabilities::*;
 use crate::native::platform::Platform;
 use crate::platform::display::IDisplay;
 use crate::platform::system::console::IConsole;
+use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, IEventLoop};

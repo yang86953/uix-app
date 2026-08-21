@@ -12,7 +12,7 @@
 
 use crate::core::error::{Error, Result};
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
-use crate::native::capabilities::system::StatusLevel;
+use crate::platform::capabilities::StatusLevel;
 use crate::platform::services::NotificationSource;
 use crate::platform::system::INotification;
 use std::collections::VecDeque;

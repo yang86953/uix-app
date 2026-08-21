@@ -4,7 +4,7 @@
     use crate::ui::widgets::Label;
     // 引入反馈状态等级以构造最小消息条目。
     #[cfg(feature = "feedback")]
-    use crate::native::capabilities::system::StatusLevel;
+    use crate::platform::capabilities::StatusLevel;
     // 引入声明组件挂载与卸载生命周期入口。
     #[cfg(feature = "feedback")]
     use crate::ui::widget_runtime::traits::WidgetLifecycle;

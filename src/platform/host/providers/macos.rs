@@ -109,6 +109,27 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
         SpecialDir::Documents => home.join("Documents"),
         SpecialDir::Desktop => home.join("Desktop"),
         SpecialDir::Downloads => home.join("Downloads"),
+        SpecialDir::Temp => std::env::temp_dir(),
+        SpecialDir::Current => std::env::current_dir().map_err(|error| {
+            Error::new(
+                Errc::IoError,
+                format!("Platform::special_dir: current_dir failed: {error}"),
+            )
+        })?,
+        SpecialDir::Executable => {
+            let executable = std::env::current_exe().map_err(|error| {
+                Error::new(
+                    Errc::IoError,
+                    format!("Platform::special_dir: current_exe failed: {error}"),
+                )
+            })?;
+            executable.parent().map(PathBuf::from).ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "Platform::special_dir: current executable has no parent",
+                )
+            })?
+        }
     };
     Ok(path)
 }

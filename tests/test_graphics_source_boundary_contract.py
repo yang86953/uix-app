@@ -36,11 +36,9 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
 }
-# native Platform 根尚未迁移，但只能继续取得唯一剩余的 native 文件系统合同。
+# native Platform 根尚未迁移，但不得继续取得任何 native capabilities 合同。
 NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
-NATIVE_PLATFORM_PROTOCOLS = {
-    "crate::native::capabilities::system::IFileSystem",
-}
+NATIVE_PLATFORM_PROTOCOLS: set[str] = set()
 # 固定无附属值类型的基础系统服务协议唯一物理归属。
 SYSTEM_SERVICE_ROOT = SRC / "platform/system.rs"
 SYSTEM_SERVICE_DEFINITIONS = (
@@ -84,6 +82,44 @@ SYSTEM_SERVICE_PLATFORM_ROOTS = (
     SRC / "native/backends/windows/platform.rs",
     SRC / "native/backends/macos/host/mod.rs",
     ROOT / "tests/support/native/test_harness/mod.rs",
+)
+# 固定平台中立文件系统值、端口与共享核心的唯一物理归属。
+FILESYSTEM_ROOT = SRC / "platform/system/filesystem.rs"
+# native 不再保留文件系统合同或共享核心兼容模块。
+LEGACY_FILESYSTEM_ROOTS = (
+    SRC / "native/capabilities/system.rs",
+    SRC / "native/capabilities/services/filesystem.rs",
+)
+# 文件系统定义只能由 system/filesystem 叶持有。
+FILESYSTEM_DEFINITIONS = (
+    ("pub enum SpecialDir", r"\benum\s+SpecialDir\b"),
+    ("pub(crate) trait IFileSystem", r"\btrait\s+IFileSystem\b"),
+    ("pub(crate) trait SpecialDirProvider", r"\btrait\s+SpecialDirProvider\b"),
+    ("pub(crate) struct FileSystemCore", r"\bstruct\s+FileSystemCore\b"),
+)
+# 三平台特殊目录实现与 fake 必须直接绑定同一个 platform 叶。
+FILESYSTEM_IMPLEMENTERS = {
+    SRC / "native/backends/linux/filesystem.rs": (
+        "impl SpecialDirProvider for LinuxSpecialDirs",
+    ),
+    SRC / "native/backends/windows/filesystem.rs": (
+        "impl SpecialDirProvider for WindowsSpecialDirs",
+    ),
+    SRC / "native/backends/macos/host/services.rs": (
+        "impl SpecialDirProvider for MacosSpecialDirs",
+    ),
+    ROOT / "tests/support/native/test_harness/fake_file_system.rs": (
+        "impl IFileSystem for FakeFileSystem",
+    ),
+}
+# Platform 根、三平台聚合、fake 与应用测试桩均直接消费唯一低层端口。
+FILESYSTEM_PLATFORM_ROOTS = (
+    NATIVE_PLATFORM_ROOT,
+    SRC / "native/backends/linux/platform.rs",
+    SRC / "native/backends/windows/platform.rs",
+    SRC / "native/backends/macos/host/mod.rs",
+    ROOT / "tests/support/native/test_harness/mod.rs",
+    ROOT / "tests/unit/app/application/application/runtime/mod__tests.rs",
 )
 # 固定平台中立控制台值与端口的唯一物理归属。
 CONSOLE_ROOT = SRC / "platform/system/console.rs"
@@ -414,6 +450,59 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         for path in SYSTEM_SERVICE_PLATFORM_ROOTS:
             with self.subTest(system_service_platform_root=relative(path)):
                 self.assertIn("crate::platform::system", source(path))
+
+    def test_platform_filesystem_is_the_only_source_definition(self) -> None:
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+
+        # 旧合同与共享核心物理文件必须消失，递归 Rust 源码不得继续引用旧路径。
+        for path in LEGACY_FILESYSTEM_ROOTS:
+            with self.subTest(legacy_filesystem_root=relative(path)):
+                self.assertFalse(path.exists())
+        for path in rust_sources:
+            text = source(path)
+            with self.subTest(legacy_filesystem_reference=relative(path)):
+                self.assertNotIn("native::capabilities::system", text)
+                self.assertNotIn("native::capabilities::services::filesystem", text)
+
+        # 权威叶只依赖 core，不得形成 platform 到 native 的合同依赖环。
+        owner_source = source(FILESYSTEM_ROOT)
+        self.assertNotIn("crate::native", owner_source)
+        self.assertIn("use crate::core::{Errc, Error, Result};", owner_source)
+
+        # 目录值、低层端口、provider 窄端口与共享核心都只能定义一次。
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        for marker, pattern in FILESYSTEM_DEFINITIONS:
+            self.assertIn(marker, owner_source)
+            definition = re.compile(pattern)
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(filesystem_definition=marker):
+                self.assertEqual(locations, [FILESYSTEM_ROOT])
+
+        # 公开 services 路径只能重导出同一类型，不得恢复第二份 SpecialDir。
+        services_source = source(SRC / "platform/host/services.rs")
+        self.assertIn(
+            "pub use crate::platform::system::filesystem::SpecialDir;",
+            services_source,
+        )
+
+        # 三平台与 fake 直接实现同一权威合同，不增加适配层或兼容路径。
+        for path, implementations in FILESYSTEM_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(filesystem_implementation=relative(path)):
+                self.assertIn(
+                    "crate::platform::system::filesystem", implementation_source
+                )
+                for implementation in implementations:
+                    self.assertIn(implementation, implementation_source)
+
+        # Platform 根、三平台聚合、fake 与应用桩都直接取得 platform 端口。
+        for path in FILESYSTEM_PLATFORM_ROOTS:
+            with self.subTest(filesystem_platform_root=relative(path)):
+                self.assertIn(
+                    "crate::platform::system::filesystem::IFileSystem", source(path)
+                )
 
     def test_platform_console_is_the_only_source_definition(self) -> None:
         rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))

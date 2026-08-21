@@ -125,6 +125,29 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
         SpecialDir::Documents => FOLDERID_DOCUMENTS,
         SpecialDir::Desktop => FOLDERID_DESKTOP,
         SpecialDir::Downloads => FOLDERID_DOWNLOADS,
+        SpecialDir::Temp => return Ok(std::env::temp_dir()),
+        SpecialDir::Current => {
+            return std::env::current_dir().map_err(|error| {
+                Error::new(
+                    Errc::IoError,
+                    format!("Platform::special_dir: current_dir failed: {error}"),
+                )
+            });
+        }
+        SpecialDir::Executable => {
+            let executable = std::env::current_exe().map_err(|error| {
+                Error::new(
+                    Errc::IoError,
+                    format!("Platform::special_dir: current_exe failed: {error}"),
+                )
+            })?;
+            return executable.parent().map(PathBuf::from).ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "Platform::special_dir: current executable has no parent",
+                )
+            });
+        }
     };
     // SAFETY: folder points at a valid GUID; Shell allocates path and ownership
     // is released exactly once with CoTaskMemFree.
