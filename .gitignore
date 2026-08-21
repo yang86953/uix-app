@@ -36,6 +36,5 @@ __pycache__/
 # demo 工作区构建产物
 demo/target/
 
-# Cargo.lock：根库与 uix-derive 继续忽略；demo/ 为独立应用工作区，其锁文件入库
-/Cargo.lock
-uix-derive/Cargo.lock
+# Cargo.lock：所有工作区与测试夹具的锁文件均忽略
+Cargo.lock
