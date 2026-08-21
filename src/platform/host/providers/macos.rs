@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform::MacosPlatform;
-use crate::native::platform::Platform as NativePlatform;
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
+use crate::platform::platform::Platform as NativePlatform;
 // 引入跨平台通知身份与能力状态契约。
 use crate::platform::services::{
     AppUserModelId, FileDialogFilter, SpecialDir, SystemNotification, SystemNotificationCapability,

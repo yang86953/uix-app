@@ -20,7 +20,7 @@ use crate::app::window::window_actions::report_center_on_screen_result;
 // 独立 Window 入口复用 Application 的能力创建策略。
 use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
-use crate::native::platform::Platform;
+use crate::platform::platform::Platform;
 use crate::platform::windowing::window::PlatformWindow;
 /// Event-driven application window.
 ///

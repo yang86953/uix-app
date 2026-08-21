@@ -5,6 +5,8 @@
 
 // Platform System 的组合门面保留在根目录，不归属于任何单一功能域。
 mod facade;
+// Platform System 根合同由中立叶唯一持有，原生后端只负责实现与组装。
+pub(crate) mod platform;
 // 显示器信息、DPI 与主题查询由平台中立叶唯一持有。
 pub(crate) mod display;
 // Platform System 的实例生命周期与主线程约束集中在根级 runtime 边界。

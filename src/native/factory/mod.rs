@@ -16,8 +16,8 @@ use crate::core::error::Errc;
 use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::platform::system::info::ISystemInfo;
-use crate::native::platform::Platform;
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
+use crate::platform::platform::Platform;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub(crate) use registry::{

@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::platform::Platform;
 use crate::native::present::validate_pixel_buffer;
 use crate::platform::display::IDisplay;
+use crate::platform::platform::Platform;
 use crate::platform::presentation::IPresenter;
 use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::{IFileDialog, INotification, ITimer};

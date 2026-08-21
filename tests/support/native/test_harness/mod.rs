@@ -59,9 +59,9 @@ use std::time::Duration;
 
 use crate::core::Error;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::platform::*;
 use crate::native::windowing::shared::OsEventSource;
 use crate::platform::display::IDisplay;
+use crate::platform::platform::Platform;
 use crate::platform::system::console::IConsole;
 use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
