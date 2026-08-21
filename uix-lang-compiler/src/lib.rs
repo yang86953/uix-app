@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use proc_macro2::TokenStream;
+use source_graph::SourceId;
 
 /// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
 pub mod projection_schema;
@@ -34,6 +35,34 @@ pub enum CompileTarget {
     Items,
 }
 
+/// 标识诊断首次成立的 Compiler System 阶段。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DiagnosticPhase {
+    /// 源文件读取、编码或入口失败。
+    Source,
+    /// 词法、语法与单文件 AST 建立失败。
+    Syntax,
+    /// 导入路径、可见性、循环或合并失败。
+    Import,
+    /// 名称、类型、组件投影或能力检查失败。
+    Semantic,
+    /// 已验证 IR 到 Rust 输出的内部失败。
+    Emit,
+}
+
+impl DiagnosticPhase {
+    /// 返回供 CLI、LSP 与快照消费的稳定小写名称。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Syntax => "syntax",
+            Self::Import => "import",
+            Self::Semantic => "semantic",
+            Self::Emit => "emit",
+        }
+    }
+}
+
 /// 保存 Compiler System 成功建立的确定性 Rust 结果与递归文件依赖。
 #[derive(Debug)]
 pub struct CompileOutput {
@@ -48,6 +77,12 @@ pub struct CompileOutput {
 /// 保存与入口机制无关的结构化语言诊断。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerDiagnostic {
+    /// 保存跨入口稳定的诊断代码。
+    pub code: &'static str,
+    /// 保存诊断首次成立的编译阶段。
+    pub phase: DiagnosticPhase,
+    /// 保存与 SourceGraph 一致的稳定源码身份。
+    pub source_id: SourceId,
     /// 保存真实文件路径或内嵌来源标签。
     pub source_name: String,
     /// 保存 UTF-8 字节半开区间起点。
@@ -66,8 +101,17 @@ pub struct CompilerDiagnostic {
 
 impl CompilerDiagnostic {
     // 把语言内部诊断投影为 Compiler System 公开诊断。
-    fn from_language(source_name: impl Into<String>, diagnostic: Diagnostic) -> Self {
+    fn from_language(
+        source_name: impl Into<String>,
+        source_id: SourceId,
+        phase: DiagnosticPhase,
+        code: &'static str,
+        diagnostic: Diagnostic,
+    ) -> Self {
         Self {
+            code,
+            phase,
+            source_id,
             source_name: source_name.into(),
             start: diagnostic.span.start,
             end: diagnostic.span.end,
@@ -80,7 +124,14 @@ impl CompilerDiagnostic {
 
     // 保留 Source Module 已确定的真实失败文件。
     fn from_import(diagnostic: ImportDiagnostic) -> Self {
-        Self::from_language(diagnostic.source_name, diagnostic.diagnostic)
+        let source_id = SourceId::from_source_name(&diagnostic.source_name);
+        Self::from_language(
+            diagnostic.source_name,
+            source_id,
+            diagnostic.phase,
+            diagnostic.code,
+            diagnostic.diagnostic,
+        )
     }
 }
 
@@ -91,18 +142,39 @@ pub fn compile_inline(
     target: CompileTarget,
 ) -> Result<CompileOutput, CompilerDiagnostic> {
     let source_name = source_name.into();
-    let document = parse_document(source)
-        .and_then(|document| {
-            reject_inline_imports(&document)?;
-            Ok(document)
-        })
-        .map_err(|diagnostic| CompilerDiagnostic::from_language(&source_name, diagnostic))?;
-    let tokens = compile_document(&document, target)
-        .map_err(|diagnostic| CompilerDiagnostic::from_language(&source_name, diagnostic))?;
+    let source_graph = source_graph::SourceGraph::inline(&source_name, source);
+    let source_id = source_graph.root();
+    let document = parse_document(source).map_err(|diagnostic| {
+        CompilerDiagnostic::from_language(
+            &source_name,
+            source_id,
+            DiagnosticPhase::Syntax,
+            "UIX1000",
+            diagnostic,
+        )
+    })?;
+    reject_inline_imports(&document).map_err(|diagnostic| {
+        CompilerDiagnostic::from_language(
+            &source_name,
+            source_id,
+            DiagnosticPhase::Import,
+            "UIX1100",
+            diagnostic,
+        )
+    })?;
+    let tokens = compile_document(&document, target).map_err(|diagnostic| {
+        CompilerDiagnostic::from_language(
+            &source_name,
+            source_id,
+            DiagnosticPhase::Semantic,
+            "UIX2000",
+            diagnostic,
+        )
+    })?;
     Ok(CompileOutput {
         tokens,
         tracked_files: Vec::new(),
-        source_graph: source_graph::SourceGraph::inline(source_name, source),
+        source_graph,
     })
 }
 
@@ -112,9 +184,21 @@ pub fn compile_file(
     target: CompileTarget,
 ) -> Result<CompileOutput, CompilerDiagnostic> {
     let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
-    let source_name = path.display().to_string();
-    let tokens = compile_document(&resolved.document, target)
-        .map_err(|diagnostic| CompilerDiagnostic::from_language(source_name, diagnostic))?;
+    let source_id = resolved.source_graph.root();
+    let source_name = resolved
+        .source_graph
+        .file(source_id)
+        .map(|file| file.path.clone())
+        .unwrap_or_else(|| path.display().to_string());
+    let tokens = compile_document(&resolved.document, target).map_err(|diagnostic| {
+        CompilerDiagnostic::from_language(
+            source_name,
+            source_id,
+            DiagnosticPhase::Semantic,
+            "UIX2000",
+            diagnostic,
+        )
+    })?;
     Ok(CompileOutput {
         tokens,
         tracked_files: resolved.tracked_files,
@@ -133,7 +217,8 @@ fn compile_document(document: &Document, target: CompileTarget) -> Result<TokenS
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileTarget, compile_inline};
+    use super::{CompileTarget, DiagnosticPhase, compile_inline};
+    use crate::source_graph::SourceId;
 
     #[test]
     fn shared_commands_compile_all_public_target_shapes() {
@@ -160,8 +245,28 @@ mod tests {
         let error = compile_inline("<Mystery />", "demo.uix", CompileTarget::View)
             .expect_err("未知标签必须失败");
         assert_eq!(error.source_name, "demo.uix");
+        assert_eq!(error.source_id, SourceId::from_source_name("demo.uix"));
+        assert_eq!(error.code, "UIX2000");
+        assert_eq!(error.phase, DiagnosticPhase::Semantic);
         assert_eq!(error.line, 1);
         assert!(error.message.contains("Mystery"));
         assert!(!error.suggestion.is_empty());
+    }
+
+    #[test]
+    fn shared_commands_distinguish_syntax_and_import_diagnostics() {
+        let syntax = compile_inline("<Text>", "syntax.uix", CompileTarget::View)
+            .expect_err("未闭合标签必须失败");
+        assert_eq!(syntax.code, "UIX1000");
+        assert_eq!(syntax.phase, DiagnosticPhase::Syntax);
+
+        let import = compile_inline(
+            "@import('./card.uix', 'Card')\n<Text />",
+            "import.uix",
+            CompileTarget::View,
+        )
+        .expect_err("内嵌导入必须失败");
+        assert_eq!(import.code, "UIX1100");
+        assert_eq!(import.phase, DiagnosticPhase::Import);
     }
 }

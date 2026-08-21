@@ -7,6 +7,11 @@ use std::{collections::BTreeMap, path::Path};
 pub struct SourceId(u64);
 
 impl SourceId {
+    /// 从规范路径或内嵌来源标签建立稳定身份。
+    pub fn from_source_name(source_name: &str) -> Self {
+        Self(stable_hash(source_name.replace('\\', "/").as_bytes()))
+    }
+
     /// 返回可用于缓存键和协议传输的原始身份。
     pub const fn value(self) -> u64 {
         self.0
@@ -45,7 +50,7 @@ impl SourceGraph {
     pub fn inline(source_name: impl Into<String>, source: impl Into<String>) -> Self {
         let source_name = source_name.into();
         let source = source.into();
-        let id = source_id(&source_name);
+        let id = SourceId::from_source_name(&source_name);
         Self {
             root: id,
             files: vec![SourceFile {
@@ -162,7 +167,7 @@ fn normalized_path(path: &Path) -> String {
 }
 
 fn source_id(path: &str) -> SourceId {
-    SourceId(stable_hash(path.as_bytes()))
+    SourceId::from_source_name(path)
 }
 
 fn stable_hash(bytes: &[u8]) -> u64 {
