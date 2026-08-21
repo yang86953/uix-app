@@ -5,6 +5,10 @@
 
 // Platform System 的组合门面保留在根目录，不归属于任何单一功能域。
 mod facade;
+// 原生启动输入保持平台中立，并以所有权一次性交付组合根。
+mod composition;
+// 只有本叶同时依赖中立合同与具体平台实现。
+mod composition_root;
 // Platform System 根合同由中立叶唯一持有，原生后端只负责实现与组装。
 pub(crate) mod platform;
 // 显示器信息、DPI 与主题查询由平台中立叶唯一持有。
@@ -38,6 +42,8 @@ pub mod presentation;
 // windowing 功能域拥有输入值、剪贴板与事件循环唤醒契约。
 pub mod windowing;
 
+pub(crate) use composition::PendingNativeOptions;
+pub(crate) use composition_root::create_platform_with_pending;
 pub use facade::Platform;
 // 继续从 platform 根公开 UI 线程入口，同时让实现物理归属 windowing 域。
 pub use windowing::ui_thread::run_on_ui_thread;

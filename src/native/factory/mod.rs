@@ -1,4 +1,4 @@
-//! 平台工厂函数 — #[cfg] 只在此处与 backends/ 内。
+//! 原生图形 recipe 工厂；平台聚合由 `platform::composition_root` 唯一组装。
 
 pub(crate) mod registry;
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -10,14 +10,9 @@ pub(crate) mod registry_windows;
 pub(crate) mod thread_bound;
 
 use crate::core::error::Error;
-// 仅不受支持的平台构建需要统一的平台错误码。
-#[cfg(not(any(windows, unix)))]
-use crate::core::error::Errc;
-use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
-use crate::platform::platform::Platform;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub(crate) use registry::{
@@ -129,50 +124,6 @@ pub(crate) fn create_d3d12_warp_test_context(
 #[cfg(all(test, feature = "d3d12"))]
 pub(crate) fn d3d12_warp_test_context_available() -> bool {
     crate::native::presentation::graphics::d3d12::warp_test_context_available()
-}
-
-#[cfg(windows)]
-pub(crate) fn create_platform_with_pending(
-    pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn Platform>, Error> {
-    Ok(Box::new(
-        crate::native::backends::windows::platform::WindowsPlatform::new_with_pending(
-            pending_failures,
-        ),
-    ))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) fn create_platform_with_pending(
-    pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn Platform>, Error> {
-    let platform = crate::native::backends::linux::platform::LinuxPlatform::new(pending_failures)?;
-    Ok(Box::new(platform))
-}
-
-#[cfg(target_os = "macos")]
-pub(crate) fn create_platform_with_pending(
-    pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn Platform>, Error> {
-    Ok(Box::new(
-        crate::native::backends::macos::platform::MacosPlatform::new(pending_failures),
-    ))
-}
-
-#[cfg(not(any(windows, unix)))]
-pub(crate) fn create_platform_with_pending(
-    _pending_failures: PendingFailureQueue,
-) -> Result<Box<dyn Platform>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        unsupported_platform_message(),
-    ))
-}
-
-// 跨平台不支持分支保留统一错误文案，供兼容工厂和目标矩阵按需调用。
-#[allow(dead_code)]
-pub(crate) fn unsupported_platform_message() -> String {
-    "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
 }
 
 /// 探测系统可用空闲内存（字节）。

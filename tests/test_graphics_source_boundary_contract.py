@@ -33,8 +33,10 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::AgentStream",
     "crate::native::agent_transport::AgentStreamCancelIo",
     "crate::native::agent_transport::fill_secure_random",
-    "crate::native::factory::create_platform_with_pending",
 }
+# 平台启动输入合同不依赖具体实现；唯一组合根叶负责目标选择与对象所有权。
+PLATFORM_COMPOSITION_CONTRACT = SRC / "platform/composition.rs"
+PLATFORM_COMPOSITION_ROOT = SRC / "platform/composition_root.rs"
 # Platform 根合同的唯一中立物理归属；native 不保留兼容文件。
 PLATFORM_ROOT = SRC / "platform/platform.rs"
 LEGACY_PLATFORM_ROOT = SRC / "native/platform.rs"
@@ -54,7 +56,7 @@ PLATFORM_ROOT_CONSUMERS = (
     SRC / "app/window/text_input.rs",
     SRC / "app/window/window.rs",
     SRC / "app/window/window_driver/mod.rs",
-    SRC / "native/factory/mod.rs",
+    PLATFORM_COMPOSITION_ROOT,
     SRC / "platform/host/providers/linux.rs",
     SRC / "platform/host/providers/macos.rs",
     *PLATFORM_ROOT_IMPLEMENTERS,
@@ -423,6 +425,14 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
         )
 
+        # 三个上层域都不得穿透平台入口选择 factory 或具体 OS 后端。
+        for root in UPPER_ROOTS:
+            for path in rust_files(root):
+                text = source(path)
+                with self.subTest(platform_creation_reference=relative(path)):
+                    self.assertNotIn("crate::native::factory", text)
+                    self.assertNotIn("crate::native::backends", text)
+
     def test_platform_root_is_the_only_source_definition(self) -> None:
         rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
 
@@ -450,7 +460,53 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         )
         self.assertNotIn("crate::native", owner_source)
 
-        # 三平台只实现、factory 只组装，其余调用者均直接消费中立合同。
+        # 中立启动输入只定义一次且不依赖 native；按值消费锁定一次性交付语义。
+        option_definition = re.compile(r"\bstruct\s+PendingNativeOptions\b")
+        option_locations = [
+            path for path, text in all_sources.items() if option_definition.search(text)
+        ]
+        self.assertEqual(option_locations, [PLATFORM_COMPOSITION_CONTRACT])
+        composition_contract = source(PLATFORM_COMPOSITION_CONTRACT)
+        self.assertNotIn("crate::native", composition_contract)
+        self.assertIn("fn into_pending_failures(self)", composition_contract)
+
+        # 平台工厂只允许由明确命名的组合根叶定义；native factory 只保留图形 recipe。
+        factory_definition = re.compile(r"\bfn\s+create_platform_with_pending\b")
+        factory_locations = [
+            path for path, text in all_sources.items() if factory_definition.search(text)
+        ]
+        self.assertEqual(factory_locations, [PLATFORM_COMPOSITION_ROOT])
+        self.assertNotIn(
+            "create_platform_with_pending", source(SRC / "native/factory/mod.rs")
+        )
+
+        # 三平台与 unsupported 的 cfg 选择、启动输入消费和具体对象构造只在同一叶。
+        composition_root = source(PLATFORM_COMPOSITION_ROOT)
+        for marker in (
+            '#[cfg(windows)]',
+            '#[cfg(all(unix, not(target_os = "macos")))]',
+            '#[cfg(target_os = "macos")]',
+            '#[cfg(not(any(windows, unix)))]',
+            "WindowsPlatform::new_with_pending",
+            "LinuxPlatform::new",
+            "MacosPlatform::new",
+        ):
+            with self.subTest(platform_composition_marker=marker):
+                self.assertIn(marker, composition_root)
+        self.assertEqual(composition_root.count("options.into_pending_failures()"), 4)
+
+        # 具体平台聚合的选择不得再次扩散到 platform 的 host、runtime 或公开门面。
+        backend_constructor = re.compile(
+            r"(?:LinuxPlatform|WindowsPlatform|MacosPlatform)::(?:new|new_with_pending)\b"
+        )
+        constructor_locations = [
+            path
+            for path in rust_files(SRC / "platform")
+            if backend_constructor.search(without_comments(source(path)))
+        ]
+        self.assertEqual(constructor_locations, [PLATFORM_COMPOSITION_ROOT])
+
+        # 三平台只实现、composition root 只组装，其余调用者均直接消费中立合同。
         for path in PLATFORM_ROOT_IMPLEMENTERS:
             with self.subTest(platform_root_implementer=relative(path)):
                 implementation_source = source(path)
