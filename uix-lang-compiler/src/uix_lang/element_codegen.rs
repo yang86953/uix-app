@@ -5,8 +5,8 @@ use proc_macro2::TokenStream;
 use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
-    Diagnostic, Element, SUPPORTED_BUILTIN_TAGS, generate_affix, generate_alert, generate_anchor,
-    generate_app_layout, generate_autocomplete, generate_avatar, generate_back_top, generate_badge,
+    Diagnostic, Element, generate_affix, generate_alert, generate_anchor, generate_app_layout,
+    generate_autocomplete, generate_avatar, generate_back_top, generate_badge,
     generate_basic_chart, generate_breadcrumb, generate_button_group, generate_calendar,
     generate_card, generate_carousel, generate_cascader, generate_checkbox, generate_color_picker,
     generate_column, generate_container, generate_date_picker, generate_date_range_picker,
@@ -27,6 +27,7 @@ use super::{
     generate_time_picker, generate_timeline, generate_tooltip, generate_tree, generate_tree_select,
     generate_typography, generate_upload, generate_virtual_scroll, generate_watermark,
     generate_window_control, generate_window_drag_region, planned_builtin_diagnostic,
+    supported_builtin_hint,
 };
 // 引入 SelectableList 独立生成入口。
 use super::generate_selectable_list;
@@ -258,7 +259,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
             format!("元素 <{}> 尚无已登记的 Rust API 映射", element.name),
             // 指向明确支持路径。
             format!(
-                "使用 {SUPPORTED_BUILTIN_TAGS}；Col 仅作为 Row/Grid 的直接子项，或先登记组件状态"
+                "使用 {}；Col 仅作为 Row/Grid 的直接子项，或先登记组件状态",
+                supported_builtin_hint()
             ),
         )),
     }
