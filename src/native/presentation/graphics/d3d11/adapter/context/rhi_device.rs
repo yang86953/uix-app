@@ -741,3 +741,14 @@ fn d3d_error(operation: &'static str, error: ::windows::core::Error) -> Error {
         format!("D3d11 RHI {operation} failed: {error}"),
     )
 }
+
+// 显式 Windows feature 才编译真实 D3D11 全管线像素一致性 runner。
+#[cfg(feature = "d3d11-parity-test")]
+#[path = "../../../../../../../tests/unit/native/presentation/graphics/d3d11/adapter/context/rhi_device__gpu_parity_tests.rs"]
+mod gpu_parity_tests;
+
+// 只向 D3D11 context 组合边界转发 runner，不暴露原生资源。
+#[cfg(feature = "d3d11-parity-test")]
+pub(super) fn run_gpu_parity_test() {
+    gpu_parity_tests::run_gpu_parity_test();
+}
