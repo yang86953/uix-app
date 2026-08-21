@@ -6,6 +6,28 @@
 >
 > **当前实现线索**：通用执行位于 `src/draw/backend/`；API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 recipe、registry、线程绑定与原生 Adapter 位于 platform System 的私有实现 `src/native/`。永久源码依赖规则见[图形源码边界](source-boundary.md)。路径只用于定位迁移，不构成公开 API。
 
+## 当前实现状态
+
+| 状态 | 后端/范围 | 已核实实现与验收边界 |
+|---|---|---|
+| **已实现** | 共享规范 | Drawing 唯一持有 11 类 `PipelineKind` 的 canonical scenes、29 项共享采样不变量、容差与 Blur 双 pass 子区域场景；Vulkan、OpenGL、D3D11 harness 直接消费同一规范，不保留 Adapter 私有副本。三套 Adapter 同时消费同一 `RhiSurfaceLifecycle`。 |
+| **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`。`tests/vulkan_gpu_parity.rs` 的真实 harness 已在 AMD Radeon 780M Graphics（RADV PHOENIX）完成 3/3：11 pipelines / 29 invariants 与 Blur 回读、Surface 生命周期、共享设备丢失及逐窗口恢复。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
+| **已实现** | OpenGL ES | Linux 真实 EGL 1.5 / OpenGL ES 3.2 `surfaceless+pbuffer` harness 已完成同一 11 pipelines / 29 invariants 与 Blur 回读，并在同一真实 EGL owner 上覆盖 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
+| **已实现** | D3D11 静态与链接边界 | 已有真实隐藏 HWND、生产 D3D11 draw/submit、staging readback、共享 Blur 与 Surface 生命周期 runner；静态门禁确认它只消费共享规范。Windows MSVC `--no-run` 目标已完成实际链接，并核实为 PE32+ x86-64，包含 D3D11/D3DCompiler 运行库导入。此证据不等于 Windows 运行通过。 |
+| **暂缓** | D3D11 真实 Windows 运行 | 主人已明确跳过本轮真实 Windows/D3D11 执行；该项不是当前阻塞，也不得以交叉链接或静态门禁替代运行结果。 |
+
+上述“已实现”记录仓库当前固定实现与已完成验收边界；新增驱动、设备与系统版本覆盖仍由 Gitea 环境矩阵维护。
+
+### 暂缓项恢复条件
+
+**后续**仅在具备真实 Windows 桌面会话、可创建隐藏 HWND 的 D3D11/DXGI 运行环境，并能保留实际 device/driver 诊断时恢复验收。届时执行仓库冻结的单命令：
+
+```powershell
+cargo test --no-default-features --features d3d11-parity-test --test d3d11_gpu_parity -- --nocapture
+```
+
+通过条件是共享 11 pipelines / 29 invariants、Blur、真实 acquire/submit/present、resize、失效与恢复全部完成；在实际执行前继续保持 **暂缓**，不建立新的图形路线图。
+
 ## 责任边界
 
 backend 把 backend-neutral 的帧计划执行到 CPU 像素目标或 GPU thin RHI。UI 图元、painter order、clip、transform、opacity、blend、Picture 和 effect 的规范语义只在 graphics System 定义一次；原生 Adapter 只实现资源、命令、surface 和 present 原语，不复制逐 UI 组件或图元算法。
@@ -128,7 +150,7 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 
 ## 验证责任
 
-backend 变更需要按风险提供以下证据；实时环境矩阵、结果和缺口由 Gitea 持有，本文不记录动态通过数量：
+backend 变更需要按风险提供以下证据；上方状态矩阵只记录已经固定到仓库实现与验收边界的结果，后续实时环境矩阵和新增缺口仍由 Gitea 持有：
 
 - 规范语义：CPU 参考与 GPU lowering 对 painter order、clip、transform、blend、opacity、文本、图片、Picture 和 effect 的一致性；
 - 资源事务：创建/替换/销毁、generation、resize、晚到 callback、OOM 与 checked shutdown；

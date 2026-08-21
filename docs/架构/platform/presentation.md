@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
 >
-> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan GPU-native swapchain 是三平台首个生产优先参考路径，其他 API 暂缓扩展。路径只用于定位迁移，不构成公开 API；实时差距与环境矩阵由 Gitea 持有。
+> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan GPU-native swapchain 是三平台唯一最高优先参考路径；OpenGL ES 与 D3D11 已实现同一 RHI/Surface 生命周期，精确运行状态与暂缓项见 [graphics/backend 状态矩阵](../graphics/backend.md#当前实现状态)。路径只用于定位实现，不构成公开 API；后续新增环境矩阵由 Gitea 持有。
 
 ## 责任边界
 

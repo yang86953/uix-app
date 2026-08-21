@@ -16,6 +16,22 @@
 
 > **文件拖放边界**：Application 窗口创建 Adapter 在原生窗口创建后、向调用方发布 owner 前先查询 `EnableFileDrop`，仅在支持时调用 `enable_file_drop(true)`。能力稳定缺失时窗口仍可创建；其他启用失败必须关闭尚未发布的窗口并保留 typed 原因链。Windows 通过 `DragAcceptFiles` / `WM_DROPFILES` 交付本地路径；Wayland 只接受 `wl_data_device` 提供的 `text/uri-list` 与 Copy 动作，通过事件循环非阻塞读取并严格解析本地 `file:` URI。平台按 `WindowId` 投递一次 `FileDrop`，ui 再按落点命中 overlay 或主树；selection 替换、drag leave、窗口禁用/关闭和 backend teardown 必须消费 offer、pipe 与 callback owner，不得产生迟到事件。
 
+## 当前实现状态
+
+| 状态 | 范围 | 已核实实现 |
+|---|---|---|
+| **已实现** | 中立能力权威 | `src/platform/windowing/capability.rs` 唯一定义 `WindowCapability` 与 `WindowCapabilities`，闭集共 33 个能力值；`PlatformWindow::capabilities` 返回当前窗口实例的只读事实。 |
+| **已实现** | 基础能力集合 | Windows 固定声明 32 项，macOS 固定声明 12 项，Wayland 固定声明 16 项；平台名本身不推导额外能力。 |
+| **已实现** | Wayland 实例动态能力 | `xdg_activation` 可用时增加 `Raise` 1 项；逐窗 `xdg-decoration` 对象建立时增加 `ShowSystemTitleBar` 1 项；seat 已建立 data-device owner 时增加 `EnableFileDrop`、`DisableFileDrop` 2 项。三组条件相互独立，全部满足时 Wayland 实例为 20 项。 |
+| **已实现** | 统一拒绝边界 | 私有 `WindowOps` 可选默认方法体为 0，Windows、macOS、Wayland 必须显式实现完整方法集。共享核心在可选操作的参数验证、共享状态写入、presenter 与 native Adapter 副作用之前先执行能力门禁；缺失能力稳定返回中立 `Errc::NotImplemented`。 |
+| **已实现** | Wayland `SetResizable` | 单窗口状态机唯一持有用户 min/max、最新正 logical 客户区尺寸与 resizable 状态。锁定把协议 min/max 同时设为最新有效尺寸，解锁恢复用户约束；锁定期间仍更新用户权威但不覆盖固定约束，程序化 resize 与 compositor configure 会把新有效尺寸同步为新的固定 min=max。只有协议成功后才提交规划状态。 |
+
+共享窗口层继续唯一负责正尺寸以及 min/max 交叉约束校验；Wayland 状态机只编码已经验证的中立结果，不复制上层约束规则。上述集合、显式实现和状态机分别由 `tests/test_window_capability_contract.py`、`tests/unit/native/windowing/shared/window_capability__tests.rs` 与 `tests/unit/native/backends/linux/wayland/resize_constraints__tests.rs` 锁定。
+
+## 后续候选
+
+**后续**只保留能力簇候选，不代表已实现或交付承诺：Wayland 外观/装饰能力（图标、attention/闪烁、整体透明度、边框策略），以及窗口状态/层级能力（系统菜单、lower、always-on-top 等）。候选只有在对应 compositor/桌面协议能给出真实实例能力时才可进入集合；本轮不启动开发，也不改变当前 33 项中立闭集。
+
 ## 组件清单
 
 | 组件 | 目标角色 | 职责 |
