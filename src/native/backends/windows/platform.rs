@@ -40,6 +40,7 @@ use crate::native::present::*;
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::native::windowing::*;
 use crate::native::{Errc, Error};
+use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform

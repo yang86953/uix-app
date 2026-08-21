@@ -1,12 +1,11 @@
 // ============================================================================
 // platform/presenter.rs — 像素呈现器实现
 //
-// IPresenter 与类型化 graphics recipe 生命周期位于 crate::native::present 模块。
+// IPresenter 位于 platform 中立合同；具体空实现保留在 native。
 // ============================================================================
 
-use crate::core::error::Error;
-use crate::native::present::IPresenter;
-use crate::native::present::PresentDamage;
+use crate::core::{Error, PresentDamage};
+use crate::platform::presentation::IPresenter;
 
 // ════════════════════════════════════════════════════════════════════════════
 // NullPresenter — 空操作实现

@@ -1,7 +1,8 @@
 //! Fake 呈现器 — 记录每次像素输出。
 
 use crate::core::error::Result;
-use crate::native::present::{IPresenter, PresentCoherency, PresentDamage};
+use crate::core::{PresentCoherency, PresentDamage};
+use crate::platform::presentation::IPresenter;
 
 #[derive(Debug, Clone)]
 pub struct PresentCall {

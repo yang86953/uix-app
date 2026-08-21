@@ -5,7 +5,7 @@ use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
-use crate::native::present::IPresenter;
+use crate::platform::presentation::IPresenter;
 // 引入平台中立的窗口缩放方向，原生窗口只解释方向而不拥有 UI 热区。
 use crate::platform::windowing::WindowResizeEdge;
 

@@ -9,7 +9,7 @@
 //! | 归属 | 内容 |
 //! |------|------|
 //! | [`platform`] | System 共享契约：`Platform` trait（capabilities / windowing / presentation 共同依赖的窄能力） |
-//! | [`present`] | System 共享契约：类型化 recipe 生命周期、`IPresenter` 与私有 `GraphicsApi`；`PlatformWindow` 只借用 presenter，图形 context 由 renderer owner 独立持有 |
+//! | [`present`] | 迁移中的原生 recipe 生命周期与私有 `GraphicsApi`；中立 `IPresenter` 由 `platform::presentation` 拥有，`PlatformWindow` 只借用 presenter |
 //! | [`factory`] | 组合根：`create_platform_with_pending` / `available_memory_bytes` 与 `GraphicsRecipe` 登记（只负责选择、创建、注入，不拥有领域规则） |
 //! | [`backends`] | OS 适配层：唯一允许 `#[cfg(target_os = ...)]` 的目录，实现各 Module 的窄能力契约 |
 //! | [`test_harness`] | 测试替身（`test-harness` feature） |

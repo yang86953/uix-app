@@ -14,12 +14,12 @@ use std::sync::Arc;
 use super::compat::Main;
 use wayland_client::protocol::{wl_buffer, wl_shm, wl_surface};
 
-use crate::core::{Errc, Error, Result};
-use crate::native::present::PresentDamage;
-use crate::native::present::{IPresenter, validate_pixel_buffer};
+use crate::core::{Errc, Error, PresentDamage, PresentSurface, Result};
+use crate::native::present::validate_pixel_buffer;
 // SHM drawable 使用与 EGL 相同的 logical/drawable 原子快照。
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceMetrics;
 use crate::native::windowing::shared::buffer_lease::BufferLease;
+use crate::platform::presentation::IPresenter;
 
 use super::shm_buffer::ShmBuffer;
 
@@ -346,11 +346,11 @@ impl IPresenter for WaylandPresenter {
         drawable_height: i32,
         // metrics 损坏时使用调用方提供的 DPR。
         device_pixel_ratio: f32,
-    ) -> crate::native::present::PresentSurface {
+    ) -> PresentSurface {
         // 健康 metrics 直接生成不可拆分的 native surface 快照。
         match self.metrics.snapshot() {
             // Wayland core scale 同时定义 drawable extent 与 DPR。
-            Ok(snapshot) => crate::native::present::PresentSurface::identity(
+            Ok(snapshot) => PresentSurface::identity(
                 // 使用当前物理宽度。
                 snapshot.drawable_width,
                 // 使用当前物理高度。
@@ -361,7 +361,7 @@ impl IPresenter for WaylandPresenter {
                 snapshot.revision,
             ),
             // 无返回错误通道时保留调用方提供的安全回退。
-            Err(_) => crate::native::present::PresentSurface::identity(
+            Err(_) => PresentSurface::identity(
                 // 回退 drawable 宽度。
                 drawable_width,
                 // 回退 drawable 高度。

@@ -46,6 +46,14 @@ APP_NATIVE_PROTOCOLS = {
 EVENT_ROOT = SRC / "platform/windowing/event"
 # native 不再保留事件定义或兼容模块。
 LEGACY_EVENT_ROOT = SRC / "native/windowing/event"
+# 固定平台中立 CPU presenter 合同的唯一物理归属。
+PRESENTER_ROOT = SRC / "platform/presentation/presenter.rs"
+# native 只允许保留这个精确兼容重导出，不再拥有 trait 定义。
+LEGACY_PRESENTER_OWNER = SRC / "native/presentation/contracts/mod.rs"
+PRESENTER_DEFINITION = re.compile(r"\btrait\s+IPresenter\b")
+LEGACY_PRESENTER_REFERENCE = re.compile(
+    r"crate::native::present(?:::IPresenter|::\{[^}]*\bIPresenter\b)", re.DOTALL
+)
 # 每个 marker 同时约束权威文件与定义种类，防止复制协议或转换层。
 EVENT_DEFINITIONS = {
     EVENT_ROOT / "mod.rs": (
@@ -204,6 +212,25 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 with self.subTest(definition=name):
                     self.assertEqual(platform_locations, [owner])
                     self.assertEqual(native_locations, [])
+
+    def test_platform_presenter_is_the_only_source_definition(self) -> None:
+        # trait 只能由 platform leaf 定义，native 仅保留精确兼容重导出。
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+        definitions = [
+            path for path in rust_sources if PRESENTER_DEFINITION.search(source(path))
+        ]
+        self.assertEqual(definitions, [PRESENTER_ROOT])
+        self.assertIn(
+            "pub(crate) use crate::platform::presentation::IPresenter;",
+            source(LEGACY_PRESENTER_OWNER),
+        )
+
+        # 上层、窗口协议及所有 native/test 实现必须直接消费 platform 权威路径。
+        for path in rust_sources:
+            if path == LEGACY_PRESENTER_OWNER:
+                continue
+            with self.subTest(legacy_presenter_reference=relative(path)):
+                self.assertIsNone(LEGACY_PRESENTER_REFERENCE.search(source(path)))
 
     def test_drawing_graphics_dependencies_enter_only_through_platform_rhi(self) -> None:
         allowed = (
