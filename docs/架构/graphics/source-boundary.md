@@ -1,5 +1,16 @@
 # 图形源码边界
 
+[← 返回架构索引](../../架构.md)
+
+## 当前状态
+
+| 状态 | 范围 | 已核实结论 |
+|---|---|---|
+| **已实现** | 上层单一源码 | `src/app`、`src/ui`、`src/draw` 对 `crate::native` / `native::` 的生产引用为 0；UI 与 app 不直连 RHI，Drawing 只消费 platform 通用 RHI/Surface 合同。 |
+| **已实现** | platform 组合边界 | `src/platform/composition_root.rs` 是 `src/platform` 中唯一允许依赖 concrete native backend 的文件；中立合同、该组合根与 `src/native` concrete adapter 共同构成 platform 层。 |
+| **已实现** | 递归门禁 | `tests/test_graphics_source_boundary_contract.py` 同时锁定上层 OS/API 中立性、唯一 concrete 组合根、11 类 pipeline 的单一规范，以及 Vulkan、D3D11、OpenGL 对共享 Surface 生命周期的消费。 |
+| **暂缓** | Windows D3D11 运行验收 | 真实 Windows D3D11 尚未执行；这是明确跳过的验收，不是当前阻塞。已完成边界与恢复条件见 [backend 状态矩阵](backend.md#当前实现状态)。 |
+
 当前生产依赖顺序只有一条：
 
 ```text
@@ -20,7 +31,7 @@ src/ui → src/draw → src/platform/presentation/rhi
 
 `src/platform` 的中立合同与唯一组合根、`src/native` 的 concrete adapter 与内部装配共同构成 platform 层；OS/API 差异只在该层内选择并经同一合同注入，不泄漏到 `src/app`、`src/ui`、`src/draw`。
 
-## 已锁定事实
+## 已实现事实
 
 - 三平台生产 registry 都以 Vulkan `priority: 100` 为第一候选；D3D11/OpenGL 兼容候选优先级更低。
 - GPU recipe 直接构造 GPU-only backend，不能进入 CPU PixelUpload；PixelUpload 是独立 recipe。
@@ -33,7 +44,3 @@ src/ui → src/draw → src/platform/presentation/rhi
 - `src/app`、`src/ui`、`src/draw` 禁止 OS target `cfg` 和 Vulkan/D3D11/DXGI/OpenGL/EGL/WGL 专名或直接 API crate。
 - `src/app`、`src/ui`、`src/draw` 对 `crate::native` 的引用数量必须为 0；UI/app 不得直连 RHI，Drawing 不得引用具体 adapter。
 - API crate、原生入口和 `GraphicsDevice`/`GraphicsSurface` 实现不得离开对应 native adapter；factory/registry 不得穿透到 adapter 的 context、pipeline 或 raster 内部。
-
-## 当前风险与非图形旧债
-
-- 真实 Windows D3D11 尚未执行；本阶段只完成源码门禁及交叉编译检查，不能替代 Windows 驱动、窗口、resize 与呈现验收。
