@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use crate::core::WindowId;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 
 fn event_queue(
     events: &Arc<Mutex<VecDeque<UiEvent>>>,

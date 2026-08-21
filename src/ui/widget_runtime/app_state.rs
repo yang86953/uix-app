@@ -4,7 +4,7 @@ use std::thread::ThreadId;
 
 use crate::core::{Rect, WidgetId};
 use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
-use crate::platform::windowing::EventLoopWaker;
+use crate::platform::windowing::event::EventLoopWaker;
 use crate::ui::event::SemanticEvent;
 use crate::ui::widget_runtime::widget_handle::WidgetHandle;
 use crate::ui::widget_snapshot::WidgetConfigSnapshot;

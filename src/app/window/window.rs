@@ -178,9 +178,9 @@ impl Window {
         while self.running {
             let saw_event = Cell::new(false);
             let close_requested = Cell::new(false);
-            let collect = |event: &crate::native::windowing::event::UiEvent| {
+            let collect = |event: &crate::platform::windowing::event::UiEvent| {
                 saw_event.set(true);
-                if event.type_ == crate::native::windowing::event::UiEventType::WindowClose {
+                if event.type_ == crate::platform::windowing::event::UiEventType::WindowClose {
                     close_requested.set(true);
                 }
                 true

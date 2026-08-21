@@ -22,7 +22,7 @@ use crate::native::backends::windows::tsf_text_store::{
     TsfEventSink, TsfStoreHandle, TsfTextStore,
 };
 use crate::native::backends::windows::util::windows_diag;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
     ImeCompositionState, on_committed_text, on_marked_text, on_unmark_text,
 };

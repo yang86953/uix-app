@@ -3,7 +3,7 @@
 // 引入统一结果类型。
 use crate::core::Result;
 // 引入当前原生 PointerDown 携带的一次性激活身份。
-use crate::native::windowing::event::PointerActivationId;
+use crate::platform::windowing::event::PointerActivationId;
 // 引入平台中立的八方向窗口缩放契约。
 use crate::platform::windowing::WindowResizeEdge;
 // 引入 xdg-shell 顶层窗口协议及其缩放方向。

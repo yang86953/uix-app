@@ -5,15 +5,14 @@
 //! wait/wake/drain 事件、输入服务与 IME 会话；OS callback 只采集数据并
 //! 投递目标窗口事件，应用逻辑在 app/ui 的 owner thread 执行。
 //!
-//! 契约与实现：`window` / `event` / `input` 是本 Module 的窄能力契约
+//! 契约与实现：`window` / `input` 是本 Module 的原生窄能力契约，平台无关
+//! 事件协议位于 `crate::platform::windowing::event`；
 //! （OS 提供者在 `backends` 中实现），`shared` 是窗口与事件共享状态。
 //! 本 Module 只依赖 core，不依赖兄弟 Module。
 
-pub(crate) mod event;
 pub(crate) mod input;
 pub(crate) mod shared;
 pub(crate) mod window;
 
-pub(crate) use event::*;
 pub(crate) use input::*;
 pub(crate) use window::*;

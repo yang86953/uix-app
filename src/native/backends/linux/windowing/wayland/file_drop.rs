@@ -30,7 +30,7 @@ use crate::core::{Errc, Error, Point, Result, WindowId};
 // callback failure 统一进入 backend 既有 source。
 use crate::diagnostics::PendingFailureSource;
 // 完成的 URI 列表通过平台事件契约交给 Application System。
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 // 非阻塞累加器限制单轮读取预算并识别 EOF。
 use crate::native::windowing::shared::nonblocking_read::{
     // 累加器保存尚未完成的 URI 字节。

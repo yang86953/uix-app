@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use crate::diagnostics::PendingFailureSource;
 use crate::native::capabilities::system::ITimer;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 use crate::native::{Errc, Error, Result};
 
 /// 定时器控制指令

@@ -1,7 +1,7 @@
 //! Exact one-shot request state for native display callbacks that are released
 //! only after the associated frame commits.
 
-use crate::native::windowing::event::FrameRequestToken;
+use crate::platform::windowing::event::FrameRequestToken;
 use crate::native::windowing::window::NativeFrameRequest;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

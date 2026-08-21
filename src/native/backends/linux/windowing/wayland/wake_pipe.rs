@@ -3,7 +3,7 @@
 // typed error 保留 owner-thread I/O failure 分类。
 use crate::core::{Errc, Error};
 // 跨线程唤醒句柄封装安全闭包边界。
-use crate::native::windowing::event::EventLoopWaker;
+use crate::platform::windowing::event::EventLoopWaker;
 
 // backend 提供 wake FD 与既有 pending failure source。
 use super::WaylandBackend;

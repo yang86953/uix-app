@@ -8,7 +8,7 @@ use crate::core::WindowId;
 // typed error 让同步窗口操作观察注册表 owner 损坏。
 use crate::core::error::{Errc, Error, Result};
 // 不透明激活身份用于关联 native 事件与稍后的同步窗口动作。
-use crate::native::windowing::event::PointerActivationId;
+use crate::platform::windowing::event::PointerActivationId;
 
 // surface 注册代次防止协议对象编号复用旧授权。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

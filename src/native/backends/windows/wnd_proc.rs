@@ -14,6 +14,7 @@ use std::time::Instant;
 use crate::core::Point;
 use crate::native::windowing::*;
 use crate::native::{Errc, Error};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 
 use super::bindings::*;
 use super::consts::*;

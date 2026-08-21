@@ -61,11 +61,9 @@ use crate::core::Error;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::*;
 use crate::native::platform::*;
-use crate::native::windowing::event::EventBus;
-use crate::native::windowing::event::EventLoopWaker;
-use crate::native::windowing::event::UiEvent;
 use crate::native::windowing::shared::OsEventSource;
 use crate::native::windowing::*;
+use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakePlatform — 聚合所有 Fake 子系统

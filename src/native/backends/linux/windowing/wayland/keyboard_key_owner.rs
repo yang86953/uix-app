@@ -12,7 +12,7 @@ use crate::core::{Errc, Error, WindowId};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // KeyDown、KeyUp 与 TextInput 在事务内直接提交到已持有队列。
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 // Component 只消费平台中立键码与修饰快照。
 use crate::native::windowing::input::{KeyCode, KeyMod};
 // 输入 serial owner 继续服务剪贴板等 Wayland 授权操作。

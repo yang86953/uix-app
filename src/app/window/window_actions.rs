@@ -4,7 +4,7 @@
 use crate::core::{Errc, Result};
 use crate::native::windowing::window::PlatformWindow;
 // 引入当前原生指针事件携带的不可解释激活身份。
-use crate::native::windowing::event::PointerActivationId;
+use crate::platform::windowing::event::PointerActivationId;
 use crate::ui::WidgetTree;
 use crate::ui::event::WindowAction;
 

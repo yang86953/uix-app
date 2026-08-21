@@ -15,7 +15,7 @@ use std::thread::{self, JoinHandle};
 
 use crate::core::error::{Errc, Error, Result};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::event::FrameRequestToken;
+use crate::platform::windowing::event::FrameRequestToken;
 use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 
 use super::consts::WM_UIX_FRAME_OPPORTUNITY;

@@ -19,7 +19,7 @@ use crate::core::{Errc, Error, WindowId};
 // callback failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
 // keyboard Release 在同一事件队列事务中投递 WindowBlur。
-use crate::native::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 // keys-down owner 使用统一框架键码。
 use crate::native::windowing::input::KeyCode;
 // surface focus 路由继续由共享 window-target Component 拥有。

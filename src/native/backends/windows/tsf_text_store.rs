@@ -25,7 +25,7 @@ use windows::core::{
 pub(crate) use super::tsf_document::{TsfEventSink, TsfLockKind, TsfLockRequest, TsfStoreState};
 use crate::core::{Errc, Error};
 use crate::native::backends::windows::tsf_session::tsf_composition_events;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 
 const VIEW_ID: u32 = 0;
 

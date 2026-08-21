@@ -5,7 +5,7 @@ use crate::native::capabilities::display::IDisplay;
 use crate::native::capabilities::system::{
     IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
 };
-use crate::native::windowing::event::{EventBus, IEventLoop};
+use crate::platform::windowing::event::{EventBus, IEventLoop};
 use crate::native::windowing::input::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::native::windowing::window::IWindowManager;
 

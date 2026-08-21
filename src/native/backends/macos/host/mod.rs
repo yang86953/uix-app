@@ -16,7 +16,7 @@ use crate::native::capabilities::system::{
 };
 use crate::native::platform::Platform;
 use crate::native::present::{IPresenter, PresentDamage, validate_pixel_buffer};
-use crate::native::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
+use crate::platform::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::native::windowing::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
@@ -148,8 +148,8 @@ impl OsEventSource for MacosPlatform {
         if event.as_ref().is_some_and(|event| {
             matches!(
                 event.type_,
-                crate::native::windowing::event::UiEventType::WindowBlur
-                    | crate::native::windowing::event::UiEventType::WindowClose
+                crate::platform::windowing::event::UiEventType::WindowBlur
+                    | crate::platform::windowing::event::UiEventType::WindowClose
             )
         }) {
             self.keyboard.keys_down.clear();
@@ -181,15 +181,15 @@ impl MacosPlatform {
         let suppress_keydown_text = self.text_input.suppress_keydown_text(event.window_id);
         for ui_event in event.into_ui_events(suppress_keydown_text) {
             match ui_event.type_ {
-                crate::native::windowing::event::UiEventType::KeyDown => {
-                    if let crate::native::windowing::event::UiEventPayload::Key(data) =
+                crate::platform::windowing::event::UiEventType::KeyDown => {
+                    if let crate::platform::windowing::event::UiEventPayload::Key(data) =
                         &ui_event.payload
                     {
                         self.keyboard.keys_down.insert(data.key);
                     }
                 }
-                crate::native::windowing::event::UiEventType::KeyUp => {
-                    if let crate::native::windowing::event::UiEventPayload::Key(data) =
+                crate::platform::windowing::event::UiEventType::KeyUp => {
+                    if let crate::platform::windowing::event::UiEventPayload::Key(data) =
                         &ui_event.payload
                     {
                         self.keyboard.keys_down.remove(&data.key);
@@ -278,7 +278,7 @@ impl Platform for MacosPlatform {
         self
     }
 
-    fn event_loop(&mut self) -> &mut dyn crate::native::windowing::event::IEventLoop {
+    fn event_loop(&mut self) -> &mut dyn crate::platform::windowing::event::IEventLoop {
         self
     }
 

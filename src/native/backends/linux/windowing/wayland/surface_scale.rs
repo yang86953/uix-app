@@ -17,7 +17,7 @@ use crate::diagnostics::PendingFailureSource;
 // graphics 与 windowing 共享同一份逐窗 surface 元数据。
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceMetrics;
 // scale 变化通过既有逐窗 resize 事实进入唯一 WindowDriver 管线。
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 
 // 兼容代理保持 Wayland 回调注册与 teardown 语义一致。
 use super::compat::Main;

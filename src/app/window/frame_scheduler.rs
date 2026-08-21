@@ -6,7 +6,7 @@
 //! fallback.
 
 use crate::draw::renderer::GraphicsFailure;
-use crate::native::windowing::event::FrameRequestToken;
+use crate::platform::windowing::event::FrameRequestToken;
 use std::time::{Duration, Instant};
 
 const INITIAL_FALLBACK_PERIOD: Duration = Duration::from_nanos(1_000_000_000 / 60);

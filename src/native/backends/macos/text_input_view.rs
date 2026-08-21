@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Once};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::native::windowing::event::UiEvent;
+use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
     ImeCompositionState, on_committed_text_for_window, on_marked_text_for_window,
     on_unmark_text_for_window,

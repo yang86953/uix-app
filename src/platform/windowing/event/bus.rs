@@ -1,5 +1,5 @@
 // ============================================================================
-// native/windowing/event/bus.rs — 平台输入事件分发总线
+// platform/windowing/event/bus.rs — 平台输入事件分发总线
 //
 // 设计意图：platform System 私有边界（windowing Module）的输入事件分发
 // 通道，取代旧 callback 链式传递模式（collect closure），改用注册式订阅。
@@ -245,6 +245,6 @@ impl Default for EventBus {
 
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/windowing/event/bus__tests.rs"]
+#[path = "../../../../tests/unit/platform/windowing/event/bus__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

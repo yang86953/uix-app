@@ -35,16 +35,48 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::agent_transport::fill_secure_random",
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
-    "crate::native::windowing::event::FrameRequestToken",
-    "crate::native::windowing::event::PointerActivationId",
-    "crate::native::windowing::event::UiEvent",
-    "crate::native::windowing::event::UiEventPayload",
-    "crate::native::windowing::event::UiEventType",
     "crate::native::windowing::input::ICursor",
     "crate::native::windowing::window::IWindowManager",
     "crate::native::windowing::window::NativeFrameRequest",
     "crate::native::windowing::window::PlatformWindow",
     "crate::native::windowing::window::WindowOcclusionState",
+}
+
+# 固定平台无关事件协议的唯一物理归属。
+EVENT_ROOT = SRC / "platform/windowing/event"
+# native 不再保留事件定义或兼容模块。
+LEGACY_EVENT_ROOT = SRC / "native/windowing/event"
+# 每个 marker 同时约束权威文件与定义种类，防止复制协议或转换层。
+EVENT_DEFINITIONS = {
+    EVENT_ROOT / "mod.rs": (
+        "pub struct EventLoopWaker",
+        "pub(crate) trait IEventLoop",
+    ),
+    EVENT_ROOT / "bus.rs": (
+        "pub(crate) type EventHandler",
+        "struct SubscriberEntry",
+        "pub(crate) struct EventBus",
+    ),
+    EVENT_ROOT / "types.rs": (
+        "pub enum UiEventType",
+        "pub struct KeyEventData",
+        "pub struct PointerActivationId",
+        "pub struct PointerButtonEventData",
+        "pub struct PointerMoveEventData",
+        "pub struct WheelData",
+        "pub struct ResizeData",
+        "pub struct TimerEventData",
+        "pub struct TextInputData",
+        "pub struct ImeCompositionData",
+        "pub struct ClipboardData",
+        "pub struct FileDropData",
+        "pub struct ThemeChangeData",
+        "pub struct LocaleChangeData",
+        "pub struct FrameRequestToken",
+        "pub struct FrameOpportunityData",
+        "pub enum UiEventPayload",
+        "pub struct UiEvent",
+    ),
 }
 
 PIPELINE_KINDS = (
@@ -133,6 +165,45 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             APP_NATIVE_PROTOCOLS,
             "删除旧协议后必须同步收紧 allowlist，不能留下宽松例外",
         )
+
+    def test_platform_windowing_event_is_the_only_source_definition(self) -> None:
+        # 旧 native 物理模块必须消失，内部调用方统一消费新权威路径。
+        self.assertFalse(LEGACY_EVENT_ROOT.exists())
+        for path in rust_files(SRC):
+            with self.subTest(legacy_reference=relative(path)):
+                self.assertNotIn("crate::native::windowing::event", source(path))
+
+        # 权威文件必须完整持有冻结的事件协议定义。
+        for owner, markers in EVENT_DEFINITIONS.items():
+            owner_source = source(owner)
+            for marker in markers:
+                with self.subTest(owner=relative(owner), marker=marker):
+                    self.assertIn(marker, owner_source)
+
+        # windowing 内同名定义只能位于权威文件，native 不得再定义这些协议。
+        platform_sources = {
+            path: source(path) for path in rust_files(SRC / "platform/windowing")
+        }
+        native_sources = {path: source(path) for path in rust_files(SRC / "native")}
+        for owner, markers in EVENT_DEFINITIONS.items():
+            for marker in markers:
+                kind_and_name = re.search(
+                    r"(?:type|struct|enum|trait)\s+([A-Za-z_][A-Za-z0-9_]*)", marker
+                )
+                self.assertIsNotNone(kind_and_name)
+                name = kind_and_name.group(1)
+                definition = re.compile(rf"\b(?:type|struct|enum|trait)\s+{name}\b")
+                platform_locations = [
+                    path
+                    for path, text in platform_sources.items()
+                    if definition.search(text)
+                ]
+                native_locations = [
+                    path for path, text in native_sources.items() if definition.search(text)
+                ]
+                with self.subTest(definition=name):
+                    self.assertEqual(platform_locations, [owner])
+                    self.assertEqual(native_locations, [])
 
     def test_drawing_graphics_dependencies_enter_only_through_platform_rhi(self) -> None:
         allowed = (

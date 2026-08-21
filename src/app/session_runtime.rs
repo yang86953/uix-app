@@ -30,7 +30,7 @@ use crate::core::WindowId;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 #[cfg(feature = "test-harness")]
 use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackTicket};
-use crate::platform::windowing::EventLoopWaker;
+use crate::platform::windowing::event::EventLoopWaker;
 use crate::ui::Theme;
 use std::collections::VecDeque;
 
