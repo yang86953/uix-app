@@ -22,7 +22,7 @@ use crate::native::windowing::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
-use crate::native::windowing::window::{
+use crate::platform::windowing::window::{
     IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
 

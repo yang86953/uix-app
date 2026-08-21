@@ -56,7 +56,7 @@ use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
 use crate::native::windowing::shared::window::{WindowOps, unimpl};
 // 引入跨平台共享的窗口状态。
 use crate::native::windowing::shared::WindowState;
-use crate::native::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
+use crate::platform::windowing::window::{NativeFrameRequest, NativeFrameRequestPhase};
 // 引入平台中立的窗口缩放方向供 Wayland adapter 转交。
 use crate::platform::windowing::WindowResizeEdge;
 

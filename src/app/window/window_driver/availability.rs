@@ -2,7 +2,7 @@
 
 use super::WindowDriver;
 use crate::app::window_semantics::WindowSemanticState;
-use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
+use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 
 impl WindowDriver {
     pub(super) fn cancel_outstanding_native_frame(

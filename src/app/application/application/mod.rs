@@ -51,7 +51,7 @@ use crate::draw::target::RenderTarget;
 use crate::native::factory::create_platform_with_pending;
 use crate::native::platform::Platform;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::windowing::window::{PlatformWindow, WindowOcclusionState};
+use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
 use crate::platform::presentation::{
     GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,

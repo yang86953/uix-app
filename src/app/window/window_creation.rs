@@ -3,7 +3,7 @@
 // typed error 区分稳定能力缺失与真实创建失败。
 use crate::core::{Errc, Result};
 // 原生窗口管理器只提供机制，Application 在本 Adapter 注入 FileDrop 策略。
-use crate::native::windowing::window::{IWindowManager, PlatformWindow};
+use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
 
 // 创建一个默认启用 FileDrop 的应用窗口。
 pub(crate) fn create_app_window(

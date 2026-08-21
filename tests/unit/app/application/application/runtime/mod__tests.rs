@@ -6,6 +6,7 @@ use crate::native::capabilities::*;
 use crate::native::platform::Platform;
 use crate::native::windowing::*;
 use crate::platform::windowing::event::{EventBus, IEventLoop};
+use crate::platform::windowing::window::IWindowManager;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

@@ -1,31 +1,29 @@
-//! 窗口协议 — 窗口创建、属性与生命周期。
+//! 平台中立窗口协议 — 窗口创建、属性、生命周期与帧回调。
 
-// 引入帧令牌与平台中立的单次指针激活身份。
-use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::platform::presentation::IPresenter;
-// 引入平台中立的窗口缩放方向，原生窗口只解释方向而不拥有 UI 热区。
 use crate::platform::windowing::WindowResizeEdge;
+use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 
+/// 原生单次帧请求相对当前提交的生效阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFrameRequestPhase {
-    /// The callback becomes eligible after the frame currently being
-    /// assembled is committed. Display-paced APIs such as wl_surface.frame
-    /// implement this phase.
+    /// 当前组装帧提交后回调才可生效；显示节拍 API 使用此阶段。
     AfterPresent,
 }
 
+/// 交给窗口后端的一次性帧回调请求。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeFrameRequest {
     pub token: FrameRequestToken,
     pub phase: NativeFrameRequestPhase,
 }
 
-/// Current compositor knowledge about whether this window can contribute
-/// visible pixels. `Unknown` means the backend has no exact per-window query;
-/// callers must retain any backend-specific recovery mechanism.
+/// 合成器对窗口能否贡献可见像素的当前认知。
+///
+/// `Unknown` 表示后端没有精确的逐窗查询，调用方必须保留后端特有的恢复机制。
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum WindowOcclusionState {
     #[default]
@@ -43,6 +41,7 @@ impl NativeFrameRequest {
     }
 }
 
+/// 平台窗口的逻辑属性与模式操作。
 pub trait IWindowProperties {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
@@ -74,10 +73,12 @@ pub trait IWindowProperties {
     fn enable_file_drop(&mut self, enable: bool) -> Result<()>;
 }
 
+/// 暴露平台窗口原生句柄的窄协议。
 pub trait INativeHandle {
     fn native_window(&self) -> *mut std::ffi::c_void;
 }
 
+/// 创建平台窗口的中立能力协议。
 pub trait IWindowManager {
     fn create_window(
         &mut self,
@@ -122,9 +123,9 @@ pub trait PlatformWindow {
         (self.properties().width(), self.properties().height())
     }
 
-    /// Returns the latest exact compositor visibility when the backend can
-    /// query it. This is intentionally distinct from `is_visible`: a window
-    /// may be onscreen while fully covered by other windows.
+    /// 返回后端可查询到的最新精确合成器可见性。
+    ///
+    /// 此状态有意区别于 `is_visible`：窗口可以已显示但被其他窗口完全遮挡。
     fn occlusion_state(&self) -> WindowOcclusionState {
         WindowOcclusionState::Unknown
     }
@@ -141,21 +142,19 @@ pub trait PlatformWindow {
     fn presenter(&mut self) -> &mut dyn IPresenter;
     fn native_handle(&self) -> &dyn INativeHandle;
 
-    /// Arms a native one-shot callback. `Ok(false)` means this window does
-    /// not support the requested phase and the scheduler must use fallback.
+    /// 安排一次原生单次回调；`Ok(false)` 表示不支持该阶段，调度器必须回退。
     fn request_native_frame(&mut self, _request: NativeFrameRequest) -> Result<bool> {
         Ok(false)
     }
 
-    /// Confirms that the frame associated with `token` was committed.
-    /// Backends whose native wait must begin after presentation use this hook;
-    /// pre-commit protocols can keep the default no-op.
+    /// 确认与 `token` 关联的帧已经提交。
+    ///
+    /// 需要在呈现后开始原生等待的后端使用此钩子；提交前协议可保留默认空操作。
     fn native_frame_presented(&mut self, _token: FrameRequestToken) -> Result<()> {
         Ok(())
     }
 
-    /// Invalidates a still-in-flight native request. Backends that cannot
-    /// cancel the OS object must at least suppress delivery for this token.
+    /// 失效仍在途的原生请求；不能取消 OS 对象的后端至少必须抑制该令牌的交付。
     fn cancel_native_frame(&mut self, _token: FrameRequestToken) -> Result<()> {
         Ok(())
     }

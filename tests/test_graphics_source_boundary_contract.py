@@ -36,16 +36,40 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
     "crate::native::windowing::input::ICursor",
-    "crate::native::windowing::window::IWindowManager",
-    "crate::native::windowing::window::NativeFrameRequest",
-    "crate::native::windowing::window::PlatformWindow",
-    "crate::native::windowing::window::WindowOcclusionState",
 }
 
 # 固定平台无关事件协议的唯一物理归属。
 EVENT_ROOT = SRC / "platform/windowing/event"
 # native 不再保留事件定义或兼容模块。
 LEGACY_EVENT_ROOT = SRC / "native/windowing/event"
+# 固定平台中立窗口协议的唯一物理归属。
+WINDOW_ROOT = SRC / "platform/windowing/window.rs"
+# native 不再保留窗口协议定义或兼容模块。
+LEGACY_WINDOW_ROOT = SRC / "native/windowing/window.rs"
+# 每个 marker 锁定窗口协议的定义种类与名称。
+WINDOW_DEFINITIONS = (
+    "pub enum NativeFrameRequestPhase",
+    "pub struct NativeFrameRequest",
+    "pub enum WindowOcclusionState",
+    "pub trait IWindowProperties",
+    "pub trait INativeHandle",
+    "pub trait IWindowManager",
+    "pub trait PlatformWindow",
+)
+# 三个平台工厂、共享窗口核心与 fake 必须直接消费同一个中立合同。
+WINDOW_IMPLEMENTERS = {
+    SRC / "native/backends/windows/platform.rs": "impl IWindowManager for WindowsPlatform",
+    SRC / "native/backends/macos/host/mod.rs": "impl IWindowManager for MacosPlatform",
+    SRC / "native/backends/linux/windowing/wayland/window.rs": (
+        "impl IWindowManager for WaylandBackend"
+    ),
+    SRC / "native/windowing/shared/window.rs": (
+        "impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O>"
+    ),
+    ROOT / "tests/support/native/test_harness/fake_window.rs": (
+        "impl IWindowManager for FakeWindowManager"
+    ),
+}
 # 固定平台中立 CPU presenter 合同的唯一物理归属。
 PRESENTER_ROOT = SRC / "platform/presentation/presenter.rs"
 # native 只允许保留这个精确兼容重导出，不再拥有 trait 定义。
@@ -212,6 +236,49 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                 with self.subTest(definition=name):
                     self.assertEqual(platform_locations, [owner])
                     self.assertEqual(native_locations, [])
+
+    def test_platform_window_is_the_only_source_definition(self) -> None:
+        # 旧 native 模块必须消失，生产与测试源码都不得再引用旧路径。
+        self.assertFalse(LEGACY_WINDOW_ROOT.exists())
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+        for path in rust_sources:
+            with self.subTest(legacy_window_reference=relative(path)):
+                self.assertNotIn("crate::native::windowing::window", source(path))
+
+        # 权威叶只能依赖 core 与 platform 公开合同，禁止形成 platform → native 环。
+        owner_source = source(WINDOW_ROOT)
+        self.assertNotIn("crate::native", owner_source)
+        for dependency in (
+            "crate::core::WindowId",
+            "crate::core::error::{Error, Result}",
+            "crate::core::geometry::Point",
+            "crate::platform::presentation::IPresenter",
+            "crate::platform::windowing::WindowResizeEdge",
+            "crate::platform::windowing::event::{FrameRequestToken, PointerActivationId}",
+        ):
+            with self.subTest(window_dependency=dependency):
+                self.assertIn(dependency, owner_source)
+
+        # 所有窗口协议定义只能出现一次，禁止 native 或测试替身复制合同。
+        all_sources = {path: source(path) for path in rust_sources}
+        for marker in WINDOW_DEFINITIONS:
+            self.assertIn(marker, owner_source)
+            name = marker.rsplit(" ", 1)[-1]
+            definition = re.compile(rf"\b(?:struct|enum|trait)\s+{name}\b")
+            locations = [
+                path for path, text in all_sources.items() if definition.search(text)
+            ]
+            with self.subTest(window_definition=name):
+                self.assertEqual(locations, [WINDOW_ROOT])
+
+        # 生产后端、共享实现与 fake 均直接实现 platform 权威合同。
+        for path, implementation in WINDOW_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(window_implementation=relative(path)):
+                self.assertIn(implementation, implementation_source)
+                self.assertIn(
+                    "crate::platform::windowing::window", implementation_source
+                )
 
     def test_platform_presenter_is_the_only_source_definition(self) -> None:
         # trait 只能由 platform leaf 定义，native 仅保留精确兼容重导出。

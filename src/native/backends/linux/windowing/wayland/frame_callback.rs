@@ -15,7 +15,7 @@ use crate::core::{Errc, Error, Result, WindowId};
 // 引入 frame event 与 one-shot request 契约。
 use crate::platform::windowing::event::{FrameRequestToken, UiEvent};
 // 引入当前原生 frame 请求值。
-use crate::native::windowing::window::NativeFrameRequest;
+use crate::platform::windowing::window::NativeFrameRequest;
 
 // 引入兼容层协议 handle，使 owner 可主动注销 callback registry 项。
 use super::compat::Main;

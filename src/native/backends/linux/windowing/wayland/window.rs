@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::core::{Errc, Error, WindowId};
 use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
-use crate::native::windowing::*;
+use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
 
 use super::WaylandBackend;
 // 逐窗 scale owner 把 Wayland output 事实桥接到 presentation。

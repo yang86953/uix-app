@@ -13,7 +13,7 @@ use crate::diagnostics::PendingFailureSource;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 // Windows adapter 直接实现共享窗口核心所定义的私有操作契约。
 use crate::native::windowing::shared::window::WindowOps;
-use crate::native::windowing::window::NativeFrameRequest;
+use crate::platform::windowing::window::NativeFrameRequest;
 use crate::platform::windowing::WindowResizeEdge;
 
 use super::frame_pacer::{SharedWindowsFramePacerState, WindowsFramePacer};

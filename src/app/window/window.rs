@@ -21,7 +21,7 @@ use crate::app::window::window_actions::report_center_on_screen_result;
 use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
 use crate::native::platform::Platform;
-use crate::native::windowing::window::PlatformWindow;
+use crate::platform::windowing::window::PlatformWindow;
 /// Event-driven application window.
 ///
 /// 只负责窗口生命周期和平台句柄管理。
