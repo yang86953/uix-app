@@ -1,9 +1,9 @@
 //! 平台聚合协议 — 统一访问各功能域子系统。
 
 use crate::core::Error;
-use crate::native::capabilities::system::IFileSystem;
 use crate::platform::display::IDisplay;
 use crate::platform::system::console::IConsole;
+use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, IEventLoop};

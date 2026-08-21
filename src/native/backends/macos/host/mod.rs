@@ -8,12 +8,11 @@ use std::time::Duration;
 
 use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
-use crate::native::capabilities::system::{IFileSystem, SpecialDir};
 use crate::native::platform::Platform;
 use crate::native::present::validate_pixel_buffer;
 use crate::platform::display::IDisplay;
 use crate::platform::presentation::IPresenter;
+use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::platform::windowing::{

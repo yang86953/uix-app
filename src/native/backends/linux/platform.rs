@@ -12,11 +12,11 @@ use std::time::Duration;
 
 use crate::core::Error;
 use crate::diagnostics::PendingFailureQueue;
-use crate::native::capabilities::*;
 use crate::native::platform::*;
 use crate::native::windowing::shared::{OsEventSource, WindowState};
 use crate::platform::display::IDisplay;
 use crate::platform::system::console::IConsole;
+use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};

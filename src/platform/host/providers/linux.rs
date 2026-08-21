@@ -127,6 +127,27 @@ pub(crate) fn special_dir(directory: SpecialDir) -> Result<PathBuf> {
         SpecialDir::Downloads => {
             xdg_user_dir("DOWNLOAD", &home).unwrap_or_else(|| home.join("Downloads"))
         }
+        SpecialDir::Temp => std::env::temp_dir(),
+        SpecialDir::Current => std::env::current_dir().map_err(|error| {
+            Error::new(
+                Errc::IoError,
+                format!("Platform::special_dir: current_dir failed: {error}"),
+            )
+        })?,
+        SpecialDir::Executable => {
+            let executable = std::env::current_exe().map_err(|error| {
+                Error::new(
+                    Errc::IoError,
+                    format!("Platform::special_dir: current_exe failed: {error}"),
+                )
+            })?;
+            executable.parent().map(Path::to_path_buf).ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "Platform::special_dir: current executable has no parent",
+                )
+            })?
+        }
     };
     if path.as_os_str().is_empty() {
         Err(Error::new(

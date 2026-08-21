@@ -1,7 +1,7 @@
     // 引入被测 owner 与私有状态。
     use super::*;
     // 引入反馈状态等级。
-    use crate::native::capabilities::system::StatusLevel;
+    use crate::platform::capabilities::StatusLevel;
     // 引入线程安全关闭事实观察存储。
     use std::sync::Mutex;
 

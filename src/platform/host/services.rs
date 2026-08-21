@@ -8,6 +8,9 @@ use crate::core::{Errc, Error, ErrorSeverity, Result};
 
 use super::capabilities::StatusLevel;
 
+// 保持公开 services 路径，同时复用 Platform System 的唯一文件系统目录类型。
+pub use crate::platform::system::filesystem::SpecialDir;
+
 /// Drawing 字体发现所需的最小平台协议。
 ///
 /// OS 实现可以同时提供更多系统信息，但 Drawing 只能依赖这四项字体能力。
@@ -196,29 +199,6 @@ impl FileDialogFilter {
         // 只暴露不可变切片，维持构造时不变量。
         &self.extensions
     }
-}
-
-/// 操作系统已知的用户目录。
-///
-/// 本类型是 SpecialDir 的公开权威定义。native 内部文件系统契约
-/// `crate::native::capabilities::system::SpecialDir`（私有实现）以本类型为共享语义来源，
-/// 并通过 `From` 转换覆盖全部变体，另扩展 Temp/Current/Executable 内部变体；
-/// 增删本枚举变体时必须同步 native 侧定义与一致性测试。
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SpecialDir {
-    /// 当前用户的主目录或配置文件目录。
-    Home,
-    /// 平台约定的应用配置数据目录。
-    AppData,
-    /// 平台约定的设备本地应用数据目录。
-    LocalAppData,
-    /// 当前用户的文档目录。
-    Documents,
-    /// 当前用户的桌面目录。
-    Desktop,
-    /// 当前用户的下载目录。
-    Downloads,
 }
 
 /// Windows 应用用户模型标识（AUMID）。

@@ -4,6 +4,8 @@ use crate::core::Result;
 
 // 控制台值与端口由独立中立叶唯一持有。
 pub(crate) mod console;
+// 文件系统值、端口与共享核心由独立中立叶唯一持有。
+pub(crate) mod filesystem;
 // 系统信息值与端口由独立中立叶唯一持有。
 pub(crate) mod info;
 
