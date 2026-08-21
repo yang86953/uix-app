@@ -3,13 +3,16 @@ use super::*;
 impl GraphicsContextLifecycle for D3d11Context {
     // 把 D3D11 当前 drawable 元数据提供给共享生命周期边界。
     fn present_surface(&self) -> crate::native::present::PresentSurface {
-        // 使用同一代际值保证旧 damage 不会跨 swapchain 重建复用。
+        // 物理范围与 generation 必须来自同一个共享 token 快照。
+        let token = self.surface_lifecycle.token();
+        let width = token.extent.width as i32;
+        let height = token.extent.height as i32;
         crate::native::present::PresentSurface::identity(
-            self.width,
-            self.height,
+            width,
+            height,
             // 从同一 context 状态计算本次快照的 drawable 比例。
-            self.width as f32 / self.logical_width.max(1) as f32,
-            self.surface_generation,
+            width as f32 / self.logical_width.max(1) as f32,
+            token.generation,
         )
     }
 
@@ -76,10 +79,14 @@ impl D3d11Context {
         // 接收回读区域高度。
         height: i32,
     ) -> Result<Vec<u32>> {
-        let x0 = x.clamp(0, self.width);
-        let y0 = y.clamp(0, self.height);
-        let x1 = x.saturating_add(width).clamp(x0, self.width);
-        let y1 = y.saturating_add(height).clamp(y0, self.height);
+        // 回读范围与 staging 描述共享同一个已发布物理 extent。
+        let surface_extent = self.surface_lifecycle.token().extent;
+        let surface_width = surface_extent.width as i32;
+        let surface_height = surface_extent.height as i32;
+        let x0 = x.clamp(0, surface_width);
+        let y0 = y.clamp(0, surface_height);
+        let x1 = x.saturating_add(width).clamp(x0, surface_width);
+        let y1 = y.saturating_add(height).clamp(y0, surface_height);
         let read_w = x1 - x0;
         let read_h = y1 - y0;
         if read_w <= 0 || read_h <= 0 {
@@ -94,8 +101,8 @@ impl D3d11Context {
                     .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer(read_pixels)", err))?
             };
             let desc = D3D11_TEXTURE2D_DESC {
-                Width: self.width as u32,
-                Height: self.height as u32,
+                Width: surface_extent.width,
+                Height: surface_extent.height,
                 MipLevels: 1,
                 ArraySize: 1,
                 Format: DXGI_FORMAT_B8G8R8A8_UNORM,
