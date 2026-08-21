@@ -2,6 +2,7 @@
 use super::*;
 use crate::platform::system::INotification;
 use crate::platform::system::console::{ConsoleColor, IConsole, TerminalCapabilities};
+use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
 
 impl INotification for MacosNotification {
     fn show(&mut self, _title: &str, _message: &str) -> Result<()> {

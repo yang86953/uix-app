@@ -36,11 +36,10 @@ APP_NATIVE_PROTOCOLS = {
     "crate::native::factory::create_platform_with_pending",
     "crate::native::platform::Platform",
 }
-# native Platform 根尚未迁移，但只能继续取得剩余两项 native 系统服务合同。
+# native Platform 根尚未迁移，但只能继续取得唯一剩余的 native 文件系统合同。
 NATIVE_PLATFORM_ROOT = SRC / "native/platform.rs"
 NATIVE_PLATFORM_PROTOCOLS = {
     "crate::native::capabilities::system::IFileSystem",
-    "crate::native::capabilities::system::ISystemInfo",
 }
 # 固定无附属值类型的基础系统服务协议唯一物理归属。
 SYSTEM_SERVICE_ROOT = SRC / "platform/system.rs"
@@ -103,6 +102,39 @@ CONSOLE_IMPLEMENTERS = {
 }
 # Platform 根及三平台/fake 聚合均需显式消费控制台权威路径。
 CONSOLE_PLATFORM_ROOTS = (
+    NATIVE_PLATFORM_ROOT,
+    SRC / "native/backends/linux/platform.rs",
+    SRC / "native/backends/windows/platform.rs",
+    SRC / "native/backends/macos/host/mod.rs",
+    ROOT / "tests/support/native/test_harness/mod.rs",
+)
+# 固定 crate 私有系统信息值与端口的唯一物理归属。
+SYSTEM_INFO_ROOT = SRC / "platform/system/info.rs"
+# 字体发现是 Drawing 消费的高层 host 服务协议，继续由 services 叶唯一持有。
+FONT_SYSTEM_INFO_ROOT = SRC / "platform/host/services.rs"
+# crate 私有系统信息合同只允许由 system/info 叶定义。
+SYSTEM_INFO_DEFINITIONS = (
+    ("struct", "MemoryInfo"),
+    ("struct", "OsInfo"),
+    ("trait", "ISystemInfo"),
+)
+# Linux、Windows、macOS 与 fake 必须直接实现同一个 platform 合同。
+SYSTEM_INFO_IMPLEMENTERS = {
+    SRC / "native/backends/linux/host/system_info/mod.rs": (
+        "impl ISystemInfo for LinuxSystemInfo"
+    ),
+    SRC / "native/backends/windows/host/system_info/info.rs": (
+        "impl ISystemInfo for WindowsSystemInfo"
+    ),
+    SRC / "native/backends/macos/host/services2.rs": (
+        "impl ISystemInfo for MacosSystemInfo"
+    ),
+    ROOT / "tests/support/native/test_harness/fake_system_info.rs": (
+        "impl ISystemInfo for FakeSystemInfo"
+    ),
+}
+# Platform 根、三平台聚合与 fake 均需显式消费新权威路径。
+SYSTEM_INFO_PLATFORM_ROOTS = (
     NATIVE_PLATFORM_ROOT,
     SRC / "native/backends/linux/platform.rs",
     SRC / "native/backends/windows/platform.rs",
@@ -425,6 +457,54 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         for path in CONSOLE_PLATFORM_ROOTS:
             with self.subTest(console_platform_root=relative(path)):
                 self.assertIn("crate::platform::system::console", source(path))
+
+    def test_platform_system_info_is_the_only_internal_contract_definition(self) -> None:
+        rust_sources = (*rust_files(SRC), *rust_files(ROOT / "tests"))
+
+        # 生产与 fake 都不得继续消费系统信息合同的旧 native 路径。
+        legacy_reference = re.compile(
+            r"crate::native::capabilities::system::"
+            r"(?:MemoryInfo|OsInfo|ISystemInfo)\b"
+        )
+        for path in rust_sources:
+            with self.subTest(legacy_system_info_reference=relative(path)):
+                self.assertIsNone(legacy_reference.search(source(path)))
+
+        # 中立叶只依赖 core 错误合同与同层公开 host 协议，不得反向取得 native。
+        owner_source = source(SYSTEM_INFO_ROOT)
+        self.assertNotIn("crate::native", owner_source)
+        self.assertIn(
+            "impl<T> crate::platform::services::FontSystemInfo for T", owner_source
+        )
+
+        # crate 私有合同各自只能定义一次；公开 hardware 描述值保持既有公共语义。
+        all_sources = {path: without_comments(source(path)) for path in rust_sources}
+        for kind, name in SYSTEM_INFO_DEFINITIONS:
+            marker = f"pub(crate) {kind} {name}"
+            self.assertIn(marker, owner_source)
+            locations = [path for path, text in all_sources.items() if marker in text]
+            with self.subTest(system_info_definition=name):
+                self.assertEqual(locations, [SYSTEM_INFO_ROOT])
+
+        # 字体发现继续由高层 services 叶唯一持有，system/info 只实现该中立依赖。
+        font_definition = re.compile(r"\btrait\s+FontSystemInfo\b")
+        font_locations = [
+            path for path, text in all_sources.items() if font_definition.search(text)
+        ]
+        self.assertEqual(font_locations, [FONT_SYSTEM_INFO_ROOT])
+        self.assertIsNone(font_definition.search(without_comments(owner_source)))
+
+        # 三平台与 fake 均直接绑定同一内部 leaf，不增加适配 trait。
+        for path, implementation in SYSTEM_INFO_IMPLEMENTERS.items():
+            implementation_source = source(path)
+            with self.subTest(system_info_implementation=relative(path)):
+                self.assertIn("crate::platform::system::info", implementation_source)
+                self.assertIn(implementation, implementation_source)
+
+        # Platform 根与三平台/fake 聚合不经 native 兼容层取得合同。
+        for path in SYSTEM_INFO_PLATFORM_ROOTS:
+            with self.subTest(system_info_platform_root=relative(path)):
+                self.assertIn("crate::platform::system::info", source(path))
 
     def test_platform_windowing_event_is_the_only_source_definition(self) -> None:
         # 旧 native 物理模块必须消失，内部调用方统一消费新权威路径。

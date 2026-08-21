@@ -9,9 +9,7 @@ use std::time::Duration;
 use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::capabilities::services::{FileSystemCore, SpecialDirProvider};
-use crate::native::capabilities::system::{
-    IFileSystem, ISystemInfo, MemoryInfo, OsInfo, SpecialDir,
-};
+use crate::native::capabilities::system::{IFileSystem, SpecialDir};
 use crate::native::platform::Platform;
 use crate::native::present::validate_pixel_buffer;
 use crate::platform::display::IDisplay;
@@ -327,7 +325,7 @@ impl Platform for MacosPlatform {
         &self.file_system
     }
 
-    fn system_info(&self) -> &dyn ISystemInfo {
+    fn system_info(&self) -> &dyn crate::platform::system::info::ISystemInfo {
         &self.system_info
     }
 }

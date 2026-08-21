@@ -1,7 +1,7 @@
     // 复用本模块私有组装函数。
     use super::*;
-    // 引入系统信息返回值，构造不依赖 feature 的最小测试替身。
-    use crate::native::capabilities::system::{MemoryInfo, OsInfo};
+    // 引入系统信息合同与返回值，构造不依赖 feature 的最小测试替身。
+    use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
     // 使用内部可变计数器记录不可发生的平台字体查询。
     use std::cell::Cell;
 

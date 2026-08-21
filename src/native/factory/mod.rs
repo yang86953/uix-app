@@ -15,7 +15,7 @@ use crate::core::error::Error;
 use crate::core::error::Errc;
 use crate::diagnostics::PendingFailureQueue;
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
-use crate::native::capabilities::system::ISystemInfo;
+use crate::platform::system::info::ISystemInfo;
 use crate::native::platform::Platform;
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
 
