@@ -69,6 +69,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
 
         self.assertIn("struct D3d12RhiBuffer", device)
         self.assertIn("native: ID3D12Resource", device)
+        self.assertIn("shadow: Vec<u8>", device)
         self.assertIn("impl RhiBufferResource for D3d12RhiBuffer", device)
         self.assertIn("struct D3d12RhiTexture", device)
         self.assertIn("impl RhiTextureResource for D3d12RhiTexture", device)
@@ -112,6 +113,21 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
             "fn update_buffer(&mut self, device:",
             "fn preflight_buffer_upload(&self, upload:",
         )
+        zero_shadow = function_range(
+            device,
+            "fn zeroed_buffer_shadow(",
+            "fn clone_buffer_shadow(",
+        )
+        clone_shadow = function_range(
+            device,
+            "fn clone_buffer_shadow(",
+            "fn create_buffer_upload_version(",
+        )
+        upload_version = function_range(
+            device,
+            "fn create_buffer_upload_version(",
+            "fn create_upload_buffer(",
+        )
         create_texture = function_range(
             owner,
             "fn create_texture(\n",
@@ -133,11 +149,23 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
             "fn create_sampler(&mut self, desc:",
         )
 
-        self.assertLess(create_buffer.index("desc.validate()?"), create_buffer.index("create_committed_resource("))
+        self.assertLess(create_buffer.index("desc.validate()?"), create_buffer.index("zeroed_buffer_shadow("))
+        self.assertLess(create_buffer.index("zeroed_buffer_shadow("), create_buffer.index("create_buffer_upload_version("))
+        self.assertLess(create_buffer.index("create_buffer_upload_version("), create_buffer.index("self.buffers.insert("))
         self.assertLess(update_buffer.index("self.buffers.get("), update_buffer.index("upload.validate("))
-        self.assertLess(update_buffer.index("upload.validate("), update_buffer.index("create_committed_resource("))
-        self.assertLess(update_buffer.index("create_committed_resource("), update_buffer.index("native.Map("))
-        self.assertLess(update_buffer.index("native.Unmap("), update_buffer.index("self.buffers.get_mut("))
+        self.assertLess(update_buffer.index("upload.validate("), update_buffer.index("clone_buffer_shadow("))
+        self.assertLess(update_buffer.index("clone_buffer_shadow("), update_buffer.index("copy_from_slice(data)"))
+        self.assertLess(update_buffer.index("copy_from_slice(data)"), update_buffer.index("create_buffer_upload_version("))
+        self.assertLess(update_buffer.index("create_buffer_upload_version("), update_buffer.index("std::mem::replace("))
+        self.assertNotIn(".native =", update_buffer)
+        self.assertNotIn(".shadow =", update_buffer)
+        self.assertLess(zero_shadow.index("try_reserve_exact(size)"), zero_shadow.index("shadow.resize(size, 0)"))
+        self.assertLess(clone_shadow.index("try_reserve_exact(current.len())"), clone_shadow.index("extend_from_slice(current)"))
+        self.assertLess(upload_version.index("shadow.len() != desc.size_bytes()"), upload_version.index("create_committed_resource("))
+        self.assertLess(upload_version.index("create_committed_resource("), upload_version.index("native.Map("))
+        self.assertLess(upload_version.index("shadow.as_ptr()"), upload_version.rindex("native.Unmap("))
+        self.assertIn("mapped.cast::<u8>(), shadow.len()", upload_version)
+        self.assertIn("End: shadow.len()", upload_version)
         self.assertLess(create_texture.index("desc.validate()?"), create_texture.index("create_committed_resource("))
         self.assertLess(upload_texture.index("self.textures.get("), upload_texture.index("upload.validate("))
         self.assertLess(upload_texture.index("upload.validate("), upload_texture.index("GetCopyableFootprints("))

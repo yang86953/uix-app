@@ -247,6 +247,12 @@ fn validate_buffer_native(resource: &D3d12RhiBuffer, usage: BufferUsage) -> Resu
     if resource.desc.usage() != usage {
         return Err(draw_invalid("D3D12 RHI draw buffer usage is invalid"));
     }
+    // 原生版本与 CPU 完整逻辑镜像必须继续对应同一份共享描述。
+    if resource.shadow.len() != resource.desc.size_bytes() {
+        return Err(draw_platform_error(
+            "D3D12 RHI draw buffer shadow size diverged",
+        ));
+    }
     // SAFETY: native 由资源表保持存活，GetDesc 与 GetGPUVirtualAddress 均为只读查询。
     let native_desc = unsafe { resource.native.GetDesc() };
     let expected_width = match resource.desc.usage() {

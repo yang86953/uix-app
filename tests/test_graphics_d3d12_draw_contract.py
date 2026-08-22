@@ -189,6 +189,10 @@ class GraphicsD3d12DrawContractTests(unittest.TestCase):
         self.assertLess(submit.index("self.execute_recording_and_wait()?"), submit.index("submission_sequence.issue()"))
         self.assertLess(submit.index("submission_sequence.issue()"), submit.index("pending_draw_resources.clear()"))
         self.assertIn("draw.retain_after_undrained_drop()", device)
+        # draw 在更新前克隆当前原生版本，资源表的后续整体替换不会缩短旧 COM 生命周期。
+        self.assertIn("vertex: vertex.native.clone()", draw)
+        self.assertIn("uniform: uniform.native.clone()", draw)
+        self.assertIn("Some(index.native.clone())", draw)
         for owner in (
             "D3d12PipelineNativeBinding",
             "vertex: ID3D12Resource",
@@ -208,10 +212,13 @@ class GraphicsD3d12DrawContractTests(unittest.TestCase):
             "fn update_buffer(&mut self, device:",
             "fn preflight_buffer_upload(",
         )
-        self.assertLess(update.index("upload.validate(desc)?"), update.index("create_committed_resource("))
-        self.assertLess(update.index("native.Map("), update.index("native.Unmap("))
-        self.assertLess(update.index("native.Unmap("), update.index("self.buffers.get_mut("))
-        self.assertIn(".native = native", update)
+        self.assertLess(update.index("upload.validate(desc)?"), update.index("clone_buffer_shadow("))
+        self.assertLess(update.index("clone_buffer_shadow("), update.index("copy_from_slice(data)"))
+        self.assertLess(update.index("copy_from_slice(data)"), update.index("create_buffer_upload_version("))
+        self.assertLess(update.index("create_buffer_upload_version("), update.index("std::mem::replace("))
+        self.assertIn("shadow: next_shadow", update)
+        self.assertNotIn(".native =", update)
+        self.assertNotIn(".shadow =", update)
 
     def test_capabilities_enable_only_real_draw_while_production_entry_stays_closed(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")
