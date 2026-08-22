@@ -57,6 +57,33 @@
         assert!(prepared.children[2].widget.as_any().is::<Notification>());
     }
 
+    // 验证反馈浮层根提供稳定快照，页面协调不得把无配置根误判为整窗变化。
+    #[cfg(feature = "feedback")]
+    #[test]
+    fn app_overlay_root_snapshot_is_stable() {
+        // 两轮根准备应生成配置等价的零状态浮层根。
+        let first = prepare_app_root(
+            ViewNode::leaf(Label::new("first")),
+            Some(AppFeedbackState::new()),
+            WindowId::ROOT,
+        );
+        let second = prepare_app_root(
+            ViewNode::leaf(Label::new("second")),
+            Some(AppFeedbackState::new()),
+            WindowId::ROOT,
+        );
+        // 业务子树内容不同也不能污染外层浮层根的配置快照。
+        assert_eq!(
+            first.widget.snapshot_fields(),
+            second.widget.snapshot_fields()
+        );
+        // 零状态根必须脱离 Unknown 的保守整窗失效路径。
+        assert_ne!(
+            first.widget.snapshot_fields(),
+            crate::ui::SnapshotFields::Unknown
+        );
+    }
+
     // 验证不同 WindowId 不会共享反馈队列。
     #[cfg(feature = "feedback")]
     #[test]
