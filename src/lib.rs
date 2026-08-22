@@ -200,8 +200,11 @@ extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
 pub use uix_derive::{Display, uix, uix_app, uix_items};
-// 显式 Vulkan parity 的跨 System 测试组合不进入生产公开面。
-#[cfg(feature = "vulkan-parity-test")]
+// 显式 Vulkan/OpenGL parity 的跨 System 测试组合不进入生产公开面。
+#[cfg(any(
+    feature = "vulkan-parity-test",
+    all(target_os = "linux", feature = "opengl-parity-test")
+))]
 mod graphics_parity;
 // 只为显式 GPU parity 测试目标转发 crate 内 Vulkan harness，不进入默认公开面。
 #[cfg(feature = "vulkan-parity-test")]
@@ -226,6 +229,12 @@ pub fn __run_vulkan_wsi_production_chain_test() {
 #[doc(hidden)]
 pub fn __run_opengl_gpu_parity_test() {
     native::presentation::graphics::opengl::run_gpu_parity_test();
+}
+// 从真实 Wayland 窗口验收 EGL Surface、共享生命周期与最终 present。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[doc(hidden)]
+pub fn __run_opengl_wsi_production_chain_test() {
+    graphics_parity::run_opengl_wsi_production_chain_test();
 }
 // 只为显式 Windows GPU parity 测试目标转发 crate 内 D3D11 生产 Adapter harness。
 #[cfg(all(windows, feature = "d3d11-parity-test"))]

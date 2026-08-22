@@ -18,8 +18,8 @@ use std::sync::Arc;
 // 引入共享的 OpenGL RHI host 生命周期实现。
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
 // 引入 Drop 中调用的 checked shutdown 生命周期契约。
-use crate::platform::presentation::GraphicsContextLifecycle;
 use crate::native::{Errc, Error};
+use crate::platform::presentation::GraphicsContextLifecycle;
 // 引入唯一共享 Surface 生命周期与初始化原因。
 use crate::platform::presentation::rhi::{
     RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason,
@@ -619,6 +619,20 @@ impl EglContext {
             context_destroyed: false,
             surface_destroyed: false,
             display_terminated: false,
+        })
+    }
+
+    // 真实 WSI parity 没有运行应用事件泵，显式关闭交换节拍避免测试线程等待 configure。
+    #[cfg(feature = "opengl-parity-test")]
+    pub(crate) fn disable_swap_interval_for_parity_test(&self) -> Result<(), Error> {
+        // 测试钩子仍先服从正式 EGL owner 的统一生命周期门禁。
+        self.ensure_rhi_active()?;
+        // 只改变显式 parity context 的等待策略，不改变默认生产构造行为。
+        self.egl.swap_interval(self.display, 0).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("EglContext: parity eglSwapInterval(0) failed: {error:?}"),
+            )
         })
     }
 
