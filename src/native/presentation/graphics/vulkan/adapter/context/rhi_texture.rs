@@ -103,7 +103,7 @@ impl VulkanImmediateCommands {
         Ok(())
     }
 
-    fn execute<F>(
+    pub(super) fn execute<F>(
         &mut self,
         device: &ash::Device,
         queue: vk::Queue,

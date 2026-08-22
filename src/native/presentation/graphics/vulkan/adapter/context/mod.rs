@@ -32,6 +32,7 @@ mod rhi_device;
 mod rhi_frame;
 mod rhi_pipeline;
 mod rhi_surface;
+mod rhi_surface_readback;
 mod rhi_texture;
 mod swapchain;
 mod transfer;
@@ -39,6 +40,7 @@ mod transfer;
 // 构造函数只通过私有 guard 完成失败回滚与成功句柄移交。
 use construction::PendingVulkanContext;
 use rhi_device::VulkanRhiDevice;
+use rhi_surface_readback::VulkanSurfaceReadbackBuffer;
 
 // 测试 harness 仍复用私有 RHI Device，不扩大生产 Adapter 接口。
 #[cfg(feature = "vulkan-parity-test")]
@@ -225,11 +227,15 @@ pub struct VulkanContext {
     swapchain_image_views: Vec<vk::ImageView>,
     image_layouts: Vec<vk::ImageLayout>,
     swapchain_format: vk::Format,
+    // 保存最近一次成功创建 swapchain 时查询到的真实 Surface image usage 集合。
+    surface_supported_usage_flags: vk::ImageUsageFlags,
     extent: vk::Extent2D,
     command_pool: vk::CommandPool,
     command_buffer: vk::CommandBuffer,
     // 持有由 platform 类型化资源表签发身份的 Vulkan RHI Device 状态。
     rhi_device: VulkanRhiDevice,
+    // Surface adapter 独占的 HOST_VISIBLE transfer destination，不进入通用资源表。
+    surface_readback: VulkanSurfaceReadbackBuffer,
     upload: UploadBuffer,
     image_available: vk::Semaphore,
     render_finished: Vec<vk::Semaphore>,
