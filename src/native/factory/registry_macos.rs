@@ -3,7 +3,9 @@
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode};
+use crate::platform::presentation::{
+    GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode,
+};
 use std::ffi::c_void;
 
 // Vulkan GPU-native swapchain 是优先生产路径；Metal 暂缓并保留诊断条目。
@@ -56,8 +58,8 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         id: GraphicsApi::Metal,
         priority: 20,
         status: METAL_STATUS,
-        raster: RasterMode::GpuNative,
-        present: PresentMode::Swapchain,
+        raster: RasterMode::Cpu,
+        present: PresentMode::PixelUpload,
         create: create_metal,
     },
     GraphicsBackendEntry {
