@@ -3,7 +3,9 @@
 //! 这里只负责把 UI、Drawing 与具体 Adapter 的测试能力组装起来；场景语义、
 //! FramePlan lowering 和 Vulkan 原生执行仍由各自唯一责任方持有。
 
+use std::cell::Cell;
 use std::ffi::c_void;
+use std::time::{Duration, Instant};
 
 use crate::app::window::window_creation::create_app_window;
 use crate::core::Errc;
@@ -29,6 +31,7 @@ use crate::platform::presentation::rhi::GraphicsSurface;
 use crate::platform::presentation::rhi::{GraphicsContextRhi, RhiExtent, SurfaceToken};
 #[cfg(feature = "vulkan-parity-test")]
 use crate::platform::presentation::rhi::{RhiScissor, RhiSurfaceReadback};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload};
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 
 // 在真实 Vulkan device 上验收 UI → Drawing → FramePlan → Adapter 全链。
@@ -280,10 +283,102 @@ fn validate_vulkan_wsi_readback(
         .expect("Vulkan WSI final Surface pixels must satisfy shared Drawing invariants")
 }
 
+// 仅由 parity 组合根选择的事件泵与连续生产帧观测计划。
+#[derive(Clone, Copy)]
+struct WsiPacingObservationPlan {
+    production_presents: usize,
+    total_timeout: Duration,
+}
+
+// 真实 OpenGL WSI 验收必须在同一有界 owner-thread 事务内完成八帧。
+const OPENGL_WSI_PACING_PLAN: WsiPacingObservationPlan = WsiPacingObservationPlan {
+    production_presents: 8,
+    total_timeout: Duration::from_secs(15),
+};
+
+// 事件只由现有 Platform event loop 交给 parity 根观察，不建立第二套原生队列。
+#[derive(Default)]
+struct WsiEventObservation {
+    dispatches: Cell<usize>,
+    events: Cell<usize>,
+    resize_events: Cell<usize>,
+    latest_resize: Cell<Option<(i32, i32)>>,
+}
+
+impl WsiEventObservation {
+    fn observe(&self, event: &UiEvent) -> bool {
+        self.events.set(self.events.get().saturating_add(1));
+        if let UiEventPayload::Resize(resize) = &event.payload {
+            self.resize_events
+                .set(self.resize_events.get().saturating_add(1));
+            self.latest_resize.set(Some((resize.width, resize.height)));
+        }
+        true
+    }
+}
+
+// 复用生产 Platform owner 的 timeout dispatch，等待条件成立或总 deadline 到期。
+fn dispatch_wsi_events_until(
+    platform: &mut dyn crate::platform::platform::Platform,
+    observation: &WsiEventObservation,
+    deadline: Instant,
+    context: &str,
+    satisfied: impl Fn(&WsiEventObservation) -> bool,
+) {
+    while !satisfied(observation) {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .unwrap_or_default();
+        assert!(
+            !remaining.is_zero(),
+            "real platform event dispatch timed out during {context}"
+        );
+        // 该时长只是 Wayland poll 的有界等待片，不用于推断刷新率或模拟垂直同步。
+        let dispatch_timeout = remaining.min(Duration::from_millis(100));
+        let running = platform
+            .event_loop()
+            .wait_timeout(dispatch_timeout, &|event| observation.observe(event));
+        observation
+            .dispatches
+            .set(observation.dispatches.get().saturating_add(1));
+        assert!(running, "real platform event loop exited during {context}");
+        if let Some(error) = platform.take_pending_failure() {
+            panic!("real platform event dispatch failed during {context}: {error}");
+        }
+    }
+}
+
+// 从同代 logical resize 事实和初始整数 buffer scale 计算原生 drawable extent。
+fn resize_event_drawable_extent(
+    initial: SurfaceToken,
+    initial_logical: (i32, i32),
+    resized_logical: (i32, i32),
+) -> RhiExtent {
+    assert!(initial_logical.0 > 0 && initial_logical.1 > 0);
+    assert!(resized_logical.0 > 0 && resized_logical.1 > 0);
+    let initial_logical_width = initial_logical.0 as u32;
+    let initial_logical_height = initial_logical.1 as u32;
+    assert_eq!(initial.extent.width % initial_logical_width, 0);
+    assert_eq!(initial.extent.height % initial_logical_height, 0);
+    let scale_x = initial.extent.width / initial_logical_width;
+    let scale_y = initial.extent.height / initial_logical_height;
+    assert_eq!(scale_x, scale_y, "Wayland buffer scale must be uniform");
+    assert!(scale_x > 0, "Wayland buffer scale must be positive");
+    RhiExtent::new(
+        (resized_logical.0 as u32)
+            .checked_mul(scale_x)
+            .expect("resized drawable width must fit u32"),
+        (resized_logical.1 as u32)
+            .checked_mul(scale_y)
+            .expect("resized drawable height must fit u32"),
+    )
+}
+
 // 在真实平台窗口上复用同一 UI、Drawing、Surface 与 resize 验收事务。
 fn run_wsi_production_chain_test<C>(
     backend: &'static str,
     window_title: &'static str,
+    pacing: Option<WsiPacingObservationPlan>,
     create_context: impl FnOnce(*mut c_void, i32, i32) -> crate::core::Result<C>,
     adapter_diagnostic: impl FnOnce(&C) -> String,
     mut present_surface_frame: impl FnMut(
@@ -297,6 +392,8 @@ fn run_wsi_production_chain_test<C>(
     let scene = production_chain_scene();
     let logical_width = 96;
     let logical_height = 72;
+    let deadline = pacing.map(|plan| Instant::now() + plan.total_timeout);
+    let event_observation = WsiEventObservation::default();
     eprintln!("{backend} WSI stage: create-platform");
     let mut platform =
         create_platform_with_pending(PendingNativeOptions::new(PendingFailureQueue::new()))
@@ -309,6 +406,16 @@ fn run_wsi_production_chain_test<C>(
     )
     .expect("the current session must create a real platform window");
     eprintln!("{backend} WSI stage: window-created");
+    if let Some(deadline) = deadline {
+        let dispatches_before = event_observation.dispatches.get();
+        dispatch_wsi_events_until(
+            platform.as_mut(),
+            &event_observation,
+            deadline,
+            "initial Wayland configure",
+            |observation| observation.dispatches.get() > dispatches_before,
+        );
+    }
     let native_surface = window.native_surface_ptr();
     assert!(
         !native_surface.is_null(),
@@ -322,6 +429,7 @@ fn run_wsi_production_chain_test<C>(
     let adapter = adapter_diagnostic(&context);
     let initial = context.surface_ref().token();
     assert!(initial.extent.is_valid());
+    let initial_logical = window.client_logical_extent();
 
     let first_present = present_surface_frame(&mut context, &scene)
         .expect("the first real WSI frame must acquire, render and present");
@@ -344,10 +452,51 @@ fn run_wsi_production_chain_test<C>(
         "rejected resize must not commit generation or extent",
     );
 
-    // 当前会话 WSI 可可靠触发显式 swapchain resize，成功后必须推进共享代际。
-    let requested = RhiExtent::new(
-        first_present.extent.width + 16,
-        first_present.extent.height + 12,
+    // OpenGL 节拍验收由真实 compositor configure 驱动 resize；其它 WSI 保持原行为。
+    let resized_logical = if let Some(deadline) = deadline {
+        let resize_events_before = event_observation.resize_events.get();
+        window
+            .properties_mut()
+            .maximize()
+            .expect("the production platform window must request maximize");
+        dispatch_wsi_events_until(
+            platform.as_mut(),
+            &event_observation,
+            deadline,
+            "maximized Wayland resize",
+            |observation| {
+                observation.resize_events.get() > resize_events_before
+                    && observation
+                        .latest_resize
+                        .get()
+                        .is_some_and(|extent| extent != initial_logical)
+            },
+        );
+        let resized_logical = event_observation
+            .latest_resize
+            .get()
+            .expect("real Wayland resize dispatch must carry a logical extent");
+        // 与应用 WindowDriver 相同，消费已分发的 resize 事实并同步窗口平台状态。
+        window
+            .resize_notify(resized_logical.0, resized_logical.1)
+            .expect("the dispatched resize must update the production platform window");
+        Some(resized_logical)
+    } else {
+        None
+    };
+    // 原生 EGL/Vulkan Surface resize 成功后必须推进共享代际。
+    let requested = resized_logical.map_or_else(
+        || {
+            RhiExtent::new(
+                first_present.extent.width + 16,
+                first_present.extent.height + 12,
+            )
+        },
+        |logical| resize_event_drawable_extent(first_present, initial_logical, logical),
+    );
+    assert_ne!(
+        requested, first_present.extent,
+        "real resize must change extent"
     );
     let resized = context
         .surface()
@@ -361,6 +510,28 @@ fn run_wsi_production_chain_test<C>(
         .expect("the resized WSI generation must acquire, render and present");
     eprintln!("{backend} WSI stage: second-present");
     assert_eq!(second_present, resized);
+
+    let mut production_presents = 2usize;
+    if let (Some(plan), Some(deadline)) = (pacing, deadline) {
+        while production_presents < plan.production_presents {
+            let dispatches_before = event_observation.dispatches.get();
+            dispatch_wsi_events_until(
+                platform.as_mut(),
+                &event_observation,
+                deadline,
+                "paced production frame",
+                |observation| observation.dispatches.get() > dispatches_before,
+            );
+            let presented = present_surface_frame(&mut context, &scene)
+                .expect("the paced real WSI frame must acquire, render and present");
+            assert_eq!(presented, resized);
+            production_presents = production_presents.saturating_add(1);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "paced production frames exceeded the WSI total deadline"
+        );
+    }
     verify_surface_recovery(&mut context, &scene, second_present);
     context
         .try_shutdown()
@@ -369,17 +540,37 @@ fn run_wsi_production_chain_test<C>(
         .close()
         .expect("the native window must close after graphics shutdown");
 
-    eprintln!(
-        "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resized={}x{}@{}; baseline-presents=2; shutdown=ok",
-        first_present.extent.width,
-        first_present.extent.height,
-        first_present.generation,
-        first_present.extent.height,
-        rejected_error.code(),
-        resized.extent.width,
-        resized.extent.height,
-        resized.generation,
-    );
+    if let Some(resized_logical) = resized_logical {
+        eprintln!(
+            "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resize-event={}x{}; resize-token={}x{}@{}; baseline-presents=2; paced-presents={}; production-presents={production_presents}; recovery-presents=2; platform-timeout-dispatches={}; dispatched-events={}; resize-events={}; shutdown=ok; checked-window-close=ok; timing-claim=nonzero-swap-policy-only",
+            first_present.extent.width,
+            first_present.extent.height,
+            first_present.generation,
+            first_present.extent.height,
+            rejected_error.code(),
+            resized_logical.0,
+            resized_logical.1,
+            resized.extent.width,
+            resized.extent.height,
+            resized.generation,
+            production_presents.saturating_sub(2),
+            event_observation.dispatches.get(),
+            event_observation.events.get(),
+            event_observation.resize_events.get(),
+        );
+    } else {
+        eprintln!(
+            "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resized={}x{}@{}; baseline-presents=2; shutdown=ok",
+            first_present.extent.width,
+            first_present.extent.height,
+            first_present.generation,
+            first_present.extent.height,
+            rejected_error.code(),
+            resized.extent.width,
+            resized.extent.height,
+            resized.generation,
+        );
+    }
 }
 
 // 在同一真实 Vulkan WSI owner 上逐项证明四个原生返回位置的恢复语义。
@@ -474,6 +665,7 @@ pub(crate) fn run_vulkan_wsi_production_chain_test() {
     run_wsi_production_chain_test(
         "Vulkan",
         "UIX Vulkan WSI parity",
+        None,
         |native_surface, width, height| VulkanContext::new(native_surface, width, height),
         |context| {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
@@ -509,11 +701,8 @@ pub(crate) fn run_opengl_wsi_production_chain_test() {
     run_wsi_production_chain_test::<EglContext>(
         "OpenGL ES",
         "UIX OpenGL ES WSI parity",
-        |native_surface, width, height| {
-            let context = EglContext::new(native_surface, width, height)?;
-            context.disable_swap_interval_for_parity_test()?;
-            Ok(context)
-        },
+        Some(OPENGL_WSI_PACING_PLAN),
+        |native_surface, width, height| EglContext::new(native_surface, width, height),
         |context| {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
             let session =

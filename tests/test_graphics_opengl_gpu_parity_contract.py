@@ -25,6 +25,7 @@ SURFACE_LIFECYCLE = ROOT / "src/platform/presentation/rhi/surface_lifecycle.rs"
 OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
 EGL = ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs"
 EGL_RHI = ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs"
+WAYLAND_EVENT_LOOP = ROOT / "src/native/backends/linux/windowing/wayland/event_loop.rs"
 REGISTRIES = (
     ROOT / "src/native/factory/registry_linux.rs",
     ROOT / "src/native/factory/registry_windows.rs",
@@ -129,10 +130,15 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
         self.assertIn('path = "tests/opengl_wsi_parity.rs"', cargo)
         for marker in (
             "EglContext::new(native_surface",
-            "disable_swap_interval_for_parity_test",
+            "Some(OPENGL_WSI_PACING_PLAN)",
             "execute_ui_production_surface_chain_with_present_hook",
             ".expect_err(\"zero-width WSI resize must be rejected\")",
             "resized.generation, first_present.generation + 1",
+            ".maximize()",
+            "resize-token=",
+            "production-presents={production_presents}",
+            "recovery-presents=2",
+            "platform-timeout-dispatches=",
             "OpenGlSurfaceFaultForParity::Acquire",
             "OpenGlSurfaceFaultForParity::PresentAfterSubmit",
             "inject_surface_lost_for_test",
@@ -140,7 +146,8 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             "egl-surface-replacements=1",
             "recovered-submit=ok",
             "recovered-eglSwapBuffers=ok",
-            "presents=2; shutdown=ok",
+            "checked-window-close=ok",
+            "timing-claim=nonzero-swap-policy-only",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, composition)
@@ -176,6 +183,56 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
         self.assertNotIn("recreate_window_surface", composition)
         self.assertNotIn("eglSwapBuffers(", composition)
 
+    def test_production_egl_adapter_owns_explicit_nonzero_swap_interval(self) -> None:
+        egl = EGL.read_text(encoding="utf-8")
+        composition = COMPOSITION.read_text(encoding="utf-8")
+
+        self.assertIn("const EGL_PRODUCTION_SWAP_INTERVAL: i32 = 1;", egl)
+        self.assertEqual(egl.count("apply_production_swap_interval("), 3)
+        constructor = egl[egl.index("pub(crate) fn new(") : egl.index("parity_adapter_diagnostic")]
+        self.assertIn("pending.finish_failure(error)", constructor)
+        replacement = egl[egl.index("fn recreate_window_surface") :]
+        self.assertLess(
+            replacement.index("eglMakeCurrent(recreated)"),
+            replacement.index("apply_production_swap_interval"),
+        )
+        self.assertIn("swap-interval={EGL_PRODUCTION_SWAP_INTERVAL}", egl)
+        for source in (egl, composition):
+            self.assertNotIn("disable_swap_interval_for_parity_test", source)
+            self.assertNotIn("eglSwapInterval(0)", source)
+            self.assertNotIn("swap_interval(self.display, 0)", source)
+
+    def test_wsi_pacing_reuses_production_platform_event_dispatch(self) -> None:
+        composition = COMPOSITION.read_text(encoding="utf-8")
+        wayland_event_loop = WAYLAND_EVENT_LOOP.read_text(encoding="utf-8")
+
+        for marker in (
+            "production_presents: 8",
+            "total_timeout: Duration::from_secs(15)",
+            "checked_duration_since(Instant::now())",
+            ".event_loop()",
+            ".wait_timeout(dispatch_timeout",
+            "UiEventPayload::Resize",
+            ".resize_notify(",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, composition)
+        self.assertNotIn("std::thread::sleep", composition)
+        self.assertNotIn("wayland_client", composition)
+        self.assertNotIn("EventQueue<", composition)
+        self.assertEqual(composition.count("fn run_wsi_production_chain_test"), 1)
+        self.assertIn('self.dispatch_polled(timeout_ms, "dispatch_timeout")', wayland_event_loop)
+        self.assertIn("poll(", wayland_event_loop)
+
+    def test_upper_layers_do_not_branch_on_egl_or_wayland_pacing(self) -> None:
+        for upper_root in (ROOT / "src/app", ROOT / "src/ui", ROOT / "src/draw"):
+            for path in upper_root.rglob("*.rs"):
+                text = path.read_text(encoding="utf-8")
+                with self.subTest(upper=path.relative_to(ROOT)):
+                    self.assertNotIn("EGL_PRODUCTION_SWAP_INTERVAL", text)
+                    self.assertNotIn("eglSwapInterval", text)
+                    self.assertNotIn("wayland_client", text)
+
     def test_vulkan_remains_first_on_all_production_registries(self) -> None:
         for registry in REGISTRIES:
             source = registry.read_text(encoding="utf-8")
@@ -200,6 +257,7 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             OPENGL_HOST,
             EGL,
             EGL_RHI,
+            WAYLAND_EVENT_LOOP,
         ):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
 

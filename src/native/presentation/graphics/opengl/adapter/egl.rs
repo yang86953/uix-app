@@ -53,6 +53,25 @@ fn map_egl_surface_error(operation: &str, error: khronos_egl::Error) -> Error {
 fn map_egl_swap_error(error: khronos_egl::Error) -> Error {
     map_egl_surface_error("eglSwapBuffers", error)
 }
+
+// EGL window surface 的生产交换节拍由 adapter 唯一固定，上层不感知 EGL 策略。
+const EGL_PRODUCTION_SWAP_INTERVAL: i32 = 1;
+
+// 对每个新建或替换后的 current window surface 应用同一生产节拍策略。
+fn apply_production_swap_interval(
+    egl: &khronos_egl::Instance<khronos_egl::Static>,
+    display: khronos_egl::Display,
+) -> Result<(), Error> {
+    egl.swap_interval(display, EGL_PRODUCTION_SWAP_INTERVAL)
+        .map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!(
+                    "EglContext: production eglSwapInterval({EGL_PRODUCTION_SWAP_INTERVAL}) failed: {error:?}"
+                ),
+            )
+        })
+}
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
 // ════════════════════════════════════════════════════════════════════════════
@@ -553,6 +572,11 @@ impl EglContext {
         // 只在 EGL 绑定成功后登记 current 状态。
         pending.current = true;
 
+        // 生产窗口明确使用非零交换节拍；失败仍由构造期 owner 完整回滚。
+        if let Err(error) = apply_production_swap_interval(&egl, display) {
+            return Err(pending.finish_failure(error));
+        }
+
         let runtime =
             crate::native::presentation::graphics::opengl::NativeOpenGlRuntime::from_loader(
                 |name| {
@@ -628,20 +652,6 @@ impl EglContext {
         })
     }
 
-    // 真实 WSI parity 没有运行应用事件泵，显式关闭交换节拍避免测试线程等待 configure。
-    #[cfg(feature = "opengl-parity-test")]
-    pub(crate) fn disable_swap_interval_for_parity_test(&self) -> Result<(), Error> {
-        // 测试钩子仍先服从正式 EGL owner 的统一生命周期门禁。
-        self.ensure_rhi_active()?;
-        // 只改变显式 parity context 的等待策略，不改变默认生产构造行为。
-        self.egl.swap_interval(self.display, 0).map_err(|error| {
-            Error::new(
-                Errc::PlatformError,
-                format!("EglContext: parity eglSwapInterval(0) failed: {error:?}"),
-            )
-        })
-    }
-
     // 返回当前真实 Wayland EGL window context 的 EGL 与 GPU 身份。
     #[cfg(feature = "opengl-parity-test")]
     pub(crate) fn parity_adapter_diagnostic(&self) -> Result<String, Error> {
@@ -662,7 +672,7 @@ impl EglContext {
             .to_string_lossy();
         // GPU 字符串来自同一个 current window context 的 GLES runtime。
         Ok(format!(
-            "EGL vendor={egl_vendor}; version={egl_version}; {}",
+            "EGL vendor={egl_vendor}; version={egl_version}; swap-interval={EGL_PRODUCTION_SWAP_INTERVAL} (explicit production); {}",
             self.pipeline.parity_gpu_diagnostic(),
         ))
     }
@@ -872,6 +882,8 @@ impl EglContext {
                 Some(self.context),
             )
             .map_err(|error| map_egl_surface_error("eglMakeCurrent(recreated)", error))?;
+        // replacement surface 不能依赖 EGL 默认值，重新提交同一生产交换节拍。
+        apply_production_swap_interval(&self.egl, self.display)?;
         // 只在 replacement 已创建且重新 current 成功后记录一次原生事实。
         #[cfg(feature = "test-harness")]
         {
