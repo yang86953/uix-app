@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""锁定 GFX-NEXT-15 的 D3D12 唯一资源 owner 与未激活边界。"""
+"""锁定 GFX-NEXT-15/16 的 D3D12 资源 owner、纹理传输与未激活边界。"""
 
 import unittest
 from pathlib import Path
@@ -12,6 +12,7 @@ DEVICE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_devi
 GRAPHICS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs"
 REGISTRY = ROOT / "src/native/factory/registry_windows.rs"
 RESOURCE_TABLE = ROOT / "src/platform/presentation/rhi/resource_table.rs"
+TRANSFER = ROOT / "src/platform/presentation/rhi/transfer.rs"
 
 
 def function_range(source: str, signature: str, next_signature: str) -> str:
@@ -137,18 +138,18 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("begin_rhi_transfer_commands()?"))
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("CopyTextureRegion("))
 
-    # 相关预检必须只调用共享表，能力快照不得把这些预检冒充执行能力。
+    # copy/move 闭环后能力同源开启，其余阶段能力继续保持关闭。
     def test_preflight_and_capability_snapshot_are_honest(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")
 
         self.assertIn("self.buffers.validate_upload(upload)", device)
         self.assertIn("self.textures.validate_copy(copy)", device)
-        self.assertIn("self.textures.validate_move(movement)", device)
+        self.assertIn("self.validate_texture_move(movement).map(|_| ())", device)
         self.assertIn("dynamic_buffers: true", device)
         self.assertIn("texture_upload: true", device)
+        self.assertIn("texture_copy: true", device)
+        self.assertIn("texture_region_move: true", device)
         for missing in (
-            "texture_copy: false",
-            "texture_region_move: false",
             "clear_rect: false",
             "sampled_textures: false",
             "render_to_texture: false",
@@ -164,8 +165,6 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
             "begin_render_pass",
             "clear_rect",
             "draw",
-            "copy_texture",
-            "move_texture_region",
             "end_render_pass",
             "submit",
         ):
@@ -176,6 +175,86 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertNotIn("RhiPipelineResourceTable", device)
         self.assertNotIn("RhiPassState", device)
         self.assertNotIn("RhiSubmissionSequence", device)
+
+    # 共享 copy 验证必须先于 native 命令，GPU 成功必须先于两端状态提交。
+    def test_texture_copy_validation_recording_and_commit_order(self) -> None:
+        device = DEVICE.read_text(encoding="utf-8")
+        owner = device[device.index("impl D3d12RhiDevice {") :]
+        stage = function_range(
+            owner,
+            "fn stage_texture_copy(&self, copy:",
+            "fn validate_texture_move(&self, movement:",
+        )
+        commit = function_range(
+            owner,
+            "fn commit_texture_copy(",
+            "fn resolve_render_target(&self, texture:",
+        )
+        trait_device = device[device.index("impl GraphicsDevice for D3d12Context {") :]
+        execute = function_range(
+            trait_device,
+            "fn copy_texture(&mut self, copy:",
+            "fn move_texture_region(&mut self, movement:",
+        )
+        native = function_range(
+            device,
+            "fn record_texture_copy_commands(",
+            "fn resource_stage_deferred(operation:",
+        )
+
+        self.assertLess(stage.index("self.textures.get(copy.source())?"), stage.index("copy.validate_transfer("))
+        self.assertLess(stage.index("self.textures.get(copy.destination())?"), stage.index("copy.validate_transfer("))
+        self.assertLess(stage.index("copy.validate_transfer("), stage.index("source.native.clone()"))
+        self.assertLess(stage.index("copy.validate_transfer("), stage.index("destination.native.clone()"))
+        self.assertLess(execute.index("stage_texture_copy(copy)"), execute.index("begin_rhi_transfer_commands()?"))
+        self.assertLess(execute.index("stage_texture_copy(copy)"), execute.index("record_texture_copy_commands("))
+        self.assertNotIn("resource_stage_deferred", execute)
+
+        copy_call = native.index("CopyTextureRegion(")
+        self.assertLess(native.index("D3D12_RESOURCE_STATE_COPY_SOURCE"), copy_call)
+        self.assertLess(native.index("D3D12_RESOURCE_STATE_COPY_DEST"), copy_call)
+        self.assertIn("Some(&source_box)", native)
+        self.assertGreater(
+            native.index("D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE", copy_call),
+            copy_call,
+        )
+
+        self.assertLess(execute.index("pending_gpu_resources"), execute.index("execute_recording_and_wait()"))
+        self.assertLess(execute.index("execute_recording_and_wait()"), execute.index("pending_gpu_resources.truncate("))
+        self.assertLess(execute.index("execute_recording_and_wait()"), execute.index("commit_texture_copy("))
+        self.assertLess(commit.index("self.textures.get(source)?"), commit.index("self.textures.get_mut(source)?"))
+        self.assertLess(commit.index("self.textures.get(destination)?"), commit.index("self.textures.get_mut(destination)?"))
+
+    # move 必须先共享验证，跨纹理复用 copy，同纹理严格按 scratch 两段执行并检查清理。
+    def test_texture_move_reuses_copy_and_checks_scratch_cleanup(self) -> None:
+        device = DEVICE.read_text(encoding="utf-8")
+        owner = device[device.index("impl D3d12RhiDevice {") :]
+        validation = function_range(
+            owner,
+            "fn validate_texture_move(&self, movement:",
+            "fn commit_texture_copy(",
+        )
+        trait_device = device[device.index("impl GraphicsDevice for D3d12Context {") :]
+        movement = function_range(
+            trait_device,
+            "fn move_texture_region(&mut self, movement:",
+            "fn end_render_pass(&mut self)",
+        )
+
+        self.assertLess(validation.index("self.textures.get(movement.source())?"), validation.index("movement.validate_transfer("))
+        self.assertLess(validation.index("self.textures.get(movement.destination())?"), validation.index("movement.validate_transfer("))
+        self.assertLess(movement.index("validate_texture_move(movement)"), movement.index("create_texture(&self.device"))
+        self.assertIn("return self.copy_texture(movement.into_copy())", movement)
+        self.assertLess(movement.index("create_texture(&self.device"), movement.index("movement.through_scratch(scratch)"))
+        self.assertLess(movement.index("movement.through_scratch(scratch)"), movement.index("copy_texture(to_scratch)"))
+        self.assertLess(movement.index("copy_texture(to_scratch)"), movement.index("copy_texture(from_scratch)"))
+        self.assertLess(movement.index("copy_texture(from_scratch)"), movement.index("self.rhi_device.destroy_texture(scratch)"))
+        self.assertIn("match (operation, cleanup)", movement)
+        self.assertIn("Err(primary_error.with_source(cleanup_error))", movement)
+        self.assertIn("(Err(primary_error), Ok(()))", movement)
+        self.assertIn("(Ok(()), Err(cleanup_error))", movement)
+        self.assertIn("(Ok(()), Ok(()))", movement)
+        self.assertNotIn("resource_stage_deferred", movement)
 
     # GPU 完成必须先于资源 owner 排空，失败 Drop 还必须保留在途原生引用。
     def test_checked_shutdown_drains_or_retains_the_resource_owner(self) -> None:
@@ -204,9 +283,15 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         device = DEVICE.read_text(encoding="utf-8")
         graphics = GRAPHICS.read_text(encoding="utf-8")
         registry = REGISTRY.read_text(encoding="utf-8")
+        transfer = TRANSFER.read_text(encoding="utf-8")
         d3d12_sources = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
+        )
+        upper_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for directory in (ROOT / "src/app", ROOT / "src/ui", ROOT / "src/draw")
+            for path in directory.rglob("*.rs")
         )
 
         self.assertIn("impl GraphicsDevice for D3d12Context", device)
@@ -215,10 +300,19 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertNotIn("GraphicsApi::D3d12", registry)
         self.assertNotIn(".issue()", without_line_comments(d3d12_sources))
         self.assertNotIn("Ok(SubmissionHandle", without_line_comments(device))
+        for upper_token in ("D3d12", "Direct3D12", "GraphicsApi::D3d12"):
+            self.assertNotIn(upper_token, upper_sources)
+        for shared_contract in (
+            "pub(crate) struct TextureCopy",
+            "pub(crate) struct TextureMove",
+            "pub(crate) struct RhiTextureTransferBounds",
+        ):
+            self.assertEqual(transfer.count(shared_contract), 1)
+            self.assertNotIn(shared_contract, device)
 
     # 所有阶段触及文件继续满足单文件上限。
     def test_touched_files_stay_below_limit(self) -> None:
-        for path in (CONTEXT, METHODS, DEVICE, GRAPHICS, Path(__file__)):
+        for path in (CONTEXT, METHODS, DEVICE, GRAPHICS, TRANSFER, Path(__file__)):
             self.assertLess(
                 len(path.read_text(encoding="utf-8").splitlines()),
                 1500,
