@@ -225,7 +225,7 @@ impl WidgetTree {
         });
         if let Some(r) = rect
             .filter(|r| r.w > 0.0 && r.h > 0.0)
-            .and_then(|rect| self.node_visual_rect(id, rect))
+            .and_then(|rect| self.clipped_visual_rect(id, rect))
         {
             self.push_paint_invalidation(id, Some(r));
         }
@@ -237,7 +237,7 @@ impl WidgetTree {
             return;
         }
         if let Some(rect) = (rect.w > 0.0 && rect.h > 0.0)
-            .then(|| self.node_visual_rect(id, rect))
+            .then(|| self.clipped_visual_rect(id, rect))
             .flatten()
         {
             self.push_paint_invalidation(id, Some(rect));
@@ -347,7 +347,7 @@ impl WidgetTree {
                         frame
                     };
                     if r.w > 0.0 && r.h > 0.0 {
-                        self.node_visual_rect(id, r)
+                        self.clipped_visual_rect(id, r)
                     } else {
                         None
                     }

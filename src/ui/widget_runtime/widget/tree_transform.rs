@@ -3,6 +3,11 @@ use super::*;
 use crate::draw::Transform;
 use crate::ui::widget_runtime::view_transform::ViewTransform;
 
+// 把视觉边界裁剪契约的验收放在独立文件，避免机制实现与测试相互挤占篇幅。
+#[cfg(test)]
+#[path = "../../../../tests/unit/ui/widget_runtime/widget/tree_transform__tests.rs"]
+mod tests;
+
 impl WidgetTree {
     /// 判断节点是否为悬浮层节点（overlay 挂载点）。
     fn is_overlay_node(&self, id: WidgetId) -> bool {
@@ -93,7 +98,7 @@ impl WidgetTree {
             node.hit_test_frame(frame)
         };
         let mut bounds = (geometry.w > 0.0 && geometry.h > 0.0)
-            .then(|| self.node_visual_rect(id, geometry))
+            .then(|| self.clipped_visual_rect(id, geometry))
             .flatten();
 
         // 递归合并各子节点的包围盒（跳过悬浮层节点）。
@@ -111,21 +116,10 @@ impl WidgetTree {
         bounds
     }
 
-    /// 计算节点在屏幕上的可见视觉矩形（逐级裁剪，含滚动补偿）。
-    pub(crate) fn visible_visual_rect_for(&self, id: WidgetId) -> Option<Rect> {
-        // 节点不可见（含祖先不可见）时返回 None。
-        if !self.is_effectively_visible(id) {
-            return None;
-        }
-        let node = self.get(id)?;
-        let frame = node.frame();
-        // 无帧时退化为命中测试帧。
-        let base = if frame.w > 0.0 && frame.h > 0.0 {
-            frame
-        } else {
-            node.hit_test_frame(frame)
-        };
-        if base.w <= 0.0 || base.h <= 0.0 {
+    /// 把节点局部矩形映射到屏幕，并按视觉祖先的子裁剪区收窄。
+    pub(crate) fn clipped_visual_rect(&self, id: WidgetId, base: Rect) -> Option<Rect> {
+        // 节点不可见（含祖先不可见）时不存在需要刷新的屏幕区域。
+        if !self.is_effectively_visible(id) || base.w <= 0.0 || base.h <= 0.0 {
             return None;
         }
         let mut rect = self.node_visual_rect(id, base)?;
@@ -141,17 +135,30 @@ impl WidgetTree {
             // 使用与合成器一致的定位与作者变换组合。
             transform = transform.concat(self.positioned_visual_transform(current_id));
             if index + 1 < path.len() {
-                // 与子裁剪区求交，无交集则返回 None。
+                // 子裁剪区位于滚动内容平移之前，与合成器顺序保持一致。
                 if let Some(clip) = current.children_clip(current.frame()) {
                     rect = rect.intersect(&transform.transform_rect(clip))?;
                 }
-                // 补偿滚动偏移。
+                // 后续后代坐标需要补偿当前视口滚动偏移。
                 if let Some((sx, sy)) = current.viewport_scroll_offset() {
                     transform = transform.concat(Transform::translate(-sx, -sy));
                 }
             }
         }
         Some(rect)
+    }
+
+    /// 计算节点在屏幕上的可见视觉矩形（逐级裁剪，含滚动补偿）。
+    pub(crate) fn visible_visual_rect_for(&self, id: WidgetId) -> Option<Rect> {
+        let node = self.get(id)?;
+        let frame = node.frame();
+        // 无帧时退化为命中测试帧。
+        let base = if frame.w > 0.0 && frame.h > 0.0 {
+            frame
+        } else {
+            node.hit_test_frame(frame)
+        };
+        self.clipped_visual_rect(id, base)
     }
 
     /// 设置节点视觉变换；变化时自增树版本并推动旧/新包围盒重绘。

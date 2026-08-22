@@ -16,13 +16,10 @@ use crate::diagnostics::Diagnostics;
 // test-harness 只把一次性规范像素票据暴露给应用。
 #[cfg(feature = "test-harness")]
 use crate::draw::SurfaceReadbackTicket;
-// 反馈 capability 启用时才生成反馈浮层根组件实现。
-#[cfg(feature = "feedback")]
-use crate::impl_widget;
 use crate::ui::adapter::ViewAdapter;
-// 反馈 capability 启用时才实现反馈浮层根布局。
+// 反馈 capability 启用时才实现稳定快照的浮层根组件契约。
 #[cfg(feature = "feedback")]
-use crate::ui::widget_runtime::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities, WidgetLayout};
 // 引入应用根默认背景所需的主题样式值。
 use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
@@ -40,16 +37,43 @@ use crate::ui::widgets::feedback::notification::{Notification, NotificationItem}
 // 引入应用状态、主题与布局背景语义角色。
 use crate::ui::{AppState, NeutralRole, Theme};
 
-// 反馈 capability 启用时才需要额外的应用反馈浮层根节点。
 #[cfg(feature = "feedback")]
 #[derive(Default)]
 pub(crate) struct AppOverlayRoot;
 
-// 反馈 capability 启用时才生成反馈浮层根组件能力集合。
 #[cfg(feature = "feedback")]
-impl_widget!(AppOverlayRoot; Layout);
+impl Widget for AppOverlayRoot {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
-// 反馈 capability 启用时才参与反馈浮层布局。
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn snapshot_fields(&self) -> crate::ui::SnapshotFields {
+        // 零状态应用壳在任意声明轮次都保持配置等价。
+        crate::ui::SnapshotFields::Custom {
+            widget: "AppOverlayRoot",
+            fields: Vec::new(),
+        }
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        let mut capabilities = WidgetCapabilities::new();
+        capabilities.insert(WidgetCapabilities::LAYOUT);
+        capabilities
+    }
+
+    fn as_layout(&self) -> Option<&dyn WidgetLayout> {
+        Some(self)
+    }
+}
+
 #[cfg(feature = "feedback")]
 impl WidgetLayout for AppOverlayRoot {
     fn measure(&self, constraints: Constraints) -> Size {
