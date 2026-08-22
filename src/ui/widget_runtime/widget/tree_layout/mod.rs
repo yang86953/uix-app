@@ -19,6 +19,15 @@ pub(crate) struct ShrinkOp {
     needed_h: f32,
 }
 
+/// 聚合同一次布局收敛内的 frame 变化，只为首态与终态计算视觉脏区。
+#[derive(Default)]
+pub(crate) struct LayoutFrameDamage {
+    pub(crate) entries: Vec<(WidgetId, Option<Rect>)>,
+    pub(crate) seen: HashSet<WidgetId>,
+    pub(crate) roots: HashSet<WidgetId>,
+    pub(crate) prepainted: HashSet<WidgetId>,
+}
+
 #[derive(Default)]
 pub(crate) struct LayoutFrameScratch {
     order: Vec<WidgetId>,
@@ -31,6 +40,8 @@ pub(crate) struct LayoutFrameScratch {
     shrink_ops: Vec<ShrinkOp>,
     shrink_children: Vec<WidgetId>,
     shrink_parent_children: Vec<WidgetId>,
+    layout_damage: LayoutFrameDamage,
+    effective_visible: HashSet<WidgetId>,
 }
 
 mod animate;
