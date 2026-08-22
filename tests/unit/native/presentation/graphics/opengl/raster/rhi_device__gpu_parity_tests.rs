@@ -5,9 +5,11 @@ use khronos_egl as egl;
 
 use super::*;
 use crate::core::{Errc, Error, PresentDamage};
+use crate::draw::backend::production_chain_parity::execute_ui_production_chain;
 use crate::draw::backend::rhi_renderer::consistency::{
     CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyBlurScenario, ConsistencySample,
-    ConsistencyScene, blur_subregion_scenario, canonical_scenes, validate_canonical_scenes,
+    ConsistencyScene, blur_subregion_scenario, canonical_scenes, production_chain_scene,
+    validate_canonical_scenes, validate_production_chain_readback,
 };
 use crate::native::presentation::graphics::opengl::NativeOpenGlRuntime;
 use crate::native::presentation::graphics::opengl::raster::OpenGlRasterPipeline;
@@ -569,14 +571,19 @@ fn draw_scene(
 }
 
 // 从颜色 texture 的真实 FBO 回读共享画布；texture target 的第零行就是逻辑顶部。
-fn read_target(rhi: &OpenGlRhiDevice, gl: &glow::Context, texture: TextureHandle) -> Vec<u8> {
+fn read_target(
+    rhi: &OpenGlRhiDevice,
+    gl: &glow::Context,
+    texture: TextureHandle,
+    extent: RhiExtent,
+) -> Vec<u8> {
     let framebuffer = rhi
         .texture(texture)
         .expect("OpenGL consistency target must remain alive")
         .framebuffer
         .expect("OpenGL consistency color target must own a framebuffer");
-    let byte_count = CONSISTENCY_EXTENT.width as usize
-        * CONSISTENCY_EXTENT.height as usize
+    let byte_count = extent.width as usize
+        * extent.height as usize
         * TextureFormat::Rgba8Unorm.bytes_per_pixel();
     let mut pixels = vec![0u8; byte_count];
     unsafe {
@@ -587,8 +594,8 @@ fn read_target(rhi: &OpenGlRhiDevice, gl: &glow::Context, texture: TextureHandle
         gl.read_pixels(
             0,
             0,
-            CONSISTENCY_EXTENT.width as i32,
-            CONSISTENCY_EXTENT.height as i32,
+            extent.width as i32,
+            extent.height as i32,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
             glow::PixelPackData::Slice(Some(&mut pixels)),
@@ -760,7 +767,7 @@ fn run_blur_subregion_two_pass(rhi: &mut OpenGlRhiDevice, gl: &glow::Context) ->
         // SAFETY: current context 存活；finish 只等待本 context 已提交命令完成。
         gl.finish();
     }
-    let pixels = read_target(rhi, gl, target);
+    let pixels = read_target(rhi, gl, target, CONSISTENCY_EXTENT);
     validate_samples("BlurPassTwoPass", &scenario.final_samples, &pixels);
     eprintln!(
         "OpenGL blur subregion verified: origin=({}, {}), extent={}x{}, {} invariants",
@@ -832,7 +839,7 @@ pub(super) fn run_gpu_parity_test() {
         // SAFETY: current context 存活；finish 形成 submit 后真实回读的完成边界。
         gl.finish();
     }
-    let pixels = read_target(&rhi, &gl, target);
+    let pixels = read_target(&rhi, &gl, target, CONSISTENCY_EXTENT);
     for scene in &scenes {
         validate_samples(scene.name, &scene.samples, &pixels);
     }
@@ -851,7 +858,42 @@ pub(super) fn run_gpu_parity_test() {
     );
     rhi.release(&gl);
     drop(gl);
+    // 复用真实 PaintContext/Canvas2D 与共享 FramePlan 验收 GLES Device/readback。
+    run_ui_production_chain_test(&mut egl);
     // 复用同一个真实 Mesa EGL owner 验证生产 Surface blanket 生命周期。
     run_surface_lifecycle_test(&mut egl);
     egl.shutdown();
+}
+
+// 在真实 EGL/GLES owner 上闭合 UI → Drawing → FramePlan → OpenGL Device 回读。
+fn run_ui_production_chain_test(egl: &mut HeadlessEgl) {
+    let scene = production_chain_scene();
+    let frame = scene.frame;
+    let rect = scene.rect;
+    let color = scene.color;
+    let mut host = HeadlessOpenGlSurfaceHost::new(egl, scene.extent);
+    let target = execute_ui_production_chain(&mut host, scene.extent, |draw_context| {
+        crate::ui::widgets::combinators::render_shared_production_scene(
+            draw_context,
+            frame,
+            rect,
+            color,
+        );
+    })
+    .expect("OpenGL UI production scene must execute through the shared Drawing FramePlan");
+    let gl = host.pipeline.runtime.context();
+    unsafe {
+        // SAFETY: host 唯一拥有的 EGL/GLES context 当前且存活；finish 只等待已提交命令。
+        gl.finish();
+    }
+    let pixels = read_target(&host.pipeline.rhi, gl, target, scene.extent);
+    let invariant_count = validate_production_chain_readback(&scene, &pixels)
+        .expect("OpenGL production-chain readback must satisfy shared Drawing invariants");
+    GraphicsDevice::destroy_texture(&mut host, target)
+        .expect("OpenGL production-chain target must be released");
+    host.release();
+    eprintln!(
+        "OpenGL production chain verified: path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan -> OpenGL ES GraphicsDevice; draw-readback={invariant_count}/{}",
+        scene.samples.len(),
+    );
 }

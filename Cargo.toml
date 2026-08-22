@@ -191,6 +191,12 @@ path = "tests/opengl_gpu_parity.rs"
 required-features = ["opengl-parity-test"]
 
 [[test]]
+# 使用真实 Linux Wayland/EGL window surface 执行共享 UI 生产呈现链。
+name = "opengl_wsi_parity"
+path = "tests/opengl_wsi_parity.rs"
+required-features = ["opengl-parity-test"]
+
+[[test]]
 # 使用真实 Windows D3D11 device/context 执行同一共享全图元离屏像素一致性检查。
 name = "d3d11_gpu_parity"
 path = "tests/d3d11_gpu_parity.rs"
