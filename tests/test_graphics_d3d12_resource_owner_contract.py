@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""锁定 GFX-NEXT-15/16 的 D3D12 资源 owner、纹理传输与未激活边界。"""
+"""锁定 GFX-NEXT-15/16/17 的 D3D12 资源、pass、提交与未激活边界。"""
 
 import unittest
 from pathlib import Path
@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTEXT = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/mod.rs"
 METHODS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/methods.rs"
 DEVICE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device.rs"
+PASS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device_pass.rs"
 GRAPHICS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs"
 REGISTRY = ROOT / "src/native/factory/registry_windows.rs"
 RESOURCE_TABLE = ROOT / "src/platform/presentation/rhi/resource_table.rs"
@@ -47,6 +48,8 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn(
             "RhiResourceTable<SamplerHandle, D3d12RhiSampler>", device
         )
+        self.assertIn("pass: RhiPassState", device)
+        self.assertIn("submission_sequence: RhiSubmissionSequence", device)
         self.assertNotIn("HashMap", device)
         self.assertNotIn("Vec<Option", device)
         self.assertEqual(
@@ -66,6 +69,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn("struct D3d12RhiTexture", device)
         self.assertIn("impl RhiTextureResource for D3d12RhiTexture", device)
         self.assertIn("state: D3D12_RESOURCE_STATES", device)
+        self.assertIn("rtv_heap: Option<ID3D12DescriptorHeap>", device)
         self.assertIn("struct D3d12RhiSampler", device)
         self.assertIn("heap: ID3D12DescriptorHeap", device)
         self.assertIn("cpu: D3D12_CPU_DESCRIPTOR_HANDLE", device)
@@ -138,7 +142,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("begin_rhi_transfer_commands()?"))
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("CopyTextureRegion("))
 
-    # copy/move 闭环后能力同源开启，其余阶段能力继续保持关闭。
+    # pass/clear/submit 闭环后只开启本阶段真实能力，其余绘制能力继续保持关闭。
     def test_preflight_and_capability_snapshot_are_honest(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")
 
@@ -149,11 +153,11 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn("texture_upload: true", device)
         self.assertIn("texture_copy: true", device)
         self.assertIn("texture_region_move: true", device)
+        self.assertIn("clear_rect: true", device)
+        self.assertIn("render_to_texture: true", device)
+        self.assertIn("scissor: true", device)
         for missing in (
-            "clear_rect: false",
             "sampled_textures: false",
-            "render_to_texture: false",
-            "scissor: false",
             "premultiplied_alpha_blend: false",
             "additive_blend: false",
         ):
@@ -162,19 +166,15 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
             "preflight_draw_resources",
             "create_pipeline",
             "destroy_pipeline",
-            "begin_render_pass",
-            "clear_rect",
             "draw",
-            "end_render_pass",
-            "submit",
         ):
             start = device.index(f"fn {operation}(", device.index("impl GraphicsDevice"))
             body = device[start : device.index("\n    }", start)]
             self.assertIn("self.ensure_healthy()?", body)
             self.assertIn("resource_stage_deferred", body)
         self.assertNotIn("RhiPipelineResourceTable", device)
-        self.assertNotIn("RhiPassState", device)
-        self.assertNotIn("RhiSubmissionSequence", device)
+        self.assertIn("RhiPassState", device)
+        self.assertIn("RhiSubmissionSequence", device)
 
     # 共享 copy 验证必须先于 native 命令，GPU 成功必须先于两端状态提交。
     def test_texture_copy_validation_recording_and_commit_order(self) -> None:
@@ -278,9 +278,10 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn("std::mem::forget(texture.native)", device)
         self.assertIn("std::mem::forget(buffer.native)", device)
 
-    # 本阶段只能形成未激活的 Device 类型形状，不得签发 submission 或进入 registry。
+    # 真实提交只能由共享序列签发，但组合入口与 registry 继续保持未激活。
     def test_submission_registry_and_recipe_entry_remain_inactive(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")
+        pass_source = PASS.read_text(encoding="utf-8")
         graphics = GRAPHICS.read_text(encoding="utf-8")
         registry = REGISTRY.read_text(encoding="utf-8")
         transfer = TRANSFER.read_text(encoding="utf-8")
@@ -298,8 +299,12 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn('"D3D12 thin RHI is not implemented"', graphics)
         self.assertIn("Errc::NotImplemented", graphics)
         self.assertNotIn("GraphicsApi::D3d12", registry)
-        self.assertNotIn(".issue()", without_line_comments(d3d12_sources))
-        self.assertNotIn("Ok(SubmissionHandle", without_line_comments(device))
+        self.assertEqual(without_line_comments(d3d12_sources).count(".issue()"), 1)
+        self.assertLess(
+            pass_source.index("self.execute_recording_and_wait()?"),
+            pass_source.index("submission_sequence.issue()"),
+        )
+        self.assertNotIn("SubmissionHandle::from_raw", without_line_comments(d3d12_sources))
         for upper_token in ("D3d12", "Direct3D12", "GraphicsApi::D3d12"):
             self.assertNotIn(upper_token, upper_sources)
         for shared_contract in (
@@ -312,7 +317,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
 
     # 所有阶段触及文件继续满足单文件上限。
     def test_touched_files_stay_below_limit(self) -> None:
-        for path in (CONTEXT, METHODS, DEVICE, GRAPHICS, TRANSFER, Path(__file__)):
+        for path in (CONTEXT, METHODS, DEVICE, PASS, GRAPHICS, TRANSFER, Path(__file__)):
             self.assertLess(
                 len(path.read_text(encoding="utf-8").splitlines()),
                 1500,

@@ -82,11 +82,13 @@ impl GraphicsSurface for super::D3d12Context {
         self.ensure_healthy()?;
         // 已失效代际必须在 submission 门禁和 DXGI 前拒绝。
         self.surface_lifecycle.ensure_active()?;
+        // D3D12 显式命令批次必须已经成功 submit，禁止旧身份呈现未提交内容。
+        self.rhi_require_present_ready()?;
         let current = self.token();
         let coherency = self.surface_capabilities().present_coherency;
-        // 当前没有 GraphicsDevice 调用 issue，因此所有外来提交都在 DXGI 前被诚实拒绝。
-        let present = transaction.validate(current, coherency, &self.rhi_submissions)?;
-        // 未来 Device 签发接入后仍复用现有 checked present 与故障锁存路径。
+        // 只接受同一资源 Component 在真实 D3D12 提交成功后签发的最新身份。
+        let present = transaction.validate(current, coherency, self.rhi_device.submissions())?;
+        // 通过共享事务后才进入现有 checked present 与故障锁存路径。
         self.present_result(&present)
     }
 }
