@@ -13,8 +13,8 @@ use crate::platform::presentation::GraphicsContextLifecycle;
 // 引入唯一拥有 D3D12 Surface token、extent 与重建顺序的共享生命周期。
 use crate::native::presentation::graphics::platform::windows as win_surface;
 use crate::platform::presentation::rhi::{
-    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
-    RhiSurfaceResizeTransaction,
+    RhiExtent, RhiSubmissionSequence, RhiSurfaceLifecycle, RhiSurfaceRecreateReason,
+    RhiSurfaceRecreateTransaction, RhiSurfaceResizeTransaction, ValidatedRhiPresent,
 };
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D12::*;
@@ -64,9 +64,12 @@ pub struct D3d12Context {
     logical_height: i32,
     // 唯一拥有 Surface generation、物理 extent、事务号与重建状态。
     surface_lifecycle: RhiSurfaceLifecycle,
+    // 预留同一组合 context 的共享提交门禁；缺失 Device 时保持无已签发提交。
+    rhi_submissions: RhiSubmissionSequence,
     pub(crate) fault: Option<String>,
     shutdown: bool,
 }
 
 mod graphics;
 mod methods;
+mod rhi_surface;

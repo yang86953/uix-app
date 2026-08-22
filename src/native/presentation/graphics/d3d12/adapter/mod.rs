@@ -24,11 +24,16 @@ pub(crate) mod transfer;
 #[cfg(all(windows, feature = "d3d12"))]
 pub use context::D3d12Context;
 
+// 冻结 D3D12 flip-discard swapchain 的真实跨帧保留能力，供候选快照与 Surface 共用。
+#[cfg(all(windows, feature = "d3d12"))]
+pub(in crate::native::presentation::graphics::d3d12::platform) const D3D12_PRESENT_COHERENCY:
+    PresentCoherency = PresentCoherency::FullOnly;
+
 // 组装 D3D12 测试期 adapter 的静态 recipe 能力。
 #[cfg(all(windows, feature = "d3d12"))]
 fn context_caps() -> GraphicsContextCaps {
     // D3D12 当前只承诺完整 swapchain 提交。
-    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d12, PresentCoherency::FullOnly)
+    GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d12, D3D12_PRESENT_COHERENCY)
 }
 
 #[cfg(all(windows, feature = "d3d12"))]

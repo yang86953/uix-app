@@ -242,6 +242,8 @@ impl D3d12Context {
                 logical_width: drawable.logical_width,
                 logical_height: drawable.logical_height,
                 surface_lifecycle,
+                // 本阶段没有 GraphicsDevice，因此不会签发可进入原生 present 的提交身份。
+                rhi_submissions: RhiSubmissionSequence::new(),
                 fault: None,
                 shutdown: false,
             })
@@ -473,7 +475,8 @@ impl D3d12Context {
         self.execute_recording_and_wait()
     }
 
-    pub(super) fn present_result(&mut self) -> Result<()> {
+    pub(super) fn present_result(&mut self, _present: &ValidatedRhiPresent) -> Result<()> {
+        // FullOnly 已在共享事务中完成 damage 规范化；DXGI 只执行整帧 present。
         self.begin_commands()?;
         let buffer_index = self.frame_index;
         let state = self.back_buffer_states[buffer_index];
@@ -516,7 +519,7 @@ impl D3d12Context {
     }
 
     pub(crate) fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
-        // checked shutdown 或已锁存故障必须在任何 lifecycle 与 COM 操作前拒绝。
+        // checked shutdown 或已锁存故障必须在窗口查询与 COM 操作前拒绝。
         self.ensure_healthy()?;
         let current = self.surface_lifecycle.token();
         // Windows drawable helper 会对零值做兼容归一；D3D12 必须先由共享 resize 门禁拒绝非正输入。
@@ -526,29 +529,36 @@ impl D3d12Context {
         }
         let drawable = win_surface::drawable_size(self.hwnd, width, height);
         let requested = RhiExtent::new(drawable.width as u32, drawable.height as u32);
-        // 冻结旧 token 并在任何 wait/release/ResizeBuffers 前执行共享值域门禁。
+        // 冻结旧 token 并在任何 wait/release/ResizeBuffers 前执行唯一共享值域门禁。
         let resize = RhiSurfaceResizeTransaction::validate(requested, current)?;
+        self.run_surface_resize(resize, drawable.logical_width, drawable.logical_height)
+            .map(|_| ())
+    }
+
+    // 让 recipe 与通用 GraphicsSurface 共用唯一 resize 生命周期事务。
+    pub(super) fn run_surface_resize(
+        &mut self,
+        resize: RhiSurfaceResizeTransaction,
+        logical_width: i32,
+        logical_height: i32,
+    ) -> Result<crate::platform::presentation::rhi::SurfaceToken> {
+        // 调用方已在任何窗口或原生动作前完成健康与值域门禁。
+        let current = self.surface_lifecycle.token();
         // 同尺寸仅执行共享后置验证，不进入原生副作用或制造新 generation。
         if resize.extent() == current.extent {
-            resize.complete(current)?;
-            return Ok(());
+            return resize.complete(current);
         }
         // 生命周期门禁在 COM 动作前进入唯一 Resize 事务。
         let transaction = self
             .surface_lifecycle
             .begin_recreate(resize.extent(), RhiSurfaceRecreateReason::Resize)?;
-        match self.resize_surface_native(
-            transaction,
-            drawable.logical_width,
-            drawable.logical_height,
-        ) {
+        match self.resize_surface_native(transaction, logical_width, logical_height) {
             // 只有全部原生操作成功后才发布实际 extent 与精确下一 generation。
             Ok(actual) => {
                 let commit = self
                     .surface_lifecycle
                     .commit_recreate(transaction, actual)?;
-                resize.complete(commit.token())?;
-                Ok(())
+                resize.complete(commit.token())
             }
             // 失败不预提交 token；共享 abort 保留旧事实并链接原生错误。
             Err(error) => match self.surface_lifecycle.abort_recreate(transaction) {
