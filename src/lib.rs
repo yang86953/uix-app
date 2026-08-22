@@ -215,6 +215,12 @@ pub fn __run_vulkan_gpu_parity_test() {
 pub fn __run_vulkan_ui_production_chain_test() {
     graphics_parity::run_vulkan_ui_production_chain_test();
 }
+// 从真实平台窗口验收 Vulkan WSI、共享 Surface 生命周期与最终 present。
+#[cfg(feature = "vulkan-parity-test")]
+#[doc(hidden)]
+pub fn __run_vulkan_wsi_production_chain_test() {
+    graphics_parity::run_vulkan_wsi_production_chain_test();
+}
 // 只为显式 Linux GPU parity 测试目标转发 crate 内 OpenGL ES/EGL harness。
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 #[doc(hidden)]

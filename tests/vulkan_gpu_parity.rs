@@ -11,6 +11,12 @@ fn ui_drawing_frame_plan_executes_and_reads_back_on_real_vulkan_device() {
     uix::__run_vulkan_ui_production_chain_test();
 }
 
+// 在当前真实窗口会话上闭合 WSI acquire/render/present、resize 与销毁事务。
+#[test]
+fn ui_drawing_frame_plan_presents_through_real_vulkan_wsi() {
+    uix::__run_vulkan_wsi_production_chain_test();
+}
+
 // 不依赖原生窗口，确定性验证 OUT_OF_DATE 与 SUBOPTIMAL 的帧收尾语义。
 #[test]
 fn surface_lifecycle_distinguishes_retry_from_presented_rebuild() {

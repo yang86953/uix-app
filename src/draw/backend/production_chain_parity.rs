@@ -3,16 +3,17 @@
 //! 本模块只在显式共享 parity feature 下把 UI 绘制闭包送入生产
 //! `PaintContext`/`Canvas2D` lowering；它不知道或选择任何原生图形 API。
 
-use crate::core::{Errc, Error, Result};
+use crate::core::{Errc, Error, PresentDamage, Result};
 use crate::draw::FontHandle;
-use crate::draw::backend::gpu::{NativeGpuCanvas2D, NativeRasterCaps};
-use crate::draw::backend::rhi_renderer::RhiRenderer;
+use crate::draw::backend::gpu::{GpuGlyphBlit, NativeGpuCanvas2D, NativeRasterCaps};
+use crate::draw::backend::rhi_renderer::{RhiRenderer, RhiSampledQuad};
 use crate::draw::geometry::spatial::Orientation;
 use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::platform::presentation::rhi::{
-    GraphicsDevice, LoadAction, RhiColor, RhiExtent, TextureDesc, TextureFormat, TextureHandle,
+    GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiExtent, RhiViewport, SurfaceToken,
+    TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 让真实 UI 绘制入口形成 Canvas 队列、共享 FramePlan 与一次 Device submit。
@@ -71,4 +72,62 @@ pub(crate) fn execute_ui_production_chain(
         ));
     }
     Ok(target)
+}
+
+// 把真实 UI 绘制结果通过共享 sampled FramePlan 呈现到当前原生 Surface。
+pub(crate) fn execute_ui_production_surface_chain(
+    context: &mut dyn GraphicsContextRhi,
+    paint_ui: impl FnOnce(&mut PaintContext<'_>),
+) -> Result<SurfaceToken> {
+    // Surface token 是本次 acquire/render/present 事务的唯一代际与尺寸事实。
+    let token = context.surface_ref().token();
+    // 先复用真实 UI → Canvas2D → offscreen FramePlan 路径生成 retained 纹理。
+    let target = execute_ui_production_chain(context.device(), token.extent, paint_ui)?;
+    // 最终合成只使用共享物理 viewport，不读取任何 OS 或图形 API 值。
+    let viewport = RhiViewport {
+        width: token.extent.width as f32,
+        height: token.extent.height as f32,
+    };
+    // 复用 Drawing GPU Module 的统一四角顺序构造全幅 sampled quad。
+    let quad = RhiSampledQuad {
+        x: 0.0,
+        y: 0.0,
+        w: viewport.width,
+        h: viewport.height,
+        corners: GpuGlyphBlit::axis_aligned_corners(0.0, 0.0, viewport.width, viewport.height),
+        rgba: [1.0; 4],
+        additive: false,
+        texture: target,
+        u0: 0.0,
+        v0: 0.0,
+        u1: 1.0,
+        v1: 1.0,
+        scissor: None,
+    };
+    // 统一 Renderer 负责唯一 acquire、Device submit 与最终 Surface present。
+    let present = RhiRenderer::default().execute_sampled_quads(
+        context,
+        PresentDamage::Full,
+        viewport,
+        LoadAction::Clear(RhiColor::transparent()),
+        std::slice::from_ref(&quad),
+    );
+    // 成功或失败后都检查式释放本次临时 retained 纹理。
+    let cleanup = context.device().destroy_texture(target);
+    match (present, cleanup) {
+        (Ok(()), Ok(())) => {
+            // present 不得暗中替换当前 Surface 代际。
+            let current = context.surface_ref().token();
+            if current != token {
+                return Err(Error::new(
+                    Errc::GraphicsSurfaceLost,
+                    "UI production-chain surface generation changed after present",
+                ));
+            }
+            Ok(current)
+        }
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(cleanup_error)) => Err(cleanup_error),
+        (Err(error), Err(cleanup_error)) => Err(cleanup_error.with_source(error)),
+    }
 }
