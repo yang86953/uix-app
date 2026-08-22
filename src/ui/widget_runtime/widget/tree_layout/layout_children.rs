@@ -157,6 +157,8 @@ impl WidgetTree {
         ops: &mut Vec<ShrinkOp>,
         children: &mut Vec<WidgetId>,
         parent_children: &mut Vec<WidgetId>,
+        layout_damage: &mut super::LayoutFrameDamage,
+        effective_visible: &std::collections::HashSet<WidgetId>,
     ) -> bool {
         let mut any_changed = false;
         for _pass in 0..3 {
@@ -165,7 +167,7 @@ impl WidgetTree {
             ops.clear();
 
             for &id in order.iter().rev() {
-                if !self.is_effectively_visible(id) {
+                if !effective_visible.contains(&id) {
                     continue;
                 }
                 // 根 frame 由窗口客户区锁定，shrink 同样不得改写。
@@ -206,7 +208,7 @@ impl WidgetTree {
                     node.layout_children(frame, children, self)
                 };
                 for (child_id, rect) in positions {
-                    if self.set_layout_frame(child_id, rect) {
+                    if self.set_layout_frame(child_id, rect, layout_damage) {
                         pass_changed = true;
                     }
                 }
@@ -273,6 +275,7 @@ impl WidgetTree {
                     if !self.set_layout_frame(
                         op.id,
                         Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h),
+                        layout_damage,
                     ) {
                         continue;
                     }
@@ -292,7 +295,7 @@ impl WidgetTree {
                         .map(|n| n.layout_children(new_frame, children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
-                        let _ = self.set_layout_frame(child_id, rect);
+                        let _ = self.set_layout_frame(child_id, rect, layout_damage);
                     }
                     // 重新布局父容器，让兄弟组件靠拢
                     if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
@@ -307,7 +310,7 @@ impl WidgetTree {
                                 .map(|n| n.layout_children(parent_frame, parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
-                                let _ = self.set_layout_frame(child_id, rect);
+                                let _ = self.set_layout_frame(child_id, rect, layout_damage);
                             }
                         }
                     }

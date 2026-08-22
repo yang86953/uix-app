@@ -118,26 +118,42 @@ impl WidgetTree {
 
     /// 把节点局部矩形映射到屏幕，并按视觉祖先的子裁剪区收窄。
     pub(crate) fn clipped_visual_rect(&self, id: WidgetId, base: Rect) -> Option<Rect> {
-        // 节点不可见（含祖先不可见）时不存在需要刷新的屏幕区域。
-        if !self.is_effectively_visible(id) || base.w <= 0.0 || base.h <= 0.0 {
+        if base.w <= 0.0 || base.h <= 0.0 {
             return None;
         }
-        let mut rect = self.node_visual_rect(id, base)?;
-        let path = self.visual_path(id);
+        let mut path = Vec::new();
+        let mut current = Some(id);
+        let mut collect_visual_path = true;
+        // 一次父链遍历同时完成有效可见性判断与悬浮层视觉路径截断。
+        while let Some(current_id) = current {
+            let node = self.get(current_id)?;
+            if !node.visible() {
+                return None;
+            }
+            if collect_visual_path {
+                path.push(current_id);
+                if self.is_overlay_node(current_id) {
+                    collect_visual_path = false;
+                }
+            }
+            current = node.parent();
+        }
+        path.reverse();
         let mut transform = Transform::identity();
+        let mut clip_bounds: Option<Rect> = None;
         // 沿视觉路径逐级应用变换，并用各层子裁剪区收窄矩形。
         for (index, current_id) in path.iter().copied().enumerate() {
             let current = self.get(current_id)?;
-            // 路径上任一节点不可见则整体不可见。
-            if !current.visible() {
-                return None;
-            }
             // 使用与合成器一致的定位与作者变换组合。
             transform = transform.concat(self.positioned_visual_transform(current_id));
             if index + 1 < path.len() {
                 // 子裁剪区位于滚动内容平移之前，与合成器顺序保持一致。
                 if let Some(clip) = current.children_clip(current.frame()) {
-                    rect = rect.intersect(&transform.transform_rect(clip))?;
+                    let transformed_clip = transform.transform_rect(clip);
+                    clip_bounds = Some(match clip_bounds {
+                        Some(bounds) => bounds.intersect(&transformed_clip)?,
+                        None => transformed_clip,
+                    });
                 }
                 // 后续后代坐标需要补偿当前视口滚动偏移。
                 if let Some((sx, sy)) = current.viewport_scroll_offset() {
@@ -145,7 +161,11 @@ impl WidgetTree {
                 }
             }
         }
-        Some(rect)
+        let rect = transform.transform_rect(base);
+        match clip_bounds {
+            Some(clip) => rect.intersect(&clip),
+            None => Some(rect),
+        }
     }
 
     /// 计算节点在屏幕上的可见视觉矩形（逐级裁剪，含滚动补偿）。

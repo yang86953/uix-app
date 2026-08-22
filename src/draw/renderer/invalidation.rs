@@ -173,6 +173,12 @@ impl InvalidationQueue {
         roots.extend(self.layout_ids.iter().copied());
     }
 
+    /// 将当前已有 Paint 节点身份写入调用方复用集合。
+    pub(crate) fn paint_ids_into(&self, ids: &mut HashSet<NodeId>) {
+        ids.clear();
+        ids.extend(self.paint_indices.keys().copied());
+    }
+
     /// 节点是否有 Paint 失效。
     pub fn node_needs_paint(&self, id: NodeId) -> bool {
         if self.needs_full_frame() {

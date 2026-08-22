@@ -531,26 +531,36 @@ impl WidgetTree {
 
     // 在已建立事务的边界内递归移除节点子树。
     pub(super) fn remove_in_transaction(&mut self, id: WidgetId) {
+        self.remove_in_transaction_inner(id, true);
+    }
+
+    // 递归后代由最外层移除根统一覆盖脏区与父级布局通知。
+    fn remove_in_transaction_inner(&mut self, id: WidgetId, publish_parent_damage: bool) {
         // 节点移除会立即改写真实结构，停止树拒绝且协调事务记录发布事实。
         self.mark_coordination_publish_started();
         self.tree_version += 1;
         self.active_widget_animations.remove(&id);
 
-        let old_visual_bounds = self.visual_subtree_bounds(id);
+        // 根边界已经包含全部后代；递归重复扫描会让整棵子树退化为平方复杂度。
+        let old_visual_bounds = publish_parent_damage
+            .then(|| self.visual_subtree_bounds(id))
+            .flatten();
 
         let Some(slot) = self.node_slot_for(id) else {
             return;
         };
         let parent_id = self.nodes[slot].as_ref().and_then(|n| n.parent());
-        // 节点仍可寻址时交付 PointerLeave / DragEnd / FocusOut，再销毁生命周期。
-        self.cancel_subtree_interaction(id);
-        self.teardown_subtree(id);
+        if publish_parent_damage {
+            // 根仍可寻址时一次性交付整棵子树的交互取消与逆序销毁生命周期。
+            self.cancel_subtree_interaction(id);
+            self.teardown_subtree(id);
+        }
         if let Some(node) = self.nodes.get_mut(slot) {
             if let Some(node) = node.take() {
                 // 节点已真实离开槽位后，取消其待提交项并立即释放实际动画源所有权。
                 self.release_node_animated_sources_immediately(id);
                 for child_id in node.children().to_vec() {
-                    self.remove_in_transaction(child_id);
+                    self.remove_in_transaction_inner(child_id, false);
                 }
                 self.handler_table.clear_widget(id);
                 self.render_handler_table.clear_widget(id);
@@ -588,14 +598,16 @@ impl WidgetTree {
             }
         }
 
-        if let Some(rect) = old_visual_bounds {
-            if let Some(pid) = parent_id {
-                self.push_paint_invalidation(pid, Some(rect));
+        if publish_parent_damage {
+            if let Some(rect) = old_visual_bounds {
+                if let Some(pid) = parent_id {
+                    self.push_paint_invalidation(pid, Some(rect));
+                }
             }
-        }
-        if let Some(pid) = parent_id {
-            self.push_layout_invalidation(pid);
-            self.propagate_layout_invalidation(pid);
+            if let Some(pid) = parent_id {
+                self.push_layout_invalidation(pid);
+                self.propagate_layout_invalidation(pid);
+            }
         }
         // 事务外的实际移除（含 leave 结束）现在可释放无承载节点的私有状态。
         self.prune_widget_state_scopes_if_idle();
@@ -755,18 +767,46 @@ impl WidgetTree {
         self.propagate_layout_invalidation(id);
     }
 
-    /// layout() 内写 frame：只标 Paint，不重新入队 Layout。
+    /// layout() 内写 frame：延后聚合 Paint，不重新入队 Layout。
     ///
     /// `set_frame_dirty` 会 `push_layout_invalidation`，若在收敛循环里调用，
     /// 会在结果已稳定后仍留下 Layout pending，下一帧无事件也再跑 layout（违反休眠）。
-    pub(crate) fn set_layout_frame(&mut self, id: WidgetId, new_frame: Rect) -> bool {
+    pub(crate) fn set_layout_frame(
+        &mut self,
+        id: WidgetId,
+        new_frame: Rect,
+        damage: &mut tree_layout::LayoutFrameDamage,
+    ) -> bool {
         #[cfg(test)]
         let before_h = self
             .get(id)
             .map(|n| n.frame().h.round() as i32)
             .unwrap_or(0);
-        if !self.apply_frame_paint(id, new_frame) {
-            return false;
+        // 中间收敛状态不会上屏；归一并比较后只保存节点首次变化前的视觉边界。
+        let new_frame = crate::ui::layout::engine::normalize_layout_rect(new_frame);
+        match self.get(id) {
+            Some(node) if node.frame() == new_frame => return false,
+            None => return false,
+            Some(_) => {}
+        }
+        if damage.seen.insert(id) {
+            // 已记录的变化祖先会覆盖整棵子树，无需为每个后代重复扫描视觉边界。
+            let mut ancestor = self.get(id).and_then(|node| node.parent());
+            let mut covered = false;
+            while let Some(ancestor_id) = ancestor {
+                if damage.roots.contains(&ancestor_id) {
+                    covered = true;
+                    break;
+                }
+                ancestor = self.get(ancestor_id).and_then(|node| node.parent());
+            }
+            if !covered {
+                damage.roots.insert(id);
+                damage.entries.push((id, self.visual_subtree_bounds(id)));
+            }
+        }
+        if let Some(node) = self.get_mut(id) {
+            node.set_frame(new_frame);
         }
         #[cfg(test)]
         {
@@ -783,6 +823,43 @@ impl WidgetTree {
             }
         }
         true
+    }
+
+    /// 布局收敛后一次性提交所有节点的首态与终态视觉脏区。
+    pub(crate) fn flush_layout_frame_damage(
+        &mut self,
+        damage: &mut tree_layout::LayoutFrameDamage,
+    ) {
+        let full_paint = {
+            let invalidation = self
+                .invalidation
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            invalidation.paint_ids_into(&mut damage.prepainted);
+            invalidation.needs_full_frame()
+        };
+        let mut entries = std::mem::take(&mut damage.entries);
+        for (id, old_visual_bounds) in entries.drain(..) {
+            let new_visual_bounds = self.visual_subtree_bounds(id);
+            for rect in [old_visual_bounds, new_visual_bounds].into_iter().flatten() {
+                if rect.w > 0.0 && rect.h > 0.0 {
+                    self.push_paint_invalidation(id, Some(rect));
+                }
+            }
+        }
+        // 后代仍保持独立 Paint 身份；旧位置已由变化根的旧子树边界覆盖，
+        // 因此这里只提交最终自身边界，避免把每个节点都扩成整页脏区。
+        for id in damage.seen.iter().copied().filter(|id| {
+            !full_paint && !damage.roots.contains(id) && !damage.prepainted.contains(id)
+        }) {
+            if let Some(rect) = self.visible_visual_rect_for(id) {
+                self.push_paint_invalidation(id, Some(rect));
+            }
+        }
+        damage.entries = entries;
+        damage.seen.clear();
+        damage.roots.clear();
+        damage.prepainted.clear();
     }
 
     // 测试目标保留布局帧 trace 取出入口，供布局收敛测试按需调用。

@@ -121,7 +121,15 @@ impl WidgetTree {
             shrink_ops,
             shrink_children,
             shrink_parent_children,
+            layout_damage,
+            effective_visible,
         } = scratch;
+
+        // 防止上次异常退出留下的暂存被下一轮布局误用。
+        layout_damage.entries.clear();
+        layout_damage.seen.clear();
+        layout_damage.roots.clear();
+        layout_damage.prepainted.clear();
 
         self.refresh_collapse_content_children(order);
         self.refresh_image_error_children(order);
@@ -187,12 +195,13 @@ impl WidgetTree {
             if self.sync_parent_child_visibility(order, visibility_changes) {
                 any_change = true;
             }
+            self.fill_effective_visibility(order, effective_visible);
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(1));
             for &id in order.iter() {
-                if !self.is_effectively_visible(id) {
+                if !effective_visible.contains(&id) {
                     continue;
                 }
                 let positions: Vec<(WidgetId, Rect)> = {
@@ -208,7 +217,7 @@ impl WidgetTree {
                     node.layout_children(frame, children, self)
                 };
                 for (child_id, rect) in positions {
-                    if self.set_layout_frame(child_id, rect) {
+                    if self.set_layout_frame(child_id, rect, layout_damage) {
                         any_change = true;
                     }
                 }
@@ -216,6 +225,7 @@ impl WidgetTree {
             if self.sync_parent_child_visibility(order, visibility_changes) {
                 any_change = true;
             }
+            self.fill_effective_visibility(order, effective_visible);
             #[cfg(test)]
             LAYOUT_TRACE_PHASE.with(|p| p.set(0));
 
@@ -228,13 +238,25 @@ impl WidgetTree {
                 let expand_start = pass_expand_sig.len();
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(2));
-                let expanded =
-                    self.layout_expand(order, pass_expand_sig, resized_children, expand_children);
+                let expanded = self.layout_expand(
+                    order,
+                    pass_expand_sig,
+                    resized_children,
+                    expand_children,
+                    layout_damage,
+                    effective_visible,
+                );
                 let expand_end = pass_expand_sig.len();
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(4));
-                let shrunk =
-                    self.layout_shrink(order, shrink_ops, shrink_children, shrink_parent_children);
+                let shrunk = self.layout_shrink(
+                    order,
+                    shrink_ops,
+                    shrink_children,
+                    shrink_parent_children,
+                    layout_damage,
+                    effective_visible,
+                );
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(0));
                 if expanded || shrunk {
@@ -281,6 +303,8 @@ impl WidgetTree {
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports(order);
+        // 只发布布局开始前与最终稳定 frame 的视觉脏区，忽略未上屏的中间状态。
+        self.flush_layout_frame_damage(layout_damage);
         self.refresh_virtual_scroll_children(order);
         // 表格 capability 启用时才用最终 viewport 再刷新泛型单元格。
         #[cfg(feature = "table")]
@@ -347,6 +371,20 @@ impl WidgetTree {
             self.set_focus(replacement);
         }
         !changes.is_empty()
+    }
+
+    /// 按先序布局序列一次性计算有效可见节点，供本轮全部收敛阶段复用。
+    fn fill_effective_visibility(&self, order: &[WidgetId], visible: &mut HashSet<WidgetId>) {
+        visible.clear();
+        for &id in order {
+            let Some(node) = self.get(id) else {
+                continue;
+            };
+            let parent_visible = node.parent().is_none_or(|parent| visible.contains(&parent));
+            if node.visible() && parent_visible {
+                visible.insert(id);
+            }
+        }
     }
 
     pub(crate) fn rebuild_widget_overlays(&mut self) {
@@ -519,12 +557,14 @@ impl WidgetTree {
         expand_sig: &mut Vec<(WidgetId, i32, i32, i32, i32)>,
         resized_children: &mut HashSet<WidgetId>,
         children: &mut Vec<WidgetId>,
+        layout_damage: &mut super::LayoutFrameDamage,
+        effective_visible: &HashSet<WidgetId>,
     ) -> bool {
         let mut any_resized = false;
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         resized_children.clear();
         for &id in order.iter().rev() {
-            if !self.is_effectively_visible(id) {
+            if !effective_visible.contains(&id) {
                 continue;
             }
             // 根已有确定客户区高度时不得被内容撑开（窗口缩小场景）；
@@ -649,6 +689,7 @@ impl WidgetTree {
                     if self.set_layout_frame(
                         id,
                         Rect::new(old_frame.x, old_frame.y, effective_w, effective_h),
+                        layout_damage,
                     ) {
                         any_resized = true;
                         resized_children.insert(id);
@@ -689,7 +730,7 @@ impl WidgetTree {
                 );
                 let mut child_moved = false;
                 for (child_id, rect) in new_positions {
-                    if self.set_layout_frame(child_id, rect) {
+                    if self.set_layout_frame(child_id, rect, layout_damage) {
                         child_moved = true;
                         resized_children.insert(child_id);
                     }
