@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 D3D12_CONTEXT = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/mod.rs"
 D3D12_METHODS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/methods.rs"
 D3D12_GRAPHICS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs"
+D3D12_RHI_SURFACE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_surface.rs"
+D3D12_ADAPTER = ROOT / "src/native/presentation/graphics/d3d12/adapter/mod.rs"
+D3D12_MODULES = ROOT / "src/native/presentation/graphics/mod.rs"
 # 定位共享 Surface 生命周期与 resize 事务 Component。
 SURFACE_LIFECYCLE = ROOT / "src/platform/presentation/rhi/surface_lifecycle.rs"
 RESIZE_TRANSACTION = ROOT / "src/platform/presentation/rhi/resize_transaction.rs"
@@ -76,13 +79,16 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
     def test_resize_gates_before_native_and_commits_after_success(self) -> None:
         methods = D3D12_METHODS.read_text(encoding="utf-8")
         start = methods.index("pub(crate) fn resize_result(")
-        end = methods.index("pub(crate) fn read_pixels_result(", start)
-        resize = methods[start:end]
+        run_start = methods.index("pub(super) fn run_surface_resize(", start)
+        recipe = methods[start:run_start]
+        run_end = methods.index("fn resize_surface_native(", run_start)
+        resize = methods[run_start:run_end]
 
-        ensure = resize.index("self.ensure_healthy()?")
-        zero_gate = resize.index("if width <= 0 || height <= 0")
-        drawable = resize.index("win_surface::drawable_size(")
-        validate = resize.index("RhiSurfaceResizeTransaction::validate(requested, current)?")
+        ensure = recipe.index("self.ensure_healthy()?")
+        zero_gate = recipe.index("if width <= 0 || height <= 0")
+        drawable = recipe.index("win_surface::drawable_size(")
+        validate = recipe.index("RhiSurfaceResizeTransaction::validate(requested, current)?")
+        shared = recipe.index("self.run_surface_resize(")
         same_extent = resize.index("if resize.extent() == current.extent")
         begin = resize.index(
             ".begin_recreate(resize.extent(), RhiSurfaceRecreateReason::Resize)?"
@@ -92,12 +98,12 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
         self.assertLess(ensure, zero_gate)
         self.assertLess(zero_gate, drawable)
         self.assertLess(drawable, validate)
-        self.assertLess(validate, same_extent)
+        self.assertLess(validate, shared)
         self.assertLess(same_extent, begin)
         self.assertLess(begin, native)
         self.assertLess(native, commit)
-        self.assertIn("resize.complete(current)?;\n            return Ok(());", resize)
-        self.assertIn("resize.complete(commit.token())?", resize)
+        self.assertIn("return resize.complete(current);", resize)
+        self.assertIn("resize.complete(commit.token())", resize)
         self.assertIn("self.surface_lifecycle.abort_recreate(transaction)", resize)
         self.assertIn("Err(lifecycle_error.with_source(error))", resize)
 
@@ -139,10 +145,76 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
         self.assertNotIn("self.height", present)
         self.assertNotIn("\n            0,", present)
 
-    # checked shutdown 后的 recipe 与 resize 使用必须先拒绝，thin RHI 仍保持未激活。
+    # 通用 Surface 必须只实现一次，并机械消费共享 token、resize 与 readback 合同。
+    def test_single_graphics_surface_maps_existing_native_primitives(self) -> None:
+        context = D3D12_CONTEXT.read_text(encoding="utf-8")
+        surface = D3D12_RHI_SURFACE.read_text(encoding="utf-8")
+        d3d12_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
+        )
+
+        self.assertIn("mod rhi_surface;", context)
+        self.assertEqual(d3d12_sources.count("impl GraphicsSurface for"), 1)
+        self.assertIn("impl GraphicsSurface for super::D3d12Context", surface)
+        self.assertIn("self.surface_lifecycle.token()", surface)
+        acquire = surface[surface.index("fn acquire("):surface.index("fn resize(")]
+        self.assertLess(
+            acquire.index("self.ensure_healthy()?"),
+            acquire.index("self.surface_lifecycle.ensure_active()?"),
+        )
+        self.assertLess(
+            acquire.index("self.surface_lifecycle.ensure_active()?"),
+            acquire.index("SurfaceFrame::new"),
+        )
+        self.assertIn("if self.frame_index >= self.back_buffers.len()", acquire)
+        resize = surface[surface.index("fn resize("):surface.index("fn read_surface_pixels(")]
+        self.assertLess(
+            resize.index("RhiSurfaceResizeTransaction::validate(extent, current)?"),
+            resize.index("self.run_surface_resize("),
+        )
+        readback = surface[
+            surface.index("fn read_surface_pixels("):surface.index("fn present(")
+        ]
+        self.assertLess(
+            readback.index("self.surface_lifecycle.ensure_active()?"),
+            readback.index("RhiSurfaceReadback::validate_region(region, token.extent)?"),
+        )
+        self.assertLess(
+            readback.index("RhiSurfaceReadback::validate_region(region, token.extent)?"),
+            readback.index("self.read_pixels_result("),
+        )
+        self.assertLess(
+            readback.index("self.read_pixels_result("),
+            readback.index("RhiSurfaceReadback::try_new("),
+        )
+
+    # Surface 能力必须与 flip-discard 和真实回读方法同源，禁止重复声明保留事实。
+    def test_surface_capabilities_match_actual_methods(self) -> None:
+        adapter = D3D12_ADAPTER.read_text(encoding="utf-8")
+        surface = D3D12_RHI_SURFACE.read_text(encoding="utf-8")
+        d3d12_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
+        )
+
+        self.assertEqual(d3d12_sources.count("PresentCoherency::FullOnly"), 1)
+        self.assertIn("const D3D12_PRESENT_COHERENCY", adapter)
+        self.assertIn(
+            "GraphicsContextCaps::gpu_native_swapchain(GraphicsApi::D3d12, D3D12_PRESENT_COHERENCY)",
+            adapter,
+        )
+        self.assertIn("GraphicsSurfaceCapabilities::with_readback(", surface)
+        self.assertIn("super::super::D3D12_PRESENT_COHERENCY", surface)
+        self.assertIn("fn read_surface_pixels(", surface)
+        self.assertIn("fn present(", surface)
+
+    # checked shutdown 与缺失 Device 必须先拒绝，thin RHI 和 registry 仍保持未激活。
     def test_shutdown_gate_precedes_recipe_use_and_rhi_stays_planned(self) -> None:
         graphics = D3D12_GRAPHICS.read_text(encoding="utf-8")
         methods = D3D12_METHODS.read_text(encoding="utf-8")
+        context = D3D12_CONTEXT.read_text(encoding="utf-8")
+        surface = D3D12_RHI_SURFACE.read_text(encoding="utf-8")
         rhi_start = graphics.index("fn rhi_context(")
         rhi_end = graphics.index("fn resize_surface(", rhi_start)
         rhi = graphics[rhi_start:rhi_end]
@@ -159,14 +231,34 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
             for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
         )
         self.assertNotIn("impl GraphicsDevice for D3d12Context", d3d12_sources)
-        self.assertNotIn("impl GraphicsSurface for D3d12Context", d3d12_sources)
+        self.assertIn("rhi_submissions: RhiSubmissionSequence", context)
+        self.assertIn("rhi_submissions: RhiSubmissionSequence::new()", methods)
+        self.assertNotIn(".issue()", without_line_comments(d3d12_sources))
+        present = surface[surface.index("fn present("):]
+        self.assertLess(
+            present.index("self.surface_lifecycle.ensure_active()?"),
+            present.index("transaction.validate(current, coherency, &self.rhi_submissions)?"),
+        )
+        self.assertLess(
+            present.index("transaction.validate(current, coherency, &self.rhi_submissions)?"),
+            present.index("self.present_result(&present)"),
+        )
+        native_present = methods[
+            methods.index("pub(super) fn present_result("):
+            methods.index("pub(crate) fn latch_present_result(")
+        ]
+        self.assertIn("_present: &ValidatedRhiPresent", native_present)
+        self.assertIn("self.swap_chain.Present(1, DXGI_PRESENT(0))", native_present)
 
     # 生产选择与上层单一源码必须不受 Planned adapter 变更影响。
     def test_registry_defaults_and_upper_sources_remain_unchanged(self) -> None:
         registry = WINDOWS_REGISTRY.read_text(encoding="utf-8")
         cargo = CARGO.read_text(encoding="utf-8")
+        modules = D3D12_MODULES.read_text(encoding="utf-8")
 
         self.assertNotIn("GraphicsApi::D3d12", registry)
+        self.assertIn('#[cfg(feature = "d3d12")]\npub(crate) mod d3d12;', modules)
+        self.assertNotIn('#[cfg(all(test, feature = "d3d12"))]', modules)
         self.assertIn("id: GraphicsApi::D3d11,\n        priority: 30,", registry)
         self.assertIn("id: GraphicsApi::Vulkan,\n        priority: 100,", registry)
         self.assertIn("id: GraphicsApi::OpenGlEs,\n        priority: 10,", registry)
@@ -181,7 +273,15 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
 
     # 本阶段所有源码与契约文件均不得超过单文件上限。
     def test_touched_files_stay_below_limit(self) -> None:
-        for path in (D3D12_CONTEXT, D3D12_METHODS, D3D12_GRAPHICS, Path(__file__)):
+        for path in (
+            D3D12_CONTEXT,
+            D3D12_METHODS,
+            D3D12_GRAPHICS,
+            D3D12_RHI_SURFACE,
+            D3D12_ADAPTER,
+            D3D12_MODULES,
+            Path(__file__),
+        ):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
 
 
