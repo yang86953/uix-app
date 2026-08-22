@@ -6,21 +6,23 @@ use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
     PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource, RhiBufferResourceTable,
     RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiResourceTable, RhiScissor,
-    RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload, SamplerAddressMode, SamplerDesc,
-    SamplerFilter, SamplerHandle, SamplerMipMode, SubmissionHandle, TextureCopy, TextureDesc,
-    TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CONTRACT, ValidatedRhiTextureUpload,
+    RhiTextureResource, RhiTextureResourceTable, RhiTextureTransferBounds, RhiTextureUpload,
+    SamplerAddressMode, SamplerDesc, SamplerFilter, SamplerHandle, SamplerMipMode,
+    SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
+    UIX_COLOR_CONTRACT, ValidatedRhiTextureUpload,
 };
 use ::windows::Win32::Graphics::Direct3D12::{
-    D3D12_COMPARISON_FUNC_NEVER, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC,
-    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
-    D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_HEAP_FLAG_NONE,
-    D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_DESC,
+    D3D12_BOX, D3D12_COMPARISON_FUNC_NEVER, D3D12_CPU_DESCRIPTOR_HANDLE,
+    D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+    D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES,
+    D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_DESC,
     D3D12_RESOURCE_DIMENSION_BUFFER, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
     D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_NONE,
-    D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ,
-    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATES,
-    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN,
-    ID3D12DescriptorHeap, ID3D12Device, ID3D12Resource,
+    D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
+    D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+    D3D12_RESOURCE_STATES, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12DescriptorHeap, ID3D12Device, ID3D12Resource,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -89,6 +91,24 @@ struct D3d12TextureUploadPlan<'a> {
     _validated: ValidatedRhiTextureUpload<'a>,
 }
 
+// 保存共享传输验证完成后才能进入命令录制的跨纹理复制计划。
+struct D3d12TextureCopyPlan {
+    // 源句柄只用于 GPU 成功后的状态提交。
+    source: TextureHandle,
+    // 目标句柄只用于 GPU 成功后的状态提交。
+    destination: TextureHandle,
+    // 源原生资源在命令和 fence 完成前保持存活。
+    source_native: ID3D12Resource,
+    // 目标原生资源在命令和 fence 完成前保持存活。
+    destination_native: ID3D12Resource,
+    // 保存源资源命令开始前已提交的状态。
+    source_before: D3D12_RESOURCE_STATES,
+    // 保存目标资源命令开始前已提交的状态。
+    destination_before: D3D12_RESOURCE_STATES,
+    // 保存由 platform 唯一 TextureCopy 验证产生的两端边界。
+    bounds: RhiTextureTransferBounds,
+}
+
 // D3D12 context 唯一拥有的资源阶段 Component。
 pub(super) struct D3d12RhiDevice {
     // 直接复用 platform 唯一 Buffer 资源表，不复制句柄状态机。
@@ -115,8 +135,8 @@ impl D3d12RhiDevice {
             color_contract: UIX_COLOR_CONTRACT,
             dynamic_buffers: true,
             texture_upload: true,
-            texture_copy: false,
-            texture_region_move: false,
+            texture_copy: true,
+            texture_region_move: true,
             clear_rect: false,
             sampled_textures: false,
             render_to_texture: false,
@@ -294,6 +314,50 @@ impl D3d12RhiDevice {
         Ok(())
     }
 
+    // 先完成真实身份、格式、非空范围和两端边界门禁，再克隆任何原生资源引用。
+    fn stage_texture_copy(&self, copy: TextureCopy) -> Result<D3d12TextureCopyPlan> {
+        // 共享资源表只读解析源身份与冻结描述。
+        let source = self.textures.get(copy.source())?;
+        // 共享资源表只读解析目标身份与冻结描述。
+        let destination = self.textures.get(copy.destination())?;
+        // 唯一 TextureCopy 契约拒绝同资源、格式差异、空范围、溢出和越界。
+        let bounds = copy.validate_transfer(source.desc, destination.desc)?;
+        // 只有共享门禁全部成功后才冻结原生资源与已提交状态。
+        Ok(D3d12TextureCopyPlan {
+            source: copy.source(),
+            destination: copy.destination(),
+            source_native: source.native.clone(),
+            destination_native: destination.native.clone(),
+            source_before: source.state,
+            destination_before: destination.state,
+            bounds,
+        })
+    }
+
+    // 只读消费 platform 唯一 TextureMove 验证，并返回 scratch 所需的源描述。
+    fn validate_texture_move(&self, movement: TextureMove) -> Result<TextureDesc> {
+        // 先解析两端真实身份，禁止陈旧句柄触发后续原生资源创建。
+        let source = self.textures.get(movement.source())?;
+        let destination = self.textures.get(movement.destination())?;
+        // 同纹理和跨纹理移动共用格式、非空范围与两端边界门禁。
+        movement.validate_transfer(source.desc, destination.desc)?;
+        Ok(source.desc)
+    }
+
+    // GPU 完成后一次提交复制两端的冻结原生状态。
+    fn commit_texture_copy(
+        &mut self,
+        source: TextureHandle,
+        destination: TextureHandle,
+    ) -> Result<()> {
+        // 提交前先证明两个句柄仍同时存活，避免部分状态发布。
+        self.textures.get(source)?;
+        self.textures.get(destination)?;
+        self.textures.get_mut(source)?.state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        self.textures.get_mut(destination)?.state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        Ok(())
+    }
+
     // 从共享描述提升 render-target 身份，不触碰描述符或命令列表。
     fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
         self.textures.resolve_render_target(texture)
@@ -306,7 +370,7 @@ impl D3d12RhiDevice {
 
     // 只读预检 texture move 的真实资源和传输关系。
     fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
-        self.textures.validate_move(movement)
+        self.validate_texture_move(movement).map(|_| ())
     }
 
     // 创建真实 shader-visible sampler descriptor，并由共享表签发句柄。
@@ -547,14 +611,66 @@ impl GraphicsDevice for D3d12Context {
         Err(resource_stage_deferred("draw"))
     }
 
-    fn copy_texture(&mut self, _copy: TextureCopy) -> Result<()> {
+    fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("copy_texture"))
+        // 共享验证必须先于命令列表 Reset、barrier 和 CopyTextureRegion。
+        let result = self.rhi_device.stage_texture_copy(copy);
+        let plan = self.observe_rhi_result("stage RHI texture copy", result)?;
+        self.begin_rhi_transfer_commands()?;
+        record_texture_copy_commands(&self.command_list, &plan);
+        // 两端原生资源在 fence 成功前由 context 在途 owner 保持存活。
+        let pending_start = self.pending_gpu_resources.len();
+        self.pending_gpu_resources.push(plan.source_native.clone());
+        self.pending_gpu_resources
+            .push(plan.destination_native.clone());
+        if let Err(error) = self.execute_recording_and_wait() {
+            // GPU 结果不确定时保留两端引用，交给 checked shutdown 排空或 Drop 泄漏保护。
+            return Err(error);
+        }
+        self.pending_gpu_resources.truncate(pending_start);
+        // 只有 GPU 完成成功后才同时发布源与目标的新状态事实。
+        if let Err(error) = self
+            .rhi_device
+            .commit_texture_copy(plan.source, plan.destination)
+        {
+            self.latch_fault("commit RHI texture copy state", &error);
+            return Err(error);
+        }
+        Ok(())
     }
 
-    fn move_texture_region(&mut self, _movement: TextureMove) -> Result<()> {
+    fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("move_texture_region"))
+        // 在任何 scratch 创建或命令录制前直接消费共享 TextureMove 门禁。
+        let result = self.rhi_device.validate_texture_move(movement);
+        let source_desc = self.observe_rhi_result("validate RHI texture move", result)?;
+        // 不同纹理没有重叠风险，无损复用已经闭环的 copy 原语。
+        if movement.source() != movement.destination() {
+            return self.copy_texture(movement.into_copy());
+        }
+        // 同纹理移动的 scratch 必须由唯一 D3D12 资源 owner 创建和登记。
+        let scratch_desc = TextureDesc::new(movement.transfer().extent(), source_desc.format());
+        let result = self.rhi_device.create_texture(&self.device, scratch_desc);
+        let scratch = self.observe_rhi_result("create RHI texture move scratch", result)?;
+        // platform 唯一 through_scratch 契约固定先保存、再恢复的 memmove 顺序。
+        let (to_scratch, from_scratch) = movement.through_scratch(scratch);
+        let operation = self
+            .copy_texture(to_scratch)
+            .and_then(|()| self.copy_texture(from_scratch));
+        // 即使 context 已因命令失败锁存，也由资源 owner 检查式移除 scratch 身份。
+        let cleanup = self.rhi_device.destroy_texture(scratch);
+        match (operation, cleanup) {
+            // 两者都失败时保留主移动错误，并把清理错误挂入来源链。
+            (Err(primary_error), Err(cleanup_error)) => {
+                Err(primary_error.with_source(cleanup_error))
+            }
+            // 只有移动失败时原样返回主错误。
+            (Err(primary_error), Ok(())) => Err(primary_error),
+            // 移动成功但清理失败不能伪造完整成功。
+            (Ok(()), Err(cleanup_error)) => Err(cleanup_error),
+            // 两段复制与 scratch 清理全部成功。
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 
     fn end_render_pass(&mut self) -> Result<()> {
@@ -693,6 +809,66 @@ fn texture_format(format: TextureFormat) -> DXGI_FORMAT {
 // 按 D3D12 常量 Buffer 物理对齐扩展容量。
 fn align_up(value: u64, alignment: u64) -> u64 {
     value.div_ceil(alignment) * alignment
+}
+
+// 把已经通过共享门禁的复制计划机械录制为 D3D12 状态转换与区域复制。
+fn record_texture_copy_commands(
+    command_list: &ID3D12GraphicsCommandList,
+    plan: &D3d12TextureCopyPlan,
+) {
+    // 共享边界直接投影为 D3D12 二维源 box。
+    let (source_left, source_top, source_right, source_bottom) =
+        plan.bounds.source().native_rect_u32();
+    let source_box = D3D12_BOX {
+        left: source_left,
+        top: source_top,
+        front: 0,
+        right: source_right,
+        bottom: source_bottom,
+        back: 1,
+    };
+    // 共享目标边界只投影已验证的左上原点。
+    let destination_origin = plan.bounds.destination().region().origin();
+    record_transition(
+        command_list,
+        &plan.source_native,
+        plan.source_before,
+        D3D12_RESOURCE_STATE_COPY_SOURCE,
+    );
+    record_transition(
+        command_list,
+        &plan.destination_native,
+        plan.destination_before,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+    );
+    let mut source = texture_copy_location_subresource(&plan.source_native);
+    let mut destination = texture_copy_location_subresource(&plan.destination_native);
+    // SAFETY: 两端均为同一 device 创建的存活二维纹理；格式、资源关系和区域已由 TextureCopy 验证。
+    unsafe {
+        command_list.CopyTextureRegion(
+            &destination,
+            destination_origin.x(),
+            destination_origin.y(),
+            0,
+            &source,
+            Some(&source_box),
+        );
+    }
+    release_copy_location(&mut source);
+    release_copy_location(&mut destination);
+    // 完成复制后统一回到本资源阶段已冻结的可采样状态。
+    record_transition(
+        command_list,
+        &plan.source_native,
+        D3D12_RESOURCE_STATE_COPY_SOURCE,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+    );
+    record_transition(
+        command_list,
+        &plan.destination_native,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+    );
 }
 
 // 明确拒绝尚未进入本资源所有权阶段的 Device 原语。
