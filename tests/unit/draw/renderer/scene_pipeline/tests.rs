@@ -237,9 +237,11 @@ impl RenderTarget for FailingBackdropTarget {
 // 提供一个正常根树与一个 root-level overlay 子节点。
 struct RefreshScene {
     // 保存当前帧 typed effect。
-    effect: crate::draw::OverlayBackdropEffect,
+    effect: Option<crate::draw::OverlayBackdropEffect>,
     // 决定正常树是否故意产生 CPU 光栅分段。
     cpu_raster_normal: bool,
+    // 决定测试浮层是否拥有干净背景快照能力。
+    requires_backdrop: bool,
 }
 
 // 两节点场景精确触发 normal_tree_dirty 与 overlay membership。
@@ -306,10 +308,16 @@ impl ScenePaint for RefreshScene {
         id == OVERLAY_NODE
     }
 
+    // 把模态/局部浮层分类显式交给场景管线。
+    fn node_requires_overlay_backdrop(&self, id: NodeId) -> bool {
+        // 只有指定的 overlay 节点参与背景快照事务。
+        id == OVERLAY_NODE && self.requires_backdrop
+    }
+
     // 返回本帧唯一 typed effect。
     fn overlay_backdrop_effect(&self) -> Option<crate::draw::OverlayBackdropEffect> {
         // Copy 值直接交给场景管线。
-        Some(self.effect)
+        self.effect
     }
 
     // 本测试不使用子树裁剪。
@@ -516,6 +524,32 @@ fn frame_input<'a>(
     }
 }
 
+// 高度重叠的多块脏区应合并为一次包围盒绘制，避免重复遍历场景。
+#[test]
+fn dense_dirty_region_coalesces_to_one_bounded_rect() {
+    let mut region = DirtyRegion::empty();
+    for x in [0.0, 4.0, 8.0, 12.0] {
+        region.add_rect(Rect::new(x, 0.0, 24.0, 20.0));
+    }
+
+    let coalesced = coalesce_dense_dirty_region(region);
+
+    assert_eq!(coalesced.rects(), &[Rect::new(0.0, 0.0, 36.0, 20.0)]);
+    assert!(coalesced.clear_required);
+}
+
+// 稀疏小块的包围盒额外面积过大，应继续使用离散脏区。
+#[test]
+fn sparse_dirty_region_keeps_split_rects() {
+    let mut region = DirtyRegion::empty();
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0), (100.0, 100.0)] {
+        region.add_rect(Rect::new(x, y, 4.0, 4.0));
+    }
+    let expected = region.clone();
+
+    assert_eq!(coalesce_dense_dirty_region(region), expected);
+}
+
 // 验证浮层离场释放失败会在任何新帧动作前终止。
 #[test]
 fn overlay_backdrop_release_failure_stops_before_begin_frame() {
@@ -704,9 +738,11 @@ fn overlay_backdrop_refresh_rebuilds_clean_source_before_single_present() {
     // 正常根 dirty，overlay 子节点保持可见。
     let scene = RefreshScene {
         // 成功事务使用合法原生正常树。
-        effect,
+        effect: Some(effect),
         // 不注入 CPU 光栅分段。
         cpu_raster_normal: false,
+        // 显式要求建立干净背景。
+        requires_backdrop: true,
     };
     // refresh 从完整 dirty 区域开始。
     let dirty = DirtyRegion::full();
@@ -765,9 +801,11 @@ fn overlay_backdrop_refresh_falls_back_for_cpu_raster_normal_tree() {
     // 构造会在 API-neutral recorder 中产生 CPU segment 的正常树。
     let scene = RefreshScene {
         // 保留同一 typed effect。
-        effect,
+        effect: Some(effect),
         // 显式打开 CPU 光栅注入。
         cpu_raster_normal: true,
+        // 显式要求建立干净背景。
+        requires_backdrop: true,
     };
     // 使用完整 dirty 区域模拟初次展示浮层。
     let dirty = DirtyRegion::full();
@@ -807,4 +845,41 @@ fn overlay_backdrop_refresh_falls_back_for_cpu_raster_normal_tree() {
     assert_eq!(target.end_calls, 1);
     // 当前 overlay 生命周期必须禁止重试同一 retained 优化。
     assert!(pipeline.overlay_backdrop_blocked);
+}
+
+// 非模态局部浮层不应为页面切换建立整窗背景快照。
+#[test]
+fn local_overlay_skips_backdrop_refresh_transaction() {
+    // 创建可记录所有背景资源事务的 retained GPU mock。
+    let mut target = FailingBackdropTarget::new(BackdropFailurePoint::None);
+    // 正常根与局部 overlay 都存在，但局部浮层不需要干净背景 owner。
+    let scene = RefreshScene {
+        // 局部浮层未声明 blur 效果。
+        effect: None,
+        // 正常树可直接走 GPU-native 绘制。
+        cpu_raster_normal: false,
+        // Message/Notification 等局部浮层不申请背景快照。
+        requires_backdrop: false,
+    };
+    // 页面切换仍可要求完整表面重建。
+    let dirty = DirtyRegion::full();
+    // 创建空字体与图片服务。
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    // 模拟首次展示该页面，验证不会进入两阶段 refresh。
+    let mut input = frame_input(&dirty, &fonts, &images);
+    input.rendered_first = false;
+
+    let output = ScenePipeline::new().render_frame(&mut target, &scene, input);
+
+    assert!(matches!(
+        output.outcome,
+        RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
+    ));
+    // 正常树与局部浮层应在唯一最终帧直接绘制。
+    assert_eq!(target.encoded_frame_calls, 0);
+    assert_eq!(target.snapshot_calls, 0);
+    assert_eq!(target.restore_calls, 0);
+    assert_eq!(target.begin_calls, 1);
+    assert_eq!(target.end_calls, 1);
 }

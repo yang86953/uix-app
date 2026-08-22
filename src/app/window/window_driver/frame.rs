@@ -522,12 +522,12 @@ impl WindowDriver {
         if needs_layout {
             // 帧诊断：布局阶段起点。
             let layout_start = Instant::now();
-            let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
             laid_out = true;
 
             sync_root_frame_to_engine(tree, engine);
+            let before_on_frame_version = tree.tree_version();
             if let Some(platform) = platform.as_deref_mut() {
                 on_frame(tree, engine, platform);
             }
@@ -555,9 +555,16 @@ impl WindowDriver {
             }
             sync_root_frame_to_engine(tree, engine);
 
-            if tree.tree_version() != before_version {
+            let after_on_frame_version = tree.tree_version();
+            // 第一轮已原子消费原有 Layout；只有布局内部或 on_frame 新产生的
+            // Layout 请求才需要同帧再收敛，避免仅因合成拓扑版本变化重复整树布局。
+            if has_layout_work(tree) {
                 tree.layout();
                 record_layout(metrics);
+            }
+            // on_frame 可能替换根或改变应用结构，必须保守清除旧像素；
+            // 首轮布局自身的版本变化已由布局 damage 精确覆盖，无需升为全帧。
+            if after_on_frame_version != before_on_frame_version {
                 tree.mark_full_frame_dirty();
             }
             // 帧诊断：布局阶段耗时。

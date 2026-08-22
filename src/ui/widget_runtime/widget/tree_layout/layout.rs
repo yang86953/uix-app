@@ -8,6 +8,11 @@ use super::super::LAYOUT_TRACE_PHASE;
 
 use super::{LayoutFrameScratch, LayoutTraversalScratch};
 
+// 将失效消费契约测试放在根 tests 目录，保留私有遍历入口访问能力。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_layout/layout__tests.rs"]
+mod tests;
+
 impl WidgetTree {
     pub(crate) fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
         crate::ui::tree_widget_hooks::nearest_viewport_overflow_axes(self, id)
@@ -38,16 +43,40 @@ impl WidgetTree {
         result: &mut Vec<WidgetId>,
         scratch: &mut LayoutTraversalScratch,
     ) {
+        self.fill_layout_traversal_impl(result, scratch, false);
+    }
+
+    /// 生成本轮布局遍历并原子消费已纳入遍历的 Layout 失效。
+    fn take_layout_traversal(
+        &self,
+        result: &mut Vec<WidgetId>,
+        scratch: &mut LayoutTraversalScratch,
+    ) {
+        self.fill_layout_traversal_impl(result, scratch, true);
+    }
+
+    fn fill_layout_traversal_impl(
+        &self,
+        result: &mut Vec<WidgetId>,
+        scratch: &mut LayoutTraversalScratch,
+        consume_layout: bool,
+    ) {
         result.clear();
+        scratch.roots.clear();
         scratch.paths.clear();
         scratch.stack.clear();
-        let inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
-        if inv.needs_full_frame() {
+        let mut inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+        let full_frame = inv.needs_full_frame();
+        inv.layout_roots_into(&mut scratch.roots);
+        if consume_layout {
+            // 与 roots 快照保持同一锁临界区，避免清除并发到达的新 Layout 请求。
+            inv.clear_layout();
+        }
+        drop(inv);
+        if full_frame {
             result.extend(self.traverse().iter().copied());
             return;
         }
-        inv.layout_roots_into(&mut scratch.roots);
-        drop(inv);
         if scratch.roots.is_empty() {
             return;
         }
@@ -136,7 +165,7 @@ impl WidgetTree {
         // 表格 capability 启用时才在布局前刷新泛型单元格。
         #[cfg(feature = "table")]
         self.refresh_table_cell_children(order);
-        self.fill_layout_traversal(order, traversal);
+        self.take_layout_traversal(order, traversal);
         if order.is_empty() {
             // 根节点已有有效 frame 但子树尚未布局时（如 bind_invalidation / reset 清空队列），
             // 只要仍有可见节点 frame 为 0 就重新标脏，避免组件堆叠在 (0,0)。
@@ -162,7 +191,7 @@ impl WidgetTree {
             if let Some(root_id) = self.root_id {
                 self.push_layout_invalidation(root_id);
             }
-            self.fill_layout_traversal(order, traversal);
+            self.take_layout_traversal(order, traversal);
             if order.is_empty() {
                 return;
             }

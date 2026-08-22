@@ -83,14 +83,16 @@ pub fn node_viewport_frame(scene: &impl ScenePaint, node_id: NodeId) -> Rect {
     node_visual_rect(scene, node_id, scene.node_frame(node_id))
 }
 
-/// 节点在 viewport/screen 空间的可见矩形（累计祖先 scroll 与 children_clip）。
-/// 完全滚出可视区或不可见时返回 `None`。与 `WidgetTree::visible_rect_for` 同语义。
-pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option<Rect> {
+/// 将节点拥有的任意布局矩形投影到 viewport/screen 可见区域。
+fn visible_viewport_rect_for(
+    scene: &impl ScenePaint,
+    node_id: NodeId,
+    source_rect: Rect,
+) -> Option<Rect> {
     if !scene.node_visible(node_id) {
         return None;
     }
-    let frame = scene.node_frame(node_id);
-    let mut rect = node_visual_rect(scene, node_id, frame);
+    let mut rect = node_visual_rect(scene, node_id, source_rect);
     if rect.w <= 0.0 || rect.h <= 0.0 {
         return None;
     }
@@ -134,6 +136,12 @@ pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option
     Some(rect)
 }
 
+/// 节点在 viewport/screen 空间的可见矩形（累计祖先 scroll 与 children_clip）。
+/// 完全滚出可视区或不可见时返回 `None`。与 `WidgetTree::visible_rect_for` 同语义。
+pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option<Rect> {
+    visible_viewport_rect_for(scene, node_id, scene.node_frame(node_id))
+}
+
 /// 节点是否需绘制：自身脏，或其 viewport 投影与 dirty_region 相交。
 pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &DirtyRegion) -> bool {
     if scene.node_dirty(node_id) {
@@ -146,6 +154,28 @@ pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &Dirt
     };
     // 只在真实可见包围盒与脏区域相交时提交节点。
     dirty_region.intersects(frame)
+}
+
+/// 主表面节点是否需绘制：脏节点也必须至少有实际绘制范围落在可见区域内。
+///
+/// Picture 离屏目标在重栅格化前会被完整清空，不能使用该裁剪入口。
+pub(crate) fn needs_paint_in_viewport(
+    scene: &impl ScenePaint,
+    node_id: NodeId,
+    dirty_region: &DirtyRegion,
+) -> bool {
+    let node_dirty = scene.node_dirty(node_id);
+    let frame = scene.node_frame(node_id);
+    // 脏节点可能通过阴影、徽标等视觉超出布局 frame，必须使用完整 dirty_rect。
+    let paint_rect = if node_dirty {
+        scene.dirty_rect(node_id, frame)
+    } else {
+        frame
+    };
+    let Some(visible_rect) = visible_viewport_rect_for(scene, node_id, paint_rect) else {
+        return false;
+    };
+    node_dirty || dirty_region.intersects(visible_rect)
 }
 
 /// overlay / dirty_rect 区域是否需重绘。
@@ -164,3 +194,8 @@ pub fn needs_paint_rect(
 fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
     scene.children_clip(id, scene.node_frame(id)).is_some()
 }
+
+// 将主表面裁剪契约测试放在根 tests 目录，保留私有辅助函数访问能力。
+#[cfg(test)]
+#[path = "../../../tests/unit/draw/scene/viewport_transform__tests.rs"]
+mod tests;
