@@ -201,7 +201,13 @@ class GraphicsD3d12PipelineContractTests(unittest.TestCase):
         self.assertIn("d3d12_topology_type(contract.topology)", native)
 
     def test_destroy_shutdown_and_undrained_drop_keep_unique_reverse_lifecycle(self) -> None:
+        native = D3D12_PIPELINE.read_text(encoding="utf-8")
         device = D3D12_DEVICE.read_text(encoding="utf-8")
+        resource = function_range(
+            native,
+            "pub(crate) struct D3d12PipelineResource {",
+            "impl D3d12PipelinePlan",
+        )
         destroy = function_range(
             device,
             "fn destroy_pipeline(&mut self, pipeline:",
@@ -223,7 +229,21 @@ class GraphicsD3d12PipelineContractTests(unittest.TestCase):
         self.assertLess(shutdown.index("self.samplers.drain_reverse()"), shutdown.index("self.textures.drain_reverse()"))
         self.assertLess(shutdown.index("self.textures.drain_reverse()"), shutdown.index("self.buffers.drain_reverse()"))
         self.assertIn("pipeline.retain_after_undrained_drop()", retain)
-        self.assertIn("std::mem::forget(self)", D3D12_PIPELINE.read_text(encoding="utf-8"))
+        # Rust 按字段声明顺序析构，锁定单项内部的原生依赖逆序。
+        drop_order = (
+            "variants: D3d12PipelineStateVariants",
+            "vertex_shader: ID3DBlob",
+            "pixel_shader: ID3DBlob",
+            "input_layout: Vec<D3D12_INPUT_ELEMENT_DESC>",
+            "fixed_state: D3d12PipelineFixedState",
+            "contract: PipelineContract",
+            "root_signature: ID3D12RootSignature",
+        )
+        positions = [resource.index(field) for field in drop_order]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("impl Drop for D3d12PipelineResource", native)
+        self.assertNotIn("ManuallyDrop", resource)
+        self.assertIn("std::mem::forget(self)", native)
 
     def test_draw_registry_and_upper_source_remain_inactive(self) -> None:
         device = D3D12_DEVICE.read_text(encoding="utf-8")

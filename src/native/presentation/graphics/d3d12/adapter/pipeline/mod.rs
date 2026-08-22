@@ -80,8 +80,8 @@ struct D3d12PipelineStateVariants {
 // 由 D3D12 资源表唯一拥有的完整原生 pipeline 资源。
 #[allow(dead_code)]
 pub(crate) struct D3d12PipelineResource {
-    // Root Signature 只声明 b0 与按采样契约出现的 t0/s0。
-    root_signature: ID3D12RootSignature,
+    // Rust 按字段声明顺序析构，先释放最后创建且引用 Root Signature 的全部 PSO。
+    variants: D3d12PipelineStateVariants,
     // 保留真实编译后的顶点 shader bytecode COM owner。
     vertex_shader: ID3DBlob,
     // 保留真实编译后的像素 shader bytecode COM owner。
@@ -90,10 +90,10 @@ pub(crate) struct D3d12PipelineResource {
     input_layout: Vec<D3D12_INPUT_ELEMENT_DESC>,
     // 保留由共享契约生成的真实固定状态描述。
     fixed_state: D3d12PipelineFixedState,
-    // 保留两个可渲染 DXGI 格式的真实 PSO。
-    variants: D3d12PipelineStateVariants,
     // 只保存同一份 platform 契约值，不复制 ABI 或状态权威。
     contract: PipelineContract,
+    // Root Signature 最后释放，覆盖全部依赖它的 PSO 与描述 owner 生命周期。
+    root_signature: ID3D12RootSignature,
 }
 
 impl D3d12PipelinePlan {
@@ -182,13 +182,13 @@ impl D3d12PipelineResource {
             plan.fixed_state,
         )?;
         Ok(Self {
-            root_signature,
+            variants,
             vertex_shader,
             pixel_shader,
             input_layout: plan.input_layout,
             fixed_state: plan.fixed_state,
-            variants,
             contract: plan.contract,
+            root_signature,
         })
     }
 
