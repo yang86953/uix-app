@@ -59,6 +59,8 @@ pub struct D3d12Context {
     frame_index: usize,
     recording: bool,
     pending_gpu_resources: Vec<ID3D12Resource>,
+    // 唯一拥有 D3D12 Buffer、Texture、Sampler 与 platform 类型化资源表。
+    rhi_device: rhi_device::D3d12RhiDevice,
     pub(crate) adapter_info: D3d12AdapterInfo,
     logical_width: i32,
     logical_height: i32,
@@ -72,4 +74,5 @@ pub struct D3d12Context {
 
 mod graphics;
 mod methods;
+mod rhi_device;
 mod rhi_surface;

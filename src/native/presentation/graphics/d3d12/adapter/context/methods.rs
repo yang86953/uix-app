@@ -238,6 +238,8 @@ impl D3d12Context {
                 frame_index,
                 recording: false,
                 pending_gpu_resources: Vec::new(),
+                // 资源阶段只建立唯一原生资源 owner，不激活组合 RHI 入口。
+                rhi_device: rhi_device::D3d12RhiDevice::new(),
                 adapter_info,
                 logical_width: drawable.logical_width,
                 logical_height: drawable.logical_height,
@@ -792,7 +794,9 @@ impl D3d12Context {
         Ok(())
     }
 
-    pub(super) fn retain_gpu_objects_after_undrained_drop(&self) {
+    pub(super) fn retain_gpu_objects_after_undrained_drop(&mut self) {
+        // 先让唯一资源 owner 泄漏最后一份在途 COM 引用，禁止未知 GPU 状态下提前释放。
+        self.rhi_device.retain_after_undrained_drop();
         std::mem::forget(self._factory.clone());
         std::mem::forget(self._adapter.clone());
         std::mem::forget(self.device.clone());
@@ -819,6 +823,11 @@ impl D3d12Context {
         }
         if let Err(error) = self.drain_for_shutdown() {
             self.latch_fault("shutdown drain", &error);
+            return Err(error);
+        }
+        // 只有 terminal fence 已确认排空后才检查式释放共享表内全部原生子资源。
+        if let Err(error) = self.rhi_device.shutdown() {
+            self.latch_fault("shutdown RHI resource owner", &error);
             return Err(error);
         }
         self.pending_gpu_resources.clear();

@@ -230,7 +230,8 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
         )
-        self.assertNotIn("impl GraphicsDevice for D3d12Context", d3d12_sources)
+        # 资源阶段已经具备 Device 类型形状，但组合入口仍由上方 NotImplemented 门禁隔离。
+        self.assertIn("impl GraphicsDevice for D3d12Context", d3d12_sources)
         self.assertIn("rhi_submissions: RhiSubmissionSequence", context)
         self.assertIn("rhi_submissions: RhiSubmissionSequence::new()", methods)
         self.assertNotIn(".issue()", without_line_comments(d3d12_sources))
