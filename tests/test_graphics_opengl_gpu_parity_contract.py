@@ -22,6 +22,9 @@ CARGO = ROOT / "Cargo.toml"
 GPU_TARGET = ROOT / "tests/opengl_gpu_parity.rs"
 WSI_TARGET = ROOT / "tests/opengl_wsi_parity.rs"
 SURFACE_LIFECYCLE = ROOT / "src/platform/presentation/rhi/surface_lifecycle.rs"
+OPENGL_HOST = ROOT / "src/native/presentation/graphics/opengl/rhi_host.rs"
+EGL = ROOT / "src/native/presentation/graphics/opengl/adapter/egl.rs"
+EGL_RHI = ROOT / "src/native/presentation/graphics/opengl/adapter/egl_rhi.rs"
 REGISTRIES = (
     ROOT / "src/native/factory/registry_linux.rs",
     ROOT / "src/native/factory/registry_windows.rs",
@@ -82,8 +85,13 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             self.assertIn(marker, harness)
         self.assertNotIn("create_window_surface", harness)
         self.assertIn(
-            'opengl-parity-test = ["opengles", "graphics-parity-test"]', cargo
+            'opengl-parity-test = ["opengles", "test-harness", "graphics-parity-test"]',
+            cargo,
         )
+        opengles_feature = next(
+            line for line in cargo.splitlines() if line.startswith("opengles = ")
+        )
+        self.assertNotIn("test-harness", opengles_feature)
         self.assertIn('name = "opengl_gpu_parity"', cargo)
         default_features = next(
             line for line in cargo.splitlines() if line.startswith("default = ")
@@ -122,9 +130,16 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
         for marker in (
             "EglContext::new(native_surface",
             "disable_swap_interval_for_parity_test",
-            "execute_ui_production_surface_chain",
+            "execute_ui_production_surface_chain_with_present_hook",
             ".expect_err(\"zero-width WSI resize must be rejected\")",
             "resized.generation, first_present.generation + 1",
+            "OpenGlSurfaceFaultForParity::Acquire",
+            "OpenGlSurfaceFaultForParity::PresentAfterSubmit",
+            "inject_surface_lost_for_test",
+            "retry=RetryFrame(GraphicsSurfaceChanged)",
+            "egl-surface-replacements=1",
+            "recovered-submit=ok",
+            "recovered-eglSwapBuffers=ok",
             "presents=2; shutdown=ok",
         ):
             with self.subTest(marker=marker):
@@ -142,6 +157,24 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             if "struct RhiSurfaceLifecycle" in path.read_text(encoding="utf-8")
         ]
         self.assertEqual(lifecycle_definitions, [SURFACE_LIFECYCLE])
+
+    def test_real_egl_recovery_reuses_shared_authority_and_feature_only_probes(self) -> None:
+        composition = COMPOSITION.read_text(encoding="utf-8")
+        host = OPENGL_HOST.read_text(encoding="utf-8")
+        egl = EGL.read_text(encoding="utf-8")
+        egl_rhi = EGL_RHI.read_text(encoding="utf-8")
+
+        self.assertIn("rhi_recover_rejected_frame", host)
+        self.assertIn("RhiSurfaceRecreateReason::AcquisitionRejected", host)
+        self.assertIn("RhiSurfaceRecreateReason::PresentationRejected", host)
+        self.assertIn('#[cfg(feature = "test-harness")]', host)
+        self.assertEqual(egl_rhi.count("self.recreate_window_surface()?"), 1)
+        self.assertIn("window_surface_replacements_for_test", egl)
+        self.assertIn("parity_gpu_diagnostic", egl)
+        self.assertIn("query_string(Some(self.display), egl::VERSION)", egl)
+        self.assertNotIn("RhiSurfaceLifecycle::uninitialized", composition)
+        self.assertNotIn("recreate_window_surface", composition)
+        self.assertNotIn("eglSwapBuffers(", composition)
 
     def test_vulkan_remains_first_on_all_production_registries(self) -> None:
         for registry in REGISTRIES:
@@ -164,6 +197,9 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             VULKAN_HARNESS,
             GPU_TARGET,
             WSI_TARGET,
+            OPENGL_HOST,
+            EGL,
+            EGL_RHI,
         ):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
 
