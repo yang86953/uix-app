@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UIX Agent Bridge 客户端：连接 demo 的命名管道，发送 JSON Lines 命令。
+"""UIX Agent Bridge 客户端：连接 demo 的本地 IPC，发送 JSON Lines 命令。
 
 用法:
   python agent_client.py hello
@@ -10,25 +10,30 @@
 """
 import json
 import os
+import socket
 import sys
 import time
 
-import win32file
-import win32pipe
+if os.name == "nt":
+    import win32file
 
 # 统一以 UTF-8 输出，避免 Windows 控制台默认 GBK 编码破坏 JSON。
 sys.stdout.reconfigure(encoding="utf-8")
 
-# 发现文件目录：与 demo 的 private_discovery_directory 一致。
-LOCALAPPDATA = os.environ.get("LOCALAPPDATA", "")
-DISCOVERY_DIR = os.path.join(LOCALAPPDATA, "uix-agent")
+def discovery_dir():
+    """返回与框架 private_discovery_directory 一致的平台目录。"""
+    if os.name == "nt":
+        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "uix-agent")
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.join(runtime_dir, f"uix-agent-{os.getuid()}")
 
 
 def load_discovery():
     """读取最新的 discovery 文件，返回 (endpoint, token)。"""
+    directory = discovery_dir()
     files = [
-        os.path.join(DISCOVERY_DIR, name)
-        for name in os.listdir(DISCOVERY_DIR)
+        os.path.join(directory, name)
+        for name in os.listdir(directory)
         if name.startswith("uix-") and name.endswith(".json")
     ]
     if not files:
@@ -44,16 +49,23 @@ class AgentSession:
 
     def __init__(self, endpoint, token):
         self.token = token
-        # 打开命名管道并等待服务端就绪。
-        self.handle = win32file.CreateFile(
-            endpoint,
-            win32file.GENERIC_READ | win32file.GENERIC_WRITE,
-            0,
-            None,
-            win32file.OPEN_EXISTING,
-            0,
-            None,
-        )
+        if os.name == "nt":
+            # Windows 使用命名管道。
+            self.handle = win32file.CreateFile(
+                endpoint,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                0,
+                None,
+            )
+            self.socket = None
+        else:
+            # Unix 使用框架发现文件声明的私有本地 socket。
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.connect(endpoint)
+            self.handle = None
         # 保持默认字节模式读取，服务端按 JSON Lines 写入。
         self.buffer = b""
 
@@ -63,10 +75,18 @@ class AgentSession:
         payload.setdefault("request_id", f"req-{time.time_ns()}")
         payload.setdefault("schema", "uix.agent.v1")
         line = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
-        win32file.WriteFile(self.handle, line)
+        if self.socket is not None:
+            self.socket.sendall(line)
+        else:
+            win32file.WriteFile(self.handle, line)
         # 读取直到收到完整行。
         while b"\n" not in self.buffer:
-            _, data = win32file.ReadFile(self.handle, 65536)
+            if self.socket is not None:
+                data = self.socket.recv(65536)
+                if not data:
+                    raise RuntimeError("agent IPC closed before reply")
+            else:
+                _, data = win32file.ReadFile(self.handle, 65536)
             self.buffer += data
         raw, self.buffer = self.buffer.split(b"\n", 1)
         return json.loads(raw.decode("utf-8"))
@@ -85,8 +105,21 @@ class AgentSession:
         request.setdefault("type", "perform")
         return self.send(request)
 
+    def wait_presented(self, window_id, generation, revision, timeout_ms=30000):
+        """等待动作对应语义修订真正完成呈现。"""
+        return self.send({
+            "type": "wait",
+            "window_id": window_id,
+            "generation": generation,
+            "presented_revision": revision,
+            "timeout_ms": timeout_ms,
+        })
+
     def close(self):
-        win32file.CloseHandle(self.handle)
+        if self.socket is not None:
+            self.socket.close()
+        else:
+            win32file.CloseHandle(self.handle)
 
 
 def first_window(session):

@@ -98,10 +98,12 @@ impl RhiRenderer {
     pub(super) fn ensure_msdf_resources(
         &mut self,
         device: &mut dyn GraphicsDevice,
+        vertex_bytes: usize,
     ) -> Result<(PipelineBinding, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
     {
         // 复用普通 sampled quad 的 float8 顶点 ABI 和 buffer 容量管理。
-        let (_, vertex_buffer, _, _) = self.ensure_textured_resources(device)?;
+        let (_, vertex_buffer, _, _) =
+            self.ensure_textured_resources_with_capacity(device, vertex_bytes)?;
         // 首次使用时创建 MSDF 专用 pipeline。
         let pipeline = if let Some(pipeline) = self.msdf_pipeline {
             // 复用已经登记的 MSDF pipeline。

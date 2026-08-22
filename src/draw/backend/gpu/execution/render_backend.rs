@@ -158,6 +158,8 @@ impl RenderBackend for GpuBackend {
             let context = self.gpu_ctx.rhi_device()?;
             // 失败时保留 typed error，禁止在资源仍存活时伪造 shutdown 成功。
             renderer.release_msdf_atlas(context)?;
+            // 同步释放物理 1:1 文本使用的跨帧 R8 coverage atlas。
+            renderer.release_coverage_atlas(context)?;
         }
         self.gpu_ctx.try_shutdown()?;
         self.shutdown = true;

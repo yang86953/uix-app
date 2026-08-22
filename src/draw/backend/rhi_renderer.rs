@@ -237,6 +237,11 @@ pub(crate) struct RhiRenderer {
     textured_sampler: Option<SamplerHandle>,
     // 缓存点采样 sampler，保持 R8 glyph coverage 的旧像素语义。
     coverage_sampler: Option<SamplerHandle>,
+    // 保存跨帧复用的 R8 coverage atlas pages 与字形 placement。
+    coverage_atlas_pages: Vec<coverage::CoverageAtlasPage>,
+    // 保存 coverage 内容索引，避免页面切换时逐字形创建和上传纹理。
+    coverage_atlas_cache:
+        std::collections::HashMap<coverage::CoverageCacheKey, coverage::CoverageAtlasEntry>,
     // 缓存 MSDF 字形 pipeline。
     msdf_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 MSDF 字形常量 uniform buffer。
@@ -358,6 +363,22 @@ impl RhiRenderer {
         BufferHandle,
         SamplerHandle,
     )> {
+        // 普通 sampled 操作只需要一个六顶点 quad。
+        let quad_bytes = 6 * 8 * std::mem::size_of::<f32>();
+        self.ensure_textured_resources_with_capacity(device, quad_bytes)
+    }
+
+    // 确保采样资源和调用方要求的 float8 顶点容量已经存在。
+    fn ensure_textured_resources_with_capacity(
+        &mut self,
+        device: &mut dyn GraphicsDevice,
+        vertex_bytes: usize,
+    ) -> Result<(
+        crate::platform::presentation::rhi::PipelineBinding,
+        BufferHandle,
+        BufferHandle,
+        SamplerHandle,
+    )> {
         // 首次使用时创建固定的 sampled quad pipeline。
         let textured_pipeline = if let Some(pipeline) = self.textured_pipeline {
             // 复用已经登记的 pipeline。
@@ -371,23 +392,28 @@ impl RhiRenderer {
             self.textured_pipeline = Some(pipeline);
             pipeline
         };
-        // 一个 quad 固定使用六个 float8 顶点。
+        // 一个 quad 固定使用六个 float8 顶点，批量路径可申请更大容量。
         let quad_bytes = 6 * 8 * std::mem::size_of::<f32>();
+        let required_vertex_bytes = vertex_bytes.max(quad_bytes);
         // 首次使用或容量异常时创建采样 quad vertex buffer。
-        let textured_vertex_buffer = if self.textured_vertex_capacity >= quad_bytes {
+        let textured_vertex_buffer = if self.textured_vertex_capacity >= required_vertex_bytes {
             // 复用已有容量。
             self.textured_vertex_buffer
                 .ok_or_else(|| rhi_state("textured vertex buffer cache is empty"))?
         } else {
+            // 上一帧已经结束，扩容前释放旧 sampled vertex buffer。
+            if let Some(previous) = self.textured_vertex_buffer.take() {
+                device.destroy_buffer(previous)?;
+            }
             // 创建按 position/uv/color float8 ABI 绑定的 vertex buffer。
             let buffer = device.create_buffer(BufferDesc::vertex(
-                // 固定六顶点 quad 的总容量。
-                quad_bytes,
+                // 保留本帧最大连续 sampled 批次的总容量。
+                required_vertex_bytes,
                 // 步长只来自共享 pipeline 顶点 ABI。
                 PipelineKind::TexturedQuad.contract().vertex.stride_bytes(),
             ))?;
             // 记录容量和句柄。
-            self.textured_vertex_capacity = quad_bytes;
+            self.textured_vertex_capacity = required_vertex_bytes;
             self.textured_vertex_buffer = Some(buffer);
             buffer
         };

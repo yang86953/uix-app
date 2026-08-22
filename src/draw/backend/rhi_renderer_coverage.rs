@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::platform::presentation::rhi::{
     BufferHandle, DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
     GraphicsDevice, LoadAction, PipelineBinding, PipelineDesc, PipelineKind, RhiExtent,
-    RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle, TextureDesc,
-    TextureFormat,
+    RhiTextureRegion, RhiTextureUpload, SampledTextureBinding, SamplerDesc, SamplerHandle,
+    TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 复用 renderer 主模块的计划类型和 coverage payload。
@@ -16,16 +16,49 @@ use super::{
     FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiRenderer,
 };
 
+// R8 atlas 使用四张 1024² 页面，固定在 4 MiB 预算内。
+const COVERAGE_ATLAS_PAGE_SIZE: u32 = 1024;
+const COVERAGE_ATLAS_MAX_PAGES: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct CoverageCacheKey {
+    hash: u64,
+    pixel_w: u32,
+    pixel_h: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CoverageAtlasPlacement {
+    page: usize,
+    uv: [f32; 4],
+}
+
+#[derive(Debug)]
+pub(super) struct CoverageAtlasPage {
+    pub(super) texture: TextureHandle,
+    cursor_x: u32,
+    cursor_y: u32,
+    row_height: u32,
+}
+
+#[derive(Debug)]
+pub(super) struct CoverageAtlasEntry {
+    coverage: Arc<[u8]>,
+    placement: CoverageAtlasPlacement,
+}
+
 // 为 coverage shader 创建或复用 R8 专用的 pipeline、buffer 和 sampler。
 impl RhiRenderer {
     // 准备与普通 sampled quad 共用顶点/viewport ABI 的 coverage 资源。
     pub(super) fn ensure_coverage_resources(
         &mut self,
         device: &mut dyn GraphicsDevice,
+        vertex_bytes: usize,
     ) -> Result<(PipelineBinding, BufferHandle, BufferHandle, SamplerHandle), crate::core::Error>
     {
         // 复用普通 sampled quad 的 float8 顶点 buffer 和 viewport uniform。
-        let (_, vertex_buffer, uniform_buffer, _) = self.ensure_textured_resources(device)?;
+        let (_, vertex_buffer, uniform_buffer, _) =
+            self.ensure_textured_resources_with_capacity(device, vertex_bytes)?;
         // 首次使用时创建 R8 coverage 专用 pipeline。
         let pipeline = if let Some(pipeline) = self.coverage_pipeline {
             // 复用已经登记的 coverage pipeline。
@@ -62,59 +95,233 @@ impl RhiRenderer {
 
     // 生成 position/uv/color float8 的两个三角形。
     pub(super) fn coverage_quad_vertices(quad: &RhiCoverageQuad) -> [f32; 48] {
+        Self::coverage_quad_vertices_with_uv(quad, [0.0, 0.0, 1.0, 1.0])
+    }
+
+    // 生成带 atlas placement UV 的 position/uv/color float8 顶点。
+    pub(super) fn coverage_quad_vertices_with_uv(
+        quad: &RhiCoverageQuad,
+        uv: [f32; 4],
+    ) -> [f32; 48] {
         // 保存顶点颜色，交给旧 glyph shader 做量化和 premultiply。
         let color = quad.rgba;
         // 返回左上、右上、右下、左下组成的三角列表。
         [
             quad.corners[0][0],
             quad.corners[0][1],
-            0.0,
-            0.0,
+            uv[0],
+            uv[1],
             color[0],
             color[1],
             color[2],
             color[3],
             quad.corners[1][0],
             quad.corners[1][1],
-            1.0,
-            0.0,
+            uv[2],
+            uv[1],
             color[0],
             color[1],
             color[2],
             color[3],
             quad.corners[2][0],
             quad.corners[2][1],
-            1.0,
-            1.0,
+            uv[2],
+            uv[3],
             color[0],
             color[1],
             color[2],
             color[3],
             quad.corners[0][0],
             quad.corners[0][1],
-            0.0,
-            0.0,
+            uv[0],
+            uv[1],
             color[0],
             color[1],
             color[2],
             color[3],
             quad.corners[2][0],
             quad.corners[2][1],
-            1.0,
-            1.0,
+            uv[2],
+            uv[3],
             color[0],
             color[1],
             color[2],
             color[3],
             quad.corners[3][0],
             quad.corners[3][1],
-            0.0,
-            1.0,
+            uv[0],
+            uv[3],
             color[0],
             color[1],
             color[2],
             color[3],
         ]
+    }
+
+    // 获取或创建一个跨帧 R8 coverage atlas placement。
+    pub(super) fn ensure_coverage_texture(
+        &mut self,
+        device: &mut dyn GraphicsDevice,
+        quad: &RhiCoverageQuad,
+    ) -> crate::core::Result<(TextureHandle, [f32; 4], bool)> {
+        let key = Self::coverage_cache_key(quad);
+        if let Some(entry) = self.coverage_atlas_cache.get(&key) {
+            if entry.coverage.as_ref() == quad.coverage.as_ref() {
+                let page = self
+                    .coverage_atlas_pages
+                    .get(entry.placement.page)
+                    .ok_or_else(|| {
+                        super::rhi_invalid("RhiRenderer coverage atlas page is missing")
+                    })?;
+                return Ok((page.texture, entry.placement.uv, true));
+            }
+        }
+        self.coverage_atlas_cache.remove(&key);
+        if quad.pixel_w > COVERAGE_ATLAS_PAGE_SIZE || quad.pixel_h > COVERAGE_ATLAS_PAGE_SIZE {
+            return Self::create_transient_coverage_texture(device, quad);
+        }
+        let mut packed = None;
+        let mut created_page = false;
+        for (page_index, page) in self.coverage_atlas_pages.iter_mut().enumerate() {
+            if let Some((x, y)) = Self::pack_coverage_slot(page, quad.pixel_w, quad.pixel_h) {
+                packed = Some((page_index, x, y));
+                break;
+            }
+        }
+        if packed.is_none() && self.coverage_atlas_pages.len() < COVERAGE_ATLAS_MAX_PAGES {
+            self.coverage_atlas_pages
+                .push(Self::create_coverage_atlas_page(device)?);
+            created_page = true;
+            let page_index = self.coverage_atlas_pages.len() - 1;
+            packed = Self::pack_coverage_slot(
+                self.coverage_atlas_pages
+                    .last_mut()
+                    .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage atlas page missing"))?,
+                quad.pixel_w,
+                quad.pixel_h,
+            )
+            .map(|(x, y)| (page_index, x, y));
+        }
+        let Some((page_index, slot_x, slot_y)) = packed else {
+            return Self::create_transient_coverage_texture(device, quad);
+        };
+        let page_texture = self
+            .coverage_atlas_pages
+            .get(page_index)
+            .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage atlas page is missing"))?
+            .texture;
+        if let Err(error) = device.update_texture(RhiTextureUpload::new(
+            page_texture,
+            RhiTextureRegion::from_xy(slot_x, slot_y, RhiExtent::new(quad.pixel_w, quad.pixel_h)),
+            quad.coverage.as_ref(),
+        )) {
+            if created_page {
+                if let Some(page) = self.coverage_atlas_pages.pop() {
+                    let _ = device.destroy_texture(page.texture);
+                }
+            }
+            return Err(error);
+        }
+        let inverse = 1.0 / COVERAGE_ATLAS_PAGE_SIZE as f32;
+        let placement = CoverageAtlasPlacement {
+            page: page_index,
+            uv: [
+                slot_x as f32 * inverse,
+                slot_y as f32 * inverse,
+                (slot_x + quad.pixel_w) as f32 * inverse,
+                (slot_y + quad.pixel_h) as f32 * inverse,
+            ],
+        };
+        self.coverage_atlas_cache.insert(
+            key,
+            CoverageAtlasEntry {
+                coverage: quad.coverage.clone(),
+                placement,
+            },
+        );
+        Ok((page_texture, placement.uv, true))
+    }
+
+    fn coverage_cache_key(quad: &RhiCoverageQuad) -> CoverageCacheKey {
+        let mut hash = 14_695_981_039_346_656_037_u64;
+        for byte in quad.coverage.iter() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(1_099_511_628_211_u64);
+        }
+        hash ^= u64::from(quad.pixel_w);
+        hash = hash.wrapping_mul(1_099_511_628_211_u64);
+        hash ^= u64::from(quad.pixel_h);
+        CoverageCacheKey {
+            hash,
+            pixel_w: quad.pixel_w,
+            pixel_h: quad.pixel_h,
+        }
+    }
+
+    fn create_coverage_atlas_page(
+        device: &mut dyn GraphicsDevice,
+    ) -> crate::core::Result<CoverageAtlasPage> {
+        let texture = device.create_texture(TextureDesc::new(
+            RhiExtent::new(COVERAGE_ATLAS_PAGE_SIZE, COVERAGE_ATLAS_PAGE_SIZE),
+            TextureFormat::R8Unorm,
+        ))?;
+        Ok(CoverageAtlasPage {
+            texture,
+            cursor_x: 0,
+            cursor_y: 0,
+            row_height: 0,
+        })
+    }
+
+    fn pack_coverage_slot(
+        page: &mut CoverageAtlasPage,
+        width: u32,
+        height: u32,
+    ) -> Option<(u32, u32)> {
+        if page.cursor_x.saturating_add(width) > COVERAGE_ATLAS_PAGE_SIZE {
+            page.cursor_x = 0;
+            page.cursor_y = page.cursor_y.saturating_add(page.row_height);
+            page.row_height = 0;
+        }
+        if page.cursor_y.saturating_add(height) > COVERAGE_ATLAS_PAGE_SIZE {
+            return None;
+        }
+        let position = (page.cursor_x, page.cursor_y);
+        page.cursor_x = page.cursor_x.saturating_add(width);
+        page.row_height = page.row_height.max(height);
+        Some(position)
+    }
+
+    fn create_transient_coverage_texture(
+        device: &mut dyn GraphicsDevice,
+        quad: &RhiCoverageQuad,
+    ) -> crate::core::Result<(TextureHandle, [f32; 4], bool)> {
+        let extent = RhiExtent::new(quad.pixel_w, quad.pixel_h);
+        let texture = device.create_texture(TextureDesc::new(extent, TextureFormat::R8Unorm))?;
+        if let Err(error) = device.update_texture(RhiTextureUpload::full(
+            texture,
+            extent,
+            quad.coverage.as_ref(),
+        )) {
+            let _ = device.destroy_texture(texture);
+            return Err(error);
+        }
+        Ok((texture, [0.0, 0.0, 1.0, 1.0], false))
+    }
+
+    pub(crate) fn release_coverage_atlas(
+        &mut self,
+        context: &mut dyn GraphicsDevice,
+    ) -> crate::core::Result<()> {
+        let _entries = std::mem::take(&mut self.coverage_atlas_cache);
+        let pages = std::mem::take(&mut self.coverage_atlas_pages);
+        let mut first_error = None;
+        for page in pages {
+            if let Err(error) = context.destroy_texture(page.texture) {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
     }
 
     // 执行一帧 R8 字形 coverage quad RHI 计划。
@@ -184,8 +391,12 @@ impl RhiRenderer {
             }
         }
         // 准备 coverage pipeline、共享 vertex/uniform 和点采样 sampler。
+        let vertex_bytes = quads
+            .len()
+            .checked_mul(6 * 8 * std::mem::size_of::<f32>())
+            .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage vertex capacity overflows"))?;
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
-            self.ensure_coverage_resources(frame.device())?;
+            self.ensure_coverage_resources(frame.device(), vertex_bytes)?;
         // 为本次帧逐项创建、上传并记录临时 R8 texture。
         let mut textures = Vec::with_capacity(quads.len());
         for quad in quads {
