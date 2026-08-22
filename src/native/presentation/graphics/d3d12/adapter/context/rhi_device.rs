@@ -1,15 +1,17 @@
 //! D3D12 薄 RHI 的唯一资源 owner 与资源阶段 GraphicsDevice 原语。
 
+use super::super::pipeline::D3d12PipelineResource;
 use super::*;
 
 use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
     PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource, RhiBufferResourceTable,
-    RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiPassState, RhiResourceTable,
-    RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
-    RhiTextureTransferBounds, RhiTextureUpload, SamplerAddressMode, SamplerDesc, SamplerFilter,
-    SamplerHandle, SamplerMipMode, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat,
-    TextureHandle, TextureMove, UIX_COLOR_CONTRACT, ValidatedRhiTextureUpload,
+    RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiPassState, RhiPipelineResourceTable,
+    RhiResourceTable, RhiScissor, RhiSubmissionSequence, RhiTextureResource,
+    RhiTextureResourceTable, RhiTextureTransferBounds, RhiTextureUpload, SamplerAddressMode,
+    SamplerDesc, SamplerFilter, SamplerHandle, SamplerMipMode, SubmissionHandle, TextureCopy,
+    TextureDesc, TextureFormat, TextureHandle, TextureMove, UIX_COLOR_CONTRACT,
+    ValidatedRhiTextureUpload,
 };
 use ::windows::Win32::Graphics::Direct3D12::{
     D3D12_BOX, D3D12_COMPARISON_FUNC_NEVER, D3D12_CPU_DESCRIPTOR_HANDLE,
@@ -121,6 +123,8 @@ pub(super) struct D3d12RhiDevice {
     textures: RhiTextureResourceTable<D3d12RhiTexture>,
     // 直接复用 platform 唯一通用表签发 sampler 身份。
     samplers: RhiResourceTable<SamplerHandle, D3d12RhiSampler>,
+    // 真实 Root Signature、shader、input layout、固定状态和 PSO 只由本资源表持有。
+    pipelines: RhiPipelineResourceTable<D3d12PipelineResource>,
     // 直接复用 platform 唯一 pass 状态机，不复制目标、范围或打开状态。
     pass: RhiPassState,
     // 保存正在编码的唯一 D3D12 render target 与必要 COM owner。
@@ -141,6 +145,7 @@ impl D3d12RhiDevice {
             buffers: RhiBufferResourceTable::new(),
             textures: RhiTextureResourceTable::new(),
             samplers: RhiResourceTable::new(),
+            pipelines: RhiPipelineResourceTable::new(),
             pass: RhiPassState::new(),
             active_target: None,
             pending_targets: Vec::new(),
@@ -444,6 +449,18 @@ impl D3d12RhiDevice {
         Ok(self.samplers.insert(D3d12RhiSampler { heap, cpu, desc }))
     }
 
+    // 在完整原生对象成功创建后才由共享表签发不可拆 pipeline 身份。
+    fn create_pipeline(
+        &mut self,
+        device: &ID3D12Device,
+        desc: PipelineDesc,
+    ) -> Result<PipelineBinding> {
+        // Component 内部先完成共享契约门禁、Root Signature、HLSL 与全部 PSO 变体创建。
+        let resource = D3d12PipelineResource::create(device, desc)?;
+        // 只有完整资源存在时才登记，失败路径不会留下半成品句柄。
+        Ok(self.pipelines.insert(desc.kind, resource))
+    }
+
     // 检查式销毁 Buffer；共享表保证同一句柄不能再次使用。
     fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
         self.buffers.take(buffer)?;
@@ -464,6 +481,12 @@ impl D3d12RhiDevice {
         Ok(())
     }
 
+    // 检查 kind 与句柄身份后取出并释放完整原生 pipeline 资源。
+    fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
+        self.pipelines.take(pipeline)?;
+        Ok(())
+    }
+
     // GPU 已检查式排空后，按创建逆序释放全部子资源。
     pub(super) fn shutdown(&mut self) -> Result<()> {
         // terminal fence 已排空，先失效提交并释放 pass/待提交目标的额外 COM owner。
@@ -471,6 +494,9 @@ impl D3d12RhiDevice {
         self.pass.reset();
         self.active_target = None;
         self.pending_targets.clear();
+        for pipeline in self.pipelines.drain_reverse() {
+            drop(pipeline);
+        }
         for sampler in self.samplers.drain_reverse() {
             drop(sampler);
         }
@@ -491,6 +517,9 @@ impl D3d12RhiDevice {
         }
         for target in self.pending_targets.drain(..) {
             target.retain_after_undrained_drop();
+        }
+        for pipeline in self.pipelines.drain_reverse() {
+            pipeline.retain_after_undrained_drop();
         }
         for sampler in self.samplers.drain_reverse() {
             std::mem::forget(sampler.heap);
@@ -610,9 +639,10 @@ impl GraphicsDevice for D3d12Context {
         self.observe_rhi_result("create RHI sampler", result)
     }
 
-    fn create_pipeline(&mut self, _desc: PipelineDesc) -> Result<PipelineBinding> {
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<PipelineBinding> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("create_pipeline"))
+        let result = self.rhi_device.create_pipeline(&self.device, desc);
+        self.observe_rhi_result("create RHI pipeline", result)
     }
 
     fn destroy_buffer(&mut self, buffer: BufferHandle) -> Result<()> {
@@ -630,9 +660,10 @@ impl GraphicsDevice for D3d12Context {
         self.rhi_device.destroy_sampler(sampler)
     }
 
-    fn destroy_pipeline(&mut self, _pipeline: PipelineBinding) -> Result<()> {
+    fn destroy_pipeline(&mut self, pipeline: PipelineBinding) -> Result<()> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("destroy_pipeline"))
+        let result = self.rhi_device.destroy_pipeline(pipeline);
+        self.observe_rhi_result("destroy RHI pipeline", result)
     }
 
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {

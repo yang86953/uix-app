@@ -10,6 +10,7 @@ CONTEXT = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/mod.rs"
 METHODS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/methods.rs"
 DEVICE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device.rs"
 PASS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device_pass.rs"
+PIPELINE = ROOT / "src/native/presentation/graphics/d3d12/adapter/pipeline/mod.rs"
 SURFACE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_surface.rs"
 GRAPHICS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs"
 REGISTRY = ROOT / "src/native/factory/registry_windows.rs"
@@ -233,11 +234,11 @@ class GraphicsD3d12RenderPassContractTests(unittest.TestCase):
             self.assertIn(disabled, device)
         for deferred in (
             'resource_stage_deferred("preflight_draw_resources")',
-            'resource_stage_deferred("create_pipeline")',
-            'resource_stage_deferred("destroy_pipeline")',
             'resource_stage_deferred("draw")',
         ):
             self.assertIn(deferred, device)
+        self.assertIn("self.rhi_device.create_pipeline(&self.device, desc)", device)
+        self.assertIn("self.rhi_device.destroy_pipeline(pipeline)", device)
         for forbidden in ("create_pipeline", "DrawInstanced", "DrawIndexedInstanced"):
             self.assertNotIn(forbidden, pass_source)
         self.assertIn('"D3D12 thin RHI is not implemented"', graphics)
@@ -247,7 +248,16 @@ class GraphicsD3d12RenderPassContractTests(unittest.TestCase):
             self.assertNotIn(upper_token, upper_sources)
 
     def test_touched_files_stay_below_limit(self) -> None:
-        for path in (CONTEXT, METHODS, DEVICE, PASS, SURFACE, GRAPHICS, Path(__file__)):
+        for path in (
+            CONTEXT,
+            METHODS,
+            DEVICE,
+            PASS,
+            PIPELINE,
+            SURFACE,
+            GRAPHICS,
+            Path(__file__),
+        ):
             self.assertLess(len(path.read_text(encoding="utf-8").splitlines()), 1500, path)
 
 

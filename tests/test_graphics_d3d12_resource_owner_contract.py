@@ -10,6 +10,7 @@ CONTEXT = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/mod.rs"
 METHODS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/methods.rs"
 DEVICE = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device.rs"
 PASS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/rhi_device_pass.rs"
+PIPELINE = ROOT / "src/native/presentation/graphics/d3d12/adapter/pipeline/mod.rs"
 GRAPHICS = ROOT / "src/native/presentation/graphics/d3d12/adapter/context/graphics.rs"
 REGISTRY = ROOT / "src/native/factory/registry_windows.rs"
 RESOURCE_TABLE = ROOT / "src/platform/presentation/rhi/resource_table.rs"
@@ -47,6 +48,9 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn("RhiTextureResourceTable<D3d12RhiTexture>", device)
         self.assertIn(
             "RhiResourceTable<SamplerHandle, D3d12RhiSampler>", device
+        )
+        self.assertIn(
+            "RhiPipelineResourceTable<D3d12PipelineResource>", device
         )
         self.assertIn("pass: RhiPassState", device)
         self.assertIn("submission_sequence: RhiSubmissionSequence", device)
@@ -162,17 +166,22 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
             "additive_blend: false",
         ):
             self.assertIn(missing, device)
-        for operation in (
-            "preflight_draw_resources",
-            "create_pipeline",
-            "destroy_pipeline",
-            "draw",
-        ):
+        for operation in ("preflight_draw_resources", "draw"):
             start = device.index(f"fn {operation}(", device.index("impl GraphicsDevice"))
             body = device[start : device.index("\n    }", start)]
             self.assertIn("self.ensure_healthy()?", body)
             self.assertIn("resource_stage_deferred", body)
-        self.assertNotIn("RhiPipelineResourceTable", device)
+        for operation, delegation in (
+            ("create_pipeline", "self.rhi_device.create_pipeline(&self.device, desc)"),
+            ("destroy_pipeline", "self.rhi_device.destroy_pipeline(pipeline)"),
+        ):
+            start = device.index(f"fn {operation}(", device.index("impl GraphicsDevice"))
+            body = device[start : device.index("\n    }", start)]
+            self.assertIn("self.ensure_healthy()?", body)
+            self.assertIn(delegation, body)
+            self.assertIn("self.observe_rhi_result", body)
+            self.assertNotIn("resource_stage_deferred", body)
+        self.assertIn("RhiPipelineResourceTable", device)
         self.assertIn("RhiPassState", device)
         self.assertIn("RhiSubmissionSequence", device)
 
@@ -273,7 +282,8 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertLess(shutdown.index("self.rhi_device.shutdown()"), shutdown.index("close_owned_fence_event_with("))
         self.assertLess(shutdown.index("close_owned_fence_event_with("), shutdown.index("self.shutdown = true"))
         self.assertLess(retain.index("self.rhi_device.retain_after_undrained_drop()"), retain.index("forget(self.device.clone())"))
-        self.assertGreaterEqual(device.count("drain_reverse()"), 6)
+        self.assertGreaterEqual(device.count("drain_reverse()"), 8)
+        self.assertIn("pipeline.retain_after_undrained_drop()", device)
         self.assertIn("std::mem::forget(sampler.heap)", device)
         self.assertIn("std::mem::forget(texture.native)", device)
         self.assertIn("std::mem::forget(buffer.native)", device)
@@ -317,7 +327,16 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
 
     # 所有阶段触及文件继续满足单文件上限。
     def test_touched_files_stay_below_limit(self) -> None:
-        for path in (CONTEXT, METHODS, DEVICE, PASS, GRAPHICS, TRANSFER, Path(__file__)):
+        for path in (
+            CONTEXT,
+            METHODS,
+            DEVICE,
+            PASS,
+            PIPELINE,
+            GRAPHICS,
+            TRANSFER,
+            Path(__file__),
+        ):
             self.assertLess(
                 len(path.read_text(encoding="utf-8").splitlines()),
                 1500,
