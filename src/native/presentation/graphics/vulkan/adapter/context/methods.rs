@@ -115,11 +115,13 @@ impl VulkanContext {
             swapchain_image_views: Vec::new(),
             image_layouts: Vec::new(),
             swapchain_format: vk::Format::UNDEFINED,
+            surface_supported_usage_flags: vk::ImageUsageFlags::empty(),
             extent,
             command_pool,
             command_buffer,
             // 资源表必须先于任何 Drawing 资源创建完成初始化。
             rhi_device: VulkanRhiDevice::new(uniform_alignment),
+            surface_readback: VulkanSurfaceReadbackBuffer::new(),
             upload: UploadBuffer {
                 buffer: vk::Buffer::null(),
                 memory: vk::DeviceMemory::null(),
@@ -323,6 +325,15 @@ impl VulkanContext {
                 "VulkanContext: surface swapchain images do not support transfer and color attachment usage",
             ));
         }
+        // Surface 查询是 TRANSFER_SRC 能力的唯一事实来源；不支持时不得强制请求。
+        let transfer_src_supported = caps
+            .supported_usage_flags
+            .contains(vk::ImageUsageFlags::TRANSFER_SRC);
+        let image_usage = if transfer_src_supported {
+            required_usage | vk::ImageUsageFlags::TRANSFER_SRC
+        } else {
+            required_usage
+        };
         let composite_alpha =
             choose_composite_alpha(caps.supported_composite_alpha).ok_or_else(|| {
                 Error::new(
@@ -351,7 +362,7 @@ impl VulkanContext {
             .image_color_space(surface_format.color_space)
             .image_extent(extent)
             .image_array_layers(1)
-            .image_usage(required_usage)
+            .image_usage(image_usage)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
             .composite_alpha(composite_alpha)
@@ -488,9 +499,20 @@ impl VulkanContext {
         self.swapchain_image_views = new_image_views;
         self.image_layouts = new_image_layouts;
         self.swapchain_format = surface_format.format;
+        // 只在新 swapchain 完整成功后提交本代 Surface usage 事实。
+        self.surface_supported_usage_flags = caps.supported_usage_flags;
         self.extent = extent;
         self.acquired_frame = None;
         self.submitted_frame = None;
+        tracing::info!(
+            "VulkanContext: Surface supported_usage_flags=0x{:08x}; swapchain_format={}({}); transfer_src={}; readback={}",
+            self.surface_supported_usage_flags.as_raw(),
+            rhi_surface_readback::surface_readback_format_name(self.swapchain_format),
+            self.swapchain_format.as_raw(),
+            transfer_src_supported,
+            transfer_src_supported
+                && rhi_surface_readback::supports_surface_readback_format(self.swapchain_format),
+        );
         Ok(crate::platform::presentation::rhi::RhiExtent::new(
             self.extent.width,
             self.extent.height,
@@ -679,6 +701,8 @@ impl VulkanContext {
         accept_device_wait_for_shutdown(wait_result)?;
         // Drawing 资源依赖 Vulkan device，必须在 command pool 与 device 父对象前逆序回收。
         self.rhi_device.shutdown(&self.device);
+        // immediate 命令池已释放后再销毁它曾引用的 Surface staging 资源。
+        self.surface_readback.shutdown(&self.device);
         // RHI framebuffer 已释放后才能销毁 swapchain image views。
         destroy_image_views(&self.device, &mut self.swapchain_image_views);
         self.acquired_frame = None;

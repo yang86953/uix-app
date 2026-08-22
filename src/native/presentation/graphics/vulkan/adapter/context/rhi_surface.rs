@@ -7,14 +7,15 @@ use ash::vk;
 
 use crate::core::{Errc, Error, PresentCoherency, Result};
 use crate::platform::presentation::rhi::{
-    GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction,
-    RhiSurfaceResizeTransaction, SubmissionHandle, SurfaceFrame, SurfaceToken,
+    GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction, RhiScissor,
+    RhiSurfaceReadback, RhiSurfaceResizeTransaction, SubmissionHandle, SurfaceFrame, SurfaceToken,
 };
 use crate::platform::presentation::{
     GpuRecipeContext, GraphicsContextLifecycle, resize_native_rhi_surface,
 };
 
 use super::rhi_frame::{VulkanRhiTarget, VulkanTargetOwner};
+use super::rhi_surface_readback::{record_surface_readback, supports_surface_readback_format};
 use super::{
     VulkanAcquiredFrame, VulkanContext, VulkanSubmittedFrame, failed_submit_error, vk_err,
 };
@@ -179,7 +180,11 @@ impl GraphicsSurface for VulkanContext {
     fn surface_capabilities(&self) -> GraphicsSurfaceCapabilities {
         GraphicsSurfaceCapabilities {
             present_coherency: PresentCoherency::FullOnly,
-            readback: false,
+            // capability 直接投影本代真实 Surface usage 与已实现的格式规范化集合。
+            readback: self
+                .surface_supported_usage_flags
+                .contains(vk::ImageUsageFlags::TRANSFER_SRC)
+                && supports_surface_readback_format(self.swapchain_format),
         }
     }
 
@@ -288,6 +293,86 @@ impl GraphicsSurface for VulkanContext {
             self.cpu_shadow.clear();
         }
         resize.complete(self.token())
+    }
+
+    // 回读已提交最终 composite、尚未 present 的当前 swapchain image。
+    fn read_surface_pixels(&mut self, region: RhiScissor) -> Result<RhiSurfaceReadback> {
+        let owner = self.active_device()?;
+        if !self.surface_capabilities().readback {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "Vulkan Surface readback requires TRANSFER_SRC and a supported swapchain format",
+            ));
+        }
+        let token = self.token();
+        // 复用 platform 唯一区域契约，禁止 Adapter 静默裁切。
+        RhiSurfaceReadback::validate_region(region, token.extent)?;
+        let submitted = self.submitted_frame.as_ref().ok_or_else(|| {
+            invalid_state("Vulkan Surface readback requires a submitted image before present")
+        })?;
+        let image_slot = submitted.image_index as usize;
+        let image = self
+            .swapchain_images
+            .get(image_slot)
+            .copied()
+            .ok_or_else(|| invalid_state("Vulkan Surface readback image is outside swapchain"))?;
+        let layout =
+            self.image_layouts.get(image_slot).copied().ok_or_else(|| {
+                invalid_state("Vulkan Surface readback image has no tracked layout")
+            })?;
+        if layout != vk::ImageLayout::PRESENT_SRC_KHR {
+            return Err(invalid_state(
+                "Vulkan Surface readback image is not ready for before-present transfer",
+            ));
+        }
+        let pixel_count = (region.width as usize)
+            .checked_mul(region.height as usize)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidArgument,
+                    "Vulkan Surface readback pixel count overflows",
+                )
+            })?;
+        let required = u64::try_from(pixel_count)
+            .ok()
+            .and_then(|count| count.checked_mul(4))
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidArgument,
+                    "Vulkan Surface readback staging size overflows",
+                )
+            })?;
+        let instance = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| invalid_state("Vulkan Surface readback requested after shutdown"))?
+            .instance()
+            .clone();
+        let staging = self.surface_readback.ensure_capacity(
+            &instance,
+            self.physical_device,
+            &self.device,
+            required,
+        );
+        owner.observe(staging)?;
+
+        let destination = self.surface_readback.buffer();
+        let queue_family_index = self.adapter_info.queue_family_index;
+        let device = self.device.clone();
+        // 同一共享 queue 上的即时提交排在最终 composite submit 之后，并等待 GPU idle；
+        // render_finished 保持 signaled，随后仍由真实 present 唯一消费。
+        let readback = owner.with_queue("vkQueueSubmit Surface readback", |queue| {
+            self.rhi_device
+                .execute_immediate(&device, queue, queue_family_index, |command| {
+                    record_surface_readback(&device, command, image, destination, region);
+                })
+        })?;
+        owner.observe(readback)?;
+        let pixels =
+            self.surface_readback
+                .read_pixels(&self.device, self.swapchain_format, pixel_count);
+        let pixels = owner.observe(pixels)?;
+        RhiSurfaceReadback::try_new(region, token.extent, pixels)
     }
 
     fn present(&mut self, transaction: RhiPresentTransaction) -> Result<()> {

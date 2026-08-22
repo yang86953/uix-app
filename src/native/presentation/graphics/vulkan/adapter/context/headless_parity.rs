@@ -106,10 +106,12 @@ impl VulkanContext {
             swapchain_image_views: Vec::new(),
             image_layouts: Vec::new(),
             swapchain_format: vk::Format::UNDEFINED,
+            surface_supported_usage_flags: vk::ImageUsageFlags::empty(),
             extent: native_extent,
             command_pool,
             command_buffer,
             rhi_device: VulkanRhiDevice::new(uniform_alignment),
+            surface_readback: VulkanSurfaceReadbackBuffer::new(),
             upload: UploadBuffer {
                 buffer: vk::Buffer::null(),
                 memory: vk::DeviceMemory::null(),
@@ -139,6 +141,20 @@ impl VulkanContext {
     // 返回真实生产 adapter 选择产生的稳定设备/API 诊断。
     pub(crate) fn parity_adapter_diagnostic(&self) -> String {
         self.adapter_info.diagnostic_summary()
+    }
+
+    // 只向显式 parity 组合根报告本代真实 WSI usage、格式与投影能力。
+    pub(crate) fn parity_surface_diagnostic(&self) -> String {
+        format!(
+            "surface_format={}({}); supported_usage_flags=0x{:08x}; transfer_src={}; readback={}",
+            rhi_surface_readback::surface_readback_format_name(self.swapchain_format),
+            self.swapchain_format.as_raw(),
+            self.surface_supported_usage_flags.as_raw(),
+            self.surface_supported_usage_flags
+                .contains(vk::ImageUsageFlags::TRANSFER_SRC),
+            crate::platform::presentation::rhi::GraphicsSurface::surface_capabilities(self)
+                .readback,
+        )
     }
 
     // 在 FramePlan submit 完成后机械回读一个离屏纹理。

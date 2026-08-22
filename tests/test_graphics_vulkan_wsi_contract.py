@@ -14,6 +14,11 @@ TARGET = ROOT / "tests/vulkan_gpu_parity.rs"
 VULKAN_CONTEXT = ROOT / "src/native/presentation/graphics/vulkan/adapter/context/mod.rs"
 VULKAN_METHODS = ROOT / "src/native/presentation/graphics/vulkan/adapter/context/methods.rs"
 VULKAN_SURFACE = ROOT / "src/native/presentation/graphics/vulkan/adapter/context/rhi_surface.rs"
+VULKAN_READBACK = (
+    ROOT
+    / "src/native/presentation/graphics/vulkan/adapter/context/rhi_surface_readback.rs"
+)
+VULKAN_TEXTURE = ROOT / "src/native/presentation/graphics/vulkan/adapter/context/rhi_texture.rs"
 
 
 def source(path: Path) -> str:
@@ -27,7 +32,7 @@ class VulkanWsiContractTests(unittest.TestCase):
     def test_drawing_surface_bridge_is_api_neutral_and_reuses_shared_plan(self) -> None:
         bridge = source(DRAW_BRIDGE)
         self.assertIn("execute_ui_production_chain(context.device()", bridge)
-        self.assertIn("execute_sampled_quads(", bridge)
+        self.assertIn("execute_sampled_quads_with_present_hook(", bridge)
         self.assertIn("PresentDamage::Full", bridge)
         self.assertIn("context.surface_ref().token()", bridge)
         for forbidden in ("crate::native", "GraphicsApi::", "Vulkan", "ash::", "vk::"):
@@ -47,6 +52,9 @@ class VulkanWsiContractTests(unittest.TestCase):
             "baseline-presents=2; shutdown=ok",
             "verify_vulkan_surface_recovery",
             "recovery-ui-presents=4",
+            "present_shared_production_scene_with_readback",
+            "Vulkan WSI Surface readback verified",
+            "context.parity_surface_diagnostic()",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, composition)
@@ -110,6 +118,58 @@ class VulkanWsiContractTests(unittest.TestCase):
         self.assertNotIn("VulkanSurfaceFaultForParity", bridge)
         self.assertNotIn("ERROR_OUT_OF_DATE_KHR", bridge)
         self.assertNotIn("SUBOPTIMAL_KHR", bridge)
+
+    def test_transfer_src_capability_comes_from_the_real_surface_generation(self) -> None:
+        methods = source(VULKAN_METHODS)
+        surface = source(VULKAN_SURFACE)
+
+        self.assertIn("caps.supported_usage_flags", methods)
+        self.assertIn("contains(vk::ImageUsageFlags::TRANSFER_SRC)", methods)
+        self.assertIn("required_usage | vk::ImageUsageFlags::TRANSFER_SRC", methods)
+        self.assertIn(".image_usage(image_usage)", methods)
+        self.assertIn(
+            "self.surface_supported_usage_flags = caps.supported_usage_flags",
+            methods,
+        )
+        self.assertIn("surface_supported_usage_flags", surface)
+        self.assertIn("supports_surface_readback_format(self.swapchain_format)", surface)
+        self.assertNotIn("readback: true", surface)
+
+    def test_vulkan_readback_reuses_submit_before_present_and_immediate_sync(self) -> None:
+        surface = source(VULKAN_SURFACE)
+        readback = source(VULKAN_READBACK)
+        texture = source(VULKAN_TEXTURE)
+        bridge = source(DRAW_BRIDGE)
+
+        method = surface[
+            surface.index("fn read_surface_pixels(") : surface.index("fn present(")
+        ]
+        for marker in (
+            "RhiSurfaceReadback::validate_region",
+            "self.submitted_frame.as_ref()",
+            "vk::ImageLayout::PRESENT_SRC_KHR",
+            "execute_immediate",
+            "RhiSurfaceReadback::try_new",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, method)
+        for marker in (
+            "vk::BufferUsageFlags::TRANSFER_DST",
+            "vk::ImageLayout::TRANSFER_SRC_OPTIMAL",
+            "cmd_copy_image_to_buffer",
+            ".buffer_row_length(0)",
+            "vk::AccessFlags::HOST_READ",
+            "invalidate_mapped_memory_ranges",
+            "B8G8R8A8_UNORM",
+            "R8G8B8A8_UNORM",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, readback)
+        self.assertIn("queue_wait_idle", texture)
+        self.assertIn("execute_ui_production_surface_chain_with_present_hook", bridge)
+        self.assertNotIn('feature = "test-harness"', readback)
+        self.assertNotIn("crate::draw", readback)
+        self.assertNotIn("crate::ui", readback)
 
     def test_explicit_vulkan_target_calls_the_real_wsi_entry(self) -> None:
         target = source(TARGET)

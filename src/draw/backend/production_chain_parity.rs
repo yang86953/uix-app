@@ -12,8 +12,8 @@ use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::platform::presentation::rhi::{
-    GraphicsContextRhi, GraphicsDevice, LoadAction, RhiColor, RhiExtent, RhiViewport, SurfaceToken,
-    TextureDesc, TextureFormat, TextureHandle,
+    GraphicsContextRhi, GraphicsDevice, GraphicsSurface, LoadAction, RhiColor, RhiExtent,
+    RhiViewport, SurfaceToken, TextureDesc, TextureFormat, TextureHandle,
 };
 
 // 让真实 UI 绘制入口形成 Canvas 队列、共享 FramePlan 与一次 Device submit。
@@ -79,6 +79,16 @@ pub(crate) fn execute_ui_production_surface_chain(
     context: &mut dyn GraphicsContextRhi,
     paint_ui: impl FnOnce(&mut PaintContext<'_>),
 ) -> Result<SurfaceToken> {
+    // 普通 parity 帧不安装观察者，仍复用同一个最终 Surface 事务实现。
+    execute_ui_production_surface_chain_with_present_hook(context, paint_ui, &mut |_| {})
+}
+
+// 显式 parity 可在唯一 submit 后、present 前观察最终 Surface，不改变生产 FramePlan。
+pub(crate) fn execute_ui_production_surface_chain_with_present_hook(
+    context: &mut dyn GraphicsContextRhi,
+    paint_ui: impl FnOnce(&mut PaintContext<'_>),
+    before_present: &mut dyn FnMut(&mut dyn GraphicsSurface),
+) -> Result<SurfaceToken> {
     // Surface token 是本次 acquire/render/present 事务的唯一代际与尺寸事实。
     let token = context.surface_ref().token();
     // 先复用真实 UI → Canvas2D → offscreen FramePlan 路径生成 retained 纹理。
@@ -105,12 +115,13 @@ pub(crate) fn execute_ui_production_surface_chain(
         scissor: None,
     };
     // 统一 Renderer 负责唯一 acquire、Device submit 与最终 Surface present。
-    let present = RhiRenderer::default().execute_sampled_quads(
+    let present = RhiRenderer::default().execute_sampled_quads_with_present_hook(
         context,
         PresentDamage::Full,
         viewport,
         LoadAction::Clear(RhiColor::transparent()),
         std::slice::from_ref(&quad),
+        before_present,
     );
     // 成功或失败后都检查式释放本次临时 retained 纹理。
     let cleanup = context.device().destroy_texture(target);

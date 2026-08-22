@@ -273,6 +273,24 @@ impl VulkanRhiDevice {
         self.frame.prepare(device, command_buffer)
     }
 
+    // 复用纹理传输已经拥有的串行即时命令，供同一 Adapter 的 Surface 回读使用。
+    pub(super) fn execute_immediate<F>(
+        &mut self,
+        device: &ash::Device,
+        queue: vk::Queue,
+        queue_family_index: u32,
+        record: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(vk::CommandBuffer),
+    {
+        // 即时传输不能穿插在仍打开的共享 render pass 中。
+        self.pass.require_closed()?;
+        // 唯一 immediate owner 负责命令池复用、提交和 GPU 完成等待。
+        self.immediate
+            .execute(device, queue, queue_family_index, record)
+    }
+
     pub(super) fn begin_render_pass(
         &mut self,
         device: &ash::Device,
