@@ -14,6 +14,9 @@ use source_graph::SourceId;
 use source_map::SourceMap;
 
 mod formatter;
+/// 导出可选的开发期纯 UI AOT 热重载入口。
+#[cfg(feature = "hot-reload")]
+pub mod hot_reload;
 /// 导出覆盖全部源码字节的无损具体语法流。
 pub mod lossless_cst;
 /// 导出编译器、工具链与文档生成共同消费的 UI 投影登记事实。
@@ -267,6 +270,18 @@ impl CompilerSystem {
         target: CompileTarget,
     ) -> Result<CompileOutput, CompilerDiagnostic> {
         let analyzed = analyze_file(path, Some(target))?;
+        compile_analyzed(analyzed)
+    }
+
+    /// 编译开发会话的文件快照；overlay 只替换本次 AOT 输入，不执行生成结果。
+    #[cfg(feature = "hot-reload")]
+    pub(crate) fn compile_file_with_overlays(
+        self,
+        path: &Path,
+        overlays: &BTreeMap<PathBuf, String>,
+        target: CompileTarget,
+    ) -> Result<CompileOutput, CompilerDiagnostic> {
+        let analyzed = analyze_file_with_overlays(path, overlays, Some(target))?;
         compile_analyzed(analyzed)
     }
 
