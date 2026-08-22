@@ -15,9 +15,13 @@ use windows::core::w;
 
 use super::*;
 use crate::core::{Errc, PresentDamage};
+use crate::draw::backend::production_chain_parity::{
+    execute_ui_production_chain, execute_ui_production_surface_chain,
+};
 use crate::draw::backend::rhi_renderer::consistency::{
     CONSISTENCY_BACKGROUND, CONSISTENCY_EXTENT, ConsistencyBlurScenario, ConsistencySample,
-    ConsistencyScene, blur_subregion_scenario, canonical_scenes, validate_canonical_scenes,
+    ConsistencyScene, blur_subregion_scenario, canonical_scenes, production_chain_scene,
+    validate_canonical_scenes, validate_production_chain_readback,
 };
 use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawPacket, DrawRange, DrawRasterState, DrawSamplingBinding,
@@ -187,6 +191,63 @@ fn run_surface_lifecycle_test(rhi: &mut D3d11Context) {
 
     eprintln!(
         "D3D11 surface lifecycle verified: initialization, real acquire/submit/present, ResizeBuffers, stale token, zero/invalid extent, acquire+present one-shot recovery"
+    );
+}
+
+// 在真实 D3D11 Device 上闭合 UI → Drawing → 共享 FramePlan 与 staging 回读。
+fn run_ui_production_chain_test(rhi: &mut D3d11Context) {
+    let scene = production_chain_scene();
+    let frame = scene.frame;
+    let rect = scene.rect;
+    let color = scene.color;
+    let target = execute_ui_production_chain(rhi, scene.extent, |draw_context| {
+        crate::ui::widgets::combinators::render_shared_production_scene(
+            draw_context,
+            frame,
+            rect,
+            color,
+        );
+    })
+    .expect("D3D11 UI production scene must execute through the shared Drawing FramePlan");
+    let pixels = read_target(rhi, target);
+    let invariant_count = validate_production_chain_readback(&scene, &pixels)
+        .expect("D3D11 production-chain readback must satisfy shared Drawing invariants");
+    GraphicsDevice::destroy_texture(rhi, target)
+        .expect("D3D11 production-chain target must be released");
+    eprintln!(
+        "D3D11 production chain verified: path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan -> D3D11 GraphicsDevice; draw-readback={invariant_count}/{}",
+        scene.samples.len(),
+    );
+}
+
+// 在同一真实 DXGI Surface 上复用 API 中立生产桥；隐藏窗口允许明确的 occluded 结果。
+fn run_ui_production_surface_chain_test(rhi: &mut D3d11Context) {
+    let scene = production_chain_scene();
+    let frame = scene.frame;
+    let rect = scene.rect;
+    let color = scene.color;
+    let before = GraphicsSurface::token(rhi);
+    let status = match execute_ui_production_surface_chain(rhi, |draw_context| {
+        crate::ui::widgets::combinators::render_shared_production_scene(
+            draw_context,
+            frame,
+            rect,
+            color,
+        );
+    }) {
+        Ok(presented) => {
+            assert_eq!(presented, before);
+            "presented"
+        }
+        Err(error) if error.code() == Errc::GraphicsOccluded => {
+            assert_eq!(GraphicsSurface::token(rhi), before);
+            "occluded-token-unchanged"
+        }
+        Err(error) => panic!("D3D11 UI production Surface chain failed: {error}"),
+    };
+    eprintln!(
+        "D3D11 Surface production chain verified: shared UI/Drawing FramePlan/RHI bridge; generation={}; status={status}",
+        before.generation,
     );
 }
 
@@ -528,6 +589,8 @@ pub(super) fn run_gpu_parity_test() {
         rhi.adapter_info.diagnostic_summary()
     );
     run_surface_lifecycle_test(&mut rhi);
+    run_ui_production_chain_test(&mut rhi);
+    run_ui_production_surface_chain_test(&mut rhi);
 
     let scenes = canonical_scenes();
     validate_canonical_scenes(&scenes).expect("shared consistency architecture gate must pass");
