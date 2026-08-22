@@ -961,11 +961,15 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "crate::core::error::{Error, Result}",
             "crate::core::geometry::Point",
             "crate::platform::presentation::IPresenter",
-            "crate::platform::windowing::WindowResizeEdge",
             "crate::platform::windowing::event::{FrameRequestToken, PointerActivationId}",
         ):
             with self.subTest(window_dependency=dependency):
                 self.assertIn(dependency, owner_source)
+        # 公共窗口类型允许按 Rust 惯例独立导入或与同层类型分组导入。
+        self.assertRegex(
+            without_comments(owner_source),
+            r"\buse\s+crate::platform::windowing::(?:WindowResizeEdge|\{[^;}]*\bWindowResizeEdge\b[^;}]*\});",
+        )
 
         # 所有窗口协议定义只能出现一次，禁止 native 或测试替身复制合同。
         all_sources = {path: source(path) for path in rust_sources}
