@@ -10,7 +10,12 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 // 导入 context 实现直接消费的共享生命周期契约。
 use crate::platform::presentation::GraphicsContextLifecycle;
+// 引入唯一拥有 D3D12 Surface token、extent 与重建顺序的共享生命周期。
 use crate::native::presentation::graphics::platform::windows as win_surface;
+use crate::platform::presentation::rhi::{
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
+    RhiSurfaceResizeTransaction,
+};
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -57,8 +62,8 @@ pub struct D3d12Context {
     pub(crate) adapter_info: D3d12AdapterInfo,
     logical_width: i32,
     logical_height: i32,
-    width: i32,
-    height: i32,
+    // 唯一拥有 Surface generation、物理 extent、事务号与重建状态。
+    surface_lifecycle: RhiSurfaceLifecycle,
     pub(crate) fault: Option<String>,
     shutdown: bool,
 }

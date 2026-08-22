@@ -3,16 +3,19 @@ use super::*;
 impl GraphicsContextLifecycle for D3d12Context {
     // 返回 D3D12 测试期 context 的完整 drawable 元数据快照。
     fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
-        // D3D12 尚未承诺跨 resize generation，保留既有零代际语义。
+        // 物理范围与 generation 必须来自同一个共享 token 快照。
+        let token = self.surface_lifecycle.token();
+        let width = token.extent.width as i32;
+        let height = token.extent.height as i32;
         crate::platform::presentation::PresentSurface::identity(
-            // 记录当前物理 backbuffer 宽度。
-            self.width,
-            // 记录当前物理 backbuffer 高度。
-            self.height,
+            // 记录当前已发布的物理 backbuffer 宽度。
+            width,
+            // 记录当前已发布的物理 backbuffer 高度。
+            height,
             // 从同一状态计算当前设备像素比。
-            self.width as f32 / self.logical_width.max(1) as f32,
-            // 保持此前默认 PresentSurface 的 generation。
-            0,
+            width as f32 / self.logical_width.max(1) as f32,
+            // 共享重建事务发布的 generation 拒绝迟到 surface 快照。
+            token.generation,
         )
     }
 
@@ -28,6 +31,8 @@ impl crate::platform::presentation::GpuRecipeContext for D3d12Context {
         // 借用当前 D3D12 owner。
         &mut self,
     ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
+        // checked shutdown 后必须先拒绝，不得把未实现门禁伪装成存活能力。
+        self.ensure_healthy()?;
         // Planned row 不得伪造已经完成的 thin RHI。
         Err(Error::new(
             // 保持为实现缺口而非设备故障。
@@ -37,7 +42,7 @@ impl crate::platform::presentation::GpuRecipeContext for D3d12Context {
         ))
     }
 
-    // 复用 D3D12 已有的 swapchain resize 事务。
+    // 复用 D3D12 已接入共享 Surface 权威的 swapchain resize 事务。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
         // 在未来激活前保持单一 native resize 路径。
         self.resize_result(width, height)

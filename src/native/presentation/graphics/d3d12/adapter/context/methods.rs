@@ -23,6 +23,44 @@ fn close_owned_fence_event_with(
     Ok(())
 }
 
+// 在 D3D12Context 发布前暂时拥有 fence event，保证构造失败也不泄漏 HANDLE。
+struct PendingFenceEvent {
+    // 唯一待交付的 Win32 event owner 槽位。
+    handle: Option<HANDLE>,
+}
+
+impl PendingFenceEvent {
+    // 接管刚创建的 fence event。
+    const fn new(handle: HANDLE) -> Self {
+        Self {
+            handle: Some(handle),
+        }
+    }
+
+    // 所有原生资源与 Initialize 事务已成功后，将 HANDLE 交给正式 context。
+    fn release(mut self) -> HANDLE {
+        self.handle
+            .take()
+            .expect("pending D3D12 fence event must own one handle")
+    }
+}
+
+impl Drop for PendingFenceEvent {
+    // 构造中途失败时就地释放尚未发布的 Win32 owner。
+    fn drop(&mut self) {
+        if let Err(error) = close_owned_fence_event_with(&mut self.handle, |event| {
+            // SAFETY: event 仅由本局部 owner 持有，且尚未交给 D3D12Context。
+            unsafe { CloseHandle(event) }
+                .map_err(|error| d3d12_error("CloseHandle pending fence event", error))
+        }) {
+            tracing::error!(
+                "D3d12Context: pending fence event close failed: {}",
+                error.short_what()
+            );
+        }
+    }
+}
+
 impl D3d12Context {
     pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {
@@ -86,145 +124,199 @@ impl D3d12Context {
         driver: D3d12DriverKind,
     ) -> Result<Self> {
         let drawable = win_surface::drawable_size(native_window, width, height);
-        let (adapter, device, adapter_info) = match driver {
-            D3d12DriverKind::Hardware => select_hardware_adapter(&factory)?,
-            D3d12DriverKind::Warp => select_warp_adapter(&factory)?,
-        };
-        let queue_desc = D3D12_COMMAND_QUEUE_DESC {
-            Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-            Priority: D3D12_COMMAND_QUEUE_PRIORITY_NORMAL.0,
-            Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
-            NodeMask: 0,
-        };
-        // SAFETY: device 为 select_*_adapter 返回的存活接口；queue_desc 为栈上完整初始化的描述结构。
-        let queue: ID3D12CommandQueue = unsafe { device.CreateCommandQueue(&queue_desc) }
-            .map_err(|error| d3d12_error("ID3D12Device::CreateCommandQueue", error))?;
-        let desc = swap_chain_desc(drawable.width, drawable.height);
-        // SAFETY: queue 存活；native_window 为非空 HWND（上方已校验）；desc 为栈上完整初始化的交换链描述；输出参数传 None。
-        let swap_chain1 = unsafe {
-            factory.CreateSwapChainForHwnd(
-                &queue,
-                HWND(native_window),
-                &desc,
-                None,
-                None::<&IDXGIOutput>,
-            )
-        }
-        .map_err(|error| d3d12_error("IDXGIFactory4::CreateSwapChainForHwnd", error))?;
-        // SAFETY: factory 存活；native_window 为有效 HWND；无指针输出参数。
-        unsafe { factory.MakeWindowAssociation(HWND(native_window), DXGI_MWA_NO_ALT_ENTER) }
-            .map_err(|error| d3d12_error("IDXGIFactory4::MakeWindowAssociation", error))?;
-        let swap_chain: IDXGISwapChain3 = swap_chain1
-            .cast()
-            .map_err(|error| d3d12_error("IDXGISwapChain1::cast<IDXGISwapChain3>", error))?;
+        // 原生创建前先由 platform 唯一权威签发 Initialize 事务。
+        let initial_extent = RhiExtent::new(drawable.width as u32, drawable.height as u32);
+        let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
+        let surface_initialize = surface_lifecycle
+            .begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)?;
+        let context = (|| -> Result<Self> {
+            let (adapter, device, adapter_info) = match driver {
+                D3d12DriverKind::Hardware => select_hardware_adapter(&factory)?,
+                D3d12DriverKind::Warp => select_warp_adapter(&factory)?,
+            };
+            let queue_desc = D3D12_COMMAND_QUEUE_DESC {
+                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+                Priority: D3D12_COMMAND_QUEUE_PRIORITY_NORMAL.0,
+                Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
+                NodeMask: 0,
+            };
+            // SAFETY: device 为 select_*_adapter 返回的存活接口；queue_desc 为栈上完整初始化的描述结构。
+            let queue: ID3D12CommandQueue = unsafe { device.CreateCommandQueue(&queue_desc) }
+                .map_err(|error| d3d12_error("ID3D12Device::CreateCommandQueue", error))?;
+            let desc = swap_chain_desc(drawable.width, drawable.height);
+            // SAFETY: queue 存活；native_window 为非空 HWND（上方已校验）；desc 为栈上完整初始化的交换链描述；输出参数传 None。
+            let swap_chain1 = unsafe {
+                factory.CreateSwapChainForHwnd(
+                    &queue,
+                    HWND(native_window),
+                    &desc,
+                    None,
+                    None::<&IDXGIOutput>,
+                )
+            }
+            .map_err(|error| d3d12_error("IDXGIFactory4::CreateSwapChainForHwnd", error))?;
+            // SAFETY: factory 存活；native_window 为有效 HWND；无指针输出参数。
+            unsafe { factory.MakeWindowAssociation(HWND(native_window), DXGI_MWA_NO_ALT_ENTER) }
+                .map_err(|error| d3d12_error("IDXGIFactory4::MakeWindowAssociation", error))?;
+            let swap_chain: IDXGISwapChain3 = swap_chain1
+                .cast()
+                .map_err(|error| d3d12_error("IDXGISwapChain1::cast<IDXGISwapChain3>", error))?;
 
-        let rtv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC {
-            Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-            NumDescriptors: FRAME_COUNT as u32,
-            Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-            NodeMask: 0,
-        };
-        // SAFETY: device 存活；rtv_heap_desc 为栈上完整初始化的堆描述，创建成功后由接口类型接管。
-        let rtv_heap: ID3D12DescriptorHeap = unsafe { device.CreateDescriptorHeap(&rtv_heap_desc) }
+            let rtv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC {
+                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                NumDescriptors: FRAME_COUNT as u32,
+                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+                NodeMask: 0,
+            };
+            // SAFETY: device 存活；rtv_heap_desc 为栈上完整初始化的堆描述，创建成功后由接口类型接管。
+            let rtv_heap: ID3D12DescriptorHeap = unsafe {
+                device.CreateDescriptorHeap(&rtv_heap_desc)
+            }
             .map_err(|error| d3d12_error("ID3D12Device::CreateDescriptorHeap(RTV)", error))?;
-        // SAFETY: device 存活；枚举参数为有效 D3D12 常量，无指针输入。
-        let rtv_stride =
-            unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
+            // SAFETY: device 存活；枚举参数为有效 D3D12 常量，无指针输入。
+            let rtv_stride =
+                unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
 
-        let mut allocators = Vec::with_capacity(FRAME_COUNT);
-        for _ in 0..FRAME_COUNT {
-            // SAFETY: device 存活；命令列表类型为有效常量，失败走 HRESULT 返回。
-            let allocator: ID3D12CommandAllocator =
-                unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }
-                    .map_err(|error| d3d12_error("ID3D12Device::CreateCommandAllocator", error))?;
-            allocators.push(allocator);
+            let mut allocators = Vec::with_capacity(FRAME_COUNT);
+            for _ in 0..FRAME_COUNT {
+                // SAFETY: device 存活；命令列表类型为有效常量，失败走 HRESULT 返回。
+                let allocator: ID3D12CommandAllocator =
+                    unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }
+                        .map_err(|error| {
+                            d3d12_error("ID3D12Device::CreateCommandAllocator", error)
+                        })?;
+                allocators.push(allocator);
+            }
+            // SAFETY: device 存活；allocators[0] 为刚创建且未重置过的 allocator；pipeline state 传 None。
+            let command_list: ID3D12GraphicsCommandList = unsafe {
+                device.CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    &allocators[0],
+                    None::<&ID3D12PipelineState>,
+                )
+            }
+            .map_err(|error| d3d12_error("ID3D12Device::CreateCommandList", error))?;
+            // SAFETY: command_list 刚创建且由接口类型接管，Close 只是提交状态。
+            unsafe { command_list.Close() }
+                .map_err(|error| d3d12_error("ID3D12GraphicsCommandList::Close(initial)", error))?;
+            let command_list_base: ID3D12CommandList = command_list
+                .cast()
+                .map_err(|error| d3d12_error("command list cast", error))?;
+            // SAFETY: device 存活；初始 fence 值 0 与标志均为有效常量。
+            let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
+                .map_err(|error| d3d12_error("ID3D12Device::CreateFence", error))?;
+            // SAFETY: 安全属性与名字均传 None，事件为无名字的自动重置事件，返回句柄由局部 RAII owner 接管。
+            let fence_event = PendingFenceEvent::new(
+                unsafe { CreateEventW(None, false, false, None) }
+                    .map_err(|error| d3d12_error("CreateEventW(fence)", error))?,
+            );
+            // 在发布任何 Surface token 前取得全部 backbuffer 并建立 RTV。
+            let (back_buffers, frame_index) =
+                Self::build_back_buffers(&device, &swap_chain, &rtv_heap, rtv_stride)?;
+            // device/queue/swapchain/RTV/backbuffer/command/fence 全部成功后才发布初始 token。
+            surface_lifecycle.commit_recreate(surface_initialize, initial_extent)?;
+            // commit 后不再执行可失败操作，直接将原生 owner 与唯一 lifecycle 组装为 context。
+            Ok(Self {
+                hwnd: native_window,
+                _factory: factory,
+                _adapter: adapter,
+                device,
+                queue,
+                swap_chain,
+                rtv_heap,
+                rtv_stride,
+                back_buffers,
+                back_buffer_states: [D3D12_RESOURCE_STATE_PRESENT; FRAME_COUNT],
+                allocators,
+                command_list,
+                command_list_base,
+                fence,
+                fence_event: Some(fence_event.release()),
+                fence_values: [0; FRAME_COUNT],
+                next_fence_value: 1,
+                frame_index,
+                recording: false,
+                pending_gpu_resources: Vec::new(),
+                adapter_info,
+                logical_width: drawable.logical_width,
+                logical_height: drawable.logical_height,
+                surface_lifecycle,
+                fault: None,
+                shutdown: false,
+            })
+        })();
+        match context {
+            Ok(context) => {
+                tracing::info!(
+                    "D3d12Context: created {}x{} flip-discard swapchain; {}",
+                    drawable.width,
+                    drawable.height,
+                    context.adapter_info.diagnostic_summary()
+                );
+                Ok(context)
+            }
+            // 构造失败时 COM 局部 owner 与 fence RAII owner 先自动清理，随后回滚未发布的生命周期事务。
+            Err(error) => match surface_lifecycle.abort_recreate(surface_initialize) {
+                Ok(()) => Err(error),
+                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+            },
         }
-        // SAFETY: device 存活；allocators[0] 为刚创建且未重置过的 allocator；pipeline state 传 None。
-        let command_list: ID3D12GraphicsCommandList = unsafe {
-            device.CreateCommandList(
-                0,
-                D3D12_COMMAND_LIST_TYPE_DIRECT,
-                &allocators[0],
-                None::<&ID3D12PipelineState>,
-            )
-        }
-        .map_err(|error| d3d12_error("ID3D12Device::CreateCommandList", error))?;
-        // SAFETY: command_list 刚创建且由接口类型接管，Close 只是提交状态。
-        unsafe { command_list.Close() }
-            .map_err(|error| d3d12_error("ID3D12GraphicsCommandList::Close(initial)", error))?;
-        let command_list_base: ID3D12CommandList = command_list
-            .cast()
-            .map_err(|error| d3d12_error("command list cast", error))?;
-        // SAFETY: device 存活；初始 fence 值 0 与标志均为有效常量。
-        let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
-            .map_err(|error| d3d12_error("ID3D12Device::CreateFence", error))?;
-        // SAFETY: 安全属性与名字均传 None，事件为无名字的自动重置事件，返回句柄由本对象接管。
-        let fence_event = unsafe { CreateEventW(None, false, false, None) }
-            .map_err(|error| d3d12_error("CreateEventW(fence)", error))?;
-
-        let mut context = Self {
-            hwnd: native_window,
-            _factory: factory,
-            _adapter: adapter,
-            device,
-            queue,
-            swap_chain,
-            rtv_heap,
-            rtv_stride,
-            back_buffers: Vec::with_capacity(FRAME_COUNT),
-            back_buffer_states: [D3D12_RESOURCE_STATE_PRESENT; FRAME_COUNT],
-            allocators,
-            command_list,
-            command_list_base,
-            fence,
-            fence_event: Some(fence_event),
-            fence_values: [0; FRAME_COUNT],
-            next_fence_value: 1,
-            frame_index: 0,
-            recording: false,
-            pending_gpu_resources: Vec::new(),
-            adapter_info,
-            logical_width: drawable.logical_width,
-            logical_height: drawable.logical_height,
-            width: drawable.width,
-            height: drawable.height,
-            fault: None,
-            shutdown: false,
-        };
-        context.rebuild_back_buffers()?;
-        tracing::info!(
-            "D3d12Context: created {}x{} flip-discard swapchain; {}",
-            drawable.width,
-            drawable.height,
-            context.adapter_info.diagnostic_summary()
-        );
-        Ok(context)
     }
 
-    pub(super) fn rtv_handle(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
-        // SAFETY: rtv_heap 由本对象持有且存活，查询堆起始句柄为只读操作。
-        let mut handle = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
-        handle.ptr += index * self.rtv_stride as usize;
+    // 从指定 RTV 堆计算给定 backbuffer 的描述符句柄。
+    fn rtv_handle_from_heap(
+        rtv_heap: &ID3D12DescriptorHeap,
+        rtv_stride: u32,
+        index: usize,
+    ) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        // SAFETY: rtv_heap 存活，查询堆起始句柄为只读操作。
+        let mut handle = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
+        handle.ptr += index * rtv_stride as usize;
         handle
     }
 
-    pub(super) fn rebuild_back_buffers(&mut self) -> Result<()> {
+    pub(super) fn rtv_handle(&self, index: usize) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        Self::rtv_handle_from_heap(&self.rtv_heap, self.rtv_stride, index)
+    }
+
+    // 同一 helper 同时服务构造事务与 resize，不复制原生 backbuffer 创建流程。
+    fn build_back_buffers(
+        device: &ID3D12Device,
+        swap_chain: &IDXGISwapChain3,
+        rtv_heap: &ID3D12DescriptorHeap,
+        rtv_stride: u32,
+    ) -> Result<(Vec<ID3D12Resource>, usize)> {
         let mut back_buffers = Vec::with_capacity(FRAME_COUNT);
         for index in 0..FRAME_COUNT {
             // SAFETY: swap_chain 存活且后台缓冲数由 FRAME_COUNT 锁定，index 不超过交换链缓冲数。
-            let buffer: ID3D12Resource = unsafe { self.swap_chain.GetBuffer(index as u32) }
+            let buffer: ID3D12Resource = unsafe { swap_chain.GetBuffer(index as u32) }
                 .map_err(|error| d3d12_error("IDXGISwapChain::GetBuffer", error))?;
             // SAFETY: buffer 为刚取得的存活资源；rtv_handle(index) 指向 RTV 堆内已预留的描述符槽位。
             unsafe {
-                self.device
-                    .CreateRenderTargetView(&buffer, None, self.rtv_handle(index));
+                device.CreateRenderTargetView(
+                    &buffer,
+                    None,
+                    Self::rtv_handle_from_heap(rtv_heap, rtv_stride, index),
+                );
             }
             back_buffers.push(buffer);
         }
+        // SAFETY: swap_chain 存活，查询当前后台缓冲索引为只读操作。
+        let frame_index = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
+        Ok((back_buffers, frame_index))
+    }
+
+    pub(super) fn rebuild_back_buffers(&mut self) -> Result<()> {
+        let (back_buffers, frame_index) = Self::build_back_buffers(
+            &self.device,
+            &self.swap_chain,
+            &self.rtv_heap,
+            self.rtv_stride,
+        )?;
         self.back_buffers = back_buffers;
         self.back_buffer_states = [D3D12_RESOURCE_STATE_PRESENT; FRAME_COUNT];
-        // SAFETY: swap_chain 存活，查询当前后台缓冲索引为只读操作。
-        self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
+        self.frame_index = frame_index;
         Ok(())
     }
 
@@ -424,32 +516,73 @@ impl D3d12Context {
     }
 
     pub(crate) fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
+        // checked shutdown 或已锁存故障必须在任何 lifecycle 与 COM 操作前拒绝。
         self.ensure_healthy()?;
+        let current = self.surface_lifecycle.token();
+        // Windows drawable helper 会对零值做兼容归一；D3D12 必须先由共享 resize 门禁拒绝非正输入。
+        if width <= 0 || height <= 0 {
+            let invalid = RhiExtent::new(width.max(0) as u32, height.max(0) as u32);
+            return RhiSurfaceResizeTransaction::validate(invalid, current).map(|_| ());
+        }
         let drawable = win_surface::drawable_size(self.hwnd, width, height);
-        if drawable.width == self.width && drawable.height == self.height {
+        let requested = RhiExtent::new(drawable.width as u32, drawable.height as u32);
+        // 冻结旧 token 并在任何 wait/release/ResizeBuffers 前执行共享值域门禁。
+        let resize = RhiSurfaceResizeTransaction::validate(requested, current)?;
+        // 同尺寸仅执行共享后置验证，不进入原生副作用或制造新 generation。
+        if resize.extent() == current.extent {
+            resize.complete(current)?;
             return Ok(());
         }
+        // 生命周期门禁在 COM 动作前进入唯一 Resize 事务。
+        let transaction = self
+            .surface_lifecycle
+            .begin_recreate(resize.extent(), RhiSurfaceRecreateReason::Resize)?;
+        match self.resize_surface_native(
+            transaction,
+            drawable.logical_width,
+            drawable.logical_height,
+        ) {
+            // 只有全部原生操作成功后才发布实际 extent 与精确下一 generation。
+            Ok(actual) => {
+                let commit = self
+                    .surface_lifecycle
+                    .commit_recreate(transaction, actual)?;
+                resize.complete(commit.token())?;
+                Ok(())
+            }
+            // 失败不预提交 token；共享 abort 保留旧事实并链接原生错误。
+            Err(error) => match self.surface_lifecycle.abort_recreate(transaction) {
+                Ok(()) => Err(error),
+                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
+            },
+        }
+    }
+
+    // 机械消费共享事务，不拥有 generation 或发布权。
+    fn resize_surface_native(
+        &mut self,
+        recreate: RhiSurfaceRecreateTransaction,
+        logical_width: i32,
+        logical_height: i32,
+    ) -> Result<RhiExtent> {
+        let (physical_width, physical_height) = recreate.native_size_i32();
         // ResizeBuffers requires every reference released. Normalize the current
         // buffer to PRESENT first so a failed resize can safely rebuild and keep
         // the same state tracking for the original swapchain buffers.
         self.transition_current_buffer_to_present_and_wait()?;
-        let old_width = self.width;
-        let old_height = self.height;
         self.back_buffers.clear();
         // SAFETY: swap_chain 存活；back_buffers 已清空释放引用，满足 ResizeBuffers 的引用释放前置条件；尺寸与格式为有效参数。
         let resize_result = unsafe {
             self.swap_chain.ResizeBuffers(
                 FRAME_COUNT as u32,
-                drawable.width as u32,
-                drawable.height as u32,
+                physical_width as u32,
+                physical_height as u32,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
             )
         };
         if let Err(error) = resize_result {
             let resize_error = d3d12_error("IDXGISwapChain::ResizeBuffers", error);
-            self.width = old_width;
-            self.height = old_height;
             if let Err(rebuild_error) = self.rebuild_back_buffers() {
                 let combined = platform_error(format!(
                     "{}; restoring old back buffers also failed: {}",
@@ -461,16 +594,18 @@ impl D3d12Context {
             }
             return Err(resize_error);
         }
-        self.logical_width = drawable.logical_width;
-        self.logical_height = drawable.logical_height;
-        self.width = drawable.width;
-        self.height = drawable.height;
         self.fence_values = [0; FRAME_COUNT];
         if let Err(error) = self.rebuild_back_buffers() {
             self.latch_fault("rebuild resized back buffers", &error);
             return Err(error);
         }
-        Ok(())
+        // 只在新 backbuffer/RTV 完整后更新与该物理 extent 对应的逻辑尺寸。
+        self.logical_width = logical_width;
+        self.logical_height = logical_height;
+        Ok(RhiExtent::new(
+            physical_width as u32,
+            physical_height as u32,
+        ))
     }
 
     pub(crate) fn read_pixels_result(
@@ -480,10 +615,13 @@ impl D3d12Context {
         width: i32,
         height: i32,
     ) -> Result<Vec<u32>> {
-        let x0 = x.clamp(0, self.width);
-        let y0 = y.clamp(0, self.height);
-        let x1 = x.saturating_add(width).clamp(x0, self.width);
-        let y1 = y.saturating_add(height).clamp(y0, self.height);
+        let extent = self.surface_lifecycle.token().extent;
+        let surface_width = extent.width as i32;
+        let surface_height = extent.height as i32;
+        let x0 = x.clamp(0, surface_width);
+        let y0 = y.clamp(0, surface_height);
+        let x1 = x.saturating_add(width).clamp(x0, surface_width);
+        let y1 = y.saturating_add(height).clamp(y0, surface_height);
         let read_w = x1 - x0;
         let read_h = y1 - y0;
         if read_w <= 0 || read_h <= 0 {
