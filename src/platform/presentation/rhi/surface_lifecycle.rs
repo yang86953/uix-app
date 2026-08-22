@@ -115,6 +115,17 @@ impl RhiSurfaceLifecycle {
         self.token
     }
 
+    // 在 Adapter 读取 token 或触碰原生 Surface 前确认当前代际仍可使用。
+    pub(crate) fn ensure_active(&self) -> Result<()> {
+        if self.state != RhiSurfaceLifecycleState::Active {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "RHI surface lifecycle is not active",
+            ));
+        }
+        Ok(())
+    }
+
     // 在任何原生销毁或创建前原子进入 Recreating。
     pub(crate) fn begin_recreate(
         &mut self,

@@ -457,10 +457,12 @@ class GraphicsTeardownContractTests(unittest.TestCase):
         self.assertIn("initialized: true", fake)
         # 读取保留 checked shutdown 状态的 Metal context。
         metal = contexts[4].read_text(encoding="utf-8")
-        # Metal 构造必须直接标记为就绪。
-        self.assertIn("initialized: true", metal)
+        # Metal 构造必须通过共享 lifecycle 发布初始就绪 token。
+        self.assertIn("RhiSurfaceLifecycle::uninitialized(initial_extent)", metal)
+        self.assertIn("RhiSurfaceRecreateReason::Initialize", metal)
+        self.assertIn("commit_recreate(initialize, initial_extent)?", metal)
         # Metal 的失败诊断只描述构造后发生的 checked shutdown。
-        self.assertIn("present after shutdown", metal)
+        self.assertIn('self.ensure_active("present")?', metal)
         # 陈旧的二阶段初始化诊断不得复活。
         self.assertNotIn("present before initialize", metal)
     # 校验平台 current 语义只存在于 adapter 私有 RHI host，不再穿透通用 renderer。
