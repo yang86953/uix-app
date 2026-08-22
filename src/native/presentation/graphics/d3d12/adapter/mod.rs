@@ -17,6 +17,8 @@ pub(crate) mod context;
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod error;
 #[cfg(all(windows, feature = "d3d12"))]
+pub(crate) mod pipeline;
+#[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod swap_chain;
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod transfer;

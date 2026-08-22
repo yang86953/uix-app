@@ -4,10 +4,13 @@
 //! 复用 `platform::presentation` 的同一套图形契约。D3D12 仅显式 feature 编译且
 //! 尚未注册为生产候选，Metal 暂缓。
 
+// D3D11 与 D3D12 只在 Windows 原生层共享同一份 HLSL 源，不形成 feature 依赖。
 #[cfg(feature = "d3d11")]
 pub(crate) mod d3d11;
 #[cfg(feature = "d3d12")]
 pub(crate) mod d3d12;
+#[cfg(all(windows, any(feature = "d3d11", feature = "d3d12")))]
+mod d3d_shader_source;
 #[cfg(all(test, feature = "metal"))]
 pub(crate) mod metal;
 #[cfg(feature = "opengles")]

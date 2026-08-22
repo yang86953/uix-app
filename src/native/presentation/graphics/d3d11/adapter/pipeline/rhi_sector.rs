@@ -1,69 +1,8 @@
-//! D3D11 薄 RHI 的分析抗锯齿扇形 shader 与 draw ABI。
+//! D3D11 薄 RHI 的分析抗锯齿扇形 draw ABI。
 
 // 复用 pipeline 父模块的 D3D11 类型、编译辅助和错误类型。
 use super::*;
-
-// 为轴对齐原生扇形定义固定的 SectorConstants 与单位 quad shader。
-pub(crate) const SECTOR_HLSL: &str = r#"
-cbuffer SectorCB : register(b0)
-{
-    float2 u_viewport;
-    float2 _pad0;
-    float4 u_rect;
-    float4 u_color;
-    float4 u_angles;
-};
-
-struct VSIn {
-    float2 pos : POSITION;
-};
-
-struct VSOut {
-    float4 pos : SV_POSITION;
-    float2 local : TEXCOORD0;
-    float2 rect_size : TEXCOORD1;
-};
-
-VSOut VSMain(VSIn input)
-{
-    VSOut output;
-    float2 pos = u_rect.xy + input.pos * u_rect.zw;
-    float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
-    output.pos = float4(ndc, 0.0, 1.0);
-    output.local = input.pos * u_rect.zw;
-    output.rect_size = u_rect.zw;
-    return output;
-}
-
-float4 PSMain(VSOut input) : SV_Target
-{
-    const float TAU = 6.283185307179586;
-    float2 unit = (input.local / max(input.rect_size, float2(0.0001, 0.0001)) - 0.5) * 2.0;
-    float radius = length(unit);
-    float radial_width = max(fwidth(radius), 0.0001);
-    float radial_mask = saturate((1.0 - radius) / radial_width + 0.5);
-    float angular_mask = 1.0;
-    if (u_angles.y < TAU - 0.0001 && radius > 0.0001)
-    {
-        float angle = atan2(unit.y, unit.x);
-        if (angle < 0.0)
-            angle += TAU;
-        float delta = fmod(angle - u_angles.x + TAU, TAU);
-        float edge = min(delta, u_angles.y - delta);
-        float angular_width = max(fwidth(angle), 0.0001);
-        angular_mask = saturate(edge / angular_width + 0.5);
-        if (delta > u_angles.y)
-            angular_mask = 0.0;
-    }
-    float mask = radial_mask * angular_mask;
-    if (mask <= 0.0)
-        discard;
-    float4 color = floor(saturate(u_color) * 255.0 + 0.5);
-    float3 premul = floor(color.rgb * color.a / 255.0);
-    return float4(premul * mask, color.a * mask) / 255.0;
-}
-"#;
+use crate::native::presentation::graphics::d3d_shader_source::SECTOR_HLSL;
 
 // 编译 SectorHLSL 的 VS/PS，避免把 shader 对象暴露到通用 RHI。
 pub(super) fn create_sector_shaders(
