@@ -1,6 +1,6 @@
 //! D3D12 薄 RHI 的唯一资源 owner 与资源阶段 GraphicsDevice 原语。
 
-use super::super::pipeline::D3d12PipelineResource;
+use super::super::pipeline::{D3d12PipelineNativeBinding, D3d12PipelineResource};
 use super::*;
 
 use crate::platform::presentation::rhi::{
@@ -16,10 +16,10 @@ use crate::platform::presentation::rhi::{
 use ::windows::Win32::Graphics::Direct3D12::{
     D3D12_BOX, D3D12_COMPARISON_FUNC_NEVER, D3D12_CPU_DESCRIPTOR_HANDLE,
     D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-    D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
-    D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES,
-    D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_DESC,
+    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+    D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_HEAP_FLAG_NONE,
+    D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_DESC,
     D3D12_RESOURCE_DIMENSION_BUFFER, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
     D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_NONE,
     D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
@@ -50,14 +50,18 @@ impl RhiBufferResource for D3d12RhiBuffer {
 
 // 保存一个真实 D3D12 Texture、冻结描述和已提交原生状态。
 struct D3d12RhiTexture {
-    // Default heap 资源保持纹理的原生生命周期。
+    // 最后创建的 RTV descriptor heap 在正常关闭时最先释放。
+    rtv_heap: Option<ID3D12DescriptorHeap>,
+    // 每个纹理唯一拥有一个 shader-visible SRV descriptor heap。
+    srv_heap: ID3D12DescriptorHeap,
+    // Default heap 资源在两个 descriptor heap 之后释放。
     native: ID3D12Resource,
     // 共享描述是上传、copy 预检和 render-target 提升的唯一事实。
     desc: TextureDesc,
     // 只在命令执行并等待成功后提交新的资源状态。
     state: D3D12_RESOURCE_STATES,
-    // 可渲染格式唯一拥有自己的 RTV descriptor heap；覆盖率纹理保持为空。
-    rtv_heap: Option<ID3D12DescriptorHeap>,
+    // 保存已经写入原生 SRV heap 的 CPU descriptor 身份。
+    srv_cpu: D3D12_CPU_DESCRIPTOR_HANDLE,
 }
 
 // 让共享 Texture 表读取 D3D12 创建时冻结的描述。
@@ -131,10 +135,14 @@ pub(super) struct D3d12RhiDevice {
     active_target: Option<rhi_device_pass::D3d12RhiRenderTarget>,
     // 保存已结束但尚未成功提交的原生目标与状态发布计划。
     pending_targets: Vec<rhi_device_pass::D3d12RhiRenderTarget>,
+    // 保存命令列表从首个 draw 到 fence 成功期间引用的全部原生对象。
+    pending_draw_resources: Vec<rhi_device_draw::D3d12RhiDrawResources>,
     // 直接复用 platform 唯一提交序列，供同一 Surface present 校验。
     submission_sequence: RhiSubmissionSequence,
 }
 
+#[path = "rhi_device_draw.rs"]
+mod rhi_device_draw;
 #[path = "rhi_device_pass.rs"]
 mod rhi_device_pass;
 
@@ -149,6 +157,7 @@ impl D3d12RhiDevice {
             pass: RhiPassState::new(),
             active_target: None,
             pending_targets: Vec::new(),
+            pending_draw_resources: Vec::new(),
             submission_sequence: RhiSubmissionSequence::new(),
         }
     }
@@ -162,11 +171,11 @@ impl D3d12RhiDevice {
             texture_copy: true,
             texture_region_move: true,
             clear_rect: true,
-            sampled_textures: false,
+            sampled_textures: true,
             render_to_texture: true,
             scissor: true,
-            premultiplied_alpha_blend: false,
-            additive_blend: false,
+            premultiplied_alpha_blend: true,
+            additive_blend: true,
         }
     }
 
@@ -193,20 +202,35 @@ impl D3d12RhiDevice {
     }
 
     // 在 Map 前完成真实句柄、共享描述和载荷范围门禁。
-    fn update_buffer(&self, upload: RhiBufferUpload<'_>) -> Result<()> {
+    fn update_buffer(&mut self, device: &ID3D12Device, upload: RhiBufferUpload<'_>) -> Result<()> {
         // 陈旧身份必须先于任何原生资源调用被共享表拒绝。
-        let resource = self.buffers.get(upload.buffer())?;
+        let desc = self.buffers.get(upload.buffer())?.desc;
         // 空载荷、容量、元素边界和 Uniform 完整替换由共享值对象唯一解释。
-        let validated = upload.validate(resource.desc)?;
+        let validated = upload.validate(desc)?;
         let data = validated.data();
+        // 每次上传创建一个新版本，保证同一命令批次中更早的 draw 继续读取其冻结资源。
+        let requested = desc.size_bytes() as u64;
+        let allocation = match desc.usage() {
+            crate::platform::presentation::rhi::BufferUsage::Uniform => align_up(requested, 256),
+            crate::platform::presentation::rhi::BufferUsage::Vertex
+            | crate::platform::presentation::rhi::BufferUsage::Index => requested,
+        };
+        let native_desc = buffer_resource_desc(allocation);
+        let native = create_committed_resource(
+            device,
+            D3D12_HEAP_TYPE_UPLOAD,
+            &native_desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            "ID3D12Device::CreateCommittedResource(RHI buffer upload version)",
+        )?;
         let no_read = D3D12_RANGE { Begin: 0, End: 0 };
         let mut mapped = std::ptr::null_mut();
-        // SAFETY: native 是存活的 upload-heap Buffer；共享门禁已证明写入范围位于冻结容量内。
-        unsafe { resource.native.Map(0, Some(&no_read), Some(&mut mapped)) }
+        // SAFETY: native 是新建且存活的 upload-heap Buffer；共享门禁已证明写入范围位于冻结容量内。
+        unsafe { native.Map(0, Some(&no_read), Some(&mut mapped)) }
             .map_err(|error| d3d12_error("ID3D12Resource::Map(RHI buffer)", error))?;
         if mapped.is_null() {
             // SAFETY: Map 已成功但没有返回地址；空写范围结束本次映射。
-            unsafe { resource.native.Unmap(0, Some(&no_read)) };
+            unsafe { native.Unmap(0, Some(&no_read)) };
             return Err(platform_error("D3d12Context: RHI buffer Map returned null"));
         }
         // SAFETY: Map 返回的 upload-heap 地址至少覆盖资源物理分配；共享门禁证明 data 不超过逻辑容量。
@@ -216,8 +240,10 @@ impl D3d12RhiDevice {
                 Begin: 0,
                 End: data.len(),
             };
-            resource.native.Unmap(0, Some(&written));
+            native.Unmap(0, Some(&written));
         }
+        // 只有新版本完整创建、映射和写入成功后才替换资源表当前版本。
+        self.buffers.get_mut(upload.buffer())?.native = native;
         Ok(())
     }
 
@@ -242,13 +268,17 @@ impl D3d12RhiDevice {
             D3D12_RESOURCE_STATE_COPY_DEST,
             "ID3D12Device::CreateCommittedResource(RHI texture)",
         )?;
-        // 可渲染纹理由同一资源 owner 创建并保留唯一 RTV heap。
+        // 所有纹理由同一资源 owner 创建并保留唯一 shader-visible SRV heap。
+        let (srv_heap, srv_cpu) = create_texture_srv_heap(device, &native, desc)?;
+        // 可渲染纹理由同一资源 owner 额外创建并保留唯一 RTV heap。
         let rtv_heap = create_texture_rtv_heap(device, &native, desc)?;
         Ok(self.textures.insert(D3d12RhiTexture {
             native,
             desc,
             state: D3D12_RESOURCE_STATE_COPY_DEST,
             rtv_heap,
+            srv_heap,
+            srv_cpu,
         }))
     }
 
@@ -492,6 +522,7 @@ impl D3d12RhiDevice {
         // terminal fence 已排空，先失效提交并释放 pass/待提交目标的额外 COM owner。
         self.submission_sequence.invalidate();
         self.pass.reset();
+        self.pending_draw_resources.clear();
         self.active_target = None;
         self.pending_targets.clear();
         for pipeline in self.pipelines.drain_reverse() {
@@ -518,6 +549,9 @@ impl D3d12RhiDevice {
         for target in self.pending_targets.drain(..) {
             target.retain_after_undrained_drop();
         }
+        for draw in self.pending_draw_resources.drain(..) {
+            draw.retain_after_undrained_drop();
+        }
         for pipeline in self.pipelines.drain_reverse() {
             pipeline.retain_after_undrained_drop();
         }
@@ -528,6 +562,7 @@ impl D3d12RhiDevice {
             if let Some(rtv_heap) = texture.rtv_heap {
                 std::mem::forget(rtv_heap);
             }
+            std::mem::forget(texture.srv_heap);
             std::mem::forget(texture.native);
         }
         for buffer in self.buffers.drain_reverse() {
@@ -550,7 +585,7 @@ impl GraphicsDevice for D3d12Context {
 
     fn update_buffer(&mut self, upload: RhiBufferUpload<'_>) -> Result<()> {
         self.ensure_healthy()?;
-        let result = self.rhi_device.update_buffer(upload);
+        let result = self.rhi_device.update_buffer(&self.device, upload);
         self.observe_rhi_result("update RHI buffer", result)
     }
 
@@ -580,9 +615,9 @@ impl GraphicsDevice for D3d12Context {
         self.rhi_device.preflight_texture_move(movement)
     }
 
-    fn preflight_draw_resources(&self, _packet: DrawPacket) -> Result<()> {
+    fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("preflight_draw_resources"))
+        self.rhi_device.preflight_draw_resources(packet)
     }
 
     fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
@@ -674,9 +709,9 @@ impl GraphicsDevice for D3d12Context {
         self.rhi_clear_rect(color, scissor)
     }
 
-    fn draw(&mut self, _packet: DrawPacket) -> Result<()> {
+    fn draw(&mut self, packet: DrawPacket) -> Result<()> {
         self.ensure_healthy()?;
-        Err(resource_stage_deferred("draw"))
+        self.draw_rhi_packet(packet)
     }
 
     fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
@@ -756,6 +791,32 @@ impl GraphicsDevice for D3d12Context {
     fn maintain(&mut self) -> Result<()> {
         self.ensure_healthy()
     }
+}
+
+// 为每个纹理创建单槽 shader-visible SRV heap，并写入其唯一原生 descriptor。
+fn create_texture_srv_heap(
+    device: &ID3D12Device,
+    texture: &ID3D12Resource,
+    desc: TextureDesc,
+) -> Result<(ID3D12DescriptorHeap, D3D12_CPU_DESCRIPTOR_HANDLE)> {
+    // 共享纹理描述必须先于任何 descriptor heap 副作用通过完整值域门禁。
+    desc.validate()?;
+    let heap_desc = D3D12_DESCRIPTOR_HEAP_DESC {
+        Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+        NumDescriptors: 1,
+        Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+        NodeMask: 0,
+    };
+    // SAFETY: device 存活；heap 描述完整且只申请一个 shader-visible SRV 槽位。
+    let heap: ID3D12DescriptorHeap =
+        unsafe { device.CreateDescriptorHeap(&heap_desc) }.map_err(|error| {
+            d3d12_error("ID3D12Device::CreateDescriptorHeap(RHI texture SRV)", error)
+        })?;
+    // SAFETY: 单槽 SRV heap 存活，起始 CPU handle 指向唯一 descriptor。
+    let cpu = unsafe { heap.GetCPUDescriptorHandleForHeapStart() };
+    // SAFETY: texture 是共享描述对应的有类型二维纹理；空 view 描述创建完整单 mip 默认 SRV。
+    unsafe { device.CreateShaderResourceView(texture, None, cpu) };
+    Ok((heap, cpu))
 }
 
 // 为可渲染纹理创建单槽 RTV heap；非渲染格式不伪造 descriptor。
@@ -962,14 +1023,6 @@ fn record_texture_copy_commands(
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
     );
-}
-
-// 明确拒绝尚未进入本资源所有权阶段的 Device 原语。
-fn resource_stage_deferred(operation: &'static str) -> Error {
-    Error::new(
-        Errc::NotImplemented,
-        format!("D3D12 resource stage does not implement {operation}"),
-    )
 }
 
 impl D3d12Context {

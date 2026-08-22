@@ -1,7 +1,7 @@
-//! Direct3D 12 swapchain context for Windows.
+//! Windows Direct3D 12 swapchain context。
 //!
-//! This first slice owns the explicit D3D12 resource lifecycle and synchronization
-//! contract. Draw-side activation stays gated until a thin RHI provider is available.
+//! 本模块拥有显式 D3D12 资源与同步生命周期；内部 thin RHI draw 已闭合，
+//! 生产组合入口与 registry 仍保持未激活。
 
 #![allow(nonstandard_style)]
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""锁定 GFX-NEXT-15/16/17 的 D3D12 资源、pass、提交与未激活边界。"""
+"""锁定 GFX-NEXT-15..19 的 D3D12 资源、draw、提交与未激活边界。"""
 
 import unittest
 from pathlib import Path
@@ -105,11 +105,11 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         create_buffer = function_range(
             owner,
             "fn create_buffer(&mut self, device:",
-            "fn update_buffer(&self, upload:",
+            "fn update_buffer(&mut self, device:",
         )
         update_buffer = function_range(
             owner,
-            "fn update_buffer(&self, upload:",
+            "fn update_buffer(&mut self, device:",
             "fn preflight_buffer_upload(&self, upload:",
         )
         create_texture = function_range(
@@ -135,7 +135,9 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
 
         self.assertLess(create_buffer.index("desc.validate()?"), create_buffer.index("create_committed_resource("))
         self.assertLess(update_buffer.index("self.buffers.get("), update_buffer.index("upload.validate("))
-        self.assertLess(update_buffer.index("upload.validate("), update_buffer.index(".Map("))
+        self.assertLess(update_buffer.index("upload.validate("), update_buffer.index("create_committed_resource("))
+        self.assertLess(update_buffer.index("create_committed_resource("), update_buffer.index("native.Map("))
+        self.assertLess(update_buffer.index("native.Unmap("), update_buffer.index("self.buffers.get_mut("))
         self.assertLess(create_texture.index("desc.validate()?"), create_texture.index("create_committed_resource("))
         self.assertLess(upload_texture.index("self.textures.get("), upload_texture.index("upload.validate("))
         self.assertLess(upload_texture.index("upload.validate("), upload_texture.index("GetCopyableFootprints("))
@@ -146,7 +148,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("begin_rhi_transfer_commands()?"))
         self.assertLess(trait_upload.index("stage_texture_upload("), trait_upload.index("CopyTextureRegion("))
 
-    # pass/clear/submit 闭环后只开启本阶段真实能力，其余绘制能力继续保持关闭。
+    # draw 闭环后只开启已有真实实现支撑的能力。
     def test_preflight_and_capability_snapshot_are_honest(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")
 
@@ -160,17 +162,21 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         self.assertIn("clear_rect: true", device)
         self.assertIn("render_to_texture: true", device)
         self.assertIn("scissor: true", device)
-        for missing in (
-            "sampled_textures: false",
-            "premultiplied_alpha_blend: false",
-            "additive_blend: false",
+        for enabled in (
+            "sampled_textures: true",
+            "premultiplied_alpha_blend: true",
+            "additive_blend: true",
         ):
-            self.assertIn(missing, device)
-        for operation in ("preflight_draw_resources", "draw"):
+            self.assertIn(enabled, device)
+        for operation, delegation in (
+            ("preflight_draw_resources", "self.rhi_device.preflight_draw_resources(packet)"),
+            ("draw", "self.draw_rhi_packet(packet)"),
+        ):
             start = device.index(f"fn {operation}(", device.index("impl GraphicsDevice"))
             body = device[start : device.index("\n    }", start)]
             self.assertIn("self.ensure_healthy()?", body)
-            self.assertIn("resource_stage_deferred", body)
+            self.assertIn(delegation, body)
+            self.assertNotIn("resource_stage_deferred", body)
         for operation, delegation in (
             ("create_pipeline", "self.rhi_device.create_pipeline(&self.device, desc)"),
             ("destroy_pipeline", "self.rhi_device.destroy_pipeline(pipeline)"),
@@ -208,7 +214,7 @@ class GraphicsD3d12ResourceOwnerContractTests(unittest.TestCase):
         native = function_range(
             device,
             "fn record_texture_copy_commands(",
-            "fn resource_stage_deferred(operation:",
+            "impl D3d12Context {",
         )
 
         self.assertLess(stage.index("self.textures.get(copy.source())?"), stage.index("copy.validate_transfer("))

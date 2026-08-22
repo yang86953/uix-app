@@ -256,18 +256,14 @@ class GraphicsD3d12PipelineContractTests(unittest.TestCase):
         )
 
         for capability in (
-            "sampled_textures: false",
-            "premultiplied_alpha_blend: false",
-            "additive_blend: false",
+            "sampled_textures: true",
+            "premultiplied_alpha_blend: true",
+            "additive_blend: true",
         ):
             self.assertIn(capability, device)
-        for deferred in (
-            'resource_stage_deferred("preflight_draw_resources")',
-            'resource_stage_deferred("draw")',
-        ):
-            self.assertIn(deferred, device)
-        self.assertNotIn('resource_stage_deferred("create_pipeline")', device)
-        self.assertNotIn('resource_stage_deferred("destroy_pipeline")', device)
+        self.assertIn("self.rhi_device.preflight_draw_resources(packet)", device)
+        self.assertIn("self.draw_rhi_packet(packet)", device)
+        self.assertNotIn("resource_stage_deferred", device)
         self.assertNotIn("DrawInstanced", D3D12_PIPELINE.read_text(encoding="utf-8"))
         self.assertNotIn("DrawIndexedInstanced", D3D12_PIPELINE.read_text(encoding="utf-8"))
         self.assertNotIn("DrawInstanced", pass_source)

@@ -18,6 +18,7 @@ use crate::platform::presentation::rhi::{
     PipelineCullMode, PipelineDepthClip, PipelineDepthState, PipelineDesc, PipelineDitherState,
     PipelineFrontFace, PipelineMultisampleState, PipelinePrimitiveTopology, PipelineSampling,
     PipelineStencilState, PipelineVertexFormat, PipelineVertexLayout, PipelineVertexSemantic,
+    TextureFormat,
 };
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -30,6 +31,11 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 use ::windows::core::PCSTR;
 
 use super::error::{d3d12_error, platform_error};
+
+// D3D12 Root Signature 参数索引只由本 pipeline Component 定义一次。
+const ROOT_PARAMETER_CBV_B0: u32 = 0;
+const ROOT_PARAMETER_SRV_T0: u32 = 1;
+const ROOT_PARAMETER_SAMPLER_S0: u32 = 2;
 
 // 保存一个共享 kind 在 D3D 原生层唯一选择的 HLSL 入口对。
 #[derive(Clone, Copy)]
@@ -75,6 +81,39 @@ struct D3d12PipelineStateVariants {
     bgra8: ID3D12PipelineState,
     // RGBA8 离屏目标使用的真实 PSO。
     rgba8: ID3D12PipelineState,
+}
+
+// 保存一次已验证 draw 对原生 Root Signature 与目标格式 PSO 的窄只读绑定。
+pub(crate) struct D3d12PipelineNativeBinding {
+    // 命令列表与 GPU 完成前保持当前目标格式 PSO 的独立 COM 引用。
+    pipeline_state: ID3D12PipelineState,
+    // 采样 pipeline 携带同一 Root Signature 创建顺序派生的 t0/s0 参数索引。
+    sampled_parameters: Option<(u32, u32)>,
+    // Root Signature 最后释放，覆盖 PSO 对同一根布局的依赖生命周期。
+    root_signature: ID3D12RootSignature,
+}
+
+// 只向 D3D12 draw adapter 暴露编码所需的两个原生对象。
+impl D3d12PipelineNativeBinding {
+    // 借用已验证的 Root Signature，不暴露资源创建或替换能力。
+    pub(crate) const fn root_signature(&self) -> &ID3D12RootSignature {
+        &self.root_signature
+    }
+
+    // 借用已按活动目标格式选择的 PSO。
+    pub(crate) const fn pipeline_state(&self) -> &ID3D12PipelineState {
+        &self.pipeline_state
+    }
+
+    // 返回所有现有 pipeline 共用的 b0 根参数索引。
+    pub(crate) const fn constant_buffer_parameter(&self) -> u32 {
+        ROOT_PARAMETER_CBV_B0
+    }
+
+    // 返回条件采样 pipeline 的 t0 与 s0 根参数索引。
+    pub(crate) const fn sampled_parameters(&self) -> Option<(u32, u32)> {
+        self.sampled_parameters
+    }
 }
 
 // 由 D3D12 资源表唯一拥有的完整原生 pipeline 资源。
@@ -189,6 +228,45 @@ impl D3d12PipelineResource {
             fixed_state: plan.fixed_state,
             contract: plan.contract,
             root_signature,
+        })
+    }
+
+    // 在不暴露 shader、布局或固定状态 owner 的前提下取得当前 draw 原生绑定。
+    pub(crate) fn native_binding(
+        &self,
+        contract: PipelineContract,
+        target_format: TextureFormat,
+    ) -> Result<D3d12PipelineNativeBinding> {
+        // 资源创建时冻结的共享契约必须与当前不可拆 PipelineBinding 完全一致。
+        if self.contract != contract {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3D12 RHI pipeline resource contract is stale",
+            ));
+        }
+        // PSO 只能从活动目标的共享格式机械选择，R8 不能充当颜色输出。
+        let pipeline_state = match target_format {
+            TextureFormat::Bgra8Unorm => self.variants.bgra8.clone(),
+            TextureFormat::Rgba8Unorm => self.variants.rgba8.clone(),
+            TextureFormat::R8Unorm => {
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "D3D12 RHI pipeline target format is not renderable",
+                ));
+            }
+        };
+        // 克隆的两个 COM 引用由在途 draw 计划保持到 fence 成功。
+        Ok(D3d12PipelineNativeBinding {
+            pipeline_state,
+            sampled_parameters: match contract.sampling {
+                PipelineSampling::None => None,
+                PipelineSampling::PremultipliedColor
+                | PipelineSampling::Coverage
+                | PipelineSampling::Msdf => {
+                    Some((ROOT_PARAMETER_SRV_T0, ROOT_PARAMETER_SAMPLER_S0))
+                }
+            },
+            root_signature: self.root_signature.clone(),
         })
     }
 

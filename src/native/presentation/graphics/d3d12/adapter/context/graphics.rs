@@ -26,14 +26,14 @@ impl GraphicsContextLifecycle for D3d12Context {
 
 // 为尚未激活的 D3D12 registry row 固化 GPU recipe 类型形状。
 impl crate::platform::presentation::GpuRecipeContext for D3d12Context {
-    // D3D12 在 thin RHI 完成前保持明确的未实现探测结果。
+    // D3D12 内部纵向切片完成后仍保持组合入口未激活的明确结果。
     fn rhi_context(
         // 借用当前 D3D12 owner。
         &mut self,
     ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
         // checked shutdown 后必须先拒绝，不得把未实现门禁伪装成存活能力。
         self.ensure_healthy()?;
-        // Planned row 不得伪造已经完成的 thin RHI。
+        // Planned row 不得把内部实现伪造成 UI 到 Drawing 的生产链贯通。
         Err(Error::new(
             // 保持为实现缺口而非设备故障。
             Errc::NotImplemented,
