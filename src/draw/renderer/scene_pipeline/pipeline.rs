@@ -43,16 +43,16 @@ impl ScenePipeline {
         input: FrameRenderInput<'_>,
     ) -> FrameRenderOutput {
         let cur_version = scene.tree_version();
-        let has_overlay = scene
+        let has_backdrop_overlay = scene
             .root_id()
-            .is_some_and(|root| Self::scene_has_overlay(scene, root));
+            .is_some_and(|root| Self::scene_has_backdrop_overlay(scene, root));
         // UI 已把 Theme、区域策略与多 overlay 聚合为单一 typed 计划。
         let requested_backdrop_effect = scene.overlay_backdrop_effect();
         // 策略、半径或逻辑区域任一变化都属于 effect 失效。
         let backdrop_effect_changed = self.overlay_backdrop_effect != requested_backdrop_effect;
-        if !has_overlay {
+        if !has_backdrop_overlay {
             self.overlay_backdrop = None;
-            // 浮层离场时的资源释放失败必须在任何新帧动作前进入恢复路径。
+            // 需要背景快照的浮层离场时，资源释放失败必须在任何新帧动作前进入恢复路径。
             if let Err(error) = engine.release_overlay_backdrop() {
                 // 不再继续 idle、begin_frame、paint 或 present。
                 return Self::failed_backdrop_frame(error, cur_version);
@@ -141,9 +141,17 @@ impl ScenePipeline {
             }
             region
         };
+        // 页面切换等结构更新常产生多块高度重叠的脏区；若包围盒额外面积受控，
+        // 扩大实际清理与 present damage，避免按矩形重复遍历和编码整棵场景。
+        // 滚动搬移仍保留独立 viewport/条带契约，不参与该收敛。
+        let dirty_with_scroll = if scroll_moves.is_empty() {
+            coalesce_dense_dirty_region(dirty_with_scroll)
+        } else {
+            dirty_with_scroll
+        };
 
         // 判断正常树变化是否会污染现有 overlay backdrop。
-        let normal_tree_dirty = has_overlay
+        let normal_tree_dirty = has_backdrop_overlay
             && scene
                 .root_id()
                 .is_some_and(|root| Self::scene_normal_tree_dirty(scene, root));
@@ -169,7 +177,7 @@ impl ScenePipeline {
             self.overlay_backdrop = None;
             // 新事务将在 begin_frame 后从完整正常树重建，不进入安全阻塞。
             self.overlay_backdrop_blocked = false;
-        } else if has_overlay && normal_tree_dirty {
+        } else if has_backdrop_overlay && normal_tree_dirty {
             self.overlay_backdrop = None;
             // 正常树变化会使快照失效；销毁失败不能被整树重绘掩盖。
             if let Err(error) = engine.release_overlay_backdrop() {
@@ -177,7 +185,7 @@ impl ScenePipeline {
                 return Self::failed_backdrop_frame(error, cur_version);
             }
             self.overlay_backdrop_blocked = true;
-        } else if has_overlay
+        } else if has_backdrop_overlay
             && backdrop_effect_changed
             && engine.has_overlay_backdrop()
             && !self.overlay_backdrop_blocked
@@ -207,7 +215,7 @@ impl ScenePipeline {
                     return Self::failed_backdrop_frame(error, cur_version);
                 }
             }
-        } else if has_overlay
+        } else if has_backdrop_overlay
             && self.overlay_backdrop.is_none()
             && !engine.has_overlay_backdrop()
             && !self.overlay_backdrop_blocked
@@ -380,7 +388,7 @@ impl ScenePipeline {
                 // begin_frame 已开始，但失败后仍禁止 paint、end_frame 与 present。
                 return Self::failed_backdrop_frame(error, cur_version);
             }
-            self.overlay_backdrop_blocked = has_overlay;
+            self.overlay_backdrop_blocked = has_backdrop_overlay;
             self.raster_pipeline = Some(raster_pipeline);
         }
 
@@ -402,7 +410,7 @@ impl ScenePipeline {
             self.overlay_backdrop = None;
             self.overlay_backdrop_blocked = true;
         }
-        let overlay_backdrop = (has_overlay
+        let overlay_backdrop = (has_backdrop_overlay
             && region.full_frame
             && !input.debug_mode
             && !normal_tree_dirty
@@ -411,7 +419,7 @@ impl ScenePipeline {
             .flatten();
         let use_cpu_overlay_backdrop = overlay_backdrop.is_some();
         // GPU 快照由引擎持有；尺寸变化时 renderer 已释放，此处只查有效性。
-        let use_gpu_overlay_backdrop = has_overlay
+        let use_gpu_overlay_backdrop = has_backdrop_overlay
             && region.full_frame
             && !input.debug_mode
             && !normal_tree_dirty
@@ -859,16 +867,16 @@ impl ScenePipeline {
         }
     }
 
-    fn scene_has_overlay(scene: &impl ScenePaint, id: crate::draw::scene::NodeId) -> bool {
+    fn scene_has_backdrop_overlay(scene: &impl ScenePaint, id: crate::draw::scene::NodeId) -> bool {
         if !scene.node_visible(id) {
             return false;
         }
-        scene.node_is_overlay(id)
+        scene.node_requires_overlay_backdrop(id)
             || scene
                 .node_children(id)
                 .iter()
                 .copied()
-                .any(|child| Self::scene_has_overlay(scene, child))
+                .any(|child| Self::scene_has_backdrop_overlay(scene, child))
     }
 
     fn scene_normal_tree_dirty(scene: &impl ScenePaint, id: crate::draw::scene::NodeId) -> bool {

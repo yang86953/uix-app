@@ -142,6 +142,14 @@ impl ScenePaint for WidgetTree {
                 .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
+    fn node_requires_overlay_backdrop(&self, id: NodeId) -> bool {
+        // 只有模态遮罩或显式 blur 需要跨帧保留不含浮层的干净背景。
+        // Message、Notification、Tooltip 等局部浮层直接在 retained 主表面按 damage 重绘。
+        self.overlay_stack().iter().any(|entry| {
+            entry.owner() == id && (entry.is_modal() || entry.backdrop_blur_value().is_some())
+        })
+    }
+
     // 把 UI overlay 栈与当前 Theme token 解析为 draw System 的唯一效果计划。
     fn overlay_backdrop_effect(&self) -> Option<crate::draw::OverlayBackdropEffect> {
         // 停止树不得暴露半提交 overlay 或主题状态。

@@ -9,7 +9,7 @@ use crate::draw::scene::picture::{
     LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
 };
 use crate::draw::scene::render_object::RenderObjectTree;
-use crate::draw::scene::viewport_transform::{needs_paint, needs_paint_rect};
+use crate::draw::scene::viewport_transform::{needs_paint_in_viewport, needs_paint_rect};
 use crate::draw::scene::{NodeId, ScenePaint};
 use crate::draw::{Canvas2D, FontHandle, RenderTarget};
 
@@ -704,6 +704,6 @@ impl LayerTree {
         node_id: NodeId,
         dirty_region: &DirtyRegion,
     ) -> bool {
-        scene.node_is_overlay(node_id) || needs_paint(scene, node_id, dirty_region)
+        scene.node_is_overlay(node_id) || needs_paint_in_viewport(scene, node_id, dirty_region)
     }
 }

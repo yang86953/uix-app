@@ -133,6 +133,12 @@ pub trait ScenePaint {
         let _ = id;
         false
     }
+    /// 返回该浮层是否需要保留一份不含浮层像素的干净背景。
+    ///
+    /// 未细分浮层能力的场景保持保守语义：所有浮层都需要背景快照。
+    fn node_requires_overlay_backdrop(&self, id: NodeId) -> bool {
+        self.node_is_overlay(id)
+    }
     /// 返回当前帧全部 overlay 合并后的 backdrop 效果计划。
     fn overlay_backdrop_effect(&self) -> Option<OverlayBackdropEffect> {
         // 非 UI 场景默认不请求 backdrop 效果。

@@ -2,6 +2,11 @@
 
 use super::*;
 
+// 脏矩形达到该数量后才评估单次包围盒重绘，避免小规模更新增加填充量。
+const DENSE_DIRTY_RECT_THRESHOLD: usize = 4;
+// 包围盒面积不超过离散矩形总面积两倍时，优先一次遍历，限制额外重绘范围。
+const DENSE_DIRTY_MAX_OVERDRAW: f64 = 2.0;
+
 impl Default for ScenePipeline {
     fn default() -> Self {
         Self::new()
@@ -86,6 +91,38 @@ pub(super) fn compute_present_damage(
         DamageRegion::full()
     } else {
         DamageRegion::partial(rects)
+    }
+}
+
+/// 将高密度局部脏区收敛为一次包围盒重绘。
+///
+/// 多矩形逐块绘制会为每个矩形重复遍历并编码整棵场景；当包围盒额外面积受控时，
+/// 扩大实际清理与 present damage 比重复提交更便宜。稀疏区域仍保留离散矩形。
+pub(super) fn coalesce_dense_dirty_region(region: DirtyRegion) -> DirtyRegion {
+    if region.full_frame || region.rects().len() < DENSE_DIRTY_RECT_THRESHOLD {
+        return region;
+    }
+    if !region.rects().iter().copied().all(valid_frame_rect) {
+        return region;
+    }
+
+    let bounds = region.bounds();
+    if !valid_frame_rect(bounds) {
+        return region;
+    }
+    let dirty_area = region
+        .rects()
+        .iter()
+        .map(|rect| f64::from(rect.w) * f64::from(rect.h))
+        .sum::<f64>();
+    let bounds_area = f64::from(bounds.w) * f64::from(bounds.h);
+    if dirty_area.is_finite()
+        && bounds_area.is_finite()
+        && bounds_area <= dirty_area * DENSE_DIRTY_MAX_OVERDRAW
+    {
+        DirtyRegion::area(bounds)
+    } else {
+        region
     }
 }
 
