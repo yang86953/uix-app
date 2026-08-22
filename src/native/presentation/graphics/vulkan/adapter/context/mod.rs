@@ -188,6 +188,20 @@ struct VulkanSubmittedFrame {
     submission: crate::platform::presentation::rhi::SubmissionHandle,
 }
 
+// 显式 parity feature 可安排的一次性 Vulkan Surface 原生结果。
+#[cfg(feature = "vulkan-parity-test")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VulkanSurfaceFaultForParity {
+    // 在调用 vkAcquireNextImageKHR 前模拟旧 swapchain 已失效。
+    AcquireOutOfDate,
+    // 保留真实 acquire image，只把其返回状态提升为 SUBOPTIMAL。
+    AcquireSuboptimal,
+    // 在调用 vkQueuePresentKHR 前模拟当前 swapchain 已失效。
+    PresentOutOfDate,
+    // 保留真实 queue present，只把其返回状态提升为 SUBOPTIMAL。
+    PresentSuboptimal,
+}
+
 pub struct VulkanContext {
     runtime: Option<Rc<VulkanRuntime>>,
     device_lease: Option<Rc<VulkanDevice>>,
@@ -224,6 +238,12 @@ pub struct VulkanContext {
     frame_fence: vk::Fence,
     acquired_frame: Option<VulkanAcquiredFrame>,
     submitted_frame: Option<VulkanSubmittedFrame>,
+    // 一次只允许 parity 组合根安排一个 Surface 原生结果，不进入生产 feature。
+    #[cfg(feature = "vulkan-parity-test")]
+    surface_fault_for_parity: Option<VulkanSurfaceFaultForParity>,
+    // 跳过 present 后禁止复用仍为 signaled 的旧代 render-finished semaphore。
+    #[cfg(feature = "vulkan-parity-test")]
+    replace_present_sync_for_parity: bool,
     // API 无关状态机唯一拥有 Surface generation、extent 与重建事务顺序。
     surface_lifecycle: crate::platform::presentation::rhi::RhiSurfaceLifecycle,
     native_surface: *mut c_void,

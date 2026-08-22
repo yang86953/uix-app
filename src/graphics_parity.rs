@@ -11,15 +11,19 @@ use crate::diagnostics::PendingFailureQueue;
 #[cfg(feature = "vulkan-parity-test")]
 use crate::draw::backend::production_chain_parity::execute_ui_production_chain;
 use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain;
-use crate::draw::backend::rhi_renderer::consistency::production_chain_scene;
 #[cfg(feature = "vulkan-parity-test")]
 use crate::draw::backend::rhi_renderer::consistency::validate_production_chain_readback;
+use crate::draw::backend::rhi_renderer::consistency::{
+    ProductionChainScene, production_chain_scene,
+};
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 use crate::native::presentation::graphics::opengl::platform::EglContext;
 #[cfg(feature = "vulkan-parity-test")]
-use crate::native::presentation::graphics::vulkan::platform::VulkanContext;
+use crate::native::presentation::graphics::vulkan::platform::{
+    VulkanContext, VulkanSurfaceFaultForParity,
+};
 use crate::platform::presentation::GraphicsContextLifecycle;
-use crate::platform::presentation::rhi::{GraphicsContextRhi, RhiExtent};
+use crate::platform::presentation::rhi::{GraphicsContextRhi, RhiExtent, SurfaceToken};
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 
 // 在真实 Vulkan device 上验收 UI → Drawing → FramePlan → Adapter 全链。
@@ -53,12 +57,28 @@ pub(crate) fn run_vulkan_ui_production_chain_test() {
     );
 }
 
+// 所有 WSI 验收都从唯一共享场景进入同一 UI Surface 桥。
+fn present_shared_production_scene(
+    context: &mut dyn GraphicsContextRhi,
+    scene: &ProductionChainScene,
+) -> crate::core::Result<SurfaceToken> {
+    execute_ui_production_surface_chain(context, |draw_context| {
+        crate::ui::widgets::combinators::render_shared_production_scene(
+            draw_context,
+            scene.frame,
+            scene.rect,
+            scene.color,
+        );
+    })
+}
+
 // 在真实平台窗口上复用同一 UI、Drawing、Surface 与 resize 验收事务。
 fn run_wsi_production_chain_test<C>(
     backend: &'static str,
     window_title: &'static str,
     create_context: impl FnOnce(*mut c_void, i32, i32) -> crate::core::Result<C>,
     adapter_diagnostic: impl FnOnce(&C) -> String,
+    verify_surface_recovery: impl FnOnce(&mut C, &ProductionChainScene, SurfaceToken),
 ) where
     C: GraphicsContextRhi + GraphicsContextLifecycle,
 {
@@ -91,18 +111,8 @@ fn run_wsi_production_chain_test<C>(
     let initial = context.surface_ref().token();
     assert!(initial.extent.is_valid());
 
-    let frame = scene.frame;
-    let rect = scene.rect;
-    let color = scene.color;
-    let first_present = execute_ui_production_surface_chain(&mut context, |draw_context| {
-        crate::ui::widgets::combinators::render_shared_production_scene(
-            draw_context,
-            frame,
-            rect,
-            color,
-        );
-    })
-    .expect("the first real WSI frame must acquire, render and present");
+    let first_present = present_shared_production_scene(&mut context, &scene)
+        .expect("the first real WSI frame must acquire, render and present");
     eprintln!("{backend} WSI stage: first-present");
     assert_eq!(first_present, initial);
     window
@@ -135,17 +145,11 @@ fn run_wsi_production_chain_test<C>(
     assert_eq!(resized.extent, requested);
     assert_eq!(resized.generation, first_present.generation + 1);
 
-    let second_present = execute_ui_production_surface_chain(&mut context, |draw_context| {
-        crate::ui::widgets::combinators::render_shared_production_scene(
-            draw_context,
-            frame,
-            rect,
-            color,
-        );
-    })
-    .expect("the resized WSI generation must acquire, render and present");
+    let second_present = present_shared_production_scene(&mut context, &scene)
+        .expect("the resized WSI generation must acquire, render and present");
     eprintln!("{backend} WSI stage: second-present");
     assert_eq!(second_present, resized);
+    verify_surface_recovery(&mut context, &scene, second_present);
     context
         .try_shutdown()
         .expect("the production WSI context must shut down before its native window");
@@ -154,7 +158,7 @@ fn run_wsi_production_chain_test<C>(
         .expect("the native window must close after graphics shutdown");
 
     eprintln!(
-        "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resized={}x{}@{}; presents=2; shutdown=ok",
+        "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resized={}x{}@{}; baseline-presents=2; shutdown=ok",
         first_present.extent.width,
         first_present.extent.height,
         first_present.generation,
@@ -166,6 +170,92 @@ fn run_wsi_production_chain_test<C>(
     );
 }
 
+// 在同一真实 Vulkan WSI owner 上逐项证明四个原生返回位置的恢复语义。
+#[cfg(feature = "vulkan-parity-test")]
+fn verify_vulkan_surface_fault(
+    context: &mut VulkanContext,
+    scene: &ProductionChainScene,
+    fault: VulkanSurfaceFaultForParity,
+) -> SurfaceToken {
+    let old = context.surface_ref().token();
+    context
+        .inject_surface_fault_for_parity_test(fault)
+        .unwrap_or_else(|error| {
+            panic!("{fault:?} injection must arm at an idle boundary: {error}")
+        });
+    assert_eq!(
+        context.surface_ref().token(),
+        old,
+        "arming {fault:?} must not commit authoritative Surface state",
+    );
+
+    let injected = present_shared_production_scene(context, scene);
+    let rebuilt = context.surface_ref().token();
+    assert_eq!(
+        rebuilt.extent, old.extent,
+        "{fault:?} must keep the real WSI extent"
+    );
+    assert_eq!(
+        rebuilt.generation,
+        old.generation + 1,
+        "{fault:?} must commit exactly one recreated generation",
+    );
+
+    let semantics = match fault {
+        VulkanSurfaceFaultForParity::AcquireOutOfDate
+        | VulkanSurfaceFaultForParity::PresentOutOfDate => {
+            let error = injected.expect_err("OUT_OF_DATE must reject the old frame");
+            assert_eq!(error.code(), Errc::GraphicsSurfaceChanged);
+            "RetryFrame(GraphicsSurfaceChanged)"
+        }
+        VulkanSurfaceFaultForParity::AcquireSuboptimal
+        | VulkanSurfaceFaultForParity::PresentSuboptimal => {
+            let presented = injected.expect("SUBOPTIMAL must keep the presented frame successful");
+            assert_eq!(presented, rebuilt);
+            assert_ne!(presented, old, "SUBOPTIMAL must not return the stale token");
+            "Presented(Ok)"
+        }
+    };
+
+    let recovered = present_shared_production_scene(context, scene)
+        .unwrap_or_else(|error| panic!("{fault:?} next real WSI frame must present: {error}"));
+    assert_eq!(recovered, rebuilt);
+    eprintln!(
+        "Vulkan WSI recovery path: fault={fault:?}; old={}x{}@{}; new={}x{}@{}; injected={semantics}; recovered-present=ok@{}",
+        old.extent.width,
+        old.extent.height,
+        old.generation,
+        rebuilt.extent.width,
+        rebuilt.extent.height,
+        rebuilt.generation,
+        recovered.generation,
+    );
+    rebuilt
+}
+
+// 四条路径共享同一个真实窗口、GPU、场景、FramePlan 和生命周期 owner。
+#[cfg(feature = "vulkan-parity-test")]
+fn verify_vulkan_surface_recovery(
+    context: &mut VulkanContext,
+    scene: &ProductionChainScene,
+    initial: SurfaceToken,
+) {
+    let mut current = initial;
+    for fault in [
+        VulkanSurfaceFaultForParity::AcquireOutOfDate,
+        VulkanSurfaceFaultForParity::PresentOutOfDate,
+        VulkanSurfaceFaultForParity::AcquireSuboptimal,
+        VulkanSurfaceFaultForParity::PresentSuboptimal,
+    ] {
+        current = verify_vulkan_surface_fault(context, scene, fault);
+    }
+    assert_eq!(current.generation, initial.generation + 4);
+    eprintln!(
+        "Vulkan WSI Surface recovery verified: paths=4; generation={}->{}; recovery-ui-presents=4; injected-suboptimal-presents=2",
+        initial.generation, current.generation,
+    );
+}
+
 // 在真实平台窗口上验收 Vulkan WSI acquire → render → present 与 resize 生命周期。
 #[cfg(feature = "vulkan-parity-test")]
 pub(crate) fn run_vulkan_wsi_production_chain_test() {
@@ -173,7 +263,16 @@ pub(crate) fn run_vulkan_wsi_production_chain_test() {
         "Vulkan",
         "UIX Vulkan WSI parity",
         |native_surface, width, height| VulkanContext::new(native_surface, width, height),
-        |context| context.parity_adapter_diagnostic(),
+        |context| {
+            let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
+            let session =
+                std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "<unset>".to_owned());
+            format!(
+                "Wayland display={display}; session={session}; {}",
+                context.parity_adapter_diagnostic()
+            )
+        },
+        verify_vulkan_surface_recovery,
     );
 }
 
@@ -192,5 +291,6 @@ pub(crate) fn run_opengl_wsi_production_chain_test() {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
             format!("Wayland display={display}; EGL window surface; GLES context")
         },
+        |_, _, _| {},
     );
 }

@@ -29,6 +29,9 @@ pub(crate) mod surface;
 
 #[cfg(any(unix, windows))]
 pub use context::VulkanContext;
+// 故障值只供 crate 内显式 Vulkan parity 组合根安排一次原生结果。
+#[cfg(all(any(unix, windows), feature = "vulkan-parity-test"))]
+pub(crate) use context::VulkanSurfaceFaultForParity;
 
 // 组装 Vulkan GPU-native swapchain adapter 的静态 recipe 能力。
 #[cfg(any(unix, windows))]

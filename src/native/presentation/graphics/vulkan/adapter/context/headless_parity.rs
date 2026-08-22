@@ -122,6 +122,8 @@ impl VulkanContext {
             frame_fence,
             acquired_frame: None,
             submitted_frame: None,
+            surface_fault_for_parity: None,
+            replace_present_sync_for_parity: false,
             surface_lifecycle:
                 crate::platform::presentation::rhi::RhiSurfaceLifecycle::uninitialized(extent),
             native_surface: std::ptr::null_mut(),
