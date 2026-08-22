@@ -33,12 +33,14 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
 };
 
-// 保存一个真实 D3D12 Buffer 与创建时冻结的共享描述。
+// 保存一个真实 D3D12 Buffer、创建时冻结的共享描述和完整逻辑内容。
 struct D3d12RhiBuffer {
     // Upload heap 资源可直接作为顶点、索引或常量 Buffer 使用。
     native: ID3D12Resource,
     // 共享描述是所有上传预检的唯一事实。
     desc: BufferDesc,
+    // CPU 镜像保存完整逻辑容量，供前缀更新继承未覆盖后缀。
+    shadow: Vec<u8>,
 }
 
 // 让共享 Buffer 表读取 D3D12 创建时冻结的描述。
@@ -182,68 +184,51 @@ impl D3d12RhiDevice {
     // 创建真实 upload-heap Buffer，并由共享表签发不可复用句柄。
     fn create_buffer(&mut self, device: &ID3D12Device, desc: BufferDesc) -> Result<BufferHandle> {
         // 共享容量、用途、步长与 Uniform ABI 必须先于 CreateCommittedResource。
-        let native_desc = desc.validate()?;
-        let requested = u64::from(native_desc.size_bytes_u32());
-        // D3D12 常量 Buffer 的物理分配按 256 字节扩展，API 无关容量仍保持不变。
-        let allocation = match desc.usage() {
-            crate::platform::presentation::rhi::BufferUsage::Uniform => align_up(requested, 256),
-            crate::platform::presentation::rhi::BufferUsage::Vertex
-            | crate::platform::presentation::rhi::BufferUsage::Index => requested,
-        };
-        let resource_desc = buffer_resource_desc(allocation);
-        let native = create_committed_resource(
+        desc.validate()?;
+        // 新资源的完整逻辑内容从确定性零值开始，分配失败不登记任何状态。
+        let shadow = zeroed_buffer_shadow(desc.size_bytes())?;
+        // 原生资源只有在完整逻辑镜像写入成功后才交给资源表。
+        let native = create_buffer_upload_version(
             device,
-            D3D12_HEAP_TYPE_UPLOAD,
-            &resource_desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
+            desc,
+            &shadow,
             "ID3D12Device::CreateCommittedResource(RHI buffer)",
         )?;
-        Ok(self.buffers.insert(D3d12RhiBuffer { native, desc }))
+        Ok(self.buffers.insert(D3d12RhiBuffer {
+            native,
+            desc,
+            shadow,
+        }))
     }
 
     // 在 Map 前完成真实句柄、共享描述和载荷范围门禁。
     fn update_buffer(&mut self, device: &ID3D12Device, upload: RhiBufferUpload<'_>) -> Result<()> {
         // 陈旧身份必须先于任何原生资源调用被共享表拒绝。
-        let desc = self.buffers.get(upload.buffer())?.desc;
+        let handle = upload.buffer();
+        let current = self.buffers.get(handle)?;
+        let desc = current.desc;
         // 空载荷、容量、元素边界和 Uniform 完整替换由共享值对象唯一解释。
         let validated = upload.validate(desc)?;
         let data = validated.data();
-        // 每次上传创建一个新版本，保证同一命令批次中更早的 draw 继续读取其冻结资源。
-        let requested = desc.size_bytes() as u64;
-        let allocation = match desc.usage() {
-            crate::platform::presentation::rhi::BufferUsage::Uniform => align_up(requested, 256),
-            crate::platform::presentation::rhi::BufferUsage::Vertex
-            | crate::platform::presentation::rhi::BufferUsage::Index => requested,
-        };
-        let native_desc = buffer_resource_desc(allocation);
-        let native = create_committed_resource(
+        // 先以可失败方式复制旧逻辑内容，再只覆盖共享合同允许的前缀。
+        let mut next_shadow = clone_buffer_shadow(&current.shadow)?;
+        next_shadow[..data.len()].copy_from_slice(data);
+        // 每次上传创建新版本并写入完整逻辑容量，旧版本继续由既有 draw 引用保活。
+        let native = create_buffer_upload_version(
             device,
-            D3D12_HEAP_TYPE_UPLOAD,
-            &native_desc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
+            desc,
+            &next_shadow,
             "ID3D12Device::CreateCommittedResource(RHI buffer upload version)",
         )?;
-        let no_read = D3D12_RANGE { Begin: 0, End: 0 };
-        let mut mapped = std::ptr::null_mut();
-        // SAFETY: native 是新建且存活的 upload-heap Buffer；共享门禁已证明写入范围位于冻结容量内。
-        unsafe { native.Map(0, Some(&no_read), Some(&mut mapped)) }
-            .map_err(|error| d3d12_error("ID3D12Resource::Map(RHI buffer)", error))?;
-        if mapped.is_null() {
-            // SAFETY: Map 已成功但没有返回地址；空写范围结束本次映射。
-            unsafe { native.Unmap(0, Some(&no_read)) };
-            return Err(platform_error("D3d12Context: RHI buffer Map returned null"));
-        }
-        // SAFETY: Map 返回的 upload-heap 地址至少覆盖资源物理分配；共享门禁证明 data 不超过逻辑容量。
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), mapped.cast::<u8>(), data.len());
-            let written = D3D12_RANGE {
-                Begin: 0,
-                End: data.len(),
-            };
-            native.Unmap(0, Some(&written));
-        }
-        // 只有新版本完整创建、映射和写入成功后才替换资源表当前版本。
-        self.buffers.get_mut(upload.buffer())?.native = native;
+        // 只有镜像复制、前缀覆盖、原生创建和完整写入全部成功后，才整体替换当前版本。
+        let replacement = D3d12RhiBuffer {
+            native,
+            desc,
+            shadow: next_shadow,
+        };
+        let previous = std::mem::replace(self.buffers.get_mut(handle)?, replacement);
+        // 不在 pending draw 中的旧 COM 引用可在提交新版本后正常释放。
+        drop(previous);
         Ok(())
     }
 
@@ -876,6 +861,79 @@ fn create_committed_resource(
     .map_err(|error| d3d12_error(operation, error))?;
     resource
         .ok_or_else(|| platform_error(format!("D3d12Context: {operation} returned no resource")))
+}
+
+// 以可报告失败的方式创建确定性零值 Buffer 逻辑镜像。
+fn zeroed_buffer_shadow(size: usize) -> Result<Vec<u8>> {
+    let mut shadow = Vec::new();
+    // 先完成唯一可能失败的容量扩展，调用方状态保持未提交。
+    shadow
+        .try_reserve_exact(size)
+        .map_err(|_| platform_error("D3d12Context: RHI buffer shadow allocation failed"))?;
+    // 已预留完整容量，零值扩展不会再次分配。
+    shadow.resize(size, 0);
+    Ok(shadow)
+}
+
+// 以可报告失败的方式复制完整 Buffer 逻辑镜像。
+fn clone_buffer_shadow(current: &[u8]) -> Result<Vec<u8>> {
+    let mut next = Vec::new();
+    // 先尝试预留全部容量，失败时不改变当前镜像或原生版本。
+    next.try_reserve_exact(current.len())
+        .map_err(|_| platform_error("D3d12Context: RHI buffer shadow copy failed"))?;
+    // 容量已经完整预留，因此复制旧后缀不会再触发分配。
+    next.extend_from_slice(current);
+    Ok(next)
+}
+
+// 创建并写满一个 D3D12 upload-heap Buffer 版本。
+fn create_buffer_upload_version(
+    device: &ID3D12Device,
+    desc: BufferDesc,
+    shadow: &[u8],
+    operation: &'static str,
+) -> Result<ID3D12Resource> {
+    // CPU owner 的内部镜像必须精确覆盖 API 无关逻辑容量。
+    if shadow.len() != desc.size_bytes() {
+        return Err(platform_error(
+            "D3d12Context: RHI buffer shadow size diverged",
+        ));
+    }
+    let requested = desc.size_bytes() as u64;
+    // D3D12 常量 Buffer 的物理分配按 256 字节扩展，逻辑内容仍只由共享描述决定。
+    let allocation = match desc.usage() {
+        crate::platform::presentation::rhi::BufferUsage::Uniform => align_up(requested, 256),
+        crate::platform::presentation::rhi::BufferUsage::Vertex
+        | crate::platform::presentation::rhi::BufferUsage::Index => requested,
+    };
+    let native_desc = buffer_resource_desc(allocation);
+    let native = create_committed_resource(
+        device,
+        D3D12_HEAP_TYPE_UPLOAD,
+        &native_desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        operation,
+    )?;
+    let no_read = D3D12_RANGE { Begin: 0, End: 0 };
+    let mut mapped = std::ptr::null_mut();
+    // SAFETY: native 是新建且存活的 upload-heap Buffer，物理容量不小于完整逻辑镜像。
+    unsafe { native.Map(0, Some(&no_read), Some(&mut mapped)) }
+        .map_err(|error| d3d12_error("ID3D12Resource::Map(RHI buffer)", error))?;
+    if mapped.is_null() {
+        // SAFETY: Map 已成功但没有返回地址；空写范围结束本次映射。
+        unsafe { native.Unmap(0, Some(&no_read)) };
+        return Err(platform_error("D3d12Context: RHI buffer Map returned null"));
+    }
+    // SAFETY: Map 返回的地址覆盖物理分配，shadow 精确覆盖已验证的完整逻辑容量。
+    unsafe {
+        std::ptr::copy_nonoverlapping(shadow.as_ptr(), mapped.cast::<u8>(), shadow.len());
+        let written = D3D12_RANGE {
+            Begin: 0,
+            End: shadow.len(),
+        };
+        native.Unmap(0, Some(&written));
+    }
+    Ok(native)
 }
 
 // 创建 upload heap Buffer，供一次纹理 copy 保持到 fence 完成。
