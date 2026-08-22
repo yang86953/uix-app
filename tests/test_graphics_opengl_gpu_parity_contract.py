@@ -130,7 +130,7 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
         self.assertIn('path = "tests/opengl_wsi_parity.rs"', cargo)
         for marker in (
             "EglContext::new(native_surface",
-            "Some(OPENGL_WSI_PACING_PLAN)",
+            "Some(WSI_PACING_OBSERVATION_PLAN)",
             "execute_ui_production_surface_chain_with_present_hook",
             ".expect_err(\"zero-width WSI resize must be rejected\")",
             "resized.generation, first_present.generation + 1",
@@ -147,7 +147,7 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
             "recovered-submit=ok",
             "recovered-eglSwapBuffers=ok",
             "checked-window-close=ok",
-            "timing-claim=nonzero-swap-policy-only",
+            "timing-claim=bounded-platform-dispatch-only",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, composition)
@@ -221,6 +221,8 @@ class GraphicsOpenGlGpuParityContractTests(unittest.TestCase):
         self.assertNotIn("wayland_client", composition)
         self.assertNotIn("EventQueue<", composition)
         self.assertEqual(composition.count("fn run_wsi_production_chain_test"), 1)
+        self.assertEqual(composition.count("Some(WSI_PACING_OBSERVATION_PLAN)"), 2)
+        self.assertNotIn("OPENGL_WSI_PACING_PLAN", composition)
         self.assertIn('self.dispatch_polled(timeout_ms, "dispatch_timeout")', wayland_event_loop)
         self.assertIn("poll(", wayland_event_loop)
 

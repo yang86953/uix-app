@@ -44,12 +44,18 @@ class VulkanWsiContractTests(unittest.TestCase):
         for marker in (
             "create_platform_with_pending",
             "create_app_window(",
+            "production_presents: 8",
+            "total_timeout: Duration::from_secs(15)",
+            ".event_loop()",
+            ".wait_timeout(dispatch_timeout",
             "VulkanContext::new(native_surface",
             "execute_ui_production_surface_chain",
             ".expect_err(\"zero-width WSI resize must be rejected\")",
             "rejected resize must not commit generation or extent",
             "resized.generation, first_present.generation + 1",
-            "baseline-presents=2; shutdown=ok",
+            "event_observation.dispatches.get() >= plan.production_presents",
+            "baseline-presents=2; paced-presents={}; production-presents={production_presents}",
+            "timing-claim=bounded-platform-dispatch-only",
             "verify_vulkan_surface_recovery",
             "recovery-ui-presents=4",
             "present_shared_production_scene_with_readback",
@@ -58,7 +64,31 @@ class VulkanWsiContractTests(unittest.TestCase):
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, composition)
+        self.assertEqual(composition.count("fn run_wsi_production_chain_test"), 1)
+        self.assertEqual(composition.count("struct WsiPacingObservationPlan"), 1)
+        self.assertEqual(composition.count("const WSI_PACING_OBSERVATION_PLAN"), 1)
+        self.assertEqual(composition.count("Some(WSI_PACING_OBSERVATION_PLAN)"), 2)
+        self.assertNotIn("OPENGL_WSI_PACING_PLAN", composition)
+        vulkan_entry = composition[
+            composition.index("fn run_vulkan_wsi_production_chain_test") :
+            composition.index("fn run_opengl_wsi_production_chain_test")
+        ]
+        self.assertIn("Some(WSI_PACING_OBSERVATION_PLAN)", vulkan_entry)
+        self.assertNotIn("None,", vulkan_entry)
         self.assertLess(composition.index(".try_shutdown()"), composition.index("window\n        .close()"))
+
+    def test_upper_sources_do_not_own_vulkan_or_wayland_pacing(self) -> None:
+        for upper_root in (ROOT / "src/app", ROOT / "src/ui", ROOT / "src/draw"):
+            for path in upper_root.rglob("*.rs"):
+                text = source(path)
+                for forbidden in (
+                    "WSI_PACING_OBSERVATION_PLAN",
+                    "wait_timeout(dispatch_timeout",
+                    "VulkanContext",
+                    "wayland_client",
+                ):
+                    with self.subTest(upper=path.relative_to(ROOT), forbidden=forbidden):
+                        self.assertNotIn(forbidden, text)
 
     def test_shared_lifecycle_and_consistency_authorities_are_not_copied(self) -> None:
         definitions = []

@@ -290,8 +290,8 @@ struct WsiPacingObservationPlan {
     total_timeout: Duration,
 }
 
-// 真实 OpenGL WSI 验收必须在同一有界 owner-thread 事务内完成八帧。
-const OPENGL_WSI_PACING_PLAN: WsiPacingObservationPlan = WsiPacingObservationPlan {
+// 真实 Vulkan/OpenGL WSI 验收共用同一有界 owner-thread 八帧观测计划。
+const WSI_PACING_OBSERVATION_PLAN: WsiPacingObservationPlan = WsiPacingObservationPlan {
     production_presents: 8,
     total_timeout: Duration::from_secs(15),
 };
@@ -452,7 +452,7 @@ fn run_wsi_production_chain_test<C>(
         "rejected resize must not commit generation or extent",
     );
 
-    // OpenGL 节拍验收由真实 compositor configure 驱动 resize；其它 WSI 保持原行为。
+    // 有节拍的 WSI 验收由真实 compositor configure 驱动 resize。
     let resized_logical = if let Some(deadline) = deadline {
         let resize_events_before = event_observation.resize_events.get();
         window
@@ -531,6 +531,10 @@ fn run_wsi_production_chain_test<C>(
             Instant::now() < deadline,
             "paced production frames exceeded the WSI total deadline"
         );
+        assert!(
+            event_observation.dispatches.get() >= plan.production_presents,
+            "paced production frames must each be preceded by real platform event dispatch",
+        );
     }
     verify_surface_recovery(&mut context, &scene, second_present);
     context
@@ -542,7 +546,7 @@ fn run_wsi_production_chain_test<C>(
 
     if let Some(resized_logical) = resized_logical {
         eprintln!(
-            "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resize-event={}x{}; resize-token={}x{}@{}; baseline-presents=2; paced-presents={}; production-presents={production_presents}; recovery-presents=2; platform-timeout-dispatches={}; dispatched-events={}; resize-events={}; shutdown=ok; checked-window-close=ok; timing-claim=nonzero-swap-policy-only",
+            "{backend} WSI production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan/RHI -> native Surface acquire/render/present; first={}x{}@{}; rejected=0x{}:{:?},token-unchanged; resize-event={}x{}; resize-token={}x{}@{}; baseline-presents=2; paced-presents={}; production-presents={production_presents}; recovery-presents=2; platform-timeout-dispatches={}; dispatched-events={}; resize-events={}; shutdown=ok; checked-window-close=ok; timing-claim=bounded-platform-dispatch-only",
             first_present.extent.width,
             first_present.extent.height,
             first_present.generation,
@@ -665,7 +669,7 @@ pub(crate) fn run_vulkan_wsi_production_chain_test() {
     run_wsi_production_chain_test(
         "Vulkan",
         "UIX Vulkan WSI parity",
-        None,
+        Some(WSI_PACING_OBSERVATION_PLAN),
         |native_surface, width, height| VulkanContext::new(native_surface, width, height),
         |context| {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
@@ -701,7 +705,7 @@ pub(crate) fn run_opengl_wsi_production_chain_test() {
     run_wsi_production_chain_test::<EglContext>(
         "OpenGL ES",
         "UIX OpenGL ES WSI parity",
-        Some(OPENGL_WSI_PACING_PLAN),
+        Some(WSI_PACING_OBSERVATION_PLAN),
         |native_surface, width, height| EglContext::new(native_surface, width, height),
         |context| {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
