@@ -6,6 +6,8 @@
 
 mod font_cache;
 mod font_layout;
+// 保存跨帧文本布局结果，避免页面切换时重复执行 shaping 与断行。
+mod layout_cache;
 // 确定性字体包的原子安装事务独立实现，保持 FontService 主文件体积边界。
 mod bundle_install;
 // 保存中性文本布局的两端对齐空白扩展算法。
@@ -61,6 +63,8 @@ pub struct FontService {
     fallback_handles: Vec<FontHandle>,
     /// 统一字形缓存。
     glyph_cache: GlyphCache,
+    /// 有界文本布局缓存，由字体服务统一拥有并随字体配置失效。
+    layout_cache: layout_cache::TextLayoutCache,
 }
 
 impl FontService {
@@ -76,6 +80,7 @@ impl FontService {
             loaded_font_handle: FontHandle::new(0),
             fallback_handles: Vec::new(),
             glyph_cache: GlyphCache::new(),
+            layout_cache: layout_cache::TextLayoutCache::new(),
         }
     }
 
@@ -292,6 +297,8 @@ impl FontService {
     }
 
     fn sync_fallback_fonts(&mut self) {
+        // 回退链变化会改变同一文本的字体分段，必须先失效旧布局。
+        self.layout_cache.clear();
         self.text_backend.set_fallback_fonts(&self.fallback_handles);
     }
 
@@ -762,6 +769,8 @@ impl FontService {
     /// 清空字形位图缓存（释放内存）。
     pub fn clear_glyph_cache(&mut self) {
         self.glyph_cache.clear();
+        // 字形与布局缓存共享字体生命周期，显式清理时保持二者一致。
+        self.layout_cache.clear();
         self.text_backend.clear_cache();
     }
 
@@ -769,7 +778,9 @@ impl FontService {
     pub fn memory_usage(&self) -> usize {
         let backend_mem = self.text_backend.memory_usage();
         let cache_mem = self.glyph_cache.memory_usage();
-        backend_mem.saturating_add(cache_mem)
+        backend_mem
+            .saturating_add(cache_mem)
+            .saturating_add(self.layout_cache.memory_usage())
     }
 }
 

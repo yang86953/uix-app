@@ -6,10 +6,6 @@ import time
 
 import agent_client
 
-WINDOW_ID = 1
-GENERATION = 1
-
-
 def wait(label, seconds):
     """打印动作标记并等待，日志按此对应页面段。"""
     print(f"[ACTION] {label} (now, wait {seconds}s)", flush=True)
@@ -20,19 +16,35 @@ def main():
     endpoint, token = agent_client.load_discovery()
     session = agent_client.AgentSession(endpoint, token)
     session.hello()
+    window_id, generation = agent_client.first_window(session)
     print("[ACTION] repro start", flush=True)
 
     def switch(automation_id):
         """语义 invoke 点击侧边栏按钮切页。"""
         request = {
-            "window_id": WINDOW_ID,
-            "generation": GENERATION,
+            "window_id": window_id,
+            "generation": generation,
             "target": {"automation_id": automation_id},
             "action": {"kind": "invoke"},
         }
+        started = time.perf_counter()
         reply = session.perform(request)
         ok = reply.get("ok")
-        print(f"[ACTION] switch {automation_id} ok={ok}", flush=True)
+        presented = False
+        if ok:
+            waited = session.wait_presented(
+                window_id,
+                generation,
+                reply["revision"],
+            )
+            presented = waited.get("ok", False)
+            ok = ok and presented
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        print(
+            f"[ACTION] switch {automation_id} ok={ok} "
+            f"presented={presented} presented_ms={elapsed_ms:.1f}",
+            flush=True,
+        )
         if not ok:
             print("  reply:", json.dumps(reply, ensure_ascii=False)[:300], flush=True)
         return ok
@@ -59,13 +71,24 @@ def main():
 
     # 阶段 5：点击首页 +1 按钮，观察交互动画帧。
     request = {
-        "window_id": WINDOW_ID,
-        "generation": GENERATION,
+        "window_id": window_id,
+        "generation": generation,
         "target": {"automation_id": "home-count-increment"},
         "action": {"kind": "invoke"},
     }
     reply = session.perform(request)
-    print(f"[ACTION] click home-count-increment ok={reply.get('ok')}", flush=True)
+    presented = False
+    if reply.get("ok"):
+        presented = session.wait_presented(
+            window_id,
+            generation,
+            reply["revision"],
+        ).get("ok", False)
+    print(
+        f"[ACTION] click home-count-increment ok={reply.get('ok')} "
+        f"presented={presented}",
+        flush=True,
+    )
     wait("after-increment-click", 5)
 
     print("[ACTION] repro done", flush=True)

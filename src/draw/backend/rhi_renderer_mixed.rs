@@ -156,9 +156,10 @@ impl RhiRenderer {
             pipeline
         } else {
             // 只选择通用层定义的扇形 pipeline 语义。
-            let pipeline = device.create_pipeline(crate::platform::presentation::rhi::PipelineDesc {
-                kind: crate::platform::presentation::rhi::PipelineKind::Sector,
-            })?;
+            let pipeline =
+                device.create_pipeline(crate::platform::presentation::rhi::PipelineDesc {
+                    kind: crate::platform::presentation::rhi::PipelineKind::Sector,
+                })?;
             // 缓存扇形 pipeline 句柄。
             self.sector_pipeline = Some(pipeline);
             pipeline
@@ -171,15 +172,16 @@ impl RhiRenderer {
             buffer
         } else {
             // 创建 position float2 ABI 的 vertex buffer。
-            let buffer = device.create_buffer(crate::platform::presentation::rhi::BufferDesc::vertex(
-                // 保存共享类型化 payload 的精确容量。
-                unit_vertices.size_bytes(),
-                // 步长只来自共享 Sector 顶点 ABI。
-                crate::platform::presentation::rhi::PipelineKind::Sector
-                    .contract()
-                    .vertex
-                    .stride_bytes(),
-            ))?;
+            let buffer =
+                device.create_buffer(crate::platform::presentation::rhi::BufferDesc::vertex(
+                    // 保存共享类型化 payload 的精确容量。
+                    unit_vertices.size_bytes(),
+                    // 步长只来自共享 Sector 顶点 ABI。
+                    crate::platform::presentation::rhi::PipelineKind::Sector
+                        .contract()
+                        .vertex
+                        .stride_bytes(),
+                ))?;
             // 缓存尚未写入本帧内容的单位 quad 句柄。
             self.sector_vertex_buffer = Some(buffer);
             buffer
@@ -251,13 +253,29 @@ impl RhiRenderer {
             // 不含 solid 时保持空槽。
             None => None,
         };
+        // 三类 float8 sampled 操作共享同一 vertex buffer，必须在返回任何句柄前统一扩容。
+        let coverage_count = operations
+            .iter()
+            .filter(|operation| matches!(operation, RhiOp::Coverage(_)))
+            .count();
+        let msdf_count = operations
+            .iter()
+            .filter(|operation| matches!(operation, RhiOp::Msdf(_)))
+            .count();
+        let sampled_vertex_bytes = coverage_count
+            .max(msdf_count)
+            .max(1)
+            .checked_mul(6 * 8 * std::mem::size_of::<f32>())
+            .ok_or_else(|| super::rhi_invalid("RhiRenderer sampled vertex capacity overflows"))?;
         // 只在当前帧出现 color texture 时准备 sampled 资源。
         let textured_resources = if operations
             .iter()
             .any(|operation| matches!(operation, RhiOp::Textured(_) | RhiOp::Sampled(_)))
         {
             // 创建或复用 sampled pipeline、vertex、uniform 和 sampler。
-            Some(self.ensure_textured_resources(frame.device())?)
+            Some(
+                self.ensure_textured_resources_with_capacity(frame.device(), sampled_vertex_bytes)?,
+            )
         } else {
             // 不含颜色纹理时保持空槽。
             None
@@ -274,23 +292,17 @@ impl RhiRenderer {
             None
         };
         // 只在当前帧出现 coverage 时准备 R8 pipeline 和 point sampler。
-        let coverage_resources = if operations
-            .iter()
-            .any(|operation| matches!(operation, RhiOp::Coverage(_)))
-        {
+        let coverage_resources = if coverage_count > 0 {
             // 创建或复用 coverage pipeline 和共享 float8 buffer。
-            Some(self.ensure_coverage_resources(frame.device())?)
+            Some(self.ensure_coverage_resources(frame.device(), sampled_vertex_bytes)?)
         } else {
             // 不含 coverage 时保持空槽。
             None
         };
         // 只在当前帧出现 MSDF 时准备 RGBA8 MSDF pipeline 和资源。
-        let msdf_resources = if operations
-            .iter()
-            .any(|operation| matches!(operation, RhiOp::Msdf(_)))
-        {
+        let msdf_resources = if msdf_count > 0 {
             // 创建或复用 MSDF pipeline、共享 float8 buffer、常量和线性 sampler。
-            Some(self.ensure_msdf_resources(frame.device())?)
+            Some(self.ensure_msdf_resources(frame.device(), sampled_vertex_bytes)?)
         } else {
             // 不含 MSDF 时保持空槽。
             None
@@ -337,6 +349,8 @@ impl RhiRenderer {
         };
         // 为颜色纹理、coverage texture 和 MSDF atlas page 按操作序号保存 draw 句柄。
         let mut textures = vec![None; operations.len()];
+        // 为 coverage 操作保存每个字形在 R8 atlas page 内的归一化 UV。
+        let mut coverage_uvs = vec![[0.0, 0.0, 1.0, 1.0]; operations.len()];
         // 为 MSDF 操作保存每个字形在 page 内的归一化 UV。
         let mut msdf_uvs = vec![[0.0, 0.0, 1.0, 1.0]; operations.len()];
         // 为 MSDF 导数 AA 保存实际绑定 texture 的类型化物理尺寸。
@@ -345,6 +359,24 @@ impl RhiRenderer {
         let mut transient_textures = Vec::new();
         // 创建并上传所有源纹理，避免计划构造中途才发现资源错误。
         for (index, operation) in operations.iter().enumerate() {
+            // 物理 1:1 coverage 优先走跨帧 R8 atlas。
+            if let RhiOp::Coverage(quad) = operation {
+                let (texture, uv, persistent) = match self
+                    .ensure_coverage_texture(frame.device(), quad)
+                {
+                    Ok(result) => result,
+                    Err(error) => {
+                        let _ = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
+                        return Err(error);
+                    }
+                };
+                textures[index] = Some(texture);
+                coverage_uvs[index] = uv;
+                if !persistent {
+                    transient_textures.push(texture);
+                }
+                continue;
+            }
             // MSDF 优先走跨帧 atlas，减少字形源纹理的反复创建和上传。
             if let RhiOp::Msdf(quad) = operation {
                 // atlas 失败时先清理当前帧已有的临时 texture。
@@ -382,12 +414,8 @@ impl RhiRenderer {
                     TextureFormat::Bgra8Unorm,
                     RhiRenderer::encode_u32s(quad.pixels.as_ref()),
                 ),
-                // 准备 R8 coverage 源纹理。
-                RhiOp::Coverage(quad) => (
-                    RhiExtent::new(quad.pixel_w, quad.pixel_h),
-                    TextureFormat::R8Unorm,
-                    RhiRenderer::encode_coverage(quad.coverage.as_ref()),
-                ),
+                // coverage 已在本轮循环开头进入跨帧 atlas。
+                RhiOp::Coverage(_) => unreachable!("coverage atlas branch must continue"),
                 // MSDF 已在本轮循环开头处理，不能重复进入临时 texture 分支。
                 RhiOp::Msdf(_) => unreachable!("MSDF cache branch must continue"),
                 // 其他操作没有临时 sampled source。
@@ -464,7 +492,9 @@ impl RhiRenderer {
             });
         }
         // 按原始操作顺序追加 command，不能按 pipeline 类型重排。
-        for (index, operation) in operations.iter().enumerate() {
+        let mut index = 0usize;
+        while index < operations.len() {
+            let operation = &operations[index];
             // 逐类取得对应资源并编码固定 ABI。
             match operation {
                 // 编码 solid mesh。
@@ -605,13 +635,28 @@ impl RhiRenderer {
                         textures[index],
                         "RhiRenderer mixed coverage source is missing",
                     )?;
-                    // 选择当前 glyph 的裁剪。
-                    // 上传类型化 coverage quad 顶点。
+                    // 合并连续且共享 atlas page 与裁剪的 coverage，保持原 painter order。
+                    let mut batch_end = index + 1;
+                    while let Some(RhiOp::Coverage(next)) = operations.get(batch_end) {
+                        if textures[batch_end] != Some(texture) || next.scissor != quad.scissor {
+                            break;
+                        }
+                        batch_end += 1;
+                    }
+                    let mut vertices = Vec::with_capacity((batch_end - index) * 48);
+                    for batch_index in index..batch_end {
+                        let RhiOp::Coverage(batch_quad) = &operations[batch_index] else {
+                            unreachable!("coverage batch contains a non-coverage operation");
+                        };
+                        vertices.extend_from_slice(&RhiRenderer::coverage_quad_vertices_with_uv(
+                            batch_quad,
+                            coverage_uvs[batch_index],
+                        ));
+                    }
+                    // 一次上传完整连续批次，避免每个字形重复更新共享 vertex buffer。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        data: FrameVertexPayload::position_uv_color_f32(
-                            RhiRenderer::coverage_quad_vertices(quad),
-                        ),
+                        data: FrameVertexPayload::position_uv_color_f32(vertices),
                     });
                     // 上传类型化 viewport uniform。
                     pass.push(FramePlanCommand::UploadUniform {
@@ -630,9 +675,10 @@ impl RhiRenderer {
                         )),
                         // Draw 自有当前 coverage quad 的 viewport 与 scissor 栅格事实。
                         DrawRasterState::new(viewport, quad.scissor),
-                        // Coverage quad 使用封闭的六顶点非索引范围。
-                        DrawRange::vertices(6),
+                        // 连续 coverage 字形共享一次 draw。
+                        DrawRange::vertices(((batch_end - index) * 6) as u32),
                     )));
+                    index = batch_end - 1;
                 }
                 // 编码 RGBA8 MSDF 字形 quad。
                 RhiOp::Msdf(quad) => {
@@ -644,13 +690,32 @@ impl RhiRenderer {
                     // 取得当前 MSDF texture。
                     let texture =
                         required(textures[index], "RhiRenderer mixed MSDF source is missing")?;
-                    // 选择当前 MSDF 字形的裁剪。
-                    // 上传支持旋转和剪切以及 atlas UV 的类型化 MSDF quad 顶点。
+                    // 只合并连续且共享 atlas page、裁剪与 uniform 的字形，严格保持 painter order。
+                    let mut batch_end = index + 1;
+                    while let Some(RhiOp::Msdf(next)) = operations.get(batch_end) {
+                        if textures[batch_end] != Some(texture)
+                            || next.scissor != quad.scissor
+                            || next.range.to_bits() != quad.range.to_bits()
+                            || msdf_texture_extents[batch_end] != msdf_texture_extents[index]
+                        {
+                            break;
+                        }
+                        batch_end += 1;
+                    }
+                    let mut vertices = Vec::with_capacity((batch_end - index) * 48);
+                    for batch_index in index..batch_end {
+                        let RhiOp::Msdf(batch_quad) = &operations[batch_index] else {
+                            unreachable!("MSDF batch contains a non-MSDF operation");
+                        };
+                        vertices.extend_from_slice(&RhiRenderer::msdf_quad_vertices_with_uv(
+                            batch_quad,
+                            msdf_uvs[batch_index],
+                        ));
+                    }
+                    // 一次上传完整连续批次，避免每个字形重复更新共享 vertex buffer。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        data: FrameVertexPayload::position_uv_color_f32(
-                            RhiRenderer::msdf_quad_vertices_with_uv(quad, msdf_uvs[index]),
-                        ),
+                        data: FrameVertexPayload::position_uv_color_f32(vertices),
                     });
                     // 上传类型化 viewport、source extent 和 MSDF range 常量。
                     pass.push(FramePlanCommand::UploadUniform {
@@ -673,9 +738,11 @@ impl RhiRenderer {
                         )),
                         // Draw 自有当前 MSDF quad 的 viewport 与 scissor 栅格事实。
                         DrawRasterState::new(viewport, quad.scissor),
-                        // MSDF quad 使用封闭的六顶点非索引范围。
-                        DrawRange::vertices(6),
+                        // 连续字形共享一次 draw，同时保留各自的三角形顺序。
+                        DrawRange::vertices(((batch_end - index) * 6) as u32),
                     )));
+                    // 跳过已由当前 draw 覆盖的其余连续字形。
+                    index = batch_end - 1;
                 }
                 // 编码渐变矩形。
                 RhiOp::Gradient(gradient) => {
@@ -784,6 +851,7 @@ impl RhiRenderer {
                     );
                 }
             }
+            index += 1;
         }
         // 将当前 target pass 追加到封闭帧唯一拥有的计划中并保留操作顺序。
         frame.push_pass(load, pass);

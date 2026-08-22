@@ -560,7 +560,31 @@ impl FontService {
         };
         let has_max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let do_wrap = has_max_w && opts.word_wrap;
-        let max_w = if has_max_w { opts.max_width } else { f32::MAX };
+        // 左对齐且不换行时宽度约束既不参与断行也不产生偏移，规整为无界值以复用测量结果。
+        let width_affects_layout = do_wrap || opts.h_align != HAlign::Left;
+        let max_w = if has_max_w && width_affects_layout {
+            opts.max_width
+        } else {
+            f32::MAX
+        };
+
+        // 用实际布局语义规整 key，让等价的无界参数共享同一份跨帧结果。
+        let cache_opts = TextLayoutOptions {
+            max_width: max_w,
+            max_height: if opts.max_height.is_finite() && opts.max_height > 0.0 {
+                opts.max_height
+            } else {
+                0.0
+            },
+            line_height: line_h,
+            word_wrap: do_wrap,
+            h_align: opts.h_align,
+            v_align: opts.v_align,
+            font_size: fs,
+        };
+        if let Some(layout) = self.layout_cache.get(font, text, &cache_opts) {
+            return layout;
+        }
 
         let primary_metrics = self.text_backend.horizontal_line_metrics(font, fs);
         let primary_ascent = primary_metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
@@ -619,12 +643,15 @@ impl FontService {
         }
         let max_line_width = line_infos.iter().fold(0.0f32, |m, l| m.max(l.width));
 
-        TextLayout {
+        let layout = TextLayout {
             glyphs: all_glyphs,
             lines: line_infos,
             width: max_line_width,
             height: container_height,
-        }
+        };
+        self.layout_cache
+            .insert(font, text, &cache_opts, layout.clone());
+        layout
     }
 }
 

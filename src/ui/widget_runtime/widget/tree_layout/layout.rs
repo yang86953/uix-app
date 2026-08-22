@@ -220,11 +220,17 @@ impl WidgetTree {
             LAYOUT_TRACE_PHASE.with(|p| p.set(0));
 
             // 内循环：交替扩展和收缩直到稳定
-            for _inner_pass in 0..3 {
+            // 常规树维持较小预算；连续三轮仍未稳定才提高内循环预算，
+            // 让深层动态子树加速向上传播，同时避免振荡页面在首轮做无效工作。
+            let inner_passes = if _converge_pass < 3 { 3 } else { max_passes };
+            let mut previous_inner_expand = None;
+            for _inner_pass in 0..inner_passes {
+                let expand_start = pass_expand_sig.len();
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(2));
                 let expanded =
                     self.layout_expand(order, pass_expand_sig, resized_children, expand_children);
+                let expand_end = pass_expand_sig.len();
                 #[cfg(test)]
                 LAYOUT_TRACE_PHASE.with(|p| p.set(4));
                 let shrunk =
@@ -237,6 +243,17 @@ impl WidgetTree {
                 if !expanded && !shrunk {
                     break;
                 }
+                // 扩展与收缩若把同一批节点带回完全相同的尺寸，继续内循环只会空转。
+                let repeated_expand =
+                    previous_inner_expand.is_some_and(|(previous_start, previous_end)| {
+                        expand_start < expand_end
+                            && pass_expand_sig[previous_start..previous_end]
+                                == pass_expand_sig[expand_start..expand_end]
+                    });
+                if repeated_expand {
+                    break;
+                }
+                previous_inner_expand = Some((expand_start, expand_end));
             }
 
             // Phase 3: 更新 viewport 容器的 content_bounds
