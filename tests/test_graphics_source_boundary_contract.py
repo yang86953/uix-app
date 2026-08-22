@@ -565,6 +565,10 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         ui_entry = source(SRC / "ui/widgets/combinators.rs")
         drawing = source(SRC / "draw/backend/production_chain_parity.rs")
         shared_spec = source(SRC / "draw/backend/rhi_renderer_consistency.rs")
+        parity_contract = source(SRC / "platform/presentation/rhi/parity.rs")
+        vulkan_adapter = source(
+            SRC / "native/presentation/graphics/vulkan/adapter/parity.rs"
+        )
         vulkan_fixture = source(
             SRC
             / "native/presentation/graphics/vulkan/adapter/context/headless_parity.rs"
@@ -576,14 +580,31 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
             "production_chain_scene",
             "execute_ui_production_chain",
             "render_shared_production_scene",
-            "new_headless_for_parity_test",
-            "readback_texture_for_parity_test",
+            "run_headless_ui_production_chain_test",
+            "HeadlessUiParityAdapter",
+            "A::create_context",
+            "A::readback",
             "validate_production_chain_readback",
         ):
             with self.subTest(composition_marker=marker):
                 self.assertIn(marker, composition)
         self.assertIn("ProductionChainScene", shared_spec)
         self.assertIn("ConsistencySample::exact", shared_spec)
+
+        # 中立端口只描述调用形状；原生 fixture、诊断与故障值留在 Adapter。
+        for marker in (
+            "trait HeadlessUiParityAdapter",
+            "trait WsiParityAdapter",
+            "trait WsiParityFramePresenter",
+        ):
+            self.assertIn(marker, parity_contract)
+        for marker in (
+            "impl HeadlessUiParityAdapter for VulkanHeadlessUiParityAdapter",
+            "new_headless_for_parity_test",
+            "readback_texture_for_parity_test",
+        ):
+            self.assertIn(marker, vulkan_adapter)
+            self.assertNotIn(marker, composition)
 
         # UI 使用真实 WidgetRender；Drawing 使用生产 PaintContext/Canvas2D 和统一 FramePlan。
         self.assertIn("WidgetRender::render(&widget", ui_entry)
@@ -599,6 +620,8 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         self.assertIn("readback_production_texture", vulkan_fixture)
         self.assertNotIn("ConsistencySample", vulkan_fixture)
         self.assertNotIn("ProductionChainScene", vulkan_fixture)
+        self.assertNotIn("ConsistencySample", vulkan_adapter)
+        self.assertNotIn("ProductionChainScene", vulkan_adapter)
         self.assertIn(
             "ui_drawing_frame_plan_executes_and_reads_back_on_real_vulkan_device",
             test_target,
@@ -1165,6 +1188,30 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
                     continue
                 with self.subTest(source=relative(path), marker=pattern.pattern):
                     self.assertTrue(any(path.is_relative_to(root) for root in roots))
+
+        # 组合根只消费中立 parity 端口；API 诊断与故障恢复证明归对应 Adapter。
+        composition = source(SRC / "graphics_parity.rs")
+        parity_contract = source(SRC / "platform/presentation/rhi/parity.rs")
+        opengl_parity = source(API_ADAPTER_ROOTS["opengl"] / "adapter/parity.rs")
+        vulkan_parity = source(API_ADAPTER_ROOTS["vulkan"] / "adapter/parity.rs")
+        self.assertIn("trait WsiParityAdapter", parity_contract)
+        self.assertIn("impl WsiParityFramePresenter", composition)
+        for marker in (
+            "window_surface_replacements_for_test",
+            "eglSwapBuffers",
+            "EGLSurface",
+            "OpenGlSurfaceFault",
+        ):
+            self.assertNotIn(marker, composition)
+            self.assertIn(marker, opengl_parity)
+        for marker in (
+            "VulkanSurfaceFaultForParity",
+            "OUT_OF_DATE",
+            "SUBOPTIMAL",
+            "inject_surface_fault_for_parity_test",
+        ):
+            self.assertNotIn(marker, composition)
+            self.assertIn(marker, vulkan_parity)
 
         factory = "\n".join(source(path) for path in rust_files(SRC / "native/factory"))
         self.assertNotRegex(factory, r"\b(?:ash|vk|glow|khronos_egl)::")

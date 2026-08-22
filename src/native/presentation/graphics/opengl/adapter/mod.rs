@@ -9,11 +9,15 @@ use crate::platform::presentation::{
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod egl;
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+mod parity;
 #[cfg(windows)]
 pub mod wgl;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub use egl::EglContext;
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+pub(crate) use parity::OpenGlWsiParityAdapter;
 #[cfg(windows)]
 pub use wgl::WglContext;
 

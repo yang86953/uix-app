@@ -1,10 +1,9 @@
 //! 显式 GPU parity 的跨 System 测试组合根。
 //!
 //! 这里只负责把 UI、Drawing 与具体 Adapter 的测试能力组装起来；场景语义、
-//! FramePlan lowering 和 Vulkan 原生执行仍由各自唯一责任方持有。
+//! FramePlan lowering 和原生执行仍由各自唯一责任方持有。
 
 use std::cell::Cell;
-use std::ffi::c_void;
 use std::time::{Duration, Instant};
 
 use crate::app::window::window_creation::create_app_window;
@@ -12,39 +11,36 @@ use crate::core::Errc;
 use crate::diagnostics::PendingFailureQueue;
 #[cfg(feature = "vulkan-parity-test")]
 use crate::draw::backend::production_chain_parity::execute_ui_production_chain;
-use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain;
 use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain_with_present_hook;
-#[cfg(feature = "vulkan-parity-test")]
 use crate::draw::backend::rhi_renderer::consistency::validate_production_chain_readback;
 use crate::draw::backend::rhi_renderer::consistency::{
     ProductionChainScene, production_chain_scene,
 };
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-use crate::native::presentation::graphics::opengl::platform::EglContext;
+use crate::native::presentation::graphics::opengl::platform::OpenGlWsiParityAdapter;
 #[cfg(feature = "vulkan-parity-test")]
 use crate::native::presentation::graphics::vulkan::platform::{
-    VulkanContext, VulkanSurfaceFaultForParity,
+    VulkanHeadlessUiParityAdapter, VulkanWsiParityAdapter,
 };
 use crate::platform::presentation::GraphicsContextLifecycle;
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-use crate::platform::presentation::rhi::GraphicsSurface;
-use crate::platform::presentation::rhi::{GraphicsContextRhi, RhiExtent, SurfaceToken};
-#[cfg(feature = "vulkan-parity-test")]
-use crate::platform::presentation::rhi::{RhiScissor, RhiSurfaceReadback};
+use crate::platform::presentation::rhi::{
+    GraphicsContextRhi, GraphicsSurface, HeadlessUiParityAdapter, RhiExtent, RhiScissor,
+    RhiSurfaceReadback, SurfaceToken, WsiParityAdapter, WsiParityFramePresenter,
+};
 use crate::platform::windowing::event::{UiEvent, UiEventPayload};
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 
-// 在真实 Vulkan device 上验收 UI → Drawing → FramePlan → Adapter 全链。
+// 在真实 headless device 上验收 UI → Drawing → FramePlan → Adapter 全链。
 #[cfg(feature = "vulkan-parity-test")]
-pub(crate) fn run_vulkan_ui_production_chain_test() {
+fn run_headless_ui_production_chain_test<A: HeadlessUiParityAdapter>() {
     let scene = production_chain_scene();
-    let mut context = VulkanContext::new_headless_for_parity_test(scene.extent)
-        .expect("a production Vulkan graphics device is required for UI parity");
-    let adapter = context.parity_adapter_diagnostic();
+    let mut context = A::create_context(scene.extent)
+        .expect("a production graphics device is required for UI parity");
+    let adapter = A::diagnostic(&context);
     let frame = scene.frame;
     let rect = scene.rect;
     let color = scene.color;
-    let target = execute_ui_production_chain(&mut context, scene.extent, |draw_context| {
+    let target = execute_ui_production_chain(context.device(), scene.extent, |draw_context| {
         crate::ui::widgets::combinators::render_shared_production_scene(
             draw_context,
             frame,
@@ -53,218 +49,79 @@ pub(crate) fn run_vulkan_ui_production_chain_test() {
         );
     })
     .expect("UI production scene must execute through the shared Drawing FramePlan");
-    let pixels = context.readback_texture_for_parity_test(target);
+    let pixels = A::readback(&mut context, target);
     let invariant_count = validate_production_chain_readback(&scene, &pixels)
-        .expect("Vulkan production-chain readback must satisfy the shared Drawing invariants");
+        .expect("production-chain readback must satisfy the shared Drawing invariants");
     context
         .try_shutdown()
-        .expect("Vulkan production-chain fixture must shut down cleanly");
+        .expect("production-chain fixture must shut down cleanly");
     eprintln!(
-        "Vulkan production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan -> VulkanContext GraphicsDevice; draw-readback={invariant_count}/{}",
+        "GPU production chain verified: {adapter}; path=UI Canvas::render -> Drawing PaintContext/Canvas2D -> shared FramePlan -> GraphicsDevice adapter; draw-readback={invariant_count}/{}",
         scene.samples.len(),
     );
 }
 
-// 所有 WSI 验收都从唯一共享场景进入同一 UI Surface 桥。
-fn present_shared_production_scene(
-    context: &mut dyn GraphicsContextRhi,
-    scene: &ProductionChainScene,
-) -> crate::core::Result<SurfaceToken> {
-    execute_ui_production_surface_chain(context, |draw_context| {
-        crate::ui::widgets::combinators::render_shared_production_scene(
-            draw_context,
-            scene.frame,
-            scene.rect,
-            scene.color,
-        );
-    })
-}
-
-// 让 API 中立的 parity 组合根复用唯一 UI 场景并观察 submit/present 边界。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-fn present_shared_production_scene_with_hook(
-    context: &mut dyn GraphicsContextRhi,
-    scene: &ProductionChainScene,
-    before_present: &mut dyn FnMut(&mut dyn GraphicsSurface),
-) -> crate::core::Result<SurfaceToken> {
-    execute_ui_production_surface_chain_with_present_hook(
-        context,
-        |draw_context| {
-            crate::ui::widgets::combinators::render_shared_production_scene(
-                draw_context,
-                scene.frame,
-                scene.rect,
-                scene.color,
-            );
-        },
-        before_present,
-    )
-}
-
-// Vulkan WSI parity 只通过既有 before-present 钩子读取最终 swapchain image。
+// 显式 API 入口只选择 Adapter 实现，具体 fixture 与诊断留在 native 边界。
 #[cfg(feature = "vulkan-parity-test")]
-fn present_shared_production_scene_with_readback(
-    context: &mut dyn GraphicsContextRhi,
-    scene: &ProductionChainScene,
-) -> crate::core::Result<(SurfaceToken, RhiSurfaceReadback)> {
-    let mut readback = None;
-    let presented = execute_ui_production_surface_chain_with_present_hook(
-        context,
-        |draw_context| {
-            crate::ui::widgets::combinators::render_shared_production_scene(
-                draw_context,
-                scene.frame,
-                scene.rect,
-                scene.color,
-            );
-        },
-        &mut |surface| {
-            let capability = surface.surface_capabilities();
-            readback = Some(if capability.readback {
-                surface.read_surface_pixels(RhiScissor {
-                    x: 0,
-                    y: 0,
-                    width: scene.extent.width as i32,
-                    height: scene.extent.height as i32,
-                })
-            } else {
-                Err(crate::core::Error::new(
-                    Errc::NotImplemented,
-                    "Vulkan WSI Surface did not report production readback support",
-                ))
-            });
-        },
-    )?;
-    let readback = readback.ok_or_else(|| {
-        crate::core::Error::new(
-            Errc::InvalidState,
-            "Vulkan WSI before-present hook did not produce a readback result",
-        )
-    })??;
-    Ok((presented, readback))
+pub(crate) fn run_vulkan_ui_production_chain_test() {
+    run_headless_ui_production_chain_test::<VulkanHeadlessUiParityAdapter>();
 }
 
-// 只选择 parity 故障安排位置，不拥有恢复状态或原生生命周期。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-#[derive(Clone, Copy, Debug)]
-enum OpenGlSurfaceFaultForParity {
-    Acquire,
-    PresentAfterSubmit,
+// 共享 presenter 唯一拥有 UI 场景进入 Drawing Surface 桥与中立 readback 判定。
+struct SharedUiSurfacePresenter<'a> {
+    scene: &'a ProductionChainScene,
 }
 
-// 在同一真实 EGL window surface 上证明一次拒绝只触发一次原生 replacement。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-fn verify_opengl_surface_fault(
-    context: &mut EglContext,
-    scene: &ProductionChainScene,
-    fault: OpenGlSurfaceFaultForParity,
-) -> SurfaceToken {
-    let old = context.surface_ref().token();
-    let replacements_before = context.window_surface_replacements_for_test();
-    let injected = match fault {
-        OpenGlSurfaceFaultForParity::Acquire => {
-            context
-                .surface()
-                .inject_surface_lost_for_test()
-                .expect("acquire SurfaceLost injection must arm at an idle boundary");
-            assert_eq!(
-                context.surface_ref().token(),
-                old,
-                "arming acquire SurfaceLost must not commit authoritative state",
+impl WsiParityFramePresenter for SharedUiSurfacePresenter<'_> {
+    fn present(
+        &mut self,
+        context: &mut dyn GraphicsContextRhi,
+        before_present: Option<&mut dyn FnMut(&mut dyn GraphicsSurface)>,
+    ) -> crate::core::Result<SurfaceToken> {
+        let mut adapter_hook = before_present;
+        let mut readback = None;
+        let presented = execute_ui_production_surface_chain_with_present_hook(
+            context,
+            |draw_context| {
+                crate::ui::widgets::combinators::render_shared_production_scene(
+                    draw_context,
+                    self.scene.frame,
+                    self.scene.rect,
+                    self.scene.color,
+                );
+            },
+            &mut |surface| {
+                if let Some(hook) = adapter_hook.as_mut() {
+                    (**hook)(surface);
+                }
+                if surface.surface_capabilities().readback {
+                    readback = Some(surface.read_surface_pixels(RhiScissor {
+                        x: 0,
+                        y: 0,
+                        width: self.scene.extent.width as i32,
+                        height: self.scene.extent.height as i32,
+                    }));
+                }
+            },
+        )?;
+        if let Some(readback) = readback {
+            let readback = readback?;
+            let invariant_count = validate_wsi_readback(self.scene, readback);
+            eprintln!(
+                "WSI Surface readback verified: generation={}; region={}x{}; invariants={}/{}; subsequent-present=ok",
+                presented.generation,
+                self.scene.extent.width,
+                self.scene.extent.height,
+                invariant_count,
+                self.scene.samples.len(),
             );
-            present_shared_production_scene(context, scene)
         }
-        OpenGlSurfaceFaultForParity::PresentAfterSubmit => {
-            let mut armed_after_submit = false;
-            let result =
-                present_shared_production_scene_with_hook(context, scene, &mut |surface| {
-                    surface
-                        .inject_surface_lost_for_test()
-                        .expect("present SurfaceLost injection must arm after submit");
-                    assert_eq!(
-                        surface.token(),
-                        old,
-                        "arming present SurfaceLost must not commit authoritative state",
-                    );
-                    armed_after_submit = true;
-                });
-            assert!(
-                armed_after_submit,
-                "present SurfaceLost must be armed after the shared RHI submit",
-            );
-            result
-        }
-    };
-
-    let retry = injected.expect_err("SurfaceLost must reject the old OpenGL WSI frame");
-    assert_eq!(retry.code(), Errc::GraphicsSurfaceChanged);
-    let rebuilt = context.surface_ref().token();
-    assert_eq!(rebuilt.extent, old.extent, "recovery must keep WSI extent");
-    assert_eq!(
-        rebuilt.generation,
-        old.generation + 1,
-        "recovery must commit exactly one shared generation",
-    );
-    assert_eq!(
-        context.window_surface_replacements_for_test(),
-        replacements_before + 1,
-        "one SurfaceLost must replace the real EGLSurface exactly once",
-    );
-
-    let recovered = present_shared_production_scene(context, scene)
-        .expect("the next real UI production frame must submit and eglSwapBuffers");
-    assert_eq!(recovered, rebuilt);
-    assert_eq!(
-        context.window_surface_replacements_for_test(),
-        replacements_before + 1,
-        "the recovered frame must reuse the single replacement EGLSurface",
-    );
-    eprintln!(
-        "OpenGL ES WSI recovery path: fault={fault:?}; old={}x{}@{}; new={}x{}@{}; injection-token=unchanged; retry=RetryFrame(GraphicsSurfaceChanged); egl-surface-replacements=1; recovered-submit=ok; recovered-eglSwapBuffers=ok@{}",
-        old.extent.width,
-        old.extent.height,
-        old.generation,
-        rebuilt.extent.width,
-        rebuilt.extent.height,
-        rebuilt.generation,
-        recovered.generation,
-    );
-    rebuilt
+        Ok(presented)
+    }
 }
 
-// 两个拒绝边界共享同一个 EGL owner、故障注入、场景和恢复状态机。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
-fn verify_opengl_surface_recovery(
-    context: &mut EglContext,
-    scene: &ProductionChainScene,
-    initial: SurfaceToken,
-) {
-    let replacements_before = context.window_surface_replacements_for_test();
-    let acquired =
-        verify_opengl_surface_fault(context, scene, OpenGlSurfaceFaultForParity::Acquire);
-    let presented = verify_opengl_surface_fault(
-        context,
-        scene,
-        OpenGlSurfaceFaultForParity::PresentAfterSubmit,
-    );
-    assert_eq!(acquired.generation, initial.generation + 1);
-    assert_eq!(presented.generation, initial.generation + 2);
-    assert_eq!(
-        context.window_surface_replacements_for_test(),
-        replacements_before + 2,
-    );
-    eprintln!(
-        "OpenGL ES WSI Surface recovery verified: paths=2; generation={}->{}; real-egl-surface-replacements=2; recovered-ui-submits=2; recovered-eglSwapBuffers=2",
-        initial.generation, presented.generation,
-    );
-}
-
-// 把统一 0xAARRGGBB 结果转换为已有共享场景断言消费的 RGBA8 字节。
-#[cfg(feature = "vulkan-parity-test")]
-fn validate_vulkan_wsi_readback(
-    scene: &ProductionChainScene,
-    readback: RhiSurfaceReadback,
-) -> usize {
+// 把统一 0xAARRGGBB 结果转换为共享场景断言消费的 RGBA8 字节。
+fn validate_wsi_readback(scene: &ProductionChainScene, readback: RhiSurfaceReadback) -> usize {
     assert_eq!(readback.region.x, 0);
     assert_eq!(readback.region.y, 0);
     assert_eq!(readback.region.width, scene.extent.width as i32);
@@ -280,7 +137,7 @@ fn validate_vulkan_wsi_readback(
         ]);
     }
     validate_production_chain_readback(scene, &rgba)
-        .expect("Vulkan WSI final Surface pixels must satisfy shared Drawing invariants")
+        .expect("WSI final Surface pixels must satisfy shared Drawing invariants")
 }
 
 // 仅由 parity 组合根选择的事件泵与连续生产帧观测计划。
@@ -290,7 +147,7 @@ struct WsiPacingObservationPlan {
     total_timeout: Duration,
 }
 
-// 真实 Vulkan/OpenGL WSI 验收共用同一有界 owner-thread 八帧观测计划。
+// 所有真实 WSI 验收共用同一有界 owner-thread 八帧观测计划。
 const WSI_PACING_OBSERVATION_PLAN: WsiPacingObservationPlan = WsiPacingObservationPlan {
     production_presents: 8,
     total_timeout: Duration::from_secs(15),
@@ -333,7 +190,7 @@ fn dispatch_wsi_events_until(
             !remaining.is_zero(),
             "real platform event dispatch timed out during {context}"
         );
-        // 该时长只是 Wayland poll 的有界等待片，不用于推断刷新率或模拟垂直同步。
+        // 该时长只是平台 poll 的有界等待片，不用于推断刷新率或模拟垂直同步。
         let dispatch_timeout = remaining.min(Duration::from_millis(100));
         let running = platform
             .event_loop()
@@ -362,8 +219,8 @@ fn resize_event_drawable_extent(
     assert_eq!(initial.extent.height % initial_logical_height, 0);
     let scale_x = initial.extent.width / initial_logical_width;
     let scale_y = initial.extent.height / initial_logical_height;
-    assert_eq!(scale_x, scale_y, "Wayland buffer scale must be uniform");
-    assert!(scale_x > 0, "Wayland buffer scale must be positive");
+    assert_eq!(scale_x, scale_y, "platform buffer scale must be uniform");
+    assert!(scale_x > 0, "platform buffer scale must be positive");
     RhiExtent::new(
         (resized_logical.0 as u32)
             .checked_mul(scale_x)
@@ -375,21 +232,14 @@ fn resize_event_drawable_extent(
 }
 
 // 在真实平台窗口上复用同一 UI、Drawing、Surface 与 resize 验收事务。
-fn run_wsi_production_chain_test<C>(
-    backend: &'static str,
-    window_title: &'static str,
-    pacing: Option<WsiPacingObservationPlan>,
-    create_context: impl FnOnce(*mut c_void, i32, i32) -> crate::core::Result<C>,
-    adapter_diagnostic: impl FnOnce(&C) -> String,
-    mut present_surface_frame: impl FnMut(
-        &mut C,
-        &ProductionChainScene,
-    ) -> crate::core::Result<SurfaceToken>,
-    verify_surface_recovery: impl FnOnce(&mut C, &ProductionChainScene, SurfaceToken),
-) where
-    C: GraphicsContextRhi + GraphicsContextLifecycle,
-{
+fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
     let scene = production_chain_scene();
+    let mut presenter = SharedUiSurfacePresenter { scene: &scene };
+    let profile = A::profile();
+    let backend = profile.backend_label();
+    let pacing = profile
+        .observe_platform_pacing()
+        .then_some(WSI_PACING_OBSERVATION_PLAN);
     let logical_width = 96;
     let logical_height = 72;
     let deadline = pacing.map(|plan| Instant::now() + plan.total_timeout);
@@ -400,7 +250,7 @@ fn run_wsi_production_chain_test<C>(
             .expect("the current session must provide a production window platform");
     let mut window = create_app_window(
         platform.window_manager(),
-        window_title,
+        profile.window_title(),
         logical_width,
         logical_height,
     )
@@ -412,7 +262,7 @@ fn run_wsi_production_chain_test<C>(
             platform.as_mut(),
             &event_observation,
             deadline,
-            "initial Wayland configure",
+            "initial platform configure",
             |observation| observation.dispatches.get() > dispatches_before,
         );
     }
@@ -421,17 +271,18 @@ fn run_wsi_production_chain_test<C>(
         !native_surface.is_null(),
         "the production window must expose a native WSI surface"
     );
-    let mut context =
-        create_context(native_surface, logical_width, logical_height).unwrap_or_else(|error| {
+    let mut context = A::create_context(native_surface, logical_width, logical_height)
+        .unwrap_or_else(|error| {
             panic!("the production {backend} WSI context must initialize: {error}")
         });
     eprintln!("{backend} WSI stage: context-created");
-    let adapter = adapter_diagnostic(&context);
+    let adapter = A::diagnostic(&context);
     let initial = context.surface_ref().token();
     assert!(initial.extent.is_valid());
     let initial_logical = window.client_logical_extent();
 
-    let first_present = present_surface_frame(&mut context, &scene)
+    let first_present = presenter
+        .present(&mut context, None)
         .expect("the first real WSI frame must acquire, render and present");
     eprintln!("{backend} WSI stage: first-present");
     assert_eq!(first_present, initial);
@@ -463,7 +314,7 @@ fn run_wsi_production_chain_test<C>(
             platform.as_mut(),
             &event_observation,
             deadline,
-            "maximized Wayland resize",
+            "maximized platform resize",
             |observation| {
                 observation.resize_events.get() > resize_events_before
                     && observation
@@ -475,7 +326,7 @@ fn run_wsi_production_chain_test<C>(
         let resized_logical = event_observation
             .latest_resize
             .get()
-            .expect("real Wayland resize dispatch must carry a logical extent");
+            .expect("real platform resize dispatch must carry a logical extent");
         // 与应用 WindowDriver 相同，消费已分发的 resize 事实并同步窗口平台状态。
         window
             .resize_notify(resized_logical.0, resized_logical.1)
@@ -484,7 +335,7 @@ fn run_wsi_production_chain_test<C>(
     } else {
         None
     };
-    // 原生 EGL/Vulkan Surface resize 成功后必须推进共享代际。
+    // 原生 Surface resize 成功后必须推进共享代际。
     let requested = resized_logical.map_or_else(
         || {
             RhiExtent::new(
@@ -506,7 +357,8 @@ fn run_wsi_production_chain_test<C>(
     assert_eq!(resized.extent, requested);
     assert_eq!(resized.generation, first_present.generation + 1);
 
-    let second_present = present_surface_frame(&mut context, &scene)
+    let second_present = presenter
+        .present(&mut context, None)
         .expect("the resized WSI generation must acquire, render and present");
     eprintln!("{backend} WSI stage: second-present");
     assert_eq!(second_present, resized);
@@ -522,7 +374,8 @@ fn run_wsi_production_chain_test<C>(
                 "paced production frame",
                 |observation| observation.dispatches.get() > dispatches_before,
             );
-            let presented = present_surface_frame(&mut context, &scene)
+            let presented = presenter
+                .present(&mut context, None)
                 .expect("the paced real WSI frame must acquire, render and present");
             assert_eq!(presented, resized);
             production_presents = production_presents.saturating_add(1);
@@ -536,7 +389,7 @@ fn run_wsi_production_chain_test<C>(
             "paced production frames must each be preceded by real platform event dispatch",
         );
     }
-    verify_surface_recovery(&mut context, &scene, second_present);
+    A::verify_surface_recovery(&mut context, second_present, &mut presenter);
     context
         .try_shutdown()
         .expect("the production WSI context must shut down before its native window");
@@ -577,146 +430,13 @@ fn run_wsi_production_chain_test<C>(
     }
 }
 
-// 在同一真实 Vulkan WSI owner 上逐项证明四个原生返回位置的恢复语义。
-#[cfg(feature = "vulkan-parity-test")]
-fn verify_vulkan_surface_fault(
-    context: &mut VulkanContext,
-    scene: &ProductionChainScene,
-    fault: VulkanSurfaceFaultForParity,
-) -> SurfaceToken {
-    let old = context.surface_ref().token();
-    context
-        .inject_surface_fault_for_parity_test(fault)
-        .unwrap_or_else(|error| {
-            panic!("{fault:?} injection must arm at an idle boundary: {error}")
-        });
-    assert_eq!(
-        context.surface_ref().token(),
-        old,
-        "arming {fault:?} must not commit authoritative Surface state",
-    );
-
-    let injected = present_shared_production_scene(context, scene);
-    let rebuilt = context.surface_ref().token();
-    assert_eq!(
-        rebuilt.extent, old.extent,
-        "{fault:?} must keep the real WSI extent"
-    );
-    assert_eq!(
-        rebuilt.generation,
-        old.generation + 1,
-        "{fault:?} must commit exactly one recreated generation",
-    );
-
-    let semantics = match fault {
-        VulkanSurfaceFaultForParity::AcquireOutOfDate
-        | VulkanSurfaceFaultForParity::PresentOutOfDate => {
-            let error = injected.expect_err("OUT_OF_DATE must reject the old frame");
-            assert_eq!(error.code(), Errc::GraphicsSurfaceChanged);
-            "RetryFrame(GraphicsSurfaceChanged)"
-        }
-        VulkanSurfaceFaultForParity::AcquireSuboptimal
-        | VulkanSurfaceFaultForParity::PresentSuboptimal => {
-            let presented = injected.expect("SUBOPTIMAL must keep the presented frame successful");
-            assert_eq!(presented, rebuilt);
-            assert_ne!(presented, old, "SUBOPTIMAL must not return the stale token");
-            "Presented(Ok)"
-        }
-    };
-
-    let recovered = present_shared_production_scene(context, scene)
-        .unwrap_or_else(|error| panic!("{fault:?} next real WSI frame must present: {error}"));
-    assert_eq!(recovered, rebuilt);
-    eprintln!(
-        "Vulkan WSI recovery path: fault={fault:?}; old={}x{}@{}; new={}x{}@{}; injected={semantics}; recovered-present=ok@{}",
-        old.extent.width,
-        old.extent.height,
-        old.generation,
-        rebuilt.extent.width,
-        rebuilt.extent.height,
-        rebuilt.generation,
-        recovered.generation,
-    );
-    rebuilt
-}
-
-// 四条路径共享同一个真实窗口、GPU、场景、FramePlan 和生命周期 owner。
-#[cfg(feature = "vulkan-parity-test")]
-fn verify_vulkan_surface_recovery(
-    context: &mut VulkanContext,
-    scene: &ProductionChainScene,
-    initial: SurfaceToken,
-) {
-    let mut current = initial;
-    for fault in [
-        VulkanSurfaceFaultForParity::AcquireOutOfDate,
-        VulkanSurfaceFaultForParity::PresentOutOfDate,
-        VulkanSurfaceFaultForParity::AcquireSuboptimal,
-        VulkanSurfaceFaultForParity::PresentSuboptimal,
-    ] {
-        current = verify_vulkan_surface_fault(context, scene, fault);
-    }
-    assert_eq!(current.generation, initial.generation + 4);
-    eprintln!(
-        "Vulkan WSI Surface recovery verified: paths=4; generation={}->{}; recovery-ui-presents=4; injected-suboptimal-presents=2",
-        initial.generation, current.generation,
-    );
-}
-
-// 在真实平台窗口上验收 Vulkan WSI acquire → render → present 与 resize 生命周期。
+// 具体 API 入口只选择 Adapter，实现差异不回流到共享组合根。
 #[cfg(feature = "vulkan-parity-test")]
 pub(crate) fn run_vulkan_wsi_production_chain_test() {
-    run_wsi_production_chain_test(
-        "Vulkan",
-        "UIX Vulkan WSI parity",
-        Some(WSI_PACING_OBSERVATION_PLAN),
-        |native_surface, width, height| VulkanContext::new(native_surface, width, height),
-        |context| {
-            let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
-            let session =
-                std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "<unset>".to_owned());
-            format!(
-                "Wayland display={display}; session={session}; {}; {}",
-                context.parity_adapter_diagnostic(),
-                context.parity_surface_diagnostic(),
-            )
-        },
-        |context, scene| {
-            let (presented, readback) =
-                present_shared_production_scene_with_readback(context, scene)?;
-            let invariant_count = validate_vulkan_wsi_readback(scene, readback);
-            eprintln!(
-                "Vulkan WSI Surface readback verified: generation={}; region={}x{}; invariants={}/{}; subsequent-present=ok",
-                presented.generation,
-                scene.extent.width,
-                scene.extent.height,
-                invariant_count,
-                scene.samples.len(),
-            );
-            Ok(presented)
-        },
-        verify_vulkan_surface_recovery,
-    );
+    run_wsi_production_chain_test::<VulkanWsiParityAdapter>();
 }
 
-// 在真实 Wayland 窗口上验收 EGL/GLES 对同一 Surface 生产链的机械复用。
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 pub(crate) fn run_opengl_wsi_production_chain_test() {
-    run_wsi_production_chain_test::<EglContext>(
-        "OpenGL ES",
-        "UIX OpenGL ES WSI parity",
-        Some(WSI_PACING_OBSERVATION_PLAN),
-        |native_surface, width, height| EglContext::new(native_surface, width, height),
-        |context| {
-            let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
-            let session =
-                std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "<unset>".to_owned());
-            let adapter = context
-                .parity_adapter_diagnostic()
-                .expect("the real EGL window context must report its GPU identity");
-            format!("Wayland display={display}; session={session}; EGL window surface; {adapter}")
-        },
-        |context, scene| present_shared_production_scene(context, scene),
-        verify_opengl_surface_recovery,
-    );
+    run_wsi_production_chain_test::<OpenGlWsiParityAdapter>();
 }
