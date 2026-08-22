@@ -244,8 +244,6 @@ impl D3d12Context {
                 logical_width: drawable.logical_width,
                 logical_height: drawable.logical_height,
                 surface_lifecycle,
-                // 本阶段没有 GraphicsDevice，因此不会签发可进入原生 present 的提交身份。
-                rhi_submissions: RhiSubmissionSequence::new(),
                 fault: None,
                 shutdown: false,
             })
@@ -378,63 +376,6 @@ impl D3d12Context {
         self.wait_for_fence(value)
     }
 
-    pub(super) fn begin_commands(&mut self) -> Result<()> {
-        self.ensure_healthy()?;
-        if self.recording {
-            return Ok(());
-        }
-        if self.frame_index >= self.back_buffers.len() || self.frame_index >= self.allocators.len()
-        {
-            let error = platform_error(format!(
-                "D3d12Context: invalid frame resources index={} buffers={} allocators={}",
-                self.frame_index,
-                self.back_buffers.len(),
-                self.allocators.len()
-            ));
-            self.latch_fault("begin_commands", &error);
-            return Err(error);
-        }
-        if let Err(error) = self.wait_for_fence(self.fence_values[self.frame_index]) {
-            self.latch_fault("wait_for_frame", &error);
-            return Err(error);
-        }
-        let allocator = &self.allocators[self.frame_index];
-        // SAFETY: allocator 已等待对应 fence 完成（上方 wait_for_fence），Reset 不破坏 GPU 仍在用的内存。
-        if let Err(error) = unsafe { allocator.Reset() } {
-            let error = d3d12_error("ID3D12CommandAllocator::Reset", error);
-            self.latch_fault("reset allocator", &error);
-            return Err(error);
-        }
-        // SAFETY: command_list 处于 closed 状态可重置；allocator 已确认空闲；pipeline state 传 None 表示沿用既有状态。
-        let reset_result = unsafe {
-            self.command_list
-                .Reset(allocator, None::<&ID3D12PipelineState>)
-        };
-        if let Err(error) = reset_result {
-            let error = d3d12_error("ID3D12GraphicsCommandList::Reset", error);
-            self.latch_fault("reset command list", &error);
-            return Err(error);
-        }
-        let state = self.back_buffer_states[self.frame_index];
-        if state != D3D12_RESOURCE_STATE_RENDER_TARGET {
-            record_transition(
-                &self.command_list,
-                &self.back_buffers[self.frame_index],
-                state,
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-            );
-            self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        }
-        let rtv = self.rtv_handle(self.frame_index);
-        // SAFETY: command_list 存活；rtv 指向 RTV 堆内有效描述符；depth 传 None 表示无深度目标。
-        unsafe {
-            self.command_list
-                .OMSetRenderTargets(1, Some(&rtv), true, None);
-        }
-        self.recording = true;
-        Ok(())
-    }
-
     pub(super) fn execute_recording(&mut self) -> Result<()> {
         if !self.recording {
             return Ok(());
@@ -464,32 +405,53 @@ impl D3d12Context {
     }
 
     pub(super) fn transition_current_buffer_to_present_and_wait(&mut self) -> Result<()> {
-        self.begin_commands()?;
         let buffer_index = self.frame_index;
+        if buffer_index >= self.back_buffers.len() || buffer_index >= self.back_buffer_states.len()
+        {
+            return Err(platform_error(
+                "D3d12Context: Surface transition backbuffer index is invalid",
+            ));
+        }
         let state = self.back_buffer_states[buffer_index];
+        if state == D3D12_RESOURCE_STATE_PRESENT {
+            if let Err(error) = self.wait_for_gpu() {
+                self.latch_fault("wait for present-state Surface", &error);
+                return Err(error);
+            }
+            return Ok(());
+        }
+        self.reset_rhi_command_list("Surface transition")?;
         record_transition(
             &self.command_list,
             &self.back_buffers[buffer_index],
             state,
             D3D12_RESOURCE_STATE_PRESENT,
         );
+        self.execute_recording_and_wait()?;
+        // 只有 transition 命令执行并等待成功后才发布新的原生状态。
         self.back_buffer_states[buffer_index] = D3D12_RESOURCE_STATE_PRESENT;
-        self.execute_recording_and_wait()
+        Ok(())
     }
 
     pub(super) fn present_result(&mut self, _present: &ValidatedRhiPresent) -> Result<()> {
         // FullOnly 已在共享事务中完成 damage 规范化；DXGI 只执行整帧 present。
-        self.begin_commands()?;
         let buffer_index = self.frame_index;
+        if buffer_index >= self.back_buffers.len() {
+            return Err(platform_error(
+                "D3d12Context: present backbuffer index is invalid",
+            ));
+        }
         let state = self.back_buffer_states[buffer_index];
-        record_transition(
-            &self.command_list,
-            &self.back_buffers[buffer_index],
-            state,
-            D3D12_RESOURCE_STATE_PRESENT,
-        );
-        self.back_buffer_states[buffer_index] = D3D12_RESOURCE_STATE_PRESENT;
-        self.execute_recording()?;
+        if state != D3D12_RESOURCE_STATE_PRESENT {
+            self.reset_rhi_command_list("Surface present")?;
+            record_transition(
+                &self.command_list,
+                &self.back_buffers[buffer_index],
+                state,
+                D3D12_RESOURCE_STATE_PRESENT,
+            );
+            self.execute_recording()?;
+        }
 
         // SAFETY: swap_chain 存活且缓冲已 transition 到 PRESENT，Present 同步提交当前帧。
         let present = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
@@ -500,14 +462,17 @@ impl D3d12Context {
                 return Err(error);
             }
         };
-        self.fence_values[buffer_index] = fence_value;
-        // SAFETY: swap_chain 存活，Present 后查询新后台缓冲索引为只读操作。
-        self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
         self.latch_present_result(
             present
                 .ok()
                 .map_err(|error| d3d12_error("IDXGISwapChain::Present", error)),
-        )
+        )?;
+        // transition、DXGI Present 与 queue signal 均成功后才发布状态和下一帧索引。
+        self.back_buffer_states[buffer_index] = D3D12_RESOURCE_STATE_PRESENT;
+        self.fence_values[buffer_index] = fence_value;
+        // SAFETY: swap_chain 存活，Present 后查询新后台缓冲索引为只读操作。
+        self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
+        Ok(())
     }
 
     /// A failed DXGI Present leaves the submitted command list in an uncertain
@@ -667,15 +632,14 @@ impl D3d12Context {
             );
         }
         let readback = create_readback_buffer(&self.device, total_bytes)?;
-        self.begin_commands()?;
         let previous_state = self.back_buffer_states[self.frame_index];
+        self.reset_rhi_command_list("Surface readback")?;
         record_transition(
             &self.command_list,
             &buffer,
             previous_state,
             D3D12_RESOURCE_STATE_COPY_SOURCE,
         );
-        self.back_buffer_states[self.frame_index] = D3D12_RESOURCE_STATE_COPY_SOURCE;
         let mut source = texture_copy_location_subresource(&buffer);
         let mut destination = texture_copy_location_footprint(&readback, footprint);
         // SAFETY: command_list 存活；source/destination 为上方构造的拷贝位置，destination 指向 readback 的 footprint 区域。
@@ -691,7 +655,6 @@ impl D3d12Context {
             D3D12_RESOURCE_STATE_COPY_SOURCE,
             previous_state,
         );
-        self.back_buffer_states[self.frame_index] = previous_state;
         self.pending_gpu_resources.push(readback.clone());
         self.execute_recording_and_wait()?;
         self.pending_gpu_resources.pop();

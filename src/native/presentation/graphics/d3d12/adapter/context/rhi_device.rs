@@ -5,15 +5,16 @@ use super::*;
 use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, DrawPacket, GraphicsDevice, GraphicsDeviceCapabilities, LoadAction,
     PipelineBinding, PipelineDesc, RenderTargetHandle, RhiBufferResource, RhiBufferResourceTable,
-    RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiResourceTable, RhiScissor,
-    RhiTextureResource, RhiTextureResourceTable, RhiTextureTransferBounds, RhiTextureUpload,
-    SamplerAddressMode, SamplerDesc, SamplerFilter, SamplerHandle, SamplerMipMode,
-    SubmissionHandle, TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
-    UIX_COLOR_CONTRACT, ValidatedRhiTextureUpload,
+    RhiBufferUpload, RhiBufferUploadPreflight, RhiColor, RhiPassState, RhiResourceTable,
+    RhiScissor, RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable,
+    RhiTextureTransferBounds, RhiTextureUpload, SamplerAddressMode, SamplerDesc, SamplerFilter,
+    SamplerHandle, SamplerMipMode, SubmissionHandle, TextureCopy, TextureDesc, TextureFormat,
+    TextureHandle, TextureMove, UIX_COLOR_CONTRACT, ValidatedRhiTextureUpload,
 };
 use ::windows::Win32::Graphics::Direct3D12::{
     D3D12_BOX, D3D12_COMPARISON_FUNC_NEVER, D3D12_CPU_DESCRIPTOR_HANDLE,
-    D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
     D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
     D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES,
     D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_DESC,
@@ -21,8 +22,9 @@ use ::windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_FLAG_NONE,
     D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_SOURCE,
     D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-    D3D12_RESOURCE_STATES, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-    D3D12_TEXTURE_LAYOUT_UNKNOWN, ID3D12DescriptorHeap, ID3D12Device, ID3D12Resource,
+    D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATES,
+    D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    ID3D12DescriptorHeap, ID3D12Device, ID3D12Resource,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -52,6 +54,8 @@ struct D3d12RhiTexture {
     desc: TextureDesc,
     // 只在命令执行并等待成功后提交新的资源状态。
     state: D3D12_RESOURCE_STATES,
+    // 可渲染格式唯一拥有自己的 RTV descriptor heap；覆盖率纹理保持为空。
+    rtv_heap: Option<ID3D12DescriptorHeap>,
 }
 
 // 让共享 Texture 表读取 D3D12 创建时冻结的描述。
@@ -117,7 +121,18 @@ pub(super) struct D3d12RhiDevice {
     textures: RhiTextureResourceTable<D3d12RhiTexture>,
     // 直接复用 platform 唯一通用表签发 sampler 身份。
     samplers: RhiResourceTable<SamplerHandle, D3d12RhiSampler>,
+    // 直接复用 platform 唯一 pass 状态机，不复制目标、范围或打开状态。
+    pass: RhiPassState,
+    // 保存正在编码的唯一 D3D12 render target 与必要 COM owner。
+    active_target: Option<rhi_device_pass::D3d12RhiRenderTarget>,
+    // 保存已结束但尚未成功提交的原生目标与状态发布计划。
+    pending_targets: Vec<rhi_device_pass::D3d12RhiRenderTarget>,
+    // 直接复用 platform 唯一提交序列，供同一 Surface present 校验。
+    submission_sequence: RhiSubmissionSequence,
 }
+
+#[path = "rhi_device_pass.rs"]
+mod rhi_device_pass;
 
 impl D3d12RhiDevice {
     // 创建不持有任何原生资源的唯一 owner。
@@ -126,6 +141,10 @@ impl D3d12RhiDevice {
             buffers: RhiBufferResourceTable::new(),
             textures: RhiTextureResourceTable::new(),
             samplers: RhiResourceTable::new(),
+            pass: RhiPassState::new(),
+            active_target: None,
+            pending_targets: Vec::new(),
+            submission_sequence: RhiSubmissionSequence::new(),
         }
     }
 
@@ -137,10 +156,10 @@ impl D3d12RhiDevice {
             texture_upload: true,
             texture_copy: true,
             texture_region_move: true,
-            clear_rect: false,
+            clear_rect: true,
             sampled_textures: false,
-            render_to_texture: false,
-            scissor: false,
+            render_to_texture: true,
+            scissor: true,
             premultiplied_alpha_blend: false,
             additive_blend: false,
         }
@@ -218,10 +237,13 @@ impl D3d12RhiDevice {
             D3D12_RESOURCE_STATE_COPY_DEST,
             "ID3D12Device::CreateCommittedResource(RHI texture)",
         )?;
+        // 可渲染纹理由同一资源 owner 创建并保留唯一 RTV heap。
+        let rtv_heap = create_texture_rtv_heap(device, &native, desc)?;
         Ok(self.textures.insert(D3d12RhiTexture {
             native,
             desc,
             state: D3D12_RESOURCE_STATE_COPY_DEST,
+            rtv_heap,
         }))
     }
 
@@ -428,8 +450,10 @@ impl D3d12RhiDevice {
         Ok(())
     }
 
-    // 检查式销毁 Texture；本阶段没有可引用它的 pass 或 submission。
+    // 检查式销毁 Texture；活动或待提交 target 继续保留其唯一身份。
     fn destroy_texture(&mut self, texture: TextureHandle) -> Result<()> {
+        self.pass.validate_texture_destroy(texture)?;
+        self.validate_pending_texture_destroy(texture)?;
         self.textures.take(texture)?;
         Ok(())
     }
@@ -442,6 +466,11 @@ impl D3d12RhiDevice {
 
     // GPU 已检查式排空后，按创建逆序释放全部子资源。
     pub(super) fn shutdown(&mut self) -> Result<()> {
+        // terminal fence 已排空，先失效提交并释放 pass/待提交目标的额外 COM owner。
+        self.submission_sequence.invalidate();
+        self.pass.reset();
+        self.active_target = None;
+        self.pending_targets.clear();
         for sampler in self.samplers.drain_reverse() {
             drop(sampler);
         }
@@ -456,10 +485,20 @@ impl D3d12RhiDevice {
 
     // 无法证明 GPU 排空时泄漏最后一份 COM 引用，禁止 Drop 提前释放在途资源。
     pub(super) fn retain_after_undrained_drop(&mut self) {
+        // 未知 GPU 状态下保留活动与待提交 target 的资源和 descriptor owner。
+        if let Some(target) = self.active_target.take() {
+            target.retain_after_undrained_drop();
+        }
+        for target in self.pending_targets.drain(..) {
+            target.retain_after_undrained_drop();
+        }
         for sampler in self.samplers.drain_reverse() {
             std::mem::forget(sampler.heap);
         }
         for texture in self.textures.drain_reverse() {
+            if let Some(rtv_heap) = texture.rtv_heap {
+                std::mem::forget(rtv_heap);
+            }
             std::mem::forget(texture.native);
         }
         for buffer in self.buffers.drain_reverse() {
@@ -596,14 +635,12 @@ impl GraphicsDevice for D3d12Context {
         Err(resource_stage_deferred("destroy_pipeline"))
     }
 
-    fn begin_render_pass(&mut self, _target: RenderTargetHandle, _load: LoadAction) -> Result<()> {
-        self.ensure_healthy()?;
-        Err(resource_stage_deferred("begin_render_pass"))
+    fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
+        self.rhi_begin_render_pass(target, load)
     }
 
-    fn clear_rect(&mut self, _color: RhiColor, _scissor: RhiScissor) -> Result<()> {
-        self.ensure_healthy()?;
-        Err(resource_stage_deferred("clear_rect"))
+    fn clear_rect(&mut self, color: RhiColor, scissor: RhiScissor) -> Result<()> {
+        self.rhi_clear_rect(color, scissor)
     }
 
     fn draw(&mut self, _packet: DrawPacket) -> Result<()> {
@@ -674,13 +711,11 @@ impl GraphicsDevice for D3d12Context {
     }
 
     fn end_render_pass(&mut self) -> Result<()> {
-        self.ensure_healthy()?;
-        Err(resource_stage_deferred("end_render_pass"))
+        self.rhi_end_render_pass()
     }
 
     fn submit(&mut self) -> Result<SubmissionHandle> {
-        self.ensure_healthy()?;
-        Err(resource_stage_deferred("submit"))
+        self.rhi_submit()
     }
 
     fn activate(&mut self) -> Result<()> {
@@ -690,6 +725,33 @@ impl GraphicsDevice for D3d12Context {
     fn maintain(&mut self) -> Result<()> {
         self.ensure_healthy()
     }
+}
+
+// 为可渲染纹理创建单槽 RTV heap；非渲染格式不伪造 descriptor。
+fn create_texture_rtv_heap(
+    device: &ID3D12Device,
+    texture: &ID3D12Resource,
+    desc: TextureDesc,
+) -> Result<Option<ID3D12DescriptorHeap>> {
+    if !desc.format().supports_render_target() {
+        return Ok(None);
+    }
+    let heap_desc = D3D12_DESCRIPTOR_HEAP_DESC {
+        Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+        NumDescriptors: 1,
+        Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        NodeMask: 0,
+    };
+    // SAFETY: device 存活；共享格式已证明支持 render target，heap 描述完整。
+    let heap: ID3D12DescriptorHeap =
+        unsafe { device.CreateDescriptorHeap(&heap_desc) }.map_err(|error| {
+            d3d12_error("ID3D12Device::CreateDescriptorHeap(RHI texture RTV)", error)
+        })?;
+    // SAFETY: 单槽 RTV heap 存活，起始 CPU handle 指向唯一描述符。
+    let rtv = unsafe { heap.GetCPUDescriptorHandleForHeapStart() };
+    // SAFETY: texture 与 heap 属于同一 device，默认 view 与冻结的原生 texture 格式一致。
+    unsafe { device.CreateRenderTargetView(texture, None, rtv) };
+    Ok(Some(heap))
 }
 
 // 创建 D3D12 committed resource 并拒绝驱动返回空对象。
@@ -890,43 +952,48 @@ impl D3d12Context {
         result
     }
 
-    // 为资源上传重置同一原生命令列表，但不绑定或转换 swapchain backbuffer。
-    fn begin_rhi_transfer_commands(&mut self) -> Result<()> {
+    // 为薄 RHI 操作重置同一原生命令列表，但不绑定或转换 swapchain backbuffer。
+    pub(super) fn reset_rhi_command_list(&mut self, operation: &'static str) -> Result<()> {
         self.ensure_healthy()?;
-        if self.recording {
-            return Err(Error::new(
-                Errc::InvalidState,
-                "D3D12 RHI texture upload cannot interrupt command recording",
-            ));
-        }
         if self.frame_index >= self.allocators.len() {
             return Err(platform_error(format!(
-                "D3d12Context: invalid RHI transfer allocator index={} allocators={}",
+                "D3d12Context: invalid {operation} allocator index={} allocators={}",
                 self.frame_index,
                 self.allocators.len()
             )));
         }
         if let Err(error) = self.wait_for_fence(self.fence_values[self.frame_index]) {
-            self.latch_fault("wait for RHI transfer allocator", &error);
+            self.latch_fault("wait for RHI command allocator", &error);
             return Err(error);
         }
         let allocator = &self.allocators[self.frame_index];
         // SAFETY: 对应 frame fence 已完成，allocator 不再被 GPU 使用。
         if let Err(error) = unsafe { allocator.Reset() } {
-            let error = d3d12_error("ID3D12CommandAllocator::Reset(RHI transfer)", error);
-            self.latch_fault("reset RHI transfer allocator", &error);
+            let error = d3d12_error("ID3D12CommandAllocator::Reset(RHI)", error);
+            self.latch_fault("reset RHI command allocator", &error);
             return Err(error);
         }
-        // SAFETY: command list 处于 closed，allocator 已完成并重置；资源上传不绑定 pipeline state。
+        // SAFETY: command list 处于 closed，allocator 已完成并重置；薄 RHI 不隐式绑定 pipeline state。
         if let Err(error) = unsafe {
             self.command_list
                 .Reset(allocator, None::<&ID3D12PipelineState>)
         } {
-            let error = d3d12_error("ID3D12GraphicsCommandList::Reset(RHI transfer)", error);
-            self.latch_fault("reset RHI transfer command list", &error);
+            let error = d3d12_error("ID3D12GraphicsCommandList::Reset(RHI)", error);
+            self.latch_fault("reset RHI command list", &error);
             return Err(error);
         }
         self.recording = true;
         Ok(())
+    }
+
+    // 为独立资源传输开启新命令序列，禁止打断尚未提交的 render pass 批次。
+    fn begin_rhi_transfer_commands(&mut self) -> Result<()> {
+        if self.recording {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3D12 RHI texture transfer cannot interrupt command recording",
+            ));
+        }
+        self.reset_rhi_command_list("RHI texture transfer")
     }
 }

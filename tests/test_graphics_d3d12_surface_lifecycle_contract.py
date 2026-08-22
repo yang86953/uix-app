@@ -230,18 +230,22 @@ class GraphicsD3d12SurfaceLifecycleContractTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (ROOT / "src/native/presentation/graphics/d3d12").rglob("*.rs")
         )
-        # 资源阶段已经具备 Device 类型形状，但组合入口仍由上方 NotImplemented 门禁隔离。
+        # Device 已可签发真实提交，但组合入口仍由上方 NotImplemented 门禁隔离。
         self.assertIn("impl GraphicsDevice for D3d12Context", d3d12_sources)
-        self.assertIn("rhi_submissions: RhiSubmissionSequence", context)
-        self.assertIn("rhi_submissions: RhiSubmissionSequence::new()", methods)
-        self.assertNotIn(".issue()", without_line_comments(d3d12_sources))
+        self.assertNotIn("rhi_submissions", context)
+        self.assertIn("submission_sequence: RhiSubmissionSequence", d3d12_sources)
+        self.assertEqual(without_line_comments(d3d12_sources).count(".issue()"), 1)
         present = surface[surface.index("fn present("):]
         self.assertLess(
             present.index("self.surface_lifecycle.ensure_active()?"),
-            present.index("transaction.validate(current, coherency, &self.rhi_submissions)?"),
+            present.index("self.rhi_require_present_ready()?"),
         )
         self.assertLess(
-            present.index("transaction.validate(current, coherency, &self.rhi_submissions)?"),
+            present.index("self.rhi_require_present_ready()?"),
+            present.index("transaction.validate(current, coherency, self.rhi_device.submissions())?"),
+        )
+        self.assertLess(
+            present.index("transaction.validate(current, coherency, self.rhi_device.submissions())?"),
             present.index("self.present_result(&present)"),
         )
         native_present = methods[
