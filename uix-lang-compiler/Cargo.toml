@@ -13,6 +13,8 @@ syn = { version = "2", features = ["full"] }
 
 [features]
 default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+# 仅为开发工具提供 overlay 驱动的 AOT 重编译入口，不进入默认构建。
+hot-reload = []
 image-codecs = []
 qrcode = []
 form-pattern = []

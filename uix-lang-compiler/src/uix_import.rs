@@ -511,7 +511,7 @@ fn overlay_source<'a>(overlays: &'a BTreeMap<PathBuf, String>, path: &Path) -> O
 }
 
 // 为尚不存在的文件使用已存在父目录形成稳定绝对身份。
-fn normalized_overlay_path(path: &Path) -> PathBuf {
+pub(crate) fn normalized_overlay_path(path: &Path) -> PathBuf {
     if let Ok(canonical) = fs::canonicalize(path) {
         return canonical;
     }
