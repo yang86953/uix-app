@@ -132,6 +132,10 @@ impl VulkanContext {
             frame_fence,
             acquired_frame: None,
             submitted_frame: None,
+            #[cfg(feature = "vulkan-parity-test")]
+            surface_fault_for_parity: None,
+            #[cfg(feature = "vulkan-parity-test")]
+            replace_present_sync_for_parity: false,
             surface_lifecycle:
                 crate::platform::presentation::rhi::RhiSurfaceLifecycle::uninitialized(
                     crate::platform::presentation::rhi::RhiExtent::new(extent.width, extent.height),
@@ -415,6 +419,11 @@ impl VulkanContext {
             && old_swapchain != vk::SwapchainKHR::null()
             && self.render_finished.len() == new_images.len()
             && self.present_fences.len() == new_images.len();
+        // parity 的 present OUT_OF_DATE 在 queue present 前返回；旧代 signaled semaphore
+        // 没有 presentation wait 消费，因此只能在 frame fence 完成后随旧代销毁。
+        #[cfg(feature = "vulkan-parity-test")]
+        let reuse_present_sync =
+            reuse_present_sync && !std::mem::take(&mut self.replace_present_sync_for_parity);
         let new_render_finished = if reuse_present_sync {
             Vec::new()
         } else {

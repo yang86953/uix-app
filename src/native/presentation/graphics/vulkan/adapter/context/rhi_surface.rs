@@ -6,12 +6,12 @@
 use ash::vk;
 
 use crate::core::{Errc, Error, PresentCoherency, Result};
-use crate::platform::presentation::{
-    GpuRecipeContext, GraphicsContextLifecycle, resize_native_rhi_surface,
-};
 use crate::platform::presentation::rhi::{
     GraphicsSurface, GraphicsSurfaceCapabilities, RhiExtent, RhiPresentTransaction,
     RhiSurfaceResizeTransaction, SubmissionHandle, SurfaceFrame, SurfaceToken,
+};
+use crate::platform::presentation::{
+    GpuRecipeContext, GraphicsContextLifecycle, resize_native_rhi_surface,
 };
 
 use super::rhi_frame::{VulkanRhiTarget, VulkanTargetOwner};
@@ -20,6 +20,41 @@ use super::{
 };
 
 impl VulkanContext {
+    // 只允许显式 parity 组合根在无在途 frame 时安排一个原生 Surface 结果。
+    #[cfg(feature = "vulkan-parity-test")]
+    pub(crate) fn inject_surface_fault_for_parity_test(
+        &mut self,
+        fault: super::VulkanSurfaceFaultForParity,
+    ) -> Result<()> {
+        self.active_device()?;
+        if self.acquired_frame.is_some() || self.submitted_frame.is_some() {
+            return Err(invalid_state(
+                "Vulkan Surface parity fault requires an idle frame boundary",
+            ));
+        }
+        if self.surface_fault_for_parity.is_some() {
+            return Err(invalid_state(
+                "Vulkan Surface parity fault is already pending",
+            ));
+        }
+        self.surface_fault_for_parity = Some(fault);
+        Ok(())
+    }
+
+    // 只在对应原生调用边界消费一次匹配的 parity 故障。
+    #[cfg(feature = "vulkan-parity-test")]
+    fn take_surface_fault_for_parity_test(
+        &mut self,
+        fault: super::VulkanSurfaceFaultForParity,
+    ) -> bool {
+        if self.surface_fault_for_parity == Some(fault) {
+            self.surface_fault_for_parity = None;
+            true
+        } else {
+            false
+        }
+    }
+
     // 在复用唯一 command buffer 前等待上一提交，并重置单帧原生资源。
     pub(super) fn ensure_rhi_frame_prepared(&mut self) -> Result<()> {
         if self.rhi_device.is_frame_recording() {
@@ -160,15 +195,28 @@ impl GraphicsSurface for VulkanContext {
             ));
         }
         owner.observe(self.ensure_rhi_frame_prepared())?;
+        // OUT_OF_DATE 注入发生在真实 acquire 前，因此不会产生可被旧 token 提交的 image。
+        #[cfg(feature = "vulkan-parity-test")]
+        let reject_acquire_for_parity = self.take_surface_fault_for_parity_test(
+            super::VulkanSurfaceFaultForParity::AcquireOutOfDate,
+        );
+        #[cfg(not(feature = "vulkan-parity-test"))]
+        let reject_acquire_for_parity = false;
         // SAFETY: swapchain、semaphore 与 device 存活，Surface owner 串行调用 acquire。
-        let (image_index, acquire_suboptimal) = match unsafe {
-            self.swapchain_loader.acquire_next_image(
-                self.swapchain,
-                u64::MAX,
-                self.image_available,
-                vk::Fence::null(),
-            )
-        } {
+        let acquire_result = if reject_acquire_for_parity {
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR)
+        } else {
+            // SAFETY: swapchain、semaphore 与 device 存活，Surface owner 串行调用 acquire。
+            unsafe {
+                self.swapchain_loader.acquire_next_image(
+                    self.swapchain,
+                    u64::MAX,
+                    self.image_available,
+                    vk::Fence::null(),
+                )
+            }
+        };
+        let (image_index, acquire_suboptimal) = match acquire_result {
             Ok(result) => result,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 return owner.observe(match self.recreate_after_surface_change(
@@ -184,6 +232,12 @@ impl GraphicsSurface for VulkanContext {
             }
             Err(error) => return Err(owner.error("vkAcquireNextImageKHR RHI", error)),
         };
+        // acquire SUBOPTIMAL 仍必须持有真实 WSI image，并由成功 present 后的共享语义重建。
+        #[cfg(feature = "vulkan-parity-test")]
+        let acquire_suboptimal = acquire_suboptimal
+            || self.take_surface_fault_for_parity_test(
+                super::VulkanSurfaceFaultForParity::AcquireSuboptimal,
+            );
         let image_slot = image_index as usize;
         let render_finished = self
             .render_finished
@@ -261,7 +315,20 @@ impl GraphicsSurface for VulkanContext {
         let swapchains = [self.swapchain];
         let indices = [submitted.image_index];
         let semaphores = [submitted.render_finished];
-        let present_result = if let Some(present_fence) = submitted.present_fence {
+        // OUT_OF_DATE 注入发生在真实 present 前，旧 frame 只完成 GPU submit，不进入 WSI。
+        #[cfg(feature = "vulkan-parity-test")]
+        let reject_present_for_parity = self.take_surface_fault_for_parity_test(
+            super::VulkanSurfaceFaultForParity::PresentOutOfDate,
+        );
+        #[cfg(not(feature = "vulkan-parity-test"))]
+        let reject_present_for_parity = false;
+        #[cfg(feature = "vulkan-parity-test")]
+        if reject_present_for_parity {
+            self.replace_present_sync_for_parity = true;
+        }
+        let present_result = if reject_present_for_parity {
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR)
+        } else if let Some(present_fence) = submitted.present_fence {
             let fences = [present_fence];
             let mut fence_info = vk::SwapchainPresentFenceInfoEXT::default().fences(&fences);
             let present = vk::PresentInfoKHR::default()
@@ -282,6 +349,15 @@ impl GraphicsSurface for VulkanContext {
             owner.with_queue("vkQueuePresentKHR RHI", |queue| unsafe {
                 self.swapchain_loader.queue_present(queue, &present)
             })?
+        };
+        // present SUBOPTIMAL 注入保留上面的真实 queue present 与同步所有权，只改写状态映射。
+        #[cfg(feature = "vulkan-parity-test")]
+        let present_result = if self.take_surface_fault_for_parity_test(
+            super::VulkanSurfaceFaultForParity::PresentSuboptimal,
+        ) {
+            present_result.map(|_| true)
+        } else {
+            present_result
         };
         let result = match present_result {
             Ok(present_suboptimal) => {

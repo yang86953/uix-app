@@ -116,14 +116,17 @@ pub(crate) fn execute_ui_production_surface_chain(
     let cleanup = context.device().destroy_texture(target);
     match (present, cleanup) {
         (Ok(()), Ok(())) => {
-            // present 不得暗中替换当前 Surface 代际。
+            // 已呈现的 SUBOPTIMAL 可以在同一次调用中发布恰好一个后续代际。
             let current = context.surface_ref().token();
-            if current != token {
+            if current.generation != token.generation
+                && current.generation != token.generation.saturating_add(1)
+            {
                 return Err(Error::new(
                     Errc::GraphicsSurfaceLost,
-                    "UI production-chain surface generation changed after present",
+                    "UI production-chain present advanced more than one surface generation",
                 ));
             }
+            // 返回 present 后的权威 token，禁止把已重建的旧 token 报告为当前代际。
             Ok(current)
         }
         (Err(error), Ok(())) => Err(error),
