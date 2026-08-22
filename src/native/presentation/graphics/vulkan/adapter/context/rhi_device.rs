@@ -829,3 +829,12 @@ mod gpu_parity_tests;
 pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
+
+// 真实 UI/Drawing 生产链只复用 Adapter 的机械回读，不在此定义期望或容差。
+#[cfg(feature = "vulkan-parity-test")]
+pub(super) fn readback_production_texture(
+    context: &mut VulkanContext,
+    texture: TextureHandle,
+) -> Vec<u8> {
+    gpu_parity_tests::readback_production_texture(context, texture)
+}

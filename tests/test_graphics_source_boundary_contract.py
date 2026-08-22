@@ -560,6 +560,50 @@ class GraphicsSourceBoundaryContractTests(unittest.TestCase):
         self.assertIn("impl GraphicsSurface for VulkanContext", vulkan_surface)
         self.assertIn("crate::platform::presentation::rhi", vulkan_surface)
 
+    def test_real_vulkan_acceptance_crosses_ui_drawing_and_shared_frame_plan(self) -> None:
+        composition = source(SRC / "graphics_parity.rs")
+        ui_entry = source(SRC / "ui/widgets/combinators.rs")
+        drawing = source(SRC / "draw/backend/production_chain_parity.rs")
+        shared_spec = source(SRC / "draw/backend/rhi_renderer_consistency.rs")
+        vulkan_fixture = source(
+            SRC
+            / "native/presentation/graphics/vulkan/adapter/context/headless_parity.rs"
+        )
+        test_target = source(ROOT / "tests/vulkan_gpu_parity.rs")
+
+        # 测试组合根只编排各责任方，期望与容差仍由 Drawing 共享规范持有。
+        for marker in (
+            "production_chain_scene",
+            "execute_ui_production_chain",
+            "render_shared_production_scene",
+            "new_headless_for_parity_test",
+            "readback_texture_for_parity_test",
+            "validate_production_chain_readback",
+        ):
+            with self.subTest(composition_marker=marker):
+                self.assertIn(marker, composition)
+        self.assertIn("ProductionChainScene", shared_spec)
+        self.assertIn("ConsistencySample::exact", shared_spec)
+
+        # UI 使用真实 WidgetRender；Drawing 使用生产 PaintContext/Canvas2D 和统一 FramePlan。
+        self.assertIn("WidgetRender::render(&widget", ui_entry)
+        self.assertIn("context.fill_rect(rect, color, None)", ui_entry)
+        self.assertNotIn("crate::platform::presentation::rhi", ui_entry)
+        self.assertIn("PaintContext::new(", drawing)
+        self.assertIn("NativeGpuCanvas2D::new_gpu_only", drawing)
+        self.assertIn("canvas.submit_rhi_solid(", drawing)
+        self.assertNotIn("crate::native", drawing)
+
+        # Vulkan fixture 只提供真实 Device 与机械回读，不复制共享场景或判定。
+        self.assertIn("VulkanContext", vulkan_fixture)
+        self.assertIn("readback_production_texture", vulkan_fixture)
+        self.assertNotIn("ConsistencySample", vulkan_fixture)
+        self.assertNotIn("ProductionChainScene", vulkan_fixture)
+        self.assertIn(
+            "ui_drawing_frame_plan_executes_and_reads_back_on_real_vulkan_device",
+            test_target,
+        )
+
     def test_platform_has_one_concrete_native_dependency_allowlist(self) -> None:
         locations = frozenset(
             path

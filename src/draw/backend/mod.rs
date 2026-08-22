@@ -2,6 +2,9 @@
 
 // 通用 GPU Renderer 的有限帧计划，供 backend 内部迁移使用。
 pub(crate) mod frame_plan;
+// 显式 GPU parity 通过真实 PaintContext/Canvas2D 入口验收共享 FramePlan。
+#[cfg(feature = "graphics-parity-test")]
+pub(crate) mod production_chain_parity;
 // 通用 RHI lowering，逐步替代 GPU backend 的逐 UI native submit。
 pub(crate) mod rhi_renderer;
 

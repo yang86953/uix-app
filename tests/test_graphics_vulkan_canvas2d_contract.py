@@ -73,18 +73,23 @@ class VulkanCanvas2dContractTests(unittest.TestCase):
         self.assertIn("不能无损表达时整条 native queue 原子回退", lowering)
         self.assertIn("return Ok(false);", lowering)
 
-    def test_real_vulkan_parity_harness_is_explicit_and_cpu_referenced(self) -> None:
+    def test_real_vulkan_parity_harness_is_explicit_and_shared_spec_driven(self) -> None:
         parity = PARITY.read_text(encoding="utf-8")
         cargo = CARGO.read_text(encoding="utf-8")
 
-        self.assertIn('vulkan-parity-test = ["vulkan"]', cargo)
+        self.assertIn(
+            'vulkan-parity-test = ["vulkan", "graphics-parity-test"]', cargo
+        )
         self.assertIn('required-features = ["vulkan-parity-test"]', cargo)
-        self.assertIn("fn cpu_unorm8", parity)
+        self.assertIn("canonical_scenes", parity)
+        self.assertIn("validate_canonical_scenes", parity)
+        self.assertIn("sample.accepts(actual)", parity)
         self.assertIn("create_graphics_pipelines", (
             ROOT / "src/native/presentation/graphics/vulkan/adapter/context/rhi_pipeline.rs"
         ).read_text(encoding="utf-8"))
         self.assertIn("cmd_copy_image_to_buffer", parity)
-        self.assertIn("actual.abs_diff(reference) <= 1", parity)
+        self.assertNotIn("fn canonical_scenes", parity)
+        self.assertNotIn("fn blur_subregion_scenario", parity)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@ use crate::draw::backend::rhi_renderer::consistency::{
 };
 use crate::platform::presentation::rhi::{
     DrawBufferBindings, DrawRange, DrawRasterState, DrawSamplingBinding, PipelineKind,
-    RhiBufferUpload, RhiTextureUpload, RhiViewport, SampledTextureBinding, TextureFormat,
+    RhiBufferUpload, RhiExtent, RhiTextureUpload, RhiViewport, SampledTextureBinding,
+    TextureFormat,
 };
 
 // 保存一个规范场景机械映射后的 Vulkan RHI 身份；不拥有任何像素语义。
@@ -86,6 +87,7 @@ fn record_readback(
     command_buffer: vk::CommandBuffer,
     image: vk::Image,
     destination: vk::Buffer,
+    extent: RhiExtent,
 ) {
     let range = vk::ImageSubresourceRange::default()
         .aspect_mask(vk::ImageAspectFlags::COLOR)
@@ -115,8 +117,8 @@ fn record_readback(
         )
         .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
         .image_extent(vk::Extent3D {
-            width: CONSISTENCY_EXTENT.width,
-            height: CONSISTENCY_EXTENT.height,
+            width: extent.width,
+            height: extent.height,
             depth: 1,
         });
     // SAFETY: command buffer 正在录制；image 与 buffer 的用途和范围均匹配。
@@ -137,7 +139,122 @@ fn record_readback(
             destination,
             std::slice::from_ref(&copy),
         );
+        let restore = vk::ImageMemoryBarrier::default()
+            .src_access_mask(vk::AccessFlags::TRANSFER_READ)
+            .dst_access_mask(vk::AccessFlags::SHADER_READ)
+            .old_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
+            .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(range);
+        device.cmd_pipeline_barrier(
+            command_buffer,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[],
+            &[],
+            std::slice::from_ref(&restore),
+        );
     }
+}
+
+// 回读由真实 UI/Drawing FramePlan 写入的生产离屏纹理，不解释像素期望。
+pub(super) fn readback_production_texture(
+    context: &mut VulkanContext,
+    texture: TextureHandle,
+) -> Vec<u8> {
+    let owner = context
+        .active_device()
+        .expect("Vulkan production-chain device must remain active");
+    context
+        .wait_for_frame_fence("vkWaitForFences before production-chain readback")
+        .expect("Vulkan production-chain FramePlan submission must complete");
+    let texture = context
+        .rhi_device
+        .textures
+        .get(texture)
+        .expect("Vulkan production-chain target must remain registered");
+    let extent = texture.desc().extent();
+    let image = texture.image();
+    let instance = context
+        .runtime
+        .as_ref()
+        .expect("Vulkan production-chain runtime must remain active")
+        .instance()
+        .clone();
+    let byte_count = u64::from(extent.width) * u64::from(extent.height) * 4;
+    let (readback, readback_memory) = create_readback_buffer(
+        &instance,
+        context.physical_device,
+        &context.device,
+        byte_count,
+    );
+    // SAFETY: FramePlan fence 已完成，唯一 command buffer 与 fence 均可重置复用。
+    unsafe {
+        context
+            .device
+            .reset_command_buffer(context.command_buffer, vk::CommandBufferResetFlags::empty())
+            .expect("Vulkan production-chain readback command buffer must reset");
+        context
+            .device
+            .reset_fences(&[context.frame_fence])
+            .expect("Vulkan production-chain readback fence must reset");
+    }
+    let begin =
+        vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+    // SAFETY: command buffer 已重置且没有其它录制者。
+    unsafe {
+        context
+            .device
+            .begin_command_buffer(context.command_buffer, &begin)
+            .expect("Vulkan production-chain readback must begin");
+    }
+    record_readback(
+        &context.device,
+        context.command_buffer,
+        image,
+        readback,
+        extent,
+    );
+    // SAFETY: 回读与布局恢复命令完整且位于 render pass 外。
+    unsafe {
+        context
+            .device
+            .end_command_buffer(context.command_buffer)
+            .expect("Vulkan production-chain readback must finish");
+    }
+    let submit =
+        vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&context.command_buffer));
+    let submit_result = owner
+        .with_queue("vkQueueSubmit production-chain readback", |queue| unsafe {
+            context
+                .device
+                .queue_submit(queue, std::slice::from_ref(&submit), context.frame_fence)
+        })
+        .expect("Vulkan production-chain queue lease must be acquired");
+    submit_result.expect("Vulkan production-chain readback must submit");
+    context
+        .wait_for_frame_fence("vkWaitForFences production-chain readback")
+        .expect("Vulkan production-chain readback must complete");
+    // SAFETY: readback memory 为 HOST_VISIBLE 且映射范围精确覆盖紧密 RGBA8 结果。
+    let mapped = unsafe {
+        context
+            .device
+            .map_memory(readback_memory, 0, byte_count, vk::MemoryMapFlags::empty())
+            .expect("Vulkan production-chain readback memory must map")
+    };
+    // SAFETY: 映射范围在 unmap 前包含全部 byte_count 字节。
+    let pixels =
+        unsafe { std::slice::from_raw_parts(mapped.cast::<u8>(), byte_count as usize) }.to_vec();
+    // SAFETY: GPU 已完成回读，映射指针不再使用，按创建逆序回收 staging。
+    unsafe {
+        context.device.unmap_memory(readback_memory);
+        context.device.destroy_buffer(readback, None);
+        context.device.free_memory(readback_memory, None);
+    }
+    pixels
 }
 
 // 把一个 API 无关场景机械创建为 Vulkan RHI 资源，不解释其期望像素。
@@ -499,7 +616,7 @@ fn run_blur_subregion_two_pass(
         .get(target)
         .expect("Vulkan blur target must remain alive")
         .image();
-    record_readback(device, command_buffer, image, readback);
+    record_readback(device, command_buffer, image, readback, CONSISTENCY_EXTENT);
     // SAFETY: readback 命令完整且位于 render pass 外。
     unsafe { device.end_command_buffer(command_buffer) }.expect("Vulkan blur readback must finish");
     let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&command_buffer));
@@ -696,7 +813,7 @@ pub(super) fn run_gpu_parity_test() {
         .get(target)
         .expect("Vulkan consistency target must remain alive")
         .image();
-    record_readback(&device, command_buffer, image, readback);
+    record_readback(&device, command_buffer, image, readback, CONSISTENCY_EXTENT);
     // SAFETY: readback 命令完整且不在 render pass 内。
     unsafe { device.end_command_buffer(command_buffer) }
         .expect("Vulkan consistency readback must finish");
