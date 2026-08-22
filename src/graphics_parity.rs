@@ -8,11 +8,10 @@ use std::ffi::c_void;
 use crate::app::window::window_creation::create_app_window;
 use crate::core::Errc;
 use crate::diagnostics::PendingFailureQueue;
-use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain;
 #[cfg(feature = "vulkan-parity-test")]
-use crate::draw::backend::production_chain_parity::{
-    execute_ui_production_chain, execute_ui_production_surface_chain_with_present_hook,
-};
+use crate::draw::backend::production_chain_parity::execute_ui_production_chain;
+use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain;
+use crate::draw::backend::production_chain_parity::execute_ui_production_surface_chain_with_present_hook;
 #[cfg(feature = "vulkan-parity-test")]
 use crate::draw::backend::rhi_renderer::consistency::validate_production_chain_readback;
 use crate::draw::backend::rhi_renderer::consistency::{
@@ -25,6 +24,8 @@ use crate::native::presentation::graphics::vulkan::platform::{
     VulkanContext, VulkanSurfaceFaultForParity,
 };
 use crate::platform::presentation::GraphicsContextLifecycle;
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+use crate::platform::presentation::rhi::GraphicsSurface;
 use crate::platform::presentation::rhi::{GraphicsContextRhi, RhiExtent, SurfaceToken};
 #[cfg(feature = "vulkan-parity-test")]
 use crate::platform::presentation::rhi::{RhiScissor, RhiSurfaceReadback};
@@ -76,6 +77,27 @@ fn present_shared_production_scene(
     })
 }
 
+// 让 API 中立的 parity 组合根复用唯一 UI 场景并观察 submit/present 边界。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+fn present_shared_production_scene_with_hook(
+    context: &mut dyn GraphicsContextRhi,
+    scene: &ProductionChainScene,
+    before_present: &mut dyn FnMut(&mut dyn GraphicsSurface),
+) -> crate::core::Result<SurfaceToken> {
+    execute_ui_production_surface_chain_with_present_hook(
+        context,
+        |draw_context| {
+            crate::ui::widgets::combinators::render_shared_production_scene(
+                draw_context,
+                scene.frame,
+                scene.rect,
+                scene.color,
+            );
+        },
+        before_present,
+    )
+}
+
 // Vulkan WSI parity 只通过既有 before-present 钩子读取最终 swapchain image。
 #[cfg(feature = "vulkan-parity-test")]
 fn present_shared_production_scene_with_readback(
@@ -117,6 +139,121 @@ fn present_shared_production_scene_with_readback(
         )
     })??;
     Ok((presented, readback))
+}
+
+// 只选择 parity 故障安排位置，不拥有恢复状态或原生生命周期。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[derive(Clone, Copy, Debug)]
+enum OpenGlSurfaceFaultForParity {
+    Acquire,
+    PresentAfterSubmit,
+}
+
+// 在同一真实 EGL window surface 上证明一次拒绝只触发一次原生 replacement。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+fn verify_opengl_surface_fault(
+    context: &mut EglContext,
+    scene: &ProductionChainScene,
+    fault: OpenGlSurfaceFaultForParity,
+) -> SurfaceToken {
+    let old = context.surface_ref().token();
+    let replacements_before = context.window_surface_replacements_for_test();
+    let injected = match fault {
+        OpenGlSurfaceFaultForParity::Acquire => {
+            context
+                .surface()
+                .inject_surface_lost_for_test()
+                .expect("acquire SurfaceLost injection must arm at an idle boundary");
+            assert_eq!(
+                context.surface_ref().token(),
+                old,
+                "arming acquire SurfaceLost must not commit authoritative state",
+            );
+            present_shared_production_scene(context, scene)
+        }
+        OpenGlSurfaceFaultForParity::PresentAfterSubmit => {
+            let mut armed_after_submit = false;
+            let result =
+                present_shared_production_scene_with_hook(context, scene, &mut |surface| {
+                    surface
+                        .inject_surface_lost_for_test()
+                        .expect("present SurfaceLost injection must arm after submit");
+                    assert_eq!(
+                        surface.token(),
+                        old,
+                        "arming present SurfaceLost must not commit authoritative state",
+                    );
+                    armed_after_submit = true;
+                });
+            assert!(
+                armed_after_submit,
+                "present SurfaceLost must be armed after the shared RHI submit",
+            );
+            result
+        }
+    };
+
+    let retry = injected.expect_err("SurfaceLost must reject the old OpenGL WSI frame");
+    assert_eq!(retry.code(), Errc::GraphicsSurfaceChanged);
+    let rebuilt = context.surface_ref().token();
+    assert_eq!(rebuilt.extent, old.extent, "recovery must keep WSI extent");
+    assert_eq!(
+        rebuilt.generation,
+        old.generation + 1,
+        "recovery must commit exactly one shared generation",
+    );
+    assert_eq!(
+        context.window_surface_replacements_for_test(),
+        replacements_before + 1,
+        "one SurfaceLost must replace the real EGLSurface exactly once",
+    );
+
+    let recovered = present_shared_production_scene(context, scene)
+        .expect("the next real UI production frame must submit and eglSwapBuffers");
+    assert_eq!(recovered, rebuilt);
+    assert_eq!(
+        context.window_surface_replacements_for_test(),
+        replacements_before + 1,
+        "the recovered frame must reuse the single replacement EGLSurface",
+    );
+    eprintln!(
+        "OpenGL ES WSI recovery path: fault={fault:?}; old={}x{}@{}; new={}x{}@{}; injection-token=unchanged; retry=RetryFrame(GraphicsSurfaceChanged); egl-surface-replacements=1; recovered-submit=ok; recovered-eglSwapBuffers=ok@{}",
+        old.extent.width,
+        old.extent.height,
+        old.generation,
+        rebuilt.extent.width,
+        rebuilt.extent.height,
+        rebuilt.generation,
+        recovered.generation,
+    );
+    rebuilt
+}
+
+// 两个拒绝边界共享同一个 EGL owner、故障注入、场景和恢复状态机。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+fn verify_opengl_surface_recovery(
+    context: &mut EglContext,
+    scene: &ProductionChainScene,
+    initial: SurfaceToken,
+) {
+    let replacements_before = context.window_surface_replacements_for_test();
+    let acquired =
+        verify_opengl_surface_fault(context, scene, OpenGlSurfaceFaultForParity::Acquire);
+    let presented = verify_opengl_surface_fault(
+        context,
+        scene,
+        OpenGlSurfaceFaultForParity::PresentAfterSubmit,
+    );
+    assert_eq!(acquired.generation, initial.generation + 1);
+    assert_eq!(presented.generation, initial.generation + 2);
+    assert_eq!(
+        context.window_surface_replacements_for_test(),
+        replacements_before + 2,
+    );
+    eprintln!(
+        "OpenGL ES WSI Surface recovery verified: paths=2; generation={}->{}; real-egl-surface-replacements=2; recovered-ui-submits=2; recovered-eglSwapBuffers=2",
+        initial.generation, presented.generation,
+    );
 }
 
 // 把统一 0xAARRGGBB 结果转换为已有共享场景断言消费的 RGBA8 字节。
@@ -369,7 +506,7 @@ pub(crate) fn run_vulkan_wsi_production_chain_test() {
 // 在真实 Wayland 窗口上验收 EGL/GLES 对同一 Surface 生产链的机械复用。
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 pub(crate) fn run_opengl_wsi_production_chain_test() {
-    run_wsi_production_chain_test(
+    run_wsi_production_chain_test::<EglContext>(
         "OpenGL ES",
         "UIX OpenGL ES WSI parity",
         |native_surface, width, height| {
@@ -377,11 +514,16 @@ pub(crate) fn run_opengl_wsi_production_chain_test() {
             context.disable_swap_interval_for_parity_test()?;
             Ok(context)
         },
-        |_| {
+        |context| {
             let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
-            format!("Wayland display={display}; EGL window surface; GLES context")
+            let session =
+                std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "<unset>".to_owned());
+            let adapter = context
+                .parity_adapter_diagnostic()
+                .expect("the real EGL window context must report its GPU identity");
+            format!("Wayland display={display}; session={session}; EGL window surface; {adapter}")
         },
-        present_shared_production_scene,
-        |_, _, _| {},
+        |context, scene| present_shared_production_scene(context, scene),
+        verify_opengl_surface_recovery,
     );
 }

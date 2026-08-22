@@ -320,6 +320,9 @@ pub struct EglContext {
     metrics: Arc<WaylandSurfaceMetrics>,
     // 唯一拥有 Surface generation、extent 与重建事务顺序的共享状态机。
     surface_lifecycle: RhiSurfaceLifecycle,
+    // 显式测试只记录成功替换真实 EGLSurface 的次数，不参与权威状态。
+    #[cfg(feature = "test-harness")]
+    window_surface_replacements_for_test: u64,
     pipeline: OpenGlRasterPipeline,
     // 关闭事务一旦开始便禁止新的业务 RHI 借用，但允许 cleanup 重试。
     shutdown_started: bool,
@@ -612,6 +615,9 @@ impl EglContext {
             metrics: wayland.metrics,
             // 接管已经完成 Initialize 事务的共享生命周期 owner。
             surface_lifecycle,
+            // 初始 EGLSurface 属于构造，不计入失效后的 replacement。
+            #[cfg(feature = "test-harness")]
+            window_surface_replacements_for_test: 0,
             pipeline,
             // 初始 owner 尚未进入关闭事务。
             shutdown_started: false,
@@ -634,6 +640,37 @@ impl EglContext {
                 format!("EglContext: parity eglSwapInterval(0) failed: {error:?}"),
             )
         })
+    }
+
+    // 返回当前真实 Wayland EGL window context 的 EGL 与 GPU 身份。
+    #[cfg(feature = "opengl-parity-test")]
+    pub(crate) fn parity_adapter_diagnostic(&self) -> Result<String, Error> {
+        use khronos_egl as egl;
+
+        // 诊断先服从正式 owner 门禁并恢复 current context。
+        self.make_current_result()?;
+        // 从当前 display 查询 EGL 实现身份，不使用 headless 或推断值。
+        let egl_vendor = self
+            .egl
+            .query_string(Some(self.display), egl::VENDOR)
+            .map_err(|error| map_egl_surface_error("eglQueryString(EGL_VENDOR)", error))?
+            .to_string_lossy();
+        let egl_version = self
+            .egl
+            .query_string(Some(self.display), egl::VERSION)
+            .map_err(|error| map_egl_surface_error("eglQueryString(EGL_VERSION)", error))?
+            .to_string_lossy();
+        // GPU 字符串来自同一个 current window context 的 GLES runtime。
+        Ok(format!(
+            "EGL vendor={egl_vendor}; version={egl_version}; {}",
+            self.pipeline.parity_gpu_diagnostic(),
+        ))
+    }
+
+    // 返回成功替换真实 EGLSurface 的 feature-only 观察计数。
+    #[cfg(feature = "test-harness")]
+    pub(crate) const fn window_surface_replacements_for_test(&self) -> u64 {
+        self.window_surface_replacements_for_test
     }
 
     pub(crate) fn shutdown_result(&mut self) -> Result<(), Error> {
@@ -834,7 +871,14 @@ impl EglContext {
                 Some(self.surface),
                 Some(self.context),
             )
-            .map_err(|error| map_egl_surface_error("eglMakeCurrent(recreated)", error))
+            .map_err(|error| map_egl_surface_error("eglMakeCurrent(recreated)", error))?;
+        // 只在 replacement 已创建且重新 current 成功后记录一次原生事实。
+        #[cfg(feature = "test-harness")]
+        {
+            self.window_surface_replacements_for_test =
+                self.window_surface_replacements_for_test.saturating_add(1);
+        }
+        Ok(())
     }
 }
 

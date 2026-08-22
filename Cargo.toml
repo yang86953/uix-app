@@ -128,8 +128,8 @@ opengles = ["dep:glow", "dep:khronos-egl"]
 vulkan = ["dep:ash"]
 # 仅为真实 GPU 离屏像素一致性测试开放 crate 内 Vulkan harness。
 vulkan-parity-test = ["vulkan", "graphics-parity-test"]
-# 仅为 Linux 真实 EGL/GLES 离屏像素一致性测试开放 crate 内 OpenGL harness。
-opengl-parity-test = ["opengles", "graphics-parity-test"]
+# 仅为 Linux 真实 EGL/GLES parity 开放 crate 内 OpenGL harness 与故障注入。
+opengl-parity-test = ["opengles", "test-harness", "graphics-parity-test"]
 # 仅为 Windows 真实 D3D11 离屏像素一致性测试开放 crate 内生产 Adapter harness。
 d3d11-parity-test = ["d3d11", "test-harness", "graphics-parity-test"]
 # 三套原生 parity harness 共享的 Drawing 规范开关，不选择任何具体 API。
