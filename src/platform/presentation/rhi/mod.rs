@@ -38,6 +38,9 @@ mod geometry;
 mod multisample;
 // 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
 mod color;
+// 显式 parity feature 才编译 API 中立测试端口，不进入生产合同表面。
+#[cfg(feature = "graphics-parity-test")]
+mod parity;
 // 将 Device 与 Surface 能力拆到独立契约，禁止两种角色反向读取彼此状态。
 mod capabilities;
 // 将 draw packet 拆到独立类型化契约文件，保持 pipeline 身份不可拆分。
@@ -92,6 +95,11 @@ pub(crate) use multisample::PipelineMultisampleState;
 // 向 Drawing、Surface 与原生 Adapter 暴露唯一颜色与清理输出解释。
 pub(crate) use color::{
     RhiColorClearContract, RhiColorContract, UIX_COLOR_CLEAR_CONTRACT, UIX_COLOR_CONTRACT,
+};
+// 向显式 parity 组合根与原生 Adapter 暴露同一套测试端口。
+#[cfg(feature = "graphics-parity-test")]
+pub(crate) use parity::{
+    HeadlessUiParityAdapter, WsiParityAdapter, WsiParityFramePresenter, WsiParityProfile,
 };
 // 向组合根和 Adapter 暴露两个正交的事实快照。
 pub(crate) use capabilities::{GraphicsDeviceCapabilities, GraphicsSurfaceCapabilities};
