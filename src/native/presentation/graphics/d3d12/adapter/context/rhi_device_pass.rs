@@ -1,7 +1,7 @@
 //! D3D12 薄 RHI 的 render-target、pass、clear 与提交事务。
 //!
 //! 本模块只把 platform 唯一 pass/submission 合同机械编码为 D3D12 命令；
-//! pipeline、draw、采样与组合入口继续保持未实现。
+//! draw 由同级专用模块消费活动目标事实，组合入口继续保持未激活。
 
 use super::*;
 
@@ -33,6 +33,8 @@ pub(super) struct D3d12RhiRenderTarget {
     rtv: D3D12_CPU_DESCRIPTOR_HANDLE,
     // 保存共享状态机使用的目标范围。
     extent: RhiExtent,
+    // 保存当前目标的共享颜色格式，供 draw 唯一选择兼容 PSO。
+    format: TextureFormat,
     // 冻结命令录制开始前已经提交的原生状态。
     before: D3D12_RESOURCE_STATES,
     // 冻结本 pass 结束后要在 submit 成功后发布的原生状态。
@@ -44,6 +46,16 @@ pub(super) struct D3d12RhiRenderTarget {
 }
 
 impl D3d12RhiRenderTarget {
+    // 返回当前原生目标对应的共享不透明身份。
+    pub(super) const fn target(&self) -> RenderTargetHandle {
+        self.target
+    }
+
+    // 返回 draw adapter 选择 PSO 时唯一允许读取的活动目标格式。
+    pub(super) const fn format(&self) -> TextureFormat {
+        self.format
+    }
+
     // 未知 GPU 状态下泄漏最后一份资源与 descriptor 引用，禁止提前释放。
     pub(super) fn retain_after_undrained_drop(self) {
         std::mem::forget(self.native);
@@ -119,6 +131,15 @@ impl D3d12RhiDevice {
             .unwrap_or(committed)
     }
 
+    // 返回 sampled texture 在当前未提交批次中已经由命令序列建立的最新状态。
+    pub(super) fn effective_sampled_texture_state(
+        &self,
+        texture: TextureHandle,
+        committed: D3D12_RESOURCE_STATES,
+    ) -> D3D12_RESOURCE_STATES {
+        self.effective_target_state(D3d12RhiTargetOwner::Texture(texture), committed)
+    }
+
     // 解析可渲染 texture，并在 descriptor、格式与范围全部验证后克隆原生 owner。
     fn stage_texture_target(
         &self,
@@ -164,6 +185,7 @@ impl D3d12RhiDevice {
             rtv_heap_owner,
             rtv,
             extent,
+            format: resource.desc.format(),
             before: self.effective_target_state(owner, resource.state),
             after: D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             viewport,
@@ -231,7 +253,10 @@ impl D3d12RhiDevice {
     // present 前禁止任何打开或尚未提交的 D3D12 pass 绕过提交事务。
     pub(in super::super) fn require_present_ready(&self) -> Result<()> {
         self.pass.require_closed()?;
-        if self.active_target.is_some() || !self.pending_targets.is_empty() {
+        if self.active_target.is_some()
+            || !self.pending_targets.is_empty()
+            || !self.pending_draw_resources.is_empty()
+        {
             return Err(Error::new(
                 Errc::InvalidState,
                 "D3D12 RHI present requires a successfully submitted render pass",
@@ -298,6 +323,7 @@ impl D3d12Context {
             rtv_heap_owner: self.rtv_heap.clone(),
             rtv: self.rtv_handle(self.frame_index),
             extent,
+            format: TextureFormat::Bgra8Unorm,
             before: self
                 .rhi_device
                 .effective_target_state(owner, self.back_buffer_states[self.frame_index]),
@@ -473,7 +499,8 @@ impl D3d12Context {
                 return Err(error);
             }
         };
-        // 状态与身份都成功发布后才释放本批次额外的 COM owner。
+        // 状态与身份都成功发布后，按录制引用的逆序释放 draw 与目标 COM owner。
+        self.rhi_device.pending_draw_resources.clear();
         self.rhi_device.pending_targets.clear();
         Ok(submission)
     }

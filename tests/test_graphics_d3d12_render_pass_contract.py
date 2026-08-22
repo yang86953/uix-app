@@ -226,17 +226,15 @@ class GraphicsD3d12RenderPassContractTests(unittest.TestCase):
 
         for enabled in ("clear_rect: true", "render_to_texture: true", "scissor: true"):
             self.assertIn(enabled, device)
-        for disabled in (
-            "sampled_textures: false",
-            "premultiplied_alpha_blend: false",
-            "additive_blend: false",
+        for enabled in (
+            "sampled_textures: true",
+            "premultiplied_alpha_blend: true",
+            "additive_blend: true",
         ):
-            self.assertIn(disabled, device)
-        for deferred in (
-            'resource_stage_deferred("preflight_draw_resources")',
-            'resource_stage_deferred("draw")',
-        ):
-            self.assertIn(deferred, device)
+            self.assertIn(enabled, device)
+        self.assertIn("self.rhi_device.preflight_draw_resources(packet)", device)
+        self.assertIn("self.draw_rhi_packet(packet)", device)
+        self.assertNotIn("resource_stage_deferred", device)
         self.assertIn("self.rhi_device.create_pipeline(&self.device, desc)", device)
         self.assertIn("self.rhi_device.destroy_pipeline(pipeline)", device)
         for forbidden in ("create_pipeline", "DrawInstanced", "DrawIndexedInstanced"):
