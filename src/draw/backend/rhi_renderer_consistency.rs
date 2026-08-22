@@ -4,6 +4,8 @@
 //! 任一生产光栅算法。全部原生 GPU harness 必须复用这里的事实。
 
 use super::{FrameUniformPayload, FrameVertexPayload, RhiOp, RhiRenderer};
+use crate::core::Rect;
+use crate::draw::Color;
 use crate::draw::backend::gpu::pending::PendingNativeOp;
 use crate::platform::presentation::rhi::{
     BLUR_WEIGHT_COUNT, PipelineKind, PipelineSampling, RhiBlurDirection, RhiBlurPassGeometry,
@@ -156,6 +158,89 @@ pub(crate) struct ConsistencyBlurScenario {
     pub(crate) scissor: RhiScissor,
     pub(crate) horizontal_samples: Vec<ConsistencySample>,
     pub(crate) final_samples: Vec<ConsistencySample>,
+}
+
+// 保存真实 UI/Drawing 生产链验收的唯一输入与像素断言。
+#[derive(Debug, Clone)]
+pub(crate) struct ProductionChainScene {
+    // 无窗口离屏目标仍使用 platform RHI 的共享范围值。
+    pub(crate) extent: RhiExtent,
+    // UI Canvas 接收的完整逻辑 frame，不泄漏原生 surface 类型。
+    pub(crate) frame: Rect,
+    // 由真实 UI WidgetRender 入口提交的稳定内部矩形。
+    pub(crate) rect: Rect,
+    // 使用不透明颜色避免把 alpha 舍入误判为调用链断裂。
+    pub(crate) color: Color,
+    // 期望与容差继续由 Drawing 一处持有，Vulkan 只执行和回读。
+    pub(crate) samples: [ConsistencySample; 2],
+}
+
+// 返回 UI → Drawing → FramePlan 生产链唯一共享验收场景。
+pub(crate) fn production_chain_scene() -> ProductionChainScene {
+    let extent = RhiExtent::new(32, 24);
+    let color = Color::from_rgb(36, 144, 220);
+    ProductionChainScene {
+        extent,
+        frame: Rect::new(0.0, 0.0, extent.width as f32, extent.height as f32),
+        rect: Rect::new(8.0, 6.0, 16.0, 12.0),
+        color,
+        samples: [
+            ConsistencySample::exact(
+                12,
+                10,
+                [color.r, color.g, color.b, color.a],
+                ConsistencyTolerance::Quantized,
+                "UI Canvas opaque fill",
+            ),
+            ConsistencySample::exact(
+                2,
+                2,
+                [0, 0, 0, 0],
+                ConsistencyTolerance::Exact,
+                "FramePlan transparent clear",
+            ),
+        ],
+    }
+}
+
+// 用 Drawing 共享断言验证 Adapter 返回的紧密 RGBA8 回读。
+pub(crate) fn validate_production_chain_readback(
+    scene: &ProductionChainScene,
+    pixels: &[u8],
+) -> Result<usize, String> {
+    let row_bytes = scene.extent.width as usize * 4;
+    let expected_len = row_bytes * scene.extent.height as usize;
+    if pixels.len() != expected_len {
+        return Err(format!(
+            "production-chain readback length {} does not match {expected_len}",
+            pixels.len()
+        ));
+    }
+    for sample in scene.samples {
+        if sample.x >= scene.extent.width || sample.y >= scene.extent.height {
+            return Err(format!(
+                "production-chain sample {} is outside {}x{}",
+                sample.semantic, scene.extent.width, scene.extent.height
+            ));
+        }
+        let offset = sample.y as usize * row_bytes + sample.x as usize * 4;
+        let actual: [u8; 4] = pixels[offset..offset + 4]
+            .try_into()
+            .map_err(|_| "production-chain sample does not contain one RGBA pixel".to_string())?;
+        if !sample.accepts(actual) {
+            return Err(format!(
+                "{} at ({}, {}): actual {actual:?}, expected {:?}..={:?}, tolerance {:?}({})",
+                sample.semantic,
+                sample.x,
+                sample.y,
+                sample.minimum,
+                sample.maximum,
+                sample.tolerance,
+                sample.tolerance.amount(),
+            ));
+        }
+    }
+    Ok(scene.samples.len())
 }
 
 // 返回十一类 pipeline 的唯一规范场景；顺序同时固定真实 GPU 诊断输出。

@@ -200,11 +200,20 @@ extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
 pub use uix_derive::{Display, uix, uix_app, uix_items};
+// 显式 Vulkan parity 的跨 System 测试组合不进入生产公开面。
+#[cfg(feature = "vulkan-parity-test")]
+mod graphics_parity;
 // 只为显式 GPU parity 测试目标转发 crate 内 Vulkan harness，不进入默认公开面。
 #[cfg(feature = "vulkan-parity-test")]
 #[doc(hidden)]
 pub fn __run_vulkan_gpu_parity_test() {
     native::presentation::graphics::vulkan::platform::run_gpu_parity_test();
+}
+// 从真实 UI WidgetRender 入口验收 Drawing FramePlan 与 Vulkan Device adapter。
+#[cfg(feature = "vulkan-parity-test")]
+#[doc(hidden)]
+pub fn __run_vulkan_ui_production_chain_test() {
+    graphics_parity::run_vulkan_ui_production_chain_test();
 }
 // 只为显式 Linux GPU parity 测试目标转发 crate 内 OpenGL ES/EGL harness。
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]

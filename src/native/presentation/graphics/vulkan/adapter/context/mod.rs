@@ -24,6 +24,9 @@ use super::surface::{
 // 构造 module 唯一持有正式 context 交付前的 Vulkan native 资源。
 mod construction;
 mod graphics;
+// 显式 Vulkan parity 使用无窗口生产 Device 角色执行真实 FramePlan。
+#[cfg(feature = "vulkan-parity-test")]
+mod headless_parity;
 mod methods;
 mod rhi_device;
 mod rhi_frame;

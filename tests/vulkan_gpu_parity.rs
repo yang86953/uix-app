@@ -5,6 +5,12 @@ fn every_pipeline_matches_shared_consistency_scene_on_real_vulkan_device() {
     uix::__run_vulkan_gpu_parity_test();
 }
 
+// 从真实 UI WidgetRender 入口闭合 Drawing FramePlan 到生产 Vulkan Device adapter。
+#[test]
+fn ui_drawing_frame_plan_executes_and_reads_back_on_real_vulkan_device() {
+    uix::__run_vulkan_ui_production_chain_test();
+}
+
 // 不依赖原生窗口，确定性验证 OUT_OF_DATE 与 SUBOPTIMAL 的帧收尾语义。
 #[test]
 fn surface_lifecycle_distinguishes_retry_from_presented_rebuild() {

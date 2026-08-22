@@ -469,6 +469,23 @@ impl WidgetRender for Canvas {
     }
 }
 
+// 显式共享 parity 通过真实 Canvas WidgetRender 入口提交一条 UI 绘制命令。
+#[cfg(feature = "graphics-parity-test")]
+pub(crate) fn render_shared_production_scene(
+    draw_context: &mut crate::draw::painting::PaintContext<'_>,
+    frame: Rect,
+    rect: Rect,
+    color: crate::draw::Color,
+) {
+    let tree = WidgetTree::new();
+    let mut context = PaintContext::new(draw_context, tree.theme_tokens());
+    let widget = Canvas {
+        size: Size::new(frame.w, frame.h),
+        paint: Box::new(move |_frame, context| context.fill_rect(rect, color, None)),
+    };
+    WidgetRender::render(&widget, frame, &mut context, &tree);
+}
+
 /// 创建固定 logical 尺寸的轻量绘制节点，无需声明完整组件。
 ///
 /// 闭包只在节点需要绘制时执行；其中读取的 `State` / `Computed` 会自动绑定
