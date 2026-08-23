@@ -291,12 +291,18 @@ impl RhiRenderer {
             // 统一检查当前操作的固定 ABI 约束。
             check_op(operation)?;
         }
-        let max_solid_bytes = operations
+        // SolidMesh 在物理坐标中统一生成一次 coverage 边带，容量与提交复用同一载荷。
+        let solid_vertices: Vec<_> = operations
             .iter()
-            .filter_map(|operation| match operation {
-                RhiOp::Solid(mesh) => Some(mesh.vertices.len() * std::mem::size_of::<f32>()),
+            .map(|operation| match operation {
+                RhiOp::Solid(mesh) => Some(super::mesh::antialiased_vertices(&mesh.vertices)),
                 _ => None,
             })
+            .collect();
+        let max_solid_bytes = solid_vertices
+            .iter()
+            .filter_map(|vertices| vertices.as_ref())
+            .map(|vertices| vertices.len() * std::mem::size_of::<f32>())
             .max();
         // 只在当前帧出现 solid 时准备 solid 资源。
         let solid_resources = match max_solid_bytes {
@@ -572,11 +578,13 @@ impl RhiRenderer {
                         solid_resources,
                         "RhiRenderer mixed solid resources are missing",
                     )?;
-                    // 选择当前 mesh 的裁剪。
-                    // 上传当前 mesh 的类型化 position-float2 顶点。
+                    let vertices = solid_vertices[index].as_ref().ok_or_else(|| {
+                        super::rhi_state("RhiRenderer mixed solid coverage payload is missing")
+                    })?;
+                    // 上传当前 mesh 的类型化 position + coverage 顶点。
                     pass.push(FramePlanCommand::UploadVertex {
                         buffer: vertex_buffer,
-                        data: FrameVertexPayload::position_f32x2(mesh.vertices.clone()),
+                        data: FrameVertexPayload::position_coverage_f32(vertices.clone()),
                     });
                     // 上传类型化 MeshConstants。
                     pass.push(FramePlanCommand::UploadUniform {
@@ -595,7 +603,7 @@ impl RhiRenderer {
                         // Draw 自有当前 mesh 的 viewport 与 scissor 栅格事实。
                         DrawRasterState::new(viewport, mesh.scissor),
                         // Mesh 使用封闭的非索引顶点范围。
-                        DrawRange::vertices((mesh.vertices.len() / 2) as u32),
+                        DrawRange::vertices((vertices.len() / 3) as u32),
                     )));
                 }
                 // 编码解析抗锯齿线段。

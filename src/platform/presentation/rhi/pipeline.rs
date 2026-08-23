@@ -13,7 +13,7 @@ use super::vertex_layout::PipelineVertexLayout;
 // 定义通用 renderer 与 native Adapter 共享的封闭 pipeline 语义。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PipelineKind {
-    // 使用位置 float2 与 MeshConstants uniform 绘制实心三角形。
+    // 使用位置 float2、coverage float1 与 MeshConstants 绘制抗锯齿实心三角形。
     SolidMesh,
     // 使用位置 float2、纹理坐标 float2 与颜色 float4 绘制采样图元。
     TexturedQuad,
@@ -483,8 +483,8 @@ impl PipelineKind {
         match self {
             // 实心颜色由 shader 以 straight-alpha 输出。
             Self::SolidMesh => ui_2d_pipeline_contract(
-                // solid 使用 position float2。
-                PipelineVertexLayout::PositionF32x2,
+                // solid 使用 position float2 与逐顶点 coverage。
+                PipelineVertexLayout::PositionCoverageF32,
                 // solid 使用 MeshConstants。
                 PipelineUniformLayout::Mesh,
                 // solid 不读取纹理。

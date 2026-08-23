@@ -9,9 +9,10 @@ layout(set = 0, binding = 0, std140) uniform MeshUniforms {
     vec2 _pad0;
     vec4 color;
 } u;
+layout(location = 0) in float v_coverage;
 
 void main() {
-    out_color = u.color;
+    out_color = vec4(u.color.rgb, u.color.a * clamp(v_coverage, 0.0, 1.0));
 }
 
 #elif defined(UIX_TEXTURED)

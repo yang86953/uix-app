@@ -37,8 +37,8 @@ use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT, DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT,
-    DXGI_FORMAT_UNKNOWN,
+    DXGI_FORMAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_UINT, DXGI_FORMAT_R32G32_FLOAT,
+    DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_UNKNOWN,
 };
 use ::windows::core::{BOOL, PCSTR};
 
@@ -119,6 +119,8 @@ pub(crate) struct D3d11Pipeline {
     ps_grad: ID3D11PixelShader,
     vs_mesh: ID3D11VertexShader,
     ps_mesh: ID3D11PixelShader,
+    // 实心网格独占 position + coverage 输入布局。
+    layout_mesh: ID3D11InputLayout,
     vs_shadow: ID3D11VertexShader,
     ps_shadow: ID3D11PixelShader,
     // 薄 RHI 的原生扇形 VS/PS。

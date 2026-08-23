@@ -28,7 +28,7 @@ impl D3d11Pipeline {
         // 绑定 RHI packet 对应的固定 mesh pipeline。
         // SAFETY: mesh 资源与 pipeline 状态由当前 device 创建并存活，绑定和 Draw 在 immediate context owner thread 执行。
         unsafe {
-            context.IASetInputLayout(&self.layout);
+            context.IASetInputLayout(&self.layout_mesh);
             context.IASetVertexBuffers(
                 0,
                 1,

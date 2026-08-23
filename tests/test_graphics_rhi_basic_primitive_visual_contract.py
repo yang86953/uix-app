@@ -24,8 +24,8 @@ COVERAGE_RENDERER = ROOT / "src/draw/backend/rhi_renderer_coverage.rs"
 OPENGL_SHADERS = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_shaders.rs"
 # 定位 OpenGL ES 固定状态与 pipeline 分支。
 OPENGL_DRAW = ROOT / "src/native/presentation/graphics/opengl/raster/rhi_device_draw.rs"
-# 定位 D3D11 shader 常量与 pipeline 分支。
-D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/mod.rs"
+# 定位 D3D11/D3D12 共用的唯一 HLSL 语义源码。
+D3D11_PIPELINE = ROOT / "src/native/presentation/graphics/d3d_shader_source.rs"
 # 定位 D3D11 shader helper 与 draw 分支。
 D3D11_TEXTURED = ROOT / "src/native/presentation/graphics/d3d11/adapter/pipeline/rhi_textured.rs"
 # 定位 D3D11 资源/契约消费边界。
@@ -75,7 +75,7 @@ def quantize_coverage(rgba: tuple[float, float, float, float], coverage: float) 
 # 集中验证基础图元的共享 ABI、shader 与固定输出语义。
 class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
     # SolidMesh 必须由一个 Mesh ABI lowering 被两个 Adapter 的同名分支消费。
-    def test_solid_mesh_shared_abi_and_straight_alpha_contract(self) -> None:
+    def test_solid_mesh_shared_coverage_abi_and_straight_alpha_contract(self) -> None:
         # 读取共享 pipeline 契约源码。
         pipeline = PIPELINE.read_text(encoding="utf-8")
         # 读取共享 Mesh ABI 源码。
@@ -121,13 +121,17 @@ class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
         # 两端必须保留平台坐标系所需的机械 Y 映射，而不改变 X/viewport 公式。
         self.assertIn("ndc.y *= u_target_y_sign", solid_vertex)
         self.assertIn("ndc.y = -ndc.y", mesh_hlsl)
-        # Solid shader 必须直出 straight-alpha 颜色，不得自行 premultiply 或量化。
-        self.assertIn("fragColor = u_color", solid_fragment)
-        self.assertIn("return u_color", mesh_hlsl)
+        # Solid shader 必须只把逐顶点 coverage 乘入 straight alpha，不得 premultiply RGB。
+        self.assertIn("layout(location = 1) in float a_coverage", solid_vertex)
+        self.assertIn("in float v_coverage", solid_fragment)
+        self.assertIn("u_color.a * clamp(v_coverage, 0.0, 1.0)", solid_fragment)
+        self.assertIn("float coverage : TEXCOORD0", mesh_hlsl)
+        self.assertIn("u_color.a * saturate(input.coverage)", mesh_hlsl)
         # Solid pipeline 必须使用共享 StraightAlpha blend 语义。
         solid_contract = source_range(pipeline, "Self::SolidMesh => ui_2d_pipeline_contract(", "Self::TexturedQuad => ui_2d_pipeline_contract(")
+        self.assertIn("PipelineVertexLayout::PositionCoverageF32", solid_contract)
         self.assertIn("PipelineBlend::StraightAlpha", solid_contract)
-        # 两端 Solid 分支不得引入 coverage 采样或 premultiply 逻辑。
+        # 两端 Solid 分支不得引入纹理采样或 premultiply 逻辑。
         self.assertNotIn("sampled_format", opengl)
         self.assertNotIn("premul", mesh_hlsl)
         # Solid 顶点阶段不得引入逐顶点颜色插值，颜色只能来自共享 uniform。
@@ -176,7 +180,8 @@ class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
         self.assertIn("PipelineSampling::Coverage", coverage_contract)
         self.assertIn("PipelineBlend::PremultipliedAlpha", coverage_contract)
         self.assertIn("Self::Coverage => matches!(format, TextureFormat::R8Unorm)", pipeline)
-        self.assertIn("Self::Coverage => !sampler.uses_linear_filter()", pipeline)
+        self.assertIn("Self::Coverage => {", pipeline)
+        self.assertIn("matches!(sampler.filter(), SamplerFilter::Nearest)", pipeline)
         # 两端 coverage 分支必须实际消费同一个 GlyphCoverageQuad 身份。
         self.assertIn("PipelineKind::GlyphCoverageQuad =>", opengl)
         self.assertIn("PipelineKind::GlyphCoverageQuad =>", d3d11)

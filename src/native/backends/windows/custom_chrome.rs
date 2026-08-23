@@ -11,7 +11,8 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{
-    DWM_WINDOW_CORNER_PREFERENCE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+    DWM_WINDOW_CORNER_PREFERENCE, DWMNCRENDERINGPOLICY, DWMNCRP_ENABLED, DWMNCRP_USEWINDOWSTYLE,
+    DWMWA_NCRENDERING_POLICY, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::UI::Controls::MARGINS;
@@ -121,6 +122,7 @@ pub(crate) fn apply_dwm_frame_effects(
                 error,
             )
         })?;
+        set_nc_rendering_policy(handle, DWMNCRP_USEWINDOWSTYLE)?;
         return Ok(());
     }
     // 最大化窗口无阴影需求：清零扩展边距，避免 DWM 在客户区底部残留 1px 边框线；
@@ -147,6 +149,8 @@ pub(crate) fn apply_dwm_frame_effects(
             error,
         )
     })?;
+    // 自绘标题栏移除了 WS_CAPTION，显式启用 DWM 非客户区合成，避免阴影随窗口样式被关闭。
+    set_nc_rendering_policy(handle, DWMNCRP_ENABLED)?;
     let preference: DWM_WINDOW_CORNER_PREFERENCE = if maximized {
         DWMWCP_DONOTROUND
     } else {
@@ -163,6 +167,25 @@ pub(crate) fn apply_dwm_frame_effects(
     }
     .map_err(|error| dwm_failure("custom chrome: DwmSetWindowAttribute(corner) failed", error))?;
     Ok(())
+}
+
+// 将自绘/系统标题栏事实映射为唯一 DWM 非客户区渲染策略。
+fn set_nc_rendering_policy(hwnd: HWND, policy: DWMNCRENDERINGPOLICY) -> Result<()> {
+    // SAFETY: attribute 缓冲与枚举同寿，长度匹配 DWMWA_NCRENDERING_POLICY。
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_POLICY,
+            (&policy as *const DWMNCRENDERINGPOLICY).cast::<c_void>(),
+            std::mem::size_of_val(&policy) as u32,
+        )
+    }
+    .map_err(|error| {
+        dwm_failure(
+            "custom chrome: DwmSetWindowAttribute(non-client rendering) failed",
+            error,
+        )
+    })
 }
 
 fn dwm_failure(operation: &str, error: windows::core::Error) -> Error {

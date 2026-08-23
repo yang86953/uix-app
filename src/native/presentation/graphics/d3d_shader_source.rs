@@ -281,10 +281,12 @@ cbuffer MeshCB : register(b0)
 
 struct VSIn {
     float2 pos : POSITION;
+    float coverage : TEXCOORD0;
 };
 
 struct VSOut {
     float4 pos : SV_POSITION;
+    float coverage : TEXCOORD0;
 };
 
 VSOut VSMain(VSIn input)
@@ -293,12 +295,13 @@ VSOut VSMain(VSIn input)
     float2 ndc = (input.pos / u_viewport) * 2.0 - 1.0;
     ndc.y = -ndc.y;
     o.pos = float4(ndc, 0.0, 1.0);
+    o.coverage = input.coverage;
     return o;
 }
 
 float4 PSMain(VSOut input) : SV_Target
 {
-    return u_color;
+    return float4(u_color.rgb, u_color.a * saturate(input.coverage));
 }
 "#;
 

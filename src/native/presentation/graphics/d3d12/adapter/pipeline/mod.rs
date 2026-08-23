@@ -25,8 +25,9 @@ use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::ID3DBlob;
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32G32_FLOAT,
-    DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32_FLOAT,
+    DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_UNKNOWN,
+    DXGI_SAMPLE_DESC,
 };
 use ::windows::core::PCSTR;
 
@@ -540,12 +541,14 @@ fn d3d12_vertex_semantic(semantic: PipelineVertexSemantic) -> PCSTR {
         PipelineVertexSemantic::Position => PCSTR::from_raw(c"POSITION".as_ptr().cast()),
         PipelineVertexSemantic::TextureCoordinate => PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
         PipelineVertexSemantic::Color => PCSTR::from_raw(c"COLOR".as_ptr().cast()),
+        PipelineVertexSemantic::Coverage => PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
     }
 }
 
 // 穷尽映射共享顶点格式到 DXGI 格式。
 fn d3d12_vertex_format(format: PipelineVertexFormat) -> DXGI_FORMAT {
     match format {
+        PipelineVertexFormat::Float32 => DXGI_FORMAT_R32_FLOAT,
         PipelineVertexFormat::Float32x2 => DXGI_FORMAT_R32G32_FLOAT,
         PipelineVertexFormat::Float32x4 => DXGI_FORMAT_R32G32B32A32_FLOAT,
     }

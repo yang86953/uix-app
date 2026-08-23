@@ -10,6 +10,8 @@ fn d3d11_vertex_semantic(semantic: PipelineVertexSemantic) -> PCSTR {
         PipelineVertexSemantic::TextureCoordinate => PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
         // color 对应 HLSL COLOR。
         PipelineVertexSemantic::Color => PCSTR::from_raw(c"COLOR".as_ptr().cast()),
+        // coverage 复用 HLSL TEXCOORD0 标量输入。
+        PipelineVertexSemantic::Coverage => PCSTR::from_raw(c"TEXCOORD".as_ptr().cast()),
     }
 }
 
@@ -17,6 +19,8 @@ fn d3d11_vertex_semantic(semantic: PipelineVertexSemantic) -> PCSTR {
 fn d3d11_vertex_format(format: PipelineVertexFormat) -> DXGI_FORMAT {
     // 穷尽共享格式闭集，新增格式时必须显式映射。
     match format {
+        // float1 对应一个三十二位浮点通道。
+        PipelineVertexFormat::Float32 => DXGI_FORMAT_R32_FLOAT,
         // float2 对应两个三十二位浮点通道。
         PipelineVertexFormat::Float32x2 => DXGI_FORMAT_R32G32_FLOAT,
         // float4 对应四个三十二位浮点通道。
@@ -681,6 +685,26 @@ impl D3d11Pipeline {
         let layout = layout
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no input layout"))?;
 
+        // 实心网格使用独立的 position + coverage 输入布局。
+        let mesh_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionCoverageF32)?;
+        let mut layout_mesh = None;
+        // SAFETY: mesh_elems 与 mesh VS 的 POSITION/TEXCOORD0 签名严格匹配，blob 在调用期间存活。
+        unsafe {
+            device
+                .CreateInputLayout(
+                    &mesh_elems,
+                    std::slice::from_raw_parts(
+                        mesh_vs_blob.GetBufferPointer() as *const u8,
+                        mesh_vs_blob.GetBufferSize(),
+                    ),
+                    Some(&mut layout_mesh),
+                )
+                .map_err(|e| d3d_error("CreateInputLayout(mesh)", e))?;
+        }
+        let layout_mesh = layout_mesh.ok_or_else(|| {
+            Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh input layout")
+        })?;
+
         // 从共享 position/uv-float4 属性序列创建 Blur 专用输入布局。
         let blur_elems = d3d11_vertex_elements(PipelineVertexLayout::PositionUvF32)?;
         let mut layout_blur = None;
@@ -794,6 +818,7 @@ impl D3d11Pipeline {
             ps_grad,
             vs_mesh,
             ps_mesh,
+            layout_mesh,
             vs_shadow,
             ps_shadow,
             vs_sector,

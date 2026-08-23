@@ -15,6 +15,8 @@ use crate::platform::presentation::rhi::{
 pub(crate) enum FrameVertexPayload {
     // 保存只含物理位置 float2 的顶点流。
     PositionF32x2(Arc<[f32]>),
+    // 保存物理位置 float2 与单位 coverage float1 的实心网格顶点流。
+    PositionCoverageF32(Arc<[f32]>),
     // 保存目标 NDC position 与绝对 source UV 组成的固定 float4 顶点流。
     PositionUvF32(Arc<[f32]>),
     // 保存物理位置、UV 与颜色组成的固定 float8 顶点流。
@@ -27,6 +29,12 @@ impl FrameVertexPayload {
     pub(crate) fn position_f32x2(values: impl Into<Arc<[f32]>>) -> Self {
         // 保留调用方已经冻结的浮点顺序。
         Self::PositionF32x2(values.into())
+    }
+
+    // 构造 position/coverage-float3 顶点载荷。
+    pub(crate) fn position_coverage_f32(values: impl Into<Arc<[f32]>>) -> Self {
+        // 保留共享抗锯齿组件已经冻结的 xy 与 coverage 顺序。
+        Self::PositionCoverageF32(values.into())
     }
 
     // 构造 position/uv-float4 顶点载荷。
@@ -47,6 +55,8 @@ impl FrameVertexPayload {
         match self {
             // position-float2 对应两个浮点的共享布局。
             Self::PositionF32x2(_) => PipelineVertexLayout::PositionF32x2,
+            // 实心网格对应 position 与单位 coverage 的共享布局。
+            Self::PositionCoverageF32(_) => PipelineVertexLayout::PositionCoverageF32,
             // position/uv-float4 对应 Blur 的共享布局。
             Self::PositionUvF32(_) => PipelineVertexLayout::PositionUvF32,
             // sampled 顶点对应八个浮点的共享布局。
@@ -60,6 +70,8 @@ impl FrameVertexPayload {
         match self {
             // 借出 position-float2 数据。
             Self::PositionF32x2(values) => values,
+            // 借出 position/coverage-float3 数据。
+            Self::PositionCoverageF32(values) => values,
             // 借出 position/uv-float4 数据。
             Self::PositionUvF32(values) => values,
             // 借出 sampled float8 数据。
@@ -102,6 +114,10 @@ impl FrameVertexPayload {
         match self {
             // position-float2 不携带颜色，保持原有有限值行为。
             Self::PositionF32x2(_) => true,
+            // 实心网格 coverage 固定为每个 float3 顶点的第三项，且必须位于单位域。
+            Self::PositionCoverageF32(_) => values
+                .chunks_exact(floats_per_vertex)
+                .all(|vertex| vertex[2] >= 0.0 && vertex[2] <= 1.0),
             // Blur position/uv 只要求完整且有限，UV 边界由共享几何门禁产生。
             Self::PositionUvF32(_) => true,
             // sampled float8 的每个完整顶点都必须携带单位颜色。

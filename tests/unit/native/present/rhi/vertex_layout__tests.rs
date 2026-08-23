@@ -27,6 +27,21 @@
         assert_eq!(position.offset_bytes(), 0);
     }
 
+    // 锁定实心网格 position 与 coverage 的紧凑共享序列。
+    #[test]
+    fn solid_mesh_layout_has_position_and_scalar_coverage() {
+        let layout = PipelineVertexLayout::PositionCoverageF32;
+        assert!(layout.is_valid());
+        assert_eq!(layout.stride_bytes(), 12);
+        let attributes = layout.attributes();
+        assert_eq!(attributes.len(), 2);
+        assert_eq!(attributes[0].semantic(), PipelineVertexSemantic::Position);
+        assert_eq!(attributes[0].format(), PipelineVertexFormat::Float32x2);
+        assert_eq!(attributes[1].semantic(), PipelineVertexSemantic::Coverage);
+        assert_eq!(attributes[1].format(), PipelineVertexFormat::Float32);
+        assert_eq!(attributes[1].offset_bytes(), 8);
+    }
+
     // 锁定 Blur position 与绝对 source UV 的最小共享序列。
     #[test]
     fn blur_layout_has_position_and_uv_without_adapter_fields() {

@@ -15,6 +15,8 @@ use super::rhi_invalid;
 fn gl_vertex_attribute_type(format: PipelineVertexFormat) -> (u32, bool) {
     // 穷尽共享格式闭集，新增格式时必须显式映射。
     match format {
+        // float1 保持原始浮点值。
+        PipelineVertexFormat::Float32 => (glow::FLOAT, false),
         // float2 保持原始浮点值。
         PipelineVertexFormat::Float32x2 => (glow::FLOAT, false),
         // float4 保持原始浮点值。
