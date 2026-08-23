@@ -7,9 +7,64 @@
 
 use super::compat::Main;
 use std::fs::File;
-use wayland_client::protocol::{wl_buffer, wl_shm_pool};
+use std::io::{Seek, SeekFrom, Write};
+use std::os::unix::io::AsRawFd;
+use wayland_client::protocol::{wl_buffer, wl_shm, wl_shm_pool};
 
 use crate::native::windowing::shared::buffer_lease::BufferLease;
+
+// 创建 presenter 与客户端阴影共用的 ARGB8888 SHM buffer。
+pub(crate) fn create_argb_buffer(
+    shm: &Main<wl_shm::WlShm>,
+    width: i32,
+    height: i32,
+    label: &str,
+) -> Result<ShmBuffer, String> {
+    if width <= 0 || height <= 0 {
+        return Err(format!("invalid SHM extent {width}x{height}"));
+    }
+    let stride = width
+        .checked_mul(4)
+        .ok_or_else(|| format!("SHM stride overflow for width {width}"))?;
+    let size = stride
+        .checked_mul(height)
+        .ok_or_else(|| format!("SHM size overflow for {width}x{height}"))? as usize;
+    let pool_size =
+        i32::try_from(size).map_err(|_| format!("SHM size exceeds Wayland i32 limit: {size}"))?;
+    let tmp = std::env::temp_dir().join(format!("uix-shm-{}-{label}", std::process::id()));
+    let mut file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&tmp)
+        .map_err(|error| format!("shm open: {error}"))?;
+    file.set_len(size as u64)
+        .map_err(|error| format!("shm len: {error}"))?;
+    file.seek(SeekFrom::Start((size - 1) as u64))
+        .map_err(|error| format!("shm seek: {error}"))?;
+    file.write_all(&[0u8])
+        .map_err(|error| format!("shm initialize: {error}"))?;
+    file.flush()
+        .map_err(|error| format!("shm flush: {error}"))?;
+    let pool = shm.create_pool(file.as_raw_fd(), pool_size);
+    let buffer = pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888);
+    let lease = BufferLease::new();
+    let released = lease.clone();
+    buffer.quick_assign(move |_, event, _| {
+        if matches!(event, wl_buffer::Event::Release) {
+            released.release();
+        }
+    });
+    let _ = std::fs::remove_file(&tmp);
+    Ok(ShmBuffer {
+        file,
+        size,
+        pool,
+        buffer,
+        lease,
+    })
+}
 
 /// SHM 缓冲区：SHM 池 + wl_buffer + 后备临时文件。
 pub(crate) struct ShmBuffer {

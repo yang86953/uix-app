@@ -384,6 +384,8 @@ impl D3d11Pipeline {
         let shadow_ps_blob = compile_shader(SHADOW_HLSL, c"PSMain", c"ps_4_0")?;
         // 编译分析扇形 VS/PS，确保原生 sector 也在 RHI probe 中可用。
         let (vs_sector, ps_sector) = rhi_sector::create_sector_shaders(device)?;
+        // 编译解析线段 VS/PS，确保所有原生 Adapter 使用同一覆盖率公式。
+        let (vs_line, ps_line) = rhi_line::create_line_shaders(device)?;
 
         let mut vs_rect = None;
         // SAFETY: vs_blob 为本函数刚编译成功的字节码，GetBufferPointer/GetBufferSize 在调用期间有效；device 存活；输出指针指向栈上 Option。
@@ -796,6 +798,8 @@ impl D3d11Pipeline {
             ps_shadow,
             vs_sector,
             ps_sector,
+            vs_line,
+            ps_line,
             blend_alpha,
             blend_premultiplied,
             blend_additive,

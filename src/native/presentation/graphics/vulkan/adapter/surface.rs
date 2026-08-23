@@ -143,14 +143,24 @@ pub(super) fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentMo
 pub(crate) fn choose_composite_alpha(
     supported: vk::CompositeAlphaFlagsKHR,
 ) -> Option<vk::CompositeAlphaFlagsKHR> {
-    [
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let candidates = [
+        // Wayland 客户端装饰需要把圆角外像素交给 compositor 合成。
+        vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
+        vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
+        vk::CompositeAlphaFlagsKHR::OPAQUE,
+        vk::CompositeAlphaFlagsKHR::INHERIT,
+    ];
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    let candidates = [
         vk::CompositeAlphaFlagsKHR::OPAQUE,
         vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
         vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
         vk::CompositeAlphaFlagsKHR::INHERIT,
-    ]
-    .into_iter()
-    .find(|candidate| supported.contains(*candidate))
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| supported.contains(*candidate))
 }
 
 pub(super) fn choose_extent(

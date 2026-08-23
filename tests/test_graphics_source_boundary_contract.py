@@ -372,6 +372,7 @@ PIPELINE_KINDS = (
     "BlurPass",
     "MsdfGlyphQuad",
     "Sector",
+    "LineSegment",
 )
 
 # 图形共同机制的生产定义必须各自只有一个物理权威。

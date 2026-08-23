@@ -50,12 +50,24 @@ void main() {
 pub(super) const TEXTURED_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 uniform sampler2D u_tex;
+uniform vec2 u_viewport;
+uniform float u_corner_radius;
 in vec2 v_uv;
 in vec4 v_color;
 out vec4 fragColor;
 void main() {
     vec4 sample_color = texture(u_tex, v_uv);
-    fragColor = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a);
+    float coverage = 1.0;
+    if (u_corner_radius > 0.0) {
+        vec2 half_size = u_viewport * 0.5;
+        vec2 centered = abs(gl_FragCoord.xy - half_size);
+        vec2 distance = centered - half_size + u_corner_radius;
+        float signed_distance = length(max(distance, vec2(0.0)))
+            + min(max(distance.x, distance.y), 0.0) - u_corner_radius;
+        coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
+    }
+    vec4 color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a);
+    fragColor = color * coverage;
 }
 "#;
 
@@ -178,6 +190,27 @@ void main() {
     // 保留扇形原始矩形尺寸。
     v_rect_size = u_rect.zw;
 // 结束扇形顶点入口。
+}
+"#;
+
+// 解析线段使用两端点外接矩形生成单位 quad，并把物理坐标交给片元阶段。
+pub(super) const LINE_VERTEX: &str = r#"#version 300 es
+precision highp float;
+layout(location = 0) in vec2 a_pos;
+uniform vec2 u_viewport;
+uniform float u_target_y_sign;
+uniform vec4 u_points;
+uniform vec4 u_params;
+out vec2 v_position;
+void main() {
+    float fringe = max(u_params.x * 0.5, 0.0) + 1.5;
+    vec2 lower = min(u_points.xy, u_points.zw) - vec2(fringe);
+    vec2 upper = max(u_points.xy, u_points.zw) + vec2(fringe);
+    vec2 position = mix(lower, upper, a_pos);
+    vec2 ndc = (position / u_viewport) * 2.0 - 1.0;
+    ndc.y *= u_target_y_sign;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_position = position;
 }
 "#;
 
@@ -336,6 +369,30 @@ void main() {
     vec4 color = floor(clamp(u_color, 0.0, 1.0) * 255.0 + 0.5);
     vec3 premul = floor(color.rgb * color.a / 255.0);
     fragColor = vec4(premul * mask, color.a * mask) / 255.0;
+}
+"#;
+
+// 解析胶囊距离场为任意方向线段提供单一覆盖率抗锯齿语义。
+pub(super) const LINE_FRAGMENT: &str = r#"#version 300 es
+precision highp float;
+uniform vec4 u_points;
+uniform vec4 u_color;
+uniform vec4 u_params;
+in vec2 v_position;
+out vec4 fragColor;
+void main() {
+    vec2 start = u_points.xy;
+    vec2 segment = u_points.zw - start;
+    float length_squared = max(dot(segment, segment), 0.000001);
+    float along = clamp(dot(v_position - start, segment) / length_squared, 0.0, 1.0);
+    float distance_to_line = length(v_position - (start + along * segment)) - u_params.x * 0.5;
+    float derivative = max(fwidth(distance_to_line), 0.0001);
+    float coverage = clamp(0.5 - distance_to_line / derivative, 0.0, 1.0);
+    if (coverage <= 0.0)
+        discard;
+    vec4 color = floor(clamp(u_color, 0.0, 1.0) * 255.0 + 0.5);
+    vec3 premul = floor(color.rgb * color.a / 255.0);
+    fragColor = vec4(premul * coverage, color.a * coverage) / 255.0;
 }
 "#;
 

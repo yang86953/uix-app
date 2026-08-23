@@ -30,6 +30,9 @@ use wayland_protocols::xdg::decoration::zv1::client::{
     zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols_plasma::shadow::client::{
+    org_kde_kwin_shadow::OrgKdeKwinShadow, org_kde_kwin_shadow_manager::OrgKdeKwinShadowManager,
+};
 
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureSource;
@@ -638,6 +641,16 @@ impl Main<ZxdgDecorationManagerV1> {
         let proxy = self
             .proxy
             .get_toplevel_decoration(&toplevel.proxy, &self.queue_handle(), ());
+        self.child(proxy)
+    }
+}
+
+impl Main<OrgKdeKwinShadowManager> {
+    pub(crate) fn create_shadow(
+        &self,
+        surface: &Main<wl_surface::WlSurface>,
+    ) -> Main<OrgKdeKwinShadow> {
+        let proxy = self.proxy.create(&surface.proxy, &self.queue_handle(), ());
         self.child(proxy)
     }
 }

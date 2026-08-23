@@ -14,7 +14,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
 use crate::widget;
 // 复用共享布局边界的有限化与 margin 归一规则。
 use crate::ui::layout::LayoutChild;
@@ -308,7 +308,9 @@ widget! {
         children
             .iter()
             .copied()
-            .map(|id| child_from_tree_with_constraints(id, tree, constraints))
+            // 滚动轴必须读取子树自然内容尺寸；普通 Flex basis 会把 flex-grow
+            // 子项折成视口尺寸，使真实溢出无法进入 content_bounds。
+            .map(|id| child_from_tree_with_natural_constraints(id, tree, constraints))
             .collect()
     }
 

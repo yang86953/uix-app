@@ -3,7 +3,7 @@
 use super::*;
 use crate::platform::presentation::rhi::{PipelineBlend, PipelineKind};
 
-const PIPELINES: [PipelineKind; 11] = [
+const PIPELINES: [PipelineKind; 12] = [
     PipelineKind::SolidMesh,
     PipelineKind::TexturedQuad,
     PipelineKind::GradientRect,
@@ -15,6 +15,7 @@ const PIPELINES: [PipelineKind; 11] = [
     PipelineKind::BlurPass,
     PipelineKind::MsdfGlyphQuad,
     PipelineKind::Sector,
+    PipelineKind::LineSegment,
 ];
 
 #[test]

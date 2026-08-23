@@ -40,6 +40,8 @@ pub(crate) mod keycode;
 pub(crate) mod output;
 // 指针激活注册表独占 Wayland 拖动授权的签发与生命周期。
 pub(crate) mod pointer_activation;
+// 指针轴帧 Component 把 Wayland 连续/离散协议值归一为平台中立滚轮步长。
+pub(crate) mod pointer_axis;
 // 指针按钮 Component 事务化提交授权、serial 与 PointerDown/Up。
 pub(crate) mod pointer_button_owner;
 // 指针焦点 Component 事务化提交 Enter、Motion 与 Leave 的共享 owners。
@@ -48,6 +50,8 @@ pub(crate) mod presenter;
 // resize 约束 Component 独占用户约束、有效尺寸状态机与 xdg_toplevel Adapter。
 pub(crate) mod resize_constraints;
 pub(crate) mod seat;
+// 客户端窗口阴影 Component 只在 compositor 提供对应平台协议时启用。
+pub(crate) mod shadow;
 pub(crate) mod shm_buffer;
 // surface registration Component 原子注销窗口的两份共享注册事实。
 pub(crate) mod surface_registration;
@@ -76,11 +80,11 @@ use self::surface_scale::WaylandOutputScaleRegistry;
 // 引入稳定错误分类，使 wl_output callback 能传播显示状态 owner 损坏。
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::platform::windowing::event::*;
-use crate::platform::windowing::{KeyCode, KeyMod};
 use crate::native::windowing::shared::ime_events::ImeCompositionState;
 use crate::native::windowing::shared::input_serial::InputSerial;
 use crate::native::windowing::shared::window_target::SurfaceWindowTargets;
+use crate::platform::windowing::event::*;
+use crate::platform::windowing::{KeyCode, KeyMod};
 use std::collections::{HashSet, VecDeque};
 use std::os::unix::io::RawFd;
 

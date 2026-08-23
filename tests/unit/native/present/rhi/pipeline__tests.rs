@@ -196,6 +196,8 @@
             PipelineKind::MsdfGlyphQuad,
             // 验证扇形。
             PipelineKind::Sector,
+            // 验证解析抗锯齿线段。
+            PipelineKind::LineSegment,
         ] {
             // 读取该 pipeline 的唯一共享契约。
             let contract = kind.contract();

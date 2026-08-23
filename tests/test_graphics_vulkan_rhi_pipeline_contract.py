@@ -41,6 +41,7 @@ class VulkanRhiPipelineContractTests(unittest.TestCase):
             "BlurPass",
             "MsdfGlyphQuad",
             "Sector",
+            "LineSegment",
         )
 
         for kind in expected_kinds:
@@ -76,6 +77,7 @@ class VulkanRhiPipelineContractTests(unittest.TestCase):
             "blur.vert.spv",
             "msdf.vert.spv",
             "sector.vert.spv",
+            "line.vert.spv",
             "mesh.frag.spv",
             "textured.frag.spv",
             "coverage.frag.spv",
@@ -85,6 +87,7 @@ class VulkanRhiPipelineContractTests(unittest.TestCase):
             "blur.frag.spv",
             "msdf.frag.spv",
             "sector.frag.spv",
+            "line.frag.spv",
         }
 
         actual_assets = {path.name for path in SPV.glob("*.spv")}

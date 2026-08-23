@@ -85,6 +85,21 @@ pub(crate) struct RhiSolidMesh {
     // 保存物理坐标 scissor。
     pub(crate) scissor: Option<RhiScissor>,
 }
+
+// 保存一个已经完成物理 lowering 的解析抗锯齿线段。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RhiLineSegment {
+    // 保存物理空间起点。
+    pub(crate) start: [f32; 2],
+    // 保存物理空间终点。
+    pub(crate) end: [f32; 2],
+    // 保存完整物理线宽。
+    pub(crate) width: f32,
+    // 保存已经规整的直通颜色。
+    pub(crate) rgba: [f32; 4],
+    // 保存当前线段的物理裁剪矩形。
+    pub(crate) scissor: Option<RhiScissor>,
+}
 // 保存一个已经完成几何 lowering 的采样 quad 和其上传纹理。
 #[derive(Debug, Clone)]
 pub(crate) struct RhiTexturedQuad {
@@ -138,6 +153,8 @@ pub(crate) struct RhiSampledQuad {
     pub(crate) u1: f32,
     // 保存源纹理右下角的归一化 UV。
     pub(crate) v1: f32,
+    // 仅最终 surface 合成使用的物理圆角半径，普通纹理固定为零。
+    pub(crate) surface_corner_radius: f32,
     // 保存当前 quad 的物理裁剪矩形。
     pub(crate) scissor: Option<RhiScissor>,
 }
@@ -277,6 +294,10 @@ pub(crate) struct RhiRenderer {
     sector_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     sector_vertex_buffer: Option<BufferHandle>,
     sector_uniform: Option<BufferHandle>,
+    // 缓存解析抗锯齿线段 pipeline、单位 quad 和常量 uniform。
+    line_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
+    line_vertex_buffer: Option<BufferHandle>,
+    line_uniform: Option<BufferHandle>,
     // 缓存 separable blur pipeline。
     blur_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 blur 区域 quad 的 float2 vertex buffer。

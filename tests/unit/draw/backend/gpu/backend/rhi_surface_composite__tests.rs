@@ -35,6 +35,8 @@
             u1: 1.0,
             // 采样完整纵向 UV 终点。
             v1: 1.0,
+            // 基础规划测试不启用窗口圆角。
+            surface_corner_radius: 0.0,
             // 初始 quad 不携带裁剪。
             scissor: None,
         }

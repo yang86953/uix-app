@@ -163,8 +163,8 @@ class GraphicsRhiBasicPrimitiveVisualContractTests(unittest.TestCase):
         opengl_fragment = source_range(opengl_shader, "pub(super) const COVERAGE_FRAGMENT", "pub(super) const MSDF_FRAGMENT")
         # 截取 D3D11 glyph shader。
         glyph_hlsl = hlsl_range(d3d11_pipeline, "const GLYPH_HLSL: &str = r#\"", "const RHI_TEXTURED_PS_HLSL: &str = r#\"")
-        # coverage 必须复用四 float 的 sampled/coverage ABI。
-        self.assertIn("pub(crate) const SAMPLED_UNIFORM_BYTES: usize = 16;", primitive)
+        # coverage 必须复用含 viewport 与可选 surface 圆角槽位的 sampled ABI。
+        self.assertIn("pub(crate) const SAMPLED_UNIFORM_BYTES: usize = 32;", primitive)
         self.assertIn("pub(crate) const SAMPLED_VIEWPORT_FLOAT_OFFSET: usize = 0;", primitive)
         # coverage renderer 必须使用共享 sampled uniform 与 R8 texture 描述。
         self.assertIn("RhiRenderer::sampled_uniform(viewport)", coverage_renderer)

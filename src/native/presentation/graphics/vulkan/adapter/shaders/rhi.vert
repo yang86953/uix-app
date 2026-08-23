@@ -19,6 +19,7 @@ void main() {
 layout(set = 0, binding = 0, std140) uniform SampledUniforms {
     vec2 viewport;
     vec2 _pad0;
+    vec4 surface_clip;
 } u;
 layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_uv;
@@ -160,6 +161,27 @@ void main() {
     gl_Position = vec4(ndc, 0.0, 1.0);
     v_local = a_pos * u.rect.zw;
     v_rect_size = u.rect.zw;
+}
+
+#elif defined(UIX_LINE)
+layout(set = 0, binding = 0, std140) uniform LineUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 points;
+    vec4 color;
+    vec4 params;
+} u;
+layout(location = 0) in vec2 a_pos;
+layout(location = 0) out vec2 v_position;
+
+void main() {
+    float fringe = max(u.params.x * 0.5, 0.0) + 1.5;
+    vec2 lower = min(u.points.xy, u.points.zw) - vec2(fringe);
+    vec2 upper = max(u.points.xy, u.points.zw) + vec2(fringe);
+    vec2 position = mix(lower, upper, a_pos);
+    vec2 ndc = (position / u.viewport) * 2.0 - 1.0;
+    gl_Position = vec4(ndc, 0.0, 1.0);
+    v_position = position;
 }
 
 #else

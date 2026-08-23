@@ -14,12 +14,12 @@ use crate::platform::presentation::rhi::{
     RhiShapeRasterParams, RhiTextureRegion, RhiViewport, SamplerDesc, TextureFormat,
 };
 
-// 使用三行四列固定画布隔离十一类 pipeline，同时只需一次真实 GPU 提交和回读。
+// 使用三行四列固定画布隔离十二类 pipeline，同时只需一次真实 GPU 提交和回读。
 pub(crate) const CONSISTENCY_EXTENT: RhiExtent = RhiExtent::new(64, 48);
 // 所有场景共享一个不透明背景，便于同时区分 SrcOver、Additive、裁剪和 discard。
 pub(crate) const CONSISTENCY_BACKGROUND: [u8; 4] = [16, 32, 48, 255];
 // 当前 PipelineKind 的完整闭集；scene_for_pipeline 的穷尽 match 是新增变体门禁。
-pub(crate) const CONSISTENCY_PIPELINES: [PipelineKind; 11] = [
+pub(crate) const CONSISTENCY_PIPELINES: [PipelineKind; 12] = [
     PipelineKind::SolidMesh,
     PipelineKind::TexturedQuad,
     PipelineKind::GradientRect,
@@ -31,6 +31,7 @@ pub(crate) const CONSISTENCY_PIPELINES: [PipelineKind; 11] = [
     PipelineKind::BlurPass,
     PipelineKind::MsdfGlyphQuad,
     PipelineKind::Sector,
+    PipelineKind::LineSegment,
 ];
 
 // 标记规范场景在 Canvas/RHI lowering 中的生产来源，避免把 Blur 伪装成 PendingNativeOp。
@@ -243,8 +244,8 @@ pub(crate) fn validate_production_chain_readback(
     Ok(scene.samples.len())
 }
 
-// 返回十一类 pipeline 的唯一规范场景；顺序同时固定真实 GPU 诊断输出。
-pub(crate) fn canonical_scenes() -> [ConsistencyScene; 11] {
+// 返回十二类 pipeline 的唯一规范场景；顺序同时固定真实 GPU 诊断输出。
+pub(crate) fn canonical_scenes() -> [ConsistencyScene; 12] {
     CONSISTENCY_PIPELINES.map(scene_for_pipeline)
 }
 
@@ -311,6 +312,7 @@ fn scene_for_pipeline(kind: PipelineKind) -> ConsistencyScene {
         PipelineKind::BlurPass => blur_scene(),
         PipelineKind::MsdfGlyphQuad => msdf_scene(),
         PipelineKind::Sector => sector_scene(),
+        PipelineKind::LineSegment => line_segment_scene(),
     }
 }
 
@@ -337,6 +339,7 @@ pub(crate) fn pending_pipeline_route(operation: &PendingNativeOp) -> Option<Pipe
             Some(PipelineKind::GradientRect)
         }
         PendingNativeOp::Sector(_) => Some(PipelineKind::Sector),
+        PendingNativeOp::Line(_) => Some(PipelineKind::LineSegment),
         PendingNativeOp::SolidMesh(_) => Some(PipelineKind::SolidMesh),
         PendingNativeOp::BoxShadow(_) => Some(PipelineKind::BoxShadow),
         PendingNativeOp::ImageBlit(image) => Some(if image.blit.additive {
@@ -361,6 +364,7 @@ pub(crate) fn rhi_pipeline_route(operation: &RhiOp) -> PipelineKind {
         RhiOp::Shape(_) => PipelineKind::ShapeRect,
         RhiOp::AdditiveShape(_) => PipelineKind::ShapeRectAdditive,
         RhiOp::Sector(_) => PipelineKind::Sector,
+        RhiOp::Line(_) => PipelineKind::LineSegment,
         RhiOp::Shadow(_) => PipelineKind::BoxShadow,
     }
 }
@@ -863,6 +867,42 @@ fn sector_scene() -> ConsistencyScene {
             ),
             background(36, 40, "sector angular exterior"),
             background(42, 42, "sector radial exterior"),
+        ],
+    }
+}
+
+// 抗锯齿线段占用最后一个规范单元格，并覆盖内部、边缘与外部像素。
+fn line_segment_scene() -> ConsistencyScene {
+    ConsistencyScene {
+        name: "LineSegment",
+        kind: PipelineKind::LineSegment,
+        source: ConsistencySource::PendingAndRhi,
+        vertex: RhiRenderer::unit_quad_vertex_payload(),
+        uniform: FrameUniformPayload::Sector(RhiSectorRasterParams::new(
+            viewport(),
+            [51.0, 35.0, 61.0, 45.0],
+            [1.0, 0.25, 0.2, 0.8],
+            [2.0, 0.0],
+        )),
+        texture: None,
+        scissor: None,
+        samples: vec![
+            ConsistencySample::exact(
+                56,
+                40,
+                [207, 57, 50, 255],
+                ConsistencyTolerance::Filtered,
+                "line interior",
+            ),
+            ConsistencySample::range(
+                56,
+                41,
+                [135, 43, 43, 250],
+                [165, 58, 58, 255],
+                ConsistencyTolerance::Analytic,
+                "line antialias edge",
+            ),
+            background(50, 45, "line exterior"),
         ],
     }
 }

@@ -37,6 +37,8 @@ pub(super) fn shader_sources(kind: PipelineKind) -> (&'static str, &'static str)
         }
         // 扇形使用独立单位矩形顶点阶段，并由 fragment 执行角度/半径裁剪。
         PipelineKind::Sector => (rhi_shaders::SECTOR_VERTEX, rhi_shaders::SECTOR_FRAGMENT),
+        // 任意方向线段使用解析胶囊距离场，所有平台保持相同覆盖率语义。
+        PipelineKind::LineSegment => (rhi_shaders::LINE_VERTEX, rhi_shaders::LINE_FRAGMENT),
         // 阴影使用扩张的单位 quad。
         PipelineKind::BoxShadow => (rhi_shaders::SHADOW_VERTEX, rhi_shaders::SHADOW_FRAGMENT),
         // blur 使用 NDC 区域顶点和 64 tap fragment。

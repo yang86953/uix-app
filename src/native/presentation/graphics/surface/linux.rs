@@ -25,6 +25,8 @@ pub(crate) struct WaylandSurfaceSnapshot {
     pub(crate) scale: i32,
     // 任一 surface 事实变化时递增的代次。
     pub(crate) revision: u64,
+    // 客户端窗口在当前模式下需要的物理圆角半径。
+    pub(crate) corner_radius: i32,
 }
 
 // 锁内只保存不能被拆分发布的 logical extent、scale 与 revision。
@@ -38,6 +40,10 @@ struct WaylandSurfaceMetricsState {
     scale: i32,
     // 当前事实修订号。
     revision: u64,
+    // UIX 自绘标题栏是否接管窗口外观。
+    client_decorated: bool,
+    // 最大化和全屏窗口必须保持方形贴合工作区。
+    maximized: bool,
 }
 
 // presentation 与 Wayland windowing 共享的窄 surface 元数据 owner。
@@ -68,8 +74,42 @@ impl WaylandSurfaceMetrics {
                 scale,
                 // 初始 surface 使用第零修订。
                 revision: 0,
+                // 初始仍由 compositor 装饰。
+                client_decorated: false,
+                // 初始窗口处于还原态。
+                maximized: false,
             }),
         }
+    }
+
+    // 发布客户端装饰接管事实，供所有图形后端读取同一外观状态。
+    pub(crate) fn set_client_decorated(&self, client_decorated: bool) -> Result<()> {
+        let mut state = self.state.write().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "Wayland surface appearance write lock poisoned",
+            )
+        })?;
+        if state.client_decorated != client_decorated {
+            state.client_decorated = client_decorated;
+            state.revision = state.revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    // 发布最大化或全屏状态，使客户端装饰在贴边窗口上关闭圆角。
+    pub(crate) fn set_maximized(&self, maximized: bool) -> Result<()> {
+        let mut state = self.state.write().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "Wayland surface mode appearance write lock poisoned",
+            )
+        })?;
+        if state.maximized != maximized {
+            state.maximized = maximized;
+            state.revision = state.revision.saturating_add(1);
+        }
+        Ok(())
     }
 
     // 原子更新逻辑尺寸与 scale，并返回更新后的完整快照。
@@ -192,6 +232,12 @@ fn snapshot_from_state(state: &WaylandSurfaceMetricsState) -> Result<WaylandSurf
         scale: state.scale,
         // 保存同代修订号。
         revision: state.revision,
+        // 统一使用十个逻辑像素，与原生窗口常见圆角尺度一致。
+        corner_radius: if state.client_decorated && !state.maximized {
+            10_i32.saturating_mul(state.scale)
+        } else {
+            0
+        },
     })
 }
 

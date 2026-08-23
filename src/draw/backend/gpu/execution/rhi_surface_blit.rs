@@ -6,7 +6,9 @@ use crate::core::{Errc, Error, Rect};
 use crate::draw::backend::frame_plan::RenderTargetRef;
 // 引入通用 sampled quad 和薄 RHI 的 pass/load 类型。
 use crate::draw::backend::rhi_renderer::RhiSampledQuad;
-use crate::platform::presentation::rhi::{LoadAction, RhiColor, RhiScissor, RhiViewport, TextureHandle};
+use crate::platform::presentation::rhi::{
+    LoadAction, RhiColor, RhiScissor, RhiViewport, TextureHandle,
+};
 
 // 引入当前 GPU backend owner。
 use super::GpuBackend;
@@ -117,6 +119,8 @@ fn lower_picture_sampled_quad(
         u1: uv[2],
         // 保存下 UV。
         v1: uv[3],
+        // Picture 合成不承担原生窗口边界裁剪。
+        surface_corner_radius: 0.0,
         // Picture 场景裁剪已在调用边界验证，当前 ABI 不重复携带 clip。
         scissor: None,
     }

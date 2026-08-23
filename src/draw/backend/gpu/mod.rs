@@ -39,8 +39,8 @@ pub(crate) use capabilities::NativeRasterCaps;
 pub(crate) use pending::StateSnapshot;
 // 向 graphics backend 内部消费者统一导出 renderer 原语。
 pub(crate) use primitives::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLineSegment, GpuLinearGradientRect,
+    GpuRadialGradient, GpuSector, GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 
 // 将 GPU 启动探针的动态资源与 FramePlan 生命周期测试归属 Drawing GPU Module。

@@ -7,8 +7,8 @@ use crate::core::Rect;
 use crate::draw::geometry::types::{BlendMode, Transform};
 // 引入所属 graphics backend Module 的全部排队原语。
 use super::{
-    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSector,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
+    GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLineSegment, GpuLinearGradientRect,
+    GpuRadialGradient, GpuSector, GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
 
 pub(crate) struct StateSnapshot {
@@ -60,6 +60,11 @@ pub(crate) struct PendingNativeSector {
     pub(crate) scissor: (i32, i32, i32, i32),
 }
 
+pub(crate) struct PendingNativeLine {
+    pub(crate) line: GpuLineSegment,
+    pub(crate) scissor: (i32, i32, i32, i32),
+}
+
 pub(crate) struct PendingNativeMesh {
     pub(crate) mesh: GpuSolidMesh,
     pub(crate) scissor: (i32, i32, i32, i32),
@@ -100,6 +105,7 @@ pub(crate) enum PendingNativeOp {
     LinearGradient(PendingNativeLinearGrad),
     RadialGradient(PendingNativeRadialGrad),
     Sector(PendingNativeSector),
+    Line(PendingNativeLine),
     SolidMesh(PendingNativeMesh),
     BoxShadow(PendingNativeShadow),
     ImageBlit(PendingNativeImage),
@@ -116,6 +122,7 @@ impl PendingNativeOp {
             Self::LinearGradient(op) => op.scissor,
             Self::RadialGradient(op) => op.scissor,
             Self::Sector(op) => op.scissor,
+            Self::Line(op) => op.scissor,
             Self::SolidMesh(op) => op.scissor,
             Self::BoxShadow(op) => op.scissor,
             Self::ImageBlit(op) => op.scissor,

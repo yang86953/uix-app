@@ -124,6 +124,9 @@ pub(crate) struct D3d11Pipeline {
     // 薄 RHI 的原生扇形 VS/PS。
     vs_sector: ID3D11VertexShader,
     ps_sector: ID3D11PixelShader,
+    // 薄 RHI 的解析抗锯齿线段 VS/PS。
+    vs_line: ID3D11VertexShader,
+    ps_line: ID3D11PixelShader,
     blend_alpha: ID3D11BlendState,
     blend_premultiplied: ID3D11BlendState,
     // sampled Additive quad 使用源与目标都为 ONE 的 blend 状态。
@@ -278,6 +281,8 @@ mod rhi_blur;
 mod rhi_gradient;
 // 保留只接受薄 RHI packet 的实心网格编码。
 mod rhi_mesh;
+// 将解析线段 shader 与 draw ABI 拆到独立文件。
+mod rhi_line;
 mod rhi_shadow;
 mod rhi_shape;
 // 将扇形 shader 与 draw ABI 拆到独立文件，保持 pipeline 主模块边界清晰。

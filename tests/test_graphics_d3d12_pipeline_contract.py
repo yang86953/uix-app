@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""锁定 GFX-NEXT-18 的 D3D12 十一类原生 pipeline 资源 baseline。"""
+"""锁定 GFX-NEXT-18 的 D3D12 十二类原生 pipeline 资源 baseline。"""
 
 import re
 import unittest
@@ -61,6 +61,7 @@ class GraphicsD3d12PipelineContractTests(unittest.TestCase):
                 "BlurPass",
                 "MsdfGlyphQuad",
                 "Sector",
+                "LineSegment",
             ),
         )
         mapping = function_range(native, "fn d3d12_shader_pair(", "fn create_root_signature(")

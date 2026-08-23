@@ -7,8 +7,8 @@ use crate::core::{Point, Rect};
 use crate::draw::backend::frame_plan::FramePlan;
 // 引入通用 renderer 的混合载荷和执行器。
 use crate::draw::backend::rhi_renderer::{
-    RhiCoverageQuad, RhiGradientRect, RhiMsdfQuad, RhiOp, RhiRenderer, RhiRendererFrame, RhiSector,
-    RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
+    RhiCoverageQuad, RhiGradientRect, RhiLineSegment, RhiMsdfQuad, RhiOp, RhiRenderer,
+    RhiRendererFrame, RhiSector, RhiShadow, RhiShapeRect, RhiSolidMesh, RhiTexturedQuad,
 };
 // 引入 GPU native 队列的几何载荷和 TextureMove 资源类型。
 use crate::platform::presentation::rhi::{
@@ -71,6 +71,29 @@ fn lower_operation(
             Some(RhiOp::Solid(RhiSolidMesh {
                 vertices,
                 rgba: mesh.mesh.rgba,
+                scissor: Some(scissor),
+            }))
+        }
+        // 将设备空间中心线缩放为解析覆盖率线段，不再展开为硬边三角形。
+        PendingNativeOp::Line(line) => {
+            let value = line.line;
+            let width = value.width * (scale_x.abs() * scale_y.abs()).sqrt();
+            let start = [value.start[0] * scale_x, value.start[1] * scale_y];
+            let end = [value.end[0] * scale_x, value.end[1] * scale_y];
+            if !finite_values(&start)
+                || !finite_values(&end)
+                || !finite_values(&value.rgba)
+                || !width.is_finite()
+                || width <= 0.0
+                || start == end
+            {
+                return None;
+            }
+            Some(RhiOp::Line(RhiLineSegment {
+                start,
+                end,
+                width,
+                rgba: value.rgba,
                 scissor: Some(scissor),
             }))
         }
@@ -511,10 +534,7 @@ fn lower_native_scroll_move(
 }
 
 // 在不触发 swapchain present 的前提下执行一条纹理搬移 boundary。
-fn execute_texture_move(
-    device: &mut dyn GraphicsDevice,
-    movement: TextureMove,
-) -> Result<()> {
+fn execute_texture_move(device: &mut dyn GraphicsDevice, movement: TextureMove) -> Result<()> {
     // 纹理搬移只属于 device，不依赖 swapchain generation。
     let mut plan = FramePlan::offscreen();
     // 按 lowering 顺序追加重叠安全的 TextureMove。

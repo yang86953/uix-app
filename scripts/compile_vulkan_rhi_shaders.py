@@ -19,6 +19,7 @@ VERTEX_VARIANTS = {
     "blur.vert.spv": "UIX_BLUR",
     "msdf.vert.spv": "UIX_MSDF",
     "sector.vert.spv": "UIX_SECTOR",
+    "line.vert.spv": "UIX_LINE",
 }
 
 FRAGMENT_VARIANTS = {
@@ -31,6 +32,7 @@ FRAGMENT_VARIANTS = {
     "blur.frag.spv": "UIX_BLUR",
     "msdf.frag.spv": "UIX_MSDF",
     "sector.frag.spv": "UIX_SECTOR",
+    "line.frag.spv": "UIX_LINE",
 }
 
 

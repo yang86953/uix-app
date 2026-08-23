@@ -33,6 +33,11 @@ impl GpuBackend {
             // 采样目标高度使用物理 drawable extent。
             height: extent.height as f32,
         };
+        // 平台窗口层把系统差异归一化为唯一物理圆角值，Drawing 不分支识别操作系统。
+        let surface_corner_radius = self
+            .gpu_ctx
+            .rhi_surface()
+            .map(|surface| surface.surface_corner_radius())?;
         // 为最终合成准备覆盖整个 swapchain 的四角几何。
         let quad = RhiSampledQuad {
             // 全幅合成从物理左上角开始。
@@ -64,6 +69,8 @@ impl GpuBackend {
             u1: 1.0,
             // 采样完整纹理的底部 UV。
             v1: 1.0,
+            // 只在最终 retained-to-surface 合成应用窗口边界遮罩。
+            surface_corner_radius,
             // 最终合成不额外裁剪。
             scissor: None,
         };
