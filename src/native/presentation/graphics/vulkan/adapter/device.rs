@@ -35,6 +35,8 @@ pub(super) struct VulkanRuntime {
     entry: Entry,
     instance: ash::Instance,
     surface_loader: ash::khr::surface::Instance,
+    // 记录 instance 创建时是否实际启用了 swapchain maintenance1 的必需依赖。
+    surface_maintenance1: bool,
     fault_feature_query: DeviceFaultFeatureQuery,
     devices: RefCell<HashMap<DeviceKey, Weak<VulkanDevice>>>,
     // 显式禁止 runtime 跨线程迁移；所有 Vulkan owner 与调用都留在创建线程。
@@ -57,7 +59,7 @@ impl VulkanRuntime {
         // SAFETY: ash 负责按平台加载 Vulkan 动态库及校验入口符号，返回的 Entry 持有符号所需的库生命周期。
         let entry =
             unsafe { Entry::load() }.map_err(|error| loader_err("load Vulkan loader", error))?;
-        let mut instance_extensions = surface_instance_extensions();
+        let (mut instance_extensions, surface_maintenance1) = surface_instance_extensions(&entry);
         let (api_version, fault_query_mode) = configure_instance(&entry, &mut instance_extensions);
         let app_info = vk::ApplicationInfo::default()
             .application_name(c"uix")
@@ -83,6 +85,7 @@ impl VulkanRuntime {
             entry,
             instance,
             surface_loader,
+            surface_maintenance1,
             fault_feature_query,
             devices: RefCell::new(HashMap::new()),
             _thread_bound: PhantomData,
@@ -181,11 +184,12 @@ impl VulkanDevice {
             selection.physical_device,
             selection.extensions.supports_device_fault(),
         );
-        let swapchain_maintenance1 = runtime.fault_feature_query.query_swapchain_maintenance1(
-            runtime.instance(),
-            selection.physical_device,
-            selection.extensions.supports_swapchain_maintenance1(),
-        );
+        let swapchain_maintenance1 = runtime.surface_maintenance1
+            && runtime.fault_feature_query.query_swapchain_maintenance1(
+                runtime.instance(),
+                selection.physical_device,
+                selection.extensions.supports_swapchain_maintenance1(),
+            );
         let extensions = selection
             .extensions
             .enabled_names(fault_support.reporting(), swapchain_maintenance1);

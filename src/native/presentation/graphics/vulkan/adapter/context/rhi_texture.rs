@@ -266,20 +266,17 @@ pub(super) fn update_texture(
 ) -> Result<()> {
     let staging = create_staging(instance, physical_device, device, upload.data())?;
     let old_layout = texture.layout.get();
-    let (x, y, width, height) = upload.bounds().native_rect_u32();
+    // Vulkan copy 需要“原点 + 尺寸”，不能把共享矩形的 right/bottom 当成宽高。
+    let ((x, y), (width, height)) = upload.bounds().native_origin_and_size_i32();
     let copy = vk::BufferImageCopy::default()
         .buffer_offset(0)
         .buffer_row_length(0)
         .buffer_image_height(0)
         .image_subresource(color_subresource_layers())
-        .image_offset(vk::Offset3D {
-            x: x as i32,
-            y: y as i32,
-            z: 0,
-        })
+        .image_offset(vk::Offset3D { x, y, z: 0 })
         .image_extent(vk::Extent3D {
-            width,
-            height,
+            width: width as u32,
+            height: height as u32,
             depth: 1,
         });
     let result = immediate.execute(device, queue, queue_family_index, |command| {
@@ -360,24 +357,25 @@ fn record_texture_copy_commands(
 ) {
     let source_layout = source.layout.get();
     let destination_layout = destination.layout.get();
-    let (source_x, source_y, width, height) = bounds.source().native_rect_u32();
-    let (destination_x, destination_y, _, _) = bounds.destination().native_rect_u32();
+    // VkImageCopy 两端同样消费原点和传输尺寸，禁止把远端边界误作 extent。
+    let ((source_x, source_y), (width, height)) = bounds.source().native_origin_and_size_i32();
+    let ((destination_x, destination_y), _) = bounds.destination().native_origin_and_size_i32();
     let region = vk::ImageCopy::default()
         .src_subresource(color_subresource_layers())
         .src_offset(vk::Offset3D {
-            x: source_x as i32,
-            y: source_y as i32,
+            x: source_x,
+            y: source_y,
             z: 0,
         })
         .dst_subresource(color_subresource_layers())
         .dst_offset(vk::Offset3D {
-            x: destination_x as i32,
-            y: destination_y as i32,
+            x: destination_x,
+            y: destination_y,
             z: 0,
         })
         .extent(vk::Extent3D {
-            width,
-            height,
+            width: width as u32,
+            height: height as u32,
             depth: 1,
         });
     transition_image(

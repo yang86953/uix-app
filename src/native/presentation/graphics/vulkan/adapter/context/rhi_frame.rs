@@ -704,7 +704,8 @@ fn source_scope(layout: vk::ImageLayout) -> (vk::PipelineStageFlags, vk::AccessF
             vk::AccessFlags::empty(),
         ),
         vk::ImageLayout::PRESENT_SRC_KHR => (
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            // reacquire 后的首个布局转换必须位于 acquire semaphore 的等待范围内。
+            vk::PipelineStageFlags::ALL_COMMANDS,
             vk::AccessFlags::MEMORY_READ,
         ),
         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL => (

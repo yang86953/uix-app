@@ -1,6 +1,6 @@
 //! Vulkan 平台 surface 创建与 swapchain surface 策略。
 
-use std::ffi::c_void;
+use std::ffi::{CStr, c_void};
 
 use ash::{Entry, vk};
 
@@ -29,7 +29,7 @@ pub(super) fn destroy_failed_surface(
     }
 }
 
-pub(super) fn surface_instance_extensions() -> Vec<*const std::ffi::c_char> {
+pub(super) fn surface_instance_extensions(entry: &Entry) -> (Vec<*const std::ffi::c_char>, bool) {
     let mut extensions = vec![ash::khr::surface::NAME.as_ptr()];
     #[cfg(all(unix, not(target_os = "macos")))]
     extensions.push(ash::khr::wayland_surface::NAME.as_ptr());
@@ -40,7 +40,34 @@ pub(super) fn surface_instance_extensions() -> Vec<*const std::ffi::c_char> {
         extensions.push(ash::ext::metal_surface::NAME.as_ptr());
         extensions.push(ash::khr::portability_enumeration::NAME.as_ptr());
     }
-    extensions
+    // swapchain maintenance1 的 device 扩展依赖下面两个 instance 扩展，必须成组启用。
+    let surface_maintenance1 = instance_supports_surface_maintenance1(entry);
+    if surface_maintenance1 {
+        extensions.push(ash::khr::get_surface_capabilities2::NAME.as_ptr());
+        extensions.push(ash::ext::surface_maintenance1::NAME.as_ptr());
+    }
+    (extensions, surface_maintenance1)
+}
+
+fn instance_supports_surface_maintenance1(entry: &Entry) -> bool {
+    // SAFETY: entry 已加载；None 表示枚举全局 instance extensions。
+    let available = match unsafe { entry.enumerate_instance_extension_properties(None) } {
+        Ok(available) => available,
+        Err(error) => {
+            tracing::warn!(
+                "VulkanContext: vkEnumerateInstanceExtensionProperties failed; surface maintenance disabled: {error:?}"
+            );
+            return false;
+        }
+    };
+    let has_extension = |name: &CStr| {
+        available.iter().any(|extension| {
+            // SAFETY: Vulkan 保证 extension_name 是结构体内以 NUL 结尾的固定数组。
+            (unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) }) == name
+        })
+    };
+    has_extension(ash::khr::get_surface_capabilities2::NAME)
+        && has_extension(ash::ext::surface_maintenance1::NAME)
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]

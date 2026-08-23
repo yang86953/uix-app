@@ -35,9 +35,10 @@ class VulkanRhiTextureContractTests(unittest.TestCase):
     def test_upload_and_copy_use_validated_regions_and_layout_barriers(self) -> None:
         texture = TEXTURE.read_text(encoding="utf-8")
 
-        self.assertIn("upload.bounds().native_rect_u32()", texture)
-        self.assertIn("bounds.source().native_rect_u32()", texture)
-        self.assertIn("bounds.destination().native_rect_u32()", texture)
+        self.assertIn("upload.bounds().native_origin_and_size_i32()", texture)
+        self.assertIn("bounds.source().native_origin_and_size_i32()", texture)
+        self.assertIn("bounds.destination().native_origin_and_size_i32()", texture)
+        self.assertNotIn("native_rect_u32()", texture)
         self.assertIn("cmd_copy_buffer_to_image", texture)
         self.assertIn("cmd_copy_image", texture)
         self.assertIn("cmd_pipeline_barrier", texture)

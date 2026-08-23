@@ -121,8 +121,8 @@ impl VulkanContext {
         self.rhi_device
             .finish_recording(&self.device, self.command_buffer)?;
         let acquired = self.acquired_frame;
-        let wait_stages =
-            [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::TRANSFER];
+        // acquire semaphore 必须先于旧 PRESENT 布局转换及其后全部图形/传输命令生效。
+        let wait_stages = [vk::PipelineStageFlags::ALL_COMMANDS];
         let wait_semaphores = acquired
             .as_ref()
             .map_or(&[][..], |_| std::slice::from_ref(&self.image_available));
