@@ -55,6 +55,47 @@ fn natural_measure_preserves_grow_container_content() {
     );
 }
 
+// 验证有限父约束会截断上一个大窗口留下的内容尺寸缓存。
+#[test]
+fn cached_content_size_respects_finite_parent_constraints() {
+    // 普通非增长容器会使用子布局缓存作为自然尺寸下限。
+    let container = Container::new();
+    // 模拟最大化阶段记录的标题栏宽度。
+    container.cached_content_size.set(Size::new(1920.0, 48.0));
+    // 还原窗口提供更小但有限的客户区约束。
+    let restored = WidgetLayout::measure(
+        &container,
+        Constraints::loose(Size::new(1200.0, 800.0)),
+    );
+    // 缓存不得突破有限父宽度，否则子树会继续按最大化尺寸排列。
+    assert_eq!(restored, Size::new(1200.0, 48.0));
+    // 无界测量仍保留真实内容范围，供滚动容器计算溢出尺寸。
+    assert_eq!(
+        WidgetLayout::measure(&container, Constraints::unconstrained()),
+        Size::new(1920.0, 48.0),
+    );
+}
+
+// 验证确定的父级交叉轴会覆盖大窗口阶段留下的子项自然宽度。
+#[test]
+fn stretch_cross_axis_shrinks_after_parent_frame_shrinks() {
+    // 默认 Column 在交叉轴采用 Stretch。
+    let container = Container::new();
+    // 模拟标题栏子树仍报告最大化阶段的自然宽度。
+    let child = LayoutChild::new(WidgetId::new(1), Size::new(1920.0, 48.0));
+    // 还原后的容器 frame 已由客户区锁定为 1200 宽。
+    let positions = container.layout_children(
+        Rect::new(0.0, 0.0, 1200.0, 800.0),
+        &[child.clone()],
+        &WidgetTree::new(),
+    );
+    // Stretch 必须立即采用当前 frame，不能继续保留旧自然宽度。
+    assert_eq!(positions[0].1.w, 1200.0);
+    // 零宽 bootstrap 仍允许自然内容建立第一轮交叉轴尺寸。
+    let bootstrap = container.layout_children(Rect::zero(), &[child], &WidgetTree::new());
+    assert_eq!(bootstrap[0].1.w, 1920.0);
+}
+
 // 验证默认可见溢出与显式隐藏裁剪具有不同运行时结果。
 #[test]
 fn explicit_clip_content_controls_container_children_clip() {

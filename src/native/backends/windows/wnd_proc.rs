@@ -219,17 +219,23 @@ impl WindowsPlatform {
             WM_ACTIVATE => {
                 // Microsoft 的自定义 DWM 帧契约要求在激活消息重新提交扩展边距；
                 // 否则启动期设置可能被首次激活覆盖，导致无边框窗口没有系统阴影。
-                let state_maximized = window.borrow().maximized;
-                match super::custom_chrome::window_style(hwnd).and_then(|style| {
-                    let maximized = super::custom_chrome::is_effectively_maximized(
-                        hwnd,
-                        style,
-                        state_maximized,
-                    );
-                    super::custom_chrome::apply_dwm_frame_effects(hwnd, style, maximized)
-                }) {
-                    Ok(()) => {}
-                    Err(error) => self.enqueue_callback_failure(error),
+                let (state_maximized, state_minimized) = {
+                    let state = window.borrow();
+                    (state.maximized, state.minimized)
+                };
+                // 最小化期间 DWM 正在拥有非客户区状态转换；保留最后一个可见帧配置。
+                if !state_minimized {
+                    match super::custom_chrome::window_style(hwnd).and_then(|style| {
+                        let maximized = super::custom_chrome::is_effectively_maximized(
+                            hwnd,
+                            style,
+                            state_maximized,
+                        );
+                        super::custom_chrome::apply_dwm_frame_effects(hwnd, style, maximized)
+                    }) {
+                        Ok(()) => {}
+                        Err(error) => self.enqueue_callback_failure(error),
+                    }
                 }
                 self.def_window_proc(hwnd, msg, wparam, lparam)
             }
@@ -309,11 +315,16 @@ impl WindowsPlatform {
                 let dpi = super::dpi::dpi_for_window(hwnd);
                 let w = super::dpi::physical_extent_to_logical(Self::loword(lparam) as i32, dpi);
                 let h = super::dpi::physical_extent_to_logical(Self::hiword(lparam) as i32, dpi);
-                let chrome_style = match super::custom_chrome::window_style(hwnd) {
-                    Ok(style) => Some(style),
-                    Err(error) => {
-                        self.enqueue_callback_failure(error);
-                        None
+                // 最小化的 lParam 为零尺寸过渡值，不能驱动 DWM 或客户区几何事务。
+                let chrome_style = if wparam == SIZE_MINIMIZED {
+                    None
+                } else {
+                    match super::custom_chrome::window_style(hwnd) {
+                        Ok(style) => Some(style),
+                        Err(error) => {
+                            self.enqueue_callback_failure(error);
+                            None
+                        }
                     }
                 };
                 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,12 +336,11 @@ impl WindowsPlatform {
                 }
                 let actions = {
                     let mut state = window.borrow_mut();
-                    state.width = w;
-                    state.height = h;
                     let mut acts = Vec::new();
                     let mut schedule_extended_frame_refresh = false;
                     match wparam {
                         SIZE_MINIMIZED => {
+                            // Win32 在最小化时报告 0x0；保留最后一个有效客户区供恢复前查询。
                             state.minimized = true;
                             acts.push(SizeAction::Minimized);
                         }
@@ -338,7 +348,11 @@ impl WindowsPlatform {
                             state.minimized = false;
                             state.maximized = true;
                             acts.push(SizeAction::Maximized);
-                            acts.push(SizeAction::Resized);
+                            if w > 0 && h > 0 {
+                                state.width = w;
+                                state.height = h;
+                                acts.push(SizeAction::Resized);
+                            }
                         }
                         SIZE_RESTORED => {
                             let was_min = state.minimized;
@@ -351,10 +365,18 @@ impl WindowsPlatform {
                             // 最大化期 NCCALCSIZE 内缩边框；还原后需 FRAMECHANGED
                             // 才能把客户区重新扩到外窗，否则四周透出桌面。
                             schedule_extended_frame_refresh = was_max;
-                            acts.push(SizeAction::Resized);
+                            if w > 0 && h > 0 {
+                                state.width = w;
+                                state.height = h;
+                                acts.push(SizeAction::Resized);
+                            }
                         }
                         _ => {
-                            acts.push(SizeAction::Resized);
+                            if w > 0 && h > 0 {
+                                state.width = w;
+                                state.height = h;
+                                acts.push(SizeAction::Resized);
+                            }
                         }
                     }
                     drop(state);

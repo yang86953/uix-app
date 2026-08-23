@@ -150,3 +150,33 @@
             vec![(1920, 1040), (800, 600), (1600, 900), (800, 600)]
         );
     }
+
+    // 根 Surface 缩小时必须发布布局失效；副窗口即使不携带 had_layout_event 也能重排子树。
+    #[test]
+    fn resize_publishes_root_layout_invalidation() {
+        let mut driver = WindowDriver::new(1200, 800, false);
+        let mut tree = WidgetTree::new();
+        tree.set_root(Box::new(crate::ui::widgets::Label::new("响应式内容")));
+        let mut engine = CommandRecorder::new();
+        engine.initialize(1200, 800).expect("初始化测试渲染目标");
+        sync_root_frame_exactly_to_engine(&mut tree, &mut engine);
+        tree.layout();
+        tree.reset_invalidation();
+        assert!(!has_layout_work(&tree));
+
+        let mut window = FakeWindow::new(1, "测试窗口", 1200, 800);
+        let mut text_input = WindowTextInputState::default();
+        assert!(driver.handle_window_event(
+            &UiEvent::resize(640, 480),
+            &mut tree,
+            &mut engine,
+            &mut window,
+            &mut text_input,
+        ));
+
+        assert_eq!(
+            tree.root().expect("根节点存在").frame(),
+            Rect::new(0.0, 0.0, 640.0, 480.0)
+        );
+        assert!(has_layout_work(&tree));
+    }

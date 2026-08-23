@@ -19,7 +19,7 @@ fn rectangle_adds_only_outer_coverage_fringe() {
     assert_eq!(coverage.iter().filter(|value| **value == 1.0).count(), 18);
 }
 
-// 数学边界必须位于 coverage 线性边带中央，保证物理像素覆盖率不偏移。
+// 数学边界必须位于双像素 coverage 线性边带中央，保证浅斜边有连续过渡且不偏移。
 #[test]
 fn rectangle_fringe_is_centered_on_original_boundary() {
     let vertices = [
@@ -38,10 +38,10 @@ fn rectangle_fringe_is_centered_on_original_boundary() {
                 && (*actual_coverage - coverage).abs() < 1e-5
         })
     };
-    assert!(contains([-0.5, -0.5], 0.0));
-    assert!(contains([0.5, 0.5], 1.0));
-    assert!(contains([10.5, 10.5], 0.0));
-    assert!(contains([9.5, 9.5], 1.0));
+    assert!(contains([-1.0, -1.0], 0.0));
+    assert!(contains([1.0, 1.0], 1.0));
+    assert!(contains([11.0, 11.0], 0.0));
+    assert!(contains([9.0, 9.0], 1.0));
 }
 
 // 极薄三角形的尖角 miter 必须保持有界，不能扩展成大面积尖刺。
