@@ -11,6 +11,29 @@ fn generate(source: &str) -> Result<String, Diagnostic> {
     Ok(tokens.to_string())
 }
 
+// UIX 纵向 Flex 默认不吞占剩余高度，只有显式 flexGrow 才参与增长。
+#[test]
+fn keeps_vertical_flex_at_default_zero_grow() {
+    let column =
+        generate(r#"<Column><Text>A</Text></Column>"#).expect("默认 Column 应生成固有高度容器");
+    let container = generate(r#"<Container><Text>A</Text></Container>"#)
+        .expect("默认纵向 Container 应生成固有高度容器");
+    let column_cell = generate(r#"<Row><Col><Text>A</Text></Col></Row>"#)
+        .expect("默认 Col 内容应生成固有高度容器");
+    assert!(column.contains("prelude :: column_fit"));
+    assert!(container.contains("prelude :: column_fit"));
+    assert!(column_cell.contains("prelude :: column_fit"));
+    assert!(!column.contains("flex_grow"));
+    assert!(!container.contains("flex_grow"));
+
+    let growing = generate(r#"<Column flexGrow={1}><Text>A</Text></Column>"#)
+        .expect("显式增长 Column 应保留公共属性覆盖");
+    assert!(
+        growing.contains("prelude :: column_fit") && growing.contains("flex_grow (1"),
+        "{growing}",
+    );
+}
+
 // 验证 Row/Col 生成现有 24 单元响应式 Grid 契约。
 #[test]
 fn generates_responsive_row_col_contract() {
