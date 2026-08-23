@@ -232,19 +232,14 @@ impl WidgetTree {
 
     pub(super) fn register_scroll_composite(&mut self, id: WidgetId) -> bool {
         let transformed = self.path_has_visual_transform(id);
-        let Some((viewport, dx, dy)) = self.get(id).and_then(|node| {
-            let frame = node.frame();
-            node.scroll_delta_for_dirty().map(|(dx, dy)| {
-                let viewport = node.scroll_composite_viewport(frame);
-                (viewport, dx, dy)
-            })
-        }) else {
+        let Some((dx, dy)) = self.get(id).and_then(|node| node.scroll_delta_for_dirty()) else {
             return false;
         };
         if transformed {
             return false;
         }
-        self.push_scroll_composite(viewport, dx, dy)
+        // 由树级唯一入口完成视口投影、整数门禁与滚动条 chrome 失效。
+        self.push_node_scroll_composite(id, dx, dy)
     }
 
     pub(crate) fn reveal_focused_target(&mut self, target: WidgetId) -> bool {

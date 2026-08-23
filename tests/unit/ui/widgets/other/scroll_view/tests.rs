@@ -14,6 +14,27 @@ fn scrollbar_declares_after_children_paint_capability() {
     assert!(WidgetRender::paint_after_children(&scroll));
 }
 
+// 验证滚动像素搬移不会把动态滚动条沟槽当作可复用内容。
+#[test]
+fn scroll_composite_viewport_excludes_scrollbar_gutters() {
+    // 双向溢出会同时显示右侧与底部滚动条。
+    let scroll = ScrollView::new(ScrollDirection::Both);
+    let frame = Rect::new(10.0, 20.0, 100.0, 80.0);
+    // 保存真实视口并声明两个轴都超出边界。
+    scroll.last_frame.set(Some(frame));
+    scroll.content_bounds.set(Some(Size::new(180.0, 160.0)));
+    // 树级纹理搬移只允许覆盖扣除两个沟槽后的内容矩形。
+    assert_eq!(
+        crate::ui::EventHandler::scroll_composite_viewport(&scroll, frame),
+        Some(Rect::new(
+            frame.x,
+            frame.y,
+            frame.w - ScrollBar::gutter(),
+            frame.h - ScrollBar::gutter(),
+        ))
+    );
+}
+
 // 验证内容缩短后，视口与公开偏移立即收敛到新的内容末端。
 #[test]
 fn content_shrink_clamps_effective_scroll_offset() {
