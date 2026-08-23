@@ -274,19 +274,8 @@ impl Select {
         let no_data = !self.loading && visible_rows.is_empty();
         // 计算当前实际弹层行数。
         let row_count = self.dropdown_row_count();
-        // 读取绘制上下文的逻辑表面尺寸。
-        let surface_size = ctx.logical_surface_size();
-        // 将逻辑表面归一到窗口坐标原点。
-        let surface = normalize_select_rect(Rect::new(
-            // 表面横坐标固定为窗口原点。
-            0.0,
-            // 表面纵坐标固定为窗口原点。
-            0.0,
-            // 使用绘制上下文的逻辑宽度。
-            surface_size.w,
-            // 使用绘制上下文的逻辑高度。
-            surface_size.h,
-        ));
+        // 将逻辑表面映射到当前组件坐标，兼容被提升的滚动浮层。
+        let surface = normalize_select_rect(ctx.logical_surface_rect());
         // 解析并缓存与布局、命中和登记相同的相对弹层矩形。
         let popup = self.remember_dropdown_rect(frame, surface, row_count);
         // 将最终弹层转换为窗口绝对坐标。

@@ -1,6 +1,7 @@
 use super::tree_core::WidgetTree;
 use super::*;
 use crate::draw::Transform;
+use crate::draw::scene::ScenePaint;
 use crate::ui::widget_runtime::view_transform::ViewTransform;
 
 // 把视觉边界裁剪契约的验收放在独立文件，避免机制实现与测试相互挤占篇幅。
@@ -45,8 +46,14 @@ impl WidgetTree {
         let mut transform = Transform::identity();
         for (index, current_id) in path.iter().copied().enumerate() {
             let node = self.get(current_id)?;
-            // 合成 relative/sticky 定位偏移与作者视觉变换。
-            transform = transform.concat(self.positioned_visual_transform(current_id));
+            let current_transform = if index == 0 && self.is_overlay_node(current_id) {
+                // 浮层路径已截断，首节点复用场景声明的根画布最终变换。
+                self.node_overlay_transform(current_id)
+            } else {
+                // 合成 relative/sticky 定位偏移与作者视觉变换。
+                self.positioned_visual_transform(current_id)
+            };
+            transform = transform.concat(current_transform);
             // 除末尾节点外，还需补偿视口滚动偏移（子节点相对滚动）。
             if index + 1 < path.len() {
                 if let Some((sx, sy)) = node.viewport_scroll_offset() {
@@ -144,8 +151,13 @@ impl WidgetTree {
         // 沿视觉路径逐级应用变换，并用各层子裁剪区收窄矩形。
         for (index, current_id) in path.iter().copied().enumerate() {
             let current = self.get(current_id)?;
-            // 使用与合成器一致的定位与作者变换组合。
-            transform = transform.concat(self.positioned_visual_transform(current_id));
+            let current_transform = if index == 0 && self.is_overlay_node(current_id) {
+                // 浮层不继承祖先裁剪，但仍使用与合成器一致的锚点变换。
+                self.node_overlay_transform(current_id)
+            } else {
+                self.positioned_visual_transform(current_id)
+            };
+            transform = transform.concat(current_transform);
             if index + 1 < path.len() {
                 // 子裁剪区位于滚动内容平移之前，与合成器顺序保持一致。
                 if let Some(clip) = current.children_clip(current.frame()) {

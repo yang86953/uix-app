@@ -432,10 +432,8 @@ widget! {
             return;
         }
 
-        // 从绘制上下文读取当前逻辑表面尺寸。
-        let surface_size = ctx.logical_surface_size();
-        // 将窗口原点与逻辑尺寸组合为当前表面矩形。
-        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+        // 将逻辑表面映射到当前组件坐标，兼容被提升的滚动浮层。
+        let surface = ctx.logical_surface_rect();
         // 在绘制弹层前解析并缓存同帧最终几何。
         let geometry = self.remember_popup_geometry(frame, surface, self.visible_column_count());
         // 将相对触发器缓存转换为窗口绝对弹层矩形。

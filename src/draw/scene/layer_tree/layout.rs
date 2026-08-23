@@ -287,7 +287,8 @@ impl LayerTree {
         if !scene.node_visible(id) {
             return None;
         }
-        let transform = scene.node_transform(id);
+        // 根浮层脱离普通父子遍历，使用场景声明的最终根画布变换。
+        let transform = scene.node_overlay_transform(id);
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         // overlay 通常没有父级片段，但仍保持节点结构一致。
         let clip_regions = scene.node_clip_regions(id);
@@ -586,7 +587,12 @@ impl LayerTree {
                 clip_regions,
                 children,
             } => {
-                let next_transform = scene.node_transform(*node_id);
+                let next_transform = if scene.node_is_overlay(*node_id) {
+                    // 浮层根在增量帧中继续使用场景声明的最终变换。
+                    scene.node_overlay_transform(*node_id)
+                } else {
+                    scene.node_transform(*node_id)
+                };
                 let transform_changed = *transform != next_transform;
                 *transform = next_transform;
                 let next_opacity = scene.node_opacity(*node_id).clamp(0.0, 1.0);
@@ -615,3 +621,8 @@ impl LayerTree {
         }
     }
 }
+
+// 将浮层根变换回归测试统一存放到根 tests 目录。
+#[cfg(test)]
+#[path = "../../../../tests/unit/draw/scene/layer_tree_layout__tests.rs"]
+mod tests;

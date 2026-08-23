@@ -286,6 +286,11 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         self.inner.logical_surface_size()
     }
 
+    /// 返回映射到当前组件绘制坐标的逻辑表面矩形。
+    pub(crate) fn logical_surface_rect(&mut self) -> Rect {
+        self.inner.logical_surface_rect()
+    }
+
     /// 绘制并录制 owned glyph layout（UI 内部使用）。
     pub(crate) fn blit_owned_glyph_layout(
         &mut self,

@@ -155,6 +155,23 @@ impl<'a> PaintContext<'a> {
         self.surface_size()
     }
 
+    /// 返回映射到当前画布局部坐标的逻辑表面矩形。
+    pub(crate) fn logical_surface_rect(&mut self) -> Rect {
+        let size = self.logical_surface_size();
+        let surface = Rect::new(0.0, 0.0, size.w, size.h);
+        let canvas = self.spatial.canvas_2d();
+        let mut transform = canvas.current_transform();
+        let (offset_x, offset_y) = canvas.offset();
+        if offset_x != 0.0 || offset_y != 0.0 {
+            // 平移快路径保存在 offset 中，合并后才能得到真实画布变换。
+            transform = transform.concat(Transform::translate(offset_x, offset_y));
+        }
+        transform
+            .inverse()
+            .map(|inverse| inverse.transform_rect(surface))
+            .unwrap_or(surface)
+    }
+
     /// 判断逻辑矩形经当前变换与偏移后是否和有效裁剪区相交。
     pub fn is_rect_visible(&mut self, rect: Rect) -> bool {
         if rect.w <= 0.0 || rect.h <= 0.0 {

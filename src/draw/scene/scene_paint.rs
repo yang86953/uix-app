@@ -241,6 +241,12 @@ pub trait ScenePaint {
         let _ = id;
         false
     }
+    /// 返回浮层脱离普通父子遍历后应在根画布应用的完整变换。
+    ///
+    /// 默认只保留节点自身变换；需要跟随原树祖先或滚动锚点的场景应显式覆盖。
+    fn node_overlay_transform(&self, id: NodeId) -> Transform {
+        self.node_transform(id)
+    }
     /// 返回该浮层是否需要保留一份不含浮层像素的干净背景。
     ///
     /// 未细分浮层能力的场景保持保守语义：所有浮层都需要背景快照。

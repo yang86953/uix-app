@@ -1,6 +1,7 @@
 use super::super::super::*;
 use super::super::WidgetTree;
 use crate::core::Rect;
+use crate::draw::scene::ScenePaint;
 use std::collections::HashSet;
 
 #[cfg(test)]
@@ -471,11 +472,18 @@ impl WidgetTree {
                     return None;
                 }
                 let node = self.get(id)?;
-                // 显式传入当前表面，使边界敏感浮层与同帧绘制几何一致。
-                let mut entry =
-                    node.overlay_entry_for_surface(id, node.frame(), overlay_surface)?;
+                // 浮层会脱离普通父子遍历，先取得它在根画布使用的最终变换。
+                let overlay_transform = self.node_overlay_transform(id);
+                // 将窗口表面逆变换到组件布局坐标，保证滚动锚点与弹层放置同域计算。
+                let local_surface = overlay_transform
+                    .inverse()
+                    .map(|inverse| inverse.transform_rect(overlay_surface))
+                    .unwrap_or(overlay_surface);
+                // 显式传入组件坐标表面，使边界敏感浮层与同帧绘制几何一致。
+                let mut entry = node.overlay_entry_for_surface(id, node.frame(), local_surface)?;
                 if let Some(bounds) = entry.bounds_rect() {
-                    entry = entry.bounds(self.node_visual_rect(id, bounds)?);
+                    // 登记边界与根浮层绘制共用同一最终变换，避免再次在浮层处截断。
+                    entry = entry.bounds(overlay_transform.transform_rect(bounds));
                 }
                 Some(entry)
             })

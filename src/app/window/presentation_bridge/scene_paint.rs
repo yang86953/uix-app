@@ -145,6 +145,16 @@ impl ScenePaint for WidgetTree {
                 .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
+    fn node_overlay_transform(&self, id: NodeId) -> crate::draw::Transform {
+        if self.node_is_fixed(id) {
+            // fixed 浮层保持窗口坐标语义，不继承祖先滚动。
+            self.positioned_visual_transform(id)
+        } else {
+            // 输入类弹层仍锚定原组件树，补回被根浮层提升跳过的祖先变换。
+            crate::draw::scene::viewport_transform::overlay_root_visual_transform(self, id)
+        }
+    }
+
     fn node_requires_overlay_backdrop(&self, id: NodeId) -> bool {
         // 只有模态遮罩或显式 blur 需要跨帧保留不含浮层的干净背景。
         // Message、Notification、Tooltip 等局部浮层直接在 retained 主表面按 damage 重绘。
