@@ -45,6 +45,7 @@ mod pending;
 mod recovery;
 mod report;
 mod reporting;
+mod repro;
 
 use std::panic::Location;
 use std::sync::Arc;
@@ -77,6 +78,7 @@ struct DiagnosticsInner {
     reporting: ReportingModule,
     recovery: Arc<recovery::RecoveryModule>,
     debugging: debug::DebugModule,
+    repro: repro::ReproModule,
 }
 
 /// 一个运行时的公开 Diagnostics System 句柄。
@@ -101,6 +103,7 @@ impl Diagnostics {
                 pending_failures: PendingFailureQueue::new(),
                 recovery: Arc::new(recovery::RecoveryModule::new()),
                 debugging: debug::DebugModule::new(debug_mode),
+                repro: repro::ReproModule::new(),
             }),
         }
     }
@@ -138,6 +141,7 @@ impl Diagnostics {
     /// 所有共享此 Diagnostics 实例的窗口会在下一次事件或帧边界观察到新值。
     pub fn set_debug_mode(&self, enabled: bool) {
         if self.inner.debugging.set_enabled(enabled) {
+            self.inner.repro.record_mode_changed(enabled);
             tracing::info!(
                 target: "uix::diagnostics",
                 debug_event = "mode_changed",
@@ -151,6 +155,99 @@ impl Diagnostics {
     /// 为同一批输入、状态变更与最终帧分配稳定关联身份。
     pub(crate) fn next_debug_correlation_id(&self) -> u64 {
         self.inner.debugging.next_correlation_id()
+    }
+
+    /// 写出一份有界、脱敏的运行时复现清单。
+    ///
+    /// 清单只包含固定事件类型、关联身份、阶段耗时、窗口数值状态与错误码；
+    /// 不包含用户文本、窗口标题、资源标识、环境变量或本地路径。即使当前未开启
+    /// debug 也可调用，此时仍会导出平台版本与最近错误码。
+    pub fn write_debug_repro_manifest(
+        &self,
+        directory: impl AsRef<std::path::Path>,
+    ) -> Result<std::path::PathBuf, Error> {
+        let snapshot = self.inner.repro.capture(
+            repro::CaptureReason::Manual,
+            self.inner.runtime_id,
+            self.debug_mode(),
+        );
+        crash::write_text_atomic(
+            directory.as_ref(),
+            "repro",
+            snapshot.captured_at(),
+            snapshot.runtime_id(),
+            &repro::render(&snapshot),
+        )
+    }
+
+    pub(crate) fn record_debug_input(
+        &self,
+        window_id: crate::core::WindowId,
+        correlation_id: u64,
+        event_type: &'static str,
+    ) {
+        if !self.debug_mode() {
+            return;
+        }
+        self.inner
+            .repro
+            .record_input(window_id, correlation_id, event_type);
+    }
+
+    pub(crate) fn record_debug_hover_changed(
+        &self,
+        window_id: crate::core::WindowId,
+        correlation_id: u64,
+    ) {
+        if !self.debug_mode() {
+            return;
+        }
+        self.inner
+            .repro
+            .record_hover_changed(window_id, correlation_id);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_debug_frame(
+        &self,
+        window_id: crate::core::WindowId,
+        correlation_id: Option<u64>,
+        width: u32,
+        height: u32,
+        frame: std::time::Duration,
+        layout: std::time::Duration,
+        render: std::time::Duration,
+        submit: std::time::Duration,
+        present: std::time::Duration,
+        dirty_full: bool,
+        dirty_area_ratio: f64,
+        animation_count: u32,
+        invalidation_count: usize,
+        reconcile_ran: bool,
+        tree_version_delta: u64,
+        invalidation_source: &'static str,
+    ) {
+        if !self.debug_mode() {
+            return;
+        }
+        self.inner.repro.record_frame(
+            window_id,
+            correlation_id,
+            width,
+            height,
+            frame,
+            layout,
+            render,
+            submit,
+            present,
+            dirty_full,
+            dirty_area_ratio,
+            animation_count,
+            invalidation_count,
+            reconcile_ran,
+            tree_version_delta,
+            invalidation_source,
+        );
     }
 
     /// 返回按 `ReportId` 排序的不可变时间点快照。
@@ -186,13 +283,15 @@ impl Diagnostics {
     #[track_caller]
     pub(crate) fn report_with_origin(&self, error: Error, origin: ReportOrigin) -> ReportId {
         let report_site = Location::caller();
-        self.inner.reporting.report(
+        let id = self.inner.reporting.report(
             self.inner.runtime_id,
             self.inner.config.backtrace,
-            error,
+            &error,
             origin,
             report_site,
-        )
+        );
+        self.inner.repro.record_error(id, &error);
+        id
     }
 
     pub(crate) fn crash_report_directory(&self) -> Option<&std::path::Path> {
@@ -209,6 +308,23 @@ impl Diagnostics {
     /// 语义被保留。配置了崩溃目录时，转发前会原子写入一份有界崩溃报告。
     pub(crate) fn install_panic_hook(&self) {
         crash::install_panic_hook(self.clone());
+    }
+
+    pub(crate) fn write_debug_repro_manifest_for_panic(
+        &self,
+        directory: &std::path::Path,
+    ) -> Result<std::path::PathBuf, Error> {
+        let snapshot = self
+            .inner
+            .repro
+            .try_capture_for_panic(self.inner.runtime_id, self.debug_mode());
+        crash::write_text_atomic(
+            directory,
+            "repro",
+            snapshot.captured_at(),
+            snapshot.runtime_id(),
+            &repro::render(&snapshot),
+        )
     }
 }
 

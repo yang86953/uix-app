@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -159,11 +158,22 @@ fn panic_hook_writes_crash_report_and_does_not_swallow_panic() {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    assert_eq!(entries.len(), 1, "unexpected entries: {entries:?}");
-    let report_path = directory.join(&entries[0]);
+    assert_eq!(entries.len(), 2, "unexpected entries: {entries:?}");
+    let crash_name = entries
+        .iter()
+        .find(|name| name.starts_with("uix-crash-"))
+        .expect("panic hook should write crash report");
+    let repro_name = entries
+        .iter()
+        .find(|name| name.starts_with("uix-repro-"))
+        .expect("panic hook should write reproduction manifest");
+    let report_path = directory.join(crash_name);
     let content = std::fs::read_to_string(&report_path).unwrap_or_default();
     assert!(content.contains("panic_message=s3 crash probe"));
     assert!(content.contains("schema_version=1"));
+    let repro = std::fs::read_to_string(directory.join(repro_name)).unwrap_or_default();
+    assert!(repro.contains("reason=panic\n"));
+    assert!(!repro.contains("s3 crash probe"));
 
     let _ = std::fs::remove_dir_all(&directory);
 }

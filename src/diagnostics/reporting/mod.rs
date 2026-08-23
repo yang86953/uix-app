@@ -52,12 +52,12 @@ impl ReportingModule {
         &self,
         runtime_id: u64,
         backtrace_policy: BacktracePolicy,
-        error: Error,
+        error: &Error,
         origin: ReportOrigin,
         report_site: &'static Location<'static>,
     ) -> ReportId {
         // 构建有界草稿 → 入库 → 取出完整报告发射（发射失败不阻塞上报）。
-        let draft = ReportDraftBuilder::new(backtrace_policy).build(&error, origin, report_site);
+        let draft = ReportDraftBuilder::new(backtrace_policy).build(error, origin, report_site);
         let id = self.lock_store().insert(runtime_id, draft);
 
         let report = self.lock_store().report(id).cloned();

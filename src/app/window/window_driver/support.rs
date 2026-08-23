@@ -491,9 +491,14 @@ fn record_slow_frame(
 pub(super) fn accumulate_frame_diagnostics(
     // 接收窗口持有的累计诊断统计。
     diag: &mut super::FrameDiagnostics,
+    // 接收统一诊断 System，写入有界复现环形缓冲。
+    diagnostics: &Diagnostics,
     // 接收窗口与触发批次身份，关联输入和最终帧。
     window_id: WindowId,
     correlation_id: Option<u64>,
+    // 接收原生客户区尺寸，形成逐窗口数值快照。
+    width: u32,
+    height: u32,
     // 接收本帧总耗时。
     frame_us: Duration,
     // 接收本帧布局阶段耗时。
@@ -525,6 +530,24 @@ pub(super) fn accumulate_frame_diagnostics(
     // 接收本帧失效来源标签。
     source: InvalidationSource,
 ) {
+    diagnostics.record_debug_frame(
+        window_id,
+        correlation_id,
+        width,
+        height,
+        frame_us,
+        layout_us,
+        render_us,
+        submit_us,
+        present_us,
+        dirty_full,
+        dirty_area_pct,
+        anim_count,
+        inval_count,
+        reconcile_ran,
+        version_delta,
+        source.label(),
+    );
     // 卡顿自动记录：先检测本帧是否超阈值并输出开始/结束现场。
     record_slow_frame(
         diag,
