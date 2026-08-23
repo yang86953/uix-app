@@ -93,6 +93,21 @@ class PackageMetadataContractTests(unittest.TestCase):
             builder.index("$entryStream = $archiveEntry.Open()"),
         )
 
+    # 固化 0.0.1 的签名、分发、升级与回滚边界。
+    def test_delivery_document_freezes_release_operations_policy(self) -> None:
+        # 读取稳定产品交付契约，不从动态 Issue 推断操作策略。
+        delivery = (ROOT / "docs" / "产品" / "交付与许可.md").read_text(encoding="utf-8")
+        # 0.0.1 不得把普通 SHA-256 误报成发布者签名。
+        self.assertIn("不提供 detached signature", delivery)
+        self.assertIn("只证明解包载荷完整性", delivery)
+        # 正式制品只允许进入项目既定私有分发面。
+        self.assertIn("私有 Gitea Release", delivery)
+        self.assertIn("不复制到公开网盘", delivery)
+        # 当前没有自动更新器，升级与回滚必须保留可恢复边界。
+        self.assertIn("不提供安装器或自动更新器", delivery)
+        self.assertIn("新的并行版本目录", delivery)
+        self.assertIn("切回上一目录", delivery)
+
 
 # 只在任一受支持的 PowerShell 运行时可用时执行发布包行为测试。
 @unittest.skipIf(POWERSHELL is None, "PowerShell is required")
