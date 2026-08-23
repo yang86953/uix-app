@@ -12,11 +12,15 @@ pub(crate) enum PipelineVertexSemantic {
     TextureCoordinate,
     // 表示逐顶点颜色输入。
     Color,
+    // 表示实心网格边缘的逐顶点覆盖率输入。
+    Coverage,
 }
 
 // 定义两个 Adapter 必须穷尽映射的顶点属性格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PipelineVertexFormat {
+    // 表示一个三十二位浮点数。
+    Float32,
     // 表示两个连续的三十二位浮点数。
     Float32x2,
     // 表示四个连续的三十二位浮点数。
@@ -29,6 +33,8 @@ impl PipelineVertexFormat {
     pub(crate) const fn component_count_i32(self) -> i32 {
         // 穷尽封闭格式集合。
         match self {
+            // float1 固定包含一个分量。
+            Self::Float32 => 1,
             // float2 固定包含两个分量。
             Self::Float32x2 => 2,
             // float4 固定包含四个分量。
@@ -40,6 +46,8 @@ impl PipelineVertexFormat {
     pub(crate) const fn size_bytes(self) -> u32 {
         // 穷尽封闭格式集合。
         match self {
+            // 一个 f32 固定占四字节。
+            Self::Float32 => std::mem::size_of::<f32>() as u32,
             // 两个 f32 固定占八字节。
             Self::Float32x2 => 2 * std::mem::size_of::<f32>() as u32,
             // 四个 f32 固定占十六字节。
@@ -135,6 +143,22 @@ const POSITION_F32X2_ATTRIBUTES: [PipelineVertexAttribute; 1] = [PipelineVertexA
     0,
 )];
 
+// 定义 position float2 与 coverage float1 的唯一属性序列。
+const POSITION_COVERAGE_F32_ATTRIBUTES: [PipelineVertexAttribute; 2] = [
+    PipelineVertexAttribute::new(
+        0,
+        PipelineVertexSemantic::Position,
+        PipelineVertexFormat::Float32x2,
+        0,
+    ),
+    PipelineVertexAttribute::new(
+        1,
+        PipelineVertexSemantic::Coverage,
+        PipelineVertexFormat::Float32,
+        8,
+    ),
+];
+
 // 定义 position 与 uv 各一个 float2 的唯一属性序列。
 const POSITION_UV_F32_ATTRIBUTES: [PipelineVertexAttribute; 2] = [
     // 目标位置固定绑定到 location 0。
@@ -195,6 +219,8 @@ const POSITION_UV_COLOR_F32_ATTRIBUTES: [PipelineVertexAttribute; 3] = [
 pub(crate) enum PipelineVertexLayout {
     // 只包含 position float2。
     PositionF32x2,
+    // 包含 position float2 与 coverage float1。
+    PositionCoverageF32,
     // 包含 position float2 与绝对 source uv float2。
     PositionUvF32,
     // 包含 position float2、uv float2 与 color float4。
@@ -209,6 +235,8 @@ impl PipelineVertexLayout {
         match self {
             // position float2 固定占八字节。
             Self::PositionF32x2 => 8,
+            // position float2 与 coverage float1 固定占十二字节。
+            Self::PositionCoverageF32 => 12,
             // position 与 uv 各一个 float2，固定占十六字节。
             Self::PositionUvF32 => 16,
             // position、uv 与 color 固定占三十二字节。
@@ -235,6 +263,8 @@ impl PipelineVertexLayout {
         match self {
             // float2 布局只包含 position。
             Self::PositionF32x2 => &POSITION_F32X2_ATTRIBUTES,
+            // 实心网格布局包含 position 与 coverage。
+            Self::PositionCoverageF32 => &POSITION_COVERAGE_F32_ATTRIBUTES,
             // Blur 布局只包含 position 与绝对 source UV。
             Self::PositionUvF32 => &POSITION_UV_F32_ATTRIBUTES,
             // float8 布局包含 position、uv 与 color。

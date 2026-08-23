@@ -119,8 +119,10 @@ fn executes_clear_rect_in_order() {
     pass.push(FramePlanCommand::UploadVertex {
         // 使用稳定测试顶点 buffer。
         buffer: BufferHandle::from_raw(3),
-        // 构造三个完整 position-float2 顶点。
-        data: FrameVertexPayload::position_f32x2([0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
+        // 构造三个完整 position + coverage 顶点。
+        data: FrameVertexPayload::position_coverage_f32([
+            0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0,
+        ]),
     });
     // 追加与 SolidMesh 契约一致的类型化 Uniform 上传。
     pass.push(FramePlanCommand::UploadUniform {

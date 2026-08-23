@@ -21,6 +21,7 @@ pub(crate) const WM_NCLBUTTONDOWN: u32 = 0x00A1;
 pub(crate) const WM_NCRBUTTONUP: u32 = 0x00A5;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
+pub(crate) const WM_ACTIVATE: u32 = 0x0006;
 pub(crate) const WM_SIZE: u32 = 0x0005;
 pub(crate) const WM_DPICHANGED: u32 = 0x02E0;
 pub(crate) const WM_THEMECHANGED: u32 = 0x031A;

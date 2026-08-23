@@ -136,7 +136,7 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
     let capabilities = device.device_capabilities();
     // 执行探针主体，保留原始主错误直到清理完成。
     let probe_result = (|| -> Result<()> {
-        // 单位 quad 前三个顶点同时形成 solid 探针所需的最小三角形。
+        // Shape 等解析图元共用的 position-float2 单位 quad。
         let unit_vertices = [
             // 左上。
             0.0f32, // 左上。
@@ -152,14 +152,21 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             0.0,    // 左下。
             1.0,
         ];
-        // 将单位 quad 收归 FramePlan 的封闭 position-float2 载荷。
-        let vertex_payload = FrameVertexPayload::position_f32x2(unit_vertices);
-        // 创建 Solid 与 Shape 共用的真实单位 quad 顶点 buffer。
-        let vertex_buffer = scope.track_buffer(device.create_buffer(BufferDesc::vertex(
+        let shape_vertex_payload = FrameVertexPayload::position_f32x2(unit_vertices);
+        // Solid 探针使用独立的 position + coverage 最小三角形。
+        let solid_vertex_payload = FrameVertexPayload::position_coverage_f32([
+            0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+        ]);
+        let solid_vertex_buffer = scope.track_buffer(device.create_buffer(BufferDesc::vertex(
             // 字节容量只从类型化顶点载荷派生。
-            vertex_payload.size_bytes(),
+            solid_vertex_payload.size_bytes(),
             // stride 只从同一载荷声明的共享布局派生。
-            vertex_payload.layout().stride_bytes(),
+            solid_vertex_payload.layout().stride_bytes(),
+        ))?);
+        // Shape 保留 position-float2 单位 quad 的独立资源。
+        let shape_vertex_buffer = scope.track_buffer(device.create_buffer(BufferDesc::vertex(
+            shape_vertex_payload.size_bytes(),
+            shape_vertex_payload.layout().stride_bytes(),
         ))?);
         // 创建 Solid mesh 所需的 32 字节 uniform ABI。
         let solid_uniform_buffer =
@@ -358,12 +365,10 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
                 },
             });
         }
-        // 在首个 draw 前建立单位 quad 的类型化内容事实。
+        // 在首个 draw 前建立 Solid coverage 顶点内容事实。
         pass.push(FramePlanCommand::UploadVertex {
-            // 绑定 Solid 与 Shape 共用的顶点资源。
-            buffer: vertex_buffer,
-            // 交付唯一 position-float2 载荷，禁止 probe 自行编码字节。
-            data: vertex_payload,
+            buffer: solid_vertex_buffer,
+            data: solid_vertex_payload,
         });
         // 在 Solid draw 前交付完整 Mesh uniform 值对象。
         pass.push(FramePlanCommand::UploadUniform {
@@ -376,8 +381,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
         pass.push(FramePlanCommand::Draw(DrawPacket::new(
             // 选择 Solid pipeline。
             pipelines[0],
-            // 复用单位 quad 前三个顶点并绑定 Solid uniform。
-            DrawBufferBindings::new(vertex_buffer, solid_uniform_buffer),
+            // 绑定完整 coverage 三角形与 Solid uniform。
+            DrawBufferBindings::new(solid_vertex_buffer, solid_uniform_buffer),
             // Solid probe draw 不使用采样资源。
             DrawSamplingBinding::none(),
             // Probe draw 明确携带完整 viewport 与无 scissor 栅格事实。
@@ -385,6 +390,11 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 用封闭非索引范围绘制一个三角形。
             DrawRange::vertices(3),
         )));
+        // Shape draw 前建立独立 position-float2 单位 quad 内容事实。
+        pass.push(FramePlanCommand::UploadVertex {
+            buffer: shape_vertex_buffer,
+            data: shape_vertex_payload,
+        });
         // 在 Shape draw 前交付完整 Shape uniform 值对象。
         pass.push(FramePlanCommand::UploadUniform {
             // 绑定 Shape 专用 uniform 资源。
@@ -397,7 +407,7 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             // 第五个固定 pipeline 是普通 Shape。
             pipelines[4],
             // Shape 使用完整单位 quad 并绑定共享 Shape ABI uniform。
-            DrawBufferBindings::new(vertex_buffer, shape_uniform_buffer),
+            DrawBufferBindings::new(shape_vertex_buffer, shape_uniform_buffer),
             // Shape probe draw 不使用采样资源。
             DrawSamplingBinding::none(),
             // Probe draw 明确携带完整 viewport 与无 scissor 栅格事实。

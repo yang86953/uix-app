@@ -4,14 +4,17 @@
 pub(super) const SOLID_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
+layout(location = 1) in float a_coverage;
 uniform vec2 u_viewport;
 // 根据当前 render target 选择原生 surface 或 top-left texture 行序。
 uniform float u_target_y_sign;
+out float v_coverage;
 void main() {
     vec2 ndc = (a_pos / u_viewport) * 2.0 - 1.0;
     // 让目标身份成为唯一的 Y 方向事实。
     ndc.y *= u_target_y_sign;
     gl_Position = vec4(ndc, 0.0, 1.0);
+    v_coverage = a_coverage;
 }
 "#;
 
@@ -19,9 +22,10 @@ void main() {
 pub(super) const SOLID_FRAGMENT: &str = r#"#version 300 es
 precision highp float;
 uniform vec4 u_color;
+in float v_coverage;
 out vec4 fragColor;
 void main() {
-    fragColor = u_color;
+    fragColor = vec4(u_color.rgb, u_color.a * clamp(v_coverage, 0.0, 1.0));
 }
 "#;
 

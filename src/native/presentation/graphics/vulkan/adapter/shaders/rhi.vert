@@ -9,10 +9,13 @@ layout(set = 0, binding = 0, std140) uniform MeshUniforms {
     vec4 color;
 } u;
 layout(location = 0) in vec2 a_pos;
+layout(location = 1) in float a_coverage;
+layout(location = 0) out float v_coverage;
 
 void main() {
     vec2 ndc = (a_pos / u.viewport) * 2.0 - 1.0;
     gl_Position = vec4(ndc, 0.0, 1.0);
+    v_coverage = a_coverage;
 }
 
 #elif defined(UIX_SAMPLED)

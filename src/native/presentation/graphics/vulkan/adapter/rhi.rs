@@ -159,6 +159,7 @@ fn primitive_topology(topology: PipelinePrimitiveTopology) -> vk::PrimitiveTopol
 
 fn vertex_format(format: PipelineVertexFormat) -> vk::Format {
     match format {
+        PipelineVertexFormat::Float32 => vk::Format::R32_SFLOAT,
         PipelineVertexFormat::Float32x2 => vk::Format::R32G32_SFLOAT,
         PipelineVertexFormat::Float32x4 => vk::Format::R32G32B32A32_SFLOAT,
     }

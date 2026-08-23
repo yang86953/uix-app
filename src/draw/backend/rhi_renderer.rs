@@ -63,6 +63,10 @@ mod msdf;
 #[path = "rhi_renderer_uniform.rs"]
 mod uniform;
 
+// 将实心三角形轮廓转成逐顶点 coverage 边带，统一消除任意方向填充锯齿。
+#[path = "rhi_renderer_mesh.rs"]
+mod mesh;
+
 // 在测试构建中提供 API 无关的全图元像素规范；原生 Adapter 只能执行和回读。
 #[cfg(any(test, feature = "graphics-parity-test"))]
 #[path = "rhi_renderer_consistency.rs"]
@@ -344,15 +348,15 @@ impl RhiRenderer {
                 // 失败时保留 typed error，不把旧资源静默泄漏为成功。
                 device.destroy_buffer(previous)?;
             }
-            // 创建按 float2 顶点 ABI 绑定的 vertex buffer。
+            // 创建按 position + coverage 顶点 ABI 绑定的 vertex buffer。
             let buffer = device.create_buffer(BufferDesc::vertex(
-                // 至少保留一个完整 float2 顶点容量。
-                vertex_bytes.max(8),
+                // 至少保留一个完整 position + coverage 顶点容量。
+                vertex_bytes.max(12),
                 // 步长只来自共享 pipeline 顶点 ABI。
                 PipelineKind::SolidMesh.contract().vertex.stride_bytes(),
             ))?;
             // 记录新容量和句柄。
-            self.vertex_capacity = vertex_bytes.max(8);
+            self.vertex_capacity = vertex_bytes.max(12);
             self.vertex_buffer = Some(buffer);
             buffer
         };
@@ -589,10 +593,25 @@ impl RhiRenderer {
             // 返回稳定的参数错误。
             return Err(rhi_invalid("RhiRenderer viewport is invalid"));
         }
-        // 计算本帧需要的最大顶点字节数。
-        let max_vertex_bytes = meshes
+        // 先把物理 xy 网格统一转换成逐顶点 coverage 网格；每个 mesh 只生成一次。
+        let mut prepared_vertices = Vec::with_capacity(meshes.len());
+        for mesh in meshes {
+            // 输入顶点必须是完整的 xy 三角列表。
+            if mesh.vertices.len() < 6 || mesh.vertices.len() % 2 != 0 {
+                return Err(rhi_invalid("RhiRenderer solid mesh vertex ABI is invalid"));
+            }
+            let vertex_count = mesh.vertices.len() / 2;
+            if !vertex_count.is_multiple_of(3) {
+                return Err(rhi_invalid(
+                    "RhiRenderer solid mesh is not triangle-aligned",
+                ));
+            }
+            prepared_vertices.push(mesh::antialiased_vertices(&mesh.vertices));
+        }
+        // 资源容量按实际 coverage 顶点流计算，避免边带扩展后上传越界。
+        let max_vertex_bytes = prepared_vertices
             .iter()
-            .map(|mesh| mesh.vertices.len() * std::mem::size_of::<f32>())
+            .map(|vertices| vertices.len() * std::mem::size_of::<f32>())
             .max()
             .unwrap_or(0);
         // 准备可复用的 RHI 资源。
@@ -601,24 +620,13 @@ impl RhiRenderer {
         // 创建不携带 target/load 的 surface pass 命令包。
         let mut pass = frame.new_pass();
         // 为每个 mesh 保留 painter order 和独立 scissor。
-        for mesh in meshes {
-            // 顶点必须是完整的 xy 三角列表。
-            if mesh.vertices.len() < 6 || mesh.vertices.len() % 2 != 0 {
-                // 返回稳定的参数错误。
-                return Err(rhi_invalid("RhiRenderer solid mesh vertex ABI is invalid"));
-            }
-            // 三角列表必须包含完整的三个顶点一组。
-            let vertex_count = (mesh.vertices.len() / 2) as u32;
-            if !vertex_count.is_multiple_of(3) {
-                // 返回稳定的参数错误。
-                return Err(rhi_invalid(
-                    "RhiRenderer solid mesh is not triangle-aligned",
-                ));
-            }
-            // 上传当前 mesh 的类型化 position-float2 顶点。
+        for (mesh, vertices) in meshes.iter().zip(&prepared_vertices) {
+            // coverage 顶点固定由三个浮点组成。
+            let vertex_count = (vertices.len() / 3) as u32;
+            // 上传当前 mesh 的类型化 position + coverage 顶点。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
-                data: FrameVertexPayload::position_f32x2(mesh.vertices.clone()),
+                data: FrameVertexPayload::position_coverage_f32(vertices.clone()),
             });
             // 类型化 MeshConstants = viewport.xy、padding.xy、color.rgba。
             pass.push(FramePlanCommand::UploadUniform {

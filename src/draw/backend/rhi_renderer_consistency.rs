@@ -411,6 +411,29 @@ fn rect_vertices(x: f32, y: f32, width: f32, height: f32) -> FrameVertexPayload 
     ])
 }
 
+fn solid_rect_vertices(x: f32, y: f32, width: f32, height: f32) -> FrameVertexPayload {
+    FrameVertexPayload::position_coverage_f32([
+        x,
+        y,
+        1.0,
+        x + width,
+        y,
+        1.0,
+        x + width,
+        y + height,
+        1.0,
+        x,
+        y,
+        1.0,
+        x + width,
+        y + height,
+        1.0,
+        x,
+        y + height,
+        1.0,
+    ])
+}
+
 fn sampled_vertices(x: f32, y: f32, width: f32, height: f32) -> FrameVertexPayload {
     FrameVertexPayload::position_uv_color_f32(super::mixed::textured_vertices_values(
         [
@@ -432,7 +455,7 @@ fn solid_mesh_scene() -> ConsistencyScene {
         name: "SolidMesh",
         kind: PipelineKind::SolidMesh,
         source: ConsistencySource::PendingAndRhi,
-        vertex: rect_vertices(2.0, 2.0, 12.0, 12.0),
+        vertex: solid_rect_vertices(2.0, 2.0, 12.0, 12.0),
         uniform: FrameUniformPayload::Mesh(RhiMeshRasterParams::new(
             viewport(),
             [0.5, 0.25, 0.75, 0.5],

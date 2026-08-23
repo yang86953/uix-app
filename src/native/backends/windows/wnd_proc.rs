@@ -12,8 +12,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Instant;
 
 use crate::core::Point;
-use crate::platform::windowing::MouseButton;
 use crate::native::{Errc, Error};
+use crate::platform::windowing::MouseButton;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 
 use super::bindings::*;
@@ -216,6 +216,23 @@ impl WindowsPlatform {
     ) -> isize {
         let window_id = window.borrow().window_id;
         match msg {
+            WM_ACTIVATE => {
+                // Microsoft 的自定义 DWM 帧契约要求在激活消息重新提交扩展边距；
+                // 否则启动期设置可能被首次激活覆盖，导致无边框窗口没有系统阴影。
+                let state_maximized = window.borrow().maximized;
+                match super::custom_chrome::window_style(hwnd).and_then(|style| {
+                    let maximized = super::custom_chrome::is_effectively_maximized(
+                        hwnd,
+                        style,
+                        state_maximized,
+                    );
+                    super::custom_chrome::apply_dwm_frame_effects(hwnd, style, maximized)
+                }) {
+                    Ok(()) => {}
+                    Err(error) => self.enqueue_callback_failure(error),
+                }
+                self.def_window_proc(hwnd, msg, wparam, lparam)
+            }
             WM_NCCALCSIZE => {
                 let state_maximized = window.borrow().maximized;
                 let style = match super::custom_chrome::window_style(hwnd) {

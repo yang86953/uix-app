@@ -34,8 +34,10 @@ fn test_plan_for_target(mut plan: FramePlan, target: RenderTargetRef) -> FramePl
         // 使用稳定的不透明顶点 buffer。
         buffer: BufferHandle::from_raw(3),
         // 从 buffer 起始位置完整覆盖。
-        // 构造三个完整 position-float2 顶点。
-        data: FrameVertexPayload::position_f32x2([0.0, 0.0, 1.0, 0.0, 0.0, 1.0]),
+        // 构造三个完整 position + coverage 顶点。
+        data: FrameVertexPayload::position_coverage_f32([
+            0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1.0,
+        ]),
     });
     // 追加与 SolidMesh 契约一致的类型化 Uniform 上传。
     pass.push(FramePlanCommand::UploadUniform {
