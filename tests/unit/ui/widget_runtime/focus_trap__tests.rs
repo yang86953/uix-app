@@ -1,9 +1,11 @@
 // 复用被测焦点陷阱与纯顺序 helper。
 use super::{FocusTrap, next_focus_in_order};
+use crate::core::Rect;
 // 引入真实声明适配器与布局组件，覆盖透明包装节点的正常流尺寸。
 use crate::ui::adapter::ViewAdapter;
 // 引入稳定组件身份集合。
-use crate::ui::{Rect, ViewNode, WidgetId};
+use crate::ui::widget_runtime::widget::WidgetCore;
+use crate::ui::{ViewNode, WidgetId};
 // 使用真实按钮作为可聚焦内容。
 use crate::ui::widgets::{Button, Container};
 // 引入焦点陷阱公开更新接口所需集合。

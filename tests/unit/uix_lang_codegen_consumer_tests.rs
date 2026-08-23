@@ -783,10 +783,9 @@ fn data_literals_and_constructor_chains_compile_against_public_uix_api() {
     );
 }
 
-// 验证 uix_items! 生成的 record 与语言面语义类型状态在消费者中通过公开 API 类型检查。
+// 在模块级展开 items，并隔离本文件已有的同名手写 ProfileForm。
 #[cfg(all(feature = "feedback", feature = "navigation", feature = "tree-widgets"))]
-#[test]
-fn record_items_and_semantic_states_compile_against_public_uix_api() {
+mod generated_semantic_items {
     // 生成语言面 <Record> 声明的模块级业务模型。
     crate::uix_items!(
         r#"
@@ -806,8 +805,14 @@ fn record_items_and_semantic_states_compile_against_public_uix_api() {
         <Semantic />
         "#
     );
+}
+
+// 验证 uix_items! 生成的 record 与语言面语义类型状态在消费者中通过公开 API 类型检查。
+#[cfg(all(feature = "feedback", feature = "navigation", feature = "tree-widgets"))]
+#[test]
+fn record_items_and_semantic_states_compile_against_public_uix_api() {
     // Rust 侧回调引用语言面声明的 record 类型。
-    fn submit_semantic(model: ProfileForm) -> Result<(), String> {
+    fn submit_semantic(model: generated_semantic_items::ProfileForm) -> Result<(), String> {
         // 输出关键字段供演示日志核对。
         let _ = (model.email, model.accepted, model.volume);
         // 演示提交始终成功。

@@ -50,6 +50,11 @@ impl ScenePaint for ScrolledOverlayScene {
         (id == ROOT_NODE).then_some(frame)
     }
 
+    fn dirty_rect(&self, _id: NodeId, frame: Rect) -> Rect {
+        // 测试场景没有超出布局边界的绘制效果。
+        frame
+    }
+
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
         (id == ROOT_NODE).then_some((0.0, 80.0))
     }

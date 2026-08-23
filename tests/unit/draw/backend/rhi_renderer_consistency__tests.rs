@@ -1,6 +1,7 @@
 //! API 无关全图元规范场景的闭集与 ABI 门禁。
 
 use super::*;
+use crate::platform::presentation::rhi::PipelineVertexLayout;
 use std::collections::HashSet;
 
 #[test]
