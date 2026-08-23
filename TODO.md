@@ -22,7 +22,8 @@
   - 通过条件：唯一平台/feature/验收矩阵已由自动化契约冻结；提交后同步到 Gitea Issue #1。
 
 - [ ] **完成候选包与发布闭环**
-  - 在干净环境执行 Windows/Linux 构建及校验脚本。
+  - Linux 候选包已在真实 Vulkan 与 Wayland/OpenGL ES 环境完成两次确定性构建、独立校验和 GPU/WSI 验收。
+  - Windows 运行 `scripts/accept_windows_release.ps1`，一次完成真实 Vulkan/D3D11、自动 surface 回读、两次确定性 ZIP 与环境证据。
   - 明确签名、分发、升级和回滚方案。
   - 通过条件：候选包校验通过，发布状态、制品和环境证据已登记到 Gitea Issue #1。
 
