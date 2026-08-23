@@ -230,6 +230,9 @@ impl BoxedWidget {
     pub fn capabilities(&self) -> WidgetCapabilities {
         self.caps
     }
+    pub(crate) fn debug_type_name(&self) -> &'static str {
+        self.with_widget_context(|widget| widget.debug_type_name())
+    }
     pub fn key(&self) -> Option<&str> {
         self.key.as_deref()
     }

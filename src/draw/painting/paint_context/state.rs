@@ -445,4 +445,88 @@ impl<'a> PaintContext<'a> {
             font_size,
         );
     }
+
+    /// 在悬停节点附近绘制受表面边界约束的多行检查器面板。
+    pub fn draw_debug_inspector_lines(
+        &mut self,
+        anchor: Rect,
+        lines: &[String],
+        surface_w: i32,
+        surface_h: i32,
+    ) {
+        if !self.debug.debug_mode || lines.is_empty() || surface_w <= 24 || surface_h <= 24 {
+            return;
+        }
+        const MARGIN: f32 = 6.0;
+        const GAP: f32 = 8.0;
+        const PAD_X: f32 = 8.0;
+        const PAD_Y: f32 = 6.0;
+        const LINE_H: f32 = 14.0;
+        const FONT_SIZE: f32 = 11.0;
+        let available_w = (surface_w as f32 - MARGIN * 2.0).max(1.0);
+        let available_h = (surface_h as f32 - MARGIN * 2.0).max(1.0);
+        let longest = lines
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(1);
+        let panel_w = (longest as f32 * 6.2 + PAD_X * 2.0)
+            .max(220.0)
+            .min(available_w);
+        let max_lines = ((available_h - PAD_Y * 2.0) / LINE_H).floor().max(1.0) as usize;
+        let visible_lines = lines.len().min(max_lines);
+        let panel_h = visible_lines as f32 * LINE_H + PAD_Y * 2.0;
+        let max_x = (surface_w as f32 - panel_w - MARGIN).max(MARGIN);
+        let preferred_x = anchor.x + anchor.w + GAP;
+        let x = if preferred_x + panel_w <= surface_w as f32 - MARGIN {
+            preferred_x
+        } else {
+            anchor.x - panel_w - GAP
+        }
+        .clamp(MARGIN, max_x);
+        let max_y = (surface_h as f32 - panel_h - MARGIN).max(MARGIN);
+        let y = anchor.y.clamp(MARGIN, max_y);
+        self.fill_rect(
+            Rect::new(x, y, panel_w, panel_h),
+            Color::from_rgba(16, 18, 24, 232),
+            None,
+        );
+        self.stroke_rect(
+            Rect::new(x, y, panel_w, panel_h),
+            Color::from_rgba(80, 180, 255, 220),
+            1.0,
+            None,
+        );
+        let max_chars = ((panel_w - PAD_X * 2.0) / 6.2).floor().max(1.0) as usize;
+        for (index, line) in lines.iter().take(visible_lines).enumerate() {
+            let line = truncate_debug_line(line, max_chars);
+            let color = if index == 0 {
+                Color::from_rgba(110, 205, 255, 255)
+            } else {
+                Color::from_rgba(226, 230, 238, 245)
+            };
+            self.draw_text(
+                &line,
+                Point::new(
+                    x + PAD_X,
+                    y + PAD_Y + index as f32 * LINE_H + FONT_SIZE * 0.8,
+                ),
+                color,
+                FONT_SIZE,
+            );
+        }
+    }
+}
+
+// 按 Unicode 字符而非 UTF-8 字节截断面板文本，避免产生非法边界。
+fn truncate_debug_line(line: &str, max_chars: usize) -> String {
+    if line.chars().count() <= max_chars {
+        return line.to_string();
+    }
+    if max_chars <= 1 {
+        return "…".to_string();
+    }
+    let mut truncated = line.chars().take(max_chars - 1).collect::<String>();
+    truncated.push('…');
+    truncated
 }

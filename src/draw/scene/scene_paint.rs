@@ -7,6 +7,114 @@ use crate::draw::Transform;
 use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
 
+/// 调试检查器读取的单个场景节点快照，不持有 UI 对象借用。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HoverInspectorNode {
+    /// 稳定场景节点身份。
+    pub node_id: NodeId,
+    /// Rust 组件动态类型名。
+    pub type_name: &'static str,
+    /// automation id、key 或节点 id 形成的稳定可读身份。
+    pub stable_id: String,
+    /// 布局完成后的节点矩形。
+    pub frame: Rect,
+    /// 当前兄弟绘制层级。
+    pub z_index: i32,
+    /// 当前直接子节点数量。
+    pub child_count: usize,
+    /// 当前是否可见。
+    pub visible: bool,
+    /// 当前是否需要重绘。
+    pub dirty: bool,
+    /// 当前是否为悬停目标。
+    pub hovered: bool,
+    /// 当前是否为按压目标。
+    pub pressed: bool,
+    /// 当前是否持有键盘焦点。
+    pub focused: bool,
+    /// 当前是否禁止交互。
+    pub disabled: bool,
+    /// 当前是否已挂接到树。
+    pub attached: bool,
+    /// 当前是否已完成挂载。
+    pub mounted: bool,
+    /// 当前生命周期是否活动。
+    pub active: bool,
+    /// 当前是否等待离场移除。
+    pub pending_removal: bool,
+}
+
+/// 从场景根到悬停叶节点的只读检查器快照。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HoverInspectorSnapshot {
+    /// 严格按根到叶顺序保存的节点路径。
+    pub nodes: Vec<HoverInspectorNode>,
+}
+
+impl HoverInspectorSnapshot {
+    /// 返回最深命中的叶节点。
+    pub fn leaf(&self) -> Option<&HoverInspectorNode> {
+        self.nodes.last()
+    }
+
+    /// 生成包含路径、状态、生命周期和布局事实的紧凑检查器文本。
+    pub fn inspector_lines(&self, max_path_nodes: usize) -> Vec<String> {
+        let max_path_nodes = max_path_nodes.max(1);
+        let total = self.nodes.len();
+        let first = total.saturating_sub(max_path_nodes);
+        let mut lines = vec![format!("UIX Inspector depth={total} flags=HPFDV*|AMXR")];
+        if first > 0 {
+            lines.push(format!("... {first} ancestors omitted"));
+        }
+        for (index, node) in self.nodes.iter().enumerate().skip(first) {
+            let type_name = node.type_name.rsplit("::").next().unwrap_or(node.type_name);
+            let type_name = compact_inspector_text(type_name, 18);
+            let stable_id = compact_inspector_text(&node.stable_id, 22);
+            let flags = format!(
+                "{}{}{}{}{}{}|{}{}{}{}",
+                inspector_flag(node.hovered, 'H'),
+                inspector_flag(node.pressed, 'P'),
+                inspector_flag(node.focused, 'F'),
+                inspector_flag(node.disabled, 'D'),
+                inspector_flag(node.visible, 'V'),
+                inspector_flag(node.dirty, '*'),
+                inspector_flag(node.attached, 'A'),
+                inspector_flag(node.mounted, 'M'),
+                inspector_flag(node.active, 'X'),
+                inspector_flag(node.pending_removal, 'R'),
+            );
+            lines.push(format!(
+                "{index:02} {type_name} {stable_id} [{flags}] ({:.0},{:.0} {:.0}x{:.0}) z{} c{}",
+                node.frame.x,
+                node.frame.y,
+                node.frame.w,
+                node.frame.h,
+                node.z_index,
+                node.child_count,
+            ));
+        }
+        lines
+    }
+}
+
+// 把布尔状态编码为检查器固定位置字符。
+fn inspector_flag(enabled: bool, marker: char) -> char {
+    if enabled { marker } else { '-' }
+}
+
+// 限制动态类型名和稳定标识长度，保留行后部的状态与几何事实。
+fn compact_inspector_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut text = value
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>();
+    text.push('…');
+    text
+}
+
 /// Picture cache eligibility declared by widget metadata and refined by runtime signals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PicturePolicy {
@@ -165,6 +273,12 @@ pub trait ScenePaint {
     fn hit_test(&self, pos: Point) -> Option<NodeId>;
     /// 返回节点的直接父节点；根节点和未知节点返回空值。
     fn parent(&self, id: NodeId) -> Option<NodeId>;
+    /// 返回从根到命中叶节点的调试检查器快照。
+    fn hover_inspector(&self, leaf: NodeId) -> Option<HoverInspectorSnapshot> {
+        // 非 UI 场景不必实现组件检查器。
+        let _ = leaf;
+        None
+    }
     /// 在给定 frame 与绘制上下文中下发节点绘制回调。
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>);
 }
