@@ -666,8 +666,8 @@ pub(crate) use expression_ast::*;
 // 向 View 生成器暴露表达式与事件处理器生成入口。
 pub(crate) use expression_codegen::{
     expression_uses_event, generate_expression, generate_expression_without_source_marker,
-    generate_handler_expression, mark_source_tokens, with_source_marker_id, with_source_markers,
-    with_widget_source_marker,
+    generate_handler_expression, mark_source_tokens, with_record_source_marker,
+    with_source_marker_id, with_source_markers, with_widget_source_marker,
 };
 
 // 编译器内部用该属性把导入后的元素绑定到稳定 SourceId，写出前必须消费。

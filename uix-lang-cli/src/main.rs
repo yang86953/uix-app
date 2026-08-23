@@ -222,7 +222,7 @@ fn print_diagnostic(error: &CompilerDiagnostic, json_output: bool) -> Result<(),
     if json_output {
         println!(
             "{}",
-            serde_json::json!({"code":error.code,"phase":error.phase.as_str(),"path":error.source_name,"source_id":error.source_id.value(),"line":error.line,"column":error.column,"message":error.message,"suggestion":error.suggestion})
+            serde_json::json!({"code":error.code,"phase":error.phase.as_str(),"path":error.source_name,"source_id":error.source_id.value(),"start":error.start,"end":error.end,"line":error.line,"column":error.column,"message":error.message,"suggestion":error.suggestion})
         );
     } else {
         eprintln!("{}", diagnostic_text(error));
@@ -231,12 +231,14 @@ fn print_diagnostic(error: &CompilerDiagnostic, json_output: bool) -> Result<(),
 }
 fn diagnostic_text(error: &CompilerDiagnostic) -> String {
     format!(
-        "{} {} {}:{}:{} {}\n建议: {}",
+        "{} {} {}:{}:{} [bytes {}..{}] {}\n建议: {}",
         error.code,
         error.phase.as_str(),
         error.source_name,
         error.line,
         error.column,
+        error.start,
+        error.end,
         error.message,
         error.suggestion
     )

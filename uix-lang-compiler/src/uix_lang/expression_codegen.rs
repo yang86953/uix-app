@@ -6,6 +6,8 @@ use proc_macro2::{Ident, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
+// 引入 Compiler System 的稳定源码身份。
+use crate::source_graph::SourceId;
 // 引入独立数据构造器生成入口。
 use super::data_constructor_codegen::generate_data_constructor;
 // 引入表达式语法树、运算符与结构化诊断。
@@ -23,16 +25,18 @@ thread_local! {
 #[derive(Default)]
 struct SourceMarkerContext {
     enabled: bool,
-    current_source: Option<u64>,
-    widget_sources: BTreeMap<String, u64>,
+    current_source: Option<SourceId>,
+    widget_sources: BTreeMap<String, SourceId>,
+    record_sources: BTreeMap<String, SourceId>,
 }
 
 // 在一次宏入口代码生成期间启用来源标记。
 pub(crate) fn with_source_markers<T>(
-    root_source: u64,
-    widget_sources: BTreeMap<String, u64>,
-    operation: impl FnOnce() -> T,
-) -> T {
+    root_source: SourceId,
+    widget_sources: BTreeMap<String, SourceId>,
+    record_sources: BTreeMap<String, SourceId>,
+    operation: impl FnOnce() -> Result<T, Diagnostic>,
+) -> Result<T, Diagnostic> {
     // 在当前过程宏线程内切换标记状态。
     SOURCE_MARKERS.with(|context| {
         // 保存嵌套调用前的完整上下文。
@@ -40,18 +44,22 @@ pub(crate) fn with_source_markers<T>(
             enabled: true,
             current_source: Some(root_source),
             widget_sources,
+            record_sources,
         });
         // 执行完整文档代码生成。
         let result = operation();
         // 恢复调用前状态，避免污染后续纯 codegen。
         context.replace(previous);
         // 返回原始生成结果。
-        result
+        result.map_err(|diagnostic| diagnostic.at_source_if_missing(Some(root_source)))
     })
 }
 
 // 在元素或组件模板生成期间临时切换到精确源码身份。
-pub(crate) fn with_source_marker_id<T>(source_id: Option<u64>, operation: impl FnOnce() -> T) -> T {
+pub(crate) fn with_source_marker_id<T>(
+    source_id: Option<SourceId>,
+    operation: impl FnOnce() -> T,
+) -> T {
     SOURCE_MARKERS.with(|context| {
         let previous = {
             let mut context = context.borrow_mut();
@@ -68,12 +76,29 @@ pub(crate) fn with_source_marker_id<T>(source_id: Option<u64>, operation: impl F
 }
 
 // 按类型化声明登记切换到当前自定义组件模板来源。
-pub(crate) fn with_widget_source_marker<T>(name: &str, operation: impl FnOnce() -> T) -> T {
+pub(crate) fn with_widget_source_marker<T>(
+    name: &str,
+    operation: impl FnOnce() -> Result<T, Diagnostic>,
+) -> Result<T, Diagnostic> {
     let source_id = SOURCE_MARKERS.with(|context| {
         let context = context.borrow();
         context.widget_sources.get(name).copied()
     });
     with_source_marker_id(source_id, operation)
+        .map_err(|diagnostic| diagnostic.at_source_if_missing(source_id))
+}
+
+// 按类型化声明登记切换到当前 Record 的真实来源。
+pub(crate) fn with_record_source_marker<T>(
+    name: &str,
+    operation: impl FnOnce() -> Result<T, Diagnostic>,
+) -> Result<T, Diagnostic> {
+    let source_id = SOURCE_MARKERS.with(|context| {
+        let context = context.borrow();
+        context.record_sources.get(name).copied()
+    });
+    with_source_marker_id(source_id, operation)
+        .map_err(|diagnostic| diagnostic.at_source_if_missing(source_id))
 }
 
 // 把已验证表达式转换为 Rust 表达式令牌。
@@ -222,8 +247,10 @@ fn mark_source_expression(generated: TokenStream, span: SourceSpan) -> TokenStre
         || format!("__uix_source_marker_{}_{}", span.line, span.column),
         |source_id| {
             format!(
-                "__uix_source_marker_{source_id:016x}_{}_{}",
-                span.line, span.column
+                "__uix_source_marker_{:016x}_{}_{}",
+                source_id.value(),
+                span.line,
+                span.column
             )
         },
     );
