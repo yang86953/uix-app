@@ -1,7 +1,11 @@
 // 复用被测焦点陷阱与纯顺序 helper。
 use super::{FocusTrap, next_focus_in_order};
+// 引入真实声明适配器与布局组件，覆盖透明包装节点的正常流尺寸。
+use crate::ui::adapter::ViewAdapter;
 // 引入稳定组件身份集合。
-use crate::ui::WidgetId;
+use crate::ui::{Rect, ViewNode, WidgetId};
+// 使用真实按钮作为可聚焦内容。
+use crate::ui::widgets::{Button, Container};
 // 引入焦点陷阱公开更新接口所需集合。
 use std::collections::HashSet;
 
@@ -37,4 +41,30 @@ fn inactive_trap_does_not_select_focus() {
     trap.update_focusable(focusable);
     // 禁用作用域不得返回任何下一焦点。
     assert_eq!(trap.next_focus(None, true), None);
+}
+
+// 验证透明焦点作用域由真实子按钮撑开，避免内容越过父面板底部。
+#[test]
+fn focus_trap_uses_child_natural_size_in_parent_flow() {
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Container::new().size(240.0, 100.0),
+        vec![ViewNode::new(
+            FocusTrap::new(),
+            vec![ViewNode::leaf(Button::new("确认"))],
+        )],
+    ));
+    let root = tree.root_id().expect("根容器必须存在");
+    let trap = tree.get(root).expect("根容器必须可读").children()[0];
+    let button = tree.get(trap).expect("焦点作用域必须可读").children()[0];
+    tree.get_mut(root)
+        .expect("根容器必须可写")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 100.0));
+
+    tree.layout();
+
+    let trap_frame = tree.get(trap).expect("焦点作用域必须存在").frame();
+    let button_frame = tree.get(button).expect("按钮必须存在").frame();
+    assert!(trap_frame.h > 0.0);
+    assert!(button_frame.h > 0.0);
+    assert!(button_frame.y + button_frame.h <= trap_frame.y + trap_frame.h);
 }

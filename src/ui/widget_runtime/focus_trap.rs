@@ -1,5 +1,6 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
 use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
 use crate::widget;
 use std::collections::HashSet;
@@ -42,6 +43,28 @@ widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(0.0, 0.0))
+    }
+
+    // 焦点作用域是透明包装节点，必须由直接子树的自然尺寸撑开正常流占位。
+    measure_from_children => (&self, constraints: Constraints, children: &[WidgetId], tree: &WidgetTree)
+        -> Option<Size>
+    {
+        // 多个直接子节点按现有重叠布局语义取最大外框，而不是错误累加高度。
+        let measured = children
+            .iter()
+            .copied()
+            .map(|child_id| {
+                child_from_tree_with_natural_constraints(
+                    child_id,
+                    tree,
+                    Constraints::unconstrained(),
+                )
+                .measured_size
+            })
+            .fold(Size::zero(), |size, child| {
+                Size::new(size.w.max(child.w), size.h.max(child.h))
+            });
+        Some(constraints.clamp(measured))
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
