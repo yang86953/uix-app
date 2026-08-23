@@ -10,13 +10,34 @@ use super::{
 };
 
 // 把散点标记半径限制在绘图区可完整容纳的范围内。
+fn bubble_radius_limit(plot: Rect) -> f32 {
+    // 最多使用短边五分之一并封顶 48，防止单个值吃掉整个坐标区。
+    (plot.w.min(plot.h).max(0.0) * 0.2).min(48.0)
+}
+
+// 全系列等比缩小到绘图区容量，避免不同原始大小同时撞上固定上限。
+fn bubble_radius_fit_scale(max_raw: f32, plot: Rect) -> f32 {
+    let max_raw = finite_or_zero(max_raw).max(0.0);
+    let limit = bubble_radius_limit(plot);
+    if max_raw > limit && max_raw > 0.0 {
+        limit / max_raw
+    } else {
+        1.0
+    }
+}
+
 fn scatter_marker_radius(raw: f32, bubble: bool, plot: Rect) -> f32 {
     let radius = if bubble {
-        finite_or_zero(raw).clamp(2.0, 24.0)
+        finite_or_zero(raw).max(0.0).max(2.0)
     } else {
         finite_or_zero(raw).clamp(1.0, 12.0)
     };
-    radius.min((plot.w.min(plot.h).max(0.0) * 0.5).max(0.0))
+    let limit = if bubble {
+        bubble_radius_limit(plot)
+    } else {
+        plot.w.min(plot.h).max(0.0) * 0.5
+    };
+    radius.min(limit.max(0.0))
 }
 
 // 数据坐标使用标记半径内缩，极值点仍落在轴端但不会被组件裁剪。
@@ -30,6 +51,27 @@ fn inset_scatter_plot(plot: Rect, inset: f32) -> Rect {
         plot.y + inset,
         (plot.w - inset * 2.0).max(0.0),
         (plot.h - inset * 2.0).max(0.0),
+    )
+}
+
+// 从笛卡尔图外框扣除横纵轴标题槽，返回唯一的数据绘制区域。
+fn cartesian_data_plot(plot: Rect, has_x_title: bool, has_y_title: bool) -> Rect {
+    const AXIS_LABEL_HEIGHT: f32 = 16.0;
+    let top = if has_y_title {
+        AXIS_LABEL_HEIGHT.min(plot.h.max(0.0))
+    } else {
+        0.0
+    };
+    let bottom = if has_x_title {
+        AXIS_LABEL_HEIGHT.min((plot.h - top).max(0.0))
+    } else {
+        0.0
+    };
+    Rect::new(
+        plot.x,
+        plot.y + top,
+        plot.w,
+        (plot.h - top - bottom).max(0.0),
     )
 }
 
@@ -196,7 +238,14 @@ impl ChartPlaceholder {
     }
 
     /// 坐标轴绘制：x/y 轴线、轴标题与参考线。
-    pub(crate) fn paint_axes(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_axes(&self, ctx: &mut PaintContext, plot: Rect) -> Rect {
+        let outer_plot = plot;
+        // 轴标题拥有独立的上下布局槽，不再与数据标记或组件裁剪边界重叠。
+        let plot = cartesian_data_plot(
+            plot,
+            !self.x_axis.is_empty(),
+            !self.y_axis.is_empty() || !self.y_axis_right.is_empty(),
+        );
         let axis = ctx.tokens().color_border();
         ctx.fill_rect(
             Rect::new(plot.x, plot.y + plot.h - 1.0, plot.w, 1.0),
@@ -217,7 +266,7 @@ impl ChartPlaceholder {
         if !self.y_axis.is_empty() {
             ctx.draw_text(
                 &self.y_axis,
-                Point::new(plot.x, plot.y - 2.0),
+                Point::new(outer_plot.x, outer_plot.y),
                 ctx.tokens().color_text_secondary(),
                 10.0,
             );
@@ -245,11 +294,12 @@ impl ChartPlaceholder {
                 ctx.draw_text(label, Point::new(plot.x + 4.0, y - 2.0), color, 9.0);
             }
         }
+        plot
     }
 
     /// 柱状图绘制：支持分组/堆叠、横向/纵向，以及标签。
     pub(crate) fn paint_bars(&self, ctx: &mut PaintContext, plot: Rect) {
-        self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot);
         // 汇集载荷中的柱数据序列。
         let series: Vec<&[BarData]> = match &self.payload {
             ChartPayload::Bars(data) => vec![data.as_slice()],
@@ -389,7 +439,7 @@ impl ChartPlaceholder {
 
     /// 折线/面积图绘制：支持堆叠、阶梯、平滑与面积填充。
     pub(crate) fn paint_lines(&self, ctx: &mut PaintContext, plot: Rect) {
-        self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot);
         // 汇集载荷中的线数据序列。
         let series: Vec<Vec<LineData>> = match &self.payload {
             ChartPayload::Lines(data) => vec![data.clone()],
@@ -491,7 +541,7 @@ impl ChartPlaceholder {
 
     /// 散点/气泡图绘制：按数据极值归一化坐标，支持多种点样式。
     pub(crate) fn paint_scatter(&self, ctx: &mut PaintContext, plot: Rect) {
-        self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot);
         // 汇集 (x, y, 半径, 是否气泡) 元组序列。
         let series: Vec<Vec<(f32, f32, f32, bool)>> = match &self.payload {
             ChartPayload::Scatter(data) => vec![
@@ -543,10 +593,26 @@ impl ChartPlaceholder {
             .fold(f32::NEG_INFINITY, f32::max);
         let dx = (max_x - min_x).max(1.0);
         let dy = (max_y - min_y).max(1.0);
+        // 先按全系列最大值计算统一缩放，保留第三维大小之间的相对差异。
+        let bubble_fit_scale = bubble_radius_fit_scale(
+            points
+                .iter()
+                .filter(|point| point.3)
+                .map(|point| finite_or_zero(point.2).max(0.0))
+                .fold(0.0_f32, f32::max),
+            plot,
+        );
         // 坐标极值需要为最大标记预留完整半径，避免气泡贴边时只剩半圆。
         let marker_inset = points
             .iter()
-            .map(|point| scatter_marker_radius(point.2, point.3, plot))
+            .map(|point| {
+                let raw = if point.3 {
+                    point.2 * bubble_fit_scale
+                } else {
+                    point.2
+                };
+                scatter_marker_radius(raw, point.3, plot)
+            })
             .fold(0.0f32, f32::max);
         let data_plot = inset_scatter_plot(plot, marker_inset);
         for (series_index, data) in series.iter().enumerate() {
@@ -559,7 +625,12 @@ impl ChartPlaceholder {
                 let px = data_plot.x + (x - min_x) / dx * data_plot.w;
                 let py = data_plot.y + data_plot.h - (y - min_y) / dy * data_plot.h;
                 // 半径与内缩计算共享同一上限，保证最终像素全部留在绘图区内。
-                let radius = scatter_marker_radius(*radius, *bubbles, plot);
+                let raw_radius = if *bubbles {
+                    *radius * bubble_fit_scale
+                } else {
+                    *radius
+                };
+                let radius = scatter_marker_radius(raw_radius, *bubbles, plot);
                 match self.point_style {
                     PointStyle::Circle => ctx.fill_circle(px, py, radius, point_color),
                     PointStyle::Diamond => {
@@ -724,11 +795,33 @@ mod tests {
     #[test]
     fn bubble_plot_inset_keeps_marker_inside_frame() {
         let plot = Rect::new(10.0, 20.0, 100.0, 80.0);
-        let radius = scatter_marker_radius(80.0, true, plot);
-        assert_eq!(radius, 24.0);
+        let fit = bubble_radius_fit_scale(80.0, plot);
+        let radius = scatter_marker_radius(80.0 * fit, true, plot);
+        assert_eq!(radius, 16.0);
         assert_eq!(
             inset_scatter_plot(plot, radius),
-            Rect::new(34.0, 44.0, 52.0, 32.0)
+            Rect::new(26.0, 36.0, 68.0, 48.0)
+        );
+    }
+
+    // 等比适配不能把不同大小的气泡压成同一半径。
+    #[test]
+    fn bubble_fit_preserves_relative_sizes() {
+        let plot = Rect::new(0.0, 0.0, 420.0, 240.0);
+        let fit = bubble_radius_fit_scale(64.0, plot);
+        let large = scatter_marker_radius(64.0 * fit, true, plot);
+        let small = scatter_marker_radius(40.0 * fit, true, plot);
+        assert_eq!(large, 48.0);
+        assert_eq!(small, 30.0);
+    }
+
+    // 坐标轴标题必须从数据区上下边界各取得独立槽位。
+    #[test]
+    fn cartesian_axis_titles_reserve_data_space() {
+        let outer = Rect::new(10.0, 20.0, 420.0, 200.0);
+        assert_eq!(
+            cartesian_data_plot(outer, true, true),
+            Rect::new(10.0, 36.0, 420.0, 168.0)
         );
     }
 }

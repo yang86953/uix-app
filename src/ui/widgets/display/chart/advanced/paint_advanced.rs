@@ -264,7 +264,7 @@ impl ChartPlaceholder {
         if data.is_empty() {
             return;
         }
-        self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot);
         // 逐个计算段的起止值并跟踪累计值与全局范围。
         let mut ranges = Vec::with_capacity(data.len());
         let mut cumulative = 0.0;
@@ -369,13 +369,13 @@ impl ChartPlaceholder {
 
     /// 组合图绘制：柱 + 线/面积按左右轴共存，虚线/面积样式可选。
     pub(crate) fn paint_combo(&self, ctx: &mut PaintContext, plot: Rect) {
-        self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot);
         // 右侧轴标题。
         if !self.y_axis_right.is_empty() {
             let size = ctx.measure_text(&self.y_axis_right, 10.0);
             ctx.draw_text(
                 &self.y_axis_right,
-                Point::new(plot.x + plot.w - size.w, plot.y - 2.0),
+                Point::new(plot.x + plot.w - size.w, plot.y - 16.0),
                 ctx.tokens().color_text_secondary(),
                 10.0,
             );

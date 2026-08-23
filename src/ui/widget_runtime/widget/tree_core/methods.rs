@@ -545,6 +545,30 @@ impl WidgetTree {
         let old_visual_bounds = publish_parent_damage
             .then(|| self.visual_subtree_bounds(id))
             .flatten();
+        // 普通视觉边界会跳过 overlay；移除根必须在所有者失效前保存旧浮层像素。
+        let (removed_widget_overlay, old_overlay_bounds) = if publish_parent_damage {
+            let mut removed = false;
+            let mut bounds = Vec::new();
+            for entry in self
+                .overlay_stack
+                .iter()
+                .filter(|entry| !entry.is_managed())
+            {
+                if !self.is_descendant_of(entry.owner(), id) {
+                    continue;
+                }
+                removed = true;
+                if let Some(rect) = entry
+                    .bounds_rect()
+                    .filter(|rect| rect.w > 0.0 && rect.h > 0.0)
+                {
+                    bounds.push(rect);
+                }
+            }
+            (removed, bounds)
+        } else {
+            (false, Vec::new())
+        };
 
         let Some(slot) = self.node_slot_for(id) else {
             return;
@@ -603,6 +627,15 @@ impl WidgetTree {
                 if let Some(pid) = parent_id {
                     self.push_paint_invalidation(pid, Some(rect));
                 }
+            }
+            if let Some(pid) = parent_id {
+                for rect in old_overlay_bounds.iter().copied() {
+                    self.push_paint_invalidation(pid, Some(rect));
+                }
+            }
+            if removed_widget_overlay {
+                // 浮层成员已经离开合成拓扑，强制重建目标以清除保留缓冲中的旧像素。
+                self.mark_full_frame_composite();
             }
             if let Some(pid) = parent_id {
                 self.push_layout_invalidation(pid);

@@ -13,6 +13,19 @@ use super::advanced::{
     TooltipDatum, TooltipTrigger,
 };
 
+// 将环图内部标签限制在内外圆之间；窄环无法容纳完整文字时返回空值。
+fn safe_donut_label_radius(
+    preferred: f32,
+    hole_radius: f32,
+    outer_radius: f32,
+    radial_half_extent: f32,
+) -> Option<f32> {
+    const LABEL_GAP: f32 = 2.0;
+    let min_radius = hole_radius + radial_half_extent + LABEL_GAP;
+    let max_radius = outer_radius - radial_half_extent - LABEL_GAP;
+    (min_radius <= max_radius).then(|| preferred.clamp(min_radius, max_radius))
+}
+
 #[derive(Debug, Clone, PartialEq)]
 /// 饼图中的单个分类扇区数据。
 pub struct PieData {
@@ -285,13 +298,28 @@ widget! {
                     String::new()
                 };
                 if !label.is_empty() {
+                    let lsz = ctx.measure_text(&label, font_size);
                     let label_r = match self.label_position {
+                        LabelPosition::Inside if self.hole_radius > 0.0 => {
+                            // 按当前角度投影文字半外框，保证整个标签不与白色内环相交。
+                            let radial_half_extent = ma.cos().abs() * lsz.w * 0.5
+                                + ma.sin().abs() * font_size * 0.8;
+                            let Some(label_r) = safe_donut_label_radius(
+                                centroid_r,
+                                chart_r * self.hole_radius,
+                                radius,
+                                radial_half_extent,
+                            ) else {
+                                sa = ea;
+                                continue;
+                            };
+                            label_r
+                        }
                         LabelPosition::Inside => centroid_r,
                         LabelPosition::Outside | LabelPosition::Right => radius + 10.0,
                     };
                     let lx = cx + label_r * ma.cos();
                     let ly = cy + label_r * ma.sin();
-                    let lsz = ctx.measure_text(&label, font_size);
                     let text_rect = Rect::new(lx - lsz.w * 0.5, ly - font_size * 0.8, lsz.w, font_size * 1.6);
                     let text_y = ctx.visual_center_y(text_rect, font_size);
                     ctx.draw_text(&label, Point::new(lx - lsz.w * 0.5, text_y), ctx.tokens().color_white(), font_size);
@@ -346,6 +374,26 @@ widget! {
             }
         }
         ctx.pop_clip();
+    }
+}
+
+#[cfg(test)]
+mod label_geometry_tests {
+    use super::safe_donut_label_radius;
+
+    // 环图标签必须完整位于白色内环与扇区外缘之间。
+    #[test]
+    fn donut_label_radius_avoids_hole_and_outer_edge() {
+        let radius = safe_donut_label_radius(40.0, 44.0, 80.0, 10.0).expect("当前环宽足以容纳标签");
+        assert_eq!(radius, 56.0);
+        assert!(radius - 10.0 > 44.0);
+        assert!(radius + 10.0 < 80.0);
+    }
+
+    // 环宽不足时不得把标签画进白色内环。
+    #[test]
+    fn narrow_donut_skips_unsafe_inside_label() {
+        assert_eq!(safe_donut_label_radius(48.0, 44.0, 54.0, 6.0), None);
     }
 }
 
