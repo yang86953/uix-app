@@ -227,6 +227,10 @@ macro_rules! __widget_build_method {
         // 保留声明中的参数与方法体，让组件自行同步派生运行态。
         fn on_children_changed($($p)*) $body
     };
+    (on_child_visibility_changed; ($($p:tt)*) $body:block) => {
+        // 可见子树变化会使自然尺寸缓存失效，由组件清除自身派生状态。
+        fn on_child_visibility_changed($($p)*) $body
+    };
     (build_view_children; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn as_view_children(
             &self,

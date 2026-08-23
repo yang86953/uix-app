@@ -94,6 +94,11 @@ widget! {
         }
     }
 
+    on_child_visibility_changed => (&mut self) {
+        // 条件子项变化后必须从当前可见成员重新求自然尺寸。
+        self.cached_content_size.set(Size::zero());
+    }
+
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {
         // Space itself is invisible; children are rendered by the tree.
     }

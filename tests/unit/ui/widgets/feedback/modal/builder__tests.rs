@@ -11,6 +11,21 @@
         modal
     }
 
+    // 连续缩窗时对话框必须保持在当前表面安全边距内。
+    #[test]
+    fn dialog_geometry_is_responsive_to_small_surface() {
+        let modal = Modal::new("")
+            .visible(true)
+            .overlay(true)
+            .size(520.0, 300.0);
+        let dialog =
+            modal.dialog_rect_for_surface(crate::core::Rect::new(0.0, 0.0, 320.0, 180.0));
+        assert_eq!(
+            dialog,
+            crate::core::Rect::new(16.0, 16.0, 288.0, 148.0)
+        );
+    }
+
     // 验证声明式 Modal 的 blur 请求经过真实布局进入唯一 OverlayStack。
     #[cfg(feature = "test-harness")]
     #[test]

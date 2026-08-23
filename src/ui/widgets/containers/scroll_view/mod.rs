@@ -110,20 +110,20 @@ widget! {
                     && self.max_scroll_y() > 0.0
                     && self
                         .scrollbar_v
-                        .hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y())
+                        .hit_test_thumb(frame, *pos, self.effective_scroll_y(), self.max_scroll_y())
                 {
                     self.scrollbar_v
-                        .begin_drag(frame, *pos, self.scroll_y, self.max_scroll_y());
+                        .begin_drag(frame, *pos, self.effective_scroll_y(), self.max_scroll_y());
                     return EventResult::Handled;
                 }
                 if self.direction.can_scroll_x()
                     && self.max_scroll_x() > 0.0
                     && self
                         .scrollbar_h
-                        .hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x())
+                        .hit_test_thumb(frame, *pos, self.effective_scroll_x(), self.max_scroll_x())
                 {
                     self.scrollbar_h
-                        .begin_drag(frame, *pos, self.scroll_x, self.max_scroll_x());
+                        .begin_drag(frame, *pos, self.effective_scroll_x(), self.max_scroll_x());
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -136,10 +136,10 @@ widget! {
                     };
                     let max_y = self.max_scroll_y();
                     if max_y > 0.0 {
-                        let old_y = self.scroll_y;
+                        let old_y = self.effective_scroll_y();
                         self.scroll_y = self
                             .scrollbar_v
-                            .scroll_from_drag(frame, pos.y, self.scroll_y, max_y);
+                            .scroll_from_drag(frame, pos.y, old_y, max_y);
                         self.scroll_delta_strip.set((0.0, self.scroll_y - old_y));
                         self.write_bound_offset();
                     }
@@ -153,10 +153,10 @@ widget! {
                     };
                     let max_x = self.max_scroll_x();
                     if max_x > 0.0 {
-                        let old_x = self.scroll_x;
+                        let old_x = self.effective_scroll_x();
                         self.scroll_x = self
                             .scrollbar_h
-                            .scroll_from_drag(frame, pos.x, self.scroll_x, max_x);
+                            .scroll_from_drag(frame, pos.x, old_x, max_x);
                         self.scroll_delta_strip.set((self.scroll_x - old_x, 0.0));
                         self.write_bound_offset();
                     }
@@ -173,12 +173,12 @@ widget! {
                         if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
                             self.scrollbar_v.hover = self
                                 .scrollbar_v
-                                .hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y());
+                                .hit_test_thumb(frame, *pos, self.effective_scroll_y(), self.max_scroll_y());
                         }
                         if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
                             self.scrollbar_h.hover = self
                                 .scrollbar_h
-                                .hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x());
+                                .hit_test_thumb(frame, *pos, self.effective_scroll_x(), self.max_scroll_x());
                         }
                         if old_hover_v != self.scrollbar_v.hover
                             || old_hover_h != self.scrollbar_h.hover
@@ -225,9 +225,11 @@ widget! {
                     KeyCode::PageDown if self.direction.can_scroll_y() => (0.0, page_y),
                     KeyCode::PageUp if self.direction.can_scroll_y() => (0.0, -page_y),
                     KeyCode::End if self.direction.can_scroll_y() => {
-                        (0.0, self.max_scroll_y() - self.scroll_y)
+                        (0.0, self.max_scroll_y() - self.effective_scroll_y())
                     }
-                    KeyCode::Home if self.direction.can_scroll_y() => (0.0, -self.scroll_y),
+                    KeyCode::Home if self.direction.can_scroll_y() => {
+                        (0.0, -self.effective_scroll_y())
+                    }
                     KeyCode::Right if self.direction.can_scroll_x() => (line_x, 0.0),
                     KeyCode::Left if self.direction.can_scroll_x() => (-line_x, 0.0),
                     _ => return EventResult::NotHandled,
@@ -254,7 +256,7 @@ widget! {
     }
 
     viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
-        Some((self.scroll_x, self.scroll_y))
+        Some((self.effective_scroll_x(), self.effective_scroll_y()))
     }
 
     scroll_descendant_by => (&mut self, dx: f32, dy: f32) -> bool {
@@ -272,6 +274,10 @@ widget! {
         frame
     }
 
+    // 滚动条属于覆盖层，必须在内容子树及裁剪恢复后绘制。
+    paint_after_children => (&self) -> bool {
+        true
+    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.capture_bound_offset_dependency();
@@ -287,11 +293,11 @@ widget! {
                 // 仅在需要滚动时绘制 gutter 内轨道/滑块（与 layout 预留一致）。
                 if self.needs_v_scrollbar(frame, &[]) {
                     self.scrollbar_v
-                        .render(frame, ctx, self.scroll_y, self.max_scroll_y());
+                        .render(frame, ctx, self.effective_scroll_y(), self.max_scroll_y());
                 }
                 if self.needs_h_scrollbar(frame, &[]) {
                     self.scrollbar_h
-                        .render(frame, ctx, self.scroll_x, self.max_scroll_x());
+                        .render(frame, ctx, self.effective_scroll_x(), self.max_scroll_x());
                 }
             }
         }
@@ -324,11 +330,15 @@ widget! {
             finite_non_negative(frame.w),
             finite_non_negative(frame.h),
         );
+        // 布局尺寸是当前视口真相；最大偏移不能继续使用上一帧窗口尺寸。
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         // 预分配最终子项位置列表。
         let mut result = Vec::new();
         // 空视口直接记录有限的外框尺寸。
         if children.is_empty() {
             self.content_bounds.set(Some(Size::new(frame.w, frame.h)));
+            self.write_bound_offset();
             return result;
         }
 
@@ -468,6 +478,8 @@ widget! {
         };
         // 缓存完整滚动坐标范围，供事件、滑块和下一轮布局共同使用。
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
+        // 内容缩短或视口变大时，受控状态必须同步到新的合法末端。
+        self.write_bound_offset();
         // 返回已经与输入标识一一对应的子 frame。
         result
     }
@@ -723,34 +735,34 @@ impl ScrollView {
 
     /// 返回当前非负水平滚动位置。
     pub fn scroll_x(&self) -> f32 {
-        self.scroll_x
+        self.effective_scroll_x()
     }
 
     /// 返回当前非负垂直滚动位置。
     pub fn scroll_y(&self) -> f32 {
-        self.scroll_y
+        self.effective_scroll_y()
     }
 
     /// 设置非负水平滚动位置并写回已绑定的外部状态。
     pub fn set_scroll_x(&mut self, x: f32) {
-        let old_x = self.scroll_x;
+        let old_x = self.effective_scroll_x();
         self.scroll_x = Self::normalize_axis(x);
-        self.push_scroll_delta(self.scroll_x - old_x, 0.0);
+        self.push_scroll_delta(self.effective_scroll_x() - old_x, 0.0);
         self.write_bound_offset();
     }
 
     /// 设置非负垂直滚动位置并写回已绑定的外部状态。
     pub fn set_scroll_y(&mut self, y: f32) {
-        let old_y = self.scroll_y;
+        let old_y = self.effective_scroll_y();
         self.scroll_y = Self::normalize_axis(y);
-        self.push_scroll_delta(0.0, self.scroll_y - old_y);
+        self.push_scroll_delta(0.0, self.effective_scroll_y() - old_y);
         self.write_bound_offset();
     }
 
     /// 同时设置滚动位置，并在已有布局范围内夹到内容末端。
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
-        let old_x = self.scroll_x;
-        let old_y = self.scroll_y;
+        let old_x = self.effective_scroll_x();
+        let old_y = self.effective_scroll_y();
         self.scroll_x = Self::normalize_axis(x).min(self.max_scroll_x());
         self.scroll_y = Self::normalize_axis(y).min(self.max_scroll_y());
         self.push_scroll_delta(self.scroll_x - old_x, self.scroll_y - old_y);
@@ -807,10 +819,11 @@ impl ScrollView {
     }
 
     fn scroll_by(&mut self, dx: f32, dy: f32) -> bool {
-        let old_x = self.scroll_x;
-        let old_y = self.scroll_y;
-        self.scroll_x = (self.scroll_x + dx).clamp(0.0, self.max_scroll_x());
-        self.scroll_y = (self.scroll_y + dy).clamp(0.0, self.max_scroll_y());
+        // 内容收缩后先从当前有效位置继续，不能让旧偏移保留空白尾部。
+        let old_x = self.effective_scroll_x();
+        let old_y = self.effective_scroll_y();
+        self.scroll_x = (old_x + dx).clamp(0.0, self.max_scroll_x());
+        self.scroll_y = (old_y + dy).clamp(0.0, self.max_scroll_y());
         let actual_dx = self.scroll_x - old_x;
         let actual_dy = self.scroll_y - old_y;
         self.push_scroll_delta(actual_dx, actual_dy);
@@ -824,7 +837,7 @@ impl ScrollView {
         let Some(state) = self.scroll_binding.as_ref() else {
             return;
         };
-        let offset = Point::new(self.scroll_x, self.scroll_y);
+        let offset = Point::new(self.effective_scroll_x(), self.effective_scroll_y());
         if state.get() != offset {
             state.set(offset);
         }
@@ -855,6 +868,16 @@ impl ScrollView {
         } else {
             0.0
         }
+    }
+
+    // 读取已经按当前内容范围夹取的水平位置，避免内容缩短后暴露空白尾部。
+    fn effective_scroll_x(&self) -> f32 {
+        Self::normalize_axis(self.scroll_x).min(self.max_scroll_x())
+    }
+
+    // 读取已经按当前内容范围夹取的垂直位置，供绘制、命中与状态同步共用。
+    fn effective_scroll_y(&self) -> f32 {
+        Self::normalize_axis(self.scroll_y).min(self.max_scroll_y())
     }
 }
 

@@ -56,6 +56,8 @@ pub(crate) struct WindowBinding {
     pub(crate) state: Rc<RefCell<WindowState>>,
     pub(crate) ime: RefCell<WindowsImeState>,
     pub(crate) frame_pacer: SharedWindowsFramePacerState,
+    // 自定义边框缩放必须留在正常消息泵，避免 Win32 模态循环冻结响应式布局。
+    pub(crate) resize_drag: RefCell<Option<super::window_interaction::WindowsResizeDrag>>,
 }
 
 // Windows 平台聚合只由 crate 内部工厂创建。
@@ -290,6 +292,7 @@ impl IWindowManager for WindowsPlatform {
                 state: Rc::clone(&state),
                 ime: RefCell::new(WindowsImeState::default()),
                 frame_pacer: Arc::clone(&frame_pacer),
+                resize_drag: RefCell::new(None),
             });
             let binding_ptr = Box::into_raw(binding);
 

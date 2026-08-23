@@ -184,6 +184,11 @@ impl BoxedWidget {
         self.with_widget_context_mut(|widget| widget.on_children_changed(child_count));
     }
 
+    /// 通知组件其后代可见成员已变化，旧自然尺寸不再可作为布局下限。
+    pub(crate) fn notify_child_visibility_changed(&mut self) {
+        self.with_widget_context_mut(|widget| widget.on_child_visibility_changed());
+    }
+
     pub(crate) fn replace_widget(&mut self, mut widget: Box<dyn Widget>) {
         let was_attached = self.attached;
         let was_mounted = self.mounted;

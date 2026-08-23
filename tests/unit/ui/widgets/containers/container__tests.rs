@@ -76,6 +76,18 @@ fn cached_content_size_respects_finite_parent_constraints() {
     );
 }
 
+// 条件子树切换后不得继续使用上一页的自然尺寸缓存。
+#[test]
+fn child_visibility_change_clears_cached_content_size() {
+    // 模拟长页面已经写入的内容范围。
+    let mut container = Container::new();
+    container.cached_content_size.set(Size::new(960.0, 2800.0));
+    // 可见成员变化必须使该派生事实失效。
+    crate::ui::Widget::on_child_visibility_changed(&mut container);
+    // 下一轮布局应从当前短页面重新计算，而不是保留空白滚动范围。
+    assert_eq!(container.cached_content_size.get(), Size::zero());
+}
+
 // 验证确定的父级交叉轴会覆盖大窗口阶段留下的子项自然宽度。
 #[test]
 fn stretch_cross_axis_shrinks_after_parent_frame_shrinks() {

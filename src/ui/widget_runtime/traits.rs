@@ -98,6 +98,8 @@ pub trait Widget: 'static {
         // 默认组件不缓存子节点派生状态，因此只消费通知参数。
         let _ = child_count;
     }
+    /// 直接或间接子树的可见成员变化后，清除依赖旧子树的布局派生状态。
+    fn on_child_visibility_changed(&mut self) {}
     /// 声明期 View 子节点能力端口（SMC-04：由 System 私有边界
     /// `ViewChildrenProvider` 承载，避免 widget → view 依赖）。
     ///

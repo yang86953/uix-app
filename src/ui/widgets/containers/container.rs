@@ -50,6 +50,11 @@ widget! {
         }
     }
 
+    on_child_visibility_changed => (&mut self) {
+        // 条件页面切换后，旧可见子树的自然尺寸不再有效。
+        self.cached_content_size.set(Size::zero());
+    }
+
     measure => (&self, constraints: Constraints) -> Size {
         let intrinsic = self.intrinsic_size();
         let clamped = constraints.clamp(intrinsic);

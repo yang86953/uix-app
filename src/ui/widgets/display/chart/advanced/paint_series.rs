@@ -9,6 +9,30 @@ use super::{
     catmull_rom_points, finite_or_zero, normalized_ratio, palette_color,
 };
 
+// 把散点标记半径限制在绘图区可完整容纳的范围内。
+fn scatter_marker_radius(raw: f32, bubble: bool, plot: Rect) -> f32 {
+    let radius = if bubble {
+        finite_or_zero(raw).clamp(2.0, 24.0)
+    } else {
+        finite_or_zero(raw).clamp(1.0, 12.0)
+    };
+    radius.min((plot.w.min(plot.h).max(0.0) * 0.5).max(0.0))
+}
+
+// 数据坐标使用标记半径内缩，极值点仍落在轴端但不会被组件裁剪。
+fn inset_scatter_plot(plot: Rect, inset: f32) -> Rect {
+    let inset = inset
+        .max(0.0)
+        .min(plot.w.max(0.0) * 0.5)
+        .min(plot.h.max(0.0) * 0.5);
+    Rect::new(
+        plot.x + inset,
+        plot.y + inset,
+        (plot.w - inset * 2.0).max(0.0),
+        (plot.h - inset * 2.0).max(0.0),
+    )
+}
+
 impl ChartPlaceholder {
     /// 高级图表总入口：背景、标题、图例布局、缩放平移、分类型绘制与交互层。
     pub(crate) fn paint(&self, ctx: &mut PaintContext, frame: Rect) {
@@ -519,6 +543,12 @@ impl ChartPlaceholder {
             .fold(f32::NEG_INFINITY, f32::max);
         let dx = (max_x - min_x).max(1.0);
         let dy = (max_y - min_y).max(1.0);
+        // 坐标极值需要为最大标记预留完整半径，避免气泡贴边时只剩半圆。
+        let marker_inset = points
+            .iter()
+            .map(|point| scatter_marker_radius(point.2, point.3, plot))
+            .fold(0.0f32, f32::max);
+        let data_plot = inset_scatter_plot(plot, marker_inset);
         for (series_index, data) in series.iter().enumerate() {
             let point_color = palette_color(series_index);
             for (x, y, radius, bubbles) in data {
@@ -526,14 +556,10 @@ impl ChartPlaceholder {
                     continue;
                 }
                 // 坐标线性映射到绘图区（y 轴翻转）。
-                let px = plot.x + (x - min_x) / dx * plot.w;
-                let py = plot.y + plot.h - (y - min_y) / dy * plot.h;
-                // 半径：气泡上限更大。
-                let radius = if *bubbles {
-                    finite_or_zero(*radius).clamp(2.0, 24.0)
-                } else {
-                    finite_or_zero(*radius).clamp(1.0, 12.0)
-                };
+                let px = data_plot.x + (x - min_x) / dx * data_plot.w;
+                let py = data_plot.y + data_plot.h - (y - min_y) / dy * data_plot.h;
+                // 半径与内缩计算共享同一上限，保证最终像素全部留在绘图区内。
+                let radius = scatter_marker_radius(*radius, *bubbles, plot);
                 match self.point_style {
                     PointStyle::Circle => ctx.fill_circle(px, py, radius, point_color),
                     PointStyle::Diamond => {
@@ -687,5 +713,22 @@ impl ChartPlaceholder {
                 ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 1.5);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 极值数据的坐标区应按最大气泡半径从四边内缩。
+    #[test]
+    fn bubble_plot_inset_keeps_marker_inside_frame() {
+        let plot = Rect::new(10.0, 20.0, 100.0, 80.0);
+        let radius = scatter_marker_radius(80.0, true, plot);
+        assert_eq!(radius, 24.0);
+        assert_eq!(
+            inset_scatter_plot(plot, radius),
+            Rect::new(34.0, 44.0, 52.0, 32.0)
+        );
     }
 }

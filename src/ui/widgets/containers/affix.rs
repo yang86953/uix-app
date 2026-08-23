@@ -47,6 +47,11 @@ widget! {
         }
     }
 
+    on_child_visibility_changed => (&mut self) {
+        // 吸顶占位必须跟随当前可见子树重新测量。
+        self.cached_child_size.set(Size::zero());
+    }
+
     build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
     }

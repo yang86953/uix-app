@@ -111,24 +111,6 @@ impl WidgetTree {
         }
     }
 
-    /// 检查节点是否有 viewport 祖先（如 ScrollView）。
-    /// 递归遍历祖先链，不限于直接父节点。
-    /// 用于 layout_shrink 中避免收缩 viewport 内部节点，防止与 ScrollView 尺寸设定形成振荡。
-    pub(crate) fn has_viewport_ancestor(&self, id: WidgetId) -> bool {
-        let mut current = id;
-        while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
-            if self
-                .get(pid)
-                .map(|p| p.children_clip(p.frame()).is_some())
-                .unwrap_or(false)
-            {
-                return true;
-            }
-            current = pid;
-        }
-        false
-    }
-
     /// 父级当前会分配给 `id` 的 frame（Phase 1 槽位）。
     /// Phase 4 不得收缩到该高度以下，否则 Stretch/flex 分配会被下一轮 Phase 1 拉回，形成 thrashing。
     pub(crate) fn parent_allocated_frame(&self, id: WidgetId) -> Option<Rect> {
@@ -145,6 +127,38 @@ impl WidgetTree {
             .into_iter()
             .find(|(cid, _)| *cid == id)
             .map(|(_, rect)| rect)
+    }
+
+    /// 返回正常流可见子树的最下边界；裁剪容器只贡献自身边界。
+    fn normal_flow_subtree_bottom(
+        &self,
+        id: WidgetId,
+        effective_visible: &std::collections::HashSet<WidgetId>,
+    ) -> Option<f32> {
+        let mut pending = self.get(id)?.children().to_vec();
+        let mut bottom: Option<f32> = None;
+        while let Some(child_id) = pending.pop() {
+            if !effective_visible.contains(&child_id) {
+                continue;
+            }
+            let Some(child) = self.get(child_id) else {
+                continue;
+            };
+            // 绝对定位与浮层不参与祖先的滚动内容自然高度。
+            if child.position().mode.is_out_of_flow() {
+                continue;
+            }
+            let frame = child.frame();
+            let child_bottom = frame.y + frame.h;
+            if child_bottom > 0.0 {
+                bottom = Some(bottom.map_or(child_bottom, |value| value.max(child_bottom)));
+            }
+            // 裁剪节点的后代不会在其 frame 之外形成可见内容范围。
+            if child.children_clip(frame).is_none() {
+                pending.extend_from_slice(child.children());
+            }
+        }
+        bottom
     }
 
     /// 收缩过大的容器。与 layout_expand 相反——当子节点高度
@@ -181,13 +195,8 @@ impl WidgetTree {
                 if is_viewport {
                     continue;
                 }
-                // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
-                // 避免与 ScrollView::layout_children 的尺寸设定形成振荡。
-                // 递归检查所有祖先，不限于直接父节点（修复 Container→Input 嵌套场景）。
-                if self.has_viewport_ancestor(id) {
-                    continue;
-                }
-                // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
+                // viewport 内的自然内容同样必须允许回缩；条件成员变化已清除旧缓存，
+                // 下方再以当前可见子树的真实末端约束收缩结果。
 
                 children.clear();
                 match self.get(id) {
@@ -235,22 +244,44 @@ impl WidgetTree {
                     continue;
                 }
 
-                let needed_h = max_child_bottom - node_frame.y;
+                let scrolls_vertically = self
+                    .nearest_viewport_overflow_axes(id)
+                    .is_some_and(|(_, vertical)| vertical);
+                let (_, explicit_height) = self.phase2_explicit_size_locks(id);
+                if scrolls_vertically && explicit_height {
+                    continue;
+                }
+                let content_bottom = if scrolls_vertically {
+                    self.normal_flow_subtree_bottom(id, effective_visible)
+                        .unwrap_or(max_child_bottom)
+                } else {
+                    max_child_bottom
+                };
+                let needed_h = content_bottom - node_frame.y;
                 // ⭐ 最小高度取子节点实际内容和 measure 的较大值。
                 // 设此下限可防止收缩到子节点内容以下，从而避免与
                 // layout_expand（Phase 2）形成振荡循环。
                 // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
                 // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
-                let measure_constraints = frame_constraints(node_frame);
-                let pref_h = self
-                    .get(id)
-                    .map(|n| n.measure(measure_constraints).h)
-                    .unwrap_or(0.0);
+                let pref_h = if scrolls_vertically {
+                    // 滚动子树的缓存刚失效时仍可能在收敛中携带旧槽位；可见子树
+                    // 的完整末端才是当前页面的尺寸事实。显式高度已在上方保留。
+                    0.0
+                } else {
+                    let measure_constraints = frame_constraints(node_frame);
+                    self.get(id)
+                        .map(|n| n.measure(measure_constraints).h)
+                        .unwrap_or(0.0)
+                };
                 let min_h = needed_h.max(pref_h).max(1.0);
                 // 不得低于父级 Phase 1 分配高度（Stretch / flex-grow 槽位）。
                 // demo 侧栏 column_fit 被 row Stretch 拉到客户区高后，若按内容缩回，
                 // 下一轮 Phase 1 会再次拉满 → 同结果 Phase 4 空转 thrashing。
-                let parent_floor_h = self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0);
+                let parent_floor_h = if scrolls_vertically {
+                    0.0
+                } else {
+                    self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0)
+                };
                 let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
                     tracing::debug!(
