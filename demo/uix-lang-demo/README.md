@@ -28,7 +28,7 @@ cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bi
 cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-readback
 ```
 
-Windows 使用 D3D11；Linux/Wayland 使用 EGL OpenGL ES。入口统一经
+Windows 与 Linux 默认首选 Vulkan；Windows 保留 D3D11、Linux/Wayland 保留 EGL OpenGL ES 兼容回退。入口统一经
 `uix::platform::run_on_ui_thread` 运行，并在窗口创建前安装仓库内固定的 CJK 字体。
 
 ## 声明范围

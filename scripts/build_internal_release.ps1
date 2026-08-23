@@ -42,6 +42,7 @@ $demoTargetRoot = Join-Path $repoRoot 'demo\target'
 
 Push-Location $repoRoot
 try {
+    # 构建 Windows Vulkan 首选、D3D11 兼容回退的主演示。
     cargo build --release --locked --manifest-path demo\Cargo.toml --bin uix-lang-demo
     if ($LASTEXITCODE -ne 0) {
         throw 'Release Demo build failed.'

@@ -63,7 +63,7 @@ case "$release_target_root" in
 # 结束目标目录边界检查。
 esac
 
-# 构建 Linux/Wayland OpenGL ES 主演示。
+# 构建 Linux Vulkan 首选、Wayland/OpenGL ES 兼容回退的主演示。
 (cd "$release_repo_root" && cargo build --release --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo)
 # 解析内部过程宏 crate 的规范路径。
 release_derive_path="$(realpath "$release_repo_root/uix-derive")"
