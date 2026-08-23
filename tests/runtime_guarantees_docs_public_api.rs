@@ -48,6 +48,25 @@ mod diagnostics_tracing {
     }
 }
 
+// 隔离 diagnostics-repro 围栏中的显式复现清单导出。
+mod diagnostics_repro {
+    // 引入公开 Diagnostics runtime。
+    use uix::diagnostics::Diagnostics;
+
+    // 暴露当前模块对应的文档编译标识。
+    pub(super) const COMPILE_ID: &str = "diagnostics-repro";
+
+    // 编译宿主显式选择目录并处理 typed 写入结果的公开路径。
+    fn save_repro(diagnostics: &Diagnostics) -> Result<(), uix::core::Error> {
+        // 原子导出固定 schema 的有界复现清单。
+        let path = diagnostics.write_debug_repro_manifest("logs/repro")?;
+        // 路径仅由显式调用方使用，不进入复现清单内容。
+        let _ = path.display();
+        // 返回 typed 成功结果。
+        Ok(())
+    }
+}
+
 // 隔离 error-typed-business 围栏中的业务错误包装。
 mod error_typed_business {
     // 引入文档承诺的公开 Error 与设置服务 prelude。
@@ -122,14 +141,16 @@ mod diagnostics_runtime_inject {
 
 // 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
 #[test]
-// 确认本批外部消费者覆盖运行保障文档的五个真实围栏。
+// 确认本批外部消费者覆盖运行保障文档的六个真实围栏。
 fn runtime_guarantees_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
+    // 收集六个已经由编译器类型检查的公开示例标识。
     let compile_ids = [
         // 登记诊断报告与恢复订阅围栏。
         diagnostics_report::COMPILE_ID,
         // 登记宿主 tracing 配置围栏。
         diagnostics_tracing::COMPILE_ID,
+        // 登记复现清单导出围栏。
+        diagnostics_repro::COMPILE_ID,
         // 登记业务 typed 错误围栏。
         error_typed_business::COMPILE_ID,
         // 登记 Application 诊断配置围栏。
@@ -147,6 +168,8 @@ fn runtime_guarantees_rust_fences_compile_as_external_consumers() {
             "diagnostics-report",
             // 宿主 tracing 配置围栏标识。
             "diagnostics-tracing",
+            // 复现清单导出围栏标识。
+            "diagnostics-repro",
             // 业务 typed 错误围栏标识。
             "error-typed-business",
             // Application 诊断配置围栏标识。

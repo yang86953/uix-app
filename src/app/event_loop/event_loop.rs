@@ -494,6 +494,11 @@ where
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
             if let Some(correlation_id) = debug_correlation_id {
+                debug_mode.record_debug_input(
+                    window_id,
+                    correlation_id,
+                    ev.type_.diagnostic_name(),
+                );
                 tracing::debug!(
                     target: "uix::diagnostics",
                     debug_event = "input_received",
@@ -525,6 +530,8 @@ where
                             if hit != last_debug_hover.get() {
                                 last_debug_hover.set(hit);
                                 if let Some(correlation_id) = debug_correlation_id {
+                                    debug_mode
+                                        .record_debug_hover_changed(window_id, correlation_id);
                                     tracing::debug!(
                                         target: "uix::diagnostics",
                                         debug_event = "debug_hover_changed",

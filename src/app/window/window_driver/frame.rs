@@ -890,8 +890,11 @@ impl WindowDriver {
             // 帧诊断：累计本帧各阶段耗时，每秒输出一次摘要。
             accumulate_frame_diagnostics(
                 &mut self.frame_diag,
+                debug_mode,
                 platform_window.window_id(),
                 debug_correlation_id,
+                native_width.max(0) as u32,
+                native_height.max(0) as u32,
                 frame_start.map_or(Duration::ZERO, |start| start.elapsed()),
                 layout_us,
                 render_us,

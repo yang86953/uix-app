@@ -112,31 +112,45 @@ fn push_field(out: &mut String, key: &str, value: &str) {
 /// 内容先写入唯一临时文件、fsync，再 rename 到最终位置。写入失败会删除
 /// 临时文件，绝不留下部分报告。最终文件名冲突时替换先前报告。
 pub(crate) fn write_atomic(directory: &Path, report: &CrashReport) -> Result<PathBuf, Error> {
+    write_text_atomic(
+        directory,
+        "crash",
+        report.occurred_at,
+        report.runtime_id,
+        &render(report),
+    )
+}
+
+/// 为 Diagnostics 私有产物复用同一套原子落盘契约。
+pub(super) fn write_text_atomic(
+    directory: &Path,
+    kind: &'static str,
+    occurred_at: SystemTime,
+    runtime_id: u64,
+    contents: &str,
+) -> Result<PathBuf, Error> {
     std::fs::create_dir_all(directory).map_err(|error| {
         Error::new(
             Errc::IoError,
             format!(
-                "crash report directory unavailable: {}",
+                "diagnostic artifact directory unavailable: {}",
                 directory.display()
             ),
         )
         .with_source(Error::from(error))
     })?;
 
-    let (secs, millis) = unix_components(report.occurred_at);
-    let final_path = directory.join(format!(
-        "uix-crash-{secs}-{millis}-{}.txt",
-        report.runtime_id
-    ));
+    let (secs, millis) = unix_components(occurred_at);
+    let final_path = directory.join(format!("uix-{kind}-{secs}-{millis}-{runtime_id}.txt"));
     let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let tmp_path = directory.join(format!(
-        ".uix-crash-{}-{sequence}-{secs}.tmp",
+        ".uix-{kind}-{}-{sequence}-{secs}.tmp",
         std::process::id()
     ));
 
     let write_result = (|| -> std::io::Result<()> {
         let mut file = std::fs::File::create(&tmp_path)?;
-        std::io::Write::write_all(&mut file, render(report).as_bytes())?;
+        std::io::Write::write_all(&mut file, contents.as_bytes())?;
         file.sync_all()?;
         drop(file);
         match std::fs::rename(&tmp_path, &final_path) {
@@ -156,7 +170,7 @@ pub(crate) fn write_atomic(directory: &Path, report: &CrashReport) -> Result<Pat
             let _ = std::fs::remove_file(&tmp_path);
             Err(Error::new(
                 Errc::IoError,
-                format!("crash report write failed: {}", final_path.display()),
+                format!("diagnostic artifact write failed: {}", final_path.display()),
             )
             .with_source(Error::from(error)))
         }
@@ -210,6 +224,16 @@ pub(crate) fn install_panic_hook(diagnostics: Diagnostics) {
                 ),
                 Err(error) => eprintln!(
                     "uix: panic hook could not write crash report: {}",
+                    error.short_what()
+                ),
+            }
+            match diagnostics.write_debug_repro_manifest_for_panic(directory) {
+                Ok(path) => eprintln!(
+                    "uix: debug reproduction manifest written to {}",
+                    path.display()
+                ),
+                Err(error) => eprintln!(
+                    "uix: panic hook could not write debug reproduction manifest: {}",
                     error.short_what()
                 ),
             }

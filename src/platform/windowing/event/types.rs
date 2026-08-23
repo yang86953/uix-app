@@ -46,6 +46,44 @@ pub enum UiEventType {
     PointerDoubleClick,
 }
 
+impl UiEventType {
+    /// 返回不含事件载荷的固定诊断名称，供脱敏日志与复现清单使用。
+    pub(crate) const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::WindowClose => "window_close",
+            Self::WindowResize => "window_resize",
+            Self::WindowMinimize => "window_minimize",
+            Self::WindowMaximize => "window_maximize",
+            Self::WindowRestore => "window_restore",
+            Self::WindowFocus => "window_focus",
+            Self::WindowBlur => "window_blur",
+            Self::FrameOpportunity => "frame_opportunity",
+            Self::PointerDown => "pointer_down",
+            Self::PointerUp => "pointer_up",
+            Self::PointerMove => "pointer_move",
+            Self::Wheel => "wheel",
+            Self::KeyDown => "key_down",
+            Self::KeyUp => "key_up",
+            Self::Copy => "copy",
+            Self::Cut => "cut",
+            Self::Paste => "paste",
+            Self::TextInput => "text_input",
+            Self::ImeCompositionStart => "ime_composition_start",
+            Self::ImeCompositionUpdate => "ime_composition_update",
+            Self::ImeCompositionEnd => "ime_composition_end",
+            Self::Timer => "timer",
+            Self::FileDrop => "file_drop",
+            Self::ThemeChanged => "theme_changed",
+            Self::LocaleChanged => "locale_changed",
+            Self::WindowShow => "window_show",
+            Self::WindowHide => "window_hide",
+            Self::WindowOcclusionChanged => "window_occlusion_changed",
+            Self::PointerDoubleClick => "pointer_double_click",
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 事件载荷结构体
 // ════════════════════════════════════════════════════════════════════════════

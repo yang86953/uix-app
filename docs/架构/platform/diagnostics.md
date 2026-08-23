@@ -11,7 +11,7 @@
 diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障子系统，不只是 platform 的局部工具：它是产品原则「容错可观测——出错有类型，恢复有路径，崩溃有报告」（[定位与原则](../../产品/定位与原则.md)）的架构载体，使用层公开入口见[运行保障](../../使用/框架设施/运行保障.md)。框架与应用宿主共用同一个 `uix::diagnostics` 公开面，承担错误收集、错误处理与稳定运行保障：
 
 - **错误收集**：typed `Error` 保留错误类别、来源与责任边界；panic/崩溃由绑定 runtime 的 panic hook 捕获为有界 `CrashReport`；callback/worker 失败经 pending failure queue 投递到 owner-thread，错误发生点不执行 tracing、报告、恢复或用户代码。
-- **错误处理**：精确 `Errc` 恢复登记与协调、有界脱敏报告、结构化日志（tracing）与按 `ReportId` 排序的时点快照，供宿主展示或持久化。
+- **错误处理**：精确 `Errc` 恢复登记与协调、有界脱敏报告、统一调试模式、结构化日志（tracing）、复现清单与按 `ReportId` 排序的时点快照，供宿主展示或持久化。
 - **框架与宿主共用**：同一公开面服务框架自身（图形后端、窗口/输入/TSF 等失败分支）与应用宿主（业务 typed `Error`、日志 subscriber、报告配置与崩溃目录）。
 - **稳定运行保障**：崩溃只做最小安全记录、不吞 panic、不在损坏状态下继续运行复杂 UI；失败隔离并继续，错误不在中间层被吞掉或转换成伪成功；错误风暴不能无限增长内存。
 
@@ -26,6 +26,7 @@ diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障
 | `RecoveryAction` / `RecoveryOutcome` | enum | 恢复处理器动作与结果 |
 | `RecoverySubscription` | RAII struct | 精确 Errc 处理器登记 |
 | `CrashReport` | private struct | 有界、脱敏的进程 panic 快照（私有 crash Module） |
+| `ReproSnapshot` | private struct | 固定 schema、无用户文本的有界运行现场（私有 repro Module） |
 | `PendingFailureQueue` / `PendingFailureSource` | private queue/source | callback 到 owner-thread 的固定容量 typed failure 投递 |
 
 ## SMC 落地边界
@@ -38,15 +39,17 @@ Diagnostics 的首个 Rust SMC 纵切已经把公开 System 契约与私有实�
 | 私有 Module | `src/diagnostics/reporting/mod.rs` 的 `ReportingModule` | 由一个 Diagnostics 实例拥有；编排报告构建、容量存储和结构化事件发射，不向外暴露实现 |
 | 私有 Module | `src/diagnostics/recovery.rs` 的 `RecoveryModule` | 由同一 Diagnostics 实例拥有；持有精确 `Errc` handler 和 RAII 注册生命周期，不访问 reporting Module |
 | 私有 Module | `src/diagnostics/crash.rs` 的 crash Module | 由同一 Diagnostics 实例拥有；持有有界 `CrashReport` 模型、原子写入与框架 panic hook，不访问 reporting / recovery Module |
+| 私有 Module | `src/diagnostics/repro.rs` 的 `ReproModule` | 由同一 Diagnostics 实例拥有；持有 debug 事件环、窗口数值快照和错误码缓存，不保存任意文本，不访问 reporting / recovery Module |
 | Component | `reporting/mod.rs` 的 `ReportDraftBuilder` | 单一负责 typed Error 的预算、脱敏、cause 截断和按策略捕获 backtrace |
 | Component | `reporting/store.rs` 的 `ReportStore` | 单一负责 ReportId 顺序、固定容量保留和淘汰计数 |
 | Component | `reporting/emit.rs` 的 emission guard/event emitter | 单一负责 tracing 结构化事件、递归抑制和 subscriber panic 隔离 |
 | Component | `recovery.rs` 的 `RecoveryGuard` | 单一负责同线程递归恢复保护；不拥有 handler 或 System 状态 |
 | Component | `crash.rs` 的原子写入与 panic hook | 单一负责 tmp + fsync + rename 原子落盘、失败清理与 hook 递归 guard；不写敏感值，不吞 panic |
+| Component | `repro.rs` 的事件环与渲染器 | 单一负责固定事件的容量淘汰、32 KiB 行式渲染和 panic 非阻塞快照；不执行文件写入 |
 | Component | `pending.rs` 的 `PendingFailureQueue` / `PendingFailureSource` | 单一负责 callback 失败的固定容量入队、按 source 隔离、溢出信号和 teardown 关闭；不调用 subscriber、handler 或用户代码 |
 
-System 只通过 `ReportingModule::{report,snapshot}` 与 `RecoveryModule::{register,attempt}`
-协作（crash Module 由 `Diagnostics::install_panic_hook` 编排，不参与报告/恢复流程）；三个 Module 不互相引用、查找或持有实例。`report.rs` 的报告值和
+System 只通过 `ReportingModule::{report,snapshot}`、`RecoveryModule::{register,attempt}` 与 `ReproModule` 的固定事实入口
+协作；crash Module 由 `Diagnostics::install_panic_hook` 编排，System 将 repro 的纯渲染结果交给 crash 原子写入 Component。私有 Module 不互相引用、查找或持有实例。`report.rs` 的报告值和
 `config.rs` 的配置属于 Diagnostics System 契约，不是额外的 Module。最终应用的
 `AppRuntime` 持有 Diagnostics System 实例，`AppHandle` 只取得可 clone 的公开句柄。
 
@@ -65,6 +68,8 @@ System 只通过 `ReportingModule::{report,snapshot}` 与 `RecoveryModule::{regi
 | `snapshot` | `snapshot(&self) -> DiagnosticsSnapshot` | 按 ReportId 排序的时点快照 |
 | `on_error` | `on_error(&self, code: Errc, handler: F) -> RecoverySubscription` | 按精确 Errc 登记恢复 handler；RAII 句柄释放即注销 |
 | `attempt_recovery` | `attempt_recovery(&self, error: Error) -> RecoveryOutcome` | 在调用方选定的安全 owner thread 同步尝试；未处理结果保留原 Error |
+| `debug_mode` / `set_debug_mode` | 查询或动态切换 runtime-scoped 开关 | 全窗口共享；关闭时不采集帧与组件树调试事实 |
+| `write_debug_repro_manifest` | `(&self, directory) -> Result<PathBuf, Error>` | 原子写出不含用户文本、上限 32 KiB 的固定 schema 复现清单 |
 
 crate 内编排入口（不属公开 API，由 app 组装层调用）：
 
@@ -87,7 +92,13 @@ App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每�
 
 ## 组件：CrashReport 与 panic hook
 
-`CrashReport` 字段有界（线程 256B、消息 2048B、位置 512B），渲染为行式 key=value 并替换控制字符，非字符串 panic payload 以固定标记代替，不写敏感值。`App::run` 在配置加载前安装绑定 runtime 的 panic hook：配置 `crash_report_directory` 时原子写入（唯一 tmp + fsync + rename，冲突 replace，失败清理），未配置时行为等同默认；hook 始终转发 previous hook 保持默认输出与 unwind/abort 语义（不吞 panic），`PanicHookGuard` 防止 hook 内递归。
+`CrashReport` 字段有界（线程 256B、消息 2048B、位置 512B），渲染为行式 key=value 并替换控制字符，非字符串 panic payload 以固定标记代替，不写敏感值。`App::run` 在配置加载前安装绑定 runtime 的 panic hook：配置 `crash_report_directory` 时原子写入 CrashReport 与复现清单（唯一 tmp + fsync + rename，冲突 replace，失败清理），未配置时行为等同默认；hook 始终转发 previous hook 保持默认输出与 unwind/abort 语义（不吞 panic），`PanicHookGuard` 防止 hook 内递归。
+
+## 组件：统一调试与 ReproModule
+
+debug 开关由 Diagnostics System 的原子状态唯一持有，应用组合根、环境变量和快捷键只委托该入口。事件循环为同批输入分配关联身份，窗口帧驱动消费同一身份并记录布局、渲染、GPU 提交、呈现、脏区、动画、失效来源和协调跨度；组件检查器通过既有 WidgetTree → ScenePaint 桥生成只读快照，不改变命中、布局或绘制语义。
+
+`ReproModule` 的正常事件入口先检查 debug 原子位，关闭时不取锁。开启时最多保留最近 128 个固定事件、8 个窗口和 16 个错误码事实；错误文本、窗口标题、组件内容、资源标识、环境变量和路径不进入其模型。panic hook 使用 `try_lock`，当前线程若已持有复现锁则写出 `capture_busy=true` 的最小清单，不能因采集现场再次等待或死锁。
 
 ## 数据、隐私与生命周期
 
