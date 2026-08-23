@@ -42,6 +42,16 @@ bash scripts/build_internal_release.sh
 
 产物写入 `target/internal-release/uix-0.0.1-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
 
+## Windows 内部候选包
+
+在真实 Windows x64 桌面环境的干净 `main` 工作树中执行完整验收：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/accept_windows_release.ps1
+```
+
+该入口验证 Vulkan 主路径、D3D11 兼容回退和主演示最终 surface 像素，连续构建并校验两份字节一致的 `uix-0.0.1-internal-win-x64.zip`，同时生成不含凭据的环境证据 JSON。只需要生成单份开发候选包时可直接运行 `scripts/build_internal_release.ps1`。
+
 ## 文档导航
 
 | 入口 | 用途 |
