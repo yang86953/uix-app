@@ -14,6 +14,7 @@ RHI_SURFACE = ADAPTER / "context/rhi_surface.rs"
 RECOVERY = ROOT / "src/draw/renderer/recovery_driver.rs"
 CPU_MOD = ROOT / "src/draw/backend/cpu/mod.rs"
 FAULT = ADAPTER / "fault.rs"
+SURFACE = ADAPTER / "surface.rs"
 DOC = ROOT / "docs/架构/graphics/vulkan-multi-window.md"
 NATIVE_TEST = ROOT / "tests/vulkan_gpu_parity.rs"
 
@@ -30,6 +31,19 @@ class VulkanSharedDeviceContractTests(unittest.TestCase):
         self.assertIn("devices: RefCell<HashMap<DeviceKey, Weak<VulkanDevice>>>", source)
         self.assertIn("if !device.is_lost()", source)
         self.assertIn("devices.insert(key, Rc::downgrade(&device))", source)
+
+    def test_swapchain_maintenance_enables_required_instance_extension(self) -> None:
+        device = DEVICE.read_text(encoding="utf-8")
+        surface = SURFACE.read_text(encoding="utf-8")
+
+        self.assertIn("ash::khr::get_surface_capabilities2::NAME.as_ptr()", surface)
+        self.assertIn("ash::ext::surface_maintenance1::NAME.as_ptr()", surface)
+        self.assertIn("surface_maintenance1: bool", device)
+        self.assertIn("runtime.surface_maintenance1", device)
+        self.assertLess(
+            device.index("runtime.surface_maintenance1"),
+            device.index("query_swapchain_maintenance1("),
+        )
 
     def test_shared_queue_has_one_serial_entry_and_context_has_no_queue_owner(self) -> None:
         device = DEVICE.read_text(encoding="utf-8")

@@ -58,6 +58,7 @@ class VulkanRhiFrameContractTests(unittest.TestCase):
 
     def test_surface_transaction_binds_acquire_submit_and_present(self) -> None:
         surface = SURFACE.read_text(encoding="utf-8")
+        frame = FRAME.read_text(encoding="utf-8")
 
         self.assertIn("impl GraphicsSurface for VulkanContext", surface)
         self.assertIn("acquire_next_image", surface)
@@ -66,6 +67,10 @@ class VulkanRhiFrameContractTests(unittest.TestCase):
         self.assertIn("validate_present(transaction, current_token, coherency)", surface)
         self.assertIn("validate_latest_submission", surface)
         self.assertIn("queue_present", surface)
+        self.assertIn("let wait_stages = [vk::PipelineStageFlags::ALL_COMMANDS]", surface)
+        present_source = frame[frame.index("fn source_scope") : frame.index("fn destination_scope")]
+        self.assertIn("vk::ImageLayout::PRESENT_SRC_KHR", present_source)
+        self.assertIn("vk::PipelineStageFlags::ALL_COMMANDS", present_source)
 
     def test_platform_owns_surface_recreation_semantics(self) -> None:
         lifecycle = LIFECYCLE.read_text(encoding="utf-8")
