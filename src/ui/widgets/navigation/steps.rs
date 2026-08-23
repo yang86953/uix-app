@@ -52,6 +52,8 @@ pub struct Step {
     pub description: String,
     /// 步骤当前的流程状态。
     pub status: StepStatus,
+    /// 显式状态覆盖；未设置时由 Steps.current 推导流程状态。
+    status_override: Option<StepStatus>,
     /// 替代默认状态标记的可选 Lucide 图标名称。
     pub icon: String,
 }
@@ -162,18 +164,21 @@ widget! {
             // 缓存 frame 和 step_w 供 on_event 点击定位使用
             self.last_frame_and_step_w.set(Some((frame, step_w)));
 
+            let current = self.current.get();
             for (i, step) in self.steps.iter().enumerate() {
+                // 未显式指定的步骤状态随 current 自动推进。
+                let status = step.resolved_status(i, current);
                 let cx = start_x + i as f32 * step_w + step_w * 0.5;
                 // 连接线（前）
                 if i > 0 {
                     let line_x1 = start_x + (i - 1) as f32 * step_w + step_w * 0.5 + circle_r;
                     let line_x2 = cx - circle_r;
                     let line_y = circle_y;
-                    let line_c = if i <= self.current.get() { primary } else { fill };
+                    let line_c = if i <= current { primary } else { fill };
                     ctx.fill_rect(Rect::new(line_x1, line_y - 1.0, line_x2 - line_x1, 2.0), line_c, None);
                 }
                 // 圆圈
-                let (bg_c, text_c, border_c) = match step.status {
+                let (bg_c, text_c, border_c) = match status {
                     StepStatus::Finish => (primary, white, primary),
                     StepStatus::Process => (primary, white, primary),
                     StepStatus::Error => (error, white, error),
@@ -190,7 +195,7 @@ widget! {
                     ctx.fill_circle(cx, circle_y, circle_r * 0.35, text_c);
                 } else if !step.icon.is_empty() {
                     crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
-                } else if step.status == StepStatus::Finish {
+                } else if status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
@@ -202,7 +207,7 @@ widget! {
                     ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
                 }
                 // 标题（在圆圈下方居中）
-                let title_c = if i <= self.current.get() { text } else { text_sec };
+                let title_c = if i <= current { text } else { text_sec };
                 let title_rect = Rect::new(cx - step_w * 0.5, circle_y + circle_r + 4.0, step_w, 20.0);
                 ctx.text_center(&step.title, title_rect, title_c, 13.0);
                 if !step.description.is_empty() {
@@ -219,19 +224,22 @@ widget! {
             self.last_frame_and_step_w.set(None);
             let circle_r = 14.0;
             let circle_x = frame.x + 28.0;
+            let current = self.current.get();
             for (i, step) in self.steps.iter().enumerate() {
+                // 纵向与横向共享同一状态推导规则。
+                let status = step.resolved_status(i, current);
                 let cy = frame.y + i as f32 * STEP_EXTENT + 28.0;
                 if i > 0 {
                     let line_y1 = frame.y + (i - 1) as f32 * STEP_EXTENT + 28.0 + circle_r;
                     let line_y2 = cy - circle_r;
-                    let line_c = if i <= self.current.get() { primary } else { fill };
+                    let line_c = if i <= current { primary } else { fill };
                     ctx.fill_rect(
                         Rect::new(circle_x - 1.0, line_y1, 2.0, line_y2 - line_y1),
                         line_c,
                         None,
                     );
                 }
-                let (bg_c, text_c, border_c) = match step.status {
+                let (bg_c, text_c, border_c) = match status {
                     StepStatus::Finish | StepStatus::Process => (primary, white, primary),
                     StepStatus::Error => (error, white, error),
                     StepStatus::Wait => (Color::transparent(), text_sec, fill),
@@ -250,7 +258,7 @@ widget! {
                     ctx.fill_circle(circle_x, cy, circle_r * 0.35, text_c);
                 } else if !step.icon.is_empty() {
                     crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
-                } else if step.status == StepStatus::Finish {
+                } else if status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         "check",
@@ -261,7 +269,7 @@ widget! {
                 } else {
                     ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
                 }
-                let title_color = if i <= self.current.get() { text } else { text_sec };
+                let title_color = if i <= current { text } else { text_sec };
                 ctx.draw_text_in_frame(
                     &step.title,
                     Rect::new(circle_x + 24.0, cy - 20.0, frame.w - 60.0, 24.0),
@@ -506,12 +514,13 @@ impl Steps {
 mod tests;
 
 impl Step {
-    /// 使用标题创建等待状态且无描述和图标的步骤。
+    /// 使用标题创建由 Steps.current 自动决定状态且无描述和图标的步骤。
     pub fn new(title: &str) -> Self {
         Self {
             title: title.to_string(),
             description: String::new(),
             status: StepStatus::Wait,
+            status_override: None,
             icon: String::new(),
         }
     }
@@ -523,7 +532,26 @@ impl Step {
     /// 设置步骤当前的流程状态。
     pub fn status(mut self, s: StepStatus) -> Self {
         self.status = s;
+        self.status_override = Some(s);
         self
+    }
+
+    /// 解析当前索引下的最终流程状态，显式配置优先于自动进度。
+    fn resolved_status(&self, index: usize, current: usize) -> StepStatus {
+        // 兼容通过公开字段直接设置的非 Wait 状态。
+        if let Some(status) = self
+            .status_override
+            .or_else(|| (self.status != StepStatus::Wait).then_some(self.status))
+        {
+            return status;
+        }
+        if index < current {
+            StepStatus::Finish
+        } else if index == current {
+            StepStatus::Process
+        } else {
+            StepStatus::Wait
+        }
     }
 
     /// 设置替代默认状态标记的 Lucide 图标名称。

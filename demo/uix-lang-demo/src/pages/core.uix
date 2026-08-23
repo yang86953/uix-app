@@ -383,9 +383,9 @@
         // 展示面板小节标题。
         <Text fontSize="heading5">Steps / Pagination</Text>
         // 展示可点击的水平圆点步骤条。
-        <Steps current={steps_current} items={[Step('注册').status('finish'), Step('验证').status('process'), Step('完成').status('wait')]} clickable dot />
+        <Steps current={steps_current} items={[Step('注册'), Step('验证'), Step('完成')]} clickable dot />
         // 展示不可直接切换的垂直步骤条，同一状态仍可由外部按钮驱动。
-        <Steps current={steps_current} items={[Step('注册').status('finish'), Step('验证').status('process'), Step('完成').status('wait')]} direction="vertical" clickable="false" />
+        <Steps current={steps_current} items={[Step('注册'), Step('验证'), Step('完成')]} direction="vertical" clickable="false" />
         // 通过 setState 更新类型化 usize 步骤状态。
         <Container direction="row" gap="8px">
           // 跳回第一步。

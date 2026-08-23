@@ -1,5 +1,5 @@
     // 引入当前模块的组件与步骤类型。
-    use super::{Step, Steps};
+    use super::{Step, StepStatus, Steps};
     // 引入公开响应式状态句柄。
     use crate::ui::State;
 
@@ -59,4 +59,30 @@
         assert_eq!(steps.get_current(), 0);
         // 步骤数据也必须采用新声明。
         assert_eq!(steps.step_count(), 3);
+    }
+
+    // 验证默认步骤状态随 current 推进，显式状态仍可覆盖自动结果。
+    #[test]
+    fn current_drives_implicit_step_statuses() {
+        // 当前位于第二步时，前项完成、当前项处理中、后项等待。
+        let steps = Steps::new(vec![Step::new("A"), Step::new("B"), Step::new("C")]).current(1);
+        assert_eq!(
+            steps.steps[0].resolved_status(0, steps.get_current()),
+            StepStatus::Finish
+        );
+        assert_eq!(
+            steps.steps[1].resolved_status(1, steps.get_current()),
+            StepStatus::Process
+        );
+        assert_eq!(
+            steps.steps[2].resolved_status(2, steps.get_current()),
+            StepStatus::Wait
+        );
+
+        // 显式错误状态不得被 current 覆盖。
+        let error = Step::new("B").status(StepStatus::Error);
+        assert_eq!(error.resolved_status(1, 0), StepStatus::Error);
+        // 显式 Wait 同样必须保持等待，而不是退回自动推导。
+        let wait = Step::new("B").status(StepStatus::Wait);
+        assert_eq!(wait.resolved_status(1, 1), StepStatus::Wait);
     }
