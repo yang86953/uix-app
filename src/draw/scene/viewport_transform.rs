@@ -25,6 +25,16 @@ fn visual_path(scene: &impl ScenePaint, node_id: NodeId) -> Vec<NodeId> {
     path
 }
 
+/// 返回视觉路径中当前节点应使用的根画布变换。
+fn visual_path_transform(scene: &impl ScenePaint, id: NodeId, index: usize) -> Transform {
+    if index == 0 && scene.node_is_overlay(id) {
+        // 浮层路径已在提升边界截断，首节点必须消费完整根变换。
+        scene.node_overlay_transform(id)
+    } else {
+        scene.node_transform(id)
+    }
+}
+
 /// Layout coordinates to viewport/screen coordinates for a node.
 ///
 /// Each node transform applies before its descendants. A viewport's scroll
@@ -33,13 +43,7 @@ pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transf
     let path = visual_path(scene, node_id);
     let mut transform = Transform::identity();
     for (index, id) in path.iter().copied().enumerate() {
-        let node_transform = if index == 0 && scene.node_is_overlay(id) {
-            // 浮层路径在提升边界处截断，首节点必须使用场景声明的根画布变换。
-            scene.node_overlay_transform(id)
-        } else {
-            scene.node_transform(id)
-        };
-        transform = transform.concat(node_transform);
+        transform = transform.concat(visual_path_transform(scene, id, index));
         if index + 1 < path.len() {
             if let Some((sx, sy)) = scene.scroll_offset(id) {
                 transform = transform.concat(Transform::translate(-sx, -sy));
@@ -151,8 +155,8 @@ fn visible_viewport_rect_for(
                 rect = rect.intersect(&transform.transform_rect(region_bounds))?;
             }
         }
-        // 片段裁剪之后才应用当前节点自身视觉变换。
-        transform = transform.concat(scene.node_transform(id));
+        // 裁剪投影与节点绘制必须消费同一个浮层根变换，避免坐标域分叉。
+        transform = transform.concat(visual_path_transform(scene, id, index));
         if index + 1 < path.len() {
             let node_frame = scene.node_frame(id);
             if let Some(clip) = scene.children_clip(id, node_frame) {
