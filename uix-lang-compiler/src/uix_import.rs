@@ -14,7 +14,7 @@ use crate::uix_lang::{
 };
 
 // 保存已经解析并完成导入合并的文件文档。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ResolvedDocument {
     // 保存交给既有纯 codegen 的单一文档。
     pub(crate) document: Document,
@@ -27,7 +27,7 @@ pub(crate) struct ResolvedDocument {
 }
 
 // 保存带真实来源文件的入口诊断。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ImportDiagnostic {
     // 保存跨入口稳定的诊断代码。
     pub(crate) code: &'static str,
@@ -59,6 +59,86 @@ struct ResolvedUnit {
     root: Element,
 }
 
+// 保存跨 CompilerSession 调用复用的单文件 Syntax 阶段产物。
+#[derive(Debug, Default)]
+pub(crate) struct SourceStageCache {
+    // 每个规范路径只保留最新源码对应的解析结果，避免编辑会话按版本无界增长。
+    documents: BTreeMap<PathBuf, CachedDocument>,
+    // 记录当前解析命令实际触及的文件，供失败源码图建立可释放的所有权边界。
+    active_request_paths: Option<BTreeSet<PathBuf>>,
+    // 测试只观测真正进入 parser 的次数，不把墙钟时间作为确定性门禁。
+    #[cfg(test)]
+    parse_runs: usize,
+}
+
+// 把源码快照与成功或失败的 Syntax 结论绑定，重复无效输入同样无需重解析。
+#[derive(Debug, Clone)]
+struct CachedDocument {
+    source: String,
+    result: Result<Document, ImportDiagnostic>,
+}
+
+impl SourceStageCache {
+    // 开始记录一次根命令触及的 Syntax 缓存路径。
+    pub(crate) fn begin_request(&mut self) {
+        debug_assert!(self.active_request_paths.is_none());
+        self.active_request_paths = Some(BTreeSet::new());
+    }
+
+    // 结束当前记录并返回失败或成功解析已经触及的文件集合。
+    pub(crate) fn finish_request(&mut self) -> BTreeSet<PathBuf> {
+        self.active_request_paths.take().unwrap_or_default()
+    }
+
+    // 解析一个规范文件；完全相同的源码直接复用不可变 AST 或稳定诊断。
+    fn parse(&mut self, path: &Path, source: &str) -> Result<Document, ImportDiagnostic> {
+        if let Some(paths) = self.active_request_paths.as_mut() {
+            paths.insert(path.to_path_buf());
+        }
+        if let Some(cached) = self.documents.get(path)
+            && cached.source == source
+        {
+            return cached.result.clone();
+        }
+        #[cfg(test)]
+        {
+            self.parse_runs = self.parse_runs.saturating_add(1);
+        }
+        let result =
+            crate::uix_lang::parse_document(source).map_err(|diagnostic| ImportDiagnostic {
+                code: "UIX1000",
+                phase: DiagnosticPhase::Syntax,
+                source_name: path.display().to_string(),
+                diagnostic,
+            });
+        self.documents.insert(
+            path.to_path_buf(),
+            CachedDocument {
+                source: source.to_owned(),
+                result: result.clone(),
+            },
+        );
+        result
+    }
+
+    // 只保留仍被成功或失败源码图拥有的文件，关闭或改写根后释放不可达缓存。
+    pub(crate) fn retain_paths(&mut self, retained: &BTreeSet<PathBuf>) {
+        self.documents.retain(|path, _| retained.contains(path));
+    }
+
+    // 返回真正执行单文件解析的次数，供增量缓存契约测试观测。
+    #[cfg(test)]
+    pub(crate) const fn parse_runs(&self) -> usize {
+        self.parse_runs
+    }
+
+    // 返回当前实际持有的单文件缓存数量，供生命周期契约测试观测。
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.documents.len()
+    }
+}
+
 // 保存递归解析期间的确定状态与唯一缓存。
 struct ImportResolver<'a> {
     // 保存当前深度优先解析栈以拒绝循环。
@@ -73,6 +153,8 @@ struct ImportResolver<'a> {
     source_graph: SourceGraphBuilder,
     // 保存 LSP 会话提供的未落盘文件快照；正式 AOT 传入空集合。
     overlays: &'a BTreeMap<PathBuf, String>,
+    // 借用 CompilerSession 拥有的单文件 Syntax 阶段缓存。
+    source_cache: &'a mut SourceStageCache,
 }
 
 // 保存已合并声明与各命名空间来源。
@@ -109,6 +191,16 @@ pub(crate) fn resolve_file_with_overlays(
     path: &Path,
     overlays: &BTreeMap<PathBuf, String>,
 ) -> Result<ResolvedDocument, ImportDiagnostic> {
+    let mut source_cache = SourceStageCache::default();
+    resolve_file_with_overlays_cached(path, overlays, &mut source_cache)
+}
+
+// 相对真实路径解析文件，并跨同一 CompilerSession 复用未变化文件的 Syntax 产物。
+pub(crate) fn resolve_file_with_overlays_cached(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    source_cache: &mut SourceStageCache,
+) -> Result<ResolvedDocument, ImportDiagnostic> {
     // 先取得根文件规范路径，避免同一文件通过不同相对路径绕过循环检测。
     let canonical = canonical_or_overlay(path, overlays).map_err(|error| {
         // 根文件尚无源码跨度，使用稳定的一行一列入口位置。
@@ -124,7 +216,7 @@ pub(crate) fn resolve_file_with_overlays(
         )
     })?;
     // 为本次宏展开创建唯一 resolver，不跨调用共享状态。
-    let mut resolver = ImportResolver::new(&canonical, overlays);
+    let mut resolver = ImportResolver::new(&canonical, overlays, source_cache);
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
     // 把带来源声明投影回既有纯 Document 契约。
@@ -196,7 +288,11 @@ pub(crate) fn reject_inline_imports(document: &Document) -> Result<(), Diagnosti
 // 实现文件单元递归读取、缓存与循环检测。
 impl<'a> ImportResolver<'a> {
     // 为一个真实根文件创建独占源码图解析器。
-    fn new(root: &Path, overlays: &'a BTreeMap<PathBuf, String>) -> Self {
+    fn new(
+        root: &Path,
+        overlays: &'a BTreeMap<PathBuf, String>,
+        source_cache: &'a mut SourceStageCache,
+    ) -> Self {
         Self {
             stack: Vec::new(),
             cache: BTreeMap::new(),
@@ -204,6 +300,7 @@ impl<'a> ImportResolver<'a> {
             tracked_set: BTreeSet::new(),
             source_graph: SourceGraphBuilder::new(root),
             overlays,
+            source_cache,
         }
     }
 
@@ -282,20 +379,8 @@ impl<'a> ImportResolver<'a> {
         };
         // SourceGraph 与 parser 消费完全相同的不可变源码快照。
         self.source_graph.insert_file(path, &source);
-        // 使用既有纯 parser 解析单文件事实。
-        let document = crate::uix_lang::parse_document(&source).map_err(|diagnostic| {
-            // 把结构化诊断补充真实文件来源。
-            ImportDiagnostic {
-                // 单文件语法诊断保持解析阶段身份。
-                code: "UIX1000",
-                // 导入解析器不能把语法错误误报为模块错误。
-                phase: DiagnosticPhase::Syntax,
-                // 保存规范文件路径。
-                source_name: path.display().to_string(),
-                // 保留原始行列、原因与建议。
-                diagnostic,
-            }
-        })?;
+        // 使用会话级 Source 缓存复用完全相同源码的 AST 或稳定语法诊断。
+        let document = self.source_cache.parse(path, &source)?;
         // 保存导出名及其声明跨度供跨指令去重和存在性校验。
         let mut export_requests = Vec::new();
         // 创建按命名空间去重的合并器。

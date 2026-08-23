@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::uix_import::normalized_overlay_path;
-use crate::{CompilationKey, CompileOutput, CompileTarget, CompilerDiagnostic, CompilerSystem};
+use crate::{CompilationKey, CompileOutput, CompileTarget, CompilerDiagnostic, CompilerSession};
 
 /// 表示一次开发期 AOT 重编译是否产生新的确定性 UI 结果。
 #[derive(Debug)]
@@ -26,6 +26,8 @@ pub struct HotReloadAdapter {
     root: PathBuf,
     overlays: BTreeMap<PathBuf, String>,
     last_ready_key: Option<CompilationKey>,
+    // 会话拥有阶段缓存；关闭 Adapter 即释放全部解析、语义与生成产物。
+    compiler: CompilerSession,
 }
 
 impl HotReloadAdapter {
@@ -35,6 +37,7 @@ impl HotReloadAdapter {
             root: normalized_overlay_path(root.as_ref()),
             overlays: BTreeMap::new(),
             last_ready_key: None,
+            compiler: CompilerSession::new(),
         }
     }
 
@@ -73,7 +76,7 @@ impl HotReloadAdapter {
     ///
     /// 失败不会覆盖最后一次成功身份；相同身份返回 `Unchanged`。
     pub fn reload(&mut self) -> Result<HotReloadResult, CompilerDiagnostic> {
-        let output = CompilerSystem::new().compile_file_with_overlays(
+        let output = self.compiler.compile_file_with_overlays(
             &self.root,
             &self.overlays,
             CompileTarget::View,

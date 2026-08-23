@@ -4,7 +4,7 @@
 
 > **接口**：声明 app System 的等待/唤醒、事件路由、活动工作和逐窗帧机会。基础依赖：[platform/windowing](../platform/windowing.md)、[platform/presentation](../platform/presentation.md)和[graphics/renderer](../graphics/renderer.md)的公开契约；与 [window](window.md) 的协作只经 app System 私有队列/调度契约编排。导出：应用运行时内部的主循环与逐窗调度契约。
 >
-> **当前实现线索**：主循环位于 `src/app/event_loop/`；窗口帧调度位于 `src/app/window/frame_scheduler.rs`；时钟、活动工作、timer、主线程任务与 Agent 命令状态属于 app System 私有边界，位于 `src/app/queues/`。event-loop 消费 window 与 System 私有 queues，不依赖 agent Module。
+> **当前实现线索**：主循环位于 `src/app/event_loop/`；窗口帧调度位于 `src/app/window/frame_scheduler.rs`；时钟、活动工作、timer、主线程任务与 Agent 命令状态属于 app System 私有边界，位于 `src/app/queues/`。event-loop 消费 window 与 System 私有 queues，不依赖 agent Module。`tests/unit/app/event_loop/event_loop__energy_tests.rs` 直接锁定 DeepIdle 选择，`tests/unit/app/window/frame_scheduler__tests.rs` 直接锁定 one-shot 合并、暂停取消、恢复重基与终态无 deadline。
 
 ## 组件清单
 

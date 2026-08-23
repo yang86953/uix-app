@@ -61,3 +61,39 @@
         // 全部到期工作被两轮精确消费后 registry 为空。
         assert!(registry.is_empty());
     }
+
+    #[test]
+    // 验证动画源完成后同步会移除其 deadline，使窗口重新具备深度休眠条件。
+    fn animated_source_sync_removes_completed_registration() {
+        let now = Instant::now();
+        let source = NodeId::new(7);
+        let mut registry = ActiveWorkRegistry::new();
+
+        registry.sync_animated_sources([(source, Some(now))]);
+        assert!(registry.manages_animation(source));
+        assert_eq!(registry.next_deadline(), Some(now));
+
+        registry.sync_animated_sources(std::iter::empty());
+        assert!(!registry.manages_animation(source));
+        assert!(registry.is_empty());
+    }
+
+    #[test]
+    // 验证组件逐帧活动只在 active 期间保持 open 登记，结束后恢复来源 deadline 并最终注销。
+    fn open_widget_animation_only_stays_registered_while_active() {
+        let now = Instant::now();
+        let source = NodeId::new(9);
+        let mut registry = ActiveWorkRegistry::new();
+
+        registry.sync_animated_sources([(source, Some(now))]);
+        registry.sync_widget_animations([source]);
+        assert_eq!(registry.animation_ids().collect::<Vec<_>>(), vec![source]);
+        assert_eq!(registry.next_deadline(), None);
+
+        registry.sync_widget_animations(std::iter::empty());
+        assert!(registry.animation_ids().next().is_none());
+        assert_eq!(registry.next_deadline(), Some(now));
+
+        registry.sync_animated_sources(std::iter::empty());
+        assert!(registry.is_empty());
+    }
