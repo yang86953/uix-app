@@ -9,9 +9,11 @@ description = "UIX uix-lang 编译期界面演示"
 [dependencies]
 # 与 API GUI Demo 对齐公开组件能力，同时保留声明式入口自己的运行边界。
 uix = { path = "../..", default-features = false, features = [
-    # Windows 使用 D3D11 图形后端。
+    # Windows/Linux 首选 Vulkan 图形后端。
+    "vulkan",
+    # Windows 保留 D3D11 兼容回退。
     "d3d11",
-    # Linux/Wayland 使用 EGL OpenGL ES 图形后端。
+    # Linux/Wayland 保留 EGL OpenGL ES 兼容回退。
     "opengles",
     # 启用图片编解码能力。
     "image-codecs",

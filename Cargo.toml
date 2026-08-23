@@ -107,9 +107,9 @@ khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional 
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
-# 默认启用生产图形后端与九项使用方能力：
-#   三平台默认优先 Vulkan；Windows 保留 D3D11 作为兼容回退。
-default = ["vulkan", "d3d11", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+# 默认启用首发平台图形矩阵与九项使用方能力：
+#   Windows/Linux 优先 Vulkan；Windows 保留 D3D11、Linux 保留 OpenGL ES 兼容回退。
+default = ["vulkan", "d3d11", "opengles", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",

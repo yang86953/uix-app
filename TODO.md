@@ -15,11 +15,11 @@
 
 ### P0：发布前门禁
 
-- [ ] **冻结 0.0.1 平台矩阵**
-  - 统一产品文档、架构文档、根 `Cargo.toml` 默认 feature、Demo feature 与 registry 优先级。
-  - 明确 Windows 使用 D3D11 还是 Vulkan、Linux 使用 OpenGL ES 还是 Vulkan。
+- [x] **冻结 0.0.1 平台矩阵**
+  - 产品文档、使用文档、根 `Cargo.toml` 默认 feature、Demo feature 与 registry 优先级已统一。
+  - Windows/Linux 统一首选 Vulkan；Windows 保留 D3D11、Linux/Wayland 保留 OpenGL ES 兼容回退。
   - 依据：[交付与许可](docs/产品/交付与许可.md)、[图形后端状态](docs/架构/graphics/backend.md)、[Cargo.toml](Cargo.toml)。
-  - 通过条件：形成一份唯一平台/feature/验收矩阵，并同步到 Gitea Issue #1。
+  - 通过条件：唯一平台/feature/验收矩阵已由自动化契约冻结；提交后同步到 Gitea Issue #1。
 
 - [ ] **完成候选包与发布闭环**
   - 在干净环境执行 Windows/Linux 构建及校验脚本。

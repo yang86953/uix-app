@@ -7,7 +7,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 ## 当前状态
 
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
-- Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；Windows 当前基线为 x64/D3D11，Linux 当前原生路径为 Wayland/EGL OpenGL ES；平台与硬件完成度以 [Gitea 0.0.1 产品完成父 Issue #1](http://100.79.245.29:3000/admin/uix-app/issues/1) 为准。
+- Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留 D3D11、Linux/Wayland 保留 EGL OpenGL ES 兼容回退；平台与硬件完成度以 [Gitea 0.0.1 产品完成父 Issue #1](http://100.79.245.29:3000/admin/uix-app/issues/1) 为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；交付任务、负责人、阻塞和带时点的测试结果只在 Gitea 中维护。
 
@@ -30,7 +30,7 @@ cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
 
 这些命令只验证当前工作树的对应契约，不等同于正式发布、平台矩阵或交付任务全部完成；带时点的完成状态仍以 Gitea 为准。
 
-默认构建在 Windows、Linux 与 macOS 统一优先选择 Vulkan PixelUpload，以同一 Drawing 语义保证外观和行为一致；D3D11/OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
+默认构建在 Windows 与 Linux 统一优先选择 Vulkan GPU-native swapchain，以同一 Drawing 语义保证外观和行为一致；Windows 的 D3D11 与 Linux/Wayland 的 OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 
 ## Linux 内部候选包
 
