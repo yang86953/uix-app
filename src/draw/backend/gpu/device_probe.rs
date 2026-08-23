@@ -308,6 +308,8 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
             PipelineKind::MsdfGlyphQuad,
             // 扇形。
             PipelineKind::Sector,
+            // 解析抗锯齿线段。
+            PipelineKind::LineSegment,
         ];
         // 逐个创建 pipeline，让 adapter 在首帧前暴露 shader/layout 失败。
         let mut pipelines = Vec::with_capacity(pipeline_kinds.len());

@@ -200,9 +200,9 @@ pub(crate) use primitive::{
 // 不同构建只消费当前 Adapter 需要的字段，统一重导出仍保留完整共享契约。
 #[allow(unused_imports)]
 pub(crate) use primitive::{
-    MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET,
-    SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET,
-    SECTOR_VIEWPORT_FLOAT_OFFSET,
+    MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET, SAMPLED_CORNER_RADIUS_FLOAT_OFFSET,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
 };
 // 只有 OpenGL Adapter 需要把字节 ABI 解码为逐个原生 uniform 字段。
 #[cfg(feature = "opengles")]
@@ -716,6 +716,12 @@ pub(crate) trait GraphicsSurface {
 
     // 返回当前 surface 的代际和 extent。
     fn token(&self) -> SurfaceToken;
+
+    // 返回平台窗口外观已归一化后的物理圆角半径。
+    fn surface_corner_radius(&self) -> f32 {
+        // 系统装饰或不支持透明窗口的 surface 默认无需额外遮罩。
+        0.0
+    }
 
     // 获取当前可呈现 image，不提交任何命令。
     fn acquire(&mut self) -> Result<SurfaceFrame>;

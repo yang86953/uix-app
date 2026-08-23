@@ -6,6 +6,8 @@
 // 该绑定只需执行一次，多窗口共享。
 // ============================================================================
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 // data-device 事件在 seat Adapter 中只做 DnD/Selection owner 路由。
@@ -55,6 +57,8 @@ use super::pointer_button_owner::{
     // Release 原子撤销授权并投递 PointerUp。
     handle_pointer_button_released,
 };
+// 指针轴帧 Component 统一离散滚轮与连续触控板距离。
+use super::pointer_axis::PointerAxisFrame;
 // pointer callback 把焦点与移动事件委托给多 owner 事务 Component。
 use super::WaylandBackend;
 use super::pointer_focus_owner::{
@@ -407,6 +411,8 @@ impl WaylandBackend {
                         return;
                     };
                     let ptr = seat.get_pointer();
+                    // 每个 pointer 代理独占一个协议帧累加器，释放代理时随回调一并销毁。
+                    let pointer_axis_frame = Rc::new(RefCell::new(PointerAxisFrame::default()));
                     ptr.quick_assign(move |pointer, event, _| match event {
                         wl_pointer::Event::Enter {
                             serial,
@@ -557,30 +563,75 @@ impl WaylandBackend {
                             }
                         }
                         wl_pointer::Event::Axis { axis, value, .. } => {
-                            // adapter 只把协议 Axis 枚举映射为平台中立增量。
-                            let (dx, dy) = match axis {
-                                // 垂直滚轮只产生 y 增量。
-                                WEnum::Value(wl_pointer::Axis::VerticalScroll) => (0.0, value),
-                                // 水平滚轮只产生 x 增量。
-                                WEnum::Value(wl_pointer::Axis::HorizontalScroll) => (value, 0.0),
-                                // 未知协议值映射为安全忽略的零增量。
-                                _ => (0.0, 0.0),
-                            };
-                            // 三 owner Component 检查式读取路由与位置后提交事件。
-                            handle_pointer_axis(
-                                // 将协议数值收窄为框架坐标精度。
-                                dx as f32,
-                                // 将协议数值收窄为框架坐标精度。
-                                dy as f32,
-                                // surface focus owner。
-                                &targets,
-                                // 最近位置 owner。
-                                &pos,
-                                // UI 事件队列 owner。
-                                &ev,
-                                // failure 进入 backend pending source。
-                                &pointer_failures,
-                            );
+                            // 先按协议轴写入当前 frame；未知枚举不产生事实。
+                            match axis {
+                                WEnum::Value(wl_pointer::Axis::VerticalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_continuous(false, value)
+                                }
+                                WEnum::Value(wl_pointer::Axis::HorizontalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_continuous(true, value)
+                                }
+                                _ => return,
+                            }
+                            // wl_pointer v5 起由 Frame 原子提交；旧版本没有 Frame，立即消费。
+                            if pointer.version() < 5 {
+                                if let Some((dx, dy)) =
+                                    pointer_axis_frame.borrow_mut().take_normalized()
+                                {
+                                    handle_pointer_axis(
+                                        dx,
+                                        dy,
+                                        &targets,
+                                        &pos,
+                                        &ev,
+                                        &pointer_failures,
+                                    );
+                                }
+                            }
+                        }
+                        wl_pointer::Event::AxisDiscrete { axis, discrete } => {
+                            // v5 离散刻度是传统滚轮的权威单位，在 Frame 时覆盖连续距离。
+                            match axis {
+                                WEnum::Value(wl_pointer::Axis::VerticalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_discrete(false, discrete)
+                                }
+                                WEnum::Value(wl_pointer::Axis::HorizontalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_discrete(true, discrete)
+                                }
+                                _ => {}
+                            }
+                        }
+                        wl_pointer::Event::AxisValue120 { axis, value120 } => {
+                            // v8 的 120 基准刻度优先级最高，可保留高分辨率滚轮的分数步长。
+                            match axis {
+                                WEnum::Value(wl_pointer::Axis::VerticalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_value120(false, value120)
+                                }
+                                WEnum::Value(wl_pointer::Axis::HorizontalScroll) => {
+                                    pointer_axis_frame
+                                        .borrow_mut()
+                                        .record_value120(true, value120)
+                                }
+                                _ => {}
+                            }
+                        }
+                        wl_pointer::Event::Frame => {
+                            // 同一协议帧的两轴只生成一个平台中立 Wheel 事件。
+                            if let Some((dx, dy)) =
+                                pointer_axis_frame.borrow_mut().take_normalized()
+                            {
+                                handle_pointer_axis(dx, dy, &targets, &pos, &ev, &pointer_failures);
+                            }
                         }
                         _ => {}
                     });

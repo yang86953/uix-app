@@ -15,13 +15,27 @@ void main() {
 }
 
 #elif defined(UIX_TEXTURED)
+layout(set = 0, binding = 0, std140) uniform SampledUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 surface_clip;
+} u;
 layout(set = 0, binding = 1) uniform sampler2D u_texture;
 layout(location = 0) in vec2 v_uv;
 layout(location = 1) in vec4 v_color;
 
 void main() {
     vec4 sample_color = texture(u_texture, v_uv);
-    out_color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a);
+    float coverage = 1.0;
+    if (u.surface_clip.x > 0.0) {
+        vec2 half_size = u.viewport * 0.5;
+        vec2 centered = abs(gl_FragCoord.xy - half_size);
+        vec2 distance = centered - half_size + u.surface_clip.x;
+        float signed_distance = length(max(distance, vec2(0.0)))
+            + min(max(distance.x, distance.y), 0.0) - u.surface_clip.x;
+        coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
+    }
+    out_color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a) * coverage;
 }
 
 #elif defined(UIX_COVERAGE)
@@ -291,6 +305,32 @@ void main() {
     vec4 color = floor(clamp(u.color, 0.0, 1.0) * 255.0 + 0.5);
     vec3 premultiplied = floor(color.rgb * color.a / 255.0);
     out_color = vec4(premultiplied * mask, color.a * mask) / 255.0;
+}
+
+#elif defined(UIX_LINE)
+layout(set = 0, binding = 0, std140) uniform LineUniforms {
+    vec2 viewport;
+    vec2 _pad0;
+    vec4 points;
+    vec4 color;
+    vec4 params;
+} u;
+layout(location = 0) in vec2 v_position;
+
+void main() {
+    vec2 start = u.points.xy;
+    vec2 segment = u.points.zw - start;
+    float length_squared = max(dot(segment, segment), 0.000001);
+    float along = clamp(dot(v_position - start, segment) / length_squared, 0.0, 1.0);
+    float distance_to_line = length(v_position - (start + along * segment)) - u.params.x * 0.5;
+    float derivative = max(fwidth(distance_to_line), 0.0001);
+    float coverage = clamp(0.5 - distance_to_line / derivative, 0.0, 1.0);
+    if (coverage <= 0.0) {
+        discard;
+    }
+    vec4 color = floor(clamp(u.color, 0.0, 1.0) * 255.0 + 0.5);
+    vec3 premultiplied = floor(color.rgb * color.a / 255.0);
+    out_color = vec4(premultiplied * coverage, color.a * coverage) / 255.0;
 }
 
 #else

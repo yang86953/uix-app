@@ -192,6 +192,18 @@ impl GraphicsSurface for VulkanContext {
         self.surface_lifecycle.token()
     }
 
+    #[cfg(all(unix, not(target_os = "macos")))]
+    fn surface_corner_radius(&self) -> f32 {
+        // SAFETY: native_surface 指向窗口 owner 在 VulkanContext 生命周期内保持稳定的 descriptor。
+        unsafe {
+            crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle::from_native(
+                self.native_surface,
+            )
+        }
+        .and_then(|surface| surface.metrics.snapshot())
+        .map_or(0.0, |snapshot| snapshot.corner_radius as f32)
+    }
+
     fn acquire(&mut self) -> Result<SurfaceFrame> {
         let owner = self.active_device()?;
         if self.acquired_frame.is_some() || self.submitted_frame.is_some() {

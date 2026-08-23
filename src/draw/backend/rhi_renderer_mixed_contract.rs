@@ -31,6 +31,28 @@ pub(super) fn check_op(operation: &RhiOp) -> Result<()> {
                 ));
             }
         }
+        // 校验解析线段常量。
+        RhiOp::Line(line) => {
+            if line
+                .start
+                .iter()
+                .chain(line.end.iter())
+                .chain(line.rgba.iter())
+                .any(|value| !value.is_finite())
+                || !line.width.is_finite()
+                || line.width <= 0.0
+                || line.start == line.end
+            {
+                return Err(super::super::rhi_invalid(
+                    "RhiRenderer mixed line constants are invalid",
+                ));
+            }
+            if line.scissor.is_some_and(|scissor| !scissor.is_valid()) {
+                return Err(super::super::rhi_invalid(
+                    "RhiRenderer mixed line scissor is invalid",
+                ));
+            }
+        }
         // 校验颜色纹理 quad 的几何和像素 payload。
         RhiOp::Textured(quad) => {
             // 目标矩形和颜色 tint 必须是有限正值。

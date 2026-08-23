@@ -74,7 +74,12 @@ impl crate::platform::presentation::GpuRecipeContext for EglContext {
         // 在可变借用前取得当前完整 surface 快照。
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::platform::presentation::resize_native_rhi_surface(self, present_surface, width, height)
+        crate::platform::presentation::resize_native_rhi_surface(
+            self,
+            present_surface,
+            width,
+            height,
+        )
     }
 }
 
@@ -110,6 +115,13 @@ impl OpenGlRhiHost for EglContext {
     // 可变借用同一个共享 Surface 生命周期。
     fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle {
         &mut self.surface_lifecycle
+    }
+
+    // Wayland windowing 与 EGL 共享同一份客户端装饰外观事实。
+    fn rhi_surface_corner_radius(&self) -> f32 {
+        self.metrics
+            .snapshot()
+            .map_or(0.0, |snapshot| snapshot.corner_radius as f32)
     }
 
     // 判断 EGL drawable、逻辑尺寸与 DPR 是否已满足 resize 请求。

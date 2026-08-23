@@ -3,7 +3,9 @@
 // 引入统一结果类型。
 use crate::core::error::Result;
 // 引入 draw packet 与有限资源语义。
-use crate::platform::presentation::rhi::{BufferUsage, DrawPacket, PipelineKind, SampledTextureBinding};
+use crate::platform::presentation::rhi::{
+    BufferUsage, DrawPacket, PipelineKind, SampledTextureBinding,
+};
 
 // 引入父模块的 D3D11 context、资源状态和错误辅助。
 use super::{D3d11Context, D3d11IndexBinding, rhi_invalid};
@@ -265,6 +267,19 @@ impl D3d11Context {
                     first_index,
                 )
             }
+            // 解析线段使用共享 64 字节常量 ABI 和胶囊距离场。
+            PipelineKind::LineSegment => self.pipeline.draw_rhi_line(
+                &self.context,
+                &vertex_native,
+                vertex_stride,
+                index_binding.as_ref(),
+                &uniform_native,
+                contract.blend,
+                vertex_count,
+                index_count,
+                first_vertex,
+                first_index,
+            ),
             // 仿射阴影使用 96 字节 AffineShadowConstants。
             PipelineKind::BoxShadow => {
                 // 把已经由通用 renderer 验证的常量交给阴影 SDF shader。

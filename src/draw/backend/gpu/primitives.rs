@@ -145,6 +145,20 @@ pub(crate) struct GpuSector {
     pub(crate) rgba: [f32; 4],
 }
 
+// 为解析抗锯齿线段提供可复制、可比较的值语义。
+#[derive(Debug, Clone, Copy, PartialEq)]
+// 描述 GPU-native Canvas2D 的设备空间线段中心线与完整宽度。
+pub(crate) struct GpuLineSegment {
+    /// 记录设备空间起点。
+    pub(crate) start: [f32; 2],
+    /// 记录设备空间终点。
+    pub(crate) end: [f32; 2],
+    /// 记录完整设备空间线宽。
+    pub(crate) width: f32,
+    /// 记录非预乘直通 RGBA 颜色。
+    pub(crate) rgba: [f32; 4],
+}
+
 // 为纯色三角网格提供可克隆的共享载荷语义。
 #[derive(Debug, Clone)]
 // 描述 CPU 曲面细分后交给 GPU 的纯色三角列表。

@@ -31,6 +31,10 @@ pub(crate) trait OpenGlRhiHost {
     fn rhi_surface_lifecycle(&self) -> &RhiSurfaceLifecycle;
     // 可变借用同一个共享生命周期 owner。
     fn rhi_surface_lifecycle_mut(&mut self) -> &mut RhiSurfaceLifecycle;
+    // 返回平台 surface 已归一化的物理圆角半径。
+    fn rhi_surface_corner_radius(&self) -> f32 {
+        0.0
+    }
     // 判断原生 drawable 与已验证 resize 请求是否已经完全一致。
     fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool>;
     // 机械消费共享重建事务并返回原生操作产生的实际 extent。
@@ -300,6 +304,10 @@ where
     fn token(&self) -> SurfaceToken {
         // EGL/WGL 不再拼装第二份 generation 或 extent。
         self.rhi_surface_lifecycle().token()
+    }
+
+    fn surface_corner_radius(&self) -> f32 {
+        self.rhi_surface_corner_radius()
     }
 
     // 获取当前 swapchain target，并确保 GL context current。

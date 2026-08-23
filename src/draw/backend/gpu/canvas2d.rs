@@ -3,8 +3,6 @@
 //! 热路径直接入队 native 命令；unsupported 操作确定性软光栅化并在 present
 //! 时 alpha-blit（GPU-only 模式 typed 失败）。
 
-use std::sync::Arc;
-
 use crate::core::{Point, Rect};
 use crate::draw::Canvas2D;
 use crate::draw::geometry::color::Color;
@@ -18,11 +16,11 @@ use super::geometry::{
 };
 use super::pending::StateSnapshot;
 use super::pending::{
-    DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeMesh, PendingNativeOp,
+    DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeLine, PendingNativeOp,
     PendingNativeRect, PendingNativeScroll,
 };
 // 引入所属 graphics backend Module 的 renderer 原语。
-use super::{GpuGlyphBlit, GpuSolidMesh, GpuSolidRect};
+use super::{GpuGlyphBlit, GpuLineSegment, GpuSolidRect};
 
 impl Canvas2D for NativeGpuCanvas2D {
     fn current_transform(&self) -> Transform {
@@ -122,24 +120,19 @@ impl Canvas2D for NativeGpuCanvas2D {
                 return;
             }
         }
-        // 对角线：以设备坐标线段为中轴构造描边四边形网格。
+        // 对角线进入共享解析覆盖率 pipeline；硬边三角网格没有像素覆盖率，
+        // 会在所有单采样 GPU 后端形成相同的阶梯锯齿。
         if !self.soft_has_content && self.native_caps.retained_color_target && native_blend {
             let dx = p2.x - p1.x;
             let dy = p2.y - p1.y;
             let len = (dx * dx + dy * dy).sqrt();
             if len > 1e-6 && stroke_w > 0.0 {
-                let nx = -dy / len * stroke_w * 0.5;
-                let ny = dx / len * stroke_w * 0.5;
-                let (x0, y0) = (p1.x + nx, p1.y + ny);
-                let (x1, y1) = (p1.x - nx, p1.y - ny);
-                let (x2, y2) = (p2.x - nx, p2.y - ny);
-                let (x3, y3) = (p2.x + nx, p2.y + ny);
                 self.pending_native
-                    .push(PendingNativeOp::SolidMesh(PendingNativeMesh {
-                        mesh: GpuSolidMesh {
-                            vertices: Arc::<[f32]>::from(vec![
-                                x0, y0, x1, y1, x2, y2, x0, y0, x2, y2, x3, y3,
-                            ]),
+                    .push(PendingNativeOp::Line(PendingNativeLine {
+                        line: GpuLineSegment {
+                            start: [p1.x, p1.y],
+                            end: [p2.x, p2.y],
+                            width: stroke_w,
                             rgba: self.solid_rgba(color),
                         },
                         scissor: self.scissor_aabb(),

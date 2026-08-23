@@ -35,6 +35,8 @@ pub(crate) enum PipelineKind {
     MsdfGlyphQuad,
     // 使用单位 quad 与 SectorConstants 绘制分析抗锯齿扇形。
     Sector,
+    // 使用单位 quad 与共享四组常量绘制解析抗锯齿线段。
+    LineSegment,
 }
 
 // 把不透明原生句柄与创建时的共享 pipeline 语义绑定为不可拆身份。
@@ -596,6 +598,17 @@ impl PipelineKind {
                 // Sector 使用四个 float4 常量。
                 PipelineUniformLayout::Sector,
                 // Sector 不读取纹理。
+                PipelineSampling::None,
+                // shader 已输出 premultiplied coverage。
+                PipelineBlend::PremultipliedAlpha,
+            ),
+            // Line shader 把解析覆盖率乘入颜色。
+            Self::LineSegment => ui_2d_pipeline_contract(
+                // Line 使用单位 position float2 quad。
+                PipelineVertexLayout::PositionF32x2,
+                // 两端点、颜色与线宽复用四个 float4 的稳定 ABI。
+                PipelineUniformLayout::Sector,
+                // Line 不读取纹理。
                 PipelineSampling::None,
                 // shader 已输出 premultiplied coverage。
                 PipelineBlend::PremultipliedAlpha,

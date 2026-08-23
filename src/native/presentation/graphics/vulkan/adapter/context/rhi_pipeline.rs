@@ -369,7 +369,7 @@ fn create_shader_module(
         .map_err(|error| vk_err("vkCreateShaderModule RHI pipeline", error))
 }
 
-// 穷尽映射 11 个共享 PipelineKind；Additive 只复用 shader，混合由固定状态区分。
+// 穷尽映射共享 PipelineKind；Additive 只复用 shader，混合由固定状态区分。
 fn shader_pair(kind: PipelineKind) -> VulkanShaderPair {
     match kind {
         PipelineKind::SolidMesh => VulkanShaderPair {
@@ -407,6 +407,10 @@ fn shader_pair(kind: PipelineKind) -> VulkanShaderPair {
         PipelineKind::Sector => VulkanShaderPair {
             vertex: include_bytes!("../shaders/spv/sector.vert.spv"),
             fragment: include_bytes!("../shaders/spv/sector.frag.spv"),
+        },
+        PipelineKind::LineSegment => VulkanShaderPair {
+            vertex: include_bytes!("../shaders/spv/line.vert.spv"),
+            fragment: include_bytes!("../shaders/spv/line.frag.spv"),
         },
     }
 }

@@ -109,6 +109,8 @@ cbuffer GlyphCB : register(b0)
 {
     float2 u_viewport;
     float2 _pad0;
+    float u_corner_radius;
+    float3 _pad1;
 };
 
 Texture2D<float> u_atlas : register(t0);
@@ -155,6 +157,14 @@ float4 PSMain(VSOut input) : SV_Target
 
 // RHI_TEXTURED_PS_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
 pub(super) const RHI_TEXTURED_PS_HLSL: &str = r#"
+cbuffer SampledCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+    float u_corner_radius;
+    float3 _pad1;
+};
+
 Texture2D u_tex : register(t0);
 SamplerState u_samp : register(s0);
 
@@ -169,7 +179,17 @@ float4 PSMain(VSOut input) : SV_Target
     float4 sample = u_tex.Sample(u_samp, input.uv);
     // FramePlan 已验证顶点颜色属于单位域，D3D11 不再私自饱和输入。
     float4 tint = input.color;
-    return float4(sample.rgb * tint.rgb, sample.a * tint.a);
+    float coverage = 1.0;
+    if (u_corner_radius > 0.0)
+    {
+        float2 half_size = u_viewport * 0.5;
+        float2 centered = abs(input.pos.xy - half_size);
+        float2 distance = centered - half_size + u_corner_radius;
+        float signed_distance = length(max(distance, 0.0))
+            + min(max(distance.x, distance.y), 0.0) - u_corner_radius;
+        coverage = saturate(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001));
+    }
+    return float4(sample.rgb * tint.rgb, sample.a * tint.a) * coverage;
 }
 "#;
 
@@ -548,5 +568,56 @@ float4 PSMain(VSOut input) : SV_Target
     float4 color = floor(saturate(u_color) * 255.0 + 0.5);
     float3 premul = floor(color.rgb * color.a / 255.0);
     return float4(premul * mask, color.a * mask) / 255.0;
+}
+"#;
+
+// LINE_HLSL 是 D3D11 与 D3D12 共用的唯一解析抗锯齿线段语义源码。
+pub(super) const LINE_HLSL: &str = r#"
+cbuffer LineCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+    float4 u_points;
+    float4 u_color;
+    float4 u_params;
+};
+
+struct VSIn {
+    float2 pos : POSITION;
+};
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+    float2 position : TEXCOORD0;
+};
+
+VSOut VSMain(VSIn input)
+{
+    VSOut output;
+    float fringe = max(u_params.x * 0.5, 0.0) + 1.5;
+    float2 lower = min(u_points.xy, u_points.zw) - fringe;
+    float2 upper = max(u_points.xy, u_points.zw) + fringe;
+    float2 position = lerp(lower, upper, input.pos);
+    float2 ndc = (position / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    output.pos = float4(ndc, 0.0, 1.0);
+    output.position = position;
+    return output;
+}
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    float2 start = u_points.xy;
+    float2 segment = u_points.zw - start;
+    float length_squared = max(dot(segment, segment), 0.000001);
+    float along = saturate(dot(input.position - start, segment) / length_squared);
+    float distance_to_line = length(input.position - (start + along * segment)) - u_params.x * 0.5;
+    float derivative = max(fwidth(distance_to_line), 0.0001);
+    float coverage = saturate(0.5 - distance_to_line / derivative);
+    if (coverage <= 0.0)
+        discard;
+    float4 color = floor(saturate(u_color) * 255.0 + 0.5);
+    float3 premul = floor(color.rgb * color.a / 255.0);
+    return float4(premul * coverage, color.a * coverage) / 255.0;
 }
 "#;

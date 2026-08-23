@@ -18,12 +18,13 @@ use crate::platform::presentation::rhi::{
     PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
     PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace, PipelineKind,
     PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
-    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
-    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
-    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
-    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
-    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
-    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET,
+    SAMPLED_CORNER_RADIUS_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
+    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
+    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
+    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
+    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
+    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
+    SHAPE_VIEWPORT_FLOAT_OFFSET,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -235,6 +236,12 @@ impl OpenGlRhiDevice {
                             read_f32(&uniform, SAMPLED_VIEWPORT_FLOAT_OFFSET + 1)?,
                         ],
                     );
+                    set_f32(
+                        gl,
+                        program,
+                        "u_corner_radius",
+                        read_f32(&uniform, SAMPLED_CORNER_RADIUS_FLOAT_OFFSET)?,
+                    );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
                     bind_sampled(gl, self, program, packet.sampling())?;
                 }
@@ -428,6 +435,39 @@ impl OpenGlRhiDevice {
                         gl,
                         program,
                         "u_angles",
+                        read_vec4(&uniform, SECTOR_ANGLES_FLOAT_OFFSET)?,
+                    );
+                }
+            }
+            // 解析线段复用 64 字节常量布局，但端点和线宽具有独立 shader 语义。
+            PipelineKind::LineSegment => {
+                // SAFETY: 该分支已校验固定 ABI；program、vertex 和 uniform 在当前上下文存活。
+                unsafe {
+                    set_vec2(
+                        gl,
+                        program,
+                        "u_viewport",
+                        [
+                            read_f32(&uniform, SECTOR_VIEWPORT_FLOAT_OFFSET)?,
+                            read_f32(&uniform, SECTOR_VIEWPORT_FLOAT_OFFSET + 1)?,
+                        ],
+                    );
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_points",
+                        read_vec4(&uniform, SECTOR_RECT_FLOAT_OFFSET)?,
+                    );
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_color",
+                        read_vec4(&uniform, SECTOR_COLOR_FLOAT_OFFSET)?,
+                    );
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_params",
                         read_vec4(&uniform, SECTOR_ANGLES_FLOAT_OFFSET)?,
                     );
                 }

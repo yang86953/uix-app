@@ -5,8 +5,8 @@ use super::RhiViewport;
 
 // 固定两个 float4 组成的 Mesh uniform 总字节数。
 pub(crate) const MESH_UNIFORM_BYTES: usize = 32;
-// 固定一个 float4 组成的 sampled/coverage uniform 总字节数。
-pub(crate) const SAMPLED_UNIFORM_BYTES: usize = 16;
+// 固定两个 float4 组成的 sampled/coverage uniform 总字节数。
+pub(crate) const SAMPLED_UNIFORM_BYTES: usize = 32;
 // 固定四个 float4 组成的 Sector uniform 总字节数。
 pub(crate) const SECTOR_UNIFORM_BYTES: usize = 64;
 
@@ -16,6 +16,8 @@ pub(crate) const MESH_VIEWPORT_FLOAT_OFFSET: usize = 0;
 pub(crate) const MESH_COLOR_FLOAT_OFFSET: usize = 4;
 // viewport 宽高在 sampled/coverage ABI 中的起始 float 索引。
 pub(crate) const SAMPLED_VIEWPORT_FLOAT_OFFSET: usize = 0;
+// 最终 surface 合成圆角半径在 sampled ABI 中的起始 float 索引。
+pub(crate) const SAMPLED_CORNER_RADIUS_FLOAT_OFFSET: usize = 4;
 // viewport 宽高在 Sector ABI 中的起始 float 索引。
 pub(crate) const SECTOR_VIEWPORT_FLOAT_OFFSET: usize = 0;
 // 扇形外接矩形在 Sector ABI 中的起始 float 索引。
@@ -94,8 +96,8 @@ impl RhiMeshRasterParams {
 // 保存平台无关的 sampled/coverage viewport 与确定性 padding。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RhiSampledRasterParams {
-    // 一个 float4 保存 viewport 与两个零 padding。
-    values: [f32; 4],
+    // 两个 float4 保存 viewport、padding 与可选 surface 圆角半径。
+    values: [f32; 8],
 }
 
 // 为 sampled 和 coverage 共用常量提供唯一字段排列与编码入口。
@@ -107,13 +109,30 @@ impl RhiSampledRasterParams {
     ) -> Self {
         // 返回包含确定性零 padding 的完整 sampled ABI。
         Self {
-            // sampled 与 coverage shader 只读取前两个槽。
-            values: [viewport.width, viewport.height, 0.0, 0.0],
+            // 普通 sampled、coverage 与 MSDF 不应用窗口边界遮罩。
+            values: [
+                viewport.width,
+                viewport.height,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
         }
     }
 
+    // 构造只用于 retained texture 最终合成的圆角 surface 常量。
+    pub(crate) fn with_surface_corner_radius(viewport: RhiViewport, radius: f32) -> Self {
+        let mut params = Self::new(viewport);
+        // 半径已经由平台 appearance 契约规范化为物理像素。
+        params.values[SAMPLED_CORNER_RADIUS_FLOAT_OFFSET] = radius.max(0.0);
+        params
+    }
+
     // 返回 Adapter 可按共享字段索引读取的 float ABI。
-    pub(crate) const fn as_f32s(&self) -> &[f32; 4] {
+    pub(crate) const fn as_f32s(&self) -> &[f32; 8] {
         // 借出不可变数组，禁止下层重新组织字段。
         &self.values
     }

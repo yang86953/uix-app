@@ -22,6 +22,14 @@ impl RhiRenderer {
         RhiSampledRasterParams::new(viewport)
     }
 
+    // 把平台窗口外观折叠为最终 sampled 合成使用的单一圆角常量。
+    pub(super) fn surface_sampled_uniform(
+        viewport: RhiViewport,
+        corner_radius: f32,
+    ) -> RhiSampledRasterParams {
+        RhiSampledRasterParams::with_surface_corner_radius(viewport, corner_radius)
+    }
+
     // 把轴对齐扇形事实映射为共享 RHI 常量值对象。
     pub(super) fn sector_uniform(
         // 接收当前 render target 的物理 viewport。

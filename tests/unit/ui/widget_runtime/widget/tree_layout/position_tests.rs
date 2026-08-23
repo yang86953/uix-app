@@ -29,6 +29,36 @@ fn layout_root(tree: &mut crate::ui::WidgetTree, frame: Rect) {
     tree.layout();
 }
 
+// ScrollView 必须以 flex-grow 内容的自然高度建立滚动范围，而不是读取其零 basis。
+#[test]
+fn scroll_view_measures_flex_grow_child_by_natural_content_size() {
+    // 构造与 UIX <ScrollView><Column> 相同的唯一 flex-grow 内容节点。
+    let content = ViewNode::new(
+        // Column 默认扩张，但滚动轴仍应读取其自然内容高度。
+        Container::new().flex_grow(1.0),
+        // 两个固定高度子项共同超过视口。
+        vec![box_view(100.0, 40.0), box_view(100.0, 50.0)],
+    );
+    // 使用五十像素高的纵向滚动视口承载九十像素自然内容。
+    let root = ViewNode::new(
+        ScrollView::new(ScrollDirection::Vertical).size(100.0, 50.0),
+        vec![content],
+    );
+    // 发布并执行真实多阶段布局。
+    let mut tree = ViewAdapter::build_nodes(root);
+    layout_root(&mut tree, Rect::new(0.0, 0.0, 100.0, 50.0));
+    // 读取根滚动组件的运行态范围。
+    let scroll = tree
+        .root()
+        .expect("滚动根必须存在")
+        .widget()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("滚动根类型必须保持不变");
+    // 九十像素内容相对五十像素视口必须产生四十像素滚动范围。
+    assert_eq!(scroll.max_scroll_y(), 40.0);
+}
+
 // absolute 必须退出正常流，并按根包含块求解右上定位。
 #[test]
 fn position_runtime_absolute_leaves_flow_and_uses_root_block() {

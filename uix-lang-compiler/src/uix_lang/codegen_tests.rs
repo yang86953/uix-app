@@ -310,6 +310,8 @@ fn generates_theme_toggle_from_public_widget() {
         .expect("文档化 ThemeToggle 应生成 Rust View");
     // 必须从现有公开 ThemeToggle 默认构造器开始。
     assert!(snapshot.contains("ThemeToggle :: new"));
+    // 声明式快捷控件必须自动进入与 setTheme 相同的 App 级主题通道。
+    assert!(snapshot.contains("on_change_fn") && snapshot.contains("uix_set_theme"));
     // 组件必须通过公开叶 View 组合。
     assert!(snapshot.contains("ViewNode :: leaf"));
     // 公共样式仍由统一 View 映射处理。
@@ -323,8 +325,8 @@ fn generates_theme_toggle_from_public_widget() {
 fn validates_theme_toggle_shape_and_attribute_contract() {
     // 默认自闭合 ThemeToggle 应直接复用组件默认契约。
     let default = generate(r#"<ThemeToggle />"#).expect("默认 ThemeToggle 应可生成");
-    // 默认路径不应伪造暗色状态或应用级主题控制。
-    assert!(!default.contains("dark") && !default.contains("set_theme"));
+    // 默认路径不预置暗色状态，但必须进入唯一的 App 级主题请求通道。
+    assert!(!default.contains("dark") && default.contains("uix_set_theme"));
     // 可见文本不能被叶子组件静默丢弃。
     let text_error = generate(r#"<ThemeToggle>dark</ThemeToggle>"#)
         // 提取预期结构诊断。

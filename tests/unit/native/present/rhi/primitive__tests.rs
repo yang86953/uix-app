@@ -35,10 +35,25 @@
     fn sampled_params_own_shared_viewport_layout() {
         // 构造 sampled/coverage 共用参数。
         let params = RhiSampledRasterParams::new(viewport());
-        // 完整 float4 必须包含 viewport 与两个零 padding。
-        assert_eq!(params.as_f32s(), &[800.0, 600.0, 0.0, 0.0]);
+        // 两个 float4 必须包含 viewport、默认零圆角与确定性 padding。
+        assert_eq!(
+            params.as_f32s(),
+            &[800.0, 600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
         // 编码字节数必须与 pipeline 契约一致。
         assert_eq!(params.encode_ne_bytes().len(), SAMPLED_UNIFORM_BYTES);
+    }
+
+    // 最终 surface 合成必须只在共享 ABI 的固定槽位写入平台圆角事实。
+    #[test]
+    fn sampled_surface_radius_uses_the_shared_slot() {
+        // 构造带物理圆角半径的最终合成参数。
+        let params = RhiSampledRasterParams::with_surface_corner_radius(viewport(), 12.0);
+        // viewport 保持不变，圆角半径只占用第二个 float4 的首槽。
+        assert_eq!(
+            params.as_f32s(),
+            &[800.0, 600.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0]
+        );
     }
 
     // Sector 必须冻结 viewport、矩形、颜色、角度和两处 padding。

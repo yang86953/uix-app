@@ -10,8 +10,8 @@ use crate::platform::presentation::rhi::{
 // 引入父 renderer 的帧计划和已完成 lowering 的 payload。
 use super::{
     FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiGradientRect,
-    RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect, RhiSolidMesh,
-    RhiTexturedQuad,
+    RhiLineSegment, RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect,
+    RhiSolidMesh, RhiTexturedQuad,
 };
 // 将混合操作 ABI 约束检查拆到独立文件，保持执行器文件边界清晰。
 #[path = "rhi_renderer_mixed_contract.rs"]
@@ -42,6 +42,8 @@ pub(crate) struct RhiSector {
 pub(crate) enum RhiOp {
     // 保存实心 mesh 操作。
     Solid(RhiSolidMesh),
+    // 保存解析抗锯齿线段操作。
+    Line(RhiLineSegment),
     // 保存颜色纹理 quad 操作。
     Textured(RhiTexturedQuad),
     // 保存一个已经存在的 sampled texture quad。
@@ -207,6 +209,56 @@ impl RhiRenderer {
         // 返回本次 sector draw 所需的固定资源。
         Ok((pipeline, vertex_buffer, uniform_buffer))
     }
+
+    // 准备 position float2 单位 quad、共享四组常量和解析线段 pipeline。
+    fn ensure_line_resources(
+        &mut self,
+        device: &mut dyn GraphicsDevice,
+    ) -> Result<(
+        crate::platform::presentation::rhi::PipelineBinding,
+        crate::platform::presentation::rhi::BufferHandle,
+        crate::platform::presentation::rhi::BufferHandle,
+    )> {
+        let pipeline = if let Some(pipeline) = self.line_pipeline {
+            pipeline
+        } else {
+            let pipeline =
+                device.create_pipeline(crate::platform::presentation::rhi::PipelineDesc {
+                    kind: crate::platform::presentation::rhi::PipelineKind::LineSegment,
+                })?;
+            self.line_pipeline = Some(pipeline);
+            pipeline
+        };
+        let unit_vertices = RhiRenderer::unit_quad_vertex_payload();
+        let vertex_buffer = if let Some(buffer) = self.line_vertex_buffer {
+            buffer
+        } else {
+            let buffer =
+                device.create_buffer(crate::platform::presentation::rhi::BufferDesc::vertex(
+                    unit_vertices.size_bytes(),
+                    crate::platform::presentation::rhi::PipelineKind::LineSegment
+                        .contract()
+                        .vertex
+                        .stride_bytes(),
+                ))?;
+            self.line_vertex_buffer = Some(buffer);
+            buffer
+        };
+        let uniform_buffer = if let Some(buffer) = self.line_uniform {
+            buffer
+        } else {
+            let buffer =
+                device.create_buffer(crate::platform::presentation::rhi::BufferDesc::uniform(
+                    crate::platform::presentation::rhi::PipelineKind::LineSegment
+                        .contract()
+                        .uniform
+                        .size_bytes(),
+                ))?;
+            self.line_uniform = Some(buffer);
+            buffer
+        };
+        Ok((pipeline, vertex_buffer, uniform_buffer))
+    }
 }
 
 // 为通用 renderer 提供一个混合操作的单次 FramePlan 执行入口。
@@ -252,6 +304,15 @@ impl RhiRenderer {
             Some(bytes) => Some(self.ensure_solid_resources(frame.device(), bytes)?),
             // 不含 solid 时保持空槽。
             None => None,
+        };
+        // 解析线段使用固定单位 quad 与独立覆盖率 pipeline。
+        let line_resources = if operations
+            .iter()
+            .any(|operation| matches!(operation, RhiOp::Line(_)))
+        {
+            Some(self.ensure_line_resources(frame.device())?)
+        } else {
+            None
         };
         // 三类 float8 sampled 操作共享同一 vertex buffer，必须在返回任何句柄前统一扩容。
         let coverage_count = operations
@@ -491,6 +552,13 @@ impl RhiRenderer {
                 data: RhiRenderer::unit_quad_vertex_payload(),
             });
         }
+        // 只为本 pass 实际需要的 Line 建立一次静态顶点事实。
+        if let Some((_, vertex_buffer, _)) = line_resources {
+            pass.push(FramePlanCommand::UploadVertex {
+                buffer: vertex_buffer,
+                data: RhiRenderer::unit_quad_vertex_payload(),
+            });
+        }
         // 按原始操作顺序追加 command，不能按 pipeline 类型重排。
         let mut index = 0usize;
         while index < operations.len() {
@@ -528,6 +596,30 @@ impl RhiRenderer {
                         DrawRasterState::new(viewport, mesh.scissor),
                         // Mesh 使用封闭的非索引顶点范围。
                         DrawRange::vertices((mesh.vertices.len() / 2) as u32),
+                    )));
+                }
+                // 编码解析抗锯齿线段。
+                RhiOp::Line(line) => {
+                    let (pipeline, vertex_buffer, uniform_buffer) = required(
+                        line_resources,
+                        "RhiRenderer mixed line resources are missing",
+                    )?;
+                    // 复用四组 float4 的解析图元 ABI：rect 槽保存两端点，参数槽保存线宽。
+                    pass.push(FramePlanCommand::UploadUniform {
+                        buffer: uniform_buffer,
+                        data: FrameUniformPayload::Sector(RhiRenderer::sector_uniform(
+                            viewport,
+                            [line.start[0], line.start[1], line.end[0], line.end[1]],
+                            line.rgba,
+                            [line.width, 0.0],
+                        )),
+                    });
+                    pass.push(FramePlanCommand::Draw(DrawPacket::new(
+                        pipeline,
+                        DrawBufferBindings::new(vertex_buffer, uniform_buffer),
+                        DrawSamplingBinding::none(),
+                        DrawRasterState::new(viewport, line.scissor),
+                        DrawRange::vertices(6),
                     )));
                 }
                 // 编码颜色纹理 quad。
@@ -603,7 +695,10 @@ impl RhiRenderer {
                     // 上传类型化 viewport uniform。
                     pass.push(FramePlanCommand::UploadUniform {
                         buffer: uniform_buffer,
-                        data: FrameUniformPayload::Sampled(RhiRenderer::sampled_uniform(viewport)),
+                        data: FrameUniformPayload::Sampled(RhiRenderer::surface_sampled_uniform(
+                            viewport,
+                            quad.surface_corner_radius,
+                        )),
                     });
                     // 原子绑定已经存在的 Picture texture 与共享 sampler。
                     // 追加当前 Picture draw packet。

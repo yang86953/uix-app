@@ -20,6 +20,8 @@ use wayland_client::protocol::{
     wl_region,
     // seat 只作为 xdg_toplevel.move 的协议参数使用。
     wl_seat,
+    // SHM 用于平台客户端阴影纹理。
+    wl_shm,
     // surface 继续标识当前原生窗口表面。
     wl_surface,
     // 结束 Wayland 核心协议类型导入。
@@ -75,6 +77,8 @@ use super::resize_constraints::{
 };
 // 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
 use super::surface_registration::register_window_surface;
+// 可选平台阴影协议由独立逐窗 Component 托管。
+use super::shadow::WaylandClientShadow;
 // Wayland HiDPI Component 独占 output 订阅、buffer scale 与共享 surface metrics。
 use super::surface_scale::{
     WaylandOutputScaleRegistry, WaylandWindowScaleState, bind_surface_scale_events,
@@ -111,6 +115,8 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
+    // 后端唯一 SHM global 的逐窗引用，仅用于创建客户端阴影 buffer。
+    pub(crate) shm: Main<wl_shm::WlShm>,
     pub(crate) input_region: Option<Main<wl_region::WlRegion>>,
     pub(crate) events: Arc<Mutex<VecDeque<UiEvent>>>,
     // 所有窗口 callback 复用所属 Wayland backend 的同一 failure source。
@@ -139,6 +145,8 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) xdg_activation: Option<Main<XdgActivationV1>>,
     // 单个 pending activation token 允许新请求与窗口关闭注销旧 callback。
     pub(crate) activation_token: Option<Main<XdgActivationTokenV1>>,
+    // 可选客户端阴影 owner；上层始终只操作统一标题栏外观契约。
+    client_shadow: Option<WaylandClientShadow>,
 }
 
 impl WaylandWindowOps {
@@ -147,6 +155,7 @@ impl WaylandWindowOps {
         width: i32,
         height: i32,
         compositor: Main<wl_compositor::WlCompositor>,
+        shm: Main<wl_shm::WlShm>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
         // 注入所属 Wayland backend 已有的 callback failure source。
         pending_failures: PendingFailureSource,
@@ -173,6 +182,7 @@ impl WaylandWindowOps {
             xdg_surface: None,
             toplevel: None,
             compositor,
+            shm,
             input_region: None,
             events,
             // 保存同一 source 的廉价 clone，不建立新的 failure owner。
@@ -201,6 +211,7 @@ impl WaylandWindowOps {
             xdg_activation,
             // 新窗口尚未建立异步 activation token 请求。
             activation_token: None,
+            client_shadow: None,
         }
     }
 
@@ -334,6 +345,14 @@ impl WaylandWindowOps {
                 let transition = modes.apply_configure(is_max, is_full);
                 // 读取刚提交的同源模式快照。
                 let (maximized, fullscreen) = modes.snapshot();
+                // 同一 surface appearance owner 决定贴边窗口是否关闭圆角。
+                if let Err(error) = toplevel_surface_scale
+                    .metrics()
+                    .set_maximized(maximized || fullscreen)
+                {
+                    let _ = toplevel_failures.enqueue(error);
+                    return;
+                }
                 // 同步提交窗口最大化事实。
                 state.maximized = maximized;
                 // 同步提交窗口全屏事实。
@@ -398,6 +417,15 @@ impl WaylandWindowOps {
             // 返回已设置到 surface 的局部区域 owner。
             region
         };
+        // 平台扩展存在时准备逐窗阴影资源；缺失时保持标准 Wayland 客户端装饰。
+        self.client_shadow = WaylandClientShadow::try_create(
+            globals,
+            &queue_handle,
+            self.compositor.context(),
+            &self.shm,
+            &surface,
+            self.window_id,
+        );
         // 私有 Component 在任何改写前取得两份健康注册表 guard。
         register_window_surface(
             // 传入 raw pointer activation 的唯一共享 owner。
@@ -537,6 +565,11 @@ impl WindowOps for WaylandWindowOps {
         super::file_drop_window::disable_window(&self.file_drop_state, self.window_id)?;
         // 装饰对象依赖 xdg_toplevel，必须先于顶层窗口释放。
         self.xdg_decoration = None;
+        // 阴影依赖 wl_surface，必须在 surface owner 释放前结束生命周期。
+        if let Some(shadow) = self.client_shadow.as_mut() {
+            shadow.set_enabled(false);
+        }
+        self.client_shadow = None;
         // 先注销 xdg-shell callbacks，再释放两个逐窗协议 handles。
         self.shutdown_window_callbacks();
         self.surface = None;
@@ -601,10 +634,18 @@ impl WindowOps for WaylandWindowOps {
     fn os_set_system_title_bar_visible(&mut self, visible: bool) -> Result<()> {
         // 优先通过 xdg-decoration 协议提交明确的模式请求。
         if let Some(decoration) = self.xdg_decoration.as_ref() {
+            // 协议能力确认后再提交共享外观事实，避免失败请求留下部分状态。
+            self.surface_scale
+                .metrics()
+                .set_client_decorated(!visible)?;
             // 将公共布尔契约映射为唯一协议模式。
             let mode = Self::title_bar_decoration_mode(visible);
             // 模式请求由后续 surface commit 与 compositor configure 完成协商。
             decoration.set_mode(mode);
+            // 阴影启停与同一个客户端装饰事实同步，不建立第二套上层开关。
+            if let Some(shadow) = self.client_shadow.as_mut() {
+                shadow.set_enabled(!visible);
+            }
             // 记录请求方向，便于 Linux 真窗验收定位 compositor 行为。
             tracing::info!(visible, "[Wayland] xdg-decoration mode requested");
             // 已成功把请求交付给 Wayland 协议对象。
@@ -612,6 +653,11 @@ impl WindowOps for WaylandWindowOps {
         }
         // 缺少协议时 Wayland 默认由客户端负责装饰，因此隐藏系统标题栏可直接满足。
         if !visible {
+            // 无协议时 ClientSide 是 Wayland 默认值，仍提交同一共享外观事实。
+            self.surface_scale.metrics().set_client_decorated(true)?;
+            if let Some(shadow) = self.client_shadow.as_mut() {
+                shadow.set_enabled(true);
+            }
             // 记录无扩展协议时采用的客户端装饰语义。
             tracing::info!("[Wayland] using client-side decorations without xdg-decoration");
             // UIX 可以继续显示自己的标题栏。

@@ -10,7 +10,7 @@ use std::mem::ManuallyDrop;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::presentation::graphics::d3d_shader_source::{
-    BLUR_HLSL, GLYPH_HLSL, GRADIENT_HLSL, MESH_HLSL, MSDF_GLYPH_HLSL, RECT_HLSL,
+    BLUR_HLSL, GLYPH_HLSL, GRADIENT_HLSL, LINE_HLSL, MESH_HLSL, MSDF_GLYPH_HLSL, RECT_HLSL,
     RHI_TEXTURED_PS_HLSL, SECTOR_HLSL, SHADOW_HLSL,
 };
 use crate::platform::presentation::rhi::{
@@ -339,6 +339,10 @@ fn d3d12_shader_pair(kind: crate::platform::presentation::rhi::PipelineKind) -> 
         PipelineKind::Sector => D3d12ShaderPair {
             vertex: SECTOR_HLSL,
             pixel: SECTOR_HLSL,
+        },
+        PipelineKind::LineSegment => D3d12ShaderPair {
+            vertex: LINE_HLSL,
+            pixel: LINE_HLSL,
         },
     }
 }

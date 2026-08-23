@@ -5,23 +5,19 @@
 // Wayland surface。支持双缓冲和脏矩形局部更新。
 // ============================================================================
 
-use std::fs::File;
-use std::io::{Seek, SeekFrom, Write};
-use std::os::unix::io::AsRawFd;
 // presenter 与 windowing 共享逐窗 surface metrics owner。
 use std::sync::Arc;
 
 use super::compat::Main;
-use wayland_client::protocol::{wl_buffer, wl_shm, wl_surface};
+use wayland_client::protocol::{wl_shm, wl_surface};
 
 use crate::core::{Errc, Error, PresentDamage, PresentSurface, Result};
 use crate::platform::presentation::validate_pixel_buffer;
 // SHM drawable 使用与 EGL 相同的 logical/drawable 原子快照。
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceMetrics;
-use crate::native::windowing::shared::buffer_lease::BufferLease;
 use crate::platform::presentation::IPresenter;
 
-use super::shm_buffer::ShmBuffer;
+use super::shm_buffer::{ShmBuffer, create_argb_buffer};
 
 /// Wayland SHM 像素呈现器。
 ///
@@ -276,58 +272,7 @@ impl WaylandPresenter {
         height: i32,
         buffer_index: usize,
     ) -> Result<ShmBuffer, String> {
-        use wayland_client::protocol::wl_shm as wl_shm_proto;
-
-        if width <= 0 || height <= 0 {
-            return Err(format!("invalid SHM extent {width}x{height}"));
-        }
-        let stride = width
-            .checked_mul(4)
-            .ok_or_else(|| format!("SHM stride overflow for width {width}"))?;
-        let size = stride
-            .checked_mul(height)
-            .ok_or_else(|| format!("SHM size overflow for {width}x{height}"))?
-            as usize;
-        let pool_size = i32::try_from(size)
-            .map_err(|_| format!("SHM size exceeds Wayland i32 limit: {size}"))?;
-        let tmp =
-            std::env::temp_dir().join(format!("uix-shm-{}-{}", std::process::id(), buffer_index));
-
-        let mut f = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&tmp)
-            .map_err(|e| format!("shm open: {}", e))?;
-
-        f.set_len(size as u64)
-            .map_err(|e| format!("shm len: {}", e))?;
-        f.seek(SeekFrom::Start((size - 1) as u64))
-            .map_err(|e| format!("shm seek: {e}"))?;
-        f.write_all(&[0u8])
-            .map_err(|e| format!("shm initialize: {e}"))?;
-        f.flush().map_err(|e| format!("shm flush: {e}"))?;
-
-        let fd = f.as_raw_fd();
-        let pool = self.shm.create_pool(fd, pool_size);
-        let buf = pool.create_buffer(0, width, height, stride, wl_shm_proto::Format::Argb8888);
-        let lease = BufferLease::new();
-        let released = lease.clone();
-        buf.quick_assign(move |_, event, _| {
-            if matches!(event, wl_buffer::Event::Release) {
-                released.release();
-            }
-        });
-
-        let _ = std::fs::remove_file(&tmp);
-        Ok(ShmBuffer {
-            file: f,
-            size,
-            pool,
-            buffer: buf,
-            lease,
-        })
+        create_argb_buffer(&self.shm, width, height, &format!("present-{buffer_index}"))
     }
 }
 
