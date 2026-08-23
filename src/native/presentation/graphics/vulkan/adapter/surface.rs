@@ -162,7 +162,15 @@ pub(super) fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentMo
     modes
         .iter()
         .copied()
-        .find(|mode| *mode == vk::PresentModeKHR::FIFO)
+        // MAILBOX 保持无撕裂且不会把交互帧排入 FIFO 队尾，优先降低切页输入延迟。
+        .find(|mode| *mode == vk::PresentModeKHR::MAILBOX)
+        // Vulkan 保证 FIFO 可用；不支持 MAILBOX 的设备继续使用稳定垂直同步路径。
+        .or_else(|| {
+            modes
+                .iter()
+                .copied()
+                .find(|mode| *mode == vk::PresentModeKHR::FIFO)
+        })
         .or_else(|| modes.first().copied())
         .unwrap_or(vk::PresentModeKHR::FIFO)
 }
@@ -206,3 +214,8 @@ pub(super) fn choose_extent(
             .clamp(caps.min_image_extent.height, caps.max_image_extent.height),
     }
 }
+
+// 把 Vulkan Surface 的纯选择契约测试放在根 tests 目录。
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/native/presentation/graphics/vulkan/adapter/surface__tests.rs"]
+mod tests;

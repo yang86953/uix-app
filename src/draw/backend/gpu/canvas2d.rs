@@ -17,10 +17,10 @@ use super::geometry::{
 use super::pending::StateSnapshot;
 use super::pending::{
     DirectImageBlit, PendingNativeGlyph, PendingNativeImage, PendingNativeLine, PendingNativeOp,
-    PendingNativeRect, PendingNativeScroll,
+    PendingNativeScroll,
 };
 // 引入所属 graphics backend Module 的 renderer 原语。
-use super::{GpuGlyphBlit, GpuLineSegment, GpuSolidRect};
+use super::{GpuGlyphBlit, GpuLineSegment};
 
 impl Canvas2D for NativeGpuCanvas2D {
     fn current_transform(&self) -> Transform {
@@ -89,39 +89,8 @@ impl Canvas2D for NativeGpuCanvas2D {
         let stroke_scale = uniform_transform_scale(self.transform).unwrap_or(1.0);
         let stroke_w = lw * stroke_scale;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        let axis_aligned_vertical = (p1.x - p2.x).abs() < 1e-6;
-        let axis_aligned_horizontal = (p1.y - p2.y).abs() < 1e-6;
-        if (axis_aligned_vertical || axis_aligned_horizontal)
-            && !self.soft_has_content
-            && self.native_caps.retained_color_target
-            && native_blend
-        {
-            let half = stroke_w * 0.5;
-            let rect = if axis_aligned_vertical {
-                Rect::new(p1.x - half, p1.y.min(p2.y), stroke_w, (p1.y - p2.y).abs())
-            } else {
-                Rect::new(p1.x.min(p2.x), p1.y - half, (p1.x - p2.x).abs(), stroke_w)
-            };
-            if rect.w > 0.0 && rect.h > 0.0 {
-                self.pending_native
-                    .push(PendingNativeOp::SolidRect(PendingNativeRect {
-                        rect: GpuSolidRect {
-                            x: rect.x,
-                            y: rect.y,
-                            w: rect.w,
-                            h: rect.h,
-                            rgba: self.solid_rgba(color),
-                            radius: [0.0; 4],
-                        },
-                        // 轴对齐线段仍只由普通 SrcOver 快路入队。
-                        additive: false,
-                        scissor: self.scissor_aabb(),
-                    }));
-                return;
-            }
-        }
-        // 对角线进入共享解析覆盖率 pipeline；硬边三角网格没有像素覆盖率，
-        // 会在所有单采样 GPU 后端形成相同的阶梯锯齿。
+        // 所有方向统一进入共享解析覆盖率 pipeline；轴对齐线若退化为 SolidRect，
+        // 会与斜线产生不同的边缘覆盖率和端帽，缩放后尤其容易出现锯齿跳变。
         if !self.soft_has_content && self.native_caps.retained_color_target && native_blend {
             let dx = p2.x - p1.x;
             let dy = p2.y - p1.y;
@@ -141,7 +110,7 @@ impl Canvas2D for NativeGpuCanvas2D {
             }
         }
         if self.gpu_only {
-            self.reject_unsupported("diagonal line GPU primitive");
+            self.reject_unsupported("line GPU primitive");
             return;
         }
         self.sync_fallback_state();
