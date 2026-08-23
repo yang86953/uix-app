@@ -1,11 +1,14 @@
 //! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
 
+use std::collections::HashSet;
+
 use crate::core::DirtyRegion;
 use crate::core::{Point, Rect, WidgetId};
 use crate::draw::painting::PaintContext;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::PicturePolicy;
 use crate::draw::scene::ScenePaint;
+use crate::draw::scene::{HoverInspectorNode, HoverInspectorSnapshot};
 use crate::ui::reactive::state::StateBindCaptureGuard;
 use crate::ui::widget_runtime::paint_scope::PaintWidgetScope;
 use crate::ui::widget_runtime::widget::WidgetCore;
@@ -224,6 +227,66 @@ impl ScenePaint for WidgetTree {
 
     fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.get(id).and_then(|n| n.parent())
+    }
+
+    fn hover_inspector(&self, leaf: NodeId) -> Option<HoverInspectorSnapshot> {
+        // 故障停止态不得通过检查器读取半提交树。
+        if !self.accepts_external_work() || self.get(leaf).is_none() {
+            return None;
+        }
+        // 从叶向根收集，并用访问集合防御损坏父链导致无限循环。
+        let mut path = Vec::new();
+        let mut visited = HashSet::new();
+        let mut current = Some(leaf);
+        while let Some(id) = current {
+            if !visited.insert(id) {
+                return None;
+            }
+            let node = self.get(id)?;
+            path.push(id);
+            current = node.parent();
+        }
+        path.reverse();
+
+        // 交互状态与失效状态各读取一次共享事实，避免逐节点重复加锁。
+        let managers = self.managers();
+        let hovered = managers.interaction.hovered_widget();
+        let pressed = managers.interaction.pressed_widget();
+        let focused = managers.focus.focused_widget();
+        let invalidation = self
+            .invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let nodes = path
+            .into_iter()
+            .filter_map(|id| {
+                let node = self.get(id)?;
+                let stable_id = node
+                    .automation_id()
+                    .map(|value| format!("automation:{value}"))
+                    .or_else(|| node.key().map(|value| format!("key:{value}")))
+                    .unwrap_or_else(|| id.to_string());
+                Some(HoverInspectorNode {
+                    node_id: id,
+                    type_name: node.debug_type_name(),
+                    stable_id,
+                    frame: node.frame(),
+                    z_index: node.z_index(),
+                    child_count: node.children().len(),
+                    visible: node.visible(),
+                    dirty: invalidation.node_needs_paint(id),
+                    hovered: hovered == Some(id),
+                    pressed: pressed == Some(id),
+                    focused: focused == Some(id),
+                    disabled: !node.is_interaction_enabled(),
+                    attached: node.attached(),
+                    mounted: node.mounted(),
+                    active: node.active(),
+                    pending_removal: node.pending_removal(),
+                })
+            })
+            .collect();
+        Some(HoverInspectorSnapshot { nodes })
     }
 
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext) {

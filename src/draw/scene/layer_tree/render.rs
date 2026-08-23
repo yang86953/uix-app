@@ -473,6 +473,8 @@ impl LayerTree {
                         debug_mode,
                         debug_hover,
                         depth,
+                        surface_w,
+                        surface_h,
                     );
                 }
                 engine.canvas_2d().push_clip(*rect);
@@ -585,6 +587,8 @@ impl LayerTree {
         debug_mode: bool,
         debug_hover: &Option<DebugHover>,
         depth: usize,
+        surface_w: i32,
+        surface_h: i32,
     ) {
         if !debug_mode || !scene.node_visible(node_id) {
             return;
@@ -603,6 +607,10 @@ impl LayerTree {
         // 尺寸标签只贴最深命中节点，避免祖先链叠多块黑条。
         if node_id == hover.leaf {
             ctx.draw_debug_frame_info(node_id.slot(), frame);
+            if let Some(snapshot) = scene.hover_inspector(node_id) {
+                let lines = snapshot.inspector_lines(8);
+                ctx.draw_debug_inspector_lines(frame, &lines, surface_w, surface_h);
+            }
         }
     }
 
@@ -655,7 +663,16 @@ impl LayerTree {
                 PaintPass::Content,
                 render_objects.as_deref_mut(),
             );
-            Self::draw_debug_for_widget(&mut ctx, scene, id, debug_mode, debug_hover, depth);
+            Self::draw_debug_for_widget(
+                &mut ctx,
+                scene,
+                id,
+                debug_mode,
+                debug_hover,
+                depth,
+                surface_w,
+                surface_h,
+            );
         }
 
         if scene.node_visible(id) {

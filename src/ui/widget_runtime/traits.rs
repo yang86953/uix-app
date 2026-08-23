@@ -79,6 +79,10 @@ pub trait Widget: 'static {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     /// 将组件所有权转换为动态类型。
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    /// 返回调试检查器使用的真实 Rust 动态类型名。
+    fn debug_type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
     /// 返回自动化和语义快照使用的稳定字段。
     fn snapshot_fields(&self) -> crate::ui::widget_snapshot::SnapshotFields {
         crate::ui::widget_snapshot::snapshot_fields_from_any(self.as_any())
