@@ -31,6 +31,22 @@ use super::pending::{
 
 impl NativeGpuCanvas2D {
     pub(super) fn queue_solid_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        self.queue_solid_rect_inner(rect, color, radius, false);
+    }
+
+    /// 圆形保留调用方声明的同一设备圆心，不走按边界独立取整的圆角矩形对齐。
+    pub(super) fn queue_solid_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        self.queue_solid_rect_inner(rect, color, Some(Radius::uniform(r)), true);
+    }
+
+    fn queue_solid_rect_inner(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        radius: Option<Radius>,
+        preserve_circle_center: bool,
+    ) {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
@@ -42,7 +58,18 @@ impl NativeGpuCanvas2D {
         // 统一决定轴对齐矩形是否可以进入 native pending queue。
         let native_blend = native_src_over || native_additive;
         if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
-            self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
+            self.with_soft_clip(|soft| {
+                if preserve_circle_center {
+                    soft.fill_circle(
+                        rect.x + rect.w * 0.5,
+                        rect.y + rect.h * 0.5,
+                        rect.w * 0.5,
+                        color,
+                    );
+                } else {
+                    soft.fill_rect(rect, color, radius);
+                }
+            });
             self.mark_soft();
             return;
         }
@@ -57,7 +84,7 @@ impl NativeGpuCanvas2D {
             let r = scaled_corner_radii(radius, scale);
             // 圆角矩形对齐物理像素网格：亚像素设备坐标下 SDF 弧线端点与像素
             // 中心错位，导致四角取整不对称（顶/底圆角视觉半径不一致）。
-            let device = if r.iter().any(|radius| *radius > 0.0) {
+            let device = if !preserve_circle_center && r.iter().any(|radius| *radius > 0.0) {
                 match align_rounded_rect(device) {
                     Some(device) => device,
                     None => return,
@@ -84,7 +111,18 @@ impl NativeGpuCanvas2D {
         // 当前 Additive 纵切只覆盖 shape SDF，不把仿射 mesh 错交给 SrcOver pipeline。
         if native_additive {
             // hybrid canvas 保持既有等价 soft fallback；GPU-only canvas 记录 typed failure。
-            self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
+            self.with_soft_clip(|soft| {
+                if preserve_circle_center {
+                    soft.fill_circle(
+                        rect.x + rect.w * 0.5,
+                        rect.y + rect.h * 0.5,
+                        rect.w * 0.5,
+                        color,
+                    );
+                } else {
+                    soft.fill_rect(rect, color, radius);
+                }
+            });
             // 标记本次 soft 内容，供 retained owner 按 Additive segment 合成。
             self.mark_soft();
             // 禁止后续普通 mesh 分支丢失 Additive 语义。
@@ -115,7 +153,18 @@ impl NativeGpuCanvas2D {
         }
         self.soft_or_reject_transform("transformed rounded rect");
         if !self.gpu_only {
-            self.with_soft_clip(|soft| soft.fill_rect(rect, color, radius));
+            self.with_soft_clip(|soft| {
+                if preserve_circle_center {
+                    soft.fill_circle(
+                        rect.x + rect.w * 0.5,
+                        rect.y + rect.h * 0.5,
+                        rect.w * 0.5,
+                        color,
+                    );
+                } else {
+                    soft.fill_rect(rect, color, radius);
+                }
+            });
             self.mark_soft();
         }
     }
@@ -126,6 +175,30 @@ impl NativeGpuCanvas2D {
         color: Color,
         line_width: f32,
         radius: Option<Radius>,
+    ) {
+        self.queue_stroke_rect_inner(rect, color, line_width, radius, false);
+    }
+
+    /// 圆形描边与填充共用未偏移的圆心，确保不同半径仍保持同心。
+    pub(super) fn queue_stroke_circle(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        color: Color,
+        line_width: f32,
+    ) {
+        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        self.queue_stroke_rect_inner(rect, color, line_width, Some(Radius::uniform(r)), true);
+    }
+
+    fn queue_stroke_rect_inner(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        line_width: f32,
+        radius: Option<Radius>,
+        preserve_circle_center: bool,
     ) {
         let lw = line_width.max(0.0);
         if rect.w <= 0.0 || rect.h <= 0.0 || lw <= 0.0 {
@@ -139,7 +212,19 @@ impl NativeGpuCanvas2D {
         // 统一决定轴对齐描边是否可以进入 native pending queue。
         let native_blend = native_src_over || native_additive;
         if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
-            self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
+            self.with_soft_clip(|soft| {
+                if preserve_circle_center {
+                    soft.stroke_circle(
+                        rect.x + rect.w * 0.5,
+                        rect.y + rect.h * 0.5,
+                        rect.w * 0.5,
+                        color,
+                        lw,
+                    );
+                } else {
+                    soft.stroke_rect(rect, color, lw, radius);
+                }
+            });
             self.mark_soft();
             return;
         }
@@ -147,7 +232,19 @@ impl NativeGpuCanvas2D {
             // 当前 Additive 纵切只覆盖轴对齐 shape SDF，不能误入 SrcOver 仿射 mesh。
             if native_additive {
                 // hybrid canvas 保持等价 soft fallback；GPU-only canvas 记录 typed failure。
-                self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
+                self.with_soft_clip(|soft| {
+                    if preserve_circle_center {
+                        soft.stroke_circle(
+                            rect.x + rect.w * 0.5,
+                            rect.y + rect.h * 0.5,
+                            rect.w * 0.5,
+                            color,
+                            lw,
+                        );
+                    } else {
+                        soft.stroke_rect(rect, color, lw, radius);
+                    }
+                });
                 // 记录目标相关 soft segment，供 retained owner 按原始顺序合成。
                 self.mark_soft();
                 // 禁止继续进入普通描边路径 tessellation。
@@ -166,7 +263,19 @@ impl NativeGpuCanvas2D {
             }
             self.soft_or_reject_transform("non-axis-aligned stroke rect transform");
             if !self.gpu_only {
-                self.with_soft_clip(|soft| soft.stroke_rect(rect, color, lw, radius));
+                self.with_soft_clip(|soft| {
+                    if preserve_circle_center {
+                        soft.stroke_circle(
+                            rect.x + rect.w * 0.5,
+                            rect.y + rect.h * 0.5,
+                            rect.w * 0.5,
+                            color,
+                            lw,
+                        );
+                    } else {
+                        soft.stroke_rect(rect, color, lw, radius);
+                    }
+                });
                 self.mark_soft();
             }
             return;
@@ -178,7 +287,7 @@ impl NativeGpuCanvas2D {
         let stroke_w = lw * ((scale.0.abs() * scale.1.abs()).sqrt());
         // 圆角矩形对齐物理像素网格：亚像素设备坐标下 SDF 弧线端点与像素
         // 中心错位，导致四角取整不对称（顶/底圆角视觉半径不一致）。
-        let device = if r.iter().any(|radius| *radius > 0.0) {
+        let device = if !preserve_circle_center && r.iter().any(|radius| *radius > 0.0) {
             match align_rounded_rect(device) {
                 Some(device) => device,
                 None => return,

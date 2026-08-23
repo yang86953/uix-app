@@ -1,7 +1,6 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
@@ -111,6 +110,17 @@ widget! {
     }
 
     wants_continuous_pointer_move => (&self) -> bool { true }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        // 焦点圆会越过首个选项左边界；脏区必须覆盖全部抗锯齿像素，避免移动后残留。
+        let margin = self.visual_scale() + 0.75;
+        Rect::new(
+            frame.x - margin,
+            frame.y - margin,
+            frame.w + margin * 2.0,
+            frame.h + margin * 2.0,
+        )
+    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
@@ -294,28 +304,25 @@ impl Radio {
             )
         };
 
-        let circle_rect = Rect::new(x + scale, cy - r, r * 2.0, r * 2.0);
+        // 外圈、焦点圈与内点共享同一个圆心，避免圆角矩形独立像素对齐后产生偏心。
+        let center = Point::new(x + r + scale, cy);
         if self.focused && focus_visible && selected {
             let focus_outset = 2.0 * scale;
-            ctx.stroke_rect(
-                Rect::new(
-                    circle_rect.x - focus_outset,
-                    circle_rect.y - focus_outset,
-                    circle_rect.w + focus_outset * 2.0,
-                    circle_rect.h + focus_outset * 2.0,
-                ),
+            ctx.stroke_circle(
+                center.x,
+                center.y,
+                r + focus_outset,
                 ctx.tokens().color_primary_border(),
                 1.5,
-                Some(Radius::uniform(r + focus_outset)),
             );
         }
 
         // 外圈
-        ctx.stroke_rect(circle_rect, ring_color, 1.5, Some(Radius::uniform(r)));
+        ctx.stroke_circle(center.x, center.y, r, ring_color, 1.5);
 
         // 选中填充点
         if selected {
-            ctx.fill_circle(x + r + scale, cy, dot_r, dot_color);
+            ctx.fill_circle(center.x, center.y, dot_r, dot_color);
         }
         // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
         let row_rect = Rect::new(x, cy - self.item_h * 0.5, segment_width, self.item_h);
