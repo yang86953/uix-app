@@ -3,7 +3,38 @@ use super::*;
 // 导入构造子项外边距所需的边集类型。
 use crate::core::EdgeInsets;
 // 导入直接调用组件布局入口所需的 trait。
-use crate::ui::WidgetLayout;
+use crate::ui::{WidgetLayout, WidgetRender};
+
+// 验证滚动条覆盖绘制阶段会被场景树实际调度。
+#[test]
+fn scrollbar_declares_after_children_paint_capability() {
+    // 滚动条必须越过内容裁剪后叠加，不能只在未调度的 render 分支中实现。
+    let scroll = ScrollView::new(ScrollDirection::Vertical);
+    // 场景桥接只依据此能力决定是否执行 AfterChildren。
+    assert!(WidgetRender::paint_after_children(&scroll));
+}
+
+// 验证内容缩短后，视口与公开偏移立即收敛到新的内容末端。
+#[test]
+fn content_shrink_clamps_effective_scroll_offset() {
+    // 先构造可向下滚动八十像素的视口并移动到底部。
+    let mut scroll = ScrollView::new(ScrollDirection::Vertical);
+    scroll
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 100.0, 80.0)));
+    scroll.content_bounds.set(Some(Size::new(100.0, 160.0)));
+    scroll.set_scroll_y(80.0);
+    // 下一轮内容只有四十像素高，布局应把有效偏移同步回零。
+    let children = [child(1, Size::new(100.0, 40.0), EdgeInsets::zero())];
+    let tree = WidgetTree::new();
+    scroll.layout_children(Rect::new(0.0, 0.0, 100.0, 80.0), &children, &tree);
+    // 公开位置与场景视口变换必须共同观察零偏移。
+    assert_eq!(scroll.scroll_y(), 0.0);
+    assert_eq!(
+        crate::ui::EventHandler::viewport_scroll_offset(&scroll),
+        Some((0.0, 0.0))
+    );
+}
 
 // 构造带自然尺寸与外边距的布局子项。
 fn child(id: usize, size: Size, margin: EdgeInsets) -> LayoutChild {

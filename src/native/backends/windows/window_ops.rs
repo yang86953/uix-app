@@ -291,8 +291,8 @@ impl WindowOps for WindowsWindowOps {
     ) -> Result<()> {
         // 先拒绝已经失效的原生窗口句柄。
         self.ensure_valid_window("os_begin_resize_drag")?;
-        // 句柄校验完成后由窄 Component 独占方向映射与消息提交。
-        super::window_interaction::begin_resize_drag(self.hwnd, edge)
+        // 使用非模态逐指针缩放，让每个 WM_SIZE 都能返回应用消息泵完成布局与呈现。
+        super::window_interaction::begin_resize_drag(self.hwnd, edge, &self._binding.resize_drag)
     }
 
     fn os_show_system_menu(&mut self) -> Result<()> {

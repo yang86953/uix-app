@@ -13,15 +13,15 @@ impl ScrollView {
         // 只有下一声明绑定外部 State 时才把坐标视为受控运行态。
         next.scroll_binding.is_some()
             // 任一轴变化都必须进入统一 Paint 或 Composite 失效入口。
-            && (self.scroll_x != next.scroll_x || self.scroll_y != next.scroll_y)
+            && (self.scroll_x() != next.scroll_x || self.scroll_y() != next.scroll_y)
     }
 
     // 将下一次声明组件同步到 live 实例，并保留受控滚动的局部合成差量。
     pub(crate) fn sync_from(&mut self, next: Self) {
         // 保存受控同步前的水平偏移，供统一滚动合成契约计算真实位移。
-        let old_scroll_x = self.scroll_x;
+        let old_scroll_x = self.scroll_x();
         // 保存受控同步前的垂直偏移，避免声明式状态更新绕过滚动搬移。
-        let old_scroll_y = self.scroll_y;
+        let old_scroll_y = self.scroll_y();
         // 只把带绑定的下一声明解释为受控偏移更新。
         let controlled_offset = next
             // 借用下一声明的状态绑定。
@@ -53,7 +53,10 @@ impl ScrollView {
             // 将声明纵向偏移限制到当前内容范围。
             self.scroll_y = self.clamp_bound_axis(scroll_y, false);
             // 受控 State 更新与输入事件共享同一增量记录，由 WidgetTree 决定局部搬移或安全重绘。
-            self.push_scroll_delta(self.scroll_x - old_scroll_x, self.scroll_y - old_scroll_y);
+            self.push_scroll_delta(
+                self.scroll_x() - old_scroll_x,
+                self.scroll_y() - old_scroll_y,
+            );
         }
     }
 

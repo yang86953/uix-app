@@ -271,6 +271,11 @@ widget! {
         }
     }
 
+    on_child_visibility_changed => (&mut self) {
+        // 网格的固有范围由当前可见单元共同决定。
+        self.cached_content_size.set(Size::zero());
+    }
+
     layout_margin => (&self) -> EdgeInsets { self.style.margin }
 
     flex_grow => (&self) -> f32 { self.style.flex_grow }

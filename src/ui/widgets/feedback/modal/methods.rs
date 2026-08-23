@@ -490,8 +490,13 @@ impl Modal {
 
     pub(crate) fn dialog_rect_for_surface(&self, surface: Rect) -> Rect {
         let surface = Self::normalize_frame(surface);
-        let width = Self::normalize_dimension(self.width).min(surface.w);
-        let height = Self::normalize_dimension(self.height).min(surface.h);
+        // 连续缩窗时始终保留可见安全边距；极窄表面按比例收敛而不产生负尺寸。
+        let margin_x = 16.0_f32.min(surface.w * 0.1);
+        let margin_y = 16.0_f32.min(surface.h * 0.1);
+        let available_w = (surface.w - margin_x * 2.0).max(0.0);
+        let available_h = (surface.h - margin_y * 2.0).max(0.0);
+        let width = Self::normalize_dimension(self.width).min(available_w);
+        let height = Self::normalize_dimension(self.height).min(available_h);
         let (x, y) = if self.centered || self.overlay {
             (
                 surface.x + (surface.w - width) * 0.5,

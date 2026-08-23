@@ -156,6 +156,36 @@ unsafe fn wnd_proc_inner(
         }
         let binding = &*(ptr as *const WindowBinding);
         let platform = &mut *binding.platform;
+        // 自定义边框缩放不进入 DefWindowProc 的模态尺寸循环；每次移动只提交一次
+        // SetWindowPos，返回外层消息泵后立即消费同步产生的 WM_SIZE 并重排 UI。
+        if msg == WM_MOUSEMOVE {
+            let constraints = {
+                let state = binding.state.borrow();
+                (state.minimum_size, state.maximum_size)
+            };
+            match super::window_interaction::update_resize_drag(
+                hwnd,
+                &binding.resize_drag,
+                constraints.0,
+                constraints.1,
+            ) {
+                Ok(true) => return 0,
+                Ok(false) => {}
+                Err(error) => {
+                    super::window_interaction::cancel_resize_drag(&binding.resize_drag);
+                    platform.enqueue_callback_failure(error);
+                    return 0;
+                }
+            }
+        }
+        if msg == WM_LBUTTONUP
+            && super::window_interaction::finish_resize_drag(&binding.resize_drag)
+        {
+            return 0;
+        }
+        if matches!(msg, WM_CANCELMODE | WM_CAPTURECHANGED) {
+            super::window_interaction::cancel_resize_drag(&binding.resize_drag);
+        }
         if msg == WM_UIX_FRAME_OPPORTUNITY {
             if let Some(request) = complete_posted_frame(&binding.frame_pacer, wparam, lparam) {
                 let window_id = binding.state.borrow().window_id;

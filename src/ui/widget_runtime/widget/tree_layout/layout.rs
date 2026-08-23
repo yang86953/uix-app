@@ -381,6 +381,16 @@ impl WidgetTree {
             if let Some(child) = self.get_mut(*child_id) {
                 child.set_parent_visible(*visible);
             }
+            // 条件成员变化会让沿途容器的自然尺寸缓存过期。逐级清除后，
+            // 本轮收敛从当前可见子树重算，避免长页面高度残留到短页面。
+            let mut ancestor = self.get(*child_id).and_then(|child| child.parent());
+            while let Some(ancestor_id) = ancestor {
+                let next = self.get(ancestor_id).and_then(|node| node.parent());
+                if let Some(node) = self.get_mut(ancestor_id) {
+                    node.notify_child_visibility_changed();
+                }
+                ancestor = next;
+            }
             self.tree_version = self.tree_version.wrapping_add(1);
             let new_bounds = self.visual_subtree_bounds(*child_id);
             for rect in [old_bounds, new_bounds].into_iter().flatten() {
