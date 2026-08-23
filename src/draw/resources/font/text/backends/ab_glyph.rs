@@ -271,6 +271,8 @@ impl TextBackend for AbGlyphBackend {
                     text,
                     // 复用调用方布局约束。
                     opts,
+                    // 与后续 ab_glyph 光栅化共享同一设计单位缩放。
+                    sf.h_scale_factor(),
                     // 复用 ab_glyph 的像素 ascent。
                     asc,
                     // 复用 ab_glyph 的实际字体行盒高度。
@@ -476,6 +478,8 @@ impl TextBackend for AbGlyphBackend {
                     text,
                     // 复用布局约束。
                     opts,
+                    // 与后续 ab_glyph 光栅化共享同一设计单位缩放。
+                    scaled_font.h_scale_factor(),
                     // 传入像素 ascent。
                     ascent,
                     // 传入字体行盒高度。

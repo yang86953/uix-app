@@ -121,6 +121,8 @@ pub(super) fn layout_text(
     text: &str,
     // 像素字号、宽高与换行约束。
     opts: &TextLayoutOptions,
+    // 与 ab_glyph 光栅化一致的字体设计单位到像素缩放。
+    glyph_scale: f32,
     // ab_glyph 计算的像素 ascent。
     ascent: f32,
     // ab_glyph 计算的实际字体高度。
@@ -139,18 +141,9 @@ pub(super) fn layout_text(
     }
     // 从完整字体文件创建只借用数据的 OpenType 字体面。
     let face = rustybuzz::Face::from_slice(data, face_index)?;
-    // 空或异常 UPEM 不能形成有限像素缩放。
-    let units_per_em = face.units_per_em();
-    // 拒绝无效字体度量，交给旧后端收敛。
-    if units_per_em <= 0 {
-        // 返回空值触发兼容回退。
-        return None;
-        // 结束无效 UPEM 分支。
-    }
-    // 将字体设计单位缩放到调用方像素字号。
-    let scale = opts.font_size / units_per_em as f32;
-    // 非有限或非正缩放不能进入坐标计算。
-    if !scale.is_finite() || scale <= 0.0 {
+    // 布局推进必须与实际字形光栅使用同一缩放，避免字体高度与 UPEM
+    // 不相等时字形位置比可见轮廓更宽。
+    if !glyph_scale.is_finite() || glyph_scale <= 0.0 {
         // 返回空值触发有界字号兼容路径。
         return None;
         // 结束无效缩放分支。
@@ -232,7 +225,7 @@ pub(super) fn layout_text(
             // 遍历 cluster 内全部定位记录。
             .iter()
             // 水平排版统一消费 advance 的绝对像素量。
-            .map(|position| (position.x_advance as f32 * scale).abs())
+            .map(|position| (position.x_advance as f32 * glyph_scale).abs())
             // 汇总 cluster 总 advance。
             .sum::<f32>();
         // 当前行已有内容且完整 cluster 超宽时在 cluster 前换行。
@@ -286,11 +279,11 @@ pub(super) fn layout_text(
                 // 无效 cluster 触发整个 shaping 回退。
             )?;
             // 将当前字形水平 advance 缩放为非负像素。
-            let advance = (positions[index].x_advance as f32 * scale).abs();
+            let advance = (positions[index].x_advance as f32 * glyph_scale).abs();
             // 将 GPOS 水平偏移缩放为像素。
-            let offset_x = positions[index].x_offset as f32 * scale;
+            let offset_x = positions[index].x_offset as f32 * glyph_scale;
             // 字体坐标 y 向上，画布坐标 y 向下，因此反转 GPOS 垂直偏移。
-            let offset_y = -(positions[index].y_offset as f32 * scale);
+            let offset_y = -(positions[index].y_offset as f32 * glyph_scale);
             // 写入可由既有渲染路径直接消费的定位字形。
             glyphs.push(PositionedGlyph {
                 // 视觉顺序字形沿正向画笔排列并应用 GPOS 偏移。
