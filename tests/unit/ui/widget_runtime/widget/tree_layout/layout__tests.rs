@@ -1,4 +1,5 @@
 use crate::ui::adapter::ViewAdapter;
+use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::ui::widgets::{Container, FloatButton};
 use crate::ui::{Placement, Space, ViewNode};
 
