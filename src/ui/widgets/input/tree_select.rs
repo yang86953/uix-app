@@ -327,10 +327,8 @@ widget! {
             return;
         }
 
-        // 从绘制上下文读取当前逻辑表面尺寸。
-        let surface_size = ctx.logical_surface_size();
-        // 将窗口原点与逻辑尺寸组合为当前表面矩形。
-        let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
+        // 将逻辑表面映射到当前组件坐标，兼容被提升的滚动浮层。
+        let surface = ctx.logical_surface_rect();
         // 先读取当前扁平节点列表供几何与绘制共用。
         let flat = self.flatten_nodes();
         // 在绘制弹层前解析并缓存同帧最终几何。

@@ -33,11 +33,42 @@ pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transf
     let path = visual_path(scene, node_id);
     let mut transform = Transform::identity();
     for (index, id) in path.iter().copied().enumerate() {
-        transform = transform.concat(scene.node_transform(id));
+        let node_transform = if index == 0 && scene.node_is_overlay(id) {
+            // 浮层路径在提升边界处截断，首节点必须使用场景声明的根画布变换。
+            scene.node_overlay_transform(id)
+        } else {
+            scene.node_transform(id)
+        };
+        transform = transform.concat(node_transform);
         if index + 1 < path.len() {
             if let Some((sx, sy)) = scene.scroll_offset(id) {
                 transform = transform.concat(Transform::translate(-sx, -sy));
             }
+        }
+    }
+    transform
+}
+
+/// 计算被提升为根浮层的节点在原组件树中的完整视觉变换。
+///
+/// 浮层绘制会脱离普通父子遍历，因此必须在提升前补回全部祖先变换与滚动位移；
+/// 这里不能在当前浮层节点处截断，否则滚动容器中的下拉会回到内容原始坐标。
+pub(crate) fn overlay_root_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transform {
+    let mut path = Vec::new();
+    let mut current = Some(node_id);
+    while let Some(id) = current {
+        path.push(id);
+        current = scene.parent(id);
+    }
+    path.reverse();
+
+    let mut transform = Transform::identity();
+    for (index, id) in path.iter().copied().enumerate() {
+        transform = transform.concat(scene.node_transform(id));
+        if index + 1 < path.len()
+            && let Some((sx, sy)) = scene.scroll_offset(id)
+        {
+            transform = transform.concat(Transform::translate(-sx, -sy));
         }
     }
     transform
