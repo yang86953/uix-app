@@ -2,8 +2,6 @@
 //!
 //! 通过 ScenePaint trait 读取场景结构并下发绘制，不依赖 ui 域。
 
-use std::collections::HashSet;
-
 use crate::core::Rect;
 use crate::draw::geometry::types::{ImageHandle, Transform};
 use crate::draw::painting::DisplayList;
@@ -11,11 +9,6 @@ use crate::draw::scene::NodeId;
 
 mod layout;
 mod render;
-
-struct DebugHover {
-    chain: HashSet<NodeId>,
-    leaf: NodeId,
-}
 
 /// 场景节点在合成阶段使用的缓存、裁剪或直接绘制表示。
 pub enum LayerNode {

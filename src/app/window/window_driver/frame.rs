@@ -608,6 +608,20 @@ impl WindowDriver {
             tree.set_theme_tokens(theme_ref.tokens_arc());
             let scroll_move = tree.scroll_region_moves();
             let hover_pos = debug_mode.debug_mode().then(|| cursor_pos.get());
+            let invalidation_source = if !self.rendered_first {
+                InvalidationSource::FirstFrame
+            } else if had_layout_event || surface_corrected {
+                InvalidationSource::LayoutEvent
+            } else if had_due_animation_work
+                || had_scheduled_animation_work
+                || !animation_updates.is_empty()
+            {
+                InvalidationSource::AnimationPolling
+            } else {
+                InvalidationSource::DirtyRegion
+            };
+            // paint_calls 统计实际进入场景渲染阶段的帧，而不是脏节点猜测值。
+            record_paint(metrics);
             let metrics_ref = metrics.map(Cell::get);
             // 原生 swapchain 必须在首个 GPU Present 前进入可见状态，避免隐藏窗口被视为 occluded。
             if self.deferred_show && !engine.capabilities().uses_external_presenter() {
@@ -638,6 +652,8 @@ impl WindowDriver {
                     debug_mode: debug_mode.debug_mode(),
                     hover_pos,
                     metrics: metrics_ref.as_ref(),
+                    debug_frame: self.frame_diag.last_frame.as_ref(),
+                    invalidation_source,
                 },
             );
             // 帧诊断：渲染阶段耗时。
@@ -856,8 +872,10 @@ impl WindowDriver {
             agent_commands.has_work(),
         );
         if collect_frame_diagnostics {
+            // 调试图元会变化且位于最终顶层，启用时场景管线以全幅重绘清除旧轮廓。
+            let rendered_full = dirty_region.full_frame || (debug_mode.debug_mode() && need_render);
             // 帧诊断：脏区面积占窗口面积比例（全幅记为 100%）。
-            let dirty_area_pct: f64 = if dirty_region.full_frame {
+            let dirty_area_pct: f64 = if rendered_full {
                 1.0
             } else {
                 // 部分脏区取包围矩形面积与窗口面积之比。
@@ -893,6 +911,8 @@ impl WindowDriver {
                 debug_mode,
                 platform_window.window_id(),
                 debug_correlation_id,
+                self.presented_sequence,
+                tree.tree_version(),
                 native_width.max(0) as u32,
                 native_height.max(0) as u32,
                 frame_start.map_or(Duration::ZERO, |start| start.elapsed()),
@@ -902,9 +922,15 @@ impl WindowDriver {
                 // GPU 提交阶段耗时（end_frame 提交与 present 等待）。
                 submit_us,
                 // 使用渲染输入同源的脏区快照，input 已移入渲染管线。
-                dirty_region.full_frame,
+                rendered_full,
                 // 脏区面积占比。
                 dirty_area_pct,
+                // 全幅区域没有离散矩形，其余保留实际条目数量。
+                if rendered_full {
+                    0
+                } else {
+                    dirty_region.rects().len()
+                },
                 // 活跃动画节点数与最大动画 frame 占比。
                 anim_count,
                 anim_biggest_pct,

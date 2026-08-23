@@ -2,4 +2,4 @@
 
 pub mod overlay;
 
-pub use overlay::DebugRenderService;
+pub use overlay::{DebugFrameSnapshot, DebugRenderService};

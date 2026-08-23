@@ -521,7 +521,42 @@ fn frame_input<'a>(
         hover_pos: None,
         // 本批不采集性能指标。
         metrics: None,
+        // 本批不展示上一帧诊断快照。
+        debug_frame: None,
+        // 测试帧由普通脏区触发。
+        invalidation_source: InvalidationSource::DirtyRegion,
     }
+}
+
+// 失效来源必须优先保留首帧，并在后续帧区分布局、动画与普通脏区。
+#[test]
+fn invalidation_classification_preserves_runtime_cause() {
+    let dirty = DirtyRegion::area(Rect::new(1.0, 2.0, 3.0, 4.0));
+
+    assert_eq!(
+        classify_invalidation(false, &dirty, InvalidationSource::LayoutEvent),
+        InvalidationSource::FirstFrame
+    );
+    assert_eq!(
+        classify_invalidation(true, &dirty, InvalidationSource::LayoutEvent),
+        InvalidationSource::LayoutEvent
+    );
+    assert_eq!(
+        classify_invalidation(true, &dirty, InvalidationSource::AnimationPolling),
+        InvalidationSource::AnimationPolling
+    );
+    assert_eq!(
+        classify_invalidation(true, &dirty, InvalidationSource::None),
+        InvalidationSource::DirtyRegion
+    );
+    assert_eq!(
+        classify_invalidation(
+            true,
+            &DirtyRegion::empty(),
+            InvalidationSource::AnimationPolling,
+        ),
+        InvalidationSource::None
+    );
 }
 
 // 高度重叠的多块脏区应合并为一次包围盒绘制，避免重复遍历场景。

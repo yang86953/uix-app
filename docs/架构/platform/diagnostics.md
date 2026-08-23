@@ -96,7 +96,7 @@ App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每�
 
 ## 组件：统一调试与 ReproModule
 
-debug 开关由 Diagnostics System 的原子状态唯一持有，应用组合根、环境变量和快捷键只委托该入口。事件循环为同批输入分配关联身份，窗口帧驱动消费同一身份并记录布局、渲染、GPU 提交、呈现、脏区、动画、失效来源和协调跨度；组件检查器通过既有 WidgetTree → ScenePaint 桥生成只读快照，不改变命中、布局或绘制语义。
+debug 开关由 Diagnostics System 的原子状态唯一持有，应用组合根、环境变量和快捷键只委托该入口。事件循环为同批输入分配关联身份，窗口帧驱动消费同一身份并记录布局、渲染、GPU 提交、呈现、脏区、动画、失效来源和协调跨度；窗口驱动只缓存上一已完成帧的无文本数值快照，renderer 在普通内容、`AfterChildren` 与全部 overlay 完成后执行唯一最终 Debug Pass。组件检查器通过既有 WidgetTree → ScenePaint 桥生成只读快照，并在根画布坐标读取 layout/viewport/visible、裁切、绘制和交互事实；调试图元不进入 Picture 或 backdrop 快照，也不改变命中、布局或应用绘制语义。
 
 `ReproModule` 的正常事件入口先检查 debug 原子位，关闭时不取锁。开启时最多保留最近 128 个固定事件、8 个窗口和 16 个错误码事实；错误文本、窗口标题、组件内容、资源标识、环境变量和路径不进入其模型。panic hook 使用 `try_lock`，当前线程若已持有复现锁则写出 `capture_busy=true` 的最小清单，不能因采集现场再次等待或死锁。
 

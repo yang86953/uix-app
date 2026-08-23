@@ -298,6 +298,14 @@ pub(super) fn record_layout(metrics: Option<&Cell<RenderMetrics>>) {
     }
 }
 
+pub(super) fn record_paint(metrics: Option<&Cell<RenderMetrics>>) {
+    if let Some(metrics) = metrics {
+        let mut value = metrics.get();
+        value.record_paint();
+        metrics.set(value);
+    }
+}
+
 pub(super) fn record_present(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource) {
     if let Some(metrics) = metrics {
         let mut value = metrics.get();
@@ -496,6 +504,10 @@ pub(super) fn accumulate_frame_diagnostics(
     // 接收窗口与触发批次身份，关联输入和最终帧。
     window_id: WindowId,
     correlation_id: Option<u64>,
+    // 接收已成功呈现的逐窗口帧序号。
+    frame_sequence: u64,
+    // 接收当前场景树版本。
+    tree_version: u64,
     // 接收原生客户区尺寸，形成逐窗口数值快照。
     width: u32,
     height: u32,
@@ -513,6 +525,8 @@ pub(super) fn accumulate_frame_diagnostics(
     dirty_full: bool,
     // 接收本帧脏区面积占窗口面积比例（0~1）。
     dirty_area_pct: f64,
+    // 接收本帧实际脏矩形数量。
+    dirty_rect_count: usize,
     // 接收本帧活跃动画节点数。
     anim_count: u32,
     // 接收本帧最大动画节点 frame 占窗口面积比例（0~1）。
@@ -530,6 +544,29 @@ pub(super) fn accumulate_frame_diagnostics(
     // 接收本帧失效来源标签。
     source: InvalidationSource,
 ) {
+    // 只用成功提交帧更新 HUD；Idle 或失败尝试不得伪装成“已呈现帧”。
+    if source != InvalidationSource::None {
+        diag.last_frame = Some(DebugFrameSnapshot {
+            frame_sequence,
+            correlation_id,
+            tree_version,
+            tree_version_delta: version_delta,
+            frame_time: frame_us,
+            layout_time: layout_us,
+            render_time: render_us,
+            submit_time: submit_us,
+            present_time: present_us,
+            dirty_full,
+            dirty_rect_count,
+            dirty_area_ratio: dirty_area_pct.clamp(0.0, 1.0),
+            invalidation_count: inval_count,
+            largest_invalidation_slot: (inval_count > 0).then_some(inval_big_slot),
+            largest_invalidation_ratio: inval_big_pct.clamp(0.0, 1.0),
+            animation_count: anim_count,
+            reconcile_ran,
+            invalidation_source: source,
+        });
+    }
     diagnostics.record_debug_frame(
         window_id,
         correlation_id,
@@ -627,6 +664,8 @@ pub(super) fn accumulate_frame_diagnostics(
     );
     // 输出后清空统计，只保留下一次输出的计时起点与卡顿段状态。
     *diag = super::FrameDiagnostics {
+        // HUD 始终保留刚完成帧，不随一秒累计窗口清零。
+        last_frame: diag.last_frame,
         last_report: Instant::now(),
         // 保留卡顿段的进行中状态与峰值，避免摘要重置打断异常记录。
         slow_active: diag.slow_active,
