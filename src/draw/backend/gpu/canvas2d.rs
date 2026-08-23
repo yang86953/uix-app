@@ -45,8 +45,7 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        self.queue_solid_rect(rect, color, Some(Radius::uniform(r)));
+        self.queue_solid_circle(cx, cy, r, color);
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
@@ -67,8 +66,7 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, lw: f32) {
-        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
-        self.queue_stroke_rect(rect, color, lw, Some(Radius::uniform(r)));
+        self.queue_stroke_circle(cx, cy, r, color, lw);
     }
 
     fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {

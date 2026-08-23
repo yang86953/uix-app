@@ -11,6 +11,38 @@
     // 引入 graphics backend 私有的 renderer 能力投影。
     use crate::draw::backend::gpu::NativeRasterCaps;
 
+    // 不同半径的圆形填充与描边必须保留同一个分数设备圆心。
+    #[test]
+    fn circle_queue_preserves_shared_fractional_center() {
+        let native_caps = NativeRasterCaps {
+            retained_color_target: true,
+            ..NativeRasterCaps::default()
+        };
+        let mut native = NativeGpuCanvas2D::new(40, 30, native_caps);
+        // 内点半径为半像素、外圈半径为整数，曾分别按边界取整并产生半像素偏心。
+        native.fill_circle(10.3, 8.6, 3.5, Color::blue());
+        native.stroke_circle(10.3, 8.6, 6.0, Color::blue(), 1.5);
+
+        let [
+            PendingNativeOp::SolidRect(fill),
+            PendingNativeOp::StrokeRect(stroke),
+        ] = native.pending_native.as_slice()
+        else {
+            panic!("圆形应进入 retained shape 队列");
+        };
+        let fill_center = (
+            fill.rect.x + fill.rect.w * 0.5,
+            fill.rect.y + fill.rect.h * 0.5,
+        );
+        let stroke_center = (
+            stroke.rect.x + stroke.rect.w * 0.5,
+            stroke.rect.y + stroke.rect.h * 0.5,
+        );
+        assert!((fill_center.0 - 10.3).abs() < f32::EPSILON);
+        assert!((fill_center.1 - 8.6).abs() < f32::EPSILON);
+        assert_eq!(fill_center, stroke_center);
+    }
+
     // 能力存在时直达，能力或轴对齐证明缺失时保持 Additive soft segment。
     #[test]
     fn additive_stroke_respects_rhi_capability_and_axis_alignment() {
