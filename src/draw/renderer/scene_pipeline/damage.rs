@@ -13,33 +13,25 @@ impl Default for ScenePipeline {
     }
 }
 
-pub(super) fn draw_debug_telemetry(
+pub(super) fn draw_debug_overlay(
     engine: &mut dyn RenderTarget,
+    scene: &impl ScenePaint,
+    hover_pos: Option<Point>,
+    frame: Option<&crate::draw::debug::DebugFrameSnapshot>,
     metrics: Option<&RenderMetrics>,
     font: FontHandle,
     font_service: &FontService,
 ) {
-    let Some(m) = metrics else {
-        return;
-    };
     let canvas = engine.canvas_2d();
-    let sw = canvas.width();
-    let hud = DebugRenderService::new(true);
-    hud.draw_telemetry_hud(canvas, m, sw);
-    let lines = DebugRenderService::telemetry_hud_lines(m);
-    let mut text_svc = TextRenderService::new(font, font_service, 300.0);
-    // 文字在色条右侧，与 HUD 面板几何对齐。
-    let text_x = DebugRenderService::hud_panel_x(sw) + DebugRenderService::HUD_PAD_X + 42.0;
-    let text_top = DebugRenderService::HUD_MARGIN + DebugRenderService::HUD_TEXT_TOP;
-    for (i, line) in lines.iter().enumerate() {
-        text_svc.draw_text(
-            canvas,
-            line,
-            Point::new(text_x, text_top + i as f32 * DebugRenderService::HUD_LINE_H),
-            Color::from_rgba(220, 220, 220, 255),
-            11.0,
-        );
-    }
+    DebugRenderService::new(true).draw_final_overlay(
+        canvas,
+        scene,
+        hover_pos,
+        frame,
+        metrics,
+        font,
+        font_service,
+    );
 }
 
 pub(super) fn normalize_end_outcome(
@@ -237,12 +229,16 @@ pub(super) fn pad_damage_rect(r: &Rect) -> Rect {
 pub(super) fn classify_invalidation(
     rendered_first: bool,
     dirty_region: &DirtyRegion,
+    source_hint: InvalidationSource,
 ) -> InvalidationSource {
     if !rendered_first {
         return InvalidationSource::FirstFrame;
     }
     if !dirty_region.is_empty() {
-        return InvalidationSource::DirtyRegion;
+        return match source_hint {
+            InvalidationSource::AnimationPolling | InvalidationSource::LayoutEvent => source_hint,
+            _ => InvalidationSource::DirtyRegion,
+        };
     }
     InvalidationSource::None
 }

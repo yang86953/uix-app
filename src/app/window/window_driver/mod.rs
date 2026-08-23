@@ -19,6 +19,7 @@ use crate::app::window_semantics::WindowSemanticState;
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect, WindowId};
 use crate::diagnostics::Diagnostics;
 use crate::draw::RenderOutcome;
+use crate::draw::debug::DebugFrameSnapshot;
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};
 use crate::draw::resources::font::font_service::FontService;
@@ -47,9 +48,10 @@ pub(crate) use support::{
 use support::{
     accumulate_frame_diagnostics, animation_diag, dispatch_due_active_work, earliest_deadline,
     frame_diagnostics_enabled, has_layout_work, invalidation_diag, next_loop_state,
-    observe_agent_settle, protocol_failure, record_idle, record_layout, record_present,
-    report_graphics_frame_failure, report_graphics_resize_error, report_window_operation_error,
-    update_scheduled_and_discovered_animations, with_platform_clipboard,
+    observe_agent_settle, protocol_failure, record_idle, record_layout, record_paint,
+    record_present, report_graphics_frame_failure, report_graphics_resize_error,
+    report_window_operation_error, update_scheduled_and_discovered_animations,
+    with_platform_clipboard,
 };
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
@@ -85,6 +87,8 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
 // 帧诊断统计：累计帧数与各阶段耗时，供每秒输出一次性能摘要。
 #[derive(Debug)]
 pub(crate) struct FrameDiagnostics {
+    // 上一已完成帧的固定事实，供下一次最终调试 Pass 展示。
+    last_frame: Option<DebugFrameSnapshot>,
     // 已累计的渲染帧数。
     frames: u32,
     // 已累计的帧总耗时。
@@ -117,6 +121,7 @@ pub(crate) struct FrameDiagnostics {
 impl Default for FrameDiagnostics {
     fn default() -> Self {
         Self {
+            last_frame: None,
             frames: 0,
             frame_sum: Duration::ZERO,
             frame_max: Duration::ZERO,

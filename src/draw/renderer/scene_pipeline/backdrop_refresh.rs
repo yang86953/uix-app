@@ -156,10 +156,10 @@ impl ScenePipeline {
             input.font_service,
             // 传递图片服务。
             input.image_service,
-            // refresh 不在 debug 模式启用，但仍透传事实。
-            input.debug_mode,
-            // 传递 hover 位置。
-            input.hover_pos,
+            // 调试图元只允许在最终提交前的唯一顶层 Pass 绘制。
+            false,
+            // 内容 Pass 不读取悬停状态。
+            None,
             // 正常树同步进入渲染对象索引。
             Some(&mut self.render_object_tree),
         ) {
@@ -402,10 +402,10 @@ impl ScenePipeline {
             input.font_service,
             // 传递图片服务。
             input.image_service,
-            // 透传调试状态。
-            input.debug_mode,
-            // 透传 hover 位置。
-            input.hover_pos,
+            // 调试图元只允许在最终提交前的唯一顶层 Pass 绘制。
+            false,
+            // overlay 内容 Pass 不读取悬停状态。
+            None,
             // overlay 同步进入渲染对象索引。
             Some(&mut self.render_object_tree),
         ) {
@@ -419,7 +419,15 @@ impl ScenePipeline {
         // 调试遥测只在完整场景之后绘制。
         if input.debug_mode {
             // 保持与普通 GPU 路径相同的遥测边界。
-            draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
+            draw_debug_overlay(
+                engine,
+                scene,
+                input.hover_pos,
+                input.debug_frame,
+                input.metrics,
+                input.font,
+                input.font_service,
+            );
         }
         // 只有此处执行本事务唯一的最终 present。
         let final_damage = if begin_damage.full {
@@ -440,7 +448,7 @@ impl ScenePipeline {
             // 成功提交后按完整区域分类。
             RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
                 // rendered_first 为 true，但使用实际完整 refresh region。
-                classify_invalidation(input.rendered_first, &region)
+                classify_invalidation(input.rendered_first, &region, input.invalidation_source)
             }
             // 失败或未提交时保留全部 dirty。
             RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {

@@ -5,14 +5,13 @@ use crate::core::{Errc, Error, Point, Rect};
 use crate::core::DirtyRegion;
 
 use crate::draw::backend::DamageRegion;
-use crate::draw::debug::DebugRenderService;
+use crate::draw::debug::{DebugFrameSnapshot, DebugRenderService};
 use crate::draw::painting::{EncodedFrameExecution, FrameImage, recorder::CommandRecorder};
 use crate::draw::renderer::{InvalidationSource, RenderMetrics};
 use crate::draw::resources::font::font_service::FontService;
-use crate::draw::resources::font::text::TextRenderService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::scene::{LayerTree, RenderObjectTree, ScenePaint};
-use crate::draw::{Color, FontHandle, RenderOutcome};
+use crate::draw::{FontHandle, RenderOutcome};
 use crate::draw::{RasterPipeline, RenderTarget, ScrollCopy, UpdateStrategy};
 // 帧诊断需要单调时钟与时长类型。
 use std::time::{Duration, Instant};
@@ -39,6 +38,10 @@ pub struct FrameRenderInput<'a> {
     pub hover_pos: Option<Point>,
     /// 可选的渲染指标收集器。
     pub metrics: Option<&'a RenderMetrics>,
+    /// 上一已完成帧的无文本诊断快照。
+    pub debug_frame: Option<&'a DebugFrameSnapshot>,
+    /// 调用方根据事件、动画与布局事实给出的本帧失效来源。
+    pub invalidation_source: InvalidationSource,
 }
 
 /// 单帧渲染输出。

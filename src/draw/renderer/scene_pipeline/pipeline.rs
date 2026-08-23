@@ -167,7 +167,8 @@ impl ScenePipeline {
             // 本次 overlay 生命周期已证明正常树不可纯 GPU 编码时禁止重试优化。
             && !self.overlay_backdrop_blocked;
         // refresh 必须从完整正常树建立确定的 clean source。
-        let draw_full = refresh_overlay_backdrop
+        let draw_full = input.debug_mode
+            || refresh_overlay_backdrop
             || !input.rendered_first
             || input.dirty_region.full_frame
             || dirty_for_paint.is_empty()
@@ -261,11 +262,8 @@ impl ScenePipeline {
         }
         // 只有同步/降级事务未失败时才消费本帧请求计划。
         self.overlay_backdrop_effect = requested_backdrop_effect;
-        let requested_present_damage = compute_present_damage(
-            &dirty_with_scroll,
-            input.dirty_region.full_frame,
-            input.rendered_first,
-        );
+        let requested_present_damage =
+            compute_present_damage(&dirty_with_scroll, draw_full, input.rendered_first);
         let requested_region = if draw_full {
             DirtyRegion::full()
         } else if use_scroll_copies {
@@ -521,8 +519,8 @@ impl ScenePipeline {
                         input.font,
                         input.font_service,
                         input.image_service,
-                        input.debug_mode,
-                        input.hover_pos,
+                        false,
+                        None,
                         render_objects,
                     )
                 } else {
@@ -533,8 +531,8 @@ impl ScenePipeline {
                         input.font,
                         input.font_service,
                         input.image_service,
-                        input.debug_mode,
-                        input.hover_pos,
+                        false,
+                        None,
                         render_objects,
                     )
                 };
@@ -568,8 +566,8 @@ impl ScenePipeline {
                     input.font,
                     input.font_service,
                     input.image_service,
-                    input.debug_mode,
-                    input.hover_pos,
+                    false,
+                    None,
                     render_objects,
                 )
             } else {
@@ -580,8 +578,8 @@ impl ScenePipeline {
                     input.font,
                     input.font_service,
                     input.image_service,
-                    input.debug_mode,
-                    input.hover_pos,
+                    false,
+                    None,
                     render_objects,
                 )
             };
@@ -605,8 +603,11 @@ impl ScenePipeline {
         }
 
         if input.debug_mode {
-            draw_debug_telemetry(
+            draw_debug_overlay(
                 &mut self.recorder,
+                scene,
+                input.hover_pos,
+                input.debug_frame,
                 input.metrics,
                 input.font,
                 input.font_service,
@@ -681,7 +682,7 @@ impl ScenePipeline {
         };
         let inv_source = match outcome {
             RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
-                classify_invalidation(input.rendered_first, &region)
+                classify_invalidation(input.rendered_first, &region, input.invalidation_source)
             }
             RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
                 InvalidationSource::None
@@ -763,8 +764,8 @@ impl ScenePipeline {
                         input.font,
                         input.font_service,
                         input.image_service,
-                        input.debug_mode,
-                        input.hover_pos,
+                        false,
+                        None,
                         render_objects,
                     )
                 } else {
@@ -775,8 +776,8 @@ impl ScenePipeline {
                         input.font,
                         input.font_service,
                         input.image_service,
-                        input.debug_mode,
-                        input.hover_pos,
+                        false,
+                        None,
                         render_objects,
                     )
                 };
@@ -807,8 +808,8 @@ impl ScenePipeline {
                     input.font,
                     input.font_service,
                     input.image_service,
-                    input.debug_mode,
-                    input.hover_pos,
+                    false,
+                    None,
                     render_objects,
                 )
             } else {
@@ -819,8 +820,8 @@ impl ScenePipeline {
                     input.font,
                     input.font_service,
                     input.image_service,
-                    input.debug_mode,
-                    input.hover_pos,
+                    false,
+                    None,
                     render_objects,
                 )
             };
@@ -842,7 +843,15 @@ impl ScenePipeline {
         // 帧诊断：记录阶段耗时（场景遍历 + 绘制编码）。
         self.last_record_us = stage_start.elapsed();
         if input.debug_mode {
-            draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
+            draw_debug_overlay(
+                engine,
+                scene,
+                input.hover_pos,
+                input.debug_frame,
+                input.metrics,
+                input.font,
+                input.font_service,
+            );
         }
         // 帧诊断：提交阶段起点（end_frame 含 GPU 提交与 present 等待）。
         let submit_start = Instant::now();
@@ -854,7 +863,7 @@ impl ScenePipeline {
         let outcome = normalize_end_outcome(end_outcome, caps, damage);
         let inv_source = match outcome {
             RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
-                classify_invalidation(input.rendered_first, &region)
+                classify_invalidation(input.rendered_first, &region, input.invalidation_source)
             }
             RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
                 InvalidationSource::None

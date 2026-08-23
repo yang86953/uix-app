@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::core::{DirtyRegion, Point, Rect};
 use crate::draw::geometry::types::Transform;
 use crate::draw::painting::{PaintContext, PaintPass, PaintSurfaceConfig};
@@ -13,7 +11,7 @@ use crate::draw::scene::viewport_transform::{needs_paint_in_viewport, needs_pain
 use crate::draw::scene::{NodeId, ScenePaint};
 use crate::draw::{Canvas2D, FontHandle, RenderTarget};
 
-use super::{DebugHover, LayerNode, LayerTree};
+use super::{LayerNode, LayerTree};
 
 impl LayerTree {
     /// 按图层顺序将指定损伤区域渲染到目标表面。
@@ -154,22 +152,8 @@ impl LayerTree {
             orientation,
         };
 
-        // 仅 hover 祖先链画边框；leaf = hit_test 最深节点（尺寸标签只贴它）。
-        let debug_hover: Option<DebugHover> = if debug_mode {
-            hover_pos.and_then(|pos| {
-                let leaf = scene.hit_test(pos)?;
-                let mut chain = HashSet::new();
-                let mut current = leaf;
-                chain.insert(current);
-                while let Some(pid) = scene.parent(current) {
-                    chain.insert(pid);
-                    current = pid;
-                }
-                Some(DebugHover { chain, leaf })
-            })
-        } else {
-            None
-        };
+        // 兼容旧 LayerTree 参数；调试事实只由 ScenePipeline 的最终顶层 Pass 消费。
+        let _ = (debug_mode, hover_pos);
 
         if render_root {
             if let Some(ref mut root) = self.root {
@@ -185,9 +169,6 @@ impl LayerTree {
                     &env,
                     surface_w,
                     surface_h,
-                    debug_mode,
-                    &debug_hover,
-                    0,
                     render_objects.as_deref_mut(),
                 );
                 engine.canvas_2d().restore();
@@ -213,9 +194,6 @@ impl LayerTree {
                 &env,
                 surface_w,
                 surface_h,
-                debug_mode,
-                &debug_hover,
-                0,
                 render_objects.as_deref_mut(),
             );
             engine.canvas_2d().restore();
@@ -258,9 +236,6 @@ impl LayerTree {
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
-        debug_mode: bool,
-        debug_hover: &Option<DebugHover>,
-        depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
         // 克隆小型片段集合，避免在重复渲染期间借用可变节点。
@@ -277,9 +252,6 @@ impl LayerTree {
                 env,
                 surface_w,
                 surface_h,
-                debug_mode,
-                debug_hover,
-                depth,
                 render_objects,
             );
         };
@@ -302,9 +274,6 @@ impl LayerTree {
                 env,
                 surface_w,
                 surface_h,
-                debug_mode,
-                debug_hover,
-                depth,
                 // 多片段重放共享同一 DisplayList 缓存索引。
                 render_objects.as_deref_mut(),
             );
@@ -334,12 +303,6 @@ impl LayerTree {
         surface_w: i32,
         // 接收目标表面高度。
         surface_h: i32,
-        // 接收调试绘制开关。
-        debug_mode: bool,
-        // 接收当前调试命中链。
-        debug_hover: &Option<DebugHover>,
-        // 接收当前树深度。
-        depth: usize,
         // 接收可选的显示列表缓存树。
         render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
@@ -364,9 +327,6 @@ impl LayerTree {
             env,
             surface_w,
             surface_h,
-            debug_mode,
-            debug_hover,
-            depth,
             render_objects,
         );
         // 恢复进入节点前的画布变换与透明度。
@@ -383,9 +343,6 @@ impl LayerTree {
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
-        debug_mode: bool,
-        debug_hover: &Option<DebugHover>,
-        depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
         match node {
@@ -437,9 +394,6 @@ impl LayerTree {
                         env,
                         surface_w,
                         surface_h,
-                        debug_mode,
-                        debug_hover,
-                        depth,
                         render_objects,
                     )?;
                     return Ok(());
@@ -466,16 +420,6 @@ impl LayerTree {
                         PaintPass::Content,
                         render_objects.as_deref_mut(),
                     );
-                    Self::draw_debug_for_widget(
-                        &mut ctx,
-                        scene,
-                        *node_id,
-                        debug_mode,
-                        debug_hover,
-                        depth,
-                        surface_w,
-                        surface_h,
-                    );
                 }
                 engine.canvas_2d().push_clip(*rect);
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
@@ -493,9 +437,6 @@ impl LayerTree {
                         env,
                         surface_w,
                         surface_h,
-                        debug_mode,
-                        debug_hover,
-                        depth + 1,
                         render_objects.as_deref_mut(),
                     )?;
                 }
@@ -522,9 +463,6 @@ impl LayerTree {
                     env,
                     surface_w,
                     surface_h,
-                    debug_mode,
-                    debug_hover,
-                    depth,
                     render_objects,
                 )?;
             }
@@ -580,40 +518,6 @@ impl LayerTree {
         ctx.restore();
     }
 
-    fn draw_debug_for_widget(
-        ctx: &mut PaintContext<'_>,
-        scene: &impl ScenePaint,
-        node_id: NodeId,
-        debug_mode: bool,
-        debug_hover: &Option<DebugHover>,
-        depth: usize,
-        surface_w: i32,
-        surface_h: i32,
-    ) {
-        if !debug_mode || !scene.node_visible(node_id) {
-            return;
-        }
-        let Some(hover) = debug_hover.as_ref() else {
-            return;
-        };
-        // 默认不画满屏淡彩框：仅 hover 祖先链。
-        if !hover.chain.contains(&node_id) {
-            return;
-        }
-        // PaintContext 默认 debug=false；须显式打开，否则 draw_debug_* 全部 no-op。
-        ctx.set_debug_mode(true);
-        let frame = scene.node_frame(node_id);
-        ctx.draw_debug_border(frame, depth, true);
-        // 尺寸标签只贴最深命中节点，避免祖先链叠多块黑条。
-        if node_id == hover.leaf {
-            ctx.draw_debug_frame_info(node_id.slot(), frame);
-            if let Some(snapshot) = scene.hover_inspector(node_id) {
-                let lines = snapshot.inspector_lines(8);
-                ctx.draw_debug_inspector_lines(frame, &lines, surface_w, surface_h);
-            }
-        }
-    }
-
     /// 仅渲染 widget 自身的视觉效果（不处理子节点）。
     pub(crate) fn render_widget_self(
         id: NodeId,
@@ -646,9 +550,6 @@ impl LayerTree {
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
-        debug_mode: bool,
-        debug_hover: &Option<DebugHover>,
-        depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
         if !scene.node_visible(id) {
@@ -663,16 +564,6 @@ impl LayerTree {
                 PaintPass::Content,
                 render_objects.as_deref_mut(),
             );
-            Self::draw_debug_for_widget(
-                &mut ctx,
-                scene,
-                id,
-                debug_mode,
-                debug_hover,
-                depth,
-                surface_w,
-                surface_h,
-            );
         }
 
         if scene.node_visible(id) {
@@ -685,9 +576,6 @@ impl LayerTree {
                     env,
                     surface_w,
                     surface_h,
-                    debug_mode,
-                    debug_hover,
-                    depth + 1,
                     render_objects.as_deref_mut(),
                 )?;
             }
