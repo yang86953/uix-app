@@ -129,34 +129,40 @@ impl WidgetTree {
             .map(|(_, rect)| rect)
     }
 
-    /// 返回正常流可见子树的最下边界；裁剪容器只贡献自身边界。
-    fn normal_flow_subtree_bottom(
+    /// 记录当前节点正常流子树的最下边界，并补偿父级重排产生的整体位移。
+    fn record_normal_flow_subtree_bottom(
         &self,
         id: WidgetId,
         effective_visible: &std::collections::HashSet<WidgetId>,
+        bottoms: &mut std::collections::HashMap<WidgetId, (f32, f32)>,
     ) -> Option<f32> {
-        let mut pending = self.get(id)?.children().to_vec();
+        let node = self.get(id)?;
+        let frame = node.frame();
+        if node.children_clip(frame).is_some() {
+            bottoms.remove(&id);
+            return None;
+        }
         let mut bottom: Option<f32> = None;
-        while let Some(child_id) = pending.pop() {
-            if !effective_visible.contains(&child_id) {
-                continue;
-            }
+        for &child_id in node.children() {
             let Some(child) = self.get(child_id) else {
                 continue;
             };
             // 绝对定位与浮层不参与祖先的滚动内容自然高度。
-            if child.position().mode.is_out_of_flow() {
+            if !effective_visible.contains(&child_id) || child.position().mode.is_out_of_flow() {
                 continue;
             }
-            let frame = child.frame();
-            let child_bottom = frame.y + frame.h;
-            if child_bottom > 0.0 {
-                bottom = Some(bottom.map_or(child_bottom, |value| value.max(child_bottom)));
+            let child_frame = child.frame();
+            let mut child_bottom = child_frame.y + child_frame.h;
+            if let Some((recorded_y, descendant_bottom)) = bottoms.get(&child_id).copied() {
+                // 父级本轮可能整体移动了子节点；后代范围随相同位移平移。
+                child_bottom = child_bottom.max(descendant_bottom + child_frame.y - recorded_y);
             }
-            // 裁剪节点的后代不会在其 frame 之外形成可见内容范围。
-            if child.children_clip(frame).is_none() {
-                pending.extend_from_slice(child.children());
-            }
+            bottom = Some(bottom.map_or(child_bottom, |value| value.max(child_bottom)));
+        }
+        if let Some(bottom) = bottom {
+            bottoms.insert(id, (frame.y, bottom));
+        } else {
+            bottoms.remove(&id);
         }
         bottom
     }
@@ -175,8 +181,11 @@ impl WidgetTree {
         effective_visible: &std::collections::HashSet<WidgetId>,
     ) -> bool {
         let mut any_changed = false;
+        let mut subtree_bottoms = std::collections::HashMap::with_capacity(order.len());
         for _pass in 0..3 {
             let mut pass_changed = false;
+            // 反向遍历中每条父子边只汇总一次，避免每个祖先重复扫描全部后代。
+            subtree_bottoms.clear();
             // Phase A: 收集需要收缩的容器
             ops.clear();
 
@@ -247,13 +256,17 @@ impl WidgetTree {
                 let scrolls_vertically = self
                     .nearest_viewport_overflow_axes(id)
                     .is_some_and(|(_, vertical)| vertical);
+                let subtree_bottom = self.record_normal_flow_subtree_bottom(
+                    id,
+                    effective_visible,
+                    &mut subtree_bottoms,
+                );
                 let (_, explicit_height) = self.phase2_explicit_size_locks(id);
                 if scrolls_vertically && explicit_height {
                     continue;
                 }
                 let content_bottom = if scrolls_vertically {
-                    self.normal_flow_subtree_bottom(id, effective_visible)
-                        .unwrap_or(max_child_bottom)
+                    subtree_bottom.unwrap_or(max_child_bottom)
                 } else {
                     max_child_bottom
                 };
