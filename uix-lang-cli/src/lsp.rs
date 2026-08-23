@@ -4,12 +4,14 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use uix_lang_compiler::{CompilerDiagnostic, CompilerSystem};
+use uix_lang_compiler::{CompilerDiagnostic, CompilerSession, CompilerSystem};
 
 #[derive(Default)]
 struct Session {
     documents: BTreeMap<String, String>,
     diagnostics_by_root: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
+    // LSP Adapter 独占编译会话；进程退出或文档关闭时释放对应阶段缓存。
+    compiler: CompilerSession,
     shutdown: bool,
 }
 
@@ -75,12 +77,13 @@ fn handle(session: &mut Session, request: &Value) -> Vec<Value> {
     let id = request.get("id").cloned();
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
     let result = match method {
-        "initialize" => json!({"capabilities":{"textDocumentSync":1,"documentFormattingProvider":true,"completionProvider":{"triggerCharacters":["<","@"]},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true}}),
+        "initialize" => json!({"capabilities":{"textDocumentSync":{"openClose":true,"change":1},"documentFormattingProvider":true,"completionProvider":{"triggerCharacters":["<","@"]},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true}}),
         "initialized" | "$/cancelRequest" => return Vec::new(),
         "shutdown" => { session.shutdown = true; Value::Null },
         "exit" => return Vec::new(),
         "textDocument/didOpen" => { update_document(session, request); return diagnostic_notifications(session, request); }
         "textDocument/didChange" => { update_document(session, request); return diagnostic_notifications(session, request); }
+        "textDocument/didClose" => return close_document(session, request),
         "textDocument/formatting" => formatting(session, request),
         "textDocument/completion" => completion(request),
         "textDocument/hover" => hover(session, request),
@@ -119,6 +122,70 @@ fn update_document(session: &mut Session, request: &Value) {
     }
 }
 
+fn close_document(session: &mut Session, request: &Value) -> Vec<Value> {
+    let uri = request
+        .pointer("/params/textDocument/uri")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    session.documents.remove(&uri);
+    let previous = session.diagnostics_by_root.remove(&uri).unwrap_or_default();
+    let affected_roots = uri_to_path(&uri)
+        .map(|path| session.compiler.evict_file(&path))
+        .unwrap_or_default();
+    // 关闭依赖 overlay 后立即按落盘内容复核仍打开的根，不能等待下一次编辑才失效。
+    let affected_uris = session
+        .documents
+        .keys()
+        .filter(|candidate| {
+            uri_to_path(candidate).is_some_and(|candidate_path| {
+                affected_roots
+                    .iter()
+                    .any(|root| same_document_path(root, &candidate_path))
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut notifications = BTreeMap::<String, Value>::new();
+    for root_uri in affected_uris {
+        for notification in diagnostic_notifications(
+            session,
+            &json!({"params":{"textDocument":{"uri":root_uri}}}),
+        ) {
+            if let Some(target_uri) = notification.pointer("/params/uri").and_then(Value::as_str) {
+                notifications.insert(target_uri.to_string(), notification);
+            }
+        }
+    }
+    // 关闭根后重新汇聚仍由其他根持有的诊断；至少发布一次结果清理客户端状态。
+    let mut publish_uris = previous.keys().cloned().collect::<BTreeSet<_>>();
+    publish_uris.insert(uri);
+    for publish_uri in publish_uris {
+        let diagnostics = session
+            .diagnostics_by_root
+            .values()
+            .filter_map(|by_uri| by_uri.get(&publish_uri))
+            .flatten()
+            .cloned()
+            .collect::<Vec<_>>();
+        notifications.insert(
+            publish_uri.clone(),
+            json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":publish_uri,"diagnostics":diagnostics}}),
+        );
+    }
+    notifications.into_values().collect()
+}
+
+fn same_document_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn diagnostic_notifications(session: &mut Session, request: &Value) -> Vec<Value> {
     let request_uri = request
         .pointer("/params/textDocument/uri")
@@ -126,12 +193,14 @@ fn diagnostic_notifications(session: &mut Session, request: &Value) -> Vec<Value
         .unwrap_or("");
     let (text, name) = source(session, request_uri);
     let path = uri_to_path(request_uri);
-    let system = CompilerSystem::new();
     let result = if let Some(path) = path.as_ref() {
         let overlays = overlay_documents(session);
-        system.check_file_with_overlays_auto(path, &overlays).err()
+        session
+            .compiler
+            .check_file_with_overlays_auto(path, &overlays)
+            .err()
     } else {
-        system.check_inline_auto(&text, &name).err()
+        CompilerSystem::new().check_inline_auto(&text, &name).err()
     };
     // 每轮只保留当前失败来源；先前发布到其他依赖文件的诊断必须显式清空。
     let mut active = BTreeMap::<String, Vec<Value>>::new();
@@ -402,6 +471,14 @@ mod tests {
             .next()
             .expect("initialize 必须返回响应");
         assert_eq!(response["result"]["capabilities"]["hoverProvider"], true);
+        assert_eq!(
+            response["result"]["capabilities"]["textDocumentSync"]["openClose"],
+            true
+        );
+        assert_eq!(
+            response["result"]["capabilities"]["textDocumentSync"]["change"],
+            1
+        );
     }
 
     #[test]
@@ -425,6 +502,91 @@ mod tests {
             notification["params"]["diagnostics"],
             serde_json::Value::Array(Vec::new())
         );
+    }
+
+    #[test]
+    fn did_close_releases_overlay_and_clears_published_diagnostics() {
+        let path = std::env::temp_dir().join(format!("uix-lsp-close-{}.uix", std::process::id()));
+        let uri = format!("file://{}", path.display());
+        let mut session = Session::default();
+        session
+            .documents
+            .insert(uri.clone(), "<App><Unknown /></App>".to_string());
+        let published = diagnostic_notifications(
+            &mut session,
+            &json!({"params":{"textDocument":{"uri":uri.clone()}}}),
+        );
+        assert!(published.iter().any(|notification| {
+            !notification["params"]["diagnostics"]
+                .as_array()
+                .expect("诊断必须是数组")
+                .is_empty()
+        }));
+
+        let cleared = handle(
+            &mut session,
+            &json!({"method":"textDocument/didClose","params":{"textDocument":{"uri":uri.clone()}}}),
+        );
+
+        assert!(!session.documents.contains_key(&uri));
+        assert!(!session.diagnostics_by_root.contains_key(&uri));
+        assert!(cleared.iter().any(|notification| {
+            notification["params"]["uri"] == uri
+                && notification["params"]["diagnostics"] == serde_json::Value::Array(Vec::new())
+        }));
+    }
+
+    #[test]
+    fn closing_dependency_overlay_revalidates_open_root_from_disk() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("系统时钟必须可用")
+            .as_nanos();
+        let fixture = std::env::temp_dir().join(format!("uix-lsp-close-dependency-{unique}"));
+        std::fs::create_dir(&fixture).expect("必须创建 LSP fixture");
+        let helper = fixture.join("helper.uix");
+        let root = fixture.join("main.uix");
+        let helper_source =
+            "@export('Helper')\n<Widget name=\"Helper\"><Text>共享</Text></Widget>\n<Helper />";
+        let root_source = "@import('./helper.uix', 'Helper')\n<App><Helper /></App>";
+        std::fs::write(&helper, helper_source).expect("必须写入有效依赖文件");
+        std::fs::write(&root, root_source).expect("必须写入根文件");
+        let root_uri = format!("file://{}", root.display());
+        let helper_uri = format!("file://{}", helper.display());
+        let mut session = Session::default();
+        session
+            .documents
+            .insert(root_uri.clone(), root_source.to_string());
+        session.documents.insert(
+            helper_uri.clone(),
+            "@export('Helper')\n<Widget name=\"Helper\"><Unknown /></Widget>\n<Helper />"
+                .to_string(),
+        );
+        let published = diagnostic_notifications(
+            &mut session,
+            &json!({"params":{"textDocument":{"uri":root_uri.clone()}}}),
+        );
+        assert!(published.iter().any(|notification| {
+            notification["params"]["uri"] == helper_uri
+                && !notification["params"]["diagnostics"]
+                    .as_array()
+                    .expect("诊断必须是数组")
+                    .is_empty()
+        }));
+
+        let cleared = handle(
+            &mut session,
+            &json!({"method":"textDocument/didClose","params":{"textDocument":{"uri":helper_uri.clone()}}}),
+        );
+
+        assert!(session.documents.contains_key(&root_uri));
+        assert!(!session.documents.contains_key(&helper_uri));
+        assert!(!session.diagnostics_by_root.contains_key(&root_uri));
+        assert!(cleared.iter().any(|notification| {
+            notification["params"]["uri"] == helper_uri
+                && notification["params"]["diagnostics"] == serde_json::Value::Array(Vec::new())
+        }));
+        let _ = std::fs::remove_dir_all(fixture);
     }
 
     #[test]

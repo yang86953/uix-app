@@ -13,7 +13,9 @@ use semantic_ir::{TypedUiIr, lower_document};
 use source_graph::SourceId;
 use source_map::SourceMap;
 
+mod compiler_session;
 mod formatter;
+pub use compiler_session::CompilerSession;
 /// 导出可选的开发期纯 UI AOT 热重载入口。
 #[cfg(feature = "hot-reload")]
 pub mod hot_reload;
@@ -42,7 +44,7 @@ use uix_lang::{
 };
 
 /// 声明一次编译需要生成的公开入口形状。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CompileTarget {
     /// 生成 `ViewNode` 表达式。
     View,
@@ -137,7 +139,7 @@ pub struct CompilationKey {
 }
 
 impl CompilationKey {
-    fn new(source_graph: &source_graph::SourceGraph, target: CompileTarget) -> Self {
+    pub(crate) fn new(source_graph: &source_graph::SourceGraph, target: CompileTarget) -> Self {
         let root_content_hash = source_graph
             .file(source_graph.root())
             .map(|file| file.content_hash)
@@ -183,7 +185,7 @@ impl DiagnosticPhase {
 }
 
 /// 保存 Compiler System 成功建立的确定性 Rust 结果与递归文件依赖。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompileOutput {
     /// 保存供入口 Adapter 消费的 Rust 令牌。
     pub tokens: TokenStream,
@@ -200,7 +202,7 @@ pub struct CompileOutput {
 }
 
 /// 保存不产生公开 Rust 输出的共享检查结果。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CheckOutput {
     /// 保存根文件及递归导入闭包中的规范路径。
     pub tracked_files: Vec<PathBuf>,
@@ -270,18 +272,6 @@ impl CompilerSystem {
         target: CompileTarget,
     ) -> Result<CompileOutput, CompilerDiagnostic> {
         let analyzed = analyze_file(path, Some(target))?;
-        compile_analyzed(analyzed)
-    }
-
-    /// 编译开发会话的文件快照；overlay 只替换本次 AOT 输入，不执行生成结果。
-    #[cfg(feature = "hot-reload")]
-    pub(crate) fn compile_file_with_overlays(
-        self,
-        path: &Path,
-        overlays: &BTreeMap<PathBuf, String>,
-        target: CompileTarget,
-    ) -> Result<CompileOutput, CompilerDiagnostic> {
-        let analyzed = analyze_file_with_overlays(path, overlays, Some(target))?;
         compile_analyzed(analyzed)
     }
 
@@ -420,7 +410,8 @@ impl CompilerSystem {
 }
 
 // 保存语义阶段成功后供 check 与 AOT 共享的不可变产物。
-struct AnalyzedUnit {
+#[derive(Debug, Clone)]
+pub(crate) struct AnalyzedUnit {
     tracked_files: Vec<PathBuf>,
     source_graph: source_graph::SourceGraph,
     ir: TypedUiIr,
@@ -648,7 +639,7 @@ fn analyze_file_with_overlays(
     analyze_resolved_file(resolved, path, requested_target)
 }
 
-fn analyze_resolved_file(
+pub(crate) fn analyze_resolved_file(
     resolved: uix_import::ResolvedDocument,
     path: &Path,
     requested_target: Option<CompileTarget>,
@@ -678,7 +669,7 @@ fn analyze_resolved_file(
 }
 
 // 自动入口只依据成功解析后的根元素，不依赖诊断文案或二次编译。
-fn inferred_target(document: &uix_lang::Document) -> CompileTarget {
+pub(crate) fn inferred_target(document: &uix_lang::Document) -> CompileTarget {
     if document.root.name == "App" {
         CompileTarget::App
     } else {
@@ -687,9 +678,16 @@ fn inferred_target(document: &uix_lang::Document) -> CompileTarget {
 }
 
 // 让 AOT 与 check 执行同一完整 lowering Gate，AOT 额外进入 Rust Emitter。
-fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDiagnostic> {
-    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
-    let plan = lower_rust_plan(&analyzed.ir).map_err(|failure| {
+pub(crate) fn compile_analyzed(
+    analyzed: AnalyzedUnit,
+) -> Result<CompileOutput, CompilerDiagnostic> {
+    let plan = lower_analyzed(&analyzed)?;
+    compile_lowered(analyzed, plan)
+}
+
+// 把共享 lowering Gate 投影为可被会话缓存的稳定结果。
+pub(crate) fn lower_analyzed(analyzed: &AnalyzedUnit) -> Result<RustUiPlan, CompilerDiagnostic> {
+    lower_rust_plan(&analyzed.ir).map_err(|failure| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
@@ -697,7 +695,15 @@ fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDia
             failure.code,
             failure.diagnostic,
         )
-    })?;
+    })
+}
+
+// 让会话在复用 lowering 计划后只执行真正的 Rust Emit 阶段。
+pub(crate) fn compile_lowered(
+    analyzed: AnalyzedUnit,
+    plan: RustUiPlan,
+) -> Result<CompileOutput, CompilerDiagnostic> {
+    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
     let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir)
         .map_err(|message| emit_diagnostic(&analyzed.source_graph, message))?;
     Ok(CompileOutput {
@@ -711,23 +717,20 @@ fn compile_analyzed(analyzed: AnalyzedUnit) -> Result<CompileOutput, CompilerDia
 }
 
 // 检查阶段执行完整 lowering Gate，但不进入 Rust Emitter。
-fn check_analyzed(analyzed: AnalyzedUnit) -> Result<CheckOutput, CompilerDiagnostic> {
+pub(crate) fn check_analyzed(analyzed: AnalyzedUnit) -> Result<CheckOutput, CompilerDiagnostic> {
+    lower_analyzed(&analyzed)?;
+    Ok(check_lowered(analyzed))
+}
+
+// 让会话在确认共享 lowering 成功后构造不含 Rust Emit 的检查结果。
+pub(crate) fn check_lowered(analyzed: AnalyzedUnit) -> CheckOutput {
     let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
-    lower_rust_plan(&analyzed.ir).map_err(|failure| {
-        semantic_diagnostic(
-            &analyzed.source_graph,
-            Path::new("<unknown>"),
-            failure.source_id,
-            failure.code,
-            failure.diagnostic,
-        )
-    })?;
-    Ok(CheckOutput {
+    CheckOutput {
         tracked_files: analyzed.tracked_files,
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
         compilation_key,
-    })
+    }
 }
 
 // 把 lowering 错误绑定到本次源码图中的真实节点来源。
@@ -780,7 +783,8 @@ fn emit_diagnostic(
 }
 
 // 保存已通过全部语义 Gate、可直接交付 Rust Emitter 的不可变计划。
-struct RustUiPlan {
+#[derive(Debug, Clone)]
+pub(crate) struct RustUiPlan {
     tokens: TokenStream,
 }
 

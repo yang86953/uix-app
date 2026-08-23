@@ -35,10 +35,10 @@
   - 覆盖 11 类 pipeline、Blur、present、resize、设备丢失与恢复。
   - 通过条件：保留实际设备、驱动和运行结果；静态链接或交叉编译不能替代运行证据。
 
-- [ ] **实现 UIX Lang 真正的增量编译**
-  - 当前已有 `CompilationKey` 和递归依赖摘要，但编译入口仍会重新执行分析、降低和生成。
-  - 为 Compiler System/LSP 增加阶段缓存与会话复用。
-  - 通过条件：只失效受影响依赖；源码未变返回稳定结果；诊断顺序和失败语义不变。
+- [x] **实现 UIX Lang 真正的增量编译**
+  - `CompilerSession` 持有会话级 Syntax、Semantic、check 与 Emit 阶段缓存；LSP 和热重载 Adapter 复用同一会话，并在文档关闭或 Adapter 销毁时释放缓存。
+  - 单文件内容未变时复用 AST 或稳定语法诊断；完整 `CompilationKey` 未变时复用分析及输出，依赖 overlay 变化只重解析变化文件并失效对应源码图。
+  - 阶段计数契约测试覆盖未变化命中、依赖定向失效及 check/compile 共享分析与 lowering；既有诊断和热重载测试继续锁定顺序与失败语义。
   - 依据：[语言完善计划](docs/uix-lang/变更/语言完善计划.md)、[编译器架构](docs/uix-lang/设计/编译器架构.md)。
 
 - [ ] **建立诊断质量验收矩阵**

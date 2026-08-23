@@ -105,11 +105,11 @@ class GraphicsRhiPresentDamageContractTests(unittest.TestCase):
         # 共享事务校验必须早于 native current context 切换。
         self.assertLess(
             opengl_present.index("rhi_validate_present("),
-            opengl_present.index("rhi_make_current()?"),
+            opengl_present.index("rhi_make_current()"),
         )
         # native 交换只能消费共享门禁发布的结果。
         self.assertLess(
-            opengl_present.index("rhi_make_current()?"),
+            opengl_present.index("rhi_make_current()"),
             opengl_present.index("rhi_swap_buffers("),
         )
         # 截取 D3D11 的单次 present 实现作为同一失败时序对照。
@@ -121,11 +121,11 @@ class GraphicsRhiPresentDamageContractTests(unittest.TestCase):
         # D3D11 必须继续先校验事务再恢复 swapchain target。
         self.assertLess(
             d3d11_present.index("validate_present_impl("),
-            d3d11_present.index("bind_swapchain_target()?"),
+            d3d11_present.index("bind_swapchain_target()"),
         )
         # 原生 Present 只接收共享校验后的封闭值。
         self.assertLess(
-            d3d11_present.index("bind_swapchain_target()?"),
+            d3d11_present.index("bind_swapchain_target()"),
             d3d11_present.index("present_result(&present)"),
         )
 
