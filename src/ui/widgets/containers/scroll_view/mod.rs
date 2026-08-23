@@ -255,6 +255,16 @@ widget! {
         }
     }
 
+    // 像素搬移只覆盖内容视口；滚动条沟槽由树级失效单独重绘。
+    scroll_composite_viewport => (&self, frame: Rect) -> Option<Rect> {
+        // 使用与布局、裁剪完全相同的滚动条判定，禁止把动态滑块像素一起搬移。
+        let need_v = self.needs_v_scrollbar(frame, &[]);
+        // 双向视口还需排除底部横向滚动条沟槽。
+        let need_h = self.needs_h_scrollbar(frame, &[]);
+        // 空内容视口会由树级合成门禁回退为普通重绘。
+        Some(self.content_frame(frame, need_v, need_h))
+    }
+
     viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
         Some((self.effective_scroll_x(), self.effective_scroll_y()))
     }

@@ -146,8 +146,20 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_overlay_transform(&self, id: NodeId) -> crate::draw::Transform {
-        if self.node_is_fixed(id) {
-            // fixed 浮层保持窗口坐标语义，不继承祖先滚动。
+        let uses_viewport_coordinates = self.node_is_fixed(id)
+            || self
+                // Modal、Drawer 与图片预览会直接按逻辑表面绘制，不能再叠加锚点滚动。
+                .get(id)
+                // 使用无需表面参数的条目只判定坐标语义；真实 bounds 仍由布局阶段解析。
+                .and_then(|node| node.overlay_entry(id, node.frame()))
+                .is_some_and(|entry| {
+                    matches!(
+                        entry.kind(),
+                        crate::ui::OverlayKind::Modal | crate::ui::OverlayKind::Drawer
+                    )
+                });
+        if uses_viewport_coordinates {
+            // 窗口级浮层保持视口坐标语义，不继承祖先滚动。
             self.positioned_visual_transform(id)
         } else {
             // 输入类弹层仍锚定原组件树，补回被根浮层提升跳过的祖先变换。

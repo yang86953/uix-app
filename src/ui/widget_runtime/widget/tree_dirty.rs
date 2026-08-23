@@ -5,6 +5,50 @@ use crate::draw::renderer::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/ui/widget_runtime/widget/tree_dirty__tests.rs"]
+mod tests;
+
+// 返回组件外框中没有被内容搬移视口覆盖的非重叠区域。
+fn scroll_chrome_regions(frame: Rect, viewport: Rect) -> Vec<Rect> {
+    // 调用方通常已做相交；这里仍防御组件返回越界视口。
+    let Some(viewport) = frame.intersect(&viewport) else {
+        // 完全不相交时整个组件都属于不能搬移的绘制区域。
+        return (frame.w > 0.0 && frame.h > 0.0)
+            .then_some(frame)
+            .into_iter()
+            .collect();
+    };
+    // 最多产生上、下、左、右四个互不重叠的矩形。
+    let mut regions = Vec::with_capacity(4);
+    let frame_right = frame.x + frame.w;
+    let frame_bottom = frame.y + frame.h;
+    let viewport_right = viewport.x + viewport.w;
+    let viewport_bottom = viewport.y + viewport.h;
+    for region in [
+        Rect::new(frame.x, frame.y, frame.w, viewport.y - frame.y),
+        Rect::new(
+            frame.x,
+            viewport_bottom,
+            frame.w,
+            frame_bottom - viewport_bottom,
+        ),
+        Rect::new(frame.x, viewport.y, viewport.x - frame.x, viewport.h),
+        Rect::new(
+            viewport_right,
+            viewport.y,
+            frame_right - viewport_right,
+            viewport.h,
+        ),
+    ] {
+        // 空边不进入失效队列。
+        if region.w > 0.0 && region.h > 0.0 {
+            regions.push(region);
+        }
+    }
+    regions
+}
+
 impl WidgetTree {
     /// 返回组件树共享的失效队列句柄。
     pub fn invalidation(&self) -> &InvalidationQueueHandle {
@@ -130,9 +174,12 @@ impl WidgetTree {
     }
 
     pub(crate) fn push_scroll_composite(&mut self, viewport: Rect, dx: f32, dy: f32) -> bool {
-        let dx = dx.round();
-        let dy = dy.round();
-        if viewport.w <= 0.0 || viewport.h <= 0.0 || (dx == 0.0 && dy == 0.0) {
+        // retained texture copy 是整数像素事务；分数位移若取整会让文字与新绘像素逐帧漂移。
+        let integral_geometry = [viewport.x, viewport.y, viewport.w, viewport.h, dx, dy]
+            .into_iter()
+            .all(|value| value.is_finite() && value.fract() == 0.0);
+        if !integral_geometry || viewport.w <= 0.0 || viewport.h <= 0.0 || (dx == 0.0 && dy == 0.0)
+        {
             return false;
         }
 
@@ -172,6 +219,30 @@ impl WidgetTree {
         true
     }
 
+    // 为组件登记一次精确内容搬移，并重绘搬移视口外的滚动条或固定 chrome。
+    pub(crate) fn push_node_scroll_composite(&mut self, id: WidgetId, dx: f32, dy: f32) -> bool {
+        let Some((frame, logical_viewport)) = self.get(id).map(|node| {
+            let frame = node.frame();
+            (frame, node.scroll_composite_viewport(frame))
+        }) else {
+            return false;
+        };
+        // 纹理搬移消费屏幕坐标，必须与绘制、命中共用祖先滚动和裁剪投影。
+        let Some(visual_viewport) = self.clipped_visual_rect(id, logical_viewport) else {
+            return false;
+        };
+        if !self.push_scroll_composite(visual_viewport, dx, dy) {
+            return false;
+        }
+        // 内容视口之外不能复用旧像素；滚动条滑块位置也会随偏移变化。
+        for region in scroll_chrome_regions(frame, logical_viewport) {
+            if let Some(region) = self.clipped_visual_rect(id, region) {
+                self.push_paint_invalidation(id, Some(region));
+            }
+        }
+        true
+    }
+
     /// 返回当前失效队列聚合得到的绘制脏区快照。
     pub fn dirty_region(&self) -> DirtyRegion {
         self.invalidation
@@ -200,16 +271,10 @@ impl WidgetTree {
             return;
         }
         let transformed = self.path_has_visual_transform(id);
-        let scroll = self.get(id).and_then(|node| {
-            let frame = node.frame();
-            node.scroll_delta_for_dirty().map(|(dx, dy)| {
-                let viewport = node.scroll_composite_viewport(frame);
-                (viewport, dx, dy)
-            })
-        });
+        let scroll = self.get(id).and_then(|node| node.scroll_delta_for_dirty());
         if !transformed {
-            if let Some((viewport, dx, dy)) = scroll {
-                if self.push_scroll_composite(viewport, dx, dy) {
+            if let Some((dx, dy)) = scroll {
+                if self.push_node_scroll_composite(id, dx, dy) {
                     return;
                 }
             }
