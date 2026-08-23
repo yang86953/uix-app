@@ -233,6 +233,34 @@ impl Subscriber for CaptureSubscriber {
 }
 
 #[test]
+fn debug_mode_is_runtime_scoped_shared_and_structured() {
+    install_global_default_subscriber();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = CaptureSubscriber {
+        events: Arc::clone(&events),
+    };
+    let diagnostics = Diagnostics::new(DiagnosticsConfig::default().debug_mode(true));
+    let shared = diagnostics.clone();
+
+    assert!(diagnostics.debug_mode());
+    tracing::subscriber::with_default(subscriber, || {
+        diagnostics.set_debug_mode(false);
+        // 相同值不应产生重复模式事件。
+        diagnostics.set_debug_mode(false);
+    });
+    assert!(!shared.debug_mode());
+
+    let events = events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].target, "uix::diagnostics");
+    for field in ["debug_event", "runtime_id", "enabled"] {
+        assert!(events[0].fields.iter().any(|candidate| candidate == field));
+    }
+}
+
+#[test]
 fn report_emits_one_fixed_target_event_with_contract_fields() {
     install_global_default_subscriber();
     let events = Arc::new(Mutex::new(Vec::new()));

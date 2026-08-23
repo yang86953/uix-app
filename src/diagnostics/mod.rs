@@ -40,6 +40,7 @@
 
 mod config;
 mod crash;
+mod debug;
 mod pending;
 mod recovery;
 mod report;
@@ -52,6 +53,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::core::Error;
 
 pub use config::{BacktracePolicy, DiagnosticsConfig};
+pub(crate) use debug::debug_mode_from_env;
 pub(crate) use pending::{PendingFailureQueue, PendingFailureSource};
 pub use recovery::{RecoveryAction, RecoveryOutcome, RecoverySubscription};
 
@@ -74,6 +76,7 @@ struct DiagnosticsInner {
     pending_failures: PendingFailureQueue,
     reporting: ReportingModule,
     recovery: Arc<recovery::RecoveryModule>,
+    debugging: debug::DebugModule,
 }
 
 /// 一个运行时的公开 Diagnostics System 句柄。
@@ -89,6 +92,7 @@ impl Diagnostics {
     /// 使用指定配置创建相互隔离的诊断运行时实例。
     pub fn new(config: DiagnosticsConfig) -> Self {
         let runtime_id = NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed);
+        let debug_mode = config.debug_mode;
         Self {
             inner: Arc::new(DiagnosticsInner {
                 runtime_id,
@@ -96,6 +100,7 @@ impl Diagnostics {
                 config,
                 pending_failures: PendingFailureQueue::new(),
                 recovery: Arc::new(recovery::RecoveryModule::new()),
+                debugging: debug::DebugModule::new(debug_mode),
             }),
         }
     }
@@ -120,6 +125,32 @@ impl Diagnostics {
     /// interest,恢复诊断事件可见性。
     pub fn rebuild_tracing_interest_cache(&self) {
         tracing::callsite::rebuild_interest_cache();
+    }
+
+    /// 返回当前运行时是否启用了统一调试模式。
+    #[inline(always)]
+    pub fn debug_mode(&self) -> bool {
+        self.inner.debugging.enabled()
+    }
+
+    /// 动态切换统一调试模式。
+    ///
+    /// 所有共享此 Diagnostics 实例的窗口会在下一次事件或帧边界观察到新值。
+    pub fn set_debug_mode(&self, enabled: bool) {
+        if self.inner.debugging.set_enabled(enabled) {
+            tracing::info!(
+                target: "uix::diagnostics",
+                debug_event = "mode_changed",
+                runtime_id = self.inner.runtime_id,
+                enabled,
+                "runtime debug mode changed"
+            );
+        }
+    }
+
+    /// 为同一批输入、状态变更与最终帧分配稳定关联身份。
+    pub(crate) fn next_debug_correlation_id(&self) -> u64 {
+        self.inner.debugging.next_correlation_id()
     }
 
     /// 返回按 `ReportId` 排序的不可变时间点快照。

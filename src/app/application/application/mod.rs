@@ -48,15 +48,15 @@ use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
 // Application 只把运行时故障队列交给平台中立入口，不选择具体原生后端。
-use crate::platform::{PendingNativeOptions, create_platform_with_pending};
-use crate::platform::platform::Platform;
-use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::graphics::GraphicsBackend;
+use crate::platform::platform::Platform;
 use crate::platform::presentation::{
     GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,
     graphics_runtime_platform, try_create_gpu_recipe_with_queue,
 };
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
+use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 use crate::ui::semantic_action::SemanticActionKind;
 use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
@@ -105,6 +105,8 @@ pub struct App {
     pub(crate) app_timers: AppTimerQueue,
     pub(crate) main_thread_queue: MainThreadQueue,
     runtime: AppRuntime,
+    /// 公开 builder 对运行时调试模式的显式覆写；空值保留 Diagnostics 配置或环境值。
+    debug_mode_override: Option<bool>,
     handle_alive: Arc<AtomicBool>,
     root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
     pub(crate) on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
@@ -203,6 +205,15 @@ impl App {
     /// 互斥；后调用者生效。
     pub fn diagnostics_runtime(mut self, diagnostics: crate::diagnostics::Diagnostics) -> Self {
         self.runtime.set_diagnostics_runtime(diagnostics);
+        self
+    }
+
+    /// 显式设置应用启动时的统一调试模式。
+    ///
+    /// 该设置优先于 `UIX_DEBUG`，并在全部窗口间共享。运行中可通过
+    /// `Ctrl+Shift+D` 或 [`crate::diagnostics::Diagnostics::set_debug_mode`] 切换。
+    pub fn debug_mode(mut self, enabled: bool) -> Self {
+        self.debug_mode_override = Some(enabled);
         self
     }
 
@@ -459,6 +470,19 @@ impl App {
         let (w, h) = self.size;
         let graphics_backend = self.configured_graphics_backend();
         let diagnostics = self.runtime.diagnostics();
+        let requested_debug_mode = self
+            .debug_mode_override
+            .map(Ok)
+            .or_else(crate::diagnostics::debug_mode_from_env);
+        match requested_debug_mode {
+            Some(Ok(enabled)) => diagnostics.set_debug_mode(enabled),
+            Some(Err(())) => tracing::warn!(
+                target: "uix::diagnostics",
+                debug_event = "invalid_debug_switch",
+                "UIX_DEBUG must be one of 1/0, true/false, yes/no, or on/off"
+            ),
+            None => {}
+        }
 
         // 真实 device-lost 恢复注册：typed `GraphicsDeviceLost` 到达 owner-thread
         // 安全点时，恢复 handler 只请求窗口引擎在下个帧边界执行既有有界恢复序列
@@ -731,8 +755,8 @@ impl App {
             &mut secondary_windows.borrow_mut(),
         );
         let theme = RefCell::new(self.runtime.take_pending_theme().unwrap_or(self.theme));
-        // UIX_DEBUG=1 启动即开调试 overlay（与 Window::new 一致）。
-        let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
+        // Diagnostics System 是全部窗口调试状态的唯一所有者。
+        let debug_mode = diagnostics.clone();
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
         let metrics = Cell::new(crate::draw::renderer::RenderMetrics::default());
         drain_secondary_window_frames_with_platform(

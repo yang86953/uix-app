@@ -150,7 +150,7 @@ pub(crate) fn drain_secondary_window_frames(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     clock: &dyn AppClock,
 ) -> bool {
@@ -176,7 +176,7 @@ pub(super) fn drain_secondary_window_frames_with_platform(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     clock: &dyn AppClock,
 ) -> bool {
@@ -202,7 +202,7 @@ fn drain_secondary_window_frames_impl(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     clock: &dyn AppClock,
 ) -> bool {

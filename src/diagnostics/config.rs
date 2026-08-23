@@ -19,6 +19,7 @@ pub struct DiagnosticsConfig {
     pub(crate) report_capacity: usize,
     pub(crate) crash_report_directory: Option<PathBuf>,
     pub(crate) backtrace: BacktracePolicy,
+    pub(crate) debug_mode: bool,
 }
 
 impl DiagnosticsConfig {
@@ -40,6 +41,16 @@ impl DiagnosticsConfig {
         self.backtrace = policy;
         self
     }
+
+    /// 设置运行时调试模式的初始状态；默认关闭。
+    ///
+    /// 开启后应用事件循环会发射带关联身份的结构化调试事件，并启用帧诊断与
+    /// 调试覆盖层。运行中仍可通过 [`crate::diagnostics::Diagnostics::set_debug_mode`]
+    /// 或快捷键切换。
+    pub fn debug_mode(mut self, enabled: bool) -> Self {
+        self.debug_mode = enabled;
+        self
+    }
 }
 
 impl Default for DiagnosticsConfig {
@@ -48,6 +59,7 @@ impl Default for DiagnosticsConfig {
             report_capacity: 256,
             crash_report_directory: None,
             backtrace: BacktracePolicy::FatalOnly,
+            debug_mode: false,
         }
     }
 }

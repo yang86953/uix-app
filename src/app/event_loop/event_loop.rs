@@ -9,6 +9,7 @@ use crate::app::window::window_driver::{WindowDriver, WindowFrameContext};
 use crate::app::window::window_session::{WindowLoopState, WindowSession, WindowTextInputState};
 use crate::app::window_semantics::WindowSemanticState;
 use crate::core::Point;
+use crate::diagnostics::Diagnostics;
 use crate::draw::renderer::RenderMetrics;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
@@ -48,7 +49,7 @@ pub(crate) fn run_widget_loop<M, X, F>(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -109,7 +110,7 @@ pub(crate) fn run_window_session_loop<M, X, F>(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -150,7 +151,7 @@ pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
     image_service: &ImageService,
     theme: &RefCell<Theme>,
     system_theme_tokens: Option<&DynTokens>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -191,7 +192,7 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
     system_theme_tokens: Option<&DynTokens>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -242,7 +243,7 @@ pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
     image_service: &ImageService,
     theme: &RefCell<Theme>,
     clock: std::sync::Arc<dyn AppClock>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -285,7 +286,7 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
     theme: &RefCell<Theme>,
     system_theme_tokens: Option<&DynTokens>,
     clock: std::sync::Arc<dyn AppClock>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -357,7 +358,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     image_service: &ImageService,
     theme: &RefCell<Theme>,
     system_theme_tokens: Option<&DynTokens>,
-    debug_mode: &Cell<bool>,
+    debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
@@ -487,8 +488,21 @@ where
         }
 
         let had_events = !pending_events.borrow().is_empty();
+        // 同一批原生输入与其驱动的最终帧共享关联身份，便于从日志反查因果链。
+        let mut debug_correlation_id =
+            (debug_mode.debug_mode() && had_events).then(|| debug_mode.next_debug_correlation_id());
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
+            if let Some(correlation_id) = debug_correlation_id {
+                tracing::debug!(
+                    target: "uix::diagnostics",
+                    debug_event = "input_received",
+                    correlation_id,
+                    window_id = ?window_id,
+                    event_type = ?ev.type_,
+                    "window input entered the UI dispatch boundary"
+                );
+            }
             had_layout_event |=
                 driver.handle_window_event(&ev, tree, engine, platform_window, text_input);
 
@@ -506,10 +520,22 @@ where
                             &active_pointer_cursor,
                         );
                         // debug hover 链：仅 hit 目标变化时标脏（#105；非每 move 全帧）。
-                        if debug_mode.get() {
+                        if debug_mode.debug_mode() {
                             let hit = tree.hit_test(data.pos);
                             if hit != last_debug_hover.get() {
                                 last_debug_hover.set(hit);
+                                if let Some(correlation_id) = debug_correlation_id {
+                                    tracing::debug!(
+                                        target: "uix::diagnostics",
+                                        debug_event = "debug_hover_changed",
+                                        correlation_id,
+                                        window_id = ?window_id,
+                                        widget_id = ?hit,
+                                        pointer_x = data.pos.x,
+                                        pointer_y = data.pos.y,
+                                        "debug hover target changed"
+                                    );
+                                }
                                 tree.mark_full_frame_dirty();
                             }
                         }
@@ -525,8 +551,20 @@ where
                             && data.mods.contains(KeyMod::CTRL)
                             && data.mods.contains(KeyMod::SHIFT);
                         if toggle_debug {
-                            let next = !debug_mode.get();
-                            debug_mode.set(next);
+                            let next = !debug_mode.debug_mode();
+                            debug_mode.set_debug_mode(next);
+                            if next && debug_correlation_id.is_none() {
+                                debug_correlation_id = Some(debug_mode.next_debug_correlation_id());
+                            }
+                            tracing::info!(
+                                target: "uix::diagnostics",
+                                debug_event = "shortcut_toggle",
+                                correlation_id = debug_correlation_id.unwrap_or(0),
+                                has_correlation = debug_correlation_id.is_some(),
+                                window_id = ?window_id,
+                                enabled = next,
+                                "runtime debug mode toggled by keyboard"
+                            );
                             if !next {
                                 last_debug_hover.set(None);
                             }
@@ -622,6 +660,7 @@ where
             image_service,
             theme,
             debug_mode,
+            debug_correlation_id,
             cursor_pos,
             metrics,
             now,
