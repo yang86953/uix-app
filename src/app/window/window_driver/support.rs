@@ -195,6 +195,29 @@ fn engine_logical_extent(engine: &mut dyn RenderTarget) -> Option<(f32, f32)> {
     (width > 0 && height > 0).then_some((width as f32, height as f32))
 }
 
+// 将根节点对齐到最新 Surface，并把尺寸变化发布为真正的布局失效。
+// 主窗会显式携带 had_layout_event，副窗则依赖本失效进入同一布局事务。
+fn sync_root_surface_frame(tree: &mut WidgetTree, width: f32, height: f32) -> bool {
+    let Some(root_id) = tree.root_id() else {
+        return false;
+    };
+    let mismatched = tree.get(root_id).is_some_and(|root| {
+        let frame = root.frame();
+        (frame.w - width).abs() > 0.5 || (frame.h - height).abs() > 0.5
+    });
+    if !mismatched {
+        return false;
+    }
+    let Some(root) = tree.get_mut(root_id) else {
+        return false;
+    };
+    root.set_frame(Rect::new(0.0, 0.0, width, height));
+    tree.tree_version = tree.tree_version.wrapping_add(1);
+    tree.push_layout_invalidation(root_id);
+    tree.mark_full_frame_dirty();
+    true
+}
+
 /// 读取平台窗口协议提供的当前逻辑客户区。
 pub(crate) fn native_client_logical_extent(platform_window: &dyn PlatformWindow) -> (i32, i32) {
     // OS 查询与尺寸换算都封装在 PlatformWindow 实现中。
@@ -234,22 +257,7 @@ pub(crate) fn ensure_surface_matches_window(
     let Some((engine_width, engine_height)) = engine_logical_extent(engine) else {
         return changed;
     };
-    let root_mismatch = tree
-        .root_id()
-        .and_then(|root_id| tree.get(root_id))
-        .is_some_and(|root| {
-            let frame = root.frame();
-            (frame.w - engine_width).abs() > 0.5 || (frame.h - engine_height).abs() > 0.5
-        });
-    if root_mismatch {
-        if let Some(root_id) = tree.root_id() {
-            if let Some(root) = tree.get_mut(root_id) {
-                root.set_frame(Rect::new(0.0, 0.0, engine_width, engine_height));
-            }
-        }
-        tree.tree_version = tree.tree_version.wrapping_add(1);
-        tree.mark_full_frame_dirty();
-    }
+    sync_root_surface_frame(tree, engine_width, engine_height);
     changed
 }
 
@@ -260,18 +268,7 @@ pub(crate) fn sync_root_frame_exactly_to_engine(
     let Some((width, height)) = engine_logical_extent(engine) else {
         return;
     };
-    if let Some(root_id) = tree.root_id() {
-        let mismatched = tree.get(root_id).is_some_and(|root| {
-            let frame = root.frame();
-            (frame.w - width).abs() > 0.5 || (frame.h - height).abs() > 0.5
-        });
-        if mismatched {
-            if let Some(root) = tree.get_mut(root_id) {
-                root.set_frame(Rect::new(0.0, 0.0, width, height));
-            }
-            tree.tree_version = tree.tree_version.wrapping_add(1);
-        }
-    }
+    sync_root_surface_frame(tree, width, height);
 }
 
 pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn RenderTarget) {
@@ -288,13 +285,7 @@ pub(crate) fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn 
             bootstrap || engine_larger
         });
     if need_sync {
-        if let Some(root_id) = tree.root_id() {
-            if let Some(root) = tree.get_mut(root_id) {
-                root.set_frame(Rect::new(0.0, 0.0, engine_width, engine_height));
-            }
-        }
-        tree.tree_version = tree.tree_version.wrapping_add(1);
-        tree.mark_full_frame_dirty();
+        sync_root_surface_frame(tree, engine_width, engine_height);
         tree.layout();
     }
 }

@@ -1,15 +1,16 @@
 //! 实心三角网格到逐顶点覆盖率网格的共享 lowering。
 //!
 //! 输入是物理坐标 `xy` 三角列表；输出是 `xy + coverage` 三角列表。组件只负责
-//! 单像素抗锯齿边带，不理解 Path、Widget 或任一原生图形 API。
+//! 双像素抗锯齿边带，不理解 Path、Widget 或任一原生图形 API。
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// 抗锯齿边带以数学边界为中心，内外各占半个物理像素。
-const HALF_FRINGE: f32 = 0.5;
+// 抗锯齿边带以数学边界为中心，内外各占一个物理像素；
+// 双像素过渡可让单采样目标上的浅斜边稳定落入多个部分覆盖像素。
+const FEATHER_RADIUS: f32 = 1.0;
 // 限制尖角 miter，避免极小夹角把边带扩展成大面积尖刺。
-const MAX_MITER: f32 = 2.0;
+const MAX_MITER: f32 = 4.0;
 // 退化边和翻转三角形共用的物理面积门限。
 const AREA_EPSILON: f32 = 1e-5;
 
@@ -102,9 +103,9 @@ fn miter_offset(normals: NormalAccumulator) -> [f32; 2] {
     };
     let projection = (direction[0] * normals.first[0] + direction[1] * normals.first[1]).abs();
     let distance = if normals.count >= 2 && projection > AREA_EPSILON {
-        (HALF_FRINGE / projection).min(MAX_MITER)
+        (FEATHER_RADIUS / projection).min(MAX_MITER)
     } else {
-        HALF_FRINGE
+        FEATHER_RADIUS
     };
     [direction[0] * distance, direction[1] * distance]
 }
@@ -123,7 +124,7 @@ fn opaque_vertices(vertices: &[f32]) -> Arc<[f32]> {
     Arc::from(output)
 }
 
-/// 把物理 `xy` 三角列表转换成带一像素连续 coverage 边带的 `xyc` 三角列表。
+/// 把物理 `xy` 三角列表转换成带双像素连续 coverage 边带的 `xyc` 三角列表。
 pub(super) fn antialiased_vertices(vertices: &[f32]) -> Arc<[f32]> {
     // 上层已经验证基本 ABI；这里仍保留局部防御，异常输入只退回不透明网格。
     if vertices.len() < 6 || !vertices.len().is_multiple_of(6) {
@@ -173,7 +174,7 @@ pub(super) fn antialiased_vertices(vertices: &[f32]) -> Arc<[f32]> {
         .map(|(point, value)| (point, miter_offset(value)))
         .collect();
 
-    // 先把原轮廓内缩半像素，形成 coverage=1 的稳定内部三角列表。
+    // 先把原轮廓内缩一个像素，形成 coverage=1 的稳定内部三角列表。
     let mut inset = Vec::with_capacity(vertices.len());
     for pair in vertices.chunks_exact(2) {
         let point = [pair[0], pair[1]];

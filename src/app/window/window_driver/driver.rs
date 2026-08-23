@@ -75,6 +75,10 @@ impl WindowDriver {
                             platform_window.resize_notify(data.width, data.height),
                         );
                         if resized {
+                            // Surface resize 会丢弃旧代际内容；下一帧必须从空白目标完整重建，
+                            // 不能让还原后的较小窗口复用最大化帧的 retained 像素。
+                            self.rendered_first = false;
+                            self.present_damage_tracker.reset();
                             sync_root_frame_exactly_to_engine(tree, engine);
                         }
                         self.frame_scheduler.surface_changed();

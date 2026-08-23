@@ -73,7 +73,9 @@ widget! {
         } else {
             clamped.h
         };
-        Size::new(w, h)
+        // 内容缓存只在父级对应轴无上界时允许撑出视口；有限约束下必须重新
+        // 收口，否则最大化阶段写入的缓存会让还原后的标题栏与内容区保持旧宽度。
+        constraints.clamp(Size::new(w, h))
     }
 
     measure_natural => (&self, constraints: Constraints) -> Size {
@@ -181,21 +183,18 @@ widget! {
                 s.flex_direction,
                 crate::ui::theme::style::FlexDirection::Row | crate::ui::theme::style::FlexDirection::RowReverse
             ) && s.width.is_none_or(|w| w <= 0.0);
-        // Row 的未定高度或 Column 的未定宽度必须由子项自然交叉尺寸撑开。
-        let cross_axis_indefinite = matches!(
-            // 水平布局的交叉轴是高度。
+        // 只有父级尚未分配有效交叉轴的 bootstrap frame 才由子项自然尺寸撑开。
+        // 一旦 frame 已确定，就必须允许 Stretch 随窗口收缩；不能因 style 未写
+        // width/height 而继续使用最大化阶段缓存的自然尺寸。
+        let cross_axis_indefinite = if matches!(
             s.flex_direction,
-            // Row 与 RowReverse 共享相同交叉轴。
             crate::ui::theme::style::FlexDirection::Row
                 | crate::ui::theme::style::FlexDirection::RowReverse
-        ) && s.height.is_none_or(|height| height <= 0.0)
-            || matches!(
-                // 垂直布局的交叉轴是宽度。
-                s.flex_direction,
-                // Column 与 ColumnReverse 共享相同交叉轴。
-                crate::ui::theme::style::FlexDirection::Column
-                    | crate::ui::theme::style::FlexDirection::ColumnReverse
-            ) && s.width.is_none_or(|width| width <= 0.0);
+        ) {
+            content_rect.h <= 1.0
+        } else {
+            content_rect.w <= 1.0
+        };
 
         // 委托给统一的 FlexLayout 布局引擎
         let engine = FlexLayout {
@@ -206,7 +205,7 @@ widget! {
             wrap: s.flex_wrap,
             overflow_content: s.overflow_content,
             intrinsic_main: main_axis_indefinite,
-            // 交叉轴固有性不得由当前暂存 frame 推断。
+            // 已分配 frame 是交叉轴的当前真相；仅 bootstrap 保留固有尺寸。
             intrinsic_cross: cross_axis_indefinite,
         };
         // 与 Space 对齐：禁止子项 flex-shrink。定高 Card 若压缩 Label/wrap，
