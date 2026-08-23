@@ -2,6 +2,8 @@
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
+// 引入 Compiler System 的稳定源码身份。
+use crate::source_graph::SourceId;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
     Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SOURCE_ID_ATTRIBUTE,
@@ -37,10 +39,13 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
         .iter()
         .find(|attribute| attribute.name == SOURCE_ID_ATTRIBUTE)
         .and_then(|attribute| match &attribute.value {
-            super::AttributeValue::Literal(value) => value.parse::<u64>().ok(),
+            super::AttributeValue::Literal(value) => {
+                value.parse::<u64>().ok().map(SourceId::from_value)
+            }
             super::AttributeValue::Expression(_) | super::AttributeValue::InlineStyle(_) => None,
         });
     with_source_marker_id(source_id, || generate_view_for_source(element))
+        .map_err(|diagnostic| diagnostic.at_source_if_missing(source_id))
 }
 
 fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic> {

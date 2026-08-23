@@ -223,14 +223,19 @@ fn tracked_items(generated: TokenStream, paths: &[PathBuf], input: &LitStr) -> T
 
 // 把共享结构化诊断转换为过程宏 compile_error!。
 fn diagnostic_error(error: &CompilerDiagnostic, input: &LitStr) -> TokenStream {
-    entry_error(
-        &error.source_name,
+    let message = format!(
+        "UIX {} {} {}:{}:{} [bytes {}..{}]: {}；建议：{}",
+        error.code,
+        error.phase.as_str(),
+        error.source_name,
         error.line,
         error.column,
-        &error.message,
-        &error.suggestion,
-        input,
-    )
+        error.start,
+        error.end,
+        error.message,
+        error.suggestion,
+    );
+    syn::Error::new(input.span(), message).to_compile_error()
 }
 
 // 生成统一来源与修复建议格式的 compile_error!。

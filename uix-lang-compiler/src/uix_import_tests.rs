@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::uix_import::{reject_inline_imports, resolve_file};
 // 引入纯文档生成与解析入口。
 use crate::uix_lang::{Declaration, generate_document_app, parse_document};
+// 引入完整 Compiler System 入口与公开诊断契约。
+use crate::{CompileTarget, DiagnosticPhase, check_file, compile_file};
 
 // 唯一拥有一组导入测试文件。
 struct Fixture {
@@ -258,6 +260,48 @@ fn inline_documents_reject_imports_without_a_file_base() {
     assert!(error.message.contains("内嵌 UIX 源码不能使用 @import"));
     // 建议必须同时覆盖三个公开宏。
     assert!(error.suggestion.contains("uix_app!"));
+}
+
+// 验证生成期错误保留被导入组件的真实文件与精确跨度。
+#[test]
+fn imported_codegen_diagnostics_keep_their_source_identity() {
+    // 创建包含一个根文件和一个组件库的独占文件图。
+    let fixture = Fixture::new("codegen-source");
+    // 保存可直接核对诊断字节范围的组件源码。
+    let helper_source = "@export('Helper')\n<Widget name=\"Helper\">\n<Text mystery=\"x\">共享</Text>\n</Widget>\n<Helper />";
+    // 未登记属性会通过解析与类型化 Gate，并在 Rust lowering 阶段失败。
+    let helper = fixture.write("helper.uix", helper_source);
+    // 根文件只负责导入并调用组件，不能成为组件体错误的归属。
+    let root = fixture.write(
+        "main.uix",
+        "@import('./helper.uix', 'Helper')\n<App><Helper /></App>",
+    );
+    // AOT 与 check 必须走同一 lowering Gate 并返回同一来源事实。
+    let errors = [
+        compile_file(&root, CompileTarget::App).expect_err("AOT 必须拒绝未登记属性"),
+        check_file(&root, CompileTarget::App).expect_err("check 必须拒绝未登记属性"),
+    ];
+    // 属性跨度应精确覆盖被导入文件中的非法声明。
+    let expected_start = helper_source
+        .find("mystery")
+        .expect("fixture 必须包含非法属性");
+    let expected_end = expected_start + "mystery=\"x\"".len();
+    for error in errors {
+        // 保持稳定阶段与代码，便于 CLI、LSP 和宏入口统一消费。
+        assert_eq!(error.phase, DiagnosticPhase::Semantic);
+        assert_eq!(error.code, "UIX2000");
+        // 文件名与身份都必须指向 helper，而不是根 main.uix。
+        assert_eq!(error.source_name, helper.to_string_lossy());
+        assert_eq!(
+            error.source_id,
+            crate::source_graph::SourceId::from_source_name(&helper.to_string_lossy())
+        );
+        // 行列与字节范围必须能直接高亮真实非法属性。
+        assert_eq!(error.start, expected_start);
+        assert_eq!(error.end, expected_end);
+        assert_eq!((error.line, error.column), (3, 7));
+        assert_eq!(&helper_source[error.start..error.end], "mystery=\"x\"");
+    }
 }
 
 // 收集文档声明中的组件名称并排序。

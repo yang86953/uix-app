@@ -4,7 +4,9 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 
 // 引入组件类型、文档声明与诊断。
-use super::{Declaration, Diagnostic, Document, WidgetValueType, rust_identifier};
+use super::{
+    Declaration, Diagnostic, Document, WidgetValueType, rust_identifier, with_record_source_marker,
+};
 
 // 生成文档内全部 record 的模块级结构体声明，供 uix_items! 与 Rust 侧引用。
 pub(crate) fn generate_record_items(document: &Document) -> Result<TokenStream, Diagnostic> {
@@ -23,32 +25,34 @@ pub(crate) fn generate_record_items(document: &Document) -> Result<TokenStream, 
         })
         // 转换每个 record。
         .map(|record| {
-            // 验证 record 名可映射为 Rust 标识符。
-            let name: Ident = syn::parse_str(&record.name).expect("record 名已在解析期验证");
-            // 生成全部字段令牌。
-            let fields = record
-                // 遍历声明字段。
-                .fields
-                // 借用字段序列。
-                .iter()
-                // 转换每个字段。
-                .map(|field| {
-                    // 验证字段名。
-                    let field_name = rust_identifier(&field.name, field.span)?;
-                    // 生成字段类型令牌。
-                    let field_type = value_type_tokens(field.kind.clone());
-                    // 返回公开字段声明。
-                    Ok(quote! { pub #field_name: #field_type })
+            with_record_source_marker(&record.name, || {
+                // 验证 record 名可映射为 Rust 标识符。
+                let name: Ident = syn::parse_str(&record.name).expect("record 名已在解析期验证");
+                // 生成全部字段令牌。
+                let fields = record
+                    // 遍历声明字段。
+                    .fields
+                    // 借用字段序列。
+                    .iter()
+                    // 转换每个字段。
+                    .map(|field| {
+                        // 验证字段名。
+                        let field_name = rust_identifier(&field.name, field.span)?;
+                        // 生成字段类型令牌。
+                        let field_type = value_type_tokens(field.kind.clone());
+                        // 返回公开字段声明。
+                        Ok(quote! { pub #field_name: #field_type })
+                    })
+                    // 收集或返回首个诊断。
+                    .collect::<Result<Vec<_>, Diagnostic>>()?;
+                // 返回模块级结构体声明。
+                Ok(quote! {
+                    // 语言面 <Record> 声明的模块级业务模型，供 uix! 与 Rust 侧共同引用。
+                    #[derive(::std::clone::Clone)]
+                    pub struct #name {
+                        #(#fields,)*
+                    }
                 })
-                // 收集或返回首个诊断。
-                .collect::<Result<Vec<_>, Diagnostic>>()?;
-            // 返回模块级结构体声明。
-            Ok(quote! {
-                // 语言面 <Record> 声明的模块级业务模型，供 uix! 与 Rust 侧共同引用。
-                #[derive(::std::clone::Clone)]
-                pub struct #name {
-                    #(#fields,)*
-                }
             })
         })
         // 收集或返回首个诊断。

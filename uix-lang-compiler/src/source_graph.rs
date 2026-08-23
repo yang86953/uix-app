@@ -16,6 +16,11 @@ impl SourceId {
     pub const fn value(self) -> u64 {
         self.0
     }
+
+    // 从编译器内部来源标记恢复稳定身份，不向外暴露任意身份构造。
+    pub(crate) const fn from_value(value: u64) -> Self {
+        Self(value)
+    }
 }
 
 /// 保存 Compiler System 实际读取的一份 UTF-8 源文件快照。

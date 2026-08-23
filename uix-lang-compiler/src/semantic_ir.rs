@@ -232,11 +232,20 @@ impl TypedUiIr {
     }
 
     // 返回自定义组件名称到真实声明来源的确定映射。
-    pub(crate) fn widget_source_ids(&self) -> BTreeMap<String, u64> {
+    pub(crate) fn widget_source_ids(&self) -> BTreeMap<String, SourceId> {
         self.declarations
             .iter()
             .filter(|declaration| declaration.kind == TypedDeclarationKind::Widget)
-            .map(|declaration| (declaration.name.clone(), declaration.span.source_id.value()))
+            .map(|declaration| (declaration.name.clone(), declaration.span.source_id))
+            .collect()
+    }
+
+    // 返回 Record 名称到真实声明来源的确定映射。
+    pub(crate) fn record_source_ids(&self) -> BTreeMap<String, SourceId> {
+        self.declarations
+            .iter()
+            .filter(|declaration| declaration.kind == TypedDeclarationKind::Record)
+            .map(|declaration| (declaration.name.clone(), declaration.span.source_id))
             .collect()
     }
 }

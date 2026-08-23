@@ -818,21 +818,33 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
         });
     }
     let document = ir.emission_document();
-    let root_source = ir.root().span.source_id.value();
+    let root_source = ir.root().span.source_id;
     let widget_sources = ir.widget_source_ids();
+    let record_sources = ir.record_source_ids();
     let tokens = match ir.target() {
-        CompileTarget::View => with_source_markers(root_source, widget_sources, || {
-            generate_document_view(&document)
-        }),
-        CompileTarget::App => with_source_markers(root_source, widget_sources, || {
-            generate_document_app(&document)
-        }),
-        CompileTarget::Items => generate_record_items(&document),
+        CompileTarget::View => {
+            with_source_markers(root_source, widget_sources, record_sources, || {
+                generate_document_view(&document)
+            })
+        }
+        CompileTarget::App => {
+            with_source_markers(root_source, widget_sources, record_sources, || {
+                generate_document_app(&document)
+            })
+        }
+        CompileTarget::Items => {
+            with_source_markers(root_source, widget_sources, record_sources, || {
+                generate_record_items(&document)
+            })
+        }
     }
-    .map_err(|diagnostic| LoweringDiagnostic {
-        code: "UIX2000",
-        source_id: ir.root().span.source_id,
-        diagnostic,
+    .map_err(|diagnostic| {
+        let source_id = diagnostic.source_id.unwrap_or(ir.root().span.source_id);
+        LoweringDiagnostic {
+            code: "UIX2000",
+            source_id,
+            diagnostic,
+        }
     })?;
     Ok(RustUiPlan { tokens })
 }

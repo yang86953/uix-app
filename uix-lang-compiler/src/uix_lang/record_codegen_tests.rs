@@ -1,5 +1,13 @@
-// 引入 record 生成、文档解析与表达式解析入口。
-use super::{ExpressionKind, SourceSpan, generate_record_items, parse_document, parse_expression};
+// 引入确定映射。
+use std::collections::BTreeMap;
+
+// 引入 Compiler System 的稳定源码身份。
+use crate::source_graph::SourceId;
+// 引入 record 生成、来源上下文、文档解析与表达式解析入口。
+use super::{
+    Declaration, ExpressionKind, SourceSpan, generate_record_items, parse_document,
+    parse_expression, with_source_markers,
+};
 
 // 构造独立表达式测试使用的绝对起点。
 fn origin() -> SourceSpan {
@@ -126,4 +134,32 @@ fn rejects_invalid_record_declarations_and_references() {
         "{}",
         error.message
     );
+}
+
+// 验证 Items 不依赖元素来源令牌也能保留 Record 的具名来源上下文。
+#[test]
+fn record_codegen_error_keeps_named_source_context() {
+    // 先解析合法 Record，再只在测试内制造生成器必须拒绝的 Rust 关键字字段。
+    let mut document =
+        parse_document(r#"<Record name="Broken" fields="field: String" /><Text>根</Text>"#)
+            .expect("初始 Record 必须合法");
+    let field_span = match document.declarations.first_mut() {
+        Some(Declaration::Record(record)) => {
+            let field = record.fields.first_mut().expect("Record 必须有字段");
+            field.name = "type".to_string();
+            field.span
+        }
+        _ => panic!("首个声明必须是 Record"),
+    };
+    // 模拟根文件导入具名 Record 后的 Compiler System 来源登记。
+    let root_source = SourceId::from_source_name("main.uix");
+    let record_source = SourceId::from_source_name("helper.uix");
+    let record_sources = BTreeMap::from([("Broken".to_string(), record_source)]);
+    // Items 生成错误必须取得 Record 来源，而不是顶层根来源。
+    let error = with_source_markers(root_source, BTreeMap::new(), record_sources, || {
+        generate_record_items(&document)
+    })
+    .expect_err("Rust 关键字字段必须被生成器拒绝");
+    assert_eq!(error.source_id, Some(record_source));
+    assert_eq!(error.span, field_span);
 }
