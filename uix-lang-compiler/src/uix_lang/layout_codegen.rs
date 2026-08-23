@@ -50,8 +50,8 @@ pub(crate) fn generate_container(element: &Element) -> Result<TokenStream, Diagn
         // 横向 Container 继续使用公开 row 函数。
         quote! { ::uix::prelude::row(#children) }
     } else {
-        // 默认 Container 使用公开 column 函数。
-        quote! { ::uix::prelude::column(#children) }
+        // UIX 默认 flexGrow=0，纵向 Container 必须保持内容固有高度。
+        quote! { ::uix::prelude::column_fit(#children) }
     };
     // 按源码顺序应用 Container 专属简写属性。
     base = apply_container_shorthands(base, element)?;
@@ -72,8 +72,8 @@ pub(crate) fn generate_column(element: &Element) -> Result<TokenStream, Diagnost
     reject_fixed_direction(element)?;
     // 生成保持源码顺序的子节点向量。
     let children = generate_children(&element.children)?;
-    // 复用公开纵向 Flex 构造器。
-    let base = quote! { ::uix::prelude::column(#children) };
+    // UIX 默认 flexGrow=0；显式 flexGrow 属性由公共属性阶段覆盖。
+    let base = quote! { ::uix::prelude::column_fit(#children) };
     // 应用统一公共属性。
     apply_common_attributes(base, &element.attributes, &[])
 }
@@ -461,8 +461,8 @@ fn generate_column_view(
 ) -> Result<TokenStream, Diagnostic> {
     // 生成 Col 内保持源码顺序的子节点。
     let children = generate_children(&column.children)?;
-    // 使用公开 column 容器承载 Col 的单一 View 身份。
-    let base = quote! { ::uix::prelude::column(#children) };
+    // Col 内容默认保持固有高度，与 UIX flexGrow=0 契约一致。
+    let base = quote! { ::uix::prelude::column_fit(#children) };
     // 结构属性由父布局消费，其余属性进入统一 View 映射。
     apply_common_attributes(base, &column.attributes, consumed)
 }
