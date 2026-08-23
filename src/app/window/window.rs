@@ -20,6 +20,7 @@ use crate::app::window::window_actions::report_center_on_screen_result;
 // 独立 Window 入口复用 Application 的能力创建策略。
 use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
+use crate::diagnostics::Diagnostics;
 use crate::platform::platform::Platform;
 use crate::platform::windowing::window::PlatformWindow;
 /// Event-driven application window.
@@ -33,8 +34,8 @@ pub struct Window {
     exit_code: i32,
     /// 窗口初始尺寸（用于最大化还原时恢复）
     initial_size: (i32, i32),
-    /// 调试模式开关（Ctrl+Shift+D 切换；勿用 F12，见 event_loop）。
-    debug_mode: Cell<bool>,
+    /// 独立窗口拥有的 Diagnostics System；调试模式由其统一保存。
+    diagnostics: Diagnostics,
     /// 当前光标位置（用于调试模式悬浮高亮）。
     cursor_pos: Cell<Point>,
 }
@@ -42,9 +43,15 @@ pub struct Window {
 impl Window {
     /// 创建拥有指定平台实现、尚未建立平台窗口的应用窗口控制器。
     pub fn new(platform: Box<dyn Platform>) -> Self {
-        let debug_mode = std::env::var("UIX_DEBUG").is_ok();
-        if debug_mode {
-            tracing::info!("[Debug] UIX_DEBUG 环境变量已设置，调试模式默认开启");
+        let diagnostics = Diagnostics::default();
+        match crate::diagnostics::debug_mode_from_env() {
+            Some(Ok(enabled)) => diagnostics.set_debug_mode(enabled),
+            Some(Err(())) => tracing::warn!(
+                target: "uix::diagnostics",
+                debug_event = "invalid_debug_switch",
+                "UIX_DEBUG must be one of 1/0, true/false, yes/no, or on/off"
+            ),
+            None => {}
         }
         Self {
             platform,
@@ -52,7 +59,7 @@ impl Window {
             running: false,
             exit_code: 0,
             initial_size: (800, 600),
-            debug_mode: Cell::new(debug_mode),
+            diagnostics,
             cursor_pos: Cell::new(Point::new(0.0, 0.0)),
         }
     }
@@ -153,13 +160,12 @@ impl Window {
 
     /// 设置调试模式。
     pub fn set_debug_mode(&self, mode: bool) {
-        self.debug_mode.set(mode);
-        tracing::info!("[Debug] 调试模式 {}", if mode { "开启" } else { "关闭" });
+        self.diagnostics.set_debug_mode(mode);
     }
 
     /// 查询当前是否处于调试模式。
     pub fn debug_mode(&self) -> bool {
-        self.debug_mode.get()
+        self.diagnostics.debug_mode()
     }
 
     /// 简单事件循环（无渲染），由上层自行驱动。

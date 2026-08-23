@@ -365,25 +365,47 @@ pub(super) fn invalidation_diag(
         .diag_largest_paint()
 }
 
-// 卡顿帧判定阈值：超过即自动记录现场，默认 100ms，可用环境变量覆盖。
-fn slow_frame_threshold() -> Duration {
-    // 只解析一次环境变量。
-    static THRESHOLD: OnceLock<Duration> = OnceLock::new();
-    // 取环境变量或默认值。
+const DEFAULT_SLOW_FRAME_THRESHOLD: Duration = Duration::from_millis(100);
+
+fn parse_slow_frame_threshold(value: &std::ffi::OsStr) -> Option<Duration> {
+    let milliseconds = value.to_str()?.trim().parse::<u64>().ok()?;
+    (milliseconds > 0).then(|| Duration::from_millis(milliseconds))
+}
+
+// 显式卡顿阈值会在调试覆盖层关闭时单独启用帧诊断。
+fn configured_slow_frame_threshold() -> Option<Duration> {
+    static THRESHOLD: OnceLock<Option<Duration>> = OnceLock::new();
     *THRESHOLD.get_or_init(|| {
-        std::env::var("UIX_SLOW_FRAME_MS")
-            // 非法值回退默认阈值。
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(Duration::from_millis(100))
+        let value = std::env::var_os("UIX_SLOW_FRAME_MS")?;
+        let parsed = parse_slow_frame_threshold(&value);
+        if parsed.is_none() {
+            tracing::warn!(
+                target: "uix::diagnostics",
+                debug_event = "invalid_slow_frame_threshold",
+                "UIX_SLOW_FRAME_MS must be a positive integer"
+            );
+        }
+        parsed
     })
+}
+
+/// 关闭调试且没有显式卡顿阈值时，帧驱动跳过计时与现场扫描。
+pub(super) fn frame_diagnostics_enabled(debug_mode: bool) -> bool {
+    debug_mode || configured_slow_frame_threshold().is_some()
+}
+
+// 卡顿帧判定阈值：调试模式默认 100ms，环境变量可显式覆盖。
+fn slow_frame_threshold() -> Duration {
+    configured_slow_frame_threshold().unwrap_or(DEFAULT_SLOW_FRAME_THRESHOLD)
 }
 
 // 卡顿自动记录：检测单帧超阈值，输出开始/结束/持续中的现场详情。
 fn record_slow_frame(
     // 接收窗口持有的诊断统计。
     diag: &mut super::FrameDiagnostics,
+    // 保留逐窗身份与触发批次关联身份。
+    window_id: WindowId,
+    correlation_id: Option<u64>,
     // 接收本帧总耗时。
     frame_us: Duration,
     // 接收本帧各阶段耗时。
@@ -414,35 +436,26 @@ fn record_slow_frame(
             diag.slow_since = Some(Instant::now());
             // 卡顿开始：立即输出现场详情。
             tracing::warn!(
-                "[FrameDiag] SLOW START {:.0}ms layout={:.1}ms render={:.1}ms submit={:.1}ms present={:.1}ms dirty={:.0}% full={} inval={} invslot={} invbig={:.0}% anims={} rc={} vd={} source={}",
-                // 帧总耗时。
-                frame_us.as_secs_f64() * 1000.0,
-                // 布局耗时。
-                layout_us.as_secs_f64() * 1000.0,
-                // 渲染耗时。
-                render_us.as_secs_f64() * 1000.0,
-                // 提交耗时。
-                submit_us.as_secs_f64() * 1000.0,
-                // 呈现耗时。
-                present_us.as_secs_f64() * 1000.0,
-                // 脏区占比。
-                dirty_area_pct * 100.0,
-                // 全幅标记。
+                target: "uix::diagnostics",
+                debug_event = "slow_frame_start",
+                window_id = ?window_id,
+                correlation_id = correlation_id.unwrap_or(0),
+                has_correlation = correlation_id.is_some(),
+                frame_ms = frame_us.as_secs_f64() * 1000.0,
+                layout_ms = layout_us.as_secs_f64() * 1000.0,
+                render_ms = render_us.as_secs_f64() * 1000.0,
+                submit_ms = submit_us.as_secs_f64() * 1000.0,
+                present_ms = present_us.as_secs_f64() * 1000.0,
+                dirty_percent = dirty_area_pct * 100.0,
                 dirty_full,
-                // 失效条目数。
-                inval_count,
-                // 最大失效节点。
-                inval_big_slot,
-                // 最大失效矩形占比。
-                inval_big_pct * 100.0,
-                // 动画数。
-                anim_count,
-                // 是否协调。
+                invalidation_count = inval_count,
+                largest_invalidation_slot = inval_big_slot,
+                largest_invalidation_percent = inval_big_pct * 100.0,
+                animation_count = anim_count,
                 reconcile_ran,
-                // 版本增量。
-                version_delta,
-                // 失效来源。
-                source.label(),
+                tree_version_delta = version_delta,
+                invalidation_source = source.label(),
+                "slow frame segment started"
             );
         }
         return;
@@ -462,11 +475,14 @@ fn record_slow_frame(
         diag.slow_peak = Duration::ZERO;
         // 卡顿结束：报告持续时长与峰值。
         tracing::warn!(
-            "[FrameDiag] SLOW END lasted={:.1}s peak={:.0}ms",
-            // 持续秒数。
-            duration.as_secs_f64(),
-            // 峰值毫秒。
-            peak.as_secs_f64() * 1000.0,
+            target: "uix::diagnostics",
+            debug_event = "slow_frame_end",
+            window_id = ?window_id,
+            correlation_id = correlation_id.unwrap_or(0),
+            has_correlation = correlation_id.is_some(),
+            duration_seconds = duration.as_secs_f64(),
+            peak_ms = peak.as_secs_f64() * 1000.0,
+            "slow frame segment ended"
         );
     }
 }
@@ -475,6 +491,9 @@ fn record_slow_frame(
 pub(super) fn accumulate_frame_diagnostics(
     // 接收窗口持有的累计诊断统计。
     diag: &mut super::FrameDiagnostics,
+    // 接收窗口与触发批次身份，关联输入和最终帧。
+    window_id: WindowId,
+    correlation_id: Option<u64>,
     // 接收本帧总耗时。
     frame_us: Duration,
     // 接收本帧布局阶段耗时。
@@ -509,6 +528,8 @@ pub(super) fn accumulate_frame_diagnostics(
     // 卡顿自动记录：先检测本帧是否超阈值并输出开始/结束现场。
     record_slow_frame(
         diag,
+        window_id,
+        correlation_id,
         frame_us,
         layout_us,
         render_us,
@@ -556,43 +577,30 @@ pub(super) fn accumulate_frame_diagnostics(
     // 读取并清零文本布局调用计数，得到本秒 shaping 次数。
     let text_layout_calls = take_text_layout_calls();
     tracing::info!(
-        "[FrameDiag] fps={:.1} avg={:.2}ms max={:.2}ms layout={:.2}ms render={:.2}ms submit={:.2}ms present={:.2}ms full={}% dirty={:.0}% shapes={} anims={} big={:.0}% inval={} invslot={} invbig={:.0}% rc={} vd={} source={}",
-        // 帧率。
-        1000.0 / avg_frame_ms,
-        // 平均帧耗时。
-        avg_frame_ms,
-        // 单帧最大耗时。
-        diag.frame_max.as_secs_f64() * 1000.0,
-        // 布局平均耗时。
-        avg(diag.layout_sum),
-        // 渲染平均耗时。
-        avg(diag.render_sum),
-        // GPU 提交平均耗时。
-        avg(diag.submit_sum),
-        // 呈现平均耗时。
-        avg(diag.present_sum),
-        // 全幅重绘占比。
-        diag.full_frames * 100 / frames,
-        // 平均脏区面积占比。
-        diag.dirty_area_sum * 100.0 / frames as f64,
-        // 本秒文本布局（shaping）调用次数。
+        target: "uix::diagnostics",
+        debug_event = "frame_summary",
+        window_id = ?window_id,
+        correlation_id = correlation_id.unwrap_or(0),
+        has_correlation = correlation_id.is_some(),
+        fps = 1000.0 / avg_frame_ms,
+        average_frame_ms = avg_frame_ms,
+        maximum_frame_ms = diag.frame_max.as_secs_f64() * 1000.0,
+        average_layout_ms = avg(diag.layout_sum),
+        average_render_ms = avg(diag.render_sum),
+        average_submit_ms = avg(diag.submit_sum),
+        average_present_ms = avg(diag.present_sum),
+        full_frame_percent = diag.full_frames * 100 / frames,
+        dirty_percent = diag.dirty_area_sum * 100.0 / frames as f64,
         text_layout_calls,
-        // 最近一帧活跃动画数。
-        anim_count,
-        // 最近一帧最大动画 frame 占窗口比例。
-        anim_biggest_pct * 100.0,
-        // 最近一帧失效条目数。
-        inval_count,
-        // 最近一帧最大 Paint 失效节点槽位。
-        inval_big_slot,
-        // 最近一帧最大 Paint 失效矩形占窗口比例。
-        inval_big_pct * 100.0,
-        // 最近一帧是否执行整树协调。
+        animation_count = anim_count,
+        largest_animation_percent = anim_biggest_pct * 100.0,
+        invalidation_count = inval_count,
+        largest_invalidation_slot = inval_big_slot,
+        largest_invalidation_percent = inval_big_pct * 100.0,
         reconcile_ran,
-        // 最近一帧树版本增量。
-        version_delta,
-        // 最近一帧失效来源。
-        source.label(),
+        tree_version_delta = version_delta,
+        invalidation_source = source.label(),
+        "frame diagnostics summary"
     );
     // 输出后清空统计，只保留下一次输出的计时起点与卡顿段状态。
     *diag = super::FrameDiagnostics {

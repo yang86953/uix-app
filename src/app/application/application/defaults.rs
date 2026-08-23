@@ -68,6 +68,7 @@ impl Default for App {
             app_timers,
             main_thread_queue,
             runtime,
+            debug_mode_override: None,
             handle_alive,
             root_factory: None,
             on_start: None,

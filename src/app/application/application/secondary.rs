@@ -94,7 +94,7 @@ impl SecondaryWindowSession {
         font_service: &FontService,
         image_service: &ImageService,
         theme: &RefCell<Theme>,
-        debug_mode: &Cell<bool>,
+        debug_mode: &crate::diagnostics::Diagnostics,
         cursor_pos: &Cell<Point>,
         clock: &dyn AppClock,
         platform: Option<&mut dyn Platform>,
@@ -131,6 +131,9 @@ impl SecondaryWindowSession {
             image_service,
             theme,
             debug_mode,
+            debug_correlation_id: debug_mode
+                .debug_mode()
+                .then(|| debug_mode.next_debug_correlation_id()),
             cursor_pos,
             metrics: None,
             now,

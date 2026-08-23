@@ -16,7 +16,8 @@ use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_agent_ops::PlatformWindowAgentOps;
 use crate::app::window::window_session::{ViewFactorySlot, WindowLoopState, WindowTextInputState};
 use crate::app::window_semantics::WindowSemanticState;
-use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect};
+use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect, WindowId};
+use crate::diagnostics::Diagnostics;
 use crate::draw::RenderOutcome;
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};
@@ -26,11 +27,11 @@ use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
 use crate::platform::platform::Platform;
 use crate::platform::presentation::PresentTestResult;
+use crate::platform::windowing::WindowCapability;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::{
     NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
-use crate::platform::windowing::WindowCapability;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::theme::Theme;
 use crate::ui::widget_runtime::clipboard;
@@ -45,9 +46,9 @@ pub(crate) use support::{
 };
 use support::{
     accumulate_frame_diagnostics, animation_diag, dispatch_due_active_work, earliest_deadline,
-    has_layout_work, invalidation_diag, next_loop_state, observe_agent_settle, protocol_failure,
-    record_idle, record_layout, record_present, report_graphics_frame_failure,
-    report_graphics_resize_error, report_window_operation_error,
+    frame_diagnostics_enabled, has_layout_work, invalidation_diag, next_loop_state,
+    observe_agent_settle, protocol_failure, record_idle, record_layout, record_present,
+    report_graphics_frame_failure, report_graphics_resize_error, report_window_operation_error,
     update_scheduled_and_discovered_animations, with_platform_clipboard,
 };
 pub(crate) struct WindowFrameContext<'a, 'platform> {
@@ -68,7 +69,9 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) font_service: &'a FontService,
     pub(crate) image_service: &'a ImageService,
     pub(crate) theme: &'a RefCell<Theme>,
-    pub(crate) debug_mode: &'a Cell<bool>,
+    pub(crate) debug_mode: &'a Diagnostics,
+    /// 关联触发本帧的输入/运行时批次；空值表示本帧未启用关联追踪。
+    pub(crate) debug_correlation_id: Option<u64>,
     pub(crate) cursor_pos: &'a Cell<Point>,
     pub(crate) metrics: Option<&'a Cell<RenderMetrics>>,
     pub(crate) now: Instant,
