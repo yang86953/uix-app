@@ -104,6 +104,30 @@
         assert!(!canvas.soft_has_content);
     }
 
+    // 横竖线与斜线必须共用解析覆盖率原语，避免方向相关的硬边锯齿。
+    #[test]
+    fn axis_aligned_and_diagonal_lines_share_analytic_pipeline() {
+        // retained surface 表示共享 LineSegment pipeline 已通过启动探针。
+        let caps = NativeRasterCaps {
+            retained_color_target: true,
+            ..NativeRasterCaps::default()
+        };
+        let mut canvas = NativeGpuCanvas2D::new_gpu_only(64, 48, caps);
+        // 分别记录水平线、垂直线与对角线。
+        canvas.draw_line(2.0, 4.0, 30.0, 4.0, Color::red(), 1.0);
+        canvas.draw_line(8.0, 6.0, 8.0, 34.0, Color::green(), 1.5);
+        canvas.draw_line(12.0, 8.0, 36.0, 30.0, Color::blue(), 2.0);
+        // 三种方向都必须保留为同一种解析线段操作。
+        assert_eq!(canvas.pending_native.len(), 3);
+        assert!(
+            canvas
+                .pending_native
+                .iter()
+                .all(|op| matches!(op, PendingNativeOp::Line(_)))
+        );
+        assert!(canvas.take_deferred_error().is_none());
+    }
+
     // 未声明 RHI Additive 的 adapter 必须保留既有等价 soft fallback。
     #[test]
     fn additive_rect_without_rhi_capability_stays_in_soft_segment() {

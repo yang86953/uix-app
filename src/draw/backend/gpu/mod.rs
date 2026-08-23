@@ -1,7 +1,7 @@
 //! API-neutral non-GL GPU-native raster backend.
 //!
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `fill_sector` /
-//! `stroke_rect` / `stroke_circle`, axis-aligned `draw_line`, solid `blit_glyph`,
+//! `stroke_rect` / `stroke_circle`, analytic `draw_line`, solid `blit_glyph`,
 //! linear/radial gradients, fill-rule-aware `fill_path`,
 //! cap/join-aware `stroke_path`, box/ambient shadow, and scaled image blit)
 //! 通过固定 probe 验证的 retained RHI 执行绘制，并由 `NativeRasterCaps` 陈述事实能力。
