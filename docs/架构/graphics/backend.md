@@ -14,19 +14,19 @@
 | **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`。`tests/vulkan_gpu_parity.rs` 的真实 harness 已在 AMD Radeon 780M Graphics（RADV PHOENIX）完成 3/3：11 pipelines / 29 invariants 与 Blur 回读、Surface 生命周期、共享设备丢失及逐窗口恢复。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
 | **已实现** | OpenGL ES | Linux 真实 EGL 1.5 / OpenGL ES 3.2 `surfaceless+pbuffer` harness 已完成同一 11 pipelines / 29 invariants 与 Blur 回读，并在同一真实 EGL owner 上覆盖 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
 | **已实现** | D3D11 静态与链接边界 | 已有真实隐藏 HWND、生产 D3D11 draw/submit、staging readback、共享 Blur 与 Surface 生命周期 runner；静态门禁确认它只消费共享规范。Windows MSVC `--no-run` 目标已完成实际链接，并核实为 PE32+ x86-64，包含 D3D11/D3DCompiler 运行库导入。此证据不等于 Windows 运行通过。 |
-| **暂缓** | D3D11 真实 Windows 运行 | 主人已明确跳过本轮真实 Windows/D3D11 执行；该项不是当前阻塞，也不得以交叉链接或静态门禁替代运行结果。 |
+| **待验收** | D3D11 真实 Windows 运行 | 真实 Windows x64 运行尚未完成；该项是 `0.0.1` 发布门禁，也不得以交叉链接或静态门禁替代运行结果。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
 
 上述“已实现”记录仓库当前固定实现与已完成验收边界；新增驱动、设备与系统版本覆盖仍由 Gitea 环境矩阵维护。
 
-### 暂缓项恢复条件
+### Windows 发布验收条件
 
-**后续**仅在具备真实 Windows 桌面会话、可创建隐藏 HWND 的 D3D11/DXGI 运行环境，并能保留实际 device/driver 诊断时恢复验收。届时执行仓库冻结的单命令：
+当前发布门禁必须在真实 Windows x64 桌面会话、可创建隐藏 HWND 的 D3D11/DXGI 运行环境中执行，并保留实际 device/driver 诊断。仓库冻结的完整单命令为：
 
 ```powershell
-cargo test --no-default-features --features d3d11-parity-test --test d3d11_gpu_parity -- --nocapture
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/accept_windows_release.ps1
 ```
 
-通过条件是共享 11 pipelines / 29 invariants、Blur、真实 acquire/submit/present、resize、失效与恢复全部完成；在实际执行前继续保持 **暂缓**，不建立新的图形路线图。
+该入口同时验收 Vulkan 主路径、D3D11 共享 11 pipelines / 29 invariants、Blur、真实 acquire/submit/present、resize、失效与恢复、主演示自动图形选择、两次确定性 ZIP 与环境证据；在实际执行前继续保持 **待验收**，不建立新的图形路线图。
 
 ## 责任边界
 

@@ -6,6 +6,8 @@ from pathlib import Path
 # 定位仓库根目录与 Windows 验收入口。
 ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = ROOT / "scripts" / "accept_windows_release.ps1"
+SOURCE_BOUNDARY = ROOT / "docs" / "架构" / "graphics" / "source-boundary.md"
+BACKEND_DOC = ROOT / "docs" / "架构" / "graphics" / "backend.md"
 
 
 # 冻结真实 Windows 候选包验收入口的必要门禁。
@@ -14,6 +16,21 @@ class WindowsReleaseAcceptanceContractTests(unittest.TestCase):
     def setUp(self) -> None:
         # 使用 UTF-8 保持中文注释与稳定命令文本。
         self.script = ACCEPTANCE.read_text(encoding="utf-8")
+
+    # 架构文档不得把首发 Windows 真机门禁继续描述为已跳过事项。
+    def test_docs_keep_windows_runtime_as_release_gate(self) -> None:
+        # 两处图形状态说明共同约束实现边界与发布口径。
+        docs = "\n".join(
+            (
+                SOURCE_BOUNDARY.read_text(encoding="utf-8"),
+                BACKEND_DOC.read_text(encoding="utf-8"),
+            )
+        )
+        # 发布门禁必须明确，历史跳过口径不得回归。
+        self.assertIn("`0.0.1` 发布门禁", docs)
+        self.assertIn("scripts/accept_windows_release.ps1", docs)
+        self.assertNotIn("不是当前阻塞", docs)
+        self.assertNotIn("主人已明确跳过本轮", docs)
 
     # 验收必须拒绝错误主机、错误分支或未同步提交。
     def test_requires_windows_x64_clean_synced_main(self) -> None:
