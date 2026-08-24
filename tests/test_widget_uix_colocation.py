@@ -33,6 +33,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/list",
     "display/qrcode",
     "display/result",
+    "display/rich_text",
     "display/selectable_list",
     "display/skeleton",
     "display/table",

@@ -2,7 +2,8 @@
 
 // 引入布局最终消费的解析颜色。
 use crate::draw::Color;
-// 引入 UI 主题的公开聚合契约。
+// 测试兼容入口读取 UI 主题的公开聚合契约。
+#[cfg(test)]
 use crate::ui::ThemeTokens;
 
 // 定义无主题测量路径使用的代码背景透明度。
@@ -39,6 +40,7 @@ impl RichTextPalette {
     }
 
     // 从当前主题作用域投影真实绘制颜色。
+    #[cfg(test)]
     pub(crate) fn from_tokens(default_text: Color, tokens: &dyn ThemeTokens) -> Self {
         // 只读取语义 token，不缓存或拥有主题实例。
         Self {

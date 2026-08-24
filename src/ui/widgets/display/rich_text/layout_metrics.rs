@@ -1,6 +1,7 @@
 //! 保存 RichText 的估算字符宽度与全局字符索引映射。
 
 // 引入布局字形、布局行与富文本段类型。
+use super::presentation::RichTextMetricsVisual;
 use super::{LayoutGlyph, LayoutGlyphKind, LayoutLine, LayoutLineKind, RichTextSegment};
 
 // 将富文本段拼接为保留显式换行的完整逻辑源文本。
@@ -38,6 +39,8 @@ pub(super) fn flush_line(
     glyphs: &mut Vec<LayoutGlyph>,
     // 接收当前行实际高度。
     line_height: f32,
+    // 接收 UIX 声明的统一行高比例。
+    metrics: RichTextMetricsVisual,
 ) {
     // 非空行以全部实际字形的最大字号计算行高，避免后续小字号段压缩前序大字号段。
     let line_height = glyphs
@@ -46,7 +49,7 @@ pub(super) fn flush_line(
         // 将每个字形字号转换为统一的一点五倍行高。
         .map(|glyph| match glyph.kind {
             // 普通文本继续使用固定一点五倍行高。
-            LayoutGlyphKind::Text => glyph.font_size * 1.5,
+            LayoutGlyphKind::Text => glyph.font_size * metrics.line_height_factor,
             // 图片的 font_size 字段保存替换对象实际高度。
             LayoutGlyphKind::InlineImage => glyph.font_size,
         })
@@ -75,23 +78,23 @@ pub(super) fn flush_line(
 }
 
 // 估算字符宽度，单位为逻辑像素。
-pub(super) fn char_width(fs: f32, ch: char) -> f32 {
+pub(super) fn char_width(fs: f32, ch: char, metrics: RichTextMetricsVisual) -> f32 {
     // 按字符类别选择与字号相乘的稳定比例。
     match ch {
         // 普通空格使用较窄 advance。
-        ' ' => fs * 0.35,
+        ' ' => fs * metrics.space_advance,
         // 制表符保留较宽估算 advance。
-        '\t' => fs * 2.0,
+        '\t' => fs * metrics.tab_advance,
         // 常见宽 Latin 字母使用较宽比例。
-        'm' | 'M' | 'W' | 'w' => fs * 0.7,
+        'm' | 'M' | 'W' | 'w' => fs * metrics.wide_advance,
         // 常见窄字母、数字与标点使用较窄比例。
-        'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => fs * 0.3,
+        'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => fs * metrics.narrow_advance,
         // CJK 字符按全字号估算。
-        c if is_cjk(c) => fs,
+        c if is_cjk(c) => fs * metrics.cjk_advance,
         // CJK 标点块按接近全字号估算。
-        c if ('\u{3000}'..='\u{303f}').contains(&c) => fs * 0.9,
+        c if ('\u{3000}'..='\u{303f}').contains(&c) => fs * metrics.cjk_punctuation_advance,
         // 其他字符使用通用半宽估算。
-        _ => fs * 0.55,
+        _ => fs * metrics.default_advance,
         // 结束字符宽度匹配。
     }
 }

@@ -2,6 +2,7 @@
 
 // 复用富文本的估算字符宽度作为缺字兜底。
 use super::layout_metrics::char_width;
+use super::presentation::RichTextMetricsVisual;
 // 读取统一字体服务以执行无换行的真实 shaping。
 use crate::draw::resources::font::font_service::FontService;
 // 读取携带源字符区间的定位字形。
@@ -77,6 +78,8 @@ pub(super) fn real_char_advances(
     text: &str,
     // 接收当前文本段字号。
     fs: f32,
+    // 接收 UIX 声明的缺字估算比例。
+    metrics: RichTextMetricsVisual,
     // 返回与源字符索引一一对应的 advance。
 ) -> Vec<f32> {
     // 空文本无需调用字体后端。
@@ -111,7 +114,7 @@ pub(super) fn real_char_advances(
     // 按源字符索引读取 shaping cluster 几何。
     for (char_index, ch) in chars.iter().enumerate() {
         // 当前字符没有可用字形时使用估算宽度保持布局可收敛。
-        let fallback = char_width(fs, *ch);
+        let fallback = char_width(fs, *ch, metrics);
         // cluster 起点消费完整 advance，后继源字符保持零宽。
         advances.push(measured_advance_for_char(
             // 传入连续 shaping 的字形列表。

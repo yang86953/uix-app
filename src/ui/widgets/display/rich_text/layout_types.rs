@@ -41,8 +41,6 @@ pub(crate) struct LayoutGlyph {
     pub bg_color: Option<Color>,
     // 标记当前字符是否属于链接。
     pub is_link: bool,
-    // 使用共享字符串保存链接 URL，避免逐字形分配。
-    pub link_url: Option<std::sync::Arc<str>>,
 }
 
 // 描述绘制层需要区分的视觉行类型。

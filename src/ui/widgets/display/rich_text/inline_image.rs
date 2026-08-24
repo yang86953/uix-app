@@ -103,6 +103,8 @@ pub(crate) fn push_layout_glyph(
     default_line_height: f32,
     // 接收默认前景色供共享布局字段保持完整。
     default_color: crate::draw::Color,
+    // 接收 UIX 声明的布局比例。
+    metrics: super::presentation::RichTextMetricsVisual,
     // 接收已完成行列表。
     lines: &mut Vec<super::LayoutLine>,
     // 接收当前行视觉原子。
@@ -121,7 +123,7 @@ pub(crate) fn push_layout_glyph(
         // 结算换行前的实际宽度。
         *max_line_width = (*max_line_width).max(*current_x);
         // 复用共享行结算保持前序文本行高。
-        super::layout_metrics::flush_line(lines, glyphs, default_line_height);
+        super::layout_metrics::flush_line(lines, glyphs, default_line_height, metrics);
         // 图片从新行起点开始。
         *current_x = 0.0;
     }
@@ -151,8 +153,6 @@ pub(crate) fn push_layout_glyph(
         bg_color: None,
         // 图片不进入链接提交生命周期。
         is_link: false,
-        // 图片没有链接 URL。
-        link_url: None,
     });
     // 推进到图片右缘。
     *current_x += size.w;
@@ -306,8 +306,22 @@ pub(crate) fn prepare(
 }
 
 // 图片编解码能力开启时绘制布局中的全部图片原子。
-#[cfg(feature = "image-codecs")]
+#[cfg(all(test, feature = "image-codecs"))]
 pub(crate) fn draw(
+    ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
+    segments: &[super::RichTextSegment],
+    states: &InlineImageStates,
+    lines: &[super::LayoutLine],
+    frame: crate::core::Rect,
+) {
+    let visual = super::presentation::DEFAULT_RICH_TEXT_VISUAL;
+    let resolved = visual.resolve(crate::draw::Color::default(), true, ctx.tokens());
+    draw_visual(ctx, segments, states, lines, frame, visual.image, resolved);
+}
+
+// 生产绘制入口消费 UIX 根注入的图片视觉与主题颜色。
+#[cfg(feature = "image-codecs")]
+pub(crate) fn draw_visual(
     // 接收 UI 绘制上下文。
     ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
     // 接收公开段列表。
@@ -318,6 +332,10 @@ pub(crate) fn draw(
     lines: &[super::LayoutLine],
     // 接收组件内容 frame。
     frame: crate::core::Rect,
+    // 接收 UIX 声明的图片占位视觉。
+    visual: super::presentation::RichTextImageVisual,
+    // 接收当前主题一次解析完成的颜色。
+    resolved: super::presentation::ResolvedRichTextVisual,
 ) {
     // 遍历全部视觉行。
     for line in lines {
@@ -341,7 +359,7 @@ pub(crate) fn draw(
                 // 水平位置相对组件 frame。
                 frame.x + glyph.x,
                 // 垂直位置相对已经平移的行顶部。
-                line.y + (line.height - glyph.font_size) * 0.5,
+                frame.y + line.y + (line.height - glyph.font_size) * 0.5,
                 // 使用布局确定的原子宽度。
                 glyph.width,
                 // 使用布局确定的原子高度。
@@ -373,7 +391,7 @@ pub(crate) fn draw(
                 // 使用完整图片原子范围。
                 bounds,
                 // 使用三级填充色适配主题。
-                ctx.tokens().color_fill_tertiary(),
+                resolved.fill_tertiary,
                 // 应用公开圆角。
                 Some(crate::draw::Radius::uniform(radius)),
             );
@@ -382,9 +400,14 @@ pub(crate) fn draw(
                 // 计算圆角派生图需要的设备像素尺寸。
                 let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
                 // 宽度限制在资源服务允许范围内。
-                let target_width = (bounds.w * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                let target_width = (bounds.w * device_scale)
+                    .ceil()
+                    .clamp(1.0, visual.max_device_extent) as u32;
                 // 高度遵守相同限制。
-                let target_height = (bounds.h * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                let target_height = (bounds.h * device_scale)
+                    .ceil()
+                    .clamp(1.0, visual.max_device_extent)
+                    as u32;
                 // 有圆角时复用 ImageService 派生图缓存。
                 let drawable = (radius > 0.0)
                     // 生成或复用目标尺寸圆角派生图。
@@ -423,14 +446,17 @@ pub(crate) fn draw(
                 // 使用完整占位范围。
                 bounds,
                 // 使用次级边框色。
-                ctx.tokens().color_border_secondary(),
+                resolved.border_secondary,
                 // 使用一逻辑像素边框。
-                1.0,
+                visual.border_stroke,
                 // 保持与图片相同圆角。
                 Some(crate::draw::Radius::uniform(radius)),
             );
             // 有空间且有 alt 时把替代文本绘制为失败/加载占位。
-            if !alt.is_empty() && bounds.w >= 24.0 && bounds.h >= 16.0 {
+            if !alt.is_empty()
+                && bounds.w >= visual.min_alt_width
+                && bounds.h >= visual.min_alt_height
+            {
                 // 裁剪替代文本避免泄漏到相邻行内内容。
                 ctx.push_clip(bounds);
                 // 以较小字号在占位中居中展示 alt。
@@ -440,9 +466,9 @@ pub(crate) fn draw(
                     // 使用图片原子范围。
                     bounds,
                     // 使用次级正文色。
-                    ctx.tokens().color_text_secondary(),
+                    resolved.text_secondary,
                     // 字号受图片高度限制。
-                    12.0_f32.min(bounds.h * 0.6),
+                    visual.alt_font_size.min(bounds.h * visual.alt_height_ratio),
                 );
                 // 恢复外层 RichText 裁剪。
                 ctx.pop_clip();
