@@ -1,2 +1,2 @@
-// Spin 可携带任意遮罩子树；UIX 声明公开根，Rust 内核负责动画与绘制。
-<KernelView value={build_spin_view(kernel, children)} />
+// Spin 的三档尺寸、圆点序列、透明度、提示排版、遮罩与转速由 UIX 声明；Rust 内核负责动画状态与绘制。
+<KernelView value={build_spin_view(kernel, children, spin_visual(spin_default_size(), spin_layout(16, 24, 36, 0.35, 0.18, 1, 8, 18, 13), spin_dots(8, 0.70710677, 0.70710677, 0.25, 0.75), spin_motion(0, 1), spin_palette(spin_primary(), spin_overlay(), 30, spin_tip())))} />

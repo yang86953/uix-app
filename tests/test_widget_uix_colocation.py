@@ -22,7 +22,6 @@ VISUAL_OWNERSHIP_DEBT = {
     "display/image/image.uix",
     "display/image_group/image_group.uix",
     "display/watermark/watermark.uix",
-    "feedback/spin/spin.uix",
 }
 
 

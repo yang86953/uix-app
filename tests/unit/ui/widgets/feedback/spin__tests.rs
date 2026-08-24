@@ -1,5 +1,5 @@
 // 复用被测加载指示器。
-use super::Spin;
+use super::{DEFAULT_SPIN_VISUAL, Spin};
 // 引入动画更新公开组件契约。
 use crate::ui::widget_runtime::traits::WidgetAnimation;
 // 引入公开声明构建契约以验证同目录 UIX 根。
@@ -15,9 +15,17 @@ fn dot_rotation_recurrence_preserves_geometry() {
     let radius = 12.6_f32;
     let mut offsets = Vec::with_capacity(8);
     // 收集递推结果仅用于测试；生产绘制仍以回调流式提交，无逐帧分配。
-    Spin::for_each_dot_offset(phase, radius, |index, dx, dy| {
-        offsets.push((index, dx, dy));
-    });
+    let dots = DEFAULT_SPIN_VISUAL.dots;
+    Spin::for_each_dot_offset(
+        phase,
+        radius,
+        dots.count,
+        dots.step_sin,
+        dots.step_cos,
+        |index, dx, dy| {
+            offsets.push((index, dx, dy));
+        },
+    );
     // 必须继续生成原有八个等间距圆点。
     assert_eq!(offsets.len(), 8);
     for (index, dx, dy) in offsets {
@@ -52,6 +60,31 @@ fn uix_root_preserves_spin_kernel_and_children() {
     // 声明配置与包裹模式必须无损进入原内核。
     assert_eq!(kernel.tip, "正在加载");
     assert!(kernel.wrapper_mode);
+    assert_eq!(kernel.visual.layout.default_diameter, 24.0);
+    assert_eq!(kernel.visual.dots.count, 8);
+    assert_eq!(kernel.visual.motion.turns_per_second, 1.0);
+    assert!(!kernel.size_authored);
+}
+
+// 验证显式尺寸覆盖 UIX 默认值，完整视觉表由实例共享。
+#[test]
+fn uix_visual_configuration_is_shared_and_keeps_authored_size() {
+    let first = View::build(Spin::new().large());
+    let second = View::build(Spin::new());
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<Spin>()
+        .expect("第一个 UIX 根必须保留 Spin 内核");
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<Spin>()
+        .expect("第二个 UIX 根必须保留 Spin 内核");
+    assert_eq!(first.diameter(), 36.0);
+    assert!(first.size_authored);
+    assert_eq!(second.diameter(), 24.0);
+    assert!(std::ptr::eq(first.visual, second.visual));
 }
 
 // 验证配置刷新在延迟未变化时保留运行时动画进度。
