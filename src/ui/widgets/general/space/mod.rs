@@ -14,7 +14,8 @@ use crate::ui::SnapshotFields;
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::layout::{
-    AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, flex::compute_flex_layout,
+    AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+    flex::compute_flex_layout_into,
 };
 use crate::ui::{View, ViewNode, Widget, WidgetId, WidgetTree};
 
@@ -151,76 +152,120 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        let constraints = self.child_constraints(frame);
-        children
-            .iter()
-            .copied()
-            .map(|cid| child_from_tree_with_constraints(cid, tree, constraints))
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_children_reusing(frame, children, tree, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_children_reusing(frame, children, tree, output);
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
+        let mut scratch = crate::ui::LayoutEngineScratch::default();
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_reusing(frame, children, &mut scratch, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_children_reusing(frame, children, scratch, output);
+    }
+}
+
+impl Space {
+    // 统一拥有型与树级复用入口，保持 Space 子项测量只有一套语义。
+    fn measure_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        let constraints = self.child_constraints(frame);
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| child_from_tree_with_constraints(id, tree, constraints)),
+        );
+    }
+
+    // 由布局树独占求解缓冲，Space 只借用一次并把结果写入调用方数组。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
         if children.is_empty() {
             self.cached_content_size.set(Size::zero());
-            return Vec::new();
+            return;
         }
 
-        let flex_children: Vec<FlexChild> = children
-            .iter()
-            .map(|child| FlexChild {
+        scratch.flex_children.clear();
+        scratch
+            .flex_children
+            .extend(children.iter().map(|child| FlexChild {
                 flex_grow: child.flex_grow,
-                // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
+                // Space 的正常流保持自然主轴尺寸，扩展由树级收敛阶段负责。
                 flex_shrink: self.visual.child_flex_shrink,
                 align_self: child.align_self,
                 measured_size: child.measured_size,
-                // Space 与其他 Flex 容器一致地让 margin 推开兄弟并参与固有尺寸。
                 margin: child.margin,
                 ..FlexChild::default()
-            })
-            .collect();
-
+            }));
         let intrinsic_main = match self.direction {
             FlexDirection::Row | FlexDirection::RowReverse => self.fixed_width.is_none(),
             FlexDirection::Column | FlexDirection::ColumnReverse => self.fixed_height.is_none(),
         };
-        // 交叉轴未显式指定时由最宽或最高子项撑开。
         let intrinsic_cross = match self.direction {
-            // 水平排列的交叉轴是高度。
             FlexDirection::Row | FlexDirection::RowReverse => self.fixed_height.is_none(),
-            // 垂直排列的交叉轴是宽度。
             FlexDirection::Column | FlexDirection::ColumnReverse => self.fixed_width.is_none(),
         };
-
         let input = FlexInput {
             direction: self.direction,
             wrap: self.wrap,
             gap: self.space_size.value(),
             padding: self.visual.padding,
             container: frame,
-            children: &flex_children,
+            children: &scratch.flex_children,
             justify_content: self.justify,
             align_items: self.align,
             intrinsic_main,
-            // 把独立的交叉轴固有性传给共享 Flex 求解器。
             intrinsic_cross,
         };
-
-        let output = compute_flex_layout(&input);
-        // 缓存子布局实际可见末端与正尾侧 margin，供下一轮固有测量撑开。
-        let content_size = content_size_from_children(frame, &output.child_rects, children);
-        // 写入不依赖求解器父级总尺寸的真实子内容范围。
-        self.cached_content_size.set(content_size);
-        children
-            .iter()
-            .zip(output.child_rects)
-            .map(|(child, rect)| (child.id, rect))
-            .collect()
+        let _ = compute_flex_layout_into(&input, &mut scratch.flex);
+        let positions = &scratch.flex.child_rects;
+        self.cached_content_size
+            .set(content_size_from_children(frame, positions, children));
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .zip(positions)
+                .map(|(child, rect)| (child.id, *rect)),
+        );
     }
-}
 
-impl Space {
     pub(crate) fn explicit_size_locks(&self) -> (bool, bool) {
         (self.fixed_width.is_some(), self.fixed_height.is_some())
     }

@@ -15,13 +15,13 @@ use sizing::normalized_axis_bounds;
 /// cross-axis alignment via AlignItems and per-child align_self,
 /// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
 /// and multi-line wrapping.
+#[cfg(test)]
 pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     // 兼容独立求解调用方：临时工作区的所有权随返回结果移交。
     let mut scratch = FlexComputeScratch::default();
-    let total_size = compute_flex_layout_into(input, &mut scratch);
+    let _ = compute_flex_layout_into(input, &mut scratch);
     FlexOutput {
         child_rects: std::mem::take(&mut scratch.child_rects),
-        total_size,
     }
 }
 
@@ -67,6 +67,9 @@ pub(crate) fn compute_flex_layout_into(
     let FlexComputeScratch {
         base_main_sizes,
         cross_sizes,
+        lines,
+        line_cross_positions,
+        line_max_cross,
         child_rects,
     } = scratch;
 
@@ -88,7 +91,7 @@ pub(crate) fn compute_flex_layout_into(
     clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
 
     if input.wrap {
-        let output = compute_wrapped(
+        compute_wrapped(
             input,
             &inner,
             is_row,
@@ -97,9 +100,11 @@ pub(crate) fn compute_flex_layout_into(
             container_cross,
             base_main_sizes,
             cross_sizes,
-        );
-        *child_rects = output.child_rects;
-        output.total_size
+            lines,
+            line_cross_positions,
+            line_max_cross,
+            child_rects,
+        )
     } else {
         compute_single_line(
             input,
@@ -576,7 +581,11 @@ fn compute_wrapped(
     container_cross: f32,
     base_main_sizes: &mut [f32],
     cross_sizes: &mut [f32],
-) -> FlexOutput {
+    lines: &mut Vec<FlexLine>,
+    line_cross_positions: &mut Vec<f32>,
+    line_max_cross: &mut Vec<f32>,
+    child_rects: &mut Vec<Rect>,
+) -> Size {
     let count = base_main_sizes.len();
     let gap = finite_or_zero(input.gap);
     // 零或近零主轴属于首次 bootstrap，不应被当成真实换行上限。
@@ -592,12 +601,8 @@ fn compute_wrapped(
         container_main
     };
 
-    // Build lines: each line is a range of child indices
-    struct Line {
-        start: usize,
-        end: usize,
-    }
-    let mut lines: Vec<Line> = Vec::new();
+    // 在树级工作区内重建行范围，避免每个换行容器重复申请。
+    lines.clear();
     let mut line_start = 0usize;
     let mut line_main = 0.0f32;
 
@@ -607,7 +612,7 @@ fn compute_wrapped(
 
         // 当前行只要已经收集过子项，就必须让超出上限的新项另起一行。
         if line_main + item_gap + child_main > wrap_limit && i > line_start {
-            lines.push(Line {
+            lines.push(FlexLine {
                 start: line_start,
                 end: i,
             });
@@ -618,26 +623,26 @@ fn compute_wrapped(
         }
     }
     if line_start < count {
-        lines.push(Line {
+        lines.push(FlexLine {
             start: line_start,
             end: count,
         });
     }
 
     if lines.is_empty() {
-        return FlexOutput {
-            child_rects: Vec::new(),
-            total_size: Size::new(inner.w, inner.h),
-        };
+        child_rects.clear();
+        return Size::new(inner.w, inner.h);
     }
 
     // Track cross-axis position for each line
     let line_gap = gap;
-    let mut line_cross_positions = Vec::with_capacity(lines.len());
-    let mut line_max_cross = Vec::with_capacity(lines.len());
+    line_cross_positions.clear();
+    line_cross_positions.reserve(lines.len());
+    line_max_cross.clear();
+    line_max_cross.reserve(lines.len());
     let mut cursor_cross = 0.0f32;
 
-    for line in &lines {
+    for line in lines.iter() {
         let line_count = line.end - line.start;
         let line_margin_main: f32 = (line.start..line.end)
             .map(|i| margin_main(child_margin(input, i), is_row))
@@ -707,14 +712,15 @@ fn compute_wrapped(
     }
 
     // Position children line by line
-    let mut child_rects = vec![Rect::zero(); count];
+    child_rects.clear();
+    child_rects.resize(count, Rect::zero());
 
     // 自然交叉轴总尺寸必须覆盖所有行的最远物理末端。
     let natural_total_cross = line_cross_positions
         // 把每行起点与对应行高配对。
         .iter()
         // 负 gap 可能让较矮末行早于前面高行结束，因此不能只读取最终游标。
-        .zip(&line_max_cross)
+        .zip(line_max_cross.iter())
         // 逐行计算相对内容原点的有限物理末端。
         .map(|(&start, &size)| finite_or_zero(start + size))
         // 取所有行末端最大值，并把完全位于原点前的范围收敛为零。
@@ -858,7 +864,7 @@ fn compute_wrapped(
             // 垂直固定主轴使用内容区高度。
             inner.h
         };
-        for rect in &mut child_rects {
+        for rect in child_rects.iter_mut() {
             if is_row {
                 rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
             } else {
@@ -897,10 +903,7 @@ fn compute_wrapped(
             resolved_main + input.padding.vertical(),
         )
     };
-    FlexOutput {
-        child_rects,
-        total_size: Size::new(total_w, total_h),
-    }
+    Size::new(total_w, total_h)
 }
 
 // 仅在库测试中加载独立的 min/max 弹性分配契约。

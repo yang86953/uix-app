@@ -4,7 +4,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::Rect;
-use uix::prelude::{Container, Space};
+use uix::prelude::{Card, Container, Space};
 use uix::ui::__private::WidgetTree;
 
 struct CountingAllocator;
@@ -65,10 +65,69 @@ fn nested_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
-#[test]
-fn warmed_nested_layout_reuses_heap_storage() {
-    let (mut tree, root) = nested_layout_tree();
+fn wrapped_container_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let mut branch = Container::new().size(100.0, 30.0);
+        branch.style.flex_wrap = true;
+        let branch = tree.add_child(root, Box::new(branch));
+        for leaf_index in 0..5 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(18.0 + branch_index as f32)
+                        .height(12.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
 
+fn wrapped_space_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(
+            root,
+            Box::new(Space::new().width(100.0).height(30.0).wrap(true)),
+        );
+        for leaf_index in 0..5 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(18.0 + branch_index as f32)
+                        .height(12.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
+fn card_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(root, Box::new(Card::new().size(100.0, 60.0)));
+        for leaf_index in 0..4 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(18.0 + branch_index as f32)
+                        .height(10.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
+fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 321.0, 200.0));
@@ -79,8 +138,20 @@ fn warmed_nested_layout_reuses_heap_storage() {
     COUNT_ALLOCATIONS.store(true, Ordering::Release);
     tree.layout();
     COUNT_ALLOCATIONS.store(false, Ordering::Release);
+    ALLOCATION_COUNT.load(Ordering::Relaxed)
+}
 
-    let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
-    eprintln!("稳态嵌套布局堆申请次数: {allocations}");
-    assert_eq!(allocations, 0, "预热后的嵌套布局必须复用全部堆存储");
+#[test]
+fn warmed_nested_layout_reuses_heap_storage() {
+    let scenarios = [
+        ("Container", nested_layout_tree()),
+        ("Container wrap", wrapped_container_tree()),
+        ("Space wrap", wrapped_space_tree()),
+        ("Card", card_layout_tree()),
+    ];
+    for (name, (tree, root)) in scenarios {
+        let allocations = warmed_layout_allocations(tree, root);
+        eprintln!("稳态 {name} 布局堆申请次数: {allocations}");
+        assert_eq!(allocations, 0, "预热后的 {name} 布局必须复用全部堆存储");
+    }
 }

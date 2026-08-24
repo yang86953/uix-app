@@ -11,7 +11,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, LayoutChild,
-    flex::compute_flex_layout,
+    flex::compute_flex_layout_into,
 };
 use crate::ui::view::{View, ViewNode};
 use crate::widget;
@@ -515,91 +515,39 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        // 先按当前卡片几何计算 body 可用宽度与纵向起点。
-        let inner = self.body_rect(frame);
-        // 自动高度必须允许子树暴露自然高度，固定高度仍以 body 高度为上限。
-        let max_height = if self.fixed_height.is_none() {
-            // 无界哨兵只参与测量，不会写入最终布局 frame。
-            f32::INFINITY
-        } else {
-            // 显式定高继续保留原有裁剪与收缩语义。
-            inner.h
-        };
-        // 横向仍受 body 宽度约束，避免文本按无限宽度测量后跨平台换行漂移。
-        let constraints = Constraints::loose(Size::new(inner.w, max_height));
-        children
-            .iter()
-            .map(|&id| {
-                let mut child = child_from_tree_with_natural_constraints(id, tree, constraints);
-                child.measured_size = constraints.clamp(child.measured_size);
-                if tree.get(id).and_then(|node| node.as_layout()).is_none() {
-                    child.flex_shrink = 0.0;
-                }
-                child
-            })
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_children_reusing(frame, children, tree, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_children_reusing(frame, children, tree, output);
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        // 空子树没有可缓存的内容范围。
-        if children.is_empty() {
-            // 清除已移除内容留下的旧测量结果。
-            self.cached_content_size.set(Size::zero());
-            // 空布局不产生子节点位置。
-            return Vec::new();
-        }
+        let mut scratch = crate::ui::LayoutEngineScratch::default();
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_reusing(frame, children, &mut scratch, &mut output);
+        output
+    }
 
-        // body 同时决定子项起点和内容尺寸的相对原点。
-        let inner = self.body_rect(frame);
-        // 零宽或显式零高无法产生有效的可见子布局。
-        if inner.w <= 0.0 || (inner.h <= 0.0 && self.fixed_height.is_some()) {
-            // 固定退化几何继续返回稳定的零尺寸子 frame。
-            return children
-                .iter()
-                .map(|child| (child.id, Rect::new(inner.x, inner.y, 0.0, 0.0)))
-                .collect();
-        }
-
-        let flex_children: Vec<FlexChild> = children
-            .iter()
-            .map(|child| FlexChild {
-                flex_grow: child.flex_grow,
-                flex_shrink: child.flex_shrink,
-                align_self: child.align_self,
-                measured_size: child.measured_size,
-                // Card 的定制 Flex 转换必须保留共享子项外边距契约。
-                margin: child.margin,
-                ..FlexChild::default()
-            })
-            .collect();
-
-        let input = FlexInput {
-            direction: FlexDirection::Column,
-            gap: self.visual.defaults.body_gap,
-            padding: EdgeInsets::zero(),
-            container: inner,
-            children: &flex_children,
-            justify_content: JustifyContent::Start,
-            align_items: AlignItems::Stretch,
-            // 未指定高度时由子项自然高度撑开主轴，禁止压入默认 body 高度。
-            intrinsic_main: self.fixed_height.is_none(),
-            ..FlexInput::default()
-        };
-
-        // 使用共享 Flex 实现完成 Card body 的垂直正常流布局。
-        let output = compute_flex_layout(&input);
-        // 记录包含子项尾侧 margin 的真实内容范围，供下一轮 Card 测量使用。
-        let content_size = content_size_from_children(inner, &output.child_rects, children);
-        // 缓存只属于 Card 组件实例，不泄漏到图形后端或平台 Surface。
-        self.cached_content_size.set(content_size);
-        // 把共享 Flex 结果重新关联到稳定组件标识。
-        children
-            .iter()
-            .zip(output.child_rects)
-            .map(|(child, rect)| (child.id, rect))
-            .collect()
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_children_reusing(frame, children, scratch, output);
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -706,6 +654,92 @@ impl View for Card {
 }
 
 impl Card {
+    // 统一拥有型与树级复用入口，保持 Card 自然尺寸测量契约不分叉。
+    fn measure_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        let inner = self.body_rect(frame);
+        let max_height = if self.fixed_height.is_none() {
+            f32::INFINITY
+        } else {
+            inner.h
+        };
+        let constraints = Constraints::loose(Size::new(inner.w, max_height));
+        output.clear();
+        output.extend(children.iter().map(|&id| {
+            let mut child = child_from_tree_with_natural_constraints(id, tree, constraints);
+            child.measured_size = constraints.clamp(child.measured_size);
+            if tree.get(id).and_then(|node| node.as_layout()).is_none() {
+                child.flex_shrink = 0.0;
+            }
+            child
+        }));
+    }
+
+    // 布局树独占共享 Flex 缓冲；Card 只维护自身内容尺寸缓存。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        if children.is_empty() {
+            self.cached_content_size.set(Size::zero());
+            return;
+        }
+
+        let inner = self.body_rect(frame);
+        if inner.w <= 0.0 || (inner.h <= 0.0 && self.fixed_height.is_some()) {
+            output.reserve(children.len());
+            output.extend(
+                children
+                    .iter()
+                    .map(|child| (child.id, Rect::new(inner.x, inner.y, 0.0, 0.0))),
+            );
+            return;
+        }
+
+        scratch.flex_children.clear();
+        scratch
+            .flex_children
+            .extend(children.iter().map(|child| FlexChild {
+                flex_grow: child.flex_grow,
+                flex_shrink: child.flex_shrink,
+                align_self: child.align_self,
+                measured_size: child.measured_size,
+                margin: child.margin,
+                ..FlexChild::default()
+            }));
+        let input = FlexInput {
+            direction: FlexDirection::Column,
+            gap: self.visual.defaults.body_gap,
+            padding: EdgeInsets::zero(),
+            container: inner,
+            children: &scratch.flex_children,
+            justify_content: JustifyContent::Start,
+            align_items: AlignItems::Stretch,
+            intrinsic_main: self.fixed_height.is_none(),
+            ..FlexInput::default()
+        };
+        let _ = compute_flex_layout_into(&input, &mut scratch.flex);
+        let positions = &scratch.flex.child_rects;
+        self.cached_content_size
+            .set(content_size_from_children(inner, positions, children));
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .zip(positions)
+                .map(|(child, rect)| (child.id, *rect)),
+        );
+    }
+
     fn body_rect(&self, frame: Rect) -> Rect {
         // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
         let frame_w = frame.w.max(0.0);

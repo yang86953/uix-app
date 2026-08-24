@@ -134,10 +134,10 @@ impl Default for FlexInput<'_> {
 }
 
 /// flex 布局输出。
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct FlexOutput {
     pub child_rects: Vec<Rect>,
-    pub total_size: Size,
 }
 
 /// 同一布局帧内复用的 Flex 求解工作区。
@@ -145,7 +145,17 @@ pub(crate) struct FlexOutput {
 pub(crate) struct FlexComputeScratch {
     pub(crate) base_main_sizes: Vec<f32>,
     pub(crate) cross_sizes: Vec<f32>,
+    pub(crate) lines: Vec<FlexLine>,
+    pub(crate) line_cross_positions: Vec<f32>,
+    pub(crate) line_max_cross: Vec<f32>,
     pub(crate) child_rects: Vec<Rect>,
+}
+
+/// 换行 Flex 求解器复用的子项半开区间。
+#[derive(Clone, Copy)]
+pub(crate) struct FlexLine {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 // ── Grid 内部类型 ──
