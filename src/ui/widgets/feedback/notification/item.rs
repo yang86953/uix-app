@@ -93,7 +93,7 @@ impl NotificationHandle {
             type_,
             title: title.into(),
             description: description.into(),
-            duration_ms: Notification::DEFAULT_DURATION_MS,
+            duration_ms: Notification::default_duration_ms(),
             closable: true,
         })
     }
