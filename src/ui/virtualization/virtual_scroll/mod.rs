@@ -66,6 +66,32 @@ impl VirtualItemOffsetCache {
     }
 }
 
+// 唯一标识一次可变高度物化范围计算的全部输入事实。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VirtualRangeCacheKey {
+    // 实际测量发生变化时必须重新计算范围。
+    measurement_generation: u64,
+    // 数据长度决定范围上界和总高度。
+    item_count: usize,
+    // 浮点输入按位区分，避免缓存改变 NaN 或符号零归一路径。
+    estimated_height_bits: u32,
+    // 滚动状态按原始位模式参与缓存身份。
+    scroll_offset_bits: u32,
+    // 视口高度按原始位模式参与缓存身份。
+    viewport_height_bits: u32,
+    // 预渲染数量决定最终物化窗口。
+    overscan: usize,
+}
+
+// 保存原范围算法针对一组完整输入产生的唯一结果。
+#[derive(Debug, Clone, Copy)]
+struct VirtualRangeCacheEntry {
+    // 输入键用于逐字段精确命中。
+    key: VirtualRangeCacheKey,
+    // 结果直接复用，不重新执行总高扫描和边界二分。
+    range: (usize, usize),
+}
+
 // 把有效正度量提升为 f64，供索引与总高度计算使用。
 fn positive_measurement(value: f32) -> Option<f64> {
     // f32::MAX 是布局层的无界测量哨兵，不能作为实际行高或视口。
@@ -292,6 +318,8 @@ widget! {
         measurement_cache: RefCell<VirtualListMeasurementCache>,
         #[snapshot(skip)]
         item_offset_cache: RefCell<VirtualItemOffsetCache>,
+        #[snapshot(skip)]
+        range_cache: Cell<Option<VirtualRangeCacheEntry>>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
@@ -444,6 +472,7 @@ impl VirtualScroll {
             materialized_measurement_generation: Cell::new(0),
             measurement_cache: RefCell::new(VirtualListMeasurementCache::new()),
             item_offset_cache: RefCell::new(VirtualItemOffsetCache::default()),
+            range_cache: Cell::new(None),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -572,15 +601,34 @@ impl VirtualScroll {
     pub fn scroll_range(&self, viewport_height: f32) -> (usize, usize) {
         // 可变模式使用测量缓存提供的前缀坐标。
         if self.variable_height {
-            // 借用缓存只覆盖本次范围计算。
-            return virtual_list_index_range_with_measurements(
+            // 一次借用同时取得代际并执行可能需要的原范围算法。
+            let measurements = self.measurement_cache.borrow();
+            // 全部几何输入按值或原始位模式组成精确缓存键。
+            let key = VirtualRangeCacheKey {
+                measurement_generation: measurements.generation(),
+                item_count: self.item_count,
+                estimated_height_bits: self.item_height.to_bits(),
+                scroll_offset_bits: self.scroll_offset.get().to_bits(),
+                viewport_height_bits: viewport_height.to_bits(),
+                overscan: self.overscan,
+            };
+            // 稳定帧直接复用原算法已经产生的半开范围。
+            if let Some(entry) = self.range_cache.get().filter(|entry| entry.key == key) {
+                return entry.range;
+            }
+            // 未命中仍完整执行原范围实现，保持所有边界和浮点语义。
+            let range = virtual_list_index_range_with_measurements(
                 self.item_count,
                 self.item_height,
-                &self.measurement_cache.borrow(),
+                &measurements,
                 self.scroll_offset.get(),
                 viewport_height,
                 self.overscan,
             );
+            // 保存唯一结果供相同事实的后续稳定帧复用。
+            self.range_cache
+                .set(Some(VirtualRangeCacheEntry { key, range }));
+            return range;
         }
         // 固定模式保持原有等高范围契约。
         virtual_list_index_range(
