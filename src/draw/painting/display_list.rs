@@ -330,6 +330,14 @@ impl DisplayList {
         Self::default()
     }
 
+    // 按上一份显示列表的指令数量预留录制空间。
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        // 新列表仍拥有独立 Arc，容量提示只减少后续 Vec 扩容。
+        Self {
+            ops: Arc::new(Vec::with_capacity(capacity)),
+        }
+    }
+
     /// 列表是否不含任何绘制指令。
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
@@ -338,6 +346,12 @@ impl DisplayList {
     /// 指令数量。
     pub fn len(&self) -> usize {
         self.ops.len()
+    }
+
+    // 测试目标观测容量提示是否进入新列表，不暴露为公共绘制契约。
+    #[cfg(test)]
+    pub(crate) fn capacity(&self) -> usize {
+        self.ops.capacity()
     }
 
     // 测试目标保留绘制操作只读观测入口，供 display-list 语义测试按需调用。

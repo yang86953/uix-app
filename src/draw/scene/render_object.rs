@@ -116,7 +116,9 @@ impl RenderObjectTree {
         entry.frame = frame;
         entry.is_dirty = false;
 
-        let mut list = DisplayList::new();
+        // 只读取旧列表规模作为容量提示，录制完成前仍保留旧缓存所有权。
+        let previous_len = entry.display_list.as_ref().map_or(0, DisplayList::len);
+        let mut list = DisplayList::with_capacity(previous_len);
         ctx.set_paint_pass(PaintPass::Content);
         ctx.with_recorder(&mut list, |ctx| {
             scene.paint(id, frame, ctx);
@@ -125,7 +127,8 @@ impl RenderObjectTree {
     }
 
     fn rebuild(&mut self, scene: &impl ScenePaint) {
-        let mut next = HashMap::new();
+        // 场景版本变化通常保持相近规模，复用旧节点数减少重哈希扩容。
+        let mut next = HashMap::with_capacity(self.entries.len());
         if let Some(root) = scene.root_id() {
             Self::collect_nodes(scene, root, &mut next);
         }
