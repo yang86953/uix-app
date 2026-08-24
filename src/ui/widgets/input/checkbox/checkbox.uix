@@ -1,0 +1,31 @@
+// Checkbox 的尺寸映射、勾选图标、描边几何与主题角色由 UIX 唯一拥有。
+<Visual
+  name="CHECKBOX_VISUAL"
+  type="CheckboxVisual"
+  smallScale={0.875}
+  mediumScale={1.0}
+  largeScale={1.125}
+  smallFontSize={12.0}
+  mediumFontSize={13.0}
+  largeFontSize={14.0}
+  baseBoxSize={16.0}
+  labelGap={6.0}
+  centerRatio={0.5}
+  boxRadius={3.0}
+  checkedIcon="check"
+  checkedIconSize={12.0}
+  borderWidth={1.5}
+  focusOutset={1.0}
+  focusRadius={4.0}
+  focusStrokeWidth={1.5}
+  primary={checkbox_primary()}
+  primaryHover={checkbox_primary_hover()}
+  primaryBorder={checkbox_primary_border()}
+  border={checkbox_border()}
+  borderSecondary={checkbox_border_secondary()}
+  text={checkbox_text()}
+  textDisabled={checkbox_text_disabled()}
+  checkedIconColor={checkbox_checked_icon_color()}
+/>
+
+<KernelView value={build_checkbox_view(kernel, CHECKBOX_VISUAL_REF)} />

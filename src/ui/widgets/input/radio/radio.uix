@@ -1,0 +1,28 @@
+// Radio 的方向、圆点、焦点圈、文字排版与主题角色由 UIX 唯一拥有。
+<Visual
+  name="RADIO_VISUAL"
+  type="RadioVisual"
+  defaultDirection={radio_default_direction()}
+  minimumWidth={120.0}
+  dirtyScaleOutset={1.0}
+  dirtyAntialiasPadding={0.75}
+  outerRadius={6.0}
+  dotRadius={3.5}
+  centerLeadingExtra={1.0}
+  focusOutset={2.0}
+  focusStrokeWidth={1.5}
+  ringStrokeWidth={1.5}
+  labelOffset={20.0}
+  baseFontSize={13.0}
+  itemExtraWidth={30.0}
+  centerRatio={0.5}
+  borderSecondary={radio_border_secondary()}
+  textDisabled={radio_text_disabled()}
+  primary={radio_primary()}
+  text={radio_text()}
+  primaryHover={radio_primary_hover()}
+  border={radio_border()}
+  focusBorder={radio_focus_border()}
+/>
+
+<KernelView value={build_radio_view(kernel, RADIO_VISUAL_REF)} />

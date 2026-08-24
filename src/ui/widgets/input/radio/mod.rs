@@ -1,13 +1,17 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::draw::Color;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 use std::cell::Cell;
@@ -19,6 +23,87 @@ pub enum RadioDirection {
     Horizontal,
     /// 从上到下排列各个选项。
     Vertical,
+}
+
+// 保存 UIX 声明的单选圆点、焦点圈、文字排版与固有尺寸策略。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RadioVisual {
+    default_direction: RadioDirection,
+    minimum_width: f32,
+    dirty_scale_outset: f32,
+    dirty_antialias_padding: f32,
+    outer_radius: f32,
+    dot_radius: f32,
+    center_leading_extra: f32,
+    focus_outset: f32,
+    focus_stroke_width: f32,
+    ring_stroke_width: f32,
+    label_offset: f32,
+    base_font_size: f32,
+    item_extra_width: f32,
+    center_ratio: f32,
+    border_secondary: ColorValue,
+    text_disabled: ColorValue,
+    primary: ColorValue,
+    text: ColorValue,
+    primary_hover: ColorValue,
+    border: ColorValue,
+    focus_border: ColorValue,
+}
+
+// 同目录 UIX 生成唯一单选组视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/radio/radio.uix");
+
+// 保存每帧一次解析后的主题颜色，全部选项共享。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedRadioVisual {
+    border_secondary: Color,
+    text_disabled: Color,
+    primary: Color,
+    text: Color,
+    primary_hover: Color,
+    border: Color,
+    focus_border: Color,
+}
+
+impl RadioVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedRadioVisual {
+        ResolvedRadioVisual {
+            border_secondary: self.border_secondary.resolve(tokens),
+            text_disabled: self.text_disabled.resolve(tokens),
+            primary: self.primary.resolve(tokens),
+            text: self.text.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            border: self.border.resolve(tokens),
+            focus_border: self.focus_border.resolve(tokens),
+        }
+    }
+}
+
+// 向 UIX 提供默认方向和零分配主题角色。
+const fn radio_default_direction() -> RadioDirection {
+    RadioDirection::Horizontal
+}
+const fn radio_border_secondary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+const fn radio_text_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+const fn radio_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn radio_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+const fn radio_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn radio_border() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Border)
+}
+const fn radio_focus_border() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryBorder)
 }
 
 widget! {
@@ -34,6 +119,9 @@ widget! {
         hovered_idx: Option<usize>,
         focused: bool,
         pending_change: Cell<Option<usize>>,
+        #[snapshot(skip)]
+        /// UIX 声明的圆点、焦点、排版与主题角色。
+        pub(crate) visual: &'static RadioVisual,
     }
 
 
@@ -113,7 +201,8 @@ widget! {
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         // 焦点圆会越过首个选项左边界；脏区必须覆盖全部抗锯齿像素，避免移动后残留。
-        let margin = self.visual_scale() + 0.75;
+        let margin = self.visual_scale() * self.visual.dirty_scale_outset
+            + self.visual.dirty_antialias_padding;
         Rect::new(
             frame.x - margin,
             frame.y - margin,
@@ -124,20 +213,33 @@ widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_value_dependency();
-        let cy = frame.y + self.item_h * 0.5;
+        let cy = frame.y + self.item_h * self.visual.center_ratio;
+        // 主题角色只在整组绘制开始时解析一次，避免选项循环重复查询。
+        let visual = self.visual.resolve(ctx.tokens());
 
         match self.direction {
             RadioDirection::Horizontal => {
                 let mut x = frame.x;
                 for (i, opt) in self.options.iter().enumerate() {
                     let w = self.item_width(opt);
-                    self.render_radio_item(ctx, i, opt, x, cy, w, tree.keyboard_focus_visible());
+                    self.render_radio_item(
+                        ctx,
+                        i,
+                        opt,
+                        x,
+                        cy,
+                        w,
+                        tree.keyboard_focus_visible(),
+                        &visual,
+                    );
                     x += w;
                 }
             }
             RadioDirection::Vertical => {
                 for (i, opt) in self.options.iter().enumerate() {
-                    let y = frame.y + i as f32 * self.item_h + self.item_h * 0.5;
+                    let y = frame.y
+                        + i as f32 * self.item_h
+                        + self.item_h * self.visual.center_ratio;
                     let w = frame.w;
                     self.render_radio_item(
                         ctx,
@@ -147,6 +249,7 @@ widget! {
                         y,
                         w,
                         tree.keyboard_focus_visible(),
+                        &visual,
                     );
                 }
             }
@@ -209,23 +312,24 @@ impl Radio {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let item_w = self
-            .options
-            .iter()
-            .map(|o| self.item_width(o))
-            .collect::<Vec<_>>();
         match self.direction {
             RadioDirection::Horizontal => {
-                let w = item_w.iter().sum::<f32>().max(120.0);
+                // 直接累计宽度，避免测量阶段为临时数字列表分配堆内存。
+                let w = self
+                    .options
+                    .iter()
+                    .map(|option| self.item_width(option))
+                    .sum::<f32>()
+                    .max(self.visual.minimum_width);
                 Size::new(w, self.item_h)
             }
             RadioDirection::Vertical => {
-                let w = item_w
+                // 一次遍历求最大宽度，不再收集临时 Vec。
+                let w = self
+                    .options
                     .iter()
-                    .cloned()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .unwrap_or(120.0)
-                    .max(120.0);
+                    .map(|option| self.item_width(option))
+                    .fold(self.visual.minimum_width, f32::max);
                 Size::new(w, self.item_h * self.options.len() as f32)
             }
         }
@@ -271,64 +375,69 @@ impl Radio {
         cy: f32,
         segment_width: f32,
         focus_visible: bool,
+        visual: &ResolvedRadioVisual,
     ) {
         let scale = self.visual_scale();
-        let r = 6.0 * scale;
-        let dot_r = 3.5 * scale;
+        let r = self.visual.outer_radius * scale;
+        let dot_r = self.visual.dot_radius * scale;
         let selected = i == self.selected;
         let hovered = self.hovered_idx == Some(i);
 
         let (ring_color, dot_color, text_c) = if self.disabled {
             (
-                ctx.tokens().color_border_secondary(),
-                ctx.tokens().color_border_secondary(),
-                ctx.tokens().color_text_quaternary(),
+                visual.border_secondary,
+                visual.border_secondary,
+                visual.text_disabled,
             )
         } else if selected {
-            (
-                ctx.tokens().color_primary(),
-                ctx.tokens().color_primary(),
-                ctx.tokens().color_text(),
-            )
+            (visual.primary, visual.primary, visual.text)
         } else if hovered {
-            (
-                ctx.tokens().color_primary_hover(),
-                ctx.tokens().color_primary_hover(),
-                ctx.tokens().color_text(),
-            )
+            (visual.primary_hover, visual.primary_hover, visual.text)
         } else {
-            (
-                ctx.tokens().color_border(),
-                ctx.tokens().color_border(),
-                ctx.tokens().color_text(),
-            )
+            (visual.border, visual.border, visual.text)
         };
 
         // 外圈、焦点圈与内点共享同一个圆心，避免圆角矩形独立像素对齐后产生偏心。
-        let center = Point::new(x + r + scale, cy);
+        let center = Point::new(x + r + self.visual.center_leading_extra * scale, cy);
         if self.focused && focus_visible && selected {
-            let focus_outset = 2.0 * scale;
+            let focus_outset = self.visual.focus_outset * scale;
             ctx.stroke_circle(
                 center.x,
                 center.y,
                 r + focus_outset,
-                ctx.tokens().color_primary_border(),
-                1.5,
+                visual.focus_border,
+                self.visual.focus_stroke_width,
             );
         }
 
         // 外圈
-        ctx.stroke_circle(center.x, center.y, r, ring_color, 1.5);
+        ctx.stroke_circle(
+            center.x,
+            center.y,
+            r,
+            ring_color,
+            self.visual.ring_stroke_width,
+        );
 
         // 选中填充点
         if selected {
             ctx.fill_circle(center.x, center.y, dot_r, dot_color);
         }
         // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
-        let row_rect = Rect::new(x, cy - self.item_h * 0.5, segment_width, self.item_h);
+        let row_rect = Rect::new(
+            x,
+            cy - self.item_h * self.visual.center_ratio,
+            segment_width,
+            self.item_h,
+        );
         let font_size = self.font_size();
         let text_y = ctx.visual_center_y(row_rect, font_size);
-        ctx.draw_text(opt, Point::new(x + 20.0 * scale, text_y), text_c, font_size);
+        ctx.draw_text(
+            opt,
+            Point::new(x + self.visual.label_offset * scale, text_y),
+            text_c,
+            font_size,
+        );
     }
 }
 
@@ -348,11 +457,12 @@ impl Radio {
             selected: 0,
             value_binding: None,
             disabled: false,
-            direction: RadioDirection::Horizontal,
+            direction: RADIO_VISUAL_REF.default_direction,
             item_h: crate::ui::widget_runtime::config::control_height(config.size),
             hovered_idx: None,
             focused: false,
             pending_change: Cell::new(None),
+            visual: RADIO_VISUAL_REF,
         }
     }
 
@@ -432,12 +542,13 @@ impl Radio {
     }
 
     fn font_size(&self) -> f32 {
-        13.0 * self.visual_scale().sqrt()
+        self.visual.base_font_size * self.visual_scale().sqrt()
     }
 
     fn item_width(&self, option: &str) -> f32 {
         let scale = self.visual_scale();
-        estimate_text_metrics(option, f32::INFINITY, self.font_size()).max_line_width + 30.0 * scale
+        estimate_text_metrics(option, f32::INFINITY, self.font_size()).max_line_width
+            + self.visual.item_extra_width * scale
     }
 }
 
@@ -466,12 +577,30 @@ impl Radio {
         self.disabled = next.disabled;
         self.direction = next.direction;
         self.item_h = next.item_h;
+        self.visual = next.visual;
     }
+}
+
+// 把 Radio Rust 选择内核与 UIX 静态视觉组合为单一组件节点。
+fn build_radio_view(mut kernel: Radio, visual: &'static RadioVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Radio {
+    fn build(self) -> ViewNode {
+        build_radio_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_radio_uix_root(kernel: Radio) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/radio/radio.uix")
 }
 
 // 仅在测试构建中编译单选组键盘导航契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/input/radio__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/radio__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

@@ -1,0 +1,23 @@
+// Switch 的尺寸映射、轨道/滑块几何、焦点描边与主题角色由 UIX 唯一拥有。
+<Visual
+  name="SWITCH_VISUAL"
+  type="SwitchVisual"
+  smallTrackHeight={16.0}
+  mediumTrackHeight={22.0}
+  largeTrackHeight={28.0}
+  trackWidthFactor={2.0}
+  trackWidthSubtract={4.0}
+  centerRatio={0.5}
+  thumbInset={2.0}
+  focusOutset={1.0}
+  focusStrokeWidth={1.5}
+  primary={switch_primary()}
+  primaryHover={switch_primary_hover()}
+  primaryBorder={switch_primary_border()}
+  fillSecondary={switch_fill_secondary()}
+  fillTertiary={switch_fill_tertiary()}
+  thumbDisabled={switch_thumb_disabled()}
+  thumb={switch_thumb()}
+/>
+
+<KernelView value={build_switch_view(kernel, SWITCH_VISUAL_REF)} />

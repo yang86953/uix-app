@@ -1,16 +1,106 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
 use crate::core::{Constraints, Rect, Size};
+use crate::draw::Color;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 use std::cell::Cell;
+
+// 保存 UIX 声明的尺寸映射、勾选图标、边框与焦点几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CheckboxVisual {
+    small_scale: f32,
+    medium_scale: f32,
+    large_scale: f32,
+    small_font_size: f32,
+    medium_font_size: f32,
+    large_font_size: f32,
+    base_box_size: f32,
+    label_gap: f32,
+    center_ratio: f32,
+    box_radius: f32,
+    checked_icon: &'static str,
+    checked_icon_size: f32,
+    border_width: f32,
+    focus_outset: f32,
+    focus_radius: f32,
+    focus_stroke_width: f32,
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    primary_border: ColorValue,
+    border: ColorValue,
+    border_secondary: ColorValue,
+    text: ColorValue,
+    text_disabled: ColorValue,
+    checked_icon_color: ColorValue,
+}
+
+// 同目录 UIX 生成唯一复选框视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/checkbox/checkbox.uix");
+
+// 保存每帧一次解析后的主题颜色，绘制分支只选择紧凑值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedCheckboxVisual {
+    primary: Color,
+    primary_hover: Color,
+    primary_border: Color,
+    border: Color,
+    border_secondary: Color,
+    text: Color,
+    text_disabled: Color,
+    checked_icon_color: Color,
+}
+
+impl CheckboxVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedCheckboxVisual {
+        ResolvedCheckboxVisual {
+            primary: self.primary.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            primary_border: self.primary_border.resolve(tokens),
+            border: self.border.resolve(tokens),
+            border_secondary: self.border_secondary.resolve(tokens),
+            text: self.text.resolve(tokens),
+            text_disabled: self.text_disabled.resolve(tokens),
+            checked_icon_color: self.checked_icon_color.resolve(tokens),
+        }
+    }
+}
+
+// 向 UIX 提供零分配的主题角色。
+const fn checkbox_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn checkbox_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn checkbox_primary_border() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryBorder)
+}
+const fn checkbox_border() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Border)
+}
+const fn checkbox_border_secondary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+const fn checkbox_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+const fn checkbox_text_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+const fn checkbox_checked_icon_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
 
 widget! {
     /// 支持受控勾选状态、标签和禁用语义的复选框组件。
@@ -27,6 +117,9 @@ widget! {
         // 键盘激活手势的武装键（KeyUp 匹配才切换）。
         pressed_key: Option<KeyCode>,
         pending_change: Cell<Option<bool>>,
+        #[snapshot(skip)]
+        /// UIX 声明的尺寸、图标、描边与主题角色。
+        pub(crate) visual: &'static CheckboxVisual,
     }
 
 
@@ -107,41 +200,46 @@ widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.capture_bound_checked_dependency();
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        let primary_border = ctx.tokens().color_primary_border();
-        let border_c = ctx.tokens().color_border();
-        let border_sec = ctx.tokens().color_border_secondary();
-        let text_c = if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() };
-        // 勾选图标反白色：白色 token。
-        let white = ctx.tokens().color_white();
+        let visual = self.visual.resolve(ctx.tokens());
+        let text_c = if self.disabled { visual.text_disabled } else { visual.text };
 
         let box_size = self.box_size();
         let scale = self.visual_scale();
         let gap = self.label_gap();
         let font_size = self.font_size();
         let box_x = frame.x;
-        let box_y = frame.y + (frame.h - box_size) * 0.5;
+        let box_y = frame.y + (frame.h - box_size) * self.visual.center_ratio;
         let box_r = Rect::new(box_x, box_y, box_size, box_size);
-        let corner = Some(crate::draw::Radius::uniform(3.0 * scale));
+        let corner = Some(crate::draw::Radius::uniform(self.visual.box_radius * scale));
 
         if self.checked {
-            let bg = if self.disabled { primary_border } else if self.hovered { primary_hover } else { primary };
+            let bg = if self.disabled { visual.primary_border } else if self.hovered { visual.primary_hover } else { visual.primary };
             ctx.fill_rect(box_r, bg, corner);
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "check",
+                self.visual.checked_icon,
                 box_r,
-                white,
-                12.0 * scale,
+                visual.checked_icon_color,
+                self.visual.checked_icon_size * scale,
             );
         } else {
-            let border = if self.disabled { border_sec } else if self.hovered { primary_hover } else { border_c };
-            ctx.stroke_rect(box_r, border, 1.5, corner);
+            let border = if self.disabled { visual.border_secondary } else if self.hovered { visual.primary_hover } else { visual.border };
+            ctx.stroke_rect(box_r, border, self.visual.border_width, corner);
         }
 
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(Rect::new(box_x - scale, box_y - scale, box_size + 2.0 * scale, box_size + 2.0 * scale), primary, 1.5, Some(crate::draw::Radius::uniform(4.0 * scale)));
+            let outset = self.visual.focus_outset * scale;
+            ctx.stroke_rect(
+                Rect::new(
+                    box_x - outset,
+                    box_y - outset,
+                    box_size + outset * 2.0,
+                    box_size + outset * 2.0,
+                ),
+                visual.primary,
+                self.visual.focus_stroke_width,
+                Some(crate::draw::Radius::uniform(self.visual.focus_radius * scale)),
+            );
         }
 
         let label_rect = Rect::new(box_x + box_size + gap, frame.y, (frame.w - box_size - gap).max(0.0), frame.h);
@@ -171,6 +269,7 @@ impl Checkbox {
             pressed: false,
             pressed_key: None,
             pending_change: Cell::new(None),
+            visual: CHECKBOX_VISUAL_REF,
         }
     }
     /// 将勾选值绑定到外部 `State<bool>`；用户切换与外部更新保持双向同步。
@@ -235,27 +334,27 @@ impl Checkbox {
         if self.label.is_empty() {
             0.0
         } else {
-            6.0 * self.visual_scale()
+            self.visual.label_gap * self.visual_scale()
         }
     }
 
     fn visual_scale(&self) -> f32 {
         match self.checkbox_size {
-            ControlSize::Small => 0.875,
-            ControlSize::Medium => 1.0,
-            ControlSize::Large => 1.125,
+            ControlSize::Small => self.visual.small_scale,
+            ControlSize::Medium => self.visual.medium_scale,
+            ControlSize::Large => self.visual.large_scale,
         }
     }
 
     fn box_size(&self) -> f32 {
-        16.0 * self.visual_scale()
+        self.visual.base_box_size * self.visual_scale()
     }
 
     fn font_size(&self) -> f32 {
         match self.checkbox_size {
-            ControlSize::Small => 12.0,
-            ControlSize::Medium => 13.0,
-            ControlSize::Large => 14.0,
+            ControlSize::Small => self.visual.small_font_size,
+            ControlSize::Medium => self.visual.medium_font_size,
+            ControlSize::Large => self.visual.large_font_size,
         }
     }
 }
@@ -278,12 +377,30 @@ impl Checkbox {
         self.disabled = next.disabled;
         self.label = next.label;
         self.checkbox_size = next.checkbox_size;
+        self.visual = next.visual;
     }
+}
+
+// 把 Checkbox Rust 状态内核与 UIX 静态视觉组合为单一组件节点。
+fn build_checkbox_view(mut kernel: Checkbox, visual: &'static CheckboxVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Checkbox {
+    fn build(self) -> ViewNode {
+        build_checkbox_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_checkbox_uix_root(kernel: Checkbox) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/checkbox/checkbox.uix")
 }
 
 // 仅在测试构建中编译勾选框激活时序契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/input/checkbox__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/checkbox__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
