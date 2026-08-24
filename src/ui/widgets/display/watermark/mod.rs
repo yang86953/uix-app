@@ -37,16 +37,18 @@ widget! {
         let color = self.effective_color(ctx.tokens().color_text());
         // 默认字号在拥有主题上下文的绘制阶段解析。
         let font_size = self.resolved_font_size(ctx.tokens());
+        // 完全透明的水印没有可见输出，也无需生成文字绘制命令。
+        if color.a == 0 {
+            return;
+        }
         let columns = (frame.w.max(0.0) / self.gap_x).ceil() as usize + 2;
         let rows = (frame.h.max(0.0) / self.gap_y).ceil() as usize + 2;
+        // 全部平铺实例共享同一角度，每帧只计算一次三角函数。
+        let (sin_a, cos_a) = self.rotate.to_radians().sin_cos();
 
         ctx.push_clip(frame);
-        for gy in 0..rows {
-            for gx in 0..columns {
-                // 平铺文字复用本次绘制解析出的主题字号与颜色。
-                self.paint_rotated_text(ctx, self.tile_position(frame, gx, gy), color, font_size);
-            }
-        }
+        // 逐字符流式绘制全部平铺实例，使每个字符宽度在本帧只测量一次。
+        self.paint_tiled_text(ctx, frame, columns, rows, color, font_size, sin_a, cos_a);
         ctx.pop_clip();
     }
 
@@ -142,33 +144,48 @@ impl Watermark {
         )
     }
 
-    fn paint_rotated_text(
+    fn paint_tiled_text(
         &self,
         ctx: &mut PaintContext,
-        origin: Point,
+        frame: Rect,
+        columns: usize,
+        rows: usize,
         color: Color,
         font_size: f32,
+        sin_a: f32,
+        cos_a: f32,
     ) {
-        let angle = self.rotate.to_radians();
-        let (sin_a, cos_a) = angle.sin_cos();
         // 行高从本次绘制解析出的实际字号派生。
         let line_height = font_size * 1.4;
         for (line_index, line) in self.text.split('\n').enumerate() {
             let normal_offset = line_index as f32 * line_height;
-            let line_origin = Point::new(
-                origin.x - sin_a * normal_offset,
-                origin.y + cos_a * normal_offset,
-            );
             let mut advance = 0.0;
             for character in line.chars() {
-                let glyph = character.to_string();
-                let position = Self::rotated_advance(line_origin, advance, sin_a, cos_a);
-                // 使用主题解析后的实际字号绘制当前字符。
-                ctx.draw_text(&glyph, position, color, font_size);
-                // 度量与绘制必须共享相同字号。
-                advance += ctx.measure_text(&glyph, font_size).w;
+                // 单个 Unicode 标量最多占四字节，直接编码到栈上避免逐实例 String。
+                let mut glyph_buffer = [0_u8; 4];
+                let glyph = Self::encode_glyph(character, &mut glyph_buffer);
+                // 相同字符位置的所有平铺副本共享本轮 advance 与字号。
+                for gy in 0..rows {
+                    for gx in 0..columns {
+                        let origin = self.tile_position(frame, gx, gy);
+                        let line_origin = Point::new(
+                            origin.x - sin_a * normal_offset,
+                            origin.y + cos_a * normal_offset,
+                        );
+                        let position = Self::rotated_advance(line_origin, advance, sin_a, cos_a);
+                        // 绘制集合、位置、颜色与字号均保持原契约，仅改变同色命令顺序。
+                        ctx.draw_text(glyph, position, color, font_size);
+                    }
+                }
+                // 每个文本字符只测量一次，全部平铺实例复用同一推进距离。
+                advance += ctx.measure_text(glyph, font_size).w;
             }
         }
+    }
+
+    // 把单个 Unicode 标量无分配编码为有效 UTF-8 视图。
+    fn encode_glyph<'a>(character: char, buffer: &'a mut [u8; 4]) -> &'a str {
+        character.encode_utf8(buffer)
     }
 
     fn rotated_advance(origin: Point, advance: f32, sin_a: f32, cos_a: f32) -> Point {
