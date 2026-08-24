@@ -1,8 +1,8 @@
-//! Tag UIX 声明壳回归测试。
+//! Tag UIX 视觉声明回归测试。
 
 use super::*;
 
-/// UIX 声明壳必须保持原 Tag 类型、配置和单叶节点形状。
+/// UIX 视觉声明必须保持原 Tag 类型、配置和单叶节点形状。
 #[test]
 fn uix_shell_preserves_single_tag_kernel_leaf() {
     let node = View::build(
@@ -27,4 +27,34 @@ fn uix_shell_preserves_single_tag_kernel_leaf() {
             icon: String::new(),
         }
     );
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Tag>()
+        .expect("UIX 根必须保留 Tag 内核");
+    assert_eq!(kernel.visual.layout.default_font_size, 12.0);
+    assert_eq!(kernel.visual.layout.close_width, 20.0);
+    assert_eq!(kernel.visual.check_icon, "check");
+    assert!(!kernel.font_size_authored);
+}
+
+/// 显式字号必须覆盖 UIX 默认值，完整视觉表则由实例共享。
+#[test]
+fn uix_visual_configuration_is_shared_and_keeps_authored_font_size() {
+    let first = View::build(Tag::new("一").font_size(15.0));
+    let second = View::build(Tag::new("二"));
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<Tag>()
+        .expect("第一个 UIX 根必须保留 Tag 内核");
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<Tag>()
+        .expect("第二个 UIX 根必须保留 Tag 内核");
+    assert_eq!(first.font_size, 15.0);
+    assert!(first.font_size_authored);
+    assert_eq!(second.font_size, 12.0);
+    assert!(std::ptr::eq(first.visual, second.visual));
 }
