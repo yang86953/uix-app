@@ -1,0 +1,102 @@
+<Visual
+  name="TYPOGRAPHY_HEADING_1_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={38.0}
+  fontWeight={typography_semibold_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_HEADING_2_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={30.0}
+  fontWeight={typography_semibold_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_HEADING_3_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={24.0}
+  fontWeight={typography_semibold_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_HEADING_4_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={20.0}
+  fontWeight={typography_semibold_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_HEADING_5_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={16.0}
+  fontWeight={typography_semibold_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_PARAGRAPH_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={14.0}
+  fontWeight={typography_normal_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_TEXT_VISUAL"
+  type="TypographyLevelVisual"
+  fontSize={14.0}
+  fontWeight={typography_normal_weight()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_GEOMETRY_VISUAL"
+  type="TypographyGeometryVisual"
+  copySpace={28.0}
+  minTextWidth={1.0}
+  layoutMaxHeight={0.0}
+  verticalAlign={typography_vertical_align_top()}
+  normalLineHeightFactor={1.5}
+  singleLineHeightFactor={1.2}
+  averageAdvanceFactor={0.6}
+  markHorizontalPadding={3.0}
+  markVerticalPadding={1.0}
+  codeRadius={3.0}
+  markRadius={1.0}
+  selectionAlpha={64}
+  copyWidth={24.0}
+  copyHeight={20.0}
+  copyPaintOffset={2.0}
+  copyFocusStroke={1.0}
+  copyFocusRadius={3.0}
+  copyIconSize={14.0}
+  copyIcon="copy"
+/>
+
+<Visual
+  name="TYPOGRAPHY_PALETTE_VISUAL"
+  type="TypographyPaletteVisual"
+  text={typography_text_color()}
+  disabledText={typography_disabled_text_color()}
+  codeBackground={typography_fill_secondary_color()}
+  markBackground={typography_warning_background_color()}
+  primary={typography_primary_color()}
+  copyText={typography_copy_text_color()}
+  copyCenterFont={typography_body_font()}
+/>
+
+<Visual
+  name="TYPOGRAPHY_VISUAL"
+  type="TypographyVisual"
+  levels={[
+    TYPOGRAPHY_HEADING_1_VISUAL,
+    TYPOGRAPHY_HEADING_2_VISUAL,
+    TYPOGRAPHY_HEADING_3_VISUAL,
+    TYPOGRAPHY_HEADING_4_VISUAL,
+    TYPOGRAPHY_HEADING_5_VISUAL,
+    TYPOGRAPHY_PARAGRAPH_VISUAL,
+    TYPOGRAPHY_TEXT_VISUAL
+  ]}
+  geometry={TYPOGRAPHY_GEOMETRY_VISUAL}
+  palette={TYPOGRAPHY_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_typography_view(kernel, TYPOGRAPHY_VISUAL_REF)} />

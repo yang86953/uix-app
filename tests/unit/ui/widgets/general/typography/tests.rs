@@ -17,14 +17,14 @@ fn semantic_color_resolves_against_current_theme_tokens() {
     // 亮色主题必须解析为自身的次要文字令牌。
     assert_eq!(
         // 调用组件内部绘制颜色解析边界。
-        secondary.resolved_text_color(light.as_ref()),
+        secondary.resolved_text_color(&secondary.visual.resolve(light.as_ref()), light.as_ref()),
         // 读取亮色主题期望值。
         light.color_text_secondary()
     );
     // 暗色主题必须重新解析而不是复用亮色 RGB。
     assert_eq!(
         // 使用同一声明式组件解析暗色主题。
-        secondary.resolved_text_color(dark.as_ref()),
+        secondary.resolved_text_color(&secondary.visual.resolve(dark.as_ref()), dark.as_ref()),
         // 读取暗色主题期望值。
         dark.color_text_secondary()
     );
@@ -35,10 +35,24 @@ fn semantic_color_resolves_against_current_theme_tokens() {
     // 危险文字必须解析为当前主题错误色。
     assert_eq!(
         // 解析亮色主题危险色。
-        danger.resolved_text_color(light.as_ref()),
+        danger.resolved_text_color(&danger.visual.resolve(light.as_ref()), light.as_ref()),
         // 读取亮色主题错误令牌。
         light.color_error()
     );
+}
+
+// 验证直接构造与 View 构建共享同目录 UIX 的唯一静态视觉地址。
+#[test]
+fn view_build_uses_uix_visual_without_a_rust_default_copy() {
+    let typography = Typography::text("UIX Typography");
+    assert!(std::ptr::eq(typography.visual, TYPOGRAPHY_VISUAL_REF));
+    let node = crate::ui::view::View::build(typography);
+    let typography = node
+        .widget
+        .as_any()
+        .downcast_ref::<Typography>()
+        .expect("UIX 根必须保留 Typography Rust 内核");
+    assert!(std::ptr::eq(typography.visual, TYPOGRAPHY_VISUAL_REF));
 }
 
 // 验证 Style 行高优先于 Typography 专有段落 spacing。

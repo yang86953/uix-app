@@ -1,10 +1,10 @@
-//! Space widget — Ant Design style flex container with uniform gap between children.
+//! Space 的 Rust 子树所有权与 Flex 布局内核。
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
 use std::cell::Cell;
 
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
@@ -16,7 +16,7 @@ use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, flex::compute_flex_layout,
 };
-use crate::ui::{Widget, WidgetId, WidgetTree};
+use crate::ui::{View, ViewNode, Widget, WidgetId, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,13 +31,52 @@ pub enum SpaceSize {
     Custom(f32),
 }
 
+// 保存 Space 的档位间距、默认 Flex 配置与容器静态几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SpaceVisual {
+    pub(crate) small_gap: f32,
+    pub(crate) middle_gap: f32,
+    pub(crate) large_gap: f32,
+    pub(crate) default_direction: FlexDirection,
+    pub(crate) default_size: SpaceSize,
+    pub(crate) default_wrap: bool,
+    pub(crate) default_justify: JustifyContent,
+    pub(crate) default_align: AlignItems,
+    pub(crate) default_flex_grow: f32,
+    pub(crate) container_flex_shrink: f32,
+    pub(crate) child_flex_shrink: f32,
+    pub(crate) padding: EdgeInsets,
+}
+
+crate::uix_items!("src/ui/widgets/general/space/space.uix");
+
+pub(crate) const fn space_direction_row() -> FlexDirection {
+    FlexDirection::Row
+}
+
+pub(crate) const fn space_size_small() -> SpaceSize {
+    SpaceSize::Small
+}
+
+pub(crate) const fn space_justify_start() -> JustifyContent {
+    JustifyContent::Start
+}
+
+pub(crate) const fn space_align_center() -> AlignItems {
+    AlignItems::Center
+}
+
+pub(crate) const fn space_zero_padding() -> EdgeInsets {
+    EdgeInsets::zero()
+}
+
 impl SpaceSize {
     /// 返回此间距档位对应的逻辑像素值。
     pub fn value(&self) -> f32 {
         match self {
-            Self::Small => 8.0,
-            Self::Middle => 16.0,
-            Self::Large => 24.0,
+            Self::Small => SPACE_VISUAL.small_gap,
+            Self::Middle => SPACE_VISUAL.middle_gap,
+            Self::Large => SPACE_VISUAL.large_gap,
             Self::Custom(v) => *v,
         }
     }
@@ -57,6 +96,8 @@ widget! {
         flex_grow_val: f32,
         /// layout_children 后缓存子树内容尺寸，供无固定宽高时的 measure。
         pub(crate) cached_content_size: Cell<Size>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static SpaceVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -84,7 +125,7 @@ widget! {
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
 
-    flex_shrink => (&self) -> f32 { 0.0 }
+    flex_shrink => (&self) -> f32 { self.visual.container_flex_shrink }
 
     on_children_changed => (&mut self, child_count: usize) {
         // 最后一个子节点移除后，旧内容尺寸不再是有效的测量下限。
@@ -131,7 +172,7 @@ widget! {
             .map(|child| FlexChild {
                 flex_grow: child.flex_grow,
                 // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
-                flex_shrink: 0.0,
+                flex_shrink: self.visual.child_flex_shrink,
                 align_self: child.align_self,
                 measured_size: child.measured_size,
                 // Space 与其他 Flex 容器一致地让 margin 推开兄弟并参与固有尺寸。
@@ -156,7 +197,7 @@ widget! {
             direction: self.direction,
             wrap: self.wrap,
             gap: self.space_size.value(),
-            padding: crate::core::EdgeInsets::zero(),
+            padding: self.visual.padding,
             container: frame,
             children: &flex_children,
             justify_content: self.justify,
@@ -188,15 +229,16 @@ impl Space {
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
-            direction: FlexDirection::Row,
-            space_size: SpaceSize::Small,
-            wrap: false,
-            justify: JustifyContent::Start,
-            align: AlignItems::Center,
+            direction: SPACE_VISUAL.default_direction,
+            space_size: SPACE_VISUAL.default_size,
+            wrap: SPACE_VISUAL.default_wrap,
+            justify: SPACE_VISUAL.default_justify,
+            align: SPACE_VISUAL.default_align,
             fixed_width: None,
             fixed_height: None,
-            flex_grow_val: 0.0,
+            flex_grow_val: SPACE_VISUAL.default_flex_grow,
             cached_content_size: Cell::new(Size::zero()),
+            visual: SPACE_VISUAL_REF,
         }
     }
 
@@ -337,7 +379,25 @@ impl Space {
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.flex_grow_val = next.flex_grow_val;
+        self.visual = next.visual;
         // 保留 cached_content_size：reconcile 不重建布局缓存。
+    }
+}
+
+// 把 Space Rust 子树内核与 UIX 静态布局视觉组合为单一节点。
+fn build_space_view(mut kernel: Space, visual: &'static SpaceVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_space_uix_root(kernel: Space) -> ViewNode {
+    crate::uix!("src/ui/widgets/general/space/space.uix")
+}
+
+impl View for Space {
+    fn build(self) -> ViewNode {
+        build_space_uix_root(self)
     }
 }
 
@@ -350,6 +410,6 @@ impl Default for Space {
 // Space 布局参数与缓存的内部回归测试。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/space__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/space__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

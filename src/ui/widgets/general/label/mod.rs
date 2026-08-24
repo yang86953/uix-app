@@ -1,27 +1,85 @@
-//! Label widget — displays text with optional selection support.
+//! Label 的 Rust 文本选择、布局与绘制内核。
 //!
 //! 默认不可选中：导航/标题等 UI 文案不应出现拖选高亮。
 //! 需要复制选区时调用 `.selectable()`。
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::TextLayoutOptions;
 use crate::draw::geometry::spatial::PhysicalUnit;
+use crate::draw::{Color, TextLayoutOptions, VAlign};
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
+use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::Style;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::{EventResult, KeyCode, KeyMod, MouseButton, SystemEvent, UserSelect, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
+use crate::ui::{ThemeTokens, View, ViewNode};
 
-const DEFAULT_LABEL_FONT_SIZE: f32 = 12.0;
+// 保存 Label 的字号、行盒、度量与选择背景静态视觉。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LabelMetricsVisual {
+    pub(crate) default_font_size: f32,
+    pub(crate) default_line_height_factor: f32,
+    pub(crate) single_line_height_factor: f32,
+    pub(crate) measurement_dpi: f32,
+    pub(crate) selection_alpha: u8,
+    pub(crate) layout_max_height: f32,
+    pub(crate) word_wrap: bool,
+    pub(crate) vertical_align: VAlign,
+}
+
+// 保存 Label 默认文字色与选区强调色的主题角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LabelPaletteVisual {
+    text: ColorValue,
+    primary: ColorValue,
+}
+
+// 全部 Label 实例共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LabelVisual {
+    pub(crate) metrics: LabelMetricsVisual,
+    palette: LabelPaletteVisual,
+}
+
+crate::uix_items!("src/ui/widgets/general/label/label.uix");
+
+// 保存每帧从主题解析出的 Label 色值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedLabelVisual {
+    text: Color,
+    primary: Color,
+}
+
+impl LabelVisual {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> ResolvedLabelVisual {
+        ResolvedLabelVisual {
+            text: self.palette.text.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+        }
+    }
+}
+
+pub(crate) const fn label_vertical_align_top() -> VAlign {
+    VAlign::Top
+}
+
+pub(crate) const fn label_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+pub(crate) const fn label_primary_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
 
 fn normalized_label_font_size(size: f32) -> f32 {
     if size.is_finite() && size > 0.0 {
         size
     } else {
-        DEFAULT_LABEL_FONT_SIZE
+        LABEL_VISUAL.metrics.default_font_size
     }
 }
 
@@ -48,6 +106,8 @@ widget! {
         sel: PerNodeTextSelection,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
         pub(crate) style: Option<Style>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static LabelVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -144,6 +204,7 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        let resolved = self.visual.resolve(ctx.tokens());
         // 统一样式优先：背景/边框（section 色条等）再绘制文字
         if let Some(style) = self.style.as_ref() {
             crate::ui::theme::style::apply_style(ctx, frame, style);
@@ -153,7 +214,7 @@ widget! {
         let c = if let Some(style) = self.style.as_ref() {
             style.resolve_color(ctx.tokens())
         } else {
-            self.color.unwrap_or_else(|| ctx.tokens().color_text())
+            self.color.unwrap_or(resolved.text)
         };
         // 分辨率：物理单位优先 > style > self.font_size
         let fs = if let Some(unit) = self.font_size_unit {
@@ -173,7 +234,7 @@ widget! {
             // 按最终字号解析倍率或像素值。
             .and_then(|style| style.resolve_line_height(fs))
             // 未声明时保持 Label 既有 normal 行高。
-            .unwrap_or(fs * 1.5);
+            .unwrap_or(fs * self.visual.metrics.default_line_height_factor);
         // 提前解析内边距，使文本对齐使用真实内容框宽度。
         let pad = self
             // 借用可选统一样式。
@@ -211,12 +272,12 @@ widget! {
         let opts = TextLayoutOptions {
             // 对齐使用最终内容框宽度。
             max_width,
-            max_height: 0.0,
+            max_height: self.visual.metrics.layout_max_height,
             line_height,
-            word_wrap: false,
+            word_wrap: self.visual.metrics.word_wrap,
             // 使用 UI Style 映射后的水平对齐。
             h_align,
-            v_align: crate::draw::VAlign::Top,
+            v_align: self.visual.metrics.vertical_align,
             font_size: fs,
         };
         let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
@@ -273,7 +334,9 @@ widget! {
                             // 绘制当前连续选择片段。
                             ctx.fill_rect(
                                 Rect::new(x0, y0, (x1 - x0).max(0.0), selection_height),
-                                ctx.tokens().color_primary().with_alpha(64),
+                                resolved
+                                    .primary
+                                    .with_alpha(self.visual.metrics.selection_alpha),
                                 None,
                             );
                         }
@@ -320,6 +383,23 @@ widget! {
     }
 }
 
+// 把 Label Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_label_view(mut kernel: Label, visual: &'static LabelVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Label {
+    fn build(self) -> ViewNode {
+        build_label_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_label_uix_root(kernel: Label) -> ViewNode {
+    crate::uix!("src/ui/widgets/general/label/label.uix")
+}
+
 impl SnapshotSource for Label {
     fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Label {
@@ -340,7 +420,7 @@ impl Label {
         let t = text.into();
         Self {
             text: t,
-            font_size: DEFAULT_LABEL_FONT_SIZE,
+            font_size: LABEL_VISUAL.metrics.default_font_size,
             font_size_unit: None,
             color: None,
             fixed_width: None,
@@ -350,6 +430,7 @@ impl Label {
             user_select_policy: UserSelect::Auto,
             sel: PerNodeTextSelection::new(),
             style: None,
+            visual: LABEL_VISUAL_REF,
         }
     }
 
@@ -410,6 +491,7 @@ impl Label {
             self.sel.reset_selection();
         }
         self.style = next.style;
+        self.visual = next.visual;
     }
 
     /// 设置标签文字颜色。
@@ -485,7 +567,7 @@ impl Label {
         } else {
             let raw_font_size = self
                 .font_size_unit
-                .map(|unit| unit.to_dip(96.0))
+                .map(|unit| unit.to_dip(self.visual.metrics.measurement_dpi))
                 .or_else(|| self.style.as_ref().map(|s| s.font_size.default_size()))
                 .unwrap_or(self.font_size);
             let fs = normalized_label_font_size(raw_font_size);
@@ -510,10 +592,10 @@ impl Label {
                 line_height * estimated.line_count as f32
             } else if estimated.line_count == 1 {
                 // 未声明时保留现有单行视觉字高。
-                fs * 1.2
+                fs * self.visual.metrics.single_line_height_factor
             } else {
                 // 未声明时保留现有多行 normal 行高。
-                fs * 1.5 * estimated.line_count as f32
+                fs * self.visual.metrics.default_line_height_factor * estimated.line_count as f32
             };
             Size::new(
                 w.unwrap_or(estimated.max_line_width + pad.horizontal()),
@@ -526,6 +608,6 @@ impl Label {
 // 只在单元测试目标验证显式行高对 Label 固有测量的影响。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/label__line_height_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/label__line_height_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod line_height_tests;

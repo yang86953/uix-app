@@ -1,4 +1,4 @@
-//! Typography widget — 排版组件（标题/段落/文本）。
+//! Typography 的 Rust 文本选择、排版与复制交互内核。
 //!
 //! 支持 h1-h5 标题级别、段落文本、disabled/type 等变体。
 //! 与 Label 的区别：Typography 提供语义化排版和更多样式选项。
@@ -6,7 +6,7 @@
 use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::{Color, Radius, VAlign};
 use crate::widget;
 // 引入排版快照契约。
 use crate::ui::SnapshotFields;
@@ -15,13 +15,14 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入共享的单节点文字选区实现。
 use crate::ui::text_selection::per_node::PerNodeTextSelection;
 // 引入 UI System 拥有的字体族、字重、行高、文本对齐、文本装饰与样式契约。
+use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{
-    FontFamily, FontWeight, LineHeight, Style, TextAlign, TextDecoration,
+    ColorValue, FontFamily, FontWeight, LineHeight, PaletteColor, Style, TextAlign, TextDecoration,
 };
 // 引入主题颜色值与组件运行契约。
 use crate::ui::{
-    ColorValue, EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, UserSelect,
-    WidgetId, WidgetTree,
+    EventResult, KeyCode, KeyMod, MouseButton, SemanticEvent, SystemEvent, ThemeTokens, UserSelect,
+    View, ViewNode, WidgetId, WidgetTree,
 };
 
 use super::icon::Icon;
@@ -43,6 +44,139 @@ pub enum TypographyType {
     Paragraph,
     /// 不附加段落排版语义的普通文本。
     Text,
+}
+
+// 保存单个语义排版层级的字号与默认字重。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TypographyLevelVisual {
+    pub(crate) font_size: f32,
+    pub(crate) font_weight: FontWeight,
+}
+
+// 保存文字行盒、标记背景、复制入口与选择背景的静态几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TypographyGeometryVisual {
+    pub(crate) copy_space: f32,
+    pub(crate) min_text_width: f32,
+    pub(crate) layout_max_height: f32,
+    pub(crate) vertical_align: VAlign,
+    pub(crate) normal_line_height_factor: f32,
+    pub(crate) single_line_height_factor: f32,
+    pub(crate) average_advance_factor: f32,
+    pub(crate) mark_horizontal_padding: f32,
+    pub(crate) mark_vertical_padding: f32,
+    pub(crate) code_radius: f32,
+    pub(crate) mark_radius: f32,
+    pub(crate) selection_alpha: u8,
+    pub(crate) copy_width: f32,
+    pub(crate) copy_height: f32,
+    pub(crate) copy_paint_offset: f32,
+    pub(crate) copy_focus_stroke: f32,
+    pub(crate) copy_focus_radius: f32,
+    pub(crate) copy_icon_size: f32,
+    pub(crate) copy_icon: &'static str,
+}
+
+// 保存复制入口垂直居中使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypographyFontRole {
+    Body,
+}
+
+impl TypographyFontRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.font_size(),
+        }
+    }
+}
+
+// 保存 Typography 使用的全部主题颜色与字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TypographyPaletteVisual {
+    text: ColorValue,
+    disabled_text: ColorValue,
+    code_background: ColorValue,
+    mark_background: ColorValue,
+    primary: ColorValue,
+    copy_text: ColorValue,
+    copy_center_font: TypographyFontRole,
+}
+
+// 全部 Typography 实例共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TypographyVisual {
+    pub(crate) levels: [TypographyLevelVisual; 7],
+    pub(crate) geometry: TypographyGeometryVisual,
+    palette: TypographyPaletteVisual,
+}
+
+crate::uix_items!("src/ui/widgets/general/typography/typography.uix");
+
+// 保存每帧一次解析得到的主题视觉值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedTypographyVisual {
+    text: Color,
+    disabled_text: Color,
+    code_background: Color,
+    mark_background: Color,
+    primary: Color,
+    copy_text: Color,
+    copy_center_font_size: f32,
+}
+
+impl TypographyVisual {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> ResolvedTypographyVisual {
+        ResolvedTypographyVisual {
+            text: self.palette.text.resolve(tokens),
+            disabled_text: self.palette.disabled_text.resolve(tokens),
+            code_background: self.palette.code_background.resolve(tokens),
+            mark_background: self.palette.mark_background.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            copy_text: self.palette.copy_text.resolve(tokens),
+            copy_center_font_size: self.palette.copy_center_font.resolve(tokens),
+        }
+    }
+}
+
+pub(crate) const fn typography_semibold_weight() -> FontWeight {
+    FontWeight::SEMIBOLD
+}
+
+pub(crate) const fn typography_normal_weight() -> FontWeight {
+    FontWeight::NORMAL
+}
+
+pub(crate) const fn typography_vertical_align_top() -> VAlign {
+    VAlign::Top
+}
+
+pub(crate) const fn typography_body_font() -> TypographyFontRole {
+    TypographyFontRole::Body
+}
+
+pub(crate) const fn typography_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+pub(crate) const fn typography_disabled_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+
+pub(crate) const fn typography_fill_secondary_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillSecondary)
+}
+
+pub(crate) const fn typography_warning_background_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::WarningBg)
+}
+
+pub(crate) const fn typography_primary_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+pub(crate) const fn typography_copy_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
 }
 
 widget! {
@@ -81,6 +215,8 @@ widget! {
         copy_rect: Cell<Option<Rect>>,
         focused: bool,
         pending_submit: Cell<bool>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static TypographyVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -90,10 +226,15 @@ widget! {
             && constraints.max.w > 0.0
         {
             let (fs, _) = self.compute_font_style();
-            let copy_space = if self.copyable { 28.0 } else { 0.0 };
-            let text_width = (constraints.max.w - copy_space).max(1.0);
+            let copy_space = if self.copyable {
+                self.visual.geometry.copy_space
+            } else {
+                0.0
+            };
+            let text_width = (constraints.max.w - copy_space)
+                .max(self.visual.geometry.min_text_width);
             let indent = self.paragraph_indent(fs).min(text_width);
-            let wrap_width = (text_width - indent).max(1.0);
+            let wrap_width = (text_width - indent).max(self.visual.geometry.min_text_width);
             let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &self.content,
                 wrap_width,
@@ -214,6 +355,7 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+        let resolved = self.visual.resolve(ctx.tokens());
         let (fs, default_weight) = self.compute_font_style();
         // 显式 Style 字重优先，其次保留 strong 构建器与标题默认语义。
         let font_weight = self.font_weight.unwrap_or_else(|| {
@@ -223,9 +365,13 @@ widget! {
         // 为测量、布局与绘制解析唯一最终行高。
         let line_height = self.resolved_line_height(fs);
         // 在绘制阶段通过当前 Provider 主题解析语义颜色。
-        let text_c = self.resolved_text_color(ctx.tokens());
-        let copy_space = if self.copyable { 28.0 } else { 0.0 };
-        let text_width = (frame.w - copy_space).max(1.0);
+        let text_c = self.resolved_text_color(&resolved, ctx.tokens());
+        let copy_space = if self.copyable {
+            self.visual.geometry.copy_space
+        } else {
+            0.0
+        };
+        let text_width = (frame.w - copy_space).max(self.visual.geometry.min_text_width);
         let wraps = matches!(self.type_, TypographyType::Paragraph);
         let indent = if wraps {
             self.paragraph_indent(fs).min(text_width)
@@ -233,7 +379,7 @@ widget! {
             0.0
         };
         let layout_width = if wraps {
-            (text_width - indent).max(1.0)
+            (text_width - indent).max(self.visual.geometry.min_text_width)
         } else {
             text_width
         };
@@ -243,12 +389,12 @@ widget! {
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = crate::draw::TextLayoutOptions {
             max_width: layout_width,
-            max_height: 0.0,
+            max_height: self.visual.geometry.layout_max_height,
             line_height,
             word_wrap: wraps,
             // 使用 UI Style 映射后的水平对齐。
             h_align,
-            v_align: crate::draw::VAlign::Top,
+            v_align: self.visual.geometry.vertical_align,
             font_size: fs,
         };
         let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
@@ -278,21 +424,26 @@ widget! {
 
             if self.mark || self.code {
                 let background = if self.code {
-                    ctx.tokens().color_fill_secondary()
+                    resolved.code_background
                 } else {
-                    ctx.tokens().color_warning_bg()
+                    resolved.mark_background
                 };
                 for line in &layout.lines {
-                    if let Some(bounds) = Self::line_bounds(&layout, line, abs_pos, fs) {
+                    if let Some(bounds) = self.line_bounds(&layout, line, abs_pos, fs) {
                         ctx.fill_rect(
                             Rect::new(
-                                bounds.x - 3.0,
-                                bounds.y - 1.0,
-                                bounds.w + 6.0,
-                                bounds.h + 2.0,
+                                bounds.x - self.visual.geometry.mark_horizontal_padding,
+                                bounds.y - self.visual.geometry.mark_vertical_padding,
+                                bounds.w
+                                    + self.visual.geometry.mark_horizontal_padding * 2.0,
+                                bounds.h + self.visual.geometry.mark_vertical_padding * 2.0,
                             ),
                             background,
-                            Some(Radius::uniform(if self.code { 3.0 } else { 1.0 })),
+                            Some(Radius::uniform(if self.code {
+                                self.visual.geometry.code_radius
+                            } else {
+                                self.visual.geometry.mark_radius
+                            })),
                         );
                     }
                 }
@@ -303,7 +454,7 @@ widget! {
                     let visual_h = ctx.font_service()
                         .horizontal_line_metrics(&fh, fs)
                         .map(|m| m.ascent + m.descent)
-                        .unwrap_or(fs * 1.2);
+                        .unwrap_or(fs * self.visual.geometry.single_line_height_factor);
                     for line in &layout.lines {
                         let gs = line.glyph_start;
                         let ge = (gs + line.glyph_count).min(layout.glyphs.len());
@@ -327,7 +478,9 @@ widget! {
                             // 绘制当前连续选择片段。
                             ctx.fill_rect(
                                 Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
-                                ctx.tokens().color_primary().with_alpha(64),
+                                resolved
+                                    .primary
+                                    .with_alpha(self.visual.geometry.selection_alpha),
                                 None,
                             );
                         }
@@ -345,34 +498,61 @@ widget! {
 
         // copyable 图标
         if self.copyable {
-            let copy_x = frame.x + (frame.w - 24.0).max(0.0);
-            let copy_y = if wraps { frame.y } else { ctx.visual_center_y(frame, ctx.tokens().font_size()) };
+            let copy_x =
+                frame.x + (frame.w - self.visual.geometry.copy_width).max(0.0);
+            let copy_y = if wraps {
+                frame.y
+            } else {
+                ctx.visual_center_y(frame, resolved.copy_center_font_size)
+            };
             self.copy_rect.set(Some(Rect::new(
                 copy_x - frame.x,
                 copy_y - frame.y,
-                24.0,
-                20.0,
+                self.visual.geometry.copy_width,
+                self.visual.geometry.copy_height,
             )));
+            let copy_frame = Rect::new(
+                copy_x - self.visual.geometry.copy_paint_offset,
+                copy_y - self.visual.geometry.copy_paint_offset,
+                self.visual.geometry.copy_width,
+                self.visual.geometry.copy_height,
+            );
             if self.focused && tree.keyboard_focus_visible() {
                 ctx.stroke_rect(
-                    Rect::new(copy_x - 2.0, copy_y - 2.0, 24.0, 20.0),
-                    ctx.tokens().color_primary(),
-                    1.0,
-                    Some(Radius::uniform(3.0)),
+                    copy_frame,
+                    resolved.primary,
+                    self.visual.geometry.copy_focus_stroke,
+                    Some(Radius::uniform(self.visual.geometry.copy_focus_radius)),
                 );
             }
-            let copy_color = ctx.tokens().color_text_quaternary();
             Icon::paint_in_frame(
                 ctx,
-                "copy",
-                Rect::new(copy_x - 2.0, copy_y - 2.0, 24.0, 20.0),
-                copy_color,
-                14.0,
+                self.visual.geometry.copy_icon,
+                copy_frame,
+                resolved.copy_text,
+                self.visual.geometry.copy_icon_size,
             );
         } else {
             self.copy_rect.set(None);
         }
     }
+}
+
+// 把 Typography Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_typography_view(mut kernel: Typography, visual: &'static TypographyVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Typography {
+    fn build(self) -> ViewNode {
+        build_typography_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_typography_uix_root(kernel: Typography) -> ViewNode {
+    crate::uix!("src/ui/widgets/general/typography/typography.uix")
 }
 
 impl Typography {
@@ -411,6 +591,7 @@ impl Typography {
             copy_rect: Cell::new(None),
             focused: false,
             pending_submit: Cell::new(false),
+            visual: TYPOGRAPHY_VISUAL_REF,
         }
     }
     /// 创建标题，并将级别夹取到一至五级。
@@ -581,15 +762,17 @@ impl Typography {
     }
 
     fn compute_font_style(&self) -> (f32, FontWeight) {
-        match self.type_ {
-            TypographyType::Heading1 => (38.0, FontWeight::SEMIBOLD),
-            TypographyType::Heading2 => (30.0, FontWeight::SEMIBOLD),
-            TypographyType::Heading3 => (24.0, FontWeight::SEMIBOLD),
-            TypographyType::Heading4 => (20.0, FontWeight::SEMIBOLD),
-            TypographyType::Heading5 => (16.0, FontWeight::SEMIBOLD),
-            TypographyType::Paragraph => (14.0, FontWeight::NORMAL),
-            TypographyType::Text => (14.0, FontWeight::NORMAL),
-        }
+        let index = match self.type_ {
+            TypographyType::Heading1 => 0,
+            TypographyType::Heading2 => 1,
+            TypographyType::Heading3 => 2,
+            TypographyType::Heading4 => 3,
+            TypographyType::Heading5 => 4,
+            TypographyType::Paragraph => 5,
+            TypographyType::Text => 6,
+        };
+        let level = self.visual.levels[index];
+        (level.font_size, level.font_weight)
     }
 
     fn type_for_level(level: u8) -> TypographyType {
@@ -614,13 +797,13 @@ impl Typography {
             self.spacing
         } else {
             // 标题、普通文本与未声明段落保持既有 normal 倍率。
-            1.5
+            self.visual.geometry.normal_line_height_factor
         };
         let line_height = font_size * factor;
         if line_height.is_finite() && line_height > 0.0 {
             line_height
         } else {
-            font_size * 1.5
+            font_size * self.visual.geometry.normal_line_height_factor
         }
     }
 
@@ -680,8 +863,14 @@ impl Typography {
 
     fn intrinsic_size(&self) -> Size {
         let (fs, _fw) = self.compute_font_style();
-        let copy_space = if self.copyable { 28.0 } else { 0.0 };
-        let w = self.content.chars().count() as f32 * fs * 0.6 + copy_space;
+        let copy_space = if self.copyable {
+            self.visual.geometry.copy_space
+        } else {
+            0.0
+        };
+        let w =
+            self.content.chars().count() as f32 * fs * self.visual.geometry.average_advance_factor
+                + copy_space;
         // 与 Label 一致：单行用视觉字高，避免光学居中后量高偏大
         let h = self
             // 只有显式样式行高改变单行固有高度。
@@ -689,7 +878,7 @@ impl Typography {
             // 按语义字号解析行盒。
             .map(|line_height| line_height.resolve(fs))
             // 未声明时保留既有视觉字高。
-            .unwrap_or(fs * 1.2);
+            .unwrap_or(fs * self.visual.geometry.single_line_height_factor);
         Size::new(w, h)
     }
 
@@ -701,6 +890,7 @@ impl Typography {
     }
 
     fn line_bounds(
+        &self,
         layout: &crate::draw::resources::font::text_backend::TextLayout,
         line: &crate::draw::resources::font::text_backend::LineInfo,
         origin: Point,
@@ -715,7 +905,8 @@ impl Typography {
             origin.x + first.x,
             origin.y + line.y,
             (last.x + last.width - first.x).max(0.0),
-            line.height.max(font_size * 1.2),
+            line.height
+                .max(font_size * self.visual.geometry.single_line_height_factor),
         ))
     }
 
@@ -738,7 +929,8 @@ impl Typography {
         // 借用当前排版组件。
         &self,
         // 借用绘制阶段恢复的主题令牌。
-        tokens: &dyn crate::ui::ThemeTokens,
+        resolved: &ResolvedTypographyVisual,
+        tokens: &dyn ThemeTokens,
     ) -> Color {
         // 固定颜色保持最高优先级，兼容既有 color 构建器。
         self.color_override
@@ -749,10 +941,10 @@ impl Typography {
                 // 禁用文字使用四级文本色。
                 if self.disabled {
                     // 返回主题禁用色。
-                    tokens.color_text_quaternary()
+                    resolved.disabled_text
                 } else {
                     // 返回主题正文色。
-                    tokens.color_text()
+                    resolved.text
                 }
             })
     }
@@ -805,6 +997,7 @@ impl Typography {
         self.text_decoration = next.text_decoration;
         self.indent = next.indent;
         self.ellipsis = next.ellipsis;
+        self.visual = next.visual;
         if !self.copyable || self.disabled {
             self.focused = false;
             self.copy_rect.set(None);
@@ -844,5 +1037,5 @@ impl Typography {
 // 只在单元测试目标验证主题值与统一文本样式适配契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/typography/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/typography/tests.rs"]
 mod tests;
