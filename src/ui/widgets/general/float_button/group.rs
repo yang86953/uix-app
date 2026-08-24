@@ -181,14 +181,34 @@ impl FloatButtonGroup {
         self.is_present() && self.expansion_progress() > 0.0
     }
 
-    pub(super) fn child_frame(&self, frame: Rect, index: usize, progress: f32) -> Rect {
-        let item = self.item_layouts[index];
+    // 单次线性遍历产生全部子按钮 frame，避免每项重新扫描前缀。
+    pub(super) fn child_frames(
+        &self,
+        frame: Rect,
+        progress: f32,
+    ) -> impl Iterator<Item = (FloatButtonGroupItemLayout, Rect)> + '_ {
+        // 前缀高度只在当前遍历中累加一次，不增加持久内存。
+        let mut preceding_height = 0.0;
+        // 按稳定子项顺序消费只读几何记录。
+        self.item_layouts.iter().copied().map(move |item| {
+            // 使用已累加的前缀计算当前子项。
+            let child = Self::child_frame(frame, item, preceding_height, progress);
+            // 为下一项累加当前直径与固定间距。
+            preceding_height += item.size + FLOAT_BUTTON_GROUP_GAP;
+            // 同时交付命中/损伤计算仍需要的相对几何。
+            (item, child)
+        })
+    }
+
+    // 使用已累加前缀计算单个子按钮在当前过渡中的 frame。
+    fn child_frame(
+        frame: Rect,
+        item: FloatButtonGroupItemLayout,
+        preceding_height: f32,
+        progress: f32,
+    ) -> Rect {
         let collapsed_x = frame.x + (FLOAT_BUTTON_GROUP_TRIGGER_SIZE - item.size) * 0.5;
         let collapsed_y = frame.y + (FLOAT_BUTTON_GROUP_TRIGGER_SIZE - item.size) * 0.5;
-        let preceding_height = self.item_layouts[..index]
-            .iter()
-            .map(|layout| layout.size + FLOAT_BUTTON_GROUP_GAP)
-            .sum::<f32>();
         let expanded_y =
             frame.y + FLOAT_BUTTON_GROUP_TRIGGER_SIZE + FLOAT_BUTTON_GROUP_GAP + preceding_height;
         Rect::new(
@@ -205,8 +225,7 @@ impl FloatButtonGroup {
             return bounds;
         }
         let progress = self.expansion_progress();
-        for (index, item) in self.item_layouts.iter().enumerate() {
-            let child = self.child_frame(frame, index, progress);
+        for (item, child) in self.child_frames(frame, progress) {
             // 把子按钮相对命中区域平移到当前动画 frame。
             let hit = item.hit_bounds;
             bounds = bounds.union(&Rect::new(
@@ -231,9 +250,13 @@ impl FloatButtonGroup {
             trigger.w + 20.0,
             trigger.h + 24.0,
         );
-        for (index, item) in self.item_layouts.iter().enumerate() {
-            for progress in [0.0, 1.0] {
-                let child = self.child_frame(frame, index, progress);
+        // 折叠与展开端点各做一次线性前缀遍历。
+        for ((item, collapsed), (_, expanded)) in self
+            .child_frames(frame, 0.0)
+            .zip(self.child_frames(frame, 1.0))
+        {
+            // 损伤边界同时覆盖过渡两端，保持原有质量。
+            for child in [collapsed, expanded] {
                 let paint = item.paint_bounds;
                 bounds = bounds.union(&Rect::new(
                     child.x + paint.x,

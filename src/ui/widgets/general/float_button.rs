@@ -505,14 +505,11 @@ widget! {
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
         let progress = self.expansion_progress();
-        children
-            .iter()
-            .enumerate()
-            .filter_map(|(index, child)| {
-                self.item_layouts
-                    .get(index)
-                    .map(|_| (child.id, self.child_frame(frame, index, progress)))
-            })
+        self.child_frames(frame, progress)
+            // 与真实子节点一一配对，任一侧较短时立即结束。
+            .zip(children.iter())
+            // 父组件只交付子节点身份与单次累加前缀计算的 frame。
+            .map(|((_item, frame), child)| (child.id, frame))
             .collect()
     }
 
