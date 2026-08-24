@@ -60,6 +60,8 @@
         );
         // 全部到期工作被两轮精确消费后 registry 为空。
         assert!(registry.is_empty());
+        // 到期项移除后缓存不得继续暴露旧 deadline。
+        assert_eq!(registry.next_deadline(), None);
     }
 
     #[test]
@@ -76,6 +78,7 @@
         registry.sync_animated_sources(std::iter::empty());
         assert!(!registry.manages_animation(source));
         assert!(registry.is_empty());
+        assert_eq!(registry.next_deadline(), None);
     }
 
     #[test]
@@ -96,4 +99,40 @@
 
         registry.sync_animated_sources(std::iter::empty());
         assert!(registry.is_empty());
+    }
+
+    #[test]
+    fn next_deadline_cache_reuses_and_invalidates_on_actual_changes() {
+        let now = Instant::now();
+        let later = now + Duration::from_secs(5);
+        let mut registry = ActiveWorkRegistry::new();
+
+        // 空表结果也应缓存，避免空闲循环重复扫描。
+        assert_eq!(registry.next_deadline(), None);
+        assert_eq!(registry.next_deadline_cache.get(), Some(None));
+
+        // 新增与移除更早项必须失效并恢复正确最小值。
+        registry.register(ActiveWorkKind::GraphicsMaintenance, later);
+        assert_eq!(registry.next_deadline_cache.get(), None);
+        assert_eq!(registry.next_deadline(), Some(later));
+        registry.register(ActiveWorkKind::Timer(1), now);
+        assert_eq!(registry.next_deadline(), Some(now));
+        assert!(registry.unregister(ActiveWorkKind::Timer(1)));
+        assert_eq!(registry.next_deadline(), Some(later));
+
+        // 写回完全相同的 deadline 不应破坏已计算缓存。
+        registry.register(ActiveWorkKind::GraphicsMaintenance, later);
+        assert_eq!(registry.next_deadline_cache.get(), Some(Some(later)));
+
+        // open 登记替换有限 deadline 后，最早时间应变为空。
+        registry.register_open(ActiveWorkKind::GraphicsMaintenance);
+        assert_eq!(registry.next_deadline(), None);
+
+        // App timer 同步只在实际新增、更新或移除时失效。
+        registry.sync_app_timers([(7, later)]);
+        assert_eq!(registry.next_deadline(), Some(later));
+        registry.sync_app_timers([(7, later)]);
+        assert_eq!(registry.next_deadline_cache.get(), Some(Some(later)));
+        registry.sync_app_timers(std::iter::empty());
+        assert_eq!(registry.next_deadline(), None);
     }
