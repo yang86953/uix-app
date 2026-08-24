@@ -15,20 +15,24 @@ use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetTree,
 };
 use crate::widget;
+
+mod presentation;
+use presentation::*;
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
 
 /// 导航项绘制区域：上下各扩 0.5px，避免局部重绘与相邻项出现 1px 接缝。
-fn nav_item_paint_rect(frame: Rect, min_w: f32, min_h: f32) -> Rect {
+fn nav_item_paint_rect(frame: Rect, min_w: f32, min_h: f32, layout: &NavLayoutVisual) -> Rect {
     Rect::new(
         frame.x,
-        frame.y - 0.5,
+        frame.y - layout.paint_vertical_expand,
         frame.w.max(min_w),
-        frame.h.max(min_h) + 1.0,
+        frame.h.max(min_h) + layout.paint_height_expand,
     )
 }
 
@@ -63,6 +67,9 @@ widget! {
         focused: bool,
         value_binding: Option<Rc<dyn Fn()>>,
         pending_change: RefCell<Option<String>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static NavVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -110,18 +117,23 @@ widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let active = self.index == self.active_shared.get();
-        let primary = ctx.tokens().color_primary();
-        let primary_bg = ctx.tokens().color_primary_bg();
-        let text = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let fill_tertiary = ctx.tokens().color_fill_tertiary();
-        let bg_container = ctx.tokens().color_bg_container();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
+        // 标准态与紧凑态同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let primary = visual.primary;
+        let primary_bg = visual.primary_background;
+        let text = visual.text;
+        let text_secondary = visual.text_secondary;
+        let fill_tertiary = visual.fill_tertiary;
+        let bg_container = visual.container_background;
+        let bg_elevated = visual.elevated_background;
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
 
         let item_frame = nav_item_paint_rect(
             frame,
             self.fixed_width,
             self.fixed_height,
+            layout,
         );
 
         // —— Compact 模式：纯图标按钮，无文字标签，无指示条 ——
@@ -139,8 +151,8 @@ widget! {
                 ctx.stroke_rect(
                     item_frame,
                     primary,
-                    1.5,
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    self.visual.chrome.focus_width,
+                    Some(Radius::uniform(visual.radius)),
                 );
             }
 
@@ -150,7 +162,7 @@ widget! {
                     &self.icon,
                     item_frame,
                     text_color,
-                    18.0,
+                    typography.compact_icon,
                 );
             } else if !self.label.is_empty() {
                 let display = &self.label[..self
@@ -159,7 +171,7 @@ widget! {
                     .nth(1)
                     .map(|(i, _)| i)
                     .unwrap_or(self.label.len())];
-                let fs = 18.0;
+                let fs = typography.compact_fallback;
                 let tw = ctx.measure_text(display, fs).w;
                 let th = ctx.line_box_height(fs);
                 ctx.draw_text(
@@ -176,7 +188,7 @@ widget! {
         }
 
         // —— 标准模式 ——
-        let indicator_w = 3.0;
+        let indicator_w = layout.indicator_width;
 
         let (overlay, icon_color, label_color) = if active {
             (Some(primary_bg), primary, text)
@@ -190,36 +202,50 @@ widget! {
 
         if active {
             let bar = Rect::new(frame.x, frame.y, indicator_w, frame.h.max(self.fixed_height));
-            ctx.fill_rect(bar, primary, Some(Radius::uniform(1.5)));
+            ctx.fill_rect(bar, primary, Some(Radius::uniform(layout.indicator_radius)));
         }
 
         let mut cursor_x = frame.x + indicator_w;
 
         let row_h = frame.h.max(self.fixed_height);
         if !self.icon.is_empty() {
-            let icon_slot = Rect::new(cursor_x + 10.0, frame.y, 20.0, row_h);
+            let icon_slot = Rect::new(
+                cursor_x + layout.icon_start,
+                frame.y,
+                layout.icon_slot_width,
+                row_h,
+            );
             // 先用 UI 字体光学中心画图标，再画标签（见 Icon::paint_in_frame）
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 &self.icon,
                 icon_slot,
                 icon_color,
-                14.0,
+                typography.icon,
             );
-            cursor_x += 28.0;
+            cursor_x += layout.icon_advance;
         } else {
-            cursor_x += if active { 12.0 } else { 15.0 };
+            cursor_x += if active {
+                layout.active_label_start
+            } else {
+                layout.label_start
+            };
         }
 
         let label_w = (frame.x + frame.w - cursor_x).max(0.0);
         let label_area = Rect::new(cursor_x, frame.y, label_w, row_h);
-        ctx.draw_text_in_frame(&self.label, label_area, label_color, ctx.tokens().font_size());
+        ctx.draw_text_in_frame(
+            &self.label,
+            label_area,
+            label_color,
+            visual.label_font_size,
+        );
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 item_frame,
                 primary,
-                1.5,
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                self.visual.chrome.focus_width,
+                Some(Radius::uniform(visual.radius)),
             );
         }
     }
@@ -232,19 +258,21 @@ impl NavItem {
 
     /// 使用标签、索引和组拥有的共享选中状态创建导航项。
     pub fn new(label: &str, index: usize, active_shared: SharedActive) -> Self {
+        let visual = NAV_VISUAL_REF;
         Self {
             label: label.to_string(),
             key: index.to_string(),
             icon: String::new(),
             hovered: false,
-            fixed_width: 200.0,
-            fixed_height: 36.0,
+            fixed_width: visual.layout.default_width,
+            fixed_height: visual.layout.default_item_height,
             index,
             active_shared,
             compact: false,
             focused: false,
             value_binding: None,
             pending_change: RefCell::new(None),
+            visual,
         }
     }
 
@@ -307,6 +335,8 @@ impl NavItem {
         self.index = next.index;
         self.compact = next.compact;
         self.value_binding = next.value_binding;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         // 同步选中值（不替换 Rc），使 State 驱动的重建能刷新高亮。
         self.active_shared.set(next.active_shared.get());
     }
@@ -406,17 +436,18 @@ where
 {
     /// 使用标题创建空的 typed-key 侧边栏导航容器。
     pub fn new(title: &str) -> Self {
+        let visual = NAV_VISUAL_REF;
         Self {
             title: title.to_string(),
             active: Rc::new(Cell::new(0)),
             items: Vec::new(),
             keys: Vec::new(),
             page_binding: None,
-            width: 200.0,
-            height: 720.0,
-            show_version: true,
-            show_title: true,
-            compact_items: false,
+            width: visual.layout.default_width,
+            height: visual.layout.default_shell_height,
+            show_version: visual.defaults.show_version,
+            show_title: visual.defaults.show_title,
+            compact_items: visual.defaults.compact_items,
             collapsed_state: None,
             collapse_callback: None,
         }
@@ -527,10 +558,14 @@ where
         tokens: &dyn crate::ui::theme::traits::TokenProvider,
     ) -> crate::ui::widget_runtime::widget::WidgetNode {
         self.sync_page_binding();
+        // 兼容构建器的标题、导航项与版本区共享一次主题解析。
+        let visual = NAV_VISUAL_REF.resolve(tokens);
+        let layout = &NAV_VISUAL_REF.layout;
+        let typography = &NAV_VISUAL_REF.typography;
         let collapsed = self.collapsed_state.as_ref().is_some_and(State::get);
         let compact_items = self.compact_items || collapsed;
         let width = if collapsed {
-            self.height.min(self.width).max(48.0)
+            self.height.min(self.width).max(layout.compact_min_width)
         } else {
             self.width
         };
@@ -538,7 +573,11 @@ where
         use crate::ui::IntoWidgetNode;
         use crate::ui::widgets::{Container, Divider, Label};
 
-        let item_h = if compact_items { width } else { 36.0 };
+        let item_h = if compact_items {
+            width
+        } else {
+            layout.default_item_height
+        };
         let mut children: Vec<crate::ui::widget_runtime::widget::WidgetNode> = Vec::new();
 
         if let Some(collapsed_state) = self.collapsed_state.clone() {
@@ -553,25 +592,22 @@ where
                     }
                 })
                 .into();
-            let toggle =
-                crate::ui::adapter::ViewAdapter::expand(toggle_view.width(width).height(32.0));
+            let toggle = crate::ui::adapter::ViewAdapter::expand(
+                toggle_view.width(width).height(layout.toggle_height),
+            );
             children.push(toggle);
         }
 
         if self.show_title && !collapsed {
             children.push(
                 Label::new(&self.title)
-                    .color(tokens.color_primary())
-                    .font_size(20.0)
-                    .size(width, 52.0)
+                    .color(visual.primary)
+                    .font_size(typography.title)
+                    .size(width, layout.title_height)
                     .into_node(),
             );
 
-            children.push(
-                Divider::new()
-                    .color(tokens.color_border_secondary())
-                    .into_node(),
-            );
+            children.push(Divider::new().color(visual.border_secondary).into_node());
         }
 
         for item in self.items {
@@ -589,9 +625,9 @@ where
         if self.show_version && !collapsed {
             children.push(
                 Label::new(loc.nav_version)
-                    .color(tokens.color_text_quaternary())
-                    .font_size(11.0)
-                    .size(width, 24.0)
+                    .color(visual.text_quaternary)
+                    .font_size(typography.version)
+                    .size(width, layout.version_height)
                     .into_node(),
             );
         }
@@ -599,7 +635,7 @@ where
         crate::ui::widget_runtime::widget::WidgetNode::new(
             Box::new(
                 Container::new()
-                    .bg(tokens.color_bg_container())
+                    .bg(visual.container_background)
                     .dir(crate::ui::layout::FlexDirection::Column)
                     .w(width)
                     // 侧栏在 Row 父容器中仅固定宽度，禁止 flex-grow 抢占主轴（水平）空间
@@ -666,5 +702,17 @@ impl Navigation<String> {
             // Menu 是唯一直接子树。
             vec![crate::ui::view::ViewNode::leaf(menu)],
         )
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有稳定 key、共享状态与事件。
+fn build_nav_item_view(mut kernel: NavItem, visual: &'static NavVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for NavItem {
+    fn build(self) -> ViewNode {
+        build_nav_item_view(self, NAV_VISUAL_REF)
     }
 }

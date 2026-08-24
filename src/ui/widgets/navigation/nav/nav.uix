@@ -1,0 +1,32 @@
+// NavItem 与兼容 Navigation 外壳的尺寸、状态、排版、描边和主题由 UIX 唯一拥有。
+<Visual name="NAV_LAYOUT_VISUAL" type="NavLayoutVisual"
+  defaultWidth={200.0} defaultItemHeight={36.0} defaultShellHeight={720.0}
+  compactMinWidth={48.0} paintVerticalExpand={0.5} paintHeightExpand={1.0}
+  indicatorWidth={3.0} indicatorRadius={1.5}
+  iconStart={10.0} iconSlotWidth={20.0} iconAdvance={28.0}
+  activeLabelStart={12.0} labelStart={15.0}
+  toggleHeight={32.0} titleHeight={52.0} versionHeight={24.0}
+/>
+<Visual name="NAV_TYPOGRAPHY_VISUAL" type="NavTypographyVisual"
+  label={nav_font_base()} icon={14.0} compactIcon={18.0} compactFallback={18.0}
+  title={20.0} version={11.0}
+/>
+<Visual name="NAV_CHROME_VISUAL" type="NavChromeVisual"
+  focusWidth={1.5} radius={nav_radius_small()}
+/>
+<Visual name="NAV_DEFAULTS_VISUAL" type="NavDefaultsVisual"
+  showVersion={true} showTitle={true} compactItems={false}
+/>
+<Visual name="NAV_PALETTE_VISUAL" type="NavPaletteVisual"
+  primary={nav_primary()} primaryBackground={nav_primary_background()}
+  text={nav_text()} textSecondary={nav_text_secondary()}
+  fillTertiary={nav_fill_tertiary()} containerBackground={nav_container_background()}
+  elevatedBackground={nav_elevated_background()} borderSecondary={nav_border_secondary()}
+  textQuaternary={nav_text_quaternary()}
+/>
+<Visual name="NAV_VISUAL" type="NavVisual"
+  layout={NAV_LAYOUT_VISUAL} typography={NAV_TYPOGRAPHY_VISUAL}
+  chrome={NAV_CHROME_VISUAL} defaults={NAV_DEFAULTS_VISUAL}
+  palette={NAV_PALETTE_VISUAL}
+/>
+<KernelView value={build_nav_item_view(kernel, NAV_VISUAL_REF)} />
