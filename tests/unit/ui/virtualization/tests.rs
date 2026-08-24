@@ -8,7 +8,7 @@ use crate::ui::adapter::ViewAdapter;
 // 导入访问组件树子项所需的核心 trait。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入直接构造并调用布局入口所需的子项与 trait。
-use crate::ui::{LayoutChild, WidgetLayout};
+use crate::ui::{LayoutChild, LayoutEngineScratch, WidgetLayout};
 // 导入构造行 View 所需的节点类型。
 use crate::ui::view::ViewNode;
 // 导入最小文本行组件。
@@ -258,12 +258,35 @@ fn virtual_scroll_sanitizes_total_height_and_layout_frames() {
     let children = [LayoutChild::new(WidgetId::new(1), Size::new(10.0, 10.0))];
     // 空树足以覆盖虚拟行的纯几何放置路径。
     let tree = WidgetTree::new();
+    // 树级测量入口必须保持默认精确填充描述符契约。
+    let child_ids = [children[0].id];
+    let expected_measured = scroll.measure_children(Rect::zero(), &child_ids, &tree);
+    let mut reused_measured = Vec::new();
+    scroll.measure_children_into(Rect::zero(), &child_ids, &tree, &mut reused_measured);
+    assert_eq!(reused_measured.len(), expected_measured.len());
+    assert_eq!(reused_measured[0].id, expected_measured[0].id);
+    assert_eq!(
+        reused_measured[0].measured_size,
+        expected_measured[0].measured_size
+    );
+    assert_eq!(reused_measured[0].margin, expected_measured[0].margin);
     // 输入同时包含非法坐标、宽度与高度。
     let positions = scroll.layout_children(
         Rect::new(f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::NAN),
         &children,
         &tree,
     );
+    // 树级复用入口必须保持相同的有限几何结果。
+    let mut scratch = LayoutEngineScratch::default();
+    let mut reused_positions = Vec::new();
+    scroll.layout_children_into(
+        Rect::new(f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::NAN),
+        &children,
+        &tree,
+        &mut scratch,
+        &mut reused_positions,
+    );
+    assert_eq!(reused_positions, positions);
     // 读取唯一子项的最终 frame。
     let frame = positions[0].1;
     // 所有坐标与尺寸都必须为有限值。
@@ -441,6 +464,18 @@ fn variable_scroll_layout_uses_measured_item_frames() {
         &children,
         &WidgetTree::new(),
     );
+    // 稳态树级入口必须复用缓冲并保持可变行高重锚结果。
+    let tree = WidgetTree::new();
+    let mut scratch = LayoutEngineScratch::default();
+    let mut reused_positions = Vec::new();
+    scroll.layout_children_into(
+        Rect::new(0.0, 0.0, 100.0, 25.0),
+        &children,
+        &tree,
+        &mut scratch,
+        &mut reused_positions,
+    );
+    assert_eq!(reused_positions, positions);
     // 第一项目从内容原点开始并保留估算高度。
     assert_eq!(positions[0].1, Rect::new(0.0, 0.0, 100.0, 10.0));
     // 第二项目起点只推进第一项目高度。

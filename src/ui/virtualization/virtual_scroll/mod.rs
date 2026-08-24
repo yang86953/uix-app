@@ -434,41 +434,89 @@ widget! {
         ctx.fill_rect(frame, bg, None);
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_virtual_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_virtual_children_into(frame, children, tree, output);
+    }
+}
+
+impl VirtualScroll {
+    // 将活动虚拟行位置写入布局树拥有的跨帧数组。
+    fn layout_virtual_children_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        tree: &WidgetTree,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
         // 父级输入先收敛到有限实际矩形。
         let frame = finite_virtual_rect(frame);
         // 读取当前物化窗口的绝对起始索引。
         let start = self.visible_start();
+        // 复用树级数组并为最坏情况下的全部活动行预留容量。
+        output.clear();
+        output.reserve(children.len());
+        // 离场墓碑不占用活动行绝对索引。
+        let mut local_index = 0_usize;
         // 按物化顺序为每个行子树计算绝对位置。
-        children
-            .iter()
-            // 离场行保留最后 frame 供动画绘制，但不再占用活动行绝对索引。
-            .filter(|child| !tree.is_pending_removal_subtree(child.id))
-            .enumerate()
-            .map(|(local_i, child)| {
-                // 防御不一致子项数量导致绝对索引整数溢出。
-                let abs_i = start.saturating_add(local_i);
-                // 可变模式先记录当前已物化子项的实际测量高度。
-                if self.variable_height {
-                    // 测量变化会让下一轮刷新重新确认窗口和锚点。
-                    self.measure_item(abs_i, child.measured_size.h);
-                }
-                // 使用缓存前缀或固定行高计算项目起点。
-                let item_offset = self.item_offset(abs_i) as f64;
-                // 每个项目都读取最新的可变行高重锚偏移。
-                let scroll_offset = finite_scroll_offset(self.scroll_offset.get()) as f64;
-                // 使用 f64 完成坐标与偏移累加。
-                let y = frame.y as f64 + item_offset - scroll_offset;
-                // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
-                let y = finite_virtual_coordinate(y);
-                // 可变模式返回实际高度，未测量项目回退到估算高度。
-                let item_height = self.item_height_for(abs_i).max(0.0);
-                // 子项 frame 只包含有限坐标与非负有限尺寸。
-                (child.id, Rect::new(frame.x, y, frame.w, item_height))
-            })
-            .collect()
+        for child in children {
+            // 离场行保留最后 frame 供动画绘制，但不再发布新位置。
+            if tree.is_pending_removal_subtree(child.id) {
+                continue;
+            }
+            // 防御不一致子项数量导致绝对索引整数溢出。
+            let absolute_index = start.saturating_add(local_index);
+            // 下一活动行继续使用紧邻的绝对索引。
+            local_index = local_index.saturating_add(1);
+            // 可变模式先记录当前已物化子项的实际测量高度。
+            if self.variable_height {
+                // 测量变化会让下一轮刷新重新确认窗口和锚点。
+                self.measure_item(absolute_index, child.measured_size.h);
+            }
+            // 使用缓存前缀或固定行高计算项目起点。
+            let item_offset = self.item_offset(absolute_index) as f64;
+            // 每个项目都读取最新的可变行高重锚偏移。
+            let scroll_offset = finite_scroll_offset(self.scroll_offset.get()) as f64;
+            // 使用 f64 完成坐标与偏移累加。
+            let y = frame.y as f64 + item_offset - scroll_offset;
+            // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
+            let y = finite_virtual_coordinate(y);
+            // 可变模式返回实际高度，未测量项目回退到估算高度。
+            let item_height = self.item_height_for(absolute_index).max(0.0);
+            // 子项 frame 只包含有限坐标与非负有限尺寸。
+            output.push((child.id, Rect::new(frame.x, y, frame.w, item_height)));
+        }
     }
 }
 
