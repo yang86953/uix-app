@@ -60,6 +60,11 @@ mod conditional_chain_codegen;
 mod conditional_chain_codegen_tests;
 // 定义元素名称到既有专用生成器的确定性分派。
 mod element_codegen;
+// 定义框架 Rust 基础 View 注入 UIX 组合树的窄边界。
+mod kernel_view_codegen;
+// 集中验证基础 View 桥接的所有权与拒绝路径。
+#[cfg(test)]
+mod kernel_view_codegen_tests;
 // 定义 Divider 内置组件的公开 API 代码生成边界。
 mod divider_codegen;
 // 定义 Space 内置组件的公开 API 代码生成边界。
@@ -623,6 +628,8 @@ pub(crate) use builtin_matrix::{planned_builtin_diagnostic, supported_builtin_hi
 pub(crate) use button_group_codegen::generate_button_group;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
+// 向核心元素生成器暴露基础 View 桥接映射。
+pub(crate) use kernel_view_codegen::{generate_kernel_host, generate_kernel_view};
 // 向核心元素生成器暴露 Divider 专用映射。
 pub(crate) use divider_codegen::generate_divider;
 // 向核心元素生成器暴露 Space 专用映射。
@@ -641,8 +648,8 @@ pub(crate) use widget_ast::*;
 pub(crate) use action_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
-    DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
-    is_registered_data_type, normalize_number_literals, step_status_path,
+    data_chain_root, data_constructor_spec, is_data_constructor_chain, is_registered_data_type,
+    normalize_number_literals, step_status_path, DataConstructorSpec,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use widget_codegen::generate_document_view;

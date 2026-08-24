@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::CompileTarget;
 use crate::projection_schema::{ComponentCategory, UI_PROJECTION_SCHEMA};
 use crate::source_graph::SourceId;
 use crate::uix_lang::{
     Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element, Node,
     SourceSpan,
 };
+use crate::CompileTarget;
 
 /// 保存绑定到稳定源码身份的半开字节范围。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -575,7 +575,10 @@ fn typed_attribute(
 }
 
 fn is_control_element(name: &str) -> bool {
-    matches!(name, "If" | "ElseIf" | "Else" | "For" | "Slot")
+    matches!(
+        name,
+        "If" | "ElseIf" | "Else" | "For" | "Slot" | "KernelView" | "KernelHost"
+    )
 }
 
 fn ir_span(source_id: SourceId, span: SourceSpan) -> IrSpan {
@@ -590,10 +593,10 @@ fn ir_span(source_id: SourceId, span: SourceSpan) -> IrSpan {
 
 #[cfg(test)]
 mod tests {
-    use super::{TypedAttributeRole, TypedDeclarationKind, TypedElementKind, lower_document};
-    use crate::CompileTarget;
+    use super::{lower_document, TypedAttributeRole, TypedDeclarationKind, TypedElementKind};
     use crate::source_graph::SourceId;
     use crate::uix_lang::parse_document;
+    use crate::CompileTarget;
 
     #[test]
     fn semantic_ir_classifies_components_custom_widgets_and_attribute_roles() {
@@ -617,6 +620,29 @@ mod tests {
             .expect("事件属性必须可由位置查询");
         assert_eq!(click.name, "@click");
         assert_eq!(click.kind, super::SemanticNodeKind::Attribute);
+    }
+
+    #[test]
+    fn semantic_ir_classifies_kernel_view_as_internal_control() {
+        // KernelView 是框架模板边界，不进入公开组件 schema。
+        let document = parse_document("<KernelView value={build_kernel()} />")
+            .expect("基础 View 桥接源码必须通过解析");
+        // 使用稳定来源身份建立完整语义 IR。
+        let source = SourceId::from_source_name("kernel.uix");
+        let ir = lower_document(document, CompileTarget::View, source, &[])
+            .expect("KernelView 必须通过语义降低");
+        // 该元素只能归入语言内部控制，不得伪装成公开内置组件。
+        assert!(matches!(ir.root().kind, TypedElementKind::Control));
+
+        // 带 UIX 展示子树的基础内核宿主使用同一内部控制边界。
+        let host =
+            parse_document("<KernelHost value={build_kernel}><Icon name=\"minus\" /></KernelHost>")
+                .expect("基础内核宿主源码必须通过解析");
+        // 使用独立语义降低确认不会进入公开 schema。
+        let host = lower_document(host, CompileTarget::View, source, &[])
+            .expect("KernelHost 必须通过语义降低");
+        // 宿主和直接注入都属于框架内部控制。
+        assert!(matches!(host.root().kind, TypedElementKind::Control));
     }
 
     #[test]

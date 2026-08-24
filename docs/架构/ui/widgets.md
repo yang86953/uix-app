@@ -22,6 +22,28 @@
 
 Button、Label、Typography、Icon、Container 等基础 widget 只组合 widget、layout、event、theme 和 painting 能力，不私有化通用机制。
 
+为避免“基本控件”在迁移过程中不断扩大，公开白名单冻结为：
+
+| 责任 | 允许继续以 Rust 为公开实现的基础标签 |
+|---|---|
+| 文本、图形与直接操作 | `Text`、`Label`、`Typography`、`Icon`、`Image`、`Button` |
+| 单值基础输入 | `Input`、`Checkbox`、`Switch`、`Slider` |
+| 通用布局与滚动 | `Container`、`Row`、`Column`、`Grid`、`ScrollView`、`Space` |
+
+白名单之外的公开组件必须逐批改为 uix-lang 声明壳。Rust 可以继续实现不直接替代公开复合组件的基础内核，例如平台窗口动作、overlay host、虚拟化、资源加载、文本整形、图表绘制与复杂布局求解；这些内核只拥有状态、算法、I/O、生命周期和平台交互，不得重新拥有公开组件的条件结构、排列、静态文案或插槽组合。
+
+## 非基础组件的 uix-lang 迁移契约
+
+迁移完成必须同时满足以下条件：
+
+1. `.uix` 文件拥有公开组件的子树结构、顺序、条件分支、插槽投影、静态样式和展示文案。
+2. Rust 只保留 UIX 无法安全表达的基础内核职责；业务逻辑、持久化、异步 I/O 与平台调用仍不得进入 `.uix`。
+3. Rust 基础 View 需要进入声明树时，只能通过框架内部的 `KernelView value={...}` 或单展示根 `KernelHost value={...}` 窄桥接；桥接禁止事件与组件专有属性，只允许统一 View 样式，不能成为第二套公共组件 API。
+4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果，并用真实编译测试与最接近的行为测试验收。
+5. 条件隐藏的分支不得提前构造 Rust 基础 View；高频路径不得因语言迁移增加无条件分配、克隆或动态解析。
+
+首个完成迁移的非基础组件是标准 `WindowControl` 组合：`src/ui/widgets/uix/window_controls.uix` 拥有三个动作的图标、尺寸、状态色、条件结构和排列，`window_chrome` Rust Module 只保留窗口动作、无障碍语义与交互状态。
+
 ## 组件：复合组件
 
 Form、Table、Tree、Modal、Menu 等复合组件分别复用 form、virtualization、overlay 等目标模块。每个组件通过 `Widget` 暴露必要能力，运行态只由组件实例和树 side table 持有；公开教程与参数表归[使用 · 组件](../../使用/界面构建/组件.md)。
