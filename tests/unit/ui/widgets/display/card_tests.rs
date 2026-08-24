@@ -28,8 +28,39 @@ fn uix_root_preserves_card_kernel_and_children() {
         .downcast_ref::<Card>()
         .expect("UIX 根必须保留 Card 内核");
     assert_eq!(kernel.title.as_deref(), Some("概览"));
+    // UIX 声明必须进入真实绘制与布局内核。
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (200.0, 120.0, 16.0, 56.0, 15.0, 40.0, 13.0, 0.05)
+    );
     // 公开 View 入口的空卡片同样保持零子节点形状。
     assert!(View::build(Card::new()).children.is_empty());
+}
+
+// UIX 默认外观只填充未显式覆写字段，且实例共享静态视觉表。
+#[test]
+fn uix_defaults_preserve_authored_card_appearance_and_share_visuals() {
+    let authored = View::build(Card::new().bordered(false).padding(24.0).elevation(3));
+    let defaults = View::build(Card::new());
+    let authored = authored
+        .widget
+        .as_any()
+        .downcast_ref::<Card>()
+        .expect("作者 Card 必须保留内核");
+    let defaults = defaults
+        .widget
+        .as_any()
+        .downcast_ref::<Card>()
+        .expect("默认 Card 必须保留内核");
+    assert_eq!(
+        (authored.bordered, authored.padding, authored.elevation),
+        (false, 24.0, 3)
+    );
+    assert_eq!(
+        (defaults.bordered, defaults.padding, defaults.elevation),
+        (true, 16.0, 1)
+    );
+    assert!(authored.shares_visual_with_for_test(defaults));
 }
 
 // 验证自动高度由未压缩的 body 子树撑开，而显式高度仍是硬约束。
@@ -46,7 +77,7 @@ fn auto_height_tracks_body_content_but_fixed_height_does_not() {
         // 布局目标是待验证的自动高度卡片。
         &card,
         // 二百二十宽卡片扣除内边距后恰好得到一百八十八宽 body。
-        Rect::new(0.0, 0.0, 220.0, Card::DEFAULT_HEIGHT),
+        Rect::new(0.0, 0.0, 220.0, DEFAULT_CARD_VISUAL.defaults.height),
         // 单个子项代表首页卡片中的垂直 Column。
         &[child],
         // 本测试不需要访问运行时树内容。
