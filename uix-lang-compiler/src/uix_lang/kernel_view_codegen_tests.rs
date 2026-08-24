@@ -54,6 +54,20 @@ fn generates_kernel_host_with_single_uix_child() {
     assert!(snapshot.contains("width (46.0)"));
 }
 
+// 验证 KernelChildren 把拥有型 ViewNode 列表无克隆交给 UIX 容器。
+#[test]
+fn generates_kernel_children_without_clone_or_wrapper() {
+    // 外层容器拥有排列，Rust 只交付已完成行为配置的节点列表。
+    let snapshot = generate(
+        r#"<Container direction="row" gap="0px"><KernelChildren value={positioned_buttons} /></Container>"#,
+    )
+    .expect("KernelChildren 应接收拥有型 ViewNode 列表");
+    // 生成物必须直接消费列表并追加到容器子项。
+    assert!(snapshot.contains("extend") && snapshot.contains("positioned_buttons"));
+    // 列表桥接不得因语言迁移引入无条件克隆或额外容器。
+    assert!(!snapshot.contains("clone"));
+}
+
 // 验证桥接元素拒绝第二套属性与子树所有权。
 #[test]
 fn rejects_invalid_kernel_view_shapes() {
@@ -93,4 +107,28 @@ fn rejects_invalid_kernel_view_shapes() {
     .expect_err("KernelHost 多子树必须失败");
     // 诊断必须引导显式布局。
     assert!(host_multiple.message.contains("只能包含一个"));
+
+    // KernelChildren 必须保持仅 value 的多根交接边界。
+    let children_missing = generate(r#"<Container><KernelChildren /></Container>"#)
+        .expect_err("KernelChildren 缺少 value 必须失败");
+    // 缺失诊断必须指明 value。
+    assert!(children_missing.message.contains("缺少 value"));
+    // 列表桥接不得带通用样式，样式归外层 UIX 容器。
+    let children_attribute =
+        generate(r#"<Container><KernelChildren value={nodes} class="rows" /></Container>"#)
+            .expect_err("KernelChildren 样式属性必须失败");
+    // 诊断必须保留越界属性名。
+    assert!(children_attribute.message.contains("class"));
+    // 列表交接不得同时接收声明子节点。
+    let children_child = generate(
+        r#"<Container><KernelChildren value={nodes}><Icon name="x" /></KernelChildren></Container>"#,
+    )
+    .expect_err("KernelChildren 子节点必须失败");
+    // 诊断必须说明子树所有权冲突。
+    assert!(children_child.message.contains("不接受子节点"));
+    // 列表桥接不能脱离外层布局独立生成 View。
+    let children_root =
+        generate(r#"<KernelChildren value={nodes} />"#).expect_err("KernelChildren 独立根必须失败");
+    // 诊断必须引导放入容器。
+    assert!(children_root.message.contains("不能作为独立 View 根节点"));
 }

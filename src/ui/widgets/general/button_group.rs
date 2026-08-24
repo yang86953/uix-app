@@ -5,7 +5,6 @@
 
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::general::button::{Button, ButtonGroupPosition};
-use crate::ui::widgets::row;
 
 /// 视觉连体按钮组。将多个 Button 标记位置后返回，由 View 层组合布局。
 pub struct ButtonGroup {
@@ -56,12 +55,14 @@ impl Default for ButtonGroup {
 
 impl View for ButtonGroup {
     fn build(self) -> ViewNode {
-        let children = self
+        // Rust 只保留按钮行为需要的连体位置标记。
+        let positioned_buttons = self
             .into_positioned_buttons()
             .into_iter()
             .map(ViewNode::leaf)
             .collect::<Vec<_>>();
-        row(children).gap(0.0)
+        // 容器结构、横向排列与间距由 UIX 声明壳拥有。
+        crate::uix!("src/ui/widgets/uix/button_group.uix")
     }
 }
 

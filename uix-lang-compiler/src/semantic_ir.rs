@@ -577,7 +577,7 @@ fn typed_attribute(
 fn is_control_element(name: &str) -> bool {
     matches!(
         name,
-        "If" | "ElseIf" | "Else" | "For" | "Slot" | "KernelView" | "KernelHost"
+        "If" | "ElseIf" | "Else" | "For" | "Slot" | "KernelView" | "KernelHost" | "KernelChildren"
     )
 }
 
@@ -643,6 +643,15 @@ mod tests {
             .expect("KernelHost 必须通过语义降低");
         // 宿主和直接注入都属于框架内部控制。
         assert!(matches!(host.root().kind, TypedElementKind::Control));
+
+        // 多节点列表桥接同样只是框架内部控制元素。
+        let children = parse_document("<KernelChildren value={build_children()} />")
+            .expect("基础节点列表桥接必须通过解析");
+        // 语义降低不得把列表桥接暴露为公开组件。
+        let children = lower_document(children, CompileTarget::View, source, &[])
+            .expect("KernelChildren 必须通过语义降低");
+        // 确认内部控制分类。
+        assert!(matches!(children.root().kind, TypedElementKind::Control));
     }
 
     #[test]

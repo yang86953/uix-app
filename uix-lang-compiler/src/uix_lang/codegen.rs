@@ -6,8 +6,8 @@ use quote::quote;
 use crate::source_graph::SourceId;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SOURCE_ID_ATTRIBUTE,
-    SourceSpan, WidgetScopeMarker, mark_source_tokens, with_source_marker_id,
+    mark_source_tokens, with_source_marker_id, Attribute, ControlBinding, Diagnostic, Element,
+    ExpressionNode, Node, SourceSpan, WidgetScopeMarker, SOURCE_ID_ATTRIBUTE,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -23,6 +23,8 @@ use super::for_identity_codegen::{internal_control_ident, optional_internal_cont
 use super::view_decoration_codegen::apply_widget_scopes;
 // 引入受限表达式与事件处理器生成入口。
 use super::generate_expression;
+// 引入 Rust 基础节点列表到 UIX 容器的无克隆追加边界。
+use super::generate_kernel_children;
 // 引入属性值与绑定名称的共享生成入口。
 use super::{
     align_value, apply_inline_style, boolean_value, deferred_style_diagnostic, justify_value,
@@ -50,7 +52,10 @@ pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic
 
 fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 控制节点只能在父元素的有序子节点列表中展开。
-    if matches!(element.name.as_str(), "If" | "ElseIf" | "Else" | "For") {
+    if matches!(
+        element.name.as_str(),
+        "If" | "ElseIf" | "Else" | "For" | "KernelChildren"
+    ) {
         // 返回根控制节点形状诊断。
         return Err(Diagnostic::new(
             // 指向完整控制元素。
@@ -58,7 +63,7 @@ fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic
             // 说明单根 View 要求。
             format!("<{}> 不能作为独立 View 根节点生成", element.name),
             // 给出父容器修复建议。
-            "把 If、ElseIf、Else 或 For 放入 Container、Row 或 Column 内",
+            "把该控制元素放入 Container、Row 或 Column 内",
         ));
     }
     // 普通元素委托映射矩阵生成。
@@ -531,6 +536,15 @@ pub(super) fn generate_child_statements(
                 statements.push(generate_control(element, output)?);
                 // 继续处理下一节点。
                 // 前进到下一节点。
+                index += 1;
+                // 继续扫描。
+                continue;
+            }
+            // KernelChildren 直接消费拥有型 ViewNode 列表，不生成额外占位 View。
+            if element.name == "KernelChildren" {
+                // 生成无克隆的顺序追加语句。
+                statements.push(generate_kernel_children(element, output)?);
+                // 前进到下一个源节点。
                 index += 1;
                 // 继续扫描。
                 continue;
