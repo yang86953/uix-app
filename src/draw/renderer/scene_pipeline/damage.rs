@@ -118,6 +118,20 @@ pub(super) fn coalesce_dense_dirty_region(region: DirtyRegion) -> DirtyRegion {
     }
 }
 
+// 判断局部脏区是否应按原始离散矩形逐块遍历。
+pub(super) fn should_split_dirty_rects(region: &DirtyRegion) -> bool {
+    // 与绘制路径原判定一致：完整帧和单矩形不进入拆分遍历。
+    !region.full_frame
+        && region.rects().len() > 1
+        // 至少一个正面积矩形时才进入拆分分支。
+        && region.rects().iter().any(|rect| positive_dirty_rect(*rect))
+}
+
+// 保留拆分绘制原有的正面积筛选，不扩大几何合法性语义。
+pub(super) fn positive_dirty_rect(rect: Rect) -> bool {
+    rect.w > 0.0 && rect.h > 0.0
+}
+
 pub(super) fn valid_scroll_copy(viewport: Rect, dx: f32, dy: f32) -> bool {
     if !valid_frame_rect(viewport)
         || ![viewport.x, viewport.y, viewport.w, viewport.h]

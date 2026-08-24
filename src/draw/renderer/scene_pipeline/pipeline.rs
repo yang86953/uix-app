@@ -465,7 +465,6 @@ impl ScenePipeline {
         // Paint prune uses the same region as begin_frame clear. Full frames
         // keep DirtyRegion::full(); dirty frames omit the recording Clear so
         // execute_into_pixels retains undamaged CPU pixels.
-        let paint_region = region.clone();
         if let Err(error) = self.recorder.begin_recording(region.full_frame) {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Failed(crate::draw::renderer::GraphicsFailure::from_error(
@@ -488,22 +487,18 @@ impl ScenePipeline {
         }
         // 多块脏区：逐矩形 clip + 以该矩形为 dirty 剪枝重绘，父背景只填当前洞，
         // 不污染空隙中的干净像素。单矩形仍走一次 clip（与 begin_frame 外层并集 clip 叠加）。
-        let split_rects: Vec<Rect> = if !region.full_frame && region.rects().len() > 1 {
-            region
+        let render_result = if should_split_dirty_rects(&region) {
+            let mut first = true;
+            let mut result = Ok(());
+            // 直接借用原矩形切片，避免每帧复制临时 Vec。
+            for rect in region
                 .rects()
                 .iter()
                 .copied()
-                .filter(|r| r.w > 0.0 && r.h > 0.0)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let render_result = if !split_rects.is_empty() {
-            let mut first = true;
-            let mut result = Ok(());
-            for rect in &split_rects {
-                self.recorder.canvas_2d().push_clip(*rect);
-                let sub_region = DirtyRegion::area(*rect);
+                .filter(|rect| positive_dirty_rect(*rect))
+            {
+                self.recorder.canvas_2d().push_clip(rect);
+                let sub_region = DirtyRegion::area(rect);
                 let render_objects = if first && input.rendered_first {
                     first = false;
                     Some(&mut self.render_object_tree)
@@ -562,7 +557,7 @@ impl ScenePipeline {
                 self.layer_tree.render_overlays(
                     &mut self.recorder,
                     scene,
-                    &paint_region,
+                    &region,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -574,7 +569,7 @@ impl ScenePipeline {
                 self.layer_tree.render(
                     &mut self.recorder,
                     scene,
-                    &paint_region,
+                    &region,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -732,23 +727,18 @@ impl ScenePipeline {
             }
         }
 
-        let paint_region = region.clone();
-        let split_rects: Vec<Rect> = if !region.full_frame && region.rects().len() > 1 {
-            region
+        let render_result = if should_split_dirty_rects(&region) {
+            let mut first = true;
+            let mut result = Ok(());
+            // GPU 路径同样直接遍历原矩形，保持与 CPU 录制路径一致。
+            for rect in region
                 .rects()
                 .iter()
                 .copied()
-                .filter(|r| r.w > 0.0 && r.h > 0.0)
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let render_result = if !split_rects.is_empty() {
-            let mut first = true;
-            let mut result = Ok(());
-            for rect in &split_rects {
-                engine.canvas_2d().push_clip(*rect);
-                let sub_region = DirtyRegion::area(*rect);
+                .filter(|rect| positive_dirty_rect(*rect))
+            {
+                engine.canvas_2d().push_clip(rect);
+                let sub_region = DirtyRegion::area(rect);
                 let render_objects = if first && input.rendered_first {
                     first = false;
                     Some(&mut self.render_object_tree)
@@ -804,7 +794,7 @@ impl ScenePipeline {
                 self.layer_tree.render_overlays(
                     engine,
                     scene,
-                    &paint_region,
+                    &region,
                     input.font,
                     input.font_service,
                     input.image_service,
@@ -816,7 +806,7 @@ impl ScenePipeline {
                 self.layer_tree.render(
                     engine,
                     scene,
-                    &paint_region,
+                    &region,
                     input.font,
                     input.font_service,
                     input.image_service,
