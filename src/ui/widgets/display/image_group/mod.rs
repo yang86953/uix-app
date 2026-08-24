@@ -1,6 +1,8 @@
 //! ImageGroup — a keyboard-friendly image gallery with an in-window preview.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::fmt::Write;
+use std::sync::OnceLock;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
@@ -11,8 +13,449 @@ use crate::ui::{
     WidgetId, WidgetTree,
 };
 use crate::widget;
-// 引入同一 display Module 拥有的图片浮层调色板。
-use super::image::presentation::ImageOverlayPalette;
+// 引入同一 display Module 拥有的 UIX 图片视觉角色与解析结果。
+use super::image::presentation::{
+    ImageColorRole, ImageOverlayPalette, ImageOverlayVisual, ImageRadiusRole, image_overlay_visual,
+};
+
+// 保存由 UIX 声明的 ImageGroup 默认固有尺寸。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupDefaultsVisual {
+    width: f32,
+    height: f32,
+}
+
+// 保存由 UIX 声明的内嵌画廊布局与焦点圈几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupGalleryVisual {
+    strip_height: f32,
+    strip_min_height: f32,
+    strip_min_width: f32,
+    strip_max_ratio: f32,
+    navigation_width: f32,
+    navigation_width_ratio: f32,
+    navigation_min_width: f32,
+    border_width: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+}
+
+// 保存由 UIX 声明的模态预览布局与覆盖层级。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupPreviewVisual {
+    strip_height: f32,
+    strip_min_height: f32,
+    strip_min_width: f32,
+    strip_max_ratio: f32,
+    margin_ratio: f32,
+    margin_min: f32,
+    margin_max: f32,
+    navigation_width: f32,
+    navigation_width_ratio: f32,
+    navigation_min_width: f32,
+    close_size: f32,
+    close_margin: f32,
+    available_center_ratio: f32,
+    panel_radius: f32,
+    counter_y: f32,
+    counter_height: f32,
+    z_index: i32,
+}
+
+// 保存由 UIX 声明的缩略图条带、间距与选中边框。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupThumbnailVisual {
+    inline_max_size: f32,
+    preview_max_size: f32,
+    padding: f32,
+    padding_strip_ratio: f32,
+    min_size: f32,
+    gap: f32,
+    gap_size_ratio: f32,
+    center_ratio: f32,
+    selected_stroke_width: f32,
+    normal_stroke_width: f32,
+}
+
+// 保存由 UIX 声明的导航、空状态与预览控制图标及文案。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupControlsVisual {
+    navigation_diameter: f32,
+    navigation_icon_size: f32,
+    navigation_icon_ratio: f32,
+    close_icon_size: f32,
+    close_icon_ratio: f32,
+    empty_icon_size: f32,
+    empty_icon_ratio: f32,
+    previous_icon: &'static str,
+    next_icon: &'static str,
+    close_icon: &'static str,
+    image_icon: &'static str,
+    loading_label: &'static str,
+    empty_label: &'static str,
+    unavailable_label: &'static str,
+}
+
+// 保存由 UIX 声明的 ImageGroup 主题角色与圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupPaletteVisual {
+    background: ImageColorRole,
+    text_secondary: ImageColorRole,
+    primary: ImageColorRole,
+    fill: ImageColorRole,
+    overlay: ImageOverlayVisual,
+    frame_radius: ImageRadiusRole,
+    thumbnail_radius: ImageRadiusRole,
+}
+
+// 完整视觉配置由全部 ImageGroup 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageGroupVisual {
+    defaults: ImageGroupDefaultsVisual,
+    gallery: ImageGroupGalleryVisual,
+    preview: ImageGroupPreviewVisual,
+    thumbnail: ImageGroupThumbnailVisual,
+    controls: ImageGroupControlsVisual,
+    palette: ImageGroupPaletteVisual,
+}
+
+// 保存 ImageGroup 每帧只解析一次的主题值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedImageGroupVisual {
+    background: Color,
+    text_secondary: Color,
+    primary: Color,
+    fill: Color,
+    overlay: ImageOverlayPalette,
+    frame_radius: f32,
+    thumbnail_radius: f32,
+}
+
+impl ImageGroupVisual {
+    // 一次读取当前主题，避免每个缩略图和控制器重复解析 token。
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedImageGroupVisual {
+        ResolvedImageGroupVisual {
+            background: self.palette.background.resolve(tokens),
+            text_secondary: self.palette.text_secondary.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            fill: self.palette.fill.resolve(tokens),
+            overlay: ImageOverlayPalette::resolve(tokens, self.palette.overlay),
+            frame_radius: self.palette.frame_radius.resolve(tokens),
+            thumbnail_radius: self.palette.thumbnail_radius.resolve(tokens),
+        }
+    }
+}
+
+// 缓存预览计数文案，索引未变时不再逐帧 format! 分配。
+#[derive(Debug)]
+struct ImageGroupCounterCache {
+    current: usize,
+    count: usize,
+    text: String,
+}
+
+impl Default for ImageGroupCounterCache {
+    fn default() -> Self {
+        Self {
+            current: usize::MAX,
+            count: usize::MAX,
+            text: String::new(),
+        }
+    }
+}
+
+// 组合 UIX 声明的 ImageGroup 默认尺寸。
+const fn image_group_defaults(width: f32, height: f32) -> ImageGroupDefaultsVisual {
+    ImageGroupDefaultsVisual { width, height }
+}
+
+// 组合 UIX 声明的内嵌画廊视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_group_gallery(
+    strip_height: f32,
+    strip_min_height: f32,
+    strip_min_width: f32,
+    strip_max_ratio: f32,
+    navigation_width: f32,
+    navigation_width_ratio: f32,
+    navigation_min_width: f32,
+    border_width: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+) -> ImageGroupGalleryVisual {
+    ImageGroupGalleryVisual {
+        strip_height,
+        strip_min_height,
+        strip_min_width,
+        strip_max_ratio,
+        navigation_width,
+        navigation_width_ratio,
+        navigation_min_width,
+        border_width,
+        focus_inset,
+        focus_stroke_width,
+    }
+}
+
+// 组合 UIX 声明的模态预览视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_group_preview(
+    strip_height: f32,
+    strip_min_height: f32,
+    strip_min_width: f32,
+    strip_max_ratio: f32,
+    margin_ratio: f32,
+    margin_min: f32,
+    margin_max: f32,
+    navigation_width: f32,
+    navigation_width_ratio: f32,
+    navigation_min_width: f32,
+    close_size: f32,
+    close_margin: f32,
+    available_center_ratio: f32,
+    panel_radius: f32,
+    counter_y: f32,
+    counter_height: f32,
+    z_index: f32,
+) -> ImageGroupPreviewVisual {
+    ImageGroupPreviewVisual {
+        strip_height,
+        strip_min_height,
+        strip_min_width,
+        strip_max_ratio,
+        margin_ratio,
+        margin_min,
+        margin_max,
+        navigation_width,
+        navigation_width_ratio,
+        navigation_min_width,
+        close_size,
+        close_margin,
+        available_center_ratio,
+        panel_radius,
+        counter_y,
+        counter_height,
+        z_index: z_index as i32,
+    }
+}
+
+// 组合 UIX 声明的缩略图视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_group_thumbnail(
+    inline_max_size: f32,
+    preview_max_size: f32,
+    padding: f32,
+    padding_strip_ratio: f32,
+    min_size: f32,
+    gap: f32,
+    gap_size_ratio: f32,
+    center_ratio: f32,
+    selected_stroke_width: f32,
+    normal_stroke_width: f32,
+) -> ImageGroupThumbnailVisual {
+    ImageGroupThumbnailVisual {
+        inline_max_size,
+        preview_max_size,
+        padding,
+        padding_strip_ratio,
+        min_size,
+        gap,
+        gap_size_ratio,
+        center_ratio,
+        selected_stroke_width,
+        normal_stroke_width,
+    }
+}
+
+// 组合 UIX 声明的图标、控制器与静态文案。
+#[allow(clippy::too_many_arguments)]
+const fn image_group_controls(
+    navigation_diameter: f32,
+    navigation_icon_size: f32,
+    navigation_icon_ratio: f32,
+    close_icon_size: f32,
+    close_icon_ratio: f32,
+    empty_icon_size: f32,
+    empty_icon_ratio: f32,
+    previous_icon: &'static str,
+    next_icon: &'static str,
+    close_icon: &'static str,
+    image_icon: &'static str,
+    loading_label: &'static str,
+    empty_label: &'static str,
+    unavailable_label: &'static str,
+) -> ImageGroupControlsVisual {
+    ImageGroupControlsVisual {
+        navigation_diameter,
+        navigation_icon_size,
+        navigation_icon_ratio,
+        close_icon_size,
+        close_icon_ratio,
+        empty_icon_size,
+        empty_icon_ratio,
+        previous_icon,
+        next_icon,
+        close_icon,
+        image_icon,
+        loading_label,
+        empty_label,
+        unavailable_label,
+    }
+}
+
+// 组合 UIX 声明的主题角色。
+#[allow(clippy::too_many_arguments)]
+const fn image_group_palette(
+    background: ImageColorRole,
+    text_secondary: ImageColorRole,
+    primary: ImageColorRole,
+    fill: ImageColorRole,
+    overlay: ImageOverlayVisual,
+    frame_radius: ImageRadiusRole,
+    thumbnail_radius: ImageRadiusRole,
+) -> ImageGroupPaletteVisual {
+    ImageGroupPaletteVisual {
+        background,
+        text_secondary,
+        primary,
+        fill,
+        overlay,
+        frame_radius,
+        thumbnail_radius,
+    }
+}
+
+// 组合 UIX 声明的完整 ImageGroup 视觉配置。
+const fn image_group_visual(
+    defaults: ImageGroupDefaultsVisual,
+    gallery: ImageGroupGalleryVisual,
+    preview: ImageGroupPreviewVisual,
+    thumbnail: ImageGroupThumbnailVisual,
+    controls: ImageGroupControlsVisual,
+    palette: ImageGroupPaletteVisual,
+) -> ImageGroupVisual {
+    ImageGroupVisual {
+        defaults,
+        gallery,
+        preview,
+        thumbnail,
+        controls,
+        palette,
+    }
+}
+
+// 向 UIX 提供受限表达式不能直接写入的文案、图标与主题角色。
+const fn image_group_previous_icon() -> &'static str {
+    "chevron-left"
+}
+const fn image_group_next_icon() -> &'static str {
+    "chevron-right"
+}
+const fn image_group_close_icon() -> &'static str {
+    "x"
+}
+const fn image_group_image_icon() -> &'static str {
+    "image"
+}
+const fn image_group_loading_label() -> &'static str {
+    "图片加载中…"
+}
+const fn image_group_empty_label() -> &'static str {
+    "暂无图片"
+}
+const fn image_group_unavailable_label() -> &'static str {
+    "图片不可用"
+}
+const fn image_group_container_color() -> ImageColorRole {
+    ImageColorRole::Container
+}
+const fn image_group_secondary_text_color() -> ImageColorRole {
+    ImageColorRole::TextSecondary
+}
+const fn image_group_primary_color() -> ImageColorRole {
+    ImageColorRole::Primary
+}
+const fn image_group_fill_color() -> ImageColorRole {
+    ImageColorRole::FillTertiary
+}
+const fn image_group_mask_color() -> ImageColorRole {
+    ImageColorRole::Mask
+}
+const fn image_group_overlay_color() -> ImageColorRole {
+    ImageColorRole::Overlay
+}
+const fn image_group_text_color() -> ImageColorRole {
+    ImageColorRole::Text
+}
+const fn image_group_border_color() -> ImageColorRole {
+    ImageColorRole::BorderSecondary
+}
+const fn image_group_body_radius() -> ImageRadiusRole {
+    ImageRadiusRole::Body
+}
+const fn image_group_small_radius() -> ImageRadiusRole {
+    ImageRadiusRole::Small
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_IMAGE_GROUP_VISUAL: ImageGroupVisual = image_group_visual(
+    image_group_defaults(320.0, 220.0),
+    image_group_gallery(56.0, 72.0, 24.0, 0.4, 36.0, 1.0 / 3.0, 4.0, 1.0, 1.0, 2.0),
+    image_group_preview(
+        72.0,
+        120.0,
+        32.0,
+        0.25,
+        0.06,
+        4.0,
+        40.0,
+        48.0,
+        1.0 / 3.0,
+        4.0,
+        40.0,
+        12.0,
+        0.5,
+        4.0,
+        8.0,
+        24.0,
+        1100.0,
+    ),
+    image_group_thumbnail(44.0, 52.0, 6.0, 0.2, 4.0, 6.0, 0.25, 0.5, 2.0, 1.0),
+    image_group_controls(
+        30.0,
+        16.0,
+        0.6,
+        20.0,
+        0.6,
+        16.0,
+        0.5,
+        "chevron-left",
+        "chevron-right",
+        "x",
+        "image",
+        "图片加载中…",
+        "暂无图片",
+        "图片不可用",
+    ),
+    image_group_palette(
+        ImageColorRole::Container,
+        ImageColorRole::TextSecondary,
+        ImageColorRole::Primary,
+        ImageColorRole::FillTertiary,
+        image_overlay_visual(
+            ImageColorRole::Mask,
+            ImageColorRole::Overlay,
+            ImageColorRole::Text,
+            ImageColorRole::BorderSecondary,
+            0.5,
+        ),
+        ImageRadiusRole::Body,
+        ImageRadiusRole::Small,
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_IMAGE_GROUP_VISUAL: OnceLock<ImageGroupVisual> = OnceLock::new();
 
 #[derive(Debug)]
 struct GalleryGeometry {
@@ -72,10 +515,17 @@ widget! {
         last_surface_h: Cell<f32>,
         /// 关闭预览后的首帧仍需清除上一帧覆盖的整个 surface。
         preview_painted: Cell<bool>,
+        #[snapshot(skip)]
+        counter_cache: RefCell<ImageGroupCounterCache>,
+        #[snapshot(skip)]
+        visual: &'static ImageGroupVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(320.0, 220.0))
+        constraints.clamp(Size::new(
+            self.visual.defaults.width,
+            self.visual.defaults.height,
+        ))
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.images.is_empty()) }
@@ -140,7 +590,7 @@ widget! {
         self.preview_open.then(|| {
             OverlayEntry::new(id, OverlayKind::Modal)
                 .bounds(self.surface_rect(frame))
-                .z_index(1100)
+                .z_index(self.visual.preview.z_index)
                 .dismiss_on_outside(false)
         })
     }
@@ -154,10 +604,16 @@ widget! {
 
         let frame = Self::normalized_frame(frame);
         self.last_frame.set(Some(frame));
-        self.paint_gallery(frame, ctx, tree);
+        // 整个画廊与预览共享一次主题解析，缩略图数量不再放大 token 读取成本。
+        let resolved = self.visual.resolve(ctx.tokens());
+        self.paint_gallery(frame, ctx, tree, &resolved);
 
         if self.preview_open {
-            self.paint_preview(ctx, Rect::new(0.0, 0.0, surface_w, surface_h));
+            self.paint_preview(
+                ctx,
+                Rect::new(0.0, 0.0, surface_w, surface_h),
+                &resolved,
+            );
             self.preview_painted.set(true);
         } else {
             self.preview_painted.set(false);
@@ -165,8 +621,9 @@ widget! {
     }
 }
 
-// 把画廊交互、资源绘制与预览内核融合为 UIX 声明的单一根节点。
-fn build_image_group_view(kernel: ImageGroup) -> ViewNode {
+// 把画廊交互、资源绘制与 UIX 视觉表融合为单一根节点。
+fn build_image_group_view(mut kernel: ImageGroup, declared_visual: ImageGroupVisual) -> ViewNode {
+    kernel.visual = UIX_IMAGE_GROUP_VISUAL.get_or_init(|| declared_visual);
     ViewNode::leaf(kernel)
 }
 
@@ -190,9 +647,6 @@ impl Default for ImageGroup {
 mod tests;
 
 impl ImageGroup {
-    const INLINE_THUMB_STRIP_HEIGHT: f32 = 56.0;
-    const PREVIEW_THUMB_STRIP_HEIGHT: f32 = 72.0;
-
     /// 创建没有图片、起始索引为零且预览关闭的图片组。
     pub fn new() -> Self {
         Self {
@@ -206,6 +660,8 @@ impl ImageGroup {
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
             preview_painted: Cell::new(false),
+            counter_cache: RefCell::new(ImageGroupCounterCache::default()),
+            visual: &DEFAULT_IMAGE_GROUP_VISUAL,
         }
     }
 
@@ -267,7 +723,7 @@ impl ImageGroup {
 
         if self.preview_open {
             let surface = self.surface_rect(frame);
-            let geometry = Self::preview_geometry(surface, self.images.len(), self.current_index());
+            let geometry = self.preview_geometry(surface, self.images.len(), self.current_index());
             let surface_pos = Point::new(pos.x + frame.x, pos.y + frame.y);
 
             if geometry.close.contains(surface_pos) {
@@ -301,7 +757,7 @@ impl ImageGroup {
         }
 
         let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
-        let geometry = Self::gallery_geometry(local_frame, self.images.len(), self.current_index());
+        let geometry = self.gallery_geometry(local_frame, self.images.len(), self.current_index());
         if geometry.previous.is_some_and(|rect| rect.contains(pos)) {
             let _ = self.select_previous();
             return EventResult::Handled;
@@ -383,16 +839,23 @@ impl ImageGroup {
         }
     }
 
-    fn gallery_geometry(frame: Rect, image_count: usize, current: usize) -> GalleryGeometry {
-        let strip_height = if image_count > 1 && frame.h >= 72.0 && frame.w >= 24.0 {
-            Self::INLINE_THUMB_STRIP_HEIGHT.min(frame.h * 0.4)
+    fn gallery_geometry(&self, frame: Rect, image_count: usize, current: usize) -> GalleryGeometry {
+        let gallery = self.visual.gallery;
+        let strip_height = if image_count > 1
+            && frame.h >= gallery.strip_min_height
+            && frame.w >= gallery.strip_min_width
+        {
+            gallery.strip_height.min(frame.h * gallery.strip_max_ratio)
         } else {
             0.0
         };
         let main = Rect::new(frame.x, frame.y, frame.w, (frame.h - strip_height).max(0.0));
         let strip = Rect::new(frame.x, frame.y + main.h, frame.w, strip_height);
-        let navigation_width = 36.0_f32.min(main.w / 3.0).min(main.h);
-        let navigation = image_count > 1 && navigation_width >= 4.0;
+        let navigation_width = gallery
+            .navigation_width
+            .min(main.w * gallery.navigation_width_ratio)
+            .min(main.h);
+        let navigation = image_count > 1 && navigation_width >= gallery.navigation_min_width;
         let previous_slot = Rect::new(main.x, main.y, navigation_width, main.h);
         let next_slot = Rect::new(
             main.x + main.w - navigation_width,
@@ -402,33 +865,58 @@ impl ImageGroup {
         );
         GalleryGeometry {
             main,
-            previous: navigation.then(|| Self::navigation_control_rect(previous_slot)),
-            next: navigation.then(|| Self::navigation_control_rect(next_slot)),
-            thumbnails: Self::thumbnail_layout(strip, image_count, current, 44.0),
+            previous: navigation.then(|| self.navigation_control_rect(previous_slot)),
+            next: navigation.then(|| self.navigation_control_rect(next_slot)),
+            thumbnails: self.thumbnail_layout(
+                strip,
+                image_count,
+                current,
+                self.visual.thumbnail.inline_max_size,
+            ),
         }
     }
 
-    fn preview_geometry(surface: Rect, image_count: usize, current: usize) -> PreviewGeometry {
-        let thumbnail_height = if image_count > 1 && surface.h >= 120.0 && surface.w >= 32.0 {
-            Self::PREVIEW_THUMB_STRIP_HEIGHT.min(surface.h * 0.25)
+    fn preview_geometry(
+        &self,
+        surface: Rect,
+        image_count: usize,
+        current: usize,
+    ) -> PreviewGeometry {
+        let preview_visual = self.visual.preview;
+        let thumbnail_height = if image_count > 1
+            && surface.h >= preview_visual.strip_min_height
+            && surface.w >= preview_visual.strip_min_width
+        {
+            preview_visual
+                .strip_height
+                .min(surface.h * preview_visual.strip_max_ratio)
         } else {
             0.0
         };
         let content_height = (surface.h - thumbnail_height).max(0.0);
         let shortest = surface.w.min(content_height).max(0.0);
-        let margin = (shortest * 0.06).clamp(4.0, 40.0);
+        let margin = (shortest * preview_visual.margin_ratio)
+            .clamp(preview_visual.margin_min, preview_visual.margin_max);
         let preview = Rect::new(
             surface.x + margin,
             surface.y + margin,
             (surface.w - margin * 2.0).max(0.0),
             (content_height - margin * 2.0).max(0.0),
         );
-        let navigation_width = 48.0_f32.min(surface.w / 3.0).min(content_height);
-        let navigation = image_count > 1 && navigation_width >= 4.0;
-        let close_size = 40.0_f32.min(surface.w).min(surface.h).max(0.0);
-        let close_margin = 12.0_f32
-            .min((surface.w - close_size).max(0.0) * 0.5)
-            .min((surface.h - close_size).max(0.0) * 0.5);
+        let navigation_width = preview_visual
+            .navigation_width
+            .min(surface.w * preview_visual.navigation_width_ratio)
+            .min(content_height);
+        let navigation = image_count > 1 && navigation_width >= preview_visual.navigation_min_width;
+        let close_size = preview_visual
+            .close_size
+            .min(surface.w)
+            .min(surface.h)
+            .max(0.0);
+        let close_margin = preview_visual
+            .close_margin
+            .min((surface.w - close_size).max(0.0) * preview_visual.available_center_ratio)
+            .min((surface.h - close_size).max(0.0) * preview_visual.available_center_ratio);
         let strip = Rect::new(
             surface.x,
             surface.y + content_height,
@@ -444,19 +932,25 @@ impl ImageGroup {
         );
         PreviewGeometry {
             preview,
-            previous: navigation.then(|| Self::navigation_control_rect(previous_slot)),
-            next: navigation.then(|| Self::navigation_control_rect(next_slot)),
+            previous: navigation.then(|| self.navigation_control_rect(previous_slot)),
+            next: navigation.then(|| self.navigation_control_rect(next_slot)),
             close: Rect::new(
                 surface.x + surface.w - close_size - close_margin,
                 surface.y + close_margin,
                 close_size,
                 close_size,
             ),
-            thumbnails: Self::thumbnail_layout(strip, image_count, current, 52.0),
+            thumbnails: self.thumbnail_layout(
+                strip,
+                image_count,
+                current,
+                self.visual.thumbnail.preview_max_size,
+            ),
         }
     }
 
     fn thumbnail_layout(
+        &self,
         strip: Rect,
         image_count: usize,
         current: usize,
@@ -465,14 +959,17 @@ impl ImageGroup {
         if image_count == 0 || strip.w <= 0.0 || strip.h <= 0.0 {
             return ThumbnailLayout::default();
         }
-        let padding = 6.0_f32.min(strip.h * 0.2);
+        let thumbnail = self.visual.thumbnail;
+        let padding = thumbnail
+            .padding
+            .min(strip.h * thumbnail.padding_strip_ratio);
         let size = maximum_size
             .min((strip.h - padding * 2.0).max(0.0))
             .min(strip.w);
-        if size < 4.0 {
+        if size < thumbnail.min_size {
             return ThumbnailLayout::default();
         }
-        let gap = 6.0_f32.min(size * 0.25);
+        let gap = thumbnail.gap.min(size * thumbnail.gap_size_ratio);
         let capacity = (((strip.w + gap) / (size + gap)).floor() as usize)
             .max(1)
             .min(image_count);
@@ -480,8 +977,8 @@ impl ImageGroup {
             .saturating_sub(capacity / 2)
             .min(image_count - capacity);
         let total_width = size * capacity as f32 + gap * capacity.saturating_sub(1) as f32;
-        let x = strip.x + (strip.w - total_width).max(0.0) * 0.5;
-        let y = strip.y + (strip.h - size).max(0.0) * 0.5;
+        let x = strip.x + (strip.w - total_width).max(0.0) * self.visual.thumbnail.center_ratio;
+        let y = strip.y + (strip.h - size).max(0.0) * self.visual.thumbnail.center_ratio;
         ThumbnailLayout {
             start,
             count: capacity,
@@ -492,51 +989,71 @@ impl ImageGroup {
         }
     }
 
-    fn navigation_control_rect(slot: Rect) -> Rect {
-        let diameter = 30.0_f32.min(slot.w).min(slot.h).max(0.0);
+    fn navigation_control_rect(&self, slot: Rect) -> Rect {
+        let diameter = self
+            .visual
+            .controls
+            .navigation_diameter
+            .min(slot.w)
+            .min(slot.h)
+            .max(0.0);
         Rect::new(
-            slot.x + (slot.w - diameter) * 0.5,
-            slot.y + (slot.h - diameter) * 0.5,
+            slot.x + (slot.w - diameter) * self.visual.thumbnail.center_ratio,
+            slot.y + (slot.h - diameter) * self.visual.thumbnail.center_ratio,
             diameter,
             diameter,
         )
     }
 
-    fn paint_gallery(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
+    fn paint_gallery(
+        &self,
+        frame: Rect,
+        ctx: &mut PaintContext,
+        tree: &WidgetTree,
+        resolved: &ResolvedImageGroupVisual,
+    ) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let radius = ctx.tokens().border_radius().min(frame.w.min(frame.h) * 0.5);
+        let radius = resolved
+            .frame_radius
+            .min(frame.w.min(frame.h) * self.visual.thumbnail.center_ratio);
         ctx.push_clip(frame);
-        ctx.fill_rect(
-            frame,
-            ctx.tokens().color_bg_container(),
-            Some(Radius::uniform(radius)),
-        );
+        ctx.fill_rect(frame, resolved.background, Some(Radius::uniform(radius)));
         ctx.stroke_rect(
             frame,
-            ctx.tokens().color_border_secondary(),
-            1.0,
+            resolved.overlay.border,
+            self.visual.gallery.border_width,
             Some(Radius::uniform(radius)),
         );
 
-        let geometry = Self::gallery_geometry(frame, self.images.len(), self.current_index());
+        let geometry = self.gallery_geometry(frame, self.images.len(), self.current_index());
         if let Some(path) = self.images.get(self.current_index()) {
-            self.paint_image(ctx, path, geometry.main, true, "图片加载中…");
-        } else {
-            // 空状态说明使用主题派生的紧凑字号。
-            let compact_font = ImageOverlayPalette::resolve(ctx.tokens()).compact_font;
-            ctx.text_center(
-                "暂无图片",
+            self.paint_image(
+                ctx,
+                path,
                 geometry.main,
-                ctx.tokens().color_text_secondary(),
-                compact_font,
+                true,
+                self.visual.controls.loading_label,
+                resolved,
+            );
+        } else {
+            ctx.text_center(
+                self.visual.controls.empty_label,
+                geometry.main,
+                resolved.text_secondary,
+                resolved.overlay.compact_font,
             );
         }
-        self.paint_controls(ctx, &geometry);
+        self.paint_controls(ctx, &geometry, resolved);
 
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = self
+                .visual
+                .gallery
+                .focus_inset
+                .min(frame.w * self.visual.thumbnail.center_ratio)
+                .min(frame.h * self.visual.thumbnail.center_ratio);
             ctx.stroke_rect(
                 Rect::new(
                     frame.x + inset,
@@ -544,121 +1061,186 @@ impl ImageGroup {
                     (frame.w - inset * 2.0).max(0.0),
                     (frame.h - inset * 2.0).max(0.0),
                 ),
-                ctx.tokens().color_primary(),
-                2.0,
+                resolved.primary,
+                self.visual.gallery.focus_stroke_width,
                 Some(Radius::uniform(radius)),
             );
         }
         ctx.pop_clip();
     }
 
-    fn paint_controls(&self, ctx: &mut PaintContext, geometry: &GalleryGeometry) {
-        let text_color = ctx.tokens().color_text();
+    fn paint_controls(
+        &self,
+        ctx: &mut PaintContext,
+        geometry: &GalleryGeometry,
+        resolved: &ResolvedImageGroupVisual,
+    ) {
         if let Some(previous) = geometry.previous {
-            Self::paint_navigation_control(ctx, previous, "chevron-left", text_color);
+            self.paint_navigation_control(
+                ctx,
+                previous,
+                self.visual.controls.previous_icon,
+                resolved.overlay.foreground,
+                resolved,
+            );
         }
         if let Some(next) = geometry.next {
-            Self::paint_navigation_control(ctx, next, "chevron-right", text_color);
+            self.paint_navigation_control(
+                ctx,
+                next,
+                self.visual.controls.next_icon,
+                resolved.overlay.foreground,
+                resolved,
+            );
         }
         let current = self.current_index();
         for (index, rect) in geometry.thumbnails.iter() {
             if let Some(path) = self.images.get(index) {
-                self.paint_image(ctx, path, rect, false, "");
+                self.paint_image(ctx, path, rect, false, "", resolved);
             }
             ctx.stroke_rect(
                 rect,
                 if index == current {
-                    ctx.tokens().color_primary()
+                    resolved.primary
                 } else {
-                    ctx.tokens().color_border_secondary()
+                    resolved.overlay.border
                 },
-                if index == current { 2.0 } else { 1.0 },
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                if index == current {
+                    self.visual.thumbnail.selected_stroke_width
+                } else {
+                    self.visual.thumbnail.normal_stroke_width
+                },
+                Some(Radius::uniform(resolved.thumbnail_radius)),
             );
         }
     }
 
-    fn paint_preview(&self, ctx: &mut PaintContext, surface: Rect) {
+    fn paint_preview(
+        &self,
+        ctx: &mut PaintContext,
+        surface: Rect,
+        resolved: &ResolvedImageGroupVisual,
+    ) {
         let surface = Self::normalized_frame(surface);
         if surface.w <= 0.0 || surface.h <= 0.0 || self.images.is_empty() {
             return;
         }
-        let geometry = Self::preview_geometry(surface, self.images.len(), self.current_index());
-        // 在组件主题作用域内解析一次预览调色板。
-        let palette = ImageOverlayPalette::resolve(ctx.tokens());
+        let geometry = self.preview_geometry(surface, self.images.len(), self.current_index());
         ctx.push_clip(surface);
         // 全窗口背景使用主题语义遮罩。
-        ctx.fill_rect(surface, palette.mask, None);
+        ctx.fill_rect(surface, resolved.overlay.mask, None);
         if geometry.preview.w > 0.0 && geometry.preview.h > 0.0 {
             // 预览占位区域使用主题浮层表面。
             ctx.fill_rect(
                 geometry.preview,
-                palette.surface,
-                Some(Radius::uniform(4.0)),
+                resolved.overlay.surface,
+                Some(Radius::uniform(self.visual.preview.panel_radius)),
             );
             if let Some(path) = self.images.get(self.current_index()) {
-                self.paint_image(ctx, path, geometry.preview, true, "图片不可用");
+                self.paint_image(
+                    ctx,
+                    path,
+                    geometry.preview,
+                    true,
+                    self.visual.controls.unavailable_label,
+                    resolved,
+                );
             }
         }
 
         if let Some(previous) = geometry.previous {
             // 导航箭头使用浮层正文前景。
-            Self::paint_navigation_control(ctx, previous, "chevron-left", palette.foreground);
+            self.paint_navigation_control(
+                ctx,
+                previous,
+                self.visual.controls.previous_icon,
+                resolved.overlay.foreground,
+                resolved,
+            );
         }
         if let Some(next) = geometry.next {
             // 导航箭头使用浮层正文前景。
-            Self::paint_navigation_control(ctx, next, "chevron-right", palette.foreground);
+            self.paint_navigation_control(
+                ctx,
+                next,
+                self.visual.controls.next_icon,
+                resolved.overlay.foreground,
+                resolved,
+            );
         }
         let current = self.current_index();
         for (index, rect) in geometry.thumbnails.iter() {
             if let Some(path) = self.images.get(index) {
-                self.paint_image(ctx, path, rect, false, "");
+                self.paint_image(ctx, path, rect, false, "", resolved);
             }
             ctx.stroke_rect(
                 rect,
                 if index == current {
-                    ctx.tokens().color_primary()
+                    resolved.primary
                 } else {
                     // 未选缩略图使用主题浮层弱边界。
-                    palette.border
+                    resolved.overlay.border
                 },
-                if index == current { 2.0 } else { 1.0 },
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                if index == current {
+                    self.visual.thumbnail.selected_stroke_width
+                } else {
+                    self.visual.thumbnail.normal_stroke_width
+                },
+                Some(Radius::uniform(resolved.thumbnail_radius)),
             );
         }
 
         if geometry.close.w > 0.0 && geometry.close.h > 0.0 {
             ctx.fill_circle(
-                geometry.close.x + geometry.close.w * 0.5,
-                geometry.close.y + geometry.close.h * 0.5,
-                geometry.close.w.min(geometry.close.h) * 0.5,
+                geometry.close.x + geometry.close.w * self.visual.preview.available_center_ratio,
+                geometry.close.y + geometry.close.h * self.visual.preview.available_center_ratio,
+                geometry.close.w.min(geometry.close.h) * self.visual.preview.available_center_ratio,
                 // 关闭按钮使用主题浮层表面。
-                palette.surface,
+                resolved.overlay.surface,
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
+                self.visual.controls.close_icon,
                 geometry.close,
                 // 关闭图标使用主题正文前景。
-                palette.foreground,
-                20.0_f32.min(geometry.close.w.min(geometry.close.h) * 0.6),
+                resolved.overlay.foreground,
+                self.visual.controls.close_icon_size.min(
+                    geometry.close.w.min(geometry.close.h) * self.visual.controls.close_icon_ratio,
+                ),
             );
         }
         let counter = Rect::new(
             surface.x,
-            surface.y + 8.0,
+            surface.y + self.visual.preview.counter_y,
             surface.w,
-            24.0_f32.min(surface.h),
+            self.visual.preview.counter_height.min(surface.h),
         );
+        // 只在索引或图片数量变化时改写计数文案，并复用 String 容量。
+        let current = self.current_index();
+        let count = self.images.len();
+        self.refresh_counter_text(current, count);
+        let counter_cache = self.counter_cache.borrow();
         ctx.text_center(
-            &format!("{} / {}", self.current_index() + 1, self.images.len()),
+            &counter_cache.text,
             counter,
             // 计数文本使用主题正文前景。
-            palette.foreground,
+            resolved.overlay.foreground,
             // 使用主题派生的紧凑字号。
-            palette.compact_font,
+            resolved.overlay.compact_font,
         );
         ctx.pop_clip();
+    }
+
+    // 只在索引事实变化时刷新预览计数，并保留已有 String 容量。
+    fn refresh_counter_text(&self, current: usize, count: usize) {
+        let mut counter_cache = self.counter_cache.borrow_mut();
+        if counter_cache.current == current && counter_cache.count == count {
+            return;
+        }
+        counter_cache.current = current;
+        counter_cache.count = count;
+        counter_cache.text.clear();
+        let _ = write!(&mut counter_cache.text, "{} / {}", current + 1, count);
     }
 
     fn paint_image(
@@ -668,11 +1250,12 @@ impl ImageGroup {
         frame: Rect,
         fit: bool,
         unavailable_label: &str,
+        resolved: &ResolvedImageGroupVisual,
     ) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        ctx.fill_rect(frame, ctx.tokens().color_fill_tertiary(), None);
+        ctx.fill_rect(frame, resolved.fill, None);
         // 图片编解码 capability 启用时才解析画廊中的文件路径。
         #[cfg(feature = "image-codecs")]
         // 能力开启时从应用级缓存取得位图句柄。
@@ -693,49 +1276,65 @@ impl ImageGroup {
                 ctx.draw_image_fill(handle, frame);
             }
         } else if !unavailable_label.is_empty() {
-            // 不可用说明复用主题派生的紧凑字号。
-            let compact_font = ImageOverlayPalette::resolve(ctx.tokens()).compact_font;
             ctx.text_center(
                 unavailable_label,
                 frame,
-                ctx.tokens().color_text_secondary(),
-                compact_font.min(frame.h.max(1.0)),
+                resolved.text_secondary,
+                resolved.overlay.compact_font.min(frame.h.max(1.0)),
             );
         } else {
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "image",
+                self.visual.controls.image_icon,
                 frame,
-                ctx.tokens().color_text_secondary(),
-                16.0_f32.min(frame.w.min(frame.h) * 0.5),
+                resolved.text_secondary,
+                self.visual
+                    .controls
+                    .empty_icon_size
+                    .min(frame.w.min(frame.h) * self.visual.controls.empty_icon_ratio),
             );
         }
     }
 
-    fn paint_navigation_control(ctx: &mut PaintContext, frame: Rect, icon: &str, color: Color) {
+    fn paint_navigation_control(
+        &self,
+        ctx: &mut PaintContext,
+        frame: Rect,
+        icon: &str,
+        color: Color,
+        resolved: &ResolvedImageGroupVisual,
+    ) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let diameter = 30.0_f32.min(frame.w).min(frame.h);
+        let diameter = self
+            .visual
+            .controls
+            .navigation_diameter
+            .min(frame.w)
+            .min(frame.h);
         let circle = Rect::new(
-            frame.x + (frame.w - diameter) * 0.5,
-            frame.y + (frame.h - diameter) * 0.5,
+            frame.x + (frame.w - diameter) * self.visual.thumbnail.center_ratio,
+            frame.y + (frame.h - diameter) * self.visual.thumbnail.center_ratio,
             diameter,
             diameter,
         );
         ctx.fill_circle(
-            circle.x + circle.w * 0.5,
-            circle.y + circle.h * 0.5,
-            diameter * 0.5,
+            circle.x + circle.w * self.visual.thumbnail.center_ratio,
+            circle.y + circle.h * self.visual.thumbnail.center_ratio,
+            diameter * self.visual.thumbnail.center_ratio,
             // 导航按钮使用主题浮层表面。
-            ctx.tokens().color_bg_overlay(),
+            resolved.overlay.surface,
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             icon,
             circle,
             color,
-            16.0_f32.min(diameter * 0.6),
+            self.visual
+                .controls
+                .navigation_icon_size
+                .min(diameter * self.visual.controls.navigation_icon_ratio),
         );
     }
 
@@ -760,6 +1359,7 @@ impl ImageGroup {
         });
         self.images = next.images;
         self.start_index = next.start_index;
+        self.visual = next.visual;
         let reconciled_index = selected_identity
             .as_ref()
             .and_then(|(path, occurrence)| {
@@ -777,5 +1377,24 @@ impl ImageGroup {
             self.focused = false;
         }
         self.pending_index.set(None);
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, i32) {
+        (
+            self.visual.defaults.width,
+            self.visual.defaults.height,
+            self.visual.gallery.strip_height,
+            self.visual.preview.strip_height,
+            self.visual.controls.navigation_diameter,
+            self.visual.preview.z_index,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 }

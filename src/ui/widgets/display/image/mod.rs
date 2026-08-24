@@ -9,6 +9,7 @@ mod state;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
@@ -22,10 +23,355 @@ use crate::ui::widget_runtime::paint_scope::current_paint_widget;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
 use crate::widget;
-// 引入同一 widget 目录拥有的图片浮层调色板。
-use self::presentation::ImageOverlayPalette;
+// 引入同一 widget 目录拥有的 UIX 图片视觉角色与解析结果。
+use self::presentation::{
+    ImageColorRole, ImageFontRole, ImageOverlayPalette, ImageOverlayVisual, image_overlay_visual,
+};
 // 引入 Image 私有加载生命周期状态。
 use self::state::ImageLoadState;
+
+// 保存由 UIX 声明的 Image 默认视觉与交互开关。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageDefaultsVisual {
+    radius: f32,
+    preview: bool,
+    fit: bool,
+    lazy: bool,
+}
+
+// 保存由 UIX 声明的缩略图占位、文字与图标几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageThumbnailVisual {
+    padding: f32,
+    radius_limit_ratio: f32,
+    border_width: f32,
+    icon_max_size: f32,
+    icon_frame_ratio: f32,
+    icon: &'static str,
+    error_label: &'static str,
+    label_font_size: f32,
+    label_line_height_ratio: f32,
+    center_ratio: f32,
+}
+
+// 保存由 UIX 声明的键盘焦点圈几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageFocusVisual {
+    inset: f32,
+    stroke_width: f32,
+}
+
+// 保存由 UIX 声明的缩放预览指示器几何与图标。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageIndicatorVisual {
+    min_shortest: f32,
+    badge_max_size: f32,
+    outer_padding: f32,
+    inset: f32,
+    center_ratio: f32,
+    icon_ratio: f32,
+    icon: &'static str,
+}
+
+// 保存由 UIX 声明的模态预览布局、文案、图标与覆盖层级。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImagePreviewVisual {
+    z_index: i32,
+    margin_max: f32,
+    margin_viewport_ratio: f32,
+    margin_min: f32,
+    min_extent: f32,
+    missing_label: &'static str,
+    missing_font: ImageFontRole,
+    close_right_extent: f32,
+    close_min_x: f32,
+    close_y: f32,
+    close_size: f32,
+    center_ratio: f32,
+    close_icon: &'static str,
+    close_icon_size: f32,
+}
+
+// 保存由 UIX 声明的 Image 主题语义角色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImagePaletteVisual {
+    fill: ImageColorRole,
+    text_secondary: ImageColorRole,
+    primary: ImageColorRole,
+    overlay: ImageOverlayVisual,
+}
+
+// 完整视觉配置由全部 Image 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageVisual {
+    defaults: ImageDefaultsVisual,
+    thumbnail: ImageThumbnailVisual,
+    focus: ImageFocusVisual,
+    indicator: ImageIndicatorVisual,
+    preview: ImagePreviewVisual,
+    palette: ImagePaletteVisual,
+}
+
+// 保存 Image 每帧只解析一次的主题值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedImageVisual {
+    fill: Color,
+    text_secondary: Color,
+    primary: Color,
+    overlay: ImageOverlayPalette,
+    missing_font_size: f32,
+}
+
+impl ImageVisual {
+    // 一次读取当前主题，避免缩略图、指示器、焦点圈和预览重复取 token。
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedImageVisual {
+        ResolvedImageVisual {
+            fill: self.palette.fill.resolve(tokens),
+            text_secondary: self.palette.text_secondary.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            overlay: ImageOverlayPalette::resolve(tokens, self.palette.overlay),
+            missing_font_size: self.preview.missing_font.resolve(tokens),
+        }
+    }
+}
+
+// 组合 UIX 声明的 Image 默认值。
+const fn image_defaults(radius: f32, preview: bool, fit: bool, lazy: bool) -> ImageDefaultsVisual {
+    ImageDefaultsVisual {
+        radius,
+        preview,
+        fit,
+        lazy,
+    }
+}
+
+// 组合 UIX 声明的缩略图占位视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_thumbnail(
+    padding: f32,
+    radius_limit_ratio: f32,
+    border_width: f32,
+    icon_max_size: f32,
+    icon_frame_ratio: f32,
+    icon: &'static str,
+    error_label: &'static str,
+    label_font_size: f32,
+    label_line_height_ratio: f32,
+    center_ratio: f32,
+) -> ImageThumbnailVisual {
+    ImageThumbnailVisual {
+        padding,
+        radius_limit_ratio,
+        border_width,
+        icon_max_size,
+        icon_frame_ratio,
+        icon,
+        error_label,
+        label_font_size,
+        label_line_height_ratio,
+        center_ratio,
+    }
+}
+
+// 组合 UIX 声明的焦点圈视觉。
+const fn image_focus(inset: f32, stroke_width: f32) -> ImageFocusVisual {
+    ImageFocusVisual {
+        inset,
+        stroke_width,
+    }
+}
+
+// 组合 UIX 声明的预览指示器视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_indicator(
+    min_shortest: f32,
+    badge_max_size: f32,
+    outer_padding: f32,
+    inset: f32,
+    center_ratio: f32,
+    icon_ratio: f32,
+    icon: &'static str,
+) -> ImageIndicatorVisual {
+    ImageIndicatorVisual {
+        min_shortest,
+        badge_max_size,
+        outer_padding,
+        inset,
+        center_ratio,
+        icon_ratio,
+        icon,
+    }
+}
+
+// 组合 UIX 声明的模态预览视觉。
+#[allow(clippy::too_many_arguments)]
+const fn image_preview(
+    z_index: f32,
+    margin_max: f32,
+    margin_viewport_ratio: f32,
+    margin_min: f32,
+    min_extent: f32,
+    missing_label: &'static str,
+    missing_font: ImageFontRole,
+    close_right_extent: f32,
+    close_min_x: f32,
+    close_y: f32,
+    close_size: f32,
+    center_ratio: f32,
+    close_icon: &'static str,
+    close_icon_size: f32,
+) -> ImagePreviewVisual {
+    ImagePreviewVisual {
+        z_index: z_index as i32,
+        margin_max,
+        margin_viewport_ratio,
+        margin_min,
+        min_extent,
+        missing_label,
+        missing_font,
+        close_right_extent,
+        close_min_x,
+        close_y,
+        close_size,
+        center_ratio,
+        close_icon,
+        close_icon_size,
+    }
+}
+
+// 组合 UIX 声明的 Image 主题语义角色。
+const fn image_palette(
+    fill: ImageColorRole,
+    text_secondary: ImageColorRole,
+    primary: ImageColorRole,
+    overlay: ImageOverlayVisual,
+) -> ImagePaletteVisual {
+    ImagePaletteVisual {
+        fill,
+        text_secondary,
+        primary,
+        overlay,
+    }
+}
+
+// 组合 UIX 声明的完整 Image 视觉配置。
+const fn image_visual(
+    defaults: ImageDefaultsVisual,
+    thumbnail: ImageThumbnailVisual,
+    focus: ImageFocusVisual,
+    indicator: ImageIndicatorVisual,
+    preview: ImagePreviewVisual,
+    palette: ImagePaletteVisual,
+) -> ImageVisual {
+    ImageVisual {
+        defaults,
+        thumbnail,
+        focus,
+        indicator,
+        preview,
+        palette,
+    }
+}
+
+// 向 UIX 提供不能直接写入受限表达式的布尔默认值、文案、图标与主题角色。
+const fn image_default_preview() -> bool {
+    true
+}
+const fn image_default_fit() -> bool {
+    true
+}
+const fn image_default_lazy() -> bool {
+    false
+}
+const fn image_placeholder_icon() -> &'static str {
+    "image"
+}
+const fn image_error_label() -> &'static str {
+    "加载失败"
+}
+const fn image_indicator_icon() -> &'static str {
+    "zoom-in"
+}
+const fn image_missing_label() -> &'static str {
+    "图片不可用"
+}
+const fn image_close_icon() -> &'static str {
+    "x"
+}
+const fn image_large_font() -> ImageFontRole {
+    ImageFontRole::Large
+}
+const fn image_fill_color() -> ImageColorRole {
+    ImageColorRole::FillTertiary
+}
+const fn image_secondary_text_color() -> ImageColorRole {
+    ImageColorRole::TextSecondary
+}
+const fn image_primary_color() -> ImageColorRole {
+    ImageColorRole::Primary
+}
+const fn image_mask_color() -> ImageColorRole {
+    ImageColorRole::Mask
+}
+const fn image_overlay_color() -> ImageColorRole {
+    ImageColorRole::Overlay
+}
+const fn image_text_color() -> ImageColorRole {
+    ImageColorRole::Text
+}
+const fn image_border_color() -> ImageColorRole {
+    ImageColorRole::BorderSecondary
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_IMAGE_VISUAL: ImageVisual = image_visual(
+    image_defaults(6.0, true, true, false),
+    image_thumbnail(
+        8.0,
+        0.5,
+        1.0,
+        24.0,
+        0.45,
+        "image",
+        "加载失败",
+        13.0,
+        1.5,
+        0.5,
+    ),
+    image_focus(1.0, 2.0),
+    image_indicator(20.0, 20.0, 8.0, 6.0, 0.5, 0.58, "zoom-in"),
+    image_preview(
+        1100.0,
+        48.0,
+        0.1,
+        16.0,
+        1.0,
+        "图片不可用",
+        ImageFontRole::Large,
+        52.0,
+        4.0,
+        12.0,
+        40.0,
+        0.5,
+        "x",
+        20.0,
+    ),
+    image_palette(
+        ImageColorRole::FillTertiary,
+        ImageColorRole::TextSecondary,
+        ImageColorRole::Primary,
+        image_overlay_visual(
+            ImageColorRole::Mask,
+            ImageColorRole::Overlay,
+            ImageColorRole::Text,
+            ImageColorRole::BorderSecondary,
+            0.5,
+        ),
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_IMAGE_VISUAL: OnceLock<ImageVisual> = OnceLock::new();
 
 // Image — 图片显示组件。
 widget! {
@@ -37,15 +383,23 @@ widget! {
         width: f32,
         height: f32,
         radius: f32,
+        #[snapshot(skip)]
+        radius_authored: bool,
         preview: bool,
+        #[snapshot(skip)]
+        preview_authored: bool,
         /// 预加载位图句柄（优先于 src 懒加载）。
         slot: Option<BitmapHandle>,
         /// src 首次加载成功后的句柄缓存，避免每帧查表。
         cached: Cell<Option<BitmapHandle>>,
         /// fit 模式：true=保持比例居中，false=拉伸填满。
         fit: bool,
+        #[snapshot(skip)]
+        fit_authored: bool,
         /// 延迟到组件进入可见绘制路径后加载；Image 的绘制本身已是按需加载。
         lazy: bool,
+        #[snapshot(skip)]
+        lazy_authored: bool,
         placeholder_enabled: bool,
         error_handler_enabled: bool,
         #[snapshot(skip)]
@@ -62,6 +416,8 @@ widget! {
         last_surface_h: Cell<f32>,
         /// 关闭预览后的首帧仍需清除上一帧覆盖的整个 surface。
         preview_painted: Cell<bool>,
+        #[snapshot(skip)]
+        visual: &'static ImageVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -170,7 +526,7 @@ widget! {
         self.preview_open.then(|| {
             OverlayEntry::new(id, OverlayKind::Modal)
                 .bounds(self.surface_rect(frame))
-                .z_index(1100)
+                .z_index(self.visual.preview.z_index)
                 .dismiss_on_outside(false)
         })
     }
@@ -189,10 +545,13 @@ widget! {
         self.last_surface_w.set(surface_w);
         self.last_surface_h.set(surface_h);
         let frame = Self::normalized_frame(frame);
-        let radius = self.radius.min(frame.w.min(frame.h) * 0.5);
+        let resolved = self.visual.resolve(ctx.tokens());
+        let radius = self
+            .radius
+            .min(frame.w.min(frame.h) * self.visual.thumbnail.radius_limit_ratio);
         let handle = if pass == PaintPass::Content {
             let handle = self.resolve_handle(ctx, tree, frame);
-            self.render_thumbnail(frame, radius, handle, ctx);
+            self.render_thumbnail(frame, radius, handle, &resolved, ctx);
             handle
         } else {
             self.valid_handle(ctx.image_service())
@@ -208,14 +567,29 @@ widget! {
             handle,
             surface_w,
             surface_h,
+            &resolved,
             ctx,
             tree,
         );
     }
 }
 
-// 把图片资源、状态机与绘制内核融合为 UIX 声明的单一根节点。
-fn build_image_view(kernel: Image) -> ViewNode {
+// 把图片资源、状态机与 UIX 视觉表融合为单一根节点。
+fn build_image_view(mut kernel: Image, declared_visual: ImageVisual) -> ViewNode {
+    let visual = UIX_IMAGE_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.radius_authored {
+        kernel.radius = visual.defaults.radius;
+    }
+    if !kernel.preview_authored {
+        kernel.preview = visual.defaults.preview;
+    }
+    if !kernel.fit_authored {
+        kernel.fit = visual.defaults.fit;
+    }
+    if !kernel.lazy_authored {
+        kernel.lazy = visual.defaults.lazy;
+    }
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -228,7 +602,6 @@ impl View for Image {
 }
 
 impl Image {
-    const PLACEHOLDER_PADDING: f32 = 8.0;
     const PLACEHOLDER_CHILD_KEY: &'static str = "uix:image:placeholder";
     // 错误动态子树的运行时 key 同时作为组件状态捕获的稳定实例身份。
     pub(crate) const ERROR_CHILD_KEY: &'static str = "uix:image:error";
@@ -258,12 +631,16 @@ impl Image {
             fallback: String::new(),
             width: Self::finite_non_negative(w),
             height: Self::finite_non_negative(h),
-            radius: 6.0,
-            preview: true,
+            radius: DEFAULT_IMAGE_VISUAL.defaults.radius,
+            radius_authored: false,
+            preview: DEFAULT_IMAGE_VISUAL.defaults.preview,
+            preview_authored: false,
             slot: None,
             cached: Cell::new(None),
-            fit: true,
-            lazy: false,
+            fit: DEFAULT_IMAGE_VISUAL.defaults.fit,
+            fit_authored: false,
+            lazy: DEFAULT_IMAGE_VISUAL.defaults.lazy,
+            lazy_authored: false,
             placeholder_enabled: false,
             error_handler_enabled: false,
             placeholder_view: RefCell::new(None),
@@ -275,6 +652,7 @@ impl Image {
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
             preview_painted: Cell::new(false),
+            visual: &DEFAULT_IMAGE_VISUAL,
         }
     }
 
@@ -310,11 +688,13 @@ impl Image {
     /// 设置非负圆角半径；负数或非有限值归一化为零。
     pub fn radius(mut self, r: f32) -> Self {
         self.radius = Self::finite_non_negative(r);
+        self.radius_authored = true;
         self
     }
     /// 设置是否允许交互式模态预览；禁用时立即关闭已有预览。
     pub fn preview(mut self, v: bool) -> Self {
         self.preview = v;
+        self.preview_authored = true;
         if !v {
             self.preview_open = false;
         }
@@ -323,12 +703,14 @@ impl Image {
     /// 保持宽高比居中（默认 true）；false 则拉伸填满。
     pub fn fit(mut self, v: bool) -> Self {
         self.fit = v;
+        self.fit_authored = true;
         self
     }
 
     /// 延迟到图片与当前绘制视口相交时才解析资源。
     pub fn lazy(mut self, v: bool) -> Self {
         self.lazy = v;
+        self.lazy_authored = true;
         self.reset_load_state();
         self
     }
@@ -489,18 +871,17 @@ impl Image {
         frame: Rect,
         radius: f32,
         handle: Option<BitmapHandle>,
+        resolved: &ResolvedImageVisual,
         ctx: &mut PaintContext,
     ) {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
 
-        let fill = ctx.tokens().color_fill_tertiary();
-        let text_secondary = ctx.tokens().color_text_secondary();
         let rounded = Some(Radius::uniform(radius));
         ctx.push_clip(frame);
         if let Some(handle) = handle {
-            ctx.fill_rect(frame, fill, rounded);
+            ctx.fill_rect(frame, resolved.fill, rounded);
             let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
             let target_width = (frame.w * device_scale).ceil().clamp(1.0, 4096.0) as u32;
             let target_height = (frame.h * device_scale).ceil().clamp(1.0, 4096.0) as u32;
@@ -518,30 +899,45 @@ impl Image {
                 ctx.draw_image_fill(handle, frame);
             }
         } else {
-            ctx.fill_rect(frame, fill, rounded);
-            ctx.stroke_rect(frame, ctx.tokens().color_border_secondary(), 1.0, rounded);
+            ctx.fill_rect(frame, resolved.fill, rounded);
+            ctx.stroke_rect(
+                frame,
+                resolved.overlay.border,
+                self.visual.thumbnail.border_width,
+                rounded,
+            );
             if !self.custom_content_active() {
                 let state = self.load_state.borrow();
                 let label = if state.error().is_some() && !self.fallback.is_empty() {
                     self.fallback.as_str()
                 } else if state.error().is_some() && self.error_handler_enabled {
-                    "加载失败"
+                    self.visual.thumbnail.error_label
                 } else if !self.alt.is_empty() {
                     self.alt.as_str()
                 } else {
                     ""
                 };
                 if label.is_empty() {
-                    let icon_size = 24.0_f32.min(frame.w.min(frame.h) * 0.45);
+                    let icon_size = self
+                        .visual
+                        .thumbnail
+                        .icon_max_size
+                        .min(frame.w.min(frame.h) * self.visual.thumbnail.icon_frame_ratio);
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "image",
+                        self.visual.thumbnail.icon,
                         frame,
-                        text_secondary,
+                        resolved.text_secondary,
                         icon_size,
                     );
                 } else {
-                    Self::paint_centered_label(ctx, label, frame, text_secondary, 13.0);
+                    self.paint_centered_label(
+                        ctx,
+                        label,
+                        frame,
+                        resolved.text_secondary,
+                        self.visual.thumbnail.label_font_size,
+                    );
                 }
             }
         }
@@ -559,28 +955,31 @@ impl Image {
         handle: Option<BitmapHandle>,
         surface_w: f32,
         surface_h: f32,
+        resolved: &ResolvedImageVisual,
         ctx: &mut PaintContext,
         tree: &WidgetTree,
     ) {
         if frame.w > 0.0 && frame.h > 0.0 {
             ctx.push_clip(frame);
             if self.preview && handle.is_some() {
-                Self::paint_preview_indicator(ctx, frame);
+                self.paint_preview_indicator(ctx, frame, resolved);
             }
             if self.focused && tree.keyboard_focus_visible() && self.preview {
-                let focus = Self::inset(frame, 1.0);
+                let focus = Self::inset(frame, self.visual.focus.inset);
                 ctx.stroke_rect(
                     focus,
-                    ctx.tokens().color_primary(),
-                    2.0,
-                    Some(Radius::uniform(radius.min(focus.w.min(focus.h) * 0.5))),
+                    resolved.primary,
+                    self.visual.focus.stroke_width,
+                    Some(Radius::uniform(radius.min(
+                        focus.w.min(focus.h) * self.visual.thumbnail.radius_limit_ratio,
+                    ))),
                 );
             }
             ctx.pop_clip();
         }
 
         if self.preview_open {
-            self.render_preview(ctx, handle, surface_w, surface_h);
+            self.render_preview(ctx, handle, surface_w, surface_h, resolved);
             self.preview_painted.set(true);
         } else {
             self.preview_painted.set(false);
@@ -588,24 +987,25 @@ impl Image {
     }
 
     fn paint_centered_label(
+        &self,
         ctx: &mut PaintContext,
         label: &str,
         frame: Rect,
         color: Color,
         font_size: f32,
     ) {
-        let content = Self::inset(frame, Self::PLACEHOLDER_PADDING);
+        let content = Self::inset(frame, self.visual.thumbnail.padding);
         if content.w <= 0.0 || content.h <= 0.0 {
             return;
         }
         let metrics = crate::draw::resources::font::text_backend::estimate_text_metrics(
             label, content.w, font_size,
         );
-        let line_height = font_size * 1.5;
+        let line_height = font_size * self.visual.thumbnail.label_line_height_ratio;
         let label_height = (metrics.line_count.max(1) as f32 * line_height).min(content.h);
         let label_frame = Rect::new(
             content.x,
-            content.y + (content.h - label_height) * 0.5,
+            content.y + (content.h - label_height) * self.visual.thumbnail.center_ratio,
             content.w,
             label_height,
         );
@@ -618,35 +1018,46 @@ impl Image {
         ctx.pop_clip();
     }
 
-    fn paint_preview_indicator(ctx: &mut PaintContext, frame: Rect) {
+    fn paint_preview_indicator(
+        &self,
+        ctx: &mut PaintContext,
+        frame: Rect,
+        resolved: &ResolvedImageVisual,
+    ) {
         let shortest = frame.w.min(frame.h);
-        if shortest < 20.0 {
+        if shortest < self.visual.indicator.min_shortest {
             return;
         }
-        let badge_size = 20.0_f32.min((shortest - 8.0).max(0.0));
-        let inset = 6.0_f32.min((shortest - badge_size).max(0.0) * 0.5);
+        let badge_size = self
+            .visual
+            .indicator
+            .badge_max_size
+            .min((shortest - self.visual.indicator.outer_padding).max(0.0));
+        let inset = self
+            .visual
+            .indicator
+            .inset
+            .min((shortest - badge_size).max(0.0) * self.visual.indicator.center_ratio);
         let badge = Rect::new(
             frame.x + frame.w - badge_size - inset,
             frame.y + inset,
             badge_size,
             badge_size,
         );
-        // 在当前主题作用域解析浮层调色板。
-        let palette = ImageOverlayPalette::resolve(ctx.tokens());
         ctx.fill_circle(
-            badge.x + badge.w * 0.5,
-            badge.y + badge.h * 0.5,
-            badge_size * 0.5,
+            badge.x + badge.w * self.visual.indicator.center_ratio,
+            badge.y + badge.h * self.visual.indicator.center_ratio,
+            badge_size * self.visual.indicator.center_ratio,
             // 缩放徽标使用主题浮层表面。
-            palette.surface,
+            resolved.overlay.surface,
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            "zoom-in",
+            self.visual.indicator.icon,
             badge,
             // 缩放图标使用主题浮层前景。
-            palette.foreground,
-            badge_size * 0.58,
+            resolved.overlay.foreground,
+            badge_size * self.visual.indicator.icon_ratio,
         );
     }
 
@@ -674,19 +1085,24 @@ impl Image {
         self.width = next.width;
         self.height = next.height;
         self.radius = next.radius;
+        self.radius_authored = next.radius_authored;
         self.preview = next.preview;
+        self.preview_authored = next.preview_authored;
         if !self.preview {
             self.preview_open = false;
             self.focused = false;
         }
         self.slot = next.slot;
         self.fit = next.fit;
+        self.fit_authored = next.fit_authored;
         self.lazy = next.lazy;
+        self.lazy_authored = next.lazy_authored;
         self.placeholder_enabled = next.placeholder_enabled;
         self.error_handler_enabled = next.error_handler_enabled;
         self.placeholder_view
             .replace(next.placeholder_view.into_inner());
         self.error_view_factory = next.error_view_factory;
+        self.visual = next.visual;
         if image_source_changed {
             self.cached.set(None);
             self.load_state.replace(next_load_state);
@@ -852,29 +1268,37 @@ impl Image {
         handle: Option<BitmapHandle>,
         surface_w: f32,
         surface_h: f32,
+        resolved: &ResolvedImageVisual,
     ) {
         if !surface_w.is_finite() || !surface_h.is_finite() || surface_w <= 0.0 || surface_h <= 0.0
         {
             return;
         }
         let surface = Rect::new(0.0, 0.0, surface_w, surface_h);
-        // 在当前主题作用域解析一次浮层调色板。
-        let palette = ImageOverlayPalette::resolve(ctx.tokens());
         ctx.push_clip(surface);
         // 全屏预览背景使用主题语义遮罩。
-        ctx.fill_rect(surface, palette.mask, None);
+        ctx.fill_rect(surface, resolved.overlay.mask, None);
 
-        let margin = 48.0_f32
-            .min((surface_w * 0.1).max(16.0))
-            .min((surface_h * 0.1).max(16.0));
+        let margin = self
+            .visual
+            .preview
+            .margin_max
+            .min(
+                (surface_w * self.visual.preview.margin_viewport_ratio)
+                    .max(self.visual.preview.margin_min),
+            )
+            .min(
+                (surface_h * self.visual.preview.margin_viewport_ratio)
+                    .max(self.visual.preview.margin_min),
+            );
         let preview_rect = Rect::new(
             margin,
             margin,
-            (surface_w - margin * 2.0).max(1.0),
-            (surface_h - margin * 2.0).max(1.0),
+            (surface_w - margin * 2.0).max(self.visual.preview.min_extent),
+            (surface_h - margin * 2.0).max(self.visual.preview.min_extent),
         );
         // 预览占位区域使用主题浮层表面。
-        ctx.fill_rect(preview_rect, palette.surface, None);
+        ctx.fill_rect(preview_rect, resolved.overlay.surface, None);
         if let Some(handle) = handle {
             ctx.draw_image(handle, preview_rect);
         } else {
@@ -883,27 +1307,57 @@ impl Image {
             } else if !self.alt.is_empty() {
                 &self.alt
             } else {
-                "图片不可用"
+                self.visual.preview.missing_label
             };
-            Self::paint_centered_label(
+            self.paint_centered_label(
                 ctx,
                 label,
                 preview_rect,
-                palette.foreground,
-                ctx.tokens().font_size_lg(),
+                resolved.overlay.foreground,
+                resolved.missing_font_size,
             );
         }
 
-        let close = Rect::new((surface_w - 52.0).max(4.0), 12.0, 40.0, 40.0);
-        ctx.fill_circle(
-            close.x + close.w * 0.5,
-            close.y + close.h * 0.5,
-            close.w * 0.5,
-            // 关闭按钮使用主题浮层表面。
-            palette.surface,
+        let close = Rect::new(
+            (surface_w - self.visual.preview.close_right_extent)
+                .max(self.visual.preview.close_min_x),
+            self.visual.preview.close_y,
+            self.visual.preview.close_size,
+            self.visual.preview.close_size,
         );
-        crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "x", close, palette.foreground, 20.0);
+        ctx.fill_circle(
+            close.x + close.w * self.visual.preview.center_ratio,
+            close.y + close.h * self.visual.preview.center_ratio,
+            close.w * self.visual.preview.center_ratio,
+            // 关闭按钮使用主题浮层表面。
+            resolved.overlay.surface,
+        );
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            self.visual.preview.close_icon,
+            close,
+            resolved.overlay.foreground,
+            self.visual.preview.close_icon_size,
+        );
         ctx.pop_clip();
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, i32) {
+        (
+            self.visual.defaults.radius,
+            self.visual.thumbnail.padding,
+            self.visual.indicator.badge_max_size,
+            self.visual.preview.margin_max,
+            self.visual.preview.z_index,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 }
 
