@@ -96,3 +96,23 @@ fn selection_and_max_length_preserve_complete_graphemes() {
     // 拒绝后值保持为空。
     assert_eq!(limited.current_value(), "");
 }
+
+/// 流式行列定位必须保留空行、Unicode 字符和越界收敛语义。
+#[test]
+fn cursor_line_col_streams_without_changing_positions() {
+    // 空文本仍有首个空逻辑行。
+    let mut input = Input::textarea();
+    input.cursor_char = 0;
+    assert_eq!(input.cursor_line_col(), (0, 0));
+
+    // 连续换行会产生中间空行，列使用 Unicode 标量下标而非字节偏移。
+    input.value = "甲a\n\n👩z".to_string();
+    input.cursor_char = 4;
+    assert_eq!(input.cursor_line_col(), (2, 0));
+    input.cursor_char = 5;
+    assert_eq!(input.cursor_line_col(), (2, 1));
+
+    // 旧状态中的越界光标继续收敛到末行末尾。
+    input.cursor_char = usize::MAX;
+    assert_eq!(input.cursor_line_col(), (2, 2));
+}

@@ -259,20 +259,13 @@ impl Canvas2D for FrameRecordingCanvas {
             // 目标相关命令前必须先提交此前累计的 source-independent scratch。
             if let Err(error) = self.flush_scratch().and_then(|()| {
                 // 记录带显式 blend 事实的共享描边载荷。
-                self.encoder_mut()?
-                    .native(FrameRasterOp::StrokeRoundedRects {
-                        // 当前调用只产生一条描边，后续由 encoder 做安全批合并。
-                        strokes: vec![FrameStrokeRect::new(
-                            native_rect,
-                            native_color,
-                            native_radius,
-                            line_width,
-                        )],
-                        // 保存已经证明为整数矩形的当前 clip。
-                        clip,
-                        // 标记该批必须使用饱和加法混合。
-                        additive: true,
-                    });
+                self.encoder_mut()?.native_stroke(
+                    FrameStrokeRect::new(native_rect, native_color, native_radius, line_width),
+                    // 保存已经证明为整数矩形的当前 clip。
+                    clip,
+                    // 标记该批必须使用饱和加法混合。
+                    true,
+                );
                 // 命令记录成功。
                 Ok(())
             }) {
@@ -304,18 +297,12 @@ impl Canvas2D for FrameRecordingCanvas {
                 return;
             }
             if let Err(error) = self.flush_scratch().and_then(|()| {
-                self.encoder_mut()?
-                    .native(FrameRasterOp::StrokeRoundedRects {
-                        strokes: vec![FrameStrokeRect::new(
-                            native_rect,
-                            native_color,
-                            native_radius,
-                            line_width,
-                        )],
-                        clip,
-                        // 普通直达描边保持 SrcOver 语义。
-                        additive: false,
-                    });
+                self.encoder_mut()?.native_stroke(
+                    FrameStrokeRect::new(native_rect, native_color, native_radius, line_width),
+                    clip,
+                    // 普通直达描边保持 SrcOver 语义。
+                    false,
+                );
                 Ok(())
             }) {
                 self.remember_error(error);
