@@ -15,8 +15,9 @@ fn generates_card_contract() {
     assert!(snapshot.contains("title (& * (\"用户信息\"))"));
     // 操作项表达式必须保留调用侧标识符。
     assert!(snapshot.contains("actions ((card_actions) . clone ())"));
-    // 卡片与子节点必须由统一 ViewNode 容器组合。
-    assert!(snapshot.contains("ViewNode :: new"));
+    // 卡片与子节点必须进入组件自己的 UIX 根声明，不能直接构造运行时节点。
+    assert!(snapshot.contains("build_view_with_children"));
+    assert!(!snapshot.contains("ViewNode :: new"));
     // 公共宽度必须继续应用到组合节点。
     assert!(snapshot.contains("width (320.0)"));
     // 自动化标识仍由公共属性层消费。

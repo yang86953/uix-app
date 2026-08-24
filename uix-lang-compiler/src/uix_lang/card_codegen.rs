@@ -44,8 +44,8 @@ pub(crate) fn generate_card(element: &Element) -> Result<TokenStream, Diagnostic
 
     // 按源码顺序生成子节点、条件与循环控制流。
     let children = generate_children(&element.children)?;
-    // 使用统一 ViewNode 子树承载样式、事件与生命周期信息。
-    let view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
+    // 经公开桥接进入 Card 自己的同目录 UIX 根声明，并原样移交拥有型子树。
+    let view = quote! { (#widget).build_view_with_children(#children) };
     // 消费 Card 专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(view, &element.attributes, &["title", "actions"])
     // 结束 Card 生成函数。

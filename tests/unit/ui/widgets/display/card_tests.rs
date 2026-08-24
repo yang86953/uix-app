@@ -8,6 +8,29 @@ use crate::ui::adapter::ViewAdapter;
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入构造真实 Card 子树所需的公开组件与声明节点。
 use crate::ui::{Container, Space, ViewNode};
+// 导入公开 View 构建入口以验证同目录 UIX 根。
+use crate::ui::view::View;
+
+// 验证 UIX 根桥接保持 Card 动态类型与拥有型 View 子树形状。
+#[test]
+fn uix_root_preserves_card_kernel_and_children() {
+    // 构造一个真实 View 子节点并经代码生成桥接进入 Card UIX 根。
+    let child = ViewNode::leaf(Space::new().width(40.0).height(20.0));
+    let node = Card::new()
+        .title("概览")
+        .build_view_with_children(vec![child]);
+    // UIX 声明不得增加额外包装或复制子节点。
+    assert_eq!(node.children.len(), 1);
+    // 根动态类型必须继续是拥有布局、交互与绘制机制的 Card。
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Card>()
+        .expect("UIX 根必须保留 Card 内核");
+    assert_eq!(kernel.title.as_deref(), Some("概览"));
+    // 公开 View 入口的空卡片同样保持零子节点形状。
+    assert!(View::build(Card::new()).children.is_empty());
+}
 
 // 验证自动高度由未压缩的 body 子树撑开，而显式高度仍是硬约束。
 #[test]
