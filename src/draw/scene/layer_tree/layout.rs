@@ -141,6 +141,44 @@ impl LayerTree {
 
     // ── 内部 ──
 
+    /// 为需要独立持有生命周期的 LayerNode 创建一次片段快照。
+    fn clip_regions_snapshot(scene: &impl ScenePaint, id: NodeId) -> Option<Vec<Rect>> {
+        let mut snapshot = None;
+        scene.visit_node_clip_regions(id, &mut |regions| {
+            snapshot = Some(regions.to_vec());
+        });
+        snapshot
+    }
+
+    /// 判断节点是否声明片段元数据，保留 Some(empty) 的“完全隐藏”语义。
+    fn node_has_clip_regions(scene: &impl ScenePaint, id: NodeId) -> bool {
+        scene.visit_node_clip_regions(id, &mut |_| {})
+    }
+
+    /// 同步 LayerNode 已有片段快照；内容不变时不复制也不重新申请容量。
+    fn sync_clip_regions_snapshot(
+        current: &mut Option<Vec<Rect>>,
+        scene: &impl ScenePaint,
+        id: NodeId,
+    ) -> bool {
+        let mut present = false;
+        let mut changed = false;
+        scene.visit_node_clip_regions(id, &mut |regions| {
+            present = true;
+            if current.as_deref() != Some(regions) {
+                let snapshot = current.get_or_insert_with(Vec::new);
+                snapshot.clear();
+                snapshot.extend_from_slice(regions);
+                changed = true;
+            }
+        });
+        if present {
+            changed
+        } else {
+            current.take().is_some()
+        }
+    }
+
     /// Take ownership of old Picture nodes' display lists and offscreen handles
     /// (avoiding clone). The old tree is discarded after build, so moving out is
     /// safe.
@@ -198,7 +236,7 @@ impl LayerTree {
         let transform = scene.node_transform(id);
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         // 捕获父布局为当前节点声明的不连续裁剪片段。
-        let clip_regions = scene.node_clip_regions(id);
+        let clip_regions = Self::clip_regions_snapshot(scene, id);
         let descendants_support_offscreen = supports_offscreen && transform.is_identity();
 
         if supports_offscreen && selected_pictures.contains(&id) {
@@ -291,7 +329,7 @@ impl LayerTree {
         let transform = scene.node_overlay_transform(id);
         let opacity = scene.node_opacity(id).clamp(0.0, 1.0);
         // overlay 通常没有父级片段，但仍保持节点结构一致。
-        let clip_regions = scene.node_clip_regions(id);
+        let clip_regions = Self::clip_regions_snapshot(scene, id);
         Some(LayerNode::Direct {
             node_id: id,
             transform,
@@ -465,7 +503,7 @@ impl LayerTree {
             && !scene.node_is_overlay(id)
             && !scene.node_focusable(id)
             // 带父级片段的节点必须在主合成路径逐片重放，不能提升为单张 Picture。
-            && scene.node_clip_regions(id).is_none()
+            && !Self::node_has_clip_regions(scene, id)
             && scene.children_clip(id, frame).is_none()
             && scene.scroll_offset(id).is_none()
             && scene.node_transform(id).is_identity()
@@ -518,11 +556,8 @@ impl LayerTree {
                 ..
             } => {
                 // 同步父布局可能因滚动或重排改变的片段集合。
-                let next_clip_regions = scene.node_clip_regions(*node_id);
-                // 片段变化必须使所属图片节点失效。
-                let clip_regions_changed = *clip_regions != next_clip_regions;
-                // 保存最新片段快照。
-                *clip_regions = next_clip_regions;
+                let clip_regions_changed =
+                    Self::sync_clip_regions_snapshot(clip_regions, scene, *node_id);
                 // 窗口放大后若未 rebuild，仍须刷新 bounds，否则离屏/blit 卡在旧几何。
                 let frame = scene.node_frame(*node_id);
                 if *bounds != frame {
@@ -555,11 +590,8 @@ impl LayerTree {
                 let opacity_changed = *opacity != next_opacity;
                 *opacity = next_opacity;
                 // 同步父布局可能因滚动或重排改变的片段集合。
-                let next_clip_regions = scene.node_clip_regions(*node_id);
-                // 记录片段集合是否发生变化。
-                let clip_regions_changed = *clip_regions != next_clip_regions;
-                // 保存最新片段快照。
-                *clip_regions = next_clip_regions;
+                let clip_regions_changed =
+                    Self::sync_clip_regions_snapshot(clip_regions, scene, *node_id);
                 let frame = scene.node_frame(*node_id);
                 if let Some(clip) = scene.children_clip(*node_id, frame) {
                     if *rect != clip {
@@ -599,11 +631,8 @@ impl LayerTree {
                 let opacity_changed = *opacity != next_opacity;
                 *opacity = next_opacity;
                 // 同步父布局可能因滚动或重排改变的片段集合。
-                let next_clip_regions = scene.node_clip_regions(*node_id);
-                // 记录片段集合是否发生变化。
-                let clip_regions_changed = *clip_regions != next_clip_regions;
-                // 保存最新片段快照。
-                *clip_regions = next_clip_regions;
+                let clip_regions_changed =
+                    Self::sync_clip_regions_snapshot(clip_regions, scene, *node_id);
                 let self_dirty = scene.node_dirty(*node_id);
                 let mut child_dirty = false;
                 for child in children.iter_mut() {
