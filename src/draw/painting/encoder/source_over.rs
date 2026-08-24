@@ -116,6 +116,11 @@ pub(super) fn source_over_commands_have_safe_grouping(
 ) -> bool {
     let mut writes = Vec::new();
     let mut opaque_covers = Vec::new();
+    // 常见命令至少贡献一个写区；先按命令数预留，避免有效 Picture 每条增长。
+    // 字形批次仍由 push_source_over_write 按需扩容，保留原有失败语义。
+    if writes.try_reserve_exact(commands.len()).is_err() {
+        return false;
+    }
     for command in commands {
         match command {
             FrameCommand::Clear { .. } => return false,
@@ -126,7 +131,7 @@ pub(super) fn source_over_commands_have_safe_grouping(
                         return false;
                     }
                     if opaque {
-                        push_opaque_cover(&mut opaque_covers, *rect);
+                        push_opaque_cover(&mut opaque_covers, *rect, commands.len());
                     }
                 }
                 FrameRasterOp::FillRoundedRect {
@@ -139,7 +144,7 @@ pub(super) fn source_over_commands_have_safe_grouping(
                     }
                     if color.a == u8::MAX {
                         if let Some(inner) = rounded_rect_opaque_inner(*rect, *radius) {
-                            push_opaque_cover(&mut opaque_covers, inner);
+                            push_opaque_cover(&mut opaque_covers, inner, commands.len());
                         }
                     }
                 }
@@ -159,7 +164,7 @@ pub(super) fn source_over_commands_have_safe_grouping(
                         if let Some(inner) = rounded_rect_opaque_inner(*rect, *radius)
                             .and_then(|inner| inner.intersection(*clip))
                         {
-                            push_opaque_cover(&mut opaque_covers, inner);
+                            push_opaque_cover(&mut opaque_covers, inner, commands.len());
                         }
                     }
                 }
@@ -223,7 +228,7 @@ pub(super) fn source_over_commands_have_safe_grouping(
                     return false;
                 }
                 if image_src_is_fully_opaque(image, *src) {
-                    push_opaque_cover(&mut opaque_covers, *dst);
+                    push_opaque_cover(&mut opaque_covers, *dst, commands.len());
                 }
             }
             FrameCommand::PictureBlit {
@@ -247,7 +252,7 @@ pub(super) fn source_over_commands_have_safe_grouping(
                     return false;
                 }
                 if opacity.is_opaque() && image_src_is_fully_opaque(image, *src) {
-                    push_opaque_cover(&mut opaque_covers, integer_dst);
+                    push_opaque_cover(&mut opaque_covers, integer_dst, commands.len());
                 }
             }
         }
@@ -265,10 +270,12 @@ pub(super) fn source_over_commands_have_safe_grouping(
     true
 }
 
-fn push_opaque_cover(covers: &mut Vec<FrameRect>, rect: FrameRect) {
-    if covers.try_reserve(1).is_ok() {
-        covers.push(rect);
+fn push_opaque_cover(covers: &mut Vec<FrameRect>, rect: FrameRect, capacity_hint: usize) {
+    // 只有实际出现不透明 cover 时才分配，并一次覆盖本批上限。
+    if covers.is_empty() && covers.try_reserve_exact(capacity_hint).is_err() {
+        return;
     }
+    covers.push(rect);
 }
 
 /// 判定 image 的 `src` 子矩形是否逐像素 alpha=255（premultiplied AARRGGBB）。
