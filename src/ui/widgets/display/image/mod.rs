@@ -434,18 +434,24 @@ impl Image {
     }
 
     fn set_load_state(&self, next: ImageLoadState, tree: &WidgetTree, frame: Rect) {
-        let previous = self.load_state.borrow().clone();
-        if previous == next {
+        // 在借用期内提取后续判断值，避免复制 Error 携带的错误字符串。
+        let (unchanged, previous_has_error, placeholder_visibility_changed) = {
+            let previous = self.load_state.borrow();
+            (
+                *previous == next,
+                previous.error().is_some(),
+                self.placeholder_enabled
+                    && previous.shows_placeholder() != next.shows_placeholder(),
+            )
+        };
+        if unchanged {
             return;
         }
-        // 记录旧状态是否拥有错误子树，供后继布局执行窄增加或移除。
-        let previous_has_error = previous.error().is_some();
         // 记录新状态是否需要错误子树，避免只处理首次失败而遗漏恢复路径。
         let next_has_error = next.error().is_some();
         // 加载阶段、占位可见性或错误存在性变化都需要一次后继布局。
         let needs_follow_up = matches!(&next, ImageLoadState::Loading)
-            || (self.placeholder_enabled
-                && previous.shows_placeholder() != next.shows_placeholder())
+            || placeholder_visibility_changed
             || previous_has_error != next_has_error;
         self.load_state.replace(next);
         if !needs_follow_up {

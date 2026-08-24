@@ -1,5 +1,5 @@
 // 保存 Image 私有的加载生命周期状态。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum ImageLoadState {
     // 没有可加载来源。
     Empty,
