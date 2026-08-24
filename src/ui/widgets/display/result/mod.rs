@@ -501,7 +501,9 @@ struct ResultGeometry {
     frame: Rect,
     icon: Rect,
     title: Rect,
+    title_line_count: u8,
     subtitle: Rect,
+    subtitle_line_count: u8,
     action: Rect,
 }
 
@@ -635,6 +637,7 @@ widget! {
             ctx,
             main_title,
             geometry.title,
+            geometry.title_line_count,
             text,
             typography.title_font_size,
             typography.line_height,
@@ -643,6 +646,7 @@ widget! {
             ctx,
             sub,
             geometry.subtitle,
+            geometry.subtitle_line_count,
             text_sec,
             typography.subtitle_font_size,
             typography.line_height,
@@ -737,7 +741,9 @@ impl ResultView {
                 frame,
                 icon: Rect::zero(),
                 title: Rect::zero(),
+                title_line_count: 0,
                 subtitle: Rect::zero(),
+                subtitle_line_count: 0,
                 action: Rect::zero(),
             };
         }
@@ -786,18 +792,18 @@ impl ResultView {
             .icon_title_gap_max
             .min((content_height - icon_size).max(0.0) * layout.icon_title_gap_ratio);
         let text_height = (content_height - icon_size - icon_title_gap).max(0.0);
-        let title_desired = Self::estimated_text_height(
+        let (title_desired, title_line_count) = Self::estimated_text_layout(
             title,
             inner.w,
             typography.title_font_size,
-            typography.title_max_lines as usize,
+            typography.title_max_lines,
             typography.line_height,
         );
-        let subtitle_desired = Self::estimated_text_height(
+        let (subtitle_desired, subtitle_line_count) = Self::estimated_text_layout(
             subtitle,
             inner.w,
             typography.subtitle_font_size,
-            typography.subtitle_max_lines as usize,
+            typography.subtitle_max_lines,
             typography.line_height,
         );
         let subtitle_gap = if has_subtitle {
@@ -866,7 +872,9 @@ impl ResultView {
             frame,
             icon,
             title,
+            title_line_count,
             subtitle,
+            subtitle_line_count,
             action,
         }
     }
@@ -916,28 +924,29 @@ impl ResultView {
         }
     }
 
-    fn estimated_text_height(
+    fn estimated_text_layout(
         value: &str,
         width: f32,
         font_size: f32,
-        max_lines: usize,
+        max_lines: u8,
         line_height: f32,
-    ) -> f32 {
+    ) -> (f32, u8) {
         if value.is_empty() || width <= 0.0 {
-            return 0.0;
+            return (0.0, 0);
         }
         let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
             value, width, font_size,
         )
         .line_count
-        .clamp(1, max_lines);
-        line_count as f32 * font_size * line_height
+        .clamp(1, max_lines as usize) as u8;
+        (line_count as f32 * font_size * line_height, line_count)
     }
 
     fn paint_text_block(
         ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
+        line_count: u8,
         color: Color,
         font_size: f32,
         line_height: f32,
@@ -950,11 +959,8 @@ impl ResultView {
         if visible_lines == 0 {
             return;
         }
-        let metrics = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            value, frame.w, font_size,
-        );
         ctx.push_clip(frame);
-        if metrics.line_count <= 1 {
+        if line_count <= 1 {
             ctx.text_center(value, frame, color, font_size);
         } else if visible_lines >= 2 {
             ctx.draw_text_wrapped(value, frame, color, font_size);
