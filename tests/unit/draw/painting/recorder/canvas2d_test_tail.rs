@@ -446,6 +446,89 @@ fn recording_reuses_recycled_command_allocation() {
     );
 }
 
+// 稳定文字录制应复用上一帧字形批次，不再逐字形申请临时 Vec。
+#[test]
+fn recording_reuses_recycled_glyph_batch_allocation() {
+    let mut canvas = FrameRecordingCanvas::new(32, 8);
+    let coverage: std::sync::Arc<[u8]> = std::sync::Arc::from([u8::MAX]);
+    canvas
+        .begin_recording(false)
+        .expect("first glyph recording should begin");
+    for x in 0..6 {
+        canvas.blit_glyph_shared(x, 0, std::sync::Arc::clone(&coverage), 1, 1, Color::white());
+    }
+    let first = canvas
+        .finish_recording()
+        .expect("first glyph recording should finish");
+    let [
+        FrameCommand::Native {
+            operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+        },
+    ] = first.commands()
+    else {
+        panic!("expected one glyph batch");
+    };
+    let first_storage = glyphs.as_ptr();
+    let first_pixels = first.render_reference().pixels().to_vec();
+    canvas.recycle_encoder(first);
+
+    canvas
+        .begin_recording(false)
+        .expect("second glyph recording should begin");
+    for x in 0..6 {
+        canvas.blit_glyph_shared(x, 0, std::sync::Arc::clone(&coverage), 1, 1, Color::white());
+    }
+    let second = canvas
+        .finish_recording()
+        .expect("second glyph recording should finish");
+    let [
+        FrameCommand::Native {
+            operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+        },
+    ] = second.commands()
+    else {
+        panic!("expected one recycled glyph batch");
+    };
+    assert_eq!(glyphs.as_ptr(), first_storage);
+    assert_eq!(second.render_reference().pixels(), first_pixels);
+}
+
+// 文字场景骤减后不应长期驻留上一峰值字形槽位。
+#[test]
+fn recording_drops_oversized_recycled_glyph_allocation_after_shrink() {
+    let mut canvas = FrameRecordingCanvas::new(512, 8);
+    let coverage: std::sync::Arc<[u8]> = std::sync::Arc::from([u8::MAX]);
+    canvas
+        .begin_recording(false)
+        .expect("large glyph recording should begin");
+    for x in 0..256 {
+        canvas.blit_glyph_shared(x, 0, std::sync::Arc::clone(&coverage), 1, 1, Color::white());
+    }
+    let large = canvas
+        .finish_recording()
+        .expect("large glyph recording should finish");
+    canvas.recycle_encoder(large);
+    let large_retained = canvas
+        .spare_encoder
+        .as_ref()
+        .expect("large encoder should be retained")
+        .retained_memory_usage();
+
+    canvas
+        .begin_recording(false)
+        .expect("empty recording should begin");
+    let empty = canvas
+        .finish_recording()
+        .expect("empty recording should finish");
+    canvas.recycle_encoder(empty);
+    let shrunk_retained = canvas
+        .spare_encoder
+        .as_ref()
+        .expect("empty encoder should be retained")
+        .retained_memory_usage();
+    assert!(shrunk_retained < large_retained);
+}
+
 // 峰值命令容量不得在场景骤减后无界驻留。
 #[test]
 fn recording_drops_oversized_recycled_command_allocation() {

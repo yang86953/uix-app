@@ -46,6 +46,8 @@ pub struct FrameEncoder {
     height: i32,
     pixel_count: usize,
     commands: Vec<FrameCommand>,
+    /// 上一帧回收的一组字形槽位；仅由同一录制器跨帧复用。
+    spare_glyphs: Vec<FrameGlyphBlit>,
 }
 
 impl FrameEncoder {
@@ -70,6 +72,7 @@ impl FrameEncoder {
             height,
             pixel_count,
             commands,
+            spare_glyphs: Vec::new(),
         })
     }
 
@@ -93,9 +96,42 @@ impl FrameEncoder {
         self.commands.capacity()
     }
 
-    /// 清空上一帧命令载荷但保留 Vec 分配，供同尺寸录制器开始下一帧。
-    pub(crate) fn clear_commands_for_reuse(&mut self) {
+    /// 返回当前帧最大字形批次长度，供录制器制定有界复用策略。
+    pub(crate) fn max_glyph_batch_len(&self) -> usize {
+        self.commands
+            .iter()
+            .filter_map(|command| match command {
+                FrameCommand::Native {
+                    operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+                } => Some(glyphs.len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// 清空上一帧命令载荷，并有界保留最大字形批次与命令数组分配。
+    pub(crate) fn clear_commands_for_reuse(&mut self, glyph_capacity_limit: usize) {
+        let mut spare_glyphs = std::mem::take(&mut self.spare_glyphs);
+        if spare_glyphs.capacity() > glyph_capacity_limit {
+            spare_glyphs = Vec::new();
+        }
+        for command in &mut self.commands {
+            let FrameCommand::Native {
+                operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+            } = command
+            else {
+                continue;
+            };
+            if glyphs.capacity() <= glyph_capacity_limit
+                && glyphs.capacity() > spare_glyphs.capacity()
+            {
+                std::mem::swap(glyphs, &mut spare_glyphs);
+            }
+        }
         self.commands.clear();
+        spare_glyphs.clear();
+        self.spare_glyphs = spare_glyphs;
     }
 
     /// 统计帧内 CPU 生成的光栅载荷（字形 coverage、CPU 分段、物化 Picture），
@@ -164,7 +200,12 @@ impl FrameEncoder {
         let mut bytes = self
             .commands
             .capacity()
-            .saturating_mul(std::mem::size_of::<FrameCommand>());
+            .saturating_mul(std::mem::size_of::<FrameCommand>())
+            .saturating_add(
+                self.spare_glyphs
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<FrameGlyphBlit>()),
+            );
         for command in &self.commands {
             bytes = bytes.saturating_add(match command {
                 FrameCommand::Native {
@@ -369,6 +410,31 @@ impl FrameEncoder {
             return;
         }
         self.commands.push(FrameCommand::Native { operation });
+    }
+
+    /// 直接追加单个字形，避免为每个 glyph 构造一次临时 `Vec`。
+    pub(crate) fn native_glyph(&mut self, glyph: FrameGlyphBlit, clip: FrameRect) {
+        if clip.is_empty() {
+            return;
+        }
+        if let Some(FrameCommand::Native {
+            operation:
+                FrameRasterOp::BlitGlyphs {
+                    glyphs,
+                    clip: previous_clip,
+                },
+        }) = self.commands.last_mut()
+        {
+            if *previous_clip == clip {
+                glyphs.push(glyph);
+                return;
+            }
+        }
+        let mut glyphs = std::mem::take(&mut self.spare_glyphs);
+        glyphs.push(glyph);
+        self.commands.push(FrameCommand::Native {
+            operation: FrameRasterOp::BlitGlyphs { glyphs, clip },
+        });
     }
 
     /// 记录与源无关的 CPU 光栅子集，作为一个有界回退分段。目标相关操作

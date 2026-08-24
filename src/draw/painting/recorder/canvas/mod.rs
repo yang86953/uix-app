@@ -23,6 +23,10 @@ mod geometry_ops;
 const MIN_RETAINED_COMMAND_CAPACITY: usize = 16;
 // 场景骤减后容量超过当前命令数四倍时释放，避免峰值命令流长期驻留。
 const MAX_RETAINED_COMMAND_CAPACITY_RATIO: usize = 4;
+// 常见短文本至少保留一轮字形 Vec 增长余量。
+const MIN_RETAINED_GLYPH_CAPACITY: usize = 16;
+// 字形批次骤减后同样只保留当前规模四倍以内的槽位。
+const MAX_RETAINED_GLYPH_CAPACITY_RATIO: usize = 4;
 
 /// 状态保持的 CPU scratch 光栅化器。连续的 CPU 绘制累积在 scratch 中，
 /// 在 painter-order 屏障（native / Picture / finish）处 flush，使字形与
@@ -145,6 +149,7 @@ impl FrameRecordingCanvas {
     /// 收回同步执行完成的同尺寸编码器；释放命令载荷并有界保留 Vec 容量。
     pub(super) fn recycle_encoder(&mut self, mut encoder: FrameEncoder) {
         let command_count = encoder.commands().len();
+        let glyph_batch_len = encoder.max_glyph_batch_len();
         self.command_capacity_hint = command_count;
         let retain_limit = command_count
             .max(MIN_RETAINED_COMMAND_CAPACITY)
@@ -156,8 +161,11 @@ impl FrameRecordingCanvas {
         {
             return;
         }
-        // 立即释放图片、字形等嵌套载荷，只让 recorder owner 保留命令数组分配。
-        encoder.clear_commands_for_reuse();
+        let glyph_capacity_limit = glyph_batch_len
+            .max(MIN_RETAINED_GLYPH_CAPACITY)
+            .saturating_mul(MAX_RETAINED_GLYPH_CAPACITY_RATIO);
+        // 图片等大载荷立即释放；只保留一组有界字形槽位和命令数组分配。
+        encoder.clear_commands_for_reuse(glyph_capacity_limit);
         self.spare_encoder = Some(encoder);
     }
 
