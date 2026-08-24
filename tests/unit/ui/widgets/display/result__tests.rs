@@ -22,3 +22,16 @@ fn uix_shell_preserves_single_result_kernel_leaf() {
         }
     );
 }
+
+/// 常见单行动作文案必须保持借用，仅真实换行输入才归一化并分配。
+#[test]
+fn action_text_normalization_keeps_single_line_borrowed() {
+    assert!(matches!(
+        ResultView::normalized_action_text("返回首页"),
+        std::borrow::Cow::Borrowed("返回首页")
+    ));
+    assert_eq!(
+        ResultView::normalized_action_text("返回\n首页"),
+        "返回 首页"
+    );
+}

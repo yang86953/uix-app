@@ -3,6 +3,7 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
+use std::borrow::Cow;
 use std::cell::Cell;
 
 use crate::core::{Constraints, Rect, Size};
@@ -414,12 +415,21 @@ impl ResultView {
     }
 
     fn estimated_text_width(value: &str, font_size: f32) -> f32 {
+        let value = Self::normalized_action_text(value);
         crate::draw::resources::font::text_backend::estimate_text_metrics(
-            &value.replace(['\r', '\n'], " "),
+            &value,
             f32::INFINITY,
             font_size,
         )
         .max_line_width
+    }
+
+    fn normalized_action_text(value: &str) -> Cow<'_, str> {
+        if value.contains(['\r', '\n']) {
+            Cow::Owned(value.replace(['\r', '\n'], " "))
+        } else {
+            Cow::Borrowed(value)
+        }
     }
 
     fn estimated_text_height(value: &str, width: f32, font_size: f32, max_lines: usize) -> f32 {
