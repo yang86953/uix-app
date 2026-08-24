@@ -6,6 +6,7 @@
 mod compact;
 // typed 受控构造拆分到子模块，保持状态映射边界集中。
 mod controlled;
+mod presentation;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
@@ -13,13 +14,16 @@ use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::rc::Rc;
+
+use presentation::*;
 
 /// Menu direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -271,6 +275,9 @@ widget! {
         focused: bool,
         item_h: f32,
         pending_change: RefCell<Option<String>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static MenuVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -358,47 +365,66 @@ widget! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let primary = ctx.tokens().color_primary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let fill = ctx.tokens().color_fill_tertiary();
+        // 横向、纵向与紧凑呈现同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let primary = visual.primary;
+        let text = visual.text;
+        let text_sec = visual.text_secondary;
+        let fill = visual.fill_tertiary;
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
         let active_key = &self.active_key;
         let hovered = self.hovered_idx.get();
-        let r = Radius::uniform(ctx.tokens().border_radius_sm());
+        let radius = Radius::uniform(visual.radius);
 
         match self.mode {
             MenuMode::Horizontal => {
                 let mut cx = frame.x;
                 for (i, (item, depth)) in self.visible_items().iter().enumerate() {
-                    let iw = Self::horizontal_item_width(item, *depth);
+                    let iw = self.horizontal_item_width(item, *depth);
                     let item_rect = Rect::new(cx, frame.y, iw, self.item_h);
                     let is_active = item.key == *active_key || self.selected_keys.contains(&item.key);
                     let is_hover = i == hovered;
                     let item_c = if item.disabled { text_sec } else if is_active { primary } else { text };
                     if is_active || is_hover {
-                        ctx.fill_rect(item_rect, fill, Some(r));
+                        ctx.fill_rect(item_rect, fill, Some(radius));
                     }
                     if is_active {
-                        ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
+                        ctx.fill_rect(
+                            Rect::new(
+                                cx + layout.active_inset,
+                                frame.y + self.item_h - layout.active_thickness,
+                                (iw - layout.active_inset * 2.0).max(0.0),
+                                layout.active_thickness,
+                            ),
+                            primary,
+                            None,
+                        );
                     }
                     if item.icon.is_empty() {
-                        ctx.text_center(&item.label, item_rect, item_c, ctx.tokens().font_size());
+                        ctx.text_center(&item.label, item_rect, item_c, visual.label_font_size);
                     } else {
-                        let text_width = item.label.len() as f32 * 8.0;
-                        let content_width = 16.0 + 4.0 + text_width;
+                        let text_width = item.label.len() as f32 * layout.glyph_width;
+                        let content_width =
+                            layout.icon_slot_width + layout.icon_text_gap + text_width;
                         let content_x = cx + (iw - content_width) * 0.5;
                         crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
                             &item.icon,
-                            Rect::new(content_x, frame.y, 16.0, self.item_h),
+                            Rect::new(content_x, frame.y, layout.icon_slot_width, self.item_h),
                             item_c,
-                            14.0,
+                            typography.icon,
                         );
                         ctx.draw_text_in_frame(
                             &item.label,
-                            Rect::new(content_x + 20.0, frame.y, text_width, self.item_h),
+                            Rect::new(
+                                content_x + layout.icon_advance,
+                                frame.y,
+                                text_width,
+                                self.item_h,
+                            ),
                             item_c,
-                            14.0,
+                            typography.icon_label,
                         );
                     }
                     cx += iw;
@@ -412,34 +438,52 @@ widget! {
                     let is_hover = i == hovered;
                     let item_c = if item.disabled { text_sec } else if is_active { primary } else { text };
                     if is_active || is_hover {
-                        ctx.fill_rect(item_rect, fill, Some(r));
+                        ctx.fill_rect(item_rect, fill, Some(radius));
                     }
                     // 紧凑侧栏绘制由专属呈现模块处理。
-                    if self.paint_compact_item(ctx, item, item_rect, item_c) {
+                    if self.paint_compact_item(ctx, item, item_rect, item_c, &visual) {
                         // 紧凑项已完成本行绘制。
                         continue;
                     }
-                    let label_pad = if item.icon.is_empty() { 16.0 } else { 36.0 }
-                        + *depth as f32 * 16.0;
+                    let label_pad = if item.icon.is_empty() {
+                        layout.plain_label_padding
+                    } else {
+                        layout.icon_label_padding
+                    } + *depth as f32 * layout.depth_indent;
                     if !item.icon.is_empty() {
-                        let icon_rect = Rect::new(frame.x + 12.0, item_y, 16.0, self.item_h);
+                        let icon_rect = Rect::new(
+                            frame.x + layout.vertical_icon_start,
+                            item_y,
+                            layout.icon_slot_width,
+                            self.item_h,
+                        );
                         crate::ui::widgets::icon::Icon::paint_in_frame(
-                            ctx, &item.icon, icon_rect, item_c, 14.0,
+                            ctx, &item.icon, icon_rect, item_c, typography.icon,
                         );
                     }
                     let label_rect = Rect::new(
                         frame.x + label_pad,
                         item_y,
-                        (frame.w - label_pad - 8.0).max(0.0),
+                        (frame.w - label_pad - layout.label_end_padding).max(0.0),
                         self.item_h,
                     );
-                    ctx.draw_text_in_frame(&item.label, label_rect, item_c, ctx.tokens().font_size());
+                    ctx.draw_text_in_frame(
+                        &item.label,
+                        label_rect,
+                        item_c,
+                        visual.label_font_size,
+                    );
                 }
             }
         }
 
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(frame, primary, 1.5, Some(r));
+            ctx.stroke_rect(
+                frame,
+                primary,
+                self.visual.chrome.focus_width,
+                Some(radius),
+            );
         }
     }
 }
@@ -451,14 +495,18 @@ impl Menu {
             MenuMode::Horizontal => {
                 let w = items
                     .iter()
-                    .map(|(item, depth)| Self::horizontal_item_width(item, *depth))
+                    .map(|(item, depth)| self.horizontal_item_width(item, *depth))
                     .sum::<f32>();
-                Size::new(w.max(100.0), self.item_h)
+                Size::new(w.max(self.visual.layout.horizontal_min_width), self.item_h)
             }
             MenuMode::Vertical | MenuMode::Inline => {
                 // 折叠侧栏使用稳定紧凑宽度，展开态保持兼容宽度。
                 Size::new(
-                    if self.is_compact() { 56.0 } else { 200.0 },
+                    if self.is_compact() {
+                        self.visual.layout.compact_width
+                    } else {
+                        self.visual.layout.expanded_width
+                    },
                     items.len() as f32 * self.item_h,
                 )
             }
@@ -474,7 +522,7 @@ impl Menu {
                 }
                 let mut cx = 0.0f32;
                 for (i, (item, depth)) in items.iter().enumerate() {
-                    let iw = Self::horizontal_item_width(item, *depth);
+                    let iw = self.horizontal_item_width(item, *depth);
                     if px >= cx && px < cx + iw {
                         return Some(i);
                     }
@@ -499,11 +547,15 @@ impl Menu {
             .position(|(item, _)| item.key == key)
     }
 
-    fn horizontal_item_width(item: &MenuItem, depth: usize) -> f32 {
-        item.label.len() as f32 * 8.0
-            + 32.0
-            + depth as f32 * 16.0
-            + if item.icon.is_empty() { 0.0 } else { 20.0 }
+    fn horizontal_item_width(&self, item: &MenuItem, depth: usize) -> f32 {
+        item.label.len() as f32 * self.visual.layout.glyph_width
+            + self.visual.layout.horizontal_padding
+            + depth as f32 * self.visual.layout.depth_indent
+            + if item.icon.is_empty() {
+                0.0
+            } else {
+                self.visual.layout.icon_extra_width
+            }
     }
 
     fn select_adjacent(&mut self, forward: bool) {
@@ -664,6 +716,7 @@ impl Default for Menu {
 impl Menu {
     /// 创建空的水平菜单。
     pub fn new() -> Self {
+        let visual = MENU_VISUAL_REF;
         Self {
             items: Vec::new(),
             active_key: String::new(),
@@ -680,8 +733,9 @@ impl Menu {
             diagnostics: Vec::new(),
             hovered_idx: Cell::new(usize::MAX),
             focused: false,
-            item_h: 32.0,
+            item_h: visual.layout.default_item_height,
             pending_change: RefCell::new(None),
+            visual,
         }
     }
     /// 替换顶层菜单项，并重新应用已配置的选择状态。
@@ -792,6 +846,8 @@ impl Menu {
         self.collapsible = next.collapsible;
         self.compact_binding = next.compact_binding;
         self.diagnostics = next.diagnostics;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         if self.controlled_binding.is_some() {
             // typed 受控状态始终覆盖组件内部兼容状态。
             self.sync_bound_keys();
@@ -892,5 +948,17 @@ impl Menu {
         let items = visit(items, &mut seen, &mut values, &mut diagnostics);
         // 返回绘制树、typed 映射与诊断。
         (items, values, diagnostics)
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有递归数据、受控状态与事件。
+fn build_menu_view(mut kernel: Menu, visual: &'static MenuVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Menu {
+    fn build(self) -> ViewNode {
+        build_menu_view(self, MENU_VISUAL_REF)
     }
 }
