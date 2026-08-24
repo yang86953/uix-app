@@ -1,8 +1,8 @@
 // 引入弹层缓存与视口方法所需的矩形类型。
 use crate::core::Rect;
 
-// 引入被扩展的树选择组件与最大视口规格。
-use super::{MAX_DROPDOWN_VIEWPORT_HEIGHT, TreeSelect};
+// 引入被扩展的树选择组件。
+use super::TreeSelect;
 // 引入同一组件私有几何模块的解析与转换函数。
 use super::geometry::{
     // 将相对弹层转换为窗口绝对坐标。
@@ -34,7 +34,7 @@ impl TreeSelect {
         // 归一化并缓存当前逻辑表面。
         let surface = normalize_tree_select_rect(surface);
         // 使用共享解析器生成绝对弹层矩形。
-        let absolute = resolve_tree_select_popup_rect(frame, item_count, surface);
+        let absolute = resolve_tree_select_popup_rect(frame, item_count, surface, self.visual);
         // 转换为组件事件路径可复用的相对矩形。
         let local = local_tree_select_popup_rect(frame, absolute);
         // 缓存最终相对弹层矩形。
@@ -74,7 +74,7 @@ impl TreeSelect {
             // 读取可复制的可选表面。
             .get()
             // 首次使用时按当前行数构造有限表面。
-            .unwrap_or_else(|| tree_select_fallback_surface(frame, item_count))
+            .unwrap_or_else(|| tree_select_fallback_surface(frame, item_count, self.visual))
     }
 
     // 返回事件路径应使用的实际弹层矩形。
@@ -102,9 +102,9 @@ impl TreeSelect {
             return self.remember_popup_rect(anchor, surface, item_count);
         }
         // 首次登记前构造有限回退表面。
-        let surface = tree_select_fallback_surface(frame, item_count);
+        let surface = tree_select_fallback_surface(frame, item_count, self.visual);
         // 解析回退绝对弹层。
-        let absolute = resolve_tree_select_popup_rect(frame, item_count, surface);
+        let absolute = resolve_tree_select_popup_rect(frame, item_count, surface, self.visual);
         // 只返回本地几何，等待正式登记记录绝对锚点与脏区。
         local_tree_select_popup_rect(frame, absolute)
     }
@@ -144,6 +144,6 @@ impl TreeSelect {
             // 读取实际视口高度并防止超过自然规格。
             .h
             // 夹取到既有最大视口高度。
-            .clamp(0.0, MAX_DROPDOWN_VIEWPORT_HEIGHT)
+            .clamp(0.0, self.visual.layout.max_dropdown_height)
     }
 }

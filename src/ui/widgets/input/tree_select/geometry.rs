@@ -1,15 +1,8 @@
 // 引入矩形基础类型。
 use crate::core::Rect;
 
-// 引入树选择弹层的既有尺寸规格。
-use super::{
-    // 单行自然高度。
-    DROPDOWN_ROW_HEIGHT,
-    // 最大自然视口高度。
-    MAX_DROPDOWN_VIEWPORT_HEIGHT,
-    // 最小自然弹层宽度。
-    MIN_DROPDOWN_WIDTH,
-};
+// 引入 UIX 注入的树选择视觉表。
+use super::presentation::TreeSelectVisual;
 
 // 使用当前逻辑表面解析树选择弹层最终绝对矩形。
 pub(super) fn resolve_tree_select_popup_rect(
@@ -19,6 +12,8 @@ pub(super) fn resolve_tree_select_popup_rect(
     item_count: usize,
     // 接收当前窗口逻辑表面。
     surface: Rect,
+    // 接收 UIX 声明的弹层视觉尺寸。
+    visual: &TreeSelectVisual,
     // 返回限制在表面内的绝对弹层矩形。
 ) -> Rect {
     // 归一化触发器矩形。
@@ -26,11 +21,11 @@ pub(super) fn resolve_tree_select_popup_rect(
     // 归一化逻辑表面矩形。
     let surface = normalize_tree_select_rect(surface);
     // 计算既有规格要求的自然宽度。
-    let natural_width = frame.w.max(MIN_DROPDOWN_WIDTH);
+    let natural_width = frame.w.max(visual.layout.min_dropdown_width);
     // 计算至少一行且不超过最大视口的自然高度。
-    let natural_height = (item_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT)
+    let natural_height = (item_count.max(1) as f32 * visual.layout.row_height)
         // 限制到既有最大自然视口高度。
-        .min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
+        .min(visual.layout.max_dropdown_height);
     // 将弹层宽度限制在当前表面内。
     let width = finite_nonnegative(natural_width).min(surface.w);
     // 无可用表面时返回稳定空矩形。
@@ -143,15 +138,19 @@ pub(super) fn tree_select_surface_rect(
 }
 
 // 构造尚未取得真实窗口表面时的有限回退表面。
-pub(super) fn tree_select_fallback_surface(frame: Rect, item_count: usize) -> Rect {
+pub(super) fn tree_select_fallback_surface(
+    frame: Rect,
+    item_count: usize,
+    visual: &TreeSelectVisual,
+) -> Rect {
     // 归一化触发器矩形。
     let frame = normalize_tree_select_rect(frame);
     // 计算既有规格要求的自然宽度。
-    let width = frame.w.max(MIN_DROPDOWN_WIDTH);
+    let width = frame.w.max(visual.layout.min_dropdown_width);
     // 计算当前行数对应的自然视口高度。
-    let height = (item_count.max(1) as f32 * DROPDOWN_ROW_HEIGHT)
+    let height = (item_count.max(1) as f32 * visual.layout.row_height)
         // 限制到既有最大自然视口高度。
-        .min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
+        .min(visual.layout.max_dropdown_height);
     // 在触发器上下各预留一份自然弹层空间。
     Rect::new(
         // 横向从触发器左边开始。

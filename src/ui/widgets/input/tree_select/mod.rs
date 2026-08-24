@@ -1,6 +1,7 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入稳定节点 key 的受控状态句柄。
@@ -17,6 +18,7 @@ use std::cell::{Cell, RefCell};
 mod geometry;
 // 将弹层缓存与实际视口方法隔离到私有实现模块。
 mod methods;
+mod presentation;
 
 // 复用所有 TreeSelect 消费端共享的最终几何函数。
 use geometry::{
@@ -25,11 +27,7 @@ use geometry::{
     // 合并触发器、弹层与当前表面。
     tree_select_surface_rect,
 };
-
-const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
-const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
-const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
-const MIN_DROPDOWN_WIDTH: f32 = 200.0;
+use presentation::*;
 
 widget! {
     /// 通过窗口内树形弹层选择并绑定稳定节点键的组件。
@@ -61,6 +59,9 @@ widget! {
         popup_anchor_frame: Cell<Option<Rect>>,
         // 累积当前呈现周期内需要清理的绝对弹层区域。
         dropdown_damage_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static TreeSelectVisual,
     }
 
 
@@ -163,7 +164,7 @@ widget! {
                     let dy = self.dropdown_scroll.scroll_by_wheel(
                         delta.y,
                         row_count,
-                        DROPDOWN_ROW_HEIGHT,
+                        self.visual.layout.row_height,
                         viewport_h,
                     );
                     if dy.abs() > 0.01 {
@@ -251,28 +252,30 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0))));
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border();
-        let primary = ctx.tokens().color_primary();
-        let text = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_tertiary = ctx.tokens().color_text_quaternary();
-        let fill = ctx.tokens().color_fill_tertiary();
-        let scale = (frame.h / DROPDOWN_TRIGGER_HEIGHT).clamp(0.0, 1.0);
-        let font_size = 13.0 * scale;
-        let left_padding = 10.0 * scale;
-        let arrow_slot = 28.0 * scale;
+        let visual = self.visual.resolve(ctx.tokens());
+        let scale = (frame.h / self.visual.layout.trigger_height).clamp(0.0, 1.0);
+        let font_size = self.visual.layout.font_size * scale;
+        let left_padding = self.visual.layout.left_padding * scale;
+        let arrow_slot = self.visual.layout.arrow_slot * scale;
         let radius = Some(Radius::uniform(
-            (ctx.tokens().border_radius_sm() * scale).min(frame.h.max(0.0) * 0.5),
+            (visual.radius * scale).min(frame.h.max(0.0) * 0.5),
         ));
         let input_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
-        let bc = if self.open || self.focused { primary } else { border };
+        let bc = if self.open || self.focused {
+            visual.primary
+        } else {
+            visual.border
+        };
         ctx.push_clip(input_rect);
-        ctx.fill_rect(input_rect, bg, radius);
+        ctx.fill_rect(input_rect, visual.background, radius);
         ctx.stroke_rect(
             input_rect,
             bc,
-            if self.open || self.focused { 2.0 } else { 1.0 },
+            if self.open || self.focused {
+                self.visual.chrome.focus_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
             radius,
         );
         if font_size > 0.0 && input_rect.w > 0.0 {
@@ -295,9 +298,9 @@ widget! {
                     &self.value
                 };
                 let display_color = if self.value.is_empty() {
-                    text_tertiary
+                    visual.text_quaternary
                 } else {
-                    text
+                    visual.text
                 };
                 let input_y = ctx.visual_center_y(text_area, font_size);
                 ctx.push_clip(text_area);
@@ -312,13 +315,13 @@ widget! {
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 if self.is_present() {
-                    "chevron-up"
+                    self.visual.icons.arrow_up
                 } else {
-                    "chevron-down"
+                    self.visual.icons.arrow_down
                 },
                 arrow_rect,
-                text_secondary,
-                12.0 * scale,
+                visual.text_secondary,
+                self.visual.layout.arrow_icon_size * scale,
             );
         }
         ctx.pop_clip();
@@ -342,36 +345,41 @@ widget! {
         }
 
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(bg, opacity);
-        let border = fade_color(border, opacity);
-        let primary = fade_color(primary, opacity);
-        let text = fade_color(text, opacity);
-        let fill = fade_color(fill, opacity);
-        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
-        let text_tertiary = fade_color(text_tertiary, opacity);
+        let bg = fade_color(visual.background, opacity);
+        let border = fade_color(visual.border, opacity);
+        let primary = fade_color(visual.primary, opacity);
+        let text = fade_color(visual.text, opacity);
+        let fill = fade_color(visual.fill_tertiary, opacity);
+        let primary_bg = fade_color(visual.primary_background, opacity);
+        let text_tertiary = fade_color(visual.text_quaternary, opacity);
         let display_row_count = flat.len().max(1);
-        let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let panel_radius = Some(Radius::uniform(visual.radius));
         // 将整个树选择弹层裁剪到当前逻辑表面。
         ctx.push_clip(surface);
         // 再按最终弹层矩形裁剪行与边框。
         ctx.push_clip(list_rect);
         ctx.fill_rect(list_rect, bg, panel_radius);
-        ctx.stroke_rect(list_rect, border, 1.0, panel_radius);
+        ctx.stroke_rect(
+            list_rect,
+            border,
+            self.visual.chrome.border_width,
+            panel_radius,
+        );
 
         if flat.is_empty() {
             let text_area = Rect::new(
-                list_rect.x + 10.0,
+                list_rect.x + self.visual.layout.row_horizontal_padding,
                 list_rect.y,
-                (list_rect.w - 20.0).max(0.0),
+                (list_rect.w - self.visual.layout.row_horizontal_padding * 2.0).max(0.0),
                 list_rect.h,
             );
-            let row_y = ctx.visual_center_y(text_area, 13.0);
+            let row_y = ctx.visual_center_y(text_area, self.visual.layout.font_size);
             ctx.push_clip(text_area);
             ctx.draw_text(
                 crate::ui::widget_runtime::locale::use_locale().no_data,
                 Point::new(text_area.x, row_y),
                 text_tertiary,
-                13.0,
+                self.visual.layout.font_size,
             );
             ctx.pop_clip();
             ctx.pop_clip();
@@ -383,13 +391,13 @@ widget! {
         let scroll_offset = self.dropdown_scroll.scroll_offset();
         let (start, end) = self.dropdown_scroll.scroll_range(
             display_row_count,
-            DROPDOWN_ROW_HEIGHT,
+            self.visual.layout.row_height,
             list_rect.h,
         );
 
         for (i, (key, title, depth, disabled)) in flat.iter().enumerate().take(end).skip(start) {
-            let item_y = list_rect.y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
-            if item_y + DROPDOWN_ROW_HEIGHT <= list_rect.y
+            let item_y = list_rect.y + i as f32 * self.visual.layout.row_height - scroll_offset;
+            if item_y + self.visual.layout.row_height <= list_rect.y
                 || item_y >= list_rect.y + list_rect.h
             {
                 continue;
@@ -398,10 +406,14 @@ widget! {
                 list_rect.x,
                 item_y,
                 list_rect.w,
-                DROPDOWN_ROW_HEIGHT,
+                self.visual.layout.row_height,
             );
-            let indent = (*depth as f32 * 20.0 + 8.0)
-                .min((item_rect.w - 34.0).max(8.0));
+            let indent = (*depth as f32 * self.visual.layout.indent_width
+                + self.visual.layout.indent_base)
+                .min(
+                    (item_rect.w - self.visual.layout.indent_right_reserve)
+                        .max(self.visual.layout.indent_base),
+                );
             let is_hovered = !disabled && self.hovered_option.as_ref() == Some(key);
             let is_highlighted = !disabled && self.highlighted_option.as_ref() == Some(key);
             let is_selected = *key == self.value_key;
@@ -413,7 +425,7 @@ widget! {
                 ctx.fill_rect(item_rect, primary_bg, None);
             }
 
-            let row_y = ctx.visual_center_y(item_rect, 13.0);
+            let row_y = ctx.visual_center_y(item_rect, self.visual.layout.font_size);
             let tc = if *disabled {
                 text_tertiary
             } else if is_selected {
@@ -424,12 +436,17 @@ widget! {
             let text_area = Rect::new(
                 item_rect.x + indent,
                 item_rect.y,
-                (item_rect.w - indent - 10.0).max(0.0),
+                (item_rect.w - indent - self.visual.layout.text_right_padding).max(0.0),
                 item_rect.h,
             );
             if text_area.w > 0.0 {
                 ctx.push_clip(text_area);
-                ctx.draw_text(title, Point::new(text_area.x, row_y), tc, 13.0);
+                ctx.draw_text(
+                    title,
+                    Point::new(text_area.x, row_y),
+                    tc,
+                    self.visual.layout.font_size,
+                );
                 ctx.pop_clip();
             }
         }
@@ -464,7 +481,7 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // 登记边界与绘制、命中共用同一矩形。
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -524,7 +541,10 @@ widget! {
 
 impl TreeSelect {
     fn intrinsic_size(&self) -> Size {
-        Size::new(200.0, DROPDOWN_TRIGGER_HEIGHT)
+        Size::new(
+            self.visual.layout.intrinsic_width,
+            self.visual.layout.trigger_height,
+        )
     }
 
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
@@ -537,7 +557,7 @@ impl TreeSelect {
         if local_y < 0.0 {
             return None;
         }
-        let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
+        let idx = (local_y / self.visual.layout.row_height) as usize;
         let flat_len = self.flatten_nodes().len();
         if idx < flat_len { Some(idx) } else { None }
     }
@@ -643,6 +663,7 @@ impl TreeSelect {
             popup_anchor_frame: Cell::new(None),
             // 首次呈现前没有历史弹层脏区。
             dropdown_damage_rect: Cell::new(Rect::zero()),
+            visual: TREE_SELECT_VISUAL_REF,
         }
     }
     /// 设置尚未选中节点时显示的占位文本。
@@ -745,6 +766,14 @@ impl TreeSelect {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        if !std::ptr::eq(self.visual, next.visual) {
+            self.visual = next.visual;
+            self.dropdown_rect.set(Rect::zero());
+            self.dropdown_row_count.set(0);
+            self.surface_rect.set(None);
+            self.popup_anchor_frame.set(None);
+            self.dropdown_damage_rect.set(Rect::zero());
+        }
         // 受控实例以新声明树中的状态值为权威。
         let controlled_value = next
             .value_binding
@@ -765,7 +794,7 @@ impl TreeSelect {
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
         self.dropdown_scroll.clamp_to_content(
             row_count,
-            DROPDOWN_ROW_HEIGHT,
+            self.visual.layout.row_height,
             // 动态节点变化使用当前实际视口收敛滚动状态。
             viewport_height,
         );
@@ -853,8 +882,8 @@ impl TreeSelect {
         // 键盘显露使用受当前表面缩高后的实际视口。
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
         let old_offset = self.dropdown_scroll.scroll_offset();
-        let row_top = index as f32 * DROPDOWN_ROW_HEIGHT;
-        let row_bottom = row_top + DROPDOWN_ROW_HEIGHT;
+        let row_top = index as f32 * self.visual.layout.row_height;
+        let row_bottom = row_top + self.visual.layout.row_height;
         let new_offset = if row_top < old_offset {
             row_top
         } else if row_bottom > old_offset + viewport_height {
@@ -863,8 +892,11 @@ impl TreeSelect {
             old_offset
         };
         self.dropdown_scroll.set_scroll_offset(new_offset);
-        self.dropdown_scroll
-            .clamp_to_content(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        self.dropdown_scroll.clamp_to_content(
+            row_count,
+            self.visual.layout.row_height,
+            viewport_height,
+        );
         let applied = self.dropdown_scroll.scroll_offset() - old_offset;
         if applied.abs() > 0.01 {
             self.push_scroll_delta(0.0, applied);
@@ -881,6 +913,18 @@ fn fade_color(color: Color, opacity: f32) -> Color {
         .round()
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
+}
+
+// 把 TreeSelect 的 Rust 树状态内核与 UIX 静态视觉组合为单一组件节点。
+fn build_tree_select_view(mut kernel: TreeSelect, visual: &'static TreeSelectVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for TreeSelect {
+    fn build(self) -> ViewNode {
+        build_tree_select_view(self, TREE_SELECT_VISUAL_REF)
+    }
 }
 
 impl Default for TreeSelect {
