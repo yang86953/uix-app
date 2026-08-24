@@ -1,17 +1,40 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 反馈组件复用基础层提示气泡原语。
 use crate::ui::SnapshotFields;
 use crate::ui::widgets::tooltip_primitives::{
-    paint_tooltip_bubble, tooltip_bubble_rect, tooltip_dirty_rect, tooltip_fallback_surface,
+    paint_tooltip_bubble_with_visual_and_size, tooltip_bubble_rect_with_visual_and_size,
+    tooltip_bubble_size_with_visual, tooltip_dirty_rect_with_visual_and_size,
+    tooltip_fallback_surface_with_visual_and_size,
 };
 use crate::ui::{EventResult, KeyCode, MouseButton, SystemEvent, WidgetTree};
 
 // 复用基础层交互模型，并保持 feedback::tooltip 的既有公开路径。
 pub use crate::ui::widgets::overlay_types::{TooltipPlacement, TriggerMode};
+
+mod presentation;
+use presentation::*;
+
+// 记录会覆盖 UIX 默认值的 Rust 调用方声明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TooltipAuthored(u8);
+
+impl TooltipAuthored {
+    const PLACEMENT: u8 = 1 << 0;
+    const ARROW: u8 = 1 << 1;
+
+    fn contains(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn set(&mut self, flag: u8) {
+        self.0 |= flag;
+    }
+}
 
 widget! {
     /// 按指定触发方式显示说明文本的浮层提示。
@@ -34,6 +57,13 @@ widget! {
         last_frame: std::cell::Cell<Rect>,
         // 缓存当前逻辑表面，统一绘制、脏区与浮层登记的边界。
         surface_rect: std::cell::Cell<Option<Rect>>,
+        #[snapshot(skip)]
+        visual: &'static TooltipVisual,
+        #[snapshot(skip)]
+        authored: TooltipAuthored,
+        // 缓存文字自然尺寸，避免 render、dirty 与 overlay 在同帧重复度量。
+        #[snapshot(skip)]
+        natural_bubble_size: std::cell::Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -219,18 +249,20 @@ widget! {
         }
 
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        // 气泡底：原为 50,50,50 深灰，收敛为黑色 token（AntD 标准 tooltip 色，alpha 保持原值）。
+        // 每帧只解析一次 UIX 声明的主题颜色。
+        let resolved = self.visual.resolve(ctx.tokens());
+        // 调用方显式颜色保持高于 UIX 主题角色的优先级。
         let bg = fade_color(
             self.bg_color
-                .unwrap_or(ctx.tokens().color_black().with_alpha(230)),
+                .unwrap_or(resolved.background),
             opacity,
         );
         let txt_color = fade_color(
             self.text_color
-                .unwrap_or(ctx.tokens().color_white()),
+                .unwrap_or(resolved.text),
             opacity,
         );
-        paint_tooltip_bubble(
+        paint_tooltip_bubble_with_visual_and_size(
             ctx,
             &self.text,
             frame,
@@ -238,14 +270,14 @@ widget! {
             bg,
             txt_color,
             self.arrow,
+            self.natural_bubble_size.get(),
+            self.visual.bubble,
         );
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         // 使用最近布局或绘制获得的表面解析当前脏区。
-        tooltip_dirty_rect(
-            // 传入提示文字。
-            &self.text,
+        tooltip_dirty_rect_with_visual_and_size(
             // 传入箭头开关。
             self.arrow,
             // 传入作者指定方向。
@@ -254,6 +286,10 @@ widget! {
             frame,
             // 传入当前表面或有限回退。
             self.surface_or_fallback(frame),
+            // 复用构建或声明刷新时计算的自然尺寸。
+            self.natural_bubble_size.get(),
+            // 传入 UIX 声明的共享视觉表。
+            self.visual.bubble,
         )
     }
 
@@ -264,14 +300,15 @@ widget! {
 
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
-                .bounds(tooltip_bubble_rect(
-                    &self.text,
+                .bounds(tooltip_bubble_rect_with_visual_and_size(
                     self.arrow,
                     self.placement,
                     frame,
                     self.surface_or_fallback(frame),
+                    self.natural_bubble_size.get(),
+                    self.visual.bubble,
                 ))
-                .z_index(1100),
+                .z_index(self.visual.overlay_z),
         )
     }
 
@@ -303,9 +340,7 @@ widget! {
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
             // 动画脏区也必须使用当前逻辑表面。
-            tooltip_dirty_rect(
-                // 传入提示文字。
-                &self.text,
+            tooltip_dirty_rect_with_visual_and_size(
                 // 传入箭头开关。
                 self.arrow,
                 // 传入作者指定方向。
@@ -314,6 +349,10 @@ widget! {
                 frame,
                 // 传入当前表面或有限回退。
                 self.surface_or_fallback(frame),
+                // 复用构建或声明刷新时计算的自然尺寸。
+                self.natural_bubble_size.get(),
+                // 传入 UIX 声明的共享视觉表。
+                self.visual.bubble,
             )
         } else {
             Rect::zero()
@@ -328,6 +367,34 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
+// 把内容/交互状态与 UIX 静态视觉融合为单一 Tooltip 根节点。
+fn build_tooltip_view(mut kernel: Tooltip, declared_visual: TooltipVisual) -> ViewNode {
+    let visual = UIX_TOOLTIP_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.authored.contains(TooltipAuthored::PLACEMENT) {
+        kernel.placement = visual.defaults.placement;
+    }
+    if !kernel.authored.contains(TooltipAuthored::ARROW) {
+        kernel.arrow = visual.defaults.arrow;
+    }
+    kernel.visual = visual;
+    kernel
+        .natural_bubble_size
+        .set(tooltip_bubble_size_with_visual(&kernel.text, visual.bubble));
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_tooltip_uix_root(kernel: Tooltip) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/tooltip/tooltip.uix")
+}
+
+impl View for Tooltip {
+    fn build(self) -> ViewNode {
+        build_tooltip_uix_root(self)
+    }
+}
+
 impl Default for Tooltip {
     fn default() -> Self {
         Self::new("")
@@ -337,9 +404,12 @@ impl Default for Tooltip {
 impl Tooltip {
     /// 创建默认置于上方、悬停触发且初始隐藏的浮层提示。
     pub fn new(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let natural_bubble_size =
+            tooltip_bubble_size_with_visual(&text, DEFAULT_TOOLTIP_VISUAL.bubble);
         Self {
-            text: text.into(),
-            placement: TooltipPlacement::Top,
+            text,
+            placement: DEFAULT_TOOLTIP_VISUAL.defaults.placement,
             trigger: TriggerMode::Hover,
             bg_color: None,
             text_color: None,
@@ -347,21 +417,33 @@ impl Tooltip {
             pending: false,
             delay_ms: 0,
             timer_id: 1,
-            arrow: true,
-            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            arrow: DEFAULT_TOOLTIP_VISUAL.defaults.arrow,
+            transition: TransitionPlayer::new(AnimationConfig::fade_in(
+                DEFAULT_TOOLTIP_VISUAL.motion.enter_duration,
+            )),
             closing: false,
             transition_dirty: false,
             pressed_button: None,
             pressed_key: None,
-            last_frame: std::cell::Cell::new(Rect::new(0.0, 0.0, 80.0, 28.0)),
+            last_frame: std::cell::Cell::new(Rect::new(
+                0.0,
+                0.0,
+                DEFAULT_TOOLTIP_VISUAL.defaults.width,
+                DEFAULT_TOOLTIP_VISUAL.defaults.height,
+            )),
             // 新组件尚未接收布局或绘制表面。
             surface_rect: std::cell::Cell::new(None),
+            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
+            visual: &DEFAULT_TOOLTIP_VISUAL,
+            authored: TooltipAuthored::default(),
+            natural_bubble_size: std::cell::Cell::new(natural_bubble_size),
         }
     }
 
     /// 设置浮层相对触发区域的放置方向。
     pub fn placement(mut self, p: TooltipPlacement) -> Self {
         self.placement = p;
+        self.authored.set(TooltipAuthored::PLACEMENT);
         self
     }
 
@@ -396,6 +478,7 @@ impl Tooltip {
     /// 设置是否绘制指向触发区域的箭头。
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
+        self.authored.set(TooltipAuthored::ARROW);
         self
     }
 
@@ -426,7 +509,8 @@ impl Tooltip {
         self.cancel_pending_activation();
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_in(self.visual.motion.enter_duration));
         self.transition_dirty = true;
     }
 
@@ -441,7 +525,8 @@ impl Tooltip {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_out(self.visual.motion.exit_duration));
         self.transition_dirty = true;
     }
 
@@ -461,8 +546,16 @@ impl Tooltip {
 
     fn trigger_rect(&self) -> Rect {
         let frame = self.last_frame.get();
-        let width = if frame.w > 0.0 { frame.w } else { 80.0 };
-        let height = if frame.h > 0.0 { frame.h } else { 28.0 };
+        let width = if frame.w > 0.0 {
+            frame.w
+        } else {
+            self.visual.defaults.width
+        };
+        let height = if frame.h > 0.0 {
+            frame.h
+        } else {
+            self.visual.defaults.height
+        };
         Rect::new(0.0, 0.0, width, height)
     }
 
@@ -490,11 +583,17 @@ impl Tooltip {
             // 读取可复制的可选表面缓存。
             .get()
             // 首次登记前根据文字自然尺寸构造有限回退。
-            .unwrap_or_else(|| tooltip_fallback_surface(&self.text, frame))
+            .unwrap_or_else(|| {
+                tooltip_fallback_surface_with_visual_and_size(
+                    frame,
+                    self.natural_bubble_size.get(),
+                    self.visual.bubble,
+                )
+            })
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(80.0, 28.0)
+        Size::new(self.visual.defaults.width, self.visual.defaults.height)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -520,6 +619,9 @@ impl Tooltip {
         self.delay_ms = next.delay_ms;
         self.timer_id = next.timer_id;
         self.arrow = next.arrow;
+        self.visual = next.visual;
+        self.authored = next.authored;
+        self.natural_bubble_size.set(next.natural_bubble_size.get());
         if trigger_changed {
             self.pending = false;
             self.pressed_button = None;
@@ -532,6 +634,6 @@ impl Tooltip {
 #[cfg(test)]
 // 将表面约束契约限制在当前模块的内部测试中。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/tooltip__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/feedback/tooltip__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

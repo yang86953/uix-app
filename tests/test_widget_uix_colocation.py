@@ -46,6 +46,7 @@ MIGRATED_WIDGET_DIRS = {
     "feedback/alert",
     "feedback/progress",
     "feedback/spin",
+    "feedback/tooltip",
     "general/button_group",
     "general/divider",
     "other/theme_toggle",
