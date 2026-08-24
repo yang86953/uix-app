@@ -25,6 +25,8 @@ fn generates_skeleton_contract() {
     assert!(snapshot.contains("height (48.0)"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 Skeleton 自己的 View/UIX 声明边界，不能直接绕过为叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"));
 }
 
 // 验证动态尺寸保留公开 Rust f32 类型检查。

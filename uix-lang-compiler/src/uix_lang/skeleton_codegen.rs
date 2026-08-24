@@ -68,8 +68,8 @@ pub(crate) fn generate_skeleton(element: &Element) -> Result<TokenStream, Diagno
         widget = quote! { (#widget).height(#height) };
     }
 
-    // 物化为公开叶 View，再应用统一样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 Skeleton 专有尺寸，避免重复应用到外层 View。
     apply_common_attributes(
         // 传入已经配置的骨架屏 View。

@@ -1,0 +1,2 @@
+// Skeleton 是原子绘制组件；UIX 声明公开根，Rust 内核负责动画与绘制。
+<KernelView value={build_skeleton_view(kernel)} />
