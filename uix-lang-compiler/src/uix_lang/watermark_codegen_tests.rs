@@ -23,8 +23,8 @@ fn generates_watermark_contract() {
     assert!(snapshot.contains("Watermark :: new (& * (watermark_text))"));
     // 动态透明度必须进入运行时构建器。
     assert!(snapshot.contains("opacity (watermark_opacity)"));
-    // 组件必须物化为公开叶节点。
-    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 生成器必须进入 Watermark 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
     // 公共宽度与自动化标识仍由统一属性层消费。
     assert!(snapshot.contains("width") && snapshot.contains("automation_id"));
 }

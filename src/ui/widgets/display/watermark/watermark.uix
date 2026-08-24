@@ -1,0 +1,2 @@
+// Watermark 是平铺文字绘制组件；UIX 声明公开根，Rust 内核负责旋转排版。
+<KernelView value={build_watermark_view(kernel)} />

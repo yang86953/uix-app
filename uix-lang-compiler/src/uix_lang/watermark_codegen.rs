@@ -39,8 +39,8 @@ pub(crate) fn generate_watermark(element: &Element) -> Result<TokenStream, Diagn
         ::uix::prelude::Watermark::new(&*(#text))
             .opacity(#opacity)
     };
-    // Watermark 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入 Watermark 自己的同目录 UIX 声明根。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费专有属性并继续应用统一样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置的水印 View。

@@ -20,7 +20,7 @@ mod upload_types;
 // 将测试实现统一存放在根 tests 目录。
 #[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_tests.rs"]
 mod upload_tests;
-#[path = "../../display/watermark.rs"]
+#[path = "../../display/watermark/mod.rs"]
 mod watermark;
 
 // 关闭二维码 capability 时不保留模块级公开入口。

@@ -48,6 +48,7 @@
 - `Badge`：`src/ui/widgets/display/badge/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留唯一真实子树交接、布局收敛、装饰几何和绘制；生成结果仍是原 `Badge` 叶根，子树由既有生命周期端口物化，不增加包装节点。
 - `Avatar`：`src/ui/widgets/display/avatar/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留图片缓存、失效、后备文字缩放和绘制；生成结果仍是原 `Avatar` 单叶节点，不增加包装或子节点。
 - `QRCode`：`src/ui/widgets/display/qrcode/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留纠错编码、矩阵缓存、quiet zone 与无损模块绘制；生成结果仍是原 `QRCode` 单叶节点，不增加包装或子节点。
+- `Watermark`：`src/ui/widgets/display/watermark/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留主题解析、平铺、旋转排版与绘制；生成结果仍是原 `Watermark` 单叶节点，不增加包装或子节点。
 
 ## 组件：复合组件
 

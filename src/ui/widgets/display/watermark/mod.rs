@@ -1,5 +1,6 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, ThemeTokens, WidgetTree};
 use crate::widget;
@@ -56,6 +57,20 @@ widget! {
         frame
     }
 }
+
+// 把水印平铺配置与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_watermark_view(kernel: Watermark) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Watermark {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占平铺、旋转排版与绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/watermark/watermark.uix")
+    }
+}
+
 impl Watermark {
     const DEFAULT_OPACITY: f32 = 0.15;
     const DEFAULT_ROTATE: f32 = -22.0;
@@ -242,6 +257,6 @@ impl Watermark {
 // 验证 Watermark 默认样式随主题解析。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/other/misc/watermark__theme_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/misc/watermark__theme_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod theme_tests;
