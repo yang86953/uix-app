@@ -10,13 +10,14 @@ use crate::widget;
 // 引入受控 current 的响应式状态句柄。
 use crate::ui::State;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetId, WidgetTree,
 };
 use std::cell::Cell;
 use std::rc::Rc;
 
-const STEP_EXTENT: f32 = 80.0;
+mod presentation;
+use presentation::*;
 
 /// 步骤状态。
 ///
@@ -74,6 +75,9 @@ widget! {
         step_callback: Option<Rc<dyn Fn(usize, &Step)>>,
         /// 缓存 render 时的 frame 和 step_w，供 on_event 定位点击区域
         last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static StepsVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.steps.is_empty()) }
@@ -142,24 +146,27 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         // 捕获受控 State 依赖，使外部更新触发声明树重建。
         self.capture_bound_value_dependency();
-        let primary = ctx.tokens().color_primary();
-        let _success = ctx.tokens().color_success();
-        let error = ctx.tokens().color_error();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let fill = ctx.tokens().color_fill();
+        // 横向与纵向步骤同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
+        let primary = visual.primary;
+        let error = visual.error;
+        let text = visual.text;
+        let text_sec = visual.text_secondary;
+        let fill = visual.fill;
         // 步骤圆点反白色：白色 token。
-        let white = ctx.tokens().color_white();
+        let white = visual.white;
         let count = self.steps.len();
         if count == 0 { return; }
 
         if self.direction == StepsDirection::Horizontal {
             // 横向
-            let step_w = (frame.w / count as f32).min(200.0);
+            let step_w = (frame.w / count as f32).min(layout.horizontal_step_max_width);
             let total_w = step_w * count as f32;
             let start_x = frame.x + (frame.w - total_w) * 0.5;
-            let circle_r = 14.0;
-            let circle_y = frame.y + 28.0;
+            let circle_r = layout.circle_radius;
+            let circle_y = frame.y + layout.center_offset;
 
             // 缓存 frame 和 step_w 供 on_event 点击定位使用
             self.last_frame_and_step_w.set(Some((frame, step_w)));
@@ -175,7 +182,16 @@ widget! {
                     let line_x2 = cx - circle_r;
                     let line_y = circle_y;
                     let line_c = if i <= current { primary } else { fill };
-                    ctx.fill_rect(Rect::new(line_x1, line_y - 1.0, line_x2 - line_x1, 2.0), line_c, None);
+                    ctx.fill_rect(
+                        Rect::new(
+                            line_x1,
+                            line_y - layout.line_half_width,
+                            line_x2 - line_x1,
+                            layout.line_thickness,
+                        ),
+                        line_c,
+                        None,
+                    );
                 }
                 // 圆圈
                 let (bg_c, text_c, border_c) = match status {
@@ -187,54 +203,89 @@ widget! {
                 if bg_c.a > 0 {
                     ctx.fill_circle(cx, circle_y, circle_r, bg_c);
                 }
-                ctx.stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
+                ctx.stroke_circle(
+                    cx,
+                    circle_y,
+                    circle_r,
+                    border_c,
+                    self.visual.chrome.marker_border_width,
+                );
                 // 步骤编号/图标（在圆圈内居中）
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
                 // 步骤图标/编号字号：统一使用主题 font_size token。
                 if self.dot {
-                    ctx.fill_circle(cx, circle_y, circle_r * 0.35, text_c);
+                    ctx.fill_circle(cx, circle_y, circle_r * layout.dot_radius_factor, text_c);
                 } else if !step.icon.is_empty() {
-                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
+                        ctx,
+                        &step.icon,
+                        circle_rect,
+                        text_c,
+                        visual.marker_font_size,
+                    );
                 } else if status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "check",
+                        self.visual.icons.finish,
                         circle_rect,
                         text_c,
-                        ctx.tokens().font_size(),
+                        visual.marker_font_size,
                     );
                 } else {
-                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
+                    ctx.text_center(
+                        &(i + 1).to_string(),
+                        circle_rect,
+                        text_c,
+                        visual.marker_font_size,
+                    );
                 }
                 // 标题（在圆圈下方居中）
                 let title_c = if i <= current { text } else { text_sec };
-                let title_rect = Rect::new(cx - step_w * 0.5, circle_y + circle_r + 4.0, step_w, 20.0);
-                ctx.text_center(&step.title, title_rect, title_c, 13.0);
+                let title_rect = Rect::new(
+                    cx - step_w * 0.5,
+                    circle_y + circle_r + layout.title_gap,
+                    step_w,
+                    layout.title_height,
+                );
+                ctx.text_center(&step.title, title_rect, title_c, typography.title);
                 if !step.description.is_empty() {
                     let description_rect = Rect::new(
                         cx - step_w * 0.5,
-                        circle_y + circle_r + 24.0,
+                        circle_y + circle_r + layout.description_offset,
                         step_w,
-                        18.0,
+                        layout.description_height,
                     );
-                    ctx.text_center(&step.description, description_rect, text_sec, 11.0);
+                    ctx.text_center(
+                        &step.description,
+                        description_rect,
+                        text_sec,
+                        typography.description,
+                    );
                 }
             }
         } else {
             self.last_frame_and_step_w.set(None);
-            let circle_r = 14.0;
-            let circle_x = frame.x + 28.0;
+            let circle_r = layout.circle_radius;
+            let circle_x = frame.x + layout.center_offset;
             let current = self.current.get();
             for (i, step) in self.steps.iter().enumerate() {
                 // 纵向与横向共享同一状态推导规则。
                 let status = step.resolved_status(i, current);
-                let cy = frame.y + i as f32 * STEP_EXTENT + 28.0;
+                let cy = frame.y + i as f32 * layout.step_extent + layout.center_offset;
                 if i > 0 {
-                    let line_y1 = frame.y + (i - 1) as f32 * STEP_EXTENT + 28.0 + circle_r;
+                    let line_y1 = frame.y
+                        + (i - 1) as f32 * layout.step_extent
+                        + layout.center_offset
+                        + circle_r;
                     let line_y2 = cy - circle_r;
                     let line_c = if i <= current { primary } else { fill };
                     ctx.fill_rect(
-                        Rect::new(circle_x - 1.0, line_y1, 2.0, line_y2 - line_y1),
+                        Rect::new(
+                            circle_x - layout.line_half_width,
+                            line_y1,
+                            layout.line_thickness,
+                            line_y2 - line_y1,
+                        ),
                         line_c,
                         None,
                     );
@@ -247,7 +298,13 @@ widget! {
                 if bg_c.a > 0 {
                     ctx.fill_circle(circle_x, cy, circle_r, bg_c);
                 }
-                ctx.stroke_circle(circle_x, cy, circle_r, border_c, 2.0);
+                ctx.stroke_circle(
+                    circle_x,
+                    cy,
+                    circle_r,
+                    border_c,
+                    self.visual.chrome.marker_border_width,
+                );
                 let circle_rect = Rect::new(
                     circle_x - circle_r,
                     cy - circle_r,
@@ -255,33 +312,59 @@ widget! {
                     circle_r * 2.0,
                 );
                 if self.dot {
-                    ctx.fill_circle(circle_x, cy, circle_r * 0.35, text_c);
+                    ctx.fill_circle(
+                        circle_x,
+                        cy,
+                        circle_r * layout.dot_radius_factor,
+                        text_c,
+                    );
                 } else if !step.icon.is_empty() {
-                    crate::ui::widgets::icon::Icon::paint_in_frame(ctx, &step.icon, circle_rect, text_c, ctx.tokens().font_size());
+                    crate::ui::widgets::icon::Icon::paint_in_frame(
+                        ctx,
+                        &step.icon,
+                        circle_rect,
+                        text_c,
+                        visual.marker_font_size,
+                    );
                 } else if status == StepStatus::Finish {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "check",
+                        self.visual.icons.finish,
                         circle_rect,
                         text_c,
-                        ctx.tokens().font_size(),
+                        visual.marker_font_size,
                     );
                 } else {
-                    ctx.text_center(&(i + 1).to_string(), circle_rect, text_c, ctx.tokens().font_size());
+                    ctx.text_center(
+                        &(i + 1).to_string(),
+                        circle_rect,
+                        text_c,
+                        visual.marker_font_size,
+                    );
                 }
                 let title_color = if i <= current { text } else { text_sec };
                 ctx.draw_text_in_frame(
                     &step.title,
-                    Rect::new(circle_x + 24.0, cy - 20.0, frame.w - 60.0, 24.0),
+                    Rect::new(
+                        circle_x + layout.vertical_text_start,
+                        cy + layout.vertical_title_offset,
+                        frame.w - layout.vertical_text_end_reserve,
+                        layout.vertical_title_height,
+                    ),
                     title_color,
-                    13.0,
+                    typography.title,
                 );
                 if !step.description.is_empty() {
                     ctx.draw_text_in_frame(
                         &step.description,
-                        Rect::new(circle_x + 24.0, cy + 4.0, frame.w - 60.0, 22.0),
+                        Rect::new(
+                            circle_x + layout.vertical_text_start,
+                            cy + layout.vertical_description_offset,
+                            frame.w - layout.vertical_text_end_reserve,
+                            layout.vertical_description_height,
+                        ),
                         text_sec,
-                        11.0,
+                        typography.description,
                     );
                 }
             }
@@ -291,10 +374,8 @@ widget! {
             ctx.stroke_rect(
                 frame,
                 primary,
-                1.5,
-                Some(crate::draw::Radius::uniform(
-                    ctx.tokens().border_radius_sm(),
-                )),
+                self.visual.chrome.focus_width,
+                Some(crate::draw::Radius::uniform(visual.radius)),
             );
         }
     }
@@ -303,27 +384,35 @@ widget! {
 impl Steps {
     fn intrinsic_size(&self) -> Size {
         if self.direction == StepsDirection::Horizontal {
-            Size::new(600.0, 96.0)
+            Size::new(
+                self.visual.layout.horizontal_width,
+                self.visual.layout.horizontal_height,
+            )
         } else {
-            Size::new(200.0, self.steps.len() as f32 * STEP_EXTENT)
+            Size::new(
+                self.visual.layout.vertical_width,
+                self.steps.len() as f32 * self.visual.layout.step_extent,
+            )
         }
     }
 
     /// 使用步骤列表创建默认水平、可点击的步骤条。
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
+        let visual = STEPS_VISUAL_REF;
         Self {
             steps,
             current,
             // 默认构造保持非受控模式。
             current_binding: None,
-            direction: StepsDirection::Horizontal,
+            direction: visual.defaults.direction,
             focused: false,
             pending_change: Cell::new(None),
-            clickable: true,
-            dot: false,
+            clickable: visual.defaults.clickable,
+            dot: visual.defaults.dot,
             step_callback: None,
             last_frame_and_step_w: Cell::new(None),
+            visual,
         }
     }
     /// 设置非受控模式的初始步骤索引，并夹取到有效范围。
@@ -386,6 +475,8 @@ impl Steps {
         self.clickable = next.clickable;
         self.dot = next.dot;
         self.step_callback = next.step_callback;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         // 受控模式服从外部 State；非受控模式保留原交互状态。
         let current = controlled_current.unwrap_or_else(|| self.current.get());
         // 在新步骤集合下归一化 current 镜像。
@@ -498,7 +589,7 @@ impl Steps {
                 Some((relative_x / step_width) as usize)
             }
             StepsDirection::Vertical => {
-                let index = (y / STEP_EXTENT) as usize;
+                let index = (y / self.visual.layout.step_extent) as usize;
                 (index < self.steps.len()).then_some(index)
             }
         }
@@ -509,7 +600,7 @@ impl Steps {
 #[cfg(test)]
 // 声明 Steps 私有测试模块。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/navigation/steps__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/navigation/steps__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
 
@@ -581,5 +672,17 @@ impl Steps {
     {
         self.step_callback = Some(Rc::new(callback));
         self
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有 current 状态、状态推导和输入。
+fn build_steps_view(mut kernel: Steps, visual: &'static StepsVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Steps {
+    fn build(self) -> ViewNode {
+        build_steps_view(self, STEPS_VISUAL_REF)
     }
 }
