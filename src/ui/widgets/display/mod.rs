@@ -10,10 +10,6 @@ pub mod descriptions;
 pub mod empty;
 pub mod image;
 pub mod image_group;
-// 图片组件共享的主题绘制值保持在 display Module 私有边界。
-mod image_presentation;
-// 单 Image 的加载生命周期状态保持在私有模块。
-mod image_state;
 pub mod list;
 pub mod result;
 pub mod selectable_list;

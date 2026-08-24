@@ -98,8 +98,8 @@ pub(crate) fn generate_image(element: &Element) -> Result<TokenStream, Diagnosti
         widget = quote! { (#widget).on_error(move |_error| { #error }) };
     }
 
-    // 物化为公开叶 View，再应用统一样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入 Image 自己的同目录 UIX 声明根。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 Image 专有属性，避免公共属性层重复解释固有尺寸。
     apply_common_attributes(
         // 传入已经配置的图片 View。

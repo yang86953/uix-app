@@ -11,7 +11,7 @@ use crate::ui::{
 };
 use crate::widget;
 // 引入同一 display Module 拥有的图片浮层调色板。
-use super::image_presentation::ImageOverlayPalette;
+use super::image::presentation::ImageOverlayPalette;
 
 #[derive(Debug)]
 struct GalleryGeometry {

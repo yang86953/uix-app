@@ -2,6 +2,11 @@
 //!
 //! 支持占位图、fallback、描述、圆角与文件路径加载。
 
+// 图片与图片组共享的主题绘制值跟随 Image widget 同目录维护。
+pub(super) mod presentation;
+// 单 Image 的加载生命周期状态保持在 widget 私有边界。
+mod state;
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -11,15 +16,16 @@ use crate::draw::renderer::Invalidation;
 use crate::draw::resources::image::BitmapHandle;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::paint_scope::current_paint_widget;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SystemEvent};
 use crate::widget;
-// 引入同一 display Module 拥有的图片浮层调色板。
-use super::image_presentation::ImageOverlayPalette;
+// 引入同一 widget 目录拥有的图片浮层调色板。
+use self::presentation::ImageOverlayPalette;
 // 引入 Image 私有加载生命周期状态。
-use super::image_state::ImageLoadState;
+use self::state::ImageLoadState;
 
 // Image — 图片显示组件。
 widget! {
@@ -205,6 +211,19 @@ widget! {
             ctx,
             tree,
         );
+    }
+}
+
+// 把图片资源、状态机与绘制内核融合为 UIX 声明的单一根节点。
+fn build_image_view(kernel: Image) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Image {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占加载、动态子树、预览与绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/image/image.uix")
     }
 }
 
@@ -885,10 +904,14 @@ impl Image {
 // 仅在单元测试中挂载图片延迟错误视图的状态所有权回归。
 #[cfg(test)]
 // 测试独立文件保持产品组件实现不超过规模上限。
-#[path = "../../../../tests/unit/ui/widgets/display/image_dynamic_capture_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/image_dynamic_capture_tests.rs"]
 mod image_dynamic_capture_tests;
 // 仅在单元测试中挂载图片动态子树的离场与所有者释放回归。
 #[cfg(test)]
 // 独立生命周期测试文件避免产品实现超过规模上限。
-#[path = "../../../../tests/unit/ui/widgets/display/image_dynamic_lifecycle_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/image_dynamic_lifecycle_tests.rs"]
 mod image_dynamic_lifecycle_tests;
+// 集中验证 UIX 声明根保持 Image 内核与公开配置。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/image_tests.rs"]
+mod tests;
