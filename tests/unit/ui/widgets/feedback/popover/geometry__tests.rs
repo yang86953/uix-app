@@ -31,10 +31,8 @@ fn popup_cache_does_not_survive_surface_resize() {
         PopoverPlacement::Right,
         // 保留箭头间距。
         true,
-        // 使用组件标准宽度。
-        POPOVER_WIDTH,
-        // 使用组件标准高度。
-        POPOVER_HEIGHT,
+        // 使用组件 UIX 默认视觉表。
+        &DEFAULT_POPOVER_VISUAL,
     )
     // 只取最终气泡矩形。
     .popup;
@@ -76,10 +74,8 @@ fn popup_cache_does_not_survive_surface_resize() {
         PopoverPlacement::Right,
         // 箭头配置保持不变。
         true,
-        // 宽度配置保持不变。
-        POPOVER_WIDTH,
-        // 高度配置保持不变。
-        POPOVER_HEIGHT,
+        // UIX 视觉配置保持不变。
+        &DEFAULT_POPOVER_VISUAL,
     )
     // 只比较最终气泡矩形。
     .popup;
@@ -158,4 +154,52 @@ fn controlled_open_synchronizes_external_updates_and_user_close() {
     popover.sync_bound_open();
     // 运行时必须取消离场并重新进入可见状态。
     assert!(popover.is_visible() && !popover.closing);
+}
+
+// View 构建必须经过同目录 UIX，并保留调用方显式视觉覆写。
+#[test]
+fn view_build_uses_uix_visual_and_preserves_authored_values() {
+    let enter = AnimationConfig::zoom_in(0.3);
+    let leave = AnimationConfig::zoom_out(0.2);
+    let node = crate::ui::view::View::build(
+        Popover::new("content")
+            .placement(PopoverPlacement::BottomRight)
+            .arrow(false)
+            .enter_animation(enter)
+            .leave_animation(leave)
+            .trigger_view(ViewNode::leaf(Popover::new("trigger"))),
+    );
+    let popover = node
+        .widget
+        .as_any()
+        .downcast_ref::<Popover>()
+        .expect("UIX 根必须保留 Popover Rust 内核");
+    let declared = UIX_POPOVER_VISUAL
+        .get()
+        .expect("View 构建必须固化同目录 UIX 视觉");
+    assert!(std::ptr::eq(popover.visual, declared));
+    assert_eq!(popover.placement, PopoverPlacement::BottomRight);
+    assert!(!popover.arrow);
+    assert_eq!(popover.enter_animation, enter);
+    assert_eq!(popover.leave_animation, leave);
+    assert!(popover.custom_trigger);
+    assert!(
+        popover
+            .custom_trigger_view
+            .as_ref()
+            .is_some_and(|view| view.borrow().is_some())
+    );
+}
+
+// UIX 默认表必须保持迁移前的触发器、气泡和内容几何。
+#[test]
+fn uix_visual_preserves_existing_geometry() {
+    let popover = Popover::new("content");
+    assert_eq!(popover.intrinsic_size(), Size::new(80.0, 28.0));
+    assert_eq!(popover.visual.defaults.popup_width, 220.0);
+    assert_eq!(popover.visual.defaults.popup_height, 100.0);
+    assert_eq!(popover.visual.layout.arrow_gap, 10.0);
+    assert_eq!(popover.visual.layout.content_inset, 12.0);
+    assert_eq!(popover.visual.layout.title_height, 32.0);
+    assert_eq!(popover.visual.layout.arrow_size, 8.0);
 }
