@@ -3,15 +3,19 @@ use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入稳定条目 id 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, ThemeTokens,
+    WidgetId, WidgetTree,
 };
+use std::sync::OnceLock;
 
 // 可选择条目的无状态构造方法由同名子模块维护。
 mod item;
@@ -22,39 +26,320 @@ enum SelectableListAction {
     Row(usize),
 }
 
-// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
-const DEFAULT_WIDTH: f32 = 220.0;
-const DEFAULT_HEIGHT: f32 = 500.0;
-// 列表头部高度（48.0），组件独立设计；同名常量在 collapse/calendar/date_calendar 各为 36/40/32。
-const HEADER_HEIGHT: f32 = 48.0;
-const HEADER_INSET: f32 = 8.0;
-const HEADER_BUTTON_HEIGHT: f32 = 32.0;
-const FOOTER_HEIGHT: f32 = 28.0;
-const ROW_HORIZONTAL_INSET: f32 = 8.0;
-// 品牌色按压/活动态的 alpha 值（色相取自 token color_primary，随主题换肤）。
-const PRIMARY_HEADER_PRESSED_ALPHA: u8 = 38;
-const PRIMARY_PRESSED_ALPHA: u8 = 45;
-const PRIMARY_ACTIVE_ALPHA: u8 = 25;
-// 行内图标槽宽（像素），无图标时文本缩进到该宽度。
-const ROW_ICON_SLOT_W: f32 = 26.0;
-// 行内图标边长（像素）。
-const ROW_ICON_SIZE: f32 = 18.0;
-// 无图标行文本左缩进（像素）。
-const ROW_TEXT_INDENT: f32 = 14.0;
-// 图标与文本之间的间距（像素）。
-const ROW_ICON_TEXT_GAP: f32 = 6.0;
-// 行文本右侧留白（像素）。
-const ROW_TEXT_RIGHT_PAD: f32 = 10.0;
-// 行/头部按钮圆角（像素）。
-const ROW_RADIUS: f32 = 6.0;
-// 活动行左侧指示条宽度（像素）。
-const ACTIVE_BAR_W: f32 = 3.0;
-// 活动行左侧指示条圆角（像素）。
-const ACTIVE_BAR_RADIUS: f32 = 1.5;
-// 活动行指示条上下内缩（像素）。
-const ACTIVE_BAR_V_INSET: f32 = 6.0;
-// 行文本字号（无对应 token，token 为 12/14/16，保持原值）。
-const ROW_TEXT_FONT_SIZE: f32 = 13.0;
+// 保存由 UIX 声明的固有尺寸、头尾区域与行布局。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SelectableListGeometryVisual {
+    default_width: f32,
+    default_height: f32,
+    min_height: f32,
+    default_item_height: f32,
+    min_item_height: f32,
+    header_height: f32,
+    header_inset: f32,
+    header_button_height: f32,
+    footer_height: f32,
+    row_gap: f32,
+    row_horizontal_inset: f32,
+}
+
+// 保存由 UIX 声明的按钮、行、图标、活动条和焦点框视觉。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SelectableListChromeVisual {
+    header_pressed_alpha: u8,
+    row_pressed_alpha: u8,
+    row_active_alpha: u8,
+    row_icon_slot: f32,
+    row_icon_size: f32,
+    row_text_indent: f32,
+    row_icon_text_gap: f32,
+    row_text_right_pad: f32,
+    row_radius: f32,
+    active_bar_width: f32,
+    active_bar_radius: f32,
+    active_bar_vertical_inset: f32,
+    row_font_size: f32,
+    header_icon_inset: f32,
+    header_icon_frame_ratio: f32,
+    center_ratio: f32,
+    header_text_gap: f32,
+    header_text_right_pad: f32,
+    separator_y_offset: f32,
+    separator_height: f32,
+    frame_border_width: f32,
+    footer_inset: f32,
+    footer_inset_ratio: f32,
+    footer_font_size: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    plus_icon: &'static str,
+}
+
+// SelectableList 使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectableListFontRole {
+    Body,
+}
+
+impl SelectableListFontRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.font_size(),
+        }
+    }
+}
+
+// SelectableList 焦点框使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectableListRadiusRole {
+    Small,
+}
+
+impl SelectableListRadiusRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的主题语义角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SelectableListPaletteVisual {
+    background: ColorValue,
+    border: ColorValue,
+    fill_secondary: ColorValue,
+    fill_hover: ColorValue,
+    text_secondary: ColorValue,
+    text_tertiary: ColorValue,
+    primary: ColorValue,
+    icon_font: SelectableListFontRole,
+    focus_radius: SelectableListRadiusRole,
+}
+
+// 完整视觉配置由全部 SelectableList 实例共享。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SelectableListVisual {
+    geometry: SelectableListGeometryVisual,
+    chrome: SelectableListChromeVisual,
+    palette: SelectableListPaletteVisual,
+}
+
+// 保存每帧一次性解析的主题颜色、字号与圆角。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedSelectableListVisual {
+    background: Color,
+    border: Color,
+    fill_secondary: Color,
+    fill_hover: Color,
+    text_secondary: Color,
+    text_tertiary: Color,
+    primary: Color,
+    icon_font_size: f32,
+    focus_radius: f32,
+}
+
+impl SelectableListVisual {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> ResolvedSelectableListVisual {
+        ResolvedSelectableListVisual {
+            background: self.palette.background.resolve(tokens),
+            border: self.palette.border.resolve(tokens),
+            fill_secondary: self.palette.fill_secondary.resolve(tokens),
+            fill_hover: self.palette.fill_hover.resolve(tokens),
+            text_secondary: self.palette.text_secondary.resolve(tokens),
+            text_tertiary: self.palette.text_tertiary.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            icon_font_size: self.palette.icon_font.resolve(tokens),
+            focus_radius: self.palette.focus_radius.resolve(tokens),
+        }
+    }
+}
+
+// 组合 UIX 声明的固有尺寸与列表布局。
+#[allow(clippy::too_many_arguments)]
+const fn selectable_list_geometry(
+    default_width: f32,
+    default_height: f32,
+    min_height: f32,
+    default_item_height: f32,
+    min_item_height: f32,
+    header_height: f32,
+    header_inset: f32,
+    header_button_height: f32,
+    footer_height: f32,
+    row_gap: f32,
+    row_horizontal_inset: f32,
+) -> SelectableListGeometryVisual {
+    SelectableListGeometryVisual {
+        default_width,
+        default_height,
+        min_height,
+        default_item_height,
+        min_item_height,
+        header_height,
+        header_inset,
+        header_button_height,
+        footer_height,
+        row_gap,
+        row_horizontal_inset,
+    }
+}
+
+// 组合 UIX 声明的按钮、行、图标、活动条和焦点框视觉。
+#[allow(clippy::too_many_arguments)]
+const fn selectable_list_chrome(
+    header_pressed_alpha: f32,
+    row_pressed_alpha: f32,
+    row_active_alpha: f32,
+    row_icon_slot: f32,
+    row_icon_size: f32,
+    row_text_indent: f32,
+    row_icon_text_gap: f32,
+    row_text_right_pad: f32,
+    row_radius: f32,
+    active_bar_width: f32,
+    active_bar_radius: f32,
+    active_bar_vertical_inset: f32,
+    row_font_size: f32,
+    header_icon_inset: f32,
+    header_icon_frame_ratio: f32,
+    center_ratio: f32,
+    header_text_gap: f32,
+    header_text_right_pad: f32,
+    separator_y_offset: f32,
+    separator_height: f32,
+    frame_border_width: f32,
+    footer_inset: f32,
+    footer_inset_ratio: f32,
+    footer_font_size: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    plus_icon: &'static str,
+) -> SelectableListChromeVisual {
+    SelectableListChromeVisual {
+        header_pressed_alpha: header_pressed_alpha as u8,
+        row_pressed_alpha: row_pressed_alpha as u8,
+        row_active_alpha: row_active_alpha as u8,
+        row_icon_slot,
+        row_icon_size,
+        row_text_indent,
+        row_icon_text_gap,
+        row_text_right_pad,
+        row_radius,
+        active_bar_width,
+        active_bar_radius,
+        active_bar_vertical_inset,
+        row_font_size,
+        header_icon_inset,
+        header_icon_frame_ratio,
+        center_ratio,
+        header_text_gap,
+        header_text_right_pad,
+        separator_y_offset,
+        separator_height,
+        frame_border_width,
+        footer_inset,
+        footer_inset_ratio,
+        footer_font_size,
+        focus_inset,
+        focus_stroke_width,
+        plus_icon,
+    }
+}
+
+// 组合 UIX 声明的主题语义角色。
+#[allow(clippy::too_many_arguments)]
+const fn selectable_list_palette(
+    background: ColorValue,
+    border: ColorValue,
+    fill_secondary: ColorValue,
+    fill_hover: ColorValue,
+    text_secondary: ColorValue,
+    text_tertiary: ColorValue,
+    primary: ColorValue,
+    icon_font: SelectableListFontRole,
+    focus_radius: SelectableListRadiusRole,
+) -> SelectableListPaletteVisual {
+    SelectableListPaletteVisual {
+        background,
+        border,
+        fill_secondary,
+        fill_hover,
+        text_secondary,
+        text_tertiary,
+        primary,
+        icon_font,
+        focus_radius,
+    }
+}
+
+const fn selectable_list_visual(
+    geometry: SelectableListGeometryVisual,
+    chrome: SelectableListChromeVisual,
+    palette: SelectableListPaletteVisual,
+) -> SelectableListVisual {
+    SelectableListVisual {
+        geometry,
+        chrome,
+        palette,
+    }
+}
+
+// 向 UIX 提供受限表达式不能直接书写的图标与主题角色。
+const fn selectable_list_plus_icon() -> &'static str {
+    "plus"
+}
+const fn selectable_list_body_font() -> SelectableListFontRole {
+    SelectableListFontRole::Body
+}
+const fn selectable_list_small_radius() -> SelectableListRadiusRole {
+    SelectableListRadiusRole::Small
+}
+const fn selectable_list_background_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+const fn selectable_list_border_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+const fn selectable_list_fill_secondary_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillSecondary)
+}
+const fn selectable_list_fill_hover_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Fill)
+}
+const fn selectable_list_secondary_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn selectable_list_tertiary_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextTertiary)
+}
+const fn selectable_list_primary_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// Rust 直接构造时保持既有视觉；正常 View 构建会切换到 UIX 静态配置。
+static DEFAULT_SELECTABLE_LIST_VISUAL: SelectableListVisual = selectable_list_visual(
+    selectable_list_geometry(
+        220.0, 500.0, 100.0, 36.0, 20.0, 48.0, 8.0, 32.0, 28.0, 2.0, 8.0,
+    ),
+    selectable_list_chrome(
+        38.0, 45.0, 25.0, 26.0, 18.0, 14.0, 6.0, 10.0, 6.0, 3.0, 1.5, 6.0, 13.0, 8.0, 0.25, 0.5,
+        4.0, 10.0, 1.0, 1.0, 1.0, 12.0, 0.25, 11.0, 1.0, 1.5, "plus",
+    ),
+    selectable_list_palette(
+        ColorValue::Neutral(NeutralRole::BgContainer),
+        ColorValue::Neutral(NeutralRole::BorderSecondary),
+        ColorValue::Neutral(NeutralRole::FillSecondary),
+        ColorValue::Neutral(NeutralRole::Fill),
+        ColorValue::Neutral(NeutralRole::TextSecondary),
+        ColorValue::Neutral(NeutralRole::TextTertiary),
+        ColorValue::Palette(PaletteColor::Primary),
+        SelectableListFontRole::Body,
+        SelectableListRadiusRole::Small,
+    ),
+);
+
+// 首次 UIX 构建固化声明值，全部实例共享一份只读视觉配置。
+static UIX_SELECTABLE_LIST_VISUAL: OnceLock<SelectableListVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct SelectableListGeometry {
@@ -93,14 +378,18 @@ impl SelectableList {
     }
 
     pub(crate) fn item_stride(&self) -> f32 {
-        self.item_height + 2.0
+        self.item_height + self.visual.geometry.row_gap
     }
 
     pub(crate) fn list_body_viewport_height(&self) -> f32 {
-        let frame = self
-            .last_frame
-            .get()
-            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        let frame = self.last_frame.get().unwrap_or_else(|| {
+            Rect::new(
+                0.0,
+                0.0,
+                self.visual.geometry.default_width,
+                self.visual.geometry.default_height,
+            )
+        });
         self.geometry(frame).body.h
     }
 
@@ -108,10 +397,14 @@ impl SelectableList {
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
-        let frame = self
-            .last_frame
-            .get()
-            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        let frame = self.last_frame.get().unwrap_or_else(|| {
+            Rect::new(
+                0.0,
+                0.0,
+                self.visual.geometry.default_width,
+                self.visual.geometry.default_height,
+            )
+        });
         let geometry = self.local_geometry(frame);
         self.row_index_in_geometry(Point::new(geometry.body.x, pos_y), geometry)
     }
@@ -148,10 +441,14 @@ impl SelectableList {
     }
 
     fn action_at_point(&self, point: Point) -> Option<SelectableListAction> {
-        let frame = self
-            .last_frame
-            .get()
-            .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        let frame = self.last_frame.get().unwrap_or_else(|| {
+            Rect::new(
+                0.0,
+                0.0,
+                self.visual.geometry.default_width,
+                self.visual.geometry.default_height,
+            )
+        });
         let geometry = self.local_geometry(frame);
         if geometry
             .header_button
@@ -271,7 +568,8 @@ impl SelectableList {
     /// 设置行高；仅有限值生效，并至少归一化为二十像素。
     pub fn row_height(mut self, height: f32) -> Self {
         if height.is_finite() {
-            self.item_height = height.max(20.0);
+            self.item_height = height.max(self.visual.geometry.min_item_height);
+            self.item_height_authored = true;
         }
         self
     }
@@ -318,6 +616,8 @@ impl SelectableList {
         self.header_button_text = next.header_button_text;
         self.footer_text = next.footer_text;
         self.item_height = next.item_height;
+        self.item_height_authored = next.item_height_authored;
+        self.visual = next.visual;
         // 下一帧声明决定是否进入受控模式。
         self.active_binding = next.active_binding;
         // 受控状态覆盖旧内部选择，非受控模式继续按稳定 id 调和。
@@ -349,23 +649,26 @@ impl SelectableList {
         let header_height = if self.header_button_text.is_empty() {
             0.0
         } else {
-            HEADER_HEIGHT.min(frame.h)
+            self.visual.geometry.header_height.min(frame.h)
         };
         let remaining = (frame.h - header_height).max(0.0);
         let footer_height = if self.footer_text.is_empty() {
             0.0
         } else {
-            FOOTER_HEIGHT.min(remaining)
+            self.visual.geometry.footer_height.min(remaining)
         };
         let body_height = (remaining - footer_height).max(0.0);
         let header_button = (!self.header_button_text.is_empty()).then(|| {
-            let horizontal_inset = HEADER_INSET.min(frame.w * 0.5);
-            let vertical_inset = HEADER_INSET.min(header_height * 0.5);
+            let horizontal_inset = self.visual.geometry.header_inset.min(frame.w * 0.5);
+            let vertical_inset = self.visual.geometry.header_inset.min(header_height * 0.5);
             Rect::new(
                 frame.x + horizontal_inset,
                 frame.y + vertical_inset,
                 (frame.w - horizontal_inset * 2.0).max(0.0),
-                HEADER_BUTTON_HEIGHT.min((header_height - vertical_inset * 2.0).max(0.0)),
+                self.visual
+                    .geometry
+                    .header_button_height
+                    .min((header_height - vertical_inset * 2.0).max(0.0)),
             )
         });
         let body = Rect::new(frame.x, frame.y + header_height, frame.w, body_height);
@@ -411,7 +714,7 @@ impl SelectableList {
             return;
         }
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         ctx.push_clip(frame);
@@ -436,6 +739,9 @@ widget! {
         pub footer_text: String,
         /// 每个列表条目的逻辑行高。
         pub item_height: f32,
+        // 标记行高是否由 Rust 调用方显式覆盖。
+        #[snapshot(skip)]
+        item_height_authored: bool,
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
         pressed_action: Cell<Option<SelectableListAction>>,
@@ -444,6 +750,9 @@ widget! {
         scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         pending_action: Cell<Option<SelectableListAction>>,
+        // 全部实例共享 UIX 声明固化后的只读视觉配置。
+        #[snapshot(skip)]
+        visual: &'static SelectableListVisual,
     }
     @new -> Self {
         Self {
@@ -453,7 +762,8 @@ widget! {
             active_binding: None,
             header_button_text: String::new(),
             footer_text: String::new(),
-            item_height: 36.0,
+            item_height: DEFAULT_SELECTABLE_LIST_VISUAL.geometry.default_item_height,
+            item_height_authored: false,
             hovered_index: Cell::new(None),
             hovered_header: Cell::new(false),
             pressed_action: Cell::new(None),
@@ -462,6 +772,7 @@ widget! {
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
             pending_action: Cell::new(None),
+            visual: &DEFAULT_SELECTABLE_LIST_VISUAL,
         }
     }
     tab_index => (&self) -> i32 {
@@ -470,13 +781,16 @@ widget! {
     measure => (&self, constraints: Constraints) -> Size {
         let mut h = 0.0;
         if !self.header_button_text.is_empty() {
-            h += 48.0;
+            h += self.visual.geometry.header_height;
         }
         h += self.items.len() as f32 * self.item_stride();
         if !self.footer_text.is_empty() {
-            h += 28.0;
+            h += self.visual.geometry.footer_height;
         }
-        constraints.clamp(Size::new(220.0, h.max(100.0)))
+        constraints.clamp(Size::new(
+            self.visual.geometry.default_width,
+            h.max(self.visual.geometry.min_height),
+        ))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -552,7 +866,14 @@ widget! {
                 let frame = self
                     .last_frame
                     .get()
-                    .unwrap_or_else(|| Rect::new(0.0, 0.0, DEFAULT_WIDTH, DEFAULT_HEIGHT));
+                    .unwrap_or_else(|| {
+                        Rect::new(
+                            0.0,
+                            0.0,
+                            self.visual.geometry.default_width,
+                            self.visual.geometry.default_height,
+                        )
+                    });
                 if !self.local_geometry(frame).body.contains(*pos) {
                     return EventResult::NotHandled;
                 }
@@ -665,20 +986,20 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border_secondary();
-        let fill = ctx.tokens().color_fill_secondary();
-        let fill_hover = ctx.tokens().color_fill();
-        let t_sec = ctx.tokens().color_text_secondary();
-        let t_ter = ctx.tokens().color_text_tertiary();
-        let t_pri = ctx.tokens().color_primary();
+        let resolved = self.visual.resolve(ctx.tokens());
+        let chrome = self.visual.chrome;
 
         ctx.push_clip(frame);
-        ctx.fill_rect(frame, bg, None);
-        if frame.w >= 1.0 {
+        ctx.fill_rect(frame, resolved.background, None);
+        if frame.w >= chrome.frame_border_width {
             ctx.fill_rect(
-                Rect::new(frame.x + frame.w - 1.0, frame.y, 1.0, frame.h),
-                border,
+                Rect::new(
+                    frame.x + frame.w - chrome.frame_border_width,
+                    frame.y,
+                    chrome.frame_border_width,
+                    frame.h,
+                ),
+                resolved.border,
                 None,
             );
         }
@@ -688,45 +1009,62 @@ widget! {
                 && self.hovered_header.get();
             let btn_bg = if pressed {
                 // 按压态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
-                t_pri.with_alpha(PRIMARY_HEADER_PRESSED_ALPHA)
+                resolved.primary.with_alpha(chrome.header_pressed_alpha)
             } else if self.hovered_header.get() {
-                fill_hover
+                resolved.fill_hover
             } else {
-                fill
+                resolved.fill_secondary
             };
-            ctx.fill_rect(btn_frame, btn_bg, Some(Radius::uniform(ROW_RADIUS)));
-            let icon_size = ROW_ICON_SIZE.min(btn_frame.h);
+            ctx.fill_rect(
+                btn_frame,
+                btn_bg,
+                Some(Radius::uniform(chrome.row_radius)),
+            );
+            let icon_size = chrome.row_icon_size.min(btn_frame.h);
             let icon_frame = Rect::new(
-                btn_frame.x + 8.0_f32.min(btn_frame.w * 0.25),
-                btn_frame.y + (btn_frame.h - icon_size) * 0.5,
+                btn_frame.x
+                    + chrome
+                        .header_icon_inset
+                        .min(btn_frame.w * chrome.header_icon_frame_ratio),
+                btn_frame.y + (btn_frame.h - icon_size) * chrome.center_ratio,
                 icon_size,
                 icon_size,
             );
             crate::ui::widgets::general::icon::Icon::paint_in_frame(
                 ctx,
-                "plus",
+                chrome.plus_icon,
                 icon_frame,
-                t_sec,
-                // 图标字号对齐默认字号 token。
-                ctx.tokens().font_size(),
+                resolved.text_secondary,
+                resolved.icon_font_size,
             );
             let text_frame = Rect::new(
-                icon_frame.x + icon_frame.w + 4.0,
+                icon_frame.x + icon_frame.w + chrome.header_text_gap,
                 btn_frame.y,
-                (btn_frame.x + btn_frame.w - icon_frame.x - icon_frame.w - 10.0).max(0.0),
+                (btn_frame.x + btn_frame.w
+                    - icon_frame.x
+                    - icon_frame.w
+                    - chrome.header_text_right_pad)
+                    .max(0.0),
                 btn_frame.h,
             );
-            Self::paint_single_line(ctx, &self.header_button_text, text_frame, t_sec, ROW_TEXT_FONT_SIZE);
-            let separator_width = (frame.w - HEADER_INSET * 2.0).max(0.0);
+            Self::paint_single_line(
+                ctx,
+                &self.header_button_text,
+                text_frame,
+                resolved.text_secondary,
+                chrome.row_font_size,
+            );
+            let separator_width =
+                (frame.w - self.visual.geometry.header_inset * 2.0).max(0.0);
             if separator_width > 0.0 && geometry.body.y > frame.y {
                 ctx.fill_rect(
                     Rect::new(
-                        frame.x + HEADER_INSET.min(frame.w * 0.5),
-                        (geometry.body.y - 1.0).max(frame.y),
+                        frame.x + self.visual.geometry.header_inset.min(frame.w * 0.5),
+                        (geometry.body.y - chrome.separator_y_offset).max(frame.y),
                         separator_width,
-                        1.0,
+                        chrome.separator_height,
                     ),
-                    border,
+                    resolved.border,
                     None,
                 );
             }
@@ -749,7 +1087,11 @@ widget! {
 
             let is_active = i == self.active_index;
             let is_hover = self.hovered_index.get() == Some(i);
-            let horizontal_inset = ROW_HORIZONTAL_INSET.min(frame.w * 0.5);
+            let horizontal_inset = self
+                .visual
+                .geometry
+                .row_horizontal_inset
+                .min(frame.w * 0.5);
             let item_frame = Rect::new(
                 frame.x + horizontal_inset,
                 iy,
@@ -763,64 +1105,95 @@ widget! {
                 ctx.fill_rect(
                     item_frame,
                     // 按压态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
-                    t_pri.with_alpha(PRIMARY_PRESSED_ALPHA),
-                    Some(Radius::uniform(ROW_RADIUS)),
+                    resolved.primary.with_alpha(chrome.row_pressed_alpha),
+                    Some(Radius::uniform(chrome.row_radius)),
                 );
             } else if is_active {
                 // 活动态：token 主色 + 固定 alpha（替换原硬编码 55,110,255 以支持换肤）。
-                ctx.fill_rect(item_frame, t_pri.with_alpha(PRIMARY_ACTIVE_ALPHA), Some(Radius::uniform(ROW_RADIUS)));
+                ctx.fill_rect(
+                    item_frame,
+                    resolved.primary.with_alpha(chrome.row_active_alpha),
+                    Some(Radius::uniform(chrome.row_radius)),
+                );
                 ctx.fill_rect(
                     Rect::new(
                         item_frame.x,
-                        item_frame.y + ACTIVE_BAR_V_INSET.min(item_frame.h * 0.5),
-                        ACTIVE_BAR_W.min(item_frame.w),
-                        (item_frame.h - ACTIVE_BAR_V_INSET * 2.0).max(0.0),
+                        item_frame.y
+                            + chrome
+                                .active_bar_vertical_inset
+                                .min(item_frame.h * chrome.center_ratio),
+                        chrome.active_bar_width.min(item_frame.w),
+                        (item_frame.h - chrome.active_bar_vertical_inset * 2.0).max(0.0),
                     ),
-                    t_pri,
-                    Some(Radius::uniform(ACTIVE_BAR_RADIUS)),
+                    resolved.primary,
+                    Some(Radius::uniform(chrome.active_bar_radius)),
                 );
             } else if is_hover {
-                ctx.fill_rect(item_frame, fill_hover, Some(Radius::uniform(ROW_RADIUS)));
+                ctx.fill_rect(
+                    item_frame,
+                    resolved.fill_hover,
+                    Some(Radius::uniform(chrome.row_radius)),
+                );
             }
 
             let icon = self.items[i].icon.as_deref().unwrap_or("");
-            let icon_slot = if icon.is_empty() { 0.0 } else { ROW_ICON_SLOT_W.min(item_frame.w) };
-            let text_x = if icon.is_empty() {
-                item_frame.x + ROW_TEXT_INDENT.min(item_frame.w * 0.25)
+            let icon_slot = if icon.is_empty() {
+                0.0
             } else {
-                item_frame.x + icon_slot + ROW_ICON_TEXT_GAP.min(item_frame.w * 0.1)
+                chrome.row_icon_slot.min(item_frame.w)
+            };
+            let text_x = if icon.is_empty() {
+                item_frame.x + chrome.row_text_indent.min(item_frame.w * 0.25)
+            } else {
+                item_frame.x + icon_slot + chrome.row_icon_text_gap.min(item_frame.w * 0.1)
             };
             if !icon.is_empty() {
-                let icon_size = ROW_ICON_SIZE.min(item_frame.h);
+                let icon_size = chrome.row_icon_size.min(item_frame.h);
                 crate::ui::widgets::general::icon::Icon::paint_in_frame(
                     ctx,
                     icon,
                     Rect::new(
-                        item_frame.x + 8.0_f32.min(item_frame.w * 0.2),
-                        item_frame.y + (item_frame.h - icon_size) * 0.5,
+                        item_frame.x
+                            + self
+                                .visual
+                                .geometry
+                                .row_horizontal_inset
+                                .min(item_frame.w * 0.2),
+                        item_frame.y + (item_frame.h - icon_size) * chrome.center_ratio,
                         icon_size,
                         icon_size,
                     ),
-                    t_sec,
-                    // 图标字号对齐默认字号 token。
-                    ctx.tokens().font_size(),
+                    resolved.text_secondary,
+                    resolved.icon_font_size,
                 );
             }
 
-            let color = if is_active { t_pri } else { t_sec };
+            let color = if is_active {
+                resolved.primary
+            } else {
+                resolved.text_secondary
+            };
             let text_frame = Rect::new(
                 text_x,
                 item_frame.y,
-                (item_frame.x + item_frame.w - text_x - ROW_TEXT_RIGHT_PAD).max(0.0),
+                (item_frame.x + item_frame.w - text_x - chrome.row_text_right_pad).max(0.0),
                 item_frame.h,
             );
-            Self::paint_single_line(ctx, &self.items[i].text, text_frame, color, ROW_TEXT_FONT_SIZE);
+            Self::paint_single_line(
+                ctx,
+                &self.items[i].text,
+                text_frame,
+                color,
+                chrome.row_font_size,
+            );
         }
 
         ctx.pop_clip();
 
         if let Some(footer) = geometry.footer {
-            let horizontal_inset = 12.0_f32.min(footer.w * 0.25);
+            let horizontal_inset = chrome
+                .footer_inset
+                .min(footer.w * chrome.footer_inset_ratio);
             Self::paint_single_line(
                 ctx,
                 &self.footer_text,
@@ -830,12 +1203,15 @@ widget! {
                     (footer.w - horizontal_inset * 2.0).max(0.0),
                     footer.h,
                 ),
-                t_ter,
-                11.0,
+                resolved.text_tertiary,
+                chrome.footer_font_size,
             );
         }
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = chrome
+                .focus_inset
+                .min(frame.w * chrome.center_ratio)
+                .min(frame.h * chrome.center_ratio);
             let focus_frame = Rect::new(
                 frame.x + inset,
                 frame.y + inset,
@@ -844,17 +1220,59 @@ widget! {
             );
             ctx.stroke_rect(
                 focus_frame,
-                t_pri,
-                1.5,
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                resolved.primary,
+                chrome.focus_stroke_width,
+                Some(Radius::uniform(resolved.focus_radius)),
             );
         }
         ctx.pop_clip();
     }
 }
 
+// 把列表数据、受控选择与 UIX 静态视觉融合为单一根节点。
+fn build_selectable_list_view(
+    mut kernel: SelectableList,
+    declared_visual: SelectableListVisual,
+) -> ViewNode {
+    let visual = UIX_SELECTABLE_LIST_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.item_height_authored {
+        kernel.item_height = visual.geometry.default_item_height;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for SelectableList {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开根与静态视觉；Rust 保留状态、输入、虚拟化与底层绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/selectable_list/selectable_list.uix")
+    }
+}
+
+impl SelectableList {
+    // 测试目标观察 UIX 声明的关键视觉契约，不扩大公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.geometry.default_width,
+            self.visual.geometry.default_height,
+            self.visual.geometry.min_height,
+            self.visual.geometry.default_item_height,
+            self.visual.geometry.row_gap,
+            self.visual.chrome.row_radius,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
+    }
+}
+
 // 集中验证稳定 id 受控绑定与非受控兼容边界。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/display/selectable_list/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/selectable_list/tests.rs"]
 mod tests;

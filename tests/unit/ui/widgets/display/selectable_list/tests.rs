@@ -2,6 +2,8 @@
 use super::{SelectableItem, SelectableList};
 // 引入语义事件与受控状态测试类型。
 use crate::ui::{EventHandler, SemanticKind, SemanticPayload, State, SystemEvent, WidgetId};
+// 引入公开 View 构建入口以验证 UIX 根。
+use crate::ui::view::View;
 
 // 构造两个具有稳定 id 的列表条目。
 fn items() -> Vec<SelectableItem> {
@@ -70,4 +72,58 @@ fn uncontrolled_active_index_remains_compatible() {
     let list = SelectableList::new().items(items()).active(1);
     // 非受控模式仍按既有索引返回稳定 id。
     assert_eq!(list.selected_id(), Some("beta"));
+}
+
+// 验证 UIX 根保留业务数据并注入真实视觉契约。
+#[test]
+fn uix_root_preserves_selectable_list_kernel_and_visual_contract() {
+    let node = View::build(
+        SelectableList::new()
+            .items(items())
+            .header_button("新增")
+            .footer("共 2 项"),
+    );
+    assert!(node.children.is_empty());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<SelectableList>()
+        .expect("UIX 根必须保留 SelectableList 内核");
+    assert_eq!(kernel.items.len(), 2);
+    assert_eq!(kernel.header_button_text, "新增");
+    assert_eq!(kernel.footer_text, "共 2 项");
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (220.0, 500.0, 100.0, 36.0, 2.0, 6.0)
+    );
+}
+
+// 验证显式行高优先于 UIX 缺省值。
+#[test]
+fn explicit_row_height_has_priority_over_uix_default() {
+    let node = View::build(SelectableList::new().row_height(44.0));
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<SelectableList>()
+        .unwrap();
+    assert_eq!(kernel.item_height, 44.0);
+}
+
+// 验证全部 SelectableList 实例共享同一份 UIX 视觉表。
+#[test]
+fn selectable_list_instances_share_uix_visual_table() {
+    let first = View::build(SelectableList::new());
+    let second = View::build(SelectableList::new());
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<SelectableList>()
+        .unwrap();
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<SelectableList>()
+        .unwrap();
+    assert!(first.shares_visual_with_for_test(second));
 }
