@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::draw::painting::PaintPass;
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
@@ -219,6 +220,18 @@ impl Default for Spin {
     }
 }
 
+// 把加载指示器 Rust 内核与已有拥有型子树融合为 UIX 声明的单一根节点。
+fn build_spin_view(kernel: Spin, children: Vec<ViewNode>) -> ViewNode {
+    ViewNode::new(kernel, children)
+}
+
+impl View for Spin {
+    fn build(self) -> ViewNode {
+        // 独立指示器同样经由组件自己的 UIX 根声明构建。
+        self.build_view_with_children(Vec::new())
+    }
+}
+
 impl Spin {
     /// 创建默认尺寸且立即开始旋转的加载指示器。
     pub fn new() -> Self {
@@ -283,6 +296,14 @@ impl Spin {
         self
     }
 
+    /// 经由同目录 UIX 根声明构建加载指示器及其遮罩子树。
+    #[doc(hidden)]
+    pub fn build_view_with_children(self, children: Vec<ViewNode>) -> ViewNode {
+        // UIX 只拥有公开根；Rust 内核继续独占动画、布局、几何与绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/feedback/spin/spin.uix")
+    }
+
     /// 返回当前动画相位。
     pub fn phase(&self) -> f32 {
         self.phase
@@ -330,6 +351,6 @@ impl Spin {
 #[cfg(test)]
 // 将生命周期契约限制在当前组件模块的内部测试中。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/spin__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/feedback/spin__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

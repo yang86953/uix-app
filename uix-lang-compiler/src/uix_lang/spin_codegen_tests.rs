@@ -21,6 +21,9 @@ fn generates_standalone_spin_contract() {
     assert!(!snapshot.contains("wrapper_mode ()"));
     // 公共宽度与自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("width (240.0)") && snapshot.contains("automation_id"));
+    // 生成器必须进入 Spin 自己的 UIX 根声明，不能直接构造运行时节点。
+    assert!(snapshot.contains("build_view_with_children"));
+    assert!(!snapshot.contains("ViewNode :: new"));
 }
 
 // 验证 Spin 包裹模式保留普通、If 与 For 有序子树。
@@ -31,6 +34,9 @@ fn preserves_wrapper_children_and_control_flow() {
     let snapshot = generate(r#"<Spin><Text>静态</Text><If {show_more}><Button>详情</Button></If><For {item} in {items}><Text>{item}</Text></For></Spin>"#).expect("Spin 应保留完整有序子树");
     // 存在可生成子树时必须启用公开遮罩模式。
     assert!(snapshot.contains("wrapper_mode ()"));
+    // 拥有型子树必须经同一 UIX 根桥接移交，不能增加包装节点。
+    assert!(snapshot.contains("build_view_with_children"));
+    assert!(!snapshot.contains("ViewNode :: new"));
     // 静态文本必须保留在生成子树中。
     assert!(snapshot.contains("\"静态\""));
     // 条件分支必须保留为 Rust if。
