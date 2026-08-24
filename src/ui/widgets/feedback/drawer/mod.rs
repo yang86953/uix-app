@@ -4,12 +4,16 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::widget;
 // 引入受控状态句柄与 Drawer 既有事件、树契约。
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
+
+mod presentation;
+use self::presentation::*;
 
 mod methods;
 
@@ -60,7 +64,8 @@ impl ControlledDrawerOpen {
 widget! {
     /// Sliding drawer panel.
     pub struct Drawer {
-        title: String,
+        // 精确容量文本避免为不可变标题保留 String capacity 字段。
+        title: Box<str>,
         visible: bool,
         width: f32,
         height: f32,
@@ -72,7 +77,8 @@ widget! {
         // 保存可选的统一 overlay backdrop blur 请求。
         backdrop_blur: Option<crate::ui::OverlayBackdropBlur>,
         footer_visible: bool,
-        extra: String,
+        // 精确容量文本避免为不可变附加文案保留 String capacity 字段。
+        extra: Box<str>,
         enter_animation: Option<AnimationConfig>,
         leave_animation: Option<AnimationConfig>,
         // 保存可选受控打开绑定，生命周期仍由 Drawer 自身拥有。
@@ -89,6 +95,9 @@ widget! {
         close_hovered: Cell<bool>,
         pressed_target: Cell<Option<DrawerPointerTarget>>,
         activation_key: Cell<Option<crate::ui::KeyCode>>,
+        // 全部实例只保存指向 UIX 唯一视觉静态项的共享引用。
+        #[snapshot(skip)]
+        visual: &'static DrawerVisual,
     }
 
     // Closed drawers still render and receive input through their trigger.
@@ -105,7 +114,7 @@ widget! {
         if self.mask && self.is_present() {
             Rect::new(0.0, 0.0, self.last_surface_w.get(), self.last_surface_h.get())
         } else if !self.is_present() {
-            let trigger = Self::trigger_rect_for_size(actual_frame.w, actual_frame.h);
+            let trigger = self.trigger_rect_for_size(actual_frame.w, actual_frame.h);
             self.last_trigger_rect.set(trigger);
             Rect::new(
                 actual_frame.x + trigger.x,
@@ -235,17 +244,20 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Self::normalize_frame(frame));
         let loc = crate::ui::widget_runtime::locale::use_locale();
+        let visual = self.visual;
         if !self.is_present() {
-            let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
+            let local_trigger = self.trigger_rect_for_size(frame.w, frame.h);
             self.last_trigger_rect.set(local_trigger);
+            // 关闭态只解析触发器实际使用的主题角色。
+            let resolved = visual.resolve_trigger(ctx.tokens());
             let primary = if self.pressed_target.get() == Some(DrawerPointerTarget::Trigger)
                 || self.activation_key.get().is_some()
             {
-                ctx.tokens().color_primary_active()
+                resolved.primary_active
             } else if self.close_hovered.get() {
-                ctx.tokens().color_primary_hover()
+                resolved.primary_hover
             } else {
-                ctx.tokens().color_primary()
+                resolved.primary
             };
             let frame_x = if frame.x.is_finite() { frame.x } else { 0.0 };
             let frame_y = if frame.y.is_finite() { frame.y } else { 0.0 };
@@ -259,16 +271,29 @@ widget! {
                 return;
             }
             ctx.push_clip(trigger);
-            ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
-            ctx.text_center("打开 Drawer", trigger, ctx.tokens().color_white(), 13.0);
+            ctx.fill_rect(trigger, primary, Some(Radius::uniform(resolved.radius)));
+            ctx.text_center(
+                visual.chrome.trigger_label,
+                trigger,
+                resolved.white,
+                resolved.font_size,
+            );
             ctx.pop_clip();
             return;
         }
 
+        // 打开态按真实可见分支一次解析主题，避免同一帧重复虚调用。
+        let resolved = visual.resolve_panel(
+            ctx.tokens(),
+            self.mask,
+            self.closable,
+            !self.extra.is_empty(),
+            self.footer_visible,
+        );
         // 保留主题遮罩色的基础 alpha，并按当前进出场进度衰减。
         let mask = super::fade_token_color(
-            // 读取当前组件主题作用域的遮罩 token。
-            ctx.tokens().color_bg_mask(),
+            // 使用本帧已经解析的遮罩角色。
+            resolved.mask,
             // 使用 Drawer 生命周期拥有的过渡不透明度。
             self.transition_opacity(),
         );
@@ -287,11 +312,12 @@ widget! {
             );
         }
 
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border_secondary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let r = Radius::uniform(ctx.tokens().border_radius_lg());
+        let bg = resolved.background;
+        let border = resolved.border;
+        let text = resolved.text;
+        let text_sec = resolved.text_secondary;
+        let r = Radius::uniform(resolved.radius);
+        let layout = &visual.layout;
 
         let drawer_rect = if let Some((surface_w, surface_h)) = surface_extent {
             self.overlay_rect_for_surface(surface_w, surface_h)
@@ -319,23 +345,32 @@ widget! {
         };
         ctx.push_clip(drawer_rect);
         ctx.fill_rect(drawer_rect, bg, corner);
-        ctx.stroke_rect(drawer_rect, border, 1.0, corner);
+        ctx.stroke_rect(drawer_rect, border, visual.chrome.panel_stroke, corner);
 
-        let header_rect = Rect::new(drawer_x, drawer_y, drawer_w, drawer_h.min(48.0));
-        let close_w = if self.closable { drawer_w.min(48.0) } else { 0.0 };
+        let header_rect = Rect::new(
+            drawer_x,
+            drawer_y,
+            drawer_w,
+            drawer_h.min(layout.header_height),
+        );
+        let close_w = if self.closable {
+            drawer_w.min(layout.close_width)
+        } else {
+            0.0
+        };
         let extra_w = if self.extra.is_empty() {
             0.0
         } else {
-            (drawer_w - close_w).clamp(0.0, 120.0)
+            (drawer_w - close_w).clamp(0.0, layout.extra_max_width)
         };
-        let title_x = drawer_x + 24.0_f32.min(drawer_w);
+        let title_x = drawer_x + layout.title_inset.min(drawer_w);
         let title_rect = Rect::new(
             title_x,
             drawer_y,
             (drawer_x + drawer_w - close_w - extra_w - title_x).max(0.0),
             header_rect.h,
         );
-        Self::paint_elided_text(ctx, &self.title, title_rect, text, ctx.tokens().font_size_lg());
+        Self::paint_elided_text(ctx, &self.title, title_rect, text, resolved.title_font_size);
 
         if !self.extra.is_empty() {
             let extra_rect = Rect::new(
@@ -344,7 +379,7 @@ widget! {
                 extra_w,
                 header_rect.h,
             );
-            Self::paint_elided_text(ctx, &self.extra, extra_rect, text_sec, ctx.tokens().font_size());
+            Self::paint_elided_text(ctx, &self.extra, extra_rect, text_sec, resolved.extra_font_size);
         }
         if self.closable {
             let close_rect = Rect::new(
@@ -353,8 +388,8 @@ widget! {
                 close_w,
                 header_rect.h,
             );
-            let inset_x = 8.0_f32.min(close_rect.w * 0.5);
-            let inset_y = 8.0_f32.min(close_rect.h * 0.5);
+            let inset_x = layout.close_inset.min(close_rect.w * 0.5);
+            let inset_y = layout.close_inset.min(close_rect.h * 0.5);
             let close_button = Rect::new(
                 close_rect.x + inset_x,
                 close_rect.y + inset_y,
@@ -364,47 +399,71 @@ widget! {
             if self.pressed_target.get() == Some(DrawerPointerTarget::Close) {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_secondary(),
-                    Some(Radius::uniform(4.0)),
+                    resolved.fill_secondary,
+                    Some(Radius::uniform(visual.chrome.control_radius)),
                 );
             } else if self.close_hovered.get() {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_tertiary(),
-                    Some(Radius::uniform(4.0)),
+                    resolved.fill_tertiary,
+                    Some(Radius::uniform(visual.chrome.control_radius)),
                 );
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
+                visual.icons.close,
                 close_button,
                 text_sec,
-                16.0,
+                visual.typography.close_icon,
             );
         }
-        ctx.fill_rect(Rect::new(drawer_x, drawer_y + 48.0, drawer_w, 1.0), border, None);
+        ctx.fill_rect(
+            Rect::new(
+                drawer_x,
+                drawer_y + header_rect.h,
+                drawer_w,
+                layout.divider_thickness,
+            ),
+            border,
+            None,
+        );
 
         let footer_h = if self.footer_visible {
-            (drawer_h - header_rect.h).clamp(0.0, 56.0)
+            (drawer_h - header_rect.h).clamp(0.0, layout.footer_height)
         } else {
             0.0
         };
         if self.footer_visible {
             let footer_y = drawer_y + drawer_h - footer_h;
-            ctx.fill_rect(Rect::new(drawer_x, footer_y, drawer_w, 1.0), border, None);
-            let primary = ctx.tokens().color_primary();
-            let btn_r = Some(Radius::uniform(4.0));
-            let ok_w = (drawer_w - 40.0).clamp(0.0, 80.0);
-            let ok_h = (footer_h - 20.0).clamp(0.0, 28.0);
+            ctx.fill_rect(
+                Rect::new(
+                    drawer_x,
+                    footer_y,
+                    drawer_w,
+                    layout.divider_thickness,
+                ),
+                border,
+                None,
+            );
+            let btn_r = Some(Radius::uniform(visual.chrome.control_radius));
+            let ok_w = (drawer_w - layout.footer_side_inset * 2.0)
+                .clamp(0.0, layout.footer_button_max_width);
+            let ok_h = (footer_h - layout.footer_vertical_padding)
+                .clamp(0.0, layout.footer_button_max_height);
             if ok_w > 0.0 && ok_h > 0.0 {
                 let ok_rect = Rect::new(
-                    drawer_x + drawer_w - 20.0_f32.min(drawer_w) - ok_w,
+                    drawer_x + drawer_w - layout.footer_side_inset.min(drawer_w) - ok_w,
                     footer_y + (footer_h - ok_h) * 0.5,
                     ok_w,
                     ok_h,
                 );
-                ctx.fill_rect(ok_rect, primary, btn_r);
-                ctx.text_center(loc.drawer_ok, ok_rect, ctx.tokens().color_white(), 13.0);
+                ctx.fill_rect(ok_rect, resolved.primary, btn_r);
+                ctx.text_center(
+                    loc.drawer_ok,
+                    ok_rect,
+                    resolved.white,
+                    resolved.footer_font_size,
+                );
             }
         }
         ctx.pop_clip();
@@ -416,7 +475,12 @@ widget! {
         }
 
         let bounds = if self.mask {
-            Rect::new(-2000.0, -2000.0, 4000.0, 4000.0)
+            Rect::new(
+                self.visual.layout.overlay_fallback_origin,
+                self.visual.layout.overlay_fallback_origin,
+                self.visual.layout.overlay_fallback_extent,
+                self.visual.layout.overlay_fallback_extent,
+            )
         } else {
             match self.placement {
                 DrawerPlacement::Right | DrawerPlacement::Left => {
@@ -431,7 +495,7 @@ widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
                 .bounds(bounds)
-                .z_index(1000),
+                .z_index(self.visual.chrome.overlay_z),
         )
     }
 
@@ -465,8 +529,8 @@ widget! {
         let mut entry = crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
             // 同一 bounds 同时服务命中、mask 与默认 blur。
             .bounds(bounds)
-            // 保留既有 Drawer 层级。
-            .z_index(1000);
+            // 使用 UIX 声明的 Drawer 层级。
+            .z_index(self.visual.chrome.overlay_z);
         // 离场开始立即停止 backdrop blur。
         if !self.closing {
             // 默认关闭，仅投影显式请求。
@@ -494,7 +558,10 @@ widget! {
                 .map(|root| (root.frame().w, root.frame().h))
                 .filter(|(w, h)| *w > 0.0 && *h > 0.0)
                 .map(|(w, h)| (Self::normalize_dimension(w), Self::normalize_dimension(h)))
-                .unwrap_or((1200.0, 760.0));
+                .unwrap_or((
+                    self.visual.layout.surface_fallback_width,
+                    self.visual.layout.surface_fallback_height,
+                ));
             self.last_surface_w.set(surface_w);
             self.last_surface_h.set(surface_h);
             self.overlay_rect_for_surface(surface_w, surface_h)
@@ -518,11 +585,15 @@ widget! {
         let drawer_y = drawer_rect.y;
         let drawer_w = drawer_rect.w;
         let drawer_h = drawer_rect.h;
-        let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
-        let header_h = drawer_h.min(48.0);
+        let header_h = drawer_h.min(self.visual.layout.header_height);
+        let footer_h = if self.footer_visible {
+            (drawer_h - header_h).clamp(0.0, self.visual.layout.footer_height)
+        } else {
+            0.0
+        };
         let body_y = drawer_y + header_h;
         let body_h = (drawer_h - header_h - footer_h).max(0.0);
-        let pad = 24.0;
+        let pad = self.visual.layout.body_padding;
         children
             .iter()
             .map(|child| {
@@ -584,5 +655,22 @@ widget! {
         } else {
             Rect::zero()
         }
+    }
+}
+
+// 把 Drawer 行为内核与 UIX 唯一视觉静态项融合为单一节点。
+fn build_drawer_view(mut kernel: Drawer, visual: &'static DrawerVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_drawer_uix_root(kernel: Drawer) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/drawer/drawer.uix")
+}
+
+impl View for Drawer {
+    fn build(self) -> ViewNode {
+        build_drawer_uix_root(self)
     }
 }
