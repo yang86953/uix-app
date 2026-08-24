@@ -2,7 +2,7 @@
 // 引入矩形、混合模式、圆角与帧编码载荷类型。
 use crate::core::Rect;
 use crate::draw::geometry::types::{BlendMode, Radius};
-use crate::draw::painting::{FrameGlyphBlit, FrameRasterOp, FrameRect, FrameSampledRect};
+use crate::draw::painting::{FrameGlyphBlit, FrameRect, FrameSampledRect};
 use crate::draw::{Canvas2D, Color};
 use std::sync::Arc;
 // 引入被扩展的录制画布与共享帧几何换算。
@@ -110,10 +110,7 @@ impl FrameRecordingCanvas {
                 return;
             }
             if let Err(error) = self.flush_scratch().and_then(|()| {
-                self.encoder_mut()?.native(FrameRasterOp::BlitGlyphs {
-                    glyphs: vec![glyph],
-                    clip,
-                });
+                self.encoder_mut()?.native_glyph(glyph, clip);
                 Ok(())
             }) {
                 self.remember_error(error);
