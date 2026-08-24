@@ -2,14 +2,15 @@
 
 use std::any::{Any, TypeId};
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 
 use crate::core::error::{Errc, Error, Result};
 
-use super::Fact;
 use super::subscription::Subscription;
+use super::Fact;
 
 /// 嵌套分发深度上限，防止无界递归发布导致栈溢出。
 pub const MAX_DISPATCH_DEPTH: usize = 64;
@@ -64,6 +65,8 @@ pub(crate) struct Entry {
 #[derive(Default)]
 pub(crate) struct Registry {
     pub(crate) entries: Vec<Entry>,
+    /// 按事实类型缓存不可变处理器快照；注册变更只失效对应类型。
+    snapshot_cache: HashMap<TypeId, Rc<Vec<HandlerCell>>>,
     pub(crate) next_id: usize,
     pub(crate) state: BusState,
     /// 当前嵌套分发深度（0 = 无分发在途）。
@@ -95,7 +98,18 @@ impl Registry {
             type_id: TypeId::of::<F>(),
             handler: Rc::new(Cell::new(Some(raw))),
         });
+        self.snapshot_cache.remove(&TypeId::of::<F>());
         Ok(id)
+    }
+
+    /// 注销单一条目并失效其事实类型快照；重复注销保持 no-op。
+    pub(crate) fn unsubscribe(&mut self, id: usize) {
+        let Some(index) = self.entries.iter().position(|entry| entry.id == id) else {
+            return;
+        };
+        let type_id = self.entries[index].type_id;
+        self.entries.remove(index);
+        self.snapshot_cache.remove(&type_id);
     }
 
     /// 关闭注册表（crate 内部）：停止注册与发布，清空条目。
@@ -111,6 +125,7 @@ impl Registry {
         }
         self.state = BusState::Closed;
         self.entries.clear();
+        self.snapshot_cache.clear();
         Ok(())
     }
 }
@@ -134,13 +149,22 @@ fn dispatch<F: Fact>(registry: &Rc<RefCell<Registry>>, fact: F) -> Result<Dispat
         ));
     }
     reg.dispatch_depth += 1;
-    // 取匹配处理器快照，随后释放注册表借用（处理器执行期无注册表锁）。
-    let snapshot: Vec<HandlerCell> = reg
-        .entries
-        .iter()
-        .filter(|e| e.type_id == TypeId::of::<F>())
-        .map(|e| Rc::clone(&e.handler))
-        .collect();
+    // 稳定订阅表直接复用类型快照；首次发布或对应类型变更后才重新扫描。
+    let type_id = TypeId::of::<F>();
+    let snapshot = match reg.snapshot_cache.get(&type_id) {
+        Some(snapshot) => Rc::clone(snapshot),
+        None => {
+            let snapshot = Rc::new(
+                reg.entries
+                    .iter()
+                    .filter(|entry| entry.type_id == type_id)
+                    .map(|entry| Rc::clone(&entry.handler))
+                    .collect(),
+            );
+            reg.snapshot_cache.insert(type_id, Rc::clone(&snapshot));
+            snapshot
+        }
+    };
     let mut report = DispatchReport {
         matched: snapshot.len(),
         ..DispatchReport::default()
@@ -149,7 +173,7 @@ fn dispatch<F: Fact>(registry: &Rc<RefCell<Registry>>, fact: F) -> Result<Dispat
     // 逐处理器执行：「取出-调用-放回」，panic 被隔离并计数，
     // 不阻止其他处理器（P-05）；同处理器重入（执行期间再次命中）
     // 跳过并计数，保证语义可诊断。
-    for cell in &snapshot {
+    for cell in snapshot.iter() {
         let mut taken = cell.take();
         match taken.as_mut() {
             Some(h) => {

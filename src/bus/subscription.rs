@@ -29,7 +29,7 @@ impl Subscription {
     /// 安全 no-op。
     pub fn unsubscribe(&mut self) {
         if let Some(reg) = self.registry.upgrade() {
-            reg.borrow_mut().entries.retain(|e| e.id != self.id);
+            reg.borrow_mut().unsubscribe(self.id);
         }
     }
 
