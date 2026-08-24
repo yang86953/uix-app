@@ -4,6 +4,7 @@ use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, SnapshotFields, SystemEvent,
@@ -137,11 +138,29 @@ widget! {
     }
 }
 
+// 把画廊交互、资源绘制与预览内核融合为 UIX 声明的单一根节点。
+fn build_image_group_view(kernel: ImageGroup) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for ImageGroup {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占索引、输入、预览与资源绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/image_group/image_group.uix")
+    }
+}
+
 impl Default for ImageGroup {
     fn default() -> Self {
         Self::new()
     }
 }
+
+// 集中验证 UIX 声明根保持 ImageGroup 内核与公开配置。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/image_group_tests.rs"]
+mod tests;
 
 impl ImageGroup {
     const INLINE_THUMB_STRIP_HEIGHT: f32 = 56.0;

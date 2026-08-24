@@ -36,6 +36,8 @@ fn generates_image_group_contract() {
     assert!(snapshot.contains("__uix_image_group_change"));
     // 公共尺寸与自动化标识仍由统一属性层消费。
     assert!(snapshot.contains("width") && snapshot.contains("automation_id"));
+    // 生成器必须进入 ImageGroup 自己的 UIX 根，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证 ImageGroup 最小声明保留运行时零索引与无观察器默认值。
@@ -52,6 +54,8 @@ fn generates_image_group_runtime_defaults() {
     assert!(!snapshot.contains("start_index"));
     // 省略 Change 事件时不得注册额外观察器。
     assert!(!snapshot.contains("on_change_fn"));
+    // 最小声明也必须经过 ImageGroup 的 UIX 根。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证 ImageGroup 必需集合、叶节点与静态索引边界。

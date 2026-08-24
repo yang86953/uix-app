@@ -59,8 +59,8 @@ pub(crate) fn generate_image_group(element: &Element) -> Result<TokenStream, Dia
         widget = quote! { (#widget).start_index(#start_index) };
     }
 
-    // 先物化公开叶节点，Change 处理器与样式由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 先经公开 View 契约进入同目录 UIX 根，Change 处理器与样式由声明节点拥有。
+    let mut view = quote! { ::uix::prelude::View::build(#widget) };
     // 可选变化事件只观察运行时已经提交的当前索引事实。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。
