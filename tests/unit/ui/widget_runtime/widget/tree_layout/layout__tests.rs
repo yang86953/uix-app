@@ -28,6 +28,58 @@ fn layout_traversal_is_read_only_and_layout_consumes_snapshot() {
 }
 
 #[test]
+fn all_visible_layout_skips_filtered_child_allocation() {
+    // 构造常见的全可见容器子树，覆盖布局收敛中的统一子项排列入口。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Container::new().size(320.0, 200.0),
+        vec![
+            ViewNode::leaf(Space::new().width(24.0).height(16.0)),
+            ViewNode::leaf(Space::new().width(32.0).height(20.0)),
+        ],
+    ));
+    let root = tree.root_id().expect("根容器必须存在");
+    tree.get_mut(root)
+        .expect("根容器必须可写")
+        .set_frame(crate::core::Rect::new(0.0, 0.0, 320.0, 200.0));
+
+    crate::ui::widget_runtime::widget::boxed::reset_filtered_child_allocation_count();
+    tree.layout();
+
+    assert_eq!(
+        crate::ui::widget_runtime::widget::boxed::filtered_child_allocation_count(),
+        0,
+        "全可见热路径不得为过滤子项分配临时 Vec",
+    );
+}
+
+#[test]
+fn hidden_child_layout_keeps_filtered_fallback() {
+    // 构造一个隐藏子项，确认稀有过滤路径仍然保留既有可见性语义。
+    let mut tree = ViewAdapter::build_nodes(ViewNode::new(
+        Container::new().size(320.0, 200.0),
+        vec![
+            ViewNode::leaf(Space::new().width(24.0).height(16.0)),
+            ViewNode::leaf(Space::new().width(32.0).height(20.0)),
+        ],
+    ));
+    let root = tree.root_id().expect("根容器必须存在");
+    let hidden = tree.get(root).expect("根容器必须可读").children()[1];
+    tree.get_mut(root)
+        .expect("根容器必须可写")
+        .set_frame(crate::core::Rect::new(0.0, 0.0, 320.0, 200.0));
+    tree.set_visible(hidden, false);
+
+    crate::ui::widget_runtime::widget::boxed::reset_filtered_child_allocation_count();
+    tree.layout();
+
+    assert!(
+        crate::ui::widget_runtime::widget::boxed::filtered_child_allocation_count() > 0,
+        "隐藏子树仍应进入过滤回退路径",
+    );
+    assert_eq!(tree.get(hidden).expect("隐藏子项必须存在").frame().w, 0.0);
+}
+
+#[test]
 fn removing_overlay_owner_subtree_invalidates_old_surface_pixels() {
     // 用中间页面节点包裹窗口浮动按钮，模拟条件页面整棵卸载。
     let mut tree = ViewAdapter::build_nodes(ViewNode::new(
