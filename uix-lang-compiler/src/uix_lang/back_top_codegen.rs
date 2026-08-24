@@ -6,7 +6,7 @@ use quote::quote;
 // 引入公共属性与可见子节点判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入属性解析、表达式生成与诊断契约。
-use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression, numeric_value};
+use super::{generate_expression, numeric_value, Attribute, AttributeValue, Diagnostic, Element};
 
 // 生成带状态回写能力的 BackTop 叶组件。
 pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -74,8 +74,8 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
     }
     // 最后应用状态绑定或只读快照配置。
     widget = quote! { (#widget) #scroll_configuration };
-    // 先物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 先通过公开 View 契约进入 BackTop 的 UIX 声明壳，再应用调用方公共属性。
+    let base = quote! { ::uix::prelude::View::build(#widget) };
     // 消费专有属性并返回公共 View 表达式。
     apply_common_attributes(base, &element.attributes, &["threshold", "scrollY"])
 }
