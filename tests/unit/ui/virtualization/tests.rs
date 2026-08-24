@@ -355,6 +355,37 @@ fn variable_item_offset_cache_preserves_exact_results_and_invalidates() {
     assert_eq!(scroll.item_offset_cache.borrow().offsets.len(), 1);
 }
 
+// 验证物化范围缓存只命中完整相同输入，并随测量代际更新。
+#[test]
+fn variable_scroll_range_cache_reuses_exact_result_and_invalidates() {
+    // 构造可产生明确边界变化的可变高度列表。
+    let scroll = VirtualScroll::new()
+        .item_count(10)
+        .item_height(10.0)
+        .variable_height()
+        .overscan(0);
+    scroll.scroll_offset.set(20.0);
+    // 首次结果由原算法计算并写入单值缓存。
+    let first = scroll.scroll_range(15.0);
+    assert_eq!(first, (2, 4));
+    let first_entry = scroll.range_cache.get().expect("range cache should be set");
+    // 完全相同输入直接复用同一结果和同一键。
+    assert_eq!(scroll.scroll_range(15.0), first);
+    assert_eq!(
+        scroll.range_cache.get().map(|entry| entry.key),
+        Some(first_entry.key)
+    );
+    // 首项变高会推进测量代际，使旧范围自动失效。
+    assert!(scroll.measure_item(0, 20.0));
+    let refreshed = scroll.scroll_range(15.0);
+    assert_eq!(refreshed, (1, 3));
+    let refreshed_entry = scroll
+        .range_cache
+        .get()
+        .expect("range cache should refresh");
+    assert_ne!(refreshed_entry.key, first_entry.key);
+}
+
 // 验证可变行高模式会把已物化子项测量写回 frame 和滚动几何。
 #[test]
 fn variable_scroll_layout_uses_measured_item_frames() {
