@@ -9,6 +9,8 @@ use crate::ui::{
 use crate::widget;
 // 引入组件局部状态与待发变化记录所需的单线程容器。
 use std::cell::{Cell, RefCell};
+// 搜索词无需大小写归一化时直接借用，避免稳态布局创建临时字符串。
+use std::borrow::Cow;
 // 引入稳定身份集合，确保同一 pane 的条目不会共享动态状态命名空间。
 use std::collections::HashSet;
 // 引入应用 renderer 与回调的单线程共享所有权句柄。
@@ -105,36 +107,40 @@ widget! {
         )
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        let layout = self.visual.layout;
-        let half = ((frame.w - layout.button_column_width) * 0.5)
-            .max(layout.min_pane_half_width);
-        let row_h = layout.row_height;
-        let header_h = layout.header_height
-            + if self.searchable { layout.search_height } else { 0.0 };
-        let mut layouts = Vec::with_capacity(children.len());
-        for (index, child) in children.iter().enumerate() {
-            let (pane, raw_index) = if index < self.source.len() {
-                (TransferPane::Source, index)
-            } else {
-                (TransferPane::Target, index - self.source.len())
-            };
-            let visible = self.visible_indices(pane).into_iter().position(|item| item == raw_index);
-            let rect = if let Some(visible_index) = visible {
-                let x = if pane == TransferPane::Source {
-                    frame.x
-                } else {
-                    frame.x + half + layout.button_column_width
-                };
-                Rect::new(x, frame.y + header_h + visible_index as f32 * row_h, half, row_h)
-            } else {
-                Rect::zero()
-            };
-            layouts.push((child.id, rect));
-        }
-        layouts
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_transfer_children_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(crate::ui::WidgetId, Rect)>
+    ) {
+        self.layout_transfer_children_into(frame, children, output);
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -216,6 +222,7 @@ widget! {
         );
         let loc = crate::ui::widget_runtime::locale::use_locale();
         let source_title = if self.source_title.is_empty() { loc.transfer_source } else { &self.source_title };
+        let normalized_query = self.normalized_query();
         if self.searchable {
             ctx.stroke_rect(
                 Rect::new(
@@ -247,7 +254,10 @@ widget! {
             visual.text_quaternary,
             visual.typography.caption,
         );
-        for (i, raw_index) in self.visible_indices(TransferPane::Source).into_iter().enumerate() {
+        for (i, raw_index) in self
+            .visible_indices(TransferPane::Source, normalized_query.as_ref())
+            .enumerate()
+        {
             let item = &self.source[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
@@ -381,7 +391,10 @@ widget! {
             visual.text_quaternary,
             visual.typography.caption,
         );
-        for (i, raw_index) in self.visible_indices(TransferPane::Target).into_iter().enumerate() {
+        for (i, raw_index) in self
+            .visible_indices(TransferPane::Target, normalized_query.as_ref())
+            .enumerate()
+        {
             let item = &self.target[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
@@ -428,6 +441,65 @@ widget! {
     }
 }
 impl Transfer {
+    // 将全部自定义条目位置写入布局树拥有的跨帧数组。
+    fn layout_transfer_children_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        let layout = self.visual.layout;
+        let half = ((frame.w - layout.button_column_width) * 0.5).max(layout.min_pane_half_width);
+        let row_h = layout.row_height;
+        let header_h = layout.header_height
+            + if self.searchable {
+                layout.search_height
+            } else {
+                0.0
+            };
+        let normalized_query = self.normalized_query();
+        let mut source_visible_index = 0_usize;
+        let mut target_visible_index = 0_usize;
+
+        output.clear();
+        output.reserve(children.len());
+        for (index, child) in children.iter().enumerate() {
+            let (pane, item, visible_index) = if index < self.source.len() {
+                (
+                    TransferPane::Source,
+                    self.source.get(index),
+                    &mut source_visible_index,
+                )
+            } else {
+                let raw_index = index - self.source.len();
+                (
+                    TransferPane::Target,
+                    self.target.get(raw_index),
+                    &mut target_visible_index,
+                )
+            };
+            let rect = item
+                .filter(|item| Self::item_matches_query(item, normalized_query.as_ref()))
+                .map(|_| {
+                    let x = if pane == TransferPane::Source {
+                        frame.x
+                    } else {
+                        frame.x + half + layout.button_column_width
+                    };
+                    let rect = Rect::new(
+                        x,
+                        frame.y + header_h + *visible_index as f32 * row_h,
+                        half,
+                        row_h,
+                    );
+                    *visible_index += 1;
+                    rect
+                })
+                .unwrap_or_default();
+            output.push((child.id, rect));
+        }
+    }
+
     /// 创建空的、不可搜索且活动 pane 为源列表的 Transfer。
     pub fn new() -> Self {
         Self {
@@ -625,8 +697,12 @@ impl Transfer {
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
     }
 
-    fn visible_indices(&self, pane: TransferPane) -> Vec<usize> {
-        let query = self.search_query.trim().to_lowercase();
+    // 返回已经过当前搜索条件筛选的原始条目索引，不物化中间集合。
+    fn visible_indices<'a>(
+        &'a self,
+        pane: TransferPane,
+        normalized_query: &'a str,
+    ) -> impl Iterator<Item = usize> + 'a {
         let items = match pane {
             TransferPane::Source => &self.source,
             TransferPane::Target => &self.target,
@@ -634,13 +710,57 @@ impl Transfer {
         items
             .iter()
             .enumerate()
-            .filter(|(_, item)| {
-                query.is_empty()
-                    || item.title.to_lowercase().contains(&query)
-                    || item.key.to_lowercase().contains(&query)
-            })
+            .filter(move |(_, item)| Self::item_matches_query(item, normalized_query))
             .map(|(index, _)| index)
-            .collect()
+    }
+
+    // 搜索词已经稳定时直接借用原字符串，仅在确需 Unicode 小写映射时分配一次。
+    fn normalized_query(&self) -> Cow<'_, str> {
+        let query = self.search_query.trim();
+        if query.is_ascii() || Self::lowercase_is_identity(query) {
+            Cow::Borrowed(query)
+        } else {
+            Cow::Owned(query.to_lowercase())
+        }
+    }
+
+    // 判定字符串的小写映射是否保持逐字符不变。
+    fn lowercase_is_identity(value: &str) -> bool {
+        value.chars().all(|ch| {
+            let mut lowercase = ch.to_lowercase();
+            lowercase.next() == Some(ch) && lowercase.next().is_none()
+        })
+    }
+
+    // 复用已归一化搜索词，同时保持原有 Unicode 小写匹配语义。
+    fn contains_normalized_query(value: &str, normalized_query: &str) -> bool {
+        if normalized_query.is_empty() {
+            return true;
+        }
+        if normalized_query.is_ascii() {
+            let query = normalized_query.as_bytes();
+            let contains_ascii_query = |candidate: &str| {
+                candidate
+                    .as_bytes()
+                    .windows(query.len())
+                    .any(|window| window.eq_ignore_ascii_case(query))
+            };
+            if value.is_ascii() || Self::lowercase_is_identity(value) {
+                return contains_ascii_query(value);
+            }
+            return contains_ascii_query(&value.to_lowercase());
+        }
+        if Self::lowercase_is_identity(value) {
+            value.contains(normalized_query)
+        } else {
+            value.to_lowercase().contains(normalized_query)
+        }
+    }
+
+    // 任一稳定键或标题命中即可保留该条目。
+    fn item_matches_query(item: &TransferItem, normalized_query: &str) -> bool {
+        Self::contains_normalized_query(&item.title, normalized_query)
+            || Self::contains_normalized_query(&item.key, normalized_query)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -742,7 +862,11 @@ impl Transfer {
         let Some(visible_row) = row else {
             return EventResult::NotHandled;
         };
-        let Some(raw_row) = self.visible_indices(pane).get(visible_row).copied() else {
+        let normalized_query = self.normalized_query();
+        let Some(raw_row) = self
+            .visible_indices(pane, normalized_query.as_ref())
+            .nth(visible_row)
+        else {
             return EventResult::NotHandled;
         };
         self.toggle_row(pane, Some(raw_row))
@@ -841,3 +965,8 @@ impl Default for Transfer {
 #[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod typography_tests;
+
+// 验证 Transfer 的筛选与树级布局复用契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__layout_tests.rs"]
+mod layout_tests;
