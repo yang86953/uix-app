@@ -1,8 +1,8 @@
 // 引入时间面板几何所需的矩形类型。
 use crate::core::Rect;
 
-// 引入时间面板的自然尺寸与触发间隙。
-use super::{POPUP_GAP, POPUP_HEIGHT, POPUP_MIN_WIDTH};
+// 引入 UIX 注入的时间面板视觉表。
+use super::presentation::TimePickerVisual;
 
 // 使用当前逻辑表面解析时间面板的最终绝对矩形。
 pub(super) fn resolve_time_popup_rect(
@@ -10,13 +10,15 @@ pub(super) fn resolve_time_popup_rect(
     frame: Rect,
     // 接收当前逻辑表面。
     surface: Rect,
+    // 接收 UIX 声明的面板尺寸与间隙。
+    visual: &TimePickerVisual,
 ) -> Rect {
     // 归一化触发器矩形。
     let frame = normalize_time_rect(frame);
     // 归一化逻辑表面矩形。
     let surface = normalize_time_rect(surface);
     // 将自然宽度限制在当前表面内。
-    let width = frame.w.max(POPUP_MIN_WIDTH).min(surface.w);
+    let width = frame.w.max(visual.layout.popup_min_width).min(surface.w);
     // 空表面不生成可见时间面板。
     if width <= 0.0 || surface.h <= 0.0 {
         // 返回稳定的空矩形。
@@ -27,15 +29,16 @@ pub(super) fn resolve_time_popup_rect(
     // 将触发器横向锚点限制在表面内。
     let x = frame.x.clamp(surface.x, max_x);
     // 计算保留间隙后的下方空间。
-    let available_below = (surface.y + surface.h - frame.y - frame.h - POPUP_GAP).max(0.0);
+    let available_below =
+        (surface.y + surface.h - frame.y - frame.h - visual.layout.popup_gap).max(0.0);
     // 计算保留间隙后的上方空间。
-    let available_above = (frame.y - surface.y - POPUP_GAP).max(0.0);
+    let available_above = (frame.y - surface.y - visual.layout.popup_gap).max(0.0);
     // 优先完整向下，其次完整向上，均不足时选择空间更大的一侧。
-    let place_below = if POPUP_HEIGHT <= available_below {
+    let place_below = if visual.layout.popup_height <= available_below {
         // 下方可以完整容纳自然高度。
         true
     // 检查上方是否可以完整容纳自然高度。
-    } else if POPUP_HEIGHT <= available_above {
+    } else if visual.layout.popup_height <= available_above {
         // 上方可以完整容纳时翻转。
         false
     // 两侧都不足时比较可用空间。
@@ -53,15 +56,15 @@ pub(super) fn resolve_time_popup_rect(
         available_above
     };
     // 将时间面板高度限制到最终方向的可用空间。
-    let height = POPUP_HEIGHT.min(available_height);
+    let height = visual.layout.popup_height.min(available_height);
     // 按最终方向计算纵向起点。
     let y = if place_below {
         // 向下面板从触发器底边加间隙开始。
-        frame.y + frame.h + POPUP_GAP
+        frame.y + frame.h + visual.layout.popup_gap
     // 处理向上布局。
     } else {
         // 向上面板紧贴触发器上方间隙。
-        frame.y - POPUP_GAP - height
+        frame.y - visual.layout.popup_gap - height
     };
     // 返回绘制、命中、滚动、脏区和登记共享的最终矩形。
     Rect::new(x, y, width, height)
@@ -94,21 +97,21 @@ pub(super) fn time_surface_rect(frame: Rect, popup: Rect, surface: Rect) -> Rect
 }
 
 // 构造首次正式登记前的有限回退表面。
-pub(super) fn time_fallback_surface(frame: Rect) -> Rect {
+pub(super) fn time_fallback_surface(frame: Rect, visual: &TimePickerVisual) -> Rect {
     // 归一化触发器矩形。
     let frame = normalize_time_rect(frame);
     // 计算自然时间面板宽度。
-    let width = frame.w.max(POPUP_MIN_WIDTH);
+    let width = frame.w.max(visual.layout.popup_min_width);
     // 在触发器上下各预留完整时间面板和间隙。
     Rect::new(
         // 从触发器左边开始。
         frame.x,
         // 向上预留完整时间面板和间隙。
-        frame.y - POPUP_HEIGHT - POPUP_GAP,
+        frame.y - visual.layout.popup_height - visual.layout.popup_gap,
         // 保留自然时间面板宽度。
         width,
         // 覆盖上下两份面板、两份间隙和触发器。
-        POPUP_HEIGHT * 2.0 + POPUP_GAP * 2.0 + frame.h,
+        visual.layout.popup_height * 2.0 + visual.layout.popup_gap * 2.0 + frame.h,
     )
 }
 

@@ -24,7 +24,7 @@ impl TimePicker {
         // 归一化并缓存当前逻辑表面。
         let surface = normalize_time_rect(surface);
         // 使用共享解析器生成绝对时间面板矩形。
-        let absolute = resolve_time_popup_rect(frame, surface);
+        let absolute = resolve_time_popup_rect(frame, surface, self.visual);
         // 转换为组件事件路径可复用的相对矩形。
         let local = local_time_popup_rect(frame, absolute);
         // 读取此前缓存的最终时间面板。
@@ -74,7 +74,7 @@ impl TimePicker {
             // 读取可复制的可选表面。
             .get()
             // 首次使用时构造有限表面。
-            .unwrap_or_else(|| time_fallback_surface(frame))
+            .unwrap_or_else(|| time_fallback_surface(frame, self.visual))
     }
 
     // 返回事件路径应使用的实际时间面板矩形。
@@ -88,9 +88,9 @@ impl TimePicker {
             return self.remember_popup_rect(anchor, surface);
         }
         // 首次正式登记前构造有限回退表面。
-        let surface = time_fallback_surface(frame);
+        let surface = time_fallback_surface(frame, self.visual);
         // 解析回退绝对时间面板。
-        let absolute = resolve_time_popup_rect(frame, surface);
+        let absolute = resolve_time_popup_rect(frame, surface, self.visual);
         // 只返回本地几何并等待正式登记记录表面。
         local_time_popup_rect(frame, absolute)
     }
@@ -127,7 +127,7 @@ impl TimePicker {
             // 丢弃空视口。
             .filter(|height| *height > 0.0);
         // 首次登记前使用自然视口高度。
-        height.unwrap_or(super::POPUP_HEIGHT)
+        height.unwrap_or(self.visual.layout.popup_height)
     }
 
     // 开启新的呈现周期时重置时间面板几何缓存。
