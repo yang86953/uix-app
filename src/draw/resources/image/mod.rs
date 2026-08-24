@@ -24,10 +24,10 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 // 图片编解码 capability 启用时才构造解码与文件错误。
-use crate::core::Rect;
 #[cfg(feature = "image-codecs")]
 // 解码入口继续返回框架统一错误类型。
 use crate::core::error::Error;
+use crate::core::Rect;
 use crate::draw::Canvas2D;
 
 // 图片编解码 capability 启用时才暴露压缩数据解码函数。
@@ -158,15 +158,18 @@ impl ImageService {
     #[cfg(feature = "image-codecs")]
     // 关闭 capability 后路径缓存仍可服务已有内部槽位清理。
     pub fn load_from_path(&self, path: impl AsRef<Path>) -> Result<BitmapHandle, Error> {
-        let path_str = path.as_ref().to_string_lossy().into_owned();
-        if let Some(handle) = self.path_cache.borrow().get(&path_str).copied() {
+        // UTF-8 路径命中缓存时保持借用，避免绘制热路径重复分配 String。
+        let path_str = path.as_ref().to_string_lossy();
+        if let Some(handle) = self.path_cache.borrow().get(path_str.as_ref()).copied() {
             if self.is_valid(handle) {
                 return Ok(handle);
             }
         }
-        let data = fs::read(&path_str)
+        let data = fs::read(path_str.as_ref())
             .map_err(|e| Error::io_error(format!("读取图片文件 '{path_str}' 失败: {e}")))?;
         let (w, h, pixels) = decode_to_pixels(&data)?;
+        // 只有缓存未命中且解码成功后才取得路径所有权。
+        let path_str = path_str.into_owned();
         let handle = self.insert_slot(ImageSlot::from_decoded(
             w,
             h,
@@ -186,19 +189,21 @@ impl ImageService {
         // 接收需要缓存的本地文件路径。
         path: impl AsRef<Path>,
     ) -> Result<Option<BitmapHandle>, Error> {
-        // 使用与同步缓存一致的有损字符串身份。
-        let path_string = path.as_ref().to_string_lossy().into_owned();
+        // 使用与同步缓存一致的有损字符串身份；命中路径保持借用。
+        let path_string = path.as_ref().to_string_lossy();
         // 空路径不能形成稳定的资源请求。
         if path_string.is_empty() {
             // 返回统一无效参数错误。
             return Err(Error::invalid_arg("图片文件路径不能为空"));
         }
         // 优先复用已经完成并仍然有效的路径缓存。
-        if let Some(handle) = self.path_cache.borrow().get(&path_string).copied() {
+        if let Some(handle) = self.path_cache.borrow().get(path_string.as_ref()).copied() {
             // 代际仍有效时直接交付现有句柄。
             if self.is_valid(handle) {
                 // 同步加载可能抢先完成，清理同路径残留后台接收端。
-                self.pending_path_decodes.borrow_mut().remove(&path_string);
+                self.pending_path_decodes
+                    .borrow_mut()
+                    .remove(path_string.as_ref());
                 // 已缓存图片不需要后台任务。
                 return Ok(Some(handle));
             }
@@ -208,7 +213,7 @@ impl ImageService {
             // 暂时借用任务表，只在通道轮询期间持有。
             let pending = self.pending_path_decodes.borrow();
             // 查找当前路径对应的唯一任务。
-            pending.get(&path_string).map(Receiver::try_recv)
+            pending.get(path_string.as_ref()).map(Receiver::try_recv)
         };
         // 已有任务时根据通道状态完成本轮查询。
         if let Some(polled) = polled {
@@ -217,9 +222,13 @@ impl ImageService {
                 // 后台任务已经返回解码结果。
                 Ok(result) => {
                     // 完成任务只消费一次，立即移出任务表。
-                    self.pending_path_decodes.borrow_mut().remove(&path_string);
+                    self.pending_path_decodes
+                        .borrow_mut()
+                        .remove(path_string.as_ref());
                     // 传播后台文件或解码 typed error。
                     let (width, height, pixels) = result?;
+                    // 任务完成并需要落入槽位与路径表时才取得 String 所有权。
+                    let path_string = path_string.into_owned();
                     // 只在所有解码步骤成功后登记有效资源槽位。
                     let handle = self.insert_slot(ImageSlot::from_decoded(
                         // 保存固有像素宽度。
@@ -244,7 +253,9 @@ impl ImageService {
                 // 发送端异常结束时移除失效任务并返回 typed error。
                 Err(TryRecvError::Disconnected) => {
                     // 清理已无法完成的任务身份。
-                    self.pending_path_decodes.borrow_mut().remove(&path_string);
+                    self.pending_path_decodes
+                        .borrow_mut()
+                        .remove(path_string.as_ref());
                     // 通道断开属于资源服务状态错误。
                     return Err(Error::invalid_state(format!(
                         // 保留确切路径方便诊断。
@@ -253,6 +264,8 @@ impl ImageService {
                 }
             }
         }
+        // 首次任务必须跨线程与跨轮次保存路径，此时才转成 owned。
+        let path_string = path_string.into_owned();
         // 为首次请求建立容量一的单结果通道。
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         // 后台线程拥有独立路径副本。
@@ -649,6 +662,10 @@ impl ImageService {
         }
     }
 }
+
+#[cfg(all(test, feature = "image-codecs"))]
+#[path = "../../../../tests/unit/draw/resources/image__tests.rs"]
+mod tests;
 
 fn apply_pixel_coverage(pixel: u32, coverage: f32) -> u32 {
     if coverage >= 1.0 {
