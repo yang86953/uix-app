@@ -1,0 +1,2 @@
+// Divider 的标签尺寸、线段几何、固有尺寸与主题色角色由 UIX 声明。
+<KernelView value={build_divider_view(kernel, 14, 7.5, 8, 32, 8, 1, 6, 4, 24, 1, divider_border_secondary(), divider_text_secondary())} />

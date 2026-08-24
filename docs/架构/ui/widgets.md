@@ -48,6 +48,7 @@ Button、Label、Typography、Icon、Container 等基础 widget 只组合 widget
 - `ButtonGroup`：`src/ui/widgets/uix/button_group.uix` 拥有容器结构、横向排列与零间距，Rust 只计算每个按钮的连体位置；`KernelChildren` 直接消费已有 `ViewNode` 列表，不引入克隆或额外容器。
 - `BackTop`：`src/ui/widgets/uix/back_top.uix` 拥有图标、固有尺寸、环形几何与主题色角色，Rust 只保留滚动阈值、状态回写、输入、焦点与绘制内核；声明配置融合进原叶节点，不新增 Icon 子节点或包装容器。
 - `ThemeToggle`：`src/ui/widgets/uix/theme_toggle.uix` 拥有亮/暗双图标、固有尺寸、焦点几何与主题色角色，Rust 只选择当前状态、发布 change 事实并执行绘制；声明配置融合进原叶节点，不物化两个 Icon 子节点。
+- `Divider`：`src/ui/widgets/uix/divider.uix` 拥有标签尺寸、线段几何、固有尺寸与主题色角色，Rust 只保留文字数据、方向、对齐、虚线状态与绘制内核；声明配置融合进原叶节点，不生成标签或线段子节点。
 
 ## 组件：复合组件
 
