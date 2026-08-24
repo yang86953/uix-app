@@ -1,6 +1,6 @@
 // 拆分自 mentions.rs：文本编辑、光标定位与候选替换。
-// 引入被扩展的提及组件与光标换算高度规格。
-use super::{CONTROL_HEIGHT, Mentions};
+// 引入被扩展的提及组件。
+use super::Mentions;
 
 // 为 Mentions 提供文本编辑与候选替换方法。
 impl Mentions {
@@ -10,8 +10,10 @@ impl Mentions {
             self.cursor_char = self.value.chars().count();
             return;
         }
-        let scale = (self.interaction_frame().h / CONTROL_HEIGHT).clamp(0.0, 1.0);
-        let target = (x - 10.0 * scale + self.text_scroll_x.get()).max(0.0);
+        let scale =
+            (self.interaction_frame().h / self.visual.layout.control_height).clamp(0.0, 1.0);
+        let target =
+            (x - self.visual.layout.horizontal_padding * scale + self.text_scroll_x.get()).max(0.0);
         let mut index = glyph_xs.len().saturating_sub(1);
         for candidate in 0..glyph_xs.len().saturating_sub(1) {
             let midpoint = (glyph_xs[candidate] + glyph_xs[candidate + 1]) * 0.5;

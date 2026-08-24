@@ -1,0 +1,48 @@
+// Mentions 的输入框、候选弹层、光标、排版、层级与主题由 UIX 唯一拥有。
+<Visual
+  name="MENTIONS_LAYOUT_VISUAL"
+  type="MentionsLayoutVisual"
+  intrinsicWidth={200.0}
+  controlHeight={32.0}
+  suggestionRowHeight={28.0}
+  maxPopupHeight={280.0}
+  minPopupWidth={200.0}
+  fontSize={13.0}
+  horizontalPadding={10.0}
+  caretHeight={18.0}
+  caretWidth={1.0}
+  borderWidth={1.0}
+  focusBorderWidth={2.0}
+  panelBorderWidth={1.0}
+/>
+
+<Visual
+  name="MENTIONS_CHROME_VISUAL"
+  type="MentionsChromeVisual"
+  overlayZ={900}
+  radius={mentions_radius_small()}
+/>
+
+<Visual
+  name="MENTIONS_PALETTE_VISUAL"
+  type="MentionsPaletteVisual"
+  background={mentions_background()}
+  popupBackground={mentions_popup_background()}
+  border={mentions_border()}
+  primary={mentions_primary()}
+  primaryHover={mentions_primary_hover()}
+  text={mentions_text()}
+  textSecondary={mentions_text_secondary()}
+  textPlaceholder={mentions_text_placeholder()}
+  hoverFill={mentions_hover_fill()}
+/>
+
+<Visual
+  name="MENTIONS_VISUAL"
+  type="MentionsVisual"
+  layout={MENTIONS_LAYOUT_VISUAL}
+  chrome={MENTIONS_CHROME_VISUAL}
+  palette={MENTIONS_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_mentions_view(kernel, MENTIONS_VISUAL_REF)} />

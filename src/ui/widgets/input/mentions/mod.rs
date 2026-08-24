@@ -6,6 +6,7 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入提及输入完整文本的受控状态句柄。
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
@@ -18,10 +19,14 @@ use std::sync::Arc;
 mod geometry;
 // 将弹层缓存与实际视口方法隔离到私有实现模块。
 mod methods;
+// 声明 Mentions 的 UIX 静态视觉与主题解析模块。
+mod presentation;
 // 将文本编辑与候选替换方法隔离到私有实现模块。
 mod text_editing;
 // 将候选建议刷新与过滤方法隔离到私有实现模块。
 mod suggestions;
+
+use presentation::*;
 
 // 复用所有 Mentions 消费端共享的最终几何函数。
 use geometry::{
@@ -32,12 +37,6 @@ use geometry::{
 };
 // 文本编辑模块提供字符索引换算，供建议过滤与候选替换共用。
 use text_editing::byte_index_for_char;
-
-const CONTROL_HEIGHT: f32 = 32.0;
-const SUGGESTION_ROW_HEIGHT: f32 = 28.0;
-const MAX_POPUP_HEIGHT: f32 = 280.0;
-const MIN_POPUP_WIDTH: f32 = 200.0;
-const FONT_SIZE: f32 = 13.0;
 
 widget! {
     /// Mentions——`@` 提及输入框。
@@ -97,6 +96,9 @@ widget! {
         popup_anchor_frame: Cell<Option<Rect>>,
         /// 当前呈现周期内新旧绝对弹层脏区。
         popup_damage_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static MentionsVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -194,7 +196,7 @@ widget! {
                     let dy = self.dropdown_scroll.scroll_by_wheel(
                         delta.y,
                         self.filtered.len(),
-                        SUGGESTION_ROW_HEIGHT,
+                        self.visual.layout.suggestion_row_height,
                         // 滚轮范围使用表面约束后的实际视口。
                         self.effective_popup_viewport_height(self.filtered.len()),
                     );
@@ -310,32 +312,33 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0))));
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border();
-        let primary = ctx.tokens().color_primary();
-        let text = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_tertiary = ctx.tokens().color_text_quaternary();
-        let scale = (frame.h / CONTROL_HEIGHT).clamp(0.0, 1.0);
-        let font_size = FONT_SIZE * scale;
-        let padding = 10.0 * scale;
+        // 输入框与候选弹层共享同帧一次 UIX 主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let scale = (frame.h / layout.control_height).clamp(0.0, 1.0);
+        let font_size = layout.font_size * scale;
+        let padding = layout.horizontal_padding * scale;
         let input_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
         let radius = Some(Radius::uniform(
-            (ctx.tokens().border_radius_sm() * scale).min(input_rect.h * 0.5),
+            (visual.radius * scale).min(input_rect.h * 0.5),
         ));
         let border_color = if self.focused {
-            primary
+            visual.primary
         } else if self.hovered {
-            ctx.tokens().color_primary_hover()
+            visual.primary_hover
         } else {
-            border
+            visual.border
         };
         ctx.push_clip(input_rect);
-        ctx.fill_rect(input_rect, bg, radius);
+        ctx.fill_rect(input_rect, visual.background, radius);
         ctx.stroke_rect(
             input_rect,
             border_color,
-            if self.focused { 2.0 } else { 1.0 },
+            if self.focused {
+                layout.focus_border_width
+            } else {
+                layout.border_width
+            },
             radius,
         );
 
@@ -373,9 +376,9 @@ widget! {
                 &self.value
             };
             let display_color = if self.value.is_empty() {
-                text_tertiary
+                visual.text_placeholder
             } else {
-                text
+                visual.text
             };
             let draw_x = if self.value.is_empty() {
                 text_area.x
@@ -386,14 +389,14 @@ widget! {
             ctx.push_clip(text_area);
             ctx.draw_text(display, Point::new(draw_x, draw_y), display_color, font_size);
 
-            let caret_h = (18.0 * scale).min(text_area.h);
+            let caret_h = (layout.caret_height * scale).min(text_area.h);
             let caret_x = (text_area.x + cursor_offset - scroll)
                 .clamp(text_area.x, text_area.x + text_area.w);
             let caret_y = text_area.y + (text_area.h - caret_h) * 0.5;
-            let cursor_rect = Rect::new(caret_x, caret_y, 1.0, caret_h);
+            let cursor_rect = Rect::new(caret_x, caret_y, layout.caret_width * scale, caret_h);
             self.cursor_rect.set(cursor_rect);
             if self.focused {
-                ctx.fill_rect(cursor_rect, primary, None);
+                ctx.fill_rect(cursor_rect, visual.primary, None);
             }
             ctx.pop_clip();
         } else {
@@ -416,28 +419,33 @@ widget! {
                 // 保留输入框绘制结果并跳过弹层。
                 return;
             }
-            let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+            let panel_radius = Some(Radius::uniform(visual.radius));
             // 将整个提及弹层裁剪到当前逻辑表面。
             ctx.push_clip(surface);
             // 再按最终弹层矩形裁剪候选行与边框。
             ctx.push_clip(menu_rect);
-            ctx.fill_rect(menu_rect, ctx.tokens().color_bg_elevated(), panel_radius);
-            ctx.stroke_rect(menu_rect, border, 1.0, panel_radius);
+            ctx.fill_rect(menu_rect, visual.popup_background, panel_radius);
+            ctx.stroke_rect(
+                menu_rect,
+                visual.border,
+                layout.panel_border_width,
+                panel_radius,
+            );
 
             if self.filtered.is_empty() {
                 let no_data_area = Rect::new(
-                    menu_rect.x + 10.0,
+                    menu_rect.x + layout.horizontal_padding,
                     menu_rect.y,
-                    (menu_rect.w - 20.0).max(0.0),
+                    (menu_rect.w - layout.horizontal_padding * 2.0).max(0.0),
                     menu_rect.h,
                 );
-                let y = ctx.visual_center_y(no_data_area, FONT_SIZE);
+                let y = ctx.visual_center_y(no_data_area, layout.font_size);
                 ctx.push_clip(no_data_area);
                 ctx.draw_text(
                     crate::ui::widget_runtime::locale::use_locale().no_data,
                     Point::new(no_data_area.x, y),
-                    text_secondary,
-                    FONT_SIZE,
+                    visual.text_secondary,
+                    layout.font_size,
                 );
                 ctx.pop_clip();
                 ctx.pop_clip();
@@ -449,29 +457,34 @@ widget! {
             let scroll_offset = self.dropdown_scroll.scroll_offset();
             let (start, end) = self.dropdown_scroll.scroll_range(
                 self.filtered.len(),
-                SUGGESTION_ROW_HEIGHT,
+                layout.suggestion_row_height,
                 menu_rect.h,
             );
             for (index, option) in self.filtered.iter().enumerate().take(end).skip(start) {
-                let y = menu_rect.y + index as f32 * SUGGESTION_ROW_HEIGHT - scroll_offset;
-                if y + SUGGESTION_ROW_HEIGHT <= menu_rect.y
+                let y = menu_rect.y + index as f32 * layout.suggestion_row_height - scroll_offset;
+                if y + layout.suggestion_row_height <= menu_rect.y
                     || y >= menu_rect.y + menu_rect.h
                 {
                     continue;
                 }
-                let item_rect = Rect::new(menu_rect.x, y, menu_rect.w, SUGGESTION_ROW_HEIGHT);
+                let item_rect = Rect::new(menu_rect.x, y, menu_rect.w, layout.suggestion_row_height);
                 if index == self.selected_index || self.hovered_option == Some(index) {
-                    ctx.fill_rect(item_rect, ctx.tokens().color_fill_tertiary(), None);
+                    ctx.fill_rect(item_rect, visual.hover_fill, None);
                 }
                 let option_area = Rect::new(
-                    item_rect.x + 10.0,
+                    item_rect.x + layout.horizontal_padding,
                     item_rect.y,
-                    (item_rect.w - 20.0).max(0.0),
+                    (item_rect.w - layout.horizontal_padding * 2.0).max(0.0),
                     item_rect.h,
                 );
-                let text_y = ctx.visual_center_y(option_area, FONT_SIZE);
+                let text_y = ctx.visual_center_y(option_area, layout.font_size);
                 ctx.push_clip(option_area);
-                ctx.draw_text(option, Point::new(option_area.x, text_y), text, FONT_SIZE);
+                ctx.draw_text(
+                    option,
+                    Point::new(option_area.x, text_y),
+                    visual.text,
+                    layout.font_size,
+                );
                 ctx.pop_clip();
             }
             ctx.pop_clip();
@@ -505,7 +518,7 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // 登记边界与绘制、命中共用同一矩形。
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -520,7 +533,10 @@ widget! {
 
 impl Mentions {
     fn intrinsic_size(&self) -> Size {
-        Size::new(200.0, CONTROL_HEIGHT)
+        Size::new(
+            self.visual.layout.intrinsic_width,
+            self.visual.layout.control_height,
+        )
     }
 
     /// 创建使用指定占位文字和默认 `@` 触发符的提及输入框。
@@ -558,6 +574,7 @@ impl Mentions {
             popup_anchor_frame: Cell::new(None),
             // 首次呈现前没有历史弹层脏区。
             popup_damage_rect: Cell::new(Rect::zero()),
+            visual: MENTIONS_VISUAL_REF,
         }
     }
 
@@ -648,7 +665,7 @@ impl Mentions {
             // 避免负浮点转换为无意义索引。
             return None;
         }
-        let index = (local_y / SUGGESTION_ROW_HEIGHT).floor() as usize;
+        let index = (local_y / self.visual.layout.suggestion_row_height).floor() as usize;
         (index < self.filtered.len()).then_some(index)
     }
 
@@ -668,8 +685,8 @@ impl Mentions {
         // 键盘显露使用表面约束后的实际视口高度。
         let viewport_height = self.effective_popup_viewport_height(self.filtered.len());
         let old_offset = self.dropdown_scroll.scroll_offset();
-        let row_top = self.selected_index as f32 * SUGGESTION_ROW_HEIGHT;
-        let row_bottom = row_top + SUGGESTION_ROW_HEIGHT;
+        let row_top = self.selected_index as f32 * self.visual.layout.suggestion_row_height;
+        let row_bottom = row_top + self.visual.layout.suggestion_row_height;
         let new_offset = if row_top < old_offset {
             row_top
         } else if row_bottom > old_offset + viewport_height {
@@ -680,7 +697,7 @@ impl Mentions {
         self.dropdown_scroll.set_scroll_offset(new_offset);
         self.dropdown_scroll.clamp_to_content(
             self.filtered.len(),
-            SUGGESTION_ROW_HEIGHT,
+            self.visual.layout.suggestion_row_height,
             viewport_height,
         );
         let applied = self.dropdown_scroll.scroll_offset() - old_offset;
@@ -734,6 +751,31 @@ impl Mentions {
         if self.suggesting && options_changed {
             self.update_filtered();
         }
+        if !std::ptr::eq(self.visual, next.visual) {
+            self.visual = next.visual;
+            self.popup_rect.set(Rect::zero());
+            self.popup_row_count.set(0);
+            self.surface_rect.set(None);
+            self.popup_anchor_frame.set(None);
+            self.popup_damage_rect.set(Rect::zero());
+        }
+    }
+}
+
+// 把 Mentions Rust 文本与候选内核和 UIX 静态视觉组合为单一组件节点。
+fn build_mentions_view(mut kernel: Mentions, visual: &'static MentionsVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_mentions_uix_root(kernel: Mentions) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/mentions/mentions.uix")
+}
+
+impl View for Mentions {
+    fn build(self) -> ViewNode {
+        build_mentions_uix_root(self)
     }
 }
 
