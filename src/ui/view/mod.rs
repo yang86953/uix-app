@@ -77,7 +77,8 @@ pub struct ViewNode {
     pub(crate) automation_id: Option<String>,
     pub(crate) tab_index: Option<i32>,
     pub(crate) focus_handle: Option<FocusHandle>,
-    pub(crate) accessibility_override: Option<AccessibilityOverride>,
+    // 绝大多数节点没有语义覆盖，按需分配避免在每个声明节点内联大对象。
+    pub(crate) accessibility_override: Option<Box<AccessibilityOverride>>,
     pub(crate) handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
     pub(crate) render_handlers: Vec<RenderHandlerRegistration>,
@@ -537,51 +538,46 @@ impl ViewNode {
 
     /// 完整替换节点对外暴露的无障碍快照。
     pub fn accessibility(mut self, accessibility: AccessibilitySnapshot) -> Self {
-        self.accessibility_override = Some(AccessibilityOverride::replace(accessibility));
+        self.accessibility_override = Some(Box::new(AccessibilityOverride::replace(accessibility)));
         self
+    }
+
+    // 原位复用已分配的覆盖对象，连续链式声明不重复申请堆内存。
+    fn update_accessibility_override(
+        &mut self,
+        update: impl FnOnce(AccessibilityOverride) -> AccessibilityOverride,
+    ) {
+        // 仅在首次声明覆盖时分配，随后复用同一 Box。
+        let accessibility_override = self
+            .accessibility_override
+            .get_or_insert_with(|| Box::new(AccessibilityOverride::default()));
+        // 暂时取出值以复用现有消费式 builder，同时保留外层分配。
+        **accessibility_override = update(std::mem::take(accessibility_override.as_mut()));
     }
 
     /// 覆写节点 role，同时保留组件实时派生的 name 与 state。
     pub fn role(mut self, role: AccessibilityRole) -> Self {
-        self.accessibility_override = Some(
-            self.accessibility_override
-                .take()
-                .unwrap_or_default()
-                .with_role(role),
-        );
+        self.update_accessibility_override(|current| current.with_role(role));
         self
     }
 
     /// 覆写节点可访问名称；空字符串会显式清除组件默认名称。
     pub fn accessible_name(mut self, name: impl Into<String>) -> Self {
-        self.accessibility_override = Some(
-            self.accessibility_override
-                .take()
-                .unwrap_or_default()
-                .with_name(name),
-        );
+        self.update_accessibility_override(|current| current.with_name(name));
         self
     }
 
     /// 覆写节点完整无障碍状态。
     pub fn accessibility_state(mut self, state: AccessibilityState) -> Self {
-        self.accessibility_override = Some(
-            self.accessibility_override
-                .take()
-                .unwrap_or_default()
-                .with_state(state),
-        );
+        self.update_accessibility_override(|current| current.with_state(state));
         self
     }
 
     /// 追加或按名称替换一个 ARIA 属性。
     pub fn aria(mut self, name: &'static str, value: impl Into<String>) -> Self {
-        self.accessibility_override = Some(
-            self.accessibility_override
-                .take()
-                .unwrap_or_default()
-                .with_attribute(AriaAttribute::new(name, value)),
-        );
+        self.update_accessibility_override(|current| {
+            current.with_attribute(AriaAttribute::new(name, value))
+        });
         self
     }
 

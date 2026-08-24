@@ -28,7 +28,8 @@ pub struct WidgetNode {
     pub tab_idx: i32,
     pub(crate) tab_index_override: Option<i32>,
     pub(crate) focus_handle: Option<FocusHandle>,
-    pub(crate) accessibility_override: Option<AccessibilityOverride>,
+    // 无障碍覆盖是稀疏元数据，沿协调流水线移动同一按需分配对象。
+    pub(crate) accessibility_override: Option<Box<AccessibilityOverride>>,
     /// 此节点登记的语义事件处理器。
     pub handlers: Vec<HandlerRegistration>,
     pub(crate) system_event_handlers: Vec<SystemEventHandlerRegistration>,
@@ -236,7 +237,7 @@ impl WidgetNode {
     }
     pub(crate) fn with_accessibility_override(
         mut self,
-        accessibility_override: AccessibilityOverride,
+        accessibility_override: Box<AccessibilityOverride>,
     ) -> Self {
         self.accessibility_override = Some(accessibility_override);
         self
