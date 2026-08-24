@@ -13,10 +13,10 @@ use crate::widget;
 // 引入展开面板稳定 key 集合的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotCollapsePanel, SnapshotFields,
-    SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SnapshotCollapsePanel,
+    SnapshotFields, SystemEvent, WidgetId, WidgetTree,
 };
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::rc::Rc;
 
 // 保存由 UIX 声明的 Collapse 默认宽度、行高、图标槽与内容留白。
@@ -209,6 +209,21 @@ pub(crate) struct CollapseContentEntry {
     content: String,
 }
 
+// 保存一个内容宽度下全部面板的测量高度，并跨布局帧复用数组容量。
+#[derive(Default)]
+struct CollapseContentHeightCacheEntry {
+    text_width_bits: Option<u32>,
+    heights: Vec<f32>,
+}
+
+// 固有宽度与最近两个布局宽度共同保留，不让稳定尺寸切换重新测量全部文本。
+#[derive(Default)]
+struct CollapseContentHeightCache {
+    recent: CollapseContentHeightCacheEntry,
+    previous: CollapseContentHeightCacheEntry,
+    older: CollapseContentHeightCacheEntry,
+}
+
 widget! {
     /// Collapse — 可折叠面板组。
     pub struct Collapse {
@@ -234,6 +249,12 @@ widget! {
         content_opacities: Vec<Rc<Cell<f32>>>,
         #[snapshot(skip)]
         materialized_content: RefCell<Vec<CollapseContentEntry>>,
+        // 面板文本未变化时复用与宽度无关的固有宽度。
+        #[snapshot(skip)]
+        preferred_width_cache: Cell<Option<f32>>,
+        // 内容高度按三个常用文本宽度缓存，并保留已申请数组。
+        #[snapshot(skip)]
+        content_height_cache: RefCell<CollapseContentHeightCache>,
         #[snapshot(skip)]
         visual: &'static CollapseVisual,
     }
@@ -253,28 +274,43 @@ widget! {
         views
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let mut output = Vec::with_capacity(children.len());
+        Self::measure_children_reusing(children, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        // 动态内容 frame 完全由面板状态计算，测量阶段只保留子节点身份。
+        Self::measure_children_reusing(children, output);
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        // 借用全部已物化内容条目，稳定 key 保留原面板身份。
-        let entries = self.materialized_content.borrow();
-        // 通用布局入口只传入当前有效可见子集，不能再使用压缩后的索引。
-        children
-            .iter()
-            // 按动态子节点自身稳定 key 回查原始面板条目。
-            .filter_map(|child| {
-                // 读取当前树中仍存活的真实子节点。
-                let child_node = tree.get(child.id)?;
-                // 动态 Collapse 内容必须保留协调时登记的稳定 key。
-                let child_key = child_node.key()?;
-                // 在完整条目表中恢复未压缩的原始 panel_index。
-                let entry = entries.iter().find(|entry| entry.key == child_key)?;
-                // 使用真实面板索引计算标题之后的内容 frame。
-                self.content_frame(frame, entry.panel_index)
-                    .map(|content_frame| (child.id, content_frame))
-            })
-            // 返回当前可见子集的确定放置结果。
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_reusing(frame, children, tree, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        // 动态内容位置直接写入布局树跨帧复用的结果数组。
+        self.layout_children_reusing(frame, children, tree, output);
     }
 
     child_visible => (&self, index: usize) -> bool {
@@ -404,6 +440,7 @@ widget! {
         let r = (!self.borderless).then(|| Radius::uniform(resolved.radius));
         let mut y = frame.y;
         let frame_bottom = frame.y + frame.h;
+        let content_heights = self.content_heights(frame.w);
         ctx.push_clip(frame);
 
         for (idx, p) in self.panels.iter().enumerate() {
@@ -504,7 +541,7 @@ widget! {
             y += self.visual.geometry.header_height;
 
             if self.panel_present(idx, p) {
-                let content_height = self.content_height(&p.content, frame.w);
+                let content_height = content_heights.get(idx).copied().unwrap_or(0.0);
                 let body_height = content_height.min((frame_bottom - y).max(0.0));
                 let body_rect = Rect::new(frame.x, y, frame.w, body_height);
                 if body_rect.w > 0.0 && body_rect.h > 0.0 {
@@ -597,6 +634,50 @@ impl View for Collapse {
 impl Default for Collapse {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Collapse {
+    // 把动态内容子节点身份写入调用方测量缓冲。
+    fn measure_children_reusing(children: &[WidgetId], output: &mut Vec<LayoutChild>) {
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| LayoutChild::new(id, Size::zero())),
+        );
+    }
+
+    // 按稳定 key 恢复原面板身份，并复用调用方位置数组。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        // 借用全部已物化内容条目，稳定 key 保留原面板身份。
+        let entries = self.materialized_content.borrow();
+        output.clear();
+        output.reserve(children.len());
+        // 通用布局入口只传入当前有效可见子集，不能再使用压缩后的索引。
+        output.extend(
+            children
+                .iter()
+                // 按动态子节点自身稳定 key 回查原始面板条目。
+                .filter_map(|child| {
+                    // 读取当前树中仍存活的真实子节点。
+                    let child_node = tree.get(child.id)?;
+                    // 动态 Collapse 内容必须保留协调时登记的稳定 key。
+                    let child_key = child_node.key()?;
+                    // 在完整条目表中恢复未压缩的原始 panel_index。
+                    let entry = entries.iter().find(|entry| entry.key == child_key)?;
+                    // 使用真实面板索引计算标题之后的内容 frame。
+                    self.content_frame(frame, entry.panel_index)
+                        .map(|content_frame| (child.id, content_frame))
+                }),
+        );
     }
 }
 
