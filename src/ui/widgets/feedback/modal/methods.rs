@@ -1,4 +1,6 @@
-use super::{Modal, ModalBuilder, ModalContext, ModalPointerTarget};
+use super::{
+    Modal, ModalBuilder, ModalContext, ModalPointerTarget, presentation::MODAL_VISUAL_REF,
+};
 
 use std::cell::{Cell, RefCell};
 
@@ -6,7 +8,7 @@ use crate::core::{Point, Rect, Size};
 use crate::draw::Color;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
-use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use std::rc::Rc;
@@ -16,20 +18,26 @@ impl Modal {
     /// 创建默认关闭、居中、带遮罩关闭能力和底部操作区的模态框。
     pub fn new(title: &str) -> Self {
         let size = crate::ui::widget_runtime::config::use_config().size;
+        // 直接构造与 UIX View 构建共同读取同一视觉静态项。
+        let visual = MODAL_VISUAL_REF;
+        // 三档尺寸只由 UIX 默认表决定。
+        let (width, height) = visual.defaults.dimensions(size);
+        let enter_animation = AnimationConfig::zoom_in(visual.motion.enter_duration);
+        let leave_animation = AnimationConfig::zoom_out(visual.motion.leave_duration);
         Self {
-            title: title.to_string(),
+            title: title.into(),
             visible: false,
-            width: 520.0,
-            height: 300.0,
+            width,
+            height,
             modal_size: size,
-            closable: true,
-            mask_closable: true,
-            footer_visible: true,
-            centered: true,
-            overlay: false,
+            closable: visual.defaults.closable,
+            mask_closable: visual.defaults.mask_closable,
+            footer_visible: visual.defaults.footer_visible,
+            centered: visual.defaults.centered,
+            overlay: visual.defaults.overlay,
             // backdrop blur 默认关闭，遵守显式 opt-in 决策。
             backdrop_blur: None,
-            destroy_on_close: false,
+            destroy_on_close: visual.defaults.destroy_on_close,
             controlled: None,
             context_close_requested: None,
             // 默认没有确认业务回调。
@@ -38,22 +46,27 @@ impl Modal {
             cancel_callback: None,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
-            enter_animation: presets::modal_enter(),
-            leave_animation: presets::modal_exit(),
-            transition: TransitionPlayer::new(presets::modal_enter()),
+            enter_animation,
+            leave_animation,
+            transition: TransitionPlayer::new(enter_animation),
             closing: false,
             transition_dirty: false,
             layout_requested: Cell::new(false),
             last_frame: Cell::new(Rect::zero()),
-            last_trigger_rect: Cell::new(Rect::new(0.0, 0.0, 96.0, 32.0)),
+            last_trigger_rect: Cell::new(Rect::new(
+                0.0,
+                0.0,
+                visual.layout.trigger_width,
+                visual.layout.trigger_height,
+            )),
             last_dialog_rect: Cell::new(Rect::zero()),
             close_hovered: Cell::new(false),
             // 默认没有悬停的底部操作。
             footer_hovered: Cell::new(None),
             pressed_target: Cell::new(None),
             activation_key: Cell::new(None),
+            visual,
         }
-        .modal_size(size)
     }
 
     /// 设置初始可见性，并通过正式打开或关闭生命周期应用状态。
@@ -219,20 +232,8 @@ impl Modal {
     /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn modal_size(mut self, s: ControlSize) -> Self {
         self.modal_size = s;
-        match s {
-            ControlSize::Small => {
-                self.width = 400.0;
-                self.height = 200.0;
-            }
-            ControlSize::Medium => {
-                self.width = 520.0;
-                self.height = 300.0;
-            }
-            ControlSize::Large => {
-                self.width = 720.0;
-                self.height = 400.0;
-            }
-        }
+        // 预设尺寸与直接构造共同读取 UIX 唯一表。
+        (self.width, self.height) = self.visual.defaults.dimensions(s);
         self
     }
 
@@ -462,7 +463,8 @@ impl Modal {
             // 底部显隐改变内容、命中与裁剪几何。
             || self.footer_visible != next.footer_visible
             || self.centered != next.centered
-            || self.overlay != next.overlay;
+            || self.overlay != next.overlay
+            || !std::ptr::eq(self.visual, next.visual);
         self.title = next.title;
         self.width = next.width;
         self.height = next.height;
@@ -472,6 +474,8 @@ impl Modal {
         self.footer_visible = next.footer_visible;
         self.centered = next.centered;
         self.overlay = next.overlay;
+        // 声明重建同步最新 backdrop blur 请求。
+        self.backdrop_blur = next.backdrop_blur;
         self.destroy_on_close = next.destroy_on_close;
         self.context_close_requested = next.context_close_requested;
         // 声明式重建替换当前实例的确认回调。
@@ -483,6 +487,8 @@ impl Modal {
         }
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
+        // UIX 静态项按共享引用替换，不复制完整视觉表。
+        self.visual = next.visual;
         if interaction_geometry_changed {
             self.cancel_interaction();
         }
@@ -491,8 +497,16 @@ impl Modal {
     pub(crate) fn dialog_rect_for_surface(&self, surface: Rect) -> Rect {
         let surface = Self::normalize_frame(surface);
         // 连续缩窗时始终保留可见安全边距；极窄表面按比例收敛而不产生负尺寸。
-        let margin_x = 16.0_f32.min(surface.w * 0.1);
-        let margin_y = 16.0_f32.min(surface.h * 0.1);
+        let margin_x = self
+            .visual
+            .layout
+            .safe_margin
+            .min(surface.w * self.visual.layout.safe_margin_ratio);
+        let margin_y = self
+            .visual
+            .layout
+            .safe_margin
+            .min(surface.h * self.visual.layout.safe_margin_ratio);
         let available_w = (surface.w - margin_x * 2.0).max(0.0);
         let available_h = (surface.h - margin_y * 2.0).max(0.0);
         let width = Self::normalize_dimension(self.width).min(available_w);
@@ -508,11 +522,16 @@ impl Modal {
         Rect::new(x, y, width, height)
     }
 
-    pub(crate) fn trigger_rect_for_size(frame_w: f32, frame_h: f32) -> Rect {
+    pub(crate) fn trigger_rect_for_size(&self, frame_w: f32, frame_h: f32) -> Rect {
         let frame_w = Self::normalize_dimension(frame_w);
         let frame_h = Self::normalize_dimension(frame_h);
-        let width = frame_w.min(96.0);
-        Rect::new((frame_w - width) * 0.5, 0.0, width, frame_h.min(32.0))
+        let width = frame_w.min(self.visual.layout.trigger_width);
+        Rect::new(
+            (frame_w - width) * 0.5,
+            0.0,
+            width,
+            frame_h.min(self.visual.layout.trigger_height),
+        )
     }
 
     pub(crate) fn trigger_rect_local(&self) -> Rect {
@@ -520,7 +539,12 @@ impl Modal {
         if trigger.w > 0.0 && trigger.h > 0.0 {
             trigger
         } else {
-            Rect::new(0.0, 0.0, 96.0, 32.0)
+            Rect::new(
+                0.0,
+                0.0,
+                self.visual.layout.trigger_width,
+                self.visual.layout.trigger_height,
+            )
         }
     }
 
@@ -544,31 +568,37 @@ impl Modal {
 
     pub(crate) fn close_rect_local(&self) -> Rect {
         let dialog = self.dialog_rect_local();
-        let width = dialog.w.min(48.0);
+        let width = dialog.w.min(self.visual.layout.close_width);
         Rect::new(
             dialog.x + dialog.w - width,
             dialog.y,
             width,
-            dialog.h.min(56.0),
+            dialog.h.min(self.visual.layout.header_height),
         )
     }
 
     // 从最终对话框几何派生取消与确认按钮，供绘制和命中共同使用。
-    pub(crate) fn footer_action_rects(dialog: Rect) -> (Rect, Rect) {
+    pub(crate) fn footer_action_rects(&self, dialog: Rect) -> (Rect, Rect) {
+        let layout = &self.visual.layout;
         // 标题高度与内容布局保持同一约束。
-        let header_height = dialog.h.min(56.0);
+        let header_height = dialog.h.min(layout.header_height);
         // 底部区域最多占用五十六逻辑像素。
-        let footer_height = (dialog.h - header_height).clamp(0.0, 56.0);
+        let footer_height = (dialog.h - header_height).clamp(0.0, layout.footer_height);
         // 水平内边距在窄对话框内自适应收敛。
-        let horizontal_padding = 16.0_f32.min(dialog.w.max(0.0) * 0.25);
+        let horizontal_padding = layout
+            .footer_side_inset
+            .min(dialog.w.max(0.0) * layout.footer_side_inset_ratio);
         // 两按钮间距同样收敛到可用宽度。
-        let gap = 8.0_f32.min(dialog.w.max(0.0) * 0.1);
+        let gap = layout
+            .footer_gap
+            .min(dialog.w.max(0.0) * layout.footer_gap_ratio);
         // 计算扣除边距与间距后的按钮总可用宽度。
         let available_width = (dialog.w - horizontal_padding * 2.0 - gap).max(0.0);
         // 每个按钮不超过八十逻辑像素且平分可用空间。
-        let button_width = (available_width * 0.5).min(80.0);
+        let button_width = (available_width * 0.5).min(layout.footer_button_max_width);
         // 底部上下各保留八像素，并限制标准按钮高度。
-        let button_height = (footer_height - 16.0).clamp(0.0, 32.0);
+        let button_height = (footer_height - layout.footer_button_vertical_inset)
+            .clamp(0.0, layout.footer_button_max_height);
         // 在底部区域内垂直居中按钮。
         let button_y = dialog.y + dialog.h - footer_height + (footer_height - button_height) * 0.5;
         // 确认按钮靠右排列。
@@ -590,7 +620,7 @@ impl Modal {
             Some(ModalPointerTarget::Close)
         } else if self.footer_visible {
             // 从最终本地对话框派生底部操作几何。
-            let (cancel, ok) = Self::footer_action_rects(self.dialog_rect_local());
+            let (cancel, ok) = self.footer_action_rects(self.dialog_rect_local());
             // 取消按钮优先匹配自己的非重叠区域。
             if cancel.contains(pos) {
                 // 返回取消目标。
@@ -638,9 +668,9 @@ impl Modal {
     }
 
     pub(crate) fn body_rect(&self, dialog: Rect) -> Rect {
-        let header_h = dialog.h.min(56.0);
+        let header_h = dialog.h.min(self.visual.layout.header_height);
         let footer_h = if self.footer_visible {
-            (dialog.h - header_h).clamp(0.0, 56.0)
+            (dialog.h - header_h).clamp(0.0, self.visual.layout.footer_height)
         } else {
             0.0
         };
@@ -752,13 +782,16 @@ impl Modal {
             }
         } else {
             // Closed: reserve a trigger slot for gallery / live demos.
-            Size::new(96.0, 32.0)
+            Size::new(
+                self.visual.layout.trigger_width,
+                self.visual.layout.trigger_height,
+            )
         }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Modal {
-            title: self.title.clone(),
+            title: self.title.to_string(),
             open: self.is_present(),
             width: self.width,
             height: self.height,

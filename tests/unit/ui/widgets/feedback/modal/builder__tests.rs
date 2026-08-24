@@ -1,5 +1,5 @@
     // 引入 Modal 私有命中目标以验证同模块运行时契约。
-    use super::super::ModalPointerTarget;
+    use super::super::{MODAL_VISUAL_REF, ModalPointerTarget};
     use super::*;
     use crate::ui::widget_runtime::traits::WidgetAnimation;
     use std::cell::RefCell;
@@ -24,6 +24,46 @@
             dialog,
             crate::core::Rect::new(16.0, 16.0, 288.0, 148.0)
         );
+    }
+
+    // 验证直接构造和声明式 View 都共享 UIX 生成的唯一视觉静态项。
+    #[test]
+    fn view_build_uses_shared_uix_visual() {
+        // 直接构造路径不得拥有第二份 Rust 默认表。
+        let modal = Modal::new("标题");
+        assert!(std::ptr::eq(modal.visual, MODAL_VISUAL_REF));
+
+        // View 构建必须实际经过同目录 UIX 根并保留 Modal 行为内核。
+        let node = crate::ui::view::View::build(modal);
+        let modal = node
+            .widget
+            .as_any()
+            .downcast_ref::<Modal>()
+            .expect("UIX 根必须保留 Modal Rust 内核");
+        assert!(std::ptr::eq(modal.visual, MODAL_VISUAL_REF));
+    }
+
+    // 验证三档尺寸、分区几何和静态文案仅由 UIX 视觉项提供。
+    #[test]
+    fn uix_visual_preserves_modal_defaults_and_geometry() {
+        use crate::platform::windowing::ControlSize;
+
+        assert_eq!(
+            MODAL_VISUAL_REF.defaults.dimensions(ControlSize::Small),
+            (400.0, 200.0)
+        );
+        assert_eq!(
+            MODAL_VISUAL_REF.defaults.dimensions(ControlSize::Medium),
+            (520.0, 300.0)
+        );
+        assert_eq!(
+            MODAL_VISUAL_REF.defaults.dimensions(ControlSize::Large),
+            (720.0, 400.0)
+        );
+        assert_eq!(MODAL_VISUAL_REF.layout.header_height, 56.0);
+        assert_eq!(MODAL_VISUAL_REF.layout.footer_height, 56.0);
+        assert_eq!(MODAL_VISUAL_REF.layout.body_padding, 24.0);
+        assert_eq!(MODAL_VISUAL_REF.chrome.trigger_label, "打开 Modal");
     }
 
     // 验证声明式 Modal 的 blur 请求经过真实布局进入唯一 OverlayStack。
@@ -257,7 +297,7 @@
             // 使用标准 Modal 尺寸。
             .set(crate::core::Rect::new(0.0, 0.0, 520.0, 300.0));
         // 取得取消与确认按钮的共享矩形。
-        let (cancel, ok) = Modal::footer_action_rects(modal.last_dialog_rect.get());
+        let (cancel, ok) = modal.footer_action_rects(modal.last_dialog_rect.get());
         // 取消中心必须命中取消目标。
         assert_eq!(
             // 查询取消中心的目标。
