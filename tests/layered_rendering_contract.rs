@@ -1,9 +1,51 @@
 //! 分层渲染的浮层变换与裁剪坐标契约。
 
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{DirtyRegion, Point, Rect, WidgetId};
 use uix::draw::Transform;
 use uix::draw::painting::PaintContext;
 use uix::draw::scene::{NodeId, ScenePaint, node_visual_rect, visible_viewport_rect};
+
+/// 只在测试显式开启的窄区间统计场景坐标查询的堆申请。
+struct CountingAllocator;
+
+static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
+static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        // SAFETY: 原样把有效 Layout 委托给系统分配器。
+        unsafe { System.alloc(layout) }
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        // SAFETY: 原样把有效 Layout 委托给系统分配器。
+        unsafe { System.alloc_zeroed(layout) }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: 指针和 Layout 均来自同一系统分配器。
+        unsafe { System.dealloc(ptr, layout) }
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+        // SAFETY: 指针和旧 Layout 来自系统分配器，新尺寸由调用方提供。
+        unsafe { System.realloc(ptr, layout, new_size) }
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 const ROOT_NODE: NodeId = WidgetId::new(1);
 const OVERLAY_NODE: NodeId = WidgetId::new(2);
@@ -45,6 +87,16 @@ impl ScenePaint for ScrolledClippedOverlayScene {
         i32::from(id == OVERLAY_NODE) * 900
     }
 
+    fn node_transform(&self, id: NodeId) -> Transform {
+        match id {
+            // 视觉路径必须在浮层根截断，不能继承普通根节点缩放。
+            ROOT_NODE => Transform::scale(3.0, 3.0),
+            // 子节点缩放与浮层平移不可交换，用于锁定矩阵累计顺序。
+            CHILD_NODE => Transform::scale(2.0, 1.0),
+            _ => Transform::identity(),
+        }
+    }
+
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static ROOT_CHILDREN: [NodeId; 1] = [OVERLAY_NODE];
         static OVERLAY_CHILDREN: [NodeId; 1] = [CHILD_NODE];
@@ -76,7 +128,12 @@ impl ScenePaint for ScrolledClippedOverlayScene {
     }
 
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
-        (id == ROOT_NODE).then_some((0.0, 80.0))
+        match id {
+            ROOT_NODE => Some((0.0, 80.0)),
+            // 浮层自身仍可作为滚动祖先影响其普通后代。
+            OVERLAY_NODE => Some((5.0, 0.0)),
+            _ => None,
+        }
     }
 
     fn focused_node(&self) -> Option<NodeId> {
@@ -103,13 +160,34 @@ impl ScenePaint for ScrolledClippedOverlayScene {
 }
 
 #[test]
-fn overlay_descendant_clip_uses_the_same_root_transform_as_painting() {
+fn overlay_descendant_projection_preserves_clipping_without_heap_allocations() {
     let scene = ScrolledClippedOverlayScene;
-    let expected = Rect::new(30.0, 30.0, 40.0, 20.0);
+    let expected_rect = Rect::new(55.0, 30.0, 80.0, 20.0);
+    let expected_visible = Rect::new(55.0, 30.0, 65.0, 20.0);
 
     assert_eq!(
         node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE)),
-        expected
+        expected_rect
     );
-    assert_eq!(visible_viewport_rect(&scene, CHILD_NODE), Some(expected));
+    assert_eq!(
+        visible_viewport_rect(&scene, CHILD_NODE),
+        Some(expected_visible)
+    );
+
+    // 预热测试进程后，只测量相同坐标与裁剪查询本身。
+    let _ = node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE));
+    let _ = visible_viewport_rect(&scene, CHILD_NODE);
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Release);
+    let repeated_rect = node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE));
+    let repeated_visible = visible_viewport_rect(&scene, CHILD_NODE);
+    COUNT_ALLOCATIONS.store(false, Ordering::Release);
+
+    assert_eq!(repeated_rect, expected_rect);
+    assert_eq!(repeated_visible, Some(expected_visible));
+    assert_eq!(
+        ALLOCATION_COUNT.load(Ordering::Relaxed),
+        0,
+        "预热后的场景坐标与裁剪查询不应申请堆内存"
+    );
 }
