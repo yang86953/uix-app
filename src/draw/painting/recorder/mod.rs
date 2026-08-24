@@ -83,6 +83,13 @@ impl CommandRecorder {
         self.canvas.finish_recording()
     }
 
+    /// 收回目标已同步消费的主帧命令缓冲，供下一帧复用其 Vec 容量。
+    pub(crate) fn recycle_frame_encoder(&mut self, encoder: FrameEncoder) {
+        if self.active_offscreen.is_none() {
+            self.canvas.recycle_encoder(encoder);
+        }
+    }
+
     /// 在整帧录制开始时恢复一帧不可变的主 surface 快照。图片按 painter
     /// 顺序录制，后续根级覆盖层会合成在干净背景之上。
     pub(crate) fn record_main_image(&mut self, image: FrameImage) -> Result<(), Error> {

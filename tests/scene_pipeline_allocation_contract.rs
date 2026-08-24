@@ -8,7 +8,7 @@ use uix::draw::painting::PaintContext;
 use uix::draw::renderer::{FrameRenderInput, ScenePipeline};
 use uix::draw::resources::{FontService, ImageService};
 use uix::draw::scene::{NodeId, ScenePaint};
-use uix::draw::{DirtyRegion, FontHandle, RenderOutcome, RenderTarget, Renderer};
+use uix::draw::{Color, DirtyRegion, FontHandle, RenderOutcome, RenderTarget, Renderer};
 
 // 只统计显式测量区间内的堆申请。
 struct CountingAllocator;
@@ -116,7 +116,10 @@ impl ScenePaint for EmptyScene {
         None
     }
 
-    fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {}
+    fn paint(&self, _id: NodeId, _frame: Rect, ctx: &mut PaintContext<'_>) {
+        // 使用可直接编码的原生矩形，确保稳态帧真实经过命令缓冲。
+        ctx.fill_rect(Rect::new(2.0, 3.0, 8.0, 9.0), Color::blue(), None);
+    }
 }
 
 fn frame_input<'a>(
@@ -201,7 +204,7 @@ fn warmed_partial_frame_has_bounded_geometry_allocations() {
         "测量局部帧必须完成呈现"
     );
     assert_eq!(
-        allocations, 11,
+        allocations, 12,
         "预热后的单矩形局部帧不得恢复已消除的脏区复制申请"
     );
 }
