@@ -6,40 +6,55 @@ impl Drawer {
     /// 创建默认关闭、从右侧进入且带遮罩和关闭按钮的抽屉。
     pub fn new(title: &str) -> Self {
         let size = crate::ui::widget_runtime::config::use_config().size;
+        // 直接构造与 UIX View 构建共同读取同一视觉静态项。
+        let visual = DRAWER_VISUAL_REF;
+        // 三档尺寸只由 UIX 默认表决定。
+        let (width, height) = visual.defaults.dimensions(size);
+        // 保存默认方向，供初始动画使用同一事实。
+        let placement = visual.defaults.placement;
         Self {
-            title: title.to_string(),
+            title: title.into(),
             visible: false,
-            width: 378.0,
-            height: 300.0,
+            width,
+            height,
             drawer_size: size,
-            placement: DrawerPlacement::Right,
-            closable: true,
-            mask_closable: true,
-            mask: true,
+            placement,
+            closable: visual.defaults.closable,
+            mask_closable: visual.defaults.mask_closable,
+            mask: visual.defaults.mask,
             // backdrop blur 默认关闭，遵守显式 opt-in 决策。
             backdrop_blur: None,
-            footer_visible: false,
-            extra: String::new(),
+            footer_visible: visual.defaults.footer_visible,
+            extra: String::new().into_boxed_str(),
             enter_animation: None,
             leave_animation: None,
             // 默认不绑定外部状态，保留现有非受控构造契约。
             controlled: None,
-            transition: TransitionPlayer::new(presets::drawer_enter(
-                Self::animation_placement_for(DrawerPlacement::Right),
-            )),
+            transition: TransitionPlayer::new(
+                AnimationConfig::slide_in(
+                    Self::animation_placement_for(placement),
+                    visual.motion.enter_duration,
+                )
+                .with_distance(visual.motion.distance),
+            ),
             closing: false,
             transition_dirty: false,
             layout_requested: Cell::new(false),
             last_frame: Cell::new(Rect::zero()),
             last_surface_w: Cell::new(0.0),
             last_surface_h: Cell::new(0.0),
-            last_trigger_rect: Cell::new(Rect::new(0.0, 0.0, 96.0, 32.0)),
+            last_trigger_rect: Cell::new(Rect::new(
+                0.0,
+                0.0,
+                visual.layout.trigger_width,
+                visual.layout.trigger_height,
+            )),
             last_panel_rect: Cell::new(Rect::zero()),
             close_hovered: Cell::new(false),
             pressed_target: Cell::new(None),
             activation_key: Cell::new(None),
+            visual,
         }
-        .drawer_size(size)
     }
 
     /// 设置初始可见性，并通过正式打开或关闭生命周期应用状态。
@@ -87,20 +102,8 @@ impl Drawer {
     /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn drawer_size(mut self, s: ControlSize) -> Self {
         self.drawer_size = s;
-        match s {
-            ControlSize::Small => {
-                self.width = 300.0;
-                self.height = 200.0;
-            }
-            ControlSize::Medium => {
-                self.width = 378.0;
-                self.height = 300.0;
-            }
-            ControlSize::Large => {
-                self.width = 600.0;
-                self.height = 450.0;
-            }
-        }
+        // 预设尺寸与直接构造共同读取 UIX 唯一表。
+        (self.width, self.height) = self.visual.defaults.dimensions(s);
         self
     }
 
@@ -147,7 +150,8 @@ impl Drawer {
 
     /// 设置标题区末尾显示的附加文本。
     pub fn extra(mut self, t: impl Into<String>) -> Self {
-        self.extra = t.into();
+        // 收缩为精确容量不可变文本，减少每实例闲置内存。
+        self.extra = t.into().into_boxed_str();
         self
     }
 
@@ -311,7 +315,8 @@ impl Drawer {
             || self.height != next.height
             || self.placement != next.placement
             || self.closable != next.closable
-            || self.mask != next.mask;
+            || self.mask != next.mask
+            || !std::ptr::eq(self.visual, next.visual);
         self.title = next.title;
         self.width = next.width;
         self.height = next.height;
@@ -320,6 +325,8 @@ impl Drawer {
         self.closable = next.closable;
         self.mask_closable = next.mask_closable;
         self.mask = next.mask;
+        // 声明重建同步最新 backdrop blur 请求。
+        self.backdrop_blur = next.backdrop_blur;
         self.footer_visible = next.footer_visible;
         self.extra = next.extra;
         // 声明重建提供新绑定时替换当前受控句柄。
@@ -329,6 +336,8 @@ impl Drawer {
         }
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
+        // UIX 静态项按共享引用替换，不复制完整视觉表。
+        self.visual = next.visual;
         if interaction_geometry_changed {
             self.cancel_interaction();
         }
@@ -352,8 +361,12 @@ impl Drawer {
             panel
         } else if self.mask {
             self.overlay_rect_for_surface(
-                self.last_surface_w.get().max(1200.0),
-                self.last_surface_h.get().max(760.0),
+                self.last_surface_w
+                    .get()
+                    .max(self.visual.layout.surface_fallback_width),
+                self.last_surface_h
+                    .get()
+                    .max(self.visual.layout.surface_fallback_height),
             )
         } else {
             match self.placement {
@@ -370,12 +383,12 @@ impl Drawer {
 
     fn close_rect_local(&self) -> Rect {
         let panel = self.panel_rect_local();
-        let close_width = panel.w.min(48.0);
+        let close_width = panel.w.min(self.visual.layout.close_width);
         Rect::new(
             panel.x + panel.w - close_width,
             panel.y,
             close_width,
-            panel.h.min(48.0),
+            panel.h.min(self.visual.layout.header_height),
         )
     }
 
@@ -430,11 +443,16 @@ impl Drawer {
         }
     }
 
-    pub(super) fn trigger_rect_for_size(frame_w: f32, frame_h: f32) -> Rect {
+    pub(super) fn trigger_rect_for_size(&self, frame_w: f32, frame_h: f32) -> Rect {
         let frame_w = Self::normalize_dimension(frame_w);
         let frame_h = Self::normalize_dimension(frame_h);
-        let width = frame_w.min(96.0);
-        Rect::new((frame_w - width) * 0.5, 0.0, width, frame_h.min(32.0))
+        let width = frame_w.min(self.visual.layout.trigger_width);
+        Rect::new(
+            (frame_w - width) * 0.5,
+            0.0,
+            width,
+            frame_h.min(self.visual.layout.trigger_height),
+        )
     }
 
     pub(super) fn trigger_rect_local(&self) -> Rect {
@@ -442,14 +460,19 @@ impl Drawer {
         if trigger.w > 0.0 && trigger.h > 0.0 {
             trigger
         } else {
-            Rect::new(0.0, 0.0, 96.0, 32.0)
+            Rect::new(
+                0.0,
+                0.0,
+                self.visual.layout.trigger_width,
+                self.visual.layout.trigger_height,
+            )
         }
     }
 
     pub(super) fn body_rect(&self, panel: Rect) -> Rect {
-        let header_h = panel.h.min(48.0);
+        let header_h = panel.h.min(self.visual.layout.header_height);
         let footer_h = if self.footer_visible {
-            (panel.h - header_h).clamp(0.0, 56.0)
+            (panel.h - header_h).clamp(0.0, self.visual.layout.footer_height)
         } else {
             0.0
         };
@@ -501,13 +524,23 @@ impl Drawer {
     }
 
     fn resolved_enter_animation(&self) -> AnimationConfig {
-        self.enter_animation
-            .unwrap_or_else(|| presets::drawer_enter(Self::animation_placement_for(self.placement)))
+        self.enter_animation.unwrap_or_else(|| {
+            AnimationConfig::slide_in(
+                Self::animation_placement_for(self.placement),
+                self.visual.motion.enter_duration,
+            )
+            .with_distance(self.visual.motion.distance)
+        })
     }
 
     fn resolved_leave_animation(&self) -> AnimationConfig {
-        self.leave_animation
-            .unwrap_or_else(|| presets::drawer_exit(Self::animation_placement_for(self.placement)))
+        self.leave_animation.unwrap_or_else(|| {
+            AnimationConfig::slide_out(
+                Self::animation_placement_for(self.placement),
+                self.visual.motion.leave_duration,
+            )
+            .with_distance(self.visual.motion.distance)
+        })
     }
 
     pub(super) fn intrinsic_size(&self) -> Size {
@@ -517,22 +550,27 @@ impl Drawer {
                 Size::zero()
             } else {
                 match self.placement {
-                    DrawerPlacement::Right | DrawerPlacement::Left => {
-                        Size::new(Self::normalize_dimension(self.width), 600.0)
-                    }
-                    DrawerPlacement::Top | DrawerPlacement::Bottom => {
-                        Size::new(400.0, Self::normalize_dimension(self.height))
-                    }
+                    DrawerPlacement::Right | DrawerPlacement::Left => Size::new(
+                        Self::normalize_dimension(self.width),
+                        self.visual.layout.open_vertical_extent,
+                    ),
+                    DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(
+                        self.visual.layout.open_horizontal_extent,
+                        Self::normalize_dimension(self.height),
+                    ),
                 }
             }
         } else {
-            Size::new(96.0, 32.0)
+            Size::new(
+                self.visual.layout.trigger_width,
+                self.visual.layout.trigger_height,
+            )
         }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Drawer {
-            title: self.title.clone(),
+            title: self.title.to_string(),
             open: self.is_present(),
             width: self.width,
             height: self.height,
@@ -544,7 +582,7 @@ impl Drawer {
             // 快照纳入效果请求，确保声明式变更触发 reconcile。
             backdrop_blur: self.backdrop_blur,
             footer_visible: self.footer_visible,
-            extra: self.extra.clone(),
+            extra: self.extra.to_string(),
         }
     }
 }

@@ -1,0 +1,105 @@
+<Visual
+  name="DRAWER_DEFAULTS_VISUAL"
+  type="DrawerDefaultsVisual"
+  smallWidth={300.0}
+  smallHeight={200.0}
+  mediumWidth={378.0}
+  mediumHeight={300.0}
+  largeWidth={600.0}
+  largeHeight={450.0}
+  placement={drawer_placement_right()}
+  closable={true}
+  maskClosable={true}
+  mask={true}
+  footerVisible={false}
+/>
+
+<Visual
+  name="DRAWER_LAYOUT_VISUAL"
+  type="DrawerLayoutVisual"
+  triggerWidth={96.0}
+  triggerHeight={32.0}
+  openVerticalExtent={600.0}
+  openHorizontalExtent={400.0}
+  surfaceFallbackWidth={1200.0}
+  surfaceFallbackHeight={760.0}
+  overlayFallbackOrigin={-2000.0}
+  overlayFallbackExtent={4000.0}
+  headerHeight={48.0}
+  closeWidth={48.0}
+  extraMaxWidth={120.0}
+  titleInset={24.0}
+  closeInset={8.0}
+  dividerThickness={1.0}
+  footerHeight={56.0}
+  footerSideInset={20.0}
+  footerButtonMaxWidth={80.0}
+  footerVerticalPadding={20.0}
+  footerButtonMaxHeight={28.0}
+  bodyPadding={24.0}
+/>
+
+<Visual
+  name="DRAWER_TYPOGRAPHY_VISUAL"
+  type="DrawerTypographyVisual"
+  trigger={drawer_font_fixed(13.0)}
+  title={drawer_font_large()}
+  extra={drawer_font_normal()}
+  closeIcon={16.0}
+  footer={drawer_font_fixed(13.0)}
+/>
+
+<Visual
+  name="DRAWER_MOTION_VISUAL"
+  type="DrawerMotionVisual"
+  enterDuration={0.0}
+  leaveDuration={0.2}
+  distance={180.0}
+/>
+
+<Visual
+  name="DRAWER_ICONS_VISUAL"
+  type="DrawerIconsVisual"
+  close="x"
+/>
+
+<Visual
+  name="DRAWER_CHROME_VISUAL"
+  type="DrawerChromeVisual"
+  overlayZ={1000}
+  panelStroke={1.0}
+  controlRadius={4.0}
+  triggerLabel="打开 Drawer"
+  panelRadius={drawer_radius_large()}
+  triggerRadius={drawer_radius_normal()}
+/>
+
+<Visual
+  name="DRAWER_PALETTE_VISUAL"
+  type="DrawerPaletteVisual"
+  mask={drawer_bg_mask()}
+  panelBackground={drawer_bg_container()}
+  border={drawer_border_secondary()}
+  text={drawer_text()}
+  textSecondary={drawer_text_secondary()}
+  primary={drawer_primary()}
+  primaryHover={drawer_primary_hover()}
+  primaryActive={drawer_primary_active()}
+  fillSecondary={drawer_fill_secondary()}
+  fillTertiary={drawer_fill_tertiary()}
+  white={drawer_white()}
+/>
+
+<Visual
+  name="DRAWER_VISUAL"
+  type="DrawerVisual"
+  defaults={DRAWER_DEFAULTS_VISUAL}
+  layout={DRAWER_LAYOUT_VISUAL}
+  typography={DRAWER_TYPOGRAPHY_VISUAL}
+  motion={DRAWER_MOTION_VISUAL}
+  icons={DRAWER_ICONS_VISUAL}
+  chrome={DRAWER_CHROME_VISUAL}
+  palette={DRAWER_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_drawer_view(kernel, DRAWER_VISUAL_REF)} />
