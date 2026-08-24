@@ -19,7 +19,7 @@ struct GalleryGeometry {
     main: Rect,
     previous: Option<Rect>,
     next: Option<Rect>,
-    thumbnails: Vec<(usize, Rect)>,
+    thumbnails: ThumbnailLayout,
 }
 
 #[derive(Debug)]
@@ -28,7 +28,34 @@ struct PreviewGeometry {
     previous: Option<Rect>,
     next: Option<Rect>,
     close: Rect,
-    thumbnails: Vec<(usize, Rect)>,
+    thumbnails: ThumbnailLayout,
+}
+
+// 保存等距缩略图的紧凑范围描述，迭代时按需生成矩形而不分配 Vec。
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct ThumbnailLayout {
+    start: usize,
+    count: usize,
+    x: f32,
+    y: f32,
+    size: f32,
+    stride: f32,
+}
+
+impl ThumbnailLayout {
+    fn iter(self) -> impl Iterator<Item = (usize, Rect)> {
+        (0..self.count).map(move |offset| {
+            (
+                self.start + offset,
+                Rect::new(
+                    self.x + offset as f32 * self.stride,
+                    self.y,
+                    self.size,
+                    self.size,
+                ),
+            )
+        })
+    }
 }
 
 widget! {
@@ -263,7 +290,7 @@ impl ImageGroup {
                 .iter()
                 .find(|(_, rect)| rect.contains(surface_pos))
             {
-                let _ = self.select_index(*index);
+                let _ = self.select_index(index);
                 return EventResult::Handled;
             }
             if !geometry.preview.contains(surface_pos) {
@@ -288,7 +315,7 @@ impl ImageGroup {
             .iter()
             .find(|(_, rect)| rect.contains(pos))
         {
-            let _ = self.select_index(*index);
+            let _ = self.select_index(index);
             return EventResult::Handled;
         }
         if geometry.main.contains(pos) {
@@ -377,7 +404,7 @@ impl ImageGroup {
             main,
             previous: navigation.then(|| Self::navigation_control_rect(previous_slot)),
             next: navigation.then(|| Self::navigation_control_rect(next_slot)),
-            thumbnails: Self::thumbnail_rects(strip, image_count, current, 44.0),
+            thumbnails: Self::thumbnail_layout(strip, image_count, current, 44.0),
         }
     }
 
@@ -425,25 +452,25 @@ impl ImageGroup {
                 close_size,
                 close_size,
             ),
-            thumbnails: Self::thumbnail_rects(strip, image_count, current, 52.0),
+            thumbnails: Self::thumbnail_layout(strip, image_count, current, 52.0),
         }
     }
 
-    fn thumbnail_rects(
+    fn thumbnail_layout(
         strip: Rect,
         image_count: usize,
         current: usize,
         maximum_size: f32,
-    ) -> Vec<(usize, Rect)> {
+    ) -> ThumbnailLayout {
         if image_count == 0 || strip.w <= 0.0 || strip.h <= 0.0 {
-            return Vec::new();
+            return ThumbnailLayout::default();
         }
         let padding = 6.0_f32.min(strip.h * 0.2);
         let size = maximum_size
             .min((strip.h - padding * 2.0).max(0.0))
             .min(strip.w);
         if size < 4.0 {
-            return Vec::new();
+            return ThumbnailLayout::default();
         }
         let gap = 6.0_f32.min(size * 0.25);
         let capacity = (((strip.w + gap) / (size + gap)).floor() as usize)
@@ -455,15 +482,14 @@ impl ImageGroup {
         let total_width = size * capacity as f32 + gap * capacity.saturating_sub(1) as f32;
         let x = strip.x + (strip.w - total_width).max(0.0) * 0.5;
         let y = strip.y + (strip.h - size).max(0.0) * 0.5;
-        (0..capacity)
-            .map(|offset| {
-                let index = start + offset;
-                (
-                    index,
-                    Rect::new(x + offset as f32 * (size + gap), y, size, size),
-                )
-            })
-            .collect()
+        ThumbnailLayout {
+            start,
+            count: capacity,
+            x,
+            y,
+            size,
+            stride: size + gap,
+        }
     }
 
     fn navigation_control_rect(slot: Rect) -> Rect {
@@ -534,22 +560,19 @@ impl ImageGroup {
         if let Some(next) = geometry.next {
             Self::paint_navigation_control(ctx, next, "chevron-right", text_color);
         }
-        for &(index, rect) in &geometry.thumbnails {
+        let current = self.current_index();
+        for (index, rect) in geometry.thumbnails.iter() {
             if let Some(path) = self.images.get(index) {
                 self.paint_image(ctx, path, rect, false, "");
             }
             ctx.stroke_rect(
                 rect,
-                if index == self.current_index() {
+                if index == current {
                     ctx.tokens().color_primary()
                 } else {
                     ctx.tokens().color_border_secondary()
                 },
-                if index == self.current_index() {
-                    2.0
-                } else {
-                    1.0
-                },
+                if index == current { 2.0 } else { 1.0 },
                 Some(Radius::uniform(ctx.tokens().border_radius_sm())),
             );
         }
@@ -586,23 +609,20 @@ impl ImageGroup {
             // 导航箭头使用浮层正文前景。
             Self::paint_navigation_control(ctx, next, "chevron-right", palette.foreground);
         }
-        for &(index, rect) in &geometry.thumbnails {
+        let current = self.current_index();
+        for (index, rect) in geometry.thumbnails.iter() {
             if let Some(path) = self.images.get(index) {
                 self.paint_image(ctx, path, rect, false, "");
             }
             ctx.stroke_rect(
                 rect,
-                if index == self.current_index() {
+                if index == current {
                     ctx.tokens().color_primary()
                 } else {
                     // 未选缩略图使用主题浮层弱边界。
                     palette.border
                 },
-                if index == self.current_index() {
-                    2.0
-                } else {
-                    1.0
-                },
+                if index == current { 2.0 } else { 1.0 },
                 Some(Radius::uniform(ctx.tokens().border_radius_sm())),
             );
         }
