@@ -571,6 +571,7 @@ fn dense_dirty_region_coalesces_to_one_bounded_rect() {
 
     assert_eq!(coalesced.rects(), &[Rect::new(0.0, 0.0, 36.0, 20.0)]);
     assert!(coalesced.clear_required);
+    assert!(!should_split_dirty_rects(&coalesced));
 }
 
 // 稀疏小块的包围盒额外面积过大，应继续使用离散脏区。
@@ -581,6 +582,9 @@ fn sparse_dirty_region_keeps_split_rects() {
         region.add_rect(Rect::new(x, y, 4.0, 4.0));
     }
     let expected = region.clone();
+
+    // 稀疏区域应直接借用原切片进入逐块遍历。
+    assert!(should_split_dirty_rects(&region));
 
     assert_eq!(coalesce_dense_dirty_region(region), expected);
 }
