@@ -21,6 +21,14 @@ use super::{
 };
 
 impl VulkanContext {
+    // 为同一 FramePlan 的后续命令复用已录制中的 command buffer。
+    pub(super) fn ensure_rhi_commands_ready(&mut self) -> Result<()> {
+        if self.rhi_device.is_frame_recording() {
+            return Ok(());
+        }
+        self.ensure_rhi_frame_prepared()
+    }
+
     // 只允许显式 parity 组合根在无在途 frame 时安排一个原生 Surface 结果。
     #[cfg(feature = "vulkan-parity-test")]
     pub(crate) fn inject_surface_fault_for_parity_test(
@@ -63,7 +71,7 @@ impl VulkanContext {
                 "Vulkan RHI cannot prepare while frame commands are recording",
             ));
         }
-        if self.rhi_device.is_frame_prepared() {
+        if self.rhi_device.is_frame_prepared() && !self.rhi_device.has_texture_move_scratch() {
             return Ok(());
         }
         if self.submitted_frame.is_some() {
