@@ -9,6 +9,7 @@ use crate::draw::Radius;
 use crate::platform::capabilities::StatusLevel;
 use crate::platform::services::{NotificationSource, ToastEntry};
 use crate::ui::animation::AnimationConfig;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SystemEvent};
@@ -20,6 +21,9 @@ use super::toast_motion::{ToastMotion, ToastQueue};
 
 mod item;
 mod layout;
+mod presentation;
+
+use self::presentation::*;
 
 pub use self::item::{NotificationHandle, NotificationItem};
 use self::layout::{fade_color, finite_or_zero, transitioned_rect, union_nonempty};
@@ -43,6 +47,9 @@ widget! {
         icon_name: Option<String>,
         close_label: Option<String>,
         offset: Point,
+        // 全部实例只保存指向 UIX 唯一视觉静态项的共享引用。
+        #[snapshot(skip)]
+        visual: &'static NotificationVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -149,8 +156,12 @@ widget! {
             return;
         }
 
-        let radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
-        let shadow = ctx.tokens().box_shadow();
+        // 同帧全部可见通知共享一次主题解析。
+        let visual = self.visual;
+        let resolved = visual.resolve(ctx.tokens());
+        let layout = &visual.layout;
+        let radius = Some(Radius::uniform(resolved.radius));
+        let shadow = resolved.shadow;
         ctx.push_clip(frame);
         for (base_rect, entry) in self.notification_rects(frame, motion.entries()) {
             let opacity = entry.opacity().clamp(0.0, 1.0);
@@ -159,16 +170,11 @@ widget! {
                 continue;
             }
             let item = entry.item();
-            let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-            let border = fade_color(ctx.tokens().color_border_secondary(), opacity);
-            let text = fade_color(ctx.tokens().color_text(), opacity);
-            let text_secondary = fade_color(ctx.tokens().color_text_secondary(), opacity);
-            let (default_icon, accent) = match item.type_ {
-                StatusLevel::Success => ("check-circle", ctx.tokens().color_success()),
-                StatusLevel::Info => ("info", ctx.tokens().color_info()),
-                StatusLevel::Warning => ("alert-triangle", ctx.tokens().color_warning()),
-                StatusLevel::Error => ("x-circle", ctx.tokens().color_error()),
-            };
+            let bg = fade_color(resolved.background, opacity);
+            let border = fade_color(resolved.border, opacity);
+            let text = fade_color(resolved.text, opacity);
+            let text_secondary = fade_color(resolved.text_secondary, opacity);
+            let (default_icon, accent) = visual.status_visual(&resolved, item.type_);
             let icon = self.icon_name.as_deref().unwrap_or(default_icon);
             let accent = fade_color(accent, opacity);
             if shadow.layer_1.2 > 0.0 {
@@ -182,16 +188,21 @@ widget! {
                 );
             }
             ctx.fill_rect(notif_rect, bg, radius);
-            ctx.stroke_rect(notif_rect, border, 1.0, radius);
+            ctx.stroke_rect(
+                notif_rect,
+                border,
+                visual.chrome.panel_stroke,
+                radius,
+            );
             ctx.fill_rect(
                 Rect::new(
                     notif_rect.x,
-                    notif_rect.y + 6.0_f32.min(notif_rect.h * 0.5),
-                    notif_rect.w.min(3.0),
-                    (notif_rect.h - 12.0).max(0.0),
+                    notif_rect.y + layout.accent_vertical_inset.min(notif_rect.h * 0.5),
+                    notif_rect.w.min(layout.accent_width),
+                    (notif_rect.h - layout.accent_vertical_inset * 2.0).max(0.0),
                 ),
                 accent,
-                Some(Radius::uniform(1.5)),
+                Some(Radius::uniform(layout.accent_radius)),
             );
             let geometry = self.item_geometry(notif_rect, item);
             crate::ui::widgets::icon::Icon::paint_in_frame(
@@ -199,27 +210,33 @@ widget! {
                 icon,
                 geometry.icon,
                 accent,
-                16.0,
+                visual.typography.status_icon,
             );
-            Self::paint_elided_text(ctx, &item.title, geometry.title, text, ctx.tokens().font_size());
+            Self::paint_elided_text(
+                ctx,
+                &item.title,
+                geometry.title,
+                text,
+                resolved.title_font_size,
+            );
             if !item.description.is_empty() {
                 Self::paint_elided_text(
                     ctx,
                     &item.description,
                     geometry.description,
                     text_secondary,
-                    12.0,
+                    visual.typography.description,
                 );
             }
             if let (Some(action), Some(action_rect)) =
                 (self.action_label.as_deref(), geometry.action)
             {
-                let action_button = Self::inset_rect(action_rect, 4.0);
+                let action_button = Self::inset_rect(action_rect, layout.action_inset);
                 if self.pressed_action.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         action_button,
-                        fade_color(ctx.tokens().color_fill_secondary(), opacity),
-                        Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_secondary, opacity),
+                        Some(Radius::uniform(resolved.control_radius)),
                     );
                 }
                 Self::paint_centered_elided_text(
@@ -227,22 +244,22 @@ widget! {
                     action,
                     action_button,
                     text,
-                    Self::ACTION_FONT_SIZE,
+                    visual.typography.action,
                 );
             }
             if item.closable {
-                let close_button = Self::inset_rect(geometry.close, 6.0);
+                let close_button = Self::inset_rect(geometry.close, layout.close_inset);
                 if self.pressed_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(ctx.tokens().color_fill_secondary(), opacity),
-                        Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_secondary, opacity),
+                        Some(Radius::uniform(resolved.control_radius)),
                     );
                 } else if self.hovered_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(ctx.tokens().color_fill_tertiary(), opacity),
-                        Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_tertiary, opacity),
+                        Some(Radius::uniform(resolved.control_radius)),
                     );
                 }
                 if let Some(label) = self.close_label.as_deref() {
@@ -250,16 +267,16 @@ widget! {
                         ctx,
                         label,
                         close_button,
-                        fade_color(ctx.tokens().color_text_quaternary(), opacity),
-                        Self::CLOSE_FONT_SIZE,
+                        fade_color(resolved.text_quaternary, opacity),
+                        visual.typography.close_label,
                     );
                 } else {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "x",
+                        visual.icons.close,
                         close_button,
-                        fade_color(ctx.tokens().color_text_quaternary(), opacity),
-                        13.0,
+                        fade_color(resolved.text_quaternary, opacity),
+                        visual.typography.close_icon,
                     );
                 }
             }
@@ -283,7 +300,7 @@ widget! {
         (bounds.w > 0.0 && bounds.h > 0.0).then(|| {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Notification)
                 .bounds(bounds)
-                .z_index(1210)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -317,25 +334,10 @@ impl Default for Notification {
 }
 
 impl Notification {
-    const DEFAULT_DURATION_MS: u64 = 4500;
-    const WIDTH: f32 = 384.0;
-    // toast 水平内边距（24.0）；date_calendar 月视图面板为 8.0，语境不同。
-    const HORIZONTAL_INSET: f32 = 24.0;
-    const VERTICAL_INSET: f32 = 12.0;
-    const GAP: f32 = 12.0;
-    const SHADOW_MARGIN: f32 = 12.0;
-    // toast 家族动作字号，与 Message 保持一致（12.0）；Card 独立用 13.0。
-    const ACTION_FONT_SIZE: f32 = 12.0;
-    const CLOSE_FONT_SIZE: f32 = 11.0;
-    const ACTION_HORIZONTAL_PADDING: f32 = 16.0;
-    const CLOSE_HORIZONTAL_PADDING: f32 = 16.0;
-    const ACTION_MIN_WIDTH: f32 = 40.0;
-    const ACTION_MAX_WIDTH: f32 = 112.0;
-    const CLOSE_MIN_WIDTH: f32 = 40.0;
-    const CLOSE_MAX_WIDTH: f32 = 112.0;
-    const CONTROL_GAP: f32 = 4.0;
-    // toast 家族内容尾部间隙；Message 侧为 7.0，存在 1px 历史差异，保留原值。
-    const CONTENT_TRAILING_GAP: f32 = 8.0;
+    // 向反馈声明与句柄暴露 UIX 唯一默认时长，不泄漏完整视觉结构。
+    pub(super) const fn default_duration_ms() -> u64 {
+        NOTIFICATION_VISUAL_REF.defaults.duration_ms
+    }
 
     /// 创建拥有独立通知队列、默认位于右上角的通知容器。
     pub fn new() -> Self {
@@ -345,10 +347,11 @@ impl Notification {
 
     pub(crate) fn from_handle(handle: NotificationHandle) -> Self {
         // Host 只接收 Application System 分配给目标窗口的窄句柄。
+        let visual = NOTIFICATION_VISUAL_REF;
         Self {
             queue: handle.queue,
             motion: RefCell::new(ToastMotion::default()),
-            placement: Placement::TopRight,
+            placement: visual.defaults.placement,
             enter_animation: None,
             leave_animation: None,
             last_frame: Cell::new(Rect::zero()),
@@ -362,6 +365,7 @@ impl Notification {
             icon_name: None,
             close_label: None,
             offset: Point::new(0.0, 0.0),
+            visual,
         }
     }
 
@@ -536,12 +540,12 @@ impl Notification {
 
     fn resolved_enter_animation(&self) -> AnimationConfig {
         self.enter_animation
-            .unwrap_or_else(|| AnimationConfig::fade_in(0.2))
+            .unwrap_or_else(|| AnimationConfig::fade_in(self.visual.motion.enter_duration))
     }
 
     fn resolved_leave_animation(&self) -> AnimationConfig {
         self.leave_animation
-            .unwrap_or_else(|| AnimationConfig::fade_out(0.15))
+            .unwrap_or_else(|| AnimationConfig::fade_out(self.visual.motion.leave_duration))
     }
 
     fn sync_motion(&self) -> bool {
@@ -579,5 +583,25 @@ impl Notification {
             self.pressed_action.set(None);
         }
         changed
+    }
+}
+
+// 把 Rust 运行内核与 UIX 生成的唯一静态视觉项融合为根节点。
+fn build_notification_view(
+    mut kernel: Notification,
+    visual: &'static NotificationVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让公开 View 构建统一进入同目录 UIX 文档。
+fn build_notification_uix_root(kernel: Notification) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/notification/notification.uix")
+}
+
+impl View for Notification {
+    fn build(self) -> ViewNode {
+        build_notification_uix_root(self)
     }
 }

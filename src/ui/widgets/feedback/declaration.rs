@@ -403,8 +403,8 @@ impl NotificationDeclaration {
                 title: title.into(),
                 // 保存正文。
                 content: content.into(),
-                // UIX 默认四点五秒。
-                duration_ms: 4_500,
+                // 默认时长读取 Notification 同目录 UIX 唯一视觉项。
+                duration_ms: super::notification::Notification::default_duration_ms(),
                 // 默认不显示关闭入口。
                 closable: false,
                 // 默认没有关闭观察器。

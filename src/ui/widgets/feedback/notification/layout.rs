@@ -19,46 +19,60 @@ impl Notification {
         entries: &'a [ToastMotionEntry<NotificationItem>],
     ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<NotificationItem>)> + 'a + use<'a> {
         let frame = Self::normalize_frame(frame);
+        let layout = &self.visual.layout;
         // 先为两侧保留固定留白，再以通知设计宽度限制剩余可用区。
-        let width = (frame.w - Self::HORIZONTAL_INSET * 2.0).clamp(0.0, Self::WIDTH);
-        let visible_start = Self::visible_start(frame.h, entries);
+        let width = (frame.w - layout.horizontal_inset * 2.0).clamp(0.0, layout.max_width);
+        let visible_start = self.visible_start(frame.h, entries);
         let visible = &entries[visible_start..];
-        let stack_height = Self::stack_height(visible, frame.h);
+        let stack_height = self.stack_height(visible, frame.h);
+        // 迭代器只捕获复制后的 UIX 数值，不把 self 生命周期绑到条目切片。
+        let compact_height = layout.compact_height;
+        let detailed_height = layout.detailed_height;
+        let item_gap = layout.item_gap;
         let start_x = frame.x
             + self
                 .placement
-                .horizontal_start(frame.w, width, Self::HORIZONTAL_INSET)
+                .horizontal_start(frame.w, width, layout.horizontal_inset)
             + self.offset.x;
         let mut y = frame.y
             + self
                 .placement
-                .vertical_start(frame.h, stack_height, Self::VERTICAL_INSET)
+                .vertical_start(frame.h, stack_height, layout.vertical_inset)
             + self.offset.y;
 
         visible.iter().map(move |entry| {
-            let height = Self::toast_height(entry.item()).min(frame.h);
+            let height = if entry.item().description.is_empty() {
+                compact_height
+            } else {
+                detailed_height
+            }
+            .min(frame.h);
             let rect = Rect::new(start_x, y, width, height);
-            y += height + Self::GAP;
+            y += height + item_gap;
             (rect, entry)
         })
     }
 
-    fn stack_height(entries: &[ToastMotionEntry<NotificationItem>], frame_height: f32) -> f32 {
+    fn stack_height(
+        &self,
+        entries: &[ToastMotionEntry<NotificationItem>],
+        frame_height: f32,
+    ) -> f32 {
         if entries.is_empty() || frame_height <= 0.0 {
             return 0.0;
         }
         entries
             .iter()
-            .map(|entry| Self::toast_height(entry.item()).min(frame_height))
+            .map(|entry| self.toast_height(entry.item()).min(frame_height))
             .sum::<f32>()
-            + entries.len().saturating_sub(1) as f32 * Self::GAP
+            + entries.len().saturating_sub(1) as f32 * self.visual.layout.item_gap
     }
 
-    fn toast_height(item: &NotificationItem) -> f32 {
+    fn toast_height(&self, item: &NotificationItem) -> f32 {
         if item.description.is_empty() {
-            48.0
+            self.visual.layout.compact_height
         } else {
-            66.0
+            self.visual.layout.detailed_height
         }
     }
 
@@ -82,7 +96,7 @@ impl Notification {
             bounds = Some(bounds.map_or(sweep, |current| current.union(&sweep)));
         }
         bounds
-            .map(|bounds| expand_rect(bounds, Self::SHADOW_MARGIN))
+            .map(|bounds| expand_rect(bounds, self.visual.layout.shadow_margin))
             .and_then(|bounds| bounds.intersect(&frame))
             .unwrap_or_else(Rect::zero)
     }
@@ -91,35 +105,40 @@ impl Notification {
         if !closable {
             return Rect::new(rect.x + rect.w, rect.y, 0.0, rect.h);
         }
-        let desired = self.close_label.as_deref().map_or(40.0, |label| {
-            Self::measured_control_width(
-                label,
-                Self::CLOSE_FONT_SIZE,
-                Self::CLOSE_HORIZONTAL_PADDING,
-                Self::CLOSE_MIN_WIDTH,
-                Self::CLOSE_MAX_WIDTH,
-            )
-        });
+        let layout = &self.visual.layout;
+        let desired = self
+            .close_label
+            .as_deref()
+            .map_or(layout.close_default_width, |label| {
+                Self::measured_control_width(
+                    label,
+                    self.visual.typography.close_label,
+                    layout.close_horizontal_padding,
+                    layout.close_min_width,
+                    layout.close_max_width,
+                )
+            });
         let width = desired.min(rect.w.max(0.0));
         Rect::new(rect.x + rect.w - width, rect.y, width, rect.h)
     }
 
     fn action_rect(&self, rect: Rect, closable: bool) -> Option<Rect> {
         let label = self.action_label.as_deref()?;
+        let layout = &self.visual.layout;
         let close = self.close_rect(rect, closable);
         let gap = if close.w > 0.0 {
-            Self::CONTROL_GAP.min((close.x - rect.x).max(0.0))
+            layout.control_gap.min((close.x - rect.x).max(0.0))
         } else {
-            Self::CONTENT_TRAILING_GAP.min(rect.w.max(0.0))
+            layout.content_trailing_gap.min(rect.w.max(0.0))
         };
         let end = (close.x - gap).max(rect.x);
         let available = (end - rect.x).max(0.0);
         let width = Self::measured_control_width(
             label,
-            Self::ACTION_FONT_SIZE,
-            Self::ACTION_HORIZONTAL_PADDING,
-            Self::ACTION_MIN_WIDTH,
-            Self::ACTION_MAX_WIDTH,
+            self.visual.typography.action,
+            layout.action_horizontal_padding,
+            layout.action_min_width,
+            layout.action_max_width,
         )
         .min(available);
         (width > 0.0).then(|| Rect::new(end - width, rect.y, width, rect.h))
@@ -139,6 +158,7 @@ impl Notification {
         if self.placement != next.placement
             || self.offset != next.offset
             || self.close_label != next.close_label
+            || !std::ptr::eq(self.visual, next.visual)
         {
             self.hovered_close.set(None);
             self.pressed_close.set(None);
@@ -151,6 +171,7 @@ impl Notification {
         self.icon_name = next.icon_name;
         self.close_label = next.close_label;
         self.offset = next.offset;
+        self.visual = next.visual;
         self.pressed_action.set(None);
     }
 
@@ -163,7 +184,11 @@ impl Notification {
         }
     }
 
-    fn visible_start(frame_height: f32, entries: &[ToastMotionEntry<NotificationItem>]) -> usize {
+    fn visible_start(
+        &self,
+        frame_height: f32,
+        entries: &[ToastMotionEntry<NotificationItem>],
+    ) -> usize {
         let frame_height = Self::normalize_dimension(frame_height);
         if entries.is_empty() || frame_height <= 0.0 {
             return entries.len();
@@ -171,11 +196,11 @@ impl Notification {
         let mut start = entries.len();
         let mut height = 0.0;
         for index in (0..entries.len()).rev() {
-            let item_height = Self::toast_height(entries[index].item()).min(frame_height);
+            let item_height = self.toast_height(entries[index].item()).min(frame_height);
             let candidate = if start == entries.len() {
                 item_height
             } else {
-                item_height + Self::GAP + height
+                item_height + self.visual.layout.item_gap + height
             };
             if candidate > frame_height && start < entries.len() {
                 break;
@@ -279,14 +304,17 @@ impl Notification {
     ) -> NotificationGeometry {
         let close = self.close_rect(rect, item.closable);
         let action = self.action_rect(rect, item.closable);
+        let layout = &self.visual.layout;
         let trailing_start = action.map_or(close.x, |action| action.x);
         let content_end = (trailing_start
-            - Self::CONTENT_TRAILING_GAP.min((trailing_start - rect.x).max(0.0)))
+            - layout
+                .content_trailing_gap
+                .min((trailing_start - rect.x).max(0.0)))
         .max(rect.x);
-        let icon_x = rect.x + 10.0_f32.min(rect.w);
-        let icon_width = (content_end - icon_x).clamp(0.0, 24.0);
+        let icon_x = rect.x + layout.icon_inset.min(rect.w);
+        let icon_width = (content_end - icon_x).clamp(0.0, layout.icon_max_width);
         let icon = Rect::new(icon_x, rect.y, icon_width, rect.h);
-        let content_x = (icon.x + icon.w + 8.0).min(content_end);
+        let content_x = (icon.x + icon.w + layout.icon_content_gap).min(content_end);
         let content_width = (content_end - content_x).max(0.0);
         let (title, description) = if item.description.is_empty() {
             (
@@ -294,9 +322,14 @@ impl Notification {
                 Rect::zero(),
             )
         } else {
-            let title_height = rect.h.min(30.0);
+            let title_height = rect.h.min(layout.title_height);
             (
-                Rect::new(content_x, rect.y + 4.0, content_width, title_height),
+                Rect::new(
+                    content_x,
+                    rect.y + layout.title_top_inset,
+                    content_width,
+                    title_height,
+                ),
                 Rect::new(
                     content_x,
                     rect.y + title_height,
