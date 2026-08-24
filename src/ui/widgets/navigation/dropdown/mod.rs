@@ -123,12 +123,6 @@ impl From<String> for DropdownItem {
     }
 }
 
-#[derive(Clone)]
-struct VisibleDropdownItem {
-    item: DropdownItem,
-    depth: usize,
-}
-
 widget! {
     /// Click-triggered dropdown menu.
     pub struct Dropdown {
@@ -193,43 +187,41 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        // trigger 只占据组件顶部交互区域。
-        let trigger_constraints = Constraints::new(
-            // 允许子 View 使用自己的最小宽度。
-            Size::zero(),
-            // 上界采用 Dropdown 实际宽度与固定触发高度。
-            Size::new(
-                frame.w.max(0.0),
-                self.visual.layout.trigger_height.min(frame.h.max(0.0)),
-            ),
-            // trigger 区域没有额外的确定尺寸覆盖。
-            None,
-        );
-        // 组合契约只布局首个直接 trigger，额外子树不得被静默绘制。
-        children
-            // 借用直接子节点身份。
-            .first()
-            // 测量唯一 trigger 子树。
-            .map(|id| child_from_tree_with_constraints(*id, tree, trigger_constraints))
-            // 将可选测量结果物化为布局集合。
-            .into_iter()
-            // 返回零或一个 trigger 布局快照。
-            .collect()
+        let mut output = Vec::with_capacity(children.len().min(1));
+        self.measure_trigger_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    // 将 trigger 测量结果写入组件树跨帧工作区。
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_trigger_children_into(frame, children, tree, output);
     }
 
     // 让唯一 trigger View 填充 Dropdown 的触发区域。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        // 没有 trigger 时不产生伪布局。
-        let Some(child) = children.first() else { return Vec::new(); };
-        // trigger 与旧按钮共享 UIX 声明的稳定交互高度。
-        vec![(child.id, Rect::new(
-            frame.x,
-            frame.y,
-            frame.w.max(0.0),
-            self.visual.layout.trigger_height.min(frame.h.max(0.0)),
-        ))]
+        let mut output = Vec::with_capacity(children.len().min(1));
+        self.layout_trigger_children_into(frame, children, &mut output);
+        output
+    }
+
+    // 将 trigger 最终位置写入组件树跨帧工作区。
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_trigger_children_into(frame, children, output);
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -394,7 +386,6 @@ widget! {
         if !self.is_present() {
             return;
         }
-        let visible = self.visible_items();
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let bg = fade_color(visual.elevated_background, opacity);
         let border = fade_color(visual.border, opacity);
@@ -403,7 +394,7 @@ widget! {
         let highlight = fade_color(visual.fill_tertiary, opacity);
 
         let menu_y = frame.y + layout.trigger_height;
-        let menu_h = visible.iter().map(|row| self.row_height(row)).sum::<f32>();
+        let menu_h = self.visible_menu_height();
         let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
         let shadow = visual.shadow;
         ctx.draw_box_shadow(
@@ -418,10 +409,10 @@ widget! {
         ctx.stroke_rect(menu_rect, border, self.visual.chrome.border_width, radius);
 
         let mut y = menu_y;
-        for (index, row) in visible.iter().enumerate() {
-            let h = self.row_height(row);
+        self.for_each_visible_item(|index, item, depth| {
+            let h = self.row_height(item);
             let item_rect = Rect::new(frame.x, y, frame.w, h);
-            if row.item.divider {
+            if item.divider {
                 let inset = layout.divider_inset.min(frame.w * 0.5);
                 ctx.fill_rect(
                     Rect::new(
@@ -437,21 +428,21 @@ widget! {
                 if self.highlighted_index == Some(index) || self.selected_index == Some(index) {
                     ctx.fill_rect(item_rect, highlight, radius);
                 }
-                let color = if row.item.disabled { disabled_color } else { text_color };
+                let color = if item.disabled { disabled_color } else { text_color };
                 let mut content_x =
-                    frame.x + layout.content_start + row.depth as f32 * layout.depth_indent;
-                if !row.item.icon.is_empty() {
+                    frame.x + layout.content_start + depth as f32 * layout.depth_indent;
+                if !item.icon.is_empty() {
                     let icon_rect = Rect::new(content_x, y, layout.icon_slot_width, h);
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        &row.item.icon,
+                        &item.icon,
                         icon_rect,
                         color,
                         typography.icon,
                     );
                     content_x += layout.icon_advance;
                 }
-                let arrow_space = if row.item.children.is_empty() {
+                let arrow_space = if item.children.is_empty() {
                     0.0
                 } else {
                     layout.arrow_reserve
@@ -463,11 +454,11 @@ widget! {
                         .max(0.0),
                     h,
                 );
-                ctx.draw_text_in_frame(&row.item.label, label_rect, color, typography.label);
-                if !row.item.children.is_empty() {
+                ctx.draw_text_in_frame(&item.label, label_rect, color, typography.label);
+                if !item.children.is_empty() {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        if self.expanded_keys.iter().any(|key| key == &row.item.key) {
+                        if self.expanded_keys.iter().any(|key| key == &item.key) {
                             self.visual.icons.expanded
                         } else {
                             self.visual.icons.collapsed
@@ -484,16 +475,12 @@ widget! {
                 }
             }
             y += h;
-        }
+        });
     }
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            let menu_h = self
-                .visible_items()
-                .iter()
-                .map(|row| self.row_height(row))
-                .sum::<f32>();
+            let menu_h = self.visible_menu_height();
             Rect::new(
                 frame.x,
                 frame.y,
@@ -511,11 +498,7 @@ widget! {
             return None;
         }
         // 菜单从触发区下方展开，浮层命中范围与 hit_test_frame 一致。
-        let menu_h = self
-            .visible_items()
-            .iter()
-            .map(|row| self.row_height(row))
-            .sum::<f32>();
+        let menu_h = self.visible_menu_height();
         let bounds = Rect::new(
             frame.x,
             frame.y,
@@ -532,14 +515,7 @@ widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        dropdown_dirty_rect(
-            frame,
-            self.visible_items()
-                .iter()
-                .map(|row| self.row_height(row))
-                .sum(),
-            self.visual,
-        )
+        dropdown_dirty_rect(frame, self.visible_menu_height(), self.visual)
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -561,14 +537,7 @@ widget! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            dropdown_dirty_rect(
-                frame,
-                self.visible_items()
-                    .iter()
-                    .map(|row| self.row_height(row))
-                    .sum(),
-                self.visual,
-            )
+            dropdown_dirty_rect(frame, self.visible_menu_height(), self.visual)
         } else {
             Rect::zero()
         }
@@ -582,6 +551,56 @@ impl Default for Dropdown {
 }
 
 impl Dropdown {
+    // 测量唯一 trigger 子树并复用调用方数组。
+    fn measure_trigger_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        output.clear();
+        let Some(id) = children.first().copied() else {
+            return;
+        };
+        // trigger 只占据组件顶部交互区域。
+        let trigger_constraints = Constraints::new(
+            Size::zero(),
+            Size::new(
+                frame.w.max(0.0),
+                self.visual.layout.trigger_height.min(frame.h.max(0.0)),
+            ),
+            None,
+        );
+        output.push(child_from_tree_with_constraints(
+            id,
+            tree,
+            trigger_constraints,
+        ));
+    }
+
+    // 排列唯一 trigger 子树并复用调用方数组。
+    fn layout_trigger_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        let Some(child) = children.first() else {
+            return;
+        };
+        output.push((
+            child.id,
+            Rect::new(
+                frame.x,
+                frame.y,
+                frame.w.max(0.0),
+                self.visual.layout.trigger_height.min(frame.h.max(0.0)),
+            ),
+        ));
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(self.visual.layout.width, self.visual.layout.trigger_height)
     }
@@ -739,10 +758,14 @@ impl Dropdown {
         // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
         self.visual = next.visual;
         self.selected_index = selected_value.as_ref().and_then(|value| {
-            self.visible_items()
-                .iter()
+            let mut matched = None;
+            self.for_each_visible_item(|index, item, _depth| {
                 // 使用稳定 key 查找刷新后的同一业务选项。
-                .position(|row| row.item.key == *value)
+                if matched.is_none() && item.key == *value {
+                    matched = Some(index);
+                }
+            });
+            matched
         });
         // 已移除的业务 key 不再保留为幽灵选择。
         self.selected_value = self.selected_index.and(selected_value);
@@ -756,18 +779,13 @@ impl Dropdown {
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        let mut items = Vec::with_capacity(self.visible_item_count());
+        // 快照边界才复制拥有型选项，运行时热路径始终借用源数据。
+        self.for_each_visible_item(|_index, item, _depth| items.push(item.clone()));
         SnapshotFields::Dropdown {
             label: self.label.clone(),
-            // 快照保留完整 keyed 选项，便于 reconcile 与诊断观察身份。
-            items: self
-                // 展开树顺序必须与 selected_index 和 highlighted_index 对齐。
-                .visible_items()
-                // 快照不需要保留布局深度，只复制 keyed 选项。
-                .into_iter()
-                // 提取每一行的拥有型选项。
-                .map(|row| row.item)
-                // 物化可观察的当前列表顺序。
-                .collect(),
+            // 展开树顺序必须与 selected_index 和 highlighted_index 对齐。
+            items,
             open: self.open,
             selected_index: self.selected_index,
             highlighted_index: self.highlighted_index,
@@ -779,14 +797,15 @@ impl Dropdown {
             return None;
         }
         let mut cursor = self.visual.layout.trigger_height;
-        for (index, row) in self.visible_items().iter().enumerate() {
-            let height = self.row_height(row);
-            if y >= cursor && y < cursor + height {
-                return Some(index);
+        let mut matched = None;
+        self.for_each_visible_item(|index, item, _depth| {
+            let height = self.row_height(item);
+            if matched.is_none() && y >= cursor && y < cursor + height {
+                matched = Some(index);
             }
             cursor += height;
-        }
-        None
+        });
+        matched
     }
 
     fn move_highlight(&mut self, forward: bool) {
@@ -798,15 +817,17 @@ impl Dropdown {
     }
 
     fn select_index(&mut self, index: usize) -> bool {
-        let rows = self.visible_items();
-        let Some(row) = rows.get(index) else {
+        let mut value = None;
+        self.for_each_visible_item(|visible_index, item, _depth| {
+            if visible_index == index && !item.divider && !item.disabled && item.children.is_empty()
+            {
+                value = Some(item.key.clone());
+            }
+        });
+        let Some(value) = value else {
             return false;
         };
-        if row.item.divider || row.item.disabled || !row.item.children.is_empty() {
-            return false;
-        }
-        // 用户选择发布稳定 key，不再把展示 label 当身份。
-        let value = row.item.key.clone();
+        // 用户选择只复制最终业务 key，不再深拷贝全部可见菜单树。
         self.selected_index = Some(index);
         self.selected_value = Some(value.clone());
         self.highlighted_index = Some(index);
@@ -816,85 +837,126 @@ impl Dropdown {
     }
 
     fn toggle_or_select(&mut self, index: usize) -> bool {
-        let Some(row) = self.visible_items().get(index).cloned() else {
+        enum Target {
+            Group(String),
+            Leaf,
+        }
+
+        let mut target = None;
+        self.for_each_visible_item(|visible_index, item, _depth| {
+            if visible_index == index && !item.divider && !item.disabled {
+                target = Some(if item.children.is_empty() {
+                    Target::Leaf
+                } else {
+                    Target::Group(item.key.clone())
+                });
+            }
+        });
+        let Some(target) = target else {
             return false;
         };
-        if row.item.divider || row.item.disabled {
-            return false;
-        }
-        if !row.item.children.is_empty() {
-            // 递归组展开状态同样以稳定 key 为身份。
-            if self.expanded_keys.iter().any(|key| key == &row.item.key) {
-                // 收起当前 keyed 子菜单组。
-                self.expanded_keys.retain(|key| key != &row.item.key);
-            } else {
-                // 展开当前 keyed 子菜单组。
-                self.expanded_keys.push(row.item.key);
+        match target {
+            Target::Group(key) => {
+                // 递归组展开状态同样以稳定 key 为身份。
+                if self.expanded_keys.iter().any(|expanded| expanded == &key) {
+                    // 收起当前 keyed 子菜单组。
+                    self.expanded_keys.retain(|expanded| expanded != &key);
+                } else {
+                    // 展开当前 keyed 子菜单组。
+                    self.expanded_keys.push(key);
+                }
+                self.highlighted_index = Some(index);
+                true
             }
-            self.highlighted_index = Some(index);
-            return true;
+            // 叶子选择复用唯一提交入口，只复制最终业务 key。
+            Target::Leaf => self.select_index(index),
         }
-        self.select_index(index)
     }
 
     fn is_selectable(&self, index: usize) -> bool {
-        self.visible_items()
-            .get(index)
-            .is_some_and(|row| !row.item.divider && !row.item.disabled)
+        let mut selectable = false;
+        self.for_each_visible_item(|visible_index, item, _depth| {
+            if visible_index == index {
+                selectable = !item.divider && !item.disabled;
+            }
+        });
+        selectable
     }
 
     fn next_selectable(&self, current: Option<usize>, forward: bool) -> Option<usize> {
-        let rows = self.visible_items();
-        if rows.is_empty() {
+        let count = self.visible_item_count();
+        if count == 0 {
             return None;
         }
         let start = match (current, forward) {
-            (Some(index), true) => (index + 1) % rows.len(),
-            (Some(index), false) => (index + rows.len() - 1) % rows.len(),
+            (Some(index), true) => (index + 1) % count,
+            (Some(index), false) => (index + count - 1) % count,
             (None, true) => 0,
-            (None, false) => rows.len() - 1,
+            (None, false) => count - 1,
         };
-        for offset in 0..rows.len() {
-            let index = if forward {
-                (start + offset) % rows.len()
-            } else {
-                (start + rows.len() - offset) % rows.len()
-            };
-            if !rows[index].item.divider && !rows[index].item.disabled {
-                return Some(index);
+        let mut nearest = None;
+        self.for_each_visible_item(|index, item, _depth| {
+            if item.divider || item.disabled {
+                return;
             }
-        }
-        None
+            let distance = if forward {
+                (index + count - start) % count
+            } else {
+                (start + count - index) % count
+            };
+            if nearest.is_none_or(|(_, best_distance)| distance < best_distance) {
+                nearest = Some((index, distance));
+            }
+        });
+        nearest.map(|(index, _distance)| index)
     }
 
-    fn visible_items(&self) -> Vec<VisibleDropdownItem> {
-        fn visit(
-            items: &[DropdownItem],
+    // 按声明与展开顺序借用可见菜单项，避免布局、命中和绘制复制数据树。
+    fn for_each_visible_item(&self, mut callback: impl FnMut(usize, &DropdownItem, usize)) {
+        fn visit<'a>(
+            items: &'a [DropdownItem],
             expanded_keys: &[String],
             depth: usize,
-            rows: &mut Vec<VisibleDropdownItem>,
+            index: &mut usize,
+            callback: &mut impl FnMut(usize, &'a DropdownItem, usize),
         ) {
             for item in items {
                 // 递归可见性由稳定 key 驱动，同名 label 不再冲突。
                 let expanded = expanded_keys.iter().any(|key| key == &item.key);
-                let children = item.children.clone();
-                rows.push(VisibleDropdownItem {
-                    item: item.clone(),
-                    depth,
-                });
-                if expanded && !children.is_empty() {
-                    visit(&children, expanded_keys, depth + 1, rows);
+                callback(*index, item, depth);
+                *index += 1;
+                if expanded && !item.children.is_empty() {
+                    visit(&item.children, expanded_keys, depth + 1, index, callback);
                 }
             }
         }
 
-        let mut rows = Vec::new();
-        visit(&self.items, &self.expanded_keys, 0, &mut rows);
-        rows
+        let mut index = 0_usize;
+        visit(
+            &self.items,
+            &self.expanded_keys,
+            0,
+            &mut index,
+            &mut callback,
+        );
     }
 
-    fn row_height(&self, row: &VisibleDropdownItem) -> f32 {
-        if row.item.divider {
+    // 计算可见条目数而不创建临时行集合。
+    fn visible_item_count(&self) -> usize {
+        let mut count = 0_usize;
+        self.for_each_visible_item(|_index, _item, _depth| count += 1);
+        count
+    }
+
+    // 汇总菜单高度而不复制条目或分配行数组。
+    fn visible_menu_height(&self) -> f32 {
+        let mut height = 0.0_f32;
+        self.for_each_visible_item(|_index, item, _depth| height += self.row_height(item));
+        height
+    }
+
+    fn row_height(&self, item: &DropdownItem) -> f32 {
+        if item.divider {
             self.visual.layout.divider_row_height
         } else {
             self.visual.layout.row_height

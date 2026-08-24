@@ -9,7 +9,10 @@ use crate::ui::widget_runtime::traits::WidgetRender;
 // 引入稳定测试组件身份与指针坐标。
 use crate::core::{Point, Rect, WidgetId};
 // 引入触发枚举、输入事件和语义载荷。
-use crate::ui::{EventResult, KeyMod, MouseButton, SemanticPayload, SystemEvent, TriggerMode};
+use crate::ui::{
+    EventResult, KeyMod, LayoutEngineScratch, MouseButton, SemanticPayload, SystemEvent,
+    TriggerMode, WidgetLayout, WidgetTree,
+};
 // 使用真实按钮 View builder 验证组合 trigger 所有权入口。
 use crate::ui::widgets::button;
 
@@ -39,6 +42,92 @@ fn change_payload(dropdown: &Dropdown) -> String {
         // 其他载荷形状表示公开契约回归。
         _ => panic!("Dropdown Change 应使用稳定 key 文本载荷"),
     }
+}
+
+// 借用式可见行遍历必须保持嵌套顺序、深度与循环键盘导航语义。
+#[test]
+fn borrowed_visible_traversal_preserves_nested_navigation() {
+    let mut dropdown = Dropdown::new("").keyed_items(vec![
+        DropdownItem::from_text("禁用", "disabled").disabled(true),
+        DropdownItem::from_text("首项", "first"),
+        DropdownItem::divider(),
+        DropdownItem::from_text("分组", "group").children(vec![
+            DropdownItem::from_text("子项", "child"),
+            DropdownItem::from_text("禁用子项", "child-disabled").disabled(true),
+        ]),
+        DropdownItem::from_text("末项", "last"),
+    ]);
+    dropdown.open();
+    assert_eq!(dropdown.visible_item_count(), 5);
+    assert!(dropdown.toggle_or_select(3));
+
+    let mut rows = Vec::new();
+    dropdown.for_each_visible_item(|_index, item, depth| rows.push((item.key.clone(), depth)));
+    assert_eq!(
+        rows,
+        vec![
+            ("disabled".to_owned(), 0),
+            ("first".to_owned(), 0),
+            (String::new(), 0),
+            ("group".to_owned(), 0),
+            ("child".to_owned(), 1),
+            ("child-disabled".to_owned(), 1),
+            ("last".to_owned(), 0),
+        ]
+    );
+    assert_eq!(dropdown.visible_item_count(), 7);
+    assert_eq!(
+        dropdown.visible_menu_height(),
+        dropdown.visual.layout.row_height * 6.0 + dropdown.visual.layout.divider_row_height
+    );
+    assert_eq!(dropdown.next_selectable(None, true), Some(1));
+    assert_eq!(dropdown.next_selectable(None, false), Some(6));
+    assert_eq!(dropdown.next_selectable(Some(1), true), Some(3));
+    assert_eq!(dropdown.next_selectable(Some(3), true), Some(4));
+    assert_eq!(dropdown.next_selectable(Some(4), true), Some(6));
+    assert_eq!(dropdown.next_selectable(Some(6), true), Some(1));
+    assert_eq!(dropdown.next_selectable(Some(1), false), Some(6));
+    let trigger_height = dropdown.visual.layout.trigger_height;
+    let row_height = dropdown.visual.layout.row_height;
+    assert_eq!(dropdown.item_at_y(trigger_height + 0.5), Some(0));
+    assert_eq!(
+        dropdown.item_at_y(
+            trigger_height + row_height * 2.0 + dropdown.visual.layout.divider_row_height * 0.5
+        ),
+        Some(2)
+    );
+}
+
+// 组合 trigger 的调用方缓冲入口必须与拥有型兼容入口保持相同几何。
+#[test]
+fn trigger_layout_buffers_match_owned_geometry() {
+    let dropdown = Dropdown::new("");
+    let mut tree = WidgetTree::new();
+    let child_id = tree.set_root(Box::new(crate::ui::widgets::Container::new()));
+    let frame = Rect::new(10.0, 20.0, 180.0, 48.0);
+    let child_ids = [child_id];
+
+    let expected_measurements = dropdown.measure_children(frame, &child_ids, &tree);
+    let mut actual_measurements = Vec::new();
+    dropdown.measure_children_into(frame, &child_ids, &tree, &mut actual_measurements);
+    assert_eq!(actual_measurements.len(), expected_measurements.len());
+    assert_eq!(actual_measurements[0].id, expected_measurements[0].id);
+    assert_eq!(
+        actual_measurements[0].measured_size,
+        expected_measurements[0].measured_size
+    );
+
+    let expected_layout = dropdown.layout_children(frame, &expected_measurements, &tree);
+    let mut actual_layout = Vec::new();
+    dropdown.layout_children_into(
+        frame,
+        &actual_measurements,
+        &tree,
+        &mut LayoutEngineScratch::default(),
+        &mut actual_layout,
+    );
+    assert_eq!(actual_layout, expected_layout);
+    assert_eq!(actual_layout[0].1, Rect::new(10.0, 20.0, 180.0, 32.0));
 }
 
 // 验证同名 label 的选项使用独立 key 选择与发布事件。
