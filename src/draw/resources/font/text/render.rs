@@ -291,12 +291,31 @@ impl<'a> TextRenderService<'a> {
         selection_bg: Color,
     ) {
         if let Some((s, e)) = selection {
-            // 立即消费选区几何，避免稳态绘制创建范围和矩形临时向量。
-            self.visit_selection_rects(text, font_size, pos, s, e, |rect| {
-                canvas.fill_rect(rect, selection_bg, None);
-            });
+            // 复用仅背景入口，保持直接文本选择和输入控件的几何语义一致。
+            self.fill_text_selection(canvas, text, font_size, pos, s, e, selection_bg);
         }
         self.draw_text(canvas, text, pos, color, font_size);
+    }
+
+    /// 流式填充文本选择背景，不创建拥有型矩形列表。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "selection color and bounds are part of the text rendering contract"
+    )]
+    pub fn fill_text_selection(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
+        color: Color,
+    ) {
+        // 立即消费每个矩形，避免选择活跃期间产生逐帧临时容器。
+        self.visit_selection_rects(text, font_size, pos, start, end, |rect| {
+            canvas.fill_rect(rect, color, None);
+        });
     }
 
     // ── 3D 空间文本 ──

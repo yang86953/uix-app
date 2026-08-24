@@ -286,6 +286,61 @@ impl<'a> PaintContext<'a> {
             .draw_text_wrapped(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
 
+    /// 仅填充文本选择背景，并把可重放的逻辑选择写入显示列表。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "selection color and bounds are part of the text rendering contract"
+    )]
+    pub fn fill_text_selection(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
+        color: Color,
+    ) {
+        // 稳态重录优先复用同一文字载荷，只更新选择与视觉参数。
+        self.record_op_reusing(
+            |op| match op {
+                PaintOp::FillTextSelection {
+                    text: recorded_text,
+                    font_size: recorded_size,
+                    pos: recorded_pos,
+                    start: recorded_start,
+                    end: recorded_end,
+                    color: recorded_color,
+                } if recorded_text.as_ref() == text => {
+                    *recorded_size = font_size;
+                    *recorded_pos = pos;
+                    *recorded_start = start;
+                    *recorded_end = end;
+                    *recorded_color = color;
+                    true
+                }
+                _ => false,
+            },
+            || PaintOp::FillTextSelection {
+                text: Arc::from(text),
+                font_size,
+                pos,
+                start,
+                end,
+                color,
+            },
+        );
+        // 直接绘制时流式消费选区几何，不建立临时矩形数组。
+        self.text.fill_text_selection(
+            self.spatial.canvas_2d(),
+            text,
+            font_size,
+            pos,
+            start,
+            end,
+            color,
+        );
+    }
+
     /// 绘制文本选中背景 + 文本。
     pub fn draw_text_with_selection(
         &mut self,
@@ -654,6 +709,7 @@ mod tests {
             ctx.text_center(text, Rect::new(x, 2.0, 30.0, 12.0), Color::green(), 14.0);
             ctx.draw_text_in_frame(text, Rect::new(x, 3.0, 30.0, 12.0), Color::blue(), 15.0);
             ctx.draw_text_wrapped(text, Rect::new(x, 4.0, 30.0, 24.0), Color::white(), 16.0);
+            ctx.fill_text_selection(text, 16.5, Point::new(x, 4.5), 1, 4, Color::green());
             ctx.draw_text_with_selection(
                 text,
                 Point::new(x, 5.0),
@@ -675,13 +731,14 @@ mod tests {
                 | PaintOp::TextCenter { text, .. }
                 | PaintOp::DrawTextInFrame { text, .. }
                 | PaintOp::DrawTextWrapped { text, .. }
+                | PaintOp::FillTextSelection { text, .. }
                 | PaintOp::DrawTextWithSelection { text, .. } => Arc::clone(text),
                 other => panic!("只应录制文字操作，实际为 {other:?}"),
             })
             .collect()
     }
 
-    // 六类文字操作都应在稳定内容下复用 Arc，并在内容变化时正确替换。
+    // 七类文字操作都应在稳定内容下复用 Arc，并在内容变化时正确替换。
     #[test]
     fn text_variants_reuse_stable_content_and_replace_changed_content() {
         let mut canvas = NoopCanvas2D;
@@ -706,7 +763,7 @@ mod tests {
         let first_texts = recorded_texts(&list);
         record_text_variants(&mut ctx, &mut list, "steady", 2.0);
         let second_texts = recorded_texts(&list);
-        assert_eq!(first_texts.len(), 6);
+        assert_eq!(first_texts.len(), 7);
         assert!(
             first_texts
                 .iter()
