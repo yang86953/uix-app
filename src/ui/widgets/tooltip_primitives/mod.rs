@@ -6,7 +6,7 @@ use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::TooltipPlacement;
 
-// 保存共享提示气泡的静态几何与排版；具体 widget 可由 UIX 注入同类型视觉表。
+// 保存共享提示气泡的静态几何与排版；数值唯一由同目录 UIX 声明。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TooltipBubbleVisual {
     pub(crate) font_size: f32,
@@ -22,38 +22,7 @@ pub(crate) struct TooltipBubbleVisual {
     pub(crate) fallback_span_bubbles: f32,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn tooltip_bubble_visual(
-    font_size: f32,
-    horizontal_padding: f32,
-    height: f32,
-    arrow_size: f32,
-    arrow_gap: f32,
-    plain_gap: f32,
-    radius: f32,
-    edge_overlap: f32,
-    center_ratio: f32,
-    fallback_offset_bubbles: f32,
-    fallback_span_bubbles: f32,
-) -> TooltipBubbleVisual {
-    TooltipBubbleVisual {
-        font_size,
-        horizontal_padding,
-        height,
-        arrow_size,
-        arrow_gap,
-        plain_gap,
-        radius,
-        edge_overlap,
-        center_ratio,
-        fallback_offset_bubbles,
-        fallback_span_bubbles,
-    }
-}
-
-// 未迁移调用方继续使用原有的完全等价视觉参数。
-pub(crate) static DEFAULT_TOOLTIP_BUBBLE_VISUAL: TooltipBubbleVisual =
-    tooltip_bubble_visual(12.0, 16.0, 26.0, 6.0, 2.0, 4.0, 4.0, 1.0, 0.5, 2.0, 5.0);
+crate::uix_items!("src/ui/widgets/tooltip_primitives/tooltip_primitives.uix");
 
 // 保存提示气泡经过翻转与表面约束后的最终几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,8 +82,8 @@ pub(crate) fn resolve_tooltip_geometry(
         placement,
         frame,
         surface,
-        tooltip_bubble_size_with_visual(text, DEFAULT_TOOLTIP_BUBBLE_VISUAL),
-        DEFAULT_TOOLTIP_BUBBLE_VISUAL,
+        tooltip_bubble_size_with_visual(text, TOOLTIP_BUBBLE_VISUAL),
+        TOOLTIP_BUBBLE_VISUAL,
     )
 }
 
@@ -277,8 +246,8 @@ pub(crate) fn tooltip_dirty_rect(
         placement,
         frame,
         surface,
-        tooltip_bubble_size_with_visual(text, DEFAULT_TOOLTIP_BUBBLE_VISUAL),
-        DEFAULT_TOOLTIP_BUBBLE_VISUAL,
+        tooltip_bubble_size_with_visual(text, TOOLTIP_BUBBLE_VISUAL),
+        TOOLTIP_BUBBLE_VISUAL,
     )
 }
 
@@ -313,8 +282,8 @@ pub(crate) fn tooltip_bubble_rect(
         placement,
         frame,
         surface,
-        tooltip_bubble_size_with_visual(text, DEFAULT_TOOLTIP_BUBBLE_VISUAL),
-        DEFAULT_TOOLTIP_BUBBLE_VISUAL,
+        tooltip_bubble_size_with_visual(text, TOOLTIP_BUBBLE_VISUAL),
+        TOOLTIP_BUBBLE_VISUAL,
     )
 }
 
@@ -350,8 +319,8 @@ pub(crate) fn paint_tooltip_bubble(
         bg,
         text_color,
         arrow,
-        tooltip_bubble_size_with_visual(text, DEFAULT_TOOLTIP_BUBBLE_VISUAL),
-        DEFAULT_TOOLTIP_BUBBLE_VISUAL,
+        tooltip_bubble_size_with_visual(text, TOOLTIP_BUBBLE_VISUAL),
+        TOOLTIP_BUBBLE_VISUAL,
     )
 }
 
@@ -484,8 +453,8 @@ pub(crate) fn tooltip_bubble_size_with_visual(text: &str, visual: TooltipBubbleV
 pub(crate) fn tooltip_fallback_surface(text: &str, frame: Rect) -> Rect {
     tooltip_fallback_surface_with_visual_and_size(
         frame,
-        tooltip_bubble_size_with_visual(text, DEFAULT_TOOLTIP_BUBBLE_VISUAL),
-        DEFAULT_TOOLTIP_BUBBLE_VISUAL,
+        tooltip_bubble_size_with_visual(text, TOOLTIP_BUBBLE_VISUAL),
+        TOOLTIP_BUBBLE_VISUAL,
     )
 }
 
@@ -566,6 +535,6 @@ fn draw_arrow(
 #[cfg(test)]
 // 将契约放在原语模块内以直接覆盖私有尺寸计算。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widgets/tooltip_primitives__tests.rs"]
+#[path = "../../../../tests/unit/ui/widgets/tooltip_primitives__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

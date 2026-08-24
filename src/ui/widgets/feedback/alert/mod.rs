@@ -346,9 +346,7 @@ widget! {
 }
 
 // 把内容/交互状态与 UIX 静态视觉融合为单一 Alert 根节点。
-fn build_alert_view(mut kernel: Alert, declared_visual: AlertVisual) -> ViewNode {
-    let visual = UIX_ALERT_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_alert_view(mut kernel: Alert, visual: &'static AlertVisual) -> ViewNode {
     if !kernel.authored.contains(AlertAuthored::SHOW_ICON) {
         kernel.show_icon = visual.defaults.show_icon;
     }
@@ -384,23 +382,23 @@ impl Alert {
             description: String::new(),
             type_: StatusLevel::Info,
             closable: false,
-            show_icon: DEFAULT_ALERT_VISUAL.defaults.show_icon,
+            show_icon: ALERT_VISUAL.defaults.show_icon,
             visible: true,
             action_label: String::new(),
             action_callback: None,
-            banner: DEFAULT_ALERT_VISUAL.defaults.banner,
+            banner: ALERT_VISUAL.defaults.banner,
             focused: false,
             action_hovered: Cell::new(false),
             close_hovered: Cell::new(false),
             pressed: Cell::new(None),
             last_size: Cell::new(Size::new(
-                DEFAULT_ALERT_VISUAL.defaults.width,
-                DEFAULT_ALERT_VISUAL.defaults.base_height,
+                ALERT_VISUAL.defaults.width,
+                ALERT_VISUAL.defaults.base_height,
             )),
             layout_requested: Cell::new(false),
             pending_close: Cell::new(false),
             pending_action: Cell::new(false),
-            visual: &DEFAULT_ALERT_VISUAL,
+            visual: ALERT_VISUAL_REF,
             authored: AlertAuthored::default(),
         }
     }

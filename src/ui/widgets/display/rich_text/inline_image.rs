@@ -314,7 +314,7 @@ pub(crate) fn draw(
     lines: &[super::LayoutLine],
     frame: crate::core::Rect,
 ) {
-    let visual = super::presentation::DEFAULT_RICH_TEXT_VISUAL;
+    let visual = super::presentation::RICH_TEXT_VISUAL;
     let resolved = visual.resolve(crate::draw::Color::default(), true, ctx.tokens());
     draw_visual(ctx, segments, states, lines, frame, visual.image, resolved);
 }

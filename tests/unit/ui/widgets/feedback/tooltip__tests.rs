@@ -1,5 +1,5 @@
 // 复用被测组件与位置枚举。
-use super::{DEFAULT_TOOLTIP_VISUAL, Tooltip, TooltipPlacement, UIX_TOOLTIP_VISUAL};
+use super::{TOOLTIP_VISUAL, TOOLTIP_VISUAL_REF, Tooltip, TooltipPlacement};
 // 引入几何基础类型。
 use crate::core::Rect;
 // 引入共享解析器以核对登记与绘制几何同源。
@@ -11,20 +11,17 @@ use crate::ui::widgets::tooltip_primitives::{
 // 验证 View 构建经过同目录 UIX，并保留调用方显式视觉覆写。
 #[test]
 fn view_build_uses_uix_visual_and_preserves_authored_values() {
-    let node = crate::ui::view::View::build(
-        Tooltip::new("提示")
-            .placement(TooltipPlacement::Bottom)
-            .arrow(false),
-    );
+    let tooltip = Tooltip::new("提示")
+        .placement(TooltipPlacement::Bottom)
+        .arrow(false);
+    assert!(std::ptr::eq(tooltip.visual, TOOLTIP_VISUAL_REF));
+    let node = crate::ui::view::View::build(tooltip);
     let tooltip = node
         .widget
         .as_any()
         .downcast_ref::<Tooltip>()
         .expect("UIX 根必须保留 Tooltip Rust 内核");
-    let declared = UIX_TOOLTIP_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(tooltip.visual, declared));
+    assert!(std::ptr::eq(tooltip.visual, TOOLTIP_VISUAL_REF));
     assert_eq!(tooltip.placement, TooltipPlacement::Bottom);
     assert!(!tooltip.arrow);
     assert_eq!(tooltip.visual.motion.enter_duration, 0.15);
@@ -42,8 +39,8 @@ fn uix_bubble_visual_preserves_shared_geometry() {
         TooltipPlacement::Top,
         frame,
         surface,
-        tooltip_bubble_size_with_visual("tip", DEFAULT_TOOLTIP_VISUAL.bubble),
-        DEFAULT_TOOLTIP_VISUAL.bubble,
+        tooltip_bubble_size_with_visual("tip", TOOLTIP_VISUAL.bubble),
+        TOOLTIP_VISUAL.bubble,
     );
     assert_eq!(declared, legacy);
 }

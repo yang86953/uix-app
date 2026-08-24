@@ -1,2 +1,112 @@
-// Alert 的默认尺寸/图标/横幅、关闭区/操作区/图标/正文/强调条几何、状态图标、交互反馈、排版、圆角与主题角色由 UIX 声明；Rust 内核负责内容、状态语义、输入、关闭生命周期和绘制执行。
-<KernelView value={build_alert_view(kernel, alert_visual(alert_defaults_visual(300, 36, 18, true, false), alert_layout_visual(36, 4, 8, 64, 8, 28, 8, 14, 4, 0.5, 0.52, 2, 4, 3, 8), alert_chrome_visual(1.5, 3, 4, 2, alert_radius_normal(), alert_radius_small()), alert_typography_visual(14, 12, 13, 14, 14, alert_success_icon(), alert_info_icon(), alert_warning_icon(), alert_error_icon(), alert_close_icon()), alert_palette_visual(alert_status_palette_visual(alert_success_bg(), alert_success()), alert_status_palette_visual(alert_info_bg(), alert_info()), alert_status_palette_visual(alert_warning_bg(), alert_warning()), alert_status_palette_visual(alert_error_bg(), alert_error()), alert_text(), alert_text_secondary(), alert_fill_secondary(), alert_fill_tertiary(), alert_primary())))} />
+// Alert 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责内容、状态语义、输入、关闭生命周期和绘制执行。
+<Visual
+  name="ALERT_DEFAULTS_VISUAL"
+  type="AlertDefaultsVisual"
+  width={300.0}
+  baseHeight={36.0}
+  descriptionHeight={18.0}
+  showIcon={true}
+  banner={false}
+/>
+
+<Visual
+  name="ALERT_LAYOUT_VISUAL"
+  type="AlertLayoutVisual"
+  closeWidth={36.0}
+  closeActionGap={4.0}
+  contentRightGap={8.0}
+  actionWidth={64.0}
+  actionContentGap={8.0}
+  iconMaxWidth={28.0}
+  iconGap={8.0}
+  noIconLeft={14.0}
+  contentVerticalInset={4.0}
+  contentVerticalRatio={0.5}
+  messageHeightRatio={0.52}
+  accentX={2.0}
+  accentY={4.0}
+  accentWidth={3.0}
+  iconX={8.0}
+/>
+
+<Visual
+  name="ALERT_CHROME_VISUAL"
+  type="AlertChromeVisual"
+  accentRadius={1.5}
+  actionInset={3.0}
+  closeInset={4.0}
+  focusStroke={2.0}
+  containerRadius={alert_radius_normal()}
+  interactionRadius={alert_radius_small()}
+/>
+
+<Visual
+  name="ALERT_TYPOGRAPHY_VISUAL"
+  type="AlertTypographyVisual"
+  message={14.0}
+  description={12.0}
+  action={13.0}
+  statusIcon={14.0}
+  closeIcon={14.0}
+  successIcon="check-circle"
+  infoIcon="info"
+  warningIcon="alert-triangle"
+  errorIcon="x-circle"
+  closeIconName="x"
+/>
+
+<Visual
+  name="ALERT_SUCCESS_PALETTE_VISUAL"
+  type="AlertStatusPaletteVisual"
+  background={alert_success_bg()}
+  foreground={alert_success()}
+/>
+
+<Visual
+  name="ALERT_INFO_PALETTE_VISUAL"
+  type="AlertStatusPaletteVisual"
+  background={alert_info_bg()}
+  foreground={alert_info()}
+/>
+
+<Visual
+  name="ALERT_WARNING_PALETTE_VISUAL"
+  type="AlertStatusPaletteVisual"
+  background={alert_warning_bg()}
+  foreground={alert_warning()}
+/>
+
+<Visual
+  name="ALERT_ERROR_PALETTE_VISUAL"
+  type="AlertStatusPaletteVisual"
+  background={alert_error_bg()}
+  foreground={alert_error()}
+/>
+
+<Visual
+  name="ALERT_PALETTE_VISUAL"
+  type="AlertPaletteVisual"
+  statuses={[
+    ALERT_SUCCESS_PALETTE_VISUAL,
+    ALERT_INFO_PALETTE_VISUAL,
+    ALERT_WARNING_PALETTE_VISUAL,
+    ALERT_ERROR_PALETTE_VISUAL
+  ]}
+  text={alert_text()}
+  textSecondary={alert_text_secondary()}
+  fillSecondary={alert_fill_secondary()}
+  fillTertiary={alert_fill_tertiary()}
+  primary={alert_primary()}
+/>
+
+<Visual
+  name="ALERT_VISUAL"
+  type="AlertVisual"
+  defaults={ALERT_DEFAULTS_VISUAL}
+  layout={ALERT_LAYOUT_VISUAL}
+  chrome={ALERT_CHROME_VISUAL}
+  typography={ALERT_TYPOGRAPHY_VISUAL}
+  palette={ALERT_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_alert_view(kernel, ALERT_VISUAL_REF)} />

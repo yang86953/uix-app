@@ -32,7 +32,7 @@ fn popup_cache_does_not_survive_surface_resize() {
         // 保留箭头间距。
         true,
         // 使用组件 UIX 默认视觉表。
-        &DEFAULT_POPOVER_VISUAL,
+        &POPOVER_VISUAL,
     )
     // 只取最终气泡矩形。
     .popup;
@@ -75,7 +75,7 @@ fn popup_cache_does_not_survive_surface_resize() {
         // 箭头配置保持不变。
         true,
         // UIX 视觉配置保持不变。
-        &DEFAULT_POPOVER_VISUAL,
+        &POPOVER_VISUAL,
     )
     // 只比较最终气泡矩形。
     .popup;
@@ -161,23 +161,20 @@ fn controlled_open_synchronizes_external_updates_and_user_close() {
 fn view_build_uses_uix_visual_and_preserves_authored_values() {
     let enter = AnimationConfig::zoom_in(0.3);
     let leave = AnimationConfig::zoom_out(0.2);
-    let node = crate::ui::view::View::build(
-        Popover::new("content")
-            .placement(PopoverPlacement::BottomRight)
-            .arrow(false)
-            .enter_animation(enter)
-            .leave_animation(leave)
-            .trigger_view(ViewNode::leaf(Popover::new("trigger"))),
-    );
+    let popover = Popover::new("content")
+        .placement(PopoverPlacement::BottomRight)
+        .arrow(false)
+        .enter_animation(enter)
+        .leave_animation(leave)
+        .trigger_view(ViewNode::leaf(Popover::new("trigger")));
+    assert!(std::ptr::eq(popover.visual, POPOVER_VISUAL_REF));
+    let node = crate::ui::view::View::build(popover);
     let popover = node
         .widget
         .as_any()
         .downcast_ref::<Popover>()
         .expect("UIX 根必须保留 Popover Rust 内核");
-    let declared = UIX_POPOVER_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(popover.visual, declared));
+    assert!(std::ptr::eq(popover.visual, POPOVER_VISUAL_REF));
     assert_eq!(popover.placement, PopoverPlacement::BottomRight);
     assert!(!popover.arrow);
     assert_eq!(popover.enter_animation, enter);

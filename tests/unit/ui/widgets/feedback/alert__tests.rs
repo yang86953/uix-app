@@ -1,19 +1,18 @@
 // 引入待验证的公开警告提示组件。
-use super::{Alert, UIX_ALERT_VISUAL};
+use super::{ALERT_VISUAL_REF, Alert};
 
 // 验证 View 构建经过同目录 UIX，并保留调用方显式视觉覆写。
 #[test]
 fn view_build_uses_uix_visual_and_preserves_authored_values() {
-    let node = crate::ui::view::View::build(Alert::new("提示").show_icon(false).banner(true));
+    let alert = Alert::new("提示").show_icon(false).banner(true);
+    assert!(std::ptr::eq(alert.visual, ALERT_VISUAL_REF));
+    let node = crate::ui::view::View::build(alert);
     let alert = node
         .widget
         .as_any()
         .downcast_ref::<Alert>()
         .expect("UIX 根必须保留 Alert Rust 内核");
-    let declared = UIX_ALERT_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(alert.visual, declared));
+    assert!(std::ptr::eq(alert.visual, ALERT_VISUAL_REF));
     assert!(!alert.show_icon);
     assert!(alert.banner);
 }

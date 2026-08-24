@@ -4,10 +4,10 @@ mod control_binding;
 mod element_parser;
 // 引入核心 AST、词法游标和诊断。
 use super::{
-    Cursor, Declaration, Diagnostic, Document, SourceSpan, WidgetStateInitial, WidgetValueType,
-    parse_at_declaration, parse_record_declaration, parse_style_class, parse_visual_declaration,
-    parse_widget_declaration, register_declaration_name, starts_record_declaration,
-    starts_visual_declaration, starts_widget_declaration,
+    Cursor, Declaration, Diagnostic, Document, Element, SourceSpan, WidgetStateInitial,
+    WidgetValueType, parse_at_declaration, parse_record_declaration, parse_style_class,
+    parse_visual_declaration, parse_widget_declaration, register_declaration_name,
+    starts_record_declaration, starts_visual_declaration, starts_widget_declaration,
 };
 // 引入拆分后的元素解析入口。
 use element_parser::parse_element;
@@ -17,8 +17,21 @@ use super::{AttributeValue, Node};
 // 引入顶层名称去重集合。
 use std::collections::HashSet;
 
-// 把 UIX 源码解析为具有唯一根元素的核心文档 AST。
+// 把普通 UIX 源码解析为具有唯一根元素的核心文档 AST。
 pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
+    parse_document_with_mode(source, false)
+}
+
+// 允许 uix_items! 资源只包含 Record 与 Visual 等模块级声明。
+pub(crate) fn parse_items_document(source: &str) -> Result<Document, Diagnostic> {
+    parse_document_with_mode(source, true)
+}
+
+// 共享完整语法解析，仅由入口目标决定声明资源能否省略视图根。
+fn parse_document_with_mode(
+    source: &str,
+    allow_declaration_only: bool,
+) -> Result<Document, Diagnostic> {
     // 创建 UTF-8 安全词法游标。
     let mut cursor = Cursor::new(source);
     // 跳过文档起始 trivia。
@@ -94,17 +107,35 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
         // 跳过声明间 trivia。
         cursor.skip_trivia()?;
     }
-    // 空文档或只有声明的文档缺少根元素。
+    // 普通 View/App 文档始终要求显式根元素。
     if cursor.is_eof() {
-        // 返回带修复建议的空文档诊断。
-        return Err(Diagnostic::new(
-            // 指向文件起点。
-            cursor.point_span(),
-            // 陈述失败原因。
-            "UIX 文档缺少根元素",
-            // 给出确定修复动作。
-            "添加一个根元素，例如 <App />",
-        ));
+        if !allow_declaration_only {
+            // 返回带修复建议的空文档诊断。
+            return Err(Diagnostic::new(
+                // 指向文件起点。
+                cursor.point_span(),
+                // 陈述失败原因。
+                "UIX 文档缺少根元素",
+                // 给出确定修复动作。
+                "添加一个根元素，例如 <App />",
+            ));
+        }
+        // Items 生成器不消费根；用零节点内部占位维持统一 AST/IR 形状。
+        let document = Document {
+            declarations,
+            root: Element {
+                name: "KernelView".to_owned(),
+                attributes: Vec::new(),
+                children: Vec::new(),
+                control: None,
+                span: cursor.point_span(),
+                widget_scopes: Vec::new(),
+                for_iteration_clones: Vec::new(),
+                for_iteration_setup: Vec::new(),
+            },
+        };
+        validate_record_references(&document)?;
+        return Ok(document);
     }
     // 解析唯一根元素。
     let root = parse_element(&mut cursor, false)?;

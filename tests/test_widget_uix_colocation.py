@@ -16,24 +16,11 @@ WIDGETS_ROOT = ROOT / "src" / "ui" / "widgets"
 # 该集合只能缩小；新迁移不得加入，修复一项时必须同步删除对应路径。
 VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
-# Rust 仍保存完整静态表或 Visual::default 数值的存量双源事实；只允许逐项删除。
-RUST_VISUAL_DEFAULT_DEBT = {
-    "display/rich_text/presentation.rs",
-    "display/table/presentation.rs",
-    "feedback/alert/presentation.rs",
-    "feedback/popover/presentation.rs",
-    "feedback/tooltip/presentation.rs",
-    "tooltip_primitives.rs",
-}
+# Rust 完整静态表或 Visual::default 数值债务已经清零；禁止重新引入双源事实。
+RUST_VISUAL_DEFAULT_DEBT: set[str] = set()
 
-# 仍以单个巨型位置参数调用表达视觉的存量 UIX；新组件必须改用具名 Visual 或真实子树。
-POSITIONAL_VISUAL_SHELL_DEBT = {
-    "display/rich_text/rich_text.uix",
-    "display/table/table.uix",
-    "feedback/alert/alert.uix",
-    "feedback/popover/popover.uix",
-    "feedback/tooltip/tooltip.uix",
-}
+# 巨型位置参数视觉壳债务已经清零；新组件必须使用具名 Visual 或真实子树。
+POSITIONAL_VISUAL_SHELL_DEBT: set[str] = set()
 
 # 已完成同目录 UIX 视觉迁移的 widget 目录；删除声明文件不得伪装成债务清零。
 MIGRATED_WIDGET_DIRS = {
@@ -71,6 +58,7 @@ MIGRATED_WIDGET_DIRS = {
     "general/divider",
     "general/icon",
     "other/theme_toggle",
+    "tooltip_primitives",
     "window_controls",
 }
 

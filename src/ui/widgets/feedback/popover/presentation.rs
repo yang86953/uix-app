@@ -1,7 +1,5 @@
 //! Popover 的 UIX 静态视觉契约与主题解析。
 
-use std::sync::OnceLock;
-
 use crate::draw::Color;
 use crate::ui::ThemeTokens;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
@@ -130,6 +128,8 @@ pub(crate) struct PopoverVisual {
     palette: PopoverPaletteVisual,
 }
 
+crate::uix_items!("src/ui/widgets/feedback/popover/popover.uix");
+
 // 保存 Popover 每帧一次解析得到的主题值。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ResolvedPopoverVisual {
@@ -189,131 +189,6 @@ impl PopoverVisual {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn popover_defaults_visual(
-    popup_width: f32,
-    popup_height: f32,
-    trigger_width: f32,
-    trigger_height: f32,
-    placement: PopoverPlacement,
-    arrow: bool,
-) -> PopoverDefaultsVisual {
-    PopoverDefaultsVisual {
-        popup_width,
-        popup_height,
-        trigger_width,
-        trigger_height,
-        placement,
-        arrow,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn popover_layout_visual(
-    arrow_gap: f32,
-    plain_gap: f32,
-    center_ratio: f32,
-    fallback_offset_popups: f32,
-    fallback_span_popups: f32,
-    shadow_expand: f32,
-    content_inset: f32,
-    title_height: f32,
-    divider_thickness: f32,
-    arrow_size: f32,
-) -> PopoverLayoutVisual {
-    PopoverLayoutVisual {
-        arrow_gap,
-        plain_gap,
-        center_ratio,
-        fallback_offset_popups,
-        fallback_span_popups,
-        shadow_expand,
-        content_inset,
-        title_height,
-        divider_thickness,
-        arrow_size,
-    }
-}
-
-pub(crate) const fn popover_chrome_visual(
-    trigger_stroke: f32,
-    focus_stroke: f32,
-    overlay_z: f32,
-    default_trigger_label: &'static str,
-    radius: PopoverRadiusRole,
-    shadow: PopoverShadowRole,
-) -> PopoverChromeVisual {
-    PopoverChromeVisual {
-        trigger_stroke,
-        focus_stroke,
-        overlay_z: overlay_z as i32,
-        default_trigger_label,
-        radius,
-        shadow,
-    }
-}
-
-pub(crate) const fn popover_typography_visual(
-    trigger: PopoverFontRole,
-    title: PopoverFontRole,
-    content: PopoverFontRole,
-) -> PopoverTypographyVisual {
-    PopoverTypographyVisual {
-        trigger,
-        title,
-        content,
-    }
-}
-
-pub(crate) const fn popover_motion_visual(
-    enter_duration: f64,
-    exit_duration: f64,
-) -> PopoverMotionVisual {
-    PopoverMotionVisual {
-        enter_duration,
-        exit_duration,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn popover_palette_visual(
-    popup_background: ColorValue,
-    border: ColorValue,
-    text: ColorValue,
-    text_secondary: ColorValue,
-    fill_secondary: ColorValue,
-    fill_tertiary: ColorValue,
-    primary: ColorValue,
-) -> PopoverPaletteVisual {
-    PopoverPaletteVisual {
-        popup_background,
-        border,
-        text,
-        text_secondary,
-        fill_secondary,
-        fill_tertiary,
-        primary,
-    }
-}
-
-pub(crate) const fn popover_visual(
-    defaults: PopoverDefaultsVisual,
-    layout: PopoverLayoutVisual,
-    chrome: PopoverChromeVisual,
-    typography: PopoverTypographyVisual,
-    motion: PopoverMotionVisual,
-    palette: PopoverPaletteVisual,
-) -> PopoverVisual {
-    PopoverVisual {
-        defaults,
-        layout,
-        chrome,
-        motion,
-        typography,
-        palette,
-    }
-}
-
 pub(crate) const fn popover_placement_top() -> PopoverPlacement {
     PopoverPlacement::Top
 }
@@ -331,9 +206,6 @@ pub(crate) const fn popover_font_small() -> PopoverFontRole {
 }
 pub(crate) const fn popover_font_fixed(value: f32) -> PopoverFontRole {
     PopoverFontRole::Fixed(value)
-}
-pub(crate) const fn popover_default_trigger_label() -> &'static str {
-    "Popover"
 }
 pub(crate) const fn popover_bg_elevated() -> ColorValue {
     ColorValue::Neutral(NeutralRole::BgElevated)
@@ -356,34 +228,3 @@ pub(crate) const fn popover_fill_tertiary() -> ColorValue {
 pub(crate) const fn popover_primary() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
 }
-
-pub(crate) static DEFAULT_POPOVER_VISUAL: PopoverVisual = popover_visual(
-    popover_defaults_visual(220.0, 100.0, 80.0, 28.0, PopoverPlacement::Top, true),
-    popover_layout_visual(10.0, 4.0, 0.5, 2.0, 5.0, 12.0, 12.0, 32.0, 1.0, 8.0),
-    popover_chrome_visual(
-        1.0,
-        2.0,
-        900.0,
-        "Popover",
-        PopoverRadiusRole::Small,
-        PopoverShadowRole::Secondary,
-    ),
-    popover_typography_visual(
-        PopoverFontRole::Small,
-        PopoverFontRole::Normal,
-        PopoverFontRole::Fixed(12.0),
-    ),
-    popover_motion_visual(0.15, 0.1),
-    popover_palette_visual(
-        ColorValue::Neutral(NeutralRole::BgElevated),
-        ColorValue::Neutral(NeutralRole::Border),
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::FillSecondary),
-        ColorValue::Neutral(NeutralRole::FillTertiary),
-        ColorValue::Palette(PaletteColor::Primary),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，全部 Popover 实例共享一份视觉表。
-pub(crate) static UIX_POPOVER_VISUAL: OnceLock<PopoverVisual> = OnceLock::new();

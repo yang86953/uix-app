@@ -21,16 +21,15 @@ fn dummy_event() -> SystemEvent {
 // 验证声明式入口使用同目录 UIX 视觉且保留 Rust 调用方字号。
 #[test]
 fn view_build_uses_uix_visual_and_preserves_authored_font_size() {
-    let node = crate::ui::view::View::build(RichText::new().font_size(22.0));
+    let rich = RichText::new().font_size(22.0);
+    assert!(std::ptr::eq(rich.visual, RICH_TEXT_VISUAL_REF));
+    let node = crate::ui::view::View::build(rich);
     let rich = node
         .widget
         .as_any()
         .downcast_ref::<RichText>()
         .expect("UIX 根必须保留 RichText Rust 内核");
-    let declared = UIX_RICH_TEXT_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(rich.visual, declared));
+    assert!(std::ptr::eq(rich.visual, RICH_TEXT_VISUAL_REF));
     assert_eq!(rich.default_font_size, 22.0);
 }
 

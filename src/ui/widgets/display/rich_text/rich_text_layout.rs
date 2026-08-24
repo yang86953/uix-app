@@ -14,7 +14,7 @@ use super::shaped_advance::real_char_advances;
 use super::thematic_break;
 // 复用图片原子几何和运行时尺寸状态。
 use super::inline_image::InlineImageStates;
-use super::presentation::{DEFAULT_RICH_TEXT_VISUAL, RichTextMetricsVisual};
+use super::presentation::{RICH_TEXT_VISUAL, RichTextMetricsVisual};
 // 图片能力开启时调用原子布局实现。
 #[cfg(feature = "image-codecs")]
 use super::inline_image;
@@ -85,7 +85,7 @@ pub(crate) fn draw_rich_text_run(
 // 返回围绕文本顶部的局部斜体仿射变换。
 #[cfg(test)]
 pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
-    italic_transform_with_shear(pivot_y, DEFAULT_RICH_TEXT_VISUAL.metrics.italic_shear)
+    italic_transform_with_shear(pivot_y, RICH_TEXT_VISUAL.metrics.italic_shear)
 }
 
 // 使用 UIX 声明的倾斜比例返回局部斜体仿射变换。
@@ -107,7 +107,7 @@ fn italic_transform_with_shear(pivot_y: f32, shear: f32) -> Transform {
 mod tests;
 
 // 估算布局（不依赖 FontService）。
-// 兼容内部测试与无视觉调用方，使用 Rust 回退视觉表。
+// 兼容内部测试与无视觉调用方，复用 UIX 唯一视觉表。
 pub(crate) fn layout_rich_text_with_images(
     segments: &[RichTextSegment],
     max_width: f32,
@@ -121,7 +121,7 @@ pub(crate) fn layout_rich_text_with_images(
         default_font_size,
         palette,
         image_states,
-        DEFAULT_RICH_TEXT_VISUAL.metrics,
+        RICH_TEXT_VISUAL.metrics,
     )
 }
 
@@ -529,7 +529,7 @@ fn layout_text_content_line(
 
 // 真实字体度量布局（用于 render 阶段）。
 
-// 兼容内部测试与无视觉调用方，使用 Rust 回退视觉表。
+// 兼容内部测试与无视觉调用方，复用 UIX 唯一视觉表。
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn layout_rich_text_real_with_images(
@@ -549,7 +549,7 @@ pub(crate) fn layout_rich_text_real_with_images(
         font_service,
         font,
         image_states,
-        DEFAULT_RICH_TEXT_VISUAL.metrics,
+        RICH_TEXT_VISUAL.metrics,
     )
 }
 

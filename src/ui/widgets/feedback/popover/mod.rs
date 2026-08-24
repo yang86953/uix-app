@@ -471,9 +471,7 @@ widget! {
 }
 
 // 把内容/交互状态与 UIX 静态视觉融合为单一 Popover 根节点。
-fn build_popover_view(mut kernel: Popover, declared_visual: PopoverVisual) -> ViewNode {
-    let visual = UIX_POPOVER_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_popover_view(mut kernel: Popover, visual: &'static PopoverVisual) -> ViewNode {
     if !kernel.authored.contains(PopoverAuthored::PLACEMENT) {
         kernel.placement = visual.defaults.placement;
     }

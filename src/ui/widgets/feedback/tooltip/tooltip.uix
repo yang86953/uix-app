@@ -1,2 +1,35 @@
-// Tooltip 的默认尺寸/方向/箭头、气泡几何、排版、进入退出时序、浮层层级与主题角色由 UIX 声明；Rust 内核负责内容、触发、输入、计时器、动画状态、表面约束和绘制执行。
-<KernelView value={build_tooltip_view(kernel, tooltip_visual(tooltip_defaults_visual(80, 28, tooltip_placement_top(), true), tooltip_bubble_visual(12, 16, 26, 6, 2, 4, 4, 1, 0.5, 2, 5), tooltip_motion_visual(0.15, 0.1), 1100, tooltip_palette_visual(tooltip_black(), tooltip_white(), 230)))} />
+<Visual
+  name="TOOLTIP_DEFAULTS_VISUAL"
+  type="TooltipDefaultsVisual"
+  width={80.0}
+  height={28.0}
+  placement={tooltip_placement_top()}
+  arrow={true}
+/>
+
+<Visual
+  name="TOOLTIP_MOTION_VISUAL"
+  type="TooltipMotionVisual"
+  enterDuration={0.15}
+  exitDuration={0.1}
+/>
+
+<Visual
+  name="TOOLTIP_PALETTE_VISUAL"
+  type="TooltipPaletteVisual"
+  background={tooltip_black()}
+  text={tooltip_white()}
+  backgroundAlpha={230}
+/>
+
+<Visual
+  name="TOOLTIP_VISUAL"
+  type="TooltipVisual"
+  defaults={TOOLTIP_DEFAULTS_VISUAL}
+  bubble={TOOLTIP_BUBBLE_VISUAL}
+  motion={TOOLTIP_MOTION_VISUAL}
+  overlayZ={1100}
+  palette={TOOLTIP_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_tooltip_view(kernel, TOOLTIP_VISUAL_REF)} />

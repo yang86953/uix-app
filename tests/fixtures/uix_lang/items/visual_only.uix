@@ -1,0 +1,5 @@
+<Visual
+  name="ONLY_VISUAL"
+  type="OnlyVisual"
+  value={1.0}
+/>
