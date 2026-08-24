@@ -855,8 +855,8 @@ fn fitted_text(
     } else {
         return None;
     };
-    // 复用 UI 绘制上下文拥有的保守单行省略算法。
-    let visible = ctx.elide_single_line(&visible, font_size, max_width)?;
+    // 复用已规范化窄入口，避免对同一标题或操作文案再次替换并分配。
+    let visible = ctx.elide_normalized_single_line(&visible, font_size, max_width)?;
     Some((visible, font_size))
 }
 
