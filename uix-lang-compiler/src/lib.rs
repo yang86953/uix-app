@@ -718,17 +718,53 @@ pub(crate) fn compile_lowered(
     analyzed: AnalyzedUnit,
     plan: RustUiPlan,
 ) -> Result<CompileOutput, CompilerDiagnostic> {
-    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
-    let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir)
-        .map_err(|message| emit_diagnostic(&analyzed.source_graph, message))?;
+    let artifact = compile_cached_artifact(&analyzed, &plan)?;
     Ok(CompileOutput {
-        tokens: emitted.tokens,
+        tokens: artifact.tokens,
         tracked_files: analyzed.tracked_files,
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
+        source_map: artifact.source_map,
+        compilation_key: artifact.compilation_key,
+    })
+}
+
+// 保存会话缓存真正需要复用的 Emit 产物，不重复持有 analysis 中的源码图与 IR。
+#[derive(Debug)]
+pub(crate) struct CompiledArtifact {
+    tokens: TokenStream,
+    source_map: SourceMap,
+    compilation_key: CompilationKey,
+}
+
+// 让长寿命 CompilerSession 从共享 analysis/lowering 生成最小 Emit 缓存。
+pub(crate) fn compile_cached_artifact(
+    analyzed: &AnalyzedUnit,
+    plan: &RustUiPlan,
+) -> Result<CompiledArtifact, CompilerDiagnostic> {
+    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
+    let emitted = RustEmitter::emit(plan, &analyzed.source_graph, &analyzed.ir)
+        .map_err(|message| emit_diagnostic(&analyzed.source_graph, message))?;
+    Ok(CompiledArtifact {
+        tokens: emitted.tokens,
         source_map: emitted.source_map,
         compilation_key,
     })
+}
+
+// 按公开拥有型契约物化一次返回值；缓存本身不保存重复 SourceGraph/TypedUiIr。
+pub(crate) fn materialize_compile_output(
+    analyzed: &AnalyzedUnit,
+    artifact: &CompiledArtifact,
+) -> CompileOutput {
+    CompileOutput {
+        tokens: artifact.tokens.clone(),
+        tracked_files: analyzed.tracked_files.clone(),
+        source_graph: analyzed.source_graph.clone(),
+        ir: analyzed.ir.clone(),
+        source_map: artifact.source_map.clone(),
+        compilation_key: artifact.compilation_key.clone(),
+    }
 }
 
 // 检查阶段执行完整 lowering Gate，但不进入 Rust Emitter。
@@ -744,6 +780,17 @@ pub(crate) fn check_lowered(analyzed: AnalyzedUnit) -> CheckOutput {
         tracked_files: analyzed.tracked_files,
         source_graph: analyzed.source_graph,
         ir: analyzed.ir,
+        compilation_key,
+    }
+}
+
+// 只缓存检查 readiness；每次按公开拥有型契约从共享 analysis 物化返回值。
+pub(crate) fn materialize_check_output(analyzed: &AnalyzedUnit) -> CheckOutput {
+    let compilation_key = CompilationKey::new(&analyzed.source_graph, analyzed.ir.target());
+    CheckOutput {
+        tracked_files: analyzed.tracked_files.clone(),
+        source_graph: analyzed.source_graph.clone(),
+        ir: analyzed.ir.clone(),
         compilation_key,
     }
 }
@@ -885,7 +932,7 @@ struct EmittedRust {
 
 impl RustEmitter {
     fn emit(
-        plan: RustUiPlan,
+        plan: &RustUiPlan,
         source_graph: &source_graph::SourceGraph,
         ir: &TypedUiIr,
     ) -> Result<EmittedRust, String> {
