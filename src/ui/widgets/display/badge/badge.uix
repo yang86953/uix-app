@@ -1,0 +1,2 @@
+// Badge 的真实子树由 Rust 生命周期端口交接；UIX 只声明零包装公开根。
+<KernelView value={build_badge_view(kernel)} />

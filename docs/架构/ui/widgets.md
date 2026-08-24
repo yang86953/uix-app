@@ -45,6 +45,7 @@
 - `Tag`：`src/ui/widgets/display/tag/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留关闭、勾选、颜色解析、几何和绘制；生成结果仍是原 `Tag` 单叶节点，不增加包装或子节点。
 - `ProgressBar`：`src/ui/widgets/feedback/progress/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留 fraction 归一化、动画、几何和绘制；生成结果仍是原 `ProgressBar` 单叶节点，不增加包装或子节点。
 - `Spin`：`src/ui/widgets/feedback/spin/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收可选遮罩子树，Rust 内核保留延迟、动画、布局、几何和绘制；生成结果仍是原 `Spin` 根节点，不增加包装或复制子节点。
+- `Badge`：`src/ui/widgets/display/badge/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留唯一真实子树交接、布局收敛、装饰几何和绘制；生成结果仍是原 `Badge` 叶根，子树由既有生命周期端口物化，不增加包装节点。
 
 ## 组件：复合组件
 

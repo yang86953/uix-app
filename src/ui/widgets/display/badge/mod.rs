@@ -14,6 +14,7 @@ use crate::draw::geometry::spatial::PhysicalUnit;
 // 引入组合装饰器所需的子节点后绘制阶段。
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入从组件树测量真实子节点的 System 私有边界。
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
@@ -467,6 +468,19 @@ impl Default for Badge {
     }
 }
 
+// 把徽章组合状态、唯一子树交接槽与绘制内核融合为 UIX 声明的单一叶根。
+fn build_badge_view(kernel: Badge) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Badge {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根；真实子树仍由 Badge 生命周期端口一次性交给组件树。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/badge/badge.uix")
+    }
+}
+
 impl Badge {
     const MARKER_DIAMETER: f32 = 10.0;
     const MARKER_TEXT_GAP: f32 = 8.0;
@@ -829,5 +843,5 @@ impl Badge {
 #[cfg(test)]
 // 测试子模块可以验证私有运行时缓存而不扩大公开 API。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/display/badge/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/badge/tests.rs"]
 mod tests;
