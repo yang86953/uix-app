@@ -2,6 +2,67 @@
 use super::*;
 // 引入运行时布局 trait 以调用组件入口。
 use crate::ui::WidgetLayout;
+// 比较构建前后的视觉引用是否保持 UIX 生成单源。
+use std::ptr;
+
+// 验证五个布局公开组件的构建前默认值与构建后节点共享 UIX 视觉。
+#[test]
+fn layout_family_uses_colocated_uix_visuals() {
+    // Layout 构造与 UIX 根构建都必须复用同一静态视觉。
+    let layout = Layout::new();
+    assert!(ptr::eq(layout.visual, LAYOUT_VISUAL_REF));
+    let layout_node = View::build(layout);
+    let layout = layout_node
+        .widget
+        .as_any()
+        .downcast_ref::<Layout>()
+        .expect("UIX 根应保留 Layout 内核");
+    assert!(ptr::eq(layout.visual, LAYOUT_VISUAL_REF));
+
+    // Header 默认高度与标题排版只能来自同目录 UIX 视觉。
+    let header = Header::default();
+    assert!(ptr::eq(header.visual, super::header::HEADER_VISUAL_REF));
+    let header_node = View::build(header);
+    let header = header_node
+        .widget
+        .as_any()
+        .downcast_ref::<Header>()
+        .expect("UIX 根应保留 Header 内核");
+    assert!(ptr::eq(header.visual, super::header::HEADER_VISUAL_REF));
+
+    // Sider 展开与折叠宽度只能来自同目录 UIX 视觉。
+    let sider = Sider::default();
+    assert!(ptr::eq(sider.visual, super::sider::SIDER_VISUAL_REF));
+    let sider_node = View::build(sider);
+    let sider = sider_node
+        .widget
+        .as_any()
+        .downcast_ref::<Sider>()
+        .expect("UIX 根应保留 Sider 内核");
+    assert!(ptr::eq(sider.visual, super::sider::SIDER_VISUAL_REF));
+
+    // Content 的弹性策略由同目录 UIX 视觉唯一拥有。
+    let content = Content::default();
+    assert!(ptr::eq(content.visual, super::content::CONTENT_VISUAL_REF));
+    let content_node = View::build(content);
+    let content = content_node
+        .widget
+        .as_any()
+        .downcast_ref::<Content>()
+        .expect("UIX 根应保留 Content 内核");
+    assert!(ptr::eq(content.visual, super::content::CONTENT_VISUAL_REF));
+
+    // Footer 默认高度与子树方向由同目录 UIX 视觉唯一拥有。
+    let footer = Footer::default();
+    assert!(ptr::eq(footer.visual, super::footer::FOOTER_VISUAL_REF));
+    let footer_node = View::build(footer);
+    let footer = footer_node
+        .widget
+        .as_any()
+        .downcast_ref::<Footer>()
+        .expect("UIX 根应保留 Footer 内核");
+    assert!(ptr::eq(footer.visual, super::footer::FOOTER_VISUAL_REF));
+}
 
 // 验证默认纵向布局分配固定区域与可增长内容。
 #[test]
