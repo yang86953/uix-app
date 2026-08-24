@@ -28,6 +28,8 @@ fn generates_avatar_contract() {
     assert!(snapshot.contains("size (avatar_size)"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 Avatar 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证 Avatar 文档默认形状与运行时默认尺寸边界。
