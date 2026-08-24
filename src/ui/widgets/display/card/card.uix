@@ -1,0 +1,2 @@
+// Card 可携带任意 View 子树；UIX 声明公开根，Rust 内核负责布局、交互与绘制。
+<KernelView value={build_card_view(kernel, children)} />

@@ -12,6 +12,7 @@ use crate::ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, LayoutChild,
     flex::compute_flex_layout,
 };
+use crate::ui::view::{View, ViewNode};
 use crate::widget;
 // 导入共享的子项物理内容尺寸计算，避免 Card 自行复制 Flex 边距语义。
 use crate::ui::layout::engine::content_size_from_children;
@@ -476,6 +477,18 @@ impl Default for Card {
     }
 }
 
+// 把卡片 Rust 内核与已有拥有型 View 子树融合为 UIX 声明的单一根节点。
+fn build_card_view(kernel: Card, children: Vec<ViewNode>) -> ViewNode {
+    ViewNode::new(kernel, children)
+}
+
+impl View for Card {
+    fn build(self) -> ViewNode {
+        // 独立卡片同样经由组件自己的 UIX 根声明构建。
+        self.build_view_with_children(Vec::new())
+    }
+}
+
 impl Card {
     const ACTION_HEIGHT: f32 = 40.0;
     // Card 动作区字号（13.0）；Message/Notification toast 家族同名常量为 12.0，属各自设计。
@@ -719,6 +732,14 @@ impl Card {
         self
     }
 
+    /// 经由同目录 UIX 根声明构建卡片及其拥有型 View 子树。
+    #[doc(hidden)]
+    pub fn build_view_with_children(self, children: Vec<ViewNode>) -> ViewNode {
+        // UIX 拥有公开根；Rust 内核继续独占布局、交互、几何与绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/card/card.uix")
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Card {
             title: self.title.clone(),
@@ -847,5 +868,5 @@ fn conservative_text_height(ctx: &mut PaintContext, text: &str, font_size: f32) 
 
 // 把 Card 组件级回归测试拆分到独立文件，保持实现文件低于规模上限。
 #[cfg(test)]
-#[path = "../../../../tests/unit/ui/widgets/display/card_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/card_tests.rs"]
 mod tests;
