@@ -20,7 +20,7 @@
 
 ## 全部组件的 uix-lang 迁移契约
 
-所有公开 widget 均须逐批改为 uix-lang 声明壳，不再保留基础控件例外。Rust 可以继续实现不直接替代公开组件的基础内核，例如平台窗口动作、overlay host、虚拟化、资源加载、文本整形、图表绘制与复杂布局求解；这些内核只拥有状态、算法、I/O、生命周期和平台交互，不得重新拥有公开组件的条件结构、排列、静态文案或插槽组合。
+所有公开 widget 均须逐批改为 uix-lang 声明，不再保留基础控件例外。UIX 必须拥有可声明的视觉结构与静态视觉配置，包括子树、排列、尺寸、间距、图标、展示文案和主题色角色；仅把 `kernel` 原样放进 `KernelView` 不算完成视觉迁移。Rust 可以继续实现不直接替代公开组件的基础内核，例如平台窗口动作、overlay host、虚拟化、资源加载、文本整形、图表绘制与复杂布局求解；这些内核只拥有状态、事件、算法、I/O、生命周期、平台交互，以及 UIX 当前无法表达的底层栅格化与几何执行。
 
 每个 widget 必须拥有独立目录，Rust 模块入口与 `.uix` 源文件放在同一目录；禁止恢复共享 `src/ui/widgets/uix/` 目录。大型组件可在自己的目录内继续拆分 Rust 子模块，但不得把另一 widget 的实现混入该目录。
 
@@ -31,27 +31,17 @@
 3. Rust 基础 View 需要进入声明树时，只能通过框架内部的 `KernelView value={...}`、单展示根 `KernelHost value={...}` 或拥有型节点列表 `KernelChildren value={...}` 窄桥接；桥接禁止事件与组件专有属性，单 View 桥接只允许统一 View 样式，列表桥接不接受任何展示属性，不能成为第二套公共组件 API。
 4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果，并用真实编译测试与最接近的行为测试验收。
 5. 条件隐藏的分支不得提前构造 Rust 基础 View；高频路径不得因语言迁移增加无条件分配、克隆或动态解析。
+6. 单 `KernelView` 组件必须由 UIX 显式向 Rust 内核注入静态视觉配置；只传 `kernel` 或 `kernel, children` 的透传壳属于未完成债务。`tests/test_widget_uix_colocation.py` 锁定当前债务清单，新迁移不得扩大清单，回填后必须删除对应项。
 
-已完成的首批组件：
+已完成视觉与逻辑分离的首批组件：
 
 - 标准 `WindowControl` 组合：`src/ui/widgets/window_controls/` 同目录保存 Rust 交互桥与 UIX 声明；UIX 拥有三个动作的图标、尺寸、状态色、条件结构和排列，`window_chrome` Rust Module 只保留窗口动作、无障碍语义与交互状态。
 - `ButtonGroup`：`src/ui/widgets/general/button_group/` 同目录保存 Rust 与 UIX；UIX 拥有容器结构、横向排列与零间距，Rust 只计算每个按钮的连体位置；`KernelChildren` 直接消费已有 `ViewNode` 列表，不引入克隆或额外容器。
 - `BackTop`：`src/ui/widgets/containers/back_top/` 同目录保存 Rust 与 UIX；UIX 拥有图标、固有尺寸、环形几何与主题色角色，Rust 只保留滚动阈值、状态回写、输入、焦点与绘制内核；声明配置融合进原叶节点，不新增 Icon 子节点或包装容器。
 - `ThemeToggle`：`src/ui/widgets/other/theme_toggle/` 同目录保存 Rust 与 UIX；UIX 拥有亮/暗双图标、固有尺寸、焦点几何与主题色角色，Rust 只选择当前状态、发布 change 事实并执行绘制；声明配置融合进原叶节点，不物化两个 Icon 子节点。
 - `Divider`：`src/ui/widgets/general/divider/` 同目录保存 Rust 与 UIX；UIX 拥有标签尺寸、线段几何、固有尺寸与主题色角色，Rust 只保留文字数据、方向、对齐、虚线状态与绘制内核；声明配置融合进原叶节点，不生成标签或线段子节点。
-- `Skeleton`：`src/ui/widgets/display/skeleton/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留占位几何、流光动画和绘制；生成结果仍是原 `Skeleton` 单叶节点，不增加包装、子节点或持久配置内存。
-- `Empty`：`src/ui/widgets/display/empty/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、文本测量、图标选择和绘制；生成结果仍是原 `Empty` 单叶节点，不增加包装或子节点。
-- `ResultView`：`src/ui/widgets/display/result/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、动作区交互、几何和绘制；生成结果仍是原 `ResultView` 单叶节点，不增加包装或子节点。
-- `Tag`：`src/ui/widgets/display/tag/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留关闭、勾选、颜色解析、几何和绘制；生成结果仍是原 `Tag` 单叶节点，不增加包装或子节点。
-- `ProgressBar`：`src/ui/widgets/feedback/progress/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留 fraction 归一化、动画、几何和绘制；生成结果仍是原 `ProgressBar` 单叶节点，不增加包装或子节点。
-- `Spin`：`src/ui/widgets/feedback/spin/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收可选遮罩子树，Rust 内核保留延迟、动画、布局、几何和绘制；生成结果仍是原 `Spin` 根节点，不增加包装或复制子节点。
-- `Badge`：`src/ui/widgets/display/badge/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留唯一真实子树交接、布局收敛、装饰几何和绘制；生成结果仍是原 `Badge` 叶根，子树由既有生命周期端口物化，不增加包装节点。
-- `Avatar`：`src/ui/widgets/display/avatar/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留图片缓存、失效、后备文字缩放和绘制；生成结果仍是原 `Avatar` 单叶节点，不增加包装或子节点。
-- `QRCode`：`src/ui/widgets/display/qrcode/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留纠错编码、矩阵缓存、quiet zone 与无损模块绘制；生成结果仍是原 `QRCode` 单叶节点，不增加包装或子节点。
-- `Watermark`：`src/ui/widgets/display/watermark/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留主题解析、平铺、旋转排版与绘制；生成结果仍是原 `Watermark` 单叶节点，不增加包装或子节点。
-- `Card`：`src/ui/widgets/display/card/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收有序 View 子树，Rust 内核保留布局、操作交互、几何和绘制；生成结果仍是原 `Card` 根节点，不增加包装或复制子节点。
-- `Carousel`：`src/ui/widgets/display/carousel/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收有序幻灯片子树，Rust 内核保留计时器、选择、淡入淡出、自定义箭头和绘制；生成结果仍是原 `Carousel` 根节点，不增加包装或复制子节点。
-- `Descriptions`：`src/ui/widgets/display/descriptions/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留类型化数据、响应式网格、换行测量和绘制；生成结果仍是原 `Descriptions` 单叶节点，不增加包装或子节点。
+
+已完成同目录与公开根迁移、仍待回填视觉声明的组件：`Skeleton`、`Empty`、`ResultView`、`Tag`、`ProgressBar`、`Spin`、`Badge`、`Avatar`、`QRCode`、`Watermark`、`Card`、`Carousel`、`Descriptions`、`Image` 与 `ImageGroup`。这些条目不能作为最终完成状态；对应债务清单由结构测试锁定并逐项缩减。
 
 ## 组件：复合组件
 
