@@ -1,20 +1,72 @@
 //! 日期输入组件共用的月视图面板。
 
 use crate::core::{Point, Rect};
+use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, DisabledDate, days_in_month, first_weekday};
 
+// 旧 DateRangePicker 在下一阶段迁移前继续复用原始月历自然尺寸。
 pub(crate) const CALENDAR_PANEL_HEIGHT: f32 = 250.0;
-// 允许日期选择器的表面解析器复用月历自然最小宽度。
 pub(crate) const CALENDAR_PANEL_MIN_WIDTH: f32 = 160.0;
-// 日期面板头部高度（32.0）；同名常量在 calendar/collapse/selectable_list 各为 40/36/48。
-const HEADER_HEIGHT: f32 = 32.0;
-// 月视图星期栏高度（24.0）；display/calendar 组件用推导值 16，两组件独立布局。
-const WEEKDAY_HEIGHT: f32 = 24.0;
-const CELL_HEIGHT: f32 = 30.0;
-// 月视图面板水平内边距（8.0）；toast 家族（Message/Notification）同名常量为 24.0，语境不同。
-const HORIZONTAL_INSET: f32 = 8.0;
-const NAVIGATION_WIDTH: f32 = 32.0;
+
+/// 月历绘制与命中共享的静态视觉指标；具体值由组件 UIX 提供。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CalendarPanelVisual {
+    pub(crate) height: f32,
+    pub(crate) min_width: f32,
+    pub(crate) header_height: f32,
+    pub(crate) weekday_height: f32,
+    pub(crate) cell_height: f32,
+    pub(crate) horizontal_inset: f32,
+    pub(crate) navigation_width: f32,
+    pub(crate) title_font_size: f32,
+    pub(crate) navigation_icon_size: f32,
+    pub(crate) weekday_font_size: f32,
+    pub(crate) day_font_size: f32,
+    pub(crate) border_width: f32,
+}
+
+/// 月历翻月按钮使用的图标名称；具体值由组件 UIX 提供。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CalendarPanelIconsVisual {
+    pub(crate) previous: &'static str,
+    pub(crate) next: &'static str,
+}
+
+/// 每帧主题解析后的月历绘制颜色与圆角。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ResolvedCalendarPanelVisual {
+    pub(crate) primary: Color,
+    pub(crate) primary_background: Color,
+    pub(crate) border: Color,
+    pub(crate) text: Color,
+    pub(crate) text_secondary: Color,
+    pub(crate) text_tertiary: Color,
+    pub(crate) popup_background: Color,
+    pub(crate) hover_fill: Color,
+    pub(crate) radius: f32,
+}
+
+// 未迁移的 DateRangePicker 暂用原有月历视觉；DatePicker 不读取此表。
+const LEGACY_CALENDAR_VISUAL: CalendarPanelVisual = CalendarPanelVisual {
+    height: CALENDAR_PANEL_HEIGHT,
+    min_width: CALENDAR_PANEL_MIN_WIDTH,
+    header_height: 32.0,
+    weekday_height: 24.0,
+    cell_height: 30.0,
+    horizontal_inset: 8.0,
+    navigation_width: 32.0,
+    title_font_size: 14.0,
+    navigation_icon_size: 12.0,
+    weekday_font_size: 10.0,
+    day_font_size: 12.0,
+    border_width: 1.0,
+};
+
+const LEGACY_CALENDAR_ICONS: CalendarPanelIconsVisual = CalendarPanelIconsVisual {
+    previous: "chevron-left",
+    next: "chevron-right",
+};
 
 // 描述任意实际日期面板上的缩放布局指标。
 #[derive(Debug, Clone, Copy)]
@@ -38,27 +90,27 @@ struct CalendarPanelGeometry {
 // 为任意实际面板计算绘制与命中共享的布局指标。
 impl CalendarPanelGeometry {
     // 从最终面板矩形构造布局指标。
-    fn new(popup: Rect) -> Self {
+    fn new(popup: Rect, visual: CalendarPanelVisual) -> Self {
         // 收敛负宽度并保留最终横坐标。
         let popup = Rect::new(popup.x, popup.y, popup.w.max(0.0), popup.h.max(0.0));
         // 计算相对自然最小宽度的横向比例。
-        let x_scale = (popup.w / CALENDAR_PANEL_MIN_WIDTH).clamp(0.0, 1.0);
+        let x_scale = (popup.w / visual.min_width).clamp(0.0, 1.0);
         // 计算相对自然高度的纵向比例。
-        let y_scale = (popup.h / CALENDAR_PANEL_HEIGHT).clamp(0.0, 1.0);
+        let y_scale = (popup.h / visual.height).clamp(0.0, 1.0);
         // 返回所有消费者共享的缩放指标。
         Self {
             // 保存最终面板矩形。
             popup,
             // 按实际高度缩放标题栏。
-            header_height: HEADER_HEIGHT * y_scale,
+            header_height: visual.header_height * y_scale,
             // 按实际高度缩放星期栏。
-            weekday_height: WEEKDAY_HEIGHT * y_scale,
+            weekday_height: visual.weekday_height * y_scale,
             // 按实际高度缩放日期单元格。
-            cell_height: CELL_HEIGHT * y_scale,
+            cell_height: visual.cell_height * y_scale,
             // 按实际宽度缩放水平内边距。
-            horizontal_inset: HORIZONTAL_INSET * x_scale,
+            horizontal_inset: visual.horizontal_inset * x_scale,
             // 按实际宽度缩放月份导航区域。
-            navigation_width: NAVIGATION_WIDTH * x_scale,
+            navigation_width: visual.navigation_width * x_scale,
             // 字体与图标使用较小轴比例避免裁切。
             font_scale: x_scale.min(y_scale),
         }
@@ -110,8 +162,17 @@ pub(crate) fn hit_month_navigation_in_rect(
     // 接收与面板同一坐标系的指针位置。
     position: Point,
 ) -> Option<MonthNavigation> {
+    hit_month_navigation_in_rect_with_visual(popup, position, LEGACY_CALENDAR_VISUAL)
+}
+
+// 使用调用方 UIX 提供的月历指标命中月份导航按钮。
+pub(crate) fn hit_month_navigation_in_rect_with_visual(
+    popup: Rect,
+    position: Point,
+    visual: CalendarPanelVisual,
+) -> Option<MonthNavigation> {
     // 构造绘制与命中共享的缩放布局指标。
-    let geometry = CalendarPanelGeometry::new(popup);
+    let geometry = CalendarPanelGeometry::new(popup, visual);
     // 将指针转换到面板内部坐标。
     let relative = Point::new(position.x - popup.x, position.y - popup.y);
     // 面板外或标题栏外不命中月份导航。
@@ -148,8 +209,19 @@ pub(crate) fn hit_calendar_date_in_rect(
     // 接收当前视图月份。
     month: usize,
 ) -> Option<Date> {
+    hit_calendar_date_in_rect_with_visual(popup, position, year, month, LEGACY_CALENDAR_VISUAL)
+}
+
+// 使用调用方 UIX 提供的月历指标命中日期单元格。
+pub(crate) fn hit_calendar_date_in_rect_with_visual(
+    popup: Rect,
+    position: Point,
+    year: i32,
+    month: usize,
+    visual: CalendarPanelVisual,
+) -> Option<Date> {
     // 构造绘制与命中共享的缩放布局指标。
-    let geometry = CalendarPanelGeometry::new(popup);
+    let geometry = CalendarPanelGeometry::new(popup, visual);
     // 缩为零的网格不可参与命中。
     if geometry.cell_height <= 0.0 {
         // 返回未命中。
@@ -203,34 +275,54 @@ pub(crate) fn draw_calendar_panel_in_rect(
     // 接收当前月份和日期状态。
     state: CalendarPanelState<'_>,
 ) {
+    let resolved = ResolvedCalendarPanelVisual {
+        primary: ctx.tokens().color_primary(),
+        primary_background: ctx.tokens().color_primary_bg(),
+        border: ctx.tokens().color_border(),
+        text: ctx.tokens().color_text(),
+        text_secondary: ctx.tokens().color_text_secondary(),
+        text_tertiary: ctx.tokens().color_text_tertiary(),
+        popup_background: ctx.tokens().color_bg_elevated(),
+        hover_fill: ctx.tokens().color_fill_tertiary(),
+        radius: ctx.tokens().border_radius_sm(),
+    };
+    draw_calendar_panel_in_rect_with_visual(
+        popup,
+        ctx,
+        state,
+        LEGACY_CALENDAR_VISUAL,
+        LEGACY_CALENDAR_ICONS,
+        resolved,
+    );
+}
+
+// 使用调用方 UIX 提供的静态视觉和同帧主题结果绘制月历面板。
+pub(crate) fn draw_calendar_panel_in_rect_with_visual(
+    popup: Rect,
+    ctx: &mut PaintContext,
+    state: CalendarPanelState<'_>,
+    visual: CalendarPanelVisual,
+    icons: CalendarPanelIconsVisual,
+    resolved: ResolvedCalendarPanelVisual,
+) {
     // 构造绘制与命中共享的缩放布局指标。
-    let geometry = CalendarPanelGeometry::new(popup);
+    let geometry = CalendarPanelGeometry::new(popup, visual);
     // 空面板不产生绘制命令。
     if popup.w <= 0.0 || popup.h <= 0.0 {
         // 提前结束空面板绘制。
         return;
     }
-    let primary = ctx.tokens().color_primary();
-    let primary_bg = ctx.tokens().color_primary_bg();
-    let border_color = ctx.tokens().color_border();
-    let text_color = ctx.tokens().color_text();
-    let text_secondary = ctx.tokens().color_text_secondary();
-    let text_tertiary = ctx.tokens().color_text_tertiary();
-    let bg_elevated = ctx.tokens().color_bg_elevated();
-    let fill_tertiary = ctx.tokens().color_fill_tertiary();
-    let radius = Some(crate::draw::Radius::uniform(
-        ctx.tokens().border_radius_sm(),
-    ));
+    let radius = Some(crate::draw::Radius::uniform(resolved.radius));
 
     ctx.push_clip(popup);
-    ctx.fill_rect(popup, bg_elevated, radius);
-    ctx.stroke_rect(popup, border_color, 1.0, radius);
+    ctx.fill_rect(popup, resolved.popup_background, radius);
+    ctx.stroke_rect(popup, resolved.border, visual.border_width, radius);
 
     let title = format!("{}年{:02}月", state.year, state.month);
     // 构造缩放后的标题栏矩形。
     let header_rect = Rect::new(popup.x, popup.y, popup.w, geometry.header_height);
     // 计算缩放后的标题字号。
-    let title_font_size = 14.0 * geometry.font_scale;
+    let title_font_size = visual.title_font_size * geometry.font_scale;
     // 计算标题基线。
     let title_y = ctx.visual_center_y(header_rect, title_font_size);
     // 测量缩放后的标题宽度。
@@ -238,32 +330,32 @@ pub(crate) fn draw_calendar_panel_in_rect(
     ctx.draw_text(
         &title,
         Point::new(popup.x + (popup.w - title_width) * 0.5, title_y),
-        text_color,
+        resolved.text,
         title_font_size,
     );
     crate::ui::widgets::icon::Icon::paint_in_frame(
         ctx,
-        "chevron-left",
+        icons.previous,
         Rect::new(
             popup.x,
             popup.y,
             geometry.navigation_width,
             geometry.header_height,
         ),
-        text_secondary,
-        12.0 * geometry.font_scale,
+        resolved.text_secondary,
+        visual.navigation_icon_size * geometry.font_scale,
     );
     crate::ui::widgets::icon::Icon::paint_in_frame(
         ctx,
-        "chevron-right",
+        icons.next,
         Rect::new(
             popup.x + popup.w - geometry.navigation_width,
             popup.y,
             geometry.navigation_width,
             geometry.header_height,
         ),
-        text_secondary,
-        12.0 * geometry.font_scale,
+        resolved.text_secondary,
+        visual.navigation_icon_size * geometry.font_scale,
     );
 
     // 读取共享指标计算的日期单元格宽度。
@@ -276,7 +368,7 @@ pub(crate) fn draw_calendar_panel_in_rect(
         geometry.weekday_height,
     );
     // 计算缩放后的星期字号。
-    let weekday_font_size = 10.0 * geometry.font_scale;
+    let weekday_font_size = visual.weekday_font_size * geometry.font_scale;
     // 计算星期文本基线。
     let weekday_text_y = ctx.visual_center_y(weekday_row, weekday_font_size);
     for (index, weekday) in crate::ui::widget_runtime::locale::use_locale()
@@ -291,7 +383,7 @@ pub(crate) fn draw_calendar_panel_in_rect(
         ctx.draw_text(
             weekday,
             Point::new(x + (cell_width - text_width) * 0.5, weekday_text_y),
-            text_tertiary,
+            resolved.text_tertiary,
             weekday_font_size,
         );
     }
@@ -317,21 +409,21 @@ pub(crate) fn draw_calendar_panel_in_rect(
         let is_disabled = state.is_disabled(date);
 
         if is_active || is_in_range {
-            ctx.fill_rect(cell_rect, primary_bg, None);
+            ctx.fill_rect(cell_rect, resolved.primary_background, None);
         } else if is_hovered {
-            ctx.fill_rect(cell_rect, fill_tertiary, None);
+            ctx.fill_rect(cell_rect, resolved.hover_fill, None);
         }
 
         let color = if is_disabled {
-            text_tertiary
+            resolved.text_tertiary
         } else if is_active {
-            primary
+            resolved.primary
         } else {
-            text_color
+            resolved.text
         };
         let day_text = day.to_string();
         // 计算缩放后的日期字号。
-        let day_font_size = 12.0 * geometry.font_scale;
+        let day_font_size = visual.day_font_size * geometry.font_scale;
         // 测量缩放后的日期文本宽度。
         let text_width = ctx.measure_text(&day_text, day_font_size).w;
         // 计算日期文本基线。

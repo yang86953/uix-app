@@ -24,7 +24,12 @@ impl DatePicker {
         // 归一化并缓存当前逻辑表面。
         let surface = normalize_date_picker_rect(surface);
         // 使用共享解析器生成绝对面板矩形。
-        let absolute = resolve_date_picker_popup_rect(frame, surface);
+        let absolute = resolve_date_picker_popup_rect(
+            frame,
+            surface,
+            self.visual.calendar,
+            self.visual.layout.popup_gap,
+        );
         // 转换为组件事件路径可复用的相对矩形。
         let local = local_date_picker_popup_rect(frame, absolute);
         // 缓存最终相对面板矩形。
@@ -63,7 +68,13 @@ impl DatePicker {
             // 读取可复制的可选表面。
             .get()
             // 首次使用时构造有限表面。
-            .unwrap_or_else(|| date_picker_fallback_surface(frame))
+            .unwrap_or_else(|| {
+                date_picker_fallback_surface(
+                    frame,
+                    self.visual.calendar,
+                    self.visual.layout.popup_gap,
+                )
+            })
     }
 
     // 返回事件路径应使用的实际日期面板矩形。
@@ -77,9 +88,15 @@ impl DatePicker {
             return self.remember_popup_rect(anchor, surface);
         }
         // 首次正式登记前构造有限回退表面。
-        let surface = date_picker_fallback_surface(frame);
+        let surface =
+            date_picker_fallback_surface(frame, self.visual.calendar, self.visual.layout.popup_gap);
         // 解析回退绝对面板。
-        let absolute = resolve_date_picker_popup_rect(frame, surface);
+        let absolute = resolve_date_picker_popup_rect(
+            frame,
+            surface,
+            self.visual.calendar,
+            self.visual.layout.popup_gap,
+        );
         // 只返回本地几何并等待正式登记记录表面。
         local_date_picker_popup_rect(frame, absolute)
     }
