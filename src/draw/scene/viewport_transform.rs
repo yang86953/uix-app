@@ -11,45 +11,112 @@ use crate::draw::Transform;
 use crate::draw::scene::NodeId;
 use crate::draw::scene::ScenePaint;
 
-fn visual_path(scene: &impl ScenePaint, node_id: NodeId) -> Vec<NodeId> {
-    let mut path = Vec::new();
-    let mut current = Some(node_id);
-    while let Some(id) = current {
-        path.push(id);
-        if scene.node_is_overlay(id) {
-            break;
-        }
-        current = scene.parent(id);
+/// 沿视觉父链递归累计到当前节点的完整变换，不构造临时路径容器。
+fn accumulate_visual_transform(scene: &impl ScenePaint, id: NodeId) -> Transform {
+    // 浮层根已经携带提升前的最终根画布变换，不再继承普通父链。
+    if scene.node_is_overlay(id) {
+        return scene.node_overlay_transform(id);
     }
-    path.reverse();
-    path
+    let Some(parent) = scene.parent(id) else {
+        return scene.node_transform(id);
+    };
+    // 先完成祖先变换，再在父子边界应用父视口滚动，最后应用当前节点变换。
+    let mut transform = accumulate_visual_transform(scene, parent);
+    if let Some((sx, sy)) = scene.scroll_offset(parent) {
+        transform = transform.concat(Transform::translate(-sx, -sy));
+    }
+    transform.concat(scene.node_transform(id))
 }
 
-/// 返回视觉路径中当前节点应使用的根画布变换。
-fn visual_path_transform(scene: &impl ScenePaint, id: NodeId, index: usize) -> Transform {
-    if index == 0 && scene.node_is_overlay(id) {
-        // 浮层路径已在提升边界截断，首节点必须消费完整根变换。
-        scene.node_overlay_transform(id)
+/// 沿完整组件父链累计浮层提升前的变换，不在中间浮层节点处截断。
+fn accumulate_overlay_root_transform(scene: &impl ScenePaint, id: NodeId) -> Transform {
+    let Some(parent) = scene.parent(id) else {
+        return scene.node_transform(id);
+    };
+    let mut transform = accumulate_overlay_root_transform(scene, parent);
+    if let Some((sx, sy)) = scene.scroll_offset(parent) {
+        transform = transform.concat(Transform::translate(-sx, -sy));
+    }
+    transform.concat(scene.node_transform(id))
+}
+
+/// 单次父链递归期间累计的屏幕变换与祖先裁剪边界。
+#[derive(Clone, Copy)]
+struct VisiblePathState {
+    transform: Transform,
+    clip_bounds: Option<Rect>,
+    has_ancestor: bool,
+}
+
+impl VisiblePathState {
+    fn root() -> Self {
+        Self {
+            transform: Transform::identity(),
+            clip_bounds: None,
+            has_ancestor: false,
+        }
+    }
+
+    /// 合并一个已投影到屏幕坐标的裁剪矩形。
+    fn intersect_clip(&mut self, clip: Rect) -> Option<()> {
+        self.clip_bounds = Some(match self.clip_bounds {
+            Some(bounds) => bounds.intersect(&clip)?,
+            None => clip,
+        });
+        Some(())
+    }
+}
+
+/// 从视觉根递归回卷到目标节点，同时累计变换、可见性与裁剪。
+fn accumulate_visible_path(
+    scene: &impl ScenePaint,
+    id: NodeId,
+    target: NodeId,
+) -> Option<VisiblePathState> {
+    if !scene.node_visible(id) {
+        return None;
+    }
+    let is_overlay_root = scene.node_is_overlay(id);
+    let mut state = if is_overlay_root {
+        VisiblePathState::root()
+    } else if let Some(parent) = scene.parent(id) {
+        accumulate_visible_path(scene, parent, target)?
     } else {
-        scene.node_transform(id)
-    }
-}
+        VisiblePathState::root()
+    };
 
-// 按既有根到叶顺序累计一条已解析视觉路径的完整变换。
-fn transform_for_visual_path(scene: &impl ScenePaint, path: &[NodeId]) -> Transform {
-    // 保持原实现从单位矩阵开始的累计顺序。
-    let mut transform = Transform::identity();
-    for (index, id) in path.iter().copied().enumerate() {
-        // 节点变换继续先于其后代和滚动位移生效。
-        transform = transform.concat(visual_path_transform(scene, id, index));
-        if index + 1 < path.len()
-            && let Some((sx, sy)) = scene.scroll_offset(id)
-        {
-            // 祖先滚动仍在同一位置进入变换链。
-            transform = transform.concat(Transform::translate(-sx, -sy));
+    // 父级片段位于当前节点自身变换之前的父内容坐标系。
+    if state.has_ancestor
+        && let Some(regions) = scene.node_clip_regions(id)
+    {
+        let mut regions = regions.into_iter();
+        let mut region_bounds = regions.next()?;
+        for region in regions {
+            region_bounds = region_bounds.union(&region);
+        }
+        state.intersect_clip(state.transform.transform_rect(region_bounds))?;
+    }
+
+    // 视觉根浮层消费完整根变换，其余节点消费常规节点变换。
+    state.transform = state
+        .transform
+        .concat(if is_overlay_root && !state.has_ancestor {
+            scene.node_overlay_transform(id)
+        } else {
+            scene.node_transform(id)
+        });
+    state.has_ancestor = true;
+
+    if id != target {
+        let node_frame = scene.node_frame(id);
+        if let Some(clip) = scene.children_clip(id, node_frame) {
+            state.intersect_clip(state.transform.transform_rect(clip))?;
+        }
+        if let Some((sx, sy)) = scene.scroll_offset(id) {
+            state.transform = state.transform.concat(Transform::translate(-sx, -sy));
         }
     }
-    transform
+    Some(state)
 }
 
 /// Layout coordinates to viewport/screen coordinates for a node.
@@ -57,8 +124,7 @@ fn transform_for_visual_path(scene: &impl ScenePaint, path: &[NodeId]) -> Transf
 /// Each node transform applies before its descendants. A viewport's scroll
 /// translation applies between the viewport transform and the child transform.
 pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transform {
-    let path = visual_path(scene, node_id);
-    transform_for_visual_path(scene, &path)
+    accumulate_visual_transform(scene, node_id)
 }
 
 /// 计算被提升为根浮层的节点在原组件树中的完整视觉变换。
@@ -66,24 +132,7 @@ pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transf
 /// 浮层绘制会脱离普通父子遍历，因此必须在提升前补回全部祖先变换与滚动位移；
 /// 这里不能在当前浮层节点处截断，否则滚动容器中的下拉会回到内容原始坐标。
 pub(crate) fn overlay_root_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transform {
-    let mut path = Vec::new();
-    let mut current = Some(node_id);
-    while let Some(id) = current {
-        path.push(id);
-        current = scene.parent(id);
-    }
-    path.reverse();
-
-    let mut transform = Transform::identity();
-    for (index, id) in path.iter().copied().enumerate() {
-        transform = transform.concat(scene.node_transform(id));
-        if index + 1 < path.len()
-            && let Some((sx, sy)) = scene.scroll_offset(id)
-        {
-            transform = transform.concat(Transform::translate(-sx, -sy));
-        }
-    }
-    transform
+    accumulate_overlay_root_transform(scene, node_id)
 }
 
 /// Maps layout geometry owned by `node_id` into viewport/screen coordinates.
@@ -132,53 +181,16 @@ fn visible_viewport_rect_for(
     node_id: NodeId,
     source_rect: Rect,
 ) -> Option<Rect> {
-    if !scene.node_visible(node_id) {
-        return None;
-    }
-    // 可见矩形投影与祖先裁剪复用同一条稳定场景路径。
-    let path = visual_path(scene, node_id);
-    // 完整变换仍按原根到叶顺序累计，再投影源矩形。
-    let mut rect = transform_for_visual_path(scene, &path).transform_rect(source_rect);
+    // 单次父链递归同时生成完整变换和全部祖先裁剪，不创建 Vec<NodeId>。
+    let state = accumulate_visible_path(scene, node_id, node_id)?;
+    let rect = state.transform.transform_rect(source_rect);
     if rect.w <= 0.0 || rect.h <= 0.0 {
         return None;
     }
-
-    let mut transform = Transform::identity();
-    for (index, id) in path.iter().copied().enumerate() {
-        if !scene.node_visible(id) {
-            return None;
-        }
-        // 父级片段位于当前节点自身变换之前的父内容坐标系。
-        if index > 0 {
-            // 只在父布局显式声明不连续片段时收缩可见区域。
-            if let Some(regions) = scene.node_clip_regions(id) {
-                // 空片段集合表示当前节点子树完全不可见。
-                let mut regions = regions.into_iter();
-                // 读取首个片段作为保守联合边界初值。
-                let mut region_bounds = regions.next()?;
-                // 合并其余片段，仅用于可见性与脏区的保守矩形投影。
-                for region in regions {
-                    // 使用矩形联合保留全部实际片段。
-                    region_bounds = region_bounds.union(&region);
-                }
-                // 先用祖先与滚动变换投影片段，再同节点可见矩形求交。
-                rect = rect.intersect(&transform.transform_rect(region_bounds))?;
-            }
-        }
-        // 裁剪投影与节点绘制必须消费同一个浮层根变换，避免坐标域分叉。
-        transform = transform.concat(visual_path_transform(scene, id, index));
-        if index + 1 < path.len() {
-            let node_frame = scene.node_frame(id);
-            if let Some(clip) = scene.children_clip(id, node_frame) {
-                rect = rect.intersect(&transform.transform_rect(clip))?;
-            }
-            if let Some((sx, sy)) = scene.scroll_offset(id) {
-                transform = transform.concat(Transform::translate(-sx, -sy));
-            }
-        }
+    match state.clip_bounds {
+        Some(clip) => rect.intersect(&clip),
+        None => Some(rect),
     }
-
-    Some(rect)
 }
 
 /// 节点在 viewport/screen 空间的可见矩形（累计祖先 scroll 与 children_clip）。
