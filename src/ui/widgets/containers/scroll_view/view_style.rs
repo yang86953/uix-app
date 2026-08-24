@@ -46,6 +46,8 @@ impl ScrollView {
         self.scrollbar_v.show = next.scrollbar_v.show;
         // 同步横向滚动条可见配置。
         self.scrollbar_h.show = next.scrollbar_h.show;
+        // 保留 UIX 注入的唯一视口与滚动条视觉引用。
+        self.visual = next.visual;
         // 只有受控声明才覆盖 live 偏移。
         if let Some((scroll_x, scroll_y)) = controlled_offset {
             // 将声明水平偏移限制到当前内容范围。

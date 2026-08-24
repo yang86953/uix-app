@@ -1,0 +1,27 @@
+// ScrollView 的默认视口、弹性策略、方向和滚动条外观由 UIX 唯一拥有。
+<Visual
+  name="SCROLLBAR_VISUAL"
+  type="ScrollbarVisual"
+  thickness={6.0}
+  edgePadding={2.0}
+  thumbMinExtent={18.0}
+  cornerRadius={3.0}
+  trackColor={scrollbar_track_color()}
+  thumbColor={scrollbar_thumb_color()}
+  activeThumbColor={scrollbar_active_thumb_color()}
+/>
+
+<Visual
+  name="SCROLL_VIEW_VISUAL"
+  type="ScrollViewVisual"
+  defaultWidth={300.0}
+  defaultHeight={200.0}
+  defaultFlexGrow={0.0}
+  defaultFlexShrink={1.0}
+  defaultScrollbarVisible={true}
+  defaultDirection={scroll_view_default_direction()}
+  background={scroll_view_background()}
+  scrollbar={SCROLLBAR_VISUAL}
+/>
+
+<KernelView value={build_scroll_view_view(kernel, SCROLL_VIEW_VISUAL_REF)} />

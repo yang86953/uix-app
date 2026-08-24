@@ -1,11 +1,8 @@
 //! ScrollView widget: a scrollable viewport that clips and scrolls children.
 
 use crate::ui::widget_runtime::widget::WidgetCore;
-pub mod scrollbar;
 // 将声明式 View 样式适配与核心滚动状态拆分，保持组件文件规模边界。
 mod view_style;
-#[allow(unused_imports)]
-pub(crate) use scrollbar::*;
 
 use std::cell::Cell;
 
@@ -13,6 +10,8 @@ use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::ui::children::WidgetChildren;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::ColorValue;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
 use crate::widget;
@@ -21,10 +20,73 @@ use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::reactive::state::State;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, Widget, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, View, ViewNode, Widget,
+    WidgetId, WidgetTree,
 };
 
 pub use crate::platform::windowing::ScrollDirection;
+
+// 滚轮和键盘步长属于 Rust 输入机制，不进入 UIX 视觉事实。
+const WHEEL_VIEWPORT_FACTOR: f32 = 0.25;
+const KEYBOARD_LINE_FACTOR: f32 = 0.1;
+const KEYBOARD_MIN_LINE: f32 = 16.0;
+const KEYBOARD_PAGE_FACTOR: f32 = 0.9;
+// 合成差量与滚动条收敛阈值属于 Rust 数值稳定机制。
+const SCROLL_DELTA_EPSILON: f32 = 0.01;
+const SCROLLBAR_OVERFLOW_EPSILON: f32 = 0.5;
+
+// 保存 UIX 声明的滚动条厚度、轨道几何与主题角色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ScrollbarVisual {
+    thickness: f32,
+    edge_padding: f32,
+    thumb_min_extent: f32,
+    corner_radius: f32,
+    track_color: ColorValue,
+    thumb_color: ColorValue,
+    active_thumb_color: ColorValue,
+}
+
+// 保存 UIX 声明的视口默认尺寸、弹性策略、方向与滚动条视觉。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ScrollViewVisual {
+    default_width: f32,
+    default_height: f32,
+    default_flex_grow: f32,
+    default_flex_shrink: f32,
+    default_scrollbar_visible: bool,
+    default_direction: ScrollDirection,
+    background: ColorValue,
+    scrollbar: ScrollbarVisual,
+}
+
+// 同目录 UIX 生成唯一视口及滚动条视觉值与静态借用。
+crate::uix_items!("src/ui/widgets/containers/scroll_view/scroll_view.uix");
+
+// 向 UIX 提供零分配的默认方向和主题语义角色。
+const fn scroll_view_default_direction() -> ScrollDirection {
+    ScrollDirection::Vertical
+}
+
+const fn scroll_view_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+const fn scrollbar_track_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+const fn scrollbar_thumb_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillSecondary)
+}
+
+const fn scrollbar_active_thumb_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Fill)
+}
+
+pub mod scrollbar;
+#[allow(unused_imports)]
+pub(crate) use scrollbar::*;
 
 widget! {
     /// A scrollable viewport that clips its children.
@@ -44,6 +106,9 @@ widget! {
         pub(crate) scroll_delta_strip: Cell<(f32, f32)>,
         scrollbar_v: ScrollBar,
         scrollbar_h: ScrollBar,
+        #[snapshot(skip)]
+        /// UIX 声明的视口、滚动条几何及主题角色。
+        pub(crate) visual: &'static ScrollViewVisual,
         pub(crate) last_frame: Cell<Option<Rect>>,
     }
 
@@ -78,14 +143,14 @@ widget! {
                 if self.direction.can_scroll_y() && delta.y != 0.0 {
                     let view_h = view
                         .map(|f| f.h)
-                        .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                    dy = delta.y * view_h * 0.25;
+                        .unwrap_or(self.fixed_height.unwrap_or(self.visual.default_height));
+                    dy = delta.y * view_h * WHEEL_VIEWPORT_FACTOR;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
                     let view_w = view
                         .map(|f| f.w)
-                        .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                    dx = delta.x * view_w * 0.25;
+                        .unwrap_or(self.fixed_width.unwrap_or(self.visual.default_width));
+                    dx = delta.x * view_w * WHEEL_VIEWPORT_FACTOR;
                 }
 
                 if self.scroll_by(dx, dy) {
@@ -110,7 +175,12 @@ widget! {
                     && self.max_scroll_y() > 0.0
                     && self
                         .scrollbar_v
-                        .hit_test_thumb(frame, *pos, self.effective_scroll_y(), self.max_scroll_y())
+                        .hit_test_thumb(
+                            frame,
+                            *pos,
+                            self.effective_scroll_y(),
+                            self.max_scroll_y(),
+                        )
                 {
                     self.scrollbar_v
                         .begin_drag(frame, *pos, self.effective_scroll_y(), self.max_scroll_y());
@@ -120,7 +190,12 @@ widget! {
                     && self.max_scroll_x() > 0.0
                     && self
                         .scrollbar_h
-                        .hit_test_thumb(frame, *pos, self.effective_scroll_x(), self.max_scroll_x())
+                        .hit_test_thumb(
+                            frame,
+                            *pos,
+                            self.effective_scroll_x(),
+                            self.max_scroll_x(),
+                        )
                 {
                     self.scrollbar_h
                         .begin_drag(frame, *pos, self.effective_scroll_x(), self.max_scroll_x());
@@ -173,12 +248,22 @@ widget! {
                         if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
                             self.scrollbar_v.hover = self
                                 .scrollbar_v
-                                .hit_test_thumb(frame, *pos, self.effective_scroll_y(), self.max_scroll_y());
+                                .hit_test_thumb(
+                                    frame,
+                                    *pos,
+                                    self.effective_scroll_y(),
+                                    self.max_scroll_y(),
+                                );
                         }
                         if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
                             self.scrollbar_h.hover = self
                                 .scrollbar_h
-                                .hit_test_thumb(frame, *pos, self.effective_scroll_x(), self.max_scroll_x());
+                                .hit_test_thumb(
+                                    frame,
+                                    *pos,
+                                    self.effective_scroll_x(),
+                                    self.max_scroll_x(),
+                                );
                         }
                         if old_hover_v != self.scrollbar_v.hover
                             || old_hover_h != self.scrollbar_h.hover
@@ -211,13 +296,13 @@ widget! {
                 let view = self.last_frame.get();
                 let view_w = view
                     .map(|f| f.w)
-                    .unwrap_or(self.fixed_width.unwrap_or(300.0));
+                    .unwrap_or(self.fixed_width.unwrap_or(self.visual.default_width));
                 let view_h = view
                     .map(|f| f.h)
-                    .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                let line_x = (view_w * 0.1).max(16.0);
-                let line_y = (view_h * 0.1).max(16.0);
-                let page_y = (view_h * 0.9).max(line_y);
+                    .unwrap_or(self.fixed_height.unwrap_or(self.visual.default_height));
+                let line_x = (view_w * KEYBOARD_LINE_FACTOR).max(KEYBOARD_MIN_LINE);
+                let line_y = (view_h * KEYBOARD_LINE_FACTOR).max(KEYBOARD_MIN_LINE);
+                let page_y = (view_h * KEYBOARD_PAGE_FACTOR).max(line_y);
 
                 let (dx, dy) = match key {
                     KeyCode::Down if self.direction.can_scroll_y() => (0.0, line_y),
@@ -247,7 +332,7 @@ widget! {
 
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
-        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+        if delta.0.abs() > SCROLL_DELTA_EPSILON || delta.1.abs() > SCROLL_DELTA_EPSILON {
             self.scroll_delta_strip.set((0.0, 0.0));
             Some(delta)
         } else {
@@ -296,18 +381,28 @@ widget! {
 
         match ctx.paint_pass() {
             PaintPass::Content => {
-                let bg = ctx.tokens().color_bg_container();
+                let bg = self.visual.background.resolve(ctx.tokens());
                 ctx.fill_rect(frame, bg, None);
             }
             PaintPass::AfterChildren => {
                 // 仅在需要滚动时绘制 gutter 内轨道/滑块（与 layout 预留一致）。
                 if self.needs_v_scrollbar(frame, &[]) {
                     self.scrollbar_v
-                        .render(frame, ctx, self.effective_scroll_y(), self.max_scroll_y());
+                        .render(
+                            frame,
+                            ctx,
+                            self.effective_scroll_y(),
+                            self.max_scroll_y(),
+                        );
                 }
                 if self.needs_h_scrollbar(frame, &[]) {
                     self.scrollbar_h
-                        .render(frame, ctx, self.effective_scroll_x(), self.max_scroll_x());
+                        .render(
+                            frame,
+                            ctx,
+                            self.effective_scroll_x(),
+                            self.max_scroll_x(),
+                        );
                 }
             }
         }
@@ -531,8 +626,13 @@ impl ScrollView {
         // 否则默认 300×200 会阻止窗口缩小时收缩，内容被窗口裁切且 max_scroll=0。
         let grow = self.flex_grow_val > 0.0;
         Size::new(
-            self.fixed_width.unwrap_or(if grow { 0.0 } else { 300.0 }),
-            self.fixed_height.unwrap_or(if grow { 0.0 } else { 200.0 }),
+            self.fixed_width
+                .unwrap_or(if grow { 0.0 } else { self.visual.default_width }),
+            self.fixed_height.unwrap_or(if grow {
+                0.0
+            } else {
+                self.visual.default_height
+            }),
         )
     }
 
@@ -590,7 +690,7 @@ impl ScrollView {
         if self
             .content_bounds
             .get()
-            .is_some_and(|b| finite_non_negative(b.h) > frame_h + 0.5)
+            .is_some_and(|b| finite_non_negative(b.h) > frame_h + SCROLLBAR_OVERFLOW_EPSILON)
         {
             return true;
         }
@@ -600,7 +700,7 @@ impl ScrollView {
             finite_non_negative(height + Self::child_outer_size(child).h)
         });
         // 留出半像素容差，避免浮点抖动反复切换沟槽。
-        content_h > frame_h + 0.5
+        content_h > frame_h + SCROLLBAR_OVERFLOW_EPSILON
     }
 
     pub(crate) fn needs_h_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
@@ -618,7 +718,7 @@ impl ScrollView {
         if self
             .content_bounds
             .get()
-            .is_some_and(|b| finite_non_negative(b.w) > frame_w + 0.5)
+            .is_some_and(|b| finite_non_negative(b.w) > frame_w + SCROLLBAR_OVERFLOW_EPSILON)
         {
             return true;
         }
@@ -637,7 +737,7 @@ impl ScrollView {
             row_width
         };
         // 留出半像素容差，避免浮点抖动反复切换沟槽。
-        content_w > frame_w + 0.5
+        content_w > frame_w + SCROLLBAR_OVERFLOW_EPSILON
     }
 
     fn child_constraints(&self, frame: Rect, need_v: bool, need_h: bool) -> Constraints {
@@ -657,6 +757,7 @@ impl ScrollView {
 
     /// 创建指定滚动方向、没有子组件和固定尺寸的滚动视图。
     pub fn new(direction: ScrollDirection) -> Self {
+        let visual = SCROLL_VIEW_VISUAL_REF;
         Self {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
@@ -665,12 +766,13 @@ impl ScrollView {
             direction,
             fixed_width: None,
             fixed_height: None,
-            flex_grow_val: 0.0,
-            flex_shrink_val: 1.0,
+            flex_grow_val: visual.default_flex_grow,
+            flex_shrink_val: visual.default_flex_shrink,
             content_bounds: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             scrollbar_v: ScrollBar::new(ScrollbarOrientation::Vertical),
             scrollbar_h: ScrollBar::new(ScrollbarOrientation::Horizontal),
+            visual,
             last_frame: Cell::new(None),
         }
     }
@@ -790,7 +892,7 @@ impl ScrollView {
                     .last_frame
                     .get()
                     .map(|f| f.w)
-                    .unwrap_or(self.fixed_width.unwrap_or(300.0));
+                    .unwrap_or(self.fixed_width.unwrap_or(self.visual.default_width));
                 // 清除非有限值、无界哨兵与负范围。
                 finite_non_negative(finite_non_negative(cs.w) - finite_non_negative(view_w))
             }
@@ -810,7 +912,7 @@ impl ScrollView {
                     .last_frame
                     .get()
                     .map(|f| f.h)
-                    .unwrap_or(self.fixed_height.unwrap_or(200.0));
+                    .unwrap_or(self.fixed_height.unwrap_or(self.visual.default_height));
                 // 清除非有限值、无界哨兵与负范围。
                 finite_non_negative(finite_non_negative(cs.h) - finite_non_negative(view_h))
             }
@@ -820,7 +922,7 @@ impl ScrollView {
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
-        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+        if dx.abs() <= SCROLL_DELTA_EPSILON && dy.abs() <= SCROLL_DELTA_EPSILON {
             return;
         }
         let current = self.scroll_delta_strip.get();
@@ -837,10 +939,10 @@ impl ScrollView {
         let actual_dx = self.scroll_x - old_x;
         let actual_dy = self.scroll_y - old_y;
         self.push_scroll_delta(actual_dx, actual_dy);
-        if actual_dx.abs() > 0.01 || actual_dy.abs() > 0.01 {
+        if actual_dx.abs() > SCROLL_DELTA_EPSILON || actual_dy.abs() > SCROLL_DELTA_EPSILON {
             self.write_bound_offset();
         }
-        actual_dx.abs() > 0.01 || actual_dy.abs() > 0.01
+        actual_dx.abs() > SCROLL_DELTA_EPSILON || actual_dy.abs() > SCROLL_DELTA_EPSILON
     }
 
     fn write_bound_offset(&self) {
@@ -893,8 +995,25 @@ impl ScrollView {
 
 impl Default for ScrollView {
     fn default() -> Self {
-        Self::new(ScrollDirection::Vertical)
+        Self::new(SCROLL_VIEW_VISUAL_REF.default_direction)
     }
+}
+
+// 把 ScrollView Rust 滚动内核与 UIX 静态视口视觉组合为单一组件节点。
+fn build_scroll_view_view(mut kernel: ScrollView, visual: &'static ScrollViewVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for ScrollView {
+    fn build(self) -> ViewNode {
+        build_scroll_view_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_scroll_view_uix_root(kernel: ScrollView) -> ViewNode {
+    crate::uix!("src/ui/widgets/containers/scroll_view/scroll_view.uix")
 }
 
 // 仅在测试构建中加载 ScrollView 的内部布局契约。

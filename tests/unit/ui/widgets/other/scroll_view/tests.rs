@@ -3,7 +3,25 @@ use super::*;
 // 导入构造子项外边距所需的边集类型。
 use crate::core::EdgeInsets;
 // 导入直接调用组件布局入口所需的 trait。
-use crate::ui::{WidgetLayout, WidgetRender};
+use crate::ui::{View, WidgetLayout, WidgetRender};
+// 比较构建前后是否复用 UIX 生成的静态视觉。
+use std::ptr;
+
+// 验证默认实例与 UIX 构建节点共享唯一视口视觉。
+#[test]
+fn scroll_view_uses_colocated_uix_visual() {
+    // 默认构造不得复制尺寸或滚动条视觉表。
+    let scroll = ScrollView::default();
+    assert!(ptr::eq(scroll.visual, SCROLL_VIEW_VISUAL_REF));
+    // 构建后的叶内核继续持有同一静态引用。
+    let node = View::build(scroll);
+    let scroll = node
+        .widget
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("UIX 根应保留 ScrollView 内核");
+    assert!(ptr::eq(scroll.visual, SCROLL_VIEW_VISUAL_REF));
+}
 
 // 验证滚动条覆盖绘制阶段会被场景树实际调度。
 #[test]
