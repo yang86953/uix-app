@@ -25,6 +25,8 @@ mod geometry_ops;
 pub(super) struct FrameRecordingCanvas {
     pub(super) scratch: SharedRasterizer,
     pub(super) encoder: Option<FrameEncoder>,
+    /// 上一成功帧的命令数，用于减少稳定场景每帧 Vec 扩容。
+    pub(super) command_capacity_hint: usize,
     pub(super) blend_mode: BlendMode,
     pub(super) blend_stack: Vec<BlendMode>,
     pub(super) scratch_dirty: bool,
@@ -48,6 +50,7 @@ impl FrameRecordingCanvas {
         Self {
             scratch,
             encoder: None,
+            command_capacity_hint: 0,
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
             scratch_dirty: false,
@@ -98,8 +101,12 @@ impl FrameRecordingCanvas {
         self.scratch_additive = false;
         self.scratch_pack_bounds = None;
         self.deferred_error = None;
-        let mut encoder =
-            FrameEncoder::new(self.width, self.height).map_err(frame_encoder_error)?;
+        let mut encoder = FrameEncoder::with_command_capacity(
+            self.width,
+            self.height,
+            self.command_capacity_hint,
+        )
+        .map_err(frame_encoder_error)?;
         if clear_target {
             encoder.clear(Color::transparent());
         }
@@ -113,12 +120,14 @@ impl FrameRecordingCanvas {
         if let Some(error) = self.deferred_error.take() {
             return Err(error);
         }
-        self.encoder.take().ok_or_else(|| {
+        let encoder = self.encoder.take().ok_or_else(|| {
             Error::new(
                 Errc::InvalidState,
                 "FrameEncoder recording was not started before finish",
             )
-        })
+        })?;
+        self.command_capacity_hint = encoder.commands().len();
+        Ok(encoder)
     }
 
     /// 仅 flush 当前 scratch 并检查 deferred 错误（不结束录制）。

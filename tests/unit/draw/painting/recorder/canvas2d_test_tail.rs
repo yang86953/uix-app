@@ -406,3 +406,42 @@ fn additive_stroke_fractional_or_scaled_transform_uses_sampled_segment() {
             .any(|pixel| pixel & 0xff00_0000 != 0));
     }
 }
+
+// 稳定场景应复用上一成功帧的命令规模提示，同时保持像素结果一致。
+#[test]
+fn recording_reuses_previous_command_capacity_hint() {
+    // 创建独立录制画布并完成首帧。
+    let mut canvas = FrameRecordingCanvas::new(12, 8);
+    canvas
+        .begin_recording(true)
+        .expect("first recording should begin");
+    canvas.fill_rect(Rect::new(2.0, 1.0, 5.0, 4.0), Color::green(), None);
+    let first = canvas
+        .finish_recording()
+        .expect("first recording should finish");
+    let first_command_count = first.commands().len();
+    assert!(first_command_count > 0);
+
+    // 第二帧开始时应一次性预留上一帧规模，避免按命令逐步扩容。
+    canvas
+        .begin_recording(false)
+        .expect("second recording should begin");
+    assert!(
+        canvas
+            .encoder
+            .as_ref()
+            .expect("second encoder should exist")
+            .command_capacity()
+            >= first_command_count
+    );
+    canvas.fill_rect(Rect::new(2.0, 1.0, 5.0, 4.0), Color::green(), None);
+    let second = canvas
+        .finish_recording()
+        .expect("second recording should finish");
+
+    // 容量复用不得改变相同绘制在透明目标上的参考像素。
+    assert_eq!(
+        first.render_reference().pixels(),
+        second.render_reference().pixels()
+    );
+}
