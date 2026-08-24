@@ -21,3 +21,20 @@ fn child_margins_affect_positions_and_cached_content_size() {
     // 缓存必须记录包含右下 margin 的完整外尺寸。
     assert_eq!(space.cached_content_size.get(), Size::new(30.0, 20.0));
 }
+
+// 验证间距档位与直接构造、View 构建都读取同一 UIX 静态视觉。
+#[test]
+fn view_build_and_gap_sizes_use_uix_visual() {
+    assert_eq!(SpaceSize::Small.value(), 8.0);
+    assert_eq!(SpaceSize::Middle.value(), 16.0);
+    assert_eq!(SpaceSize::Large.value(), 24.0);
+    let space = Space::new();
+    assert!(std::ptr::eq(space.visual, SPACE_VISUAL_REF));
+    let node = crate::ui::view::View::build(space);
+    let space = node
+        .widget
+        .as_any()
+        .downcast_ref::<Space>()
+        .expect("UIX 根必须保留 Space Rust 内核");
+    assert!(std::ptr::eq(space.visual, SPACE_VISUAL_REF));
+}
