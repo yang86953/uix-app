@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
@@ -20,6 +21,8 @@ pub(crate) enum ActiveWorkKind {
 #[derive(Debug, Default)]
 pub(crate) struct ActiveWorkRegistry {
     entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
+    /// `None` 表示待重算，`Some(None)` 表示已确认没有有限 deadline。
+    next_deadline_cache: Cell<Option<Option<Instant>>>,
     managed_animation_registrations: BTreeMap<NodeId, (Option<Instant>, bool)>,
     open_widget_animations: BTreeMap<NodeId, bool>,
     managed_timers: BTreeMap<TimerId, bool>,
@@ -41,11 +44,15 @@ impl ActiveWorkRegistry {
     }
 
     pub(crate) fn register(&mut self, kind: ActiveWorkKind, next_deadline: Instant) {
-        self.entries.insert(kind, Some(next_deadline));
+        if self.entries.insert(kind, Some(next_deadline)) != Some(Some(next_deadline)) {
+            self.invalidate_deadline_cache();
+        }
     }
 
     pub(crate) fn register_open(&mut self, kind: ActiveWorkKind) {
-        self.entries.insert(kind, None);
+        if self.entries.insert(kind, None) != Some(None) {
+            self.invalidate_deadline_cache();
+        }
     }
 
     pub(crate) fn unregister(&mut self, kind: ActiveWorkKind) -> bool {
@@ -59,7 +66,11 @@ impl ActiveWorkRegistry {
         if let ActiveWorkKind::AppTimer(id) = kind {
             self.managed_app_timers.remove(&id);
         }
-        self.entries.remove(&kind).is_some()
+        let removed = self.entries.remove(&kind).is_some();
+        if removed {
+            self.invalidate_deadline_cache();
+        }
+        removed
     }
 
     pub(crate) fn sync_animated_sources<I>(&mut self, registrations: I)
@@ -74,6 +85,7 @@ impl ActiveWorkRegistry {
         }
         let entries = &mut self.entries;
         let open_widget_animations = &self.open_widget_animations;
+        let mut deadlines_changed = false;
         self.managed_animation_registrations
             .retain(|&id, (_, seen_marker)| {
                 if *seen_marker == marker {
@@ -81,19 +93,22 @@ impl ActiveWorkRegistry {
                 }
                 let kind = ActiveWorkKind::Animation(id);
                 if open_widget_animations.contains_key(&id) {
-                    entries.insert(kind, None);
+                    deadlines_changed |= entries.insert(kind, None) != Some(None);
                 } else {
-                    entries.remove(&kind);
+                    deadlines_changed |= entries.remove(&kind).is_some();
                 }
                 false
             });
         for (&id, &(deadline, _)) in &self.managed_animation_registrations {
             let kind = ActiveWorkKind::Animation(id);
             if self.open_widget_animations.contains_key(&id) {
-                self.entries.insert(kind, None);
+                deadlines_changed |= self.entries.insert(kind, None) != Some(None);
             } else {
-                self.entries.insert(kind, deadline);
+                deadlines_changed |= self.entries.insert(kind, deadline) != Some(deadline);
             }
+        }
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
         }
     }
 
@@ -108,20 +123,25 @@ impl ActiveWorkRegistry {
         }
         let entries = &mut self.entries;
         let managed_animation_registrations = &self.managed_animation_registrations;
+        let mut deadlines_changed = false;
         self.open_widget_animations.retain(|&id, seen_marker| {
             if *seen_marker == marker {
                 return true;
             }
             let kind = ActiveWorkKind::Animation(id);
             if let Some(&(deadline, _)) = managed_animation_registrations.get(&id) {
-                entries.insert(kind, deadline);
+                deadlines_changed |= entries.insert(kind, deadline) != Some(deadline);
             } else {
-                entries.remove(&kind);
+                deadlines_changed |= entries.remove(&kind).is_some();
             }
             false
         });
         for &id in self.open_widget_animations.keys() {
-            self.entries.insert(ActiveWorkKind::Animation(id), None);
+            deadlines_changed |=
+                self.entries.insert(ActiveWorkKind::Animation(id), None) != Some(None);
+        }
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
         }
     }
 
@@ -132,15 +152,31 @@ impl ActiveWorkRegistry {
 
     pub(crate) fn park_animated_deadlines(&mut self) {
         let managed = &self.managed_animation_registrations;
+        let mut deadlines_changed = false;
         for (kind, deadline) in &mut self.entries {
-            if matches!(kind, ActiveWorkKind::Animation(id) if managed.contains_key(id)) {
+            if deadline.is_some()
+                && matches!(kind, ActiveWorkKind::Animation(id) if managed.contains_key(id))
+            {
                 *deadline = None;
+                deadlines_changed = true;
             }
+        }
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
         }
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        self.entries.values().filter_map(|deadline| *deadline).min()
+        if let Some(deadline) = self.next_deadline_cache.get() {
+            return deadline;
+        }
+        let deadline = self.entries.values().filter_map(|deadline| *deadline).min();
+        self.next_deadline_cache.set(Some(deadline));
+        deadline
+    }
+
+    fn invalidate_deadline_cache(&self) {
+        self.next_deadline_cache.set(None);
     }
 
     #[cfg(test)]
@@ -170,6 +206,7 @@ impl ActiveWorkRegistry {
         let mut app_timer_budget = timer_budget_per_kind;
         let managed_timers = &mut self.managed_timers;
         let managed_app_timers = &mut self.managed_app_timers;
+        let mut deadlines_changed = false;
         self.entries.retain(|kind, deadline| {
             if !deadline.is_some_and(|deadline| deadline <= now) {
                 return true;
@@ -202,8 +239,12 @@ impl ActiveWorkRegistry {
                 }
                 _ => {}
             }
+            deadlines_changed = true;
             false
         });
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
+        }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -225,10 +266,14 @@ impl ActiveWorkRegistry {
     {
         self.timer_sync_marker = !self.timer_sync_marker;
         let marker = self.timer_sync_marker;
+        let mut deadlines_changed = false;
         for (id, delay) in timers {
-            self.entries
-                .entry(ActiveWorkKind::Timer(id))
-                .or_insert(Some(now + delay));
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                self.entries.entry(ActiveWorkKind::Timer(id))
+            {
+                entry.insert(Some(now + delay));
+                deadlines_changed = true;
+            }
             self.managed_timers.insert(id, marker);
         }
         let entries = &mut self.entries;
@@ -236,10 +281,13 @@ impl ActiveWorkRegistry {
             if *seen_marker == marker {
                 true
             } else {
-                entries.remove(&ActiveWorkKind::Timer(id));
+                deadlines_changed |= entries.remove(&ActiveWorkKind::Timer(id)).is_some();
                 false
             }
         });
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
+        }
     }
 
     pub(crate) fn sync_app_timers<I>(&mut self, timers: I)
@@ -248,9 +296,12 @@ impl ActiveWorkRegistry {
     {
         self.app_timer_sync_marker = !self.app_timer_sync_marker;
         let marker = self.app_timer_sync_marker;
+        let mut deadlines_changed = false;
         for (id, deadline) in timers {
-            self.entries
-                .insert(ActiveWorkKind::AppTimer(id), Some(deadline));
+            deadlines_changed |= self
+                .entries
+                .insert(ActiveWorkKind::AppTimer(id), Some(deadline))
+                != Some(Some(deadline));
             self.managed_app_timers.insert(id, marker);
         }
         let entries = &mut self.entries;
@@ -258,10 +309,13 @@ impl ActiveWorkRegistry {
             if *seen_marker == marker {
                 true
             } else {
-                entries.remove(&ActiveWorkKind::AppTimer(id));
+                deadlines_changed |= entries.remove(&ActiveWorkKind::AppTimer(id)).is_some();
                 false
             }
         });
+        if deadlines_changed {
+            self.invalidate_deadline_cache();
+        }
     }
 }
 
