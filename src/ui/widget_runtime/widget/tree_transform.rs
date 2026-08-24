@@ -21,9 +21,9 @@ impl WidgetTree {
                 .is_some_and(|node| node.overlay_entry(id, node.frame()).is_some())
     }
 
-    /// 计算从树根到指定节点的视觉路径（遇悬浮层节点截断，根在前）。
-    fn visual_path(&self, id: WidgetId) -> Vec<WidgetId> {
-        let mut path = Vec::new();
+    /// 把从树根到指定节点的视觉路径写入调用方工作区（遇悬浮层节点截断）。
+    fn fill_visual_path(&self, id: WidgetId, path: &mut Vec<WidgetId>) {
+        path.clear();
         let mut current = Some(id);
         // 沿父链向上收集，直到树根或悬浮层节点。
         while let Some(current_id) = current {
@@ -34,34 +34,89 @@ impl WidgetTree {
             current = self.get(current_id).and_then(|node| node.parent());
         }
         path.reverse();
-        path
+    }
+
+    /// 在树级视觉路径工作区上执行一次同步查询；重入时回退到局部容器。
+    fn with_visual_path<R>(&self, id: WidgetId, consume: impl FnOnce(&[WidgetId]) -> R) -> R {
+        // 正常窗口事件与布局循环复用树级容量；重入查询不能触发 RefCell panic。
+        let mut local_path = Vec::new();
+        let mut borrowed_path = self.visual_path_scratch.try_borrow_mut().ok();
+        let path = borrowed_path.as_deref_mut().unwrap_or(&mut local_path);
+        self.fill_visual_path(id, path);
+        let result = consume(path);
+        // 清除逻辑内容但保留树级容量供下一次高频查询复用。
+        path.clear();
+        result
+    }
+
+    /// 一次父链遍历同时验证全部祖先可见性并收集浮层截断后的视觉路径。
+    fn fill_visible_visual_path(&self, id: WidgetId, path: &mut Vec<WidgetId>) -> bool {
+        path.clear();
+        let mut current = Some(id);
+        let mut collect_visual_path = true;
+        while let Some(current_id) = current {
+            let Some(node) = self.get(current_id) else {
+                return false;
+            };
+            if !node.visible() {
+                return false;
+            }
+            if collect_visual_path {
+                path.push(current_id);
+                if self.is_overlay_node(current_id) {
+                    collect_visual_path = false;
+                }
+            }
+            current = node.parent();
+        }
+        path.reverse();
+        true
+    }
+
+    /// 在复用工作区上执行需要完整祖先可见性门禁的视觉查询。
+    fn with_visible_visual_path<R>(
+        &self,
+        id: WidgetId,
+        consume: impl FnOnce(&[WidgetId]) -> Option<R>,
+    ) -> Option<R> {
+        let mut local_path = Vec::new();
+        let mut borrowed_path = self.visual_path_scratch.try_borrow_mut().ok();
+        let path = borrowed_path.as_deref_mut().unwrap_or(&mut local_path);
+        if !self.fill_visible_visual_path(id, path) {
+            path.clear();
+            return None;
+        }
+        let result = consume(path);
+        path.clear();
+        result
     }
 
     /// 计算节点到屏幕的视觉变换：沿视觉路径逐级串联矩阵并叠加滚动偏移。
     pub(crate) fn node_visual_transform(&self, id: WidgetId) -> Option<Transform> {
-        let path = self.visual_path(id);
-        if path.is_empty() {
-            return None;
-        }
-        let mut transform = Transform::identity();
-        for (index, current_id) in path.iter().copied().enumerate() {
-            let node = self.get(current_id)?;
-            let current_transform = if index == 0 && self.is_overlay_node(current_id) {
-                // 浮层路径已截断，首节点复用场景声明的根画布最终变换。
-                self.node_overlay_transform(current_id)
-            } else {
-                // 合成 relative/sticky 定位偏移与作者视觉变换。
-                self.positioned_visual_transform(current_id)
-            };
-            transform = transform.concat(current_transform);
-            // 除末尾节点外，还需补偿视口滚动偏移（子节点相对滚动）。
-            if index + 1 < path.len() {
-                if let Some((sx, sy)) = node.viewport_scroll_offset() {
+        self.with_visual_path(id, |path| {
+            if path.is_empty() {
+                return None;
+            }
+            let mut transform = Transform::identity();
+            for (index, current_id) in path.iter().copied().enumerate() {
+                let node = self.get(current_id)?;
+                let current_transform = if index == 0 && self.is_overlay_node(current_id) {
+                    // 浮层路径已截断，首节点复用场景声明的根画布最终变换。
+                    self.node_overlay_transform(current_id)
+                } else {
+                    // 合成 relative/sticky 定位偏移与作者视觉变换。
+                    self.positioned_visual_transform(current_id)
+                };
+                transform = transform.concat(current_transform);
+                // 除末尾节点外，还需补偿视口滚动偏移（子节点相对滚动）。
+                if index + 1 < path.len()
+                    && let Some((sx, sy)) = node.viewport_scroll_offset()
+                {
                     transform = transform.concat(Transform::translate(-sx, -sy));
                 }
             }
-        }
-        Some(transform)
+            Some(transform)
+        })
     }
 
     /// 将节点局部矩形变换为屏幕视觉矩形。
@@ -81,9 +136,11 @@ impl WidgetTree {
 
     /// 视觉路径上是否存在任意有效视觉变换的节点。
     pub(crate) fn path_has_visual_transform(&self, id: WidgetId) -> bool {
-        self.visual_path(id).into_iter().any(|current_id| {
-            self.get(current_id)
-                .is_some_and(BoxedWidget::has_effective_visual_transform)
+        self.with_visual_path(id, |path| {
+            path.iter().copied().any(|current_id| {
+                self.get(current_id)
+                    .is_some_and(BoxedWidget::has_effective_visual_transform)
+            })
         })
     }
 
@@ -128,56 +185,40 @@ impl WidgetTree {
         if base.w <= 0.0 || base.h <= 0.0 {
             return None;
         }
-        let mut path = Vec::new();
-        let mut current = Some(id);
-        let mut collect_visual_path = true;
-        // 一次父链遍历同时完成有效可见性判断与悬浮层视觉路径截断。
-        while let Some(current_id) = current {
-            let node = self.get(current_id)?;
-            if !node.visible() {
-                return None;
-            }
-            if collect_visual_path {
-                path.push(current_id);
-                if self.is_overlay_node(current_id) {
-                    collect_visual_path = false;
+        self.with_visible_visual_path(id, |path| {
+            let mut transform = Transform::identity();
+            let mut clip_bounds: Option<Rect> = None;
+            // 沿视觉路径逐级应用变换，并用各层子裁剪区收窄矩形。
+            for (index, current_id) in path.iter().copied().enumerate() {
+                let current = self.get(current_id)?;
+                let current_transform = if index == 0 && self.is_overlay_node(current_id) {
+                    // 浮层不继承祖先裁剪，但仍使用与合成器一致的锚点变换。
+                    self.node_overlay_transform(current_id)
+                } else {
+                    self.positioned_visual_transform(current_id)
+                };
+                transform = transform.concat(current_transform);
+                if index + 1 < path.len() {
+                    // 子裁剪区位于滚动内容平移之前，与合成器顺序保持一致。
+                    if let Some(clip) = current.children_clip(current.frame()) {
+                        let transformed_clip = transform.transform_rect(clip);
+                        clip_bounds = Some(match clip_bounds {
+                            Some(bounds) => bounds.intersect(&transformed_clip)?,
+                            None => transformed_clip,
+                        });
+                    }
+                    // 后续后代坐标需要补偿当前视口滚动偏移。
+                    if let Some((sx, sy)) = current.viewport_scroll_offset() {
+                        transform = transform.concat(Transform::translate(-sx, -sy));
+                    }
                 }
             }
-            current = node.parent();
-        }
-        path.reverse();
-        let mut transform = Transform::identity();
-        let mut clip_bounds: Option<Rect> = None;
-        // 沿视觉路径逐级应用变换，并用各层子裁剪区收窄矩形。
-        for (index, current_id) in path.iter().copied().enumerate() {
-            let current = self.get(current_id)?;
-            let current_transform = if index == 0 && self.is_overlay_node(current_id) {
-                // 浮层不继承祖先裁剪，但仍使用与合成器一致的锚点变换。
-                self.node_overlay_transform(current_id)
-            } else {
-                self.positioned_visual_transform(current_id)
-            };
-            transform = transform.concat(current_transform);
-            if index + 1 < path.len() {
-                // 子裁剪区位于滚动内容平移之前，与合成器顺序保持一致。
-                if let Some(clip) = current.children_clip(current.frame()) {
-                    let transformed_clip = transform.transform_rect(clip);
-                    clip_bounds = Some(match clip_bounds {
-                        Some(bounds) => bounds.intersect(&transformed_clip)?,
-                        None => transformed_clip,
-                    });
-                }
-                // 后续后代坐标需要补偿当前视口滚动偏移。
-                if let Some((sx, sy)) = current.viewport_scroll_offset() {
-                    transform = transform.concat(Transform::translate(-sx, -sy));
-                }
+            let rect = transform.transform_rect(base);
+            match clip_bounds {
+                Some(clip) => rect.intersect(&clip),
+                None => Some(rect),
             }
-        }
-        let rect = transform.transform_rect(base);
-        match clip_bounds {
-            Some(clip) => rect.intersect(&clip),
-            None => Some(rect),
-        }
+        })
     }
 
     /// 计算节点在屏幕上的可见视觉矩形（逐级裁剪，含滚动补偿）。
