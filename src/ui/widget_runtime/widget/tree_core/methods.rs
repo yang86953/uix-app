@@ -712,7 +712,9 @@ impl WidgetTree {
                 ids.clear();
                 if let Some(root_id) = self.root_id {
                     // Iterative traversal avoids stack overflow on very deep trees.
-                    let mut stack = vec![root_id];
+                    let mut stack = self.traversal_stack_scratch.borrow_mut();
+                    stack.clear();
+                    stack.push(root_id);
                     while let Some(current) = stack.pop() {
                         ids.push(current);
                         if let Some(node) = self.get(current) {
@@ -721,6 +723,7 @@ impl WidgetTree {
                             }
                         }
                     }
+                    stack.clear();
                 }
                 *ver = self.tree_version;
             }

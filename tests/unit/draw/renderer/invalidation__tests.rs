@@ -54,3 +54,18 @@ fn layout_and_full_clear_preserve_queue_flag_lifecycle() {
     assert!(!queue.has_paint_or_composite());
     assert!(!queue.needs_full_frame());
 }
+
+// 重复全帧合成请求只需保留一项，并在清理后允许重新登记。
+#[test]
+fn full_composite_requests_are_coalesced_until_clear() {
+    let mut queue = InvalidationQueue::new();
+    queue.push(Invalidation::FullComposite);
+    queue.push(Invalidation::FullComposite);
+
+    assert_eq!(queue.items.len(), 1);
+    assert!(queue.has_paint_or_composite());
+
+    queue.clear();
+    queue.push(Invalidation::FullComposite);
+    assert_eq!(queue.items.len(), 1);
+}

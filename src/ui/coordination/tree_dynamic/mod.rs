@@ -739,10 +739,8 @@ impl WidgetTree {
             return false;
         }
 
-        let Some((indices, labels, needs_refresh)) = self.get(id).and_then(|node| {
+        let Some(needs_refresh) = self.get(id).and_then(|node| {
             let select = node.widget().as_any().downcast_ref::<Select>()?;
-            let indices = select.custom_option_indices();
-            let labels = select.custom_option_labels(&indices);
             // 离场墓碑仍保留在直接 children 链中，但不属于当前活动选项窗口。
             let mounted_children = node
                 // 只检查 Select 直接拥有的动态选项。
@@ -753,15 +751,22 @@ impl WidgetTree {
                 .filter(|child_id| !self.is_pending_removal_subtree(**child_id))
                 // 得到活动选项总数，避免墓碑触发重复 renderer。
                 .count();
-            // 只让活动选项参与是否需要重建当前窗口的判定。
-            let needs_refresh = select.needs_custom_option_refresh(&indices, mounted_children);
-            Some((indices, labels, needs_refresh))
+            // 先用无分配遍历比较活动窗口，变化时才物化捕获参数。
+            Some(select.needs_custom_option_refresh(mounted_children))
         }) else {
             return false;
         };
         if !needs_refresh {
             return false;
         }
+        let Some((indices, labels)) = self.get(id).and_then(|node| {
+            let select = node.widget().as_any().downcast_ref::<Select>()?;
+            let indices = select.custom_option_indices();
+            let labels = select.custom_option_labels(&indices);
+            Some((indices, labels))
+        }) else {
+            return false;
+        };
 
         // 在借用 renderer sidecar 前签发固定树 store 与已验证 Select owner 的窄能力。
         let capture_context = ViewAdapter::dynamic_capture_context(self, id);

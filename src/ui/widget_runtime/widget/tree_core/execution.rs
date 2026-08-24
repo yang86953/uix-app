@@ -417,6 +417,7 @@ impl WidgetTree {
         self.layout_scratch = tree_layout::LayoutFrameScratch::default();
         // 清空遍历缓存，关闭后不得再暴露旧节点身份快照。
         self.cached_traversal.borrow_mut().0.clear();
+        self.traversal_stack_scratch.borrow_mut().clear();
         // 清空动画外的生命周期暂存。
         self.lifecycle_states_scratch.clear();
         // 清空语义事件暂存。

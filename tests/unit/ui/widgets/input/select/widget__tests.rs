@@ -1,11 +1,91 @@
 // 复用被测选择组件和结构化选项模型。
-use super::{Select, SelectOption};
+use super::{OptGroup, Select, SelectOption, VisibleRow};
 // 引入布局断言所需的基础几何类型。
 use crate::core::{Rect, Size};
 // 引入根节点 frame 读写所需的组件核心 trait。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 引入直接执行组件布局与设置根表面所需的树接口。
-use crate::ui::{LayoutChild, WidgetId, WidgetLayout, WidgetTree};
+use crate::ui::{LayoutChild, LayoutEngineScratch, WidgetId, WidgetLayout, WidgetTree};
+
+// 分组搜索的无分配遍历必须保持既有组标题与选项顺序。
+#[test]
+fn visible_row_traversal_preserves_grouped_search_semantics() {
+    let mut select = Select::searchable().optgroups(vec![
+        OptGroup::new("甲组").add("Alpha").add("Beta"),
+        OptGroup::new("乙组").add("Gamma").add("Delta"),
+    ]);
+    select.search_query = "TA".to_owned();
+
+    let mut rows = Vec::new();
+    select.for_each_visible_row(|row| rows.push(row));
+
+    assert_eq!(
+        rows,
+        vec![
+            VisibleRow::Group(0),
+            VisibleRow::Option(1),
+            VisibleRow::Group(1),
+            VisibleRow::Option(3),
+        ]
+    );
+    assert_eq!(select.visible_row_count(), rows.len());
+}
+
+// 调用方缓冲入口必须与拥有型兼容入口返回相同的过滤后几何。
+#[test]
+fn custom_option_layout_buffer_matches_owned_geometry() {
+    let mut select = Select::searchable().options((0..20).map(|index| format!("Option {index}")));
+    select.open();
+    select.search_query = "OPTION 1".to_owned();
+    select.custom_option_views = true;
+    // 刻意使用非声明顺序，覆盖兼容回退而不影响常态线性扫描。
+    select.mark_custom_options_materialized(vec![10, 1]);
+
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(Select::new()));
+    tree.root_mut()
+        .expect("测试组件树应包含根节点")
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+    let ids = [WidgetId::new(31), WidgetId::new(32)];
+    let frame = Rect::new(20.0, 20.0, 180.0, 32.0);
+
+    let owned_measurements = select.measure_children(frame, &ids, &tree);
+    let mut reused_measurements = Vec::with_capacity(ids.len());
+    select.measure_children_into(frame, &ids, &tree, &mut reused_measurements);
+    assert_eq!(reused_measurements.len(), owned_measurements.len());
+    for (reused, owned) in reused_measurements.iter().zip(&owned_measurements) {
+        assert_eq!(reused.id, owned.id);
+        assert_eq!(reused.measured_size, owned.measured_size);
+    }
+
+    let owned_layout = select.layout_children(frame, &owned_measurements, &tree);
+    let mut reused_layout = Vec::with_capacity(ids.len());
+    select.layout_children_into(
+        frame,
+        &reused_measurements,
+        &tree,
+        &mut LayoutEngineScratch::default(),
+        &mut reused_layout,
+    );
+    assert_eq!(reused_layout, owned_layout);
+    assert_eq!(reused_layout.len(), 2);
+    // Option 1 是首行，Option 10 是次行；输出仍按物化子项顺序排列。
+    assert!(reused_layout[0].1.y > reused_layout[1].1.y);
+}
+
+// 固有宽度只在文案配置变化后失效并重新计算。
+#[test]
+fn intrinsic_width_cache_invalidates_when_labels_change() {
+    let select = Select::new().options(["短"]);
+    let short = select.intrinsic_size();
+    assert_eq!(select.intrinsic_width.get(), Some(short.w));
+
+    let select = select.options(["一段明显更长的选项文案"]);
+    assert_eq!(select.intrinsic_width.get(), None);
+    let long = select.intrinsic_size();
+    assert!(long.w > short.w);
+    assert_eq!(select.intrinsic_width.get(), Some(long.w));
+}
 
 // 验证显示文案、状态值和快照观测保持各自契约。
 #[test]
