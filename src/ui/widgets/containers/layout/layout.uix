@@ -1,0 +1,10 @@
+<Visual
+  name="LAYOUT_VISUAL"
+  type="LayoutVisual"
+  defaultDirection={layout_default_direction()}
+  intrinsicWidth={300.0}
+  intrinsicHeight={200.0}
+  flexGrow={1.0}
+/>
+
+<KernelView value={build_layout_view(kernel, LAYOUT_VISUAL_REF)} />

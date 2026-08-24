@@ -1,0 +1,10 @@
+<Visual
+  name="CONTENT_VISUAL"
+  type="ContentVisual"
+  intrinsicWidth={0.0}
+  intrinsicHeight={0.0}
+  flexGrow={1.0}
+  childDirection={content_child_direction()}
+/>
+
+<KernelView value={build_content_view(kernel, CONTENT_VISUAL_REF)} />
