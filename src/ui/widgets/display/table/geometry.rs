@@ -39,7 +39,84 @@ pub(crate) struct TableColumnGeometry {
     selection_width: f32,
 }
 
+// 保存列几何的最近输入与可跨帧复用的列数组。
+#[derive(Debug, Default)]
+pub(crate) struct TableColumnGeometryCache {
+    key: Option<TableColumnGeometryKey>,
+    geometry: TableColumnGeometry,
+}
+
+// 只记录几何标量；列宽与固定区直接和已求解列逐项比较，避免散列碰撞。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TableColumnGeometryKey {
+    origin_x_bits: u32,
+    viewport_width_bits: u32,
+    selection_width_bits: u32,
+    scroll_x_bits: u32,
+}
+
+impl Default for TableColumnGeometry {
+    fn default() -> Self {
+        Self {
+            columns: Vec::new(),
+            middle_clip: Rect::zero(),
+            left_width: 0.0,
+            right_width: 0.0,
+            max_scroll_x: 0.0,
+            origin_x: 0.0,
+            viewport_width: 0.0,
+            selection_width: 0.0,
+        }
+    }
+}
+
+impl TableColumnGeometryCache {
+    // 返回与当前列定义和视口标量匹配的共享几何。
+    pub(crate) fn resolve(
+        &mut self,
+        columns: &[TableColumn],
+        origin_x: f32,
+        viewport_width: f32,
+        selection_width: f32,
+        scroll_x: f32,
+    ) -> &TableColumnGeometry {
+        let key = TableColumnGeometryKey {
+            origin_x_bits: origin_x.to_bits(),
+            viewport_width_bits: viewport_width.to_bits(),
+            selection_width_bits: selection_width.to_bits(),
+            scroll_x_bits: scroll_x.to_bits(),
+        };
+        let columns_match = self.geometry.columns.len() == columns.len()
+            && self
+                .geometry
+                .columns
+                .iter()
+                .zip(columns)
+                .all(|(resolved, column)| {
+                    resolved.width.to_bits() == finite_nonnegative(column.width).to_bits()
+                        && resolved.zone
+                            == match column.fixed {
+                                Some(Fixed::Left) => ColumnZone::Left,
+                                Some(Fixed::Right) => ColumnZone::Right,
+                                None => ColumnZone::Middle,
+                            }
+                });
+        if self.key != Some(key) || !columns_match {
+            self.geometry
+                .resolve(columns, origin_x, viewport_width, selection_width, scroll_x);
+            self.key = Some(key);
+        }
+        &self.geometry
+    }
+
+    // 以只读借用暴露已经求解的共享几何。
+    pub(crate) fn geometry(&self) -> &TableColumnGeometry {
+        &self.geometry
+    }
+}
+
 impl TableColumnGeometry {
+    #[cfg(test)]
     pub(crate) fn new(
         columns: &[TableColumn],
         origin_x: f32,
@@ -47,6 +124,20 @@ impl TableColumnGeometry {
         selection_width: f32,
         scroll_x: f32,
     ) -> Self {
+        let mut geometry = Self::default();
+        geometry.resolve(columns, origin_x, viewport_width, selection_width, scroll_x);
+        geometry
+    }
+
+    // 在保留列数组容量的前提下重新求解全部列区几何。
+    fn resolve(
+        &mut self,
+        columns: &[TableColumn],
+        origin_x: f32,
+        viewport_width: f32,
+        selection_width: f32,
+        scroll_x: f32,
+    ) {
         let viewport_width = finite_nonnegative(viewport_width);
         let selection_width = finite_nonnegative(selection_width).min(viewport_width);
         let left_width = zone_width(columns, Some(Fixed::Left));
@@ -58,7 +149,8 @@ impl TableColumnGeometry {
         let max_scroll_x = (middle_width - middle_viewport_width).max(0.0);
         let scroll_x = scroll_x.clamp(0.0, max_scroll_x);
 
-        let mut columns_out = Vec::with_capacity(columns.len());
+        self.columns.clear();
+        self.columns.reserve(columns.len());
         let mut left_x = origin_x + selection_width;
         let mut center_x = middle_x - scroll_x;
         let mut right_x = origin_x + viewport_width - right_width;
@@ -82,7 +174,7 @@ impl TableColumnGeometry {
                     (x, ColumnZone::Middle)
                 }
             };
-            columns_out.push(LaidOutColumn {
+            self.columns.push(LaidOutColumn {
                 index,
                 x,
                 width,
@@ -90,16 +182,13 @@ impl TableColumnGeometry {
             });
         }
 
-        Self {
-            columns: columns_out,
-            middle_clip: Rect::new(middle_x, 0.0, middle_viewport_width, 0.0),
-            left_width,
-            right_width,
-            max_scroll_x,
-            origin_x,
-            viewport_width,
-            selection_width,
-        }
+        self.middle_clip = Rect::new(middle_x, 0.0, middle_viewport_width, 0.0);
+        self.left_width = left_width;
+        self.right_width = right_width;
+        self.max_scroll_x = max_scroll_x;
+        self.origin_x = origin_x;
+        self.viewport_width = viewport_width;
+        self.selection_width = selection_width;
     }
 
     pub(crate) fn clip_for(&self, zone: ColumnZone, y: f32, height: f32) -> Option<Rect> {

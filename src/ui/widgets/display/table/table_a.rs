@@ -63,6 +63,7 @@ impl Table {
             hover_resize_column: Cell::new(None),
             visual: TABLE_VISUAL_REF,
             pagination_label_cache: RefCell::new(TablePaginationLabelCache::default()),
+            column_geometry_cache: RefCell::new(Default::default()),
         }
     }
 

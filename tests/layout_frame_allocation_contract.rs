@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{Rect, Size};
 use uix::prelude::{
     Card, Collapse, CollapsePanel, Container, Content, Footer, Grid, GridTrack, Header,
-    Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter,
+    Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter, Table, TableColumn,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
@@ -301,6 +301,27 @@ fn collapse_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn table_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    let rows = (0..12)
+        .map(|index| (index, format!("名称 {index}"), format!("状态 {index}")))
+        .collect();
+    let table = Table::data(rows, |row| row.0.to_string())
+        .expect("测试行键必须唯一")
+        .columns(vec![
+            TableColumn::new("名称", 160.0)
+                .bind(|row: &(usize, String, String)| row.1.clone())
+                .render(|_| Container::new()),
+            TableColumn::new("状态", 160.0)
+                .bind(|row: &(usize, String, String)| row.2.clone())
+                .render(|_| Container::new()),
+        ])
+        .into_node();
+    tree.set_children(root, vec![table]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -380,6 +401,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Layout", page_layout_tree()),
         ("Splitter", splitter_layout_tree()),
         ("Collapse", collapse_layout_tree()),
+        ("Table", table_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
