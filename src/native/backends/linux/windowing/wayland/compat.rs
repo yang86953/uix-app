@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::os::fd::BorrowedFd;
 use std::os::raw::c_void;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::backend::ObjectId;
@@ -140,7 +140,7 @@ impl CallbackRegistry {
     }
 
     // 检查擦除 callback 是否匹配当前 Wayland 协议接口。
-    fn downcast_callback<I>(&self, callback: StoredCallback) -> Option<Callback<I>>
+    fn downcast_callback<I>(&self, callback: StoredCallback) -> Option<Box<Callback<I>>>
     // 仅 Wayland 协议代理能够声明 callback Event 类型。
     where
         // 类型身份必须在 registry 生命周期内稳定。
@@ -150,13 +150,8 @@ impl CallbackRegistry {
     {
         // 区分健康类型 owner 与 registry 不变量损坏。
         match callback.downcast::<Callback<I>>() {
-            // 将双层 downcast owner 收敛回规范 Callback<I> trait object。
-            Ok(callback) => {
-                // 显式触发 FnMut trait object coercion，避免回插额外 Box 层。
-                let callback: Callback<I> = callback;
-                // 交付与接口匹配的唯一 callback owner。
-                Some(callback)
-            }
+            // 保留 registry 原有外层 Box，持久回调可原样回插而不重新分配。
+            Ok(callback) => Some(callback),
             // 类型错配表示同一 key 下的 registry 状态已经损坏。
             Err(_) => {
                 // 向 owner thread 报告稳定 InvalidState，不把损坏伪装成无 callback。
@@ -316,7 +311,7 @@ impl WaylandDispatchState {
         };
 
         // 检查擦除 owner 与当前协议接口是否一致。
-        let Some(mut callback) = self.registry.downcast_callback::<I>(callback) else {
+        let Some(mut callback_owner) = self.registry.downcast_callback::<I>(callback) else {
             // 类型错配已经入队并隔离损坏 entry。
             return;
         };
@@ -330,7 +325,7 @@ impl WaylandDispatchState {
         // panic 只在本 dispatch adapter 内转换，不能越过 Wayland ABI。
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
             // 执行本次协议事件对应的唯一 callback。
-            callback(&callback_proxy, event, qh)
+            (callback_owner.as_mut())(&callback_proxy, event, qh)
         }));
         // callback panic 必须形成 typed failure；生命周期策略在转换完成后统一决定 owner 去留。
         if callback_result.is_err() {
@@ -354,8 +349,8 @@ impl WaylandDispatchState {
         let _ = self.registry.insert(
             // 回插到本次 dispatch 取出的精确协议对象键。
             key,
-            // 按规范 Callback<I> 形状擦除一次，禁止双 Box 类型漂移。
-            Box::new(callback),
+            // 直接擦除并回插原 owner，避免持久事件每次重新装箱。
+            callback_owner,
             // 保留回插阶段，锁中毒时生成精确诊断。
             "callback reinsert",
         );
