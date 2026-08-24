@@ -1,5 +1,8 @@
 // 引入受测 Calendar 与日期值类型。
-use super::{Calendar, Date};
+use super::{Calendar, CalendarEvent, Date};
+// 引入事件颜色与公开 View 构建入口。
+use crate::draw::Color;
+use crate::ui::view::View;
 // 引入交互、语义事件与响应式状态测试契约。
 use crate::ui::{
     EventHandler,
@@ -185,4 +188,68 @@ fn default_date_after_value_restores_uncontrolled_selection() {
     assert_eq!(calendar.selected_date(), Some(Date::new(2026, 8, 21)));
     // 已清除的旧绑定不得收到新选择。
     assert_eq!(selected.get(), Date::new(2026, 8, 10));
+}
+
+// 验证 UIX 根保留日期状态并注入真实视觉契约。
+#[test]
+fn uix_root_preserves_calendar_kernel_and_visual_contract() {
+    let node = View::build(
+        Calendar::new()
+            .default_date(Date::new(2027, 2, 8))
+            .year_jump(true),
+    );
+    assert!(node.children.is_empty());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Calendar>()
+        .expect("UIX 根必须保留 Calendar 内核");
+    assert_eq!(kernel.selected_date(), Some(Date::new(2027, 2, 8)));
+    assert!(kernel.year_jump);
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (40.0, 20.0, 40.0, 24.0, 4.0, 3)
+    );
+}
+
+// 验证显式日期格尺寸优先于 UIX 缺省值。
+#[test]
+fn explicit_cell_size_has_priority_over_uix_default() {
+    let node = View::build(Calendar::new().cell_size(52.0));
+    let kernel = node.widget.as_any().downcast_ref::<Calendar>().unwrap();
+    assert_eq!(kernel.cell_size, 52.0);
+}
+
+// 验证事件只需一次线性分桶且保留前三项的输入顺序。
+#[test]
+fn event_buckets_preserve_count_and_visible_order() {
+    let events = (0..4)
+        .map(|index| {
+            CalendarEvent::new(
+                Date::new(2026, 6, 9),
+                format!("事件 {index}"),
+                Color::from_rgb(index, 0, 0),
+            )
+        })
+        .chain(std::iter::once(CalendarEvent::new(
+            Date::new(2026, 7, 9),
+            "其他月份",
+            Color::BLACK,
+        )))
+        .collect();
+    let calendar = Calendar::new().events(events);
+    let buckets = calendar.event_buckets(2026, 6);
+    assert_eq!(buckets[8].count, 4);
+    assert_eq!(buckets[8].visible_count, 3);
+    assert_eq!(buckets[8].visible_indices, [0, 1, 2]);
+}
+
+// 验证全部 Calendar 实例共享同一份 UIX 视觉表。
+#[test]
+fn calendar_instances_share_uix_visual_table() {
+    let first = View::build(Calendar::new());
+    let second = View::build(Calendar::new());
+    let first = first.widget.as_any().downcast_ref::<Calendar>().unwrap();
+    let second = second.widget.as_any().downcast_ref::<Calendar>().unwrap();
+    assert!(first.shares_visual_with_for_test(second));
 }
