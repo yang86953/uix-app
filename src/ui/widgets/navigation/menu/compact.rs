@@ -1,7 +1,7 @@
 //! Navigation 折叠侧栏复用 Menu 时需要的紧凑呈现。
 
 // 引入菜单组件及数据项。
-use super::{Menu, MenuItem};
+use super::{Menu, MenuItem, ResolvedMenuVisual};
 // 引入菜单项绘制矩形。
 use crate::core::Rect;
 // 引入主题解析后的颜色值。
@@ -34,6 +34,7 @@ impl Menu {
         item: &MenuItem,
         item_rect: Rect,
         item_color: Color,
+        visual: &ResolvedMenuVisual,
     ) -> bool {
         // 普通 Menu 继续使用完整标签绘制路径。
         if !self.is_compact() {
@@ -44,7 +45,11 @@ impl Menu {
         if !item.icon.is_empty() {
             // 紧凑图标使用完整行作为居中区域。
             crate::ui::widgets::icon::Icon::paint_in_frame(
-                ctx, &item.icon, item_rect, item_color, 16.0,
+                ctx,
+                &item.icon,
+                item_rect,
+                item_color,
+                self.visual.typography.compact_icon,
             );
         } else if let Some(display) = item.label.chars().next() {
             // 无图标项以首字符提供可识别的紧凑回退。
@@ -52,7 +57,7 @@ impl Menu {
                 &display.to_string(),
                 item_rect,
                 item_color,
-                ctx.tokens().font_size_lg(),
+                visual.compact_fallback_font_size,
             );
         }
         // 紧凑呈现已经处理该菜单项。
