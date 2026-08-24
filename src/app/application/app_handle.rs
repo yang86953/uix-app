@@ -80,6 +80,22 @@ impl WidgetLayout for AppOverlayRoot {
         constraints.definite.unwrap_or_default()
     }
 
+    fn measure_children_into(
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &crate::ui::WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>,
+    ) {
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     fn layout_children(
         &self,
         frame: Rect,
@@ -87,6 +103,18 @@ impl WidgetLayout for AppOverlayRoot {
         _tree: &crate::ui::WidgetTree,
     ) -> Vec<(WidgetId, Rect)> {
         children.iter().map(|child| (child.id, frame)).collect()
+    }
+
+    fn layout_children_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &crate::ui::WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        output.extend(children.iter().map(|child| (child.id, frame)));
     }
 }
 

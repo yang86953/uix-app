@@ -239,6 +239,17 @@ impl WidgetLayout for WindowInteractionRegion {
         self.container.measure_children(frame, children, tree)
     }
 
+    fn measure_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        self.container
+            .measure_children_into(frame, children, tree, output);
+    }
+
     fn layout_children(
         &self,
         frame: Rect,
@@ -246,6 +257,18 @@ impl WidgetLayout for WindowInteractionRegion {
         tree: &WidgetTree,
     ) -> Vec<(WidgetId, Rect)> {
         self.container.layout_children(frame, children, tree)
+    }
+
+    fn layout_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        self.container
+            .layout_children_into(frame, children, tree, scratch, output);
     }
 }
 

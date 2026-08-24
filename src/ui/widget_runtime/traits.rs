@@ -273,6 +273,18 @@ pub trait WidgetLayout: Widget {
             .map(|id| LayoutChild::new(id, Size::zero()))
             .collect()
     }
+    /// 把子节点测量结果写入调用方工作区；默认兼容既有拥有型实现。
+    #[doc(hidden)]
+    fn measure_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        output.clear();
+        output.extend(self.measure_children(frame, children, tree));
+    }
     /// Arrange children from the snapshot produced by [`Self::measure_children`].
     /// Implementations must not call child `measure` recursively here.
     fn layout_children(
@@ -283,6 +295,19 @@ pub trait WidgetLayout: Widget {
     ) -> Vec<(WidgetId, Rect)> {
         let _ = (frame, children, tree);
         Vec::new()
+    }
+    /// 把子节点位置写入调用方工作区；默认兼容既有拥有型实现。
+    #[doc(hidden)]
+    fn layout_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        output.extend(self.layout_children(frame, children, tree));
     }
 }
 

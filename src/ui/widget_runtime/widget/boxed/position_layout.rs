@@ -18,6 +18,63 @@ pub(crate) fn filtered_child_allocation_count() -> usize {
 }
 
 impl BoxedWidget {
+    /// 在树级复用工作区中测量并排列当前节点的可见直接子节点。
+    pub(crate) fn layout_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        scratch: &mut crate::ui::widget_runtime::widget::tree_core::LayoutArrangeScratch,
+    ) {
+        let crate::ui::widget_runtime::widget::tree_core::LayoutArrangeScratch {
+            visible_children,
+            measured,
+            in_flow,
+            out_of_flow,
+            positions,
+            engine,
+        } = scratch;
+        let all_visible = children
+            .iter()
+            .all(|child_id| tree.is_effectively_visible(*child_id));
+        visible_children.clear();
+        if !all_visible {
+            #[cfg(test)]
+            let previous_capacity = visible_children.capacity();
+            visible_children.extend(
+                children
+                    .iter()
+                    .copied()
+                    .filter(|child_id| tree.is_effectively_visible(*child_id)),
+            );
+            #[cfg(test)]
+            if visible_children.capacity() > previous_capacity {
+                FILTERED_CHILD_ALLOCATION_COUNT.set(FILTERED_CHILD_ALLOCATION_COUNT.get() + 1);
+            }
+        }
+        let visible = if all_visible {
+            children
+        } else {
+            visible_children.as_slice()
+        };
+        positions.clear();
+        self.with_widget_context(|widget| {
+            let Some(layout) = widget.as_layout() else {
+                return;
+            };
+            layout.measure_children_into(frame, visible, tree, measured);
+            tree.arrange_positioned_children_into(
+                layout,
+                frame,
+                measured,
+                in_flow,
+                out_of_flow,
+                engine,
+                positions,
+            );
+        });
+    }
+
     // 读取当前节点完整定位元数据。
     pub(crate) const fn position(&self) -> crate::ui::position::PositionedLayout {
         // 返回复制值，避免布局算法取得节点可变所有权。

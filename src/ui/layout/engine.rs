@@ -5,9 +5,9 @@
 //!
 //! 盒模型计算也统一在此层，所有容器组件通过 BoxModel 获得一致的内框计算。
 
-use super::flex::compute_flex_layout;
+use super::flex::compute_flex_layout_into;
 use super::grid::compute_grid_layout;
-use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
+use super::{AlignItems, FlexChild, FlexComputeScratch, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use crate::core::{EdgeInsets, Rect, Size, WidgetId};
 use crate::draw::geometry::spatial::AABB3D;
@@ -184,6 +184,15 @@ pub struct LayoutOutput {
     pub positions: Vec<Rect>,
     /// 布局内容在两个轴向上的总占用尺寸。
     pub total_size: Size,
+}
+
+/// 真实组件树在同一布局帧内跨容器复用的求解工作区。
+#[doc(hidden)]
+#[derive(Default)]
+pub struct LayoutEngineScratch {
+    pub(crate) layout_children: Vec<LayoutChild>,
+    pub(crate) flex_children: Vec<FlexChild>,
+    pub(crate) flex: FlexComputeScratch,
 }
 
 impl LayoutOutput {
@@ -418,97 +427,84 @@ impl Default for FlexLayout {
     }
 }
 
-impl LayoutEngine for FlexLayout {
-    fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
-        // 布局求解前先把测量阶段的无界矩形转为实际有限输入。
+impl FlexLayout {
+    /// 把布局结果写入调用方持有的工作区，避免稳定布局逐容器申请数组。
+    pub(crate) fn layout_into(
+        &self,
+        content_rect: Rect,
+        children: &[LayoutChild],
+        scratch: &mut LayoutEngineScratch,
+    ) -> Size {
         let content_rect = normalize_layout_rect(content_rect);
         if children.is_empty() {
-            // 固定尺寸空布局继续占用父级分配的两条轴。
+            scratch.flex.child_rects.clear();
             let mut total_size = Size::new(content_rect.w, content_rect.h);
-            // 固有主轴与溢出模式都必须按零个自然子项收敛主轴。
             if self.intrinsic_main || self.overflow_content {
-                // 反向布局只改变排列方向，不改变主轴对应的尺寸分量。
                 match self.direction {
-                    // 水平主轴由空内容收敛为零宽度。
                     FlexDirection::Row | FlexDirection::RowReverse => total_size.w = 0.0,
-                    // 垂直主轴由空内容收敛为零高度。
                     FlexDirection::Column | FlexDirection::ColumnReverse => total_size.h = 0.0,
                 }
             }
-            // 空子集也必须经过统一输出收敛，不能直传父级哨兵。
-            return LayoutOutput {
-                positions: Vec::new(),
-                total_size,
-            }
-            .normalized();
+            return normalize_layout_size(total_size);
         }
 
-        // 非换行溢出继续使用无弹性分配的简单流式堆叠。
         if self.overflow_content && !self.wrap {
-            // 单行流式路径与标准路径共享同一最终几何契约。
-            return overflow_layout(self, content_rect, children).normalized();
+            let output = overflow_layout(self, content_rect, children).normalized();
+            scratch.flex.child_rects = output.positions;
+            return output.total_size;
         }
 
-        // 标准 FlexBox 模式
-        let flex_children: Vec<FlexChild> = children
-            .iter()
-            .map(|c| FlexChild {
-                // 溢出换行必须保留自然主轴尺寸，不执行增长。
+        scratch.flex_children.clear();
+        scratch
+            .flex_children
+            .extend(children.iter().map(|child| FlexChild {
                 flex_grow: if self.overflow_content {
-                    // 冻结增长因子，让正剩余空间只交给 justify。
                     0.0
                 } else {
-                    // 标准路径保留有限非负增长因子。
-                    finite_non_negative(c.flex_grow)
+                    finite_non_negative(child.flex_grow)
                 },
-                // 溢出换行必须保留自然主轴尺寸，不执行压缩。
                 flex_shrink: if self.overflow_content {
-                    // 冻结压缩因子，允许自然内容形成多行。
                     0.0
                 } else {
-                    // 标准路径保留有限非负压缩因子。
-                    finite_non_negative(c.flex_shrink)
+                    finite_non_negative(child.flex_shrink)
                 },
-                align_self: c.align_self,
-                // 子项测量哨兵不能进入最终求解算术。
-                measured_size: normalize_layout_size(c.measured_size),
-                // 外边距保留有限负值语义并清除非法分量。
-                margin: normalize_margin(c.margin),
+                align_self: child.align_self,
+                measured_size: normalize_layout_size(child.measured_size),
+                margin: normalize_margin(child.margin),
                 ..FlexChild::default()
-            })
-            .collect();
-
+            }));
         let input = FlexInput {
             direction: self.direction,
             wrap: self.wrap,
-            // gap 保留既有有限负值语义，但清除非有限值和哨兵。
             gap: finite_or_zero(self.gap),
             padding: crate::core::EdgeInsets::zero(),
             container: content_rect,
-            children: &flex_children,
-            // 溢出模式的 Stretch 与单行流式路径一致，不增长自然尺寸。
+            children: &scratch.flex_children,
             justify_content: if self.overflow_content && self.justify == JustifyContent::Stretch {
-                // Start 保留原始间距和起点，等价于流式 Stretch 的既有行为。
                 JustifyContent::Start
             } else {
-                // 其他分布模式继续按声明值逐行计算。
                 self.justify
             },
             align_items: self.align,
-            // 溢出换行与显式固有主轴都用最长自然行记录内容尺寸。
             intrinsic_main: self.intrinsic_main || self.overflow_content,
-            // 交叉轴固有性独立于主轴溢出策略。
             intrinsic_cross: self.intrinsic_cross,
         };
-
-        let output = compute_flex_layout(&input);
-
-        // 标准求解结果在公开边界执行最终有限化。
-        LayoutOutput {
-            positions: output.child_rects,
-            total_size: output.total_size,
+        let total_size = compute_flex_layout_into(&input, &mut scratch.flex);
+        for frame in &mut scratch.flex.child_rects {
+            *frame = normalize_layout_rect(*frame);
         }
-        .normalized()
+        normalize_layout_size(total_size)
+    }
+}
+
+impl LayoutEngine for FlexLayout {
+    fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
+        let mut scratch = LayoutEngineScratch::default();
+        let total_size = self.layout_into(content_rect, children, &mut scratch);
+        LayoutOutput {
+            positions: std::mem::take(&mut scratch.flex.child_rects),
+            total_size,
+        }
     }
 }
 

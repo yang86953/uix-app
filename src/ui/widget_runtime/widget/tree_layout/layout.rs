@@ -151,6 +151,8 @@ impl WidgetTree {
             shrink_ops,
             shrink_children,
             shrink_parent_children,
+            arrange,
+            subtree_bottoms,
             layout_damage,
             effective_visible,
         } = scratch;
@@ -234,7 +236,7 @@ impl WidgetTree {
                 if !effective_visible.contains(&id) {
                     continue;
                 }
-                let positions: Vec<(WidgetId, Rect)> = {
+                {
                     let node = match self.get(id) {
                         Some(n) => n,
                         None => continue,
@@ -244,9 +246,10 @@ impl WidgetTree {
                     if children.is_empty() {
                         continue;
                     }
-                    node.layout_children(frame, children, self)
-                };
-                for (child_id, rect) in positions {
+                    node.layout_children_into(frame, children, self, arrange);
+                }
+                for position_index in 0..arrange.positions.len() {
+                    let (child_id, rect) = arrange.positions[position_index];
                     if self.set_layout_frame(child_id, rect, layout_damage) {
                         any_change = true;
                     }
@@ -273,6 +276,7 @@ impl WidgetTree {
                     pass_expand_sig,
                     resized_children,
                     expand_children,
+                    arrange,
                     layout_damage,
                     effective_visible,
                 );
@@ -284,6 +288,8 @@ impl WidgetTree {
                     shrink_ops,
                     shrink_children,
                     shrink_parent_children,
+                    arrange,
+                    subtree_bottoms,
                     layout_damage,
                     effective_visible,
                 );
@@ -309,7 +315,7 @@ impl WidgetTree {
             }
 
             // Phase 3: 更新 viewport 容器的 content_bounds
-            self.layout_viewports(order);
+            self.layout_viewports(order, arrange);
 
             if !pass_expand_sig.is_empty() {
                 if has_prev_expand_sig && prev_expand_sig == pass_expand_sig {
@@ -332,7 +338,7 @@ impl WidgetTree {
         }
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
-        self.layout_viewports(order);
+        self.layout_viewports(order, arrange);
         // 只发布布局开始前与最终稳定 frame 的视觉脏区，忽略未上屏的中间状态。
         self.flush_layout_frame_damage(layout_damage);
         self.refresh_virtual_scroll_children(order);
@@ -604,6 +610,7 @@ impl WidgetTree {
         expand_sig: &mut Vec<(WidgetId, i32, i32, i32, i32)>,
         resized_children: &mut HashSet<WidgetId>,
         children: &mut Vec<WidgetId>,
+        arrange: &mut super::LayoutArrangeScratch,
         layout_damage: &mut super::LayoutFrameDamage,
         effective_visible: &HashSet<WidgetId>,
     ) -> bool {
@@ -769,14 +776,16 @@ impl WidgetTree {
                 } else {
                     old_frame
                 };
-                let new_positions = self.layout_children_preserving_expansions(
+                self.layout_children_preserving_expansions(
                     id,
                     relayout_frame,
                     children,
                     resized_children,
+                    arrange,
                 );
                 let mut child_moved = false;
-                for (child_id, rect) in new_positions {
+                for position_index in 0..arrange.positions.len() {
+                    let (child_id, rect) = arrange.positions[position_index];
                     if self.set_layout_frame(child_id, rect, layout_damage) {
                         child_moved = true;
                         resized_children.insert(child_id);

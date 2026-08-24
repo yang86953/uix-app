@@ -365,8 +365,14 @@ macro_rules! __widget_method_builder {
     (measure_children; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure_children($($p)*) -> $ret $body
     };
+    (measure_children_into; WidgetLayout; ($($p:tt)*) $body:block) => {
+        fn measure_children_into($($p)*) $body
+    };
     (layout_children; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_children($($p)*) -> $ret $body
+    };
+    (layout_children_into; WidgetLayout; ($($p:tt)*) $body:block) => {
+        fn layout_children_into($($p)*) $body
     };
     // ── WidgetRender ──
     (render; WidgetRender; (&$this:ident, $frame:ident : $frame_ty:ty, $ctx:ident : &mut $ctx_ty:ty) $body:block) => {
@@ -533,8 +539,14 @@ macro_rules! __match_trait_method {
     (WidgetLayout, measure_children, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure_children($($p)*) -> $ret $body
     };
+    (WidgetLayout, measure_children_into, ($($p:tt)*) $body:block) => {
+        fn measure_children_into($($p)*) $body
+    };
     (WidgetLayout, layout_children, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_children($($p)*) -> $ret $body
+    };
+    (WidgetLayout, layout_children_into, ($($p:tt)*) $body:block) => {
+        fn layout_children_into($($p)*) $body
     };
     // ── WidgetRender ──
     (WidgetRender, render, (&$this:ident, $frame:ident : $frame_ty:ty, $ctx:ident : &mut $ctx_ty:ty) $body:block) => {

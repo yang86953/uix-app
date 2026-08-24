@@ -19,6 +19,38 @@ use crate::ui::LayoutChild;
 mod tests;
 
 impl WidgetTree {
+    /// 把定位分类和父布局结果写入调用方工作区。
+    pub(crate) fn arrange_positioned_children_into(
+        &self,
+        layout: &dyn WidgetLayout,
+        parent_frame: Rect,
+        measured: &mut Vec<LayoutChild>,
+        in_flow: &mut Vec<LayoutChild>,
+        out_of_flow: &mut Vec<WidgetId>,
+        engine: &mut crate::ui::LayoutEngineScratch,
+        positions: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        in_flow.clear();
+        out_of_flow.clear();
+        for child in measured.drain(..) {
+            let mode = self
+                .get(child.id)
+                .map(|node| node.position().mode)
+                .unwrap_or(PositionMode::Static);
+            if mode.is_out_of_flow() {
+                out_of_flow.push(child.id);
+            } else {
+                in_flow.push(child);
+            }
+        }
+        layout.layout_children_into(parent_frame, in_flow, self, engine, positions);
+        for child_id in out_of_flow.iter().copied() {
+            if let Some(rect) = self.out_of_flow_rect(child_id) {
+                positions.push((child_id, rect));
+            }
+        }
+    }
+
     // 让父组件只排列正常流子项，再追加 absolute/fixed 子项结果。
     pub(crate) fn arrange_positioned_children(
         // 读取当前树中的节点元数据与包含块。
