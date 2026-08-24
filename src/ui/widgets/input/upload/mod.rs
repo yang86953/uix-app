@@ -1,19 +1,20 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入调用方拥有的上传队列状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
-// 引入同一 UI Module 拥有的 Upload 数据契约。
-use super::{
-    UploadAcceptError, UploadChange, UploadFile, UploadFileId, UploadQueueResult,
-    UploadRejectReason, UploadRejection, UploadStatus, UploadUpdateError,
-};
-// 引入同一组件域拥有的展示值、几何常量与格式化入口。
-use super::upload_presentation::{
-    FILE_ROW_H, LIST_RIGHT_PAD, LIST_TOP, UploadTypography, format_file_size,
-};
+// 声明同目录 UIX 视觉与公开数据契约。
+mod presentation;
+mod types;
+
+// 保持 Upload 数据契约随组件公开导出。
+pub use types::*;
+
+// 引入同一组件域拥有的 UIX 视觉与格式化入口。
+use presentation::*;
 use std::cell::Cell;
 // 引入类型化变化观察器的共享所有权句柄。
 use std::rc::Rc;
@@ -42,6 +43,9 @@ widget! {
         focused: bool,
         // 记录键盘激活手势的武装键（参照 Button 激活模式）。
         activation_key: Cell<Option<crate::ui::KeyCode>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static UploadVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -50,11 +54,14 @@ widget! {
         // 读取受控队列以登记声明视图的响应式依赖。
         self.capture_bound_files_dependency();
         let list_h = if self.show_upload_list {
-            self.file_list.len() as f32 * FILE_ROW_H
+            self.file_list.len() as f32 * self.visual.layout.file_row_height
         } else {
             0.0
         };
-        constraints.clamp(Size::new(300.0, 100.0 + list_h))
+        constraints.clamp(Size::new(
+            self.visual.layout.intrinsic_width,
+            self.visual.layout.dropzone_height + list_h,
+        ))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -102,41 +109,82 @@ widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.last_width.set(frame.w.max(0.0));
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border();
-        let text_sec = ctx.tokens().color_text_quaternary();
-        let text = ctx.tokens().color_text();
-        let primary = ctx.tokens().color_primary();
-        let error = ctx.tokens().color_error();
-        let success = ctx.tokens().color_success();
-        // 在组件主题作用域内只解析一次排版值。
-        let typography = UploadTypography::resolve(ctx.tokens());
-        let r = Some(Radius::uniform(ctx.tokens().border_radius()));
-        let upload_rect = Rect::new(frame.x, frame.y, frame.w, 100.0);
-        ctx.fill_rect(upload_rect, bg, r);
+        // 上传区与全部文件行在同一帧只解析一次 UIX 主题角色。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let root_radius = Some(Radius::uniform(visual.root_radius));
+        let upload_rect = Rect::new(frame.x, frame.y, frame.w, layout.dropzone_height);
+        ctx.fill_rect(upload_rect, visual.background, root_radius);
 
-        let drag_border = if self.drag_hover { primary } else { border };
-        ctx.stroke_rect(upload_rect, drag_border, if self.drag && self.drag_hover { 2.0 } else { 1.0 }, r);
+        let drag_border = if self.drag_hover {
+            visual.primary
+        } else {
+            visual.border
+        };
+        ctx.stroke_rect(
+            upload_rect,
+            drag_border,
+            if self.drag && self.drag_hover {
+                self.visual.chrome.drag_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
+            root_radius,
+        );
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(upload_rect, primary, 2.0, r);
+            ctx.stroke_rect(
+                upload_rect,
+                visual.primary,
+                self.visual.chrome.focus_border_width,
+                root_radius,
+            );
         }
         if self.drag && self.drag_hover {
-            ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0), primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+            ctx.stroke_rect(
+                Rect::new(
+                    frame.x + layout.hover_inset,
+                    frame.y + layout.hover_inset,
+                    frame.w - layout.hover_width_reduction,
+                    layout.hover_height,
+                ),
+                visual.primary,
+                self.visual.chrome.hover_inner_border_width,
+                Some(Radius::uniform(visual.hover_radius)),
+            );
         }
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            "upload",
-            Rect::new(frame.x + frame.w * 0.5 - 24.0, frame.y + 12.0, 48.0, 40.0),
-            text_sec,
-            24.0,
+            self.visual.icons.upload,
+            Rect::new(
+                frame.x + frame.w * 0.5 - layout.upload_icon_half_offset,
+                frame.y + layout.upload_icon_y,
+                layout.upload_icon_width,
+                layout.upload_icon_height,
+            ),
+            visual.text_quaternary,
+            visual.upload_icon_size,
         );
         let loc = crate::ui::widget_runtime::locale::use_locale();
-        // 拖放主说明使用主题派生的紧凑正文字号。
-        ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, typography.prompt);
+        ctx.draw_text(
+            loc.upload_drag,
+            Point::new(
+                frame.x + frame.w * 0.5 - layout.prompt_half_offset,
+                frame.y + layout.prompt_y,
+            ),
+            visual.text_quaternary,
+            visual.typography.prompt,
+        );
         if !self.accept.is_empty() && self.accept != "*" {
             let suffix = format!("{}: {}", loc.filter_title, self.accept);
-            // 过滤条件使用主题派生的辅助说明字号。
-            ctx.draw_text(&suffix, Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, typography.supporting);
+            ctx.draw_text(
+                &suffix,
+                Point::new(
+                    frame.x + frame.w * 0.5 - layout.supporting_half_offset,
+                    frame.y + layout.supporting_y,
+                ),
+                visual.text_quaternary,
+                visual.typography.supporting,
+            );
         }
 
         if !self.show_upload_list {
@@ -144,14 +192,19 @@ widget! {
         }
 
         for (i, f) in self.file_list.iter().enumerate() {
-            let y = frame.y + LIST_TOP + i as f32 * FILE_ROW_H;
+            let y = frame.y + layout.list_top + i as f32 * layout.file_row_height;
             let status_color = match f.status {
-                UploadStatus::Error => error,
-                UploadStatus::Done => success,
-                UploadStatus::Uploading => primary,
-                UploadStatus::Pending => text_sec,
+                UploadStatus::Error => visual.error,
+                UploadStatus::Done => visual.success,
+                UploadStatus::Uploading => visual.primary,
+                UploadStatus::Pending => visual.text_quaternary,
             };
-            let thumbnail = Rect::new(frame.x + 4.0, y + 4.0, 24.0, 24.0);
+            let thumbnail = Rect::new(
+                frame.x + layout.thumbnail_inset,
+                y + layout.thumbnail_inset,
+                layout.thumbnail_size,
+                layout.thumbnail_size,
+            );
             // 图片编解码 capability 启用时才尝试本地文件缩略图。
             #[cfg(feature = "image-codecs")]
             // 能力开启时复用原有预览加载与裁剪逻辑。
@@ -161,14 +214,19 @@ widget! {
                         return false;
                     };
                     let device_scale = ctx.device_pixel_ratio().max(f32::EPSILON);
-                    let target_side = (24.0 * device_scale).ceil().clamp(1.0, 4096.0) as u32;
+                    let target_side = (layout.thumbnail_size * device_scale)
+                        .ceil()
+                        .clamp(
+                            layout.preview_min_device_side,
+                            layout.preview_max_device_side,
+                        ) as u32;
                     let drawable = ctx
                         .image_service()
                         .rounded_rect_sized(
                             handle,
                             target_side,
                             target_side,
-                            2.0 * device_scale,
+                            layout.preview_radius * device_scale,
                             true,
                         )
                         .unwrap_or(handle);
@@ -186,49 +244,84 @@ widget! {
             if !drew_preview {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "file",
-                    Rect::new(frame.x + 6.0, y, 18.0, 24.0),
-                    text_sec,
-                    14.0,
+                    self.visual.icons.file,
+                    Rect::new(
+                        frame.x + layout.file_icon_x,
+                        y,
+                        layout.file_icon_width,
+                        layout.file_icon_height,
+                    ),
+                    visual.text_quaternary,
+                    visual.file_icon_size,
                 );
             }
-            let text_x = frame.x + if drew_preview { 34.0 } else { 28.0 };
-            let file_text_clip = Rect::new(text_x, y, (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0), FILE_ROW_H);
+            let text_x = frame.x
+                + if drew_preview {
+                    layout.preview_text_inset
+                } else {
+                    layout.fallback_text_inset
+                };
+            let file_text_clip = Rect::new(
+                text_x,
+                y,
+                (frame.x + frame.w - layout.list_right_padding - text_x).max(0.0),
+                layout.file_row_height,
+            );
             ctx.push_clip(file_text_clip);
-            // 文件名使用小号正文，大小使用从小号正文派生的辅助说明字号。
-            ctx.draw_text(&f.name, Point::new(text_x, y + 2.0), text, typography.file_name);
+            ctx.draw_text(
+                &f.name,
+                Point::new(text_x, y + layout.file_name_y),
+                visual.text,
+                visual.typography.file_name,
+            );
             ctx.draw_text(
                 // 使用 presentation 边界拥有的文件大小格式化入口。
                 &format_file_size(f.size),
-                Point::new(text_x, y + 17.0),
-                text_sec,
-                typography.supporting,
+                Point::new(text_x, y + layout.file_size_y),
+                visual.text_quaternary,
+                visual.typography.supporting,
             );
             if f.status == UploadStatus::Uploading {
-                let bar_w = (frame.x + frame.w - LIST_RIGHT_PAD - text_x).max(0.0);
-                let bar_rect = Rect::new(text_x, y + 28.0, bar_w * f.progress, 3.0);
-                ctx.fill_rect(bar_rect, primary, None);
+                let bar_w =
+                    (frame.x + frame.w - layout.list_right_padding - text_x).max(0.0);
+                let bar_rect = Rect::new(
+                    text_x,
+                    y + layout.progress_y,
+                    bar_w * f.progress,
+                    layout.progress_height,
+                );
+                ctx.fill_rect(bar_rect, visual.primary, None);
             }
             ctx.pop_clip();
             let status_icon = match f.status {
-                UploadStatus::Done => "check",
-                UploadStatus::Error => "x",
-                UploadStatus::Pending => "clock",
-                UploadStatus::Uploading => "refresh-cw",
+                UploadStatus::Done => self.visual.icons.done,
+                UploadStatus::Error => self.visual.icons.error,
+                UploadStatus::Pending => self.visual.icons.pending,
+                UploadStatus::Uploading => self.visual.icons.uploading,
             };
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 status_icon,
-                Rect::new(frame.x + frame.w - 48.0, y + 4.0, 20.0, 24.0),
+                Rect::new(
+                    frame.x + frame.w - layout.status_icon_right,
+                    y + layout.row_icon_y,
+                    layout.row_icon_width,
+                    layout.row_icon_height,
+                ),
                 status_color,
-                12.0,
+                visual.row_icon_size,
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
-                Rect::new(frame.x + frame.w - 24.0, y + 4.0, 20.0, 24.0),
-                text_sec,
-                12.0,
+                self.visual.icons.remove,
+                Rect::new(
+                    frame.x + frame.w - layout.remove_icon_right,
+                    y + layout.row_icon_y,
+                    layout.row_icon_width,
+                    layout.row_icon_height,
+                ),
+                visual.text_quaternary,
+                visual.row_icon_size,
             );
         }
     }
@@ -254,6 +347,7 @@ impl Upload {
             focused: false,
             // 键盘激活手势尚未武装。
             activation_key: Cell::new(None),
+            visual: UPLOAD_VISUAL_REF,
         }
     }
     /// 创建启用拖放区域的上传组件。
@@ -694,11 +788,16 @@ impl Upload {
             return EventResult::NotHandled;
         }
         let width = self.last_width.get();
-        if width <= 0.0 || pos.x < (width - 28.0).max(0.0) || pos.x > width || pos.y < LIST_TOP {
+        let layout = self.visual.layout;
+        if width <= 0.0
+            || pos.x < (width - layout.fallback_text_inset).max(0.0)
+            || pos.x > width
+            || pos.y < layout.list_top
+        {
             return EventResult::NotHandled;
         }
         // 命中行索引与绘制阶段的行号计算保持一致。
-        let index = ((pos.y - LIST_TOP) / FILE_ROW_H).floor() as usize;
+        let index = ((pos.y - layout.list_top) / layout.file_row_height).floor() as usize;
         let Some(removed) = self.remove_file(index) else {
             return EventResult::NotHandled;
         };
@@ -840,6 +939,10 @@ impl Upload {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // 保存视觉表变化，避免声明更新后沿用旧测量。
+        let visual_changed = !std::ptr::eq(self.visual, next.visual);
+        // UIX 视觉表变化时采用下一声明值。
+        self.visual = next.visual;
         // 保存列表可见性变化。
         let list_visibility_changed = self.show_upload_list != next.show_upload_list;
         // 保存旧队列长度。
@@ -870,7 +973,7 @@ impl Upload {
         // 保存下一视图的状态句柄；解绑时保留当前队列作为非受控值。
         self.files_binding = next.files_binding;
         // 可见性或长度变化需要重新布局。
-        if list_visibility_changed || old_len != self.file_list.len() {
+        if visual_changed || list_visibility_changed || old_len != self.file_list.len() {
             // 请求一次布局失效。
             self.layout_requested.set(true);
         }
@@ -895,3 +998,19 @@ impl Default for Upload {
         Self::new()
     }
 }
+
+// UIX 根把声明视觉注入 Rust 交互内核。
+fn build_upload_view(mut kernel: Upload, visual: &'static UploadVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Upload {
+    fn build(self) -> ViewNode {
+        build_upload_view(self, UPLOAD_VISUAL_REF)
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_tests.rs"]
+mod tests;

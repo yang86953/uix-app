@@ -7,19 +7,8 @@
 mod qrcode;
 #[path = "../../input/transfer/mod.rs"]
 mod transfer;
-#[path = "../../input/upload.rs"]
+#[path = "../../input/upload/mod.rs"]
 mod upload;
-// Upload 的几何、排版与展示格式保持在组件私有 presentation 边界。
-#[path = "../../input/upload_presentation.rs"]
-mod upload_presentation;
-// 拆分 Upload 的公开数据契约，保持组件实现文件低于行数门禁。
-#[path = "../../input/upload_types.rs"]
-mod upload_types;
-// 聚焦验证 Upload 受控队列、稳定身份与类型化事实。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_tests.rs"]
-mod upload_tests;
 #[path = "../../display/watermark/mod.rs"]
 mod watermark;
 
@@ -29,6 +18,4 @@ mod watermark;
 pub use qrcode::*;
 pub use transfer::*;
 pub use upload::*;
-// 统一从 misc 模块导出 Upload 的稳定身份、状态、事实与错误类型。
-pub use upload_types::*;
 pub use watermark::*;
