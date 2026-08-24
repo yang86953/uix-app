@@ -1,15 +1,15 @@
 use crate::core::Rect;
 use crate::draw::Color;
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use std::collections::HashSet;
 
+mod presentation;
 mod render;
 mod search;
 
+use self::presentation::*;
 use self::search::VisibleRow;
-
-const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
-const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 
 pub(crate) type SelectOptionRenderer = Box<dyn Fn(&str) -> crate::ui::view::ViewNode>;
 
@@ -227,6 +227,26 @@ impl crate::ui::IntoWidgetNode for SelectOptionView {
     }
 }
 
+// UIX 根把同目录声明的完整视觉表注入 Rust 交互内核。
+fn build_select_view(mut kernel: Select, visual: &'static SelectVisual) -> ViewNode {
+    kernel.visual = visual;
+    kernel.control_rect.set(Rect::new(
+        0.0,
+        0.0,
+        visual.layout.natural_min_width,
+        visual.layout.control_height(kernel.select_size),
+    ));
+    kernel.dropdown_rect.set(Rect::zero());
+    kernel.surface_rect.set(None);
+    ViewNode::leaf(kernel)
+}
+
+impl View for Select {
+    fn build(self) -> ViewNode {
+        build_select_view(self, SELECT_VISUAL_REF)
+    }
+}
+
 // 计算控件、弹层与受表面裁剪阴影共同占用的脏区。
 fn select_dirty_rect(
     // 接收控件的绝对布局矩形。
@@ -235,6 +255,8 @@ fn select_dirty_rect(
     popup: Rect,
     // 接收当前逻辑表面。
     surface: Rect,
+    // 接收 UIX 声明的阴影扩展。
+    visual: &SelectVisual,
     // 返回限制在逻辑表面内的脏区。
 ) -> Rect {
     // 归一化控件矩形以阻止非有限值扩散。
@@ -245,8 +267,8 @@ fn select_dirty_rect(
     let list = select_popup_rect(frame, popup);
     // 合并控件与弹层本体。
     let expanded = frame.union(&list);
-    // 为既有下拉阴影预留八像素扩展。
-    let expand = 8.0;
+    // 为 UIX 声明的下拉阴影预留扩展。
+    let expand = visual.chrome.shadow_expand;
     // 扩展阴影后收敛到当前逻辑表面。
     Rect::new(
         // 向左扩展阴影。

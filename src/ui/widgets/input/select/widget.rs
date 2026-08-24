@@ -11,9 +11,10 @@ use crate::widget;
 use std::cell::{Cell, RefCell};
 
 use super::search::VisibleRow;
-use super::{OptGroup, SelectOption, SelectValueBinding, select_dirty_rect, select_popup_rect};
-
-const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
+use super::{
+    OptGroup, SelectOption, SelectValueBinding, presentation::SelectVisual, select_dirty_rect,
+    select_popup_rect,
+};
 
 widget! {
     /// 支持分组、单选或多选、搜索与弹层导航的选择组件。
@@ -51,6 +52,9 @@ widget! {
         pub(crate) multi_remove_rects: RefCell<Vec<(usize, Rect)>>,
         pub(crate) dropdown_scroll: VirtualListScroll,
         pub(crate) scroll_delta_strip: Cell<(f32, f32)>,
+        // 同目录 UIX 注入的完整静态视觉表。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static SelectVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -75,9 +79,13 @@ widget! {
         // 将弹层相对纵坐标转换为绝对列表起点。
         let list_y = frame.y + popup.y;
         // 多选行需要为复选框预留更宽左槽。
-        let text_left = if self.multiple { 32.0 } else { 10.0 };
+        let text_left = if self.multiple {
+            self.visual.layout.custom_multi_left
+        } else {
+            self.visual.layout.row_horizontal_padding
+        };
         // 自定义选项宽度使用受表面约束后的实际弹层宽度。
-        let content_width = (popup.w - text_left - 32.0).max(0.0);
+        let content_width = (popup.w - text_left - self.visual.layout.custom_right_inset).max(0.0);
         // 读取当前物化的自定义选项索引。
         let indices = self.materialized_custom_options.borrow();
         children
@@ -91,10 +99,10 @@ widget! {
                     child.id,
                     Rect::new(
                         frame.x + popup.x + text_left,
-                        list_y + row_index as f32 * DROPDOWN_ROW_HEIGHT
+                        list_y + row_index as f32 * self.visual.layout.row_height
                             - self.dropdown_scroll.scroll_offset(),
                         content_width,
-                        DROPDOWN_ROW_HEIGHT,
+                        self.visual.layout.row_height,
                     ),
                 ))
             })
@@ -224,7 +232,7 @@ widget! {
                     let dy = self.dropdown_scroll.scroll_by_wheel(
                         delta.y,
                         row_count,
-                        DROPDOWN_ROW_HEIGHT,
+                        self.visual.layout.row_height,
                         viewport_h,
                     );
                     if dy.abs() > 0.01 {
@@ -356,7 +364,7 @@ widget! {
             // 解析实际可交互弹层，而不是保守 damage 高度。
             let popup = self.remember_dropdown_rect(frame, surface, self.dropdown_row_count());
             // 命中框与最终弹层共享同一表面约束。
-            select_dirty_rect(frame, popup, surface)
+            select_dirty_rect(frame, popup, surface, self.visual)
         } else {
             frame
         }
@@ -372,7 +380,7 @@ widget! {
         // 使用保守行数解析受表面约束的重绘弹层。
         let popup = self.dropdown_damage_rect(frame, surface);
         // 控件、弹层与阴影脏区全部收敛到当前表面。
-        select_dirty_rect(frame, popup, surface)
+        select_dirty_rect(frame, popup, surface, self.visual)
     }
 
     overlay_entry => (&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -388,7 +396,7 @@ widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(select_popup_rect(frame, popup))
-                .z_index(900),
+                .z_index(self.visual.chrome.overlay_z),
         )
     }
 
@@ -435,7 +443,8 @@ widget! {
         if loading_active {
             let before = self.loading_phase;
             self.loading_phase = (self.loading_phase
-                + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+                + dt.max(0.0) as f32 * std::f32::consts::TAU
+                    / self.visual.motion.loading_cycle_seconds)
                 .rem_euclid(std::f32::consts::TAU);
             self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
         }
@@ -450,7 +459,7 @@ widget! {
             // 使用保守行数解析动画可能覆盖的弹层区域。
             let popup = self.dropdown_damage_rect(frame, surface);
             // 将动画脏区限制在当前表面。
-            select_dirty_rect(frame, popup, surface)
+            select_dirty_rect(frame, popup, surface, self.visual)
         } else {
             Rect::zero()
         }
