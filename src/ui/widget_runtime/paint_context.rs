@@ -42,8 +42,8 @@ fn conservative_width_from_measurement(measured_width: f32, text: &str, font_siz
     // 结束保守宽度合并。
 }
 
-// 使用调用方提供的保守度量函数执行 Unicode 安全的单行省略。
-fn elide_single_line_by(
+// 对已经不含换行的文本执行 Unicode 安全单行省略。
+fn elide_normalized_single_line_by(
     text: &str,
     max_width: f32,
     mut text_width: impl FnMut(&str) -> f32,
@@ -54,12 +54,12 @@ fn elide_single_line_by(
         return None;
         // 结束无可用宽度分支。
     }
-    // 将换行规范化为空格以维持既有单行语义。
-    let text = text.replace(['\r', '\n'], " ");
+    // 窄入口只接受已经完成换行规范化的文本。
+    debug_assert!(!text.contains(['\r', '\n']));
     // 完整文本能容纳时避免不必要的分配和省略。
-    if text_width(&text) <= max_width {
-        // 返回规范化后的完整单行文本。
-        return Some(text);
+    if text_width(text) <= max_width {
+        // 返回调用方可跨后续可变绘制借用持有的拥有型文本。
+        return Some(text.to_owned());
         // 结束完整文本分支。
     }
     // 极窄宽度连省略号也无法容纳时不绘制文本。
@@ -95,6 +95,17 @@ fn elide_single_line_by(
     // 返回保持在宽度边界内的单行结果。
     Some(visible)
     // 结束共享单行省略算法。
+}
+
+// 使用调用方提供的保守度量函数规范化换行并执行单行省略。
+fn elide_single_line_by(
+    text: &str,
+    max_width: f32,
+    text_width: impl FnMut(&str) -> f32,
+) -> Option<String> {
+    // 普通入口只做一次换行规范化，并把后续算法交给无重复分配的窄入口。
+    let normalized = text.replace(['\r', '\n'], " ");
+    elide_normalized_single_line_by(&normalized, max_width, text_width)
 }
 
 /// 转发 `&mut self` 绘制方法（固有方法享受二段式借用）。
@@ -202,6 +213,19 @@ impl<'a, 'b> PaintContext<'a, 'b> {
             self.conservative_text_width(candidate, font_size)
         })
         // 结束 UI 单行省略入口。
+    }
+
+    /// 对调用方已经规范化换行的文本执行保守单行省略。
+    pub(crate) fn elide_normalized_single_line(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<String> {
+        // 调用方已承担唯一一次换行替换，此处只执行宽度门禁与 Unicode 截断。
+        elide_normalized_single_line_by(text, max_width, |candidate| {
+            self.conservative_text_width(candidate, font_size)
+        })
     }
 
     delegate_shared! {
