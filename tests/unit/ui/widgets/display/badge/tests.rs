@@ -14,6 +14,8 @@ use crate::ui::widget_snapshot::AccessibilityRole;
 use crate::ui::adapter::ViewAdapter;
 // 引入事件结果、系统事件、ViewNode 与公开按钮。
 use crate::ui::{EventResult, SystemEvent, ViewNode};
+// 引入公开声明构建契约以验证同目录 UIX 根。
+use crate::ui::view::View;
 // 引入可定制主题 token 以验证预设颜色延迟解析。
 use crate::ui::theme::DesignTokens;
 // 引入公开按钮组件与水平组合器。
@@ -22,6 +24,29 @@ use crate::ui::widgets::{Button, row};
 use std::cell::Cell as CounterCell;
 // 引入点击处理器共享所有权。
 use std::rc::Rc as Shared;
+
+// 验证 UIX 根保持 Badge 内核及其一次性交接子树，不增加运行时包装节点。
+#[test]
+fn uix_root_preserves_badge_kernel_and_owned_child() {
+    // 构造带唯一真实按钮子树的组合徽章。
+    let node = View::build(
+        Badge::new()
+            .count(6)
+            .child(ViewNode::leaf(Button::new("通知"))),
+    );
+    // 声明根本身仍是叶节点；真实子树由 Badge 生命周期端口物化。
+    assert!(node.children.is_empty());
+    // 根动态类型必须继续是拥有布局、绘制与子树交接机制的 Badge。
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Badge>()
+        .expect("UIX 根必须保留 Badge 内核");
+    // 组合配置与待交接子树必须无损保留在同一内核中。
+    assert_eq!(kernel.count, 6);
+    assert!(kernel.composite);
+    assert!(kernel.child_view.is_some());
+}
 
 // 验证预设颜色跟随主题而任意颜色保持调用方所有权。
 #[test]

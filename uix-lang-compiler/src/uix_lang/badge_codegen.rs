@@ -109,8 +109,8 @@ pub(crate) fn generate_badge(element: &Element) -> Result<TokenStream, Diagnosti
         widget = quote! { (#widget).child(#child) };
     }
 
-    // 子树由 Badge 的 build_view_children 端口提供，因此外层仍是叶声明。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 子树由 Badge 的生命周期端口提供；公开根经组件自己的同目录 UIX 声明构建。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 Badge 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(
         // 传入已经配置的 Badge View。

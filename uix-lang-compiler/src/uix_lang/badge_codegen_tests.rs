@@ -34,6 +34,8 @@ fn generates_standalone_badge_contract() {
     assert!(snapshot.contains("automation_id"), "{snapshot}");
     // 零子节点不得生成组合 child 调用。
     assert!(!snapshot.contains(". child"), "{snapshot}");
+    // 生成器必须进入 Badge 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证唯一静态真实子 View 进入 Badge 组合生命周期。
@@ -55,6 +57,8 @@ fn generates_single_static_child_badge_contract() {
     .expect("静态容器内部应保留普通控制流");
     // 外层必须生成唯一 child 调用。
     assert!(container.contains("child"), "{container}");
+    // 组合 Badge 同样必须经 UIX 根声明，且不增加外层包装节点。
+    assert!(!container.contains("ViewNode :: leaf"), "{container}");
     // 内部条件必须保留为 Rust 控制流。
     assert!(container.contains("if show_button"), "{container}");
 }
