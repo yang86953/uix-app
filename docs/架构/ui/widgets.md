@@ -58,6 +58,7 @@
 - `Timeline`：`src/ui/widgets/display/timeline/` 同目录保存 Rust 与 UIX；UIX 拥有固有宽度、行高边界、节点/连接线几何、排版缩放及主题色/字号角色，Rust 只保留数据、反向索引、本地化、可见行裁剪、文本测量与底层绘制；完整容纳的普通单行文本经共享 `Cow` 快路径直接借用输入，不逐帧分配临时 `String`。
 - `List`：`src/ui/widgets/display/list/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/边框、三档行高、水平留白、兼容文字排版、分隔线和主题角色，Rust 只保留 Empty 策略、数据、三个真实插槽的稳定身份/测量/正常流布局及底层绘制；完整容纳的 header/footer/item/load-more 文本复用共享借用型省略入口。
 - `Collapse`：`src/ui/widgets/display/collapse/` 同目录保存 Rust 与 UIX；UIX 拥有宽度边界、标题/内容排版、图标槽、留白、焦点/边框几何及主题角色，Rust 只保留稳定 key、受控/非受控展开、动态内容子树、输入、动画与布局；普通单行标题宽度估算直接借用输入，面板切换只保留一份旧状态缓冲并原位启动变化动画。
+- `SelectableList`：`src/ui/widgets/display/selectable_list/` 同目录保存 Rust 与 UIX；UIX 拥有固有尺寸、头尾/行布局、图标、状态透明度、排版、焦点几何及主题角色，Rust 只保留稳定 id、受控/非受控选择、键盘/指针输入、可见行虚拟化、语义事件与底层绘制；完整容纳的单行文本直接借用输入，同帧全部可见行共享一次主题解析。
 
 当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；结构测试继续以空债务集合阻止回退。
 
