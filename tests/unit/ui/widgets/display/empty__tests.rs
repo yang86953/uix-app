@@ -17,3 +17,11 @@ fn uix_shell_preserves_single_empty_kernel_leaf() {
         }
     );
 }
+
+/// 单次描述布局必须同时返回显式多行的行数与对应行盒高度。
+#[test]
+fn description_layout_returns_count_and_height_together() {
+    let (line_count, height) = Empty::description_layout("第一行\n第二行", 1000.0);
+    assert_eq!(line_count, 2);
+    assert_eq!(height, 39.0);
+}
