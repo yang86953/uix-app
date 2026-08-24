@@ -23,7 +23,7 @@ use crate::ui::widget_runtime::widget::WidgetTree;
 // 引入布局尺寸归一化入口。
 use crate::ui::layout::engine::normalize_layout_size;
 // 引入唯一 Flex 算法与布局方向契约。
-use crate::ui::layout::{FlexDirection, FlexLayout, LayoutChild, LayoutEngine};
+use crate::ui::layout::{FlexDirection, FlexLayout, LayoutChild};
 // 引入组件标识与快照字段。
 use crate::ui::{SnapshotFields, View, ViewNode, WidgetId};
 
@@ -68,11 +68,34 @@ widget! {
         measure_shell_children(frame, children, tree)
     }
 
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        // 真实布局帧把测量快照直接写入树级工作区。
+        measure_shell_children_into(frame, children, tree, output);
+    }
+
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
         // 把方向与子项事实交给共享 FlexLayout。
         layout_shell_children(self.direction, frame, children)
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        // 真实布局帧复用树级 Flex 求解与位置映射缓冲。
+        layout_shell_children_into(self.direction, frame, children, scratch, output);
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -91,20 +114,33 @@ fn measure_shell_children(
     // 借用当前组件树完成受约束测量。
     tree: &WidgetTree,
 ) -> Vec<LayoutChild> {
+    let mut output = Vec::with_capacity(children.len());
+    measure_shell_children_into(frame, children, tree, &mut output);
+    output
+}
+
+// 把布局壳子节点测量快照写入调用方拥有的工作区。
+fn measure_shell_children_into(
+    frame: Rect,
+    children: &[WidgetId],
+    tree: &WidgetTree,
+    output: &mut Vec<LayoutChild>,
+) {
     // 只允许有限非负父尺寸进入子测量。
     let maximum = normalize_layout_size(Size::new(frame.w, frame.h));
     // 使用松约束保留子组件固有尺寸与 flex 事实。
     let constraints = Constraints::loose(maximum);
     // 按声明顺序生成共享布局描述符。
-    children
-        // 遍历轻量组件标识。
-        .iter()
-        // 复制标识供测量入口使用。
-        .copied()
-        // 从组件树读取尺寸、弹性与边距事实。
-        .map(|id| child_from_tree_with_constraints(id, tree, constraints))
-        // 物化当前布局轮次快照。
-        .collect()
+    output.clear();
+    output.extend(
+        children
+            // 遍历轻量组件标识。
+            .iter()
+            // 复制标识供测量入口使用。
+            .copied()
+            // 从组件树读取尺寸、弹性与边距事实。
+            .map(|id| child_from_tree_with_constraints(id, tree, constraints)),
+    );
 }
 
 // 把布局壳区域排列委托给唯一共享 Flex 算法。
@@ -116,6 +152,20 @@ fn layout_shell_children(
     // 接收已经测量的有序子项。
     children: &[LayoutChild],
 ) -> Vec<(WidgetId, Rect)> {
+    let mut scratch = crate::ui::LayoutEngineScratch::default();
+    let mut output = Vec::with_capacity(children.len());
+    layout_shell_children_into(direction, frame, children, &mut scratch, &mut output);
+    output
+}
+
+// 在布局树拥有的 Flex 工作区中求解并写回有序子节点位置。
+fn layout_shell_children_into(
+    direction: FlexDirection,
+    frame: Rect,
+    children: &[LayoutChild],
+    scratch: &mut crate::ui::LayoutEngineScratch,
+    output: &mut Vec<(WidgetId, Rect)>,
+) {
     // 只覆盖方向，其余对齐和伸缩规则沿用共享默认值。
     let engine = FlexLayout {
         // 应用 Layout 或固定区域方向。
@@ -123,18 +173,21 @@ fn layout_shell_children(
         // 保持 FlexLayout 的统一默认策略。
         ..FlexLayout::new()
     };
-    // 执行共享 Flex 求解。
-    let output = engine.layout(frame, children);
+    // 执行共享 Flex 求解并复用树级位置数组。
+    let _ = engine.layout_into(frame, children, scratch);
+    let positions = &scratch.flex.child_rects;
     // 把来源组件标识与求解位置重新配对。
-    children
-        // 遍历来源顺序描述符。
-        .iter()
-        // 与相同顺序的 Flex 输出配对。
-        .zip(output.positions)
-        // 返回组件树布局入口要求的映射。
-        .map(|(child, rect)| (child.id, rect))
-        // 物化全部子节点位置。
-        .collect()
+    output.clear();
+    output.reserve(children.len());
+    output.extend(
+        children
+            // 遍历来源顺序描述符。
+            .iter()
+            // 与相同顺序的 Flex 输出配对。
+            .zip(positions)
+            // 返回组件树布局入口要求的映射。
+            .map(|(child, rect)| (child.id, *rect)),
+    );
 }
 
 // 构造方法

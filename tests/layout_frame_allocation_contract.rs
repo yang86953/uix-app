@@ -3,9 +3,13 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use uix::core::Rect;
-use uix::prelude::{Card, Container, Grid, GridTrack, ScrollDirection, ScrollView, Space};
+use uix::core::{Rect, Size};
+use uix::prelude::{
+    Card, Container, Content, Footer, Grid, GridTrack, Header, Layout as PageLayout,
+    ScrollDirection, ScrollView, Sider, Space,
+};
 use uix::ui::__private::WidgetTree;
+use uix::ui::{LayoutChild, LayoutEngineScratch, WidgetId, WidgetLayout};
 
 struct CountingAllocator;
 
@@ -214,6 +218,49 @@ fn scroll_view_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn page_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(root, Box::new(PageLayout::new()));
+        for leaf_index in 0..8 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(80.0 + branch_index as f32)
+                        .height(16.0 + leaf_index as f32 * 2.0),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
+fn page_region_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    let regions = [
+        tree.add_child(root, Box::new(Header::new(48.0))),
+        tree.add_child(root, Box::new(Content::new())),
+        tree.add_child(root, Box::new(Sider::new(120.0))),
+        tree.add_child(root, Box::new(Footer::new(40.0))),
+    ];
+    for (region_index, region) in regions.into_iter().enumerate() {
+        for leaf_index in 0..8 {
+            tree.add_child(
+                region,
+                Box::new(
+                    Space::new()
+                        .width(72.0 + region_index as f32)
+                        .height(12.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -229,6 +276,28 @@ fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> u
 }
 
 #[test]
+fn page_layout_reusing_path_matches_owned_geometry() {
+    let layout = PageLayout::new();
+    let header = LayoutChild::new(WidgetId::new(1), Size::new(0.0, 48.0));
+    let mut content = LayoutChild::new(WidgetId::new(2), Size::zero());
+    content.flex_grow = 1.0;
+    let footer = LayoutChild::new(WidgetId::new(3), Size::new(0.0, 48.0));
+    let children = [header, content, footer];
+    let frame = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let tree = WidgetTree::new();
+    let expected = layout.layout_children(frame, &children, &tree);
+    let mut scratch = LayoutEngineScratch::default();
+    let mut actual = Vec::new();
+
+    layout.layout_children_into(frame, &children, &tree, &mut scratch, &mut actual);
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual[0].1, Rect::new(0.0, 0.0, 400.0, 48.0));
+    assert_eq!(actual[1].1, Rect::new(0.0, 48.0, 400.0, 204.0));
+    assert_eq!(actual[2].1, Rect::new(0.0, 252.0, 400.0, 48.0));
+}
+
+#[test]
 fn warmed_nested_layout_reuses_heap_storage() {
     let scenarios = [
         ("Container", nested_layout_tree()),
@@ -239,6 +308,8 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Responsive Grid", responsive_grid_layout_tree()),
         ("Spanning Grid", spanning_grid_layout_tree()),
         ("ScrollView", scroll_view_layout_tree()),
+        ("Layout regions", page_region_layout_tree()),
+        ("Layout", page_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
