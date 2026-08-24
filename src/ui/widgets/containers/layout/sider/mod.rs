@@ -1,6 +1,9 @@
 //! Sider 侧边栏的折叠尺寸、子树布局与声明式视觉。
 
-use super::{layout_shell_children, measure_shell_children};
+use super::{
+    layout_shell_children, layout_shell_children_into, measure_shell_children,
+    measure_shell_children_into,
+};
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::layout::{FlexDirection, LayoutChild};
@@ -55,10 +58,37 @@ widget! {
         layout_shell_children(self.visual.child_direction, frame, children)
     }
 
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        layout_shell_children_into(
+            self.visual.child_direction,
+            frame,
+            children,
+            scratch,
+            output,
+        );
+    }
+
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         measure_shell_children(frame, children, tree)
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        measure_shell_children_into(frame, children, tree, output);
     }
 }
 
