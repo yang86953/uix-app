@@ -15,9 +15,7 @@ use crate::widget;
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::theme::style::{ColorValue, DisplayMode, Style, apply_style as paint_style};
 use crate::ui::{SnapshotFields, SnapshotSource};
-use crate::ui::{WidgetId, WidgetTree};
-
-const RESPONSIVE_GRID_UNITS: usize = 24;
+use crate::ui::{View, ViewNode, WidgetId, WidgetTree};
 
 /// 自定义响应式断点无效时返回的 typed 错误。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +51,56 @@ pub struct Breakpoints {
     xxl: f32,
 }
 
+// 标识 UIX 为 Grid 选择的共享主题样式角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GridStyleRole {
+    Default,
+}
+
+impl GridStyleRole {
+    fn resolve(self) -> Style {
+        match self {
+            Self::Default => Style::default().with_display(DisplayMode::Grid),
+        }
+    }
+}
+
+// 保存 Grid 的响应式单元数、默认单元对齐与等分轨道比例。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GridLayoutVisual {
+    responsive_units: usize,
+    default_justify_items: JustifyContent,
+    equal_track_fraction: f32,
+}
+
+// 全部 Grid 实例共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GridVisual {
+    default_style: GridStyleRole,
+    breakpoints: Breakpoints,
+    layout: GridLayoutVisual,
+}
+
+crate::uix_items!("src/ui/widgets/containers/grid/grid.uix");
+
+pub(crate) const fn grid_default_style_role() -> GridStyleRole {
+    GridStyleRole::Default
+}
+
+pub(crate) const fn grid_justify_start() -> JustifyContent {
+    JustifyContent::Start
+}
+
+pub(crate) const fn grid_breakpoints(sm: f32, md: f32, lg: f32, xl: f32, xxl: f32) -> Breakpoints {
+    Breakpoints {
+        sm,
+        md,
+        lg,
+        xl,
+        xxl,
+    }
+}
+
 impl Breakpoints {
     /// 构造严格递增的自定义断点；`xs` 固定为 `0`。
     pub fn new(sm: f32, md: f32, lg: f32, xl: f32, xxl: f32) -> Result<Self, BreakpointError> {
@@ -77,13 +125,7 @@ impl Breakpoints {
 
     /// Ant Design 的默认断点，单位为 logical px。
     pub const fn antd() -> Self {
-        Self {
-            sm: 576.0,
-            md: 768.0,
-            lg: 992.0,
-            xl: 1200.0,
-            xxl: 1600.0,
-        }
+        GRID_VISUAL.breakpoints
     }
 
     /// 返回固定为零的超小断点。
@@ -140,7 +182,7 @@ impl Col {
     /// 创建默认跨越全部二十四单元的列配置。
     pub const fn new() -> Self {
         Self {
-            span: RESPONSIVE_GRID_UNITS as u8,
+            span: GRID_VISUAL.layout.responsive_units as u8,
             sm: None,
             md: None,
             lg: None,
@@ -189,7 +231,7 @@ impl Col {
 
     /// 设置当前列之前保留的栅格单元数。
     pub fn offset(mut self, offset: u32) -> Self {
-        self.offset = offset.min((RESPONSIVE_GRID_UNITS - 1) as u32) as u8;
+        self.offset = offset.min((GRID_VISUAL.layout.responsive_units - 1) as u32) as u8;
         self
     }
 
@@ -233,11 +275,11 @@ impl Col {
     }
 
     fn effective_offset(self, span: usize) -> usize {
-        (self.offset as usize).min(RESPONSIVE_GRID_UNITS - span)
+        (self.offset as usize).min(GRID_VISUAL.layout.responsive_units - span)
     }
 
     fn normalize_span(span: u32) -> u8 {
-        span.clamp(1, RESPONSIVE_GRID_UNITS as u32) as u8
+        span.clamp(1, GRID_VISUAL.layout.responsive_units as u32) as u8
     }
 }
 
@@ -256,6 +298,8 @@ widget! {
         cols: Vec<Col>,
         /// 保存零轴启动后由轨道与子内容求得的自然内容尺寸。
         cached_content_size: Cell<Size>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static GridVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -361,7 +405,7 @@ widget! {
             row_gap: self.effective_row_gap(),
             align_items: self.style.align_items,
             // Grid::justify 声明整组列轨的水平内容对齐，不改写单元格内子项。
-            justify_items: JustifyContent::Start,
+            justify_items: self.visual.layout.default_justify_items,
             // 复用 Style 的主轴对齐字段驱动 Grid 内容分布。
             justify_content: self.style.justify_content,
         };
@@ -402,6 +446,23 @@ impl Default for Grid {
     }
 }
 
+// 把 Grid Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_grid_view(mut kernel: Grid, visual: &'static GridVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Grid {
+    fn build(self) -> ViewNode {
+        build_grid_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_grid_uix_root(kernel: Grid) -> ViewNode {
+    crate::uix!("src/ui/widgets/containers/grid/grid.uix")
+}
+
 impl SnapshotSource for Grid {
     fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Grid {
@@ -416,11 +477,12 @@ impl Grid {
     /// 创建使用 Grid 显示模式的空容器。
     pub fn new() -> Self {
         Self {
-            style: Style::default().with_display(DisplayMode::Grid),
+            style: GRID_VISUAL_REF.default_style.resolve(),
             breakpoints: None,
             cols: Vec::new(),
             // 新 Grid 尚无已求解的轨道内容。
             cached_content_size: Cell::new(Size::zero()),
+            visual: GRID_VISUAL_REF,
         }
     }
 
@@ -428,6 +490,7 @@ impl Grid {
         self.style = next.style;
         self.breakpoints = next.breakpoints;
         self.cols = next.cols;
+        self.visual = next.visual;
         // 保留 cached_content_size，避免无关声明协调丢失布局固有尺寸。
     }
 
@@ -628,15 +691,17 @@ impl Grid {
 
     /// 创建两个等宽弹性列的 Grid。
     pub fn two_columns() -> Self {
-        Self::new().columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)])
+        let fraction = GRID_VISUAL_REF.layout.equal_track_fraction;
+        Self::new().columns(vec![GridTrack::Fr(fraction), GridTrack::Fr(fraction)])
     }
 
     /// 创建三个等宽弹性列的 Grid。
     pub fn three_columns() -> Self {
+        let fraction = GRID_VISUAL_REF.layout.equal_track_fraction;
         Self::new().columns(vec![
-            GridTrack::Fr(1.0),
-            GridTrack::Fr(1.0),
-            GridTrack::Fr(1.0),
+            GridTrack::Fr(fraction),
+            GridTrack::Fr(fraction),
+            GridTrack::Fr(fraction),
         ])
     }
 
@@ -658,7 +723,11 @@ impl Grid {
 
     fn ensure_responsive_tracks(&mut self) {
         if self.breakpoints.is_some() {
-            self.style.grid_template_columns = vec![GridTrack::Fr(1.0); RESPONSIVE_GRID_UNITS];
+            self.style.grid_template_columns =
+                vec![
+                    GridTrack::Fr(self.visual.layout.equal_track_fraction);
+                    self.visual.layout.responsive_units
+                ];
         }
     }
 
@@ -685,9 +754,10 @@ impl Grid {
             let col = self.cols.get(index).copied().unwrap_or_default();
             let span = col.span_at(available_width, breakpoints);
             let offset = col.effective_offset(span);
-            let current_column = next_cell % RESPONSIVE_GRID_UNITS;
-            if current_column + offset + span > RESPONSIVE_GRID_UNITS {
-                next_cell = next_cell.div_ceil(RESPONSIVE_GRID_UNITS) * RESPONSIVE_GRID_UNITS;
+            let responsive_units = self.visual.layout.responsive_units;
+            let current_column = next_cell % responsive_units;
+            if current_column + offset + span > responsive_units {
+                next_cell = next_cell.div_ceil(responsive_units) * responsive_units;
             }
             let cell = next_cell + offset;
             configured[index].grid_cell = Some(cell);
@@ -701,6 +771,6 @@ impl Grid {
 // Grid 公开组件的内容对齐接线回归测试。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/containers/grid__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/containers/grid__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

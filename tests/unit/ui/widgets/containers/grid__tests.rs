@@ -1,5 +1,20 @@
 // 导入当前模块的 Grid 与布局类型。
 use super::*;
+
+// 验证直接构造与 View 构建共享同目录 UIX 的静态视觉地址。
+#[test]
+fn view_build_uses_uix_visual_without_a_rust_default_copy() {
+    let grid = Grid::new();
+    assert!(std::ptr::eq(grid.visual, GRID_VISUAL_REF));
+    let node = crate::ui::view::View::build(grid);
+    let grid = node
+        .widget
+        .as_any()
+        .downcast_ref::<Grid>()
+        .expect("UIX 根必须保留 Grid Rust 内核");
+    assert!(std::ptr::eq(grid.visual, GRID_VISUAL_REF));
+    assert_eq!(Breakpoints::antd(), GRID_VISUAL_REF.breakpoints);
+}
 // 导入调用组件布局 trait 所需的公开接口。
 use crate::ui::WidgetLayout;
 

@@ -27,6 +27,7 @@ MIGRATED_WIDGET_DIRS = {
     "containers/back_top",
     "containers/affix",
     "containers/container",
+    "containers/grid",
     "display/avatar",
     "display/badge",
     "display/card",
