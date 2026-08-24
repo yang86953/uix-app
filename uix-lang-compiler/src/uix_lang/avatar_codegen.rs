@@ -56,8 +56,8 @@ pub(crate) fn generate_avatar(element: &Element) -> Result<TokenStream, Diagnost
         widget = quote! { (#widget).size(#size) };
     }
 
-    // 物化为公开叶 View，再应用统一样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入 Avatar 自己的同目录 UIX 声明根。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 Avatar 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的头像 View。

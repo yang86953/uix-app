@@ -1,0 +1,2 @@
+// Avatar 是带资源缓存的绘制组件；UIX 声明公开根，Rust 内核负责图片与文字。
+<KernelView value={build_avatar_view(kernel)} />

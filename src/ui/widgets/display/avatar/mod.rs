@@ -10,6 +10,7 @@ use crate::draw::Color;
 // 该导入仅服务于头像路径解码入口。
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 图片编解码 capability 启用时才追踪当前头像组件。
 use crate::ui::SnapshotFields;
@@ -138,6 +139,19 @@ impl Default for Avatar {
     }
 }
 
+// 把头像资源缓存、后备文字与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_avatar_view(kernel: Avatar) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Avatar {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占资源生命周期、测量与绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/avatar/avatar.uix")
+    }
+}
+
 impl Avatar {
     /// 创建使用主题颜色、默认 32 像素圆形和给定后备文字的头像。
     pub fn new(text: impl Into<String>) -> Self {
@@ -241,3 +255,8 @@ impl Avatar {
         }
     }
 }
+
+// 集中验证 UIX 声明壳与头像 Rust 内核的单叶契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/avatar_tests.rs"]
+mod tests;
