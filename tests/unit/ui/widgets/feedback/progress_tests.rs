@@ -7,7 +7,59 @@ use crate::ui::SnapshotFields;
 // 引入公开 View 构建入口以验证组件自己的 UIX 声明壳。
 use crate::ui::view::View;
 
-// 验证 UIX 声明壳保持原进度条单叶节点及 fraction。
+// 圆形进度必须提交单一共享弧路径，不再产生 64 条独立线段。
+#[test]
+fn circle_progress_records_one_arc_without_line_segments() {
+    use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::{DisplayList, PaintContext as DrawPaintContext, PaintOp};
+    use crate::draw::resources::font::font_service::FontService;
+    use crate::ui::Theme;
+    use crate::ui::widget_runtime::paint_context::PaintContext as UiPaintContext;
+    use crate::ui::widget_runtime::traits::WidgetRender;
+
+    let progress = ProgressBar::new().progress(0.5).circle();
+    let tree = crate::ui::WidgetTree::new();
+    let mut canvas = NoopCanvas2D;
+    let font_service = FontService::new();
+    let image_service = crate::draw::resources::image::ImageService::new();
+    let mut draw_context = DrawPaintContext::new_for_test(
+        &mut canvas,
+        crate::draw::FontHandle::new(0),
+        &font_service,
+        &image_service,
+        96.0,
+        1.0,
+        crate::draw::geometry::spatial::Orientation::YDown,
+        96,
+        96,
+    );
+    let mut list = DisplayList::new();
+    let tokens = Theme::antd_light().tokens_arc();
+    draw_context.with_recorder(&mut list, |draw_context| {
+        let mut ui_context = UiPaintContext::new(draw_context, tokens);
+        WidgetRender::render(
+            &progress,
+            crate::core::Rect::new(0.0, 0.0, 96.0, 96.0),
+            &mut ui_context,
+            &tree,
+        );
+    });
+
+    let arc_count = list
+        .ops()
+        .iter()
+        .filter(|op| matches!(op, PaintOp::StrokePath { .. }))
+        .count();
+    let line_count = list
+        .ops()
+        .iter()
+        .filter(|op| matches!(op, PaintOp::DrawLine { .. }))
+        .count();
+    assert_eq!(arc_count, 1);
+    assert_eq!(line_count, 0);
+}
+
+// 验证 UIX 视觉声明保持原进度条单叶节点、fraction 与作者形态。
 #[test]
 fn uix_shell_preserves_single_progress_kernel_leaf() {
     // 通过公开 View 入口构建已配置进度条。
@@ -27,6 +79,56 @@ fn uix_shell_preserves_single_progress_kernel_leaf() {
     };
     assert_eq!(progress, 0.4);
     assert_eq!(progress_type, ProgressType::Circle);
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<ProgressBar>()
+        .expect("UIX 根必须保留 ProgressBar 内核");
+    assert_eq!(kernel.visual_contract_for_test(), (200.0, 8.0, 0.75));
+}
+
+// 验证 UIX 默认尺寸与圆角只填充未显式设置的字段，并共享视觉表。
+#[test]
+fn uix_visual_defaults_keep_authored_dimensions_and_share_configuration() {
+    let first = View::build(ProgressBar::new().size(320.0, 12.0).round(false));
+    let second = View::build(ProgressBar::new());
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<ProgressBar>()
+        .expect("第一个 UIX 根必须保留 ProgressBar 内核");
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<ProgressBar>()
+        .expect("第二个 UIX 根必须保留 ProgressBar 内核");
+    let SnapshotFields::ProgressBar {
+        width: first_width,
+        height: first_height,
+        round: first_round,
+        ..
+    } = first.snapshot_fields()
+    else {
+        panic!("第一个 ProgressBar 必须生成专属快照");
+    };
+    let SnapshotFields::ProgressBar {
+        width: second_width,
+        height: second_height,
+        round: second_round,
+        ..
+    } = second.snapshot_fields()
+    else {
+        panic!("第二个 ProgressBar 必须生成专属快照");
+    };
+    assert_eq!(
+        (first_width, first_height, first_round),
+        (320.0, 12.0, false)
+    );
+    assert_eq!(
+        (second_width, second_height, second_round),
+        (200.0, 8.0, true)
+    );
+    assert!(first.shares_visual_with_for_test(second));
 }
 
 // 验证四类 fraction 输入共享唯一归一值与原因。

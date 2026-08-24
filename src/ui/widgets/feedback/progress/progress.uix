@@ -1,2 +1,2 @@
-// ProgressBar 是动画绘制组件；UIX 声明公开根，Rust 内核负责状态与绘制。
-<KernelView value={build_progress_view(kernel)} />
+// ProgressBar 的尺寸、几何比例、运动参数、渐变方向和主题角色由 UIX 声明；Rust 内核负责状态与绘制。
+<KernelView value={build_progress_view(kernel, progress_visual(progress_layout(200, 8, progress_round_default(), 0.4, 0.25, 1, 8, -0.25, 0.08, 2, 0.3, 0.72, 0.42, 0.65, 0.2, 1, 8, 0.5, 0.5, 11, 0.5, 1, progress_horizontal_gradient()), progress_motion(0, 0.75, 0.25, 0.25), progress_palette(progress_track(), progress_stroke(), progress_label(), progress_inner())))} />
