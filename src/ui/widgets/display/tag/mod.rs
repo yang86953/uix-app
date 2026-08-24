@@ -5,6 +5,7 @@ use std::cell::Cell;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{
@@ -407,12 +408,30 @@ impl Default for Tag {
     }
 }
 
+// 把标签 Rust 交互与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_tag_view(kernel: Tag) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Tag {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 保留关闭、勾选、布局和绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/tag/tag.uix")
+    }
+}
+
 // 验证标签预设色服从主题 token 与明暗模式。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/display/tag__palette_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/tag__palette_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod palette_tests;
+
+// 验证 UIX 声明壳与 Rust 内核的单节点契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/tag__uix_tests.rs"]
+mod uix_tests;
 
 impl Tag {
     /// 使用文本创建默认中性色、不可关闭且不可勾选的标签。

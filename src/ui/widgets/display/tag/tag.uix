@@ -1,0 +1,2 @@
+// Tag 是可关闭、可勾选的原子组件；UIX 声明公开根，Rust 内核负责行为与绘制。
+<KernelView value={build_tag_view(kernel)} />
