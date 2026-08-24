@@ -18,11 +18,6 @@ VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
 # Rust 仍保存完整静态表或 Visual::default 数值的存量双源事实；只允许逐项删除。
 RUST_VISUAL_DEFAULT_DEBT = {
-    "display/card/mod.rs",
-    "display/carousel/mod.rs",
-    "display/chart/bar_chart/presentation.rs",
-    "display/chart/line_chart/presentation.rs",
-    "display/chart/pie_chart/presentation.rs",
     "display/rich_text/presentation.rs",
     "display/table/presentation.rs",
     "feedback/alert/presentation.rs",
@@ -33,11 +28,6 @@ RUST_VISUAL_DEFAULT_DEBT = {
 
 # 仍以单个巨型位置参数调用表达视觉的存量 UIX；新组件必须改用具名 Visual 或真实子树。
 POSITIONAL_VISUAL_SHELL_DEBT = {
-    "display/card/card.uix",
-    "display/carousel/carousel.uix",
-    "display/chart/bar_chart/bar_chart.uix",
-    "display/chart/line_chart/line_chart.uix",
-    "display/chart/pie_chart/pie_chart.uix",
     "display/rich_text/rich_text.uix",
     "display/table/table.uix",
     "feedback/alert/alert.uix",

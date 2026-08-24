@@ -1,5 +1,5 @@
 // 复用父模块私有 Carousel 类型与固定动态身份。
-use super::{Carousel, CarouselEffect, SelectionSource};
+use super::{CAROUSEL_VISUAL_REF, Carousel, CarouselEffect, SelectionSource};
 // 导入真实声明建树和原位协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态 scope 与槽位创建入口。
@@ -50,12 +50,12 @@ fn uix_root_preserves_carousel_kernel_and_slides() {
 // UIX 默认控制只填充未显式设置字段，且实例共享静态视觉表。
 #[test]
 fn uix_defaults_preserve_authored_carousel_controls_and_share_visuals() {
-    let authored = View::build(
-        Carousel::new()
-            .show_dots(false)
-            .show_arrows(false)
-            .effect(CarouselEffect::Fade),
-    );
+    let authored = Carousel::new()
+        .show_dots(false)
+        .show_arrows(false)
+        .effect(CarouselEffect::Fade);
+    assert!(std::ptr::eq(authored.visual, CAROUSEL_VISUAL_REF));
+    let authored = View::build(authored);
     let defaults = View::build(Carousel::new());
     let authored = authored
         .widget
@@ -76,6 +76,7 @@ fn uix_defaults_preserve_authored_carousel_controls_and_share_visuals() {
         (true, true, CarouselEffect::Slide)
     );
     assert!(authored.shares_visual_with_for_test(defaults));
+    assert!(std::ptr::eq(authored.visual, CAROUSEL_VISUAL_REF));
 }
 
 // 淡入淡出透明度必须严格复用 UIX 关键点，并保持三角峰值质量。

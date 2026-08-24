@@ -443,9 +443,7 @@ widget! {
 }
 
 // 把数据/交互状态与 UIX 静态视觉融合为单一 PieChart 根节点。
-fn build_pie_chart_view(mut kernel: PieChart, declared_visual: PieChartVisual) -> ViewNode {
-    let visual = UIX_PIE_CHART_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_pie_chart_view(mut kernel: PieChart, visual: &'static PieChartVisual) -> ViewNode {
     if !kernel.authored.contains(PieChartAuthored::DONUT) {
         kernel.hole_radius = visual.defaults.hole_radius;
     }
@@ -534,17 +532,17 @@ impl PieChart {
         Self {
             data: Vec::new(),
             fixed_size: 0.0,
-            hole_radius: DEFAULT_PIE_CHART_VISUAL.defaults.hole_radius,
+            hole_radius: PIE_CHART_VISUAL.defaults.hole_radius,
             rose: false,
             rose_style: RoseStyle::Radius,
             start_angle: 0.0,
             end_angle: 360.0,
             total: None,
-            label_visible: DEFAULT_PIE_CHART_VISUAL.defaults.label_visible,
-            label_position: DEFAULT_PIE_CHART_VISUAL.defaults.label_position,
-            legend: DEFAULT_PIE_CHART_VISUAL.defaults.legend,
+            label_visible: PIE_CHART_VISUAL.defaults.label_visible,
+            label_position: PIE_CHART_VISUAL.defaults.label_position,
+            legend: PIE_CHART_VISUAL.defaults.legend,
             background: None,
-            padding: DEFAULT_PIE_CHART_VISUAL.defaults.padding,
+            padding: PIE_CHART_VISUAL.defaults.padding,
             title: String::new(),
             subtitle: String::new(),
             responsive: false,
@@ -560,7 +558,7 @@ impl PieChart {
             pan_origin: Cell::new(0.0),
             pan_offset: Cell::new(0.0),
             zoom: Cell::new(1.0),
-            visual: &DEFAULT_PIE_CHART_VISUAL,
+            visual: PIE_CHART_VISUAL_REF,
             authored: PieChartAuthored::default(),
         }
     }
