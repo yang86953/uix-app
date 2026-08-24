@@ -26,8 +26,8 @@ fn generates_qrcode_contract() {
     assert!(snapshot.contains("size (192.0)"));
     // Q 级必须映射为运行时编码 2。
     assert!(snapshot.contains("error_level (2u8)"));
-    // 组件必须物化为公开叶节点。
-    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 生成器必须进入 QRCode 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
     // 结束完整 QRCode 生成测试。

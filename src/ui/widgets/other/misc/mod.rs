@@ -3,7 +3,7 @@
 // 仅在使用方启用二维码 capability 时编译实现模块。
 #[cfg(feature = "qrcode")]
 // 二维码实现物理归入 display，此处只保留兼容模块路径。
-#[path = "../../display/qrcode.rs"]
+#[path = "../../display/qrcode/mod.rs"]
 mod qrcode;
 #[path = "../../input/transfer.rs"]
 mod transfer;

@@ -49,8 +49,8 @@ pub(crate) fn generate_qrcode(element: &Element) -> Result<TokenStream, Diagnost
             .size(#size)
             .error_level(#error_level)
     };
-    // QRCode 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入 QRCode 自己的同目录 UIX 声明根。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(
         // 传入已经配置的二维码 View。
