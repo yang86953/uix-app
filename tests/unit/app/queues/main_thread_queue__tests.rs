@@ -33,3 +33,58 @@
         // 两轮结束后队列应完整清空且没有任务丢失。
         assert_eq!(queue.len(), 0);
     }
+
+    // 批量取出后的回调 panic 不得丢弃同批尚未执行的任务。
+    #[test]
+    fn panicking_job_requeues_unexecuted_batch_in_fifo_order() {
+        let queue = MainThreadQueue::new();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        queue.enqueue(|| panic!("intentional main-thread job panic"));
+        for value in [2, 3] {
+            let order = Arc::clone(&order);
+            queue.enqueue(move || {
+                order
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .push(value);
+            });
+        }
+        let mut pending_root = None;
+        let mut reconcile_pending = false;
+        let mut context = MainThreadContext::new(&mut pending_root, &mut reconcile_pending);
+
+        let panic =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| queue.drain(&mut context)));
+        assert!(panic.is_err());
+        assert_eq!(queue.len(), 2);
+        assert!(queue.drain(&mut context));
+        assert_eq!(
+            order
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_slice(),
+            &[2, 3]
+        );
+    }
+
+    // 回调内 clear 必须同时取消已批量取出但尚未执行的旧任务。
+    #[test]
+    fn clear_during_drain_discards_unexecuted_batch() {
+        let queue = MainThreadQueue::new();
+        let clearer = queue.clone();
+        let calls = Arc::new(AtomicU64::new(0));
+        queue.enqueue(move || clearer.clear());
+        for _ in 0..2 {
+            let calls = Arc::clone(&calls);
+            queue.enqueue(move || {
+                calls.fetch_add(1, Ordering::Relaxed);
+            });
+        }
+        let mut pending_root = None;
+        let mut reconcile_pending = false;
+        let mut context = MainThreadContext::new(&mut pending_root, &mut reconcile_pending);
+
+        assert!(queue.drain(&mut context));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert_eq!(queue.len(), 0);
+    }
