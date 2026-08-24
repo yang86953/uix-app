@@ -2,28 +2,251 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
+use std::cell::{Ref, RefCell};
+use std::sync::OnceLock;
+
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::{SnapshotFields, WidgetTree};
+use crate::ui::{SnapshotFields, ThemeTokens, WidgetTree};
 use crate::widget;
 
-// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
-const DEFAULT_WIDTH: f32 = 600.0;
-const MIN_COLUMN_WIDTH: f32 = 140.0;
-// 描述项标题行高（32.0）；calendar 标题行为 24.0，组件独立设计。
-const TITLE_HEIGHT: f32 = 32.0;
-// 描述项标题字号（15.0）；breadcrumb 为 13.0，组件独立设计。
-const TITLE_FONT_SIZE: f32 = 15.0;
-const ITEM_FONT_SIZE: f32 = 13.0;
-const TEXT_LINE_HEIGHT: f32 = 1.5;
-// 描述项水平内边距（8.0）；empty 为 16.0，组件独立设计。
-const HORIZONTAL_PADDING: f32 = 8.0;
-// 描述项垂直内边距（6.0）；empty 为 12.0，组件独立设计。
-const VERTICAL_PADDING: f32 = 6.0;
-const MAX_LABEL_FRACTION: f32 = 0.45;
+// 保存由 UIX 声明的默认宽度、列约束与初始外观。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DescriptionsDefaultsVisual {
+    width: f32,
+    min_column_width: f32,
+    column: usize,
+    label_width: f32,
+    bordered: bool,
+}
+
+// 保存由 UIX 声明的标题、单元格与描边几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DescriptionsLayoutVisual {
+    title_height: f32,
+    title_horizontal_padding: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    max_label_fraction: f32,
+    border_width: f32,
+}
+
+// 保存由 UIX 声明的标题、条目字号与行高比例。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DescriptionsTypographyVisual {
+    title_font_size: f32,
+    item_font_size: f32,
+    line_height: f32,
+}
+
+// 保存由 UIX 声明的三档控件基础行高。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DescriptionsControlVisual {
+    small_height: f32,
+    medium_height: f32,
+    large_height: f32,
+}
+
+// 描述列表边框使用的主题圆角尺寸角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DescriptionsRadiusRole {
+    Default,
+}
+
+impl DescriptionsRadiusRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Default => tokens.border_radius(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的描述列表主题语义色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DescriptionsPaletteVisual {
+    background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    label_text: ColorValue,
+    label_fill: ColorValue,
+}
+
+// 完整视觉配置由全部 Descriptions 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DescriptionsVisual {
+    defaults: DescriptionsDefaultsVisual,
+    layout: DescriptionsLayoutVisual,
+    typography: DescriptionsTypographyVisual,
+    control: DescriptionsControlVisual,
+    radius: DescriptionsRadiusRole,
+    palette: DescriptionsPaletteVisual,
+}
+
+// 复用行高向量容量，并用宽度与列数锁定当前有效结果。
+#[derive(Debug, Default)]
+struct DescriptionsLayoutCache {
+    width_bits: u32,
+    columns: usize,
+    valid: bool,
+    row_heights: Vec<f32>,
+}
+
+// 组合 UIX 声明的默认宽度、列数与标签宽度。
+const fn descriptions_defaults(
+    width: f32,
+    min_column_width: f32,
+    column: f32,
+    label_width: f32,
+    bordered: bool,
+) -> DescriptionsDefaultsVisual {
+    DescriptionsDefaultsVisual {
+        width,
+        min_column_width,
+        column: column as usize,
+        label_width,
+        bordered,
+    }
+}
+
+// 组合 UIX 声明的标题、单元格与描边几何。
+const fn descriptions_layout(
+    title_height: f32,
+    title_horizontal_padding: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    max_label_fraction: f32,
+    border_width: f32,
+) -> DescriptionsLayoutVisual {
+    DescriptionsLayoutVisual {
+        title_height,
+        title_horizontal_padding,
+        horizontal_padding,
+        vertical_padding,
+        max_label_fraction,
+        border_width,
+    }
+}
+
+// 组合 UIX 声明的标题、条目字号与行高。
+const fn descriptions_typography(
+    title_font_size: f32,
+    item_font_size: f32,
+    line_height: f32,
+) -> DescriptionsTypographyVisual {
+    DescriptionsTypographyVisual {
+        title_font_size,
+        item_font_size,
+        line_height,
+    }
+}
+
+// 组合 UIX 声明的三档基础行高。
+const fn descriptions_control(
+    small_height: f32,
+    medium_height: f32,
+    large_height: f32,
+) -> DescriptionsControlVisual {
+    DescriptionsControlVisual {
+        small_height,
+        medium_height,
+        large_height,
+    }
+}
+
+// 组合 UIX 声明的描述列表主题语义色。
+const fn descriptions_palette(
+    background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    label_text: ColorValue,
+    label_fill: ColorValue,
+) -> DescriptionsPaletteVisual {
+    DescriptionsPaletteVisual {
+        background,
+        border,
+        text,
+        label_text,
+        label_fill,
+    }
+}
+
+// 组合 UIX 声明的完整描述列表视觉配置。
+const fn descriptions_visual(
+    defaults: DescriptionsDefaultsVisual,
+    layout: DescriptionsLayoutVisual,
+    typography: DescriptionsTypographyVisual,
+    control: DescriptionsControlVisual,
+    radius: DescriptionsRadiusRole,
+    palette: DescriptionsPaletteVisual,
+) -> DescriptionsVisual {
+    DescriptionsVisual {
+        defaults,
+        layout,
+        typography,
+        control,
+        radius,
+        palette,
+    }
+}
+
+// 向 UIX 提供默认无边框开关。
+const fn descriptions_bordered_default() -> bool {
+    false
+}
+
+// 向 UIX 提供默认圆角主题角色。
+const fn descriptions_default_radius() -> DescriptionsRadiusRole {
+    DescriptionsRadiusRole::Default
+}
+
+// 向 UIX 提供容器背景主题角色。
+const fn descriptions_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+// 向 UIX 提供次级边框主题角色。
+const fn descriptions_border() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+
+// 向 UIX 提供正文主题角色。
+const fn descriptions_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供标签次级正文主题角色。
+const fn descriptions_label_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+
+// 向 UIX 提供标签四级填充主题角色。
+const fn descriptions_label_fill() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillQuaternary)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_DESCRIPTIONS_VISUAL: DescriptionsVisual = descriptions_visual(
+    descriptions_defaults(600.0, 140.0, 3.0, 100.0, false),
+    descriptions_layout(32.0, 12.0, 8.0, 6.0, 0.45, 1.0),
+    descriptions_typography(15.0, 13.0, 1.5),
+    descriptions_control(28.0, 36.0, 44.0),
+    descriptions_default_radius(),
+    descriptions_palette(
+        descriptions_background(),
+        descriptions_border(),
+        descriptions_text(),
+        descriptions_label_text(),
+        descriptions_label_fill(),
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_DESCRIPTIONS_VISUAL: OnceLock<DescriptionsVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct ItemPlacement {
@@ -51,13 +274,25 @@ widget! {
         title: String,
         items: Vec<DescriptionsItem>,
         bordered: bool,
+        #[snapshot(skip)]
+        bordered_authored: bool,
         column: usize,
+        #[snapshot(skip)]
+        column_authored: bool,
         label_width: f32,
+        #[snapshot(skip)]
+        label_width_authored: bool,
         size: ControlSize,
+        #[snapshot(skip)]
+        layout_cache: RefCell<DescriptionsLayoutCache>,
+        #[snapshot(skip)]
+        visual: &'static DescriptionsVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let width = constraints.clamp(Size::new(DEFAULT_WIDTH, 0.0)).w;
+        let width = constraints
+            .clamp(Size::new(self.visual.defaults.width, 0.0))
+            .w;
         let row_heights = self.row_heights(width);
         constraints.clamp(Size::new(
             width,
@@ -74,12 +309,12 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border_secondary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let fill = ctx.tokens().color_fill_quaternary();
-        let r = Radius::uniform(ctx.tokens().border_radius());
+        let bg = self.visual.palette.background.resolve(ctx.tokens());
+        let border = self.visual.palette.border.resolve(ctx.tokens());
+        let text = self.visual.palette.text.resolve(ctx.tokens());
+        let text_sec = self.visual.palette.label_text.resolve(ctx.tokens());
+        let fill = self.visual.palette.label_fill.resolve(ctx.tokens());
+        let r = Radius::uniform(self.visual.radius.resolve(ctx.tokens()));
         let mut y = frame.y;
         let columns = self.effective_columns(frame.w);
         let col_w = frame.w / columns as f32;
@@ -89,21 +324,36 @@ widget! {
 
         // 标题
         if !self.title.is_empty() {
-            let title_rect = Rect::new(frame.x, y, frame.w, TITLE_HEIGHT.min(frame.h));
+            let title_rect = Rect::new(
+                frame.x,
+                y,
+                frame.w,
+                self.visual.layout.title_height.min(frame.h),
+            );
             let text_rect = Rect::new(
-                title_rect.x + 12.0,
+                title_rect.x + self.visual.layout.title_horizontal_padding,
                 title_rect.y,
-                (title_rect.w - 24.0).max(0.0),
+                (title_rect.w - self.visual.layout.title_horizontal_padding * 2.0).max(0.0),
                 title_rect.h,
             );
             // 复用 UI 绘制上下文拥有的保守单行省略算法。
-            if let Some(title) = ctx.elide_single_line(&self.title, TITLE_FONT_SIZE, text_rect.w) {
-                let ty = ctx.visual_center_y(title_rect, TITLE_FONT_SIZE);
+            if let Some(title) = ctx.elide_single_line(
+                &self.title,
+                self.visual.typography.title_font_size,
+                text_rect.w,
+            ) {
+                let ty =
+                    ctx.visual_center_y(title_rect, self.visual.typography.title_font_size);
                 ctx.push_clip(text_rect);
-                ctx.draw_text(&title, Point::new(text_rect.x, ty), text, TITLE_FONT_SIZE);
+                ctx.draw_text(
+                    &title,
+                    Point::new(text_rect.x, ty),
+                    text,
+                    self.visual.typography.title_font_size,
+                );
                 ctx.pop_clip();
             }
-            y += TITLE_HEIGHT;
+            y += self.visual.layout.title_height;
         }
 
         // 主体背景
@@ -115,7 +365,7 @@ widget! {
                 body_height.min((frame.y + frame.h - y).max(0.0)),
             );
             ctx.fill_rect(body, bg, Some(r));
-            ctx.stroke_rect(body, border, 1.0, Some(r));
+            ctx.stroke_rect(body, border, self.visual.layout.border_width, Some(r));
         }
 
         // 按 span 顺序装箱；放不下的条目从下一行开始。
@@ -141,17 +391,32 @@ widget! {
             );
             if self.bordered {
                 ctx.fill_rect(label_rect, fill, None);
-                ctx.stroke_rect(row_rect, border, 1.0, None);
+                ctx.stroke_rect(row_rect, border, self.visual.layout.border_width, None);
             }
-            draw_wrapped_cell_text(ctx, label_rect, &item.label, text_sec);
-            draw_wrapped_cell_text(ctx, value_rect, &item.value, text);
+            draw_wrapped_cell_text(ctx, label_rect, &item.label, text_sec, self.visual);
+            draw_wrapped_cell_text(ctx, value_rect, &item.value, text, self.visual);
         }
         ctx.pop_clip();
     }
 }
 
 // 把描述项数据、网格算法与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_descriptions_view(kernel: Descriptions) -> ViewNode {
+fn build_descriptions_view(
+    mut kernel: Descriptions,
+    declared_visual: DescriptionsVisual,
+) -> ViewNode {
+    let visual = UIX_DESCRIPTIONS_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.bordered_authored {
+        kernel.bordered = visual.defaults.bordered;
+    }
+    if !kernel.column_authored {
+        kernel.column = visual.defaults.column.max(1);
+    }
+    if !kernel.label_width_authored {
+        kernel.label_width = visual.defaults.label_width;
+    }
+    kernel.visual = visual;
+    kernel.invalidate_layout_cache();
     ViewNode::leaf(kernel)
 }
 
@@ -166,23 +431,31 @@ impl View for Descriptions {
 impl Descriptions {
     /// 创建三列、无边框且使用全局控件尺寸的空描述列表。
     pub fn new() -> Self {
+        let visual = &DEFAULT_DESCRIPTIONS_VISUAL;
         Self {
             title: String::new(),
             items: Vec::new(),
-            bordered: false,
-            column: 3,
-            label_width: 100.0,
+            bordered: visual.defaults.bordered,
+            bordered_authored: false,
+            column: visual.defaults.column,
+            column_authored: false,
+            label_width: visual.defaults.label_width,
+            label_width_authored: false,
             size: crate::ui::widget_runtime::config::use_config().size,
+            layout_cache: RefCell::new(DescriptionsLayoutCache::default()),
+            visual,
         }
     }
     /// 设置描述列表标题。
     pub fn title(mut self, t: &str) -> Self {
         self.title = t.to_string();
+        self.invalidate_layout_cache();
         self
     }
     /// 替换描述列表中的全部项目。
     pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self {
         self.items = items;
+        self.invalidate_layout_cache();
         self
     }
     #[allow(
@@ -192,26 +465,33 @@ impl Descriptions {
     /// 在描述列表末尾追加一个项目。
     pub fn add(mut self, item: DescriptionsItem) -> Self {
         self.items.push(item);
+        self.invalidate_layout_cache();
         self
     }
     /// 设置是否绘制单元格边框。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
+        self.bordered_authored = true;
         self
     }
     /// 设置每行列数；零会被规范化为一列。
     pub fn column(mut self, v: usize) -> Self {
         self.column = v.max(1);
+        self.column_authored = true;
+        self.invalidate_layout_cache();
         self
     }
     /// 设置标签区域宽度；非有限值归零，负值截断为零。
     pub fn label_width(mut self, w: f32) -> Self {
         self.label_width = Self::normalize_dimension(w);
+        self.label_width_authored = true;
+        self.invalidate_layout_cache();
         self
     }
     /// 设置描述列表的控件尺寸。
     pub fn size(mut self, s: ControlSize) -> Self {
         self.size = s;
+        self.invalidate_layout_cache();
         self
     }
 
@@ -230,24 +510,29 @@ impl Descriptions {
         self.title = next.title;
         self.items = next.items;
         self.bordered = next.bordered;
+        self.bordered_authored = next.bordered_authored;
         self.column = next.column.max(1);
+        self.column_authored = next.column_authored;
         self.label_width = Self::normalize_dimension(next.label_width);
+        self.label_width_authored = next.label_width_authored;
         self.size = next.size;
+        self.visual = next.visual;
+        self.invalidate_layout_cache();
     }
 
     fn title_height(&self) -> f32 {
         if self.title.is_empty() {
             0.0
         } else {
-            TITLE_HEIGHT
+            self.visual.layout.title_height
         }
     }
 
     fn base_item_height(&self) -> f32 {
         match self.size {
-            ControlSize::Small => 28.0,
-            ControlSize::Medium => 36.0,
-            ControlSize::Large => 44.0,
+            ControlSize::Small => self.visual.control.small_height,
+            ControlSize::Medium => self.visual.control.medium_height,
+            ControlSize::Large => self.visual.control.large_height,
         }
     }
 
@@ -257,7 +542,7 @@ impl Descriptions {
         } else {
             0.0
         };
-        let fitting = (available / MIN_COLUMN_WIDTH).floor() as usize;
+        let fitting = (available / self.visual.defaults.min_column_width).floor() as usize;
         self.column.min(fitting.max(1)).max(1)
     }
 
@@ -285,13 +570,32 @@ impl Descriptions {
             })
     }
 
-    fn row_heights(&self, width: f32) -> Vec<f32> {
+    fn row_heights(&self, width: f32) -> Ref<'_, [f32]> {
         let columns = self.effective_columns(width);
         self.row_heights_for(width, columns)
     }
 
-    fn row_heights_for(&self, width: f32, columns: usize) -> Vec<f32> {
-        let mut heights: Vec<f32> = Vec::new();
+    fn row_heights_for(&self, width: f32, columns: usize) -> Ref<'_, [f32]> {
+        let width = width.max(0.0);
+        let columns = columns.max(1);
+        let needs_refresh = {
+            let cache = self.layout_cache.borrow();
+            !cache.valid || cache.width_bits != width.to_bits() || cache.columns != columns
+        };
+        if needs_refresh {
+            let mut cache = self.layout_cache.borrow_mut();
+            cache.row_heights.clear();
+            self.fill_row_heights(width, columns, &mut cache.row_heights);
+            cache.width_bits = width.to_bits();
+            cache.columns = columns;
+            cache.valid = true;
+        }
+        Ref::map(self.layout_cache.borrow(), |cache| {
+            cache.row_heights.as_slice()
+        })
+    }
+
+    fn fill_row_heights(&self, width: f32, columns: usize, heights: &mut Vec<f32>) {
         let col_w = width.max(0.0) / columns.max(1) as f32;
         for placement in self.item_placements(columns) {
             if placement.row == heights.len() {
@@ -301,18 +605,41 @@ impl Descriptions {
             let item_w = placement.span as f32 * col_w;
             let label_width = self.effective_label_width(item_w);
             let value_width = (item_w - label_width).max(0.0);
-            let label_height = wrapped_text_height(&item.label, label_width);
-            let value_height = wrapped_text_height(&item.value, value_width);
-            heights[placement.row] =
-                heights[placement.row].max(label_height.max(value_height) + VERTICAL_PADDING * 2.0);
+            let label_height = wrapped_text_height(&item.label, label_width, self.visual);
+            let value_height = wrapped_text_height(&item.value, value_width, self.visual);
+            heights[placement.row] = heights[placement.row]
+                .max(label_height.max(value_height) + self.visual.layout.vertical_padding * 2.0);
         }
-        heights
     }
 
     fn effective_label_width(&self, item_width: f32) -> f32 {
         self.label_width
-            .min(item_width.max(0.0) * MAX_LABEL_FRACTION)
+            .min(item_width.max(0.0) * self.visual.layout.max_label_fraction)
             .max(0.0)
+    }
+
+    fn invalidate_layout_cache(&self) {
+        self.layout_cache.borrow_mut().valid = false;
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.defaults.width,
+            self.visual.defaults.min_column_width,
+            self.visual.layout.title_height,
+            self.visual.typography.title_font_size,
+            self.visual.typography.item_font_size,
+            self.visual.layout.horizontal_padding,
+            self.visual.layout.vertical_padding,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 
     fn normalize_dimension(value: f32) -> f32 {
@@ -351,20 +678,20 @@ impl DescriptionsItem {
 #[path = "../../../../../tests/unit/ui/widgets/display/descriptions_tests.rs"]
 mod tests;
 
-fn wrapped_text_height(text: &str, region_width: f32) -> f32 {
-    let text_width = region_width - HORIZONTAL_PADDING * 2.0;
+fn wrapped_text_height(text: &str, region_width: f32, visual: &DescriptionsVisual) -> f32 {
+    let text_width = region_width - visual.layout.horizontal_padding * 2.0;
     if text_width <= 0.0 {
         return 0.0;
     }
     crate::draw::resources::font::text_backend::estimate_text_metrics(
         text,
         text_width,
-        ITEM_FONT_SIZE,
+        visual.typography.item_font_size,
     )
     .line_count
     .max(1) as f32
-        * ITEM_FONT_SIZE
-        * TEXT_LINE_HEIGHT
+        * visual.typography.item_font_size
+        * visual.typography.line_height
 }
 
 fn draw_wrapped_cell_text(
@@ -372,17 +699,18 @@ fn draw_wrapped_cell_text(
     region: Rect,
     text: &str,
     color: crate::draw::Color,
+    visual: &DescriptionsVisual,
 ) {
     let text_rect = Rect::new(
-        region.x + HORIZONTAL_PADDING,
-        region.y + VERTICAL_PADDING,
-        (region.w - HORIZONTAL_PADDING * 2.0).max(0.0),
-        (region.h - VERTICAL_PADDING * 2.0).max(0.0),
+        region.x + visual.layout.horizontal_padding,
+        region.y + visual.layout.vertical_padding,
+        (region.w - visual.layout.horizontal_padding * 2.0).max(0.0),
+        (region.h - visual.layout.vertical_padding * 2.0).max(0.0),
     );
     if text_rect.w <= 0.0 || text_rect.h <= 0.0 {
         return;
     }
     ctx.push_clip(text_rect);
-    ctx.draw_text_wrapped(text, text_rect, color, ITEM_FONT_SIZE);
+    ctx.draw_text_wrapped(text, text_rect, color, visual.typography.item_font_size);
     ctx.pop_clip();
 }

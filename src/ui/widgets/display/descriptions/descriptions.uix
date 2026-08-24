@@ -1,2 +1,2 @@
-// Descriptions 是数据网格绘制组件；UIX 声明公开根，Rust 内核负责布局与换行。
-<KernelView value={build_descriptions_view(kernel)} />
+// Descriptions 的默认列网格、标题/单元格排版、三档行高、边框与主题角色由 UIX 声明；Rust 内核负责数据、装箱、缓存、换行与绘制。
+<KernelView value={build_descriptions_view(kernel, descriptions_visual(descriptions_defaults(600, 140, 3, 100, descriptions_bordered_default()), descriptions_layout(32, 12, 8, 6, 0.45, 1), descriptions_typography(15, 13, 1.5), descriptions_control(28, 36, 44), descriptions_default_radius(), descriptions_palette(descriptions_background(), descriptions_border(), descriptions_text(), descriptions_label_text(), descriptions_label_fill())))} />
