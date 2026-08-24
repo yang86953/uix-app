@@ -46,6 +46,8 @@ fn generates_image_contract() {
     assert!(!snapshot.contains("slot"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 Image 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证 Image 最小声明使用确定的固有尺寸与运行时开关默认值。
@@ -72,6 +74,8 @@ fn generates_image_documented_defaults() {
     assert!(!snapshot.contains(". fit"));
     // 省略 lazy 时必须保留运行时 false 默认值。
     assert!(!snapshot.contains(". lazy"));
+    // 最小声明也必须经过 Image 的 UIX 根。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
 }
 
 // 验证 Image 必需来源、默认插槽拒绝与静态数值边界。

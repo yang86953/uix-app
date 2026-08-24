@@ -1,0 +1,2 @@
+// Image 的加载状态机和预览绘制属于 Rust；UIX 声明公开组件根。
+<KernelView value={build_image_view(kernel)} />
