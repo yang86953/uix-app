@@ -4,7 +4,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::Rect;
-use uix::prelude::{Card, Container, Grid, GridTrack, Space};
+use uix::prelude::{Card, Container, Grid, GridTrack, ScrollDirection, ScrollView, Space};
 use uix::ui::__private::WidgetTree;
 
 struct CountingAllocator;
@@ -192,6 +192,28 @@ fn spanning_grid_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn scroll_view_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(
+            root,
+            Box::new(ScrollView::new(ScrollDirection::Vertical).size(100.0, 60.0)),
+        );
+        for leaf_index in 0..8 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(80.0 + branch_index as f32)
+                        .height(12.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -216,6 +238,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Grid", grid_layout_tree()),
         ("Responsive Grid", responsive_grid_layout_tree()),
         ("Spanning Grid", spanning_grid_layout_tree()),
+        ("ScrollView", scroll_view_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);

@@ -411,23 +411,51 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
         // gutter 依据上一轮 content_bounds / max_scroll；首帧无溢出信息时先满宽，
         // layout_children 仍会按子项高度决定是否缩进，收敛循环下一轮即可对齐 measure。
         let need_v = self.needs_v_scrollbar(frame, &[]);
         let need_h = self.needs_h_scrollbar(frame, &[]);
         let constraints = self.child_constraints(frame, need_v, need_h);
-        children
-            .iter()
-            .copied()
-            // 滚动轴必须读取子树自然内容尺寸；普通 Flex basis 会把 flex-grow
-            // 子项折成视口尺寸，使真实溢出无法进入 content_bounds。
-            .map(|id| child_from_tree_with_natural_constraints(id, tree, constraints))
-            .collect()
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                // 滚动轴必须读取子树自然内容尺寸；普通 Flex basis 会把 flex-grow
+                // 子项折成视口尺寸，使真实溢出无法进入 content_bounds。
+                .map(|id| child_from_tree_with_natural_constraints(id, tree, constraints)),
+        );
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
+        let mut scratch = crate::ui::LayoutEngineScratch::default();
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_into(frame, children, tree, &mut scratch, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
         // 在组件布局边界清除无界哨兵与非有限 frame 分量。
         let frame = Rect::new(
             finite_or_zero(frame.x),
@@ -438,13 +466,13 @@ widget! {
         // 布局尺寸是当前视口真相；最大偏移不能继续使用上一帧窗口尺寸。
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        // 预分配最终子项位置列表。
-        let mut result = Vec::new();
+        // 复用布局树拥有的最终子项位置列表。
+        output.clear();
         // 空视口直接记录有限的外框尺寸。
         if children.is_empty() {
             self.content_bounds.set(Some(Size::new(frame.w, frame.h)));
             self.write_bound_offset();
-            return result;
+            return;
         }
 
         // 先根据自然外尺寸与上一轮内容范围判断滚动条。
@@ -533,7 +561,7 @@ widget! {
             // 构造已有限化的子项内容 frame。
             let r = Rect::new(x, y, finite_non_negative(w), finite_non_negative(h));
             // 保持输入顺序写入布局结果。
-            result.push((cid, r));
+            output.push((cid, r));
             // 正右 margin 属于物理内容范围，负 margin 仅改变推进距离。
             let occupied_right = finite_or_zero(r.x + r.w + margin.right.max(0.0));
             // 正下 margin 属于物理内容范围，负 margin 仅改变推进距离。
@@ -585,8 +613,6 @@ widget! {
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
         // 内容缩短或视口变大时，受控状态必须同步到新的合法末端。
         self.write_bound_offset();
-        // 返回已经与输入标识一一对应的子 frame。
-        result
     }
 }
 
