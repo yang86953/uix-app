@@ -214,12 +214,14 @@ pub trait ScenePaint {
     }
     /// 返回节点按场景顺序排列的直接子节点切片。
     fn node_children(&self, id: NodeId) -> &[NodeId];
-    /// 返回父布局为节点子树声明的不连续裁剪片段。
-    fn node_clip_regions(&self, id: NodeId) -> Option<Vec<Rect>> {
-        // 默认场景节点不需要额外的父级片段裁剪。
-        let _ = id;
-        // 用空能力保持现有场景实现兼容。
-        None
+    /// 在节点声明父级不连续裁剪片段时，以只读切片调用一次访问器。
+    ///
+    /// 返回值区分“没有片段元数据”和 `Some(empty)`：前者为 `false` 且不调用访问器，
+    /// 后者为 `true` 且传入空切片。切片只在访问器调用期间有效，消费方不得保留。
+    fn visit_node_clip_regions(&self, id: NodeId, visitor: &mut dyn FnMut(&[Rect])) -> bool {
+        // 默认场景节点不提供额外的父级片段裁剪能力。
+        let _ = (id, visitor);
+        false
     }
     /// 返回节点声明并经运行时信号收紧后的 Picture 缓存资格。
     fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {

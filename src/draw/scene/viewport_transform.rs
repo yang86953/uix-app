@@ -86,15 +86,19 @@ fn accumulate_visible_path(
     };
 
     // 父级片段位于当前节点自身变换之前的父内容坐标系。
-    if state.has_ancestor
-        && let Some(regions) = scene.node_clip_regions(id)
-    {
-        let mut regions = regions.into_iter();
-        let mut region_bounds = regions.next()?;
-        for region in regions {
-            region_bounds = region_bounds.union(&region);
+    if state.has_ancestor {
+        let mut region_bounds = None;
+        let has_regions = scene.visit_node_clip_regions(id, &mut |regions| {
+            region_bounds = regions
+                .iter()
+                .copied()
+                .reduce(|left, right| left.union(&right));
+        });
+        // Some(empty) 表示父布局明确隐藏整个子树，必须与缺少元数据区分。
+        if has_regions {
+            let region_bounds = region_bounds?;
+            state.intersect_clip(state.transform.transform_rect(region_bounds))?;
         }
-        state.intersect_clip(state.transform.transform_rect(region_bounds))?;
     }
 
     // 视觉根浮层消费完整根变换，其余节点消费常规节点变换。

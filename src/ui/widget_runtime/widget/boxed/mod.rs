@@ -527,10 +527,15 @@ impl BoxedWidget {
         // 用内部可变状态接收布局阶段生成的片段快照。
         *self.parent_clip_regions.borrow_mut() = regions;
     }
-    // 读取当前节点子树应使用的父级可见片段。
-    pub(crate) fn parent_clip_regions(&self) -> Option<Vec<Rect>> {
-        // 克隆最多数个矩形，避免把借用带入合成与命中遍历。
-        self.parent_clip_regions.borrow().clone()
+    // 在内部借用作用域内读取当前节点子树应使用的父级可见片段。
+    pub(crate) fn visit_parent_clip_regions(&self, visitor: &mut dyn FnMut(&[Rect])) -> bool {
+        // 借用只覆盖同步访问器调用，不向组件树或 draw 边界泄漏 RefCell guard。
+        let regions = self.parent_clip_regions.borrow();
+        let Some(regions) = regions.as_deref() else {
+            return false;
+        };
+        visitor(regions);
+        true
     }
     pub fn dirty_rect(&self, frame: Rect) -> Rect {
         self.widget()

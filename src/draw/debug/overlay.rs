@@ -387,9 +387,11 @@ impl DebugRenderService {
             PicturePolicy::Eligible => "eligible",
         };
         let scroll = scene.scroll_offset(leaf.node_id).unwrap_or((0.0, 0.0));
-        let clip_regions = scene
-            .node_clip_regions(leaf.node_id)
-            .map_or(0, |regions| regions.len());
+        let mut clip_regions = 0;
+        // 调试面板只读取片段数量，不为只读查询复制矩形集合。
+        scene.visit_node_clip_regions(leaf.node_id, &mut |regions| {
+            clip_regions = regions.len();
+        });
 
         let mut lines = vec![
             OverlayLine::new(

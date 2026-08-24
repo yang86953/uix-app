@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{DirtyRegion, Point, Rect, WidgetId};
 use uix::draw::Transform;
 use uix::draw::painting::PaintContext;
-use uix::draw::scene::{NodeId, ScenePaint, node_visual_rect, visible_viewport_rect};
+use uix::draw::scene::{LayerTree, NodeId, ScenePaint, node_visual_rect, visible_viewport_rect};
 
 /// 只在测试显式开启的窄区间统计场景坐标查询的堆申请。
 struct CountingAllocator;
@@ -50,6 +50,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const ROOT_NODE: NodeId = WidgetId::new(1);
 const OVERLAY_NODE: NodeId = WidgetId::new(2);
 const CHILD_NODE: NodeId = WidgetId::new(3);
+const EMPTY_CLIP_NODE: NodeId = WidgetId::new(4);
 
 /// 模拟滚动容器内被提升到根画布、且自身裁剪后代的浮层。
 struct ScrolledClippedOverlayScene;
@@ -107,6 +108,22 @@ impl ScenePaint for ScrolledClippedOverlayScene {
         }
     }
 
+    fn visit_node_clip_regions(&self, id: NodeId, visitor: &mut dyn FnMut(&[Rect])) -> bool {
+        static CHILD_REGIONS: [Rect; 1] = [Rect {
+            x: 50.0,
+            y: 100.0,
+            w: 40.0,
+            h: 60.0,
+        }];
+        static EMPTY_REGIONS: [Rect; 0] = [];
+        match id {
+            CHILD_NODE => visitor(&CHILD_REGIONS),
+            EMPTY_CLIP_NODE => visitor(&EMPTY_REGIONS),
+            _ => return false,
+        }
+        true
+    }
+
     fn node_is_overlay(&self, id: NodeId) -> bool {
         id == OVERLAY_NODE
     }
@@ -151,7 +168,7 @@ impl ScenePaint for ScrolledClippedOverlayScene {
     fn parent(&self, id: NodeId) -> Option<NodeId> {
         match id {
             OVERLAY_NODE => Some(ROOT_NODE),
-            CHILD_NODE => Some(OVERLAY_NODE),
+            CHILD_NODE | EMPTY_CLIP_NODE => Some(OVERLAY_NODE),
             _ => None,
         }
     }
@@ -163,7 +180,20 @@ impl ScenePaint for ScrolledClippedOverlayScene {
 fn overlay_descendant_projection_preserves_clipping_without_heap_allocations() {
     let scene = ScrolledClippedOverlayScene;
     let expected_rect = Rect::new(55.0, 30.0, 80.0, 20.0);
-    let expected_visible = Rect::new(55.0, 30.0, 65.0, 20.0);
+    let expected_visible = Rect::new(55.0, 30.0, 30.0, 20.0);
+
+    // ScenePaint 仍可作为对象安全只读契约使用。
+    let scene_object: &dyn ScenePaint = &scene;
+    let mut empty_region_count = usize::MAX;
+    assert!(
+        scene_object.visit_node_clip_regions(EMPTY_CLIP_NODE, &mut |regions| {
+            empty_region_count = regions.len();
+        })
+    );
+    assert_eq!(empty_region_count, 0);
+    assert!(!scene_object.visit_node_clip_regions(ROOT_NODE, &mut |_| {}));
+    // Some(empty) 必须继续表示完全隐藏，不能退化成没有片段限制。
+    assert_eq!(visible_viewport_rect(&scene, EMPTY_CLIP_NODE), None);
 
     assert_eq!(
         node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE)),
@@ -177,10 +207,15 @@ fn overlay_descendant_projection_preserves_clipping_without_heap_allocations() {
     // 预热测试进程后，只测量相同坐标与裁剪查询本身。
     let _ = node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE));
     let _ = visible_viewport_rect(&scene, CHILD_NODE);
+    let mut layer_tree = LayerTree::new();
+    layer_tree.build(&scene, false);
+    layer_tree.update_dirty(&scene);
     ALLOCATION_COUNT.store(0, Ordering::Relaxed);
     COUNT_ALLOCATIONS.store(true, Ordering::Release);
     let repeated_rect = node_visual_rect(&scene, CHILD_NODE, scene.node_frame(CHILD_NODE));
     let repeated_visible = visible_viewport_rect(&scene, CHILD_NODE);
+    // 未变化的 LayerTree 片段快照必须复用已持有容量。
+    layer_tree.update_dirty(&scene);
     COUNT_ALLOCATIONS.store(false, Ordering::Release);
 
     assert_eq!(repeated_rect, expected_rect);

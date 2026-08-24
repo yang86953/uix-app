@@ -159,12 +159,15 @@ impl WidgetTree {
                     || self
                         // 读取当前子节点保存的父级片段元数据。
                         .get(child_id)
-                        // 缺少片段表示普通未裁剪子树，存在片段则要求命中任一矩形。
-                        .and_then(|child| child.parent_clip_regions())
-                        // 空片段集合自然拒绝全部命中。
-                        .is_none_or(|regions| {
-                            // 不连续片段使用集合命中，不能退化为联合包围盒。
-                            regions.iter().any(|region| region.contains(child_clip_pos))
+                        .is_none_or(|child| {
+                            // 缺少片段表示普通未裁剪子树；Some(empty) 自然拒绝全部命中。
+                            let mut inside = true;
+                            child.visit_parent_clip_regions(&mut |regions| {
+                                // 不连续片段使用集合命中，不能退化为联合包围盒。
+                                inside =
+                                    regions.iter().any(|region| region.contains(child_clip_pos));
+                            });
+                            inside
                         });
                 // 指针落在片段间隙时跳过整个子树。
                 if !inside_parent_regions {
@@ -218,35 +221,34 @@ impl WidgetTree {
             }
             // 保存父节点标识供本轮片段换算与下一轮遍历。
             let parent = node.parent();
-            // 只在父布局声明片段时执行集合命中。
-            if let Some(regions) = node.parent_clip_regions() {
+            // 只在父布局声明片段时执行集合命中，借用不逃逸到组件树外。
+            let mut regions_accept = true;
+            let has_regions = node.visit_parent_clip_regions(&mut |regions| {
                 // 根节点没有父坐标系，不能合法携带父级片段。
                 let Some(parent_id) = parent else {
-                    // 拒绝结构不完整的片段元数据。
-                    return false;
+                    regions_accept = false;
+                    return;
                 };
                 // 读取父节点以换算其滚动内容坐标。
                 let Some(parent_node) = self.get(parent_id) else {
-                    // 父节点丢失时拒绝命中。
-                    return false;
+                    regions_accept = false;
+                    return;
                 };
                 // 将屏幕点转换到父节点布局坐标。
                 let Some(mut parent_pos) = self.point_to_node_layout(parent_id, pos) else {
-                    // 不可逆变换下不能安全命中片段。
-                    return false;
+                    regions_accept = false;
+                    return;
                 };
                 // 父节点滚动时，片段与子 frame 位于内容坐标。
                 if let Some((scroll_x, scroll_y)) = parent_node.viewport_scroll_offset() {
-                    // 加回水平滚动偏移。
                     parent_pos.x += scroll_x;
-                    // 加回垂直滚动偏移。
                     parent_pos.y += scroll_y;
                 }
-                // 任一祖先片段集合未包含指针时立即拒绝。
-                if !regions.iter().any(|region| region.contains(parent_pos)) {
-                    // 不允许完整 frame 包围盒绕过不连续片段。
-                    return false;
-                }
+                // 不允许完整 frame 包围盒绕过不连续片段。
+                regions_accept = regions.iter().any(|region| region.contains(parent_pos));
+            });
+            if has_regions && !regions_accept {
+                return false;
             }
             // 上移到父节点继续检查更外层片段。
             current = parent;

@@ -2,6 +2,16 @@
 
 use super::*;
 
+// 测试断言需要独立拥有片段值时，在访问器作用域内显式创建快照。
+fn parent_clip_regions_snapshot(tree: &WidgetTree, id: crate::core::WidgetId) -> Option<Vec<Rect>> {
+    let node = tree.get(id)?;
+    let mut snapshot = None;
+    node.visit_parent_clip_regions(&mut |regions| {
+        snapshot = Some(regions.to_vec());
+    });
+    snapshot
+}
+
 #[derive(Clone)]
 struct UserRow {
     id: u64,
@@ -177,9 +187,7 @@ fn cross_zone_view_cell_uses_full_span_layout_frame() {
     // 同一 View 子树必须记录视觉左右区的两个不连续绘制片段。
     assert_eq!(
         // 从真实节点读取布局阶段保存的父级裁剪片段。
-        tree.get(child_id)
-            // 节点存在时克隆片段集合用于稳定比较。
-            .and_then(|node| node.parent_clip_regions()),
+        parent_clip_regions_snapshot(&tree, child_id),
         // 左固定区先绘制，右固定锚点区随后绘制。
         Some(vec![
             // 左固定覆盖列贡献视觉左侧四十像素。
@@ -430,9 +438,7 @@ fn cross_zone_row_and_col_span_keep_view_layout_and_hit_consistent() {
     assert_eq!(positions[2], (third_id, third_frame));
     // 首行 View 必须记录中间、左固定、右固定三个最终可见片段。
     assert_eq!(
-        tree.get(first_id)
-            // 读取布局阶段写入的父级裁剪片段。
-            .and_then(|node| node.parent_clip_regions()),
+        parent_clip_regions_snapshot(&tree, first_id),
         Some(vec![
             // 中间滚动区保留四十到七十像素片段。
             Rect::new(40.0, body_top, 30.0, 40.0),
@@ -444,16 +450,12 @@ fn cross_zone_row_and_col_span_keep_view_layout_and_hit_consistent() {
     );
     // 被覆盖 View 必须记录空片段集合以同时阻止绘制和命中。
     assert_eq!(
-        tree.get(second_id)
-            // 读取覆盖子树的父级片段元数据。
-            .and_then(|node| node.parent_clip_regions()),
+        parent_clip_regions_snapshot(&tree, second_id),
         Some(Vec::new())
     );
     // 第三行新锚点必须按相同列区顺序记录可见片段。
     assert_eq!(
-        tree.get(third_id)
-            // 读取新锚点的父级片段元数据。
-            .and_then(|node| node.parent_clip_regions()),
+        parent_clip_regions_snapshot(&tree, third_id),
         Some(vec![
             // 中间滚动区保留第三行的四十到七十像素片段。
             Rect::new(40.0, body_top + 40.0, 30.0, 20.0),
