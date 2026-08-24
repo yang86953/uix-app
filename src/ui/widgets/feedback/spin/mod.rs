@@ -131,10 +131,7 @@ impl Spin {
 
     fn render_dots(&self, ctx: &mut PaintContext, cx: f32, cy: f32, r: f32, c: Color) {
         let dot_r = r * 0.18;
-        for i in 0..8 {
-            let angle = i as f32 * std::f32::consts::TAU / 8.0 + self.phase;
-            let dx = angle.cos() * r;
-            let dy = angle.sin() * r;
+        Self::for_each_dot_offset(self.phase, r, |i, dx, dy| {
             let opacity = 0.25 + (i as f32 / 8.0) * 0.75;
             // 点渐隐：对主题色做预乘淡化（保持原算法，避免直接 alpha 在亮背景上过亮）。
             let dot_color = Color::from_rgba(
@@ -144,6 +141,27 @@ impl Spin {
                 (c.a as f32 * opacity) as u8,
             );
             ctx.fill_circle(cx + dx, cy + dy, dot_r, dot_color);
+        });
+    }
+
+    // 每帧只求一次相位三角函数，其余圆点通过固定 45° 旋转递推得到。
+    #[inline]
+    fn for_each_dot_offset(phase: f32, radius: f32, mut visit: impl FnMut(u8, f32, f32)) {
+        // 第一个圆点直接使用动画相位，避免递推跨帧累计误差。
+        let (mut sin, mut cos) = phase.sin_cos();
+        // 45° 的正弦与余弦相同，使用标准常量保持精度。
+        const STEP: f32 = std::f32::consts::FRAC_1_SQRT_2;
+        for index in 0..8 {
+            // 保持原实现以 cos 控制横轴、sin 控制纵轴的顺时针屏幕轨迹。
+            visit(index, cos * radius, sin * radius);
+            if index == 7 {
+                break;
+            }
+            // 复数乘法完成固定角度旋转，不分配临时集合。
+            let next_sin = sin * STEP + cos * STEP;
+            let next_cos = cos * STEP - sin * STEP;
+            sin = next_sin;
+            cos = next_cos;
         }
     }
 
