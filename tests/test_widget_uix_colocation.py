@@ -16,6 +16,72 @@ WIDGETS_ROOT = ROOT / "src" / "ui" / "widgets"
 # 该集合只能缩小；新迁移不得加入，修复一项时必须同步删除对应路径。
 VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
+# Rust 仍保存完整 DEFAULT_*_VISUAL 表的存量双源事实；只允许逐项删除。
+RUST_VISUAL_DEFAULT_DEBT = {
+    "display/badge/mod.rs",
+    "display/calendar/mod.rs",
+    "display/card/mod.rs",
+    "display/carousel/mod.rs",
+    "display/chart/bar_chart/presentation.rs",
+    "display/chart/line_chart/presentation.rs",
+    "display/chart/pie_chart/presentation.rs",
+    "display/collapse/mod.rs",
+    "display/descriptions/mod.rs",
+    "display/image/mod.rs",
+    "display/image_group/mod.rs",
+    "display/list/mod.rs",
+    "display/result/mod.rs",
+    "display/rich_text/presentation.rs",
+    "display/selectable_list/mod.rs",
+    "display/table/presentation.rs",
+    "display/tag/mod.rs",
+    "display/timeline/mod.rs",
+    "display/tree/mod.rs",
+    "display/watermark/mod.rs",
+    "feedback/alert/presentation.rs",
+    "feedback/popover/presentation.rs",
+    "feedback/progress/mod.rs",
+    "feedback/spin/mod.rs",
+    "feedback/tooltip/presentation.rs",
+    "tooltip_primitives.rs",
+}
+
+# 仍以单个巨型位置参数调用表达视觉的存量 UIX；新组件必须改用具名 Visual 或真实子树。
+POSITIONAL_VISUAL_SHELL_DEBT = {
+    "containers/back_top/back_top.uix",
+    "display/avatar/avatar.uix",
+    "display/badge/badge.uix",
+    "display/calendar/calendar.uix",
+    "display/card/card.uix",
+    "display/carousel/carousel.uix",
+    "display/chart/bar_chart/bar_chart.uix",
+    "display/chart/line_chart/line_chart.uix",
+    "display/chart/pie_chart/pie_chart.uix",
+    "display/collapse/collapse.uix",
+    "display/descriptions/descriptions.uix",
+    "display/empty/empty.uix",
+    "display/image/image.uix",
+    "display/image_group/image_group.uix",
+    "display/list/list.uix",
+    "display/qrcode/qrcode.uix",
+    "display/result/result.uix",
+    "display/rich_text/rich_text.uix",
+    "display/selectable_list/selectable_list.uix",
+    "display/skeleton/skeleton.uix",
+    "display/table/table.uix",
+    "display/tag/tag.uix",
+    "display/timeline/timeline.uix",
+    "display/tree/tree.uix",
+    "display/watermark/watermark.uix",
+    "feedback/alert/alert.uix",
+    "feedback/popover/popover.uix",
+    "feedback/progress/progress.uix",
+    "feedback/spin/spin.uix",
+    "feedback/tooltip/tooltip.uix",
+    "general/divider/divider.uix",
+    "other/theme_toggle/theme_toggle.uix",
+}
+
 # 已完成同目录 UIX 视觉迁移的 widget 目录；删除声明文件不得伪装成债务清零。
 MIGRATED_WIDGET_DIRS = {
     "containers/back_top",
@@ -50,6 +116,7 @@ MIGRATED_WIDGET_DIRS = {
     "feedback/tooltip",
     "general/button_group",
     "general/divider",
+    "general/icon",
     "other/theme_toggle",
     "window_controls",
 }
@@ -70,6 +137,17 @@ def is_visual_passthrough(source: str) -> bool:
     return bool(arguments) and all(
         argument in {"kernel", "children"} for argument in arguments
     )
+
+
+def is_positional_visual_shell(source: str) -> bool:
+    """识别没有具名 Visual、只靠 build_*_view 巨型位置调用表达视觉的根。"""
+
+    without_comments = re.sub(r"//[^\n]*", "", source)
+    normalized = " ".join(without_comments.split())
+    return "<Visual" not in normalized and re.fullmatch(
+        r"<KernelView\s+value=\{build_[A-Za-z0-9_]+_view\(.*\)\}\s*/>",
+        normalized,
+    ) is not None
 
 
 class WidgetUixColocationTests(unittest.TestCase):
@@ -102,6 +180,41 @@ class WidgetUixColocationTests(unittest.TestCase):
             if is_visual_passthrough(path.read_text(encoding="utf-8"))
         }
         self.assertEqual(actual, VISUAL_OWNERSHIP_DEBT)
+
+    # 完整 Rust 默认视觉表会形成第二事实源；锁定存量并禁止新建。
+    def test_rust_visual_default_debt_only_shrinks(self) -> None:
+        pattern = re.compile(r"\bstatic\s+DEFAULT_[A-Z0-9_]+_VISUAL\b")
+        actual = {
+            path.relative_to(WIDGETS_ROOT).as_posix()
+            for path in WIDGETS_ROOT.rglob("*.rs")
+            if pattern.search(path.read_text(encoding="utf-8"))
+        }
+        self.assertEqual(actual, RUST_VISUAL_DEFAULT_DEBT)
+
+    # 巨型位置参数壳会把 UIX 与 Rust 函数签名耦合；锁定存量并禁止新增。
+    def test_positional_visual_shell_debt_only_shrinks(self) -> None:
+        actual = {
+            path.relative_to(WIDGETS_ROOT).as_posix()
+            for path in WIDGETS_ROOT.rglob("*.uix")
+            if is_positional_visual_shell(path.read_text(encoding="utf-8"))
+        }
+        self.assertEqual(actual, POSITIONAL_VISUAL_SHELL_DEBT)
+
+    # Visual 必须由同目录 Rust 模块通过 uix_items! 生成，不能只写声明而继续用 Rust 副本。
+    def test_visual_declarations_generate_module_items(self) -> None:
+        violations: list[str] = []
+        for uix_path in sorted(WIDGETS_ROOT.rglob("*.uix")):
+            source = uix_path.read_text(encoding="utf-8")
+            if "<Visual" not in source:
+                continue
+            rust_source = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in sorted(uix_path.parent.glob("*.rs"))
+            )
+            relative = uix_path.relative_to(ROOT).as_posix()
+            if f'crate::uix_items!("{relative}")' not in rust_source:
+                violations.append(relative)
+        self.assertEqual(violations, [])
 
 
 if __name__ == "__main__":

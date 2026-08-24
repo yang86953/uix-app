@@ -18,6 +18,12 @@ pub(crate) fn starts_record_declaration(cursor: &Cursor<'_>) -> bool {
     starts_tag_declaration(cursor, "<Record")
 }
 
+// 判断当前位置是否为保留的顶层 Visual 声明。
+pub(crate) fn starts_visual_declaration(cursor: &Cursor<'_>) -> bool {
+    // 委托共享标签前缀判断。
+    starts_tag_declaration(cursor, "<Visual")
+}
+
 // 验证标签声明前缀后必须出现标签边界。
 fn starts_tag_declaration(cursor: &Cursor<'_>, prefix: &str) -> bool {
     // 借用当前位置之后的源码。
@@ -44,6 +50,7 @@ pub(crate) fn register_declaration_name(
     theme_names: &mut HashSet<String>,
     keyframe_names: &mut HashSet<String>,
     widget_names: &mut HashSet<String>,
+    visual_names: &mut HashSet<String>,
 ) -> Result<(), Diagnostic> {
     // 样式类名称不得重复。
     if let Declaration::StyleClass(style) = declaration {
@@ -143,6 +150,17 @@ pub(crate) fn register_declaration_name(
             format!("record 或组件 {} 重复声明", record.name),
             // 给出修复建议。
             "record 与组件共享 PascalCase 命名空间，请使用不同名称",
+        ));
+    }
+    // Visual 常量在独立模块项目标命名空间中必须唯一。
+    if let Declaration::Visual(visual) = declaration {
+        if visual_names.insert(visual.name.clone()) {
+            return Ok(());
+        }
+        return Err(Diagnostic::new(
+            visual.span,
+            format!("Visual 常量 {} 重复声明", visual.name),
+            "合并同名视觉记录或使用不同的 SCREAMING_SNAKE_CASE 名称",
         ));
     }
     // 其他声明不占用样式或主题命名空间。

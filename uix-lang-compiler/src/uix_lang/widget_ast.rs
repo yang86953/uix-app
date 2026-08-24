@@ -149,6 +149,41 @@ pub(crate) struct RecordField {
     pub(crate) span: SourceSpan,
 }
 
+// 表示由 UIX 唯一拥有并生成为 Rust 模块级常量的静态视觉记录。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VisualDeclaration {
+    // 保存 SCREAMING_SNAKE_CASE 常量名称。
+    pub(crate) name: String,
+    // 保存同一 Rust 模块内的视觉结构类型名称。
+    pub(crate) rust_type: String,
+    // 保存源码顺序中的具名视觉字段。
+    pub(crate) fields: Vec<VisualField>,
+    // 保存完整 Visual 声明跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 表示一个已映射到 Rust snake_case 字段的静态视觉值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VisualField {
+    // 保存 UIX 属性名称，供诊断与查询使用。
+    pub(crate) source_name: String,
+    // 保存最终 Rust 结构体字段名称。
+    pub(crate) rust_name: String,
+    // 保存字符串字面量或受限表达式值。
+    pub(crate) value: VisualValue,
+    // 保存完整字段属性跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 区分 Visual 字段的静态字符串与通用常量表达式。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum VisualValue {
+    // 双引号 UIX 属性直接生成静态 Rust 字符串字面量。
+    Literal(String),
+    // 花括号值使用现有受限表达式 AOT 生成器。
+    Expression(Expression),
+}
+
 // 表示一个组件私有状态槽。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WidgetState {

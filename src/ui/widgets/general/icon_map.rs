@@ -11,23 +11,26 @@ mod chunk_c;
 
 // 在有序分片中查找图标字符，不向调用方暴露存储布局。
 pub(crate) fn find_icon(name: &str) -> Option<&'static str> {
-    // 依次搜索三个互不重叠的名称范围。
-    for entries in [
-        // 搜索 A 到 E 分片。
-        chunk_a::ICON_MAP_CHUNK,
-        // 搜索 E 到 P 分片。
-        chunk_b::ICON_MAP_CHUNK,
-        // 搜索 P 到 Z 分片。
-        chunk_c::ICON_MAP_CHUNK,
-    ] {
-        // 每个生成分片内部保持名称升序，可继续使用二分查找。
-        if let Ok(index) = entries.binary_search_by_key(&name, |entry| entry.0) {
-            // 返回与命中名称绑定的静态 PUA 字符。
-            return Some(entries[index].1);
-        }
+    // 先按生成表的稳定首项边界定位唯一分片，避免每次绘制最多执行三次二分查找。
+    let entries = icon_chunk(name);
+    // 目标分片内部保持名称升序，只执行一次二分查找。
+    entries
+        .binary_search_by_key(&name, |entry| entry.0)
+        // 命中时直接返回与名称绑定的静态 PUA 字符。
+        .ok()
+        .map(|index| entries[index].1)
+}
+
+// 根据三个全局有序分片的首项选择唯一查找区间。
+fn icon_chunk(name: &str) -> &'static [(&'static str, &'static str)] {
+    // 中段从 ethernet-port 开始，末段从 pen-line 开始。
+    if name < "ethernet-port" {
+        chunk_a::ICON_MAP_CHUNK
+    } else if name < "pen-line" {
+        chunk_b::ICON_MAP_CHUNK
+    } else {
+        chunk_c::ICON_MAP_CHUNK
     }
-    // 三个分片都未命中时交给 Icon 组件执行诊断与兜底。
-    None
 }
 
 // 验证拆分后的查找边界与未知名称行为。

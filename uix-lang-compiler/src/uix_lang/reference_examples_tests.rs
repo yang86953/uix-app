@@ -290,10 +290,12 @@ fn materialize_specification_example(example: &str) -> String {
         // 返回完整 App 原文。
         return example.to_owned();
     }
-    // Widget 与 Record 是顶层声明，不能被普通容器包裹。
+    // Widget、Record 与 Visual 是顶层声明，不能被普通容器包裹。
     let starts_with_declaration = first_code_line.starts_with("<Widget")
         // Record 同样属于根元素之前的声明。
         || first_code_line.starts_with("<Record")
+        // Visual 同样属于根元素之前的模块级声明。
+        || first_code_line.starts_with("<Visual")
         // 主题和模块指令使用 @ 前缀。
         || first_code_line.starts_with('@')
         // 样式类声明以标识符开头而不是元素标记。
@@ -356,8 +358,8 @@ fn specification_examples_generate_as_documents() {
             });
         }
     }
-    // 当前规范应有二十九个明确标记为可执行的示例进入完整生成路径。
-    assert_eq!(total_examples, 29, "UIX 规范示例数量发生未审查变化");
+    // 当前规范应有三十个明确标记为可执行的示例进入完整生成路径。
+    assert_eq!(total_examples, 30, "UIX 规范示例数量发生未审查变化");
 }
 
 // 验证已宣告完整实现的目标设计示例持续通过当前完整生成路径。

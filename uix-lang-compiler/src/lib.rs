@@ -39,7 +39,7 @@ use uix_import::{
     ImportDiagnostic, reject_inline_imports, resolve_file, resolve_file_with_overlays,
 };
 use uix_lang::{
-    Diagnostic, SourceSpan, generate_document_app, generate_document_view, generate_record_items,
+    Diagnostic, SourceSpan, generate_document_app, generate_document_items, generate_document_view,
     parse_document, with_source_markers,
 };
 
@@ -50,7 +50,7 @@ pub enum CompileTarget {
     View,
     /// 生成尚未运行的 `App` builder 表达式。
     App,
-    /// 生成文档内全部模块级 Record 项。
+    /// 生成文档内全部模块级 Record 与 Visual 项。
     Items,
 }
 
@@ -825,22 +825,29 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
     let root_source = ir.root().span.source_id;
     let widget_sources = ir.widget_source_ids();
     let record_sources = ir.record_source_ids();
+    let visual_sources = ir.visual_source_ids();
     let tokens = match ir.target() {
-        CompileTarget::View => {
-            with_source_markers(root_source, widget_sources, record_sources, || {
-                generate_document_view(&document)
-            })
-        }
-        CompileTarget::App => {
-            with_source_markers(root_source, widget_sources, record_sources, || {
-                generate_document_app(&document)
-            })
-        }
-        CompileTarget::Items => {
-            with_source_markers(root_source, widget_sources, record_sources, || {
-                generate_record_items(&document)
-            })
-        }
+        CompileTarget::View => with_source_markers(
+            root_source,
+            widget_sources,
+            record_sources,
+            visual_sources,
+            || generate_document_view(&document),
+        ),
+        CompileTarget::App => with_source_markers(
+            root_source,
+            widget_sources,
+            record_sources,
+            visual_sources,
+            || generate_document_app(&document),
+        ),
+        CompileTarget::Items => with_source_markers(
+            root_source,
+            widget_sources,
+            record_sources,
+            visual_sources,
+            || generate_document_items(&document),
+        ),
     }
     .map_err(|diagnostic| {
         let source_id = diagnostic.source_id.unwrap_or(ir.root().span.source_id);

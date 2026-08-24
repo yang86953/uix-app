@@ -28,6 +28,7 @@ struct SourceMarkerContext {
     current_source: Option<SourceId>,
     widget_sources: BTreeMap<String, SourceId>,
     record_sources: BTreeMap<String, SourceId>,
+    visual_sources: BTreeMap<String, SourceId>,
 }
 
 // 在一次宏入口代码生成期间启用来源标记。
@@ -35,6 +36,7 @@ pub(crate) fn with_source_markers<T>(
     root_source: SourceId,
     widget_sources: BTreeMap<String, SourceId>,
     record_sources: BTreeMap<String, SourceId>,
+    visual_sources: BTreeMap<String, SourceId>,
     operation: impl FnOnce() -> Result<T, Diagnostic>,
 ) -> Result<T, Diagnostic> {
     // 在当前过程宏线程内切换标记状态。
@@ -45,6 +47,7 @@ pub(crate) fn with_source_markers<T>(
             current_source: Some(root_source),
             widget_sources,
             record_sources,
+            visual_sources,
         });
         // 执行完整文档代码生成。
         let result = operation();
@@ -96,6 +99,19 @@ pub(crate) fn with_record_source_marker<T>(
     let source_id = SOURCE_MARKERS.with(|context| {
         let context = context.borrow();
         context.record_sources.get(name).copied()
+    });
+    with_source_marker_id(source_id, operation)
+        .map_err(|diagnostic| diagnostic.at_source_if_missing(source_id))
+}
+
+// 按类型化声明登记切换到当前 Visual 的真实来源。
+pub(crate) fn with_visual_source_marker<T>(
+    name: &str,
+    operation: impl FnOnce() -> Result<T, Diagnostic>,
+) -> Result<T, Diagnostic> {
+    let source_id = SOURCE_MARKERS.with(|context| {
+        let context = context.borrow();
+        context.visual_sources.get(name).copied()
     });
     with_source_marker_id(source_id, operation)
         .map_err(|diagnostic| diagnostic.at_source_if_missing(source_id))

@@ -73,6 +73,14 @@ pub(super) fn parse_element(
             "把 Record 定义移动到文档根元素之前",
         ));
     }
+    // Visual 只能作为顶层声明出现。
+    if name == "Visual" && !allow_widget_declaration {
+        return Err(Diagnostic::new(
+            name_span,
+            "<Visual> 只能出现在顶层声明区",
+            "把 Visual 定义移动到文档根元素之前",
+        ));
+    }
     // 保存声明顺序中的属性。
     let mut attributes = Vec::new();
     // 保存 If、ElseIf 或 For 专用控制绑定。

@@ -32,6 +32,8 @@
 4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果，并用真实编译测试与最接近的行为测试验收。
 5. 条件隐藏的分支不得提前构造 Rust 基础 View；高频路径不得因语言迁移增加无条件分配、克隆或动态解析。
 6. 单 `KernelView` 组件必须由 UIX 显式向 Rust 内核注入静态视觉配置；只传 `kernel` 或 `kernel, children` 的透传壳属于未完成债务。`tests/test_widget_uix_colocation.py` 锁定当前债务清单，新迁移不得扩大清单，回填后必须删除对应项。
+7. `.uix` 是全部静态视觉值的唯一事实源。Rust 只定义视觉结构类型，不得复制完整 `DEFAULT_*_VISUAL` 表，也不得用运行时解析或 `OnceLock` 固化第二份表；构建前直接构造、测量、布局、绘制与构建后节点必须共同读取同一文件经 `uix_items!` 生成的常量。
+8. UIX 视觉记录必须使用 `<Visual>` 具名字段和有语义的分组常量；能表达为真实子树的部分继续使用 `<Container>`、`<If>`、`<Icon>` 等标签。禁止用单行巨型 `KernelView` 位置参数或多层匿名数字构造器代替声明结构，`build_*_view` 只接收 Rust 内核、动态 children 和少量具名 Visual 常量。
 
 已完成视觉与逻辑分离的首批组件：
 
@@ -40,6 +42,7 @@
 - `BackTop`：`src/ui/widgets/containers/back_top/` 同目录保存 Rust 与 UIX；UIX 拥有图标、固有尺寸、环形几何与主题色角色，Rust 只保留滚动阈值、状态回写、输入、焦点与绘制内核；声明配置融合进原叶节点，不新增 Icon 子节点或包装容器。
 - `ThemeToggle`：`src/ui/widgets/other/theme_toggle/` 同目录保存 Rust 与 UIX；UIX 拥有亮/暗双图标、固有尺寸、焦点几何与主题色角色，Rust 只选择当前状态、发布 change 事实并执行绘制；声明配置融合进原叶节点，不物化两个 Icon 子节点。
 - `Divider`：`src/ui/widgets/general/divider/` 同目录保存 Rust 与 UIX；UIX 拥有标签尺寸、线段几何、固有尺寸与主题色角色，Rust 只保留文字数据、方向、对齐、虚线状态与绘制内核；声明配置融合进原叶节点，不生成标签或线段子节点。
+- `Icon`：`src/ui/widgets/general/icon/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸、Lucide 字形与字体缺失后备的缩放比例及正文主题色角色，Rust 只保留名称、字体句柄、映射、测量与底层绘制；独立实例在构建期解析一次字形，精确容量名称存储使 64 位实例仍保持 32 字节，字体缺失后备使用栈缓冲，全局名称查找只搜索一个有序分片。
 - `Avatar`：`src/ui/widgets/display/avatar/` 同目录保存 Rust 与 UIX；UIX 拥有默认边长、文字缩放、方圆留白、圆角令牌和主题色角色，Rust 只保留图片缓存、失效、作者覆盖、文字适配和底层绘制；显式尺寸继续优先于声明默认值。
 - `Skeleton`：`src/ui/widgets/display/skeleton/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸、段落行高与间距、末行比例、圆角、流光宽度与节奏及主题色角色，Rust 只保留作者尺寸优先级、形状状态、动画相位、几何执行和绘制。
 - `Empty`：`src/ui/widgets/display/empty/` 同目录保存 Rust 与 UIX；UIX 拥有尺寸边界、字号与行高、内边距、图标尺寸与高度比例、图文间距和主题色角色，Rust 只保留本地化文案选择、资源名称映射、文本测量和绘制。
@@ -70,7 +73,7 @@
 - `PieChart`：`src/ui/widgets/display/chart/pie_chart/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/标签/图例、标题/图例/绘图区几何、扇区标签、内环、交互叠层、提示框、排版及主题角色，Rust 只保留有效数据摘要、极坐标几何、玫瑰映射、命中、交互与绘制执行；基础绘制借用原数据，不创建切片集合或图例字符串，数值文本使用栈缓冲，标签角度只计算一次正余弦。
 - `RichText`：`src/ui/widgets/display/rich_text/` 同目录保存 Rust 与 UIX；UIX 拥有默认字号、行高/字宽估算、代码/链接/选区装饰、复制按钮、主题分隔线、图片占位及主题角色，Rust 只保留 Markdown、Unicode 断行/双向布局、资源、选择、命中与绘制执行；缓存布局按借用复用，绘制 run 复用 UTF-8 缓冲，字形不再逐个保存链接 URL。
 
-当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；结构测试继续以空债务集合阻止回退。
+当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；结构测试继续以空债务集合阻止回退。历史迁移仍有 26 个 Rust 文件保存完整默认视觉表、32 个 UIX 文件使用巨型位置参数壳，二者由同一结构测试锁定为只减不增债务；`Icon` 已作为首个 `<Visual>` 单源样板闭环，后续逐组件删除清单项。
 
 ## 组件：复合组件
 

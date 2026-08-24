@@ -38,9 +38,16 @@ mod for_identity_codegen;
 mod view_decoration_codegen;
 // 定义 record 声明到模块级结构体的生成与语言类型映射。
 mod record_codegen;
+// 定义 UIX 单源静态视觉记录到模块级 Rust 常量的生成。
+mod visual_codegen;
+// 定义 Record 与 Visual 模块级项目标的统一生成入口。
+mod item_codegen;
 // 集中验证 record 生成、对象初始值与拒绝路径。
 #[cfg(test)]
 mod record_codegen_tests;
+// 集中验证 Visual 具名常量生成、拒绝路径与来源定位。
+#[cfg(test)]
+mod visual_codegen_tests;
 // 集中验证数据构造生成、枚举映射与拒绝路径。
 #[cfg(test)]
 mod data_binding_codegen_tests;
@@ -127,6 +134,8 @@ mod dynamic_style_lower;
 mod pseudo_style_lower;
 // 定义 Widget 声明级语法与类型白名单解析。
 mod widget_parser;
+// 定义顶层 Visual 具名静态字段解析与 Rust 字段映射。
+mod visual_parser;
 // 定义 Widget prop 类型后缀与受限默认表达式解析。
 mod widget_prop_default_parser;
 // 定义组件调用属性完整性、唯一性与必填校验。
@@ -650,8 +659,8 @@ pub(crate) use widget_ast::*;
 pub(crate) use action_ast::*;
 // 导出语言面数据类型到公开构造 API 的映射查询。
 pub(crate) use data_binding_codegen::{
-    data_chain_root, data_constructor_spec, is_data_constructor_chain, is_registered_data_type,
-    normalize_number_literals, step_status_path, DataConstructorSpec,
+    DataConstructorSpec, data_chain_root, data_constructor_spec, is_data_constructor_chain,
+    is_registered_data_type, normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
 pub(crate) use widget_codegen::generate_document_view;
@@ -663,12 +672,19 @@ pub(crate) use diagnostic::*;
 pub(crate) use widget_declaration_parser::parse_widget_declaration;
 // 向文档解析器暴露 Record 声明验证入口。
 pub(crate) use widget_parser::parse_record_declaration;
-// 向 uix_items! 与组件绑定暴露 record 生成与类型映射入口。
-pub(crate) use record_codegen::{generate_record_items, value_type_tokens};
+// 向文档解析器暴露 Visual 声明验证入口。
+pub(crate) use visual_parser::parse_visual_declaration;
+// 向 uix_items! 暴露 Record 与 Visual 的统一模块级生成入口。
+pub(crate) use item_codegen::generate_document_items;
+// 向组件绑定暴露 record 类型映射入口。
+pub(crate) use record_codegen::value_type_tokens;
+// 仅向同 crate 测试暴露细分生成器，生产入口统一使用 generate_document_items。
+#[cfg(test)]
+pub(crate) use record_codegen::generate_record_items;
 // 向文档解析器暴露顶层声明入口。
 pub(crate) use declaration_parser::{
     parse_at_declaration, parse_style_class, register_declaration_name, starts_record_declaration,
-    starts_widget_declaration,
+    starts_visual_declaration, starts_widget_declaration,
 };
 // 向核心解析器暴露表达式 AST。
 pub(crate) use expression_ast::*;
@@ -676,7 +692,8 @@ pub(crate) use expression_ast::*;
 pub(crate) use expression_codegen::{
     expression_uses_event, generate_expression, generate_expression_without_source_marker,
     generate_handler_expression, mark_source_tokens, with_record_source_marker,
-    with_source_marker_id, with_source_markers, with_widget_source_marker,
+    with_source_marker_id, with_source_markers, with_visual_source_marker,
+    with_widget_source_marker,
 };
 
 // 编译器内部用该属性把导入后的元素绑定到稳定 SourceId，写出前必须消费。
