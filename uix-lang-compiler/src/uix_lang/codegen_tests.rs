@@ -312,8 +312,8 @@ fn generates_theme_toggle_from_public_widget() {
     assert!(snapshot.contains("ThemeToggle :: new"));
     // 声明式快捷控件必须自动进入与 setTheme 相同的 App 级主题通道。
     assert!(snapshot.contains("on_change_fn") && snapshot.contains("uix_set_theme"));
-    // 组件必须通过公开叶 View 组合。
-    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 组件必须通过公开 View 契约进入 UIX 声明壳。
+    assert!(snapshot.contains("View :: build"));
     // 公共样式仍由统一 View 映射处理。
     assert!(snapshot.contains("margin"));
     // 生成物不得包含运行时标签解析器或第二个组件实现。
