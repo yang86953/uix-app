@@ -4,11 +4,14 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::SnapshotFields;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -38,6 +41,226 @@ pub enum ProgressNormalizationReason {
     /// 输入高于公开 fraction 上界。
     AboveRange,
 }
+
+// 保存由 UIX 声明、由 Rust 几何与绘制算法消费的进度视觉常量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProgressLayoutVisual {
+    default_width: f32,
+    default_height: f32,
+    default_round: bool,
+    circle_radius_ratio: f32,
+    circle_track_width_ratio: f32,
+    circle_track_width_min: f32,
+    circle_track_width_max: f32,
+    circle_start_turns: f32,
+    step_gap_ratio: f32,
+    step_gap_max: f32,
+    indeterminate_bar_width_ratio: f32,
+    dashboard_center_y_ratio: f32,
+    dashboard_radius_width_ratio: f32,
+    dashboard_radius_height_ratio: f32,
+    dashboard_track_width_ratio: f32,
+    dashboard_track_width_min: f32,
+    dashboard_track_width_max: f32,
+    dashboard_start_turns: f32,
+    dashboard_sweep_turns: f32,
+    label_font_size: f32,
+    line_radius_ratio: f32,
+    dirty_padding: f32,
+    gradient_direction: GradientDirection,
+}
+
+// 保存由 UIX 声明、由 Rust 动画状态机消费的运动参数。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProgressMotionVisual {
+    initial_phase: f32,
+    phase_speed: f32,
+    circle_indeterminate_sweep_turns: f32,
+    dashboard_indeterminate_sweep_ratio: f32,
+}
+
+// 保存进度组件使用的主题语义色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProgressPaletteVisual {
+    track: ColorValue,
+    stroke: ColorValue,
+    label: ColorValue,
+    inner: ColorValue,
+}
+
+// 完整视觉配置由全部 ProgressBar 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProgressVisual {
+    layout: ProgressLayoutVisual,
+    motion: ProgressMotionVisual,
+    palette: ProgressPaletteVisual,
+}
+
+// 组合 UIX 声明的进度几何、排版与渐变方向。
+#[allow(clippy::too_many_arguments)]
+const fn progress_layout(
+    default_width: f32,
+    default_height: f32,
+    default_round: bool,
+    circle_radius_ratio: f32,
+    circle_track_width_ratio: f32,
+    circle_track_width_min: f32,
+    circle_track_width_max: f32,
+    circle_start_turns: f32,
+    step_gap_ratio: f32,
+    step_gap_max: f32,
+    indeterminate_bar_width_ratio: f32,
+    dashboard_center_y_ratio: f32,
+    dashboard_radius_width_ratio: f32,
+    dashboard_radius_height_ratio: f32,
+    dashboard_track_width_ratio: f32,
+    dashboard_track_width_min: f32,
+    dashboard_track_width_max: f32,
+    dashboard_start_turns: f32,
+    dashboard_sweep_turns: f32,
+    label_font_size: f32,
+    line_radius_ratio: f32,
+    dirty_padding: f32,
+    gradient_direction: GradientDirection,
+) -> ProgressLayoutVisual {
+    ProgressLayoutVisual {
+        default_width,
+        default_height,
+        default_round,
+        circle_radius_ratio,
+        circle_track_width_ratio,
+        circle_track_width_min,
+        circle_track_width_max,
+        circle_start_turns,
+        step_gap_ratio,
+        step_gap_max,
+        indeterminate_bar_width_ratio,
+        dashboard_center_y_ratio,
+        dashboard_radius_width_ratio,
+        dashboard_radius_height_ratio,
+        dashboard_track_width_ratio,
+        dashboard_track_width_min,
+        dashboard_track_width_max,
+        dashboard_start_turns,
+        dashboard_sweep_turns,
+        label_font_size,
+        line_radius_ratio,
+        dirty_padding,
+        gradient_direction,
+    }
+}
+
+// 组合 UIX 声明的不确定动画参数。
+const fn progress_motion(
+    initial_phase: f32,
+    phase_speed: f32,
+    circle_indeterminate_sweep_turns: f32,
+    dashboard_indeterminate_sweep_ratio: f32,
+) -> ProgressMotionVisual {
+    ProgressMotionVisual {
+        initial_phase,
+        phase_speed,
+        circle_indeterminate_sweep_turns,
+        dashboard_indeterminate_sweep_ratio,
+    }
+}
+
+// 组合 UIX 声明的进度主题色角色。
+const fn progress_palette(
+    track: ColorValue,
+    stroke: ColorValue,
+    label: ColorValue,
+    inner: ColorValue,
+) -> ProgressPaletteVisual {
+    ProgressPaletteVisual {
+        track,
+        stroke,
+        label,
+        inner,
+    }
+}
+
+// 组合 UIX 声明的完整进度视觉配置。
+const fn progress_visual(
+    layout: ProgressLayoutVisual,
+    motion: ProgressMotionVisual,
+    palette: ProgressPaletteVisual,
+) -> ProgressVisual {
+    ProgressVisual {
+        layout,
+        motion,
+        palette,
+    }
+}
+
+// 向 UIX 提供线形进度默认圆角状态。
+const fn progress_round_default() -> bool {
+    true
+}
+
+// 向 UIX 提供进度轨道主题角色。
+const fn progress_track() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+// 向 UIX 提供进度主色主题角色。
+const fn progress_stroke() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供进度文字主题角色。
+const fn progress_label() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供圆形进度内层背景主题角色。
+const fn progress_inner() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+// 向 UIX 提供线形渐变方向。
+const fn progress_horizontal_gradient() -> GradientDirection {
+    GradientDirection::Horizontal
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_PROGRESS_VISUAL: ProgressVisual = progress_visual(
+    progress_layout(
+        200.0,
+        8.0,
+        progress_round_default(),
+        0.4,
+        0.25,
+        1.0,
+        8.0,
+        -0.25,
+        0.08,
+        2.0,
+        0.3,
+        0.72,
+        0.42,
+        0.65,
+        0.2,
+        1.0,
+        8.0,
+        0.5,
+        0.5,
+        11.0,
+        0.5,
+        1.0,
+        progress_horizontal_gradient(),
+    ),
+    progress_motion(0.0, 0.75, 0.25, 0.25),
+    progress_palette(
+        progress_track(),
+        progress_stroke(),
+        progress_label(),
+        progress_inner(),
+    ),
+);
+
+// 正常 UIX 构建首次写入声明配置，后续 ProgressBar 实例只共享该静态对象。
+static UIX_PROGRESS_VISUAL: OnceLock<ProgressVisual> = OnceLock::new();
 
 // 为诊断日志提供稳定、无本地化依赖的原因标识。
 impl ProgressNormalizationReason {
@@ -70,9 +293,17 @@ widget! {
         stroke_color: Option<Color>,
         track_color: Option<Color>,
         height: f32,
+        #[snapshot(skip)]
+        height_authored: bool,
         width: f32,
+        #[snapshot(skip)]
+        width_authored: bool,
         round: bool,
+        #[snapshot(skip)]
+        round_authored: bool,
         progress_type: ProgressType,
+        #[snapshot(skip)]
+        progress_type_authored: bool,
         gradient_start: Option<Color>,
         gradient_end: Option<Color>,
         steps: usize,
@@ -80,6 +311,8 @@ widget! {
         format_text: Option<Rc<dyn Fn(f32) -> String>>,
         indeterminate_phase: f32,
         previous_indeterminate_phase: f32,
+        #[snapshot(skip)]
+        visual: &'static ProgressVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -96,13 +329,15 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
+        let palette = &self.visual.palette;
+        let layout = &self.visual.layout;
         let track_c = self
             .track_color
-            .unwrap_or_else(|| ctx.tokens().color_fill_tertiary());
+            .unwrap_or_else(|| palette.track.resolve(ctx.tokens()));
         let stroke_c = self
             .stroke_color
-            .unwrap_or_else(|| ctx.tokens().color_primary());
-        let label_color = ctx.tokens().color_text();
+            .unwrap_or_else(|| palette.stroke.resolve(ctx.tokens()));
+        let label_color = palette.label.resolve(ctx.tokens());
 
         ctx.push_clip(frame);
         if self.dashboard {
@@ -113,41 +348,49 @@ widget! {
         if self.progress_type == ProgressType::Circle {
             let cx = frame.x + frame.w * 0.5;
             let cy = frame.y + frame.h * 0.5;
-            let r = frame.w.min(frame.h) * 0.4;
+            let r = frame.w.min(frame.h) * layout.circle_radius_ratio;
             if r <= 0.0 {
                 ctx.pop_clip();
                 return;
             }
-            let track_width = (r * 0.25).clamp(1.0, 8.0).min(r);
+            let track_width = (r * layout.circle_track_width_ratio)
+                .clamp(
+                    layout.circle_track_width_min,
+                    layout.circle_track_width_max,
+                )
+                .min(r);
 
             ctx.fill_circle(cx, cy, r, track_c);
             let inner_radius = r - track_width;
             if inner_radius > 0.0 {
-                ctx.fill_circle(cx, cy, inner_radius, ctx.tokens().color_bg_container());
+                ctx.fill_circle(cx, cy, inner_radius, palette.inner.resolve(ctx.tokens()));
             }
 
             let (start_angle, end_angle) = match self.mode {
                 ProgressMode::Determinate(p) => {
-                    let start_angle = -std::f32::consts::FRAC_PI_2;
+                    let start_angle = std::f32::consts::TAU * layout.circle_start_turns;
                     (start_angle, start_angle + std::f32::consts::TAU * p)
                 }
                 ProgressMode::Indeterminate => {
                     let start_angle = self.indeterminate_phase * std::f32::consts::TAU;
-                    (start_angle, start_angle + std::f32::consts::TAU * 0.25)
+                    (
+                        start_angle,
+                        start_angle
+                            + std::f32::consts::TAU
+                                * self.visual.motion.circle_indeterminate_sweep_turns,
+                    )
                 }
             };
             if end_angle > start_angle {
-                let segments = 64;
-                for i in 0..segments {
-                    let a1 = start_angle + (end_angle - start_angle) * i as f32 / segments as f32;
-                    let a2 = start_angle + (end_angle - start_angle) * (i + 1) as f32 / segments as f32;
-                    let inner_r = r - track_width * 0.5;
-                    let x1 = cx + a1.cos() * inner_r;
-                    let y1 = cy + a1.sin() * inner_r;
-                    let x2 = cx + a2.cos() * inner_r;
-                    let y2 = cy + a2.sin() * inner_r;
-                    ctx.draw_line(x1, y1, x2, y2, stroke_c, track_width);
-                }
+                ctx.stroke_arc(
+                    cx,
+                    cy,
+                    r - track_width * 0.5,
+                    start_angle,
+                    end_angle,
+                    stroke_c,
+                    track_width,
+                );
             }
             self.paint_progress_label(frame, label_color, ctx);
             ctx.pop_clip();
@@ -165,7 +408,8 @@ widget! {
                 if fill_w > 0.0 {
                     let fill_rect = Rect::new(frame.x, frame.y, fill_w, frame.h);
                     if self.steps > 1 {
-                        let gap = (frame.w / self.steps as f32 * 0.08).min(2.0);
+                        let gap = (frame.w / self.steps as f32 * layout.step_gap_ratio)
+                            .min(layout.step_gap_max);
                         for index in 0..self.steps {
                             let start = frame.x + index as f32 * frame.w / self.steps as f32;
                             let end = frame.x + (index + 1) as f32 * frame.w / self.steps as f32;
@@ -186,7 +430,7 @@ widget! {
                 self.paint_progress_label(frame, label_color, ctx);
             }
             ProgressMode::Indeterminate => {
-                let bar_w = frame.w * 0.3;
+                let bar_w = frame.w * layout.indeterminate_bar_width_ratio;
                 let bar_x = frame.x + (frame.w - bar_w) * self.indeterminate_phase;
                 let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
                 ctx.fill_rect(bar_rect, stroke_c, radius);
@@ -202,7 +446,7 @@ widget! {
 
         self.previous_indeterminate_phase = self.indeterminate_phase;
         self.indeterminate_phase = (self.indeterminate_phase
-            + dt as f32 * Self::INDETERMINATE_PHASE_SPEED)
+            + dt as f32 * self.visual.motion.phase_speed)
             .rem_euclid(1.0);
         true
     }
@@ -231,22 +475,40 @@ impl Default for ProgressBar {
     }
 }
 
-// 把进度条 Rust 状态与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_progress_view(kernel: ProgressBar) -> ViewNode {
+// 把 UIX 声明的共享视觉配置融合进进度条 Rust 状态与绘制内核。
+fn build_progress_view(mut kernel: ProgressBar, declared_visual: ProgressVisual) -> ViewNode {
+    let visual = UIX_PROGRESS_VISUAL.get_or_init(|| declared_visual);
+    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.width_authored {
+        kernel.width = visual.layout.default_width;
+    }
+    if !kernel.height_authored {
+        kernel.height = visual.layout.default_height;
+    }
+    if !kernel.round_authored {
+        kernel.round = visual.layout.default_round;
+    }
+    if !kernel.progress_type_authored {
+        kernel.progress_type = ProgressType::Line;
+    }
+    if kernel.indeterminate_phase == DEFAULT_PROGRESS_VISUAL.motion.initial_phase {
+        kernel.indeterminate_phase = visual.motion.initial_phase;
+        kernel.previous_indeterminate_phase = visual.motion.initial_phase;
+    }
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
 impl View for ProgressBar {
     fn build(self) -> ViewNode {
-        // UIX 拥有公开组件根，Rust 保留归一化、动画、几何和绘制机制。
+        // UIX 拥有视觉配置，Rust 保留归一化、动画状态、几何执行和底层绘制。
         let kernel = self;
         crate::uix!("src/ui/widgets/feedback/progress/progress.uix")
     }
 }
 
 impl ProgressBar {
-    const INDETERMINATE_PHASE_SPEED: f32 = 0.75;
-
     /// 创建零进度、确定模式、圆角线形且尺寸为 200×8 的进度条。
     pub fn new() -> Self {
         Self {
@@ -260,17 +522,22 @@ impl ProgressBar {
             normalization_reported: false,
             stroke_color: None,
             track_color: None,
-            height: 8.0,
-            width: 200.0,
-            round: true,
+            height: DEFAULT_PROGRESS_VISUAL.layout.default_height,
+            height_authored: false,
+            width: DEFAULT_PROGRESS_VISUAL.layout.default_width,
+            width_authored: false,
+            round: DEFAULT_PROGRESS_VISUAL.layout.default_round,
+            round_authored: false,
             progress_type: ProgressType::Line,
+            progress_type_authored: false,
             gradient_start: None,
             gradient_end: None,
             steps: 0,
             dashboard: false,
             format_text: None,
-            indeterminate_phase: 0.0,
-            previous_indeterminate_phase: 0.0,
+            indeterminate_phase: DEFAULT_PROGRESS_VISUAL.motion.initial_phase,
+            previous_indeterminate_phase: DEFAULT_PROGRESS_VISUAL.motion.initial_phase,
+            visual: &DEFAULT_PROGRESS_VISUAL,
         }
     }
 
@@ -313,6 +580,7 @@ impl ProgressBar {
     pub fn dashboard(mut self) -> Self {
         self.dashboard = true;
         self.progress_type = ProgressType::Circle;
+        self.progress_type_authored = true;
         self
     }
 
@@ -360,12 +628,14 @@ impl ProgressBar {
     /// 设置非负高度；非有限数值会归零。
     pub fn height(mut self, h: f32) -> Self {
         self.height = Self::normalize_dimension(h);
+        self.height_authored = true;
         self
     }
 
     /// 设置非负宽度；非有限数值会归零。
     pub fn width(mut self, w: f32) -> Self {
         self.width = Self::normalize_dimension(w);
+        self.width_authored = true;
         self
     }
 
@@ -373,18 +643,22 @@ impl ProgressBar {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = Self::normalize_dimension(w);
         self.height = Self::normalize_dimension(h);
+        self.width_authored = true;
+        self.height_authored = true;
         self
     }
 
     /// 设置线形进度条两端是否使用圆角。
     pub fn round(mut self, round: bool) -> Self {
         self.round = round;
+        self.round_authored = true;
         self
     }
 
     /// 切换为完整圆形轨道样式。
     pub fn circle(mut self) -> Self {
         self.progress_type = ProgressType::Circle;
+        self.progress_type_authored = true;
         self
     }
 
@@ -405,6 +679,22 @@ impl ProgressBar {
         self.normalization_reason
     }
 
+    // 测试目标只读暴露 UIX 视觉默认值，不把私有配置类型扩展到生产 API。
+    #[cfg(test)]
+    pub(crate) fn visual_contract_for_test(&self) -> (f32, f32, f32) {
+        (
+            self.visual.layout.default_width,
+            self.visual.layout.default_height,
+            self.visual.motion.phase_speed,
+        )
+    }
+
+    // 测试目标验证实例只共享视觉配置引用，不复制完整参数表。
+    #[cfg(test)]
+    pub(crate) fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
+    }
+
     fn render_dashboard(
         &self,
         frame: Rect,
@@ -413,22 +703,29 @@ impl ProgressBar {
         label_color: Color,
         ctx: &mut PaintContext,
     ) {
+        let layout = &self.visual.layout;
         let cx = frame.x + frame.w * 0.5;
-        let cy = frame.y + frame.h * 0.72;
-        let radius = (frame.w * 0.42).min(frame.h * 0.65);
+        let cy = frame.y + frame.h * layout.dashboard_center_y_ratio;
+        let radius = (frame.w * layout.dashboard_radius_width_ratio)
+            .min(frame.h * layout.dashboard_radius_height_ratio);
         if radius <= 0.0 {
             return;
         }
-        let width = (radius * 0.2).clamp(1.0, 8.0).min(radius);
-        let start = std::f32::consts::PI;
-        let end = std::f32::consts::TAU;
+        let width = (radius * layout.dashboard_track_width_ratio)
+            .clamp(
+                layout.dashboard_track_width_min,
+                layout.dashboard_track_width_max,
+            )
+            .min(radius);
+        let start = std::f32::consts::TAU * layout.dashboard_start_turns;
+        let end = start + std::f32::consts::TAU * layout.dashboard_sweep_turns;
         ctx.stroke_arc(cx, cy, radius, start, end, track_color, width);
 
         let (progress_start, progress_end) = match self.mode {
-            ProgressMode::Determinate(progress) => (start, start + std::f32::consts::PI * progress),
+            ProgressMode::Determinate(progress) => (start, start + (end - start) * progress),
             ProgressMode::Indeterminate => {
-                let sweep = std::f32::consts::PI * 0.25;
-                let travel = std::f32::consts::PI - sweep;
+                let sweep = (end - start) * self.visual.motion.dashboard_indeterminate_sweep_ratio;
+                let travel = (end - start) - sweep;
                 let progress_start = start + travel * self.indeterminate_phase;
                 (progress_start, progress_start + sweep)
             }
@@ -451,7 +748,12 @@ impl ProgressBar {
         if let (ProgressMode::Determinate(progress), Some(format)) =
             (self.mode, self.format_text.as_ref())
         {
-            ctx.text_center(&format(progress), frame, color, 11.0);
+            ctx.text_center(
+                &format(progress),
+                frame,
+                color,
+                self.visual.layout.label_font_size,
+            );
         }
     }
 
@@ -469,7 +771,12 @@ impl ProgressBar {
         if !self.round {
             let color_a = gradient_color_at(start, end, gradient_domain, rect.x);
             let color_b = gradient_color_at(start, end, gradient_domain, rect.x + rect.w);
-            ctx.fill_linear_gradient(rect, color_a, color_b, GradientDirection::Horizontal);
+            ctx.fill_linear_gradient(
+                rect,
+                color_a,
+                color_b,
+                self.visual.layout.gradient_direction,
+            );
             return;
         }
 
@@ -485,7 +792,7 @@ impl ProgressBar {
                 center,
                 gradient_color_at(start, end, gradient_domain, left_center),
                 gradient_color_at(start, end, gradient_domain, right_center),
-                GradientDirection::Horizontal,
+                self.visual.layout.gradient_direction,
             );
         }
         let cy = rect.y + rect.h * 0.5;
@@ -515,13 +822,14 @@ impl ProgressBar {
     }
 
     fn indeterminate_bar_rect(&self, frame: Rect, phase: f32) -> Rect {
-        let bar_w = frame.w * 0.3;
+        let bar_w = frame.w * self.visual.layout.indeterminate_bar_width_ratio;
         let bar_x = frame.x + (frame.w - bar_w) * phase;
         Rect::new(bar_x, frame.y, bar_w, frame.h)
     }
 
     fn circle_indeterminate_bounds(&self, frame: Rect) -> Rect {
-        let r = frame.w.min(frame.h) * 0.4 + 1.0;
+        let r = frame.w.min(frame.h) * self.visual.layout.circle_radius_ratio
+            + self.visual.layout.dirty_padding;
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
         Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
@@ -531,7 +839,7 @@ impl ProgressBar {
 
     fn line_radius(&self, rect: Rect) -> Option<Radius> {
         self.round
-            .then(|| Radius::uniform(rect.w.min(rect.h) * 0.5))
+            .then(|| Radius::uniform(rect.w.min(rect.h) * self.visual.layout.line_radius_ratio))
     }
 
     fn normalize_frame(frame: Rect) -> Rect {
@@ -597,14 +905,19 @@ impl ProgressBar {
         self.stroke_color = next.stroke_color;
         self.track_color = next.track_color;
         self.height = Self::normalize_dimension(next.height);
+        self.height_authored = next.height_authored;
         self.width = Self::normalize_dimension(next.width);
+        self.width_authored = next.width_authored;
         self.round = next.round;
+        self.round_authored = next.round_authored;
         self.progress_type = next.progress_type;
+        self.progress_type_authored = next.progress_type_authored;
         self.gradient_start = next.gradient_start;
         self.gradient_end = next.gradient_end;
         self.steps = next.steps;
         self.dashboard = next.dashboard;
         self.format_text = next.format_text;
+        self.visual = next.visual;
     }
 
     /// 同时返回安全 fraction 与可观察归一化原因。
