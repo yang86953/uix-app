@@ -3,6 +3,12 @@
 //! 点击切换暗色/亮色主题，通过 `Cell<bool>` 通知外部代码。
 
 use crate::core::{Constraints, Rect, Size};
+// 引入 UIX 声明壳物化原叶节点的 View 契约。
+use crate::ui::view::{View, ViewNode};
+// 引入 UIX 声明的主题色角色。
+use crate::ui::theme::style::{ColorValue, PaletteColor};
+// 引入默认文本中性色角色。
+use crate::ui::theme::NeutralRole;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
@@ -10,6 +16,50 @@ use crate::ui::{
 };
 use crate::widget;
 use std::cell::Cell;
+
+// 保存由 UIX 声明、由 Rust 主题切换内核消费的紧凑静态视觉。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ThemeToggleVisual {
+    // 当前处于暗色主题时展示的目标图标。
+    dark_icon: &'static str,
+    // 当前处于亮色主题时展示的目标图标。
+    light_icon: &'static str,
+    // 图标绘制尺寸。
+    icon_size: f32,
+    // 组件方形固有边长。
+    extent: f32,
+    // 键盘焦点环宽度。
+    focus_width: f32,
+    // 焦点环半径相对当前最短边的比例。
+    focus_radius_ratio: f32,
+    // 图标主题色角色。
+    icon_color: ColorValue,
+    // 焦点环主题色角色。
+    focus_color: ColorValue,
+}
+
+impl Default for ThemeToggleVisual {
+    fn default() -> Self {
+        Self {
+            // 保留暗色状态下的旧版太阳图标。
+            dark_icon: "sun",
+            // 保留亮色状态下的旧版月亮图标。
+            light_icon: "moon",
+            // 保留旧版图标尺寸。
+            icon_size: 18.0,
+            // 保留旧版固有边长。
+            extent: 32.0,
+            // 保留旧版焦点环线宽。
+            focus_width: 1.5,
+            // 保留旧版圆形焦点环。
+            focus_radius_ratio: 0.5,
+            // 图标继续使用默认文本色。
+            icon_color: ColorValue::Neutral(NeutralRole::Text),
+            // 焦点环继续使用主色。
+            focus_color: ColorValue::Palette(PaletteColor::Primary),
+        }
+    }
+}
 
 widget! {
     /// ThemeToggle — 主题切换按钮。
@@ -20,6 +70,9 @@ widget! {
         initial_dark: bool,
         focused: bool,
         pending_change: Cell<Option<bool>>,
+        #[snapshot(skip)]
+        /// UIX 声明的双状态图标、几何与主题色角色。
+        visual: ThemeToggleVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -61,21 +114,30 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let icon = if self.dark.get() { "sun" } else { "moon" };
-        let text_color = ctx.tokens().color_text();
+        // 运行内核只根据当前状态选择 UIX 声明的两个图标。
+        let icon = if self.dark.get() {
+            self.visual.dark_icon
+        } else {
+            self.visual.light_icon
+        };
+        // 在绘制边界解析 UIX 选择的文本色角色。
+        let text_color = self.visual.icon_color.resolve(ctx.tokens());
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             icon,
             frame,
             text_color,
-            18.0,
+            self.visual.icon_size,
         );
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 frame,
-                ctx.tokens().color_primary(),
-                1.5,
-                Some(crate::draw::Radius::uniform(frame.w.min(frame.h) * 0.5)),
+                self.visual.focus_color.resolve(ctx.tokens()),
+                self.visual.focus_width,
+                Some(crate::draw::Radius::uniform(
+                    frame.w.min(frame.h).max(0.0)
+                        * self.visual.focus_radius_ratio.clamp(0.0, 0.5),
+                )),
             );
         }
     }
@@ -89,6 +151,8 @@ impl ThemeToggle {
             initial_dark: false,
             focused: false,
             pending_change: Cell::new(None),
+            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
+            visual: ThemeToggleVisual::default(),
         }
     }
 
@@ -106,6 +170,8 @@ impl ThemeToggle {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.initial_dark = next.initial_dark;
+        // 协调时同步 UIX 声明配置，不覆盖当前切换与焦点运行态。
+        self.visual = next.visual;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -115,7 +181,7 @@ impl ThemeToggle {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(32.0, 32.0)
+        Size::new(self.visual.extent, self.visual.extent)
     }
 
     fn toggle(&self) {
@@ -125,8 +191,72 @@ impl ThemeToggle {
     }
 }
 
+// 向 UIX 静态模板提供零分配太阳图标角色。
+const fn theme_toggle_sun() -> &'static str {
+    "sun"
+}
+
+// 向 UIX 静态模板提供零分配月亮图标角色。
+const fn theme_toggle_moon() -> &'static str {
+    "moon"
+}
+
+// 向 UIX 静态模板提供零分配默认文本色。
+const fn theme_toggle_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 静态模板提供零分配主色。
+const fn theme_toggle_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 把 UIX 声明的静态配置融合进原有 ThemeToggle 叶内核。
+#[allow(clippy::too_many_arguments)]
+fn build_theme_toggle_view(
+    mut kernel: ThemeToggle,
+    dark_icon: &'static str,
+    light_icon: &'static str,
+    icon_size: f32,
+    extent: f32,
+    focus_width: f32,
+    focus_radius_ratio: f32,
+    icon_color: ColorValue,
+    focus_color: ColorValue,
+) -> ViewNode {
+    // 只复制紧凑配置，不创建两个图标子节点或动态字符串。
+    kernel.visual = ThemeToggleVisual {
+        dark_icon,
+        light_icon,
+        icon_size,
+        extent,
+        focus_width,
+        focus_radius_ratio,
+        icon_color,
+        focus_color,
+    };
+    // 保持原有单 Widget 树形和分配数量。
+    ViewNode::leaf(kernel)
+}
+
+impl View for ThemeToggle {
+    fn build(self) -> ViewNode {
+        // 使用局部名称交接拥有型 Rust 主题状态内核。
+        let kernel = self;
+        // 静态展示契约从 UIX 文件物化。
+        crate::uix!("src/ui/widgets/uix/theme_toggle.uix")
+    }
+}
+
 impl Default for ThemeToggle {
     fn default() -> Self {
         Self::new()
     }
 }
+
+// 集中验证 ThemeToggle 声明融合与交互契约。
+#[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../../tests/unit/ui/widgets/general/theme_toggle__tests.rs"]
+// 保留原模块私有契约访问能力。
+mod tests;

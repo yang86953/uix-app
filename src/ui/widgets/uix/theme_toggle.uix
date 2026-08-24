@@ -1,0 +1,2 @@
+// ThemeToggle 的双状态图标、固有尺寸、焦点几何与主题色角色由 UIX 声明。
+<KernelView value={build_theme_toggle_view(kernel, theme_toggle_sun(), theme_toggle_moon(), 18, 32, 1.5, 0.5, theme_toggle_text(), theme_toggle_primary())} />
