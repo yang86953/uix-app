@@ -118,6 +118,39 @@ impl DirtyRegion {
     pub fn rects(&self) -> &[Rect] {
         &self.rects
     }
+
+    /// 移交局部脏矩形的底层分配，供帧生命周期继续复用同一所有权。
+    pub(crate) fn into_rects(self) -> Vec<Rect> {
+        self.rects
+    }
+
+    /// 接管已验证的局部矩形，并在原分配内恢复 `add_rect` 的去重与收敛语义。
+    pub(crate) fn from_valid_rects(mut rects: Vec<Rect>) -> Self {
+        let mut kept = 0;
+        for read in 0..rects.len() {
+            let rect = rects[read];
+            if rects[..kept].contains(&rect) {
+                continue;
+            }
+            if kept >= DIRTY_MERGE_THRESHOLD - 1 {
+                let mut bounds = rect;
+                for existing in &rects[..kept] {
+                    bounds = bounds.union(existing);
+                }
+                rects[0] = bounds;
+                kept = 1;
+            } else {
+                rects[kept] = rect;
+                kept += 1;
+            }
+        }
+        rects.truncate(kept);
+        Self {
+            clear_required: !rects.is_empty(),
+            rects,
+            full_frame: false,
+        }
+    }
 }
 
 impl Default for DirtyRegion {

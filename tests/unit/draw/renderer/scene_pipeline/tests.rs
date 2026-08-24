@@ -504,7 +504,7 @@ fn frame_input<'a>(
         // 允许场景在 begin_frame 前捕获上一帧 retained 内容。
         rendered_first: true,
         // 使用调用方持有的 dirty region。
-        dirty_region,
+        dirty_region: dirty_region.clone(),
         // 与 StubScene 的固定代际一致。
         tree_version: 7,
         // 本批不测试滚动搬移。

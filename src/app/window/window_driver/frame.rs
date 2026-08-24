@@ -597,6 +597,28 @@ impl WindowDriver {
 
         let invalidation_revision_before_render = tree.invalidation_revision();
         let dirty_region = tree.dirty_region();
+        // 管线接管脏区 Vec 前先保存诊断标量，避免为低频日志保留第二份矩形快照。
+        let dirty_diagnostics = collect_frame_diagnostics.then(|| {
+            let rendered_full = dirty_region.full_frame || (debug_mode.debug_mode() && need_render);
+            let dirty_area_pct = if rendered_full {
+                1.0
+            } else {
+                let bounds = dirty_region.bounds();
+                let area = bounds.w * bounds.h;
+                let total = (native_width as f32) * (native_height as f32);
+                if total > 0.0 {
+                    (area / total) as f64
+                } else {
+                    0.0
+                }
+            };
+            let dirty_rect_count = if rendered_full {
+                0
+            } else {
+                dirty_region.rects().len()
+            };
+            (rendered_full, dirty_area_pct, dirty_rect_count)
+        });
         // 帧诊断：渲染前读取失效队列（帧尾时队列已被消费，无法反映本帧失效来源）。
         let (inval_count, inval_biggest) = invalidation_diag(tree);
         // 记录 GPU 首帧前已经成功显示的窗口，避免成功后重复调用 show。
@@ -643,7 +665,7 @@ impl WindowDriver {
                 tree,
                 FrameRenderInput {
                     rendered_first: self.rendered_first,
-                    dirty_region: &dirty_region,
+                    dirty_region,
                     tree_version: tree.tree_version(),
                     scroll_move,
                     font: font_service.loaded_font_handle,
@@ -868,23 +890,9 @@ impl WindowDriver {
             agent_commands.has_work(),
         );
         if collect_frame_diagnostics {
-            // 调试图元会变化且位于最终顶层，启用时场景管线以全幅重绘清除旧轮廓。
-            let rendered_full = dirty_region.full_frame || (debug_mode.debug_mode() && need_render);
-            // 帧诊断：脏区面积占窗口面积比例（全幅记为 100%）。
-            let dirty_area_pct: f64 = if rendered_full {
-                1.0
-            } else {
-                // 部分脏区取包围矩形面积与窗口面积之比。
-                let bounds = dirty_region.bounds();
-                let area = bounds.w * bounds.h;
-                let total = (native_width as f32) * (native_height as f32);
-                // 窗口尺寸无效时按零面积处理。
-                if total > 0.0 {
-                    (area / total) as f64
-                } else {
-                    0.0
-                }
-            };
+            // 诊断标量在脏区所有权移交前已保存，启用收集时必然存在。
+            let (rendered_full, dirty_area_pct, dirty_rect_count) =
+                dirty_diagnostics.unwrap_or((false, 0.0, 0));
             // 帧诊断：活跃动画节点数与其最大 frame 占窗口比例。
             let (anim_count, anim_biggest_pct) =
                 animation_diag(active_work, tree, native_width, native_height);
@@ -922,11 +930,7 @@ impl WindowDriver {
                 // 脏区面积占比。
                 dirty_area_pct,
                 // 全幅区域没有离散矩形，其余保留实际条目数量。
-                if rendered_full {
-                    0
-                } else {
-                    dirty_region.rects().len()
-                },
+                dirty_rect_count,
                 // 活跃动画节点数与最大动画 frame 占比。
                 anim_count,
                 anim_biggest_pct,
