@@ -1,8 +1,8 @@
-//! Skeleton UIX 声明壳回归测试。
+//! Skeleton UIX 视觉声明回归测试。
 
 use super::*;
 
-/// UIX 声明壳必须保持原 Skeleton 类型、配置和单叶节点形状。
+/// UIX 视觉声明必须保持原 Skeleton 类型、作者配置和单叶节点形状。
 #[test]
 fn uix_shell_preserves_single_kernel_leaf() {
     let node = View::build(
@@ -21,6 +21,17 @@ fn uix_shell_preserves_single_kernel_leaf() {
             height: 48.0,
         }
     );
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Skeleton>()
+        .expect("UIX 根必须保留 Skeleton 内核");
+    // 作者尺寸优先，段落、圆角、流光和主题角色由 UIX 注入。
+    assert_eq!(kernel.height_source, SkeletonHeightSource::Authored);
+    assert_eq!(kernel.visual.paragraph_line_height, 12.0);
+    assert_eq!(kernel.visual.paragraph_gap, 4.0);
+    assert_eq!(kernel.visual.shimmer_width_ratio, 0.35);
+    assert_eq!(kernel.visual.shimmer_speed, 0.8);
 }
 
 /// 无分配生产枚举必须保持原段落行高、间距和末行宽度。

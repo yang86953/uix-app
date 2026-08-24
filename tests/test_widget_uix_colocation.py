@@ -24,7 +24,6 @@ VISUAL_OWNERSHIP_DEBT = {
     "display/image_group/image_group.uix",
     "display/qrcode/qrcode.uix",
     "display/result/result.uix",
-    "display/skeleton/skeleton.uix",
     "display/tag/tag.uix",
     "display/watermark/watermark.uix",
     "feedback/progress/progress.uix",
