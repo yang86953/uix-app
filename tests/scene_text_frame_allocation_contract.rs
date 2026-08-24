@@ -1,4 +1,4 @@
-//! 验证稳态文字帧复用布局、字形、录制与呈现存储。
+//! 验证稳态脏文字帧复用布局、字形、显示列表、录制与呈现存储。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::Arc;
@@ -151,7 +151,7 @@ impl ScenePaint for TextScene {
     }
 
     fn node_dirty(&self, _id: NodeId) -> bool {
-        false
+        true
     }
 
     fn node_z_index(&self, _id: NodeId) -> i32 {
@@ -218,7 +218,7 @@ fn frame_input<'a>(
 }
 
 #[test]
-fn warmed_text_frame_has_zero_allocations() {
+fn warmed_dirty_text_frame_has_zero_allocations() {
     let scene = TextScene;
     let font_service = FontService::new().with_text_backend(Box::new(FixedTextBackend));
     let image_service = ImageService::new();
@@ -262,6 +262,6 @@ fn warmed_text_frame_has_zero_allocations() {
         RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
     ));
     let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
-    eprintln!("稳态文字帧堆申请次数: {allocations}");
-    assert_eq!(allocations, 0, "预热后的文字帧必须保持零堆申请");
+    eprintln!("稳态脏文字帧堆申请次数: {allocations}");
+    assert_eq!(allocations, 0, "预热后的脏文字帧必须保持零堆申请");
 }

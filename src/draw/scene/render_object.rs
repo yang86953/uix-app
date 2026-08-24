@@ -116,14 +116,19 @@ impl RenderObjectTree {
         entry.frame = frame;
         entry.is_dirty = false;
 
-        // 只读取旧列表规模作为容量提示，录制完成前仍保留旧缓存所有权。
-        let previous_len = entry.display_list.as_ref().map_or(0, DisplayList::len);
-        let mut list = DisplayList::with_capacity(previous_len);
+        // RenderObjectEntry 是缓存唯一 owner；接管旧列表并原位覆盖稳定操作槽位。
+        let mut list = entry.display_list.take().unwrap_or_default();
+        list.begin_rewrite();
         ctx.set_paint_pass(PaintPass::Content);
         ctx.with_recorder(&mut list, |ctx| {
             scene.paint(id, frame, ctx);
         });
-        entry.display_list = ctx.recording_complete().then_some(list);
+        entry.display_list = if ctx.recording_complete() {
+            list.finish_rewrite();
+            Some(list)
+        } else {
+            None
+        };
     }
 
     fn rebuild(&mut self, scene: &impl ScenePaint) {
