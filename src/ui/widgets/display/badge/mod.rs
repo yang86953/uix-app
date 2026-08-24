@@ -161,6 +161,50 @@ fn finite_badge_offset(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
 }
 
+// 在栈上保存非负 i32 十进制文本及可选上限后缀，避免测量和绘制期间堆分配。
+struct BadgeCountLabel {
+    bytes: [u8; 11],
+    start: u8,
+}
+
+impl BadgeCountLabel {
+    // 生成与原 `min(count, max)` 加可选 `+` 完全一致的 ASCII 文本。
+    fn new(count: i32, max: i32) -> Self {
+        // Badge 构建与刷新入口负责维持非负 count 和正 max。
+        debug_assert!(count >= 0 && max >= 1);
+        let mut value = count.min(max) as u32;
+        let mut bytes = [0_u8; 11];
+        let mut cursor = bytes.len();
+        // 超过上限时先在固定末尾写入后缀，再向前写数字。
+        if count > max {
+            cursor -= 1;
+            bytes[cursor] = b'+';
+        }
+        // 零值必须显式生成单个数字。
+        if value == 0 {
+            cursor -= 1;
+            bytes[cursor] = b'0';
+        } else {
+            // 从低位向高位逆序写入，最终切片天然保持十进制正序。
+            while value > 0 {
+                cursor -= 1;
+                bytes[cursor] = b'0' + (value % 10) as u8;
+                value /= 10;
+            }
+        }
+        Self {
+            bytes,
+            start: cursor as u8,
+        }
+    }
+
+    // 返回只包含 ASCII 数字与可选加号的有效 UTF-8 视图。
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.bytes[usize::from(self.start)..])
+            .expect("Badge 计数缓冲必须保持 ASCII")
+    }
+}
+
 widget! {
     /// 在可选子内容上叠加数字、圆点或文字角标的装饰组件。
     pub struct Badge {
@@ -413,10 +457,10 @@ widget! {
             ctx.fill_rect(actual_frame, bg, r);
             let label = self.count_label();
             let fs = Self::PILL_FONT_SIZE;
-            let tw = ctx.measure_text(&label, fs).w;
+            let tw = ctx.measure_text(label.as_str(), fs).w;
             let th = ctx.line_box_height(fs);
             ctx.draw_text(
-                &label,
+                label.as_str(),
                 crate::core::Point::new(
                     actual_frame.x + (actual_frame.w - tw) * 0.5,
                     actual_frame.y + (actual_frame.h - th) * 0.5,
@@ -512,7 +556,9 @@ impl Badge {
                 + Self::TEXT_HORIZONTAL_PADDING;
             Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else if self.count > 0 || (self.count == 0 && self.show_zero) {
-            let w = Self::estimated_text_width(&self.count_label(), Self::PILL_FONT_SIZE)
+            // 栈缓冲在本次宽度测量期间保持有效，不创建临时 String。
+            let label = self.count_label();
+            let w = Self::estimated_text_width(label.as_str(), Self::PILL_FONT_SIZE)
                 + Self::TEXT_HORIZONTAL_PADDING;
             Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
         } else {
@@ -821,12 +867,8 @@ impl Badge {
         );
     }
 
-    fn count_label(&self) -> String {
-        format!(
-            "{}{}",
-            self.count.min(self.max),
-            if self.count > self.max { "+" } else { "" }
-        )
+    fn count_label(&self) -> BadgeCountLabel {
+        BadgeCountLabel::new(self.count, self.max)
     }
 
     fn estimated_text_width(text: &str, font_size: f32) -> f32 {
