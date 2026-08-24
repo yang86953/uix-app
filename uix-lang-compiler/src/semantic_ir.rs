@@ -2,13 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::CompileTarget;
 use crate::projection_schema::{ComponentCategory, UI_PROJECTION_SCHEMA};
 use crate::source_graph::SourceId;
 use crate::uix_lang::{
     Attribute, AttributeValue, ControlBinding, Declaration, Diagnostic, Document, Element, Node,
     SourceSpan,
 };
-use crate::CompileTarget;
 
 /// 保存绑定到稳定源码身份的半开字节范围。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +28,7 @@ pub enum TypedDeclarationKind {
     Keyframes,
     Widget,
     Record,
+    Visual,
 }
 
 /// 保存已解析名称和来源的顶层声明。
@@ -245,6 +246,15 @@ impl TypedUiIr {
         self.declarations
             .iter()
             .filter(|declaration| declaration.kind == TypedDeclarationKind::Record)
+            .map(|declaration| (declaration.name.clone(), declaration.span.source_id))
+            .collect()
+    }
+
+    // 返回 Visual 常量名称到真实声明来源的确定映射。
+    pub(crate) fn visual_source_ids(&self) -> BTreeMap<String, SourceId> {
+        self.declarations
+            .iter()
+            .filter(|declaration| declaration.kind == TypedDeclarationKind::Visual)
             .map(|declaration| (declaration.name.clone(), declaration.span.source_id))
             .collect()
     }
@@ -476,6 +486,12 @@ fn typed_declaration(
             span: ir_span(source_id, value.span),
             body: Vec::new(),
         },
+        Declaration::Visual(value) => TypedDeclaration {
+            kind: TypedDeclarationKind::Visual,
+            name: value.name.clone(),
+            span: ir_span(source_id, value.span),
+            body: Vec::new(),
+        },
         Declaration::Import(_) | Declaration::Export(_) => return Ok(None),
     };
     Ok(Some(value))
@@ -593,10 +609,10 @@ fn ir_span(source_id: SourceId, span: SourceSpan) -> IrSpan {
 
 #[cfg(test)]
 mod tests {
-    use super::{lower_document, TypedAttributeRole, TypedDeclarationKind, TypedElementKind};
+    use super::{TypedAttributeRole, TypedDeclarationKind, TypedElementKind, lower_document};
+    use crate::CompileTarget;
     use crate::source_graph::SourceId;
     use crate::uix_lang::parse_document;
-    use crate::CompileTarget;
 
     #[test]
     fn semantic_ir_classifies_components_custom_widgets_and_attribute_roles() {

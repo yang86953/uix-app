@@ -166,7 +166,7 @@ struct DeclarationMerge {
     names: BTreeMap<(DeclarationKind, String), (PathBuf, Declaration)>,
 }
 
-// 区分 parser 已定义的五类具名声明命名空间。
+// 区分 parser 已定义的六类具名声明命名空间。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum DeclarationKind {
     // 保存样式类命名空间。
@@ -179,6 +179,8 @@ enum DeclarationKind {
     Widget,
     // 保存 record 命名空间。
     Record,
+    // 保存 Visual 常量命名空间。
+    Visual,
 }
 
 // 相对一个真实 .uix 根文件解析完整编译单元。
@@ -769,7 +771,8 @@ fn select_imported_declarations(
             Declaration::StyleClass(_)
             | Declaration::Theme(_)
             | Declaration::Keyframes(_)
-            | Declaration::Record(_) => true,
+            | Declaration::Record(_)
+            | Declaration::Visual(_) => true,
             // import/export 已由 resolver 消费。
             Declaration::Import(_) | Declaration::Export(_) => false,
         })
@@ -852,6 +855,8 @@ fn declaration_identity(declaration: &Declaration) -> Option<(DeclarationKind, S
         }
         // record 使用 record 命名空间。
         Declaration::Record(record) => Some((DeclarationKind::Record, record.name.clone())),
+        // Visual 使用模块级常量命名空间。
+        Declaration::Visual(visual) => Some((DeclarationKind::Visual, visual.name.clone())),
         // import/export 不进入 codegen 文档。
         Declaration::Import(_) | Declaration::Export(_) => None,
     }
@@ -871,6 +876,8 @@ fn declaration_kind_name(kind: DeclarationKind) -> &'static str {
         DeclarationKind::Widget => "组件",
         // record 文案。
         DeclarationKind::Record => "Record",
+        // Visual 文案。
+        DeclarationKind::Visual => "Visual",
     }
 }
 
@@ -892,6 +899,8 @@ fn declaration_span(declaration: &Declaration) -> SourceSpan {
         Declaration::Widget(value) => value.span,
         // 返回 record 跨度。
         Declaration::Record(value) => value.span,
+        // 返回 Visual 跨度。
+        Declaration::Visual(value) => value.span,
     }
 }
 

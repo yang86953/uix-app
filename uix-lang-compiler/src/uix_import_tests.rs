@@ -151,6 +151,38 @@ fn named_import_selects_one_export() {
     );
 }
 
+// 验证被选组件依赖的 Visual 支持声明进入 Items 生成并保留真实来源。
+#[test]
+fn imported_visual_declarations_generate_items_from_their_source_file() {
+    let fixture = Fixture::new("visual-items");
+    let library = fixture.write(
+        "library.uix",
+        "@export('IconView')\n<Visual name=\"ICON_VISUAL\" type=\"IconVisual\" size={24.0} />\n<Widget name=\"IconView\"><Text>图标</Text></Widget>\n<IconView />",
+    );
+    let root = fixture.write(
+        "main.uix",
+        "@import('./library.uix', 'IconView')\n<IconView />",
+    );
+
+    let output =
+        compile_file(&root, CompileTarget::Items).expect("被导入 Visual 必须进入模块项目标生成");
+    let tokens = output.tokens.to_string();
+    assert!(
+        tokens.contains("pub (crate) const ICON_VISUAL : IconVisual"),
+        "{tokens}"
+    );
+    let visual = output
+        .ir
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name == "ICON_VISUAL")
+        .expect("TypedUiIr 必须保留 Visual 声明");
+    assert_eq!(
+        visual.span.source_id,
+        crate::source_graph::SourceId::from_source_name(&library.to_string_lossy())
+    );
+}
+
 // 验证没有 export 或导入未公开组件时立即失败。
 #[test]
 fn imports_require_explicit_existing_exports() {

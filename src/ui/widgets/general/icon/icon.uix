@@ -1,0 +1,11 @@
+// Icon 的具名静态视觉记录同时供 Rust 全生命周期与 UIX 组合树使用。
+<Visual
+  name="ICON_VISUAL"
+  type="IconVisual"
+  defaultSize={24.0}
+  glyphScale={0.85}
+  fallbackScale={0.55}
+  color={icon_text_color()}
+/>
+
+<KernelView value={build_icon_view(kernel, ICON_VISUAL)} />

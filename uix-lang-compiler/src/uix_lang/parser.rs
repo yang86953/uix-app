@@ -5,8 +5,9 @@ mod element_parser;
 // 引入核心 AST、词法游标和诊断。
 use super::{
     Cursor, Declaration, Diagnostic, Document, SourceSpan, WidgetStateInitial, WidgetValueType,
-    parse_at_declaration, parse_record_declaration, parse_style_class, parse_widget_declaration,
-    register_declaration_name, starts_record_declaration, starts_widget_declaration,
+    parse_at_declaration, parse_record_declaration, parse_style_class, parse_visual_declaration,
+    parse_widget_declaration, register_declaration_name, starts_record_declaration,
+    starts_visual_declaration, starts_widget_declaration,
 };
 // 引入拆分后的元素解析入口。
 use element_parser::parse_element;
@@ -32,6 +33,8 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
     let mut keyframe_names = HashSet::new();
     // 保存已声明组件名。
     let mut widget_names = HashSet::new();
+    // 保存已声明 Visual 常量名。
+    let mut visual_names = HashSet::new();
     // 解析根元素之前的声明区。
     loop {
         // @ 前缀开始导入、导出或主题声明。
@@ -59,6 +62,10 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             let element = parse_element(&mut cursor, true)?;
             // 再验证 Record 元数据与字段类型。
             Some(Declaration::Record(parse_record_declaration(element)?))
+        // 解析并验证顶层 Visual 静态记录声明。
+        } else if starts_visual_declaration(&cursor) {
+            let element = parse_element(&mut cursor, true)?;
+            Some(Declaration::Visual(parse_visual_declaration(element)?))
         } else {
             // 当前输入应为文档根元素。
             None
@@ -80,6 +87,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
             &mut keyframe_names,
             // 传递组件名称集合。
             &mut widget_names,
+            &mut visual_names,
         )?;
         // 保存声明顺序。
         declarations.push(declaration);
@@ -113,7 +121,9 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
                 // 验证标识符首字符。
                 .is_some_and(|value| value.is_ascii_alphabetic() || value == '_')
             // Widget 也属于顶层声明。
-            || starts_widget_declaration(&cursor);
+            || starts_widget_declaration(&cursor)
+            || starts_record_declaration(&cursor)
+            || starts_visual_declaration(&cursor);
         // 为声明顺序提供专用诊断。
         if declaration_after_root {
             // 返回声明位置诊断。
@@ -123,7 +133,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
                 // 陈述失败原因。
                 "顶层声明必须位于根元素之前",
                 // 给出修复建议。
-                "把 @import、@export、@theme、样式类或 Widget 移到文档开头",
+                "把 @import、@export、@theme、样式类、Widget、Record 或 Visual 移到文档开头",
             ));
         }
         // 返回第二根或尾随内容诊断。
@@ -161,6 +171,8 @@ fn validate_record_references(document: &Document) -> Result<(), Diagnostic> {
         .filter_map(|declaration| match declaration {
             // 提取 record 名。
             Declaration::Record(record) => Some(record.name.as_str()),
+            // Visual 不参与 Record 类型命名空间。
+            Declaration::Visual(_) => None,
             // 其余声明不占用 record 命名空间。
             _ => None,
         })
@@ -189,6 +201,8 @@ fn validate_record_references(document: &Document) -> Result<(), Diagnostic> {
                     validate_value_type_record(&field.kind, &record_names, field.span)?;
                 }
             }
+            // Visual 字段由 Rust const 类型检查，不引用 UIX Record 类型系统。
+            Declaration::Visual(_) => {}
             // 其余声明不含类型引用。
             _ => {}
         }

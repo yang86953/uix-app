@@ -156,9 +156,13 @@ fn record_codegen_error_keeps_named_source_context() {
     let record_source = SourceId::from_source_name("helper.uix");
     let record_sources = BTreeMap::from([("Broken".to_string(), record_source)]);
     // Items 生成错误必须取得 Record 来源，而不是顶层根来源。
-    let error = with_source_markers(root_source, BTreeMap::new(), record_sources, || {
-        generate_record_items(&document)
-    })
+    let error = with_source_markers(
+        root_source,
+        BTreeMap::new(),
+        record_sources,
+        BTreeMap::new(),
+        || generate_record_items(&document),
+    )
     .expect_err("Rust 关键字字段必须被生成器拒绝");
     assert_eq!(error.source_id, Some(record_source));
     assert_eq!(error.span, field_span);

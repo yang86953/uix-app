@@ -1,5 +1,5 @@
 // 引入共享元素与源码跨度。
-use super::{RecordDeclaration, SourceSpan, WidgetDeclaration};
+use super::{RecordDeclaration, SourceSpan, VisualDeclaration, WidgetDeclaration};
 
 // 表示根元素之前按源码顺序出现的顶层声明。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,8 @@ pub(crate) enum Declaration {
     Widget(WidgetDeclaration),
     // 保存语言面声明的类型化业务模型。
     Record(RecordDeclaration),
+    // 保存语言面唯一拥有的静态视觉常量记录。
+    Visual(VisualDeclaration),
 }
 
 // 表示一个文件导入及可选具名组件。
