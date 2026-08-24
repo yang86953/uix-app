@@ -1,0 +1,2 @@
+// QRCode 是编码矩阵绘制组件；UIX 声明公开根，Rust 内核负责编码与扫描质量。
+<KernelView value={build_qrcode_view(kernel)} />

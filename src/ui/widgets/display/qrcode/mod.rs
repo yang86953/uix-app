@@ -1,4 +1,5 @@
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 use crate::widget;
@@ -70,6 +71,20 @@ widget! {
         }
     }
 }
+
+// 把二维码编码矩阵与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_qrcode_view(kernel: QRCode) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for QRCode {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占编码、缓存矩阵与绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/qrcode/qrcode.uix")
+    }
+}
+
 impl QRCode {
     /// 创建承载指定文本且使用默认尺寸和纠错等级的二维码。
     pub fn new(value: &str) -> Self {
@@ -165,3 +180,8 @@ impl QRCode {
         }
     }
 }
+
+// 集中验证 UIX 声明壳与二维码 Rust 内核的单叶契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/qrcode_tests.rs"]
+mod tests;
