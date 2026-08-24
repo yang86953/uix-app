@@ -5,6 +5,7 @@ use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 use crate::widget;
@@ -15,9 +16,40 @@ use super::advanced::{
 
 mod data;
 mod plot;
+mod presentation;
+
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/ui/widgets/display/chart/bar_chart/tests.rs"]
+mod tests;
 
 pub use self::data::BarData;
 use self::plot::map_x;
+use self::presentation::*;
+
+// 使用一个字节记录会覆盖 UIX 默认值的 Rust 调用方声明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct BarChartAuthored(u8);
+
+impl BarChartAuthored {
+    const HEIGHT: u8 = 1 << 0;
+    const SHOW_VALUE: u8 = 1 << 1;
+    const BAR_RADIUS: u8 = 1 << 2;
+    const BAR_GAP: u8 = 1 << 3;
+    const CATEGORY_GAP: u8 = 1 << 4;
+    const PADDING: u8 = 1 << 5;
+
+    fn contains(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn set(&mut self, flag: u8, authored: bool) {
+        if authored {
+            self.0 |= flag;
+        } else {
+            self.0 &= !flag;
+        }
+    }
+}
 
 widget! {
     /// 按具名数据项绘制柱形、坐标轴与可选数值标签的图表组件。
@@ -60,6 +92,10 @@ widget! {
         pan_offset: Cell<f32>,
         #[snapshot(skip)]
         zoom: Cell<f32>,
+        #[snapshot(skip)]
+        visual: &'static BarChartVisual,
+        #[snapshot(skip)]
+        authored: BarChartAuthored,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -191,9 +227,13 @@ widget! {
             return;
         }
         self.last_frame.set(Some(frame));
+        let resolved = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let chrome = self.visual.chrome;
+        let typography = self.visual.typography;
         ctx.fill_rect(
             frame,
-            self.background.unwrap_or(ctx.tokens().color_bg_container()),
+            self.background.unwrap_or(resolved.background),
             None,
         );
         let mut content = Rect::new(
@@ -206,21 +246,21 @@ widget! {
             ctx.draw_text(
                 &self.title,
                 Point::new(content.x, content.y),
-                ctx.tokens().color_text(),
-                15.0,
+                resolved.text,
+                typography.title,
             );
-            content.y += 20.0;
-            content.h = (content.h - 20.0).max(0.0);
+            content.y += layout.title_height;
+            content.h = (content.h - layout.title_height).max(0.0);
         }
         if !self.subtitle.is_empty() && content.h > 0.0 {
             ctx.draw_text(
                 &self.subtitle,
                 Point::new(content.x, content.y),
-                ctx.tokens().color_text_secondary(),
-                11.0,
+                resolved.text_secondary,
+                typography.subtitle,
             );
-            content.y += 16.0;
-            content.h = (content.h - 16.0).max(0.0);
+            content.y += layout.subtitle_height;
+            content.h = (content.h - layout.subtitle_height).max(0.0);
         }
         let legend_rect = self.reserve_legend(&mut content);
         ctx.push_clip(frame);
@@ -236,52 +276,69 @@ widget! {
             return;
         };
 
-        let tokens = ctx.tokens();
-        let text_c = tokens.color_text();
-        let label_c = tokens.color_text_secondary();
-        let axis_c = tokens.color_border();
+        let text_c = resolved.text;
+        let label_c = resolved.text_secondary;
+        let axis_c = resolved.border;
 
         if self.horizontal {
             let baseline_x = map_x(0.0, plot.chart_x, plot.chart_w, plot.min, plot.max);
             ctx.fill_rect(
-                Rect::new(baseline_x, plot.chart_y, 1.0, plot.chart_h),
+                Rect::new(baseline_x, plot.chart_y, chrome.axis_stroke, plot.chart_h),
                 axis_c,
                 None,
             );
         } else {
             ctx.fill_rect(
-                Rect::new(plot.chart_x, plot.baseline, plot.chart_w, 1.0),
+                Rect::new(plot.chart_x, plot.baseline, plot.chart_w, chrome.axis_stroke),
                 axis_c,
                 None,
             );
         }
 
-        let grid_lines = 4.max((plot.chart_h / 30.0) as usize);
+        let grid_lines = layout
+            .grid_min_lines
+            .max((plot.chart_h / layout.grid_min_spacing.max(f32::EPSILON)) as usize);
         for i in 0..=grid_lines {
             let t = i as f32 / grid_lines as f32;
             let value = plot.min + (plot.max - plot.min) * t;
             let label = Self::format_value(value);
             if self.horizontal {
                 let gx = plot.chart_x + plot.chart_w * t;
-                ctx.fill_rect(Rect::new(gx, plot.chart_y, 0.5, plot.chart_h), axis_c, None);
-                let label_w = ctx.measure_text(&label, 9.0).w;
+                ctx.fill_rect(
+                    Rect::new(gx, plot.chart_y, chrome.grid_stroke, plot.chart_h),
+                    axis_c,
+                    None,
+                );
+                let label_w = ctx.measure_text(label.as_str(), typography.grid).w;
                 ctx.draw_text(
-                    &label,
-                    Point::new(gx - label_w * 0.5, plot.chart_y + plot.chart_h + 2.0),
+                    label.as_str(),
+                    Point::new(
+                        gx - label_w * layout.center_ratio,
+                        plot.chart_y + plot.chart_h + chrome.value_gap,
+                    ),
                     label_c,
-                    9.0,
+                    typography.grid,
                 );
             } else {
                 let gy = plot.chart_y + plot.chart_h * (1.0 - t);
-                ctx.fill_rect(Rect::new(plot.chart_x, gy, plot.chart_w, 0.5), axis_c, None);
-                let y_label_rect = Rect::new(frame.x, gy - 6.0, plot.y_label_w - 2.0, 12.0);
-                let yly = ctx.visual_center_y(y_label_rect, 9.0);
-                let lsz = ctx.measure_text(&label, 9.0);
+                ctx.fill_rect(
+                    Rect::new(plot.chart_x, gy, plot.chart_w, chrome.grid_stroke),
+                    axis_c,
+                    None,
+                );
+                let y_label_rect = Rect::new(
+                    frame.x,
+                    gy - layout.category_label_height * layout.center_ratio,
+                    (plot.y_label_w - chrome.value_gap).max(0.0),
+                    layout.category_label_height,
+                );
+                let yly = ctx.visual_center_y(y_label_rect, typography.grid);
+                let lsz = ctx.measure_text(label.as_str(), typography.grid);
                 ctx.draw_text(
-                    &label,
-                    Point::new(plot.chart_x - lsz.w - 4.0, yly),
+                    label.as_str(),
+                    Point::new(plot.chart_x - lsz.w - chrome.label_gap, yly),
                     label_c,
-                    9.0,
+                    typography.grid,
                 );
             }
         }
@@ -307,47 +364,90 @@ widget! {
             }
 
             let value = Self::finite_value(bar.value);
-            if self.show_value && if self.horizontal { rect.w > 10.0 } else { rect.h > 10.0 } {
+            if self.show_value
+                && if self.horizontal {
+                    rect.w > layout.min_value_label_extent
+                } else {
+                    rect.h > layout.min_value_label_extent
+                }
+            {
                 let s = Self::format_value(value);
-                let sz = ctx.measure_text(&s, 10.0);
+                let sz = ctx.measure_text(s.as_str(), typography.value);
                 if self.horizontal {
                     let value_x = if value >= 0.0 {
-                        (rect.x + rect.w + 2.0).min(frame.x + frame.w - sz.w)
+                        (rect.x + rect.w + chrome.value_gap).min(frame.x + frame.w - sz.w)
                     } else {
-                        (rect.x - sz.w - 2.0).max(frame.x)
+                        (rect.x - sz.w - chrome.value_gap).max(frame.x)
                     };
-                    let value_rect = Rect::new(value_x, rect.y, sz.w, rect.h.max(sz.h + 2.0));
-                    let value_y = ctx.visual_center_y(value_rect, 10.0);
-                    ctx.draw_text(&s, Point::new(value_x, value_y), text_c, 10.0);
+                    let value_rect = Rect::new(
+                        value_x,
+                        rect.y,
+                        sz.w,
+                        rect.h.max(sz.h + chrome.value_gap),
+                    );
+                    let value_y = ctx.visual_center_y(value_rect, typography.value);
+                    ctx.draw_text(
+                        s.as_str(),
+                        Point::new(value_x, value_y),
+                        text_c,
+                        typography.value,
+                    );
                 } else {
                     let value_y = if value >= 0.0 {
-                        (rect.y - sz.h - 2.0).max(frame.y)
+                        (rect.y - sz.h - chrome.value_gap).max(frame.y)
                     } else {
-                        (rect.y + rect.h + 2.0).min(frame.y + plot.chart_h - sz.h)
+                        (rect.y + rect.h + chrome.value_gap)
+                            .min(frame.y + plot.chart_h - sz.h)
                     };
-                    let val_rect = Rect::new(rect.x, value_y, rect.w, sz.h + 2.0);
-                    let vy = ctx.visual_center_y(val_rect, 10.0);
+                    let val_rect = Rect::new(
+                        rect.x,
+                        value_y,
+                        rect.w,
+                        sz.h + chrome.value_gap,
+                    );
+                    let vy = ctx.visual_center_y(val_rect, typography.value);
                     ctx.draw_text(
-                        &s,
-                        Point::new(rect.x + (rect.w - sz.w) * 0.5, vy),
+                        s.as_str(),
+                        Point::new(rect.x + (rect.w - sz.w) * layout.center_ratio, vy),
                         text_c,
-                        10.0,
+                        typography.value,
                     );
                 }
             }
             if series_index == 0 {
-                let sz = ctx.measure_text(&bar.label, 10.0);
+                let sz = ctx.measure_text(&bar.label, typography.category);
                 if self.horizontal {
-                    let lx = (plot.chart_x - sz.w - 4.0).max(frame.x);
-                    let label_rect = Rect::new(lx, rect.y, sz.w, rect.h.max(12.0));
-                    let ly = ctx.visual_center_y(label_rect, 10.0);
-                    ctx.draw_text(&bar.label, Point::new(lx, ly), label_c, 10.0);
+                    let lx = (plot.chart_x - sz.w - chrome.label_gap).max(frame.x);
+                    let label_rect = Rect::new(
+                        lx,
+                        rect.y,
+                        sz.w,
+                        rect.h.max(layout.category_label_height),
+                    );
+                    let ly = ctx.visual_center_y(label_rect, typography.category);
+                    ctx.draw_text(
+                        &bar.label,
+                        Point::new(lx, ly),
+                        label_c,
+                        typography.category,
+                    );
                 } else {
                     let max_label_x = (plot.chart_x + plot.chart_w - sz.w).max(plot.chart_x);
-                    let lx = (rect.x + (rect.w - sz.w) * 0.5).clamp(plot.chart_x, max_label_x);
-                    let label_rect = Rect::new(lx, content.y + plot.chart_h + 2.0, sz.w, 12.0);
-                    let ly = ctx.visual_center_y(label_rect, 10.0);
-                    ctx.draw_text(&bar.label, Point::new(lx, ly), label_c, 10.0);
+                    let lx = (rect.x + (rect.w - sz.w) * layout.center_ratio)
+                        .clamp(plot.chart_x, max_label_x);
+                    let label_rect = Rect::new(
+                        lx,
+                        content.y + plot.chart_h + chrome.value_gap,
+                        sz.w,
+                        layout.category_label_height,
+                    );
+                    let ly = ctx.visual_center_y(label_rect, typography.category);
+                    ctx.draw_text(
+                        &bar.label,
+                        Point::new(lx, ly),
+                        label_c,
+                        typography.category,
+                    );
                 }
             }
         }
@@ -358,14 +458,24 @@ widget! {
             .is_some_and(|config| config.crosshair)
         {
             if let Some(pos) = self.hovered_pos.get().filter(|pos| frame.contains(*pos)) {
-                let crosshair = ctx.tokens().color_primary();
+                let crosshair = resolved.primary;
                 ctx.fill_rect(
-                    Rect::new(pos.x, plot.chart_y, 1.0, plot.chart_h),
+                    Rect::new(
+                        pos.x,
+                        plot.chart_y,
+                        chrome.crosshair_stroke,
+                        plot.chart_h,
+                    ),
                     crosshair,
                     None,
                 );
                 ctx.fill_rect(
-                    Rect::new(plot.chart_x, pos.y, plot.chart_w, 1.0),
+                    Rect::new(
+                        plot.chart_x,
+                        pos.y,
+                        plot.chart_w,
+                        chrome.crosshair_stroke,
+                    ),
                     crosshair,
                     None,
                 );
@@ -380,7 +490,7 @@ widget! {
             ctx.fill_rect(
                 Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
                 // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
-                ctx.tokens().color_primary().with_alpha(48),
+                resolved.primary.with_alpha(chrome.brush_alpha),
                 None,
             );
         }
@@ -390,23 +500,51 @@ widget! {
                 TooltipTrigger::Click => self.tooltip_pos.get(),
             };
             if let Some(pos) = pos.filter(|pos| frame.contains(*pos)) {
-                self.paint_tooltip(ctx, frame, pos);
+                self.paint_tooltip(ctx, frame, pos, resolved);
             }
         }
 
         if let Some(legend_rect) = legend_rect {
-            let legend = if self.series.is_empty() {
-                "数据".to_owned()
-            } else {
-                self.series
-                    .iter()
-                    .map(|series| series.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("  ")
-            };
-            ctx.text_center(&legend, legend_rect, label_c, 10.0);
+            self.paint_legend(ctx, legend_rect, resolved);
         }
         ctx.pop_clip();
+    }
+}
+
+// 把数据/交互状态与 UIX 静态视觉融合为单一 BarChart 根节点。
+fn build_bar_chart_view(mut kernel: BarChart, declared_visual: BarChartVisual) -> ViewNode {
+    let visual = UIX_BAR_CHART_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.authored.contains(BarChartAuthored::HEIGHT) {
+        kernel.fixed_height = visual.defaults.height;
+    }
+    if !kernel.authored.contains(BarChartAuthored::SHOW_VALUE) {
+        kernel.show_value = visual.defaults.show_value;
+    }
+    if !kernel.authored.contains(BarChartAuthored::BAR_RADIUS) {
+        kernel.bar_radius = visual.defaults.bar_radius;
+    }
+    if !kernel.authored.contains(BarChartAuthored::BAR_GAP) {
+        kernel.bar_gap = visual.defaults.bar_gap;
+    }
+    if !kernel.authored.contains(BarChartAuthored::CATEGORY_GAP) {
+        kernel.category_gap = visual.defaults.category_gap;
+    }
+    if !kernel.authored.contains(BarChartAuthored::PADDING) {
+        kernel.padding = visual.defaults.padding;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_bar_chart_uix_root(kernel: BarChart) -> ViewNode {
+    crate::uix!("src/ui/widgets/display/chart/bar_chart/bar_chart.uix")
+}
+
+impl View for BarChart {
+    fn build(self) -> ViewNode {
+        build_bar_chart_uix_root(self)
     }
 }
 
@@ -416,28 +554,24 @@ impl Default for BarChart {
     }
 }
 impl BarChart {
-    // 图表组件默认尺寸；其他组件同名常量值不同，属各自设计。
-    const DEFAULT_WIDTH: f32 = 300.0;
-    const DEFAULT_HEIGHT: f32 = 200.0;
-
     /// 创建空的垂直柱状图，并默认显示数值标签。
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
             fixed_width: 0.0,
-            fixed_height: 200.0,
+            fixed_height: DEFAULT_BAR_CHART_VISUAL.defaults.height,
             max_value: 0.0,
-            show_value: true,
-            bar_radius: 2.0,
+            show_value: DEFAULT_BAR_CHART_VISUAL.defaults.show_value,
+            bar_radius: DEFAULT_BAR_CHART_VISUAL.defaults.bar_radius,
             grouped: false,
             stacked: false,
             horizontal: false,
-            bar_gap: 0.2,
-            category_gap: 0.2,
+            bar_gap: DEFAULT_BAR_CHART_VISUAL.defaults.bar_gap,
+            category_gap: DEFAULT_BAR_CHART_VISUAL.defaults.category_gap,
             series: Vec::new(),
             legend: LegendPosition::None,
             background: None,
-            padding: 0.0,
+            padding: DEFAULT_BAR_CHART_VISUAL.defaults.padding,
             title: String::new(),
             subtitle: String::new(),
             responsive: false,
@@ -453,6 +587,8 @@ impl BarChart {
             pan_origin: Cell::new(0.0),
             pan_offset: Cell::new(0.0),
             zoom: Cell::new(1.0),
+            visual: &DEFAULT_BAR_CHART_VISUAL,
+            authored: BarChartAuthored::default(),
         }
     }
     /// 替换单序列柱状图的数据项。
@@ -467,7 +603,13 @@ impl BarChart {
     }
     /// 设置固定高度；非法或非正值恢复为默认高度。
     pub fn height(mut self, h: f32) -> Self {
-        self.fixed_height = Self::optional_dimension(h);
+        let height = Self::optional_dimension(h);
+        self.authored.set(BarChartAuthored::HEIGHT, height > 0.0);
+        self.fixed_height = if height > 0.0 {
+            height
+        } else {
+            self.visual.defaults.height
+        };
         self
     }
     /// 设置纵轴显式最大值；非法或非正值恢复为自动上界。
@@ -478,11 +620,13 @@ impl BarChart {
     /// 设置是否在空间足够的柱条旁绘制数值标签。
     pub fn show_value(mut self, v: bool) -> Self {
         self.show_value = v;
+        self.authored.set(BarChartAuthored::SHOW_VALUE, true);
         self
     }
     /// 设置柱条圆角半径；非有限值归零，负值夹取为零。
     pub fn bar_radius(mut self, r: f32) -> Self {
         self.bar_radius = if r.is_finite() { r.max(0.0) } else { 0.0 };
+        self.authored.set(BarChartAuthored::BAR_RADIUS, true);
         self
     }
 
@@ -503,20 +647,24 @@ impl BarChart {
     }
     /// 设置同一分类内柱条间距比例，并夹取到零至 0.9。
     pub fn bar_gap(mut self, value: f32) -> Self {
-        self.bar_gap = if value.is_finite() {
+        let authored = value.is_finite();
+        self.bar_gap = if authored {
             value.clamp(0.0, 0.9)
         } else {
-            0.2
+            self.visual.defaults.bar_gap
         };
+        self.authored.set(BarChartAuthored::BAR_GAP, authored);
         self
     }
     /// 设置相邻分类之间的留白比例，并夹取到零至 0.9。
     pub fn category_gap(mut self, value: f32) -> Self {
-        self.category_gap = if value.is_finite() {
+        let authored = value.is_finite();
+        self.category_gap = if authored {
             value.clamp(0.0, 0.9)
         } else {
-            0.2
+            self.visual.defaults.category_gap
         };
+        self.authored.set(BarChartAuthored::CATEGORY_GAP, authored);
         self
     }
     /// 设置多序列数据；当前兼容入口仅接受柱状数据序列列表。
@@ -543,11 +691,13 @@ impl BarChart {
     }
     /// 设置图表内容内边距；非有限值归零，负值夹取为零。
     pub fn padding(mut self, padding: f32) -> Self {
-        self.padding = if padding.is_finite() {
+        let authored = padding.is_finite();
+        self.padding = if authored {
             padding.max(0.0)
         } else {
-            0.0
+            self.visual.defaults.padding
         };
+        self.authored.set(BarChartAuthored::PADDING, authored);
         self
     }
     /// 设置显示在绘图区上方的标题。
