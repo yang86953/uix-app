@@ -40,7 +40,7 @@ impl ScenePipeline {
         &mut self,
         engine: &mut dyn RenderTarget,
         scene: &S,
-        input: FrameRenderInput<'_>,
+        mut input: FrameRenderInput<'_>,
     ) -> FrameRenderOutput {
         let cur_version = scene.tree_version();
         let has_backdrop_overlay = scene
@@ -75,30 +75,31 @@ impl ScenePipeline {
 
         let frame_start_caps = engine.capabilities();
         let scroll_moves = input.scroll_move.as_deref().unwrap_or_default();
-        // 即使上游只交付 scroll 参数，也由帧边界补齐 exposed strip；调用方仍零维护。
-        let mut dirty_for_paint = input.dirty_region.clone();
+        let input_dirty_full = input.dirty_region.full_frame;
+        // 接管调用方本帧快照；普通局部帧沿后端生命周期复用同一 Vec 分配。
+        let mut paint_region = std::mem::take(&mut input.dirty_region);
         // effect 变化必须把旧、新逻辑区域同时送入区域失效。
         if backdrop_effect_changed {
             // 旧区域需要清除上一策略的像素影响。
             if let Some(effect) = self.overlay_backdrop_effect {
                 // DirtyRegion 负责后续合并与裁剪。
-                dirty_for_paint.add_rect(effect.region());
+                paint_region.add_rect(effect.region());
             }
             // 新区域需要绘制新的 backdrop 结果。
             if let Some(effect) = requested_backdrop_effect {
                 // DPR 只由 backend blur boundary 应用一次。
-                dirty_for_paint.add_rect(effect.region());
+                paint_region.add_rect(effect.region());
             }
         }
         for &(viewport, dx, dy) in scroll_moves {
             if let Some(exposed) = scroll_exposed_rect(viewport, dx, dy) {
-                dirty_for_paint.add_rect(exposed);
+                paint_region.add_rect(exposed);
             }
         }
         // 仅在保留缓冲明确支持重叠 memmove，且几何能无损映射到像素时启用。
         // 任一滚动不满足条件时，整批退回既有整视口重绘，避免同帧部分 copy。
         let use_scroll_copies = input.rendered_first
-            && !input.dirty_region.full_frame
+            && !input_dirty_full
             && frame_start_caps.supports_scroll_memmove()
             && !scroll_moves.is_empty()
             && scroll_moves
@@ -113,12 +114,10 @@ impl ScenePipeline {
 
         // present damage 覆盖所有实际变化像素：即使只重绘 exposed strip，滚动视口
         // 内的保留像素也发生了移动，外部 presenter 必须提交整个视口。
-        let dirty_with_scroll = {
-            let mut region = if scroll_moves.is_empty() {
-                input.dirty_region.for_paint_clear()
-            } else {
-                input.dirty_region.clone()
-            };
+        let mut present_region = if scroll_moves.is_empty() {
+            None
+        } else {
+            let mut region = paint_region.clone();
             for &(viewport, _, _) in scroll_moves {
                 if valid_frame_rect(viewport) {
                     region.add_rect(viewport);
@@ -137,16 +136,14 @@ impl ScenePipeline {
                     region.add_rect(effect.region());
                 }
             }
-            region
+            Some(region)
         };
         // 页面切换等结构更新常产生多块高度重叠的脏区；若包围盒额外面积受控，
         // 扩大实际清理与 present damage，避免按矩形重复遍历和编码整棵场景。
         // 滚动搬移仍保留独立 viewport/条带契约，不参与该收敛。
-        let dirty_with_scroll = if scroll_moves.is_empty() {
-            coalesce_dense_dirty_region(dirty_with_scroll)
-        } else {
-            dirty_with_scroll
-        };
+        if scroll_moves.is_empty() {
+            paint_region = coalesce_dense_dirty_region(paint_region);
+        }
 
         // 判断正常树变化是否会污染现有 overlay backdrop。
         let normal_tree_dirty = has_backdrop_overlay
@@ -168,8 +165,8 @@ impl ScenePipeline {
         let draw_full = input.debug_mode
             || refresh_overlay_backdrop
             || !input.rendered_first
-            || input.dirty_region.full_frame
-            || dirty_for_paint.is_empty()
+            || input_dirty_full
+            || paint_region.is_empty()
             || !frame_start_caps.supports_partial_redraw();
         if refresh_overlay_backdrop {
             // CPU backdrop 不跨 GPU 中间提交复用。
@@ -260,14 +257,15 @@ impl ScenePipeline {
         }
         // 只有同步/降级事务未失败时才消费本帧请求计划。
         self.overlay_backdrop_effect = requested_backdrop_effect;
+        let present_damage_region = present_region.as_ref().unwrap_or(&paint_region);
         let requested_present_damage =
-            compute_present_damage(&dirty_with_scroll, draw_full, input.rendered_first);
+            compute_present_damage(present_damage_region, draw_full, input.rendered_first);
         let requested_region = if draw_full {
             DirtyRegion::full()
         } else if use_scroll_copies {
-            dirty_for_paint
+            paint_region
         } else {
-            dirty_with_scroll
+            present_region.take().unwrap_or(paint_region)
         };
 
         // backdrop refresh 必须在任何最终 begin_frame 之前完成正常树中间提交。
@@ -291,15 +289,17 @@ impl ScenePipeline {
             );
         }
 
+        let requested_full_frame = requested_region.full_frame;
+        let requested_bounds = requested_region.bounds();
         let strategy = if draw_full {
             UpdateStrategy::FullRedraw
         } else if let Some(copies) = scroll_copies {
             UpdateStrategy::ScrollCopies {
-                dirty_rects: requested_region.rects().to_vec(),
+                dirty_rects: requested_region.into_rects(),
                 copies,
             }
         } else {
-            UpdateStrategy::DirtyRects(requested_region.rects().to_vec())
+            UpdateStrategy::DirtyRects(requested_region.into_rects())
         };
         // 策略只提交一次，直接移交其矩形与滚动所有权。
         let begin_outcome = engine.begin_frame(strategy);
@@ -352,18 +352,19 @@ impl ScenePipeline {
             }
         };
         let begin_promoted_full = !draw_full && begin_damage.full;
-        let region = match resolve_frame_region(&requested_region, begin_damage) {
-            Ok(region) => region,
-            Err(error) => {
-                return FrameRenderOutput {
-                    outcome: RenderOutcome::Failed(
-                        crate::draw::renderer::GraphicsFailure::from_error(error),
-                    ),
-                    inv_source: InvalidationSource::None,
-                    tree_version: cur_version,
-                };
-            }
-        };
+        let region =
+            match resolve_frame_region(requested_full_frame, requested_bounds, begin_damage) {
+                Ok(region) => region,
+                Err(error) => {
+                    return FrameRenderOutput {
+                        outcome: RenderOutcome::Failed(
+                            crate::draw::renderer::GraphicsFailure::from_error(error),
+                        ),
+                        inv_source: InvalidationSource::None,
+                        tree_version: cur_version,
+                    };
+                }
+            };
         let damage = if begin_promoted_full {
             DamageRegion::full()
         } else {

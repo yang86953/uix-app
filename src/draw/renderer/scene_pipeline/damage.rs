@@ -182,31 +182,31 @@ pub(super) fn scroll_exposed_rect(viewport: Rect, dx: f32, dy: f32) -> Option<Re
 
 /// 以 `begin_frame` 返回的实际清区为权威绘制区，并验证它覆盖请求区。
 pub(super) fn resolve_frame_region(
-    requested: &DirtyRegion,
+    requested_full_frame: bool,
+    requested_bounds: Rect,
     actual: DamageRegion,
 ) -> Result<DirtyRegion, Error> {
     if actual.full {
         return Ok(DirtyRegion::full());
     }
-    if requested.full_frame {
+    if requested_full_frame {
         return Err(Error::new(
             Errc::InvalidState,
             "begin_frame returned partial damage for a full redraw request",
         ));
     }
 
-    let mut actual_region = DirtyRegion::empty();
-    for rect in actual.rects {
-        if !valid_frame_rect(rect) {
+    for rect in &actual.rects {
+        if !valid_frame_rect(*rect) {
             return Err(Error::new(
                 Errc::InvalidState,
                 "begin_frame returned an invalid partial damage rectangle",
             ));
         }
-        actual_region.add_rect(rect);
     }
-    let actual_region = actual_region.for_paint_clear();
-    if actual_region.is_empty() || !rect_covers(actual_region.bounds(), requested.bounds()) {
+    // backend 返回的 Vec 继续成为绘制区 owner，避免逐项重建第二份分配。
+    let actual_region = DirtyRegion::from_valid_rects(actual.rects);
+    if actual_region.is_empty() || !rect_covers(actual_region.bounds(), requested_bounds) {
         return Err(Error::new(
             Errc::InvalidState,
             "begin_frame damage does not cover the requested paint region",

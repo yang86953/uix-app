@@ -108,7 +108,8 @@ pub fn begin_frame(
         }
     }
 
-    RenderOutcome::FrameReady(present_damage_for_strategy(&strategy))
+    // 策略到此已完成 clip / clear，直接把脏矩形分配移交给返回值。
+    RenderOutcome::FrameReady(present_damage_for_strategy(strategy))
 }
 
 /// 帧结束：恢复裁剪栈。
@@ -120,7 +121,7 @@ pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
     RenderOutcome::Present(DamageRegion::full())
 }
 
-fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
+fn present_damage_for_strategy(strategy: UpdateStrategy) -> DamageRegion {
     match strategy {
         UpdateStrategy::FullRedraw => DamageRegion::full(),
         UpdateStrategy::DirtyRects(rects)
@@ -130,7 +131,7 @@ fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
             if rects.is_empty() {
                 DamageRegion::full()
             } else {
-                DamageRegion::partial(rects.clone())
+                DamageRegion::partial(rects)
             }
         }
     }

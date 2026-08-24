@@ -21,7 +21,7 @@ pub struct FrameRenderInput<'a> {
     /// 是否已经成功渲染过首帧。
     pub rendered_first: bool,
     /// 本帧需要重新绘制的脏区域。
-    pub dirty_region: &'a DirtyRegion,
+    pub dirty_region: DirtyRegion,
     /// 调用方观察到的场景树版本。
     pub tree_version: u64,
     /// 可选的滚动复制操作，每项包含区域及水平、垂直位移。
