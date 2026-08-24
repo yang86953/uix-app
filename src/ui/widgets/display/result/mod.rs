@@ -5,16 +5,144 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::sync::OnceLock;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
-use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
-use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::{
+    EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, ThemeTokens, WidgetTree,
+};
 use crate::widget;
 
-// 无主题上下文路径（命中测试/动作区测量）使用的默认字号，与 token font_size 默认值一致。
-const RESULT_ACTION_FONT_SIZE: f32 = 14.0;
+// 保存由 UIX 声明、由 Rust 布局算法消费的几何配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResultLayoutVisual {
+    intrinsic_width: f32,
+    intrinsic_height: f32,
+    horizontal_padding_max: f32,
+    horizontal_padding_ratio: f32,
+    vertical_padding_max: f32,
+    vertical_padding_ratio: f32,
+    action_height: f32,
+    action_gap_max: f32,
+    action_gap_ratio: f32,
+    icon_ratio_with_subtitle: f32,
+    icon_ratio_without_subtitle: f32,
+    icon_size_max: f32,
+    icon_width_ratio: f32,
+    icon_title_gap_max: f32,
+    icon_title_gap_ratio: f32,
+    subtitle_gap_max: f32,
+    subtitle_gap_ratio: f32,
+    title_extra_ratio: f32,
+    action_horizontal_padding: f32,
+    action_padding_ratio: f32,
+    action_radius: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+}
+
+// 保存由 UIX 声明、由 Rust 文本测量与栅格化消费的排版配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResultTypographyVisual {
+    title_font_size: f32,
+    title_max_lines: u8,
+    subtitle_font_size: f32,
+    subtitle_max_lines: u8,
+    action_font_fallback: f32,
+    action_font: ResultFontRole,
+    line_height: f32,
+    status_code_font_size_max: f32,
+    status_code_height_ratio: f32,
+    icon_radius_ratio: f32,
+    icon_glyph_ratio: f32,
+    icon_glyph_min_size: f32,
+}
+
+// 结果页文本使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResultFontRole {
+    Body,
+}
+
+impl ResultFontRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.font_size(),
+        }
+    }
+}
+
+// 保存结果页各绘制区域使用的主题语义色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResultPalette {
+    text: ColorValue,
+    text_secondary: ColorValue,
+    white: ColorValue,
+    primary: ColorValue,
+    primary_active: ColorValue,
+    success: ColorValue,
+    error: ColorValue,
+    info: ColorValue,
+    warning: ColorValue,
+}
+
+// 结果状态图标使用的语义色角色，避免每项重复保存完整颜色值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResultStatusColorRole {
+    TextSecondary,
+    Success,
+    Error,
+    Info,
+    Warning,
+}
+
+impl ResultStatusColorRole {
+    fn resolve(self, palette: &ResultPalette, tokens: &dyn ThemeTokens) -> Color {
+        match self {
+            Self::TextSecondary => palette.text_secondary,
+            Self::Success => palette.success,
+            Self::Error => palette.error,
+            Self::Info => palette.info,
+            Self::Warning => palette.warning,
+        }
+        .resolve(tokens)
+    }
+}
+
+// 保存由 UIX 声明的单个结果状态图标与颜色角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResultStatusVisual {
+    icon: &'static str,
+    color: ResultStatusColorRole,
+}
+
+// 完整视觉配置由所有 ResultView 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResultVisual {
+    layout: ResultLayoutVisual,
+    typography: ResultTypographyVisual,
+    palette: ResultPalette,
+    statuses: [ResultStatusVisual; 7],
+}
+
+impl ResultVisual {
+    fn status(&self, type_: ResultType) -> ResultStatusVisual {
+        self.statuses[match type_ {
+            ResultType::Success => 0,
+            ResultType::Error => 1,
+            ResultType::Info => 2,
+            ResultType::Warning => 3,
+            ResultType::NotFound => 4,
+            ResultType::Forbidden => 5,
+            ResultType::ServerError => 6,
+        }]
+    }
+}
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,6 +188,314 @@ impl ResultType {
     }
 }
 
+// 组合 UIX 声明的结果页几何常量。
+#[allow(clippy::too_many_arguments)]
+const fn result_layout(
+    intrinsic_width: f32,
+    intrinsic_height: f32,
+    horizontal_padding_max: f32,
+    horizontal_padding_ratio: f32,
+    vertical_padding_max: f32,
+    vertical_padding_ratio: f32,
+    action_height: f32,
+    action_gap_max: f32,
+    action_gap_ratio: f32,
+    icon_ratio_with_subtitle: f32,
+    icon_ratio_without_subtitle: f32,
+    icon_size_max: f32,
+    icon_width_ratio: f32,
+    icon_title_gap_max: f32,
+    icon_title_gap_ratio: f32,
+    subtitle_gap_max: f32,
+    subtitle_gap_ratio: f32,
+    title_extra_ratio: f32,
+    action_horizontal_padding: f32,
+    action_padding_ratio: f32,
+    action_radius: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+) -> ResultLayoutVisual {
+    ResultLayoutVisual {
+        intrinsic_width,
+        intrinsic_height,
+        horizontal_padding_max,
+        horizontal_padding_ratio,
+        vertical_padding_max,
+        vertical_padding_ratio,
+        action_height,
+        action_gap_max,
+        action_gap_ratio,
+        icon_ratio_with_subtitle,
+        icon_ratio_without_subtitle,
+        icon_size_max,
+        icon_width_ratio,
+        icon_title_gap_max,
+        icon_title_gap_ratio,
+        subtitle_gap_max,
+        subtitle_gap_ratio,
+        title_extra_ratio,
+        action_horizontal_padding,
+        action_padding_ratio,
+        action_radius,
+        focus_inset,
+        focus_stroke_width,
+    }
+}
+
+// 组合 UIX 声明的结果页排版与图标比例常量。
+#[allow(clippy::too_many_arguments)]
+const fn result_typography(
+    title_font_size: f32,
+    title_max_lines: f32,
+    subtitle_font_size: f32,
+    subtitle_max_lines: f32,
+    action_font_fallback: f32,
+    action_font: ResultFontRole,
+    line_height: f32,
+    status_code_font_size_max: f32,
+    status_code_height_ratio: f32,
+    icon_radius_ratio: f32,
+    icon_glyph_ratio: f32,
+    icon_glyph_min_size: f32,
+) -> ResultTypographyVisual {
+    ResultTypographyVisual {
+        title_font_size,
+        title_max_lines: title_max_lines as u8,
+        subtitle_font_size,
+        subtitle_max_lines: subtitle_max_lines as u8,
+        action_font_fallback,
+        action_font,
+        line_height,
+        status_code_font_size_max,
+        status_code_height_ratio,
+        icon_radius_ratio,
+        icon_glyph_ratio,
+        icon_glyph_min_size,
+    }
+}
+
+// 组合 UIX 声明的结果页主题色角色。
+#[allow(clippy::too_many_arguments)]
+const fn result_palette(
+    text: ColorValue,
+    text_secondary: ColorValue,
+    white: ColorValue,
+    primary: ColorValue,
+    primary_active: ColorValue,
+    success: ColorValue,
+    error: ColorValue,
+    info: ColorValue,
+    warning: ColorValue,
+) -> ResultPalette {
+    ResultPalette {
+        text,
+        text_secondary,
+        white,
+        primary,
+        primary_active,
+        success,
+        error,
+        info,
+        warning,
+    }
+}
+
+// 组合 UIX 声明的单个状态图标。
+const fn result_status(icon: &'static str, color: ResultStatusColorRole) -> ResultStatusVisual {
+    ResultStatusVisual { icon, color }
+}
+
+// 按公开 ResultType 顺序组合全部状态视觉。
+const fn result_statuses(
+    success: ResultStatusVisual,
+    error: ResultStatusVisual,
+    info: ResultStatusVisual,
+    warning: ResultStatusVisual,
+    not_found: ResultStatusVisual,
+    forbidden: ResultStatusVisual,
+    server_error: ResultStatusVisual,
+) -> [ResultStatusVisual; 7] {
+    [
+        success,
+        error,
+        info,
+        warning,
+        not_found,
+        forbidden,
+        server_error,
+    ]
+}
+
+// 组合 UIX 声明的完整结果页视觉配置。
+const fn result_visual(
+    layout: ResultLayoutVisual,
+    typography: ResultTypographyVisual,
+    palette: ResultPalette,
+    statuses: [ResultStatusVisual; 7],
+) -> ResultVisual {
+    ResultVisual {
+        layout,
+        typography,
+        palette,
+        statuses,
+    }
+}
+
+// 向 UIX 提供结果页正文主题角色。
+const fn result_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供结果页次级正文主题角色。
+const fn result_text_secondary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+
+// 向 UIX 提供结果页反白主题角色。
+const fn result_white() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+
+// 向 UIX 提供结果页主操作默认主题角色。
+const fn result_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供结果页主操作按下主题角色。
+const fn result_primary_active() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryActive)
+}
+
+// 向 UIX 提供结果页成功主题角色。
+const fn result_success() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Success)
+}
+
+// 向 UIX 提供结果页错误主题角色。
+const fn result_error() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Error)
+}
+
+// 向 UIX 提供结果页信息主题角色。
+const fn result_info() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Info)
+}
+
+// 向 UIX 提供结果页警告主题角色。
+const fn result_warning() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Warning)
+}
+
+// 向 UIX 提供结果页操作文字的正文主题字号角色。
+const fn result_body_font() -> ResultFontRole {
+    ResultFontRole::Body
+}
+
+// 向 UIX 提供状态图标的次级正文颜色角色。
+const fn result_status_text_secondary() -> ResultStatusColorRole {
+    ResultStatusColorRole::TextSecondary
+}
+
+// 向 UIX 提供状态图标的成功颜色角色。
+const fn result_status_success() -> ResultStatusColorRole {
+    ResultStatusColorRole::Success
+}
+
+// 向 UIX 提供状态图标的错误颜色角色。
+const fn result_status_error() -> ResultStatusColorRole {
+    ResultStatusColorRole::Error
+}
+
+// 向 UIX 提供状态图标的信息颜色角色。
+const fn result_status_info() -> ResultStatusColorRole {
+    ResultStatusColorRole::Info
+}
+
+// 向 UIX 提供状态图标的警告颜色角色。
+const fn result_status_warning() -> ResultStatusColorRole {
+    ResultStatusColorRole::Warning
+}
+
+// 向 UIX 提供成功状态图标名。
+const fn result_icon_success() -> &'static str {
+    "check"
+}
+
+// 向 UIX 提供错误状态图标名。
+const fn result_icon_error() -> &'static str {
+    "x"
+}
+
+// 向 UIX 提供信息状态图标名。
+const fn result_icon_info() -> &'static str {
+    "info"
+}
+
+// 向 UIX 提供警告状态图标名。
+const fn result_icon_warning() -> &'static str {
+    "alert-triangle"
+}
+
+// 向 UIX 提供资源不存在状态码文案。
+const fn result_icon_not_found() -> &'static str {
+    "404"
+}
+
+// 向 UIX 提供禁止访问状态码文案。
+const fn result_icon_forbidden() -> &'static str {
+    "403"
+}
+
+// 向 UIX 提供服务错误状态码文案。
+const fn result_icon_server_error() -> &'static str {
+    "500"
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_RESULT_VISUAL: ResultVisual = result_visual(
+    result_layout(
+        400.0, 300.0, 12.0, 0.1, 12.0, 0.08, 36.0, 12.0, 0.12, 0.35, 0.45, 64.0, 0.45, 10.0, 0.16,
+        6.0, 0.1, 0.35, 16.0, 0.25, 6.0, 2.0, 2.0,
+    ),
+    result_typography(
+        20.0,
+        2.0,
+        13.0,
+        3.0,
+        14.0,
+        result_body_font(),
+        1.5,
+        48.0,
+        0.82,
+        0.5,
+        0.8,
+        1.0,
+    ),
+    result_palette(
+        result_text(),
+        result_text_secondary(),
+        result_white(),
+        result_primary(),
+        result_primary_active(),
+        result_success(),
+        result_error(),
+        result_info(),
+        result_warning(),
+    ),
+    result_statuses(
+        result_status(result_icon_success(), result_status_success()),
+        result_status(result_icon_error(), result_status_error()),
+        result_status(result_icon_info(), result_status_info()),
+        result_status(result_icon_warning(), result_status_warning()),
+        result_status(result_icon_not_found(), result_status_text_secondary()),
+        result_status(result_icon_forbidden(), result_status_warning()),
+        result_status(result_icon_server_error(), result_status_error()),
+    ),
+);
+
+// 正常 UIX 构建首次写入声明配置，后续 ResultView 实例只共享该静态对象。
+static UIX_RESULT_VISUAL: OnceLock<ResultVisual> = OnceLock::new();
+
 #[derive(Debug, Clone, Copy)]
 struct ResultGeometry {
     frame: Rect,
@@ -80,6 +516,8 @@ widget! {
         focused: bool,
         pressed: bool,
         last_action_rect: Cell<Rect>,
+        #[snapshot(skip)]
+        visual: &'static ResultVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -93,7 +531,9 @@ widget! {
             frame
         } else {
             let local_frame = Rect::new(0.0, 0.0, frame.w, frame.h);
-            let action = self.layout(local_frame, RESULT_ACTION_FONT_SIZE).action;
+            let action = self
+                .layout(local_frame, self.visual.typography.action_font_fallback)
+                .action;
             self.last_action_rect.set(action);
             Rect::new(
                 frame.x + action.x,
@@ -154,49 +594,59 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        // 动作区布局使用主题字号 token。
-        let geometry = self.layout(frame, ctx.tokens().font_size());
+        let action_font_size = self.visual.typography.action_font.resolve(ctx.tokens());
+        let geometry = self.layout(frame, action_font_size);
         if geometry.frame.w <= 0.0 || geometry.frame.h <= 0.0 {
             self.last_action_rect.set(Rect::zero());
             return;
         }
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
+        let palette = &self.visual.palette;
+        let text = palette.text.resolve(ctx.tokens());
+        let text_sec = palette.text_secondary.resolve(ctx.tokens());
         let (main_title, sub) = self.effective_content();
-        let (icon, icon_color) = match self.type_ {
-            ResultType::Success => ("check", ctx.tokens().color_success()),
-            ResultType::Error => ("x", ctx.tokens().color_error()),
-            ResultType::Info => ("info", ctx.tokens().color_info()),
-            ResultType::Warning => ("alert-triangle", ctx.tokens().color_warning()),
-            ResultType::NotFound => ("404", text_sec),
-            ResultType::Forbidden => ("403", ctx.tokens().color_warning()),
-            ResultType::ServerError => ("500", ctx.tokens().color_error()),
-        };
+        let status = self.visual.status(self.type_);
+        let icon_color = status.color.resolve(palette, ctx.tokens());
+        let typography = &self.visual.typography;
 
         ctx.push_clip(geometry.frame);
         match self.type_ {
             ResultType::NotFound | ResultType::Forbidden | ResultType::ServerError => {
-                let font_size = 48.0_f32.min(geometry.icon.h * 0.82);
-                ctx.text_center(icon, geometry.icon, icon_color, font_size);
+                let font_size = typography
+                    .status_code_font_size_max
+                    .min(geometry.icon.h * typography.status_code_height_ratio);
+                ctx.text_center(status.icon, geometry.icon, icon_color, font_size);
             }
             _ => {
-                let radius = geometry.icon.w.min(geometry.icon.h) * 0.5;
+                let radius = geometry.icon.w.min(geometry.icon.h) * typography.icon_radius_ratio;
                 let center_x = geometry.icon.x + geometry.icon.w * 0.5;
                 let center_y = geometry.icon.y + geometry.icon.h * 0.5;
                 ctx.fill_circle(center_x, center_y, radius, icon_color);
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    icon,
+                    status.icon,
                     geometry.icon,
-                    // 结果图标反白色：白色 token。
-                    ctx.tokens().color_white(),
-                    (radius * 0.8).max(1.0),
+                    palette.white.resolve(ctx.tokens()),
+                    (radius * typography.icon_glyph_ratio).max(typography.icon_glyph_min_size),
                 );
             }
         }
 
-        Self::paint_text_block(ctx, main_title, geometry.title, text, 20.0);
-        Self::paint_text_block(ctx, sub, geometry.subtitle, text_sec, 13.0);
+        Self::paint_text_block(
+            ctx,
+            main_title,
+            geometry.title,
+            text,
+            typography.title_font_size,
+            typography.line_height,
+        );
+        Self::paint_text_block(
+            ctx,
+            sub,
+            geometry.subtitle,
+            text_sec,
+            typography.subtitle_font_size,
+            typography.line_height,
+        );
 
         if !self.extra_text.is_empty() {
             let btn_rect = geometry.action;
@@ -206,27 +656,29 @@ widget! {
                 btn_rect.w,
                 btn_rect.h,
             ));
-            let radius_value = 6.0_f32.min(btn_rect.w.min(btn_rect.h) * 0.5);
+            let layout = &self.visual.layout;
+            let radius_value = layout
+                .action_radius
+                .min(btn_rect.w.min(btn_rect.h) * 0.5);
             let radius = Some(crate::draw::Radius::uniform(radius_value));
             let background = if self.pressed {
-                ctx.tokens().color_primary_active()
+                palette.primary_active.resolve(ctx.tokens())
             } else {
-                ctx.tokens().color_primary()
+                palette.primary.resolve(ctx.tokens())
             };
             ctx.fill_rect(btn_rect, background, radius);
             if self.focused && tree.keyboard_focus_visible() {
-                let focus = Self::inset(btn_rect, 2.0);
+                let focus = Self::inset(btn_rect, layout.focus_inset);
                 ctx.stroke_rect(
                     focus,
-                    // 聚焦描边：白色 token。
-                    ctx.tokens().color_white(),
-                    2.0,
+                    palette.white.resolve(ctx.tokens()),
+                    layout.focus_stroke_width,
                     Some(crate::draw::Radius::uniform(
                         radius_value.min(focus.w.min(focus.h) * 0.5),
                     )),
                 );
             }
-            Self::paint_action_text(ctx, &self.extra_text, btn_rect);
+            self.paint_action_text(ctx, &self.extra_text, btn_rect, action_font_size);
         } else {
             self.last_action_rect.set(Rect::zero());
         }
@@ -245,6 +697,7 @@ impl ResultView {
             focused: false,
             pressed: false,
             last_action_rect: Cell::new(Rect::zero()),
+            visual: &DEFAULT_RESULT_VISUAL,
         }
     }
     /// 覆盖结果页标题；空文本继续使用本地化默认标题。
@@ -289,8 +742,14 @@ impl ResultView {
             };
         }
 
-        let horizontal_padding = 12.0_f32.min(frame.w * 0.1);
-        let vertical_padding = 12.0_f32.min(frame.h * 0.08);
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
+        let horizontal_padding = layout
+            .horizontal_padding_max
+            .min(frame.w * layout.horizontal_padding_ratio);
+        let vertical_padding = layout
+            .vertical_padding_max
+            .min(frame.h * layout.vertical_padding_ratio);
         let inner = Rect::new(
             frame.x + horizontal_padding,
             frame.y + vertical_padding,
@@ -299,42 +758,67 @@ impl ResultView {
         );
         let has_action = !self.extra_text.is_empty();
         let action_height = if has_action {
-            36.0_f32.min(inner.h)
+            layout.action_height.min(inner.h)
         } else {
             0.0
         };
         let action_gap = if has_action {
-            12.0_f32.min((inner.h - action_height).max(0.0) * 0.12)
+            layout
+                .action_gap_max
+                .min((inner.h - action_height).max(0.0) * layout.action_gap_ratio)
         } else {
             0.0
         };
         let content_height = (inner.h - action_height - action_gap).max(0.0);
         let (title, subtitle) = self.effective_content();
         let has_subtitle = !subtitle.is_empty();
-        let icon_fraction = if has_subtitle { 0.35 } else { 0.45 };
-        let icon_size = 64.0_f32
-            .min(inner.w * 0.45)
+        let icon_fraction = if has_subtitle {
+            layout.icon_ratio_with_subtitle
+        } else {
+            layout.icon_ratio_without_subtitle
+        };
+        let icon_size = layout
+            .icon_size_max
+            .min(inner.w * layout.icon_width_ratio)
             .min(content_height * icon_fraction)
             .max(0.0);
-        let icon_title_gap = 10.0_f32.min((content_height - icon_size).max(0.0) * 0.16);
+        let icon_title_gap = layout
+            .icon_title_gap_max
+            .min((content_height - icon_size).max(0.0) * layout.icon_title_gap_ratio);
         let text_height = (content_height - icon_size - icon_title_gap).max(0.0);
-        let title_desired = Self::estimated_text_height(title, inner.w, 20.0, 2);
-        let subtitle_desired = Self::estimated_text_height(subtitle, inner.w, 13.0, 3);
+        let title_desired = Self::estimated_text_height(
+            title,
+            inner.w,
+            typography.title_font_size,
+            typography.title_max_lines as usize,
+            typography.line_height,
+        );
+        let subtitle_desired = Self::estimated_text_height(
+            subtitle,
+            inner.w,
+            typography.subtitle_font_size,
+            typography.subtitle_max_lines as usize,
+            typography.line_height,
+        );
         let subtitle_gap = if has_subtitle {
-            6.0_f32.min(text_height * 0.1)
+            layout
+                .subtitle_gap_max
+                .min(text_height * layout.subtitle_gap_ratio)
         } else {
             0.0
         };
         let available_text = (text_height - subtitle_gap).max(0.0);
         let (title_height, subtitle_height) = if has_subtitle {
-            let minimum_title = (20.0_f32 * 1.5).min(available_text).min(title_desired);
-            let minimum_subtitle = (13.0_f32 * 1.5)
+            let minimum_title = (typography.title_font_size * typography.line_height)
+                .min(available_text)
+                .min(title_desired);
+            let minimum_subtitle = (typography.subtitle_font_size * typography.line_height)
                 .min((available_text - minimum_title).max(0.0))
                 .min(subtitle_desired);
             let remaining = (available_text - minimum_title - minimum_subtitle).max(0.0);
             let extra_title = (title_desired - minimum_title)
                 .max(0.0)
-                .min(remaining * 0.35);
+                .min(remaining * layout.title_extra_ratio);
             let title_height = minimum_title + extra_title;
             let subtitle_height = minimum_subtitle
                 + (subtitle_desired - minimum_subtitle)
@@ -366,7 +850,7 @@ impl ResultView {
         y += subtitle_height + action_gap;
         let action = if has_action {
             let action_width = (Self::estimated_text_width(&self.extra_text, action_font_size)
-                + 32.0)
+                + layout.action_horizontal_padding * 2.0)
                 .clamp(0.0, inner.w);
             Rect::new(
                 inner.x + (inner.w - action_width) * 0.5,
@@ -432,7 +916,13 @@ impl ResultView {
         }
     }
 
-    fn estimated_text_height(value: &str, width: f32, font_size: f32, max_lines: usize) -> f32 {
+    fn estimated_text_height(
+        value: &str,
+        width: f32,
+        font_size: f32,
+        max_lines: usize,
+        line_height: f32,
+    ) -> f32 {
         if value.is_empty() || width <= 0.0 {
             return 0.0;
         }
@@ -441,7 +931,7 @@ impl ResultView {
         )
         .line_count
         .clamp(1, max_lines);
-        line_count as f32 * font_size * 1.5
+        line_count as f32 * font_size * line_height
     }
 
     fn paint_text_block(
@@ -450,12 +940,13 @@ impl ResultView {
         frame: Rect,
         color: Color,
         font_size: f32,
+        line_height: f32,
     ) {
         if value.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let line_height = font_size * 1.5;
-        let visible_lines = (frame.h / line_height).floor() as usize;
+        let line_box_height = font_size * line_height;
+        let visible_lines = (frame.h / line_box_height).floor() as usize;
         if visible_lines == 0 {
             return;
         }
@@ -474,32 +965,35 @@ impl ResultView {
         ctx.pop_clip();
     }
 
-    fn paint_action_text(ctx: &mut PaintContext, value: &str, frame: Rect) {
-        let horizontal_padding = 16.0_f32.min(frame.w * 0.25);
+    fn paint_action_text(&self, ctx: &mut PaintContext, value: &str, frame: Rect, font_size: f32) {
+        let layout = &self.visual.layout;
+        let horizontal_padding = layout
+            .action_horizontal_padding
+            .min(frame.w * layout.action_padding_ratio);
         let content = Rect::new(
             frame.x + horizontal_padding,
             frame.y,
             (frame.w - horizontal_padding * 2.0).max(0.0),
             frame.h,
         );
-        // 在借用可变上下文前先解析当前主题字号。
-        let font_size = ctx.tokens().font_size();
         // 复用共享省略算法生成结果描述的可见文本。
         if let Some(value) = ctx.elide_single_line(value, font_size, content.w) {
             ctx.push_clip(content);
-            // 结果描述文本：白色 token。
             ctx.text_center(
                 &value,
                 content,
-                ctx.tokens().color_white(),
-                ctx.tokens().font_size(),
+                self.visual.palette.white.resolve(ctx.tokens()),
+                font_size,
             );
             ctx.pop_clip();
         }
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(400.0, 300.0)
+        Size::new(
+            self.visual.layout.intrinsic_width,
+            self.visual.layout.intrinsic_height,
+        )
     }
 
     fn action_rect_local(&self) -> Rect {
@@ -508,8 +1002,11 @@ impl ResultView {
             return rendered;
         }
         let size = self.intrinsic_size();
-        self.layout(Rect::new(0.0, 0.0, size.w, size.h), RESULT_ACTION_FONT_SIZE)
-            .action
+        self.layout(
+            Rect::new(0.0, 0.0, size.w, size.h),
+            self.visual.typography.action_font_fallback,
+        )
+        .action
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -527,6 +1024,7 @@ impl ResultView {
         self.title = next.title;
         self.subtitle = next.subtitle;
         self.extra_text = next.extra_text;
+        self.visual = next.visual;
         if action_changed {
             self.last_action_rect.set(Rect::zero());
         }
@@ -543,14 +1041,18 @@ impl Default for ResultView {
     }
 }
 
-// 把结果页 Rust 交互与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_result_view(kernel: ResultView) -> ViewNode {
+// 把 UIX 声明的共享视觉配置融合进结果页 Rust 交互与绘制内核。
+fn build_result_view(mut kernel: ResultView, declared_visual: ResultVisual) -> ViewNode {
+    let visual = UIX_RESULT_VISUAL.get_or_init(|| declared_visual);
+    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
+    debug_assert_eq!(*visual, declared_visual);
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
 impl View for ResultView {
     fn build(self) -> ViewNode {
-        // UIX 拥有公开组件根，Rust 保留本地化、交互、布局和绘制机制。
+        // UIX 拥有视觉配置，Rust 保留本地化、交互、布局算法和底层绘制。
         let kernel = self;
         crate::uix!("src/ui/widgets/display/result/result.uix")
     }

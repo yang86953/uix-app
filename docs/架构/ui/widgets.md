@@ -44,8 +44,9 @@
 - `Skeleton`：`src/ui/widgets/display/skeleton/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸、段落行高与间距、末行比例、圆角、流光宽度与节奏及主题色角色，Rust 只保留作者尺寸优先级、形状状态、动画相位、几何执行和绘制。
 - `Empty`：`src/ui/widgets/display/empty/` 同目录保存 Rust 与 UIX；UIX 拥有尺寸边界、字号与行高、内边距、图标尺寸与高度比例、图文间距和主题色角色，Rust 只保留本地化文案选择、资源名称映射、文本测量和绘制。
 - `QRCode`：`src/ui/widgets/display/qrcode/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸、前景与背景主题色、错误文案和字号角色，Rust 只保留编码矩阵、纠错等级、四模块静区、水平区间合并与底层绘制；显式尺寸继续优先于声明默认值。
+- `ResultView`：`src/ui/widgets/display/result/` 同目录保存 Rust 与 UIX；UIX 拥有固有尺寸、留白与比例、排版、操作按钮几何、七种状态图标和主题色角色，Rust 只保留本地化内容选择、自适应布局求解、文本测量、交互状态与底层绘制；完整视觉参数表由实例共享，不逐实例复制。
 
-已完成同目录与公开根迁移、仍待回填视觉声明的组件：`ResultView`、`Tag`、`ProgressBar`、`Spin`、`Badge`、`Watermark`、`Card`、`Carousel`、`Descriptions`、`Image` 与 `ImageGroup`。这些条目不能作为最终完成状态；对应债务清单由结构测试锁定并逐项缩减。
+已完成同目录与公开根迁移、仍待回填视觉声明的组件：`Tag`、`ProgressBar`、`Spin`、`Badge`、`Watermark`、`Card`、`Carousel`、`Descriptions`、`Image` 与 `ImageGroup`。这些条目不能作为最终完成状态；对应债务清单由结构测试锁定并逐项缩减。
 
 ## 组件：复合组件
 

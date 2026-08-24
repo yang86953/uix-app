@@ -1,8 +1,8 @@
-//! ResultView UIX 声明壳回归测试。
+//! ResultView UIX 视觉声明回归测试。
 
 use super::*;
 
-/// UIX 声明壳必须保持原 ResultView 类型、配置和单叶节点形状。
+/// UIX 视觉声明必须保持原 ResultView 类型、配置和单叶节点形状。
 #[test]
 fn uix_shell_preserves_single_result_kernel_leaf() {
     let node = View::build(
@@ -20,6 +20,36 @@ fn uix_shell_preserves_single_result_kernel_leaf() {
             subtitle: String::new(),
             extra_text: "返回首页".to_owned(),
         }
+    );
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<ResultView>()
+        .expect("UIX 根必须保留 ResultView 内核");
+    assert_eq!(kernel.intrinsic_size(), Size::new(400.0, 300.0));
+    assert_eq!(kernel.visual.typography.title_font_size, 20.0);
+    assert_eq!(kernel.visual.status(ResultType::NotFound).icon, "404");
+}
+
+/// 每个实例只保存 UIX 配置的静态引用，不复制完整视觉参数表。
+#[test]
+fn uix_visual_configuration_is_shared_between_result_instances() {
+    let first = View::build(ResultView::new(ResultType::Success));
+    let second = View::build(ResultView::new(ResultType::Error));
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<ResultView>()
+        .expect("第一个 UIX 根必须保留 ResultView 内核");
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<ResultView>()
+        .expect("第二个 UIX 根必须保留 ResultView 内核");
+    assert!(std::ptr::eq(first.visual, second.visual));
+    assert_eq!(
+        std::mem::size_of_val(&first.visual),
+        std::mem::size_of::<&'static ResultVisual>()
     );
 }
 
