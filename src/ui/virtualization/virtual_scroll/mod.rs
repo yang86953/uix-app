@@ -612,12 +612,23 @@ impl VirtualScroll {
             // 非可变模式或越界索引直接忽略测量。
             return false;
         }
+        // 稳定帧中的相同测量无需重复计算可见锚点和前缀偏移。
+        if !self
+            .measurement_cache
+            .borrow()
+            .would_record_change(index, height)
+        {
+            // 非法或未变化输入保持原有无刷新语义。
+            return false;
+        }
         let anchor = self.visible_anchor_index();
         let old_anchor_offset = self
             .measurement_cache
             .borrow()
             .offset_for_index(anchor, self.item_height);
         let changed = self.measurement_cache.borrow_mut().record(index, height);
+        // 预检与正式写入共享判定，期间没有可重入修改点。
+        debug_assert!(changed);
         if changed && index < anchor {
             let new_anchor_offset = self
                 .measurement_cache

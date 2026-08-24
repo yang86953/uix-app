@@ -80,19 +80,28 @@ impl VirtualListMeasurementCache {
         self.measurements.get(&index).copied()
     }
 
+    // 返回本次输入归一后是否会实际改变指定索引。
+    fn changed_measurement(&self, index: usize, height: f32) -> Option<f32> {
+        // 与正式写入共享同一有限正值规则，避免预检和提交产生分歧。
+        let height = positive_measurement(height).map(|value| value as f32)?;
+        // 相同测量无需触发任何锚点或缓存刷新工作。
+        (self.measurements.get(&index).copied() != Some(height)).then_some(height)
+    }
+
+    // 在不修改缓存的前提下判断一次测量是否会产生结构变化。
+    pub(crate) fn would_record_change(&self, index: usize, height: f32) -> bool {
+        // 复用正式写入判定，稳定帧可在昂贵的锚点计算前退出。
+        self.changed_measurement(index, height).is_some()
+    }
+
     // 记录一个有限正的项目高度，并报告缓存是否发生变化。
     /// 记录有限正高度，并在新增或改变测量时返回 `true`。
     pub fn record(&mut self, index: usize, height: f32) -> bool {
-        // 非法测量不覆盖旧值，调用方会继续使用估算行高。
-        let Some(height) = positive_measurement(height).map(|value| value as f32) else {
-            // 拒绝非有限、非正和无界测量。
+        // 非法或相同测量不覆盖旧值，也不制造额外物化刷新。
+        let Some(height) = self.changed_measurement(index, height) else {
+            // 已有结果仍然有效，非法输入继续回退到旧值或估算值。
             return false;
         };
-        // 相同测量不制造额外的物化刷新。
-        if self.measurements.get(&index).copied() == Some(height) {
-            // 已有结果仍然有效。
-            return false;
-        }
         // 保存新的有效测量。
         self.measurements.insert(index, height);
         // 高度变化会影响后续前缀坐标。
