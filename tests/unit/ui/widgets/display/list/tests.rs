@@ -315,3 +315,31 @@ fn last_builder_owns_each_slot_role() {
         Size::new(400.0, 100.0)
     );
 }
+
+// 验证非空 List 经同目录 UIX 根注入尺寸、行高与留白视觉。
+#[test]
+fn uix_root_preserves_list_kernel_and_visual_contract() {
+    let node = crate::ui::view::View::build(List::new().items(vec!["任务"]));
+    assert!(node.children.is_empty());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<List>()
+        .expect("UIX 根必须保留 List 内核");
+    assert!(kernel.bordered);
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (400.0, 100.0, 32.0, 40.0, 48.0, 16.0)
+    );
+}
+
+// 验证 List 实例共享 UIX 视觉表，显式边框开关仍保持最高优先级。
+#[test]
+fn list_instances_share_uix_visual_table_and_preserve_authored_border() {
+    let first = crate::ui::view::View::build(List::new().items(vec!["一"]));
+    let second = crate::ui::view::View::build(List::new().items(vec!["二"]).bordered(false));
+    let first = first.widget.as_any().downcast_ref::<List>().unwrap();
+    let second = second.widget.as_any().downcast_ref::<List>().unwrap();
+    assert!(first.shares_visual_with_for_test(second));
+    assert!(!second.bordered);
+}

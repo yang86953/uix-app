@@ -1,0 +1,2 @@
+// List 的默认尺寸/边框、三档行高、兼容文字排版、留白、分隔线和主题角色由 UIX 声明；Rust 内核负责数据、Empty 策略、真实插槽、测量与布局。
+<KernelView value={build_list_view(kernel, list_visual(list_defaults(400, 100, list_bordered_default()), list_rows(32, 40, 48, 16, 0.25, 13, 40, 14), list_frame(list_body_radius(), 0.5, 0.5, 1, 1), list_palette(list_background_color(), list_border_color(), list_text_color(), list_secondary_text_color(), list_primary_color(), list_body_font())))} />

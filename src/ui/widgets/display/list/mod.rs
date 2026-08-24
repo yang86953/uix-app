@@ -3,8 +3,11 @@
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入真实子 View 测量入口。
@@ -13,14 +16,252 @@ use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::{LayoutChild, SnapshotFields, WidgetId, WidgetTree};
 // 引入一次性交接声明子树所需的内部可变单元。
 use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
+
+// 保存由 UIX 声明的 List 默认尺寸与边框开关。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ListDefaultsVisual {
+    width: f32,
+    min_height: f32,
+    bordered: bool,
+}
+
+// 保存由 UIX 声明的三档行高、留白与兼容文本排版。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ListRowsVisual {
+    small_height: f32,
+    medium_height: f32,
+    large_height: f32,
+    horizontal_padding: f32,
+    horizontal_padding_frame_ratio: f32,
+    header_footer_font_size: f32,
+    load_more_height: f32,
+    load_more_font_size: f32,
+}
+
+impl ListRowsVisual {
+    fn height(self, size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => self.small_height,
+            ControlSize::Medium => self.medium_height,
+            ControlSize::Large => self.large_height,
+        }
+    }
+}
+
+// List 正文使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListFontRole {
+    Body,
+}
+
+impl ListFontRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.font_size(),
+        }
+    }
+}
+
+// List 外框使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListRadiusRole {
+    Body,
+}
+
+impl ListRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.border_radius(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的外框、分隔线与圆角几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ListFrameVisual {
+    radius: ListRadiusRole,
+    radius_limit_ratio: f32,
+    border_inset: f32,
+    border_width: f32,
+    divider_width: f32,
+}
+
+// 保存由 UIX 声明的主题语义色与正文字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ListPaletteVisual {
+    background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    text_secondary: ColorValue,
+    primary: ColorValue,
+    item_font: ListFontRole,
+}
+
+// 完整视觉配置由全部 List 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ListVisual {
+    defaults: ListDefaultsVisual,
+    rows: ListRowsVisual,
+    frame: ListFrameVisual,
+    palette: ListPaletteVisual,
+}
+
+// 保存 List 每帧复用的主题值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedListVisual {
+    background: Color,
+    border: Color,
+    text: Color,
+    text_secondary: Color,
+    item_font_size: f32,
+    radius: f32,
+}
+
+impl ListVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedListVisual {
+        ResolvedListVisual {
+            background: self.palette.background.resolve(tokens),
+            border: self.palette.border.resolve(tokens),
+            text: self.palette.text.resolve(tokens),
+            text_secondary: self.palette.text_secondary.resolve(tokens),
+            item_font_size: self.palette.item_font.resolve(tokens),
+            radius: self.frame.radius.resolve(tokens),
+        }
+    }
+}
+
+// 组合 UIX 声明的默认尺寸与边框开关。
+const fn list_defaults(width: f32, min_height: f32, bordered: bool) -> ListDefaultsVisual {
+    ListDefaultsVisual {
+        width,
+        min_height,
+        bordered,
+    }
+}
+
+// 组合 UIX 声明的三档行高、留白与兼容文本排版。
+#[allow(clippy::too_many_arguments)]
+const fn list_rows(
+    small_height: f32,
+    medium_height: f32,
+    large_height: f32,
+    horizontal_padding: f32,
+    horizontal_padding_frame_ratio: f32,
+    header_footer_font_size: f32,
+    load_more_height: f32,
+    load_more_font_size: f32,
+) -> ListRowsVisual {
+    ListRowsVisual {
+        small_height,
+        medium_height,
+        large_height,
+        horizontal_padding,
+        horizontal_padding_frame_ratio,
+        header_footer_font_size,
+        load_more_height,
+        load_more_font_size,
+    }
+}
+
+// 组合 UIX 声明的边框、分隔线与圆角视觉。
+const fn list_frame(
+    radius: ListRadiusRole,
+    radius_limit_ratio: f32,
+    border_inset: f32,
+    border_width: f32,
+    divider_width: f32,
+) -> ListFrameVisual {
+    ListFrameVisual {
+        radius,
+        radius_limit_ratio,
+        border_inset,
+        border_width,
+        divider_width,
+    }
+}
+
+// 组合 UIX 声明的主题语义色与正文字号角色。
+const fn list_palette(
+    background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    text_secondary: ColorValue,
+    primary: ColorValue,
+    item_font: ListFontRole,
+) -> ListPaletteVisual {
+    ListPaletteVisual {
+        background,
+        border,
+        text,
+        text_secondary,
+        primary,
+        item_font,
+    }
+}
+
+// 组合 UIX 声明的完整 List 视觉配置。
+const fn list_visual(
+    defaults: ListDefaultsVisual,
+    rows: ListRowsVisual,
+    frame: ListFrameVisual,
+    palette: ListPaletteVisual,
+) -> ListVisual {
+    ListVisual {
+        defaults,
+        rows,
+        frame,
+        palette,
+    }
+}
+
+// 向 UIX 提供受限表达式不能直接写入的默认值与主题角色。
+const fn list_bordered_default() -> bool {
+    true
+}
+const fn list_body_font() -> ListFontRole {
+    ListFontRole::Body
+}
+const fn list_body_radius() -> ListRadiusRole {
+    ListRadiusRole::Body
+}
+const fn list_background_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+const fn list_border_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+const fn list_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+const fn list_secondary_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn list_primary_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_LIST_VISUAL: ListVisual = list_visual(
+    list_defaults(400.0, 100.0, true),
+    list_rows(32.0, 40.0, 48.0, 16.0, 0.25, 13.0, 40.0, 14.0),
+    list_frame(ListRadiusRole::Body, 0.5, 0.5, 1.0, 1.0),
+    list_palette(
+        ColorValue::Neutral(NeutralRole::BgContainer),
+        ColorValue::Neutral(NeutralRole::BorderSecondary),
+        ColorValue::Neutral(NeutralRole::Text),
+        ColorValue::Neutral(NeutralRole::TextSecondary),
+        ColorValue::Palette(PaletteColor::Primary),
+        ListFontRole::Body,
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_LIST_VISUAL: OnceLock<ListVisual> = OnceLock::new();
 
 /// List 尺寸对应的行高。
 pub fn list_item_height(size: ControlSize) -> f32 {
-    match size {
-        ControlSize::Small => 32.0,
-        ControlSize::Medium => 40.0,
-        ControlSize::Large => 48.0,
-    }
+    DEFAULT_LIST_VISUAL.rows.height(size)
 }
 
 // List — 列表组件。
@@ -30,6 +271,8 @@ widget! {
         header: String,
         footer: String,
         bordered: bool,
+        #[snapshot(skip)]
+        bordered_authored: bool,
         list_size: ControlSize,
         items: Vec<String>,
         load_more_text: String,
@@ -60,6 +303,8 @@ widget! {
         // 缓存加载入口插槽包含 margin 的最终正常流高度。
         #[snapshot(skip)]
         load_more_view_height: Cell<f32>,
+        #[snapshot(skip)]
+        visual: &'static ListVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -85,7 +330,7 @@ widget! {
         // 从文本条目和仍使用文本兼容入口的槽位开始累计高度。
         let mut height = self.text_content_height();
         // 默认宽度保持旧 List 的四百逻辑像素契约。
-        let mut width = 400.0_f32;
+        let mut width = self.visual.defaults.width;
         // 将每个真实插槽的 margin 外尺寸纳入组件自然尺寸。
         for child in &measured {
             // 读取经过有限值归一化的子树 margin 外尺寸。
@@ -96,7 +341,10 @@ widget! {
             height += outer.h;
         }
         // 保留旧 List 最小高度并尊重父级约束。
-        Some(constraints.clamp(Size::new(width, height.max(100.0))))
+        Some(constraints.clamp(Size::new(
+            width,
+            height.max(self.visual.defaults.min_height),
+        )))
     }
 
     // 将三个声明期插槽以固定 key 一次性交给运行时树。
@@ -187,7 +435,7 @@ widget! {
             self.header_view_height.set(0.0);
         }
         // 全部文本数据项继续由 List 自绘并占据标准行高。
-        y += self.items.len() as f32 * list_item_height(self.list_size);
+        y += self.items.len() as f32 * self.row_height();
         // 页尾节点位于全部文本条目之后。
         if self.footer_view_enabled {
             // 借用固定角色对应的测量快照。
@@ -241,26 +489,32 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border_secondary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let item_h = list_item_height(self.list_size);
-        let radius = ctx.tokens().border_radius().min(frame.w.min(frame.h) * 0.5);
+        let resolved = self.visual.resolve(ctx.tokens());
+        let item_h = self.row_height();
+        let radius = resolved
+            .radius
+            .min(frame.w.min(frame.h) * self.visual.frame.radius_limit_ratio);
         let r = Radius::uniform(radius);
         let mut y = frame.y;
-        let horizontal_padding = 16.0_f32.min(frame.w * 0.25);
+        let horizontal_padding = self
+            .visual
+            .rows
+            .horizontal_padding
+            .min(frame.w * self.visual.rows.horizontal_padding_frame_ratio);
 
         ctx.push_clip(frame);
-        ctx.fill_rect(frame, bg, Some(r));
+        ctx.fill_rect(frame, resolved.background, Some(r));
         if self.bordered {
-            let border_frame = Self::inset(frame, 0.5);
+            let border_frame = Self::inset(frame, self.visual.frame.border_inset);
             ctx.stroke_rect(
                 border_frame,
-                border,
-                1.0,
+                resolved.border,
+                self.visual.frame.border_width,
                 Some(Radius::uniform(
-                    radius.min(border_frame.w.min(border_frame.h) * 0.5),
+                    radius.min(
+                        border_frame.w.min(border_frame.h)
+                            * self.visual.frame.radius_limit_ratio,
+                    ),
                 )),
             );
         }
@@ -271,29 +525,53 @@ widget! {
             // 非零真实页首之后绘制与文本兼容路径一致的整宽分隔线。
             if header_height > 0.0 {
                 // 分隔线位于页首 margin 外框的底边。
-                ctx.fill_rect(Rect::new(frame.x, y + header_height, frame.w, 1.0), border, None);
+                ctx.fill_rect(
+                    Rect::new(
+                        frame.x,
+                        y + header_height,
+                        frame.w,
+                        self.visual.frame.divider_width,
+                    ),
+                    resolved.border,
+                    None,
+                );
                 // 文本条目从真实页首之后开始。
                 y += header_height;
             }
         } else if !self.header.is_empty() {
             let header_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
-            Self::paint_single_line(ctx, &self.header, header_rect, text_sec, 13.0);
-            ctx.fill_rect(Rect::new(frame.x, y + item_h, frame.w, 1.0), border, None);
+            Self::paint_single_line(
+                ctx,
+                &self.header,
+                header_rect,
+                resolved.text_secondary,
+                self.visual.rows.header_footer_font_size,
+            );
+            ctx.fill_rect(
+                Rect::new(
+                    frame.x,
+                    y + item_h,
+                    frame.w,
+                    self.visual.frame.divider_width,
+                ),
+                resolved.border,
+                None,
+            );
             y += item_h;
         }
 
         for (i, item) in self.items.iter().enumerate() {
             let item_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
-            Self::paint_single_line(ctx, item, item_rect, text, ctx.tokens().font_size());
+            Self::paint_single_line(ctx, item, item_rect, resolved.text, resolved.item_font_size);
             if i < self.items.len() - 1 {
                 ctx.fill_rect(
                     Rect::new(
                         frame.x + horizontal_padding,
-                        y + item_h - 1.0,
+                        y + item_h - self.visual.frame.divider_width,
                         (frame.w - horizontal_padding * 2.0).max(0.0),
-                        1.0,
+                        self.visual.frame.divider_width,
                     ),
-                    border,
+                    resolved.border,
                     None,
                 );
             }
@@ -304,32 +582,55 @@ widget! {
             // 真实页尾前继续绘制与文本页尾一致的内容分隔线。
             if !self.items.is_empty() {
                 // 分隔线位于最后一个文本条目之后。
-                ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
+                ctx.fill_rect(
+                    Rect::new(frame.x, y, frame.w, self.visual.frame.divider_width),
+                    resolved.border,
+                    None,
+                );
             }
             // 页尾真实子树自行绘制，只推进其 margin 外高度。
             y += self.footer_view_height.get();
         } else if !self.footer.is_empty() {
             if !self.items.is_empty() {
-                ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
+                ctx.fill_rect(
+                    Rect::new(frame.x, y, frame.w, self.visual.frame.divider_width),
+                    resolved.border,
+                    None,
+                );
             }
             let footer_rect = Self::row_content_rect(frame, y, item_h, horizontal_padding);
-            Self::paint_single_line(ctx, &self.footer, footer_rect, text_sec, 13.0);
+            Self::paint_single_line(
+                ctx,
+                &self.footer,
+                footer_rect,
+                resolved.text_secondary,
+                self.visual.rows.header_footer_font_size,
+            );
             y += item_h;
         }
 
         // 节点型加载入口由真实子树绘制，只有兼容文本路径需要父组件自绘。
         if !self.load_more_view_enabled && !self.load_more_text.is_empty() {
-            let load_rect = Rect::new(frame.x, y, frame.w, 40.0);
-            ctx.fill_rect(load_rect, bg, None);
-            ctx.stroke_rect(load_rect, border, 1.0, Some(r));
-            let load_content = Self::row_content_rect(frame, y, 40.0, horizontal_padding);
-            let primary = ctx.tokens().color_primary();
+            let load_rect = Rect::new(frame.x, y, frame.w, self.visual.rows.load_more_height);
+            ctx.fill_rect(load_rect, resolved.background, None);
+            ctx.stroke_rect(
+                load_rect,
+                resolved.border,
+                self.visual.frame.border_width,
+                Some(r),
+            );
+            let load_content = Self::row_content_rect(
+                frame,
+                y,
+                self.visual.rows.load_more_height,
+                horizontal_padding,
+            );
             Self::paint_single_line(
                 ctx,
                 &self.load_more_text,
                 load_content,
-                primary,
-                14.0,
+                self.visual.palette.primary.resolve(ctx.tokens()),
+                self.visual.rows.load_more_font_size,
             );
         }
         ctx.pop_clip();
@@ -456,6 +757,11 @@ impl List {
             + usize::from(self.load_more_view_enabled)
     }
 
+    // 返回当前 UIX 视觉表中与控件尺寸匹配的标准行高。
+    fn row_height(&self) -> f32 {
+        self.visual.rows.height(self.list_size)
+    }
+
     // 计算仍由兼容文本路径负责的页首高度。
     fn text_header_height(&self) -> f32 {
         // 节点型页首不再保留文本行占位。
@@ -464,7 +770,7 @@ impl List {
             0.0
         } else {
             // 兼容文本页首沿用标准 List 行高。
-            list_item_height(self.list_size)
+            self.row_height()
         }
     }
 
@@ -476,7 +782,7 @@ impl List {
             0.0
         } else {
             // 兼容文本页尾沿用标准 List 行高。
-            list_item_height(self.list_size)
+            self.row_height()
         }
     }
 
@@ -488,14 +794,14 @@ impl List {
             0.0
         } else {
             // 兼容加载文字沿用既有四十逻辑像素高度。
-            40.0
+            self.visual.rows.load_more_height
         }
     }
 
     // 计算文本条目与仍使用字符串入口的全部内容高度。
     fn text_content_height(&self) -> f32 {
         // 文本数据项始终按当前控件尺寸累计。
-        self.items.len() as f32 * list_item_height(self.list_size)
+        self.items.len() as f32 * self.row_height()
             // 兼容文本页首只在没有节点页首时参与。
             + self.text_header_height()
             // 兼容文本页尾只在没有节点页尾时参与。
@@ -525,7 +831,7 @@ impl List {
             return;
         }
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         ctx.push_clip(frame);
@@ -543,7 +849,10 @@ impl List {
             // 加上最近一次真实加载入口布局的 margin 外高度。
             + self.load_more_view_height.get();
         // 保留旧默认宽度与最小高度。
-        Size::new(400.0, h.max(100.0))
+        Size::new(
+            self.visual.defaults.width,
+            h.max(self.visual.defaults.min_height),
+        )
     }
 
     /// 创建使用当前配置尺寸、带边框且无内容的列表。
@@ -551,7 +860,8 @@ impl List {
         Self {
             header: String::new(),
             footer: String::new(),
-            bordered: true,
+            bordered: DEFAULT_LIST_VISUAL.defaults.bordered,
+            bordered_authored: false,
             list_size: crate::ui::widget_runtime::config::use_config().size,
             items: Vec::new(),
             load_more_text: String::new(),
@@ -575,6 +885,7 @@ impl List {
             footer_view_height: Cell::new(0.0),
             // 加载入口尚未产生真实布局高度。
             load_more_view_height: Cell::new(0.0),
+            visual: &DEFAULT_LIST_VISUAL,
         }
     }
     /// 替换列表按声明顺序展示的文本项。
@@ -633,6 +944,7 @@ impl List {
     /// 设置是否绘制列表外框与行分隔线。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
+        self.bordered_authored = true;
         self
     }
     /// 设置列表行采用的控件尺寸规格。
@@ -686,6 +998,7 @@ impl List {
         self.header = next.header;
         self.footer = next.footer;
         self.bordered = next.bordered;
+        self.bordered_authored = next.bordered_authored;
         self.list_size = next.list_size;
         self.items = next.items;
         self.load_more_text = next.load_more_text;
@@ -703,6 +1016,26 @@ impl List {
         self.load_more_view
             // 取出下一声明的一次性交接槽位。
             .replace(next.load_more_view.into_inner());
+        self.visual = next.visual;
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.defaults.width,
+            self.visual.defaults.min_height,
+            self.visual.rows.small_height,
+            self.visual.rows.medium_height,
+            self.visual.rows.large_height,
+            self.visual.rows.horizontal_padding,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 }
 
@@ -712,15 +1045,27 @@ impl Default for List {
     }
 }
 
-impl crate::ui::view::View for List {
-    fn build(self) -> crate::ui::view::ViewNode {
+// 把列表数据、真实插槽与 UIX 视觉表融合为单一根节点。
+fn build_list_view(mut kernel: List, declared_visual: ListVisual) -> ViewNode {
+    let visual = UIX_LIST_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.bordered_authored {
+        kernel.bordered = visual.defaults.bordered;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for List {
+    fn build(self) -> ViewNode {
         if self.items.is_empty() {
             if let Some(empty) = crate::ui::widget_runtime::config::render_empty_for::<Self>() {
                 return empty;
             }
-            return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());
+            return View::build(crate::ui::widgets::display::Empty::new());
         }
-        crate::ui::view::ViewNode::leaf(self)
+        // UIX 拥有非空列表公开根与静态视觉；Rust 保留 Empty 策略、插槽与布局。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/list/list.uix")
     }
 }
 
@@ -728,5 +1073,5 @@ impl crate::ui::view::View for List {
 #[cfg(test)]
 // 测试子模块可以读取私有角色缓存而不扩大公开 API。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/display/list/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/list/tests.rs"]
 mod tests;
