@@ -50,7 +50,7 @@ impl SharedRasterizer {
     /// Resets all transient canvas state for a logical extent while retaining
     /// the current pixel allocation. The allocation may be a lazy placeholder.
     pub(crate) fn reset_state_for_extent(&mut self, width: i32, height: i32) {
-        self.renderer = SoftwareRasterizer::new(width, height);
+        self.renderer.reset_for_extent(width, height);
         self.deferred_error = None;
     }
 

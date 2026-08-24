@@ -10,6 +10,18 @@ use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::{BlendMode, Transform};
 use crate::draw::raster::rasterizer::core as rast;
 
+// 单个瞬态状态栈最多跨帧保留 16 KiB，避免异常深度永久抬高内存水位。
+pub(crate) const MAX_RETAINED_TRANSIENT_STACK_BYTES: usize = 16 * 1024;
+
+fn clear_reusable_stack<T>(stack: &mut Vec<T>) {
+    stack.clear();
+    if stack.capacity().saturating_mul(std::mem::size_of::<T>())
+        > MAX_RETAINED_TRANSIENT_STACK_BYTES
+    {
+        *stack = Vec::new();
+    }
+}
+
 /// 渲染状态快照（用于 save/restore）。
 #[derive(Clone)]
 struct StateSnapshot {
@@ -84,6 +96,35 @@ impl SoftwareRasterizer {
             blend_mode: BlendMode::default(),
             state_stack: Vec::new(),
         }
+    }
+
+    /// 重置瞬态画布状态，同时保留稳态裁剪与快照栈容量。
+    pub(crate) fn reset_for_extent(&mut self, surface_w: i32, surface_h: i32) {
+        let surface_w = surface_w.max(1);
+        let surface_h = surface_h.max(1);
+        self.surface_w = surface_w;
+        self.surface_h = surface_h;
+        self.clip_rect = Rect::new(0.0, 0.0, surface_w as f32, surface_h as f32);
+        self.clip_int = (0, 0, surface_w, surface_h);
+        clear_reusable_stack(&mut self.clip_stack);
+        self.clip_mask = None;
+        clear_reusable_stack(&mut self.clip_mask_stack);
+        self.opacity = 1.0;
+        self.offset_x = 0.0;
+        self.offset_y = 0.0;
+        self.transform = Transform::identity();
+        self.invert = Self::compute_inverse(&self.transform);
+        self.blend_mode = BlendMode::default();
+        clear_reusable_stack(&mut self.state_stack);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transient_stack_capacities(&self) -> (usize, usize, usize) {
+        (
+            self.clip_stack.capacity(),
+            self.clip_mask_stack.capacity(),
+            self.state_stack.capacity(),
+        )
     }
 
     // ═══ 状态访问器 ═══

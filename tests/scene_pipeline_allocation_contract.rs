@@ -204,7 +204,7 @@ fn warmed_partial_frame_has_bounded_geometry_allocations() {
         "测量局部帧必须完成呈现"
     );
     assert_eq!(
-        allocations, 12,
-        "预热后的单矩形局部帧不得恢复已消除的脏区复制申请"
+        allocations, 9,
+        "预热后的单矩形局部帧不得恢复已消除的脏区与光栅状态栈申请"
     );
 }
