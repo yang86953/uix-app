@@ -478,9 +478,7 @@ widget! {
 }
 
 // 把数据/交互状态与 UIX 静态视觉融合为单一 LineChart 根节点。
-fn build_line_chart_view(mut kernel: LineChart, declared_visual: LineChartVisual) -> ViewNode {
-    let visual = UIX_LINE_CHART_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_line_chart_view(mut kernel: LineChart, visual: &'static LineChartVisual) -> ViewNode {
     if !kernel.authored.contains(LineChartAuthored::HEIGHT) {
         kernel.fixed_height = visual.defaults.height;
     }

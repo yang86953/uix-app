@@ -3,7 +3,6 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::sync::OnceLock;
 
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
@@ -30,7 +29,7 @@ use crate::ui::{
 
 // 保存由 UIX 声明的卡片默认尺寸、内边距与初始外观。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardDefaultsVisual {
+pub(crate) struct CardDefaultsVisual {
     width: f32,
     height: f32,
     padding: f32,
@@ -42,7 +41,7 @@ struct CardDefaultsVisual {
 
 // 保存由 UIX 声明的标题区尺寸、分隔线与字体收缩边界。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardTitleVisual {
+pub(crate) struct CardTitleVisual {
     block_height: f32,
     text_height: f32,
     separator_offset: f32,
@@ -54,7 +53,7 @@ struct CardTitleVisual {
 
 // 保存由 UIX 声明的动作区排版、分隔线与焦点圈几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardActionVisual {
+pub(crate) struct CardActionVisual {
     height: f32,
     font_size: f32,
     min_font_size: f32,
@@ -69,7 +68,7 @@ struct CardActionVisual {
 
 // 保存由 UIX 声明的表面、描边、悬停混色与顶部强调线几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardSurfaceVisual {
+pub(crate) struct CardSurfaceVisual {
     border_width: f32,
     hover_lighten: f32,
     radius_limit_ratio: f32,
@@ -86,7 +85,7 @@ struct CardSurfaceVisual {
 
 // 保存单级阴影的三个层级缩放与脏区外扩。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardElevationVisual {
+pub(crate) struct CardElevationVisual {
     directional_scale: f32,
     ambient_scale: f32,
     glow_scale: f32,
@@ -124,7 +123,7 @@ impl CardShadowRole {
 
 // 保存由 UIX 声明的卡片主题语义色映射。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CardPaletteVisual {
+pub(crate) struct CardPaletteVisual {
     background: ColorValue,
     elevated_background: ColorValue,
     primary: ColorValue,
@@ -135,7 +134,7 @@ struct CardPaletteVisual {
 
 // 完整视觉配置由全部 Card 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CardVisual {
+pub(crate) struct CardVisual {
     defaults: CardDefaultsVisual,
     title: CardTitleVisual,
     action: CardActionVisual,
@@ -145,6 +144,9 @@ struct CardVisual {
     shadow: CardShadowRole,
     palette: CardPaletteVisual,
 }
+
+// 同目录 UIX 生成卡片全部分组视觉、三级阴影表、根记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/card/card.uix");
 
 impl CardVisual {
     fn elevation(&self, elevation: u8) -> Option<&CardElevationVisual> {
@@ -152,183 +154,6 @@ impl CardVisual {
             .checked_sub(1)
             .and_then(|index| self.elevations.get(usize::from(index)))
     }
-}
-
-// 组合 UIX 声明的卡片默认状态。
-const fn card_defaults(
-    width: f32,
-    height: f32,
-    padding: f32,
-    bordered: bool,
-    elevation: f32,
-    max_elevation: f32,
-    body_gap: f32,
-) -> CardDefaultsVisual {
-    CardDefaultsVisual {
-        width,
-        height,
-        padding,
-        bordered,
-        elevation: elevation as u8,
-        max_elevation: max_elevation as u8,
-        body_gap,
-    }
-}
-
-// 组合 UIX 声明的标题区排版。
-#[allow(clippy::too_many_arguments)]
-const fn card_title(
-    block_height: f32,
-    text_height: f32,
-    separator_offset: f32,
-    separator_thickness: f32,
-    font_size: f32,
-    min_font_size: f32,
-    vertical_inset: f32,
-) -> CardTitleVisual {
-    CardTitleVisual {
-        block_height,
-        text_height,
-        separator_offset,
-        separator_thickness,
-        font_size,
-        min_font_size,
-        vertical_inset,
-    }
-}
-
-// 组合 UIX 声明的动作区排版与交互反馈几何。
-#[allow(clippy::too_many_arguments)]
-const fn card_action(
-    height: f32,
-    font_size: f32,
-    min_font_size: f32,
-    horizontal_inset: f32,
-    vertical_inset: f32,
-    divider_inset: f32,
-    divider_thickness: f32,
-    focus_inset: f32,
-    focus_stroke_width: f32,
-    center_ratio: f32,
-) -> CardActionVisual {
-    CardActionVisual {
-        height,
-        font_size,
-        min_font_size,
-        horizontal_inset,
-        vertical_inset,
-        divider_inset,
-        divider_thickness,
-        focus_inset,
-        focus_stroke_width,
-        center_ratio,
-    }
-}
-
-// 组合 UIX 声明的卡片表面与顶部强调线。
-#[allow(clippy::too_many_arguments)]
-const fn card_surface(
-    border_width: f32,
-    hover_lighten: f32,
-    radius_limit_ratio: f32,
-    accent_min_elevation: f32,
-    accent_horizontal_inset: f32,
-    accent_height: f32,
-    accent_radius_ratio: f32,
-    shadow_directional_y_scale: f32,
-    shadow_ambient_x_scale: f32,
-    shadow_ambient_y_scale: f32,
-    shadow_glow_offset_x: f32,
-    shadow_glow_offset_y: f32,
-) -> CardSurfaceVisual {
-    CardSurfaceVisual {
-        border_width,
-        hover_lighten,
-        radius_limit_ratio,
-        accent_min_elevation: accent_min_elevation as u8,
-        accent_horizontal_inset,
-        accent_height,
-        accent_radius_ratio,
-        shadow_directional_y_scale,
-        shadow_ambient_x_scale,
-        shadow_ambient_y_scale,
-        shadow_glow_offset_x,
-        shadow_glow_offset_y,
-    }
-}
-
-// 组合 UIX 声明的单级阴影缩放与脏区外扩。
-const fn card_elevation(
-    directional_scale: f32,
-    ambient_scale: f32,
-    glow_scale: f32,
-    alpha_boost: f32,
-    dirty_expand: f32,
-) -> CardElevationVisual {
-    CardElevationVisual {
-        directional_scale,
-        ambient_scale,
-        glow_scale,
-        alpha_boost,
-        dirty_expand,
-    }
-}
-
-// 组合 UIX 声明的三级阴影视觉表。
-const fn card_elevations(
-    low: CardElevationVisual,
-    medium: CardElevationVisual,
-    high: CardElevationVisual,
-) -> [CardElevationVisual; 3] {
-    [low, medium, high]
-}
-
-// 组合 UIX 声明的卡片主题语义色。
-const fn card_palette(
-    background: ColorValue,
-    elevated_background: ColorValue,
-    primary: ColorValue,
-    border: ColorValue,
-    text: ColorValue,
-    action_hover: ColorValue,
-) -> CardPaletteVisual {
-    CardPaletteVisual {
-        background,
-        elevated_background,
-        primary,
-        border,
-        text,
-        action_hover,
-    }
-}
-
-// 组合 UIX 声明的完整卡片视觉配置。
-#[allow(clippy::too_many_arguments)]
-const fn card_visual(
-    defaults: CardDefaultsVisual,
-    title: CardTitleVisual,
-    action: CardActionVisual,
-    surface: CardSurfaceVisual,
-    elevations: [CardElevationVisual; 3],
-    radius: CardRadiusRole,
-    shadow: CardShadowRole,
-    palette: CardPaletteVisual,
-) -> CardVisual {
-    CardVisual {
-        defaults,
-        title,
-        action,
-        surface,
-        elevations,
-        radius,
-        shadow,
-        palette,
-    }
-}
-
-// 向 UIX 提供卡片默认边框开关。
-const fn card_bordered_default() -> bool {
-    true
 }
 
 // 向 UIX 提供大圆角主题角色。
@@ -370,32 +195,6 @@ const fn card_text() -> ColorValue {
 const fn card_action_hover() -> ColorValue {
     ColorValue::Neutral(NeutralRole::FillTertiary)
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_CARD_VISUAL: CardVisual = card_visual(
-    card_defaults(200.0, 120.0, 16.0, true, 1.0, 3.0, 0.0),
-    card_title(56.0, 44.0, 48.0, 1.0, 15.0, 11.0, 2.0),
-    card_action(40.0, 13.0, 10.0, 6.0, 2.0, 8.0, 1.0, 1.0, 2.0, 0.5),
-    card_surface(1.0, 0.05, 0.5, 2.0, 24.0, 3.0, 0.5, 1.5, 0.3, 0.6, 0.0, 0.0),
-    card_elevations(
-        card_elevation(0.8, 1.2, 1.6, 1.1, 50.0),
-        card_elevation(1.0, 1.6, 2.2, 1.0, 70.0),
-        card_elevation(1.2, 2.2, 3.0, 0.9, 95.0),
-    ),
-    card_large_radius(),
-    card_default_shadow(),
-    card_palette(
-        card_background(),
-        card_elevated_background(),
-        card_primary(),
-        card_border(),
-        card_text(),
-        card_action_hover(),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_CARD_VISUAL: OnceLock<CardVisual> = OnceLock::new();
 
 widget! {
     /// 支持阴影层级、悬停高亮和内容内边距的卡片组件。
@@ -883,9 +682,8 @@ impl Default for Card {
 fn build_card_view(
     mut kernel: Card,
     children: Vec<ViewNode>,
-    declared_visual: CardVisual,
+    visual: &'static CardVisual,
 ) -> ViewNode {
-    let visual = UIX_CARD_VISUAL.get_or_init(|| declared_visual);
     if !kernel.bordered_authored {
         kernel.bordered = visual.defaults.bordered;
     }
@@ -1036,7 +834,7 @@ impl Card {
 
     /// 创建带边框、一级阴影和默认内边距的卡片。
     pub fn new() -> Self {
-        let visual = &DEFAULT_CARD_VISUAL;
+        let visual = CARD_VISUAL_REF;
         Self {
             title: None,
             children: WidgetChildren::new(),
@@ -1093,7 +891,7 @@ impl Card {
     }
     /// 设置阴影层级，最大为三级。
     pub fn elevation(mut self, e: u8) -> Self {
-        self.elevation = e.min(DEFAULT_CARD_VISUAL.defaults.max_elevation);
+        self.elevation = e.min(CARD_VISUAL.defaults.max_elevation);
         self.elevation_authored = true;
         self
     }

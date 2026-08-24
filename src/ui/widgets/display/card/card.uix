@@ -1,2 +1,116 @@
-// Card 的默认尺寸、标题/动作排版、表面、三级阴影和主题角色由 UIX 声明；Rust 内核负责子树生命周期、交互、布局与绘制。
-<KernelView value={build_card_view(kernel, children, card_visual(card_defaults(200, 120, 16, card_bordered_default(), 1, 3, 0), card_title(56, 44, 48, 1, 15, 11, 2), card_action(40, 13, 10, 6, 2, 8, 1, 1, 2, 0.5), card_surface(1, 0.05, 0.5, 2, 24, 3, 0.5, 1.5, 0.3, 0.6, 0, 0), card_elevations(card_elevation(0.8, 1.2, 1.6, 1.1, 50), card_elevation(1, 1.6, 2.2, 1, 70), card_elevation(1.2, 2.2, 3, 0.9, 95)), card_large_radius(), card_default_shadow(), card_palette(card_background(), card_elevated_background(), card_primary(), card_border(), card_text(), card_action_hover())))} />
+// Card 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责子树生命周期、交互、布局与绘制。
+<Visual
+  name="CARD_DEFAULTS_VISUAL"
+  type="CardDefaultsVisual"
+  width={200.0}
+  height={120.0}
+  padding={16.0}
+  bordered={true}
+  elevation={1}
+  maxElevation={3}
+  bodyGap={0.0}
+/>
+
+<Visual
+  name="CARD_TITLE_VISUAL"
+  type="CardTitleVisual"
+  blockHeight={56.0}
+  textHeight={44.0}
+  separatorOffset={48.0}
+  separatorThickness={1.0}
+  fontSize={15.0}
+  minFontSize={11.0}
+  verticalInset={2.0}
+/>
+
+<Visual
+  name="CARD_ACTION_VISUAL"
+  type="CardActionVisual"
+  height={40.0}
+  fontSize={13.0}
+  minFontSize={10.0}
+  horizontalInset={6.0}
+  verticalInset={2.0}
+  dividerInset={8.0}
+  dividerThickness={1.0}
+  focusInset={1.0}
+  focusStrokeWidth={2.0}
+  centerRatio={0.5}
+/>
+
+<Visual
+  name="CARD_SURFACE_VISUAL"
+  type="CardSurfaceVisual"
+  borderWidth={1.0}
+  hoverLighten={0.05}
+  radiusLimitRatio={0.5}
+  accentMinElevation={2}
+  accentHorizontalInset={24.0}
+  accentHeight={3.0}
+  accentRadiusRatio={0.5}
+  shadowDirectionalYScale={1.5}
+  shadowAmbientXScale={0.3}
+  shadowAmbientYScale={0.6}
+  shadowGlowOffsetX={0.0}
+  shadowGlowOffsetY={0.0}
+/>
+
+<Visual
+  name="CARD_LOW_ELEVATION_VISUAL"
+  type="CardElevationVisual"
+  directionalScale={0.8}
+  ambientScale={1.2}
+  glowScale={1.6}
+  alphaBoost={1.1}
+  dirtyExpand={50.0}
+/>
+
+<Visual
+  name="CARD_MEDIUM_ELEVATION_VISUAL"
+  type="CardElevationVisual"
+  directionalScale={1.0}
+  ambientScale={1.6}
+  glowScale={2.2}
+  alphaBoost={1.0}
+  dirtyExpand={70.0}
+/>
+
+<Visual
+  name="CARD_HIGH_ELEVATION_VISUAL"
+  type="CardElevationVisual"
+  directionalScale={1.2}
+  ambientScale={2.2}
+  glowScale={3.0}
+  alphaBoost={0.9}
+  dirtyExpand={95.0}
+/>
+
+<Visual
+  name="CARD_PALETTE_VISUAL"
+  type="CardPaletteVisual"
+  background={card_background()}
+  elevatedBackground={card_elevated_background()}
+  primary={card_primary()}
+  border={card_border()}
+  text={card_text()}
+  actionHover={card_action_hover()}
+/>
+
+<Visual
+  name="CARD_VISUAL"
+  type="CardVisual"
+  defaults={CARD_DEFAULTS_VISUAL}
+  title={CARD_TITLE_VISUAL}
+  action={CARD_ACTION_VISUAL}
+  surface={CARD_SURFACE_VISUAL}
+  elevations={[
+    CARD_LOW_ELEVATION_VISUAL,
+    CARD_MEDIUM_ELEVATION_VISUAL,
+    CARD_HIGH_ELEVATION_VISUAL
+  ]}
+  radius={card_large_radius()}
+  shadow={card_default_shadow()}
+  palette={CARD_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_card_view(kernel, children, CARD_VISUAL_REF)} />

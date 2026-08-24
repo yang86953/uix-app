@@ -4,24 +4,21 @@ use super::*;
 
 #[test]
 fn view_build_uses_uix_visual_and_preserves_authored_values() {
-    let node = crate::ui::view::View::build(
-        LineChart::new()
-            .height(236.0)
-            .show_grid(false)
-            .show_dots(false)
-            .line_width(4.0)
-            .dot_radius(6.0)
-            .padding(8.0),
-    );
+    let chart = LineChart::new()
+        .height(236.0)
+        .show_grid(false)
+        .show_dots(false)
+        .line_width(4.0)
+        .dot_radius(6.0)
+        .padding(8.0);
+    assert!(std::ptr::eq(chart.visual, LINE_CHART_VISUAL_REF));
+    let node = crate::ui::view::View::build(chart);
     let chart = node
         .widget
         .as_any()
         .downcast_ref::<LineChart>()
         .expect("UIX 根必须保留 LineChart Rust 内核");
-    let declared = UIX_LINE_CHART_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(chart.visual, declared));
+    assert!(std::ptr::eq(chart.visual, LINE_CHART_VISUAL_REF));
     assert_eq!(chart.fixed_height, 236.0);
     assert!(!chart.show_grid);
     assert!(!chart.show_dots);

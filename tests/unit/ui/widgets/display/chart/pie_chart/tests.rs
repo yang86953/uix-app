@@ -4,24 +4,21 @@ use super::*;
 
 #[test]
 fn view_build_uses_uix_visual_and_preserves_authored_values() {
-    let node = crate::ui::view::View::build(
-        PieChart::new()
-            .size(224.0)
-            .donut(0.35)
-            .label_visible(false)
-            .label_position(LabelPosition::Outside)
-            .legend(LegendPosition::Bottom)
-            .padding(9.0),
-    );
+    let chart = PieChart::new()
+        .size(224.0)
+        .donut(0.35)
+        .label_visible(false)
+        .label_position(LabelPosition::Outside)
+        .legend(LegendPosition::Bottom)
+        .padding(9.0);
+    assert!(std::ptr::eq(chart.visual, PIE_CHART_VISUAL_REF));
+    let node = crate::ui::view::View::build(chart);
     let chart = node
         .widget
         .as_any()
         .downcast_ref::<PieChart>()
         .expect("UIX 根必须保留 PieChart Rust 内核");
-    let declared = UIX_PIE_CHART_VISUAL
-        .get()
-        .expect("View 构建必须固化同目录 UIX 视觉");
-    assert!(std::ptr::eq(chart.visual, declared));
+    assert!(std::ptr::eq(chart.visual, PIE_CHART_VISUAL_REF));
     assert_eq!(chart.fixed_size, 224.0);
     assert_eq!(chart.hole_radius, 0.35);
     assert!(!chart.label_visible);

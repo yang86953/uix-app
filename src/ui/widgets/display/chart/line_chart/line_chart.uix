@@ -1,2 +1,93 @@
-// LineChart 的默认尺寸/开关、标题/图例/坐标轴/标签/提示框几何、数据点、平滑采样、排版与主题角色由 UIX 声明；Rust 内核负责数据、范围、缩放、平移、刷选、命中和绘制执行。
-<KernelView value={build_line_chart_view(kernel, line_chart_visual(line_chart_defaults_visual(300, 200, true, true, 2, 3, 0), line_chart_layout_visual(20, 16, 18, 0.24, 64, 120, 36, 0.35, 12, 14, 2, 30, 4, 0.5), line_chart_chrome_visual(1, 0.5, 1, 48, 4, 12, 4, 4, 1, 1.5, 0.5), line_chart_typography_visual(15, 11, 9, 10, 10, 10, line_chart_series_separator(), line_chart_single_series_legend()), line_chart_motion_visual(8), line_chart_palette_visual(line_chart_background_color(), line_chart_text_color(), line_chart_secondary_text_color(), line_chart_border_color(), line_chart_primary_color(), line_chart_success_color(), line_chart_warning_color(), line_chart_error_color(), line_chart_elevated_color())))} />
+// LineChart 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责数据、范围、缩放、平移、刷选、命中和绘制执行。
+<Visual
+  name="LINE_CHART_DEFAULTS_VISUAL"
+  type="LineChartDefaultsVisual"
+  width={300.0}
+  height={200.0}
+  showGrid={true}
+  showDots={true}
+  lineWidth={2.0}
+  dotRadius={3.0}
+  padding={0.0}
+/>
+
+<Visual
+  name="LINE_CHART_LAYOUT_VISUAL"
+  type="LineChartLayoutVisual"
+  titleHeight={20.0}
+  subtitleHeight={16.0}
+  legendRowHeight={18.0}
+  legendSideRatio={0.24}
+  legendSideMin={64.0}
+  legendSideMax={120.0}
+  yLabelWidth={36.0}
+  yLabelWidthRatio={0.35}
+  categoryLabelHeight={12.0}
+  plotBottomReserve={14.0}
+  categoryLabelGap={2.0}
+  gridMinSpacing={30.0}
+  gridMinLines={line_chart_grid_min_lines(4)}
+  centerRatio={0.5}
+/>
+
+<Visual
+  name="LINE_CHART_CHROME_VISUAL"
+  type="LineChartChromeVisual"
+  axisStroke={1.0}
+  gridStroke={0.5}
+  crosshairStroke={1.0}
+  brushAlpha={48}
+  labelGap={4.0}
+  tooltipOffset={12.0}
+  tooltipPadding={4.0}
+  tooltipEdgeInset={4.0}
+  tooltipBorder={1.0}
+  dotInnerInset={1.5}
+  dotInnerMinRadius={0.5}
+/>
+
+<Visual
+  name="LINE_CHART_TYPOGRAPHY_VISUAL"
+  type="LineChartTypographyVisual"
+  title={15.0}
+  subtitle={11.0}
+  grid={9.0}
+  category={10.0}
+  tooltip={10.0}
+  legend={10.0}
+  seriesSeparator="  "
+  singleSeriesLegend="数据"
+/>
+
+<Visual
+  name="LINE_CHART_MOTION_VISUAL"
+  type="LineChartMotionVisual"
+  smoothSubdivisions={line_chart_smooth_subdivisions(8)}
+/>
+
+<Visual
+  name="LINE_CHART_PALETTE_VISUAL"
+  type="LineChartPaletteVisual"
+  background={line_chart_background_color()}
+  text={line_chart_text_color()}
+  textSecondary={line_chart_secondary_text_color()}
+  border={line_chart_border_color()}
+  primary={line_chart_primary_color()}
+  success={line_chart_success_color()}
+  warning={line_chart_warning_color()}
+  error={line_chart_error_color()}
+  elevated={line_chart_elevated_color()}
+/>
+
+<Visual
+  name="LINE_CHART_VISUAL"
+  type="LineChartVisual"
+  defaults={LINE_CHART_DEFAULTS_VISUAL}
+  layout={LINE_CHART_LAYOUT_VISUAL}
+  chrome={LINE_CHART_CHROME_VISUAL}
+  typography={LINE_CHART_TYPOGRAPHY_VISUAL}
+  motion={LINE_CHART_MOTION_VISUAL}
+  palette={LINE_CHART_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_line_chart_view(kernel, LINE_CHART_VISUAL_REF)} />

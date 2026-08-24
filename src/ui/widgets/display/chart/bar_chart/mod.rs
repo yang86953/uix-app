@@ -512,9 +512,7 @@ widget! {
 }
 
 // 把数据/交互状态与 UIX 静态视觉融合为单一 BarChart 根节点。
-fn build_bar_chart_view(mut kernel: BarChart, declared_visual: BarChartVisual) -> ViewNode {
-    let visual = UIX_BAR_CHART_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_bar_chart_view(mut kernel: BarChart, visual: &'static BarChartVisual) -> ViewNode {
     if !kernel.authored.contains(BarChartAuthored::HEIGHT) {
         kernel.fixed_height = visual.defaults.height;
     }
@@ -559,19 +557,19 @@ impl BarChart {
         Self {
             data: Vec::new(),
             fixed_width: 0.0,
-            fixed_height: DEFAULT_BAR_CHART_VISUAL.defaults.height,
+            fixed_height: BAR_CHART_VISUAL.defaults.height,
             max_value: 0.0,
-            show_value: DEFAULT_BAR_CHART_VISUAL.defaults.show_value,
-            bar_radius: DEFAULT_BAR_CHART_VISUAL.defaults.bar_radius,
+            show_value: BAR_CHART_VISUAL.defaults.show_value,
+            bar_radius: BAR_CHART_VISUAL.defaults.bar_radius,
             grouped: false,
             stacked: false,
             horizontal: false,
-            bar_gap: DEFAULT_BAR_CHART_VISUAL.defaults.bar_gap,
-            category_gap: DEFAULT_BAR_CHART_VISUAL.defaults.category_gap,
+            bar_gap: BAR_CHART_VISUAL.defaults.bar_gap,
+            category_gap: BAR_CHART_VISUAL.defaults.category_gap,
             series: Vec::new(),
             legend: LegendPosition::None,
             background: None,
-            padding: DEFAULT_BAR_CHART_VISUAL.defaults.padding,
+            padding: BAR_CHART_VISUAL.defaults.padding,
             title: String::new(),
             subtitle: String::new(),
             responsive: false,
@@ -587,7 +585,7 @@ impl BarChart {
             pan_origin: Cell::new(0.0),
             pan_offset: Cell::new(0.0),
             zoom: Cell::new(1.0),
-            visual: &DEFAULT_BAR_CHART_VISUAL,
+            visual: BAR_CHART_VISUAL_REF,
             authored: BarChartAuthored::default(),
         }
     }

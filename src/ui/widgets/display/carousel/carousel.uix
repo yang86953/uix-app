@@ -1,2 +1,78 @@
-// Carousel 的默认尺寸/控制、箭头、页码点、焦点圈、淡入淡出节奏及主题角色由 UIX 声明；Rust 内核负责子树、计时器、选择与动画状态。
-<KernelView value={build_carousel_view(kernel, children, carousel_visual(carousel_defaults(300, 200, carousel_show_dots_default(), carousel_show_arrows_default(), carousel_slide_effect(), 1), carousel_arrow(30, 16, 0.6, 1, carousel_previous_icon(), carousel_next_icon()), carousel_dots(18, 16, 6, 8, 0.75, 1, 16, 8, 0.88, 0.45, 0.5, 3), carousel_focus(0.75, 1.5, carousel_small_radius()), carousel_motion(0.3, 0, 0.5, 1), carousel_palette(carousel_background(), carousel_primary(), carousel_inactive_dot(), carousel_arrow_color())))} />
+// Carousel 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责子树、计时器、选择与动画状态。
+<Visual
+  name="CAROUSEL_DEFAULTS_VISUAL"
+  type="CarouselDefaultsVisual"
+  width={300.0}
+  height={200.0}
+  showDots={true}
+  showArrows={true}
+  effect={carousel_slide_effect()}
+  flexGrow={1.0}
+/>
+
+<Visual
+  name="CAROUSEL_ARROW_VISUAL"
+  type="CarouselArrowVisual"
+  hitWidth={30.0}
+  iconSize={16.0}
+  iconFrameRatio={0.6}
+  minIconSize={1.0}
+  previousIcon="chevron-left"
+  nextIcon="chevron-right"
+/>
+
+<Visual
+  name="CAROUSEL_DOTS_VISUAL"
+  type="CarouselDotsVisual"
+  slotWidth={18.0}
+  hitHeight={16.0}
+  height={6.0}
+  bottomInset={8.0}
+  heightSlotRatio={0.75}
+  minHeight={1.0}
+  activeWidth={16.0}
+  inactiveWidth={8.0}
+  activeFillRatio={0.88}
+  inactiveFillRatio={0.45}
+  centerRatio={0.5}
+  radius={3.0}
+/>
+
+<Visual
+  name="CAROUSEL_FOCUS_VISUAL"
+  type="CarouselFocusVisual"
+  inset={0.75}
+  strokeWidth={1.5}
+  radius={carousel_small_radius()}
+/>
+
+<Visual
+  name="CAROUSEL_MOTION_VISUAL"
+  type="CarouselMotionVisual"
+  fadeDurationSecs={0.3}
+  fadeStart={0.0}
+  fadeMidpoint={0.5}
+  fadeEnd={1.0}
+/>
+
+<Visual
+  name="CAROUSEL_PALETTE_VISUAL"
+  type="CarouselPaletteVisual"
+  background={carousel_background()}
+  primary={carousel_primary()}
+  inactiveDot={carousel_inactive_dot()}
+  arrow={carousel_arrow_color()}
+/>
+
+<Visual
+  name="CAROUSEL_VISUAL"
+  type="CarouselVisual"
+  defaults={CAROUSEL_DEFAULTS_VISUAL}
+  arrow={CAROUSEL_ARROW_VISUAL}
+  dots={CAROUSEL_DOTS_VISUAL}
+  focus={CAROUSEL_FOCUS_VISUAL}
+  motion={CAROUSEL_MOTION_VISUAL}
+  palette={CAROUSEL_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_carousel_view(kernel, children, CAROUSEL_VISUAL_REF)} />

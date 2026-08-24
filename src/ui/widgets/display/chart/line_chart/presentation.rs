@@ -1,7 +1,5 @@
 //! LineChart 的 UIX 静态视觉契约与主题解析。
 
-use std::sync::OnceLock;
-
 use crate::draw::Color;
 use crate::ui::ThemeTokens;
 use crate::ui::theme::NeutralRole;
@@ -98,6 +96,9 @@ pub(crate) struct LineChartVisual {
     palette: LineChartPaletteVisual,
 }
 
+// 同目录 UIX 生成折线图全部分组视觉、根记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/chart/line_chart/line_chart.uix");
+
 // 保存 LineChart 每帧只解析一次的主题颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ResolvedLineChartVisual {
@@ -128,181 +129,17 @@ impl LineChartVisual {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_defaults_visual(
-    width: f32,
-    height: f32,
-    show_grid: bool,
-    show_dots: bool,
-    line_width: f32,
-    dot_radius: f32,
-    padding: f32,
-) -> LineChartDefaultsVisual {
-    LineChartDefaultsVisual {
-        width,
-        height,
-        show_grid,
-        show_dots,
-        line_width,
-        dot_radius,
-        padding,
-    }
+// 限制 UIX 声明的最少网格线数量，保持绘制除数为正。
+pub(crate) const fn line_chart_grid_min_lines(value: usize) -> usize {
+    if value == 0 { 1 } else { value }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_layout_visual(
-    title_height: f32,
-    subtitle_height: f32,
-    legend_row_height: f32,
-    legend_side_ratio: f32,
-    legend_side_min: f32,
-    legend_side_max: f32,
-    y_label_width: f32,
-    y_label_width_ratio: f32,
-    category_label_height: f32,
-    plot_bottom_reserve: f32,
-    category_label_gap: f32,
-    grid_min_spacing: f32,
-    grid_min_lines: f32,
-    center_ratio: f32,
-) -> LineChartLayoutVisual {
-    let grid_min_lines = grid_min_lines as usize;
-    LineChartLayoutVisual {
-        title_height,
-        subtitle_height,
-        legend_row_height,
-        legend_side_ratio,
-        legend_side_min,
-        legend_side_max,
-        y_label_width,
-        y_label_width_ratio,
-        category_label_height,
-        plot_bottom_reserve,
-        category_label_gap,
-        grid_min_spacing,
-        grid_min_lines: if grid_min_lines == 0 {
-            1
-        } else {
-            grid_min_lines
-        },
-        center_ratio,
-    }
+// 限制 UIX 声明的平滑采样密度，避免曲线退化为零分段。
+pub(crate) const fn line_chart_smooth_subdivisions(value: usize) -> usize {
+    if value == 0 { 1 } else { value }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_chrome_visual(
-    axis_stroke: f32,
-    grid_stroke: f32,
-    crosshair_stroke: f32,
-    brush_alpha: f32,
-    label_gap: f32,
-    tooltip_offset: f32,
-    tooltip_padding: f32,
-    tooltip_edge_inset: f32,
-    tooltip_border: f32,
-    dot_inner_inset: f32,
-    dot_inner_min_radius: f32,
-) -> LineChartChromeVisual {
-    LineChartChromeVisual {
-        axis_stroke,
-        grid_stroke,
-        crosshair_stroke,
-        brush_alpha: brush_alpha as u8,
-        label_gap,
-        tooltip_offset,
-        tooltip_padding,
-        tooltip_edge_inset,
-        tooltip_border,
-        dot_inner_inset,
-        dot_inner_min_radius,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_typography_visual(
-    title: f32,
-    subtitle: f32,
-    grid: f32,
-    category: f32,
-    tooltip: f32,
-    legend: f32,
-    series_separator: &'static str,
-    single_series_legend: &'static str,
-) -> LineChartTypographyVisual {
-    LineChartTypographyVisual {
-        title,
-        subtitle,
-        grid,
-        category,
-        tooltip,
-        legend,
-        series_separator,
-        single_series_legend,
-    }
-}
-
-pub(crate) const fn line_chart_motion_visual(smooth_subdivisions: f32) -> LineChartMotionVisual {
-    let smooth_subdivisions = smooth_subdivisions as usize;
-    LineChartMotionVisual {
-        smooth_subdivisions: if smooth_subdivisions == 0 {
-            1
-        } else {
-            smooth_subdivisions
-        },
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_palette_visual(
-    background: ColorValue,
-    text: ColorValue,
-    text_secondary: ColorValue,
-    border: ColorValue,
-    primary: ColorValue,
-    success: ColorValue,
-    warning: ColorValue,
-    error: ColorValue,
-    elevated: ColorValue,
-) -> LineChartPaletteVisual {
-    LineChartPaletteVisual {
-        background,
-        text,
-        text_secondary,
-        border,
-        primary,
-        success,
-        warning,
-        error,
-        elevated,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn line_chart_visual(
-    defaults: LineChartDefaultsVisual,
-    layout: LineChartLayoutVisual,
-    chrome: LineChartChromeVisual,
-    typography: LineChartTypographyVisual,
-    motion: LineChartMotionVisual,
-    palette: LineChartPaletteVisual,
-) -> LineChartVisual {
-    LineChartVisual {
-        defaults,
-        layout,
-        chrome,
-        typography,
-        motion,
-        palette,
-    }
-}
-
-// 向 UIX 提供受限表达式不能直接书写的静态文案与主题角色。
-pub(crate) const fn line_chart_series_separator() -> &'static str {
-    "  "
-}
-pub(crate) const fn line_chart_single_series_legend() -> &'static str {
-    "数据"
-}
+// 向 UIX 提供主题语义角色。
 pub(crate) const fn line_chart_background_color() -> ColorValue {
     ColorValue::Neutral(NeutralRole::BgContainer)
 }
@@ -330,27 +167,3 @@ pub(crate) const fn line_chart_error_color() -> ColorValue {
 pub(crate) const fn line_chart_elevated_color() -> ColorValue {
     ColorValue::Neutral(NeutralRole::BgElevated)
 }
-
-pub(crate) static DEFAULT_LINE_CHART_VISUAL: LineChartVisual = line_chart_visual(
-    line_chart_defaults_visual(300.0, 200.0, true, true, 2.0, 3.0, 0.0),
-    line_chart_layout_visual(
-        20.0, 16.0, 18.0, 0.24, 64.0, 120.0, 36.0, 0.35, 12.0, 14.0, 2.0, 30.0, 4.0, 0.5,
-    ),
-    line_chart_chrome_visual(1.0, 0.5, 1.0, 48.0, 4.0, 12.0, 4.0, 4.0, 1.0, 1.5, 0.5),
-    line_chart_typography_visual(15.0, 11.0, 9.0, 10.0, 10.0, 10.0, "  ", "数据"),
-    line_chart_motion_visual(8.0),
-    line_chart_palette_visual(
-        ColorValue::Neutral(NeutralRole::BgContainer),
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::Border),
-        ColorValue::Palette(PaletteColor::Primary),
-        ColorValue::Palette(PaletteColor::Success),
-        ColorValue::Palette(PaletteColor::Warning),
-        ColorValue::Palette(PaletteColor::Error),
-        ColorValue::Neutral(NeutralRole::BgElevated),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，全部 LineChart 实例共享一份视觉表。
-pub(crate) static UIX_LINE_CHART_VISUAL: OnceLock<LineChartVisual> = OnceLock::new();
