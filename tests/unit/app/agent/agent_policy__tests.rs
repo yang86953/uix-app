@@ -1,4 +1,3 @@
-
 use super::*;
 
 #[test]
@@ -91,6 +90,18 @@ fn protected_target_wins_over_confirm() {
     // 受保护目标优先于确认目标：保护 = 直接拒绝，不进入确认流程。
     let policy = AgentPolicy::default()
         .protect("danger-button")
+        .require_confirm("danger-button");
+    assert_eq!(
+        policy.check_semantic(Some("danger-button"), SemanticActionKind::Invoke),
+        PolicyDecision::Forbidden
+    );
+}
+
+#[test]
+fn denied_action_wins_over_confirm() {
+    // 全局禁止动作优先于目标确认：确认不能把拒绝规则降级成可执行动作。
+    let policy = AgentPolicy::default()
+        .deny_action(SemanticActionKind::Invoke)
         .require_confirm("danger-button");
     assert_eq!(
         policy.check_semantic(Some("danger-button"), SemanticActionKind::Invoke),

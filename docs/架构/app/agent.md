@@ -25,7 +25,7 @@ app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandRespons
 
 1. **连接鉴权**：首请求必须以高熵随机 token 完成 hello；只接受本机同用户连接，发现信息与控制通道分离。
 2. **动作策略**（`AgentPolicy`，应用按需收紧，默认不增加额外动作限制）：只读模式拒绝全部写动作；禁止动作类别全局生效；受保护 automation_id 拒绝语义写动作；其余目标可按策略要求确认。检查发生在命令执行器内（UI turn 入口），命中拒绝即 `forbidden`，不进入 UI 语义路径。优先级：只读 > 禁止动作 > 受保护目标 > 需要确认 > 允许；确认不能覆盖任何拒绝规则。
-3. **用户确认**（应用注入确认 UI 后启用）：命中 `require_confirm` 的目标，执行器返回 `requires_confirmation`（携带一次性 `confirm_id`），`WindowAgentState` 登记待确认动作；AI 随后发 `confirm` 请求，状态机在 UI turn 内调用注入的确认 UI 并挂起响应；应用经 `AppHandle::resolve_agent_confirmation` 交回用户决定（允许 → 执行登记动作；拒绝 → `confirmation_rejected`）。确认有效期 60 秒，过期惰性清理为 `confirmation_not_found`；窗口关闭或不可呈现时未决确认一并失效。
+3. **用户确认**（应用注入确认 UI 后启用）：命中 `require_confirm` 的目标，执行器返回 `requires_confirmation`（携带一次性 `confirm_id`），`WindowAgentState` 登记待确认动作及原始 `expected_revision`；AI 随后发 `confirm` 请求，状态机在 UI turn 内调用注入的确认 UI 并挂起响应；应用经 `AppHandle::resolve_agent_confirmation` 交回用户决定（允许 → 重新校验原始修订后执行登记动作；拒绝 → `confirmation_rejected`）。确认期间语义修订变化时以 `stale_revision` 失败；确认有效期 60 秒，过期惰性清理为 `confirmation_not_found`；窗口关闭或不可呈现时未决确认一并失效。
 
 ## 组件：AgentProtocolSession
 
@@ -50,6 +50,8 @@ platform IPC
 
 `session_runtime` 是这条 app System 流程的唯一组合根：它只负责创建、注入、登记、启动和停止命令队列、动作策略、执行器、确认 UI 回调与窗口 registration；具体允许/拒绝决定仍由 `AgentPolicy` 和确认状态机持有，组合根不得复制业务判断。后台线程不得直接修改 State、WidgetTree、焦点或 platform window。窗口关闭先使 registration stale 并失败待处理命令，再销毁组件树。
 
+命令票据与 UI 队列共享单向生命周期门。协议等待超时时，仍处于待执行阶段的命令原子取消，UI turn 不得再执行；已经开始的命令不能伪装成取消成功，协议返回 `outcome_unknown`，调用方必须读取当前语义状态后再决定是否重试。
+
 ## 窗口动作
 
 窗口级动作分两类：输入注入（按键 / 点击 / 指针）经正常 UI 事件路径派发，未消费视为失败；窗口管理动作（resize / move / maximize / minimize / restore）经 `AgentWindowOps` 契约调用平台窗口——契约由 window 系统实现（`PlatformWindowAgentOps` 适配 `PlatformWindow::properties_mut`），由窗口驱动层在每帧 UI turn 内以借用传入，执行器不持有平台窗口引用。窗口操作失败映射为 `window_operation_failed`。
@@ -67,5 +69,5 @@ platform IPC
 - `automation_id` 是窗口 generation 内外的定位标识，不是授权凭据；重复 ID 必须被应用消歧或拒绝，不能据此绕过策略检查。
 - Agent 动作进入与用户输入相同的目标窗口事件/语义路径，不建立第二条可写 UI 管线。
 - 动作策略与确认流程在 UI turn 入口把关；命中策略的动作不进入 UI 语义路径。
-- 确认请求绑定窗口 generation、目标、动作和一次性 `confirm_id`；超时、重复提交、窗口关闭或策略变更后只能失败，不能退回默认允许。
+- 确认请求绑定窗口 generation、原始 `expected_revision`、目标、动作和一次性 `confirm_id`；超时、重复提交、窗口关闭、语义修订变化或策略变更后只能失败，不能退回默认允许。
 - listener、discovery、worker、窗口 registration、确认挂起和 in-flight 请求都与应用关闭联动并有界释放。

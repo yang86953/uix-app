@@ -14,8 +14,8 @@ use crate::app::agent::agent_bridge::{
     MAX_AGENT_WAIT_TIMEOUT,
 };
 use crate::app::queues::agent_command_queue::{
-    AgentCommandError, AgentCommandResponse, AgentErrorCode, AgentSubmitError, AgentWindowAction,
-    DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
+    AgentCommandError, AgentCommandResponse, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
+    AgentWindowAction, DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
 };
 use crate::app::window_semantics::WindowSemanticSnapshot;
 use crate::core::{Point, Rect, WidgetId, WindowId};
@@ -370,7 +370,11 @@ impl AgentProtocolSession {
             Err(RecvTimeoutError::Timeout) => error_reply(
                 Some(request_id),
                 AgentErrorCode::Timeout,
-                "UI command timed out",
+                if ticket.cancel_pending() {
+                    "UI snapshot timed out before execution and was cancelled"
+                } else {
+                    "UI snapshot timed out"
+                },
                 false,
             ),
             Err(RecvTimeoutError::Disconnected) => error_reply(
@@ -469,11 +473,11 @@ impl AgentProtocolSession {
                 false,
             ),
             Ok(Err(error)) => command_error_reply(request_id, error),
-            Err(RecvTimeoutError::Timeout) => error_reply(
-                Some(request_id),
-                AgentErrorCode::Timeout,
-                "UI command timed out",
-                false,
+            Err(RecvTimeoutError::Timeout) => command_timeout_reply(
+                request_id,
+                &ticket,
+                "UI command timed out before execution and was cancelled",
+                "UI command timed out after execution started; read current state before retrying",
             ),
             Err(RecvTimeoutError::Disconnected) => error_reply(
                 Some(request_id),
@@ -530,11 +534,11 @@ impl AgentProtocolSession {
                 false,
             ),
             Ok(Err(error)) => command_error_reply(request_id, error),
-            Err(RecvTimeoutError::Timeout) => error_reply(
-                Some(request_id),
-                AgentErrorCode::Timeout,
-                "confirmation timed out while waiting for the user",
-                false,
+            Err(RecvTimeoutError::Timeout) => command_timeout_reply(
+                request_id,
+                &ticket,
+                "confirmation timed out before reaching the UI and was cancelled",
+                "confirmation timed out after reaching the UI; read current state before retrying",
             ),
             Err(RecvTimeoutError::Disconnected) => error_reply(
                 Some(request_id),
@@ -596,6 +600,30 @@ impl AgentProtocolSession {
             Ok(AgentWaitOutcome::Closed(window)) => wait_success(request_id, "closed", &window),
             Err(error) => wait_error_reply(request_id, error),
         }
+    }
+}
+
+/// 区分安全取消与已开始后的未知结果，避免 AI 把迟到动作当成普通可重试超时。
+fn command_timeout_reply(
+    request_id: String,
+    ticket: &AgentCommandTicket,
+    cancelled_message: &'static str,
+    outcome_unknown_message: &'static str,
+) -> AgentProtocolReply {
+    if ticket.cancel_pending() {
+        error_reply(
+            Some(request_id),
+            AgentErrorCode::Timeout,
+            cancelled_message,
+            false,
+        )
+    } else {
+        error_reply(
+            Some(request_id),
+            AgentErrorCode::OutcomeUnknown,
+            outcome_unknown_message,
+            false,
+        )
     }
 }
 

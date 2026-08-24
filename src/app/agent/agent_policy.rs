@@ -68,13 +68,17 @@ impl AgentPolicy {
 
     /// 语义动作检查：目标 automation_id（无自动化标识时为 None）+ 动作类别。
     ///
-    /// 优先级：只读 > 受保护目标 > 需要确认 > 禁止动作类别。
+    /// 优先级：只读 > 禁止动作类别 > 受保护目标 > 需要确认。
     pub(crate) fn check_semantic(
         &self,
         automation_id: Option<&str>,
         kind: SemanticActionKind,
     ) -> PolicyDecision {
         if self.read_only {
+            return PolicyDecision::Forbidden;
+        }
+        // 全局拒绝规则必须先于目标确认生效；确认只能收紧允许动作，不能覆盖拒绝。
+        if self.denied_actions.contains(&kind) {
             return PolicyDecision::Forbidden;
         }
         if let Some(id) = automation_id {
@@ -92,9 +96,6 @@ impl AgentPolicy {
             {
                 return PolicyDecision::RequiresConfirmation;
             }
-        }
-        if self.denied_actions.contains(&kind) {
-            return PolicyDecision::Forbidden;
         }
         PolicyDecision::Allow
     }

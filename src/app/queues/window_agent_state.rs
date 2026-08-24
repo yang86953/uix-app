@@ -84,6 +84,8 @@ struct PendingAgentResponse {
 struct PendingConfirmation {
     confirm_id: u64,
     generation: u64,
+    /// 保留原始乐观并发条件，用户确认后仍必须针对同一语义修订执行。
+    expected_revision: Option<u64>,
     target: crate::ui::accessibility::semantic_snapshot::SemanticTarget,
     action: crate::ui::semantic_action::SemanticAction,
     created_at: Instant,
@@ -188,6 +190,9 @@ impl WindowAgentState {
                 self.queue.push_front(envelope);
                 break;
             }
+            if !envelope.try_start() {
+                continue;
+            }
             did_work = true;
             semantic_state.enable(tree);
             semantic_state.refresh(tree);
@@ -232,6 +237,7 @@ impl WindowAgentState {
                         self.confirm_pending.push(PendingConfirmation {
                             confirm_id,
                             generation,
+                            expected_revision,
                             target,
                             action,
                             created_at: Instant::now(),
@@ -451,6 +457,8 @@ impl WindowAgentState {
         confirm_id: u64,
         allow: bool,
     ) {
+        // 用户决定也必须遵守确认 TTL；不能因确认 UI 已展示就无限延长授权窗口。
+        self.expire_confirmations();
         let Some(index) = self
             .confirm_pending
             .iter()
@@ -491,7 +499,7 @@ impl WindowAgentState {
             semantic_state,
             presentable,
             pending.generation,
-            None,
+            pending.expected_revision,
             &pending.target,
             &pending.action,
         ) {

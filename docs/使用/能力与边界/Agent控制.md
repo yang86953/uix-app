@@ -105,6 +105,7 @@ App::new()
 ```
 
 - 确认请求有效期 60 秒；超时或确认已失效时以 `confirmation_not_found` 失败。
+- 原动作携带 `expected_revision` 时，确认后仍针对该修订重新校验；确认期间界面语义变化会以 `stale_revision` 失败，AI 应重新读取快照后再决策。
 - 未注入确认 UI 时，`confirm` 请求直接失败，不会挂起。
 - 用户拒绝时 AI 收到 `confirmation_rejected`。
 - 一次确认流程只接受一次 `confirm` 请求（重复请求按失效处理）。
@@ -152,6 +153,7 @@ App::new()
 | `unauthorized` / `unsupported_schema` | 连接鉴权失败 / 协议版本不符 |
 | `invalid_request` | 请求格式或字段非法 |
 | `window_not_found` / `stale_window` / `stale_revision` | 窗口或代际 / 修订失效 |
+| `outcome_unknown` | 命令已经开始但等待响应超时；动作可能已生效，必须先读取当前状态，禁止盲目重试 |
 | `node_not_found` / `ambiguous_target` | 目标不存在 / automation_id 匹配多个节点 |
 | `unsupported_action` / `invalid_value` | 目标不支持该动作 / 值非法 |
 | `forbidden` | 命中动作策略（只读 / 受保护 / 禁止类别） |
@@ -161,6 +163,8 @@ App::new()
 | `did_not_settle` / `not_presentable` | UI 未在限定轮数内稳定 / 窗口不可呈现 |
 | `window_operation_failed` | 窗口管理动作的平台调用失败 |
 | `timeout` / `app_closed` / `internal` | 等待超时 / 应用关闭 / 内部错误 |
+
+协议等待超时时会原子取消尚未进入 UI turn 的命令，此时返回 `timeout`；若动作已经开始，则返回 `outcome_unknown`，明确表示结果未知。两者的重试语义不同。
 
 ## 协议
 
