@@ -48,6 +48,26 @@ fn uix_root_preserves_badge_kernel_and_owned_child() {
     assert!(kernel.child_view.is_some());
 }
 
+// 验证无分配计数缓冲保持零值、边界、上限后缀与最大整数文本。
+#[test]
+fn stack_count_label_preserves_public_text_contract() {
+    // 显示零值时仍必须生成单个零字符。
+    assert_eq!(Badge::new().show_zero(true).count_label().as_str(), "0");
+    // 未超过默认上限时保留完整数字。
+    assert_eq!(Badge::new().count(99).count_label().as_str(), "99");
+    // 超过上限时显示截断上限与加号。
+    assert_eq!(Badge::new().count(100).count_label().as_str(), "99+");
+    // 十位最大正整数与自定义最大值必须完整放入固定缓冲。
+    assert_eq!(
+        Badge::new()
+            .count(i32::MAX)
+            .max(i32::MAX)
+            .count_label()
+            .as_str(),
+        "2147483647"
+    );
+}
+
 // 验证预设颜色跟随主题而任意颜色保持调用方所有权。
 #[test]
 fn preset_color_resolves_theme_without_rewriting_custom_color() {
