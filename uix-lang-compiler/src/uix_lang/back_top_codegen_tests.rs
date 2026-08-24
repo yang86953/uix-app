@@ -18,6 +18,8 @@ fn generates_back_top_contract() {
         .expect("BackTop 文档契约应生成");
     // 必须复用公开组件构造器与阈值方法。
     assert!(tokens.contains("BackTop :: new") && tokens.contains("visibility_height (limit)"));
+    // 公开 BackTop 必须通过 View 契约进入运行时 UIX 声明壳。
+    assert!(tokens.contains("View :: build"));
     // 必须把 State 句柄借给公开双向绑定入口。
     assert!(tokens.contains("scroll_state (& (scroll_y))"));
     // 公共样式必须继续走统一 View 映射。

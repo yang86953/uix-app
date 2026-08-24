@@ -46,6 +46,7 @@ Button、Label、Typography、Icon、Container 等基础 widget 只组合 widget
 
 - 标准 `WindowControl` 组合：`src/ui/widgets/uix/window_controls.uix` 拥有三个动作的图标、尺寸、状态色、条件结构和排列，`window_chrome` Rust Module 只保留窗口动作、无障碍语义与交互状态。
 - `ButtonGroup`：`src/ui/widgets/uix/button_group.uix` 拥有容器结构、横向排列与零间距，Rust 只计算每个按钮的连体位置；`KernelChildren` 直接消费已有 `ViewNode` 列表，不引入克隆或额外容器。
+- `BackTop`：`src/ui/widgets/uix/back_top.uix` 拥有图标、固有尺寸、环形几何与主题色角色，Rust 只保留滚动阈值、状态回写、输入、焦点与绘制内核；声明配置融合进原叶节点，不新增 Icon 子节点或包装容器。
 
 ## 组件：复合组件
 

@@ -1,13 +1,59 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
 use crate::core::{Constraints, Rect, Size};
-use crate::ui::SnapshotFields;
+// 引入 UIX 声明壳物化叶节点所需的 View 契约。
+use crate::ui::view::{View, ViewNode};
+// 引入 UIX 静态颜色角色到当前主题的解析契约。
+use crate::ui::theme::style::{ColorValue, PaletteColor};
+// 引入浮层背景中性色角色。
+use crate::ui::theme::NeutralRole;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::SnapshotFields;
 use crate::widget;
 // 引入事件、键盘、声明式状态与组件树公开契约。
 use crate::ui::{EventResult, KeyCode, State, SystemEvent, WidgetTree};
 
 const DEFAULT_VISIBILITY_HEIGHT: f32 = 400.0;
+
+// 保存由 UIX 声明、由 Rust 绘制内核消费的紧凑静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BackTopVisual {
+    // 保存 Lucide 图标名称。
+    icon_name: &'static str,
+    // 保存图标绘制尺寸。
+    icon_size: f32,
+    // 保存组件方形固有边长。
+    extent: f32,
+    // 保存环形边框宽度。
+    ring_width: f32,
+    // 保存环形外半径相对当前最短边的比例。
+    ring_radius_ratio: f32,
+    // 保存环形边框的主题色角色。
+    ring_color: ColorValue,
+    // 保存环形内部的主题色角色。
+    fill_color: ColorValue,
+}
+
+impl Default for BackTopVisual {
+    fn default() -> Self {
+        Self {
+            // 直接 Rust 叶构造保留旧版默认图标。
+            icon_name: "chevron-up",
+            // 保留旧版图标尺寸。
+            icon_size: 14.0,
+            // 保留旧版固有边长。
+            extent: 40.0,
+            // 保留原有内外圆两像素差。
+            ring_width: 2.0,
+            // 保留原有外圆占当前最短边四成的缩放契约。
+            ring_radius_ratio: 0.4,
+            // 环形边框继续使用主色令牌。
+            ring_color: ColorValue::Palette(PaletteColor::Primary),
+            // 内部继续使用浮层背景令牌。
+            fill_color: ColorValue::Neutral(NeutralRole::BgElevated),
+        }
+    }
+}
 
 widget! {
     /// BackTop — 回到顶部按钮。
@@ -21,6 +67,9 @@ widget! {
         /// 应用拥有的滚动状态句柄；组件只克隆句柄并在激活时写回顶部。
         scroll_binding: Option<State<f32>>,
         focused: bool,
+        #[snapshot(skip)]
+        /// UIX 声明的静态图标、几何与主题色角色。
+        visual: BackTopVisual,
     }
 
     visible => (&self) -> bool { self.visible }
@@ -64,22 +113,31 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         if !self.visible { return; }
 
-        let primary = ctx.tokens().color_primary();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
+        // 主题颜色选择由 UIX 声明，当前绘制边界只做令牌解析。
+        let primary = self.visual.ring_color.resolve(ctx.tokens());
+        // 解析环形内部背景色。
+        let bg_elevated = self.visual.fill_color.resolve(ctx.tokens());
 
-        // 圆形按钮
+        // 按 UIX 声明的外环比例居中解析圆心。
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
-        let r = frame.w.min(frame.h) * 0.4;
+        // 使用当前 frame 最短边乘以声明比例，保持旧版伸缩质量。
+        let r = frame.w.min(frame.h).max(0.0)
+            * self.visual.ring_radius_ratio.clamp(0.0, 0.5);
 
         ctx.fill_circle(cx, cy, r, primary);
-        ctx.fill_circle(cx, cy, r - 2.0, bg_elevated);
+        ctx.fill_circle(
+            cx,
+            cy,
+            (r - self.visual.ring_width).max(0.0),
+            bg_elevated,
+        );
         crate::ui::widgets::general::icon::Icon::paint_in_frame(
             ctx,
-            "chevron-up",
+            self.visual.icon_name,
             frame,
             primary,
-            14.0,
+            self.visual.icon_size,
         );
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
@@ -108,6 +166,8 @@ impl BackTop {
             // 默认手动模式不持有应用状态句柄。
             scroll_binding: None,
             focused: false,
+            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
+            visual: BackTopVisual::default(),
         }
     }
 
@@ -158,7 +218,7 @@ impl BackTop {
 
     fn intrinsic_size(&self) -> Size {
         if self.visible {
-            Size::new(40.0, 40.0)
+            Size::new(self.visual.extent, self.visual.extent)
         } else {
             Size::zero()
         }
@@ -176,6 +236,8 @@ impl BackTop {
         // reconcile 接管新 View 中同一应用状态的轻量句柄。
         self.scroll_binding = next.scroll_binding;
         self.controlled_scroll_y = next.controlled_scroll_y;
+        // 同步 UIX 声明的静态视觉配置，不覆盖运行交互状态。
+        self.visual = next.visual;
         // 绑定模式优先读取当前应用事实，避免采用生成阶段后的过期快照。
         if let Some(scroll_y) = self.scroll_binding.as_ref().map(State::get) {
             // 同步绑定值派生的可见性。
@@ -224,6 +286,56 @@ impl BackTop {
         } else {
             0.0
         }
+    }
+}
+
+// 向 UIX 静态模板提供零分配 Lucide 图标角色。
+const fn back_top_chevron_up() -> &'static str {
+    "chevron-up"
+}
+
+// 向 UIX 静态模板提供零分配主色令牌。
+const fn back_top_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 静态模板提供零分配浮层背景令牌。
+const fn back_top_elevated() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgElevated)
+}
+
+// 把 UIX 声明的静态配置融合进原有 BackTop 叶内核。
+#[allow(clippy::too_many_arguments)]
+fn build_back_top_view(
+    mut kernel: BackTop,
+    icon_name: &'static str,
+    icon_size: f32,
+    extent: f32,
+    ring_width: f32,
+    ring_radius_ratio: f32,
+    ring_color: ColorValue,
+    fill_color: ColorValue,
+) -> ViewNode {
+    // 一次性拷贝紧凑配置，不创建子节点或包装容器。
+    kernel.visual = BackTopVisual {
+        icon_name,
+        icon_size,
+        extent,
+        ring_width,
+        ring_radius_ratio,
+        ring_color,
+        fill_color,
+    };
+    // 保持原有单 Widget 树形和分配数量。
+    ViewNode::leaf(kernel)
+}
+
+impl View for BackTop {
+    fn build(self) -> ViewNode {
+        // 使用局部名称作为 UIX 表达式的拥有型 Rust 内核。
+        let kernel = self;
+        // 静态视觉完全从 UIX 文件物化，Rust 只消费生成结果。
+        crate::uix!("src/ui/widgets/uix/back_top.uix")
     }
 }
 
