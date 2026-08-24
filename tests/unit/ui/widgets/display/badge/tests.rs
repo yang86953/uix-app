@@ -53,6 +53,7 @@ fn uix_root_preserves_badge_kernel_and_owned_child() {
 // 验证完整 UIX 视觉表由 Badge 实例共享。
 #[test]
 fn uix_visual_configuration_is_shared_between_badges() {
+    assert!(std::ptr::eq(Badge::new().visual, BADGE_VISUAL_REF));
     let first = View::build(Badge::new().count(1));
     let second = View::build(Badge::new().dot());
     let first = first
@@ -66,6 +67,7 @@ fn uix_visual_configuration_is_shared_between_badges() {
         .downcast_ref::<Badge>()
         .expect("第二个 UIX 根必须保留 Badge 内核");
     assert!(std::ptr::eq(first.visual, second.visual));
+    assert!(std::ptr::eq(first.visual, BADGE_VISUAL_REF));
 }
 
 // 验证无分配计数缓冲保持零值、边界、上限后缀与最大整数文本。
@@ -101,19 +103,19 @@ fn preset_color_resolves_theme_without_rewriting_custom_color() {
     let preset = Some(BadgeColor::Blue.to_color());
     // 预设标记存在时必须解析当前品牌 token。
     assert_eq!(
-        resolve_badge_background(preset, true, &DEFAULT_BADGE_VISUAL.palette, &tokens),
+        resolve_badge_background(preset, true, &BADGE_VISUAL.palette, &tokens),
         tokens.color_primary
     );
     // 相同数值由任意 Color 输入时仍归调用方所有。
     assert_eq!(
         // 关闭预设标记以模拟 Badge::color(Color)。
-        resolve_badge_background(preset, false, &DEFAULT_BADGE_VISUAL.palette, &tokens),
+        resolve_badge_background(preset, false, &BADGE_VISUAL.palette, &tokens),
         // 原兼容颜色不得被主题重写。
         BadgeColor::Blue.to_color()
     );
     // 未指定颜色时必须使用当前主题错误色。
     assert_eq!(
-        resolve_badge_background(None, false, &DEFAULT_BADGE_VISUAL.palette, &tokens),
+        resolve_badge_background(None, false, &BADGE_VISUAL.palette, &tokens),
         tokens.color_error
     );
 }
@@ -131,7 +133,7 @@ fn uix_palette_keeps_all_badge_color_and_status_mappings() {
     ];
     for (preset, expected) in presets {
         assert_eq!(
-            preset.resolve(&DEFAULT_BADGE_VISUAL.palette, &tokens),
+            preset.resolve(&BADGE_VISUAL.palette, &tokens),
             expected,
             "{preset:?}"
         );
@@ -145,7 +147,7 @@ fn uix_palette_keeps_all_badge_color_and_status_mappings() {
     ];
     for (status, expected) in statuses {
         assert_eq!(
-            DEFAULT_BADGE_VISUAL.palette.status(status).resolve(&tokens),
+            BADGE_VISUAL.palette.status(status).resolve(&tokens),
             expected,
             "{status:?}"
         );
@@ -163,7 +165,7 @@ fn zero_child_compatibility_and_single_child_margin_layout() {
         // 通过布局 trait 测量公开组件。
         WidgetLayout::measure(&standalone, Constraints::unconstrained()).h,
         // 旧数字胶囊高度固定为二十逻辑像素。
-        DEFAULT_BADGE_VISUAL.layout.pill_height
+        BADGE_VISUAL.layout.pill_height
     );
     // 动态关闭圆点不能残留伪造数字胶囊。
     assert_eq!(Badge::new().dot_when(false).intrinsic_size(), Size::zero());
@@ -171,8 +173,8 @@ fn zero_child_compatibility_and_single_child_margin_layout() {
     assert_eq!(
         Badge::new().dot_when(true).intrinsic_size(),
         Size::new(
-            DEFAULT_BADGE_VISUAL.layout.marker_diameter,
-            DEFAULT_BADGE_VISUAL.layout.marker_diameter,
+            BADGE_VISUAL.layout.marker_diameter,
+            BADGE_VISUAL.layout.marker_diameter,
         )
     );
 
@@ -286,8 +288,7 @@ fn composite_decoration_anchors_child_top_right_without_expanding_layout() {
     // marker 圆心而非整段文字中心必须落在右上角。
     assert_eq!(
         marker_frame.x
-            + DEFAULT_BADGE_VISUAL.layout.marker_diameter
-                * DEFAULT_BADGE_VISUAL.layout.pill_radius_ratio,
+            + BADGE_VISUAL.layout.marker_diameter * BADGE_VISUAL.layout.pill_radius_ratio,
         50.0
     );
 

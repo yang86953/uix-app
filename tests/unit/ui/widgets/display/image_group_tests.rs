@@ -1,5 +1,5 @@
 // 引入被测图片组组件。
-use super::ImageGroup;
+use super::{IMAGE_GROUP_VISUAL_REF, ImageGroup};
 // 引入缩略图范围测试所需矩形。
 use crate::core::Rect;
 // 引入公开 View 构建入口。
@@ -55,11 +55,16 @@ fn thumbnail_layout_preserves_centered_visible_range() {
 // 验证 UIX 视觉表由全部 ImageGroup 实例共享，不按实例复制大配置。
 #[test]
 fn image_group_instances_share_uix_visual_table() {
+    assert!(std::ptr::eq(
+        ImageGroup::new().visual,
+        IMAGE_GROUP_VISUAL_REF
+    ));
     let first = View::build(ImageGroup::new());
     let second = View::build(ImageGroup::new());
     let first = first.widget.as_any().downcast_ref::<ImageGroup>().unwrap();
     let second = second.widget.as_any().downcast_ref::<ImageGroup>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, IMAGE_GROUP_VISUAL_REF));
 }
 
 // 验证稳定预览帧复用计数字符串的同一缓冲区。

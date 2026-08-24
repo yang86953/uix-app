@@ -1,5 +1,5 @@
 // 引入受测稳定面板与折叠组。
-use super::{Collapse, CollapsePanel};
+use super::{COLLAPSE_VISUAL_REF, Collapse, CollapsePanel};
 // 引入公开 View 构建入口。
 use crate::ui::view::View;
 // 引入语义事件与受控状态测试类型。
@@ -174,10 +174,12 @@ fn uix_root_preserves_collapse_kernel_and_visual_contract() {
 // 验证 Collapse 实例共享 UIX 视觉表且显式无边框设置优先。
 #[test]
 fn collapse_instances_share_uix_visual_and_preserve_authored_borderless() {
+    assert!(std::ptr::eq(Collapse::new().visual, COLLAPSE_VISUAL_REF));
     let first = View::build(Collapse::new().panels(panels()));
     let second = View::build(Collapse::new().panels(panels()).borderless(true));
     let first = first.widget.as_any().downcast_ref::<Collapse>().unwrap();
     let second = second.widget.as_any().downcast_ref::<Collapse>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, COLLAPSE_VISUAL_REF));
     assert!(second.borderless);
 }

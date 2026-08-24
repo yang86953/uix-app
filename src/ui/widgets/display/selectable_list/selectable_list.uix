@@ -1,2 +1,72 @@
-// SelectableList 的尺寸、头尾/行布局、图标、状态视觉、排版和主题角色由 UIX 声明；Rust 内核负责受控选择、输入、虚拟化、语义事件与底层绘制。
-<KernelView value={build_selectable_list_view(kernel, selectable_list_visual(selectable_list_geometry(220, 500, 100, 36, 20, 48, 8, 32, 28, 2, 8), selectable_list_chrome(38, 45, 25, 26, 18, 14, 6, 10, 6, 3, 1.5, 6, 13, 8, 0.25, 0.5, 4, 10, 1, 1, 1, 12, 0.25, 11, 1, 1.5, selectable_list_plus_icon()), selectable_list_palette(selectable_list_background_color(), selectable_list_border_color(), selectable_list_fill_secondary_color(), selectable_list_fill_hover_color(), selectable_list_secondary_text_color(), selectable_list_tertiary_text_color(), selectable_list_primary_color(), selectable_list_body_font(), selectable_list_small_radius())))} />
+// SelectableList 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责受控选择、输入、虚拟化、语义事件与底层绘制。
+<Visual
+  name="SELECTABLE_LIST_GEOMETRY_VISUAL"
+  type="SelectableListGeometryVisual"
+  defaultWidth={220.0}
+  defaultHeight={500.0}
+  minHeight={100.0}
+  defaultItemHeight={36.0}
+  minItemHeight={20.0}
+  headerHeight={48.0}
+  headerInset={8.0}
+  headerButtonHeight={32.0}
+  footerHeight={28.0}
+  rowGap={2.0}
+  rowHorizontalInset={8.0}
+/>
+
+<Visual
+  name="SELECTABLE_LIST_CHROME_VISUAL"
+  type="SelectableListChromeVisual"
+  headerPressedAlpha={38}
+  rowPressedAlpha={45}
+  rowActiveAlpha={25}
+  rowIconSlot={26.0}
+  rowIconSize={18.0}
+  rowTextIndent={14.0}
+  rowIconTextGap={6.0}
+  rowTextRightPad={10.0}
+  rowRadius={6.0}
+  activeBarWidth={3.0}
+  activeBarRadius={1.5}
+  activeBarVerticalInset={6.0}
+  rowFontSize={13.0}
+  headerIconInset={8.0}
+  headerIconFrameRatio={0.25}
+  centerRatio={0.5}
+  headerTextGap={4.0}
+  headerTextRightPad={10.0}
+  separatorYOffset={1.0}
+  separatorHeight={1.0}
+  frameBorderWidth={1.0}
+  footerInset={12.0}
+  footerInsetRatio={0.25}
+  footerFontSize={11.0}
+  focusInset={1.0}
+  focusStrokeWidth={1.5}
+  plusIcon="plus"
+/>
+
+<Visual
+  name="SELECTABLE_LIST_PALETTE_VISUAL"
+  type="SelectableListPaletteVisual"
+  background={selectable_list_background_color()}
+  border={selectable_list_border_color()}
+  fillSecondary={selectable_list_fill_secondary_color()}
+  fillHover={selectable_list_fill_hover_color()}
+  textSecondary={selectable_list_secondary_text_color()}
+  textTertiary={selectable_list_tertiary_text_color()}
+  primary={selectable_list_primary_color()}
+  iconFont={selectable_list_body_font()}
+  focusRadius={selectable_list_small_radius()}
+/>
+
+<Visual
+  name="SELECTABLE_LIST_VISUAL"
+  type="SelectableListVisual"
+  geometry={SELECTABLE_LIST_GEOMETRY_VISUAL}
+  chrome={SELECTABLE_LIST_CHROME_VISUAL}
+  palette={SELECTABLE_LIST_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_selectable_list_view(kernel, SELECTABLE_LIST_VISUAL_REF)} />

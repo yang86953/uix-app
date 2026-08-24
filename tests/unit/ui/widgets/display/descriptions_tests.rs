@@ -1,5 +1,5 @@
 // 引入被测描述列表与类型化数据项。
-use super::{Descriptions, DescriptionsItem};
+use super::{DESCRIPTIONS_VISUAL_REF, Descriptions, DescriptionsItem};
 // 引入公开 View 构建入口。
 use crate::ui::view::View;
 
@@ -35,6 +35,10 @@ fn uix_root_preserves_descriptions_kernel_and_items() {
 // UIX 默认网格只填充未显式设置字段，且实例共享静态视觉表。
 #[test]
 fn uix_defaults_preserve_authored_grid_and_share_visuals() {
+    assert!(std::ptr::eq(
+        Descriptions::new().visual,
+        DESCRIPTIONS_VISUAL_REF
+    ));
     let authored = View::build(
         Descriptions::new()
             .bordered(true)
@@ -61,6 +65,7 @@ fn uix_defaults_preserve_authored_grid_and_share_visuals() {
         (false, 3, 100.0)
     );
     assert!(authored.shares_visual_with_for_test(defaults));
+    assert!(std::ptr::eq(defaults.visual, DESCRIPTIONS_VISUAL_REF));
 }
 
 // 同一宽度的测量与绘制必须复用行高向量，数据变化后重新计算但保留容量。
