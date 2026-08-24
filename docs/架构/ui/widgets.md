@@ -51,6 +51,7 @@
 - `Tag`：`src/ui/widgets/display/tag/` 同目录保存 Rust 与 UIX；UIX 拥有默认字号、内边距、操作区尺寸、图标与间距、勾选与焦点描边、交互叠色、15 种预设色对和圆角主题角色，Rust 只保留关闭、勾选、语义事件、主题解析、测量与底层绘制；完整视觉表由实例共享。
 - `ProgressBar`：`src/ui/widgets/feedback/progress/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸与圆角、线形、圆形与仪表盘几何比例、标签字号、渐变方向、不确定动画参数和主题色角色，Rust 只保留 fraction 归一化、模式、动画相位、几何执行与底层绘制；圆形进度复用单弧绘制命令，不再提交 64 条折线。
 - `Alert`：`src/ui/widgets/feedback/alert/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/图标/横幅、关闭区/操作区/图标/正文/强调条几何、状态图标、交互反馈、排版、圆角及主题角色，Rust 只保留内容、状态语义、输入、关闭生命周期与绘制执行；同帧主题只解析一次，完整可见的单行文本直接借用输入，不再无条件分配 `String`。
+- `Message`：`src/ui/widgets/feedback/message/` 同目录保存 Rust 与 UIX；UIX 拥有队列放置、单项/强调线/图标/动作/关闭区几何、四类状态图标与时长、排版、进出时序、浮层层级及主题角色，Rust 只保留队列、计时、输入、动画状态、命中与绘制执行；同帧全部可见项共享一次主题解析，普通单行动作文本直接借用输入，实例便捷入队不再克隆共享句柄。
 - `Tooltip`：`src/ui/widgets/feedback/tooltip/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/方向/箭头、气泡几何、排版、进入退出时序、浮层层级及主题角色，Rust 只保留内容、触发、输入、计时器、动画状态、表面约束与绘制执行；完整视觉表由实例共享，文字自然尺寸只在构建或声明刷新时计算，render/dirty/overlay 复用缓存，未迁移的 Slider 继续通过兼容入口消费同一默认气泡参数。
 - `Popover`：`src/ui/widgets/feedback/popover/` 同目录保存 Rust 与 UIX；UIX 拥有固有尺寸、默认方向/箭头、定位与内容几何、触发器/气泡装饰、排版、进入退出时序、浮层层级及主题角色，Rust 只保留内容、受控状态、唯一触发子树、输入、动画状态、表面约束与绘制执行；同帧主题只解析一次，完整容纳的单行文本直接借用输入，不再无条件分配 `String`。
 - `Spin`：`src/ui/widgets/feedback/spin/` 同目录保存 Rust 与 UIX；UIX 拥有三档直径、轨道与圆点比例、八点序列、透明度节奏、提示排版、包裹遮罩、转速和主题色角色，Rust 只保留延迟、相位、子树叠加、圆点递推和底层绘制；生产路径继续每帧只计算一次相位三角函数且不分配临时集合。
@@ -73,7 +74,7 @@
 - `PieChart`：`src/ui/widgets/display/chart/pie_chart/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/标签/图例、标题/图例/绘图区几何、扇区标签、内环、交互叠层、提示框、排版及主题角色，Rust 只保留有效数据摘要、极坐标几何、玫瑰映射、命中、交互与绘制执行；基础绘制借用原数据，不创建切片集合或图例字符串，数值文本使用栈缓冲，标签角度只计算一次正余弦。
 - `RichText`：`src/ui/widgets/display/rich_text/` 同目录保存 Rust 与 UIX；UIX 拥有默认字号、行高/字宽估算、代码/链接/选区装饰、复制按钮、主题分隔线、图片占位及主题角色，Rust 只保留 Markdown、Unicode 断行/双向布局、资源、选择、命中与绘制执行；缓存布局按借用复用，绘制 run 复用 UTF-8 缓冲，字形不再逐个保存链接 URL。
 
-当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；Rust 完整默认视觉表与 UIX 巨型位置参数壳两类债务也已清零，结构测试继续以空集合阻止回退。`Icon`、简单叶组件、二十五个分组视觉组件以及由 Tooltip 与 Slider 共享的 `TooltipBubble` 均已完成 `<Visual>` 单源闭环；共享视觉资源允许通过 `uix_items!` 只声明模块级 `Visual`，不需要伪造可实例化视图根。
+当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的已迁移 widget；Rust 完整默认视觉表与 UIX 巨型位置参数壳两类债务也已清零，结构测试继续以空集合阻止回退。公开视觉 widget 清单由 `tests/test_widget_uix_colocation.py` 从真实 `widget!` 声明推导：当前 84 个中 58 个已完成、26 个仍在显式债务集合，测试绿灯不得解释为全量迁移完成。已迁移的简单叶组件、分组视觉组件以及由 Tooltip 与 Slider 共享的 `TooltipBubble` 均完成 `<Visual>` 单源闭环；共享视觉资源允许通过 `uix_items!` 只声明模块级 `Visual`，不需要伪造可实例化视图根。
 
 ## 组件：复合组件
 

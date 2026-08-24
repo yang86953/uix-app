@@ -3,7 +3,8 @@
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::widgets::feedback::toast_motion::ToastQueue;
 
-use super::Message;
+// 默认展示时长直接读取同目录 UIX 生成的唯一视觉静态项。
+use super::MESSAGE_VISUAL_REF;
 // 引入声明条目关闭原因。
 use crate::ui::widgets::feedback::declaration::FeedbackCloseReason;
 
@@ -81,7 +82,7 @@ impl MessageHandle {
         self.add(MessageItem {
             type_: StatusLevel::Success,
             content: content.into(),
-            duration_ms: Message::MSG_DURATION_SUCCESS,
+            duration_ms: MESSAGE_VISUAL_REF.duration_ms(StatusLevel::Success),
             closable: true,
         })
     }
@@ -91,7 +92,7 @@ impl MessageHandle {
         self.add(MessageItem {
             type_: StatusLevel::Info,
             content: content.into(),
-            duration_ms: Message::MSG_DURATION_INFO,
+            duration_ms: MESSAGE_VISUAL_REF.duration_ms(StatusLevel::Info),
             closable: true,
         })
     }
@@ -101,7 +102,7 @@ impl MessageHandle {
         self.add(MessageItem {
             type_: StatusLevel::Warning,
             content: content.into(),
-            duration_ms: Message::MSG_DURATION_WARNING,
+            duration_ms: MESSAGE_VISUAL_REF.duration_ms(StatusLevel::Warning),
             closable: true,
         })
     }
@@ -111,7 +112,7 @@ impl MessageHandle {
         self.add(MessageItem {
             type_: StatusLevel::Error,
             content: content.into(),
-            duration_ms: Message::MSG_DURATION_ERROR,
+            duration_ms: MESSAGE_VISUAL_REF.duration_ms(StatusLevel::Error),
             closable: true,
         })
     }
