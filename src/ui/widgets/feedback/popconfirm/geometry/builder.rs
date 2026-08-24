@@ -5,14 +5,15 @@ use super::*;
 impl Popconfirm {
     /// 创建默认置于上方、显示箭头和警告图标且初始隐藏的确认框。
     pub fn new() -> Self {
+        let visual = POPCONFIRM_VISUAL_REF;
         Self {
             title: String::new(),
-            confirm_text: "OK".to_string(),
-            cancel_text: "Cancel".to_string(),
+            confirm_text: visual.defaults.confirm_text.to_string(),
+            cancel_text: visual.defaults.cancel_text.to_string(),
             visible: false,
-            placement: PopconfirmPlacement::Top,
-            arrow: true,
-            icon: true,
+            placement: visual.defaults.placement,
+            arrow: visual.defaults.arrow,
+            icon: visual.defaults.icon,
             // 兼容构造默认使用旧合成触发器。
             custom_trigger: false,
             // 兼容构造不持有自定义 trigger 子树。
@@ -27,7 +28,9 @@ impl Popconfirm {
             cancel_callback: None,
             // 新实例尚未提交用户动作。
             action_committed: false,
-            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            transition: TransitionPlayer::new(AnimationConfig::fade_in(
+                visual.motion.enter_duration,
+            )),
             closing: false,
             transition_dirty: false,
             focused: false,
@@ -39,11 +42,12 @@ impl Popconfirm {
             last_frame: Cell::new(Rect::zero()),
             popup_rect: Cell::new(Rect::new(
                 0.0,
-                -POPCONFIRM_HEIGHT - 10.0,
-                POPCONFIRM_WIDTH,
-                POPCONFIRM_HEIGHT,
+                -visual.defaults.popup_height - visual.layout.arrow_gap,
+                visual.defaults.popup_width,
+                visual.defaults.popup_height,
             )),
             surface_rect: Cell::new(Rect::zero()),
+            visual,
         }
     }
 
@@ -139,7 +143,8 @@ impl Popconfirm {
         self.focused_action = 0;
         self.visible = true;
         self.closing = false;
-        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_in(self.visual.motion.enter_duration));
         self.transition_dirty = true;
     }
 
@@ -158,7 +163,8 @@ impl Popconfirm {
         }
         self.visible = false;
         self.closing = true;
-        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_out(self.visual.motion.exit_duration));
         self.transition_dirty = true;
     }
 }

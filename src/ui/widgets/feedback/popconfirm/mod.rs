@@ -5,7 +5,8 @@ use std::rc::Rc;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 复用组件树唯一的子节点测量入口。
@@ -18,6 +19,9 @@ use crate::ui::{
 };
 
 mod geometry;
+mod presentation;
+
+use self::presentation::*;
 
 // 仅在测试构建中编译组合 trigger 的父级测量回归。
 #[cfg(test)]
@@ -27,13 +31,6 @@ mod geometry;
 mod layout_tests;
 
 use self::geometry::*;
-
-const POPCONFIRM_WIDTH: f32 = 200.0;
-const POPCONFIRM_HEIGHT: f32 = 110.0;
-// 零子节点 Rust 构造保留兼容触发器宽度。
-const FALLBACK_TRIGGER_WIDTH: f32 = 80.0;
-// 零子节点 Rust 构造保留兼容触发器高度。
-const FALLBACK_TRIGGER_HEIGHT: f32 = 28.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PopconfirmTarget {
@@ -98,6 +95,9 @@ widget! {
         last_frame: Cell<Rect>,
         popup_rect: Cell<Rect>,
         surface_rect: Cell<Rect>,
+        // 全部实例只保存指向 UIX 唯一视觉静态项的共享引用。
+        #[snapshot(skip)]
+        visual: &'static PopconfirmVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -385,8 +385,8 @@ widget! {
             surface,
             self.placement,
             self.arrow,
-            POPCONFIRM_WIDTH,
-            POPCONFIRM_HEIGHT,
+            self.visual.defaults.popup_width,
+            self.visual.defaults.popup_height,
         );
         self.popup_rect.set(Rect::new(
             popup_geometry.popup.x - frame.x,
@@ -395,12 +395,12 @@ widget! {
             popup_geometry.popup.h,
         ));
 
+        // 关闭态与打开态共享一次按可见分支解析的主题值。
+        let visual = self.visual;
+        let resolved = visual.resolve(ctx.tokens(), self.is_present());
+        let layout = &visual.layout;
         let loc = crate::ui::widget_runtime::locale::use_locale();
-        let bg = ctx.tokens().color_bg_elevated();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let primary = ctx.tokens().color_primary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let r = Some(Radius::uniform(resolved.radius));
 
         ctx.push_clip(surface);
         if !self.custom_trigger && (self.hovered_target == Some(PopconfirmTarget::Trigger)
@@ -409,9 +409,9 @@ widget! {
             ctx.fill_rect(
                 frame,
                 if self.pressed_target == Some(PopconfirmTarget::Trigger) {
-                    ctx.tokens().color_fill_secondary()
+                    resolved.fill_secondary
                 } else {
-                    ctx.tokens().color_fill_tertiary()
+                    resolved.fill_tertiary
                 },
                 r,
             );
@@ -422,24 +422,24 @@ widget! {
                 ctx,
                 loc.delete_text,
                 frame,
-                ctx.tokens().color_error(),
-                13.0,
+                resolved.error,
+                resolved.trigger_font_size,
                 true,
             );
         }
         if !self.custom_trigger && self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(frame, primary, 2.0, r);
+            ctx.stroke_rect(frame, resolved.primary, visual.chrome.focus_stroke, r);
         }
 
         if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let popup_bg = fade_color(bg, opacity);
-            let popup_border = fade_color(border, opacity);
-            let popup_text = fade_color(text_color, opacity);
-            let popup_primary = fade_color(primary, opacity);
-            let popup_warning = fade_color(ctx.tokens().color_warning(), opacity);
+            let popup_bg = fade_color(resolved.popup_background, opacity);
+            let popup_border = fade_color(resolved.border, opacity);
+            let popup_text = fade_color(resolved.text, opacity);
+            let popup_primary = fade_color(resolved.primary, opacity);
+            let popup_warning = fade_color(resolved.warning, opacity);
             let pop_rect = popup_geometry.popup;
-            let shadow = ctx.tokens().box_shadow_secondary();
+            let shadow = resolved.shadow;
             ctx.draw_box_shadow(
                 pop_rect,
                 shadow.layer_1.2,
@@ -449,7 +449,7 @@ widget! {
                 r,
             );
             ctx.fill_rect(pop_rect, popup_bg, r);
-            ctx.stroke_rect(pop_rect, popup_border, 1.0, r);
+            ctx.stroke_rect(pop_rect, popup_border, visual.chrome.panel_stroke, r);
 
             if self.arrow {
                 draw_popconfirm_arrow(
@@ -461,56 +461,62 @@ widget! {
                 );
             }
 
-            let loc = crate::ui::widget_runtime::locale::use_locale();
             let title = if self.title.is_empty() {
                 loc.popconfirm_title
             } else {
                 &self.title
             };
-            let inset = 12.0_f32.min(pop_rect.w * 0.5);
+            let inset = layout.content_inset.min(pop_rect.w * 0.5);
             let (confirm_rect, cancel_rect) = button_rects_for_popup(pop_rect);
             let title_bottom = if confirm_rect.h > 0.0 {
-                (confirm_rect.y - 6.0).max(pop_rect.y)
+                (confirm_rect.y - layout.title_button_gap).max(pop_rect.y)
             } else {
                 pop_rect.y + pop_rect.h
             };
-            let icon_width = if self.icon && pop_rect.w >= 48.0 {
-                20.0
+            let icon_width = if self.icon && pop_rect.w >= layout.icon_min_popup_width {
+                layout.icon_width
             } else {
                 0.0
             };
             if icon_width > 0.0 {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "alert-triangle",
+                    visual.icons.warning,
                     Rect::new(
                         pop_rect.x + inset,
-                        pop_rect.y + 8.0,
+                        pop_rect.y + layout.icon_top_inset,
                         icon_width,
-                        (title_bottom - pop_rect.y - 8.0).max(0.0),
+                        (title_bottom - pop_rect.y - layout.icon_top_inset).max(0.0),
                     ),
                     popup_warning,
-                    16.0,
+                    visual.typography.warning_icon,
                 );
             }
             let title_rect = Rect::new(
                 pop_rect.x + inset + icon_width,
-                pop_rect.y + 6.0,
+                pop_rect.y + layout.title_top_inset,
                 (pop_rect.w - inset * 2.0 - icon_width).max(0.0),
-                (title_bottom - pop_rect.y - 6.0).max(0.0),
+                (title_bottom - pop_rect.y - layout.title_top_inset).max(0.0),
             );
-            Self::paint_elided_text(ctx, title, title_rect, popup_text, 13.0, false);
+            Self::paint_elided_text(
+                ctx,
+                title,
+                title_rect,
+                popup_text,
+                resolved.title_font_size,
+                false,
+            );
 
-            let btn_r = Some(Radius::uniform(4.0));
+            let btn_r = Some(Radius::uniform(resolved.button_radius));
             if self.hovered_target == Some(PopconfirmTarget::Confirm)
                 || self.pressed_target == Some(PopconfirmTarget::Confirm)
             {
                 ctx.fill_rect(
                     confirm_rect,
                     if self.pressed_target == Some(PopconfirmTarget::Confirm) {
-                        fade_color(ctx.tokens().color_primary_active(), opacity)
+                        fade_color(resolved.primary_active, opacity)
                     } else {
-                        fade_color(ctx.tokens().color_primary_hover(), opacity)
+                        fade_color(resolved.primary_hover, opacity)
                     },
                     btn_r,
                 );
@@ -527,8 +533,8 @@ widget! {
                 confirm,
                 confirm_rect,
                 // 确认按钮文字：白色 token 随透明度淡入淡出。
-                fade_color(ctx.tokens().color_white(), opacity),
-                12.0,
+                fade_color(resolved.white, opacity),
+                resolved.confirm_font_size,
                 true,
             );
 
@@ -538,27 +544,39 @@ widget! {
                 ctx.fill_rect(
                     cancel_rect,
                     if self.pressed_target == Some(PopconfirmTarget::Cancel) {
-                        fade_color(ctx.tokens().color_fill_secondary(), opacity)
+                        fade_color(resolved.fill_secondary, opacity)
                     } else {
-                        fade_color(ctx.tokens().color_fill_tertiary(), opacity)
+                        fade_color(resolved.fill_tertiary, opacity)
                     },
                     btn_r,
                 );
             }
-            ctx.stroke_rect(cancel_rect, popup_border, 1.0, btn_r);
+            ctx.stroke_rect(
+                cancel_rect,
+                popup_border,
+                visual.chrome.panel_stroke,
+                btn_r,
+            );
             let cancel = if self.cancel_text.is_empty() {
                 loc.popconfirm_cancel
             } else {
                 &self.cancel_text
             };
-            Self::paint_elided_text(ctx, cancel, cancel_rect, popup_text, ctx.tokens().font_size_sm(), true);
+            Self::paint_elided_text(
+                ctx,
+                cancel,
+                cancel_rect,
+                popup_text,
+                resolved.cancel_font_size,
+                true,
+            );
             if self.focused && tree.keyboard_focus_visible() && self.visible {
                 let (focus_rect, focus_color) = if self.focused_action == 0 {
-                    (confirm_rect, fade_color(ctx.tokens().color_white(), opacity))
+                    (confirm_rect, fade_color(resolved.white, opacity))
                 } else {
                     (cancel_rect, popup_primary)
                 };
-                ctx.stroke_rect(focus_rect, focus_color, 2.0, btn_r);
+                ctx.stroke_rect(focus_rect, focus_color, visual.chrome.focus_stroke, btn_r);
             }
         }
         ctx.pop_clip();
@@ -571,7 +589,10 @@ widget! {
 
         let frame = Self::normalize_frame(frame);
         // 浮层命中范围同时保留气泡与真实 trigger，允许打开态 trigger 继续收到 Click。
-        let popup = expand_popconfirm_rect(self.absolute_popup_rect(frame), 12.0)
+        let popup = expand_popconfirm_rect(
+            self.absolute_popup_rect(frame),
+            self.visual.layout.shadow_expand,
+        )
             // 合并真实 trigger border-box。
             .union(&self.absolute_trigger_frame(frame))
             .intersect(&self.surface_or_fallback(frame))
@@ -579,7 +600,7 @@ widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(popup)
-                .z_index(950)
+                .z_index(self.visual.chrome.overlay_z)
                 // 外部点击由树的 System 私有取消端口回调 owner。
                 .dismiss_on_outside(true),
         )
@@ -617,6 +638,23 @@ widget! {
         } else {
             Rect::zero()
         }
+    }
+}
+
+// 把 Rust 交互内核与 UIX 生成的唯一静态视觉项融合为根节点。
+fn build_popconfirm_view(mut kernel: Popconfirm, visual: &'static PopconfirmVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 文档。
+fn build_popconfirm_uix_root(kernel: Popconfirm) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/popconfirm/popconfirm.uix")
+}
+
+impl View for Popconfirm {
+    fn build(self) -> ViewNode {
+        build_popconfirm_uix_root(self)
     }
 }
 

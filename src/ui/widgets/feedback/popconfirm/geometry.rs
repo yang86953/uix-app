@@ -7,7 +7,9 @@ mod builder;
 
 impl Popconfirm {
     pub(crate) fn sync_from(&mut self, next: Self) {
-        let geometry_changed = self.placement != next.placement || self.arrow != next.arrow;
+        let geometry_changed = self.placement != next.placement
+            || self.arrow != next.arrow
+            || !std::ptr::eq(self.visual, next.visual);
         self.title = next.title;
         self.confirm_text = next.confirm_text;
         self.cancel_text = next.cancel_text;
@@ -22,6 +24,8 @@ impl Popconfirm {
         self.confirm_callback = next.confirm_callback;
         // 同步最新取消业务回调。
         self.cancel_callback = next.cancel_callback;
+        // UIX 静态视觉项按共享引用替换，不复制完整视觉表。
+        self.visual = next.visual;
         if geometry_changed {
             self.cancel_pending_activation();
         }
@@ -36,14 +40,14 @@ impl Popconfirm {
         } else if frame.w > 0.0 {
             frame.w
         } else {
-            FALLBACK_TRIGGER_WIDTH
+            self.visual.defaults.trigger_width
         };
         let height = if self.custom_trigger && trigger_size.h > 0.0 {
             trigger_size.h
         } else if frame.h > 0.0 {
             frame.h
         } else {
-            FALLBACK_TRIGGER_HEIGHT
+            self.visual.defaults.trigger_height
         };
         Rect::new(0.0, 0.0, width, height)
     }
@@ -133,7 +137,10 @@ impl Popconfirm {
     }
 
     pub(super) fn intrinsic_size(&self) -> Size {
-        Size::new(FALLBACK_TRIGGER_WIDTH, FALLBACK_TRIGGER_HEIGHT)
+        Size::new(
+            self.visual.defaults.trigger_width,
+            self.visual.defaults.trigger_height,
+        )
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -161,9 +168,9 @@ impl Popconfirm {
             // 保留箭头间距配置。
             self.arrow,
             // 使用标准确认气泡宽度。
-            POPCONFIRM_WIDTH,
+            self.visual.defaults.popup_width,
             // 使用标准确认气泡高度。
-            POPCONFIRM_HEIGHT,
+            self.visual.defaults.popup_height,
         )
         // 返回同一解析器生成的最终矩形。
         .popup
@@ -174,11 +181,13 @@ impl Popconfirm {
         if surface.w > 0.0 && surface.h > 0.0 {
             surface
         } else {
+            let defaults = &self.visual.defaults;
+            let layout = &self.visual.layout;
             frame.union(&Rect::new(
-                frame.x - POPCONFIRM_WIDTH * 2.0,
-                frame.y - POPCONFIRM_HEIGHT * 2.0,
-                POPCONFIRM_WIDTH * 5.0 + frame.w,
-                POPCONFIRM_HEIGHT * 5.0 + frame.h,
+                frame.x - defaults.popup_width * layout.fallback_offset_popups,
+                frame.y - defaults.popup_height * layout.fallback_offset_popups,
+                defaults.popup_width * layout.fallback_span_popups + frame.w,
+                defaults.popup_height * layout.fallback_span_popups + frame.h,
             ))
         }
     }
@@ -188,7 +197,7 @@ impl Popconfirm {
         self.absolute_trigger_frame(frame)
             .union(&expand_popconfirm_rect(
                 self.absolute_popup_rect(frame),
-                12.0,
+                self.visual.layout.shadow_expand,
             ))
             .intersect(&self.surface_or_fallback(frame))
             .unwrap_or_default()
@@ -308,12 +317,15 @@ pub(super) fn popconfirm_overflow_score(rect: Rect, surface: Rect) -> f32 {
 }
 
 pub(super) fn button_rects_for_popup(popup: Rect) -> (Rect, Rect) {
-    let inset = 12.0_f32.min(popup.w * 0.5);
-    let gap = 8.0_f32.min(popup.w);
+    let layout = &POPCONFIRM_VISUAL_REF.layout;
+    let inset = layout.content_inset.min(popup.w * 0.5);
+    let gap = layout.button_gap.min(popup.w);
     let available = (popup.w - inset * 2.0 - gap).max(0.0);
     let button_width = available * 0.5;
-    let button_height = 26.0_f32.min((popup.h - 10.0).max(0.0));
-    let y = (popup.y + popup.h - 10.0 - button_height).max(popup.y);
+    let button_height = layout
+        .button_height
+        .min((popup.h - layout.button_bottom_inset).max(0.0));
+    let y = (popup.y + popup.h - layout.button_bottom_inset - button_height).max(popup.y);
     (
         Rect::new(popup.x + inset, y, button_width, button_height),
         Rect::new(
@@ -332,7 +344,12 @@ pub(super) fn popconfirm_position(
     pw: f32,
     ph: f32,
 ) -> (f32, f32) {
-    let gap = if arrow { 10.0 } else { 4.0 };
+    let layout = &POPCONFIRM_VISUAL_REF.layout;
+    let gap = if arrow {
+        layout.arrow_gap
+    } else {
+        layout.plain_gap
+    };
     match placement {
         PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft => (frame.x, frame.y - ph - gap),
         PopconfirmPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
@@ -370,7 +387,7 @@ pub(super) fn draw_popconfirm_arrow(
     placement: PopconfirmPlacement,
     color: Color,
 ) {
-    let arrow_sz = 6.0;
+    let arrow_sz = POPCONFIRM_VISUAL_REF.layout.arrow_size;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => {
             let cx =
