@@ -296,7 +296,7 @@ widget! {
             } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx {
-                    let item = self.visible_items().get(i).map(|(item, _)| {
+                    let item = self.visible_item_at(i).map(|(item, _depth)| {
                         (item.disabled, item.key.clone(), !item.children.is_empty())
                     });
                     if let Some((disabled, key, has_children)) = item {
@@ -317,8 +317,7 @@ widget! {
             SystemEvent::PointerMove { pos, .. } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx.filter(|&i| {
-                    self.visible_items()
-                        .get(i)
+                    self.visible_item_at(i)
                         .is_some_and(|(item, _)| !item.disabled)
                 }) {
                     self.hovered_idx.set(i);
@@ -380,8 +379,8 @@ widget! {
         match self.mode {
             MenuMode::Horizontal => {
                 let mut cx = frame.x;
-                for (i, (item, depth)) in self.visible_items().iter().enumerate() {
-                    let iw = self.horizontal_item_width(item, *depth);
+                self.for_each_visible_item(|i, item, depth| {
+                    let iw = self.horizontal_item_width(item, depth);
                     let item_rect = Rect::new(cx, frame.y, iw, self.item_h);
                     let is_active = item.key == *active_key || self.selected_keys.contains(&item.key);
                     let is_hover = i == hovered;
@@ -428,10 +427,10 @@ widget! {
                         );
                     }
                     cx += iw;
-                }
+                });
             }
             MenuMode::Vertical | MenuMode::Inline => {
-                for (i, (item, depth)) in self.visible_items().iter().enumerate() {
+                self.for_each_visible_item(|i, item, depth| {
                     let item_y = frame.y + i as f32 * self.item_h;
                     let item_rect = Rect::new(frame.x, item_y, frame.w, self.item_h);
                     let is_active = item.key == *active_key || self.selected_keys.contains(&item.key);
@@ -441,39 +440,37 @@ widget! {
                         ctx.fill_rect(item_rect, fill, Some(radius));
                     }
                     // 紧凑侧栏绘制由专属呈现模块处理。
-                    if self.paint_compact_item(ctx, item, item_rect, item_c, &visual) {
-                        // 紧凑项已完成本行绘制。
-                        continue;
-                    }
-                    let label_pad = if item.icon.is_empty() {
-                        layout.plain_label_padding
-                    } else {
-                        layout.icon_label_padding
-                    } + *depth as f32 * layout.depth_indent;
-                    if !item.icon.is_empty() {
-                        let icon_rect = Rect::new(
-                            frame.x + layout.vertical_icon_start,
+                    if !self.paint_compact_item(ctx, item, item_rect, item_c, &visual) {
+                        let label_pad = if item.icon.is_empty() {
+                            layout.plain_label_padding
+                        } else {
+                            layout.icon_label_padding
+                        } + depth as f32 * layout.depth_indent;
+                        if !item.icon.is_empty() {
+                            let icon_rect = Rect::new(
+                                frame.x + layout.vertical_icon_start,
+                                item_y,
+                                layout.icon_slot_width,
+                                self.item_h,
+                            );
+                            crate::ui::widgets::icon::Icon::paint_in_frame(
+                                ctx, &item.icon, icon_rect, item_c, typography.icon,
+                            );
+                        }
+                        let label_rect = Rect::new(
+                            frame.x + label_pad,
                             item_y,
-                            layout.icon_slot_width,
+                            (frame.w - label_pad - layout.label_end_padding).max(0.0),
                             self.item_h,
                         );
-                        crate::ui::widgets::icon::Icon::paint_in_frame(
-                            ctx, &item.icon, icon_rect, item_c, typography.icon,
+                        ctx.draw_text_in_frame(
+                            &item.label,
+                            label_rect,
+                            item_c,
+                            visual.label_font_size,
                         );
                     }
-                    let label_rect = Rect::new(
-                        frame.x + label_pad,
-                        item_y,
-                        (frame.w - label_pad - layout.label_end_padding).max(0.0),
-                        self.item_h,
-                    );
-                    ctx.draw_text_in_frame(
-                        &item.label,
-                        label_rect,
-                        item_c,
-                        visual.label_font_size,
-                    );
-                }
+                });
             }
         }
 
@@ -490,15 +487,19 @@ widget! {
 
 impl Menu {
     fn intrinsic_size(&self) -> Size {
-        let items = self.visible_items();
-        match self.mode {
-            MenuMode::Horizontal => {
-                let w = items
-                    .iter()
-                    .map(|(item, depth)| self.horizontal_item_width(item, *depth))
-                    .sum::<f32>();
-                Size::new(w.max(self.visual.layout.horizontal_min_width), self.item_h)
+        let mut count = 0_usize;
+        let mut horizontal_width = 0.0_f32;
+        self.for_each_visible_item(|_index, item, depth| {
+            count += 1;
+            if self.mode == MenuMode::Horizontal {
+                horizontal_width += self.horizontal_item_width(item, depth);
             }
+        });
+        match self.mode {
+            MenuMode::Horizontal => Size::new(
+                horizontal_width.max(self.visual.layout.horizontal_min_width),
+                self.item_h,
+            ),
             MenuMode::Vertical | MenuMode::Inline => {
                 // 折叠侧栏使用稳定紧凑宽度，展开态保持兼容宽度。
                 Size::new(
@@ -507,44 +508,34 @@ impl Menu {
                     } else {
                         self.visual.layout.expanded_width
                     },
-                    items.len() as f32 * self.item_h,
+                    count as f32 * self.item_h,
                 )
             }
         }
     }
 
     fn item_at(&self, px: f32, py: f32) -> Option<usize> {
-        let items = self.visible_items();
         match self.mode {
             MenuMode::Horizontal => {
                 if py < 0.0 || py > self.item_h {
                     return None;
                 }
                 let mut cx = 0.0f32;
-                for (i, (item, depth)) in items.iter().enumerate() {
-                    let iw = self.horizontal_item_width(item, *depth);
-                    if px >= cx && px < cx + iw {
-                        return Some(i);
+                let mut matched = None;
+                self.for_each_visible_item(|index, item, depth| {
+                    let width = self.horizontal_item_width(item, depth);
+                    if matched.is_none() && px >= cx && px < cx + width {
+                        matched = Some(index);
                     }
-                    cx += iw;
-                }
-                None
+                    cx += width;
+                });
+                matched
             }
             MenuMode::Vertical | MenuMode::Inline => {
                 let idx = (py / self.item_h) as usize;
-                if idx < items.len() && py >= 0.0 {
-                    Some(idx)
-                } else {
-                    None
-                }
+                (py >= 0.0 && self.visible_item_at(idx).is_some()).then_some(idx)
             }
         }
-    }
-
-    fn item_index_of_key(&self, key: &str) -> Option<usize> {
-        self.visible_items()
-            .iter()
-            .position(|(item, _)| item.key == key)
     }
 
     fn horizontal_item_width(&self, item: &MenuItem, depth: usize) -> f32 {
@@ -559,29 +550,47 @@ impl Menu {
     }
 
     fn select_adjacent(&mut self, forward: bool) {
-        let visible = self.visible_items();
-        let enabled = visible
-            .iter()
-            .enumerate()
-            .filter_map(|(index, (item, _))| (!item.disabled).then_some(index))
-            .collect::<Vec<_>>();
-        if enabled.is_empty() {
+        let active_key = &self.active_key;
+        let mut current = None;
+        let mut current_enabled = false;
+        let mut first = None;
+        let mut last = None;
+        let mut before_current = None;
+        let mut after_current = None;
+        let mut previous_enabled = None;
+        self.for_each_visible_item(|index, item, _depth| {
+            if item.key == *active_key {
+                current = Some(index);
+                current_enabled = !item.disabled;
+                before_current = previous_enabled;
+            }
+            if item.disabled {
+                return;
+            }
+            first.get_or_insert(index);
+            last = Some(index);
+            if current.is_some_and(|current| index > current) && after_current.is_none() {
+                after_current = Some(index);
+            }
+            previous_enabled = Some(index);
+        });
+        let Some(first) = first else {
             return;
+        };
+        let target = if current_enabled {
+            if forward {
+                after_current.unwrap_or(first)
+            } else {
+                before_current.or(last).unwrap_or(first)
+            }
+        } else if forward {
+            first
+        } else {
+            last.unwrap_or(first)
+        };
+        if let Some((item, _depth)) = self.visible_item_at(target) {
+            self.select_key(item.key.clone());
         }
-
-        let current = self.item_index_of_key(&self.active_key);
-        let next_position = current
-            .and_then(|index| enabled.iter().position(|&candidate| candidate == index))
-            .map(|position| {
-                if forward {
-                    (position + 1) % enabled.len()
-                } else {
-                    (position + enabled.len() - 1) % enabled.len()
-                }
-            })
-            .unwrap_or_else(|| if forward { 0 } else { enabled.len() - 1 });
-        let next_key = visible[enabled[next_position]].0.key.clone();
-        self.select_key(next_key);
     }
 
     fn select_key(&mut self, key: String) {
@@ -603,37 +612,95 @@ impl Menu {
         self.write_open_keys();
     }
 
-    fn visible_items(&self) -> Vec<(&MenuItem, usize)> {
+    // 依当前折叠与展开策略借用可见项，避免尺寸、命中、导航和绘制物化行数组。
+    fn for_each_visible_item(&self, mut callback: impl FnMut(usize, &MenuItem, usize)) {
         // 整栏折叠时只显示顶层身份，但不改写调用方 openKeys。
         if self.is_compact() {
-            // 返回顶层菜单项的稳定源码顺序。
-            return self.items.iter().map(|item| (item, 0)).collect();
+            for (index, item) in self.items.iter().enumerate() {
+                callback(index, item, 0);
+            }
+            return;
         }
         fn visit<'a>(
             items: &'a [MenuItem],
             open_keys: &[String],
             expand_all: bool,
             depth: usize,
-            output: &mut Vec<(&'a MenuItem, usize)>,
+            index: &mut usize,
+            callback: &mut impl FnMut(usize, &'a MenuItem, usize),
         ) {
             for item in items {
-                output.push((item, depth));
+                callback(*index, item, depth);
+                *index += 1;
                 if !item.children.is_empty() && (expand_all || open_keys.contains(&item.key)) {
-                    visit(&item.children, open_keys, expand_all, depth + 1, output);
+                    visit(
+                        &item.children,
+                        open_keys,
+                        expand_all,
+                        depth + 1,
+                        index,
+                        callback,
+                    );
                 }
             }
         }
 
-        let mut output = Vec::new();
+        let mut index = 0_usize;
         visit(
             &self.items,
             &self.open_keys,
             // Inline 的固定展开语义优先于可折叠交互配置。
             self.mode == MenuMode::Inline || !self.collapsible,
             0,
-            &mut output,
+            &mut index,
+            &mut callback,
         );
-        output
+    }
+
+    // 返回指定可见行的借用与深度，事件路径只复制最终业务 key。
+    fn visible_item_at(&self, target: usize) -> Option<(&MenuItem, usize)> {
+        if self.is_compact() {
+            return self.items.get(target).map(|item| (item, 0));
+        }
+        fn visit<'a>(
+            items: &'a [MenuItem],
+            open_keys: &[String],
+            expand_all: bool,
+            depth: usize,
+            target: usize,
+            index: &mut usize,
+        ) -> Option<(&'a MenuItem, usize)> {
+            for item in items {
+                let current = *index;
+                *index += 1;
+                if current == target {
+                    return Some((item, depth));
+                }
+                if !item.children.is_empty() && (expand_all || open_keys.contains(&item.key)) {
+                    if let Some(found) = visit(
+                        &item.children,
+                        open_keys,
+                        expand_all,
+                        depth + 1,
+                        target,
+                        index,
+                    ) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+
+        let mut index = 0_usize;
+        visit(
+            &self.items,
+            &self.open_keys,
+            self.mode == MenuMode::Inline || !self.collapsible,
+            0,
+            target,
+            &mut index,
+        )
     }
 
     fn sync_bound_keys(&mut self) {
