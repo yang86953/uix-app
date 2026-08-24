@@ -6,6 +6,7 @@
 use std::cell::{Cell, RefCell};
 // 引入组合子树声明期所有权所需的共享句柄。
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use crate::widget;
 // 引入组件与子树布局使用的身份、约束和几何类型。
@@ -14,6 +15,8 @@ use crate::draw::geometry::spatial::PhysicalUnit;
 // 引入组合装饰器所需的子节点后绘制阶段。
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 引入从组件树测量真实子节点的 System 私有边界。
@@ -55,6 +58,244 @@ pub enum BadgeColor {
     Purple,
 }
 
+// 保存由 UIX 声明、由 Rust 测量与几何算法消费的徽章视觉常量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BadgeLayoutVisual {
+    marker_diameter: f32,
+    marker_text_gap: f32,
+    pill_height: f32,
+    pill_font_size: f32,
+    marker_label_font_size: f32,
+    text_horizontal_padding: f32,
+    ribbon_height: f32,
+    ribbon_horizontal_padding: f32,
+    ribbon_slant_height_ratio: f32,
+    ribbon_slant_width_ratio: f32,
+    pill_radius_ratio: f32,
+}
+
+// 徽章预设色可以来自主题 token，也可以来自固定扩展色阶。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BadgeColorSource {
+    Token(ColorValue),
+    Hue(PrimaryHue),
+}
+
+impl BadgeColorSource {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> Color {
+        match self {
+            Self::Token(color) => color.resolve(tokens),
+            Self::Hue(hue) => hue.primary(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的预设色、状态色与对比文字主题角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BadgePaletteVisual {
+    presets: [BadgeColorSource; 5],
+    statuses: [ColorValue; 5],
+    default_background: ColorValue,
+    light_foreground: ColorValue,
+    dark_foreground: ColorValue,
+    marker_text: ColorValue,
+}
+
+impl BadgePaletteVisual {
+    fn preset(&self, color: BadgeColor) -> BadgeColorSource {
+        self.presets[match color {
+            BadgeColor::Blue => 0,
+            BadgeColor::Green => 1,
+            BadgeColor::Orange => 2,
+            BadgeColor::Red => 3,
+            BadgeColor::Purple => 4,
+        }]
+    }
+
+    fn status(&self, status: BadgeStatus) -> ColorValue {
+        self.statuses[match status {
+            BadgeStatus::Success => 0,
+            BadgeStatus::Processing => 1,
+            BadgeStatus::Default => 2,
+            BadgeStatus::Error => 3,
+            BadgeStatus::Warning => 4,
+        }]
+    }
+}
+
+// 完整视觉配置由全部 Badge 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BadgeVisual {
+    layout: BadgeLayoutVisual,
+    palette: BadgePaletteVisual,
+}
+
+// 组合 UIX 声明的徽章、状态点与丝带几何。
+#[allow(clippy::too_many_arguments)]
+const fn badge_layout(
+    marker_diameter: f32,
+    marker_text_gap: f32,
+    pill_height: f32,
+    pill_font_size: f32,
+    marker_label_font_size: f32,
+    text_horizontal_padding: f32,
+    ribbon_height: f32,
+    ribbon_horizontal_padding: f32,
+    ribbon_slant_height_ratio: f32,
+    ribbon_slant_width_ratio: f32,
+    pill_radius_ratio: f32,
+) -> BadgeLayoutVisual {
+    BadgeLayoutVisual {
+        marker_diameter,
+        marker_text_gap,
+        pill_height,
+        pill_font_size,
+        marker_label_font_size,
+        text_horizontal_padding,
+        ribbon_height,
+        ribbon_horizontal_padding,
+        ribbon_slant_height_ratio,
+        ribbon_slant_width_ratio,
+        pill_radius_ratio,
+    }
+}
+
+// 组合 UIX 声明的主题 token 预设色。
+const fn badge_token(color: ColorValue) -> BadgeColorSource {
+    BadgeColorSource::Token(color)
+}
+
+// 组合 UIX 声明的扩展色阶预设色。
+const fn badge_hue(hue: PrimaryHue) -> BadgeColorSource {
+    BadgeColorSource::Hue(hue)
+}
+
+// 按公开 BadgeColor 顺序组合全部预设色。
+const fn badge_presets(
+    blue: BadgeColorSource,
+    green: BadgeColorSource,
+    orange: BadgeColorSource,
+    red: BadgeColorSource,
+    purple: BadgeColorSource,
+) -> [BadgeColorSource; 5] {
+    [blue, green, orange, red, purple]
+}
+
+// 按公开 BadgeStatus 顺序组合全部状态色。
+const fn badge_statuses(
+    success: ColorValue,
+    processing: ColorValue,
+    default: ColorValue,
+    error: ColorValue,
+    warning: ColorValue,
+) -> [ColorValue; 5] {
+    [success, processing, default, error, warning]
+}
+
+// 组合 UIX 声明的徽章主题色表。
+const fn badge_palette(
+    presets: [BadgeColorSource; 5],
+    statuses: [ColorValue; 5],
+    default_background: ColorValue,
+    light_foreground: ColorValue,
+    dark_foreground: ColorValue,
+    marker_text: ColorValue,
+) -> BadgePaletteVisual {
+    BadgePaletteVisual {
+        presets,
+        statuses,
+        default_background,
+        light_foreground,
+        dark_foreground,
+        marker_text,
+    }
+}
+
+// 组合 UIX 声明的完整徽章视觉配置。
+const fn badge_visual(layout: BadgeLayoutVisual, palette: BadgePaletteVisual) -> BadgeVisual {
+    BadgeVisual { layout, palette }
+}
+
+// 向 UIX 提供品牌主色主题角色。
+const fn badge_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供成功主题角色。
+const fn badge_success() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Success)
+}
+
+// 向 UIX 提供错误主题角色。
+const fn badge_error() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Error)
+}
+
+// 向 UIX 提供警告主题角色。
+const fn badge_warning() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Warning)
+}
+
+// 向 UIX 提供四级正文主题角色。
+const fn badge_text_quaternary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+
+// 向 UIX 提供正文主题角色。
+const fn badge_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供黑色主题角色。
+const fn badge_black() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Black)
+}
+
+// 向 UIX 提供白色主题角色。
+const fn badge_white() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+
+// 向 UIX 提供橙色扩展色阶。
+const fn badge_orange_hue() -> PrimaryHue {
+    PrimaryHue::Orange
+}
+
+// 向 UIX 提供紫色扩展色阶。
+const fn badge_purple_hue() -> PrimaryHue {
+    PrimaryHue::Purple
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_BADGE_VISUAL: BadgeVisual = badge_visual(
+    badge_layout(
+        10.0, 8.0, 20.0, 11.0, 13.0, 12.0, 24.0, 24.0, 0.22, 0.2, 0.5,
+    ),
+    badge_palette(
+        badge_presets(
+            badge_token(badge_primary()),
+            badge_token(badge_success()),
+            badge_hue(badge_orange_hue()),
+            badge_token(badge_error()),
+            badge_hue(badge_purple_hue()),
+        ),
+        badge_statuses(
+            badge_success(),
+            badge_primary(),
+            badge_text_quaternary(),
+            badge_error(),
+            badge_warning(),
+        ),
+        badge_error(),
+        badge_black(),
+        badge_white(),
+        badge_text(),
+    ),
+);
+
+// 正常 UIX 构建首次写入声明配置，后续 Badge 实例只共享该静态对象。
+static UIX_BADGE_VISUAL: OnceLock<BadgeVisual> = OnceLock::new();
+
 impl BadgeColor {
     /// 映射为对应的 `Color`。
     /// 无主题上下文时返回 theme 层 Ant Design 色阶的兼容主色。
@@ -75,20 +316,8 @@ impl BadgeColor {
     }
 
     // 在拥有主题上下文时解析预设色。
-    fn resolve(self, tokens: &dyn ThemeTokens) -> Color {
-        // 可定制功能角色服从当前主题 token，其余色相读取 theme 色阶。
-        match self {
-            // 蓝色徽章跟随当前主题品牌主色。
-            BadgeColor::Blue => tokens.color_primary(),
-            // 绿色徽章跟随当前主题成功色。
-            BadgeColor::Green => tokens.color_success(),
-            // 橙色徽章保留明确的预设色相。
-            BadgeColor::Orange => PrimaryHue::Orange.primary(),
-            // 红色徽章跟随当前主题错误色。
-            BadgeColor::Red => tokens.color_error(),
-            // 紫色徽章保留明确的预设色相。
-            BadgeColor::Purple => PrimaryHue::Purple.primary(),
-        }
+    fn resolve(self, palette: &BadgePaletteVisual, tokens: &dyn ThemeTokens) -> Color {
+        palette.preset(self).resolve(tokens)
     }
 
     // 从兼容纯色值恢复框架拥有的预设身份。
@@ -119,20 +348,22 @@ fn resolve_badge_background(
     color: Option<Color>,
     // 标记该颜色是否来自框架预设。
     adaptive_foreground: bool,
+    // 提供 UIX 声明的预设与默认主题色表。
+    palette: &BadgePaletteVisual,
     // 提供当前主题 token。
     tokens: &dyn ThemeTokens,
 ) -> Color {
     // 没有显式颜色时继续使用错误色默认值。
     let Some(color) = color else {
         // 默认徽章服从当前主题错误色。
-        return tokens.color_error();
+        return palette.default_background.resolve(tokens);
     };
     // 只有框架预设才允许重新解析主题角色。
     if adaptive_foreground {
         // 从稳定兼容色恢复预设身份。
         if let Some(preset) = BadgeColor::from_compat_color(color) {
             // 返回当前主题下的预设结果。
-            return preset.resolve(tokens);
+            return preset.resolve(palette, tokens);
         }
     }
     // 任意调用方颜色保持原值。
@@ -240,6 +471,8 @@ widget! {
 
         // ── 物理单位偏移（优先级高于 offset_x/y）──
         offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
+        #[snapshot(skip)]
+        visual: &'static BadgeVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -409,24 +642,23 @@ widget! {
         }
 
         if let Some(status) = self.status {
-            let marker_color = match status {
-                BadgeStatus::Success => ctx.tokens().color_success(),
-                BadgeStatus::Processing => ctx.tokens().color_primary(),
-                BadgeStatus::Default => ctx.tokens().color_text_quaternary(),
-                BadgeStatus::Error => ctx.tokens().color_error(),
-                BadgeStatus::Warning => ctx.tokens().color_warning(),
-            };
+            let marker_color = self.visual.palette.status(status).resolve(ctx.tokens());
             self.render_marker_label(ctx, actual_frame, marker_color);
             return;
         }
 
         // 预设色在绘制时解析当前主题，自定义色保持原值。
-        let bg = resolve_badge_background(self.color, self.adaptive_foreground, ctx.tokens());
+        let bg = resolve_badge_background(
+            self.color,
+            self.adaptive_foreground,
+            &self.visual.palette,
+            ctx.tokens(),
+        );
         // 自适应前景：按亮度取黑白 token 对比色。
         let foreground = if self.adaptive_foreground && bg.is_light() {
-            ctx.tokens().color_black()
+            self.visual.palette.light_foreground.resolve(ctx.tokens())
         } else {
-            ctx.tokens().color_white()
+            self.visual.palette.dark_foreground.resolve(ctx.tokens())
         };
         if self.ribbon {
             self.render_ribbon(ctx, actual_frame, bg, foreground);
@@ -438,9 +670,11 @@ widget! {
         }
         if self.count == 0 && !self.show_zero && self.text.is_empty() { return; }
         if !self.text.is_empty() {
-            let r = Some(Radius::uniform(actual_frame.h * 0.5));
+            let r = Some(Radius::uniform(
+                actual_frame.h * self.visual.layout.pill_radius_ratio,
+            ));
             ctx.fill_rect(actual_frame, bg, r);
-            let fs = Self::PILL_FONT_SIZE;
+            let fs = self.visual.layout.pill_font_size;
             let tw = ctx.measure_text(&self.text, fs).w;
             let th = ctx.line_box_height(fs);
             ctx.draw_text(
@@ -453,10 +687,12 @@ widget! {
                 fs,
             );
         } else {
-            let r = Some(Radius::uniform(actual_frame.h * 0.5));
+            let r = Some(Radius::uniform(
+                actual_frame.h * self.visual.layout.pill_radius_ratio,
+            ));
             ctx.fill_rect(actual_frame, bg, r);
             let label = self.count_label();
-            let fs = Self::PILL_FONT_SIZE;
+            let fs = self.visual.layout.pill_font_size;
             let tw = ctx.measure_text(label.as_str(), fs).w;
             let th = ctx.line_box_height(fs);
             ctx.draw_text(
@@ -512,55 +748,51 @@ impl Default for Badge {
     }
 }
 
-// 把徽章组合状态、唯一子树交接槽与绘制内核融合为 UIX 声明的单一叶根。
-fn build_badge_view(kernel: Badge) -> ViewNode {
+// 把 UIX 声明的共享视觉配置融合进徽章组合状态、子树交接槽与绘制内核。
+fn build_badge_view(mut kernel: Badge, declared_visual: BadgeVisual) -> ViewNode {
+    let visual = UIX_BADGE_VISUAL.get_or_init(|| declared_visual);
+    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
+    debug_assert_eq!(*visual, declared_visual);
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
 impl View for Badge {
     fn build(self) -> ViewNode {
-        // UIX 拥有公开组件根；真实子树仍由 Badge 生命周期端口一次性交给组件树。
+        // UIX 拥有视觉配置；真实子树仍由 Badge 生命周期端口一次性交给组件树。
         let kernel = self;
         crate::uix!("src/ui/widgets/display/badge/badge.uix")
     }
 }
 
 impl Badge {
-    const MARKER_DIAMETER: f32 = 10.0;
-    const MARKER_TEXT_GAP: f32 = 8.0;
-    const PILL_HEIGHT: f32 = 20.0;
-    const PILL_FONT_SIZE: f32 = 11.0;
-    const MARKER_LABEL_FONT_SIZE: f32 = 13.0;
-    const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
-    const RIBBON_HEIGHT: f32 = 24.0;
-    const RIBBON_HORIZONTAL_PADDING: f32 = 24.0;
-
     fn intrinsic_size(&self) -> Size {
+        let layout = &self.visual.layout;
         if self.dot || self.status.is_some() {
             if self.text.is_empty() {
-                Size::new(Self::MARKER_DIAMETER, Self::MARKER_DIAMETER)
+                Size::new(layout.marker_diameter, layout.marker_diameter)
             } else {
                 Size::new(
-                    Self::MARKER_DIAMETER
-                        + Self::MARKER_TEXT_GAP
-                        + Self::estimated_text_width(&self.text, Self::MARKER_LABEL_FONT_SIZE),
-                    Self::PILL_HEIGHT,
+                    layout.marker_diameter
+                        + layout.marker_text_gap
+                        + Self::estimated_text_width(&self.text, layout.marker_label_font_size),
+                    layout.pill_height,
                 )
             }
         } else if self.ribbon {
-            let w = Self::estimated_text_width(&self.text, Self::PILL_FONT_SIZE)
-                + Self::RIBBON_HORIZONTAL_PADDING;
-            Size::new(w.max(Self::RIBBON_HEIGHT), Self::RIBBON_HEIGHT)
+            let w = Self::estimated_text_width(&self.text, layout.pill_font_size)
+                + layout.ribbon_horizontal_padding;
+            Size::new(w.max(layout.ribbon_height), layout.ribbon_height)
         } else if !self.text.is_empty() {
-            let w = Self::estimated_text_width(&self.text, Self::PILL_FONT_SIZE)
-                + Self::TEXT_HORIZONTAL_PADDING;
-            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
+            let w = Self::estimated_text_width(&self.text, layout.pill_font_size)
+                + layout.text_horizontal_padding;
+            Size::new(w.max(layout.pill_height), layout.pill_height)
         } else if self.count > 0 || (self.count == 0 && self.show_zero) {
             // 栈缓冲在本次宽度测量期间保持有效，不创建临时 String。
             let label = self.count_label();
-            let w = Self::estimated_text_width(label.as_str(), Self::PILL_FONT_SIZE)
-                + Self::TEXT_HORIZONTAL_PADDING;
-            Size::new(w.max(Self::PILL_HEIGHT), Self::PILL_HEIGHT)
+            let w = Self::estimated_text_width(label.as_str(), layout.pill_font_size)
+                + layout.text_horizontal_padding;
+            Size::new(w.max(layout.pill_height), layout.pill_height)
         } else {
             Size::zero()
         }
@@ -640,7 +872,9 @@ impl Badge {
         // marker 文本从锚点向右展开，普通胶囊则整体以锚点为中心。
         let x = if marker_label {
             // 圆点半径决定 marker 左边缘。
-            child.x + child.w - Self::MARKER_DIAMETER * 0.5 + off_x
+            child.x + child.w
+                - self.visual.layout.marker_diameter * self.visual.layout.pill_radius_ratio
+                + off_x
         } else {
             // 数字、纯圆点和文本胶囊中心落在右上角。
             child.x + child.w - size.w * 0.5 + off_x
@@ -687,6 +921,7 @@ impl Badge {
             offset_x: 0.0,
             offset_y: 0.0,
             offset_unit: None,
+            visual: &DEFAULT_BADGE_VISUAL,
         }
     }
     /// 设置非负计数；负数会被归零。
@@ -792,6 +1027,7 @@ impl Badge {
         self.offset_x = finite_badge_offset(next.offset_x);
         self.offset_y = finite_badge_offset(next.offset_y);
         self.offset_unit = next.offset_unit;
+        self.visual = next.visual;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -819,19 +1055,20 @@ impl Badge {
     }
 
     fn render_marker_label(&self, ctx: &mut PaintContext, frame: Rect, marker_color: Color) {
-        let radius = Self::MARKER_DIAMETER * 0.5;
+        let layout = &self.visual.layout;
+        let radius = layout.marker_diameter * layout.pill_radius_ratio;
         let center_y = frame.y + frame.h * 0.5;
         ctx.fill_circle(frame.x + radius, center_y, radius, marker_color);
         if !self.text.is_empty() {
-            let font_size = Self::MARKER_LABEL_FONT_SIZE;
+            let font_size = layout.marker_label_font_size;
             let text_y = ctx.visual_center_y(frame, font_size);
             ctx.draw_text(
                 &self.text,
                 crate::core::Point::new(
-                    frame.x + Self::MARKER_DIAMETER + Self::MARKER_TEXT_GAP,
+                    frame.x + layout.marker_diameter + layout.marker_text_gap,
                     text_y,
                 ),
-                ctx.tokens().color_text(),
+                self.visual.palette.marker_text.resolve(ctx.tokens()),
                 font_size,
             );
         }
@@ -844,7 +1081,9 @@ impl Badge {
         background: Color,
         foreground: Color,
     ) {
-        let slant = (frame.h * 0.22).min(frame.w * 0.2);
+        let layout = &self.visual.layout;
+        let slant = (frame.h * layout.ribbon_slant_height_ratio)
+            .min(frame.w * layout.ribbon_slant_width_ratio);
         let mut path = PathBuilder::new();
         path.move_to(frame.x + slant, frame.y)
             .line_to(frame.x + frame.w, frame.y)
@@ -853,7 +1092,7 @@ impl Badge {
             .close();
         ctx.fill_path(&path.build(), background, FillRule::NonZero);
 
-        let font_size = Self::PILL_FONT_SIZE;
+        let font_size = layout.pill_font_size;
         let text_width = ctx.measure_text(&self.text, font_size).w;
         let text_height = ctx.line_box_height(font_size);
         ctx.draw_text(
