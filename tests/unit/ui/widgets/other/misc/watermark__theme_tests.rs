@@ -26,6 +26,18 @@ fn uix_root_preserves_watermark_kernel() {
     assert_eq!(kernel.rotate, -30.0);
 }
 
+// 栈字符编码必须完整保留 ASCII、中文与四字节 Unicode 标量。
+#[test]
+fn stack_glyph_encoding_preserves_unicode() {
+    // 逐类覆盖 UTF-8 的一、三与四字节编码宽度。
+    for character in ['A', '水', '🦀'] {
+        let mut buffer = [0_u8; 4];
+        let glyph = Watermark::encode_glyph(character, &mut buffer);
+        // 生产绘制收到的文本必须与原字符完全一致。
+        assert_eq!(glyph, character.to_string());
+    }
+}
+
 // 默认主题值与显式作者值必须保持正确优先级。
 #[test]
 fn watermark_defaults_follow_theme_tokens() {
