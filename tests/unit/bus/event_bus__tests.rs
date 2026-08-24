@@ -1,7 +1,7 @@
-
 //! G-08 验证矩阵：无订阅者、多订阅者、精确类型、注销线性化、
 //! 失败隔离、分发期增删、嵌套发布、深度限制、关闭竞争、空壳句柄。
 
+use std::any::TypeId;
 use std::cell::Cell;
 
 use super::*;
@@ -59,6 +59,76 @@ fn dispatch_is_exact_type_only() {
     assert_eq!(hits.get(), 0);
     ok(bus.publish(FactA(2)));
     assert_eq!(hits.get(), 1);
+}
+
+#[test]
+fn stable_dispatch_reuses_snapshot_and_mutation_invalidates_exact_type() {
+    // 两种事实各注册一个处理器，分别建立类型快照。
+    let mut bus = EventBus::new();
+    let _a = ok(bus.subscribe(|_: &FactA| {}));
+    let _b = ok(bus.subscribe(|_: &FactB| {}));
+    ok(bus.publish(FactA(1)));
+    ok(bus.publish(FactB("first")));
+    let first_a = Rc::clone(
+        bus.registry
+            .borrow()
+            .snapshot_cache
+            .get(&TypeId::of::<FactA>())
+            .expect("FactA snapshot should be cached"),
+    );
+    let first_b = Rc::clone(
+        bus.registry
+            .borrow()
+            .snapshot_cache
+            .get(&TypeId::of::<FactB>())
+            .expect("FactB snapshot should be cached"),
+    );
+
+    // 无订阅变更的重复发布必须继续使用同一快照 owner。
+    ok(bus.publish(FactA(2)));
+    assert!(Rc::ptr_eq(
+        &first_a,
+        bus.registry
+            .borrow()
+            .snapshot_cache
+            .get(&TypeId::of::<FactA>())
+            .expect("stable FactA snapshot should remain cached")
+    ));
+
+    // 新增 FactA 只失效 FactA；无关 FactB 快照保持可复用。
+    let mut added = ok(bus.subscribe(|_: &FactA| {}));
+    {
+        let registry = bus.registry.borrow();
+        assert!(!registry.snapshot_cache.contains_key(&TypeId::of::<FactA>()));
+        assert!(Rc::ptr_eq(
+            &first_b,
+            registry
+                .snapshot_cache
+                .get(&TypeId::of::<FactB>())
+                .expect("unrelated FactB snapshot should remain cached")
+        ));
+    }
+    ok(bus.publish(FactA(3)));
+    let rebuilt_a = Rc::clone(
+        bus.registry
+            .borrow()
+            .snapshot_cache
+            .get(&TypeId::of::<FactA>())
+            .expect("FactA snapshot should be rebuilt"),
+    );
+    assert!(!Rc::ptr_eq(&first_a, &rebuilt_a));
+
+    // 注销同样立即失效对应类型，避免后续发布命中过期处理器。
+    added.unsubscribe();
+    assert!(!bus
+        .registry
+        .borrow()
+        .snapshot_cache
+        .contains_key(&TypeId::of::<FactA>()));
+
+    // 关闭边界释放所有剩余类型快照。
+    ok(bus.close());
+    assert!(bus.registry.borrow().snapshot_cache.is_empty());
 }
 
 #[test]
