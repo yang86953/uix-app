@@ -26,4 +26,19 @@ fn uix_root_preserves_image_kernel_and_configuration() {
     assert_eq!(kernel.src, "assets/hero.png");
     assert_eq!(kernel.alt, "主图");
     assert!(!kernel.preview);
+    // 同目录 UIX 必须真实提供占位、指示器、预览边距与覆盖层级。
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (6.0, 8.0, 20.0, 48.0, 1100)
+    );
+}
+
+// 验证 UIX 视觉表由全部 Image 实例共享，不按实例复制大配置。
+#[test]
+fn image_instances_share_uix_visual_table() {
+    let first = View::build(Image::new(32.0, 32.0));
+    let second = View::build(Image::new(64.0, 48.0));
+    let first = first.widget.as_any().downcast_ref::<Image>().unwrap();
+    let second = second.widget.as_any().downcast_ref::<Image>().unwrap();
+    assert!(first.shares_visual_with_for_test(second));
 }

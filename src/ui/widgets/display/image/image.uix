@@ -1,2 +1,2 @@
-// Image 的加载状态机和预览绘制属于 Rust；UIX 声明公开组件根。
-<KernelView value={build_image_view(kernel)} />
+// Image 的默认开关、占位、焦点、预览指示器、模态布局、文案、图标和主题角色由 UIX 声明；Rust 内核负责资源、状态、事件与绘制算法。
+<KernelView value={build_image_view(kernel, image_visual(image_defaults(6, image_default_preview(), image_default_fit(), image_default_lazy()), image_thumbnail(8, 0.5, 1, 24, 0.45, image_placeholder_icon(), image_error_label(), 13, 1.5, 0.5), image_focus(1, 2), image_indicator(20, 20, 8, 6, 0.5, 0.58, image_indicator_icon()), image_preview(1100, 48, 0.1, 16, 1, image_missing_label(), image_large_font(), 52, 4, 12, 40, 0.5, image_close_icon(), 20), image_palette(image_fill_color(), image_secondary_text_color(), image_primary_color(), image_overlay_visual(image_mask_color(), image_overlay_color(), image_text_color(), image_border_color(), 0.5))))} />

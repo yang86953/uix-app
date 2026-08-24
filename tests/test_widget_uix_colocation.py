@@ -14,10 +14,7 @@ WIDGETS_ROOT = ROOT / "src" / "ui" / "widgets"
 
 # 已完成同目录和公开根迁移、但尚未把静态视觉配置移入 UIX 的存量债务。
 # 该集合只能缩小；新迁移不得加入，修复一项时必须同步删除对应路径。
-VISUAL_OWNERSHIP_DEBT = {
-    "display/image/image.uix",
-    "display/image_group/image_group.uix",
-}
+VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
 
 def is_visual_passthrough(source: str) -> bool:
