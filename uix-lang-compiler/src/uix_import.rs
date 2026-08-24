@@ -75,6 +75,7 @@ pub(crate) struct SourceStageCache {
 #[derive(Debug, Clone)]
 struct CachedDocument {
     source: String,
+    allow_declaration_only: bool,
     result: Result<Document, ImportDiagnostic>,
 }
 
@@ -91,12 +92,18 @@ impl SourceStageCache {
     }
 
     // 解析一个规范文件；完全相同的源码直接复用不可变 AST 或稳定诊断。
-    fn parse(&mut self, path: &Path, source: &str) -> Result<Document, ImportDiagnostic> {
+    fn parse(
+        &mut self,
+        path: &Path,
+        source: &str,
+        allow_declaration_only: bool,
+    ) -> Result<Document, ImportDiagnostic> {
         if let Some(paths) = self.active_request_paths.as_mut() {
             paths.insert(path.to_path_buf());
         }
         if let Some(cached) = self.documents.get(path)
             && cached.source == source
+            && cached.allow_declaration_only == allow_declaration_only
         {
             return cached.result.clone();
         }
@@ -104,17 +111,22 @@ impl SourceStageCache {
         {
             self.parse_runs = self.parse_runs.saturating_add(1);
         }
-        let result =
-            crate::uix_lang::parse_document(source).map_err(|diagnostic| ImportDiagnostic {
-                code: "UIX1000",
-                phase: DiagnosticPhase::Syntax,
-                source_name: path.display().to_string(),
-                diagnostic,
-            });
+        let result = if allow_declaration_only {
+            crate::uix_lang::parse_items_document(source)
+        } else {
+            crate::uix_lang::parse_document(source)
+        }
+        .map_err(|diagnostic| ImportDiagnostic {
+            code: "UIX1000",
+            phase: DiagnosticPhase::Syntax,
+            source_name: path.display().to_string(),
+            diagnostic,
+        });
         self.documents.insert(
             path.to_path_buf(),
             CachedDocument {
                 source: source.to_owned(),
+                allow_declaration_only,
                 result: result.clone(),
             },
         );
@@ -155,6 +167,8 @@ struct ImportResolver<'a> {
     overlays: &'a BTreeMap<PathBuf, String>,
     // 借用 CompilerSession 拥有的单文件 Syntax 阶段缓存。
     source_cache: &'a mut SourceStageCache,
+    // Items 资源允许根文件及导入资源只包含模块级声明。
+    allow_declaration_only: bool,
 }
 
 // 保存已合并声明与各命名空间来源。
@@ -188,13 +202,35 @@ pub(crate) fn resolve_file(path: &Path) -> Result<ResolvedDocument, ImportDiagno
     resolve_file_with_overlays(path, &BTreeMap::new())
 }
 
+// 相对真实路径解析允许省略视图根的 Items 资源及其导入闭包。
+pub(crate) fn resolve_items_file(path: &Path) -> Result<ResolvedDocument, ImportDiagnostic> {
+    resolve_items_file_with_overlays(path, &BTreeMap::new())
+}
+
 // 相对真实路径解析文件，同时让编辑器内存快照覆盖磁盘内容。
 pub(crate) fn resolve_file_with_overlays(
     path: &Path,
     overlays: &BTreeMap<PathBuf, String>,
 ) -> Result<ResolvedDocument, ImportDiagnostic> {
+    resolve_file_with_overlays_mode(path, overlays, false)
+}
+
+// 解析允许只有声明的 Items 资源，同时保留覆盖快照与导入图。
+pub(crate) fn resolve_items_file_with_overlays(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+) -> Result<ResolvedDocument, ImportDiagnostic> {
+    resolve_file_with_overlays_mode(path, overlays, true)
+}
+
+// 按入口目标选择声明资源语法，并保持其余解析机制完全共享。
+fn resolve_file_with_overlays_mode(
+    path: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    allow_declaration_only: bool,
+) -> Result<ResolvedDocument, ImportDiagnostic> {
     let mut source_cache = SourceStageCache::default();
-    resolve_file_with_overlays_cached(path, overlays, &mut source_cache)
+    resolve_file_with_overlays_cached(path, overlays, &mut source_cache, allow_declaration_only)
 }
 
 // 相对真实路径解析文件，并跨同一 CompilerSession 复用未变化文件的 Syntax 产物。
@@ -202,6 +238,7 @@ pub(crate) fn resolve_file_with_overlays_cached(
     path: &Path,
     overlays: &BTreeMap<PathBuf, String>,
     source_cache: &mut SourceStageCache,
+    allow_declaration_only: bool,
 ) -> Result<ResolvedDocument, ImportDiagnostic> {
     // 先取得根文件规范路径，避免同一文件通过不同相对路径绕过循环检测。
     let canonical = canonical_or_overlay(path, overlays).map_err(|error| {
@@ -218,7 +255,8 @@ pub(crate) fn resolve_file_with_overlays_cached(
         )
     })?;
     // 为本次宏展开创建唯一 resolver，不跨调用共享状态。
-    let mut resolver = ImportResolver::new(&canonical, overlays, source_cache);
+    let mut resolver =
+        ImportResolver::new(&canonical, overlays, source_cache, allow_declaration_only);
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
     // 把带来源声明投影回既有纯 Document 契约。
@@ -294,6 +332,7 @@ impl<'a> ImportResolver<'a> {
         root: &Path,
         overlays: &'a BTreeMap<PathBuf, String>,
         source_cache: &'a mut SourceStageCache,
+        allow_declaration_only: bool,
     ) -> Self {
         Self {
             stack: Vec::new(),
@@ -303,6 +342,7 @@ impl<'a> ImportResolver<'a> {
             source_graph: SourceGraphBuilder::new(root),
             overlays,
             source_cache,
+            allow_declaration_only,
         }
     }
 
@@ -382,7 +422,9 @@ impl<'a> ImportResolver<'a> {
         // SourceGraph 与 parser 消费完全相同的不可变源码快照。
         self.source_graph.insert_file(path, &source);
         // 使用会话级 Source 缓存复用完全相同源码的 AST 或稳定语法诊断。
-        let document = self.source_cache.parse(path, &source)?;
+        let document = self
+            .source_cache
+            .parse(path, &source, self.allow_declaration_only)?;
         // 保存导出名及其声明跨度供跨指令去重和存在性校验。
         let mut export_requests = Vec::new();
         // 创建按命名空间去重的合并器。

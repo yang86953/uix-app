@@ -855,8 +855,7 @@ widget! {
 }
 
 // 把表格数据、交互状态与 UIX 静态视觉融合为单一根节点。
-fn build_table_view(mut kernel: Table, declared_visual: TableVisual) -> crate::ui::view::ViewNode {
-    let visual = UIX_TABLE_VISUAL.get_or_init(|| declared_visual);
+fn build_table_view(mut kernel: Table, visual: &'static TableVisual) -> crate::ui::view::ViewNode {
     if !kernel.row_h_authored {
         kernel.row_h = visual.geometry.row_height;
     }

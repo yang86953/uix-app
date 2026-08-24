@@ -1,2 +1,76 @@
-// Popover 的固有尺寸、默认方向/箭头、定位与内容几何、触发器/气泡装饰、排版、动画时序、浮层层级和主题角色由 UIX 声明；Rust 内核负责内容、受控状态、子树、输入、动画状态、表面约束与绘制执行。
-<KernelView value={build_popover_view(kernel, popover_visual(popover_defaults_visual(220, 100, 80, 28, popover_placement_top(), true), popover_layout_visual(10, 4, 0.5, 2, 5, 12, 12, 32, 1, 8), popover_chrome_visual(1, 2, 900, popover_default_trigger_label(), popover_radius_small(), popover_shadow_secondary()), popover_typography_visual(popover_font_small(), popover_font_normal(), popover_font_fixed(12)), popover_motion_visual(0.15, 0.1), popover_palette_visual(popover_bg_elevated(), popover_border(), popover_text(), popover_text_secondary(), popover_fill_secondary(), popover_fill_tertiary(), popover_primary())))} />
+<Visual
+  name="POPOVER_DEFAULTS_VISUAL"
+  type="PopoverDefaultsVisual"
+  popupWidth={220.0}
+  popupHeight={100.0}
+  triggerWidth={80.0}
+  triggerHeight={28.0}
+  placement={popover_placement_top()}
+  arrow={true}
+/>
+
+<Visual
+  name="POPOVER_LAYOUT_VISUAL"
+  type="PopoverLayoutVisual"
+  arrowGap={10.0}
+  plainGap={4.0}
+  centerRatio={0.5}
+  fallbackOffsetPopups={2.0}
+  fallbackSpanPopups={5.0}
+  shadowExpand={12.0}
+  contentInset={12.0}
+  titleHeight={32.0}
+  dividerThickness={1.0}
+  arrowSize={8.0}
+/>
+
+<Visual
+  name="POPOVER_CHROME_VISUAL"
+  type="PopoverChromeVisual"
+  triggerStroke={1.0}
+  focusStroke={2.0}
+  overlayZ={900}
+  defaultTriggerLabel="Popover"
+  radius={popover_radius_small()}
+  shadow={popover_shadow_secondary()}
+/>
+
+<Visual
+  name="POPOVER_TYPOGRAPHY_VISUAL"
+  type="PopoverTypographyVisual"
+  trigger={popover_font_small()}
+  title={popover_font_normal()}
+  content={popover_font_fixed(12.0)}
+/>
+
+<Visual
+  name="POPOVER_MOTION_VISUAL"
+  type="PopoverMotionVisual"
+  enterDuration={0.15}
+  exitDuration={0.1}
+/>
+
+<Visual
+  name="POPOVER_PALETTE_VISUAL"
+  type="PopoverPaletteVisual"
+  popupBackground={popover_bg_elevated()}
+  border={popover_border()}
+  text={popover_text()}
+  textSecondary={popover_text_secondary()}
+  fillSecondary={popover_fill_secondary()}
+  fillTertiary={popover_fill_tertiary()}
+  primary={popover_primary()}
+/>
+
+<Visual
+  name="POPOVER_VISUAL"
+  type="PopoverVisual"
+  defaults={POPOVER_DEFAULTS_VISUAL}
+  layout={POPOVER_LAYOUT_VISUAL}
+  chrome={POPOVER_CHROME_VISUAL}
+  typography={POPOVER_TYPOGRAPHY_VISUAL}
+  motion={POPOVER_MOTION_VISUAL}
+  palette={POPOVER_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_popover_view(kernel, POPOVER_VISUAL_REF)} />

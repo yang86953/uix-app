@@ -73,7 +73,7 @@
 - `PieChart`：`src/ui/widgets/display/chart/pie_chart/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/标签/图例、标题/图例/绘图区几何、扇区标签、内环、交互叠层、提示框、排版及主题角色，Rust 只保留有效数据摘要、极坐标几何、玫瑰映射、命中、交互与绘制执行；基础绘制借用原数据，不创建切片集合或图例字符串，数值文本使用栈缓冲，标签角度只计算一次正余弦。
 - `RichText`：`src/ui/widgets/display/rich_text/` 同目录保存 Rust 与 UIX；UIX 拥有默认字号、行高/字宽估算、代码/链接/选区装饰、复制按钮、主题分隔线、图片占位及主题角色，Rust 只保留 Markdown、Unicode 断行/双向布局、资源、选择、命中与绘制执行；缓存布局按借用复用，绘制 run 复用 UTF-8 缓冲，字形不再逐个保存链接 URL。
 
-当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；结构测试继续以空债务集合阻止回退。历史迁移仍有 6 个 Rust 文件保存完整默认视觉表、5 个 UIX 文件使用巨型位置参数壳，二者由同一结构测试锁定为只减不增债务；`Icon`、首批七个简单叶组件以及 Watermark、List、Timeline、Progress、Spin、Badge、Collapse、Descriptions、ImageGroup、SelectableList、Image、Result、Tag、Tree、Calendar、Card、Carousel、BarChart、LineChart、PieChart 二十个分组视觉组件已完成 `<Visual>` 单源闭环，后续逐组件删除清单项。
+当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；Rust 完整默认视觉表与 UIX 巨型位置参数壳两类债务也已清零，结构测试继续以空集合阻止回退。`Icon`、简单叶组件、二十五个分组视觉组件以及由 Tooltip 与 Slider 共享的 `TooltipBubble` 均已完成 `<Visual>` 单源闭环；共享视觉资源允许通过 `uix_items!` 只声明模块级 `Visual`，不需要伪造可实例化视图根。
 
 ## 组件：复合组件
 

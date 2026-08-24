@@ -263,7 +263,7 @@ widget! {
     @new -> Self {
         Self {
             segments: Vec::new(),
-            default_font_size: DEFAULT_RICH_TEXT_VISUAL.defaults.font_size,
+            default_font_size: RICH_TEXT_VISUAL.defaults.font_size,
             default_font_size_unit: None,
             // 默认启用主题正文色，因此字段只保存显式 color() 覆写的占位值。
             default_color: Color::default(),
@@ -293,7 +293,7 @@ widget! {
             hovered_code: Cell::new(None),
             last_frame: Cell::new(None),
             pending_copy: Arc::new(Mutex::new(None)),
-            visual: &DEFAULT_RICH_TEXT_VISUAL,
+            visual: RICH_TEXT_VISUAL_REF,
             font_size_authored: false,
             run_text_scratch: RefCell::new(String::new()),
         }
@@ -876,9 +876,7 @@ widget! {
 }
 
 // 把 Markdown/Unicode/交互内核与 UIX 静态视觉融合为单一 RichText 根节点。
-fn build_rich_text_view(mut kernel: RichText, declared_visual: RichTextVisual) -> ViewNode {
-    let visual = UIX_RICH_TEXT_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_rich_text_view(mut kernel: RichText, visual: &'static RichTextVisual) -> ViewNode {
     if !kernel.font_size_authored {
         kernel.default_font_size = visual.defaults.font_size;
     }

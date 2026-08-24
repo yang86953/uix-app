@@ -37,10 +37,11 @@ mod uix_lang;
 
 use uix_import::{
     ImportDiagnostic, reject_inline_imports, resolve_file, resolve_file_with_overlays,
+    resolve_items_file, resolve_items_file_with_overlays,
 };
 use uix_lang::{
     Diagnostic, SourceSpan, generate_document_app, generate_document_items, generate_document_view,
-    parse_document, with_source_markers,
+    parse_document, parse_items_document, with_source_markers,
 };
 
 /// 声明一次编译需要生成的公开入口形状。
@@ -504,7 +505,12 @@ fn analyze_inline(
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
     let source_graph = source_graph::SourceGraph::inline(&source_name, source);
     let source_id = source_graph.root();
-    let document = parse_document(source).map_err(|diagnostic| {
+    let document = if requested_target == Some(CompileTarget::Items) {
+        parse_items_document(source)
+    } else {
+        parse_document(source)
+    }
+    .map_err(|diagnostic| {
         CompilerDiagnostic::from_language(
             &source_name,
             source_id,
@@ -624,7 +630,12 @@ fn analyze_file(
     path: &Path,
     requested_target: Option<CompileTarget>,
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
-    let resolved = resolve_file(path).map_err(CompilerDiagnostic::from_import)?;
+    let resolved = if requested_target == Some(CompileTarget::Items) {
+        resolve_items_file(path)
+    } else {
+        resolve_file(path)
+    }
+    .map_err(CompilerDiagnostic::from_import)?;
     analyze_resolved_file(resolved, path, requested_target)
 }
 
@@ -634,8 +645,12 @@ fn analyze_file_with_overlays(
     overlays: &BTreeMap<PathBuf, String>,
     requested_target: Option<CompileTarget>,
 ) -> Result<AnalyzedUnit, CompilerDiagnostic> {
-    let resolved =
-        resolve_file_with_overlays(path, overlays).map_err(CompilerDiagnostic::from_import)?;
+    let resolved = if requested_target == Some(CompileTarget::Items) {
+        resolve_items_file_with_overlays(path, overlays)
+    } else {
+        resolve_file_with_overlays(path, overlays)
+    }
+    .map_err(CompilerDiagnostic::from_import)?;
     analyze_resolved_file(resolved, path, requested_target)
 }
 
@@ -952,6 +967,30 @@ mod tests {
         )
         .expect("Record 编译应成功");
         assert!(items.tokens.to_string().contains("struct User"));
+    }
+
+    #[test]
+    fn items_target_accepts_declaration_only_resources_without_relaxing_views() {
+        let source = r#"<Visual name="ONLY_VISUAL" type="OnlyVisual" value={1.0} />"#;
+        let inline = compile_inline(source, "<visual-items>", CompileTarget::Items)
+            .expect("Items 内嵌资源应允许只有模块级声明");
+        assert!(inline.tokens.to_string().contains("ONLY_VISUAL"));
+
+        let strict = compile_inline(source, "<visual-view>", CompileTarget::View)
+            .expect_err("View 入口仍必须声明根元素");
+        assert_eq!(strict.code, "UIX1000");
+        assert!(strict.message.contains("缺少根元素"));
+
+        let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/uix_lang/items/visual_only.uix");
+        let output = CompilerSystem::new()
+            .compile_file(&file, CompileTarget::Items)
+            .expect("Items 文件资源应允许只有模块级声明");
+        assert!(output.tokens.to_string().contains("ONLY_VISUAL"));
+        let strict_file = CompilerSystem::new()
+            .compile_file(&file, CompileTarget::View)
+            .expect_err("同一文件作为 View 时仍必须拒绝缺失根元素");
+        assert_eq!(strict_file.code, "UIX1000");
     }
 
     #[test]

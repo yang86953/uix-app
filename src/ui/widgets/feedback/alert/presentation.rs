@@ -1,7 +1,5 @@
 //! Alert 的 UIX 静态视觉契约与主题解析。
 
-use std::sync::OnceLock;
-
 use crate::draw::Color;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::ThemeTokens;
@@ -108,6 +106,9 @@ pub(crate) struct AlertVisual {
     palette: AlertPaletteVisual,
 }
 
+// 同目录 UIX 生成警告提示全部分组视觉、状态色表、根记录及稳定借用。
+crate::uix_items!("src/ui/widgets/feedback/alert/alert.uix");
+
 // 保存 Alert 每帧只解析一次的主题颜色和圆角。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ResolvedAlertVisual {
@@ -148,173 +149,12 @@ impl AlertVisual {
     }
 }
 
-pub(crate) const fn alert_defaults_visual(
-    width: f32,
-    base_height: f32,
-    description_height: f32,
-    show_icon: bool,
-    banner: bool,
-) -> AlertDefaultsVisual {
-    AlertDefaultsVisual {
-        width,
-        base_height,
-        description_height,
-        show_icon,
-        banner,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn alert_layout_visual(
-    close_width: f32,
-    close_action_gap: f32,
-    content_right_gap: f32,
-    action_width: f32,
-    action_content_gap: f32,
-    icon_max_width: f32,
-    icon_gap: f32,
-    no_icon_left: f32,
-    content_vertical_inset: f32,
-    content_vertical_ratio: f32,
-    message_height_ratio: f32,
-    accent_x: f32,
-    accent_y: f32,
-    accent_width: f32,
-    icon_x: f32,
-) -> AlertLayoutVisual {
-    AlertLayoutVisual {
-        close_width,
-        close_action_gap,
-        content_right_gap,
-        action_width,
-        action_content_gap,
-        icon_max_width,
-        icon_gap,
-        no_icon_left,
-        content_vertical_inset,
-        content_vertical_ratio,
-        message_height_ratio,
-        accent_x,
-        accent_y,
-        accent_width,
-        icon_x,
-    }
-}
-
-pub(crate) const fn alert_chrome_visual(
-    accent_radius: f32,
-    action_inset: f32,
-    close_inset: f32,
-    focus_stroke: f32,
-    container_radius: AlertRadiusRole,
-    interaction_radius: AlertRadiusRole,
-) -> AlertChromeVisual {
-    AlertChromeVisual {
-        accent_radius,
-        action_inset,
-        close_inset,
-        focus_stroke,
-        container_radius,
-        interaction_radius,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn alert_typography_visual(
-    message: f32,
-    description: f32,
-    action: f32,
-    status_icon: f32,
-    close_icon: f32,
-    success_icon: &'static str,
-    info_icon: &'static str,
-    warning_icon: &'static str,
-    error_icon: &'static str,
-    close_icon_name: &'static str,
-) -> AlertTypographyVisual {
-    AlertTypographyVisual {
-        message,
-        description,
-        action,
-        status_icon,
-        close_icon,
-        success_icon,
-        info_icon,
-        warning_icon,
-        error_icon,
-        close_icon_name,
-    }
-}
-
-pub(crate) const fn alert_status_palette_visual(
-    background: ColorValue,
-    foreground: ColorValue,
-) -> AlertStatusPaletteVisual {
-    AlertStatusPaletteVisual {
-        background,
-        foreground,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) const fn alert_palette_visual(
-    success: AlertStatusPaletteVisual,
-    info: AlertStatusPaletteVisual,
-    warning: AlertStatusPaletteVisual,
-    error: AlertStatusPaletteVisual,
-    text: ColorValue,
-    text_secondary: ColorValue,
-    fill_secondary: ColorValue,
-    fill_tertiary: ColorValue,
-    primary: ColorValue,
-) -> AlertPaletteVisual {
-    AlertPaletteVisual {
-        statuses: [success, info, warning, error],
-        text,
-        text_secondary,
-        fill_secondary,
-        fill_tertiary,
-        primary,
-    }
-}
-
-pub(crate) const fn alert_visual(
-    defaults: AlertDefaultsVisual,
-    layout: AlertLayoutVisual,
-    chrome: AlertChromeVisual,
-    typography: AlertTypographyVisual,
-    palette: AlertPaletteVisual,
-) -> AlertVisual {
-    AlertVisual {
-        defaults,
-        layout,
-        chrome,
-        typography,
-        palette,
-    }
-}
-
-// 向 UIX 提供受限表达式不能直接书写的圆角、图标和主题角色。
+// 向 UIX 提供圆角与主题语义角色。
 pub(crate) const fn alert_radius_normal() -> AlertRadiusRole {
     AlertRadiusRole::Normal
 }
 pub(crate) const fn alert_radius_small() -> AlertRadiusRole {
     AlertRadiusRole::Small
-}
-pub(crate) const fn alert_success_icon() -> &'static str {
-    "check-circle"
-}
-pub(crate) const fn alert_info_icon() -> &'static str {
-    "info"
-}
-pub(crate) const fn alert_warning_icon() -> &'static str {
-    "alert-triangle"
-}
-pub(crate) const fn alert_error_icon() -> &'static str {
-    "x-circle"
-}
-pub(crate) const fn alert_close_icon() -> &'static str {
-    "x"
 }
 pub(crate) const fn alert_success_bg() -> ColorValue {
     ColorValue::Palette(PaletteColor::SuccessBg)
@@ -355,56 +195,3 @@ pub(crate) const fn alert_fill_tertiary() -> ColorValue {
 pub(crate) const fn alert_primary() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
 }
-
-pub(crate) static DEFAULT_ALERT_VISUAL: AlertVisual = alert_visual(
-    alert_defaults_visual(300.0, 36.0, 18.0, true, false),
-    alert_layout_visual(
-        36.0, 4.0, 8.0, 64.0, 8.0, 28.0, 8.0, 14.0, 4.0, 0.5, 0.52, 2.0, 4.0, 3.0, 8.0,
-    ),
-    alert_chrome_visual(
-        1.5,
-        3.0,
-        4.0,
-        2.0,
-        AlertRadiusRole::Normal,
-        AlertRadiusRole::Small,
-    ),
-    alert_typography_visual(
-        14.0,
-        12.0,
-        13.0,
-        14.0,
-        14.0,
-        "check-circle",
-        "info",
-        "alert-triangle",
-        "x-circle",
-        "x",
-    ),
-    alert_palette_visual(
-        alert_status_palette_visual(
-            ColorValue::Palette(PaletteColor::SuccessBg),
-            ColorValue::Palette(PaletteColor::Success),
-        ),
-        alert_status_palette_visual(
-            ColorValue::Palette(PaletteColor::InfoBg),
-            ColorValue::Palette(PaletteColor::Info),
-        ),
-        alert_status_palette_visual(
-            ColorValue::Palette(PaletteColor::WarningBg),
-            ColorValue::Palette(PaletteColor::Warning),
-        ),
-        alert_status_palette_visual(
-            ColorValue::Palette(PaletteColor::ErrorBg),
-            ColorValue::Palette(PaletteColor::Error),
-        ),
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::FillSecondary),
-        ColorValue::Neutral(NeutralRole::FillTertiary),
-        ColorValue::Palette(PaletteColor::Primary),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，全部 Alert 实例共享一份视觉表。
-pub(crate) static UIX_ALERT_VISUAL: OnceLock<AlertVisual> = OnceLock::new();

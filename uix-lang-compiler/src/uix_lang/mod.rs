@@ -864,7 +864,7 @@ pub(crate) use virtual_scroll_codegen::generate_virtual_scroll;
 // 向核心解析器暴露 UTF-8 安全词法游标。
 pub(crate) use lexer::Cursor;
 // 向过程宏入口暴露文档解析函数。
-pub(crate) use parser::parse_document;
+pub(crate) use parser::{parse_document, parse_items_document};
 // 向文档解析器暴露声明与样式 AST。
 pub(crate) use style_ast::*;
 // 向 View 生成器暴露内联样式映射入口。

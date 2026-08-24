@@ -368,9 +368,7 @@ fn fade_color(color: Color, opacity: f32) -> Color {
 }
 
 // 把内容/交互状态与 UIX 静态视觉融合为单一 Tooltip 根节点。
-fn build_tooltip_view(mut kernel: Tooltip, declared_visual: TooltipVisual) -> ViewNode {
-    let visual = UIX_TOOLTIP_VISUAL.get_or_init(|| declared_visual);
-    debug_assert_eq!(*visual, declared_visual);
+fn build_tooltip_view(mut kernel: Tooltip, visual: &'static TooltipVisual) -> ViewNode {
     if !kernel.authored.contains(TooltipAuthored::PLACEMENT) {
         kernel.placement = visual.defaults.placement;
     }
@@ -405,11 +403,10 @@ impl Tooltip {
     /// 创建默认置于上方、悬停触发且初始隐藏的浮层提示。
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
-        let natural_bubble_size =
-            tooltip_bubble_size_with_visual(&text, DEFAULT_TOOLTIP_VISUAL.bubble);
+        let natural_bubble_size = tooltip_bubble_size_with_visual(&text, TOOLTIP_VISUAL.bubble);
         Self {
             text,
-            placement: DEFAULT_TOOLTIP_VISUAL.defaults.placement,
+            placement: TOOLTIP_VISUAL.defaults.placement,
             trigger: TriggerMode::Hover,
             bg_color: None,
             text_color: None,
@@ -417,9 +414,9 @@ impl Tooltip {
             pending: false,
             delay_ms: 0,
             timer_id: 1,
-            arrow: DEFAULT_TOOLTIP_VISUAL.defaults.arrow,
+            arrow: TOOLTIP_VISUAL.defaults.arrow,
             transition: TransitionPlayer::new(AnimationConfig::fade_in(
-                DEFAULT_TOOLTIP_VISUAL.motion.enter_duration,
+                TOOLTIP_VISUAL.motion.enter_duration,
             )),
             closing: false,
             transition_dirty: false,
@@ -428,13 +425,13 @@ impl Tooltip {
             last_frame: std::cell::Cell::new(Rect::new(
                 0.0,
                 0.0,
-                DEFAULT_TOOLTIP_VISUAL.defaults.width,
-                DEFAULT_TOOLTIP_VISUAL.defaults.height,
+                TOOLTIP_VISUAL.defaults.width,
+                TOOLTIP_VISUAL.defaults.height,
             )),
             // 新组件尚未接收布局或绘制表面。
             surface_rect: std::cell::Cell::new(None),
             // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
-            visual: &DEFAULT_TOOLTIP_VISUAL,
+            visual: TOOLTIP_VISUAL_REF,
             authored: TooltipAuthored::default(),
             natural_bubble_size: std::cell::Cell::new(natural_bubble_size),
         }

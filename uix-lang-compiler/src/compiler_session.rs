@@ -203,7 +203,12 @@ impl CompilerSession {
     ) -> Result<(PipelineIdentity, AnalyzedUnit), CompilerDiagnostic> {
         let root = normalized_overlay_path(path);
         self.source_cache.begin_request();
-        let resolved = resolve_file_with_overlays_cached(path, overlays, &mut self.source_cache);
+        let resolved = resolve_file_with_overlays_cached(
+            path,
+            overlays,
+            &mut self.source_cache,
+            requested_target == Some(CompileTarget::Items),
+        );
         let touched_paths = self.source_cache.finish_request();
         let resolved = match resolved {
             Ok(resolved) => {

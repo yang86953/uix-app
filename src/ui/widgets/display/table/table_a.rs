@@ -10,7 +10,7 @@ use std::rc::Rc;
 use super::Table;
 use super::builder::TableBuilder;
 use super::config::flatten_column_groups;
-use super::presentation::{DEFAULT_TABLE_VISUAL, TablePaginationLabelCache};
+use super::presentation::{TABLE_VISUAL, TABLE_VISUAL_REF, TablePaginationLabelCache};
 use super::types::{
     DataTable, SortDirection, TableChange, TableColumn, TableColumnGroup, TableDataError,
     TablePagination, TablePointerAction, TableRow, finite_nonnegative, implicit_row_keys,
@@ -26,9 +26,9 @@ impl Table {
             row_keys: Vec::new(),
             view_columns: Vec::new(),
             materialized_cell_range: Cell::new(None),
-            row_h: DEFAULT_TABLE_VISUAL.geometry.row_height,
+            row_h: TABLE_VISUAL.geometry.row_height,
             row_h_authored: false,
-            header_h: DEFAULT_TABLE_VISUAL.geometry.header_height,
+            header_h: TABLE_VISUAL.geometry.header_height,
             fixed_width: None,
             fixed_height: None,
             selected_row: Cell::new(None),
@@ -37,7 +37,7 @@ impl Table {
             expanded_row: Cell::new(None),
             expanded_child_row: Cell::new(None),
             expandable: false,
-            expand_height: DEFAULT_TABLE_VISUAL.geometry.expand_height,
+            expand_height: TABLE_VISUAL.geometry.expand_height,
             sortable: false,
             selection: false,
             bordered: false,
@@ -61,7 +61,7 @@ impl Table {
             pressed_action: Cell::new(None),
             resize_drag: Cell::new(None),
             hover_resize_column: Cell::new(None),
-            visual: &DEFAULT_TABLE_VISUAL,
+            visual: TABLE_VISUAL_REF,
             pagination_label_cache: RefCell::new(TablePaginationLabelCache::default()),
         }
     }
@@ -75,9 +75,9 @@ impl Table {
 
     pub(crate) fn normalized_row_height(height: f32) -> f32 {
         if height.is_finite() {
-            height.max(DEFAULT_TABLE_VISUAL.geometry.min_row_height)
+            height.max(TABLE_VISUAL.geometry.min_row_height)
         } else {
-            DEFAULT_TABLE_VISUAL.geometry.row_height
+            TABLE_VISUAL.geometry.row_height
         }
     }
 

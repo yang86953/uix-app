@@ -1,2 +1,130 @@
-// Table 的固有尺寸、行列/外框、表头、分页、加载动画、图标、排版和主题角色由 UIX 声明；Rust 内核负责数据、跨度、固定列、排序、选择、分页状态、输入与虚拟化。
-<KernelView value={build_table_view(kernel, table_visual(table_geometry_visual(400, 300, 60, 28, 1, 32, 60, 1, 40, 32, 4, 32), table_frame_visual(0.5, 1, 16, 0.25, 14, 8, 0.25, 12, 6, 18, 14, 1, 18, 6, 10, 0.5, table_expanded_icon(), table_collapsed_icon(), table_checked_icon(), table_unchecked_icon(), 1, 2), table_header_visual(8, 0.25, 13, 24, 0.4, table_unsorted_icon(), table_ascending_icon(), table_descending_icon(), 10, 11, 18, 4, 0.25, 1, 1, 2), table_pagination_visual(40, 28, 4, 80, 8, 0.1, 0.05, 0.5, 0.5, 1, 1, table_previous_icon(), table_next_icon(), 14, 13), table_loading_visual(30, 10, 0.3, 0.18, 1, 8, 0.70710677, 0.70710677, 0.25, 0.75, 0.8), table_palette_visual(table_background_color(), table_alternate_background_color(), table_header_background_color(), table_border_color(), table_text_color(), table_secondary_text_color(), table_primary_color(), table_hover_background_color(), table_selected_background_color(), table_pressed_background_color(), table_small_radius())))} />
+// Table 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责数据、跨度、固定列、排序、选择、分页状态、输入与虚拟化。
+<Visual
+  name="TABLE_GEOMETRY_VISUAL"
+  type="TableGeometryVisual"
+  defaultWidth={400.0}
+  defaultHeight={300.0}
+  minHeight={60.0}
+  rowHeight={28.0}
+  minRowHeight={1.0}
+  headerHeight={32.0}
+  expandHeight={60.0}
+  bodySeparator={1.0}
+  wheelStep={40.0}
+  selectionWidth={32.0}
+  resizeHandleHalfWidth={4.0}
+  minResizableColumnWidth={32.0}
+/>
+
+<Visual
+  name="TABLE_FRAME_VISUAL"
+  type="TableFrameVisual"
+  radiusFrameRatio={0.5}
+  borderWidth={1.0}
+  emptyInset={16.0}
+  emptyInsetRatio={0.25}
+  emptyFontSize={14.0}
+  cellInset={8.0}
+  cellInsetRatio={0.25}
+  cellFontSize={12.0}
+  selectionIconX={6.0}
+  selectionIconWidth={18.0}
+  selectionIconSize={14.0}
+  selectionDividerWidth={1.0}
+  expandIconSize={18.0}
+  expandIconRight={6.0}
+  expandIconFontSize={10.0}
+  centerRatio={0.5}
+  expandedIcon="chevron-up"
+  collapsedIcon="chevron-down"
+  checkedIcon="check-square"
+  uncheckedIcon="square"
+  focusInset={1.0}
+  focusStroke={2.0}
+/>
+
+<Visual
+  name="TABLE_HEADER_VISUAL"
+  type="TableHeaderVisual"
+  horizontalInset={8.0}
+  horizontalInsetRatio={0.25}
+  titleFontSize={13.0}
+  sortSlot={24.0}
+  sortSlotRatio={0.4}
+  unsortedIcon="chevron-down"
+  ascendingIcon="chevron-up"
+  descendingIcon="chevron-down"
+  unsortedIconSize={10.0}
+  sortedIconSize={11.0}
+  sortIconWidth={18.0}
+  sortIconRight={4.0}
+  sortIconRightRatio={0.25}
+  dividerWidth={1.0}
+  resizeIndicatorWidth={1.0}
+  resizeActiveIndicatorWidth={2.0}
+/>
+
+<Visual
+  name="TABLE_PAGINATION_VISUAL"
+  type="TablePaginationVisual"
+  height={40.0}
+  itemSize={28.0}
+  gap={4.0}
+  labelWidth={80.0}
+  inset={8.0}
+  insetRatio={0.1}
+  gapRatio={0.05}
+  labelWidthRatio={0.5}
+  centerRatio={0.5}
+  dividerWidth={1.0}
+  buttonStroke={1.0}
+  previousIcon="chevron-left"
+  nextIcon="chevron-right"
+  iconSize={14.0}
+  labelFontSize={13.0}
+/>
+
+<Visual
+  name="TABLE_LOADING_VISUAL"
+  type="TableLoadingVisual"
+  overlayAlpha={30}
+  radius={10.0}
+  radiusRatio={0.3}
+  dotRadiusRatio={0.18}
+  extentPadding={1.0}
+  dotCount={table_loading_dot_count(8)}
+  stepSin={0.70710677}
+  stepCos={0.70710677}
+  opacityBase={0.25}
+  opacityRange={0.75}
+  durationSeconds={0.8}
+/>
+
+<Visual
+  name="TABLE_PALETTE_VISUAL"
+  type="TablePaletteVisual"
+  background={table_background_color()}
+  alternateBackground={table_alternate_background_color()}
+  headerBackground={table_header_background_color()}
+  border={table_border_color()}
+  text={table_text_color()}
+  textSecondary={table_secondary_text_color()}
+  primary={table_primary_color()}
+  hoverBackground={table_hover_background_color()}
+  selectedBackground={table_selected_background_color()}
+  pressedBackground={table_pressed_background_color()}
+  radius={table_small_radius()}
+/>
+
+<Visual
+  name="TABLE_VISUAL"
+  type="TableVisual"
+  geometry={TABLE_GEOMETRY_VISUAL}
+  frame={TABLE_FRAME_VISUAL}
+  header={TABLE_HEADER_VISUAL}
+  pagination={TABLE_PAGINATION_VISUAL}
+  loading={TABLE_LOADING_VISUAL}
+  palette={TABLE_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_table_view(kernel, TABLE_VISUAL_REF)} />
