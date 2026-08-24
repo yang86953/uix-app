@@ -37,6 +37,8 @@ fn generates_divider_with_documented_properties() {
     let snapshot = generate(source).expect("文档化 Divider 属性应生成 Rust View");
     // 必须从公开 Divider 默认构造器开始。
     assert!(snapshot.contains("Divider :: new"));
+    // 公开 Divider 必须通过 View 契约进入 UIX 声明壳。
+    assert!(snapshot.contains("View :: build"));
     // 文字必须通过现有拥有所有权的构建器进入组件。
     assert!(snapshot.contains("with_text") && snapshot.contains("title"));
     // 动态虚线必须保持 true/false 两条同类型路径。

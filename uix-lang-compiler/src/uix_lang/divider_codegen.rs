@@ -6,7 +6,7 @@ use quote::quote;
 // 引入共享公共属性生成器与可见节点判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Divider 所需的语法树、属性值生成器与诊断。
-use super::{Diagnostic, Element, boolean_value, literal_string, string_value};
+use super::{boolean_value, literal_string, string_value, Diagnostic, Element};
 
 // 生成文档化 Divider 标签对应的公开 Rust View。
 pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -82,8 +82,8 @@ pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnos
             _ => {}
         }
     }
-    // 把现有 Widget 包装成公开 ViewNode。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#divider) };
+    // 通过公开 View 契约进入 Divider 的 UIX 声明壳。
+    let base = quote! { ::uix::prelude::View::build(#divider) };
     // 专有属性消费后继续复用统一样式与事件诊断路径。
     apply_common_attributes(
         // 传入 Divider 基础 View。
