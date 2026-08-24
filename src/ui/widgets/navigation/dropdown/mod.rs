@@ -10,8 +10,8 @@ use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 // 引入直接 trigger 子节点的布局快照类型。
 use crate::ui::layout::LayoutChild;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetId, WidgetTree,
 };
 use std::cell::RefCell;
 // 组合 owner 共享一次性 trigger View 建造句柄。
@@ -19,6 +19,9 @@ use std::rc::Rc;
 
 // 下拉菜单使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::widgets::TriggerMode;
+
+mod presentation;
+use presentation::*;
 
 #[derive(Debug, Clone, PartialEq)]
 /// 下拉菜单中的可选择条目、分组或分隔线。
@@ -151,6 +154,9 @@ widget! {
         highlighted_index: Option<usize>,
         trigger_mode: TriggerMode,
         pending_change: RefCell<Option<String>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static DropdownVisual,
     }
 
     // 组合模式把 Tab 焦点交给 trigger 子树；缺失子树时保留可恢复焦点入口。
@@ -192,7 +198,10 @@ widget! {
             // 允许子 View 使用自己的最小宽度。
             Size::zero(),
             // 上界采用 Dropdown 实际宽度与固定触发高度。
-            Size::new(frame.w.max(0.0), 32.0_f32.min(frame.h.max(0.0))),
+            Size::new(
+                frame.w.max(0.0),
+                self.visual.layout.trigger_height.min(frame.h.max(0.0)),
+            ),
             // trigger 区域没有额外的确定尺寸覆盖。
             None,
         );
@@ -214,8 +223,13 @@ widget! {
     {
         // 没有 trigger 时不产生伪布局。
         let Some(child) = children.first() else { return Vec::new(); };
-        // trigger 与旧按钮共享 32px 的稳定交互高度。
-        vec![(child.id, Rect::new(frame.x, frame.y, frame.w.max(0.0), 32.0_f32.min(frame.h.max(0.0))))]
+        // trigger 与旧按钮共享 UIX 声明的稳定交互高度。
+        vec![(child.id, Rect::new(
+            frame.x,
+            frame.y,
+            frame.w.max(0.0),
+            self.visual.layout.trigger_height.min(frame.h.max(0.0)),
+        ))]
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -225,7 +239,7 @@ widget! {
                 button,
                 ..
             } => {
-                if pos.y >= 0.0 && pos.y <= 32.0 {
+                if pos.y >= 0.0 && pos.y <= self.visual.layout.trigger_height {
                     let accepted_trigger = match self.trigger_mode {
                         TriggerMode::ContextMenu => *button == MouseButton::Right,
                         _ => *button == MouseButton::Left,
@@ -240,7 +254,10 @@ widget! {
                     }
                     return EventResult::Handled;
                 }
-                if self.open && pos.y > 32.0 && *button == MouseButton::Left {
+                if self.open
+                    && pos.y > self.visual.layout.trigger_height
+                    && *button == MouseButton::Left
+                {
                     if let Some(index) = self.item_at_y(pos.y) {
                         if self.toggle_or_select(index) {
                             return EventResult::Handled;
@@ -348,20 +365,29 @@ widget! {
     wants_continuous_pointer_move => (&self) -> bool { self.open }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        // 触发器与弹层同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let radius = Some(Radius::uniform(visual.radius));
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
 
         // 兼容构造继续由 Dropdown 绘制旧字符串按钮。
         if !self.custom_trigger {
-            // 旧按钮占据顶部固定触发区域。
-            let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
+            // 旧按钮占据 UIX 声明的顶部触发区域。
+            let btn_rect = Rect::new(frame.x, frame.y, frame.w, layout.trigger_height);
             // 使用主题主色绘制兼容按钮背景。
-            ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
+            ctx.fill_rect(btn_rect, visual.primary, radius);
             // 旧 label 只服务兼容触发器展示。
-            ctx.text_center(&self.label, btn_rect, ctx.tokens().color_white(), 13.0);
+            ctx.text_center(&self.label, btn_rect, visual.white, typography.label);
             // 键盘焦点可见时绘制兼容触发器焦点环。
             if self.focused && tree.keyboard_focus_visible() {
                 // 焦点环使用主题活动主色。
-                ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_active(), 1.5, r);
+                ctx.stroke_rect(
+                    btn_rect,
+                    visual.primary_active,
+                    self.visual.chrome.focus_width,
+                    radius,
+                );
             }
         }
 
@@ -370,74 +396,90 @@ widget! {
         }
         let visible = self.visible_items();
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-        let border = fade_color(ctx.tokens().color_border(), opacity);
-        let text_color = fade_color(ctx.tokens().color_text(), opacity);
-        let disabled_color = fade_color(ctx.tokens().color_text_quaternary(), opacity);
-        let highlight = fade_color(ctx.tokens().color_fill_tertiary(), opacity);
+        let bg = fade_color(visual.elevated_background, opacity);
+        let border = fade_color(visual.border, opacity);
+        let text_color = fade_color(visual.text, opacity);
+        let disabled_color = fade_color(visual.text_quaternary, opacity);
+        let highlight = fade_color(visual.fill_tertiary, opacity);
 
-        let menu_y = frame.y + 32.0;
-        let menu_h = visible.iter().map(Self::row_height).sum::<f32>();
+        let menu_y = frame.y + layout.trigger_height;
+        let menu_h = visible.iter().map(|row| self.row_height(row)).sum::<f32>();
         let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
-        let shadow = ctx.tokens().box_shadow_secondary();
+        let shadow = visual.shadow;
         ctx.draw_box_shadow(
             menu_rect,
             shadow.layer_1.2,
             shadow.layer_1.0,
             shadow.layer_1.1,
             shadow.layer_1.3,
-            r,
+            radius,
         );
-        ctx.fill_rect(menu_rect, bg, r);
-        ctx.stroke_rect(menu_rect, border, 1.0, r);
+        ctx.fill_rect(menu_rect, bg, radius);
+        ctx.stroke_rect(menu_rect, border, self.visual.chrome.border_width, radius);
 
         let mut y = menu_y;
         for (index, row) in visible.iter().enumerate() {
-            let h = Self::row_height(row);
+            let h = self.row_height(row);
             let item_rect = Rect::new(frame.x, y, frame.w, h);
             if row.item.divider {
-                let inset = 8.0_f32.min(frame.w * 0.5);
+                let inset = layout.divider_inset.min(frame.w * 0.5);
                 ctx.fill_rect(
-                    Rect::new(frame.x + inset, y + h * 0.5, (frame.w - inset * 2.0).max(0.0), 1.0),
+                    Rect::new(
+                        frame.x + inset,
+                        y + h * 0.5,
+                        (frame.w - inset * 2.0).max(0.0),
+                        layout.divider_thickness,
+                    ),
                     border,
                     None,
                 );
             } else {
                 if self.highlighted_index == Some(index) || self.selected_index == Some(index) {
-                    ctx.fill_rect(item_rect, highlight, r);
+                    ctx.fill_rect(item_rect, highlight, radius);
                 }
                 let color = if row.item.disabled { disabled_color } else { text_color };
-                let mut content_x = frame.x + 12.0 + row.depth as f32 * 16.0;
+                let mut content_x =
+                    frame.x + layout.content_start + row.depth as f32 * layout.depth_indent;
                 if !row.item.icon.is_empty() {
-                    let icon_rect = Rect::new(content_x, y, 20.0, h);
+                    let icon_rect = Rect::new(content_x, y, layout.icon_slot_width, h);
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         &row.item.icon,
                         icon_rect,
                         color,
-                        14.0,
+                        typography.icon,
                     );
-                    content_x += 24.0;
+                    content_x += layout.icon_advance;
                 }
-                let arrow_space = if row.item.children.is_empty() { 0.0 } else { 20.0 };
+                let arrow_space = if row.item.children.is_empty() {
+                    0.0
+                } else {
+                    layout.arrow_reserve
+                };
                 let label_rect = Rect::new(
                     content_x,
                     y,
-                    (frame.x + frame.w - content_x - arrow_space - 8.0).max(0.0),
+                    (frame.x + frame.w - content_x - arrow_space - layout.label_end_padding)
+                        .max(0.0),
                     h,
                 );
-                ctx.draw_text_in_frame(&row.item.label, label_rect, color, 13.0);
+                ctx.draw_text_in_frame(&row.item.label, label_rect, color, typography.label);
                 if !row.item.children.is_empty() {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         if self.expanded_keys.iter().any(|key| key == &row.item.key) {
-                            "chevron-down"
+                            self.visual.icons.expanded
                         } else {
-                            "chevron-right"
+                            self.visual.icons.collapsed
                         },
-                        Rect::new(frame.x + frame.w - 24.0, y, 16.0, h),
+                        Rect::new(
+                            frame.x + frame.w - layout.arrow_end_inset,
+                            y,
+                            layout.arrow_slot_width,
+                            h,
+                        ),
                         color,
-                        12.0,
+                        typography.arrow,
                     );
                 }
             }
@@ -447,8 +489,17 @@ widget! {
 
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
-            let menu_h = self.visible_items().iter().map(Self::row_height).sum::<f32>();
-            Rect::new(frame.x, frame.y, frame.w, 32.0 + menu_h)
+            let menu_h = self
+                .visible_items()
+                .iter()
+                .map(|row| self.row_height(row))
+                .sum::<f32>();
+            Rect::new(
+                frame.x,
+                frame.y,
+                frame.w,
+                self.visual.layout.trigger_height + menu_h,
+            )
         } else {
             frame
         }
@@ -460,12 +511,21 @@ widget! {
             return None;
         }
         // 菜单从触发区下方展开，浮层命中范围与 hit_test_frame 一致。
-        let menu_h = self.visible_items().iter().map(Self::row_height).sum::<f32>();
-        let bounds = Rect::new(frame.x, frame.y, frame.w, 32.0 + menu_h);
+        let menu_h = self
+            .visible_items()
+            .iter()
+            .map(|row| self.row_height(row))
+            .sum::<f32>();
+        let bounds = Rect::new(
+            frame.x,
+            frame.y,
+            frame.w,
+            self.visual.layout.trigger_height + menu_h,
+        );
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
                 // 外部点击由树的 System 私有取消端口回调 owner 关闭。
                 .dismiss_on_outside(true),
         )
@@ -474,7 +534,11 @@ widget! {
     dirty_rect => (&self, frame: Rect) -> Rect {
         dropdown_dirty_rect(
             frame,
-            self.visible_items().iter().map(Self::row_height).sum(),
+            self.visible_items()
+                .iter()
+                .map(|row| self.row_height(row))
+                .sum(),
+            self.visual,
         )
     }
 
@@ -499,7 +563,11 @@ widget! {
         if self.transition_dirty {
             dropdown_dirty_rect(
                 frame,
-                self.visible_items().iter().map(Self::row_height).sum(),
+                self.visible_items()
+                    .iter()
+                    .map(|row| self.row_height(row))
+                    .sum(),
+                self.visual,
             )
         } else {
             Rect::zero()
@@ -515,11 +583,12 @@ impl Default for Dropdown {
 
 impl Dropdown {
     fn intrinsic_size(&self) -> Size {
-        Size::new(160.0, 32.0)
+        Size::new(self.visual.layout.width, self.visual.layout.trigger_height)
     }
 
     /// 创建使用文本按钮和点击触发方式的空下拉菜单。
     pub fn new(label: impl Into<String>) -> Self {
+        let visual = DROPDOWN_VISUAL_REF;
         Self {
             label: label.into(),
             items: Vec::new(),
@@ -542,6 +611,7 @@ impl Dropdown {
             highlighted_index: None,
             trigger_mode: TriggerMode::Click,
             pending_change: RefCell::new(None),
+            visual,
         }
     }
 
@@ -666,6 +736,8 @@ impl Dropdown {
             // 物化刷新后的展开集合。
             .collect();
         self.trigger_mode = next.trigger_mode;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         self.selected_index = selected_value.as_ref().and_then(|value| {
             self.visible_items()
                 .iter()
@@ -703,12 +775,12 @@ impl Dropdown {
     }
 
     fn item_at_y(&self, y: f32) -> Option<usize> {
-        if !self.open || y <= 32.0 {
+        if !self.open || y <= self.visual.layout.trigger_height {
             return None;
         }
-        let mut cursor = 32.0;
+        let mut cursor = self.visual.layout.trigger_height;
         for (index, row) in self.visible_items().iter().enumerate() {
-            let height = Self::row_height(row);
+            let height = self.row_height(row);
             if y >= cursor && y < cursor + height {
                 return Some(index);
             }
@@ -821,15 +893,24 @@ impl Dropdown {
         rows
     }
 
-    fn row_height(row: &VisibleDropdownItem) -> f32 {
-        if row.item.divider { 8.0 } else { 30.0 }
+    fn row_height(&self, row: &VisibleDropdownItem) -> f32 {
+        if row.item.divider {
+            self.visual.layout.divider_row_height
+        } else {
+            self.visual.layout.row_height
+        }
     }
 }
 
-fn dropdown_dirty_rect(frame: Rect, menu_h: f32) -> Rect {
-    let menu = Rect::new(frame.x, frame.y + 32.0, frame.w, menu_h);
+fn dropdown_dirty_rect(frame: Rect, menu_h: f32, visual: &DropdownVisual) -> Rect {
+    let menu = Rect::new(
+        frame.x,
+        frame.y + visual.layout.trigger_height,
+        frame.w,
+        menu_h,
+    );
     let expanded = frame.union(&menu);
-    let expand = 8.0;
+    let expand = visual.chrome.shadow_expand;
     Rect::new(
         expanded.x - expand,
         expanded.y - expand,
@@ -848,7 +929,19 @@ fn fade_color(color: Color, opacity: f32) -> Color {
 // 将 keyed 选择、触发方式与组合子树生命周期测试拆到独立文件。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/navigation/dropdown/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/navigation/dropdown/tests.rs"]
 mod tests;
 // 把 keyed 数据身份门禁从组件事件和绘制主体中拆分。
 mod keyed;
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有数据、状态、生命周期与事件。
+fn build_dropdown_view(mut kernel: Dropdown, visual: &'static DropdownVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Dropdown {
+    fn build(self) -> ViewNode {
+        build_dropdown_view(self, DROPDOWN_VISUAL_REF)
+    }
+}
