@@ -2,16 +2,9 @@
 
 use crate::core::{Point, Rect};
 use crate::draw::Color;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use std::collections::HashSet;
-
-// 级联触发器高度（32.0）；popover 触发器为 28.0，组件独立设计。
-const TRIGGER_HEIGHT: f32 = 32.0;
-const POPUP_GAP: f32 = 2.0;
-const POPUP_COLUMN_MIN_WIDTH: f32 = 200.0;
-const POPUP_HEIGHT: f32 = 200.0;
-// 级联列项高度（32.0）；timeline 时间线条目为 60.0，语境不同。
-const ITEM_HEIGHT: f32 = 32.0;
 
 #[derive(Debug, Clone, PartialEq)]
 /// 级联选择器中的一个树形选项。
@@ -67,8 +60,10 @@ pub(crate) struct CascaderSearchResult {
 }
 
 mod methods;
+mod presentation;
 mod widget;
 
+use presentation::*;
 pub use widget::*;
 
 fn collect_search_results(
@@ -116,17 +111,25 @@ fn byte_index_for_char(text: &str, char_index: usize) -> usize {
 }
 
 fn paint_loading_spinner(ctx: &mut PaintContext, row: Rect, phase: f32, color: Color) {
-    let slot = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
-    let radius = 4.5_f32.min(slot.w.min(slot.h) * 0.25);
+    let layout = CASCADER_VISUAL_REF.layout;
+    let slot = Rect::new(
+        row.x + row.w - layout.trailing_slot_width,
+        row.y,
+        layout.trailing_slot_width,
+        row.h,
+    );
+    let radius = layout
+        .loading_radius
+        .min(slot.w.min(slot.h) * layout.loading_radius_ratio);
     if radius > 0.0 {
         ctx.stroke_arc(
             slot.x + slot.w * 0.5,
             slot.y + slot.h * 0.5,
             radius,
             phase,
-            phase + std::f32::consts::PI * 1.45,
+            phase + std::f32::consts::PI * layout.loading_arc_pi,
             color,
-            1.6,
+            layout.loading_stroke_width,
         );
     }
 }
@@ -172,6 +175,7 @@ fn resolve_cascader_popup_geometry(
     surface: Rect,
     // 返回限制在表面内的弹层与列宽。
 ) -> CascaderPopupGeometry {
+    let layout = CASCADER_VISUAL_REF.layout;
     // 归一化触发器矩形。
     let frame = normalize_cascader_rect(frame);
     // 归一化逻辑表面矩形。
@@ -179,7 +183,7 @@ fn resolve_cascader_popup_geometry(
     // 空列集合仍按单列弹层处理。
     let level_count = level_count.max(1);
     // 计算既有规格要求的自然列宽。
-    let natural_column_width = frame.w.max(POPUP_COLUMN_MIN_WIDTH);
+    let natural_column_width = frame.w.max(layout.popup_column_min_width);
     // 计算所有可见列的自然总宽度。
     let natural_width = finite_nonnegative(natural_column_width * level_count as f32);
     // 将总宽限制在当前表面内。
@@ -200,14 +204,14 @@ fn resolve_cascader_popup_geometry(
     // 将触发器锚点横向收敛到当前表面。
     let x = frame.x.clamp(surface.x, max_x);
     // 计算带间距的控件下方可用高度。
-    let available_below = (surface.y + surface.h - frame.y - frame.h - POPUP_GAP).max(0.0);
+    let available_below = (surface.y + surface.h - frame.y - frame.h - layout.popup_gap).max(0.0);
     // 计算带间距的控件上方可用高度。
-    let available_above = (frame.y - POPUP_GAP - surface.y).max(0.0);
+    let available_above = (frame.y - layout.popup_gap - surface.y).max(0.0);
     // 优先完整向下；否则完整向上；两侧都不足时选择更大空间。
-    let place_below = if POPUP_HEIGHT <= available_below {
+    let place_below = if layout.popup_height <= available_below {
         // 下方完整容纳固定自然高度时保持默认方向。
         true
-    } else if POPUP_HEIGHT <= available_above {
+    } else if layout.popup_height <= available_above {
         // 只有上方完整容纳时翻转。
         false
     } else {
@@ -223,14 +227,14 @@ fn resolve_cascader_popup_geometry(
         available_above
     };
     // 将自然高度限制在最终方向的可用空间内。
-    let height = POPUP_HEIGHT.min(available_height).max(0.0);
+    let height = layout.popup_height.min(available_height).max(0.0);
     // 计算最终绝对纵坐标。
     let y = if place_below {
         // 向下弹层保留既有二像素间距。
-        frame.y + frame.h + POPUP_GAP
+        frame.y + frame.h + layout.popup_gap
     } else {
         // 向上弹层用实际高度紧贴触发器上方间距。
-        frame.y - POPUP_GAP - height
+        frame.y - layout.popup_gap - height
     };
 
     // 返回所有消费者共享的最终几何。
@@ -296,6 +300,7 @@ fn cascader_dirty_rect(frame: Rect, popup: Rect, surface: Rect) -> Rect {
 
 // 构造尚未取得真实窗口表面时的有限回退表面。
 fn cascader_fallback_surface(frame: Rect, level_count: usize) -> Rect {
+    let layout = CASCADER_VISUAL_REF.layout;
     // 归一化触发器矩形。
     let frame = normalize_cascader_rect(frame);
     // 空列集合仍按单列自然宽处理。
@@ -303,18 +308,20 @@ fn cascader_fallback_surface(frame: Rect, level_count: usize) -> Rect {
     // 计算所有列完整展示所需的自然宽度。
     let width = finite_nonnegative(
         // 使用既有最小列宽规格。
-        frame.w.max(POPUP_COLUMN_MIN_WIDTH) * level_count as f32,
+        frame.w.max(layout.popup_column_min_width) * level_count as f32,
     );
     // 在触发器上下各预留一份自然弹层空间。
     Rect::new(
         // 横向从触发器左边开始。
         frame.x,
         // 纵向向上预留间距与完整弹层高度。
-        frame.y - POPUP_GAP - POPUP_HEIGHT,
+        frame.y - layout.popup_gap - layout.popup_height,
         // 保留所有自然列宽。
         width,
         // 覆盖上下两份弹层、两份间距和触发器。
-        POPUP_HEIGHT * 2.0 + POPUP_GAP * 2.0 + frame.h,
+        layout.popup_height * layout.fallback_popup_sides
+            + layout.popup_gap * layout.fallback_popup_sides
+            + frame.h,
     )
 }
 
@@ -354,4 +361,21 @@ fn fade_color(color: Color, opacity: f32) -> Color {
         .round()
         .clamp(0.0, 255.0) as u8;
     color.with_alpha(alpha)
+}
+
+// 把 Cascader Rust 交互内核与 UIX 静态视觉组合为单一组件节点。
+fn build_cascader_view(mut kernel: Cascader, visual: &'static CascaderVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_cascader_uix_root(kernel: Cascader) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/cascader/cascader.uix")
+}
+
+impl View for Cascader {
+    fn build(self) -> ViewNode {
+        build_cascader_uix_root(self)
+    }
 }
