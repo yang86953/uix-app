@@ -1,13 +1,12 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SnapshotTransferItem,
     SystemEvent, WidgetId, WidgetTree,
 };
 use crate::widget;
-// 引入 Transfer 私有排版值契约消费的主题接口。
-use crate::ui::ThemeTokens;
 // 引入组件局部状态与待发变化记录所需的单线程容器。
 use std::cell::{Cell, RefCell};
 // 引入稳定身份集合，确保同一 pane 的条目不会共享动态状态命名空间。
@@ -15,48 +14,10 @@ use std::collections::HashSet;
 // 引入应用 renderer 与回调的单线程共享所有权句柄。
 use std::rc::Rc;
 
-// ════════════════════════════════════════════════════════════════════════════
-// Transfer 面板布局常量（绘制、布局与命中测试共用，保持三处数值一致）。
-// ════════════════════════════════════════════════════════════════════════════
-// 中间操作按钮列宽（像素）。
-const BTN_COL_W: f32 = 60.0;
-// 面板头部高度（像素）。
-const LIST_HEADER_H: f32 = 24.0;
-// 搜索框高度（像素）。
-const SEARCH_BAR_H: f32 = 24.0;
-// 列表行高（像素）。
-const ROW_H: f32 = 28.0;
-// 面板最小半宽（像素），窄窗下保证按钮列可用。
-const MIN_PANE_HALF_W: f32 = 40.0;
-// 条目字号位于小号正文与正文 token 的中点。
-const ITEM_FONT_MIDPOINT_WEIGHT: f32 = 0.5;
+// 声明 UIX 静态视觉契约与主题解析模块。
+mod presentation;
 
-// 保存一次绘制内解析出的 Transfer 排版值。
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct TransferTypography {
-    // 搜索说明与面板标题使用小号正文。
-    caption: f32,
-    // 列表条目使用小号正文与正文之间的紧凑字号。
-    item: f32,
-}
-
-// 将主题排版 token 转换为组件私有绘制值。
-impl TransferTypography {
-    // 从当前组件主题作用域解析排版。
-    fn resolve(tokens: &dyn ThemeTokens) -> Self {
-        // 读取主题拥有的小号正文字号。
-        let caption = tokens.font_size_sm();
-        // 读取主题拥有的正文字号。
-        let body = tokens.font_size();
-        // 返回供当前绘制批次复用的稳定值。
-        Self {
-            // 搜索说明与标题直接使用小号正文 token。
-            caption,
-            // 默认主题下保持原 13px，同时跟随两个相邻 token 变化。
-            item: caption + (body - caption) * ITEM_FONT_MIDPOINT_WEIGHT,
-        }
-    }
-}
+use presentation::*;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Transfer
@@ -115,27 +76,44 @@ widget! {
         active_pane: TransferPane,
         active_index: usize,
         pending_change: RefCell<Option<String>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static TransferVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.source.is_empty() || !self.target.is_empty()) }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(500.0, 200.0))
+        constraints.clamp(Size::new(
+            self.visual.layout.natural_width,
+            self.visual.layout.natural_height,
+        ))
     }
 
     accepts_text_input => (&self) -> bool { self.searchable }
 
     text_input_cursor_rect => (&self) -> Rect {
-        let width = (self.search_query.chars().count() as f32 * 8.0 + 8.0).clamp(8.0, 280.0);
-        Rect::new(8.0 + width, 4.0, 1.0, 20.0)
+        let layout = self.visual.layout;
+        let width = (self.search_query.chars().count() as f32 * layout.cursor_char_width
+            + layout.cursor_padding)
+            .clamp(layout.cursor_min_width, layout.cursor_max_width);
+        Rect::new(
+            layout.cursor_x_inset + width,
+            layout.cursor_y,
+            layout.cursor_width,
+            layout.cursor_height,
+        )
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
-        let row_h = ROW_H;
-        let header_h = LIST_HEADER_H + if self.searchable { SEARCH_BAR_H } else { 0.0 };
+        let layout = self.visual.layout;
+        let half = ((frame.w - layout.button_column_width) * 0.5)
+            .max(layout.min_pane_half_width);
+        let row_h = layout.row_height;
+        let header_h = layout.header_height
+            + if self.searchable { layout.search_height } else { 0.0 };
         let mut layouts = Vec::with_capacity(children.len());
         for (index, child) in children.iter().enumerate() {
             let (pane, raw_index) = if index < self.source.len() {
@@ -145,7 +123,11 @@ widget! {
             };
             let visible = self.visible_indices(pane).into_iter().position(|item| item == raw_index);
             let rect = if let Some(visible_index) = visible {
-                let x = if pane == TransferPane::Source { frame.x } else { frame.x + half + BTN_COL_W };
+                let x = if pane == TransferPane::Source {
+                    frame.x
+                } else {
+                    frame.x + half + layout.button_column_width
+                };
                 Rect::new(x, frame.y + header_h + visible_index as f32 * row_h, half, row_h)
             } else {
                 Rect::zero()
@@ -203,72 +185,97 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_quaternary();
-        let primary = ctx.tokens().color_primary();
-        let fill = ctx.tokens().color_fill_tertiary();
-        // 在组件主题作用域内只解析一次排版值。
-        let typography = TransferTypography::resolve(ctx.tokens());
-        let search_h = if self.searchable { SEARCH_BAR_H } else { 0.0 };
-        let content_header_h = LIST_HEADER_H + search_h;
-        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
-        let item_h = ROW_H;
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        // 双栏、搜索框、条目与按钮共享同一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let search_h = if self.searchable { layout.search_height } else { 0.0 };
+        let content_header_h = layout.header_height + search_h;
+        let half = ((frame.w - layout.button_column_width) * 0.5)
+            .max(layout.min_pane_half_width);
+        let item_h = layout.row_height;
+        let r = Some(Radius::uniform(visual.radius));
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
-        ctx.fill_rect(left_rect, bg, r);
+        ctx.fill_rect(left_rect, visual.background, r);
         let left_border = if self.focused
             && tree.keyboard_focus_visible()
             && self.active_pane == TransferPane::Source
         {
-            primary
+            visual.primary
         } else {
-            border
+            visual.border
         };
-        ctx.stroke_rect(left_rect, left_border, if left_border == primary { 1.5 } else { 1.0 }, r);
+        ctx.stroke_rect(
+            left_rect,
+            left_border,
+            if left_border == visual.primary {
+                self.visual.chrome.focus_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
+            r,
+        );
         let loc = crate::ui::widget_runtime::locale::use_locale();
         let source_title = if self.source_title.is_empty() { loc.transfer_source } else { &self.source_title };
         if self.searchable {
             ctx.stroke_rect(
-                Rect::new(frame.x + 4.0, frame.y + 2.0, (half - 8.0).max(0.0), 20.0),
-                border,
-                1.0,
+                Rect::new(
+                    frame.x + layout.search_horizontal_inset,
+                    frame.y + layout.search_vertical_inset,
+                    (half - layout.search_horizontal_inset * 2.0).max(0.0),
+                    layout.search_box_height,
+                ),
+                visual.border,
+                self.visual.chrome.border_width,
                 None,
             );
             ctx.draw_text(
                 &format!("搜索: {}", self.search_query),
-                Point::new(frame.x + 8.0, frame.y + 6.0),
-                text_sec,
-                typography.caption,
+                Point::new(
+                    frame.x + layout.text_horizontal_inset,
+                    frame.y + layout.text_top_inset,
+                ),
+                visual.text_quaternary,
+                visual.typography.caption,
             );
         }
         ctx.draw_text(
             &format!("{} ({}项)", source_title, self.source.len()),
-            Point::new(frame.x + 8.0, frame.y + search_h + 6.0),
-            text_sec,
-            typography.caption,
+            Point::new(
+                frame.x + layout.text_horizontal_inset,
+                frame.y + search_h + layout.text_top_inset,
+            ),
+            visual.text_quaternary,
+            visual.typography.caption,
         );
         for (i, raw_index) in self.visible_indices(TransferPane::Source).into_iter().enumerate() {
             let item = &self.source[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
             // 文字垂直定位与实际绘制共享同一个主题派生字号。
-            let row_y = ctx.visual_center_y(row_rect, typography.item);
-            if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            let row_y = ctx.visual_center_y(row_rect, visual.typography.item);
+            if item.selected { ctx.fill_rect(row_rect, visual.fill_tertiary, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
                 && self.active_pane == TransferPane::Source
                 && self.active_index == raw_index
             {
-                ctx.stroke_rect(row_rect, primary, 1.0, None);
+                ctx.stroke_rect(row_rect, visual.primary, self.visual.chrome.border_width, None);
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                if item.selected { "check-square" } else { "square" },
-                Rect::new(frame.x + 4.0, y, 20.0, item_h),
-                text,
-                12.0,
+                if item.selected {
+                    self.visual.icons.selected
+                } else {
+                    self.visual.icons.unselected
+                },
+                Rect::new(
+                    frame.x + layout.row_icon_inset,
+                    y,
+                    layout.row_icon_width,
+                    item_h,
+                ),
+                visual.text,
+                visual.checkbox_icon_size,
             );
             if self.item_renderer.is_none() {
                 // 默认条目文本使用主题派生的紧凑字号。
@@ -276,87 +283,133 @@ widget! {
                     // 绘制当前源条目标题。
                     &item.title,
                     // 保持既有条目文本起点。
-                    Point::new(frame.x + 26.0, row_y),
+                    Point::new(frame.x + layout.row_text_inset, row_y),
                     // 使用当前主题正文颜色。
-                    text,
+                    visual.text,
                     // 使用与垂直定位一致的派生字号。
-                    typography.item,
+                    visual.typography.item,
                 );
             }
         }
-        let btn_y = frame.y + frame.h * 0.5 - 20.0;
-        let rbtn_rect = Rect::new(frame.x + half + 8.0, btn_y, 44.0, 20.0);
-        let lbtn_rect = Rect::new(frame.x + half + 8.0, btn_y + 24.0, 44.0, 20.0);
-        ctx.fill_rect(rbtn_rect, primary, Some(Radius::uniform(3.0)));
-        crate::ui::widgets::icon::Icon::paint_in_frame(
-            ctx,
-            "arrow-right",
+        let btn_y = frame.y + frame.h * 0.5 - layout.button_group_half_height;
+        let rbtn_rect = Rect::new(
+            frame.x + half + layout.button_horizontal_inset,
+            btn_y,
+            layout.button_width,
+            layout.button_height,
+        );
+        let lbtn_rect = Rect::new(
+            frame.x + half + layout.button_horizontal_inset,
+            btn_y + layout.button_height + layout.button_vertical_gap,
+            layout.button_width,
+            layout.button_height,
+        );
+        ctx.fill_rect(
             rbtn_rect,
-            // 移动箭头（主色按钮上反白）：白色 token。
-            ctx.tokens().color_white(),
-            14.0,
+            visual.primary,
+            Some(Radius::uniform(self.visual.chrome.button_radius)),
         );
-        ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            "arrow-left",
-            lbtn_rect,
-            text,
-            14.0,
+            self.visual.icons.move_right,
+            rbtn_rect,
+            visual.white,
+            visual.arrow_icon_size,
         );
-        let right_x = frame.x + half + BTN_COL_W;
+        ctx.fill_rect(
+            lbtn_rect,
+            visual.border,
+            Some(Radius::uniform(self.visual.chrome.button_radius)),
+        );
+        crate::ui::widgets::icon::Icon::paint_in_frame(
+            ctx,
+            self.visual.icons.move_left,
+            lbtn_rect,
+            visual.text,
+            visual.arrow_icon_size,
+        );
+        let right_x = frame.x + half + layout.button_column_width;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
-        ctx.fill_rect(right_rect, bg, r);
+        ctx.fill_rect(right_rect, visual.background, r);
         let right_border = if self.focused
             && tree.keyboard_focus_visible()
             && self.active_pane == TransferPane::Target
         {
-            primary
+            visual.primary
         } else {
-            border
+            visual.border
         };
-        ctx.stroke_rect(right_rect, right_border, if right_border == primary { 1.5 } else { 1.0 }, r);
+        ctx.stroke_rect(
+            right_rect,
+            right_border,
+            if right_border == visual.primary {
+                self.visual.chrome.focus_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
+            r,
+        );
         let target_title = if self.target_title.is_empty() { loc.transfer_target } else { &self.target_title };
         if self.searchable {
             ctx.stroke_rect(
-                Rect::new(right_x + 4.0, frame.y + 2.0, (half - 8.0).max(0.0), 20.0),
-                border,
-                1.0,
+                Rect::new(
+                    right_x + layout.search_horizontal_inset,
+                    frame.y + layout.search_vertical_inset,
+                    (half - layout.search_horizontal_inset * 2.0).max(0.0),
+                    layout.search_box_height,
+                ),
+                visual.border,
+                self.visual.chrome.border_width,
                 None,
             );
             ctx.draw_text(
                 &format!("搜索: {}", self.search_query),
-                Point::new(right_x + 8.0, frame.y + 6.0),
-                text_sec,
-                typography.caption,
+                Point::new(
+                    right_x + layout.text_horizontal_inset,
+                    frame.y + layout.text_top_inset,
+                ),
+                visual.text_quaternary,
+                visual.typography.caption,
             );
         }
         ctx.draw_text(
             &format!("{} ({}项)", target_title, self.target.len()),
-            Point::new(right_x + 8.0, frame.y + search_h + 6.0),
-            text_sec,
-            typography.caption,
+            Point::new(
+                right_x + layout.text_horizontal_inset,
+                frame.y + search_h + layout.text_top_inset,
+            ),
+            visual.text_quaternary,
+            visual.typography.caption,
         );
         for (i, raw_index) in self.visible_indices(TransferPane::Target).into_iter().enumerate() {
             let item = &self.target[raw_index];
             let y = frame.y + content_header_h + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
             // 文字垂直定位与实际绘制共享同一个主题派生字号。
-            let row_y = ctx.visual_center_y(row_rect, typography.item);
-            if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            let row_y = ctx.visual_center_y(row_rect, visual.typography.item);
+            if item.selected { ctx.fill_rect(row_rect, visual.fill_tertiary, None); }
             if self.focused
                 && tree.keyboard_focus_visible()
                 && self.active_pane == TransferPane::Target
                 && self.active_index == raw_index
             {
-                ctx.stroke_rect(row_rect, primary, 1.0, None);
+                ctx.stroke_rect(row_rect, visual.primary, self.visual.chrome.border_width, None);
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                if item.selected { "check-square" } else { "square" },
-                Rect::new(right_x + 4.0, y, 20.0, item_h),
-                text,
-                12.0,
+                if item.selected {
+                    self.visual.icons.selected
+                } else {
+                    self.visual.icons.unselected
+                },
+                Rect::new(
+                    right_x + layout.row_icon_inset,
+                    y,
+                    layout.row_icon_width,
+                    item_h,
+                ),
+                visual.text,
+                visual.checkbox_icon_size,
             );
             if self.item_renderer.is_none() {
                 // 默认条目文本使用主题派生的紧凑字号。
@@ -364,11 +417,11 @@ widget! {
                     // 绘制当前目标条目标题。
                     &item.title,
                     // 保持既有条目文本起点。
-                    Point::new(right_x + 26.0, row_y),
+                    Point::new(right_x + layout.row_text_inset, row_y),
                     // 使用当前主题正文颜色。
-                    text,
+                    visual.text,
                     // 使用与垂直定位一致的派生字号。
-                    typography.item,
+                    visual.typography.item,
                 );
             }
         }
@@ -391,6 +444,7 @@ impl Transfer {
             active_pane: TransferPane::Source,
             active_index: 0,
             pending_change: RefCell::new(None),
+            visual: TRANSFER_VISUAL_REF,
         }
     }
     /// 替换源列表中的全部条目。
@@ -550,6 +604,7 @@ impl Transfer {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        self.visual = next.visual;
         self.source_title = next.source_title;
         self.target_title = next.target_title;
         self.searchable = next.searchable;
@@ -604,26 +659,33 @@ impl Transfer {
     }
 
     fn pointer_down(&mut self, pos: Point) -> EventResult {
-        let header = LIST_HEADER_H + if self.searchable { SEARCH_BAR_H } else { 0.0 };
+        let layout = self.visual.layout;
+        let header = layout.header_height
+            + if self.searchable {
+                layout.search_height
+            } else {
+                0.0
+            };
         let Some(frame) = self.last_frame.get().filter(|frame| frame.contains(pos)) else {
             return EventResult::NotHandled;
         };
         let x = pos.x - frame.x;
         let y = pos.y - frame.y;
-        let half = ((frame.w - BTN_COL_W) * 0.5).max(MIN_PANE_HALF_W);
-        let row = (y >= header).then(|| ((y - header) / ROW_H) as usize);
+        let half = ((frame.w - layout.button_column_width) * 0.5).max(layout.min_pane_half_width);
+        let row = (y >= header).then(|| ((y - header) / layout.row_height) as usize);
         if x < half {
             return self.toggle_visible_row(TransferPane::Source, row);
         }
-        if x > half + BTN_COL_W {
+        if x > half + layout.button_column_width {
             return self.toggle_visible_row(TransferPane::Target, row);
         }
-        let button_y = frame.h * 0.5 - 20.0;
-        if y >= button_y && y < button_y + 20.0 {
+        let button_y = frame.h * 0.5 - layout.button_group_half_height;
+        if y >= button_y && y < button_y + layout.button_height {
             self.move_selected(TransferPane::Source);
             return EventResult::Handled;
         }
-        if y >= button_y + 24.0 && y < button_y + 44.0 {
+        let second_button_y = button_y + layout.button_height + layout.button_vertical_gap;
+        if y >= second_button_y && y < second_button_y + layout.button_height {
             self.move_selected(TransferPane::Target);
             return EventResult::Handled;
         }
@@ -754,6 +816,19 @@ impl Transfer {
             .join(",")
     }
 }
+
+// 把 Transfer 的 Rust 数据移动内核与 UIX 静态视觉组合为单一组件节点。
+fn build_transfer_view(mut kernel: Transfer, visual: &'static TransferVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Transfer {
+    fn build(self) -> ViewNode {
+        build_transfer_view(self, TRANSFER_VISUAL_REF)
+    }
+}
+
 impl Default for Transfer {
     fn default() -> Self {
         Self::new()
@@ -763,6 +838,6 @@ impl Default for Transfer {
 // 验证 Transfer 排版随主题 token 解析。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod typography_tests;
