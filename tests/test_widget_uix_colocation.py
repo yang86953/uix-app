@@ -33,6 +33,7 @@ MIGRATED_WIDGET_DIRS = {
     "containers/layout/footer",
     "containers/layout/header",
     "containers/layout/sider",
+    "containers/splitter",
     "display/avatar",
     "display/badge",
     "display/card",

@@ -5,13 +5,82 @@
 use std::cell::{Cell, RefCell};
 
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::children::WidgetChildren;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, Widget,
+    WidgetId, WidgetTree,
 };
 use crate::widget;
+
+// 保存 UIX 声明的默认面板、尺寸、交互步长与手柄绘制几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SplitterVisual {
+    default_vertical: bool,
+    default_panel_count: usize,
+    default_ratio: f32,
+    default_min_size: f32,
+    handle_size: f32,
+    intrinsic_width: f32,
+    intrinsic_height: f32,
+    flex_grow: f32,
+    keyboard_step: f32,
+    grip_extent: f32,
+    grip_icon_extent: f32,
+    grip_icon_scale: f32,
+    center_ratio: f32,
+    active_stroke_width: f32,
+    vertical_grip_icon: &'static str,
+    horizontal_grip_icon: &'static str,
+    background: ColorValue,
+    handle_color: ColorValue,
+    grip_color: ColorValue,
+    active_color: ColorValue,
+}
+
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/containers/splitter/splitter.uix");
+
+// 保存一次绘制内解析后的主题颜色，避免在手柄循环内重复查令牌。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedSplitterVisual {
+    background: Color,
+    handle_color: Color,
+    grip_color: Color,
+    active_color: Color,
+}
+
+impl SplitterVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedSplitterVisual {
+        ResolvedSplitterVisual {
+            background: self.background.resolve(tokens),
+            handle_color: self.handle_color.resolve(tokens),
+            grip_color: self.grip_color.resolve(tokens),
+            active_color: self.active_color.resolve(tokens),
+        }
+    }
+}
+
+// 向 UIX 提供静态、零分配的主题角色。
+const fn splitter_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+const fn splitter_handle_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Border)
+}
+
+const fn splitter_grip_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+
+const fn splitter_active_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
 
 widget! {
     /// Splitter — 可拖拽分割面板容器。
@@ -31,6 +100,9 @@ widget! {
         min_sizes: Vec<f32>,
         /// 手柄宽度
         handle_size: f32,
+        #[snapshot(skip)]
+        /// UIX 声明的默认尺寸、手柄几何与主题角色。
+        pub(crate) visual: &'static SplitterVisual,
         /// 当前 frame（用于 hit-test）
         last_frame: Cell<Option<Rect>>,
         layout_requested: Cell<bool>,
@@ -43,7 +115,7 @@ widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    flex_grow => (&self) -> f32 { 1.0 }
+    flex_grow => (&self) -> f32 { self.visual.flex_grow }
 
     build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
@@ -112,10 +184,10 @@ widget! {
                 };
                 match (self.vertical, key) {
                     (false, KeyCode::Left) | (true, KeyCode::Up) => {
-                        self.move_active_handle(frame, -8.0);
+                        self.move_active_handle(frame, -self.visual.keyboard_step);
                     }
                     (false, KeyCode::Right) | (true, KeyCode::Down) => {
-                        self.move_active_handle(frame, 8.0);
+                        self.move_active_handle(frame, self.visual.keyboard_step);
                     }
                     (_, KeyCode::Home) => {
                         self.move_active_handle_to_limit(frame, false);
@@ -147,17 +219,14 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), None);
+        let visual = self.visual.resolve(ctx.tokens());
+        ctx.fill_rect(frame, visual.background, None);
 
         let n = self.ratios.len();
         if n <= 1 { return; }
         let total = if self.vertical { frame.h } else { frame.w };
         let handle_total = self.handle_size * (n - 1) as f32;
         let content_total = (total - handle_total).max(0.0);
-        let handle_color = ctx.tokens().color_border();
-        let dot_color = ctx.tokens().color_text_quaternary();
-        let primary = ctx.tokens().color_primary();
-
         let mut pos = 0.0;
         for i in 0..n - 1 {
             pos += self.ratios[i] * content_total;
@@ -167,27 +236,42 @@ widget! {
                 Rect::new(frame.x + pos, frame.y, self.handle_size, frame.h)
             };
             let active = self.focused && i == self.active_handle || self.dragging == Some(i);
-            ctx.fill_rect(handle_rect, if active { primary } else { handle_color }, None);
-            let grip_size = 16.0_f32.min(frame.w).min(frame.h);
+            ctx.fill_rect(
+                handle_rect,
+                if active {
+                    visual.active_color
+                } else {
+                    visual.handle_color
+                },
+                None,
+            );
+            let grip_size = self.visual.grip_extent.min(frame.w).min(frame.h);
             let grip_frame = Rect::new(
-                handle_rect.x + (handle_rect.w - grip_size) * 0.5,
-                handle_rect.y + (handle_rect.h - grip_size) * 0.5,
+                handle_rect.x + (handle_rect.w - grip_size) * self.visual.center_ratio,
+                handle_rect.y + (handle_rect.h - grip_size) * self.visual.center_ratio,
                 grip_size,
                 grip_size,
             );
             crate::ui::widgets::Icon::paint_in_frame(
                 ctx,
                 if self.vertical {
-                    "grip-horizontal"
+                    self.visual.vertical_grip_icon
                 } else {
-                    "grip-vertical"
+                    self.visual.horizontal_grip_icon
                 },
                 grip_frame,
-                dot_color,
-                14.0_f32.min(grip_size * 0.85),
+                visual.grip_color,
+                self.visual
+                    .grip_icon_extent
+                    .min(grip_size * self.visual.grip_icon_scale),
             );
             if active {
-                ctx.stroke_rect(handle_rect, primary, 1.5, None);
+                ctx.stroke_rect(
+                    handle_rect,
+                    visual.active_color,
+                    self.visual.active_stroke_width,
+                    None,
+                );
             }
             pos += self.handle_size;
         }
@@ -230,15 +314,17 @@ impl Default for Splitter {
 impl Splitter {
     /// 创建两个等分、水平排列且最小尺寸均为 50 像素的分割面板。
     pub fn new() -> Self {
+        let visual = SPLITTER_VISUAL_REF;
         Self {
             children: WidgetChildren::new(),
-            vertical: false,
-            ratios: vec![0.5, 0.5],
+            vertical: visual.default_vertical,
+            ratios: vec![visual.default_ratio; visual.default_panel_count],
             dragging: None,
             focused: false,
             active_handle: 0,
-            min_sizes: vec![50.0, 50.0],
-            handle_size: 6.0,
+            min_sizes: vec![visual.default_min_size; visual.default_panel_count],
+            handle_size: visual.handle_size,
+            visual,
             last_frame: Cell::new(None),
             layout_requested: Cell::new(false),
             pending_change: RefCell::new(None),
@@ -250,7 +336,7 @@ impl Splitter {
         let count = count.max(1);
         let ratio = 1.0 / count as f32;
         self.ratios = vec![ratio; count];
-        self.min_sizes = vec![50.0; count];
+        self.min_sizes = vec![self.visual.default_min_size; count];
         self
     }
 
@@ -288,13 +374,14 @@ impl Splitter {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(300.0, 200.0)
+        Size::new(self.visual.intrinsic_width, self.visual.intrinsic_height)
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.vertical = next.vertical;
         self.min_sizes = next.min_sizes;
         self.handle_size = next.handle_size;
+        self.visual = next.visual;
         if self.ratios.len() != next.ratios.len() {
             self.ratios = next.ratios;
         }
@@ -450,14 +537,31 @@ impl Splitter {
             ratio.clamp(0.0, 1.0)
         } else {
             // 非有限输入回退到文档默认等分比例。
-            0.5
+            SPLITTER_VISUAL_REF.default_ratio
         }
     }
+}
+
+// 把 Splitter Rust 交互内核与 UIX 静态视觉组合为单一组件节点。
+fn build_splitter_view(mut kernel: Splitter, visual: &'static SplitterVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Splitter {
+    fn build(self) -> ViewNode {
+        build_splitter_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_splitter_uix_root(kernel: Splitter) -> ViewNode {
+    crate::uix!("src/ui/widgets/containers/splitter/splitter.uix")
 }
 
 // 验证公开构建器维护文档化双面板比例不变量。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/containers/splitter__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/containers/splitter__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
