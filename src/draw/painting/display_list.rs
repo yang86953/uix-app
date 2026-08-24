@@ -229,8 +229,8 @@ pub enum PaintOp {
     },
     /// 重放预布局的字形序列。
     BlitGlyphLayout {
-        /// 已完成塑形与布局的文本结果。
-        layout: crate::draw::resources::font::text_backend::TextLayout,
+        /// 共享已完成塑形与布局的文本结果。
+        layout: Arc<crate::draw::resources::font::text_backend::TextLayout>,
         /// 字形布局起始位置。
         pos: Point,
         /// 字形颜色。
@@ -513,7 +513,7 @@ impl DisplayList {
                     pos,
                     color,
                     font_size,
-                } => ctx.blit_glyph_layout(layout, *pos, *color, *font_size),
+                } => ctx.blit_shared_glyph_layout(Arc::clone(layout), *pos, *color, *font_size),
                 // 字体状态切换。
                 PaintOp::SetFont { font } => ctx.set_font(*font),
                 // 渐变：线性与径向。
@@ -767,5 +767,39 @@ impl DisplayList {
                 PaintOp::Restore => canvas.restore(),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draw::resources::font::text_backend::TextLayout;
+
+    // DisplayList 写时复制不得深拷贝已经共享的字形与行缓冲。
+    #[test]
+    fn cloned_glyph_op_shares_layout_storage() {
+        let layout = Arc::new(TextLayout {
+            glyphs: Vec::new(),
+            lines: Vec::new(),
+            width: 0.0,
+            height: 0.0,
+        });
+        let operation = PaintOp::BlitGlyphLayout {
+            layout: Arc::clone(&layout),
+            pos: Point::new(1.0, 2.0),
+            color: Color::black(),
+            font_size: 14.0,
+        };
+
+        let cloned = operation.clone();
+
+        let PaintOp::BlitGlyphLayout {
+            layout: cloned_layout,
+            ..
+        } = cloned
+        else {
+            unreachable!("克隆后的操作类型必须保持不变");
+        };
+        assert!(Arc::ptr_eq(&layout, &cloned_layout));
     }
 }

@@ -10,6 +10,7 @@ use crate::draw::{FontHandle, HAlign, VAlign};
 use unicode_segmentation::UnicodeSegmentation;
 // 帧诊断：统计每秒文本布局（shaping）调用次数，供性能摘要读取。
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 // 引入字体模块共享的 UAX #14 断行边界。
 use super::super::line_break::LineBreakMap;
@@ -23,6 +24,9 @@ use super::text_justify::justify_line;
 
 // 帧诊断：文本布局调用计数器，每秒摘要读取后清零。
 static TEXT_LAYOUT_CALLS: AtomicU64 = AtomicU64::new(0);
+
+// 空布局跨服务共享，避免空 Label、Input 占位与测量路径反复申请 Arc 控制块。
+static EMPTY_TEXT_LAYOUT: OnceLock<Arc<TextLayout>> = OnceLock::new();
 
 // 帧诊断：读取并清零文本布局调用计数。
 pub(crate) fn take_text_layout_calls() -> u64 {
@@ -544,14 +548,44 @@ impl FontService {
         // 帧诊断：每次调用累计一次文本布局计数。
         TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
         if !self.text_backend.is_valid(font) || text.is_empty() {
-            return TextLayout {
-                glyphs: vec![],
-                lines: vec![],
-                width: 0.0,
-                height: 0.0,
-            };
+            return Self::empty_text_layout();
         }
+        // 兼容既有值返回接口；内部绘制热路径使用共享入口避免深拷贝。
+        (*self.layout_text_cached(font, text, opts)).clone()
+    }
 
+    /// 布局文本并共享缓存所有权，命中时只增加引用计数。
+    pub fn layout_text_shared(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+    ) -> Arc<TextLayout> {
+        // 帧诊断仍按调用次数统计，不把共享缓存命中误记为未布局。
+        TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
+        if !self.text_backend.is_valid(font) || text.is_empty() {
+            return Arc::clone(
+                EMPTY_TEXT_LAYOUT.get_or_init(|| Arc::new(Self::empty_text_layout())),
+            );
+        }
+        self.layout_text_cached(font, text, opts)
+    }
+
+    fn empty_text_layout() -> TextLayout {
+        TextLayout {
+            glyphs: Vec::new(),
+            lines: Vec::new(),
+            width: 0.0,
+            height: 0.0,
+        }
+    }
+
+    fn layout_text_cached(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+    ) -> Arc<TextLayout> {
         let fs = tb::bounded_font_size(opts.font_size);
         let line_h = if opts.line_height.is_finite() && opts.line_height > 0.0 {
             opts.line_height
@@ -643,15 +677,13 @@ impl FontService {
         }
         let max_line_width = line_infos.iter().fold(0.0f32, |m, l| m.max(l.width));
 
-        let layout = TextLayout {
+        let layout = Arc::new(TextLayout {
             glyphs: all_glyphs,
             lines: line_infos,
             width: max_line_width,
             height: container_height,
-        };
-        self.layout_cache
-            .insert(font, text, &cache_opts, layout.clone());
-        layout
+        });
+        self.layout_cache.insert(font, text, &cache_opts, layout)
     }
 }
 

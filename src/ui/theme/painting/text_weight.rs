@@ -1,4 +1,6 @@
-// 引入字体后端产出的中性布局。
+// 引入字体后端产出的中性布局与共享所有权。
+use std::sync::Arc;
+
 use crate::draw::resources::font::text_backend::TextLayout;
 // 引入绘制坐标、颜色与 UI 绘制上下文。
 use crate::{core::Point, draw::Color, ui::widget_runtime::paint_context::PaintContext};
@@ -10,7 +12,7 @@ pub(crate) fn paint(
     // 接收 UI 绘制上下文，但不向 draw System 泄漏 FontWeight。
     ctx: &mut PaintContext<'_, '_>,
     // 借用测量、选择与装饰共用的字形布局。
-    layout: &TextLayout,
+    layout: &Arc<TextLayout>,
     // 接收绝对绘制原点。
     position: Point,
     // 接收最终文字颜色。
@@ -21,13 +23,13 @@ pub(crate) fn paint(
     font_weight: FontWeight,
 ) {
     // 常规面与粗体面都先提交基础字形。
-    ctx.blit_glyph_layout(layout, position, color, font_size);
+    ctx.blit_shared_glyph_layout(Arc::clone(layout), position, color, font_size);
     // 当前后端只有单一字体面时，六百及以上使用稳定水平偏移合成粗体。
     if font_weight.uses_bold_face() {
         // 第二次提交保持布局几何不变，只增加笔画视觉厚度。
-        ctx.blit_glyph_layout(
+        ctx.blit_shared_glyph_layout(
             // 复用同一字形布局。
-            layout,
+            Arc::clone(layout),
             // 使用与既有 strong 契约一致的亚像素偏移。
             Point::new(position.x + 0.6, position.y),
             // 保持同一文字颜色。

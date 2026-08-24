@@ -227,9 +227,10 @@ impl Input {
                 // 借用字体服务。
                 .font_service()
                 // 布局当前显示逻辑行。
-                .layout_text(&font, hit_text, &backend_options);
-            // 保存视觉顺序字形及其逻辑 cluster 范围。
-            line_glyphs[li] = hit_layout.glyphs;
+                .layout_text_shared(&font, hit_text, &backend_options);
+            // 保存视觉顺序字形及其逻辑 cluster 范围，并复用上一帧容量。
+            line_glyphs[li].clear();
+            line_glyphs[li].extend_from_slice(&hit_layout.glyphs);
 
             if li == cursor_line {
                 let col = self.cursor_line_col().1;
@@ -563,7 +564,7 @@ impl Input {
             let fh = *ctx.font();
             let layout = ctx
                 .font_service()
-                .layout_text(&fh, &display_text, &backend_opts);
+                .layout_text_shared(&fh, &display_text, &backend_opts);
 
             let abs_pos = Point::new(draw_x, draw_y);
             {
@@ -634,7 +635,7 @@ impl Input {
                     }
                 }
             }
-            ctx.blit_owned_glyph_layout(layout, abs_pos, disp_color, typography.font_size);
+            ctx.blit_shared_glyph_layout(layout, abs_pos, disp_color, typography.font_size);
         }
 
         if has_composition {
