@@ -30,6 +30,8 @@ fn generates_tag_contract() {
     assert!(snapshot.contains("width (160.0)"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 Tag 自己的 View/UIX 声明边界，不能直接绕过为叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"));
 }
 
 // 验证自定义颜色、动态颜色、动态能力与正文插值生成。

@@ -42,6 +42,7 @@
 - `Skeleton`：`src/ui/widgets/display/skeleton/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留占位几何、流光动画和绘制；生成结果仍是原 `Skeleton` 单叶节点，不增加包装、子节点或持久配置内存。
 - `Empty`：`src/ui/widgets/display/empty/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、文本测量、图标选择和绘制；生成结果仍是原 `Empty` 单叶节点，不增加包装或子节点。
 - `ResultView`：`src/ui/widgets/display/result/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、动作区交互、几何和绘制；生成结果仍是原 `ResultView` 单叶节点，不增加包装或子节点。
+- `Tag`：`src/ui/widgets/display/tag/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留关闭、勾选、颜色解析、几何和绘制；生成结果仍是原 `Tag` 单叶节点，不增加包装或子节点。
 
 ## 组件：复合组件
 
