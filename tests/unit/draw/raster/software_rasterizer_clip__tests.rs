@@ -48,6 +48,73 @@
         assert_eq!(rasterizer.clip_rect, Rect::new(0.0, 0.0, 32.0, 24.0));
     }
 
+    // 复用槽必须保留内部分配，同时恢复任意失衡的裁剪操作。
+    #[test]
+    fn save_restore_reuses_snapshot_slot_and_exact_clip_state() {
+        let mut rasterizer = SoftwareRasterizer::new(32, 24);
+        let saved_clip = Rect::new(2.0, 3.0, 12.0, 10.0);
+        rasterizer.push_clip(saved_clip);
+        rasterizer.save();
+        rasterizer.pop_clip();
+        rasterizer.push_clip(Rect::new(20.0, 10.0, 4.0, 4.0));
+        rasterizer.restore();
+        let reusable_allocation = rasterizer
+            .snapshot_clip_stack_allocation(0)
+            .expect("restore 后应保留可复用槽容量");
+        assert_eq!(rasterizer.clip_rect, saved_clip);
+        rasterizer.pop_clip();
+        assert_eq!(rasterizer.clip_rect, Rect::new(0.0, 0.0, 32.0, 24.0));
+
+        rasterizer.push_clip(saved_clip);
+        rasterizer.save();
+        assert_eq!(
+            rasterizer
+                .snapshot_clip_stack_allocation(0)
+                .expect("第二次 save 应复用同一槽"),
+            reusable_allocation
+        );
+        rasterizer.restore();
+    }
+
+    // 路径 mask 在失衡 pop 后也必须由 save/restore 精确恢复。
+    #[test]
+    fn save_restore_preserves_path_clip_mask() {
+        let mut rasterizer = SoftwareRasterizer::new(16, 16);
+        let mut builder = PathBuilder::new();
+        builder
+            .move_to(1.0, 1.0)
+            .line_to(12.0, 1.0)
+            .line_to(1.0, 12.0)
+            .close();
+        rasterizer
+            .try_push_clip_path(&builder.build())
+            .expect("三角形路径应建立裁剪 mask");
+        let inside = rasterizer.clip_mask_value(2, 2);
+        let outside = rasterizer.clip_mask_value(12, 12);
+
+        rasterizer.save();
+        rasterizer.pop_clip();
+        assert_eq!(rasterizer.clip_mask_value(12, 12), u8::MAX);
+        rasterizer.restore();
+
+        assert_eq!(rasterizer.clip_mask_value(2, 2), inside);
+        assert_eq!(rasterizer.clip_mask_value(12, 12), outside);
+    }
+
+    // 异常 save 深度超过总预算后必须释放整个快照池。
+    #[test]
+    fn save_restore_releases_oversized_snapshot_pool() {
+        let mut rasterizer = SoftwareRasterizer::new(16, 16);
+        for _ in 0..1024 {
+            rasterizer.save();
+        }
+        for _ in 0..1024 {
+            rasterizer.restore();
+        }
+
+        assert_eq!(rasterizer.snapshot_slot_count(), 0);
+    }
+
     // 异常深度产生的大栈不得永久保留在光栅化器中。
     #[test]
     fn reset_for_extent_releases_oversized_transient_stack() {

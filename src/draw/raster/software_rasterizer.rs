@@ -12,6 +12,8 @@ use crate::draw::raster::rasterizer::core as rast;
 
 // 单个瞬态状态栈最多跨帧保留 16 KiB，避免异常深度永久抬高内存水位。
 pub(crate) const MAX_RETAINED_TRANSIENT_STACK_BYTES: usize = 16 * 1024;
+// 全部非活动 save 快照合计最多跨帧保留 64 KiB。
+const MAX_RETAINED_SNAPSHOT_POOL_BYTES: usize = 64 * 1024;
 
 fn clear_reusable_stack<T>(stack: &mut Vec<T>) {
     stack.clear();
@@ -23,7 +25,6 @@ fn clear_reusable_stack<T>(stack: &mut Vec<T>) {
 }
 
 /// 渲染状态快照（用于 save/restore）。
-#[derive(Clone)]
 struct StateSnapshot {
     clip_rect: Rect,
     clip_int: (i32, i32, i32, i32),
@@ -39,6 +40,26 @@ struct StateSnapshot {
     transform: Transform,
     invert: Option<[f64; 6]>,
     blend_mode: BlendMode,
+}
+
+impl StateSnapshot {
+    fn release_payload_for_reuse(&mut self) {
+        self.clip_mask = None;
+        clear_reusable_stack(&mut self.clip_stack);
+        clear_reusable_stack(&mut self.clip_mask_stack);
+    }
+
+    fn retained_memory_usage(&self) -> usize {
+        self.clip_mask.as_ref().map_or(0, Vec::capacity)
+            + self.clip_stack.capacity() * std::mem::size_of::<Rect>()
+            + self.clip_mask_stack.capacity() * std::mem::size_of::<Option<Vec<u8>>>()
+            + self
+                .clip_mask_stack
+                .iter()
+                .filter_map(Option::as_ref)
+                .map(Vec::capacity)
+                .sum::<usize>()
+    }
 }
 
 /// 通用栅格渲染器。
@@ -72,6 +93,8 @@ pub(crate) struct SoftwareRasterizer {
     blend_mode: BlendMode,
     /// 状态快照栈。
     state_stack: Vec<StateSnapshot>,
+    /// 当前活动的 save 深度；state_stack 同时充当可复用槽池。
+    state_depth: usize,
 }
 
 impl SoftwareRasterizer {
@@ -95,6 +118,7 @@ impl SoftwareRasterizer {
             invert: Self::compute_inverse(&Transform::identity()),
             blend_mode: BlendMode::default(),
             state_stack: Vec::new(),
+            state_depth: 0,
         }
     }
 
@@ -115,7 +139,11 @@ impl SoftwareRasterizer {
         self.transform = Transform::identity();
         self.invert = Self::compute_inverse(&self.transform);
         self.blend_mode = BlendMode::default();
-        clear_reusable_stack(&mut self.state_stack);
+        self.state_depth = 0;
+        for snapshot in &mut self.state_stack {
+            snapshot.release_payload_for_reuse();
+        }
+        self.trim_snapshot_pool();
     }
 
     #[cfg(test)]
@@ -125,6 +153,21 @@ impl SoftwareRasterizer {
             self.clip_mask_stack.capacity(),
             self.state_stack.capacity(),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn snapshot_slot_count(&self) -> usize {
+        self.state_stack.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn snapshot_clip_stack_allocation(
+        &self,
+        index: usize,
+    ) -> Option<(*const Rect, usize)> {
+        self.state_stack
+            .get(index)
+            .map(|snapshot| (snapshot.clip_stack.as_ptr(), snapshot.clip_stack.capacity()))
     }
 
     // ═══ 状态访问器 ═══
@@ -158,34 +201,71 @@ impl SoftwareRasterizer {
     // ═══ 状态管理 ═══
 
     pub(crate) fn save(&mut self) {
-        self.state_stack.push(StateSnapshot {
-            clip_rect: self.clip_rect,
-            clip_int: self.clip_int,
-            clip_mask: self.clip_mask.clone(),
-            clip_stack: self.clip_stack.clone(),
-            clip_mask_stack: self.clip_mask_stack.clone(),
-            opacity: self.opacity,
-            offset_x: self.offset_x,
-            offset_y: self.offset_y,
-            transform: self.transform,
-            invert: self.invert,
-            blend_mode: self.blend_mode,
-        });
+        if self.state_depth == self.state_stack.len() {
+            self.state_stack.push(StateSnapshot {
+                clip_rect: self.clip_rect,
+                clip_int: self.clip_int,
+                clip_mask: self.clip_mask.clone(),
+                clip_stack: self.clip_stack.clone(),
+                clip_mask_stack: self.clip_mask_stack.clone(),
+                opacity: self.opacity,
+                offset_x: self.offset_x,
+                offset_y: self.offset_y,
+                transform: self.transform,
+                invert: self.invert,
+                blend_mode: self.blend_mode,
+            });
+        } else {
+            let snapshot = &mut self.state_stack[self.state_depth];
+            snapshot.clip_rect = self.clip_rect;
+            snapshot.clip_int = self.clip_int;
+            snapshot.clip_mask.clone_from(&self.clip_mask);
+            snapshot.clip_stack.clone_from(&self.clip_stack);
+            snapshot.clip_mask_stack.clone_from(&self.clip_mask_stack);
+            snapshot.opacity = self.opacity;
+            snapshot.offset_x = self.offset_x;
+            snapshot.offset_y = self.offset_y;
+            snapshot.transform = self.transform;
+            snapshot.invert = self.invert;
+            snapshot.blend_mode = self.blend_mode;
+        }
+        self.state_depth += 1;
     }
 
     pub(crate) fn restore(&mut self) {
-        if let Some(snap) = self.state_stack.pop() {
-            self.clip_rect = snap.clip_rect;
-            self.clip_int = snap.clip_int;
-            self.clip_mask = snap.clip_mask;
-            self.clip_stack = snap.clip_stack;
-            self.clip_mask_stack = snap.clip_mask_stack;
-            self.opacity = snap.opacity;
-            self.offset_x = snap.offset_x;
-            self.offset_y = snap.offset_y;
-            self.transform = snap.transform;
-            self.invert = snap.invert;
-            self.blend_mode = snap.blend_mode;
+        let Some(depth) = self.state_depth.checked_sub(1) else {
+            return;
+        };
+        self.state_depth = depth;
+        {
+            let snapshot = &mut self.state_stack[depth];
+            self.clip_rect = snapshot.clip_rect;
+            self.clip_int = snapshot.clip_int;
+            std::mem::swap(&mut self.clip_mask, &mut snapshot.clip_mask);
+            std::mem::swap(&mut self.clip_stack, &mut snapshot.clip_stack);
+            std::mem::swap(&mut self.clip_mask_stack, &mut snapshot.clip_mask_stack);
+            self.opacity = snapshot.opacity;
+            self.offset_x = snapshot.offset_x;
+            self.offset_y = snapshot.offset_y;
+            self.transform = snapshot.transform;
+            self.invert = snapshot.invert;
+            self.blend_mode = snapshot.blend_mode;
+            snapshot.release_payload_for_reuse();
+        }
+        if self.state_depth == 0 {
+            self.trim_snapshot_pool();
+        }
+    }
+
+    fn trim_snapshot_pool(&mut self) {
+        let retained = self.state_stack.capacity() * std::mem::size_of::<StateSnapshot>()
+            + self
+                .state_stack
+                .iter()
+                .map(StateSnapshot::retained_memory_usage)
+                .sum::<usize>();
+        if retained > MAX_RETAINED_SNAPSHOT_POOL_BYTES {
+            self.state_stack = Vec::new();
         }
     }
 
