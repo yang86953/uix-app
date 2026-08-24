@@ -5,18 +5,16 @@ use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetId, WidgetTree,
 };
 use crate::widget;
 use std::cell::RefCell;
 use std::fmt::Display;
 use std::rc::Rc;
 
-const TAB_GAP: f32 = 12.0;
-const TAB_HORIZONTAL_PADDING: f32 = 16.0;
-const SIDE_TAB_BAR_WIDTH: f32 = 160.0;
-const WHEEL_STEP: f32 = 40.0;
+mod presentation;
+use presentation::*;
 
 /// A single tab definition.
 #[derive(Debug, Clone, PartialEq)]
@@ -126,6 +124,9 @@ widget! {
         tab_main_ranges: RefCell<Vec<(f32, f32)>>,
         tab_content_extent: std::cell::Cell<f32>,
         tab_scroll_offset: std::cell::Cell<f32>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static TabsVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -178,7 +179,7 @@ widget! {
                 } else {
                     delta.y
                 };
-                if self.scroll_by(wheel_delta * WHEEL_STEP) {
+                if self.scroll_by(wheel_delta * self.visual.layout.wheel_step) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -243,38 +244,54 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg_container = ctx.tokens().color_bg_container();
-        let border_secondary = ctx.tokens().color_border_secondary();
-        let primary = ctx.tokens().color_primary();
-        let text_secondary = ctx.tokens().color_text_secondary();
+        // 标签栏、编辑入口、内容区与焦点同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
+        let bg_container = visual.container_background;
+        let border_secondary = visual.border_secondary;
+        let primary = visual.primary;
+        let text_secondary = visual.text_secondary;
 
         let vertical = self.position.is_vertical();
         let tab_bar = self.tab_bar_rect(frame);
         let mut ranges = Vec::with_capacity(self.tabs.len());
-        let mut cursor = if vertical { 0.0 } else { TAB_HORIZONTAL_PADDING };
+        let mut cursor = if vertical {
+            0.0
+        } else {
+            layout.horizontal_padding
+        };
         for tab in &self.tabs {
-            let icon_w = if tab.icon.is_empty() { 0.0 } else { 20.0 };
-            let close_w = if self.editable { 20.0 } else { 0.0 };
+            let icon_w = if tab.icon.is_empty() {
+                0.0
+            } else {
+                layout.icon_reserve
+            };
+            let close_w = if self.editable {
+                layout.close_reserve
+            } else {
+                0.0
+            };
             let extent = if vertical {
                 self.tab_height
             } else {
-                ctx.measure_text(&tab.label, ctx.tokens().font_size()).w
-                    + TAB_HORIZONTAL_PADDING * 2.0
+                ctx.measure_text(&tab.label, visual.label_font_size).w
+                    + layout.horizontal_padding * 2.0
                     + icon_w
                     + close_w
             };
             ranges.push((cursor, cursor + extent));
-            cursor += extent + if vertical { 0.0 } else { TAB_GAP };
+            cursor += extent + if vertical { 0.0 } else { layout.gap };
         }
         let mut content_extent = ranges.last().map_or(0.0, |(_, end)| *end);
         if !vertical && !ranges.is_empty() {
-            content_extent += TAB_HORIZONTAL_PADDING;
+            content_extent += layout.horizontal_padding;
         }
         if self.editable {
             content_extent += if vertical {
                 self.tab_height
             } else {
-                TAB_GAP + 24.0
+                layout.gap + layout.add_size
             };
         }
         *self.tab_main_ranges.borrow_mut() = ranges;
@@ -291,10 +308,30 @@ widget! {
 
         ctx.fill_rect(tab_bar, bg_container, None);
         let divider = match self.position {
-            TabPosition::Top => Rect::new(tab_bar.x, tab_bar.y + tab_bar.h - 2.0, tab_bar.w, 2.0),
-            TabPosition::Bottom => Rect::new(tab_bar.x, tab_bar.y, tab_bar.w, 2.0),
-            TabPosition::Left => Rect::new(tab_bar.x + tab_bar.w - 2.0, tab_bar.y, 2.0, tab_bar.h),
-            TabPosition::Right => Rect::new(tab_bar.x, tab_bar.y, 2.0, tab_bar.h),
+            TabPosition::Top => Rect::new(
+                tab_bar.x,
+                tab_bar.y + tab_bar.h - layout.divider_thickness,
+                tab_bar.w,
+                layout.divider_thickness,
+            ),
+            TabPosition::Bottom => Rect::new(
+                tab_bar.x,
+                tab_bar.y,
+                tab_bar.w,
+                layout.divider_thickness,
+            ),
+            TabPosition::Left => Rect::new(
+                tab_bar.x + tab_bar.w - layout.divider_thickness,
+                tab_bar.y,
+                layout.divider_thickness,
+                tab_bar.h,
+            ),
+            TabPosition::Right => Rect::new(
+                tab_bar.x,
+                tab_bar.y,
+                layout.divider_thickness,
+                tab_bar.h,
+            ),
         };
         ctx.fill_rect(divider, border_secondary, None);
 
@@ -309,78 +346,102 @@ widget! {
             let is_active = i == self.active_index;
             let text_color = if is_active { primary } else { text_secondary };
             // 标签字号：统一使用主题 font_size token。
-            let tab_text_y = ctx.visual_center_y(tab_rect, ctx.tokens().font_size());
-            let mut text_x = tab_rect.x + TAB_HORIZONTAL_PADDING;
+            let tab_text_y = ctx.visual_center_y(tab_rect, visual.label_font_size);
+            let mut text_x = tab_rect.x + layout.horizontal_padding;
             if !tab.icon.is_empty() {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
                     &tab.icon,
                     Rect::new(
-                        tab_rect.x + TAB_HORIZONTAL_PADDING,
+                        tab_rect.x + layout.horizontal_padding,
                         tab_rect.y,
-                        16.0,
+                        layout.icon_slot_width,
                         tab_rect.h,
                     ),
                     text_color,
-                    13.0,
+                    typography.tab_icon,
                 );
-                text_x += 20.0;
+                text_x += layout.icon_advance;
             }
             ctx.draw_text(
                 &tab.label,
                 Point::new(text_x, tab_text_y),
                 text_color,
                 // 标签字号：统一使用主题 font_size token。
-                ctx.tokens().font_size(),
+                visual.label_font_size,
             );
 
             if self.editable {
                 let close = Rect::new(
-                    (tab_rect.x + tab_rect.w - 20.0).max(tab_rect.x),
+                    (tab_rect.x + tab_rect.w - layout.close_size).max(tab_rect.x),
                     tab_rect.y,
-                    20.0_f32.min(tab_rect.w),
+                    layout.close_size.min(tab_rect.w),
                     tab_rect.h,
                 );
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "x",
+                    self.visual.icons.close,
                     close,
                     text_secondary,
-                    10.0,
+                    typography.close_icon,
                 );
             }
 
             if is_active {
                 let indicator = match self.position {
                     TabPosition::Top => {
-                        let w = tab_rect.w * 0.6;
-                        Rect::new(tab_rect.x + (tab_rect.w - w) * 0.5, tab_rect.y + tab_rect.h - 2.0, w, 2.0)
+                        let w = tab_rect.w * layout.indicator_extent_factor;
+                        Rect::new(
+                            tab_rect.x + (tab_rect.w - w) * 0.5,
+                            tab_rect.y + tab_rect.h - layout.indicator_thickness,
+                            w,
+                            layout.indicator_thickness,
+                        )
                     }
                     TabPosition::Bottom => {
-                        let w = tab_rect.w * 0.6;
-                        Rect::new(tab_rect.x + (tab_rect.w - w) * 0.5, tab_rect.y, w, 2.0)
+                        let w = tab_rect.w * layout.indicator_extent_factor;
+                        Rect::new(
+                            tab_rect.x + (tab_rect.w - w) * 0.5,
+                            tab_rect.y,
+                            w,
+                            layout.indicator_thickness,
+                        )
                     }
                     TabPosition::Left => {
-                        let h = tab_rect.h * 0.6;
-                        Rect::new(tab_rect.x + tab_rect.w - 2.0, tab_rect.y + (tab_rect.h - h) * 0.5, 2.0, h)
+                        let h = tab_rect.h * layout.indicator_extent_factor;
+                        Rect::new(
+                            tab_rect.x + tab_rect.w - layout.indicator_thickness,
+                            tab_rect.y + (tab_rect.h - h) * 0.5,
+                            layout.indicator_thickness,
+                            h,
+                        )
                     }
                     TabPosition::Right => {
-                        let h = tab_rect.h * 0.6;
-                        Rect::new(tab_rect.x, tab_rect.y + (tab_rect.h - h) * 0.5, 2.0, h)
+                        let h = tab_rect.h * layout.indicator_extent_factor;
+                        Rect::new(
+                            tab_rect.x,
+                            tab_rect.y + (tab_rect.h - h) * 0.5,
+                            layout.indicator_thickness,
+                            h,
+                        )
                     }
                 };
-                ctx.fill_rect(indicator, primary, Some(Radius::uniform(1.0)));
+                ctx.fill_rect(
+                    indicator,
+                    primary,
+                    Some(Radius::uniform(self.visual.chrome.indicator_radius)),
+                );
             }
         }
         if self.editable {
             let add = Self::absolute_rect(frame, self.add_rect());
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "plus",
+                self.visual.icons.add,
                 add,
                 primary,
                 // 添加按钮图标字号：统一使用主题 font_size token。
-                ctx.tokens().font_size(),
+                visual.label_font_size,
             );
         }
         ctx.pop_clip();
@@ -390,8 +451,8 @@ widget! {
             ctx.stroke_rect(
                 tab_bar,
                 primary,
-                1.5,
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                self.visual.chrome.focus_width,
+                Some(Radius::uniform(visual.radius)),
             );
         }
     }
@@ -402,11 +463,21 @@ widget! {
         if self.active_index >= self.tabs.len() { return Vec::new(); }
         let Some(child) = children.first() else { return Vec::new(); };
         let content = self.content_rect(Self::normalized_frame(frame));
+        let horizontal_inset = self
+            .visual
+            .layout
+            .content_horizontal_inset
+            .min(content.w * 0.5);
+        let vertical_inset = self
+            .visual
+            .layout
+            .content_vertical_inset
+            .min(content.h * 0.5);
         vec![(child.id, Rect::new(
-            content.x + 16.0_f32.min(content.w * 0.5),
-            content.y + 8.0_f32.min(content.h * 0.5),
-            (content.w - 32.0).max(0.0),
-            (content.h - 16.0).max(0.0),
+            content.x + horizontal_inset,
+            content.y + vertical_inset,
+            (content.w - horizontal_inset * 2.0).max(0.0),
+            (content.h - vertical_inset * 2.0).max(0.0),
         ))]
     }
 
@@ -424,19 +495,21 @@ impl Default for Tabs {
 impl Tabs {
     fn intrinsic_size(&self) -> Size {
         Size::new(
-            self.fixed_width.unwrap_or(400.0),
-            self.fixed_height.unwrap_or(200.0),
+            self.fixed_width.unwrap_or(self.visual.layout.default_width),
+            self.fixed_height
+                .unwrap_or(self.visual.layout.default_height),
         )
     }
 
     /// 创建顶部标签栏、无标签且未启用编辑或滚动的组件。
     pub fn new() -> Self {
+        let visual = TABS_VISUAL_REF;
         Self {
             tabs: Vec::new(),
             active_index: 0,
             value_binding: None,
-            position: TabPosition::Top,
-            tab_height: 40.0,
+            position: visual.defaults.position,
+            tab_height: visual.layout.tab_height,
             fixed_width: None,
             fixed_height: None,
             focused: false,
@@ -447,10 +520,11 @@ impl Tabs {
             tab_main_ranges: RefCell::new(Vec::new()),
             tab_content_extent: std::cell::Cell::new(0.0),
             tab_scroll_offset: std::cell::Cell::new(0.0),
-            editable: false,
-            scrollable: false,
+            editable: visual.defaults.editable,
+            scrollable: visual.defaults.scrollable,
             add_callback: None,
             close_callback: None,
+            visual,
         }
     }
 
@@ -589,6 +663,8 @@ impl Tabs {
         self.scrollable = next.scrollable;
         self.add_callback = next.add_callback;
         self.close_callback = next.close_callback;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         if !self.scrollable || previous_position.is_vertical() != self.position.is_vertical() {
             self.tab_scroll_offset.set(0.0);
         }
@@ -679,9 +755,9 @@ impl Tabs {
             return Rect::zero();
         };
         Rect::new(
-            (tab.x + tab.w - 20.0).max(tab.x),
+            (tab.x + tab.w - self.visual.layout.close_size).max(tab.x),
             tab.y,
-            20.0_f32.min(tab.w),
+            self.visual.layout.close_size.min(tab.w),
             tab.h,
         )
     }
@@ -703,9 +779,9 @@ impl Tabs {
             )
         } else {
             Rect::new(
-                bar.x + end + TAB_GAP - self.tab_scroll_offset.get(),
+                bar.x + end + self.visual.layout.gap - self.tab_scroll_offset.get(),
                 bar.y,
-                24.0,
+                self.visual.layout.add_size,
                 bar.h,
             )
         }
@@ -793,7 +869,7 @@ impl Tabs {
 
     fn tab_bar_rect(&self, frame: Rect) -> Rect {
         let tab_height = self.tab_height.min(frame.h).max(0.0);
-        let side_width = SIDE_TAB_BAR_WIDTH.min(frame.w).max(0.0);
+        let side_width = self.visual.layout.side_bar_width.min(frame.w).max(0.0);
         match self.position {
             TabPosition::Top => Rect::new(frame.x, frame.y, frame.w, tab_height),
             TabPosition::Bottom => {
@@ -860,5 +936,17 @@ impl Tabs {
     #[cfg(test)]
     pub(crate) fn add_rect_for_test(&self) -> Rect {
         self.add_rect()
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有稳定 key、值绑定、滚动与子可见性。
+fn build_tabs_view(mut kernel: Tabs, visual: &'static TabsVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Tabs {
+    fn build(self) -> ViewNode {
+        build_tabs_view(self, TABS_VISUAL_REF)
     }
 }

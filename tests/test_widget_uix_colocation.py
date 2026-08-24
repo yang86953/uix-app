@@ -101,6 +101,7 @@ MIGRATED_WIDGET_DIRS = {
     "navigation/navigation_shell",
     "navigation/pagination",
     "navigation/steps",
+    "navigation/tabs",
     "input/input_group",
     "input/input_number",
     "input/radio",
@@ -127,9 +128,7 @@ MIGRATED_SUPPORT_DIRS = {
 }
 
 # 公开视觉 widget 的剩余迁移债务；完成一项时必须同步删除，最终目标为空集合。
-UNMIGRATED_PUBLIC_WIDGET_DIRS = {
-    "navigation/tabs",
-}
+UNMIGRATED_PUBLIC_WIDGET_DIRS = set()
 
 # 提取 widget! 声明的公开结构体；Button 是唯一手写 Widget 实现，单独登记。
 PUBLIC_WIDGET_DECLARATION = re.compile(
