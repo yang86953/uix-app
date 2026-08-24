@@ -26,3 +26,20 @@ fn uix_root_preserves_descriptions_kernel_and_items() {
     assert_eq!(kernel.items[0].label, "姓名");
     assert_eq!(kernel.items[0].span, 2);
 }
+
+// 验证流式项目迭代器保持跨列项目的原有装箱顺序。
+#[test]
+fn placement_iterator_preserves_grid_packing() {
+    // 三列依次放入一列、两列、两列项目，第三项必须换到下一行。
+    let descriptions = Descriptions::new()
+        .column(3)
+        .add(DescriptionsItem::new("甲", "1"))
+        .add(DescriptionsItem::new("乙", "2").span(2))
+        .add(DescriptionsItem::new("丙", "3").span(2));
+    let placements = descriptions
+        .item_placements(3)
+        .map(|placement| (placement.row, placement.column, placement.span))
+        .collect::<Vec<_>>();
+
+    assert_eq!(placements, vec![(0, 0, 1), (0, 1, 2), (1, 0, 2)]);
+}
