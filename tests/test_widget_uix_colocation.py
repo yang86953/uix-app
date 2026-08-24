@@ -78,6 +78,7 @@ MIGRATED_WIDGET_DIRS = {
     "input/input_group",
     "input/radio",
     "input/rate",
+    "input/segmented",
     "input/switch",
     "other/theme_toggle",
     "tooltip_primitives",

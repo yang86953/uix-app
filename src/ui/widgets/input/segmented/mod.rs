@@ -1,16 +1,141 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetId, WidgetTree,
 };
 use crate::widget;
 use std::cell::Cell;
+
+// Segmented 使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SegmentedRadiusRole {
+    Small,
+}
+
+impl SegmentedRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存 UIX 声明的分段排版、滑块、分隔线与焦点几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SegmentedVisual {
+    base_font_size: f32,
+    segment_extra_width: f32,
+    thumb_inset: f32,
+    thumb_radius: f32,
+    divider_inset: f32,
+    divider_width: f32,
+    focus_stroke_width: f32,
+    container_radius: SegmentedRadiusRole,
+    container: ColorValue,
+    container_disabled: ColorValue,
+    selected: ColorValue,
+    selected_disabled: ColorValue,
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    text: ColorValue,
+    text_disabled: ColorValue,
+    divider: ColorValue,
+}
+
+// 同目录 UIX 生成唯一分段选择视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/segmented/segmented.uix");
+
+// 保存每帧一次解析后的颜色与圆角。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedSegmentedVisual {
+    container: Color,
+    container_disabled: Color,
+    selected: Color,
+    selected_disabled: Color,
+    primary: Color,
+    primary_hover: Color,
+    text: Color,
+    text_disabled: Color,
+    divider: Color,
+    container_radius: f32,
+}
+
+impl SegmentedVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedSegmentedVisual {
+        ResolvedSegmentedVisual {
+            container: self.container.resolve(tokens),
+            container_disabled: self.container_disabled.resolve(tokens),
+            selected: self.selected.resolve(tokens),
+            selected_disabled: self.selected_disabled.resolve(tokens),
+            primary: self.primary.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            text: self.text.resolve(tokens),
+            text_disabled: self.text_disabled.resolve(tokens),
+            divider: self.divider.resolve(tokens),
+            container_radius: self.container_radius.resolve(tokens),
+        }
+    }
+
+    fn visual_scale_for_height(self, height: f32) -> f32 {
+        (height / crate::ui::widget_runtime::config::control_height(ControlSize::Medium)).max(0.0)
+    }
+
+    fn font_size_for_height(self, height: f32) -> f32 {
+        self.base_font_size * self.visual_scale_for_height(height).sqrt()
+    }
+
+    fn segment_width_for_height(self, option: &str, height: f32) -> f32 {
+        let scale = self.visual_scale_for_height(height);
+        let font_size = self.font_size_for_height(height);
+        crate::draw::resources::font::text_backend::estimate_text_metrics(
+            option,
+            f32::INFINITY,
+            font_size,
+        )
+        .max_line_width
+            + self.segment_extra_width * scale
+    }
+}
+
+// 向 UIX 提供圆角和零分配主题角色。
+const fn segmented_small_radius() -> SegmentedRadiusRole {
+    SegmentedRadiusRole::Small
+}
+const fn segmented_container() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+const fn segmented_container_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillQuaternary)
+}
+const fn segmented_selected() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgElevated)
+}
+const fn segmented_selected_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillSecondary)
+}
+const fn segmented_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn segmented_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn segmented_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn segmented_text_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+const fn segmented_divider() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
 
 widget! {
     /// Segmented — 水平分段选择器。
@@ -25,6 +150,9 @@ widget! {
         focused: bool,
         pending_change: Cell<Option<usize>>,
         control_rect: Cell<Rect>,
+        #[snapshot(skip)]
+        /// UIX 声明的容器、滑块、文字与分隔线视觉。
+        pub(crate) visual: &'static SegmentedVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -110,74 +238,102 @@ widget! {
             return;
         }
 
-        let fill = ctx.tokens().color_fill_tertiary();
-        let fill_secondary = ctx.tokens().color_fill_secondary();
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_quaternary = ctx.tokens().color_text_quaternary();
-        let bg = ctx.tokens().color_bg_elevated();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-        let fill_quaternary = ctx.tokens().color_fill_quaternary();
+        let visual = self.visual.resolve(ctx.tokens());
+        let r = Some(Radius::uniform(visual.container_radius));
 
         // 整体背景
-        let container_bg = if self.disabled { fill_quaternary } else { fill };
+        let container_bg = if self.disabled {
+            visual.container_disabled
+        } else {
+            visual.container
+        };
         ctx.fill_rect(control_rect, container_bg, r);
         ctx.push_clip(control_rect);
 
         let mut x = control_rect.x;
-        let visual_scale = Self::visual_scale_for_height(control_rect.h);
-        let font_size = Self::font_size_for_height(control_rect.h);
-        let segment_widths = self.segment_widths_for_frame(control_rect.h, control_rect.w);
+        let visual_scale = self.visual.visual_scale_for_height(control_rect.h);
+        let font_size = self.visual.font_size_for_height(control_rect.h);
+        // 先求名义总宽，再在循环内直接缩放，避免每帧构造宽度 Vec。
+        let nominal_total = self.nominal_width_total(control_rect.h);
+        let ratio = if nominal_total > 0.0 {
+            control_rect.w / nominal_total
+        } else {
+            0.0
+        };
+        let equal_width = if self.options.is_empty() {
+            0.0
+        } else {
+            control_rect.w / self.options.len() as f32
+        };
+        let last = self.options.len().saturating_sub(1);
+        let mut used = 0.0;
 
-        for (i, (opt, seg_w)) in self.options.iter().zip(segment_widths).enumerate() {
+        for (i, opt) in self.options.iter().enumerate() {
+            let seg_w = self.scaled_segment_width(
+                i,
+                last,
+                control_rect.h,
+                control_rect.w,
+                nominal_total,
+                ratio,
+                equal_width,
+                used,
+            );
+            used += seg_w;
             let seg_disabled = self.is_segment_disabled(i);
             let is_hovered = self.hovered_idx == Some(i) && !seg_disabled;
             let segment_rect = Rect::new(x, control_rect.y, seg_w, control_rect.h);
 
             if i == self.selected {
                 // 选中项：白色背景 + 主色文字
-                let thumb_bg = if seg_disabled { fill_secondary } else { bg };
-                let inset = 2.0 * visual_scale;
+                let thumb_bg = if seg_disabled {
+                    visual.selected_disabled
+                } else {
+                    visual.selected
+                };
+                let inset = self.visual.thumb_inset * visual_scale;
                 ctx.fill_rect(
                     Rect::new(
                         x + inset,
                         control_rect.y + inset,
-                        (seg_w - 2.0 * inset).max(0.0),
-                        (control_rect.h - 2.0 * inset).max(0.0),
+                        (seg_w - inset * 2.0).max(0.0),
+                        (control_rect.h - inset * 2.0).max(0.0),
                     ),
                     thumb_bg,
-                    Some(Radius::uniform(3.0 * visual_scale)),
+                    Some(Radius::uniform(self.visual.thumb_radius * visual_scale)),
                 );
-                let tc = if seg_disabled { text_quaternary } else { primary };
+                let tc = if seg_disabled {
+                    visual.text_disabled
+                } else {
+                    visual.primary
+                };
                 ctx.push_clip(segment_rect);
                 ctx.text_center(opt, segment_rect, tc, font_size);
                 ctx.pop_clip();
             } else if seg_disabled {
                 ctx.push_clip(segment_rect);
-                ctx.text_center(opt, segment_rect, text_quaternary, font_size);
+                ctx.text_center(opt, segment_rect, visual.text_disabled, font_size);
                 ctx.pop_clip();
             } else if is_hovered {
                 ctx.push_clip(segment_rect);
-                ctx.text_center(opt, segment_rect, primary_hover, font_size);
+                ctx.text_center(opt, segment_rect, visual.primary_hover, font_size);
                 ctx.pop_clip();
             } else {
                 ctx.push_clip(segment_rect);
-                ctx.text_center(opt, segment_rect, text_secondary, font_size);
+                ctx.text_center(opt, segment_rect, visual.text, font_size);
                 ctx.pop_clip();
             }
 
             // 分隔线（非选中项之间）
             if i > 0 && i != self.selected && i - 1 != self.selected {
-                let divider_color = ctx.tokens().color_border_secondary();
-                let inset = 6.0 * visual_scale;
+                let inset = self.visual.divider_inset * visual_scale;
                 ctx.draw_line(
                     x,
                     control_rect.y + inset,
                     x,
                     control_rect.y + control_rect.h - inset,
-                    divider_color,
-                    1.0,
+                    visual.divider,
+                    self.visual.divider_width,
                 );
             }
 
@@ -187,7 +343,12 @@ widget! {
 
         // focus 边框指示
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(control_rect, primary, 1.5, r);
+            ctx.stroke_rect(
+                control_rect,
+                visual.primary,
+                self.visual.focus_stroke_width,
+                r,
+            );
         }
     }
 }
@@ -270,7 +431,10 @@ impl Segmented {
         let w = self
             .options
             .iter()
-            .map(|option| Self::segment_width_for_height(option, self.control_height()))
+            .map(|option| {
+                self.visual
+                    .segment_width_for_height(option, self.control_height())
+            })
             .sum::<f32>();
         Size::new(w, self.control_height())
     }
@@ -284,9 +448,26 @@ impl Segmented {
         {
             return None;
         }
-        let segment_widths = self.segment_widths_for_frame(control.h, control.w);
+        let nominal_total = self.nominal_width_total(control.h);
+        let ratio = if nominal_total > 0.0 {
+            control.w / nominal_total
+        } else {
+            0.0
+        };
+        let equal_width = control.w / self.options.len() as f32;
+        let last = self.options.len() - 1;
         let mut cum_x = 0.0f32;
-        for (i, seg_w) in segment_widths.into_iter().enumerate() {
+        for i in 0..self.options.len() {
+            let seg_w = self.scaled_segment_width(
+                i,
+                last,
+                control.h,
+                control.w,
+                nominal_total,
+                ratio,
+                equal_width,
+                cum_x,
+            );
             let end = cum_x + seg_w;
             if pos.x >= cum_x && pos.x < end {
                 return Some(i);
@@ -304,56 +485,41 @@ impl Segmented {
         crate::ui::widget_runtime::config::control_height(self.segmented_size)
     }
 
-    fn visual_scale_for_height(height: f32) -> f32 {
-        (height / crate::ui::widget_runtime::config::control_height(ControlSize::Medium)).max(0.0)
-    }
-
-    fn font_size_for_height(height: f32) -> f32 {
-        13.0 * Self::visual_scale_for_height(height).sqrt()
-    }
-
-    fn segment_width_for_height(option: &str, height: f32) -> f32 {
-        let scale = Self::visual_scale_for_height(height);
-        let font_size = Self::font_size_for_height(height);
-        crate::draw::resources::font::text_backend::estimate_text_metrics(
-            option,
-            f32::INFINITY,
-            font_size,
-        )
-        .max_line_width
-            + 24.0 * scale
-    }
-
-    fn segment_widths_for_frame(&self, height: f32, frame_width: f32) -> Vec<f32> {
-        if self.options.is_empty() || frame_width <= 0.0 {
-            return Vec::new();
-        }
-        let nominal = self
-            .options
+    // 计算所有分段的名义宽度总和，不分配临时宽度列表。
+    fn nominal_width_total(&self, height: f32) -> f32 {
+        self.options
             .iter()
-            .map(|option| Self::segment_width_for_height(option, height))
-            .collect::<Vec<_>>();
-        let total = nominal.iter().sum::<f32>();
-        if total <= 0.0 {
-            return vec![frame_width / self.options.len() as f32; self.options.len()];
-        }
+            .map(|option| self.visual.segment_width_for_height(option, height))
+            .sum()
+    }
 
-        let ratio = frame_width / total;
-        let last = nominal.len() - 1;
-        let mut used = 0.0;
-        nominal
-            .into_iter()
-            .enumerate()
-            .map(|(index, width)| {
-                let width = if index == last {
-                    (frame_width - used).max(0.0)
-                } else {
-                    (width * ratio).max(0.0)
-                };
-                used += width;
-                width
-            })
-            .collect()
+    // 按当前 frame 缩放单个分段，并让末项精确消费浮点余量。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "分段宽度热路径显式传入缓存值以避免临时分配"
+    )]
+    fn scaled_segment_width(
+        &self,
+        index: usize,
+        last: usize,
+        height: f32,
+        frame_width: f32,
+        nominal_total: f32,
+        ratio: f32,
+        equal_width: f32,
+        used: f32,
+    ) -> f32 {
+        if nominal_total <= 0.0 {
+            return equal_width.max(0.0);
+        }
+        if index == last {
+            return (frame_width - used).max(0.0);
+        }
+        (self
+            .visual
+            .segment_width_for_height(&self.options[index], height)
+            * ratio)
+            .max(0.0)
     }
 
     fn reset_nominal_geometry(&self) {
@@ -376,6 +542,7 @@ impl Segmented {
         S: AsRef<str>,
     {
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = SEGMENTED_VISUAL_REF;
         let options = options
             .into_iter()
             .map(|option| option.as_ref().to_owned())
@@ -383,7 +550,7 @@ impl Segmented {
         let control_height = crate::ui::widget_runtime::config::control_height(config.size);
         let control_width = options
             .iter()
-            .map(|option| Self::segment_width_for_height(option, control_height))
+            .map(|option| visual.segment_width_for_height(option, control_height))
             .sum();
         Self {
             options,
@@ -396,6 +563,7 @@ impl Segmented {
             focused: false,
             pending_change: Cell::new(None),
             control_rect: Cell::new(Rect::new(0.0, 0.0, control_width, control_height)),
+            visual,
         }
     }
 
@@ -491,5 +659,28 @@ impl Segmented {
             self.hovered_idx = None;
         }
         self.reset_nominal_geometry();
+        self.visual = next.visual;
     }
 }
+
+// 把 Segmented Rust 选择内核与 UIX 静态视觉组合为单一组件节点。
+fn build_segmented_view(mut kernel: Segmented, visual: &'static SegmentedVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Segmented {
+    fn build(self) -> ViewNode {
+        build_segmented_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_segmented_uix_root(kernel: Segmented) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/segmented/segmented.uix")
+}
+
+// 验证分段选择器的视觉注入与无分配宽度计算契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/input/segmented__tests.rs"]
+mod tests;
