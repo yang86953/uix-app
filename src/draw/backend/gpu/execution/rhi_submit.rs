@@ -227,25 +227,21 @@ impl GpuBackend {
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算最终 sampled composite 的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
             damage,
         );
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // 先完成唯一 swapchain composite，成功后才提交 tracker 和 canvas 状态。
-        self.present_rhi_surface_texture(texture, damage_plan.present_damage.clone())?;
+        self.present_rhi_surface_texture(texture, damage_plan.present_damage)?;
         // 最终合成成功后消费 retained surface 的初始化标记。
         self.surface.needs_gpu_clear = false;
         // 清空已经由 retained FramePlan load action 替代的局部清理记录。
         self.surface.pending_clear_rects.clear();
         // 只有实际 present 成功才推进 damage tracker。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与其他 RHI present 路径相同的 canvas 消费和软资源 aging 语义。
         let mut used_soft = self.surface.canvas.finish_presented_frame();
         // 同一最终 present 后推进 Picture 软回退资源的生命周期。
@@ -309,7 +305,7 @@ impl GpuBackend {
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
@@ -346,10 +342,11 @@ impl GpuBackend {
         if !submitted {
             return Ok(false);
         }
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // retained shape 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // FramePlan present 成功后才推进清理、damage 和 canvas commit。
         // 只有最终合成成功后才消费主 surface 的全清状态。
@@ -357,12 +354,7 @@ impl GpuBackend {
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
         // 只有 present 成功才提交 damage tracker 状态。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         // 提交成功后清理 surface canvas 的已消费队列。
         let used_soft = self.surface.canvas.finish_presented_frame();
@@ -420,7 +412,7 @@ impl GpuBackend {
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
@@ -457,10 +449,11 @@ impl GpuBackend {
         if !submitted {
             return Ok(false);
         }
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // retained shadow 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // FramePlan present 成功后才推进清理、damage 和 canvas commit。
         // 只有最终合成成功后才消费主 surface 的全清状态。
@@ -468,12 +461,7 @@ impl GpuBackend {
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
         // 只有 present 成功才提交 damage tracker 状态。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         // 记录本帧是否使用了软回退内容。
@@ -527,7 +515,7 @@ impl GpuBackend {
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
         // 计算本次提交要携带的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
@@ -564,10 +552,11 @@ impl GpuBackend {
         if !submitted {
             return Ok(false);
         }
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // retained glyph 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // FramePlan present 成功后才推进清理、damage 和 canvas commit。
         // 只有最终合成成功后才消费主 surface 的全清状态。
@@ -575,12 +564,7 @@ impl GpuBackend {
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
         // 只有 present 成功才提交 damage tracker 状态。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         // 记录本帧是否使用了软回退内容。
@@ -636,7 +620,7 @@ impl GpuBackend {
         // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
@@ -673,22 +657,18 @@ impl GpuBackend {
         if !submitted {
             return Ok(false);
         }
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // retained textured 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // FramePlan present 成功后才推进清理、damage 和 canvas commit。
         // 只有最终合成成功后才消费主 surface 的全清状态。
         self.surface.needs_gpu_clear = false;
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         self.soft_used_in_last_present = used_soft;
@@ -741,7 +721,7 @@ impl GpuBackend {
         // 从同一 owner 读取当前 surface 元数据与可写 swapchain image 身份。
         let (present_surface, present_image) =
             (self.gpu_ctx.present_surface(), self.gpu_ctx.present_image());
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
@@ -778,22 +758,18 @@ impl GpuBackend {
         if !submitted {
             return Ok(false);
         }
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // retained gradient 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // FramePlan present 成功后才推进清理、damage 和 canvas commit。
         // 只有最终合成成功后才消费主 surface 的全清状态。
         self.surface.needs_gpu_clear = false;
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         self.soft_used_in_last_present = used_soft;

@@ -156,3 +156,55 @@
         // present damage 同样必须完整。
         assert_eq!(plan.present_damage, PresentDamage::Full);
     }
+
+    // 验证准备令牌只在成功提交时推进历史，失败丢弃不会污染后续修复集合。
+    #[test]
+    fn prepared_present_commits_once_and_failed_token_is_discarded() {
+        // 创建 tracker 与双缓冲身份。
+        let mut tracker = PresentDamageTracker::new();
+        let image0 = Some(PresentImage::new(0, 2));
+        let image1 = Some(PresentImage::new(1, 2));
+        // 两个成功令牌建立各自 image 的基线。
+        let first = tracker.prepare(
+            PresentCoherency::TrackedSwapchain,
+            surface(1),
+            image0,
+            &damage(0.0, 0.0),
+        );
+        let (_, first_commit) = first.into_parts();
+        tracker.commit_prepared(first_commit);
+        let second = tracker.prepare(
+            PresentCoherency::TrackedSwapchain,
+            surface(1),
+            image1,
+            &damage(20.0, 20.0),
+        );
+        let (_, second_commit) = second.into_parts();
+        tracker.commit_prepared(second_commit);
+        // 规划后直接丢弃，模拟原生 present 失败。
+        let failed = tracker.prepare(
+            PresentCoherency::TrackedSwapchain,
+            surface(1),
+            image0,
+            &damage(40.0, 40.0),
+        );
+        let (failed_plan, failed_commit) = failed.into_parts();
+        assert_eq!(
+            failed_plan.draw_damage,
+            PresentDamage::Partial(vec![(20, 20, 5, 5), (40, 40, 5, 5)])
+        );
+        drop(failed_commit);
+        // 下一次准备仍只基于最后成功的 image 1 历史，不包含失败帧损伤。
+        let retried = tracker.prepare(
+            PresentCoherency::TrackedSwapchain,
+            surface(1),
+            image0,
+            &damage(60.0, 60.0),
+        );
+        let (retried_plan, retried_commit) = retried.into_parts();
+        assert_eq!(
+            retried_plan.draw_damage,
+            PresentDamage::Partial(vec![(20, 20, 5, 5), (60, 60, 5, 5)])
+        );
+        tracker.commit_prepared(retried_commit);
+    }

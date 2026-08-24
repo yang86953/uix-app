@@ -712,12 +712,13 @@ impl WindowDriver {
                     let coherency = presenter.present_coherency();
                     let present_surface = presenter.present_surface(width, height, dpr);
                     let present_image = presenter.present_image();
-                    let damage_plan = self.present_damage_tracker.plan(
+                    let prepared_damage = self.present_damage_tracker.prepare(
                         coherency,
                         present_surface,
                         present_image,
                         &damage,
                     );
+                    let (damage_plan, damage_commit) = prepared_damage.into_parts();
                     // 帧诊断：呈现阶段起点。
                     let present_start = collect_frame_diagnostics.then(Instant::now);
                     match presenter.present(
@@ -727,12 +728,7 @@ impl WindowDriver {
                         damage_plan.present_damage,
                     ) {
                         Ok(()) => {
-                            self.present_damage_tracker.commit(
-                                coherency,
-                                present_surface,
-                                present_image,
-                                &damage,
-                            );
+                            self.present_damage_tracker.commit_prepared(damage_commit);
                             engine.external_present_succeeded();
                             // 帧诊断：呈现阶段耗时。
                             present_us =
