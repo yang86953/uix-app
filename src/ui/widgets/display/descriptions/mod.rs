@@ -83,17 +83,8 @@ widget! {
         let mut y = frame.y;
         let columns = self.effective_columns(frame.w);
         let col_w = frame.w / columns as f32;
-        let placements = self.item_placements(columns);
-        let row_heights = self.row_heights_for(frame.w, columns, &placements);
-        let mut body_height = 0.0;
-        let row_offsets = row_heights
-            .iter()
-            .map(|height| {
-                let offset = body_height;
-                body_height += *height;
-                offset
-            })
-            .collect::<Vec<_>>();
+        let row_heights = self.row_heights_for(frame.w, columns);
+        let body_height = row_heights.iter().sum::<f32>();
         ctx.push_clip(frame);
 
         // 标题
@@ -128,18 +119,23 @@ widget! {
         }
 
         // 按 span 顺序装箱；放不下的条目从下一行开始。
-        for placement in placements {
+        let mut current_row = 0usize;
+        let mut row_y = y;
+        for placement in self.item_placements(columns) {
+            while current_row < placement.row {
+                row_y += row_heights[current_row];
+                current_row += 1;
+            }
             let item = &self.items[placement.item_index];
             let item_x = frame.x + placement.column as f32 * col_w;
-            let item_y = y + row_offsets[placement.row];
             let item_w = placement.span as f32 * col_w;
             let item_h = row_heights[placement.row];
             let label_width = self.effective_label_width(item_w);
-            let row_rect = Rect::new(item_x, item_y, item_w, item_h);
-            let label_rect = Rect::new(item_x, item_y, label_width, item_h);
+            let row_rect = Rect::new(item_x, row_y, item_w, item_h);
+            let label_rect = Rect::new(item_x, row_y, label_width, item_h);
             let value_rect = Rect::new(
                 item_x + label_width,
-                item_y,
+                row_y,
                 (item_w - label_width).max(0.0),
                 item_h,
             );
@@ -265,48 +261,42 @@ impl Descriptions {
         self.column.min(fitting.max(1)).max(1)
     }
 
-    fn item_placements(&self, columns: usize) -> Vec<ItemPlacement> {
+    fn item_placements(&self, columns: usize) -> impl Iterator<Item = ItemPlacement> + '_ {
         let columns = columns.max(1);
         let mut row = 0usize;
         let mut used_columns = 0usize;
-        let mut placements = Vec::with_capacity(self.items.len());
-
-        for (item_index, item) in self.items.iter().enumerate() {
-            let span = item.span.clamp(1, columns);
-            if used_columns == columns || used_columns + span > columns {
-                row += 1;
-                used_columns = 0;
-            }
-            placements.push(ItemPlacement {
-                item_index,
-                row,
-                column: used_columns,
-                span,
-            });
-            used_columns += span;
-        }
-
-        placements
+        self.items
+            .iter()
+            .enumerate()
+            .map(move |(item_index, item)| {
+                let span = item.span.clamp(1, columns);
+                if used_columns == columns || used_columns + span > columns {
+                    row += 1;
+                    used_columns = 0;
+                }
+                let placement = ItemPlacement {
+                    item_index,
+                    row,
+                    column: used_columns,
+                    span,
+                };
+                used_columns += span;
+                placement
+            })
     }
 
     fn row_heights(&self, width: f32) -> Vec<f32> {
         let columns = self.effective_columns(width);
-        let placements = self.item_placements(columns);
-        self.row_heights_for(width, columns, &placements)
+        self.row_heights_for(width, columns)
     }
 
-    fn row_heights_for(
-        &self,
-        width: f32,
-        columns: usize,
-        placements: &[ItemPlacement],
-    ) -> Vec<f32> {
-        let Some(last) = placements.last() else {
-            return Vec::new();
-        };
-        let mut heights = vec![self.base_item_height(); last.row + 1];
+    fn row_heights_for(&self, width: f32, columns: usize) -> Vec<f32> {
+        let mut heights: Vec<f32> = Vec::new();
         let col_w = width.max(0.0) / columns.max(1) as f32;
-        for placement in placements {
+        for placement in self.item_placements(columns) {
+            if placement.row == heights.len() {
+                heights.push(self.base_item_height());
+            }
             let item = &self.items[placement.item_index];
             let item_w = placement.span as f32 * col_w;
             let label_width = self.effective_label_width(item_w);
