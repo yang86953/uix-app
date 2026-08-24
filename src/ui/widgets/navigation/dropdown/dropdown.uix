@@ -1,0 +1,30 @@
+// Dropdown 的触发器、弹层、菜单行、分隔线、图标、排版和主题由 UIX 唯一拥有。
+<Visual name="DROPDOWN_LAYOUT_VISUAL" type="DropdownLayoutVisual"
+  width={160.0} triggerHeight={32.0} rowHeight={30.0} dividerRowHeight={8.0}
+  contentStart={12.0} depthIndent={16.0} iconSlotWidth={20.0} iconAdvance={24.0}
+  arrowReserve={20.0} labelEndPadding={8.0} arrowEndInset={24.0}
+  arrowSlotWidth={16.0} dividerInset={8.0} dividerThickness={1.0}
+/>
+<Visual name="DROPDOWN_TYPOGRAPHY_VISUAL" type="DropdownTypographyVisual"
+  label={13.0} icon={14.0} arrow={12.0}
+/>
+<Visual name="DROPDOWN_CHROME_VISUAL" type="DropdownChromeVisual"
+  borderWidth={1.0} focusWidth={1.5} shadowExpand={8.0} overlayZ={900}
+  radius={dropdown_radius_small()} shadow={dropdown_shadow_secondary()}
+/>
+<Visual name="DROPDOWN_ICONS_VISUAL" type="DropdownIconsVisual"
+  expanded="chevron-down" collapsed="chevron-right"
+/>
+<Visual name="DROPDOWN_PALETTE_VISUAL" type="DropdownPaletteVisual"
+  primary={dropdown_primary()} white={dropdown_white()}
+  primaryActive={dropdown_primary_active()}
+  elevatedBackground={dropdown_elevated_background()} border={dropdown_border()}
+  text={dropdown_text()} textQuaternary={dropdown_text_quaternary()}
+  fillTertiary={dropdown_fill_tertiary()}
+/>
+<Visual name="DROPDOWN_VISUAL" type="DropdownVisual"
+  layout={DROPDOWN_LAYOUT_VISUAL} typography={DROPDOWN_TYPOGRAPHY_VISUAL}
+  chrome={DROPDOWN_CHROME_VISUAL} icons={DROPDOWN_ICONS_VISUAL}
+  palette={DROPDOWN_PALETTE_VISUAL}
+/>
+<KernelView value={build_dropdown_view(kernel, DROPDOWN_VISUAL_REF)} />
