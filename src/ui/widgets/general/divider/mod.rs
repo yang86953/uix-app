@@ -7,10 +7,10 @@ use crate::ui::view::{View, ViewNode};
 // 引入 UIX 静态颜色角色。
 use crate::ui::theme::style::ColorValue;
 // 引入分隔线与次级文字使用的中性色角色。
+use crate::ui::SnapshotFields;
 use crate::ui::theme::NeutralRole;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
-use crate::ui::SnapshotFields;
 use crate::widget;
 
 /// 水平分隔线的文本位置。
@@ -35,7 +35,7 @@ pub enum DividerDirection {
 
 // 保存由 UIX 声明、由 Rust 分隔线绘制内核消费的紧凑静态视觉。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DividerVisual {
+pub(crate) struct DividerVisual {
     // 标签文字字号。
     text_size: f32,
     // 无字形引擎精确测量时的兼容字符宽度。
@@ -62,24 +62,8 @@ struct DividerVisual {
     text_color: ColorValue,
 }
 
-impl Default for DividerVisual {
-    fn default() -> Self {
-        Self {
-            text_size: 14.0,
-            text_glyph_width: 7.5,
-            text_padding: 8.0,
-            edge_offset: 32.0,
-            text_gap: 8.0,
-            line_width: 1.0,
-            dash_segment: 6.0,
-            dash_gap: 4.0,
-            labelled_extent: 24.0,
-            plain_extent: 1.0,
-            line_color: ColorValue::Neutral(NeutralRole::BorderSecondary),
-            text_color: ColorValue::Neutral(NeutralRole::TextSecondary),
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/general/divider/divider.uix");
 
 widget! {
     /// 支持可选标签的分隔线组件。
@@ -92,7 +76,7 @@ widget! {
         dashed: bool,
         #[snapshot(skip)]
         /// UIX 声明的标签、线段、固有尺寸与主题色角色。
-        visual: DividerVisual,
+        visual: &'static DividerVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -225,8 +209,7 @@ impl Divider {
             direction: DividerDirection::Horizontal,
             color: None,
             dashed: false,
-            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
-            visual: DividerVisual::default(),
+            visual: DIVIDER_VISUAL_REF,
         }
     }
 
@@ -281,37 +264,8 @@ const fn divider_text_secondary() -> ColorValue {
 }
 
 // 把 UIX 声明的静态配置融合进原有 Divider 叶内核。
-#[allow(clippy::too_many_arguments)]
-fn build_divider_view(
-    mut kernel: Divider,
-    text_size: f32,
-    text_glyph_width: f32,
-    text_padding: f32,
-    edge_offset: f32,
-    text_gap: f32,
-    line_width: f32,
-    dash_segment: f32,
-    dash_gap: f32,
-    labelled_extent: f32,
-    plain_extent: f32,
-    line_color: ColorValue,
-    text_color: ColorValue,
-) -> ViewNode {
-    // 只复制紧凑 Copy 配置，不创建标签或线段子节点。
-    kernel.visual = DividerVisual {
-        text_size,
-        text_glyph_width,
-        text_padding,
-        edge_offset,
-        text_gap,
-        line_width,
-        dash_segment,
-        dash_gap,
-        labelled_extent,
-        plain_extent,
-        line_color,
-        text_color,
-    };
+fn build_divider_view(mut kernel: Divider, visual: &'static DividerVisual) -> ViewNode {
+    kernel.visual = visual;
     // 保持原有单 Widget 树形与分配数量。
     ViewNode::leaf(kernel)
 }

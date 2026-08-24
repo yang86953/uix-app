@@ -16,6 +16,12 @@ fn uix_root_preserves_avatar_kernel() {
         .as_any()
         .downcast_ref::<Avatar>()
         .expect("UIX 根必须保留 Avatar 内核");
+    // 构建前后共享 UIX 生成的唯一静态地址，实例不复制完整视觉表。
+    assert!(std::ptr::eq(kernel.visual, super::AVATAR_VISUAL_REF));
+    assert!(
+        std::mem::size_of::<super::AvatarVisual>()
+            > std::mem::size_of::<&'static super::AvatarVisual>()
+    );
     // 作者配置必须无损进入同一内核。
     assert_eq!(kernel.text, "AL");
     assert_eq!(kernel.size, 40.0);

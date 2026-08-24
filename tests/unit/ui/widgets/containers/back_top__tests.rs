@@ -52,6 +52,12 @@
             .downcast_ref::<BackTop>()
             // 类型变化表示 UIX 融合路径破坏。
             .expect("UIX BackTop 根必须保持 BackTop 内核");
+        // 构建前后必须共享 UIX 生成的唯一静态地址，且实例只保存一个指针。
+        assert!(std::ptr::eq(kernel.visual, BACK_TOP_VISUAL_REF));
+        assert!(
+            std::mem::size_of::<BackTopVisual>()
+                > std::mem::size_of::<&'static BackTopVisual>()
+        );
         // UIX 声明必须保留原有图标与尺寸。
         assert_eq!(kernel.visual.icon_name, "chevron-up");
         // 图标大小必须来自 UIX 参数。

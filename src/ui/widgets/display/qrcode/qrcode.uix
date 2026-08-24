@@ -1,2 +1,13 @@
-// QRCode 的默认尺寸、模块色、错误文案与主题角色由 UIX 声明；静区保持 Rust 扫描质量契约。
-<KernelView value={build_qrcode_view(kernel, 160, qrcode_white(), qrcode_black(), qrcode_error(), qrcode_error_label(), qrcode_body_font())} />
+// QRCode 的默认尺寸、模块色、错误文案与主题角色由 UIX 唯一拥有；静区保持 Rust 扫描质量契约。
+<Visual
+  name="QRCODE_VISUAL"
+  type="QRCodeVisual"
+  defaultSize={160.0}
+  backgroundColor={qrcode_white()}
+  foregroundColor={qrcode_black()}
+  errorColor={qrcode_error()}
+  errorLabel="QR !"
+  errorFont={qrcode_body_font()}
+/>
+
+<KernelView value={build_qrcode_view(kernel, QRCODE_VISUAL_REF)} />

@@ -21,6 +21,10 @@ fn uix_shell_preserves_single_empty_kernel_leaf() {
         .as_any()
         .downcast_ref::<Empty>()
         .expect("UIX 根必须保留 Empty 内核");
+    assert!(std::ptr::eq(kernel.visual, EMPTY_VISUAL_REF));
+    assert!(
+        std::mem::size_of::<EmptyVisual>() > std::mem::size_of::<&'static EmptyVisual>()
+    );
     assert_eq!(kernel.visual.min_width, 160.0);
     assert_eq!(kernel.visual.max_width, 320.0);
     assert_eq!(kernel.visual.text_font_size, 13.0);

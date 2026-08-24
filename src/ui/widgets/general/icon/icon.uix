@@ -8,4 +8,4 @@
   color={icon_text_color()}
 />
 
-<KernelView value={build_icon_view(kernel, ICON_VISUAL)} />
+<KernelView value={build_icon_view(kernel, ICON_VISUAL_REF)} />

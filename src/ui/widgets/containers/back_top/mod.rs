@@ -6,9 +6,9 @@ use crate::ui::view::{View, ViewNode};
 // 引入 UIX 静态颜色角色到当前主题的解析契约。
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 // 引入浮层背景中性色角色。
+use crate::ui::SnapshotFields;
 use crate::ui::theme::NeutralRole;
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::SnapshotFields;
 use crate::widget;
 // 引入事件、键盘、声明式状态与组件树公开契约。
 use crate::ui::{EventResult, KeyCode, State, SystemEvent, WidgetTree};
@@ -17,7 +17,7 @@ const DEFAULT_VISIBILITY_HEIGHT: f32 = 400.0;
 
 // 保存由 UIX 声明、由 Rust 绘制内核消费的紧凑静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct BackTopVisual {
+pub(crate) struct BackTopVisual {
     // 保存 Lucide 图标名称。
     icon_name: &'static str,
     // 保存图标绘制尺寸。
@@ -34,26 +34,8 @@ struct BackTopVisual {
     fill_color: ColorValue,
 }
 
-impl Default for BackTopVisual {
-    fn default() -> Self {
-        Self {
-            // 直接 Rust 叶构造保留旧版默认图标。
-            icon_name: "chevron-up",
-            // 保留旧版图标尺寸。
-            icon_size: 14.0,
-            // 保留旧版固有边长。
-            extent: 40.0,
-            // 保留原有内外圆两像素差。
-            ring_width: 2.0,
-            // 保留原有外圆占当前最短边四成的缩放契约。
-            ring_radius_ratio: 0.4,
-            // 环形边框继续使用主色令牌。
-            ring_color: ColorValue::Palette(PaletteColor::Primary),
-            // 内部继续使用浮层背景令牌。
-            fill_color: ColorValue::Neutral(NeutralRole::BgElevated),
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/containers/back_top/back_top.uix");
 
 widget! {
     /// BackTop — 回到顶部按钮。
@@ -69,7 +51,7 @@ widget! {
         focused: bool,
         #[snapshot(skip)]
         /// UIX 声明的静态图标、几何与主题色角色。
-        visual: BackTopVisual,
+        visual: &'static BackTopVisual,
     }
 
     visible => (&self) -> bool { self.visible }
@@ -166,8 +148,7 @@ impl BackTop {
             // 默认手动模式不持有应用状态句柄。
             scroll_binding: None,
             focused: false,
-            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
-            visual: BackTopVisual::default(),
+            visual: BACK_TOP_VISUAL_REF,
         }
     }
 
@@ -289,11 +270,6 @@ impl BackTop {
     }
 }
 
-// 向 UIX 静态模板提供零分配 Lucide 图标角色。
-const fn back_top_chevron_up() -> &'static str {
-    "chevron-up"
-}
-
 // 向 UIX 静态模板提供零分配主色令牌。
 const fn back_top_primary() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
@@ -305,27 +281,8 @@ const fn back_top_elevated() -> ColorValue {
 }
 
 // 把 UIX 声明的静态配置融合进原有 BackTop 叶内核。
-#[allow(clippy::too_many_arguments)]
-fn build_back_top_view(
-    mut kernel: BackTop,
-    icon_name: &'static str,
-    icon_size: f32,
-    extent: f32,
-    ring_width: f32,
-    ring_radius_ratio: f32,
-    ring_color: ColorValue,
-    fill_color: ColorValue,
-) -> ViewNode {
-    // 一次性拷贝紧凑配置，不创建子节点或包装容器。
-    kernel.visual = BackTopVisual {
-        icon_name,
-        icon_size,
-        extent,
-        ring_width,
-        ring_radius_ratio,
-        ring_color,
-        fill_color,
-    };
+fn build_back_top_view(mut kernel: BackTop, visual: &'static BackTopVisual) -> ViewNode {
+    kernel.visual = visual;
     // 保持原有单 Widget 树形和分配数量。
     ViewNode::leaf(kernel)
 }

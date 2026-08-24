@@ -1,2 +1,15 @@
-// ThemeToggle 的双状态图标、固有尺寸、焦点几何与主题色角色由 UIX 声明。
-<KernelView value={build_theme_toggle_view(kernel, theme_toggle_sun(), theme_toggle_moon(), 18, 32, 1.5, 0.5, theme_toggle_text(), theme_toggle_primary())} />
+// ThemeToggle 的双状态图标、固有尺寸、焦点几何与主题色角色由 UIX 唯一拥有。
+<Visual
+  name="THEME_TOGGLE_VISUAL"
+  type="ThemeToggleVisual"
+  darkIcon="sun"
+  lightIcon="moon"
+  iconSize={18.0}
+  extent={32.0}
+  focusWidth={1.5}
+  focusRadiusRatio={0.5}
+  iconColor={theme_toggle_text()}
+  focusColor={theme_toggle_primary()}
+/>
+
+<KernelView value={build_theme_toggle_view(kernel, THEME_TOGGLE_VISUAL_REF)} />

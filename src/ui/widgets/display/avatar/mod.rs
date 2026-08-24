@@ -23,7 +23,7 @@ use crate::ui::widget_runtime::widget::WidgetTree;
 
 // 保存由 UIX 声明、由 Rust 资源与后备文字内核消费的静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct AvatarVisual {
+pub(crate) struct AvatarVisual {
     default_extent: f32,
     text_scale: f32,
     square_text_fit: f32,
@@ -34,20 +34,8 @@ struct AvatarVisual {
     corner_radius: AvatarRadiusRole,
 }
 
-impl Default for AvatarVisual {
-    fn default() -> Self {
-        Self {
-            default_extent: 32.0,
-            text_scale: 0.45,
-            square_text_fit: 0.78,
-            circle_text_fit: 0.68,
-            corner_radius_limit: 0.5,
-            background_color: ColorValue::Palette(PaletteColor::PrimaryBg),
-            text_color: ColorValue::Neutral(NeutralRole::Text),
-            corner_radius: AvatarRadiusRole::Small,
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/display/avatar/avatar.uix");
 
 // 头像方形圆角使用的主题令牌角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,7 +64,7 @@ widget! {
         src: String,
         cached: Cell<Option<BitmapHandle>>,
         #[snapshot(skip)]
-        visual: AvatarVisual,
+        visual: &'static AvatarVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -214,32 +202,12 @@ const fn avatar_radius_sm() -> AvatarRadiusRole {
 }
 
 // 把 UIX 声明的视觉配置融合进头像资源与后备文字内核。
-#[allow(clippy::too_many_arguments)]
-fn build_avatar_view(
-    mut kernel: Avatar,
-    default_extent: f32,
-    text_scale: f32,
-    square_text_fit: f32,
-    circle_text_fit: f32,
-    corner_radius_limit: f32,
-    background_color: ColorValue,
-    text_color: ColorValue,
-    corner_radius: AvatarRadiusRole,
-) -> ViewNode {
+fn build_avatar_view(mut kernel: Avatar, visual: &'static AvatarVisual) -> ViewNode {
     // 未显式设置尺寸时采用 UIX 声明的默认边长。
     if !kernel.size_authored {
-        kernel.size = default_extent;
+        kernel.size = visual.default_extent;
     }
-    kernel.visual = AvatarVisual {
-        default_extent,
-        text_scale,
-        square_text_fit,
-        circle_text_fit,
-        corner_radius_limit,
-        background_color,
-        text_color,
-        corner_radius,
-    };
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -256,14 +224,14 @@ impl Avatar {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            size: AvatarVisual::default().default_extent,
+            size: AVATAR_VISUAL.default_extent,
             size_authored: false,
             bg_color: None,
             text_color: None,
             square: false,
             src: String::new(),
             cached: Cell::new(None),
-            visual: AvatarVisual::default(),
+            visual: AVATAR_VISUAL_REF,
         }
     }
     /// 设置头像边长；非正数或非有限值回退为 32 像素。

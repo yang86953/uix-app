@@ -8,7 +8,7 @@ use qrcode::{EcLevel, QrCode, types::Color as QrModuleColor};
 
 // 保存由 UIX 声明、由 Rust 编码与绘制内核消费的静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct QRCodeVisual {
+pub(crate) struct QRCodeVisual {
     default_size: f32,
     background_color: ColorValue,
     foreground_color: ColorValue,
@@ -17,18 +17,8 @@ struct QRCodeVisual {
     error_font: QRCodeFontRole,
 }
 
-impl Default for QRCodeVisual {
-    fn default() -> Self {
-        Self {
-            default_size: 160.0,
-            background_color: ColorValue::Palette(PaletteColor::White),
-            foreground_color: ColorValue::Palette(PaletteColor::Black),
-            error_color: ColorValue::Palette(PaletteColor::Error),
-            error_label: "QR !",
-            error_font: QRCodeFontRole::Body,
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/display/qrcode/qrcode.uix");
 
 // 二维码错误提示使用的主题字号角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +50,7 @@ widget! {
         module_count: usize,
         encoding_error: Option<String>,
         #[snapshot(skip)]
-        visual: QRCodeVisual,
+        visual: &'static QRCodeVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -131,38 +121,18 @@ const fn qrcode_error() -> ColorValue {
 }
 
 // 向 UIX 提供二维码编码失败展示文案。
-const fn qrcode_error_label() -> &'static str {
-    "QR !"
-}
-
 // 向 UIX 提供二维码编码失败的正文主题字号角色。
 const fn qrcode_body_font() -> QRCodeFontRole {
     QRCodeFontRole::Body
 }
 
 // 把 UIX 声明的视觉配置融合进二维码编码矩阵与绘制内核。
-#[allow(clippy::too_many_arguments)]
-fn build_qrcode_view(
-    mut kernel: QRCode,
-    default_size: f32,
-    background_color: ColorValue,
-    foreground_color: ColorValue,
-    error_color: ColorValue,
-    error_label: &'static str,
-    error_font: QRCodeFontRole,
-) -> ViewNode {
+fn build_qrcode_view(mut kernel: QRCode, visual: &'static QRCodeVisual) -> ViewNode {
     // Rust 直接构造且未设置尺寸时采用 UIX 声明的默认边长。
     if !kernel.size_authored {
-        kernel.size = default_size;
+        kernel.size = visual.default_size;
     }
-    kernel.visual = QRCodeVisual {
-        default_size,
-        background_color,
-        foreground_color,
-        error_color,
-        error_label,
-        error_font,
-    };
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -177,7 +147,7 @@ impl View for QRCode {
 impl QRCode {
     /// 创建承载指定文本且使用默认尺寸和纠错等级的二维码。
     pub fn new(value: &str) -> Self {
-        let visual = QRCodeVisual::default();
+        let visual = QRCODE_VISUAL_REF;
         let mut qr = Self {
             value: value.to_string(),
             size: visual.default_size,

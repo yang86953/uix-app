@@ -95,7 +95,7 @@ pub(crate) fn parse_visual_declaration(element: Element) -> Result<VisualDeclara
         Diagnostic::new(
             element.span,
             "<Visual> 缺少必需的 name 属性",
-            "使用 name=\"ICON_VISUAL\" 声明模块级常量名",
+            "使用 name=\"ICON_VISUAL\" 声明模块级静态项名",
         )
     })?;
     let rust_type = rust_type.ok_or_else(|| {
@@ -121,7 +121,7 @@ pub(crate) fn parse_visual_declaration(element: Element) -> Result<VisualDeclara
     })
 }
 
-// Visual 常量使用稳定的 SCREAMING_SNAKE_CASE Rust 标识符。
+// Visual 静态项使用稳定的 SCREAMING_SNAKE_CASE Rust 标识符。
 fn validate_visual_name(name: &str, span: super::SourceSpan) -> Result<(), Diagnostic> {
     let valid_shape = !name.is_empty()
         && name
@@ -132,13 +132,13 @@ fn validate_visual_name(name: &str, span: super::SourceSpan) -> Result<(), Diagn
             .chars()
             .all(|value| value.is_ascii_uppercase() || value.is_ascii_digit() || value == '_')
         && syn::parse_str::<Ident>(name).is_ok();
-    if valid_shape {
+    if valid_shape && !name.ends_with("_REF") {
         Ok(())
     } else {
         Err(Diagnostic::new(
             span,
             format!("Visual 名称 {name:?} 不是合法的 SCREAMING_SNAKE_CASE 标识符"),
-            "使用 ICON_VISUAL 或 ALERT_LAYOUT 等常量名称",
+            "使用 ICON_VISUAL 或 ALERT_LAYOUT 等常量名称；_REF 后缀由编译器保留",
         ))
     }
 }

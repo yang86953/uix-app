@@ -33,7 +33,7 @@ pub(crate) fn parse_document(source: &str) -> Result<Document, Diagnostic> {
     let mut keyframe_names = HashSet::new();
     // 保存已声明组件名。
     let mut widget_names = HashSet::new();
-    // 保存已声明 Visual 常量名。
+    // 保存已声明 Visual 静态项名。
     let mut visual_names = HashSet::new();
     // 解析根元素之前的声明区。
     loop {

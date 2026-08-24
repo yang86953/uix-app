@@ -16,7 +16,7 @@ WIDGETS_ROOT = ROOT / "src" / "ui" / "widgets"
 # 该集合只能缩小；新迁移不得加入，修复一项时必须同步删除对应路径。
 VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
-# Rust 仍保存完整 DEFAULT_*_VISUAL 表的存量双源事实；只允许逐项删除。
+# Rust 仍保存完整静态表或 Visual::default 数值的存量双源事实；只允许逐项删除。
 RUST_VISUAL_DEFAULT_DEBT = {
     "display/badge/mod.rs",
     "display/calendar/mod.rs",
@@ -48,8 +48,6 @@ RUST_VISUAL_DEFAULT_DEBT = {
 
 # 仍以单个巨型位置参数调用表达视觉的存量 UIX；新组件必须改用具名 Visual 或真实子树。
 POSITIONAL_VISUAL_SHELL_DEBT = {
-    "containers/back_top/back_top.uix",
-    "display/avatar/avatar.uix",
     "display/badge/badge.uix",
     "display/calendar/calendar.uix",
     "display/card/card.uix",
@@ -59,15 +57,12 @@ POSITIONAL_VISUAL_SHELL_DEBT = {
     "display/chart/pie_chart/pie_chart.uix",
     "display/collapse/collapse.uix",
     "display/descriptions/descriptions.uix",
-    "display/empty/empty.uix",
     "display/image/image.uix",
     "display/image_group/image_group.uix",
     "display/list/list.uix",
-    "display/qrcode/qrcode.uix",
     "display/result/result.uix",
     "display/rich_text/rich_text.uix",
     "display/selectable_list/selectable_list.uix",
-    "display/skeleton/skeleton.uix",
     "display/table/table.uix",
     "display/tag/tag.uix",
     "display/timeline/timeline.uix",
@@ -78,8 +73,6 @@ POSITIONAL_VISUAL_SHELL_DEBT = {
     "feedback/progress/progress.uix",
     "feedback/spin/spin.uix",
     "feedback/tooltip/tooltip.uix",
-    "general/divider/divider.uix",
-    "other/theme_toggle/theme_toggle.uix",
 }
 
 # 已完成同目录 UIX 视觉迁移的 widget 目录；删除声明文件不得伪装成债务清零。
@@ -183,7 +176,10 @@ class WidgetUixColocationTests(unittest.TestCase):
 
     # 完整 Rust 默认视觉表会形成第二事实源；锁定存量并禁止新建。
     def test_rust_visual_default_debt_only_shrinks(self) -> None:
-        pattern = re.compile(r"\bstatic\s+DEFAULT_[A-Z0-9_]+_VISUAL\b")
+        pattern = re.compile(
+            r"\bstatic\s+DEFAULT_[A-Z0-9_]+_VISUAL\b"
+            r"|\bimpl\s+Default\s+for\s+[A-Za-z0-9_]+Visual\b"
+        )
         actual = {
             path.relative_to(WIDGETS_ROOT).as_posix()
             for path in WIDGETS_ROOT.rglob("*.rs")

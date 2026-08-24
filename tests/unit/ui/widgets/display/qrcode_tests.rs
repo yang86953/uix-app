@@ -29,7 +29,11 @@ fn uix_root_preserves_qrcode_kernel_and_encoding() {
     assert_eq!(kernel.size, 192.0);
     assert!(kernel.size_authored);
     // UIX 声明必须真实注入模块色、错误文案与字体角色。
-    assert_eq!(kernel.visual, super::QRCodeVisual::default());
+    assert!(std::ptr::eq(kernel.visual, super::QRCODE_VISUAL_REF));
+    assert!(
+        std::mem::size_of::<super::QRCodeVisual>()
+            > std::mem::size_of::<&'static super::QRCodeVisual>()
+    );
     assert_eq!(kernel.visual.error_label, "QR !");
 }
 

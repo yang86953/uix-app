@@ -19,7 +19,7 @@ use std::cell::Cell;
 
 // 保存由 UIX 声明、由 Rust 主题切换内核消费的紧凑静态视觉。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ThemeToggleVisual {
+pub(crate) struct ThemeToggleVisual {
     // 当前处于暗色主题时展示的目标图标。
     dark_icon: &'static str,
     // 当前处于亮色主题时展示的目标图标。
@@ -38,28 +38,8 @@ struct ThemeToggleVisual {
     focus_color: ColorValue,
 }
 
-impl Default for ThemeToggleVisual {
-    fn default() -> Self {
-        Self {
-            // 保留暗色状态下的旧版太阳图标。
-            dark_icon: "sun",
-            // 保留亮色状态下的旧版月亮图标。
-            light_icon: "moon",
-            // 保留旧版图标尺寸。
-            icon_size: 18.0,
-            // 保留旧版固有边长。
-            extent: 32.0,
-            // 保留旧版焦点环线宽。
-            focus_width: 1.5,
-            // 保留旧版圆形焦点环。
-            focus_radius_ratio: 0.5,
-            // 图标继续使用默认文本色。
-            icon_color: ColorValue::Neutral(NeutralRole::Text),
-            // 焦点环继续使用主色。
-            focus_color: ColorValue::Palette(PaletteColor::Primary),
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/other/theme_toggle/theme_toggle.uix");
 
 widget! {
     /// ThemeToggle — 主题切换按钮。
@@ -72,7 +52,7 @@ widget! {
         pending_change: Cell<Option<bool>>,
         #[snapshot(skip)]
         /// UIX 声明的双状态图标、几何与主题色角色。
-        visual: ThemeToggleVisual,
+        visual: &'static ThemeToggleVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -151,8 +131,7 @@ impl ThemeToggle {
             initial_dark: false,
             focused: false,
             pending_change: Cell::new(None),
-            // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
-            visual: ThemeToggleVisual::default(),
+            visual: THEME_TOGGLE_VISUAL_REF,
         }
     }
 
@@ -191,16 +170,6 @@ impl ThemeToggle {
     }
 }
 
-// 向 UIX 静态模板提供零分配太阳图标角色。
-const fn theme_toggle_sun() -> &'static str {
-    "sun"
-}
-
-// 向 UIX 静态模板提供零分配月亮图标角色。
-const fn theme_toggle_moon() -> &'static str {
-    "moon"
-}
-
 // 向 UIX 静态模板提供零分配默认文本色。
 const fn theme_toggle_text() -> ColorValue {
     ColorValue::Neutral(NeutralRole::Text)
@@ -212,29 +181,11 @@ const fn theme_toggle_primary() -> ColorValue {
 }
 
 // 把 UIX 声明的静态配置融合进原有 ThemeToggle 叶内核。
-#[allow(clippy::too_many_arguments)]
 fn build_theme_toggle_view(
     mut kernel: ThemeToggle,
-    dark_icon: &'static str,
-    light_icon: &'static str,
-    icon_size: f32,
-    extent: f32,
-    focus_width: f32,
-    focus_radius_ratio: f32,
-    icon_color: ColorValue,
-    focus_color: ColorValue,
+    visual: &'static ThemeToggleVisual,
 ) -> ViewNode {
-    // 只复制紧凑配置，不创建两个图标子节点或动态字符串。
-    kernel.visual = ThemeToggleVisual {
-        dark_icon,
-        light_icon,
-        icon_size,
-        extent,
-        focus_width,
-        focus_radius_ratio,
-        icon_color,
-        focus_color,
-    };
+    kernel.visual = visual;
     // 保持原有单 Widget 树形和分配数量。
     ViewNode::leaf(kernel)
 }

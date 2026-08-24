@@ -152,14 +152,14 @@ pub(crate) fn register_declaration_name(
             "record 与组件共享 PascalCase 命名空间，请使用不同名称",
         ));
     }
-    // Visual 常量在独立模块项目标命名空间中必须唯一。
+    // Visual 静态项在独立模块项目标命名空间中必须唯一。
     if let Declaration::Visual(visual) = declaration {
         if visual_names.insert(visual.name.clone()) {
             return Ok(());
         }
         return Err(Diagnostic::new(
             visual.span,
-            format!("Visual 常量 {} 重复声明", visual.name),
+            format!("Visual 静态项 {} 重复声明", visual.name),
             "合并同名视觉记录或使用不同的 SCREAMING_SNAKE_CASE 名称",
         ));
     }

@@ -1,4 +1,4 @@
-// 统一生成 uix_items! 所需的模块级 Record 类型与 Visual 常量。
+// 统一生成 uix_items! 所需的模块级 Record 类型与 Visual 静态项。
 
 use proc_macro2::TokenStream;
 use quote::quote;

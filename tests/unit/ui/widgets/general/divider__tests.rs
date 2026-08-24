@@ -26,6 +26,11 @@
             .downcast_ref::<Divider>()
             // 类型变化表示 UIX 融合路径破坏。
             .expect("UIX Divider 根必须保持 Divider 内核");
+        assert!(std::ptr::eq(kernel.visual, DIVIDER_VISUAL_REF));
+        assert!(
+            std::mem::size_of::<DividerVisual>()
+                > std::mem::size_of::<&'static DividerVisual>()
+        );
         // UIX 必须保留标签字号与带标签固有高度。
         assert_eq!(
             (kernel.visual.text_size, kernel.visual.labelled_extent),

@@ -168,7 +168,7 @@ fn imported_visual_declarations_generate_items_from_their_source_file() {
         compile_file(&root, CompileTarget::Items).expect("被导入 Visual 必须进入模块项目标生成");
     let tokens = output.tokens.to_string();
     assert!(
-        tokens.contains("pub (crate) const ICON_VISUAL : IconVisual"),
+        tokens.contains("pub (crate) static ICON_VISUAL : IconVisual"),
         "{tokens}"
     );
     let visual = output
