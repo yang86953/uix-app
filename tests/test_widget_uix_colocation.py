@@ -99,6 +99,7 @@ MIGRATED_WIDGET_DIRS = {
     "navigation/menu",
     "navigation/nav",
     "navigation/navigation_shell",
+    "navigation/pagination",
     "input/input_group",
     "input/input_number",
     "input/radio",
@@ -126,7 +127,6 @@ MIGRATED_SUPPORT_DIRS = {
 
 # 公开视觉 widget 的剩余迁移债务；完成一项时必须同步删除，最终目标为空集合。
 UNMIGRATED_PUBLIC_WIDGET_DIRS = {
-    "navigation/pagination",
     "navigation/steps",
     "navigation/tabs",
 }

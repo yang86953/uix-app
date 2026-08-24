@@ -9,17 +9,15 @@ use crate::widget;
 // 引入 current 与 pageSize 的声明式状态句柄。
 use crate::ui::State;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
-    WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
+    WidgetId, WidgetTree,
 };
 use std::cell::Cell;
 use std::ops::Range;
 use std::rc::Rc;
 
-const PAGINATION_GAP: f32 = 4.0;
-const PAGINATION_EXTRA_GAP: f32 = 12.0;
-const PAGINATION_TOTAL_WIDTH: f32 = 100.0;
-const PAGINATION_SIZE_WIDTH: f32 = 80.0;
+mod presentation;
+use presentation::*;
 
 // Pagination — 分页器。
 widget! {
@@ -44,6 +42,9 @@ widget! {
         jumper_buffer: String,
         jumper_cursor_rect: Cell<Rect>,
         pending_change: Cell<Option<PaginationChange>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static PaginationVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -65,7 +66,7 @@ widget! {
                 button: MouseButton::Left,
                 ..
             } => {
-                if pos.y < 0.0 || pos.y > self.size + 8.0 {
+                if pos.y < 0.0 || pos.y > self.size + self.visual.layout.hit_vertical_extra {
                     return EventResult::NotHandled;
                 }
                 self.handle_pointer_down(pos.x)
@@ -155,14 +156,18 @@ widget! {
         let cur = self.current.get();
         let item_w = self.size;
         let item_h = self.size;
-        let radius = Radius::uniform(ctx.tokens().border_radius_sm());
-        let primary = ctx.tokens().color_primary();
-        let border = ctx.tokens().color_border();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
+        // 全部控件、辅助文字与输入光标同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
+        let radius = Radius::uniform(visual.radius);
+        let primary = visual.primary;
+        let border = visual.border;
+        let text = visual.text;
+        let text_sec = visual.text_secondary;
         // 当前页文字反白色：白色 token。
-        let white = ctx.tokens().color_white();
-        let bg = ctx.tokens().color_bg_container();
+        let white = visual.white;
+        let bg = visual.container_background;
 
         let mut x = frame.x;
         let y = frame.y + (frame.h - item_h) * 0.5;
@@ -171,22 +176,22 @@ widget! {
         let prev_c = if prev_disabled { text_sec } else { text };
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            "chevron-left",
+            self.visual.icons.previous,
             Rect::new(x, y, item_w, item_h),
             prev_c,
-            16.0,
+            typography.icon,
         );
-        x += item_w + PAGINATION_GAP;
+        x += item_w + layout.gap;
 
         if self.simple {
-            let simple_rect = Rect::new(x, y, item_w * 2.5, item_h);
+            let simple_rect = Rect::new(x, y, item_w * layout.simple_width_factor, item_h);
             ctx.text_center(
                 &format!("{cur} / {total_pages}"),
                 simple_rect,
                 text,
-                13.0,
+                typography.page,
             );
-            x += simple_rect.w + PAGINATION_GAP;
+            x += simple_rect.w + layout.gap;
         } else {
             for &p in &range {
             let label = if p == 0 { "...".to_string() } else { p.to_string() };
@@ -194,13 +199,18 @@ widget! {
             let btn_rect = Rect::new(x, y, item_w, item_h);
             if active {
                 ctx.fill_rect(btn_rect, primary, Some(radius));
-                ctx.text_center(&label, btn_rect, white, 13.0);
+                ctx.text_center(&label, btn_rect, white, typography.page);
             } else {
                 ctx.fill_rect(btn_rect, bg, Some(radius));
-                ctx.stroke_rect(btn_rect, border, 1.0, Some(radius));
-                ctx.text_center(&label, btn_rect, text, 13.0);
+                ctx.stroke_rect(
+                    btn_rect,
+                    border,
+                    self.visual.chrome.border_width,
+                    Some(radius),
+                );
+                ctx.text_center(&label, btn_rect, text, typography.page);
             }
-            x += item_w + PAGINATION_GAP;
+            x += item_w + layout.gap;
             }
         }
 
@@ -208,22 +218,22 @@ widget! {
         let next_c = if next_disabled { text_sec } else { text };
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            "chevron-right",
+            self.visual.icons.next,
             Rect::new(x, y, item_w, item_h),
             next_c,
-            16.0,
+            typography.icon,
         );
         x += item_w;
 
         if self.show_total {
             let total_rect = Rect::new(
-                x + PAGINATION_EXTRA_GAP,
+                x + layout.extra_gap,
                 y,
-                PAGINATION_TOTAL_WIDTH,
+                layout.total_width,
                 item_h,
             );
             // 分页辅助文本字号：统一使用主题 font_size_sm token。
-            let total_y = ctx.visual_center_y(total_rect, ctx.tokens().font_size_sm());
+            let total_y = ctx.visual_center_y(total_rect, visual.small_font_size);
             let total_label = self
                 .total_template
                 .as_ref()
@@ -233,54 +243,67 @@ widget! {
                 &total_label,
                 Point::new(total_rect.x, total_y),
                 text_sec,
-                ctx.tokens().font_size_sm(),
+                visual.small_font_size,
             );
             x = total_rect.x + total_rect.w;
         }
 
         if self.show_jumper {
-            let jumper_rect = Rect::new(x + PAGINATION_EXTRA_GAP, y, 84.0, item_h);
-            let label_rect = Rect::new(jumper_rect.x, jumper_rect.y, 24.0, jumper_rect.h);
+            let jumper_rect = Rect::new(x + layout.extra_gap, y, layout.jumper_width, item_h);
+            let label_rect = Rect::new(
+                jumper_rect.x,
+                jumper_rect.y,
+                layout.jumper_label_width,
+                jumper_rect.h,
+            );
             let input_rect = Rect::new(
                 label_rect.x + label_rect.w,
                 jumper_rect.y,
-                44.0,
+                layout.jumper_input_width,
                 jumper_rect.h,
             );
             let suffix_rect = Rect::new(
-                input_rect.x + input_rect.w + 4.0,
+                input_rect.x + input_rect.w + layout.jumper_suffix_gap,
                 jumper_rect.y,
-                12.0,
+                layout.jumper_suffix_width,
                 jumper_rect.h,
             );
             let border_color = if self.jumper_active { primary } else { border };
-            let label_y = ctx.visual_center_y(label_rect, ctx.tokens().font_size_sm());
+            let label_y = ctx.visual_center_y(label_rect, visual.small_font_size);
             ctx.draw_text(
                 "跳至",
                 Point::new(label_rect.x, label_y),
                 text_sec,
-                ctx.tokens().font_size_sm(),
+                visual.small_font_size,
             );
             ctx.fill_rect(input_rect, bg, Some(radius));
-            ctx.stroke_rect(input_rect, border_color, 1.0, Some(radius));
+            ctx.stroke_rect(
+                input_rect,
+                border_color,
+                self.visual.chrome.border_width,
+                Some(radius),
+            );
             let inactive_text = (!self.jumper_active).then(|| cur.to_string());
             let jumper_text = inactive_text
                 .as_deref()
                 .unwrap_or(self.jumper_buffer.as_str());
-            ctx.text_center(jumper_text, input_rect, text, ctx.tokens().font_size_sm());
-            let suffix_y = ctx.visual_center_y(suffix_rect, ctx.tokens().font_size_sm());
+            ctx.text_center(jumper_text, input_rect, text, visual.small_font_size);
+            let suffix_y = ctx.visual_center_y(suffix_rect, visual.small_font_size);
             ctx.draw_text(
                 "页",
                 Point::new(suffix_rect.x, suffix_y),
                 text_sec,
-                ctx.tokens().font_size_sm(),
+                visual.small_font_size,
             );
-            let text_width = ctx.measure_text(jumper_text, ctx.tokens().font_size_sm()).w.min(input_rect.w - 8.0);
+            let text_width = ctx
+                .measure_text(jumper_text, visual.small_font_size)
+                .w
+                .min(input_rect.w - layout.cursor_horizontal_padding);
             self.jumper_cursor_rect.set(Rect::new(
                 input_rect.x + (input_rect.w + text_width) * 0.5,
-                input_rect.y + 5.0,
-                1.0,
-                (input_rect.h - 10.0).max(0.0),
+                input_rect.y + layout.cursor_vertical_inset,
+                layout.cursor_width,
+                (input_rect.h - layout.cursor_vertical_inset * 2.0).max(0.0),
             ));
             x = jumper_rect.x + jumper_rect.w;
         }
@@ -288,23 +311,33 @@ widget! {
         if self.show_size_changer && !self.page_size_options.is_empty() {
             let changer_text = format!("{} 条/页", self.page_size);
             let changer_rect = Rect::new(
-                x + PAGINATION_EXTRA_GAP,
+                x + layout.extra_gap,
                 y,
-                PAGINATION_SIZE_WIDTH,
+                layout.size_changer_width,
                 item_h,
             );
-            ctx.stroke_rect(changer_rect, border, 1.0, Some(radius));
-            let cy = ctx.visual_center_y(changer_rect, ctx.tokens().font_size_sm());
+            ctx.stroke_rect(
+                changer_rect,
+                border,
+                self.visual.chrome.border_width,
+                Some(radius),
+            );
+            let cy = ctx.visual_center_y(changer_rect, visual.small_font_size);
             ctx.draw_text(
                 &changer_text,
-                Point::new(changer_rect.x + 6.0, cy),
+                Point::new(changer_rect.x + layout.changer_text_start, cy),
                 text,
-                ctx.tokens().font_size_sm(),
+                visual.small_font_size,
             );
         }
 
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(frame, primary, 1.5, Some(radius));
+            ctx.stroke_rect(
+                frame,
+                primary,
+                self.visual.chrome.focus_width,
+                Some(radius),
+            );
         }
     }
 }
@@ -318,6 +351,7 @@ enum PaginationChange {
 impl Pagination {
     /// 创建总记录数与每页条数固定、当前页为第一页的非受控分页器。
     pub fn new(total: usize, page_size: usize) -> Self {
+        let visual = PAGINATION_VISUAL_REF;
         Self {
             total,
             page_size: page_size.max(1),
@@ -326,18 +360,19 @@ impl Pagination {
             current: Cell::new(1),
             // 默认构造保持 current 非受控。
             current_binding: None,
-            show_size_changer: false,
-            show_total: true,
-            simple: false,
-            show_jumper: false,
+            show_size_changer: visual.defaults.show_size_changer,
+            show_total: visual.defaults.show_total,
+            simple: visual.defaults.simple,
+            show_jumper: visual.defaults.show_jumper,
             total_template: None,
-            size: 28.0,
+            size: visual.layout.default_item_size,
             page_size_options: vec![10, 20, 50, 100],
             focused: false,
             jumper_active: false,
             jumper_buffer: String::new(),
             jumper_cursor_rect: Cell::new(Rect::zero()),
             pending_change: Cell::new(None),
+            visual,
         }
     }
     /// 设置非受控当前页初始值，并按当前总页数归一化。
@@ -477,6 +512,8 @@ impl Pagination {
         self.total_template = next.total_template;
         self.size = next.size;
         self.page_size_options = next.page_size_options;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
     }
 
     fn intrinsic_size(&self) -> Size {
@@ -484,23 +521,27 @@ impl Pagination {
             .visible_range(self.total_pages(), self.current.get())
             .len() as f32;
         let control_count = if self.simple { 3.0 } else { range_count + 2.0 };
-        let controls = control_count * self.size + (control_count - 1.0) * PAGINATION_GAP;
+        let layout = &self.visual.layout;
+        let controls = control_count * self.size + (control_count - 1.0) * layout.gap;
         let total = if self.show_total {
-            PAGINATION_EXTRA_GAP + PAGINATION_TOTAL_WIDTH
+            layout.extra_gap + layout.total_width
         } else {
             0.0
         };
         let changer = if self.show_size_changer && !self.page_size_options.is_empty() {
-            PAGINATION_EXTRA_GAP + PAGINATION_SIZE_WIDTH
+            layout.extra_gap + layout.size_changer_width
         } else {
             0.0
         };
         let jumper = if self.show_jumper {
-            PAGINATION_EXTRA_GAP + 84.0
+            layout.extra_gap + layout.jumper_width
         } else {
             0.0
         };
-        Size::new(controls + total + changer + jumper, self.size + 8.0)
+        Size::new(
+            controls + total + changer + jumper,
+            self.size + layout.hit_vertical_extra,
+        )
     }
 
     pub(crate) fn current_record_range(&self) -> Range<usize> {
@@ -568,13 +609,14 @@ impl Pagination {
             self.change_page_by(-1);
             return EventResult::Handled;
         }
-        btn_x += self.size + PAGINATION_GAP;
+        let layout = &self.visual.layout;
+        btn_x += self.size + layout.gap;
 
         if self.simple {
-            if x >= btn_x && x < btn_x + self.size * 2.5 {
+            if x >= btn_x && x < btn_x + self.size * layout.simple_width_factor {
                 return EventResult::Handled;
             }
-            btn_x += self.size * 2.5 + PAGINATION_GAP;
+            btn_x += self.size * layout.simple_width_factor + layout.gap;
             if x >= btn_x && x < btn_x + self.size {
                 self.change_page_by(1);
                 return EventResult::Handled;
@@ -587,7 +629,7 @@ impl Pagination {
                 self.select_page(page);
                 return EventResult::Handled;
             }
-            btn_x += self.size + PAGINATION_GAP;
+            btn_x += self.size + layout.gap;
         }
 
         if x >= btn_x && x < btn_x + self.size {
@@ -597,22 +639,22 @@ impl Pagination {
         btn_x += self.size;
 
         if self.show_total {
-            btn_x += PAGINATION_EXTRA_GAP + PAGINATION_TOTAL_WIDTH;
+            btn_x += layout.extra_gap + layout.total_width;
         }
         if self.show_jumper {
-            let jumper_x = btn_x + PAGINATION_EXTRA_GAP;
-            if x >= jumper_x && x < jumper_x + 84.0 {
+            let jumper_x = btn_x + layout.extra_gap;
+            if x >= jumper_x && x < jumper_x + layout.jumper_width {
                 self.begin_jumper_edit();
                 return EventResult::Handled;
             }
             if self.jumper_active {
                 self.commit_jumper();
             }
-            btn_x = jumper_x + 84.0;
+            btn_x = jumper_x + layout.jumper_width;
         }
         if self.show_size_changer && !self.page_size_options.is_empty() {
-            let changer_x = btn_x + PAGINATION_EXTRA_GAP;
-            if x >= changer_x && x < changer_x + PAGINATION_SIZE_WIDTH {
+            let changer_x = btn_x + layout.extra_gap;
+            if x >= changer_x && x < changer_x + layout.size_changer_width {
                 self.cycle_page_size(true);
                 return EventResult::Handled;
             }
@@ -628,14 +670,15 @@ impl Pagination {
             .visible_range(self.total_pages(), self.current.get())
             .len() as f32;
         let control_count = if self.simple { 3.0 } else { range_count + 2.0 };
-        let controls = control_count * self.size + (control_count - 1.0) * PAGINATION_GAP;
+        let layout = &self.visual.layout;
+        let controls = control_count * self.size + (control_count - 1.0) * layout.gap;
         let total = if self.show_total {
-            PAGINATION_EXTRA_GAP + PAGINATION_TOTAL_WIDTH
+            layout.extra_gap + layout.total_width
         } else {
             0.0
         };
-        let start = controls + total + PAGINATION_EXTRA_GAP;
-        Some(start..start + 84.0)
+        let start = controls + total + layout.extra_gap;
+        Some(start..start + layout.jumper_width)
     }
 
     fn begin_jumper_edit(&mut self) {
@@ -819,6 +862,18 @@ impl Pagination {
             size: self.size,
             page_size_options: self.page_size_options.clone(),
         }
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有双状态、页码算法和文本输入。
+fn build_pagination_view(mut kernel: Pagination, visual: &'static PaginationVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Pagination {
+    fn build(self) -> ViewNode {
+        build_pagination_view(self, PAGINATION_VISUAL_REF)
     }
 }
 
