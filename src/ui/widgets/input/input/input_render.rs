@@ -154,9 +154,8 @@ impl Input {
                         } else {
                             value_line.chars().count()
                         };
-                        // 估算选中区域的 x 位置
-                        // 使用共享 shaping、双向与字素簇选择几何生成视觉片段。
-                        let selection_rects = ctx.selection_rects(
+                        // 使用共享 shaping、双向与字素簇几何流式绘制选区。
+                        ctx.fill_text_selection(
                             // 选择几何使用未注入 composition 的真实值行。
                             value_line,
                             // 使用输入控件字体大小。
@@ -167,21 +166,11 @@ impl Input {
                             sel_in_line_start,
                             // 传入行内合法选择终点。
                             sel_in_line_end,
+                            // 使用主题选择背景色。
+                            visual.primary.with_alpha(
+                                self.visual.chrome.selection_alpha.min(u8::MAX as u32) as u8,
+                            ),
                         );
-                        // 双向文本可能产生多个不连续视觉选择片段。
-                        for selection_rect in selection_rects {
-                            // 绘制当前视觉选择片段。
-                            ctx.fill_rect(
-                                // 保留共享排版计算出的几何。
-                                selection_rect,
-                                // 使用主题选择背景色。
-                                visual.primary.with_alpha(
-                                    self.visual.chrome.selection_alpha.min(u8::MAX as u32) as u8,
-                                ),
-                                // 选择背景不使用圆角。
-                                None,
-                            );
-                        }
                     }
                 }
             }

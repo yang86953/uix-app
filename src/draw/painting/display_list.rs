@@ -217,6 +217,21 @@ pub enum PaintOp {
         /// 字体大小。
         font_size: f32,
     },
+    /// 仅填充文本选择范围背景。
+    FillTextSelection {
+        /// 共享文本内容。
+        text: Arc<str>,
+        /// 字体大小。
+        font_size: f32,
+        /// 文本起始位置。
+        pos: Point,
+        /// 选择范围字符起点。
+        start: usize,
+        /// 选择范围字符排他终点。
+        end: usize,
+        /// 选择范围背景色。
+        color: Color,
+    },
     /// 绘制文本及可选的选择范围背景。
     DrawTextWithSelection {
         /// 共享文本内容。
@@ -545,6 +560,14 @@ impl DisplayList {
                     color,
                     font_size,
                 } => ctx.draw_text_wrapped(text, *rect, *color, *font_size),
+                PaintOp::FillTextSelection {
+                    text,
+                    font_size,
+                    pos,
+                    start,
+                    end,
+                    color,
+                } => ctx.fill_text_selection(text, *font_size, *pos, *start, *end, *color),
                 PaintOp::DrawTextWithSelection {
                     text,
                     pos,
@@ -748,6 +771,14 @@ impl DisplayList {
                     color,
                     font_size,
                 } => text.draw_text_wrapped(canvas, s, *rect, *color, *font_size),
+                PaintOp::FillTextSelection {
+                    text: s,
+                    font_size,
+                    pos,
+                    start,
+                    end,
+                    color,
+                } => text.fill_text_selection(canvas, s, *font_size, *pos, *start, *end, *color),
                 PaintOp::DrawTextWithSelection {
                     text: s,
                     pos,

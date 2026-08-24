@@ -191,14 +191,15 @@ impl ScenePaint for TextScene {
     }
 
     fn paint(&self, _id: NodeId, _frame: Rect, ctx: &mut PaintContext<'_>) {
-        ctx.draw_text_with_selection(
+        ctx.fill_text_selection(
             "steady",
-            Point::new(2.0, 3.0),
-            Color::blue(),
             14.0,
-            Some((1, 5)),
+            Point::new(2.0, 3.0),
+            1,
+            5,
             Color::from_rgba(64, 96, 160, 128),
         );
+        ctx.draw_text("steady", Point::new(2.0, 3.0), Color::blue(), 14.0);
     }
 }
 

@@ -319,6 +319,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         text_center(text: &str, rect: Rect, color: Color, font_size: f32);
         draw_text_in_frame(text: &str, rect: Rect, color: Color, font_size: f32);
         draw_text_wrapped(text: &str, rect: Rect, color: Color, font_size: f32);
+        fill_text_selection(text: &str, font_size: f32, pos: Point, start: usize, end: usize, color: Color);
         draw_text_with_selection(text: &str, pos: Point, color: Color, font_size: f32, selection: Option<(usize, usize)>, selection_bg: Color);
         selection_rects(text: &str, font_size: f32, pos: Point, start: usize, end: usize) -> Vec<Rect>;
         measure_text(text: &str, font_size: f32) -> Size;
