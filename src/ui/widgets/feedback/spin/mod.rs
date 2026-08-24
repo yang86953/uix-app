@@ -10,7 +10,6 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,7 +25,7 @@ pub enum SpinSize {
 
 // 保存由 UIX 声明、由 Rust 测量与几何算法消费的加载视觉常量。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SpinLayoutVisual {
+pub(crate) struct SpinLayoutVisual {
     small_diameter: f32,
     default_diameter: f32,
     large_diameter: f32,
@@ -40,7 +39,7 @@ struct SpinLayoutVisual {
 
 // 保存由 UIX 声明、由 Rust 圆点递推算法消费的序列参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SpinDotsVisual {
+pub(crate) struct SpinDotsVisual {
     count: u8,
     step_sin: f32,
     step_cos: f32,
@@ -50,14 +49,14 @@ struct SpinDotsVisual {
 
 // 保存由 UIX 声明、由 Rust 动画状态机消费的运动参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SpinMotionVisual {
+pub(crate) struct SpinMotionVisual {
     initial_phase: f32,
     turns_per_second: f32,
 }
 
 // 保存加载指示器使用的主题语义色与遮罩透明度。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SpinPaletteVisual {
+pub(crate) struct SpinPaletteVisual {
     indicator: ColorValue,
     overlay: ColorValue,
     overlay_alpha: u8,
@@ -66,7 +65,7 @@ struct SpinPaletteVisual {
 
 // 完整视觉配置由全部 Spin 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SpinVisual {
+pub(crate) struct SpinVisual {
     default_size: SpinSize,
     layout: SpinLayoutVisual,
     dots: SpinDotsVisual,
@@ -74,88 +73,8 @@ struct SpinVisual {
     palette: SpinPaletteVisual,
 }
 
-// 组合 UIX 声明的加载尺寸、留白与提示排版。
-#[allow(clippy::too_many_arguments)]
-const fn spin_layout(
-    small_diameter: f32,
-    default_diameter: f32,
-    large_diameter: f32,
-    orbit_radius_ratio: f32,
-    dot_radius_ratio: f32,
-    dirty_padding: f32,
-    tip_gap: f32,
-    tip_height: f32,
-    tip_font_size: f32,
-) -> SpinLayoutVisual {
-    SpinLayoutVisual {
-        small_diameter,
-        default_diameter,
-        large_diameter,
-        orbit_radius_ratio,
-        dot_radius_ratio,
-        dirty_padding,
-        tip_gap,
-        tip_height,
-        tip_font_size,
-    }
-}
-
-// 组合 UIX 声明的圆点序列与透明度节奏。
-const fn spin_dots(
-    count: f32,
-    step_sin: f32,
-    step_cos: f32,
-    opacity_start: f32,
-    opacity_range: f32,
-) -> SpinDotsVisual {
-    SpinDotsVisual {
-        count: count as u8,
-        step_sin,
-        step_cos,
-        opacity_start,
-        opacity_range,
-    }
-}
-
-// 组合 UIX 声明的加载动画运动参数。
-const fn spin_motion(initial_phase: f32, turns_per_second: f32) -> SpinMotionVisual {
-    SpinMotionVisual {
-        initial_phase,
-        turns_per_second,
-    }
-}
-
-// 组合 UIX 声明的主题色与遮罩透明度。
-const fn spin_palette(
-    indicator: ColorValue,
-    overlay: ColorValue,
-    overlay_alpha: f32,
-    tip: ColorValue,
-) -> SpinPaletteVisual {
-    SpinPaletteVisual {
-        indicator,
-        overlay,
-        overlay_alpha: overlay_alpha as u8,
-        tip,
-    }
-}
-
-// 组合 UIX 声明的完整加载指示器视觉配置。
-const fn spin_visual(
-    default_size: SpinSize,
-    layout: SpinLayoutVisual,
-    dots: SpinDotsVisual,
-    motion: SpinMotionVisual,
-    palette: SpinPaletteVisual,
-) -> SpinVisual {
-    SpinVisual {
-        default_size,
-        layout,
-        dots,
-        motion,
-        palette,
-    }
-}
+// 同目录 UIX 生成四组视觉记录、根视觉记录及稳定静态借用。
+crate::uix_items!("src/ui/widgets/feedback/spin/spin.uix");
 
 // 向 UIX 提供默认尺寸语义。
 const fn spin_default_size() -> SpinSize {
@@ -176,24 +95,6 @@ const fn spin_overlay() -> ColorValue {
 const fn spin_tip() -> ColorValue {
     ColorValue::Neutral(NeutralRole::TextSecondary)
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_SPIN_VISUAL: SpinVisual = spin_visual(
-    spin_default_size(),
-    spin_layout(16.0, 24.0, 36.0, 0.35, 0.18, 1.0, 8.0, 18.0, 13.0),
-    spin_dots(
-        8.0,
-        std::f32::consts::FRAC_1_SQRT_2,
-        std::f32::consts::FRAC_1_SQRT_2,
-        0.25,
-        0.75,
-    ),
-    spin_motion(0.0, 1.0),
-    spin_palette(spin_primary(), spin_overlay(), 30.0, spin_tip()),
-);
-
-// 正常 UIX 构建首次写入声明配置，后续 Spin 实例只共享该静态对象。
-static UIX_SPIN_VISUAL: OnceLock<SpinVisual> = OnceLock::new();
 
 widget! {
     /// 显示可延迟启动的动画加载指示器。
@@ -454,15 +355,12 @@ impl Default for Spin {
 fn build_spin_view(
     mut kernel: Spin,
     children: Vec<ViewNode>,
-    declared_visual: SpinVisual,
+    visual: &'static SpinVisual,
 ) -> ViewNode {
-    let visual = UIX_SPIN_VISUAL.get_or_init(|| declared_visual);
-    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
-    debug_assert_eq!(*visual, declared_visual);
     if !kernel.size_authored {
         kernel.size = visual.default_size;
     }
-    if kernel.phase == DEFAULT_SPIN_VISUAL.motion.initial_phase {
+    if kernel.phase == SPIN_VISUAL.motion.initial_phase {
         kernel.phase = visual.motion.initial_phase;
     }
     kernel.visual = visual;
@@ -488,8 +386,8 @@ impl Spin {
             wrapper_mode: false,
             delay: Duration::ZERO,
             delay_elapsed: 0.0,
-            phase: DEFAULT_SPIN_VISUAL.motion.initial_phase,
-            visual: &DEFAULT_SPIN_VISUAL,
+            phase: SPIN_VISUAL.motion.initial_phase,
+            visual: SPIN_VISUAL_REF,
         }
     }
 

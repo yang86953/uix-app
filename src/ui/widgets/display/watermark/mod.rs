@@ -1,6 +1,4 @@
 use crate::core::{Constraints, Point, Rect, Size};
-use std::sync::OnceLock;
-
 use crate::draw::{Color, Transform};
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::ColorValue;
@@ -11,7 +9,7 @@ use crate::widget;
 
 // 保存由 UIX 声明、由 Rust 平铺与绘制算法消费的默认几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct WatermarkTilingVisual {
+pub(crate) struct WatermarkTilingVisual {
     default_opacity: f32,
     default_rotate: f32,
     default_gap_x: f32,
@@ -37,64 +35,21 @@ impl WatermarkFontRole {
 
 // 保存由 UIX 声明、由 Rust 文本布局消费的排版参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct WatermarkTypographyVisual {
+pub(crate) struct WatermarkTypographyVisual {
     font: WatermarkFontRole,
     line_height_ratio: f32,
 }
 
 // 完整视觉配置由全部 Watermark 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct WatermarkVisual {
+pub(crate) struct WatermarkVisual {
     tiling: WatermarkTilingVisual,
     typography: WatermarkTypographyVisual,
     text_color: ColorValue,
 }
 
-// 组合 UIX 声明的平铺间距、偏移、透明度与旋转角。
-#[allow(clippy::too_many_arguments)]
-const fn watermark_tiling(
-    default_opacity: f32,
-    default_rotate: f32,
-    default_gap_x: f32,
-    default_gap_y: f32,
-    default_offset_x: f32,
-    default_offset_y: f32,
-    overscan_tiles: f32,
-) -> WatermarkTilingVisual {
-    WatermarkTilingVisual {
-        default_opacity,
-        default_rotate,
-        default_gap_x,
-        default_gap_y,
-        default_offset_x,
-        default_offset_y,
-        overscan_tiles: overscan_tiles as u8,
-    }
-}
-
-// 组合 UIX 声明的主题字号角色与行高比例。
-const fn watermark_typography(
-    font: WatermarkFontRole,
-    line_height_ratio: f32,
-) -> WatermarkTypographyVisual {
-    WatermarkTypographyVisual {
-        font,
-        line_height_ratio,
-    }
-}
-
-// 组合 UIX 声明的完整水印视觉配置。
-const fn watermark_visual(
-    tiling: WatermarkTilingVisual,
-    typography: WatermarkTypographyVisual,
-    text_color: ColorValue,
-) -> WatermarkVisual {
-    WatermarkVisual {
-        tiling,
-        typography,
-        text_color,
-    }
-}
+// 同目录 UIX 生成全部分组视觉值、根视觉值及稳定静态借用。
+crate::uix_items!("src/ui/widgets/display/watermark/watermark.uix");
 
 // 向 UIX 提供水印正文主题字号角色。
 const fn watermark_body_font() -> WatermarkFontRole {
@@ -105,16 +60,6 @@ const fn watermark_body_font() -> WatermarkFontRole {
 const fn watermark_text_color() -> ColorValue {
     ColorValue::Neutral(NeutralRole::Text)
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_WATERMARK_VISUAL: WatermarkVisual = watermark_visual(
-    watermark_tiling(0.15, -22.0, 200.0, 160.0, 0.0, 0.0, 2.0),
-    watermark_typography(watermark_body_font(), 1.4),
-    watermark_text_color(),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_WATERMARK_VISUAL: OnceLock<WatermarkVisual> = OnceLock::new();
 
 // ════════════════════════════════════════════════════════════════════════════
 // Watermark
@@ -187,8 +132,7 @@ widget! {
 }
 
 // 把水印平铺配置与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_watermark_view(mut kernel: Watermark, declared_visual: WatermarkVisual) -> ViewNode {
-    let visual = UIX_WATERMARK_VISUAL.get_or_init(|| declared_visual);
+fn build_watermark_view(mut kernel: Watermark, visual: &'static WatermarkVisual) -> ViewNode {
     if !kernel.opacity_authored {
         kernel.opacity = visual.tiling.default_opacity;
     }
@@ -222,7 +166,7 @@ impl View for Watermark {
 impl Watermark {
     /// 创建使用主题文本样式与默认平铺参数的文字水印。
     pub fn new(text: &str) -> Self {
-        let visual = &DEFAULT_WATERMARK_VISUAL;
+        let visual = WATERMARK_VISUAL_REF;
         Self {
             text: text.to_string(),
             // 透明哨兵表示绘制时使用当前主题正文色。
@@ -261,7 +205,7 @@ impl Watermark {
             self.opacity = o.clamp(0.0, 1.0);
             self.opacity_authored = true;
         } else {
-            self.opacity = DEFAULT_WATERMARK_VISUAL.tiling.default_opacity;
+            self.opacity = WATERMARK_VISUAL.tiling.default_opacity;
             self.opacity_authored = false;
         }
         self
@@ -272,7 +216,7 @@ impl Watermark {
             self.rotate = r;
             self.rotate_authored = true;
         } else {
-            self.rotate = DEFAULT_WATERMARK_VISUAL.tiling.default_rotate;
+            self.rotate = WATERMARK_VISUAL.tiling.default_rotate;
             self.rotate_authored = false;
         }
         self
@@ -281,8 +225,8 @@ impl Watermark {
     pub fn gap(mut self, x: f32, y: f32) -> Self {
         self.gap_x_authored = x.is_finite() && x >= 1.0;
         self.gap_y_authored = y.is_finite() && y >= 1.0;
-        self.gap_x = Self::positive_or(x, DEFAULT_WATERMARK_VISUAL.tiling.default_gap_x);
-        self.gap_y = Self::positive_or(y, DEFAULT_WATERMARK_VISUAL.tiling.default_gap_y);
+        self.gap_x = Self::positive_or(x, WATERMARK_VISUAL.tiling.default_gap_x);
+        self.gap_y = Self::positive_or(y, WATERMARK_VISUAL.tiling.default_gap_y);
         self
     }
     /// 设置平铺起点偏移；非有限分量分别回退为零。
@@ -292,12 +236,12 @@ impl Watermark {
         self.x_offset = if x.is_finite() {
             x
         } else {
-            DEFAULT_WATERMARK_VISUAL.tiling.default_offset_x
+            WATERMARK_VISUAL.tiling.default_offset_x
         };
         self.y_offset = if y.is_finite() {
             y
         } else {
-            DEFAULT_WATERMARK_VISUAL.tiling.default_offset_y
+            WATERMARK_VISUAL.tiling.default_offset_y
         };
         self
     }

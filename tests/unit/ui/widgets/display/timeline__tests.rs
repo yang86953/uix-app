@@ -1,5 +1,5 @@
 // 引入被测时间线与节点构建器。
-use super::{Timeline, TimelineItem};
+use super::{TIMELINE_VISUAL_REF, Timeline, TimelineItem};
 // 引入最终绘制颜色值。
 use crate::draw::Color;
 // 引入公开 View 构建入口。
@@ -49,9 +49,12 @@ fn uix_root_preserves_timeline_kernel_and_visual_contract() {
 // 验证全部 Timeline 实例共享同一份 UIX 视觉表。
 #[test]
 fn timeline_instances_share_uix_visual_table() {
+    // 构建前默认值直接读取 UIX 生成的唯一静态视觉事实。
+    assert!(std::ptr::eq(Timeline::new().visual, TIMELINE_VISUAL_REF));
     let first = View::build(Timeline::new());
     let second = View::build(Timeline::new());
     let first = first.widget.as_any().downcast_ref::<Timeline>().unwrap();
     let second = second.widget.as_any().downcast_ref::<Timeline>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, TIMELINE_VISUAL_REF));
 }

@@ -1,5 +1,5 @@
 // 复用被测加载指示器。
-use super::{DEFAULT_SPIN_VISUAL, Spin};
+use super::{SPIN_VISUAL, SPIN_VISUAL_REF, Spin};
 // 引入动画更新公开组件契约。
 use crate::ui::widget_runtime::traits::WidgetAnimation;
 // 引入公开声明构建契约以验证同目录 UIX 根。
@@ -15,7 +15,7 @@ fn dot_rotation_recurrence_preserves_geometry() {
     let radius = 12.6_f32;
     let mut offsets = Vec::with_capacity(8);
     // 收集递推结果仅用于测试；生产绘制仍以回调流式提交，无逐帧分配。
-    let dots = DEFAULT_SPIN_VISUAL.dots;
+    let dots = SPIN_VISUAL.dots;
     Spin::for_each_dot_offset(
         phase,
         radius,
@@ -69,6 +69,8 @@ fn uix_root_preserves_spin_kernel_and_children() {
 // 验证显式尺寸覆盖 UIX 默认值，完整视觉表由实例共享。
 #[test]
 fn uix_visual_configuration_is_shared_and_keeps_authored_size() {
+    // 构建前默认值直接读取 UIX 生成的唯一静态视觉事实。
+    assert!(std::ptr::eq(Spin::new().visual, SPIN_VISUAL_REF));
     let first = View::build(Spin::new().large());
     let second = View::build(Spin::new());
     let first = first
@@ -85,6 +87,7 @@ fn uix_visual_configuration_is_shared_and_keeps_authored_size() {
     assert!(first.size_authored);
     assert_eq!(second.diameter(), 24.0);
     assert!(std::ptr::eq(first.visual, second.visual));
+    assert!(std::ptr::eq(first.visual, SPIN_VISUAL_REF));
 }
 
 // 验证配置刷新在延迟未变化时保留运行时动画进度。

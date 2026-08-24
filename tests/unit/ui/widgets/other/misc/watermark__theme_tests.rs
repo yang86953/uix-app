@@ -1,5 +1,5 @@
 // 引入被测组件。
-use super::Watermark;
+use super::{WATERMARK_VISUAL_REF, Watermark};
 // 引入测试颜色值。
 use crate::draw::Color;
 // 引入可定制主题 token。
@@ -34,6 +34,11 @@ fn uix_root_preserves_watermark_kernel() {
 // UIX 默认值只填充未显式设置的字段，并由所有实例共享。
 #[test]
 fn uix_defaults_preserve_authored_values_and_share_visual_configuration() {
+    // 构建前默认值与构建后内核必须指向同一份 UIX 静态视觉事实。
+    assert!(std::ptr::eq(
+        Watermark::new("构建前").visual,
+        WATERMARK_VISUAL_REF
+    ));
     let authored = View::build(
         Watermark::new("作者水印")
             .opacity(0.2)
@@ -75,6 +80,7 @@ fn uix_defaults_preserve_authored_values_and_share_visual_configuration() {
         (0.15, -22.0, 200.0, 160.0, 0.0, 0.0)
     );
     assert!(authored.shares_visual_with_for_test(defaults));
+    assert!(std::ptr::eq(defaults.visual, WATERMARK_VISUAL_REF));
 }
 
 // 每个平铺实例必须按完整文本行绘制，避免逐字符命令破坏整形并放大布局次数。

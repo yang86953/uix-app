@@ -11,11 +11,10 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{SnapshotFields, ThemeTokens};
 use crate::widget;
-use std::sync::OnceLock;
 
 // 保存由 UIX 声明的时间线固有尺寸、行高与水平几何比例。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TimelineGeometryVisual {
+pub(crate) struct TimelineGeometryVisual {
     default_width: f32,
     item_height: f32,
     min_item_height: f32,
@@ -47,7 +46,7 @@ impl TimelineFontRole {
 
 // 保存由 UIX 声明的时间线文字缩放、间距与垂直居中比例。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TimelineTypographyVisual {
+pub(crate) struct TimelineTypographyVisual {
     label_font: TimelineFontRole,
     description_font: TimelineFontRole,
     min_scale: f32,
@@ -58,7 +57,7 @@ struct TimelineTypographyVisual {
 
 // 保存由 UIX 声明的节点边框与连接线几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TimelineStrokeVisual {
+pub(crate) struct TimelineStrokeVisual {
     dot_border_max: f32,
     connector_half_width: f32,
     connector_width: f32,
@@ -66,7 +65,7 @@ struct TimelineStrokeVisual {
 
 // 保存由 UIX 声明的时间线主题语义色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TimelinePaletteVisual {
+pub(crate) struct TimelinePaletteVisual {
     text: ColorValue,
     text_secondary: ColorValue,
     border: ColorValue,
@@ -76,12 +75,15 @@ struct TimelinePaletteVisual {
 
 // 完整视觉配置由全部 Timeline 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TimelineVisual {
+pub(crate) struct TimelineVisual {
     geometry: TimelineGeometryVisual,
     typography: TimelineTypographyVisual,
     stroke: TimelineStrokeVisual,
     palette: TimelinePaletteVisual,
 }
+
+// 同目录 UIX 生成四组视觉记录、根视觉记录及稳定静态借用。
+crate::uix_items!("src/ui/widgets/display/timeline/timeline.uix");
 
 // 保存 Timeline 每帧只解析一次的主题颜色与字号。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -109,100 +111,6 @@ impl TimelineVisual {
     }
 }
 
-// 组合 UIX 声明的时间线尺寸与几何。
-#[allow(clippy::too_many_arguments)]
-const fn timeline_geometry(
-    default_width: f32,
-    item_height: f32,
-    min_item_height: f32,
-    gutter_frame_ratio: f32,
-    gutter_max: f32,
-    line_gutter_ratio: f32,
-    right_padding_frame_ratio: f32,
-    right_padding_max: f32,
-    dot_radius: f32,
-    dot_row_ratio: f32,
-    dot_gutter_ratio: f32,
-) -> TimelineGeometryVisual {
-    TimelineGeometryVisual {
-        default_width,
-        item_height,
-        min_item_height,
-        gutter_frame_ratio,
-        gutter_max,
-        line_gutter_ratio,
-        right_padding_frame_ratio,
-        right_padding_max,
-        dot_radius,
-        dot_row_ratio,
-        dot_gutter_ratio,
-    }
-}
-
-// 组合 UIX 声明的时间线排版。
-const fn timeline_typography(
-    label_font: TimelineFontRole,
-    description_font: TimelineFontRole,
-    min_scale: f32,
-    max_scale: f32,
-    description_gap_scale: f32,
-    center_ratio: f32,
-) -> TimelineTypographyVisual {
-    TimelineTypographyVisual {
-        label_font,
-        description_font,
-        min_scale,
-        max_scale,
-        description_gap_scale,
-        center_ratio,
-    }
-}
-
-// 组合 UIX 声明的节点边框与连接线视觉。
-const fn timeline_stroke(
-    dot_border_max: f32,
-    connector_half_width: f32,
-    connector_width: f32,
-) -> TimelineStrokeVisual {
-    TimelineStrokeVisual {
-        dot_border_max,
-        connector_half_width,
-        connector_width,
-    }
-}
-
-// 组合 UIX 声明的主题语义色。
-const fn timeline_palette(
-    text: ColorValue,
-    text_secondary: ColorValue,
-    border: ColorValue,
-    dot_border: ColorValue,
-    primary: ColorValue,
-) -> TimelinePaletteVisual {
-    TimelinePaletteVisual {
-        text,
-        text_secondary,
-        border,
-        dot_border,
-        primary,
-    }
-}
-
-// 组合 UIX 声明的完整时间线视觉配置。
-const fn timeline_visual(
-    geometry: TimelineGeometryVisual,
-    typography: TimelineTypographyVisual,
-    stroke: TimelineStrokeVisual,
-    palette: TimelinePaletteVisual,
-) -> TimelineVisual {
-    TimelineVisual {
-        geometry,
-        typography,
-        stroke,
-        palette,
-    }
-}
-
 // 向 UIX 提供时间线主题字号与颜色角色。
 const fn timeline_body_font() -> TimelineFontRole {
     TimelineFontRole::Body
@@ -225,30 +133,6 @@ const fn timeline_dot_border_color() -> ColorValue {
 const fn timeline_primary_color() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_TIMELINE_VISUAL: TimelineVisual = timeline_visual(
-    timeline_geometry(400.0, 60.0, 28.0, 0.5, 40.0, 0.4, 0.1, 8.0, 5.0, 0.18, 0.18),
-    timeline_typography(
-        TimelineFontRole::Body,
-        TimelineFontRole::Small,
-        0.75,
-        1.0,
-        1.0,
-        0.5,
-    ),
-    timeline_stroke(2.0, 1.0, 2.0),
-    timeline_palette(
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::BorderSecondary),
-        ColorValue::Neutral(NeutralRole::BgContainer),
-        ColorValue::Palette(PaletteColor::Primary),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_TIMELINE_VISUAL: OnceLock<TimelineVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct TimelineGeometry {
@@ -402,8 +286,8 @@ widget! {
 }
 
 // 把时间线数据、索引策略与 UIX 视觉表融合为单一根节点。
-fn build_timeline_view(mut kernel: Timeline, declared_visual: TimelineVisual) -> ViewNode {
-    kernel.visual = UIX_TIMELINE_VISUAL.get_or_init(|| declared_visual);
+fn build_timeline_view(mut kernel: Timeline, visual: &'static TimelineVisual) -> ViewNode {
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -422,7 +306,7 @@ impl Timeline {
             items: Vec::new(),
             pending: false,
             reverse: false,
-            visual: &DEFAULT_TIMELINE_VISUAL,
+            visual: TIMELINE_VISUAL_REF,
         }
     }
     /// 替换时间线的全部节点。
