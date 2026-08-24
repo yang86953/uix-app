@@ -8,6 +8,7 @@ use std::cell::Cell;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 use crate::widget;
 
@@ -531,3 +532,21 @@ impl Default for ResultView {
         Self::new(ResultType::Info)
     }
 }
+
+// 把结果页 Rust 交互与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_result_view(kernel: ResultView) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for ResultView {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 保留本地化、交互、布局和绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/result/result.uix")
+    }
+}
+
+// 集中验证 UIX 声明壳与 Rust 内核的单节点契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/result__tests.rs"]
+mod tests;

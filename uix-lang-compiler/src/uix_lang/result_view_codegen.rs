@@ -73,8 +73,8 @@ pub(crate) fn generate_result_view(element: &Element) -> Result<TokenStream, Dia
         widget = quote! { (#widget).extra_text(#extra_text) };
     }
 
-    // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 ResultView 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的结果页 View。
