@@ -13,15 +13,13 @@ use crate::ui::widget_runtime::traits::{
     EventHandler, Widget, WidgetCapabilities, WidgetLayout, WidgetRender,
 };
 use crate::ui::widget_snapshot::SnapshotFields;
-// 引入标准窗口控件组合使用的对齐契约。
-use crate::ui::layout::{AlignItems, JustifyContent, LayoutChild};
-// 引入主题中性颜色角色。
-use crate::ui::theme::NeutralRole;
-// 引入窗口交互区域与标准外观使用的样式类型。
-use crate::ui::theme::style::{ColorValue, Style, StyleState, apply_style};
+// 引入窗口交互区域使用的对齐与子布局契约。
+use crate::ui::layout::{AlignItems, LayoutChild};
+// 引入窗口交互区域使用的样式类型。
+use crate::ui::theme::style::{apply_style, Style, StyleState};
 use crate::ui::view::{View, ViewNode};
-// 引入标准窗口控件的容器、图标与行组合原语。
-use crate::ui::widgets::{Container, Icon, row};
+// 引入窗口交互区域复用的基础容器。
+use crate::ui::widgets::Container;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 自定义标题栏可触发的标准窗口控制。
@@ -34,13 +32,6 @@ pub enum WindowControl {
     /// 请求关闭当前窗口。
     Close,
 }
-
-// 定义标准窗口控制的默认宽度。
-const STANDARD_WINDOW_CONTROL_WIDTH: f32 = 46.0;
-// 定义标准窗口控制的默认高度。
-const STANDARD_WINDOW_CONTROL_HEIGHT: f32 = 40.0;
-// 定义标准窗口控制图标尺寸。
-const STANDARD_WINDOW_CONTROL_ICON_SIZE: f32 = 14.0;
 
 impl WindowControl {
     const fn default_accessible_name(self) -> &'static str {
@@ -473,34 +464,22 @@ pub fn window_control_named(
     )
 }
 
-// 构造一个带标准外观与默认无障碍语义的窗口控制。
-fn standard_window_control(
-    // 接收平台窗口动作。
-    control: WindowControl,
-    // 接收 Lucide 图标名称。
-    icon: &'static str,
-) -> ViewNode {
-    // 复用窗口交互包装器并只把图标作为展示内容。
-    window_control(
-        // 传入平台窗口动作。
-        control,
-        // 构造不形成嵌套交互目标的图标叶视图。
-        ViewNode::leaf(Icon::new(icon).size(STANDARD_WINDOW_CONTROL_ICON_SIZE)),
-    )
-    // 采用标准标题栏控制宽度。
-    .width(STANDARD_WINDOW_CONTROL_WIDTH)
-    // 采用标准标题栏高度。
-    .height(STANDARD_WINDOW_CONTROL_HEIGHT)
-    // 在交叉轴居中图标。
-    .align(AlignItems::Center)
-    // 在主轴居中图标。
-    .justify(JustifyContent::Center)
-    // 使用当前主题的中性悬停背景。
-    .bg_hover(ColorValue::Neutral(NeutralRole::FillSecondary))
-    // 使用当前主题的中性焦点背景。
-    .bg_focus(ColorValue::Neutral(NeutralRole::Fill))
-    // 使用当前主题的中性按下背景。
-    .bg_active(ColorValue::Neutral(NeutralRole::FillTertiary))
+// 构造由 UIX 标准窗口控制壳调用的最小化基础 View。
+fn standard_minimize_control(content: ViewNode) -> ViewNode {
+    // 平台动作与默认无障碍语义继续由 Rust 基础内核拥有。
+    window_control(WindowControl::Minimize, content)
+}
+
+// 构造由 UIX 标准窗口控制壳调用的最大化/还原基础 View。
+fn standard_maximize_control(content: ViewNode) -> ViewNode {
+    // 复用同一交互内核，只选择对应平台动作。
+    window_control(WindowControl::MaximizeRestore, content)
+}
+
+// 构造由 UIX 标准窗口控制壳调用的关闭基础 View。
+fn standard_close_control(content: ViewNode) -> ViewNode {
+    // 关闭请求仍经窗口动作通道交给 Rust 应用生命周期处理。
+    window_control(WindowControl::Close, content)
 }
 
 /// 构造标准最小化、最大化/还原与关闭窗口控制组合。
@@ -512,40 +491,8 @@ pub fn window_controls(
     // 控制是否包含关闭动作。
     show_close: bool,
 ) -> ViewNode {
-    // 按文档顺序预留最多三个控制节点。
-    let mut controls = Vec::with_capacity(3);
-    // 按声明决定是否加入最小化控制。
-    if show_minimize {
-        // 添加带标准语义与图标的最小化控制。
-        controls.push(standard_window_control(
-            // 使用平台最小化动作。
-            WindowControl::Minimize,
-            // 使用标准最小化图标。
-            "minus",
-        ));
-    }
-    // 按声明决定是否加入最大化/还原控制。
-    if show_maximize {
-        // 添加带标准语义与图标的最大化/还原控制。
-        controls.push(standard_window_control(
-            // 使用平台最大化/还原动作。
-            WindowControl::MaximizeRestore,
-            // 使用标准最大化图标。
-            "maximize-2",
-        ));
-    }
-    // 按声明决定是否加入关闭控制。
-    if show_close {
-        // 添加带标准语义与图标的关闭控制。
-        controls.push(standard_window_control(
-            // 使用平台关闭动作。
-            WindowControl::Close,
-            // 使用标准关闭图标。
-            "x",
-        ));
-    }
-    // 使用无间距行容器保持标准标题栏排列。
-    row(controls)
+    // 条件结构与排列由 UIX 声明拥有；每个基础 View 仍保持 Rust 平台语义。
+    crate::uix!("src/ui/widgets/uix/window_controls.uix")
 }
 
 // 集中验证标准窗口控制组合的公开结构契约。
