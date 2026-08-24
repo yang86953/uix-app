@@ -1,39 +1,44 @@
 //! 折叠面板行为实现。
 
 use super::*;
+use std::borrow::Cow;
 
 impl Collapse {
     pub(super) fn preferred_width(&self) -> f32 {
-        let mut width = DEFAULT_WIDTH;
+        let mut width = self.visual.geometry.default_width;
         for panel in &self.panels {
-            // 将标题换行规范化为空格以匹配共享单行绘制语义。
-            let header = panel.header.replace(['\r', '\n'], " ");
+            // 普通单行标题直接借用；只有真实换行时才分配规范化缓冲区。
+            let header = if panel.header.contains(['\r', '\n']) {
+                Cow::Owned(panel.header.replace(['\r', '\n'], " "))
+            } else {
+                Cow::Borrowed(panel.header.as_str())
+            };
             let header_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &header,
                 f32::INFINITY,
-                HEADER_FONT_SIZE,
+                self.visual.typography.header_font_size,
             )
             .max_line_width
-                + HEADER_ICON_SLOT
-                + HEADER_RIGHT_PADDING;
+                + self.visual.geometry.header_icon_slot
+                + self.visual.geometry.header_right_padding;
             let content_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
                 &panel.content,
                 f32::INFINITY,
-                CONTENT_FONT_SIZE,
+                self.visual.typography.content_font_size,
             )
             .max_line_width
-                + CONTENT_HORIZONTAL_PADDING * 2.0;
+                + self.visual.geometry.content_horizontal_padding * 2.0;
             width = width.max(header_width).max(content_width);
         }
-        width.min(MAX_INTRINSIC_WIDTH)
+        width.min(self.visual.geometry.max_intrinsic_width)
     }
 
     pub(super) fn intrinsic_height(&self, width: f32) -> f32 {
         let mut h = 0.0f32;
         for (idx, p) in self.panels.iter().enumerate() {
-            h += HEADER_HEIGHT;
+            h += self.visual.geometry.header_height;
             if self.panel_present(idx, p) {
-                h += Self::content_height(&p.content, width);
+                h += self.content_height(&p.content, width);
             }
         }
         h
@@ -46,7 +51,8 @@ impl Collapse {
             accordion: false,
             // 缺省保持既有非受控展开模式。
             active_keys_binding: None,
-            borderless: false,
+            borderless: DEFAULT_COLLAPSE_VISUAL.borderless_default,
+            borderless_authored: false,
             destroy_on_hide: false,
             focused: false,
             focused_header: 0,
@@ -59,6 +65,7 @@ impl Collapse {
             layout_requested: Cell::new(false),
             content_opacities: Vec::new(),
             materialized_content: RefCell::new(Vec::new()),
+            visual: &DEFAULT_COLLAPSE_VISUAL,
         }
     }
     /// 设置面板集合并按受控稳定键或非受控初值建立展开状态。
@@ -115,6 +122,7 @@ impl Collapse {
     /// 设置是否隐藏面板组边框。
     pub fn borderless(mut self, value: bool) -> Self {
         self.borderless = value;
+        self.borderless_authored = true;
         self
     }
 
@@ -217,16 +225,19 @@ impl Collapse {
         Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
     }
 
-    pub(super) fn content_height(content: &str, width: f32) -> f32 {
-        let text_width = (width - CONTENT_HORIZONTAL_PADDING * 2.0).max(1.0);
+    pub(super) fn content_height(&self, content: &str, width: f32) -> f32 {
+        let text_width = (width - self.visual.geometry.content_horizontal_padding * 2.0).max(1.0);
         let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
             content,
             text_width,
-            CONTENT_FONT_SIZE,
+            self.visual.typography.content_font_size,
         )
         .line_count
         .max(1) as f32;
-        line_count * CONTENT_FONT_SIZE * TEXT_LINE_HEIGHT + CONTENT_VERTICAL_PADDING * 2.0
+        line_count
+            * self.visual.typography.content_font_size
+            * self.visual.typography.content_line_height_ratio
+            + self.visual.geometry.content_vertical_padding * 2.0
     }
 
     fn panel_content_key(&self, panel_index: usize) -> String {
@@ -259,6 +270,12 @@ impl Collapse {
         &self,
         entries: &[CollapseContentEntry],
     ) -> Vec<crate::ui::view::ViewNode> {
+        // 动态 Canvas 只捕获静态 UIX 视觉值，不复制整份视觉表。
+        let content_font_size = self.visual.typography.content_font_size;
+        let content_vertical_padding = self.visual.geometry.content_vertical_padding;
+        let content_horizontal_padding = self.visual.geometry.content_horizontal_padding;
+        let default_width = self.visual.geometry.default_width;
+        let text_color = self.visual.palette.text_secondary;
         entries
             .iter()
             .map(|entry| {
@@ -268,17 +285,17 @@ impl Collapse {
                     .get(entry.panel_index)
                     .cloned()
                     .unwrap_or_else(|| Rc::new(Cell::new(0.0)));
-                let natural_height = (Self::content_height(&text, DEFAULT_WIDTH)
-                    - CONTENT_VERTICAL_PADDING * 2.0)
+                let natural_height = (self.content_height(&text, default_width)
+                    - content_vertical_padding * 2.0)
                     .max(0.0);
                 crate::ui::widgets::canvas(
-                    (DEFAULT_WIDTH - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
+                    (default_width - content_horizontal_padding * 2.0).max(0.0),
                     natural_height,
                     move |frame, ctx| {
                         if frame.w <= 0.0 || frame.h <= 0.0 {
                             return;
                         }
-                        let text_color = ctx.tokens().color_text_secondary();
+                        let text_color = text_color.resolve(ctx.tokens());
                         let alpha = (text_color.a as f32 * opacity.get())
                             .round()
                             .clamp(0.0, 255.0) as u8;
@@ -290,7 +307,7 @@ impl Collapse {
                             &text,
                             frame,
                             text_color.with_alpha(alpha),
-                            CONTENT_FONT_SIZE,
+                            content_font_size,
                         );
                         ctx.pop_clip();
                     },
@@ -305,18 +322,18 @@ impl Collapse {
         let frame_bottom = frame.y + frame.h;
         let mut y = frame.y;
         for (index, panel) in self.panels.iter().enumerate() {
-            y += HEADER_HEIGHT;
+            y += self.visual.geometry.header_height;
             if !self.panel_present(index, panel) {
                 continue;
             }
-            let content_height = Self::content_height(&panel.content, frame.w);
+            let content_height = self.content_height(&panel.content, frame.w);
             if index == panel_index {
                 let body_height = content_height.min((frame_bottom - y).max(0.0));
                 return Some(Rect::new(
-                    frame.x + CONTENT_HORIZONTAL_PADDING,
-                    y + CONTENT_VERTICAL_PADDING,
-                    (frame.w - CONTENT_HORIZONTAL_PADDING * 2.0).max(0.0),
-                    (body_height - CONTENT_VERTICAL_PADDING * 2.0).max(0.0),
+                    frame.x + self.visual.geometry.content_horizontal_padding,
+                    y + self.visual.geometry.content_vertical_padding,
+                    (frame.w - self.visual.geometry.content_horizontal_padding * 2.0).max(0.0),
+                    (body_height - self.visual.geometry.content_vertical_padding * 2.0).max(0.0),
                 ));
             }
             y += content_height;
@@ -340,9 +357,9 @@ impl Collapse {
     }
 
     pub(super) fn full_dirty_rect(&self, frame: Rect) -> Rect {
-        let mut h = self.panels.len() as f32 * 36.0;
+        let mut h = self.panels.len() as f32 * self.visual.geometry.header_height;
         for panel in &self.panels {
-            h += Self::content_height(&panel.content, frame.w);
+            h += self.content_height(&panel.content, frame.w);
         }
         Rect::new(frame.x, frame.y, frame.w, h)
     }
@@ -487,7 +504,9 @@ impl Collapse {
         // 下一帧状态句柄替换旧绑定。
         self.active_keys_binding = active_keys_binding;
         self.borderless = next.borderless;
+        self.borderless_authored = next.borderless_authored;
         self.destroy_on_hide = next.destroy_on_hide;
+        self.visual = next.visual;
         let expanded_before_normalize = self
             .panels
             .iter()
@@ -564,6 +583,25 @@ impl Collapse {
         }
     }
 
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    pub(super) fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.geometry.default_width,
+            self.visual.geometry.max_intrinsic_width,
+            self.visual.geometry.header_height,
+            self.visual.typography.header_font_size,
+            self.visual.typography.content_font_size,
+            self.visual.geometry.content_horizontal_padding,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    pub(super) fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
+    }
+
     fn normalize_accordion(&mut self) {
         if !self.accordion {
             return;
@@ -588,12 +626,12 @@ impl Collapse {
         }
         let mut cursor = 0.0;
         for (index, panel) in self.panels.iter().enumerate() {
-            if point.y >= cursor && point.y < cursor + HEADER_HEIGHT {
+            if point.y >= cursor && point.y < cursor + self.visual.geometry.header_height {
                 return Some(index);
             }
-            cursor += HEADER_HEIGHT;
+            cursor += self.visual.geometry.header_height;
             if self.panel_present(index, panel) {
-                cursor += Self::content_height(&panel.content, frame.w);
+                cursor += self.content_height(&panel.content, frame.w);
             }
         }
         None
@@ -639,16 +677,12 @@ impl Collapse {
         self.panels[index].expanded = expanded;
         // 用户产生的新集合先原子写回外部状态。
         self.write_bound_active_keys();
-        let changed = self
-            .panels
-            .iter()
-            .enumerate()
-            .filter_map(|(panel_index, panel)| {
-                (panel.expanded != old_states[panel_index]).then_some((panel_index, panel.expanded))
-            })
-            .collect::<Vec<_>>();
-        for (panel_index, panel_expanded) in changed {
-            self.start_panel_transition(panel_index, panel_expanded);
+        // 直接按索引比较旧状态，避免再建立第二份变化 Vec。
+        for panel_index in 0..self.panels.len() {
+            let panel_expanded = self.panels[panel_index].expanded;
+            if panel_expanded != old_states[panel_index] {
+                self.start_panel_transition(panel_index, panel_expanded);
+            }
         }
         self.layout_requested.set(true);
         self.pending_change.set(Some(index));

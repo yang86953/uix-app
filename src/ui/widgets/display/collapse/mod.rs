@@ -3,8 +3,11 @@
 mod methods;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入展开面板稳定 key 集合的受控状态句柄。
@@ -15,19 +18,291 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::OnceLock;
 
-// 折叠头部高度（36.0）；同名常量在 selectable_list/calendar/date_calendar 各为 48/40/32。
-const HEADER_HEIGHT: f32 = 36.0;
-const HEADER_FONT_SIZE: f32 = 14.0;
-const CONTENT_FONT_SIZE: f32 = 12.0;
-const TEXT_LINE_HEIGHT: f32 = 1.5;
-const HEADER_ICON_SLOT: f32 = 28.0;
-const HEADER_RIGHT_PADDING: f32 = 12.0;
-const CONTENT_HORIZONTAL_PADDING: f32 = 16.0;
-const CONTENT_VERTICAL_PADDING: f32 = 8.0;
-// 组件默认尺寸（本组件设计值）；其他组件同名常量值不同，属各自设计。
-const DEFAULT_WIDTH: f32 = 240.0;
-const MAX_INTRINSIC_WIDTH: f32 = 320.0;
+// 保存由 UIX 声明的 Collapse 默认宽度、行高、图标槽与内容留白。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CollapseGeometryVisual {
+    default_width: f32,
+    max_intrinsic_width: f32,
+    header_height: f32,
+    header_icon_slot: f32,
+    header_right_padding: f32,
+    content_horizontal_padding: f32,
+    content_vertical_padding: f32,
+}
+
+// 保存由 UIX 声明的标题与内容字号、行高比例。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CollapseTypographyVisual {
+    header_font_size: f32,
+    content_font_size: f32,
+    content_line_height_ratio: f32,
+}
+
+// 保存由 UIX 声明的标题图标、焦点圈、边框与分隔线几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CollapseHeaderVisual {
+    icon_x: f32,
+    icon_width: f32,
+    icon_size: f32,
+    icon_height_ratio: f32,
+    expanded_icon: &'static str,
+    collapsed_icon: &'static str,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    border_width: f32,
+    separator_width: f32,
+    center_ratio: f32,
+}
+
+// Collapse 使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CollapseRadiusRole {
+    Small,
+}
+
+impl CollapseRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的 Collapse 主题语义角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CollapsePaletteVisual {
+    header_background: ColorValue,
+    body_background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    text_secondary: ColorValue,
+    primary: ColorValue,
+    hover_background: ColorValue,
+    pressed_background: ColorValue,
+    radius: CollapseRadiusRole,
+}
+
+// 完整视觉配置由全部 Collapse 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CollapseVisual {
+    geometry: CollapseGeometryVisual,
+    typography: CollapseTypographyVisual,
+    header: CollapseHeaderVisual,
+    palette: CollapsePaletteVisual,
+    borderless_default: bool,
+}
+
+// 保存 Collapse 每帧只解析一次的主题值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedCollapseVisual {
+    header_background: Color,
+    body_background: Color,
+    border: Color,
+    text: Color,
+    text_secondary: Color,
+    primary: Color,
+    hover_background: Color,
+    pressed_background: Color,
+    radius: f32,
+}
+
+impl CollapseVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedCollapseVisual {
+        ResolvedCollapseVisual {
+            header_background: self.palette.header_background.resolve(tokens),
+            body_background: self.palette.body_background.resolve(tokens),
+            border: self.palette.border.resolve(tokens),
+            text: self.palette.text.resolve(tokens),
+            text_secondary: self.palette.text_secondary.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            hover_background: self.palette.hover_background.resolve(tokens),
+            pressed_background: self.palette.pressed_background.resolve(tokens),
+            radius: self.palette.radius.resolve(tokens),
+        }
+    }
+}
+
+// 组合 UIX 声明的 Collapse 尺寸与留白。
+#[allow(clippy::too_many_arguments)]
+const fn collapse_geometry(
+    default_width: f32,
+    max_intrinsic_width: f32,
+    header_height: f32,
+    header_icon_slot: f32,
+    header_right_padding: f32,
+    content_horizontal_padding: f32,
+    content_vertical_padding: f32,
+) -> CollapseGeometryVisual {
+    CollapseGeometryVisual {
+        default_width,
+        max_intrinsic_width,
+        header_height,
+        header_icon_slot,
+        header_right_padding,
+        content_horizontal_padding,
+        content_vertical_padding,
+    }
+}
+
+// 组合 UIX 声明的标题与内容排版。
+const fn collapse_typography(
+    header_font_size: f32,
+    content_font_size: f32,
+    content_line_height_ratio: f32,
+) -> CollapseTypographyVisual {
+    CollapseTypographyVisual {
+        header_font_size,
+        content_font_size,
+        content_line_height_ratio,
+    }
+}
+
+// 组合 UIX 声明的标题图标、焦点圈与边框视觉。
+#[allow(clippy::too_many_arguments)]
+const fn collapse_header(
+    icon_x: f32,
+    icon_width: f32,
+    icon_size: f32,
+    icon_height_ratio: f32,
+    expanded_icon: &'static str,
+    collapsed_icon: &'static str,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    border_width: f32,
+    separator_width: f32,
+    center_ratio: f32,
+) -> CollapseHeaderVisual {
+    CollapseHeaderVisual {
+        icon_x,
+        icon_width,
+        icon_size,
+        icon_height_ratio,
+        expanded_icon,
+        collapsed_icon,
+        focus_inset,
+        focus_stroke_width,
+        border_width,
+        separator_width,
+        center_ratio,
+    }
+}
+
+// 组合 UIX 声明的主题语义角色。
+#[allow(clippy::too_many_arguments)]
+const fn collapse_palette(
+    header_background: ColorValue,
+    body_background: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    text_secondary: ColorValue,
+    primary: ColorValue,
+    hover_background: ColorValue,
+    pressed_background: ColorValue,
+    radius: CollapseRadiusRole,
+) -> CollapsePaletteVisual {
+    CollapsePaletteVisual {
+        header_background,
+        body_background,
+        border,
+        text,
+        text_secondary,
+        primary,
+        hover_background,
+        pressed_background,
+        radius,
+    }
+}
+
+// 组合 UIX 声明的完整 Collapse 视觉配置。
+const fn collapse_visual(
+    geometry: CollapseGeometryVisual,
+    typography: CollapseTypographyVisual,
+    header: CollapseHeaderVisual,
+    palette: CollapsePaletteVisual,
+    borderless_default: bool,
+) -> CollapseVisual {
+    CollapseVisual {
+        geometry,
+        typography,
+        header,
+        palette,
+        borderless_default,
+    }
+}
+
+// 向 UIX 提供受限表达式不能直接写入的默认值、图标与主题角色。
+const fn collapse_borderless_default() -> bool {
+    false
+}
+const fn collapse_expanded_icon() -> &'static str {
+    "chevron-down"
+}
+const fn collapse_collapsed_icon() -> &'static str {
+    "chevron-right"
+}
+const fn collapse_small_radius() -> CollapseRadiusRole {
+    CollapseRadiusRole::Small
+}
+const fn collapse_header_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgElevated)
+}
+const fn collapse_body_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+const fn collapse_border_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Border)
+}
+const fn collapse_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+const fn collapse_secondary_text_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn collapse_primary_color() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn collapse_hover_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillQuaternary)
+}
+const fn collapse_pressed_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_COLLAPSE_VISUAL: CollapseVisual = collapse_visual(
+    collapse_geometry(240.0, 320.0, 36.0, 28.0, 12.0, 16.0, 8.0),
+    collapse_typography(14.0, 12.0, 1.5),
+    collapse_header(
+        4.0,
+        24.0,
+        12.0,
+        0.6,
+        "chevron-down",
+        "chevron-right",
+        0.75,
+        1.5,
+        1.0,
+        1.0,
+        0.5,
+    ),
+    collapse_palette(
+        ColorValue::Neutral(NeutralRole::BgElevated),
+        ColorValue::Neutral(NeutralRole::BgContainer),
+        ColorValue::Neutral(NeutralRole::Border),
+        ColorValue::Neutral(NeutralRole::Text),
+        ColorValue::Neutral(NeutralRole::TextSecondary),
+        ColorValue::Palette(PaletteColor::Primary),
+        ColorValue::Neutral(NeutralRole::FillQuaternary),
+        ColorValue::Neutral(NeutralRole::FillTertiary),
+        CollapseRadiusRole::Small,
+    ),
+    false,
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_COLLAPSE_VISUAL: OnceLock<CollapseVisual> = OnceLock::new();
 
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
@@ -92,6 +367,8 @@ widget! {
         #[snapshot(skip)]
         active_keys_binding: Option<State<Vec<String>>>,
         borderless: bool,
+        #[snapshot(skip)]
+        borderless_authored: bool,
         destroy_on_hide: bool,
         focused: bool,
         focused_header: usize,
@@ -106,6 +383,8 @@ widget! {
         content_opacities: Vec<Rc<Cell<f32>>>,
         #[snapshot(skip)]
         materialized_content: RefCell<Vec<CollapseContentEntry>>,
+        #[snapshot(skip)]
+        visual: &'static CollapseVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.panels.is_empty()) }
@@ -270,15 +549,8 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg = ctx.tokens().color_bg_elevated();
-        let body_bg = ctx.tokens().color_bg_container();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let primary = ctx.tokens().color_primary();
-        let hover_bg = ctx.tokens().color_fill_quaternary();
-        let pressed_bg = ctx.tokens().color_fill_tertiary();
-        let r = (!self.borderless).then(|| Radius::uniform(ctx.tokens().border_radius_sm()));
+        let resolved = self.visual.resolve(ctx.tokens());
+        let r = (!self.borderless).then(|| Radius::uniform(resolved.radius));
         let mut y = frame.y;
         let frame_bottom = frame.y + frame.h;
         ctx.push_clip(frame);
@@ -287,20 +559,35 @@ widget! {
             if y >= frame_bottom {
                 break;
             }
-            let header_rect = Rect::new(frame.x, y, frame.w, HEADER_HEIGHT.min(frame_bottom - y));
+            let header_rect = Rect::new(
+                frame.x,
+                y,
+                frame.w,
+                self.visual.geometry.header_height.min(frame_bottom - y),
+            );
             let header_bg = if self.pressed_header.get() == Some(idx) {
-                pressed_bg
+                resolved.pressed_background
             } else if self.hovered_header.get() == Some(idx) {
-                hover_bg
+                resolved.hover_background
             } else {
-                bg
+                resolved.header_background
             };
             ctx.fill_rect(header_rect, header_bg, r);
             if !self.borderless {
-                ctx.stroke_rect(header_rect, border, 1.0, r);
+                ctx.stroke_rect(
+                    header_rect,
+                    resolved.border,
+                    self.visual.header.border_width,
+                    r,
+                );
             }
             if self.focused && tree.keyboard_focus_visible() && idx == self.focused_header {
-                let inset = 0.75_f32.min(header_rect.w * 0.5).min(header_rect.h * 0.5);
+                let inset = self
+                    .visual
+                    .header
+                    .focus_inset
+                    .min(header_rect.w * self.visual.header.center_ratio)
+                    .min(header_rect.h * self.visual.header.center_ratio);
                 let focus_rect = Rect::new(
                     header_rect.x + inset,
                     header_rect.y + inset,
@@ -308,27 +595,48 @@ widget! {
                     (header_rect.h - inset * 2.0).max(0.0),
                 );
                 if focus_rect.w > 0.0 && focus_rect.h > 0.0 {
-                    ctx.stroke_rect(focus_rect, primary, 1.5, r);
+                    ctx.stroke_rect(
+                        focus_rect,
+                        resolved.primary,
+                        self.visual.header.focus_stroke_width,
+                        r,
+                    );
                 }
             }
-            let icon_rect = Rect::new(header_rect.x + 4.0, header_rect.y, 24.0, header_rect.h);
+            let icon_rect = Rect::new(
+                header_rect.x + self.visual.header.icon_x,
+                header_rect.y,
+                self.visual.header.icon_width,
+                header_rect.h,
+            );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                if p.expanded { "chevron-down" } else { "chevron-right" },
+                if p.expanded {
+                    self.visual.header.expanded_icon
+                } else {
+                    self.visual.header.collapsed_icon
+                },
                 icon_rect,
-                text_secondary,
-                12.0_f32.min(header_rect.h * 0.6),
+                resolved.text_secondary,
+                self.visual
+                    .header
+                    .icon_size
+                    .min(header_rect.h * self.visual.header.icon_height_ratio),
             );
-            let text_width = (header_rect.w - HEADER_ICON_SLOT - HEADER_RIGHT_PADDING).max(0.0);
+            let text_width = (header_rect.w
+                - self.visual.geometry.header_icon_slot
+                - self.visual.geometry.header_right_padding)
+                .max(0.0);
             // 复用 UI 绘制上下文拥有的保守单行省略算法。
-            if let Some(visible_header) = ctx.elide_single_line(
+            if let Some(visible_header) = ctx.elide_single_line_cow(
                 &p.header,
-                HEADER_FONT_SIZE,
+                self.visual.typography.header_font_size,
                 text_width,
             ) {
-                let header_y = ctx.visual_center_y(header_rect, HEADER_FONT_SIZE);
+                let header_y =
+                    ctx.visual_center_y(header_rect, self.visual.typography.header_font_size);
                 let text_rect = Rect::new(
-                    header_rect.x + HEADER_ICON_SLOT,
+                    header_rect.x + self.visual.geometry.header_icon_slot,
                     header_rect.y,
                     text_width,
                     header_rect.h,
@@ -337,27 +645,39 @@ widget! {
                 ctx.draw_text(
                     &visible_header,
                     Point::new(text_rect.x, header_y),
-                    text_color,
-                    HEADER_FONT_SIZE,
+                    resolved.text,
+                    self.visual.typography.header_font_size,
                 );
                 ctx.pop_clip();
             }
-            y += HEADER_HEIGHT;
+            y += self.visual.geometry.header_height;
 
             if self.panel_present(idx, p) {
-                let content_height = Self::content_height(&p.content, frame.w);
+                let content_height = self.content_height(&p.content, frame.w);
                 let body_height = content_height.min((frame_bottom - y).max(0.0));
                 let body_rect = Rect::new(frame.x, y, frame.w, body_height);
                 if body_rect.w > 0.0 && body_rect.h > 0.0 {
-                    ctx.fill_rect(body_rect, body_bg, r);
+                    ctx.fill_rect(body_rect, resolved.body_background, r);
                     if !self.borderless {
-                        ctx.stroke_rect(body_rect, border, 1.0, r);
+                        ctx.stroke_rect(
+                            body_rect,
+                            resolved.border,
+                            self.visual.header.border_width,
+                            r,
+                        );
                     }
                 }
                 y += content_height;
             }
             if self.borderless && idx + 1 < self.panels.len() && y < frame_bottom {
-                ctx.draw_line(frame.x, y, frame.x + frame.w, y, border, 1.0);
+                ctx.draw_line(
+                    frame.x,
+                    y,
+                    frame.x + frame.w,
+                    y,
+                    resolved.border,
+                    self.visual.header.separator_width,
+                );
             }
         }
         ctx.pop_clip();
@@ -403,6 +723,24 @@ widget! {
         } else {
             Rect::zero()
         }
+    }
+}
+
+// 把折叠状态、动态内容子树与 UIX 视觉表融合为单一根节点。
+fn build_collapse_view(mut kernel: Collapse, declared_visual: CollapseVisual) -> ViewNode {
+    let visual = UIX_COLLAPSE_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.borderless_authored {
+        kernel.borderless = visual.borderless_default;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Collapse {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开根与静态视觉；Rust 内核继续拥有稳定 key、状态与动态内容子树。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/collapse/collapse.uix")
     }
 }
 
