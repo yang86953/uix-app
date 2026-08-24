@@ -57,7 +57,8 @@ widget! {
         let icon_color = ctx.tokens().color_text_tertiary();
         let icon_name = self.visual_icon_name();
         let text_width = (frame.w - HORIZONTAL_PADDING * 2.0).max(1.0);
-        let text_height = Self::description_height(desc, text_width);
+        // 一次文本测量同时取得行数与高度，避免同帧重复估算。
+        let (line_count, text_height) = Self::description_layout(desc, text_width);
         let icon_size = icon_name
             .map(|_| {
                 ICON_SIZE
@@ -92,7 +93,6 @@ widget! {
             text_width,
             text_height.min((frame.y + frame.h - y).max(0.0)),
         );
-        let line_count = Self::description_line_count(desc, text_width);
         if text_frame.h > 0.0 {
             if line_count <= 1 {
                 ctx.text_center(desc, text_frame, text_color, TEXT_FONT_SIZE);
@@ -167,22 +167,23 @@ impl Empty {
         } else {
             0.0
         };
-        (VERTICAL_PADDING * 2.0 + visual_height + Self::description_height(description, text_width))
+        let (_, description_height) = Self::description_layout(description, text_width);
+        (VERTICAL_PADDING * 2.0 + visual_height + description_height)
             .max(MIN_HEIGHT)
     }
 
-    fn description_height(description: &str, width: f32) -> f32 {
-        Self::description_line_count(description, width) as f32 * TEXT_FONT_SIZE * TEXT_LINE_HEIGHT
-    }
-
-    fn description_line_count(description: &str, width: f32) -> usize {
-        crate::draw::resources::font::text_backend::estimate_text_metrics(
+    fn description_layout(description: &str, width: f32) -> (usize, f32) {
+        let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
             description,
             width.max(1.0),
             TEXT_FONT_SIZE,
         )
         .line_count
-        .max(1)
+        .max(1);
+        (
+            line_count,
+            line_count as f32 * TEXT_FONT_SIZE * TEXT_LINE_HEIGHT,
+        )
     }
 
     fn visual_icon_name(&self) -> Option<&str> {
