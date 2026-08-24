@@ -1,0 +1,2 @@
+// ImageGroup 的资源、索引和模态预览属于 Rust；UIX 声明公开组件根。
+<KernelView value={build_image_group_view(kernel)} />
