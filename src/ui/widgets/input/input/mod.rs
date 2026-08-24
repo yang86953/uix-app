@@ -16,6 +16,7 @@ use crate::draw::resources::font::text_backend::PositionedGlyph;
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
@@ -25,19 +26,8 @@ use crate::ui::{SnapshotFields, SnapshotSource};
 
 /// 返回指定控件尺寸对应的输入框标准高度。
 pub fn input_height(size: ControlSize) -> f32 {
-    match size {
-        ControlSize::Small => 24.0,
-        ControlSize::Medium => 32.0,
-        ControlSize::Large => 40.0,
-    }
+    INPUT_VISUAL_REF.layout.control_height(size)
 }
-
-pub(crate) const PAD: f32 = 12.0;
-pub(crate) const FONT_SIZE: f32 = 14.0;
-const LINE_HEIGHT: f32 = 22.0;
-const ADDON_FONT_SIZE: f32 = 13.0;
-const ADDON_HORIZONTAL_PADDING: f32 = 16.0;
-const STATUS_MESSAGE_HEIGHT: f32 = 18.0;
 
 /// 输入框即时状态。
 ///
@@ -94,12 +84,12 @@ fn normalize_newlines(text: &str) -> Cow<'_, str> {
     Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
-fn addon_width(text: &str) -> f32 {
+fn addon_width(text: &str, visual: &InputVisual) -> f32 {
     if text.is_empty() {
         0.0
     } else {
-        estimate_text_metrics(text, f32::INFINITY, ADDON_FONT_SIZE).max_line_width
-            + ADDON_HORIZONTAL_PADDING
+        estimate_text_metrics(text, f32::INFINITY, visual.typography.addon_font_size).max_line_width
+            + visual.layout.addon_horizontal_padding
     }
 }
 
@@ -152,6 +142,9 @@ widget! {
         pub(crate) clear_icon_rect: Cell<Rect>,
         /// 密码眼睛图标区域（用于命中检测）
         pub(crate) pwd_icon_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static InputVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -188,9 +181,10 @@ widget! {
                     return EventResult::Handled;
                 }
                 let ci = if self.textarea {
-                    self.char_at_xy(pos.x - PAD, pos.y)
+                    self.char_at_xy(pos.x - self.visual.layout.horizontal_padding, pos.y)
                 } else {
-                    let text_x = pos.x - PAD + self.scroll_offset_x.get();
+                    let text_x = pos.x - self.visual.layout.horizontal_padding
+                        + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
                 }
                 .min(self.value.chars().count());
@@ -208,9 +202,10 @@ widget! {
             SystemEvent::PointerMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let ci = if self.textarea {
-                    self.char_at_xy(pos.x - PAD, pos.y)
+                    self.char_at_xy(pos.x - self.visual.layout.horizontal_padding, pos.y)
                 } else {
-                    let text_x = pos.x - PAD + self.scroll_offset_x.get();
+                    let text_x = pos.x - self.visual.layout.horizontal_padding
+                        + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
                 }
                 .min(self.value.chars().count());
@@ -404,7 +399,7 @@ widget! {
         let message_height = if self.status_message.is_empty() {
             0.0
         } else {
-            STATUS_MESSAGE_HEIGHT.min(frame.h.max(0.0))
+            self.visual.chrome.status_message_height.min(frame.h.max(0.0))
         };
         let control_height = if self.textarea {
             (frame.h - message_height).max(0.0)
@@ -412,18 +407,22 @@ widget! {
             input_height(self.input_size).min((frame.h - message_height).max(0.0))
         };
         let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
+        // 单行、多行与状态消息共享同帧一次 UIX 主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
         if self.textarea {
-            self.render_textarea(control_frame, ctx);
+            self.render_textarea(control_frame, ctx, visual);
         } else {
-            self.render_singleline(control_frame, ctx);
+            self.render_singleline(control_frame, ctx, visual);
         }
-        self.render_status_message(frame, control_height, ctx);
+        self.render_status_message(frame, control_height, ctx, visual);
     }
 }
 
 mod ext;
 mod input_render;
 mod methods;
+// 声明 Input 的 UIX 静态视觉与主题解析模块。
+mod presentation;
 // 仅在单元测试中编译输入控件字素簇交互回归。
 #[cfg(test)]
 // 使用独立文件避免继续膨胀核心控件模块。
@@ -432,6 +431,24 @@ mod methods;
 mod grapheme_tests;
 
 pub use self::ext::*;
+use presentation::*;
+
+// 把 Input Rust 文本编辑内核与 UIX 静态视觉组合为单一组件节点。
+fn build_input_view(mut kernel: Input, visual: &'static InputVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_input_uix_root(kernel: Input) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/input/input.uix")
+}
+
+impl View for Input {
+    fn build(self) -> ViewNode {
+        build_input_uix_root(self)
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 公共方法
