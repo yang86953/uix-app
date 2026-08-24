@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::{Rect, Size};
 use uix::prelude::{
-    Card, Collapse, CollapsePanel, Container, Content, Footer, Grid, GridTrack, Header,
-    Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter, Table, TableColumn,
+    Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid, GridTrack,
+    Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter, Table,
+    TableColumn,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
@@ -322,6 +323,22 @@ fn table_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn form_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 400.0)));
+    let items = (0..8)
+        .map(|index| {
+            let mut item = FormItem::new(&format!("字段 {index}")).into_node();
+            item.children = vec![Container::new().into_node()];
+            item
+        })
+        .collect();
+    let mut form = Form::new().into_node();
+    form.children = items;
+    tree.set_children(root, vec![form]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -402,6 +419,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Splitter", splitter_layout_tree()),
         ("Collapse", collapse_layout_tree()),
         ("Table", table_layout_tree()),
+        ("Form", form_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
