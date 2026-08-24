@@ -94,6 +94,8 @@ pub struct WidgetTree {
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
     /// 二维与三维命中递归复用的 `(子节点, 原始顺序)` 排序工作区。
     pub(crate) hit_test_order_scratch: std::cell::RefCell<Vec<(WidgetId, usize)>>,
+    /// 坐标投影、裁剪与命中逆变换复用的根到节点视觉路径工作区。
+    pub(crate) visual_path_scratch: std::cell::RefCell<Vec<WidgetId>>,
 
     pub(crate) handler_table: HandlerTable,
     pub(crate) render_handler_table: RenderHandlerTable,
@@ -175,6 +177,7 @@ impl Default for WidgetTree {
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             hit_test_order_scratch: std::cell::RefCell::new(Vec::new()),
+            visual_path_scratch: std::cell::RefCell::new(Vec::new()),
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
