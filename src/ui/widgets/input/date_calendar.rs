@@ -5,10 +5,6 @@ use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_picker::{Date, DisabledDate, days_in_month, first_weekday};
 
-// 旧 DateRangePicker 在下一阶段迁移前继续复用原始月历自然尺寸。
-pub(crate) const CALENDAR_PANEL_HEIGHT: f32 = 250.0;
-pub(crate) const CALENDAR_PANEL_MIN_WIDTH: f32 = 160.0;
-
 /// 月历绘制与命中共享的静态视觉指标；具体值由组件 UIX 提供。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct CalendarPanelVisual {
@@ -46,27 +42,6 @@ pub(crate) struct ResolvedCalendarPanelVisual {
     pub(crate) hover_fill: Color,
     pub(crate) radius: f32,
 }
-
-// 未迁移的 DateRangePicker 暂用原有月历视觉；DatePicker 不读取此表。
-const LEGACY_CALENDAR_VISUAL: CalendarPanelVisual = CalendarPanelVisual {
-    height: CALENDAR_PANEL_HEIGHT,
-    min_width: CALENDAR_PANEL_MIN_WIDTH,
-    header_height: 32.0,
-    weekday_height: 24.0,
-    cell_height: 30.0,
-    horizontal_inset: 8.0,
-    navigation_width: 32.0,
-    title_font_size: 14.0,
-    navigation_icon_size: 12.0,
-    weekday_font_size: 10.0,
-    day_font_size: 12.0,
-    border_width: 1.0,
-};
-
-const LEGACY_CALENDAR_ICONS: CalendarPanelIconsVisual = CalendarPanelIconsVisual {
-    previous: "chevron-left",
-    next: "chevron-right",
-};
 
 // 描述任意实际日期面板上的缩放布局指标。
 #[derive(Debug, Clone, Copy)]
@@ -155,16 +130,6 @@ impl CalendarPanelState<'_> {
     }
 }
 
-// 在已解析的实际面板矩形内命中月份导航按钮。
-pub(crate) fn hit_month_navigation_in_rect(
-    // 接收绘制与登记共享的实际面板矩形。
-    popup: Rect,
-    // 接收与面板同一坐标系的指针位置。
-    position: Point,
-) -> Option<MonthNavigation> {
-    hit_month_navigation_in_rect_with_visual(popup, position, LEGACY_CALENDAR_VISUAL)
-}
-
 // 使用调用方 UIX 提供的月历指标命中月份导航按钮。
 pub(crate) fn hit_month_navigation_in_rect_with_visual(
     popup: Rect,
@@ -196,20 +161,6 @@ pub(crate) fn hit_month_navigation_in_rect_with_visual(
         // 标题中部不属于导航按钮。
         None
     }
-}
-
-// 在已解析的实际面板矩形内命中日期单元格。
-pub(crate) fn hit_calendar_date_in_rect(
-    // 接收绘制与登记共享的实际面板矩形。
-    popup: Rect,
-    // 接收与面板同一坐标系的指针位置。
-    position: Point,
-    // 接收当前视图年份。
-    year: i32,
-    // 接收当前视图月份。
-    month: usize,
-) -> Option<Date> {
-    hit_calendar_date_in_rect_with_visual(popup, position, year, month, LEGACY_CALENDAR_VISUAL)
 }
 
 // 使用调用方 UIX 提供的月历指标命中日期单元格。
@@ -264,36 +215,6 @@ pub(crate) fn hit_calendar_date_in_rect_with_visual(
     }
     let day = slot - first + 1;
     (day <= days_in_month(year, month)).then(|| Date::new(year, month, day))
-}
-
-// 在已解析的实际矩形内绘制可缩放月历面板。
-pub(crate) fn draw_calendar_panel_in_rect(
-    // 接收登记、命中和脏区共享的实际面板矩形。
-    popup: Rect,
-    // 接收绘制上下文。
-    ctx: &mut PaintContext,
-    // 接收当前月份和日期状态。
-    state: CalendarPanelState<'_>,
-) {
-    let resolved = ResolvedCalendarPanelVisual {
-        primary: ctx.tokens().color_primary(),
-        primary_background: ctx.tokens().color_primary_bg(),
-        border: ctx.tokens().color_border(),
-        text: ctx.tokens().color_text(),
-        text_secondary: ctx.tokens().color_text_secondary(),
-        text_tertiary: ctx.tokens().color_text_tertiary(),
-        popup_background: ctx.tokens().color_bg_elevated(),
-        hover_fill: ctx.tokens().color_fill_tertiary(),
-        radius: ctx.tokens().border_radius_sm(),
-    };
-    draw_calendar_panel_in_rect_with_visual(
-        popup,
-        ctx,
-        state,
-        LEGACY_CALENDAR_VISUAL,
-        LEGACY_CALENDAR_ICONS,
-        resolved,
-    );
 }
 
 // 使用调用方 UIX 提供的静态视觉和同帧主题结果绘制月历面板。

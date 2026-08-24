@@ -31,7 +31,8 @@ impl DateRangePicker {
         // 归一化并缓存当前逻辑表面。
         let surface = normalize_date_range_rect(surface);
         // 使用共享解析器生成绝对组合面板矩形。
-        let absolute = resolve_date_range_popup_rect(frame, self.presets.len(), surface);
+        let absolute =
+            resolve_date_range_popup_rect(frame, self.presets.len(), surface, self.visual);
         // 转换为组件事件路径可复用的相对矩形。
         let local = local_date_range_popup_rect(frame, absolute);
         // 缓存最终相对组合面板矩形。
@@ -70,7 +71,7 @@ impl DateRangePicker {
             // 读取可复制的可选表面。
             .get()
             // 首次使用时按当前预设数构造有限表面。
-            .unwrap_or_else(|| date_range_fallback_surface(frame, self.presets.len()))
+            .unwrap_or_else(|| date_range_fallback_surface(frame, self.presets.len(), self.visual))
     }
 
     // 返回事件路径应使用的实际组合面板矩形。
@@ -84,9 +85,10 @@ impl DateRangePicker {
             return self.remember_popup_rect(anchor, surface);
         }
         // 首次正式登记前构造有限回退表面。
-        let surface = date_range_fallback_surface(frame, self.presets.len());
+        let surface = date_range_fallback_surface(frame, self.presets.len(), self.visual);
         // 解析回退绝对组合面板。
-        let absolute = resolve_date_range_popup_rect(frame, self.presets.len(), surface);
+        let absolute =
+            resolve_date_range_popup_rect(frame, self.presets.len(), surface, self.visual);
         // 只返回本地几何并等待正式登记记录表面。
         local_date_range_popup_rect(frame, absolute)
     }

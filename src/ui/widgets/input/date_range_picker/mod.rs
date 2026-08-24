@@ -6,10 +6,11 @@ use std::sync::Arc;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::input::date_calendar::{
-    CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect, hit_calendar_date_in_rect,
-    hit_month_navigation_in_rect,
+    CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect_with_visual,
+    hit_calendar_date_in_rect_with_visual, hit_month_navigation_in_rect_with_visual,
 };
 use crate::ui::widgets::input::date_picker::{
     Date, DisabledDate, add_days, days_in_month, next_month, prev_month,
@@ -24,16 +25,16 @@ use crate::widget;
 mod geometry;
 // 声明 DateRangePicker 的组合面板缓存方法模块。
 mod methods;
+// 声明 DateRangePicker 的 UIX 静态视觉与主题解析模块。
+mod presentation;
+
+use presentation::*;
 
 // 引入组合面板绝对坐标转换、分区与表面裁剪函数。
 use geometry::{
     DateRangePopupParts, absolute_date_range_popup_rect, date_range_popup_parts,
     date_range_surface_rect,
 };
-
-const PRESET_GAP: f32 = 2.0;
-const PRESET_ROW_HEIGHT: f32 = 24.0;
-const PRESET_VERTICAL_INSET: f32 = 4.0;
 
 /// DateRangePicker 的具名范围预设。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,13 +121,16 @@ widget! {
         popup_anchor_frame: Cell<Option<Rect>>,
         // 累计当前呈现周期内旧新组合面板的绝对脏区。
         popup_damage_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static DateRangePickerVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(
-            280.0,
+            self.visual.trigger.intrinsic_width,
             crate::ui::widget_runtime::config::control_height(self.picker_size),
         ))
     }
@@ -149,7 +153,7 @@ widget! {
                     // 读取同帧登记、绘制和命中共享的实际组合面板。
                     let popup = self.interaction_popup_rect(frame);
                     // 从最终组合面板派生月历与预设分区。
-                    let parts = date_range_popup_parts(popup, self.presets.len());
+                    let parts = date_range_popup_parts(popup, self.presets.len(), self.visual);
                     // 在缩放后的实际预设页脚中命中预设。
                     if let Some(index) = self.hit_preset(parts, *pos) {
                         if let Some((_, preset)) = self.presets.get(index) {
@@ -161,8 +165,11 @@ widget! {
                         return EventResult::Handled;
                     }
                     // 在缩放后的实际月历标题栏中命中月份导航。
-                    if let Some(navigation) =
-                        hit_month_navigation_in_rect(parts.calendar, *pos)
+                    if let Some(navigation) = hit_month_navigation_in_rect_with_visual(
+                        parts.calendar,
+                        *pos,
+                        self.visual.calendar,
+                    )
                     {
                         let (year, month) = match navigation {
                             MonthNavigation::Previous => {
@@ -178,11 +185,12 @@ widget! {
                         return EventResult::Handled;
                     }
                     // 在缩放后的实际日期网格中命中日期。
-                    if let Some(date) = hit_calendar_date_in_rect(
+                    if let Some(date) = hit_calendar_date_in_rect_with_visual(
                         parts.calendar,
                         *pos,
                         self.view_year.get(),
                         self.view_month.get(),
+                        self.visual.calendar,
                     ) {
                         if !self.is_date_disabled(date) {
                             if let Some(start) = self.pending_start.get() {
@@ -203,13 +211,14 @@ widget! {
                         // 读取同帧登记、绘制和命中共享的实际组合面板。
                         let popup = self.interaction_popup_rect(frame);
                         // 从最终组合面板派生实际月历分区。
-                        let parts = date_range_popup_parts(popup, self.presets.len());
+                        let parts = date_range_popup_parts(popup, self.presets.len(), self.visual);
                         // 在缩放后的实际日期网格中解析悬停日期。
-                        let hit = hit_calendar_date_in_rect(
+                        let hit = hit_calendar_date_in_rect_with_visual(
                             parts.calendar,
                             *pos,
                             self.view_year.get(),
                             self.view_month.get(),
+                            self.visual.calendar,
                         )
                         .filter(|date| !self.is_date_disabled(*date));
                         if self.hover_date.replace(hit) != hit {
@@ -337,12 +346,10 @@ widget! {
         self.sync_bound_values();
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let primary = ctx.tokens().color_primary();
-        let border_color = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_tertiary = ctx.tokens().color_text_tertiary();
-        let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm()));
+        // 触发框、月历与预设页脚共享同帧一次 UIX 主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let trigger = self.visual.trigger;
+        let radius = Some(crate::draw::Radius::uniform(visual.trigger_radius));
 
         let nominal_height = crate::ui::widget_runtime::config::control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
@@ -350,18 +357,22 @@ widget! {
         } else {
             0.0
         };
-        let font_size = 14.0 * scale;
-        let horizontal_padding = 12.0 * scale;
-        let icon_gap = 4.0 * scale;
-        let icon_slot_width = 24.0 * scale;
-        let icon_right_inset = 4.0 * scale;
+        let font_size = trigger.font_size * scale;
+        let horizontal_padding = trigger.horizontal_padding * scale;
+        let icon_gap = trigger.icon_gap * scale;
+        let icon_slot_width = trigger.icon_slot_width * scale;
+        let icon_right_inset = trigger.icon_right_inset * scale;
 
         ctx.push_clip(frame);
-        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
+        ctx.fill_rect(frame, visual.trigger_background, radius);
         ctx.stroke_rect(
             frame,
-            if self.focused { primary } else { border_color },
-            if self.focused { 2.0 } else { 1.0 },
+            if self.focused { visual.primary } else { visual.border },
+            if self.focused {
+                trigger.focus_border_width
+            } else {
+                trigger.border_width
+            },
             radius,
         );
         if font_size > 0.0 && frame.w > 0.0 {
@@ -381,12 +392,12 @@ widget! {
                     let start = start.format();
                     let end = end.format();
                     let start_width = ctx.measure_text(&start, font_size).w;
-                    let range_icon_gap = 4.0 * scale;
-                    let range_icon_width = 16.0 * scale;
+                    let range_icon_gap = trigger.range_icon_gap * scale;
+                    let range_icon_width = trigger.range_icon_width * scale;
                     ctx.draw_text(
                         &start,
                         Point::new(text_left, text_y),
-                        text_color,
+                        visual.text,
                         font_size,
                     );
                     let range_icon_frame = Rect::new(
@@ -397,9 +408,9 @@ widget! {
                     );
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "arrow-right",
+                        self.visual.chrome.range_icon,
                         range_icon_frame,
-                        text_secondary,
+                        visual.text_secondary,
                         font_size,
                     );
                     ctx.draw_text(
@@ -408,14 +419,14 @@ widget! {
                             range_icon_frame.x + range_icon_frame.w + range_icon_gap,
                             text_y,
                         ),
-                        text_color,
+                        visual.text,
                         font_size,
                     );
                 } else {
                     ctx.draw_text(
                         &self.placeholder,
                         Point::new(text_left, text_y),
-                        text_tertiary,
+                        visual.text_tertiary,
                         font_size,
                     );
                 }
@@ -423,9 +434,9 @@ widget! {
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "calendar",
+                self.visual.chrome.trigger_icon,
                 icon_frame,
-                text_secondary,
+                visual.text_secondary,
                 font_size,
             );
         }
@@ -441,7 +452,7 @@ widget! {
             // 将相对触发器缓存转换为窗口绝对组合面板矩形。
             let popup = absolute_date_range_popup_rect(frame, popup);
             // 从最终组合面板派生月历与预设分区。
-            let parts = date_range_popup_parts(popup, self.presets.len());
+            let parts = date_range_popup_parts(popup, self.presets.len(), self.visual);
             let pending = self.pending_start.get();
             let preview_range = pending
                 .zip(self.hover_date.get())
@@ -449,7 +460,7 @@ widget! {
             // 将组合弹层绘制限制在当前逻辑表面。
             ctx.push_clip(surface);
             // 使用最终月历分区驱动缩放月历绘制。
-            draw_calendar_panel_in_rect(
+            draw_calendar_panel_in_rect_with_visual(
                 parts.calendar,
                 ctx,
                 CalendarPanelState {
@@ -460,9 +471,12 @@ widget! {
                     hover: self.hover_date.get(),
                     disabled_date: self.disabled_date.as_ref(),
                 },
+                self.visual.calendar,
+                self.visual.calendar_icons,
+                visual.calendar(),
             );
             // 使用同一组合分区绘制缩放后的预设页脚。
-            self.draw_presets(parts, ctx);
+            self.draw_presets(parts, ctx, visual);
             // 恢复组合弹层外层的逻辑表面裁剪。
             ctx.pop_clip();
         }
@@ -489,7 +503,7 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // 登记边界与绘制、命中共用同一矩形。
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -534,6 +548,7 @@ impl DateRangePicker {
             popup_anchor_frame: Cell::new(None),
             // 初始化为空的组合面板历史脏区。
             popup_damage_rect: Cell::new(Rect::zero()),
+            visual: DATE_RANGE_PICKER_VISUAL_REF,
         }
     }
 
@@ -640,6 +655,10 @@ impl DateRangePicker {
         self.presets = next.presets;
         self.disabled_date = next.disabled_date;
         self.picker_size = next.picker_size;
+        if !std::ptr::eq(self.visual, next.visual) {
+            self.visual = next.visual;
+            self.reset_popup_presentation();
+        }
     }
 
     fn sync_bound_values(&self) {
@@ -737,7 +756,12 @@ impl DateRangePicker {
         (index < self.presets.len()).then_some(index)
     }
 
-    fn draw_presets(&self, parts: DateRangePopupParts, ctx: &mut PaintContext) {
+    fn draw_presets(
+        &self,
+        parts: DateRangePopupParts,
+        ctx: &mut PaintContext,
+        visual: ResolvedDateRangePickerVisual,
+    ) {
         // 无预设时不绘制页脚。
         if self.presets.is_empty() {
             // 提前结束空页脚绘制。
@@ -753,13 +777,15 @@ impl DateRangePicker {
             // 提前结束不可见页脚绘制。
             return;
         }
-        let radius = Some(crate::draw::Radius::uniform(
-            ctx.tokens().border_radius_sm(),
-        ));
+        let radius = Some(crate::draw::Radius::uniform(visual.popup_radius));
         ctx.push_clip(footer);
-        ctx.fill_rect(footer, ctx.tokens().color_bg_elevated(), radius);
-        ctx.stroke_rect(footer, ctx.tokens().color_border(), 1.0, radius);
-        let primary = ctx.tokens().color_primary();
+        ctx.fill_rect(footer, visual.popup_background, radius);
+        ctx.stroke_rect(
+            footer,
+            visual.border,
+            self.visual.popup.preset_border_width,
+            radius,
+        );
         for (index, (label, _)) in self.presets.iter().enumerate() {
             // 按最终页脚指标构造当前预设行。
             let row = Rect::new(
@@ -775,7 +801,7 @@ impl DateRangePicker {
             ctx.draw_text(
                 label,
                 Point::new(row.x, text_y),
-                primary,
+                visual.primary,
                 parts.preset_font_size,
             );
             ctx.pop_clip();
@@ -787,6 +813,26 @@ impl DateRangePicker {
 impl Default for DateRangePicker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// 把 DateRangePicker Rust 状态内核与 UIX 静态视觉组合为单一组件节点。
+fn build_date_range_picker_view(
+    mut kernel: DateRangePicker,
+    visual: &'static DateRangePickerVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_date_range_picker_uix_root(kernel: DateRangePicker) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/date_range_picker/date_range_picker.uix")
+}
+
+impl View for DateRangePicker {
+    fn build(self) -> ViewNode {
+        build_date_range_picker_uix_root(self)
     }
 }
 
