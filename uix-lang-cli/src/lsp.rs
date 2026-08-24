@@ -1,18 +1,65 @@
 //! 最小 LSP stdio Adapter；会话状态与文档缓存只属于 CLI。
 
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use uix_lang_compiler::{CompilerDiagnostic, CompilerSession, CompilerSystem};
 
+#[derive(Debug)]
+enum OpenDocument {
+    // 文件文档的源码只由 overlays 拥有，文档索引不保存第二份 String。
+    File(PathBuf),
+    // 非 file URI 没有可传给 CompilerSession 的稳定路径，继续由 LSP 会话拥有源码。
+    Virtual(String),
+}
+
 #[derive(Default)]
 struct Session {
-    documents: BTreeMap<String, String>,
+    documents: BTreeMap<String, OpenDocument>,
+    // LSP Adapter 持久拥有唯一文件源码快照，诊断请求直接借用而不重建整表。
+    overlays: BTreeMap<PathBuf, String>,
     diagnostics_by_root: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
     // LSP Adapter 独占编译会话；进程退出或文档关闭时释放对应阶段缓存。
     compiler: CompilerSession,
     shutdown: bool,
+}
+
+impl Session {
+    fn store_document(&mut self, uri: String, source: String) {
+        // 同一 URI 更新前先释放旧路径快照，避免 URI 改类时残留不可达源码。
+        self.remove_document(&uri);
+        if let Some(path) = uri_to_path(&uri) {
+            self.overlays.insert(path.clone(), source);
+            self.documents.insert(uri, OpenDocument::File(path));
+        } else {
+            self.documents.insert(uri, OpenDocument::Virtual(source));
+        }
+    }
+
+    fn remove_document(&mut self, uri: &str) -> Option<PathBuf> {
+        match self.documents.remove(uri) {
+            Some(OpenDocument::File(path)) => {
+                // URI 别名仍指向同一路径时保留共享快照，直到最后一个文档所有者关闭。
+                let still_open = self.documents.values().any(
+                    |document| matches!(document, OpenDocument::File(candidate) if candidate == &path),
+                );
+                if !still_open {
+                    self.overlays.remove(&path);
+                }
+                Some(path)
+            }
+            Some(OpenDocument::Virtual(_)) | None => None,
+        }
+    }
+
+    fn document_source(&self, uri: &str) -> Option<&str> {
+        match self.documents.get(uri)? {
+            OpenDocument::File(path) => self.overlays.get(path).map(String::as_str),
+            OpenDocument::Virtual(source) => Some(source.as_str()),
+        }
+    }
 }
 
 pub fn run_stdio() -> Result<u8, String> {
@@ -108,7 +155,7 @@ fn update_document(session: &mut Session, request: &Value) {
         .unwrap_or("")
         .to_string();
     if let Some(text) = text {
-        session.documents.insert(uri, text);
+        session.store_document(uri, text);
         return;
     }
     if let Some(changes) = params.get("contentChanges").and_then(Value::as_array) {
@@ -117,7 +164,7 @@ fn update_document(session: &mut Session, request: &Value) {
             .and_then(|v| v.get("text"))
             .and_then(Value::as_str)
         {
-            session.documents.insert(uri, text.to_string());
+            session.store_document(uri, text.to_string());
         }
     }
 }
@@ -128,9 +175,9 @@ fn close_document(session: &mut Session, request: &Value) -> Vec<Value> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    session.documents.remove(&uri);
+    let closed_path = session.remove_document(&uri).or_else(|| uri_to_path(&uri));
     let previous = session.diagnostics_by_root.remove(&uri).unwrap_or_default();
-    let affected_roots = uri_to_path(&uri)
+    let affected_roots = closed_path
         .map(|path| session.compiler.evict_file(&path))
         .unwrap_or_default();
     // 关闭依赖 overlay 后立即按落盘内容复核仍打开的根，不能等待下一次编辑才失效。
@@ -191,17 +238,17 @@ fn diagnostic_notifications(session: &mut Session, request: &Value) -> Vec<Value
         .pointer("/params/textDocument/uri")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let (text, name) = source(session, request_uri);
     let path = uri_to_path(request_uri);
     let result = if let Some(path) = path.as_ref() {
-        let overlays = overlay_documents(session);
         session
             .compiler
-            .check_file_with_overlays_auto(path, &overlays)
+            .check_file_with_overlays_auto(path, &session.overlays)
             .err()
     } else {
+        let (text, name) = source(session, request_uri);
         CompilerSystem::new().check_inline_auto(&text, &name).err()
     };
+    let (text, _) = source(session, request_uri);
     // 每轮只保留当前失败来源；先前发布到其他依赖文件的诊断必须显式清空。
     let mut active = BTreeMap::<String, Vec<Value>>::new();
     if let Some(error) = result {
@@ -240,14 +287,6 @@ fn diagnostic_notifications(session: &mut Session, request: &Value) -> Vec<Value
         .collect()
 }
 
-fn overlay_documents(session: &Session) -> BTreeMap<PathBuf, String> {
-    session
-        .documents
-        .iter()
-        .filter_map(|(uri, source)| uri_to_path(uri).map(|path| (path, source.clone())))
-        .collect()
-}
-
 fn diagnostic_uri(source_name: &str, fallback: &str) -> String {
     let path = Path::new(source_name);
     if path.is_absolute() {
@@ -259,18 +298,17 @@ fn diagnostic_uri(source_name: &str, fallback: &str) -> String {
     fallback.to_string()
 }
 
-fn diagnostic_source(
-    session: &Session,
+fn diagnostic_source<'a>(
+    session: &'a Session,
     target_uri: &str,
     source_name: &str,
-    fallback: &str,
-) -> String {
+    fallback: &'a str,
+) -> Cow<'a, str> {
     session
-        .documents
-        .get(target_uri)
-        .cloned()
-        .or_else(|| std::fs::read_to_string(source_name).ok())
-        .unwrap_or_else(|| fallback.to_string())
+        .document_source(target_uri)
+        .map(Cow::Borrowed)
+        .or_else(|| std::fs::read_to_string(source_name).ok().map(Cow::Owned))
+        .unwrap_or(Cow::Borrowed(fallback))
 }
 
 fn lsp_diagnostic(error: CompilerDiagnostic, source: &str) -> Value {
@@ -309,14 +347,17 @@ fn byte_offset_position(source: &str, offset: usize) -> Option<(usize, usize)> {
     Some((line, character))
 }
 
-fn source(session: &Session, uri: &str) -> (String, String) {
+fn source<'a>(session: &'a Session, uri: &str) -> (Cow<'a, str>, String) {
     let path = uri_to_path(uri);
     let text = session
-        .documents
-        .get(uri)
-        .cloned()
-        .or_else(|| path.as_ref().and_then(|p| std::fs::read_to_string(p).ok()))
-        .unwrap_or_default();
+        .document_source(uri)
+        .map(Cow::Borrowed)
+        .or_else(|| {
+            path.as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .map(Cow::Owned)
+        })
+        .unwrap_or(Cow::Borrowed(""));
     (
         text,
         path.map(|p| p.display().to_string())
@@ -482,11 +523,73 @@ mod tests {
     }
 
     #[test]
+    fn file_documents_keep_one_persistent_overlay_source() {
+        let first_path =
+            std::env::temp_dir().join(format!("uix-lsp-overlay-first-{}.uix", std::process::id()));
+        let second_path =
+            std::env::temp_dir().join(format!("uix-lsp-overlay-second-{}.uix", std::process::id()));
+        let first_uri = format!("file://{}", first_path.display());
+        let second_uri = format!("file://{}", second_path.display());
+        let mut session = Session::default();
+        session.store_document(first_uri.clone(), "<App><Text>一</Text></App>".to_string());
+        session.store_document(second_uri, "<App><Text>二</Text></App>".to_string());
+        let first_pointer = session
+            .document_source(&first_uri)
+            .expect("打开文档必须可读")
+            .as_ptr();
+        assert_eq!(
+            first_pointer,
+            session
+                .overlays
+                .get(&first_path)
+                .expect("文件文档必须持有 overlay")
+                .as_ptr(),
+            "文档索引与编译 overlay 必须借用同一份源码",
+        );
+
+        let _ = diagnostic_notifications(
+            &mut session,
+            &json!({"params":{"textDocument":{"uri":first_uri.clone()}}}),
+        );
+
+        assert_eq!(
+            session
+                .document_source(&first_uri)
+                .expect("诊断后打开文档必须仍可读")
+                .as_ptr(),
+            first_pointer,
+            "诊断请求不得重建 LSP 持有的 overlay 源码",
+        );
+        assert_eq!(session.overlays.len(), 2);
+    }
+
+    #[test]
+    fn closing_one_uri_alias_keeps_shared_overlay_until_last_owner() {
+        let path =
+            std::env::temp_dir().join(format!("uix-lsp-overlay-alias-{}.uix", std::process::id()));
+        let mut session = Session::default();
+        session.overlays.insert(path.clone(), "<App />".to_string());
+        session.documents.insert(
+            "file:///alias-a.uix".to_string(),
+            OpenDocument::File(path.clone()),
+        );
+        session.documents.insert(
+            "file:///alias-b.uix".to_string(),
+            OpenDocument::File(path.clone()),
+        );
+
+        session.remove_document("file:///alias-a.uix");
+        assert!(session.overlays.contains_key(&path));
+        session.remove_document("file:///alias-b.uix");
+        assert!(!session.overlays.contains_key(&path));
+    }
+
+    #[test]
     fn unsaved_app_document_uses_overlay_and_app_target() {
         let path = std::env::temp_dir().join(format!("uix-lsp-app-{}.uix", std::process::id()));
         let uri = format!("file://{}", path.display());
         let mut session = Session::default();
-        session.documents.insert(
+        session.store_document(
             uri.clone(),
             "<App title=\"Overlay\"><Text>Hello</Text></App>".to_string(),
         );
@@ -509,9 +612,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("uix-lsp-close-{}.uix", std::process::id()));
         let uri = format!("file://{}", path.display());
         let mut session = Session::default();
-        session
-            .documents
-            .insert(uri.clone(), "<App><Unknown /></App>".to_string());
+        session.store_document(uri.clone(), "<App><Unknown /></App>".to_string());
         let published = diagnostic_notifications(
             &mut session,
             &json!({"params":{"textDocument":{"uri":uri.clone()}}}),
@@ -529,6 +630,7 @@ mod tests {
         );
 
         assert!(!session.documents.contains_key(&uri));
+        assert!(!session.overlays.contains_key(&path));
         assert!(!session.diagnostics_by_root.contains_key(&uri));
         assert!(cleared.iter().any(|notification| {
             notification["params"]["uri"] == uri
@@ -554,10 +656,8 @@ mod tests {
         let root_uri = format!("file://{}", root.display());
         let helper_uri = format!("file://{}", helper.display());
         let mut session = Session::default();
-        session
-            .documents
-            .insert(root_uri.clone(), root_source.to_string());
-        session.documents.insert(
+        session.store_document(root_uri.clone(), root_source.to_string());
+        session.store_document(
             helper_uri.clone(),
             "@export('Helper')\n<Widget name=\"Helper\"><Unknown /></Widget>\n<Helper />"
                 .to_string(),
@@ -581,6 +681,8 @@ mod tests {
 
         assert!(session.documents.contains_key(&root_uri));
         assert!(!session.documents.contains_key(&helper_uri));
+        assert!(session.overlays.contains_key(&root));
+        assert!(!session.overlays.contains_key(&helper));
         assert!(!session.diagnostics_by_root.contains_key(&root_uri));
         assert!(cleared.iter().any(|notification| {
             notification["params"]["uri"] == helper_uri
