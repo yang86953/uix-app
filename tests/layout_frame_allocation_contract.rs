@@ -7,10 +7,13 @@ use uix::core::{Rect, Size};
 use uix::prelude::{
     Calendar, Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid,
     GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter,
-    Table, TableColumn, Tabs, VirtualScroll,
+    Table, TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
-use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
+use uix::ui::{
+    EventHandler, IntoWidgetNode, LayoutChild, LayoutEngineScratch, SystemEvent, View, WidgetId,
+    WidgetLayout,
+};
 
 struct CountingAllocator;
 
@@ -376,6 +379,31 @@ fn calendar_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn transfer_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let source = (0..64)
+        .map(|index| TransferItem::new(format!("source-{index}"), format!("来源 {index}")))
+        .collect();
+    let target = (0..64)
+        .map(|index| TransferItem::new(format!("target-{index}"), format!("目标 {index}")))
+        .collect();
+    let mut transfer = Transfer::new()
+        .source(source)
+        .target(target)
+        .searchable(true)
+        .render_item(|_| Container::new());
+    assert_eq!(
+        transfer.on_event(&SystemEvent::TextInput {
+            text: "SOURCE-1".to_owned(),
+        }),
+        uix::ui::EventResult::Handled
+    );
+    let transfer = transfer.into_node();
+    tree.set_children(root, vec![transfer]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -460,6 +488,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Tabs", tabs_layout_tree()),
         ("VirtualScroll", virtual_scroll_layout_tree()),
         ("Calendar", calendar_layout_tree()),
+        ("Transfer", transfer_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
