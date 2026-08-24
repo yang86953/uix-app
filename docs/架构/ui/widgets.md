@@ -51,6 +51,7 @@
 - `Watermark`：`src/ui/widgets/display/watermark/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留主题解析、平铺、旋转排版与绘制；生成结果仍是原 `Watermark` 单叶节点，不增加包装或子节点。
 - `Card`：`src/ui/widgets/display/card/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收有序 View 子树，Rust 内核保留布局、操作交互、几何和绘制；生成结果仍是原 `Card` 根节点，不增加包装或复制子节点。
 - `Carousel`：`src/ui/widgets/display/carousel/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根并原样接收有序幻灯片子树，Rust 内核保留计时器、选择、淡入淡出、自定义箭头和绘制；生成结果仍是原 `Carousel` 根节点，不增加包装或复制子节点。
+- `Descriptions`：`src/ui/widgets/display/descriptions/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留类型化数据、响应式网格、换行测量和绘制；生成结果仍是原 `Descriptions` 单叶节点，不增加包装或子节点。
 
 ## 组件：复合组件
 

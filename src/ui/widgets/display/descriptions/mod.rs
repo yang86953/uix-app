@@ -5,6 +5,7 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 use crate::widget;
@@ -150,6 +151,19 @@ widget! {
             draw_wrapped_cell_text(ctx, value_rect, &item.value, text);
         }
         ctx.pop_clip();
+    }
+}
+
+// 把描述项数据、网格算法与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_descriptions_view(kernel: Descriptions) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Descriptions {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 内核继续独占数据布局、换行与绘制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/descriptions/descriptions.uix")
     }
 }
 
@@ -341,6 +355,11 @@ impl DescriptionsItem {
         self
     }
 }
+
+// 集中验证 UIX 声明壳与描述列表 Rust 内核的单叶契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/descriptions_tests.rs"]
+mod tests;
 
 fn wrapped_text_height(text: &str, region_width: f32) -> f32 {
     let text_width = region_width - HORIZONTAL_PADDING * 2.0;

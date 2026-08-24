@@ -1,0 +1,2 @@
+// Descriptions 是数据网格绘制组件；UIX 声明公开根，Rust 内核负责布局与换行。
+<KernelView value={build_descriptions_view(kernel)} />
