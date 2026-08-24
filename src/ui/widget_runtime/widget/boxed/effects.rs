@@ -8,7 +8,7 @@ impl super::BoxedWidget {
         effects: Vec<crate::ui::reactive::state::Effect>,
     ) {
         // 旧 Effect 随向量替换释放，不再被树调度。
-        self.effects = effects;
+        self.effects = effects.into_boxed_slice();
     }
 
     // 返回节点仍应被树调度的 Effect。

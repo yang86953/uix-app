@@ -55,17 +55,20 @@ pub struct BoxedWidget {
     z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
     tab_index_override: Option<i32>,
-    handler_signatures: Vec<HandlerSignature>,
-    system_event_handlers: Vec<SystemEventHandlerRegistration>,
-    accessibility_override: Option<AccessibilityOverride>,
+    // 协调只整体替换签名快照，盒装切片不保留无用容量字段。
+    handler_signatures: Box<[HandlerSignature]>,
+    // 系统处理器同样只整批替换，保留可变迭代而无需 Vec 容量。
+    system_event_handlers: Box<[SystemEventHandlerRegistration]>,
+    // 绝大多数实际节点无覆盖，按需分配避免每节点内联大对象。
+    accessibility_override: Option<Box<AccessibilityOverride>>,
     // 保存该实际节点持有的结构性 State 订阅租约。
     reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
     // 保存该实际节点持有且可在只读绘制后替换的 Paint 订阅租约。
     paint_state_binds: std::cell::RefCell<Vec<crate::ui::reactive::state::PaintBindLease>>,
     // 由此实际节点拥有并随真实移除释放的捕获 Effect。
-    effects: Vec<crate::ui::reactive::state::Effect>,
+    effects: Box<[crate::ui::reactive::state::Effect]>,
     // 保存实际挂载节点承载的全部内联组件状态作用域。
-    uix_widget_scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
+    uix_widget_scopes: Box<[crate::ui::widget_state::UixWidgetScopeMarker]>,
 }
 
 // 在可能展开 panic 的操作之后恢复调用方提供的可变状态。
@@ -140,16 +143,16 @@ impl BoxedWidget {
             destroyed: false,
             z: 0,
             tab_index_override: None,
-            handler_signatures: Vec::new(),
-            system_event_handlers: Vec::new(),
+            handler_signatures: Box::default(),
+            system_event_handlers: Box::default(),
             accessibility_override: None,
             // 新节点在接收声明输出前没有结构性 State 租约。
             reconcile_state_binds: Vec::new(),
             // 新节点在首次布局或绘制捕获前没有 Paint 租约。
             paint_state_binds: std::cell::RefCell::new(Vec::new()),
             // 新节点在接收 View 捕获输出前不拥有 Effect。
-            effects: Vec::new(),
-            uix_widget_scopes: Vec::new(),
+            effects: Box::default(),
+            uix_widget_scopes: Box::default(),
         }
     }
     pub fn widget(&self) -> &dyn Widget {
@@ -249,19 +252,19 @@ impl BoxedWidget {
         &self.handler_signatures
     }
     pub(crate) fn set_handler_signatures(&mut self, signatures: Vec<HandlerSignature>) {
-        self.handler_signatures = signatures;
+        self.handler_signatures = signatures.into_boxed_slice();
     }
 
     pub(crate) fn replace_system_event_handlers(
         &mut self,
         handlers: Vec<SystemEventHandlerRegistration>,
     ) {
-        self.system_event_handlers = handlers;
+        self.system_event_handlers = handlers.into_boxed_slice();
     }
 
     pub(crate) fn set_accessibility_override(
         &mut self,
-        accessibility_override: Option<AccessibilityOverride>,
+        accessibility_override: Option<Box<AccessibilityOverride>>,
     ) {
         self.accessibility_override = accessibility_override;
     }
@@ -278,7 +281,7 @@ impl BoxedWidget {
         scopes: Vec<crate::ui::widget_state::UixWidgetScopeMarker>,
     ) {
         // 整体替换以保持声明树和挂载树一致。
-        self.uix_widget_scopes = scopes;
+        self.uix_widget_scopes = scopes.into_boxed_slice();
     }
 
     pub(crate) fn set_enter_animation(

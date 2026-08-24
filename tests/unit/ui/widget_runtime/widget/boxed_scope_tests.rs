@@ -1,9 +1,14 @@
-// 引入生产绘制边界使用的恢复辅助函数。
-use super::run_with_unwind_restore;
+// 引入生产绘制边界使用的恢复辅助函数与运行时节点类型。
+use super::{run_with_unwind_restore, AccessibilityOverride, BoxedWidget};
+// 引入声明节点与协调中间节点，覆盖完整节点流水线的尺寸基线。
+use crate::ui::view::ViewNode;
+use crate::ui::widget_runtime::widget::WidgetNode;
 // 引入间距与字号令牌查询契约。
 use crate::ui::theme::traits::{ISpacingTokens, ITypographyTokens};
 // 引入真实主题作用域与令牌补丁类型。
 use crate::ui::theme::{ScopedThemeTokens, Theme, TokenPatch};
+// 引入链式无障碍覆盖与基准快照类型。
+use crate::ui::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 // 引入补丁共享所有权类型。
 use std::sync::Arc;
 
@@ -63,4 +68,54 @@ fn panic_during_widget_scope_restores_sibling_tokens() {
     // 确认后续兄弟节点重新读取根主题背景模糊半径。
     assert_eq!(tokens.backdrop_blur_radius(), root_backdrop_blur_radius);
     // 结束 panic 展开回归。
+}
+
+// 锁定稀疏元数据优化后的节点尺寸上限。
+#[test]
+// 防止后续把大覆盖对象或带容量字段的只读列表重新内联进节点。
+fn runtime_node_sparse_metadata_stays_compact() {
+    // 空覆盖只占一个可空指针，而不是完整覆盖对象。
+    assert!(
+        std::mem::size_of::<Option<Box<AccessibilityOverride>>>()
+            < std::mem::size_of::<AccessibilityOverride>()
+    );
+    // Linux 64 位是当前可实测基线；其他平台保留上面的结构契约。
+    #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+    {
+        // 优化前为 4296 字节。
+        assert!(std::mem::size_of::<BoxedWidget>() <= 4000);
+        // 优化前为 4344 字节。
+        assert!(std::mem::size_of::<ViewNode>() <= 4080);
+        // 优化前为 3928 字节。
+        assert!(std::mem::size_of::<WidgetNode>() <= 3664);
+    }
+}
+
+// 确认按需装箱没有改变连续覆盖的合并语义。
+#[test]
+// 覆盖 role、name、state 与扩展属性并复用同一分配。
+fn boxed_accessibility_override_preserves_chained_updates() {
+    // 构造普通标签并连续声明全部覆盖维度。
+    let node = ViewNode::leaf(crate::ui::widgets::general::Label::new("原名称"))
+        .role(AccessibilityRole::Button)
+        .accessible_name("新名称")
+        .accessibility_state(AccessibilityState::disabled(true))
+        .aria("aria-description", "说明");
+    // 对组件派生的基准语义应用声明覆盖。
+    let merged = node
+        .accessibility_override
+        .as_deref()
+        .expect("链式声明应创建无障碍覆盖")
+        .apply(AccessibilitySnapshot::named(
+            AccessibilityRole::Text,
+            "原名称",
+        ));
+    // 确认四个维度均保持既有覆盖结果。
+    assert_eq!(merged.role, AccessibilityRole::Button);
+    assert_eq!(merged.name.as_deref(), Some("新名称"));
+    assert!(merged.state.disabled);
+    assert!(merged
+        .attributes
+        .iter()
+        .any(|item| item.name == "aria-description" && item.value == "说明"));
 }

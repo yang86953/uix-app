@@ -117,7 +117,8 @@ impl ViewAdapter {
             automation_id: Option<String>,
             tab_index: Option<i32>,
             focus_handle: Option<FocusHandle>,
-            accessibility_override: Option<AccessibilityOverride>,
+            // 展开栈只移动稀疏覆盖的指针，不复制其大对象。
+            accessibility_override: Option<Box<AccessibilityOverride>>,
             handlers: Vec<HandlerRegistration>,
             system_event_handlers: Vec<SystemEventHandlerRegistration>,
             render_handlers: Vec<RenderHandlerRegistration>,
