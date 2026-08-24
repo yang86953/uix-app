@@ -14,6 +14,7 @@ use super::shaped_advance::real_char_advances;
 use super::thematic_break;
 // 复用图片原子几何和运行时尺寸状态。
 use super::inline_image::InlineImageStates;
+use super::presentation::{DEFAULT_RICH_TEXT_VISUAL, RichTextMetricsVisual};
 // 图片能力开启时调用原子布局实现。
 #[cfg(feature = "image-codecs")]
 use super::inline_image;
@@ -34,9 +35,6 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 // 旧测试路径继续从布局实现模块读取无状态估算入口。
 #[cfg(test)]
 pub(crate) use super::rich_text_layout_entry::layout_rich_text;
-// 统一定义富文本 faux italic 的倾斜比例。
-const RICH_TEXT_ITALIC_SHEAR: f32 = 0.18;
-
 // 绘制一个连续富文本 run，并在需要时应用粗体和斜体样式。
 pub(crate) fn draw_rich_text_run(
     ctx: &mut PaintContext,
@@ -45,6 +43,7 @@ pub(crate) fn draw_rich_text_run(
     color: Color,
     font_size: f32,
     segment: Option<&RichTextSegment>,
+    metrics: RichTextMetricsVisual,
 ) {
     // 从段模型读取当前 run 的文本样式。
     let style = match segment {
@@ -62,7 +61,7 @@ pub(crate) fn draw_rich_text_run(
         // 保存当前绘制状态，避免倾斜泄漏到后续 run。
         ctx.save();
         // 以文本顶部为轴应用局部水平剪切。
-        ctx.concat_transform(italic_transform(pos.y));
+        ctx.concat_transform(italic_transform_with_shear(pos.y, metrics.italic_shear));
     }
     // 使用既有字体服务绘制原始 run，保持测量和光栅化入口一致。
     ctx.draw_text(content, pos, color, font_size);
@@ -71,7 +70,7 @@ pub(crate) fn draw_rich_text_run(
         // 通过轻微水平偏移叠加字形形成粗体视觉效果。
         ctx.draw_text(
             content,
-            crate::core::Point::new(pos.x + 0.6, pos.y),
+            crate::core::Point::new(pos.x + metrics.bold_offset, pos.y),
             color,
             font_size,
         );
@@ -84,13 +83,19 @@ pub(crate) fn draw_rich_text_run(
 }
 
 // 返回围绕文本顶部的局部斜体仿射变换。
+#[cfg(test)]
 pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
+    italic_transform_with_shear(pivot_y, DEFAULT_RICH_TEXT_VISUAL.metrics.italic_shear)
+}
+
+// 使用 UIX 声明的倾斜比例返回局部斜体仿射变换。
+fn italic_transform_with_shear(pivot_y: f32, shear: f32) -> Transform {
     // 非有限坐标回退到原点，避免把无效状态写入绘制命令。
     let pivot_y = if pivot_y.is_finite() { pivot_y } else { 0.0 };
     // 先移到局部轴，再剪切，最后移回原坐标系。
     Transform::translate(0.0, pivot_y)
         .concat(Transform {
-            m: [1.0, RICH_TEXT_ITALIC_SHEAR, 0.0, 0.0, 1.0, 0.0],
+            m: [1.0, shear, 0.0, 0.0, 1.0, 0.0],
         })
         .concat(Transform::translate(0.0, -pivot_y))
 }
@@ -102,8 +107,26 @@ pub(crate) fn italic_transform(pivot_y: f32) -> Transform {
 mod tests;
 
 // 估算布局（不依赖 FontService）。
-// 使用调用方图片资源状态执行估算布局。
+// 兼容内部测试与无视觉调用方，使用 Rust 回退视觉表。
 pub(crate) fn layout_rich_text_with_images(
+    segments: &[RichTextSegment],
+    max_width: f32,
+    default_font_size: f32,
+    palette: RichTextPalette,
+    image_states: &InlineImageStates,
+) -> (Vec<LayoutLine>, f32, f32) {
+    layout_rich_text_with_images_visual(
+        segments,
+        max_width,
+        default_font_size,
+        palette,
+        image_states,
+        DEFAULT_RICH_TEXT_VISUAL.metrics,
+    )
+}
+
+// 使用调用方图片资源状态执行估算布局。
+pub(crate) fn layout_rich_text_with_images_visual(
     // 接收公开段列表。
     segments: &[RichTextSegment],
     // 接收最大行宽。
@@ -114,6 +137,8 @@ pub(crate) fn layout_rich_text_with_images(
     palette: RichTextPalette,
     // 接收当前图片固有尺寸状态。
     image_states: &InlineImageStates,
+    // 接收 UIX 声明的排版比例。
+    metrics: RichTextMetricsVisual,
 ) -> (Vec<LayoutLine>, f32, f32) {
     // 图片能力关闭时显式消费空状态表参数。
     #[cfg(not(feature = "image-codecs"))]
@@ -125,7 +150,7 @@ pub(crate) fn layout_rich_text_with_images(
     let mut lines: Vec<LayoutLine> = Vec::new();
     let mut current_line_glyphs: Vec<LayoutGlyph> = Vec::new();
     let mut current_x: f32 = 0.0;
-    let line_height_factor: f32 = 1.5;
+    let line_height_factor = metrics.line_height_factor;
     let default_line_h = default_font_size * line_height_factor;
     let mut max_line_w: f32 = 0.0;
     // 保存当前 segment 在完整逻辑源中的字符起点。
@@ -142,6 +167,7 @@ pub(crate) fn layout_rich_text_with_images(
                     &mut lines,
                     &mut current_line_glyphs,
                     default_line_h,
+                    metrics,
                 );
                 current_x = 0.0;
                 max_line_w = max_line_w.max(thematic_break::layout_width(max_width));
@@ -153,7 +179,12 @@ pub(crate) fn layout_rich_text_with_images(
             RichTextSegment::NewLine => {
                 max_line_w = max_line_w.max(current_x);
                 // 以默认行高为下限，并由刷新入口保留当前行最大字形行高。
-                flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
+                flush_line(
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    default_line_h,
+                    metrics,
+                );
                 current_x = 0.0;
                 // 显式换行在完整逻辑源中占一个字符位置。
                 source_offset += 1;
@@ -169,7 +200,6 @@ pub(crate) fn layout_rich_text_with_images(
                     color,
                     bg,
                     false,
-                    None,
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -182,12 +212,14 @@ pub(crate) fn layout_rich_text_with_images(
                     &breaks,
                     // 传入当前文本段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
             }
             RichTextSegment::Code { content } => {
-                let fs = default_font_size * 0.9;
+                let fs = default_font_size * metrics.code_font_scale;
                 // 代码文本颜色由组件根从当前主题作用域注入。
                 let color = palette.code_text;
                 // 代码背景颜色同样只消费解析后的语义值。
@@ -199,7 +231,6 @@ pub(crate) fn layout_rich_text_with_images(
                     color,
                     Some(bg),
                     false,
-                    None,
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -212,11 +243,13 @@ pub(crate) fn layout_rich_text_with_images(
                     &breaks,
                     // 传入当前代码段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
             }
-            RichTextSegment::Link { content, url } => {
+            RichTextSegment::Link { content, .. } => {
                 let fs = default_font_size;
                 // 链接颜色由组件根从当前主题作用域注入。
                 let color = palette.link;
@@ -227,7 +260,6 @@ pub(crate) fn layout_rich_text_with_images(
                     color,
                     None,
                     true,
-                    Some(url.as_str()),
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -240,6 +272,8 @@ pub(crate) fn layout_rich_text_with_images(
                     &breaks,
                     // 传入当前链接段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
@@ -269,6 +303,8 @@ pub(crate) fn layout_rich_text_with_images(
                     default_line_h,
                     // 传递默认颜色供共享字形字段初始化。
                     palette.default_text,
+                    // 传递 UIX 声明的行高比例。
+                    metrics,
                     // 更新视觉行列表。
                     &mut lines,
                     // 更新当前行原子列表。
@@ -287,7 +323,12 @@ pub(crate) fn layout_rich_text_with_images(
     max_line_w = max_line_w.max(current_x);
     if !current_line_glyphs.is_empty() || lines.is_empty() {
         // 结算末行时不复用前序行状态，由字形几何决定实际行高。
-        flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
+        flush_line(
+            &mut lines,
+            &mut current_line_glyphs,
+            default_line_h,
+            metrics,
+        );
     }
 
     // 使用完整逻辑源对已完成 UAX #14 折行的行应用段落级 UAX #9。
@@ -308,7 +349,6 @@ fn layout_text_content(
     color: Color,
     bg_color: Option<Color>,
     is_link: bool,
-    link_url: Option<&str>,
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
@@ -319,6 +359,7 @@ fn layout_text_content(
     max_line_w: &mut f32,
     breaks: &LineBreakMap,
     source_offset: usize,
+    metrics: RichTextMetricsVisual,
 ) {
     // 按显式换行把内容拆成多个逻辑行，保证估算布局与真实布局共享换行语义。
     let mut remaining = content;
@@ -338,7 +379,6 @@ fn layout_text_content(
             color,
             bg_color,
             is_link,
-            link_url,
             seg_idx,
             max_width,
             seg_line_h,
@@ -350,6 +390,8 @@ fn layout_text_content(
             breaks,
             // 传入当前逻辑行全局字符起点。
             line_source_offset,
+            // 传入 UIX 声明的排版比例。
+            metrics,
         );
         // 没有后续换行时当前段布局完成。
         let Some(next) = next else {
@@ -359,7 +401,7 @@ fn layout_text_content(
         // 显式换行前先结算当前行的最大宽度。
         *max_line_w = (*max_line_w).max(*current_x);
         // 以默认与当前段行高为下限，并保留同一行前序段的更大字号。
-        flush_line(lines, glyphs, default_line_h.max(seg_line_h));
+        flush_line(lines, glyphs, default_line_h.max(seg_line_h), metrics);
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
         // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
@@ -377,7 +419,6 @@ fn layout_text_content_line(
     color: Color,
     bg_color: Option<Color>,
     is_link: bool,
-    link_url: Option<&str>,
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
@@ -387,8 +428,8 @@ fn layout_text_content_line(
     max_line_w: &mut f32,
     breaks: &LineBreakMap,
     source_offset: usize,
+    metrics: RichTextMetricsVisual,
 ) {
-    let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
     // 固化逻辑字符以按字符索引查询 UAX 边界。
     let chars = content.chars().collect::<Vec<_>>();
     // 从首个字符开始消费相邻 UAX 机会之间的原子片段。
@@ -407,7 +448,7 @@ fn layout_text_content_line(
             // 遍历片段字符。
             .iter()
             // 使用共享字符宽度估算。
-            .map(|ch| char_width(fs, *ch))
+            .map(|ch| char_width(fs, *ch, metrics))
             // 聚合完整片段宽度。
             .sum::<f32>();
 
@@ -416,14 +457,14 @@ fn layout_text_content_line(
             && !glyphs.is_empty()
         {
             *max_line_w = (*max_line_w).max(*current_x);
-            flush_line(lines, glyphs, seg_line_h);
+            flush_line(lines, glyphs, seg_line_h, metrics);
             *current_x = 0.0;
         }
 
         if *current_x + token_w > max_width {
             let mut word_chars_x = *current_x;
             for (relative_index, ch) in chars[start..end].iter().enumerate() {
-                let cw = char_width(fs, *ch);
+                let cw = char_width(fs, *ch, metrics);
                 // 只有长字母数字词的紧急边界可以绕过标准 UAX 机会。
                 let emergency_break =
                     breaks.emergency_allows_at(source_offset + start + relative_index);
@@ -433,7 +474,7 @@ fn layout_text_content_line(
                     && emergency_break
                 {
                     *max_line_w = (*max_line_w).max(word_chars_x);
-                    flush_line(lines, glyphs, seg_line_h);
+                    flush_line(lines, glyphs, seg_line_h, metrics);
                     word_chars_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
@@ -453,14 +494,13 @@ fn layout_text_content_line(
                     color,
                     bg_color,
                     is_link,
-                    link_url: shared_url.clone(),
                 });
                 word_chars_x += cw;
             }
             *current_x = word_chars_x;
         } else {
             for (relative_index, ch) in chars[start..end].iter().enumerate() {
-                let cw = char_width(fs, *ch);
+                let cw = char_width(fs, *ch, metrics);
                 glyphs.push(LayoutGlyph {
                     // 普通估算字符进入文本绘制路径。
                     kind: super::LayoutGlyphKind::Text,
@@ -478,7 +518,6 @@ fn layout_text_content_line(
                     color,
                     bg_color,
                     is_link,
-                    link_url: shared_url.clone(),
                 });
                 *current_x += cw;
             }
@@ -490,9 +529,33 @@ fn layout_text_content_line(
 
 // 真实字体度量布局（用于 render 阶段）。
 
+// 兼容内部测试与无视觉调用方，使用 Rust 回退视觉表。
+#[allow(clippy::too_many_arguments)]
+#[cfg(test)]
+pub(crate) fn layout_rich_text_real_with_images(
+    segments: &[RichTextSegment],
+    max_width: f32,
+    default_font_size: f32,
+    palette: RichTextPalette,
+    font_service: &FontService,
+    font: &FontHandle,
+    image_states: &InlineImageStates,
+) -> (Vec<LayoutLine>, f32, f32) {
+    layout_rich_text_real_with_images_visual(
+        segments,
+        max_width,
+        default_font_size,
+        palette,
+        font_service,
+        font,
+        image_states,
+        DEFAULT_RICH_TEXT_VISUAL.metrics,
+    )
+}
+
 // 使用真实字体与调用方图片状态执行布局。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn layout_rich_text_real_with_images(
+pub(crate) fn layout_rich_text_real_with_images_visual(
     // 接收公开段列表。
     segments: &[RichTextSegment],
     // 接收最大行宽。
@@ -507,6 +570,8 @@ pub(crate) fn layout_rich_text_real_with_images(
     font: &FontHandle,
     // 接收当前图片固有尺寸状态。
     image_states: &InlineImageStates,
+    // 接收 UIX 声明的排版比例。
+    metrics: RichTextMetricsVisual,
 ) -> (Vec<LayoutLine>, f32, f32) {
     // 图片能力关闭时显式消费空状态表参数。
     #[cfg(not(feature = "image-codecs"))]
@@ -518,7 +583,7 @@ pub(crate) fn layout_rich_text_real_with_images(
     let mut lines: Vec<LayoutLine> = Vec::new();
     let mut current_line_glyphs: Vec<LayoutGlyph> = Vec::new();
     let mut current_x: f32 = 0.0;
-    let line_height_factor: f32 = 1.5;
+    let line_height_factor = metrics.line_height_factor;
     let default_line_h = default_font_size * line_height_factor;
     let mut max_line_w: f32 = 0.0;
     // 保存当前 segment 在完整逻辑源中的字符起点。
@@ -535,6 +600,7 @@ pub(crate) fn layout_rich_text_real_with_images(
                     &mut lines,
                     &mut current_line_glyphs,
                     default_line_h,
+                    metrics,
                 );
                 current_x = 0.0;
                 max_line_w = max_line_w.max(thematic_break::layout_width(max_width));
@@ -546,7 +612,12 @@ pub(crate) fn layout_rich_text_real_with_images(
             RichTextSegment::NewLine => {
                 max_line_w = max_line_w.max(current_x);
                 // 真实布局同样以默认行高为下限，并扫描当前行实际字形。
-                flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
+                flush_line(
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    default_line_h,
+                    metrics,
+                );
                 current_x = 0.0;
                 // 显式换行在完整逻辑源中占一个字符位置。
                 source_offset += 1;
@@ -562,7 +633,6 @@ pub(crate) fn layout_rich_text_real_with_images(
                     color,
                     bg,
                     false,
-                    None,
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -577,12 +647,14 @@ pub(crate) fn layout_rich_text_real_with_images(
                     &breaks,
                     // 传入当前文本段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
             }
             RichTextSegment::Code { content } => {
-                let fs = default_font_size * 0.9;
+                let fs = default_font_size * metrics.code_font_scale;
                 // 代码文本颜色由组件根从当前主题作用域注入。
                 let color = palette.code_text;
                 // 代码背景颜色同样只消费解析后的语义值。
@@ -594,7 +666,6 @@ pub(crate) fn layout_rich_text_real_with_images(
                     color,
                     Some(bg),
                     false,
-                    None,
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -609,11 +680,13 @@ pub(crate) fn layout_rich_text_real_with_images(
                     &breaks,
                     // 传入当前代码段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
             }
-            RichTextSegment::Link { content, url } => {
+            RichTextSegment::Link { content, .. } => {
                 let fs = default_font_size;
                 // 链接颜色由组件根从当前主题作用域注入。
                 let color = palette.link;
@@ -624,7 +697,6 @@ pub(crate) fn layout_rich_text_real_with_images(
                     color,
                     None,
                     true,
-                    Some(url.as_str()),
                     seg_idx,
                     max_width,
                     seg_line_h,
@@ -639,6 +711,8 @@ pub(crate) fn layout_rich_text_real_with_images(
                     &breaks,
                     // 传入当前链接段全局字符起点。
                     source_offset,
+                    // 传入 UIX 声明的排版比例。
+                    metrics,
                 );
                 // 推进到下一 segment 的全局字符起点。
                 source_offset += content.chars().count();
@@ -668,6 +742,8 @@ pub(crate) fn layout_rich_text_real_with_images(
                     default_line_h,
                     // 传递默认颜色供共享字段初始化。
                     palette.default_text,
+                    // 传递 UIX 声明的行高比例。
+                    metrics,
                     // 更新视觉行列表。
                     &mut lines,
                     // 更新当前行原子列表。
@@ -686,7 +762,12 @@ pub(crate) fn layout_rich_text_real_with_images(
     max_line_w = max_line_w.max(current_x);
     if !current_line_glyphs.is_empty() || lines.is_empty() {
         // 真实布局末行只使用本行字形决定放大后的行盒高度。
-        flush_line(&mut lines, &mut current_line_glyphs, default_line_h);
+        flush_line(
+            &mut lines,
+            &mut current_line_glyphs,
+            default_line_h,
+            metrics,
+        );
     }
 
     // 真实字体路径与估算路径共享同一段落级 UAX #9 视觉 run 数据。
@@ -707,7 +788,6 @@ fn layout_text_content_real(
     color: Color,
     bg_color: Option<Color>,
     is_link: bool,
-    link_url: Option<&str>,
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
@@ -720,6 +800,7 @@ fn layout_text_content_real(
     font: &FontHandle,
     breaks: &LineBreakMap,
     source_offset: usize,
+    metrics: RichTextMetricsVisual,
 ) {
     // 按显式换行拆分内容，保证真实字体度量也不会把换行当成字形。
     let mut remaining = content;
@@ -739,7 +820,6 @@ fn layout_text_content_real(
             color,
             bg_color,
             is_link,
-            link_url,
             seg_idx,
             max_width,
             seg_line_h,
@@ -753,6 +833,8 @@ fn layout_text_content_real(
             breaks,
             // 传入当前逻辑行全局字符起点。
             line_source_offset,
+            // 传入 UIX 声明的排版比例。
+            metrics,
         );
         // 没有后续换行时当前段布局完成。
         let Some(next) = next else {
@@ -762,7 +844,7 @@ fn layout_text_content_real(
         // 显式换行前先结算当前行的最大宽度。
         *max_line_w = (*max_line_w).max(*current_x);
         // 以默认与当前段行高为下限，并保留同一行前序段的更大字号。
-        flush_line(lines, glyphs, default_line_h.max(seg_line_h));
+        flush_line(lines, glyphs, default_line_h.max(seg_line_h), metrics);
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
         // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
@@ -780,7 +862,6 @@ fn layout_text_content_real_line(
     color: Color,
     bg_color: Option<Color>,
     is_link: bool,
-    link_url: Option<&str>,
     seg_idx: usize,
     max_width: f32,
     seg_line_h: f32,
@@ -792,10 +873,10 @@ fn layout_text_content_real_line(
     font: &FontHandle,
     breaks: &LineBreakMap,
     source_offset: usize,
+    metrics: RichTextMetricsVisual,
 ) {
-    let advances = real_char_advances(font_service, font, content, fs);
+    let advances = real_char_advances(font_service, font, content, fs, metrics);
     let chars: Vec<char> = content.chars().collect();
-    let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
 
     let mut start = 0usize;
     let total = chars.len();
@@ -817,7 +898,7 @@ fn layout_text_content_real_line(
             && !glyphs.is_empty()
         {
             *max_line_w = (*max_line_w).max(*current_x);
-            flush_line(lines, glyphs, seg_line_h);
+            flush_line(lines, glyphs, seg_line_h, metrics);
             *current_x = 0.0;
         }
 
@@ -838,7 +919,7 @@ fn layout_text_content_real_line(
                 if word_x + cw > max_width && word_x > 0.0 && !glyphs.is_empty() && emergency_break
                 {
                     *max_line_w = (*max_line_w).max(word_x);
-                    flush_line(lines, glyphs, seg_line_h);
+                    flush_line(lines, glyphs, seg_line_h, metrics);
                     word_x = 0.0;
                 }
                 glyphs.push(LayoutGlyph {
@@ -858,7 +939,6 @@ fn layout_text_content_real_line(
                     color,
                     bg_color,
                     is_link,
-                    link_url: shared_url.clone(),
                 });
                 word_x += cw;
             }
@@ -889,7 +969,6 @@ fn layout_text_content_real_line(
                     color,
                     bg_color,
                     is_link,
-                    link_url: shared_url.clone(),
                 });
                 *current_x += cw;
             }

@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::geometry::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
@@ -138,6 +139,9 @@ pub(crate) use rich_text_layout::*;
 mod rich_text_palette;
 // 向 RichText 组件根和布局实现暴露私有调色板值。
 pub(crate) use rich_text_palette::RichTextPalette;
+// 集中定义 UIX 静态视觉与主题解析边界。
+mod presentation;
+use presentation::*;
 // 对无资源状态调用提供稳定占位布局兼容入口。
 mod rich_text_layout_entry;
 // 继续向现有内部测试和公开解析辅助暴露兼容入口。
@@ -244,12 +248,22 @@ widget! {
         last_frame: Cell<Option<Rect>>,
         /// 待复制的代码内容（外部主循环拉取）
         pub pending_copy: Arc<Mutex<Option<String>>>,
+
+        // 全部实例共享的 UIX 静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static RichTextVisual,
+        // 记录调用方是否显式覆盖 UIX 默认字号。
+        #[snapshot(skip)]
+        font_size_authored: bool,
+        // 复用每个绘制 run 的 UTF-8 缓冲，避免逐帧分配 String。
+        #[snapshot(skip)]
+        run_text_scratch: RefCell<String>,
     }
 
     @new -> Self {
         Self {
             segments: Vec::new(),
-            default_font_size: 14.0,
+            default_font_size: DEFAULT_RICH_TEXT_VISUAL.defaults.font_size,
             default_font_size_unit: None,
             // 默认启用主题正文色，因此字段只保存显式 color() 覆写的占位值。
             default_color: Color::default(),
@@ -279,6 +293,9 @@ widget! {
             hovered_code: Cell::new(None),
             last_frame: Cell::new(None),
             pending_copy: Arc::new(Mutex::new(None)),
+            visual: &DEFAULT_RICH_TEXT_VISUAL,
+            font_size_authored: false,
+            run_text_scratch: RefCell::new(String::new()),
         }
     }
 
@@ -290,22 +307,24 @@ widget! {
         } else if self.last_layout_width.get() > 0.0 {
             self.last_layout_width.get()
         } else {
-            400.0_f32
+            self.visual.defaults.unconstrained_width
         };
 
         // 宽度约束变化会改变折行与固有高度，必须参与测量缓存失效。
-        let width_changed = (self.last_layout_width.get() - est_width).abs() > 0.5;
+        let width_changed = (self.last_layout_width.get() - est_width).abs()
+            > self.visual.defaults.relayout_epsilon;
         if self.layout_dirty.get() || self.layout_height.get() <= 0.0 || width_changed {
-            let dpi = 96.0;
+            let dpi = self.visual.defaults.measurement_dpi;
             let fs = self.resolved_font_size_px(dpi);
             // 测量阶段没有 PaintContext，只传递不影响几何的派生占位调色板。
-            let estimated_palette = RichTextPalette::estimated(self.default_color);
-            let (_, total_h, max_w) = layout_rich_text_with_images(
+            let estimated_palette = self.visual.estimated_palette(self.default_color);
+            let (_, total_h, max_w) = layout_rich_text_with_images_visual(
                 &self.segments,
                 est_width,
                 fs,
                 estimated_palette,
                 &self.image_states.borrow(),
+                self.visual.metrics,
             );
             self.layout_height.set(total_h);
             self.content_width.set(max_w);
@@ -527,13 +546,11 @@ widget! {
             return;
         }
         let max_w = frame.w;
-        let resolved_default_color = if self.use_theme_color {
-            ctx.tokens().color_text()
-        } else {
-            self.default_color
-        };
-        // 从当前主题作用域投影代码与链接使用的完整语义调色板。
-        let resolved_palette = RichTextPalette::from_tokens(resolved_default_color, ctx.tokens());
+        // 每帧只解析一次 UIX 声明的主题角色。
+        let resolved = self
+            .visual
+            .resolve(self.default_color, self.use_theme_color, ctx.tokens());
+        let resolved_palette = resolved.layout_palette;
 
         // 图片能力开启时先非阻塞轮询资源事实，尺寸就绪后使布局缓存失效。
         #[cfg(feature = "image-codecs")]
@@ -555,13 +572,14 @@ widget! {
 
         // 布局缓存：仅在内容或宽度变化时重新布局，否则复用上次结果
         let need_relayout = self.layout_dirty.get()
-            || (self.last_layout_width.get() - max_w).abs() > 0.5
+            || (self.last_layout_width.get() - max_w).abs()
+                > self.visual.defaults.relayout_epsilon
             || self.last_layout_palette.get() != Some(resolved_palette);
 
-        let (layout_lines, _total_h, _max_line_w) = if need_relayout {
+        if need_relayout {
             let font = *ctx.font();
             let fs = self.resolved_font_size_px(ctx.dpi());
-            let (lines, h, w) = layout_rich_text_real_with_images(
+            let (lines, h, w) = layout_rich_text_real_with_images_visual(
                 &self.segments,
                 max_w,
                 fs,
@@ -569,38 +587,34 @@ widget! {
                 ctx.font_service(),
                 &font,
                 &self.image_states.borrow(),
+                self.visual.metrics,
             );
-            // 缓存相对坐标（y 从 0 开始），渲染时再加 frame.y
-            self.layout_lines.replace(lines.clone());
+            // 直接转移相对坐标布局所有权，避免复制全部行与字形。
+            self.layout_lines.replace(lines);
             self.layout_height.set(h);
             self.content_width.set(w);
             self.last_layout_width.set(max_w);
             self.last_layout_palette.set(Some(resolved_palette));
             self.layout_dirty.set(false);
-            (lines, h, w)
-        } else {
-            // 复用缓存
-            let lines = self.layout_lines.borrow().clone();
-            let h = self.layout_height.get();
-            let w = self.content_width.get();
-            (lines, h, w)
-        };
-
-        // 调整行位置到 frame 内（缓存存储的是相对 y）
-        let mut layout_lines = layout_lines;
-        for line in &mut layout_lines {
-            line.y += frame.y;
         }
+        // 绘制全程借用相对坐标缓存，不再为每帧克隆行与字形。
+        let layout_lines = self.layout_lines.borrow();
 
         let mut code_regions = self.code_regions.borrow_mut();
         ctx.push_clip(frame);
 
         // 先绘制零字形的主题分隔线行，再绘制普通字形内容。
-        thematic_break::draw(ctx, &layout_lines, frame);
+        thematic_break::draw(
+            ctx,
+            &layout_lines,
+            frame,
+            self.visual.thematic_break,
+            resolved.text_quaternary,
+        );
 
         // 图片能力开启时按共享布局几何绘制全部原子替换对象。
         #[cfg(feature = "image-codecs")]
-        inline_image::draw(
+        inline_image::draw_visual(
             // 传递绘制上下文。
             ctx,
             // 传递公开图片样式与 alt。
@@ -611,32 +625,48 @@ widget! {
             &layout_lines,
             // 传递组件 frame。
             frame,
+            // 传递 UIX 图片占位视觉。
+            self.visual.image,
+            // 传递本帧一次解析完成的颜色。
+            resolved,
         );
 
+        // 同帧交互状态只读取一次，焦点序号也只映射一次段索引。
+        let selection = self.selection.get();
+        let hovered_link = self.hovered_link.get();
+        let pressed_action = self.pressed_action;
+        let focused_link_segment = self
+            .focused
+            .then(|| self.link_segment_at_ordinal(self.focused_link))
+            .flatten();
+
         // ── 逐行绘制 ──
-        for line in &layout_lines {
+        for line in layout_lines.iter() {
+            let line_y = frame.y + line.y;
             for glyph in &line.glyphs {
                 let gx = frame.x + glyph.x;
-                let gy = line.y + (line.height - glyph.font_size) * 0.5;
+                let gy = line_y + (line.height - glyph.font_size) * 0.5;
 
                 // 背景色（代码段背景）
                 if let Some(bg) = glyph.bg_color {
-                    let pad = 2.0;
+                    let pad = self.visual.decoration.background_padding;
                     ctx.fill_rect(
                         Rect::new(gx - pad, gy - pad, glyph.width + pad * 2.0, glyph.font_size + pad * 2.0),
                         bg,
-                        Some(Radius::uniform(3.0)),
+                        Some(Radius::uniform(self.visual.decoration.background_radius)),
                     );
                 }
 
                 // 选中背景
-                if let Some((sel_s, sel_e)) = self.selection.get() {
+                if let Some((sel_s, sel_e)) = selection {
                     if glyph.global_char_idx < sel_e
                         && glyph.global_char_idx + glyph.source_char_len > sel_s
                     {
                         ctx.fill_rect(
                             Rect::new(gx, gy, glyph.width, glyph.font_size),
-                            ctx.tokens().color_primary().with_alpha(64),
+                            resolved
+                                .primary
+                                .with_alpha(self.visual.decoration.selection_alpha),
                             None,
                         );
                     }
@@ -652,19 +682,20 @@ widget! {
                     Some(RichTextSegment::Text { style, .. }) => Some(style),
                     _ => None,
                 };
-                let focused_link = self.focused
-                    && self.link_segment_at_ordinal(self.focused_link) == Some(glyph.segment_idx);
-                let pressed_link = self.pressed_action
-                    == Some(RichTextPointerAction::Link(glyph.segment_idx));
-                let active_link = self.hovered_link.get() == Some(glyph.segment_idx)
+                let focused_link = focused_link_segment == Some(glyph.segment_idx);
+                let pressed_link =
+                    pressed_action == Some(RichTextPointerAction::Link(glyph.segment_idx));
+                let active_link = hovered_link == Some(glyph.segment_idx)
                     || focused_link
                     || pressed_link;
                 if active_link {
                     ctx.fill_rect(
                         Rect::new(gx, gy, glyph.width, glyph.font_size),
-                        ctx.tokens()
-                            .color_primary()
-                            .with_alpha(if pressed_link { 48 } else { 24 }),
+                        resolved.primary.with_alpha(if pressed_link {
+                            self.visual.decoration.link_pressed_alpha
+                        } else {
+                            self.visual.decoration.link_active_alpha
+                        }),
                         None,
                     );
                 }
@@ -672,15 +703,33 @@ widget! {
                 // 链接或显式下划线
                 if glyph.is_link || style.is_some_and(|style| style.underline) {
                     ctx.fill_rect(
-                        Rect::new(gx, gy + glyph.font_size * 0.95, glyph.width, 1.0),
-                        if active_link { ctx.tokens().color_primary() } else { glyph.color.with_alpha(180) },
+                        Rect::new(
+                            gx,
+                            gy + glyph.font_size * self.visual.decoration.underline_ratio,
+                            glyph.width,
+                            self.visual.decoration.stroke,
+                        ),
+                        if active_link {
+                            resolved.primary
+                        } else {
+                            glyph
+                                .color
+                                .with_alpha(self.visual.decoration.inactive_decoration_alpha)
+                        },
                         None,
                     );
                 }
                 if style.is_some_and(|style| style.strikethrough) {
                     ctx.fill_rect(
-                        Rect::new(gx, gy + glyph.font_size * 0.52, glyph.width, 1.0),
-                        glyph.color.with_alpha(180),
+                        Rect::new(
+                            gx,
+                            gy + glyph.font_size * self.visual.decoration.strikethrough_ratio,
+                            glyph.width,
+                            self.visual.decoration.stroke,
+                        ),
+                        glyph
+                            .color
+                            .with_alpha(self.visual.decoration.inactive_decoration_alpha),
                         None,
                     );
                 }
@@ -688,7 +737,9 @@ widget! {
         }
 
         // 按实际折行结果绘制连续 run，保证命中、选择与像素使用同一布局。
-        for line in &layout_lines {
+        let mut run_text_scratch = self.run_text_scratch.borrow_mut();
+        for line in layout_lines.iter() {
+            let line_y = frame.y + line.y;
             let mut start = 0;
             while start < line.glyphs.len() {
                 // 图片原子不进入 draw_text 字符 run。
@@ -709,7 +760,9 @@ widget! {
                     end += 1;
                 }
                 let run = &line.glyphs[start..end];
-                let content = run.iter().map(|glyph| glyph.ch).collect::<String>();
+                // 复用组件私有 UTF-8 缓冲，避免每个 run、每帧创建 String。
+                run_text_scratch.clear();
+                run_text_scratch.extend(run.iter().map(|glyph| glyph.ch));
                 let first = &run[0];
                 let fs = first.font_size;
                 // RTL run 内保留逻辑文本顺序，因此绘制原点取全部字符视觉左缘。
@@ -721,24 +774,36 @@ widget! {
                         .map(|glyph| glyph.x)
                         // 聚合 run 左缘。
                         .fold(f32::INFINITY, f32::min);
-                let gy = line.y + (line.height - fs) * 0.5
-                    + if matches!(self.segments.get(segment_idx), Some(RichTextSegment::Code { .. })) { 2.0 } else { 0.0 };
-                let focused_link = self.focused
-                    && self.link_segment_at_ordinal(self.focused_link) == Some(segment_idx);
+                let gy = line_y + (line.height - fs) * 0.5
+                    + if matches!(self.segments.get(segment_idx), Some(RichTextSegment::Code { .. })) {
+                        self.visual.metrics.code_baseline_offset
+                    } else {
+                        0.0
+                    };
+                let focused_link = focused_link_segment == Some(segment_idx);
                 let color = if first.is_link
-                    && (self.hovered_link.get() == Some(segment_idx)
+                    && (hovered_link == Some(segment_idx)
                         || focused_link
-                        || self.pressed_action == Some(RichTextPointerAction::Link(segment_idx)))
+                        || pressed_action == Some(RichTextPointerAction::Link(segment_idx)))
                 {
-                    ctx.tokens().color_primary()
+                    resolved.primary
                 } else {
                     first.color
                 };
                 // 通过统一 run 绘制入口应用粗体与斜体，保持 DisplayList 可回放。
-                draw_rich_text_run(ctx, &content, Point::new(gx, gy), color, fs, self.segments.get(segment_idx));
+                draw_rich_text_run(
+                    ctx,
+                    run_text_scratch.as_str(),
+                    Point::new(gx, gy),
+                    color,
+                    fs,
+                    self.segments.get(segment_idx),
+                    self.visual.metrics,
+                );
                 start = end;
             }
         }
+        drop(run_text_scratch);
 
         // 每个代码段只登记一个复制按钮，折行时锚定最后一个可见字形。
         for (segment_idx, segment) in self.segments.iter().enumerate() {
@@ -752,38 +817,46 @@ widget! {
             });
             if let Some((line, glyph)) = last {
                 let gx = frame.x + glyph.x + glyph.width;
-                let gy = line.y + (line.height - glyph.font_size) * 0.5 + 2.0;
-                let btn_width = 24.0_f32.min(frame.w);
+                let gy = frame.y
+                    + line.y
+                    + (line.height - glyph.font_size) * 0.5
+                    + self.visual.metrics.code_baseline_offset;
+                let btn_width = self.visual.copy.width.min(frame.w);
                 let btn = Rect::new(
-                    (gx - 4.0).min(frame.x + frame.w - btn_width).max(frame.x),
+                    (gx - self.visual.copy.trailing_gap)
+                        .min(frame.x + frame.w - btn_width)
+                        .max(frame.x),
                     gy,
                     btn_width,
-                    16.0,
+                    self.visual.copy.height,
                 );
                 if let Some(visible_btn) = btn.intersect(&frame) {
                     let hovered = self.hovered_code.get() == Some(segment_idx);
-                    let pressed = self.pressed_action
-                        == Some(RichTextPointerAction::CopyCode(segment_idx));
+                    let pressed =
+                        pressed_action == Some(RichTextPointerAction::CopyCode(segment_idx));
                     if hovered || pressed {
                         // 复制按钮底从当前主题交互填充 token 解析。
                         ctx.fill_rect(
                             visible_btn,
                             if pressed {
                                 // 按压态使用更强的次级填充。
-                                ctx.tokens().color_fill_secondary()
+                                resolved.fill_secondary
                             } else {
                                 // 悬停态使用较弱的三级填充。
-                                ctx.tokens().color_fill_tertiary()
+                                resolved.fill_tertiary
                             },
-                            Some(Radius::uniform(3.0)),
+                            Some(Radius::uniform(self.visual.copy.radius)),
                         );
                         crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
-                            "copy",
+                            self.visual.copy.icon,
                             visible_btn,
                             // 复制图标使用当前主题次级文字色。
-                            ctx.tokens().color_text_secondary(),
-                            10.0_f32.min(visible_btn.h * 0.65),
+                            resolved.text_secondary,
+                            self.visual
+                                .copy
+                                .icon_size
+                                .min(visible_btn.h * self.visual.copy.icon_height_ratio),
                         );
                     }
                     code_regions.push(CodeCopyRegion {
@@ -799,6 +872,28 @@ widget! {
             }
         }
         ctx.pop_clip();
+    }
+}
+
+// 把 Markdown/Unicode/交互内核与 UIX 静态视觉融合为单一 RichText 根节点。
+fn build_rich_text_view(mut kernel: RichText, declared_visual: RichTextVisual) -> ViewNode {
+    let visual = UIX_RICH_TEXT_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.font_size_authored {
+        kernel.default_font_size = visual.defaults.font_size;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_rich_text_uix_root(kernel: RichText) -> ViewNode {
+    crate::uix!("src/ui/widgets/display/rich_text/rich_text.uix")
+}
+
+impl View for RichText {
+    fn build(self) -> ViewNode {
+        build_rich_text_uix_root(self)
     }
 }
 

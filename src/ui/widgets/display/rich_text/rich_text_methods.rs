@@ -31,11 +31,13 @@ impl RichText {
 
     /// 设置默认字体大小。
     pub fn font_size(mut self, size: f32) -> Self {
-        self.default_font_size = if size.is_finite() && size > 0.0 {
+        let authored = size.is_finite() && size > 0.0;
+        self.default_font_size = if authored {
             size
         } else {
-            14.0
+            self.visual.defaults.font_size
         };
+        self.font_size_authored = authored;
         self.default_font_size_unit = None;
         self.layout_dirty.set(true);
         self
@@ -44,6 +46,7 @@ impl RichText {
     /// 设置物理单位默认字体大小（优先级高于 `font_size()`）。
     pub fn font_size_unit(mut self, unit: PhysicalUnit) -> Self {
         self.default_font_size_unit = Some(unit);
+        self.font_size_authored = true;
         self.layout_dirty.set(true);
         self
     }
@@ -62,12 +65,29 @@ impl RichText {
         let selection_was_enabled = self.selection_enabled();
         // 记录公开段是否变化。
         let segments_changed = self.segments != next.segments;
+        // 记录 UIX 静态视觉是否变化。
+        let visual_changed = self.visual != next.visual;
+        // 预先计算下一份内容可能需要的最大 run 字节数，供陈旧缓冲回收。
+        let next_max_run_bytes = next
+            .segments
+            .iter()
+            .map(|segment| match segment {
+                RichTextSegment::Text { content, .. }
+                | RichTextSegment::Code { content }
+                | RichTextSegment::Link { content, .. } => content.len(),
+                #[cfg(feature = "image-codecs")]
+                RichTextSegment::Image { alt, .. } => alt.len(),
+                RichTextSegment::ThematicBreak | RichTextSegment::NewLine => 0,
+            })
+            .max()
+            .unwrap_or(0);
         // 汇总全部影响布局缓存的配置变化。
         let layout_config_changed = segments_changed
             || self.default_font_size != next.default_font_size
             || self.default_font_size_unit != next.default_font_size_unit
             || self.default_color != next.default_color
-            || self.use_theme_color != next.use_theme_color;
+            || self.use_theme_color != next.use_theme_color
+            || visual_changed;
 
         // 同步公开段列表。
         self.segments = next.segments;
@@ -79,6 +99,10 @@ impl RichText {
         self.default_color = next.default_color;
         // 同步主题颜色策略。
         self.use_theme_color = next.use_theme_color;
+        // 同步由 UIX 构建根注入的静态视觉表。
+        self.visual = next.visual;
+        // 同步字号是否由调用方显式声明。
+        self.font_size_authored = next.font_size_authored;
         // 同步公开的选择配置。
         self.selectable = next.selectable;
         // 只在最终组合能力由开变关时清理选择生命周期。
@@ -120,6 +144,14 @@ impl RichText {
         }
         // 公开段变化还必须终止所有按段索引保存的交互状态。
         if segments_changed {
+            // 清空复用的逐 run UTF-8 文本，但保留常用容量。
+            let scratch = self.run_text_scratch.get_mut();
+            scratch.clear();
+            // 内容大幅缩小时回收历史超大 run 占用，避免长期滞留峰值内存。
+            let retained_limit = next_max_run_bytes.saturating_mul(4).max(1024);
+            if scratch.capacity() > retained_limit {
+                scratch.shrink_to(next_max_run_bytes);
+            }
             // 旧图片索引和资源身份全部失效。
             self.image_states.borrow_mut().clear();
             // 清除选择。

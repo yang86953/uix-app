@@ -1,9 +1,11 @@
 //! RichText 主题分隔线的解析、布局与绘制组件。
 
 // 引入主题分隔线布局行类型。
+use super::presentation::{RichTextBreakVisual, RichTextMetricsVisual};
 use super::{LayoutGlyph, LayoutLine, LayoutLineKind};
 // 引入绘制矩形。
 use crate::core::Rect;
+use crate::draw::Color;
 // 引入富文本绘制上下文。
 use crate::ui::widget_runtime::paint_context::PaintContext;
 
@@ -35,11 +37,13 @@ pub(super) fn push_layout_line(
     glyphs: &mut Vec<LayoutGlyph>,
     // 接收默认行高。
     line_height: f32,
+    // 接收 UIX 声明的统一行高比例。
+    metrics: RichTextMetricsVisual,
 ) {
     // 主题分隔线是块级行；防御性结算它之前的文本字形。
     if !glyphs.is_empty() {
         // 复用普通文本行结算以保持前序几何。
-        super::layout_metrics::flush_line(lines, glyphs, line_height);
+        super::layout_metrics::flush_line(lines, glyphs, line_height, metrics);
     }
     // 新行顶部紧随前一行底部。
     let y = lines.last().map(|line| line.y + line.height).unwrap_or(0.0);
@@ -76,18 +80,18 @@ pub(super) fn draw(
     lines: &[LayoutLine],
     // 接收组件可见内容矩形。
     frame: Rect,
+    // 接收 UIX 声明的分隔线几何。
+    visual: RichTextBreakVisual,
+    // 接收当前主题解析出的分隔线颜色。
+    color: Color,
 ) {
-    // 两侧各保留十二逻辑像素。
-    let horizontal_inset = 12.0;
     // 线宽不得为负数。
-    let width = (frame.w - horizontal_inset * 2.0).max(0.0);
+    let width = (frame.w - visual.horizontal_inset * 2.0).max(0.0);
     // 不可见宽度无需生成绘制命令。
     if width <= 0.0 {
         // 保持布局行高但跳过空绘制。
         return;
     }
-    // 读取权威契约指定的最淡正文主题色。
-    let color = ctx.tokens().color_text_quaternary();
     // 遍历布局行，只处理主题分隔线类型。
     for line in lines {
         // 普通文本行继续由 RichText 字形路径绘制。
@@ -96,11 +100,11 @@ pub(super) fn draw(
             continue;
         }
         // 一像素主题线在行盒内垂直居中。
-        let y = line.y + (line.height - 1.0) * 0.5;
+        let y = frame.y + line.y + (line.height - visual.stroke) * 0.5;
         // 绘制无圆角的水平主题线。
         ctx.fill_rect(
             // 左右各保留十二像素并占满其余可用宽度。
-            Rect::new(frame.x + horizontal_inset, y, width, 1.0),
+            Rect::new(frame.x + visual.horizontal_inset, y, width, visual.stroke),
             // 使用主题最淡正文色。
             color,
             // 主题线不需要圆角半径。

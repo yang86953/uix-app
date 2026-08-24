@@ -92,8 +92,8 @@ impl RichText {
         {
             return Some(RichTextPointerAction::CopyCode(segment_idx));
         }
-        self.link_at_pos(pos)
-            .map(|(segment_idx, _)| RichTextPointerAction::Link(segment_idx))
+        self.link_segment_at_pos(pos)
+            .map(RichTextPointerAction::Link)
     }
 
     pub(super) fn commit_pointer_action(&mut self, action: RichTextPointerAction) {
@@ -268,7 +268,7 @@ impl RichText {
             .position(|(index, _)| index == segment_idx)
     }
 
-    fn link_at_pos(&self, pos: Point) -> Option<(usize, String)> {
+    fn link_segment_at_pos(&self, pos: Point) -> Option<usize> {
         let lines = self.layout_lines.borrow();
         for line in lines.iter() {
             if pos.y < line.y || pos.y >= line.y + line.height {
@@ -276,12 +276,11 @@ impl RichText {
             }
             for glyph in &line.glyphs {
                 if glyph.is_link && pos.x >= glyph.x && pos.x < glyph.x + glyph.width {
-                    if let Some(url) = glyph
-                        .link_url
-                        .as_deref()
-                        .filter(|url| !url.trim().is_empty())
-                    {
-                        return Some((glyph.segment_idx, url.to_string()));
+                    if matches!(
+                        self.segments.get(glyph.segment_idx),
+                        Some(RichTextSegment::Link { url, .. }) if !url.trim().is_empty()
+                    ) {
+                        return Some(glyph.segment_idx);
                     }
                 }
             }

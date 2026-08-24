@@ -18,6 +18,62 @@ fn dummy_event() -> SystemEvent {
     }
 }
 
+// 验证声明式入口使用同目录 UIX 视觉且保留 Rust 调用方字号。
+#[test]
+fn view_build_uses_uix_visual_and_preserves_authored_font_size() {
+    let node = crate::ui::view::View::build(RichText::new().font_size(22.0));
+    let rich = node
+        .widget
+        .as_any()
+        .downcast_ref::<RichText>()
+        .expect("UIX 根必须保留 RichText Rust 内核");
+    let declared = UIX_RICH_TEXT_VISUAL
+        .get()
+        .expect("View 构建必须固化同目录 UIX 视觉");
+    assert!(std::ptr::eq(rich.visual, declared));
+    assert_eq!(rich.default_font_size, 22.0);
+}
+
+// 验证链接命中从公开段读取 URL，单字形不再拥有引用计数文本。
+#[test]
+fn link_hit_uses_segment_identity_without_per_glyph_url_storage() {
+    let rich = RichText::new().content(vec![RichTextSegment::Link {
+        content: "链接".into(),
+        url: "https://example.com".into(),
+    }]);
+    let (lines, _, _) = layout_rich_text(
+        &rich.segments,
+        200.0,
+        rich.default_font_size,
+        rich.default_color,
+    );
+    let glyph = &lines[0].glyphs[0];
+    let hit = Point::new(
+        glyph.x + glyph.width * 0.5,
+        lines[0].y + lines[0].height * 0.5,
+    );
+    rich.layout_lines.replace(lines);
+    rich.last_frame.set(Some(Rect::new(0.0, 0.0, 200.0, 80.0)));
+
+    assert_eq!(
+        rich.pointer_action_at(hit),
+        Some(RichTextPointerAction::Link(0))
+    );
+    assert!(!std::mem::needs_drop::<LayoutGlyph>());
+}
+
+// 验证内容显著缩小时回收绘制 run 的历史峰值缓冲。
+#[test]
+fn reconcile_releases_oversized_run_text_scratch() {
+    let mut rich = RichText::new().content(parse_rich_text("旧内容"));
+    rich.run_text_scratch.get_mut().reserve(8 * 1024);
+    assert!(rich.run_text_scratch.get_mut().capacity() >= 8 * 1024);
+
+    rich.sync_from(RichText::new().content(parse_rich_text("新")));
+
+    assert!(rich.run_text_scratch.get_mut().capacity() <= 1024);
+}
+
 #[test]
 fn on_link_callback_fires_when_submit_emitted() {
     let calls = Rc::new(RefCell::new(Vec::new()));
