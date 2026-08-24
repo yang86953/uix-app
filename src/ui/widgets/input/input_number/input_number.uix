@@ -1,0 +1,31 @@
+// InputNumber 的固有宽度、文字、光标、步进区、边框与主题角色由 UIX 唯一拥有。
+<Visual
+  name="INPUT_NUMBER_VISUAL"
+  type="InputNumberVisual"
+  intrinsicInputWidth={80.0}
+  centerRatio={0.5}
+  textLeftPadding={12.0}
+  textHorizontalInset={20.0}
+  fontSize={14.0}
+  cursorVerticalInset={4.0}
+  cursorWidth={1.0}
+  normalBorderWidth={1.0}
+  focusedBorderWidth={2.0}
+  separatorInset={1.0}
+  separatorWidth={1.0}
+  upIcon="chevron-up"
+  downIcon="chevron-down"
+  stepIconSize={10.0}
+  radius={input_number_small_radius()}
+  primary={input_number_primary()}
+  primaryHover={input_number_primary_hover()}
+  border={input_number_border()}
+  text={input_number_text()}
+  placeholder={input_number_placeholder()}
+  textDisabled={input_number_text_disabled()}
+  stepText={input_number_step_text()}
+  backgroundDisabled={input_number_background_disabled()}
+  background={input_number_background()}
+/>
+
+<KernelView value={build_input_number_view(kernel, INPUT_NUMBER_VISUAL_REF)} />

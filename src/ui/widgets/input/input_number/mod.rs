@@ -3,13 +3,16 @@
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::{ControlSize, KeyMod};
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 use std::cell::Cell;
@@ -68,6 +71,116 @@ type NumberFormatter = Box<dyn Fn(f64) -> String + Send + Sync>;
 // f64 在十进制量化时最多保留十五位有效精度。
 const MAX_PRECISION: u8 = 15;
 
+// InputNumber 使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputNumberRadiusRole {
+    Small,
+}
+
+impl InputNumberRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存 UIX 声明的固有宽度、文字、光标、步进区和边框几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InputNumberVisual {
+    intrinsic_input_width: f32,
+    center_ratio: f32,
+    text_left_padding: f32,
+    text_horizontal_inset: f32,
+    font_size: f32,
+    cursor_vertical_inset: f32,
+    cursor_width: f32,
+    normal_border_width: f32,
+    focused_border_width: f32,
+    separator_inset: f32,
+    separator_width: f32,
+    up_icon: &'static str,
+    down_icon: &'static str,
+    step_icon_size: f32,
+    radius: InputNumberRadiusRole,
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    placeholder: ColorValue,
+    text_disabled: ColorValue,
+    step_text: ColorValue,
+    background_disabled: ColorValue,
+    background: ColorValue,
+}
+
+// 同目录 UIX 生成唯一数字输入视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/input_number/input_number.uix");
+
+// 保存每帧一次解析后的颜色与圆角。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedInputNumberVisual {
+    primary: Color,
+    primary_hover: Color,
+    border: Color,
+    text: Color,
+    placeholder: Color,
+    text_disabled: Color,
+    step_text: Color,
+    background_disabled: Color,
+    background: Color,
+    radius: f32,
+}
+
+impl InputNumberVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedInputNumberVisual {
+        ResolvedInputNumberVisual {
+            primary: self.primary.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            border: self.border.resolve(tokens),
+            text: self.text.resolve(tokens),
+            placeholder: self.placeholder.resolve(tokens),
+            text_disabled: self.text_disabled.resolve(tokens),
+            step_text: self.step_text.resolve(tokens),
+            background_disabled: self.background_disabled.resolve(tokens),
+            background: self.background.resolve(tokens),
+            radius: self.radius.resolve(tokens),
+        }
+    }
+}
+
+// 向 UIX 提供圆角和零分配主题角色。
+const fn input_number_small_radius() -> InputNumberRadiusRole {
+    InputNumberRadiusRole::Small
+}
+const fn input_number_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn input_number_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn input_number_border() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Border)
+}
+const fn input_number_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+const fn input_number_placeholder() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextTertiary)
+}
+const fn input_number_text_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+const fn input_number_step_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn input_number_background_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+const fn input_number_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
 impl Clone for InputNumber {
     /// 配置克隆：复制公开配置（值/值域/步进/占位/尺寸/禁用/键盘）。
     ///
@@ -94,6 +207,7 @@ impl Clone for InputNumber {
             pending_change: Cell::new(None),
             cursor_rect: Cell::new(Rect::default()),
             step_button_rect: Cell::new(Rect::default()),
+            visual: self.visual,
         }
     }
 }
@@ -163,6 +277,9 @@ widget! {
         pending_change: Cell<Option<f64>>,
         cursor_rect: Cell<Rect>,
         step_button_rect: Cell<Rect>,
+        #[snapshot(skip)]
+        /// UIX 声明的文字、光标、步进区、边框与主题角色。
+        pub(crate) visual: &'static InputNumberVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -187,7 +304,7 @@ widget! {
             } => {
                 let step_rect = self.step_button_rect.get();
                 if step_rect.contains(*pos) {
-                    let direction = if pos.y < step_rect.y + step_rect.h * 0.5 {
+                let direction = if pos.y < step_rect.y + step_rect.h * self.visual.center_ratio {
                         1.0
                     } else {
                         -1.0
@@ -285,31 +402,27 @@ widget! {
             btn_area.w,
             btn_area.h,
         ));
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        let border_color = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_tertiary = ctx.tokens().color_text_tertiary();
-        let text_quaternary = ctx.tokens().color_text_quaternary();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let fill_tertiary = ctx.tokens().color_fill_tertiary();
-        let border_radius_sm = ctx.tokens().border_radius_sm();
-        let radius = Some(Radius::uniform(border_radius_sm));
+        let visual = self.visual.resolve(ctx.tokens());
+        let radius = Some(Radius::uniform(visual.radius));
 
         let border_c = if self.disabled {
-            border_color
+            visual.border
         } else if self.focused {
-            primary
+            visual.primary
         } else if self.hovered {
-            primary_hover
+            visual.primary_hover
         } else {
-            border_color
+            visual.border
         };
-        let border_w = if self.focused { 2.0 } else { 1.0 };
-        let control_bg = if self.disabled {
-            fill_tertiary
+        let border_w = if self.focused {
+            self.visual.focused_border_width
         } else {
-            ctx.tokens().color_bg_container()
+            self.visual.normal_border_width
+        };
+        let control_bg = if self.disabled {
+            visual.background_disabled
+        } else {
+            visual.background
         };
 
         ctx.fill_rect(control_frame, control_bg, radius);
@@ -327,92 +440,102 @@ widget! {
         };
         let showing_placeholder = !editing && !self.value_configured;
         let display_color = if self.disabled {
-            text_quaternary
+            visual.text_disabled
         } else if showing_placeholder {
-            text_tertiary
+            visual.placeholder
         } else {
-            text_color
+            visual.text
         };
         let text_area = Rect::new(
-            input_frame.x + 12.0,
+            input_frame.x + self.visual.text_left_padding,
             input_frame.y,
-            (input_frame.w - 20.0).max(0.0),
+            (input_frame.w - self.visual.text_horizontal_inset).max(0.0),
             input_frame.h,
         );
         let display_width = if display.is_empty() {
             0.0
         } else {
-            ctx.measure_text(display, ctx.tokens().font_size()).w
+            ctx.measure_text(display, self.visual.font_size).w
         };
         let draw_x = if !showing_placeholder && display_width > text_area.w {
             text_area.x + text_area.w - display_width
         } else {
             text_area.x
         };
-        let draw_y = ctx.visual_center_y(text_area, ctx.tokens().font_size());
+        let draw_y = ctx.visual_center_y(text_area, self.visual.font_size);
         if text_area.w > 0.0 {
             ctx.push_clip(text_area);
             ctx.draw_text(
                 display,
                 Point::new(draw_x, draw_y),
                 display_color,
-                14.0,
+                self.visual.font_size,
             );
             let cursor_x = (draw_x + if editing { display_width } else { 0.0 })
                 .clamp(text_area.x, text_area.x + text_area.w);
             let cursor_rect = Rect::new(
                 cursor_x,
-                input_frame.y + 4.0,
-                1.0,
-                (input_frame.h - 8.0).max(0.0),
+                input_frame.y + self.visual.cursor_vertical_inset,
+                self.visual.cursor_width,
+                (input_frame.h - self.visual.cursor_vertical_inset * 2.0).max(0.0),
             );
             self.cursor_rect
                 .set(if editing { cursor_rect } else { Rect::zero() });
             if editing {
-                ctx.fill_rect(cursor_rect, primary, None);
+                ctx.fill_rect(cursor_rect, visual.primary, None);
             }
             ctx.pop_clip();
         } else {
             self.cursor_rect.set(Rect::zero());
         }
 
-        let up_rect = Rect::new(btn_area.x, btn_area.y, btn_area.w, btn_area.h * 0.5);
-        let dn_rect = Rect::new(btn_area.x, btn_area.y + btn_area.h * 0.5, btn_area.w, btn_area.h * 0.5);
+        let up_rect = Rect::new(
+            btn_area.x,
+            btn_area.y,
+            btn_area.w,
+            btn_area.h * self.visual.center_ratio,
+        );
+        let dn_rect = Rect::new(
+            btn_area.x,
+            btn_area.y + btn_area.h * self.visual.center_ratio,
+            btn_area.w,
+            btn_area.h * self.visual.center_ratio,
+        );
         let step_color = if self.disabled {
-            text_quaternary
+            visual.text_disabled
         } else {
-            text_secondary
+            visual.step_text
         };
         if btn_area.w > 0.0 && btn_area.h > 0.0 {
             ctx.draw_line(
                 btn_area.x,
-                btn_area.y + 1.0,
+                btn_area.y + self.visual.separator_inset,
                 btn_area.x,
-                btn_area.y + btn_area.h - 1.0,
-                border_color,
-                1.0,
+                btn_area.y + btn_area.h - self.visual.separator_inset,
+                visual.border,
+                self.visual.separator_width,
             );
             ctx.draw_line(
                 btn_area.x,
-                btn_area.y + btn_area.h * 0.5,
-                btn_area.x + btn_area.w - 1.0,
-                btn_area.y + btn_area.h * 0.5,
-                border_color,
-                1.0,
+                btn_area.y + btn_area.h * self.visual.center_ratio,
+                btn_area.x + btn_area.w - self.visual.separator_inset,
+                btn_area.y + btn_area.h * self.visual.center_ratio,
+                visual.border,
+                self.visual.separator_width,
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "chevron-up",
+                self.visual.up_icon,
                 up_rect,
                 step_color,
-                10.0,
+                self.visual.step_icon_size,
             );
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "chevron-down",
+                self.visual.down_icon,
                 dn_rect,
                 step_color,
-                10.0,
+                self.visual.step_icon_size,
             );
         }
         ctx.stroke_rect(control_frame, border_c, border_w, radius);
@@ -423,6 +546,8 @@ impl InputNumber {
     /// 创建使用无限制值域、步长一和标准配置尺寸的数字输入框。
     pub fn new() -> Self {
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = INPUT_NUMBER_VISUAL_REF;
+        let control_height = crate::ui::widget_runtime::config::control_height(config.size);
         Self {
             value: 0.0,
             min: f64::MIN,
@@ -442,7 +567,13 @@ impl InputNumber {
             text_buffer: String::new(),
             pending_change: Cell::new(None),
             cursor_rect: Cell::new(Rect::zero()),
-            step_button_rect: Cell::new(Rect::new(80.0, 0.0, 32.0, 32.0)),
+            step_button_rect: Cell::new(Rect::new(
+                visual.intrinsic_input_width,
+                0.0,
+                control_height,
+                control_height,
+            )),
+            visual,
         }
     }
 
@@ -552,7 +683,7 @@ impl InputNumber {
 
     fn intrinsic_size(&self) -> Size {
         let height = crate::ui::widget_runtime::config::control_height(self.input_size);
-        Size::new(80.0 + height, height)
+        Size::new(self.visual.intrinsic_input_width + height, height)
     }
 
     fn begin_editing(&mut self) {
@@ -775,12 +906,33 @@ impl InputNumber {
             };
             self.cursor_rect.set(Rect::zero());
         }
+        self.visual = next.visual;
     }
+}
+
+// 把 InputNumber Rust 数值内核与 UIX 静态视觉组合为单一组件节点。
+fn build_input_number_view(
+    mut kernel: InputNumber,
+    visual: &'static InputNumberVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for InputNumber {
+    fn build(self) -> ViewNode {
+        build_input_number_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_input_number_uix_root(kernel: InputNumber) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/input_number/input_number.uix")
 }
 
 // 验证 InputNumber 精度配置、状态回写与显示快照。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/input/input_number__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/input_number__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
