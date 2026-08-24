@@ -20,4 +20,10 @@ fn uix_root_preserves_avatar_kernel() {
     assert_eq!(kernel.text, "AL");
     assert_eq!(kernel.size, 40.0);
     assert!(kernel.square);
+    // 显式尺寸必须优先于 UIX 默认值，静态视觉则由 UIX 融合。
+    assert!(kernel.size_authored);
+    assert_eq!(kernel.visual.default_extent, 32.0);
+    assert_eq!(kernel.visual.text_scale, 0.45);
+    assert_eq!(kernel.visual.square_text_fit, 0.78);
+    assert_eq!(kernel.visual.circle_text_fit, 0.68);
 }

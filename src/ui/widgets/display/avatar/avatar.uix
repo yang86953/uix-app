@@ -1,2 +1,2 @@
-// Avatar 是带资源缓存的绘制组件；UIX 声明公开根，Rust 内核负责图片与文字。
-<KernelView value={build_avatar_view(kernel)} />
+// Avatar 的默认尺寸、文字缩放、形状留白与主题角色由 UIX 声明。
+<KernelView value={build_avatar_view(kernel, 32, 0.45, 0.78, 0.68, 0.5, avatar_primary_bg(), avatar_text(), avatar_radius_sm())} />
