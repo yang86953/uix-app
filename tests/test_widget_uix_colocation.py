@@ -60,6 +60,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/tree",
     "display/watermark",
     "feedback/alert",
+    "feedback/message",
     "feedback/popover",
     "feedback/progress",
     "feedback/spin",
@@ -87,6 +88,72 @@ MIGRATED_WIDGET_DIRS = {
     "tooltip_primitives",
     "window_controls",
 }
+
+# 没有可见树或视觉参数的声明租约不是公开视觉 widget，不能伪造 UIX 根。
+NON_VISUAL_WIDGET_TYPES = {"MessageDeclaration", "NotificationDeclaration"}
+
+# 这些目录保存组合声明或框架内核视觉，不对应独立的 widget! 公开结构体。
+MIGRATED_SUPPORT_DIRS = {
+    "general/button_group",
+    "general/float_button/back_top",
+    "input/input_group",
+    "tooltip_primitives",
+    "window_controls",
+}
+
+# 公开视觉 widget 的剩余迁移债务；完成一项时必须同步删除，最终目标为空集合。
+UNMIGRATED_PUBLIC_WIDGET_DIRS = {
+    "display/chart/advanced",
+    "feedback/drawer",
+    "feedback/modal",
+    "feedback/notification",
+    "feedback/popconfirm",
+    "input/autocomplete",
+    "input/cascader",
+    "input/color_picker",
+    "input/date_picker",
+    "input/date_range_picker",
+    "input/input",
+    "input/mentions",
+    "input/select",
+    "input/time_picker",
+    "input/transfer",
+    "input/tree_select",
+    "input/upload",
+    "navigation/anchor",
+    "navigation/breadcrumb",
+    "navigation/dropdown",
+    "navigation/menu",
+    "navigation/nav",
+    "navigation/navigation_shell",
+    "navigation/pagination",
+    "navigation/steps",
+    "navigation/tabs",
+}
+
+# 提取 widget! 声明的公开结构体；Button 是唯一手写 Widget 实现，单独登记。
+PUBLIC_WIDGET_DECLARATION = re.compile(
+    r"widget!\s*\{.*?pub\s+struct\s+([A-Za-z0-9_]+)", re.DOTALL
+)
+
+
+def public_visual_widget_dirs() -> set[str]:
+    """从真实 widget! 声明推导每个公开视觉组件应拥有的独立目录。"""
+
+    directories = {"general/button"}
+    for rust_path in sorted(WIDGETS_ROOT.rglob("*.rs")):
+        source = rust_path.read_text(encoding="utf-8")
+        names = PUBLIC_WIDGET_DECLARATION.findall(source)
+        if not names or all(name in NON_VISUAL_WIDGET_TYPES for name in names):
+            continue
+        # mod.rs/widget.rs 已位于组件目录；分类根下的单文件组件目标目录取文件名。
+        owner = (
+            rust_path.parent
+            if rust_path.name in {"mod.rs", "widget.rs"}
+            else rust_path.with_suffix("")
+        )
+        directories.add(owner.relative_to(WIDGETS_ROOT).as_posix())
+    return directories
 
 
 def is_visual_passthrough(source: str) -> bool:
@@ -118,6 +185,13 @@ def is_positional_visual_shell(source: str) -> bool:
 
 
 class WidgetUixColocationTests(unittest.TestCase):
+    # 所有公开视觉 widget 必须显式落入“已迁移”或“剩余债务”，不能被绿灯漏掉。
+    def test_public_visual_widget_inventory_is_complete(self) -> None:
+        actual = public_visual_widget_dirs()
+        self.assertEqual(len(actual), 84)
+        self.assertEqual(actual - MIGRATED_WIDGET_DIRS, UNMIGRATED_PUBLIC_WIDGET_DIRS)
+        self.assertEqual(MIGRATED_WIDGET_DIRS - actual, MIGRATED_SUPPORT_DIRS)
+
     # 已完成迁移的目录集合只能显式扩展，不能通过删除 UIX 文件规避守卫。
     def test_migrated_widget_directory_set_is_locked(self) -> None:
         actual = {

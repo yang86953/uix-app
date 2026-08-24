@@ -1,12 +1,15 @@
 //! 浮动全局提示容器。
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
 mod geometry;
 mod item;
+mod presentation;
 
 use self::geometry::*;
 pub use self::item::{MessageHandle, MessageItem};
+use self::presentation::*;
 
 use std::rc::Rc;
 
@@ -14,6 +17,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::animation::AnimationConfig;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, MouseButton, Placement, SnapshotFields, SystemEvent};
@@ -37,9 +41,14 @@ widget! {
         hovered_close: Cell<Option<super::toast_motion::ToastKey>>,
         pressed_close: Cell<Option<super::toast_motion::ToastKey>>,
         pressed_action: Cell<Option<super::toast_motion::ToastKey>>,
-        action_label: Option<String>,
+        // 构建后不再增长，盒装字符串避免为每个实例保留 String 容量字段。
+        action_label: Option<Box<str>>,
         action_callback: Option<Rc<dyn Fn()>>,
-        icon_name: Option<String>,
+        // 自定义图标名同样只读保存，使用精确容量盒装字符串。
+        icon_name: Option<Box<str>>,
+        // 所有实例只借用同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static MessageVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -146,8 +155,13 @@ widget! {
             return;
         }
 
-        let radius = Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_lg()));
-        let shadow = ctx.tokens().box_shadow();
+        // 同帧全部提示共享一次主题解析，避免逐项重复动态令牌访问。
+        let resolved = self.visual.resolve(ctx.tokens());
+        let radius = Some(crate::draw::Radius::uniform(resolved.radius));
+        let control_radius = Some(crate::draw::Radius::uniform(resolved.control_radius));
+        let shadow = resolved.shadow;
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
 
         ctx.push_clip(frame);
         for (base_rect, entry) in self.message_rects(frame, motion.entries()) {
@@ -157,14 +171,9 @@ widget! {
                 continue;
             }
             let item = entry.item();
-            let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-            let text_c = fade_color(ctx.tokens().color_text(), opacity);
-            let (default_icon, accent) = match item.type_ {
-                StatusLevel::Success => ("check-circle", ctx.tokens().color_success()),
-                StatusLevel::Info => ("info", ctx.tokens().color_info()),
-                StatusLevel::Warning => ("alert-triangle", ctx.tokens().color_warning()),
-                StatusLevel::Error => ("x-circle", ctx.tokens().color_error()),
-            };
+            let bg = fade_color(resolved.background, opacity);
+            let text_c = fade_color(resolved.text, opacity);
+            let (default_icon, accent) = self.visual.status_visual(&resolved, item.type_);
             let icon = self.icon_name.as_deref().unwrap_or(default_icon);
             let accent = fade_color(accent, opacity);
             if shadow.layer_1.2 > 0.0 {
@@ -181,12 +190,12 @@ widget! {
             ctx.fill_rect(
                 Rect::new(
                     msg_rect.x,
-                    msg_rect.y + 4.0_f32.min(msg_rect.h * 0.5),
-                    msg_rect.w.min(3.0),
-                    (msg_rect.h - 8.0).max(0.0),
+                    msg_rect.y + layout.accent_vertical_inset.min(msg_rect.h * 0.5),
+                    msg_rect.w.min(layout.accent_width),
+                    (msg_rect.h - layout.accent_vertical_inset * 2.0).max(0.0),
                 ),
                 accent,
-                Some(crate::draw::Radius::uniform(1.5)),
+                Some(crate::draw::Radius::uniform(layout.accent_radius)),
             );
             let geometry = self.item_geometry(msg_rect, item.closable);
             crate::ui::widgets::icon::Icon::paint_in_frame(
@@ -194,24 +203,24 @@ widget! {
                 icon,
                 geometry.icon,
                 accent,
-                14.0,
+                typography.status_icon,
             );
             Self::paint_elided_text(
                 ctx,
                 &item.content,
                 geometry.content,
                 text_c,
-                13.0,
+                typography.body,
             );
             if let (Some(action), Some(action_rect)) =
                 (self.action_label.as_deref(), geometry.action)
             {
-                let action_button = Self::inset_rect(action_rect, 4.0);
+                let action_button = Self::inset_rect(action_rect, layout.action_inset);
                 if self.pressed_action.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         action_button,
-                        fade_color(ctx.tokens().color_fill_secondary(), opacity),
-                        Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_secondary, opacity),
+                        control_radius,
                     );
                 }
                 Self::paint_centered_elided_text(
@@ -219,30 +228,30 @@ widget! {
                     action,
                     action_button,
                     text_c,
-                    Self::ACTION_FONT_SIZE,
+                    typography.action,
                 );
             }
             if item.closable {
-                let close_button = Self::inset_rect(geometry.close, 5.0);
+                let close_button = Self::inset_rect(geometry.close, layout.close_inset);
                 if self.pressed_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(ctx.tokens().color_fill_secondary(), opacity),
-                        Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_secondary, opacity),
+                        control_radius,
                     );
                 } else if self.hovered_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(ctx.tokens().color_fill_tertiary(), opacity),
-                        Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+                        fade_color(resolved.fill_tertiary, opacity),
+                        control_radius,
                     );
                 }
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "x",
+                    self.visual.icons.close,
                     close_button,
-                    fade_color(ctx.tokens().color_text_quaternary(), opacity),
-                    13.0,
+                    fade_color(resolved.text_quaternary, opacity),
+                    typography.close_icon,
                 );
             }
         }
@@ -267,7 +276,7 @@ widget! {
         (bounds.w > 0.0 && bounds.h > 0.0).then(|| {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Message)
                 .bounds(bounds)
-                .z_index(1200)
+                .z_index(self.visual.overlay_z())
         })
     }
 
@@ -304,24 +313,6 @@ impl Default for Message {
 }
 
 impl Message {
-    const MSG_DURATION_SUCCESS: u64 = 3000;
-    const MSG_DURATION_INFO: u64 = 3000;
-    const MSG_DURATION_WARNING: u64 = 4000;
-    const MSG_DURATION_ERROR: u64 = 5000;
-    const MSG_WIDTH: f32 = 380.0;
-    const MSG_HEIGHT: f32 = 40.0;
-    const MSG_HEIGHT_PER_ITEM: f32 = 48.0;
-    const MSG_INSET: f32 = 12.0;
-    const SHADOW_MARGIN: f32 = 12.0;
-    // toast 家族动作字号，与 Notification 保持一致（12.0）；Card 独立用 13.0。
-    const ACTION_FONT_SIZE: f32 = 12.0;
-    const ACTION_HORIZONTAL_PADDING: f32 = 16.0;
-    const ACTION_MIN_WIDTH: f32 = 40.0;
-    const ACTION_MAX_WIDTH: f32 = 112.0;
-    const CONTROL_GAP: f32 = 4.0;
-    // toast 家族内容尾部间隙；Notification 侧为 8.0，存在 1px 历史差异，保留原值。
-    const CONTENT_TRAILING_GAP: f32 = 7.0;
-
     /// 创建拥有独立队列且默认显示在顶部的全局提示容器。
     pub fn new() -> Self {
         // Rust 直接构造获得独立队列，不再修改任何进程级注册表。
@@ -333,7 +324,7 @@ impl Message {
         Self {
             queue: handle.queue,
             motion: RefCell::new(ToastMotion::default()),
-            placement: Placement::Top,
+            placement: MESSAGE_VISUAL_REF.defaults.placement,
             enter_animation: None,
             leave_animation: None,
             last_frame: Cell::new(Rect::zero()),
@@ -345,6 +336,7 @@ impl Message {
             action_label: None,
             action_callback: None,
             icon_name: None,
+            visual: MESSAGE_VISUAL_REF,
         }
     }
 
@@ -361,7 +353,7 @@ impl Message {
     {
         let label = label.into();
         if !label.trim().is_empty() {
-            self.action_label = Some(label);
+            self.action_label = Some(label.into_boxed_str());
             self.action_callback = Some(Rc::new(action));
         }
         self
@@ -369,7 +361,7 @@ impl Message {
 
     /// 设置每条提示使用的自定义图标名称。
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
-        self.icon_name = Some(icon.into());
+        self.icon_name = Some(icon.into().into_boxed_str());
         self
     }
 
@@ -394,27 +386,28 @@ impl Message {
 
     /// 添加提示项并返回其稳定标识。
     pub fn add(&self, item: MessageItem) -> u64 {
-        self.handle().add(item)
+        let duration_ms = item.duration_ms;
+        self.queue.push(item, duration_ms)
     }
 
     /// 添加使用标准时长的成功提示并返回其稳定标识。
     pub fn success(&self, content: impl Into<String>) -> u64 {
-        self.handle().success(content)
+        self.add_status(StatusLevel::Success, content)
     }
 
     /// 添加使用标准时长的信息提示并返回其稳定标识。
     pub fn info(&self, content: impl Into<String>) -> u64 {
-        self.handle().info(content)
+        self.add_status(StatusLevel::Info, content)
     }
 
     /// 添加使用标准时长的警告提示并返回其稳定标识。
     pub fn warning(&self, content: impl Into<String>) -> u64 {
-        self.handle().warning(content)
+        self.add_status(StatusLevel::Warning, content)
     }
 
     /// 添加使用标准时长的错误提示并返回其稳定标识。
     pub fn error(&self, content: impl Into<String>) -> u64 {
-        self.handle().error(content)
+        self.add_status(StatusLevel::Error, content)
     }
 
     /// 请求移除指定提示；返回该标识是否对应现有本地提示。
@@ -432,14 +425,24 @@ impl Message {
         self.queue.values()
     }
 
+    // 直接写入实例队列，避免便捷方法仅为一次 push 克隆共享句柄。
+    fn add_status(&self, status: StatusLevel, content: impl Into<String>) -> u64 {
+        self.add(MessageItem {
+            type_: status,
+            content: content.into(),
+            duration_ms: self.visual.duration_ms(status),
+            closable: true,
+        })
+    }
+
     fn resolved_enter_animation(&self) -> AnimationConfig {
         self.enter_animation
-            .unwrap_or_else(|| AnimationConfig::fade_in(0.2))
+            .unwrap_or_else(|| AnimationConfig::fade_in(self.visual.motion.enter_duration))
     }
 
     fn resolved_leave_animation(&self) -> AnimationConfig {
         self.leave_animation
-            .unwrap_or_else(|| AnimationConfig::fade_out(0.15))
+            .unwrap_or_else(|| AnimationConfig::fade_out(self.visual.motion.leave_duration))
     }
 
     fn sync_motion(&self) -> bool {
@@ -492,52 +495,54 @@ impl Message {
         entries: &'a [ToastMotionEntry<MessageItem>],
     ) -> impl Iterator<Item = (Rect, &'a ToastMotionEntry<MessageItem>)> + 'a + use<'a> {
         let frame = Self::normalize_frame(frame);
-        let item_height = frame.h.min(Self::MSG_HEIGHT);
-        let message_width = (frame.w - Self::MSG_INSET * 2.0).clamp(0.0, Self::MSG_WIDTH);
-        let visible_count = Self::visible_count(frame.h, entries.len());
+        let layout = &self.visual.layout;
+        let item_height = frame.h.min(layout.item_height);
+        let message_width = (frame.w - layout.surface_inset * 2.0).clamp(0.0, layout.max_width);
+        let visible_count = self.visible_count(frame.h, entries.len());
         let visible = &entries[entries.len().saturating_sub(visible_count)..];
-        let stack_height = Self::stack_height(visible.len(), item_height);
+        let stack_height = self.stack_height(visible.len(), item_height);
         let start_x = frame.x
             + self
                 .placement
-                .horizontal_start(frame.w, message_width, Self::MSG_INSET);
+                .horizontal_start(frame.w, message_width, layout.surface_inset);
         let start_y = frame.y
             + self
                 .placement
-                .vertical_start(frame.h, stack_height, Self::MSG_INSET);
+                .vertical_start(frame.h, stack_height, layout.surface_inset);
 
         visible.iter().enumerate().map(move |(index, entry)| {
-            let y = start_y + index as f32 * Self::MSG_HEIGHT_PER_ITEM;
+            let y = start_y + index as f32 * layout.item_stride;
             (Rect::new(start_x, y, message_width, item_height), entry)
         })
     }
 
-    fn stack_height(item_count: usize, item_height: f32) -> f32 {
+    fn stack_height(&self, item_count: usize, item_height: f32) -> f32 {
         if item_count == 0 || item_height <= 0.0 {
             0.0
         } else {
-            item_height + (item_count - 1) as f32 * Self::MSG_HEIGHT_PER_ITEM
+            item_height + (item_count - 1) as f32 * self.visual.layout.item_stride
         }
     }
 
     fn base_bounds_for_count(&self, frame: Rect, item_count: usize) -> Rect {
         let frame = Self::normalize_frame(frame);
-        let visible_count = Self::visible_count(frame.h, item_count);
+        let layout = &self.visual.layout;
+        let visible_count = self.visible_count(frame.h, item_count);
         if visible_count == 0 {
             return Rect::zero();
         }
-        let width = (frame.w - Self::MSG_INSET * 2.0).clamp(0.0, Self::MSG_WIDTH);
-        let item_height = frame.h.min(Self::MSG_HEIGHT);
-        let height = Self::stack_height(visible_count, item_height);
+        let width = (frame.w - layout.surface_inset * 2.0).clamp(0.0, layout.max_width);
+        let item_height = frame.h.min(layout.item_height);
+        let height = self.stack_height(visible_count, item_height);
         Rect::new(
             frame.x
                 + self
                     .placement
-                    .horizontal_start(frame.w, width, Self::MSG_INSET),
+                    .horizontal_start(frame.w, width, layout.surface_inset),
             frame.y
                 + self
                     .placement
-                    .vertical_start(frame.h, height, Self::MSG_INSET),
+                    .vertical_start(frame.h, height, layout.surface_inset),
             width,
             height,
         )
@@ -553,36 +558,39 @@ impl Message {
                 .union(&translated_rect(rect, from))
                 .union(&translated_rect(rect, to));
         }
-        expand_rect(bounds, Self::SHADOW_MARGIN)
+        expand_rect(bounds, self.visual.layout.shadow_margin)
             .intersect(&frame)
             .unwrap_or_else(Rect::zero)
     }
 
-    fn close_rect(rect: Rect) -> Rect {
-        let width = rect.w.min(40.0);
+    fn close_rect(&self, rect: Rect) -> Rect {
+        let width = rect.w.min(self.visual.layout.close_width);
         Rect::new(rect.x + rect.w - width, rect.y, width, rect.h)
     }
 
     fn action_rect(&self, rect: Rect, closable: bool) -> Option<Rect> {
         let label = self.action_label.as_deref()?;
         let close = if closable {
-            Self::close_rect(rect)
+            self.close_rect(rect)
         } else {
             Rect::new(rect.x + rect.w, rect.y, 0.0, rect.h)
         };
         let gap = if close.w > 0.0 {
-            Self::CONTROL_GAP.min((close.x - rect.x).max(0.0))
+            self.visual
+                .layout
+                .control_gap
+                .min((close.x - rect.x).max(0.0))
         } else {
-            Self::CONTENT_TRAILING_GAP.min(rect.w.max(0.0))
+            self.visual.layout.content_trailing_gap.min(rect.w.max(0.0))
         };
         let end = (close.x - gap).max(rect.x);
         let available = (end - rect.x).max(0.0);
         let width = Self::measured_control_width(
             label,
-            Self::ACTION_FONT_SIZE,
-            Self::ACTION_HORIZONTAL_PADDING,
-            Self::ACTION_MIN_WIDTH,
-            Self::ACTION_MAX_WIDTH,
+            self.visual.typography.action,
+            self.visual.layout.action_horizontal_padding,
+            self.visual.layout.action_min_width,
+            self.visual.layout.action_max_width,
         )
         .min(available);
         (width > 0.0).then(|| Rect::new(end - width, rect.y, width, rect.h))
@@ -609,6 +617,7 @@ impl Message {
         self.action_label = next.action_label;
         self.action_callback = next.action_callback;
         self.icon_name = next.icon_name;
+        self.visual = next.visual;
         self.pressed_action.set(None);
     }
 
@@ -624,14 +633,14 @@ impl Message {
         }
     }
 
-    fn visible_count(frame_height: f32, item_count: usize) -> usize {
+    fn visible_count(&self, frame_height: f32, item_count: usize) -> usize {
         let frame_height = Self::normalize_dimension(frame_height);
         if item_count == 0 || frame_height <= 0.0 {
             return 0;
         }
-        let item_height = frame_height.min(Self::MSG_HEIGHT);
+        let item_height = frame_height.min(self.visual.layout.item_height);
         let capacity =
-            1 + ((frame_height - item_height) / Self::MSG_HEIGHT_PER_ITEM).floor() as usize;
+            1 + ((frame_height - item_height) / self.visual.layout.item_stride).floor() as usize;
         item_count.min(capacity)
     }
 
@@ -676,7 +685,7 @@ impl Message {
                 let rect = transitioned_rect(rect, entry.offset(), entry.scale());
                 (entry.item().closable
                     && !entry.is_leaving()
-                    && Self::close_rect(rect).contains(pos))
+                    && self.close_rect(rect).contains(pos))
                 .then_some(entry.key())
             })
     }
@@ -725,19 +734,23 @@ impl Message {
 
     fn item_geometry(&self, rect: Rect, closable: bool) -> MessageGeometry {
         let close = if closable {
-            Self::close_rect(rect)
+            self.close_rect(rect)
         } else {
             Rect::new(rect.x + rect.w, rect.y, 0.0, rect.h)
         };
         let action = self.action_rect(rect, closable);
         let trailing_start = action.map_or(close.x, |action| action.x);
         let content_end = (trailing_start
-            - Self::CONTENT_TRAILING_GAP.min((trailing_start - rect.x).max(0.0)))
+            - self
+                .visual
+                .layout
+                .content_trailing_gap
+                .min((trailing_start - rect.x).max(0.0)))
         .max(rect.x);
-        let icon_x = rect.x + 7.0_f32.min(rect.w);
-        let icon_width = (content_end - icon_x).clamp(0.0, 24.0);
+        let icon_x = rect.x + self.visual.layout.icon_inset.min(rect.w);
+        let icon_width = (content_end - icon_x).clamp(0.0, self.visual.layout.icon_max_width);
         let icon = Rect::new(icon_x, rect.y, icon_width, rect.h);
-        let content_x = (icon.x + icon.w + 5.0).min(content_end);
+        let content_x = (icon.x + icon.w + self.visual.layout.icon_content_gap).min(content_end);
         MessageGeometry {
             icon,
             content: Rect::new(
@@ -758,14 +771,23 @@ impl Message {
         minimum: f32,
         maximum: f32,
     ) -> f32 {
-        let value = value.replace(['\r', '\n'], " ");
+        let value = Self::normalized_single_line(value);
         let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            &value,
+            value.as_ref(),
             f32::INFINITY,
             font_size,
         )
         .max_line_width;
         (text_width + horizontal_padding).clamp(minimum, maximum)
+    }
+
+    // 普通单行文本保持借用，仅在确有换行符时分配归一化结果。
+    fn normalized_single_line(value: &str) -> Cow<'_, str> {
+        if value.contains(['\r', '\n']) {
+            Cow::Owned(value.replace(['\r', '\n'], " "))
+        } else {
+            Cow::Borrowed(value)
+        }
     }
 
     fn inset_rect(frame: Rect, inset: f32) -> Rect {
@@ -818,3 +840,25 @@ impl Message {
         ctx.pop_clip();
     }
 }
+
+// 把 Rust 运行内核与 UIX 生成的唯一静态视觉项融合为根节点。
+fn build_message_view(mut kernel: Message, visual: &'static MessageVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让公开 View 构建统一进入同目录 UIX 文档。
+fn build_message_uix_root(kernel: Message) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/message/message.uix")
+}
+
+impl View for Message {
+    fn build(self) -> ViewNode {
+        build_message_uix_root(self)
+    }
+}
+
+// 集中验证 Message 的 UIX 视觉单源与分配快路径。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/feedback/message__tests.rs"]
+mod tests;
