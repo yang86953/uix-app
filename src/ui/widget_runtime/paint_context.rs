@@ -99,14 +99,28 @@ fn elide_normalized_single_line_by<'a>(
 }
 
 // 使用调用方提供的保守度量函数规范化换行并执行单行省略。
+fn elide_single_line_cow_by<'a>(
+    text: &'a str,
+    max_width: f32,
+    mut text_width: impl FnMut(&str) -> f32,
+) -> Option<Cow<'a, str>> {
+    // 常见无换行文本直接进入借用型窄入口，完整容纳时不分配 String。
+    if !text.contains(['\r', '\n']) {
+        return elide_normalized_single_line_by(text, max_width, text_width);
+    }
+    // 存在换行时只做一次规范化；返回值必须取得所有权以离开局部缓冲区。
+    let normalized = text.replace(['\r', '\n'], " ");
+    elide_normalized_single_line_by(&normalized, max_width, &mut text_width)
+        .map(|value| Cow::Owned(value.into_owned()))
+}
+
+// 保留旧拥有型入口，现有调用方继续取得 String。
 fn elide_single_line_by(
     text: &str,
     max_width: f32,
     text_width: impl FnMut(&str) -> f32,
 ) -> Option<String> {
-    // 普通入口只做一次换行规范化，并把后续算法交给无重复分配的窄入口。
-    let normalized = text.replace(['\r', '\n'], " ");
-    elide_normalized_single_line_by(&normalized, max_width, text_width).map(Cow::into_owned)
+    elide_single_line_cow_by(text, max_width, text_width).map(Cow::into_owned)
 }
 
 /// 转发 `&mut self` 绘制方法（固有方法享受二段式借用）。
@@ -214,6 +228,18 @@ impl<'a, 'b> PaintContext<'a, 'b> {
             self.conservative_text_width(candidate, font_size)
         })
         // 结束 UI 单行省略入口。
+    }
+
+    /// 规范化换行并执行单行省略；无换行且完整容纳时直接借用输入。
+    pub(crate) fn elide_single_line_cow<'c>(
+        &mut self,
+        text: &'c str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<Cow<'c, str>> {
+        elide_single_line_cow_by(text, max_width, |candidate| {
+            self.conservative_text_width(candidate, font_size)
+        })
     }
 
     /// 对调用方已经规范化换行的文本执行保守单行省略。

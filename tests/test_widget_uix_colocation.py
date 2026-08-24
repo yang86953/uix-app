@@ -16,6 +16,31 @@ WIDGETS_ROOT = ROOT / "src" / "ui" / "widgets"
 # 该集合只能缩小；新迁移不得加入，修复一项时必须同步删除对应路径。
 VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
+# 已完成同目录 UIX 视觉迁移的 widget 目录；删除声明文件不得伪装成债务清零。
+MIGRATED_WIDGET_DIRS = {
+    "containers/back_top",
+    "display/avatar",
+    "display/badge",
+    "display/card",
+    "display/carousel",
+    "display/descriptions",
+    "display/empty",
+    "display/image",
+    "display/image_group",
+    "display/qrcode",
+    "display/result",
+    "display/skeleton",
+    "display/tag",
+    "display/timeline",
+    "display/watermark",
+    "feedback/progress",
+    "feedback/spin",
+    "general/button_group",
+    "general/divider",
+    "other/theme_toggle",
+    "window_controls",
+}
+
 
 def is_visual_passthrough(source: str) -> bool:
     """识别只把 kernel/children 原样交回 Rust 的单 KernelView 壳。"""
@@ -35,6 +60,14 @@ def is_visual_passthrough(source: str) -> bool:
 
 
 class WidgetUixColocationTests(unittest.TestCase):
+    # 已完成迁移的目录集合只能显式扩展，不能通过删除 UIX 文件规避守卫。
+    def test_migrated_widget_directory_set_is_locked(self) -> None:
+        actual = {
+            path.parent.relative_to(WIDGETS_ROOT).as_posix()
+            for path in WIDGETS_ROOT.rglob("*.uix")
+        }
+        self.assertEqual(actual, MIGRATED_WIDGET_DIRS)
+
     # 已迁移的 UIX 文件必须位于拥有它的 Rust 组件目录。
     def test_uix_sources_are_colocated_with_rust_widget_modules(self) -> None:
         violations: list[str] = []
