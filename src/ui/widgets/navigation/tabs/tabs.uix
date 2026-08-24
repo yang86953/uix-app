@@ -1,0 +1,29 @@
+// Tabs 的四向标签栏、图标、编辑入口、滚动步长、内容留白、排版和主题由 UIX 唯一拥有。
+<Visual name="TABS_LAYOUT_VISUAL" type="TabsLayoutVisual"
+  defaultWidth={400.0} defaultHeight={200.0} tabHeight={40.0}
+  gap={12.0} horizontalPadding={16.0} sideBarWidth={160.0} wheelStep={40.0}
+  iconReserve={20.0} closeReserve={20.0} iconSlotWidth={16.0} iconAdvance={20.0}
+  addSize={24.0} closeSize={20.0} dividerThickness={2.0}
+  indicatorExtentFactor={0.6} indicatorThickness={2.0}
+  contentHorizontalInset={16.0} contentVerticalInset={8.0}
+/>
+<Visual name="TABS_TYPOGRAPHY_VISUAL" type="TabsTypographyVisual"
+  label={tabs_font_base()} tabIcon={13.0} closeIcon={10.0}
+/>
+<Visual name="TABS_CHROME_VISUAL" type="TabsChromeVisual"
+  indicatorRadius={1.0} focusWidth={1.5} radius={tabs_radius_small()}
+/>
+<Visual name="TABS_DEFAULTS_VISUAL" type="TabsDefaultsVisual"
+  position={tabs_position_top()} editable={false} scrollable={false}
+/>
+<Visual name="TABS_ICONS_VISUAL" type="TabsIconsVisual" close="x" add="plus" />
+<Visual name="TABS_PALETTE_VISUAL" type="TabsPaletteVisual"
+  containerBackground={tabs_container_background()} borderSecondary={tabs_border_secondary()}
+  primary={tabs_primary()} textSecondary={tabs_text_secondary()}
+/>
+<Visual name="TABS_VISUAL" type="TabsVisual"
+  layout={TABS_LAYOUT_VISUAL} typography={TABS_TYPOGRAPHY_VISUAL}
+  chrome={TABS_CHROME_VISUAL} defaults={TABS_DEFAULTS_VISUAL}
+  icons={TABS_ICONS_VISUAL} palette={TABS_PALETTE_VISUAL}
+/>
+<KernelView value={build_tabs_view(kernel, TABS_VISUAL_REF)} />
