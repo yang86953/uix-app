@@ -1,5 +1,7 @@
 //! ScenePaint — 场景绘制抽象，解耦 compositor 与 ui 域。
 
+use std::collections::HashSet;
+
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
@@ -190,6 +192,14 @@ pub trait ScenePaint {
     fn node_frame(&self, id: NodeId) -> Rect;
     /// 返回节点是否因失效而需要重新绘制。
     fn node_dirty(&self, id: NodeId) -> bool;
+    /// 尝试把当前帧的 Paint 失效身份一次写入调用方复用集合。
+    ///
+    /// `Some(true)` 表示全部节点都脏，`Some(false)` 表示集合包含完整的局部失效身份，
+    /// `None` 表示实现不提供批量快照，调用方必须继续逐节点查询 [`Self::node_dirty`]。
+    fn paint_invalidation_snapshot_into(&self, ids: &mut HashSet<NodeId>) -> Option<bool> {
+        ids.clear();
+        None
+    }
     /// 返回节点在兄弟节点之间使用的绘制层级。
     fn node_z_index(&self, id: NodeId) -> i32;
     /// Visual transform for this node and its descendants, in layout coordinates.
