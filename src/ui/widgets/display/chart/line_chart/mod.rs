@@ -1,22 +1,53 @@
 //! LineChart — line chart with grid lines and data point markers.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
 use crate::widget;
 
 use super::advanced::{
     BrushConfig, ChartSeries, InteractionConfig, LegendPosition, TooltipConfig, TooltipDatum,
-    TooltipTrigger, catmull_rom_points, normalized_ratio,
+    TooltipTrigger, catmull_rom_points_into, normalized_ratio,
 };
+use super::value_label::ChartValueLabel;
 
-// 将构造、默认值与链式配置集中到独立的组件配置模块。
-#[path = "line_chart/config.rs"]
-// 编译折线图的公开配置实现。
+// 将构造、默认值与链式配置集中到同目录组件配置模块。
 mod config;
+mod presentation;
+use presentation::*;
+
+#[cfg(test)]
+#[path = "../../../../../../tests/unit/ui/widgets/display/chart/line_chart/tests.rs"]
+mod tests;
+
+// 使用一个字节记录会覆盖 UIX 默认值的 Rust 调用方声明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct LineChartAuthored(u8);
+
+impl LineChartAuthored {
+    const HEIGHT: u8 = 1 << 0;
+    const SHOW_GRID: u8 = 1 << 1;
+    const SHOW_DOTS: u8 = 1 << 2;
+    const LINE_WIDTH: u8 = 1 << 3;
+    const DOT_RADIUS: u8 = 1 << 4;
+    const PADDING: u8 = 1 << 5;
+
+    fn contains(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn set(&mut self, flag: u8, authored: bool) {
+        if authored {
+            self.0 |= flag;
+        } else {
+            self.0 &= !flag;
+        }
+    }
+}
 
 /// 折线图中的单个分类数据点。
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +110,14 @@ widget! {
         pan_offset: Cell<f32>,
         #[snapshot(skip)]
         zoom: Cell<f32>,
+        #[snapshot(skip)]
+        visual: &'static LineChartVisual,
+        #[snapshot(skip)]
+        authored: LineChartAuthored,
+        #[snapshot(skip)]
+        points_scratch: RefCell<Vec<Point>>,
+        #[snapshot(skip)]
+        smooth_points_scratch: RefCell<Vec<Point>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -210,9 +249,13 @@ widget! {
             return;
         }
         self.last_frame.set(Some(frame));
+        let resolved = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let chrome = self.visual.chrome;
+        let typography = self.visual.typography;
         ctx.fill_rect(
             frame,
-            self.background.unwrap_or(ctx.tokens().color_bg_container()),
+            self.background.unwrap_or(resolved.background),
             None,
         );
         let mut content = Rect::new(
@@ -225,21 +268,21 @@ widget! {
             ctx.draw_text(
                 &self.title,
                 Point::new(content.x, content.y),
-                ctx.tokens().color_text(),
-                15.0,
+                resolved.text,
+                typography.title,
             );
-            content.y += 20.0;
-            content.h = (content.h - 20.0).max(0.0);
+            content.y += layout.title_height;
+            content.h = (content.h - layout.title_height).max(0.0);
         }
         if !self.subtitle.is_empty() && content.h > 0.0 {
             ctx.draw_text(
                 &self.subtitle,
                 Point::new(content.x, content.y),
-                ctx.tokens().color_text_secondary(),
-                11.0,
+                resolved.text_secondary,
+                typography.subtitle,
             );
-            content.y += 16.0;
-            content.h = (content.h - 16.0).max(0.0);
+            content.y += layout.subtitle_height;
+            content.h = (content.h - layout.subtitle_height).max(0.0);
         }
         let legend_rect = self.reserve_legend(&mut content);
         ctx.push_clip(frame);
@@ -255,57 +298,67 @@ widget! {
             return;
         };
 
-        let (default_line_color, palette_primary, palette_success, palette_warning, palette_error,
-            lbc, ac, bg) = {
-            let tokens = ctx.tokens();
-            (
-                self.line_color.unwrap_or(tokens.color_text()),
-                tokens.color_primary(),
-                tokens.color_success(),
-                tokens.color_warning(),
-                tokens.color_error(),
-                tokens.color_text_secondary(),
-                tokens.color_border(),
-                tokens.color_bg_container(),
-            )
-        };
+        let default_line_color = self.line_color.unwrap_or(resolved.text);
+        let label_color = resolved.text_secondary;
+        let axis_color = resolved.border;
+        let point_inner_color = resolved.background;
 
         if self.show_grid {
-            let grid_lines = 4.max((plot.chart_h / 30.0) as usize);
+            let grid_lines = layout
+                .grid_min_lines
+                .max((plot.chart_h / layout.grid_min_spacing.max(f32::EPSILON)) as usize);
             for i in 0..=grid_lines {
                 let t = i as f32 / grid_lines as f32;
                 let gy = plot.plot_y + plot.chart_h * (1.0 - t);
-                ctx.fill_rect(Rect::new(plot.chart_x, gy, plot.chart_w, 0.5), ac, None);
+                ctx.fill_rect(
+                    Rect::new(plot.chart_x, gy, plot.chart_w, chrome.grid_stroke),
+                    axis_color,
+                    None,
+                );
                 let value = plot.min + (plot.max - plot.min) * t;
                 let label = Self::format_value(value);
-                let y_label_rect = Rect::new(frame.x, gy - 6.0, plot.y_label_w - 2.0, 12.0);
-                let yly = ctx.visual_center_y(y_label_rect, 9.0);
-                let lsz = ctx.measure_text(&label, 9.0);
+                let y_label_rect = Rect::new(
+                    frame.x,
+                    gy - layout.category_label_height * layout.center_ratio,
+                    (plot.y_label_w - layout.category_label_gap).max(0.0),
+                    layout.category_label_height,
+                );
+                let yly = ctx.visual_center_y(y_label_rect, typography.grid);
+                let lsz = ctx.measure_text(label.as_str(), typography.grid);
                 ctx.draw_text(
-                    &label,
-                    Point::new(plot.chart_x - lsz.w - 4.0, yly),
-                    lbc,
-                    9.0,
+                    label.as_str(),
+                    Point::new(plot.chart_x - lsz.w - chrome.label_gap, yly),
+                    label_color,
+                    typography.grid,
                 );
             }
         }
 
         ctx.fill_rect(
-            Rect::new(plot.chart_x, plot.baseline, plot.chart_w, 1.0),
-            ac,
+            Rect::new(
+                plot.chart_x,
+                plot.baseline,
+                plot.chart_w,
+                chrome.axis_stroke,
+            ),
+            axis_color,
             None,
         );
 
-        let series = self.series_data();
         let lw = self.line_width;
-        for (series_index, data) in series.iter().enumerate() {
-            let points = self.points_for_data(data, &plot);
+        let mut points = self.points_scratch.borrow_mut();
+        let mut smooth_points = self.smooth_points_scratch.borrow_mut();
+        for series_index in 0..self.series_count() {
+            let Some(data) = self.series_at(series_index) else {
+                continue;
+            };
+            self.fill_points_for_data(data, &plot, &mut points);
             let lc = self.line_color.unwrap_or(match series_index {
                 0 => default_line_color,
-                1 => palette_primary,
-                2 => palette_success,
-                3 => palette_warning,
-                _ => palette_error,
+                1 => resolved.primary,
+                2 => resolved.success,
+                3 => resolved.warning,
+                _ => resolved.error,
             });
             let draw_segment = |ctx: &mut PaintContext, from: Point, to: Point| {
                 ctx.draw_line(from.x, from.y, to.x, to.y, lc, lw);
@@ -316,33 +369,55 @@ widget! {
                     draw_segment(ctx, segment[0], mid);
                     draw_segment(ctx, mid, segment[1]);
                 }
+            } else if self.smooth {
+                catmull_rom_points_into(
+                    &points,
+                    self.visual.motion.smooth_subdivisions,
+                    &mut smooth_points,
+                );
+                for segment in smooth_points.windows(2) {
+                    draw_segment(ctx, segment[0], segment[1]);
+                }
             } else {
-                let line_points = if self.smooth {
-                    catmull_rom_points(&points, 8)
-                } else {
-                    points.clone()
-                };
-                for segment in line_points.windows(2) {
+                for segment in points.windows(2) {
                     draw_segment(ctx, segment[0], segment[1]);
                 }
             }
 
             if self.show_dots && self.dot_radius > 0.0 {
-                for pt in &points {
+                for pt in points.iter() {
                     ctx.fill_circle(pt.x, pt.y, self.dot_radius, lc);
-                    ctx.fill_circle(pt.x, pt.y, (self.dot_radius - 1.5).max(0.5), bg);
+                    ctx.fill_circle(
+                        pt.x,
+                        pt.y,
+                        (self.dot_radius - chrome.dot_inner_inset)
+                            .max(chrome.dot_inner_min_radius),
+                        point_inner_color,
+                    );
                 }
             }
         }
+        drop(smooth_points);
+        drop(points);
 
         for (i, d) in self.data.iter().enumerate() {
-            let x = plot.points[i].x;
-            let sz = ctx.measure_text(&d.label, 10.0);
+            let x = Self::point_x(i, self.data.len(), &plot);
+            let sz = ctx.measure_text(&d.label, typography.category);
             let max_label_x = (plot.chart_x + plot.chart_w - sz.w).max(plot.chart_x);
-            let lx = (x - sz.w * 0.5).clamp(plot.chart_x, max_label_x);
-            let label_rect = Rect::new(lx, plot.plot_y + plot.chart_h + 2.0, sz.w, 12.0);
-            let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&d.label, Point::new(lx, ly), lbc, 10.0);
+            let lx = (x - sz.w * layout.center_ratio).clamp(plot.chart_x, max_label_x);
+            let label_rect = Rect::new(
+                lx,
+                plot.plot_y + plot.chart_h + layout.category_label_gap,
+                sz.w,
+                layout.category_label_height,
+            );
+            let ly = ctx.visual_center_y(label_rect, typography.category);
+            ctx.draw_text(
+                &d.label,
+                Point::new(lx, ly),
+                label_color,
+                typography.category,
+            );
         }
 
         if self
@@ -351,15 +426,24 @@ widget! {
             .is_some_and(|config| config.crosshair)
         {
             if let Some(pos) = self.hovered_pos.get().filter(|pos| frame.contains(*pos)) {
-                let crosshair = ctx.tokens().color_primary();
                 ctx.fill_rect(
-                    Rect::new(pos.x, plot.plot_y, 1.0, plot.chart_h),
-                    crosshair,
+                    Rect::new(
+                        pos.x,
+                        plot.plot_y,
+                        chrome.crosshair_stroke,
+                        plot.chart_h,
+                    ),
+                    resolved.primary,
                     None,
                 );
                 ctx.fill_rect(
-                    Rect::new(plot.chart_x, pos.y, plot.chart_w, 1.0),
-                    crosshair,
+                    Rect::new(
+                        plot.chart_x,
+                        pos.y,
+                        plot.chart_w,
+                        chrome.crosshair_stroke,
+                    ),
+                    resolved.primary,
                     None,
                 );
             }
@@ -372,8 +456,7 @@ widget! {
             let bottom = start.y.max(end.y).clamp(frame.y, frame.y + frame.h);
             ctx.fill_rect(
                 Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
-                // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
-                ctx.tokens().color_primary().with_alpha(48),
+                resolved.primary.with_alpha(chrome.brush_alpha),
                 None,
             );
         }
@@ -383,28 +466,51 @@ widget! {
                 TooltipTrigger::Click => self.tooltip_pos.get(),
             };
             if let Some(pos) = pos.filter(|pos| frame.contains(*pos)) {
-                self.paint_tooltip(ctx, frame, pos);
+                self.paint_tooltip(ctx, frame, pos, resolved);
             }
         }
 
         if let Some(legend_rect) = legend_rect {
-            let legend = if self.series.is_empty() {
-                "数据".to_owned()
-            } else {
-                self.series
-                    .iter()
-                    .map(|series| series.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("  ")
-            };
-            ctx.text_center(
-                &legend,
-                legend_rect,
-                lbc,
-                10.0,
-            );
+            self.paint_legend(ctx, legend_rect, resolved);
         }
         ctx.pop_clip();
+    }
+}
+
+// 把数据/交互状态与 UIX 静态视觉融合为单一 LineChart 根节点。
+fn build_line_chart_view(mut kernel: LineChart, declared_visual: LineChartVisual) -> ViewNode {
+    let visual = UIX_LINE_CHART_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.authored.contains(LineChartAuthored::HEIGHT) {
+        kernel.fixed_height = visual.defaults.height;
+    }
+    if !kernel.authored.contains(LineChartAuthored::SHOW_GRID) {
+        kernel.show_grid = visual.defaults.show_grid;
+    }
+    if !kernel.authored.contains(LineChartAuthored::SHOW_DOTS) {
+        kernel.show_dots = visual.defaults.show_dots;
+    }
+    if !kernel.authored.contains(LineChartAuthored::LINE_WIDTH) {
+        kernel.line_width = visual.defaults.line_width;
+    }
+    if !kernel.authored.contains(LineChartAuthored::DOT_RADIUS) {
+        kernel.dot_radius = visual.defaults.dot_radius;
+    }
+    if !kernel.authored.contains(LineChartAuthored::PADDING) {
+        kernel.padding = visual.defaults.padding;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_line_chart_uix_root(kernel: LineChart) -> ViewNode {
+    crate::uix!("src/ui/widgets/display/chart/line_chart/line_chart.uix")
+}
+
+impl View for LineChart {
+    fn build(self) -> ViewNode {
+        build_line_chart_uix_root(self)
     }
 }
 
@@ -418,7 +524,6 @@ struct LinePlot {
     chart_h: f32,
     y_label_w: f32,
     baseline: f32,
-    points: Vec<Point>,
 }
 
 impl LineChart {
@@ -426,12 +531,12 @@ impl LineChart {
         let width = if self.fixed_width > 0.0 {
             self.fixed_width
         } else {
-            Self::DEFAULT_WIDTH
+            self.visual.defaults.width
         };
         let height = if self.fixed_height > 0.0 {
             self.fixed_height
         } else {
-            Self::DEFAULT_HEIGHT
+            self.visual.defaults.height
         };
         Size::new(width, height)
     }
@@ -452,22 +557,25 @@ impl LineChart {
         if self.legend == LegendPosition::None {
             return None;
         }
-        const ROW: f32 = 18.0;
+        let layout = self.visual.layout;
         match self.legend {
             LegendPosition::Top => {
-                let rect = Rect::new(content.x, content.y, content.w, ROW.min(content.h));
-                content.y += ROW.min(content.h);
-                content.h = (content.h - ROW).max(0.0);
+                let height = layout.legend_row_height.min(content.h);
+                let rect = Rect::new(content.x, content.y, content.w, height);
+                content.y += height;
+                content.h = (content.h - layout.legend_row_height).max(0.0);
                 Some(rect)
             }
             LegendPosition::Bottom => {
-                let height = ROW.min(content.h);
+                let height = layout.legend_row_height.min(content.h);
                 let rect = Rect::new(content.x, content.y + content.h - height, content.w, height);
-                content.h = (content.h - ROW).max(0.0);
+                content.h = (content.h - layout.legend_row_height).max(0.0);
                 Some(rect)
             }
             LegendPosition::Left | LegendPosition::Right => {
-                let width = (content.w * 0.24).clamp(64.0, 120.0).min(content.w);
+                let width = (content.w * layout.legend_side_ratio)
+                    .clamp(layout.legend_side_min, layout.legend_side_max)
+                    .min(content.w);
                 let x = if self.legend == LegendPosition::Left {
                     let x = content.x;
                     content.x += width;
@@ -504,15 +612,17 @@ impl LineChart {
         }
     }
 
-    fn format_value(value: f32) -> String {
-        if value == value.trunc() {
-            format!("{value:.0}")
-        } else {
-            format!("{value:.1}")
-        }
+    fn format_value(value: f32) -> ChartValueLabel {
+        ChartValueLabel::from_f32(value)
     }
 
-    fn paint_tooltip(&self, ctx: &mut PaintContext, frame: Rect, pos: Point) {
+    fn paint_tooltip(
+        &self,
+        ctx: &mut PaintContext,
+        frame: Rect,
+        pos: Point,
+        resolved: ResolvedLineChartVisual,
+    ) {
         let Some(config) = &self.tooltip_config else {
             return;
         };
@@ -520,18 +630,65 @@ impl LineChart {
             return;
         };
         let text = config.format(&datum);
-        let size = ctx.measure_text(&text, 10.0);
-        let x = (pos.x + 12.0).min(frame.x + frame.w - size.w - 12.0);
-        let y = (pos.y - size.h - 12.0).max(frame.y + 4.0);
-        let rect = Rect::new(x.max(frame.x + 4.0), y, size.w + 8.0, size.h + 8.0);
-        ctx.fill_rect(rect, ctx.tokens().color_bg_elevated(), None);
-        ctx.stroke_rect(rect, ctx.tokens().color_border(), 1.0, None);
+        let typography = self.visual.typography;
+        let chrome = self.visual.chrome;
+        let size = ctx.measure_text(&text, typography.tooltip);
+        let x =
+            (pos.x + chrome.tooltip_offset).min(frame.x + frame.w - size.w - chrome.tooltip_offset);
+        let y = (pos.y - size.h - chrome.tooltip_offset).max(frame.y + chrome.tooltip_edge_inset);
+        let rect = Rect::new(
+            x.max(frame.x + chrome.tooltip_edge_inset),
+            y,
+            size.w + chrome.tooltip_padding * 2.0,
+            size.h + chrome.tooltip_padding * 2.0,
+        );
+        ctx.fill_rect(rect, resolved.elevated, None);
+        ctx.stroke_rect(rect, resolved.border, chrome.tooltip_border, None);
         ctx.draw_text(
             &text,
-            Point::new(rect.x + 4.0, rect.y + 4.0),
-            ctx.tokens().color_text(),
-            10.0,
+            Point::new(
+                rect.x + chrome.tooltip_padding,
+                rect.y + chrome.tooltip_padding,
+            ),
+            resolved.text,
+            typography.tooltip,
         );
+    }
+
+    // 不拼接临时字符串，直接按测量结果居中绘制每个系列名称。
+    fn paint_legend(&self, ctx: &mut PaintContext, frame: Rect, resolved: ResolvedLineChartVisual) {
+        let typography = self.visual.typography;
+        if self.series.is_empty() {
+            ctx.text_center(
+                typography.single_series_legend,
+                frame,
+                resolved.text_secondary,
+                typography.legend,
+            );
+            return;
+        }
+        let gap = ctx
+            .measure_text(typography.series_separator, typography.legend)
+            .w;
+        let text_width = self
+            .series
+            .iter()
+            .map(|series| ctx.measure_text(&series.name, typography.legend).w)
+            .sum::<f32>();
+        let gaps = gap * self.series.len().saturating_sub(1) as f32;
+        let mut x =
+            frame.x + (frame.w - text_width - gaps).max(0.0) * self.visual.layout.center_ratio;
+        let y = ctx.visual_center_y(frame, typography.legend);
+        for series in &self.series {
+            let width = ctx.measure_text(&series.name, typography.legend).w;
+            ctx.draw_text(
+                &series.name,
+                Point::new(x, y),
+                resolved.text_secondary,
+                typography.legend,
+            );
+            x += width + gap;
+        }
     }
 
     fn tooltip_datum_at(&self, pos: Point, frame: Rect) -> Option<TooltipDatum> {
@@ -551,9 +708,8 @@ impl LineChart {
     }
 
     fn value_range(&self) -> Option<(f32, f32)> {
-        let series = self.series_data();
-        let mut values = series
-            .iter()
+        let mut values = (0..self.series_count())
+            .filter_map(|index| self.series_at(index))
             .flat_map(|items| items.iter())
             .map(|item| Self::finite_value(item.value));
         let first = values.next()?;
@@ -587,38 +743,50 @@ impl LineChart {
         Some((min, max))
     }
 
-    fn series_data(&self) -> Vec<&[LineData]> {
+    fn series_count(&self) -> usize {
         if self.series.is_empty() {
-            vec![self.data.as_slice()]
+            1
         } else {
-            self.series
-                .iter()
-                .map(|series| series.data.as_slice())
-                .collect()
+            self.series.len()
         }
     }
 
-    fn points_for_data(&self, data: &[LineData], plot: &LinePlot) -> Vec<Point> {
-        if data.is_empty() {
-            return Vec::new();
+    fn series_at(&self, index: usize) -> Option<&[LineData]> {
+        if self.series.is_empty() {
+            (index == 0).then_some(self.data.as_slice())
+        } else {
+            self.series.get(index).map(|series| series.data.as_slice())
         }
+    }
+
+    fn fill_points_for_data(&self, data: &[LineData], plot: &LinePlot, output: &mut Vec<Point>) {
+        output.clear();
+        if data.is_empty() {
+            return;
+        }
+        output.reserve(data.len());
         let map_y = |value: f32| {
             plot.plot_y + plot.chart_h
                 - normalized_ratio(Self::finite_value(value), plot.min, plot.max) * plot.chart_h
         };
         if data.len() == 1 {
-            vec![Point::new(
+            output.push(Point::new(
                 plot.chart_x + plot.chart_w * 0.5,
                 map_y(data[0].value),
-            )]
+            ));
         } else {
             let step = plot.chart_w / (data.len() - 1) as f32;
-            data.iter()
-                .enumerate()
-                .map(|(index, item)| {
-                    Point::new(plot.chart_x + index as f32 * step, map_y(item.value))
-                })
-                .collect()
+            output.extend(data.iter().enumerate().map(|(index, item)| {
+                Point::new(plot.chart_x + index as f32 * step, map_y(item.value))
+            }));
+        }
+    }
+
+    fn point_x(index: usize, count: usize, plot: &LinePlot) -> f32 {
+        if count <= 1 {
+            plot.chart_x + plot.chart_w * 0.5
+        } else {
+            plot.chart_x + plot.chart_w * index as f32 / (count - 1) as f32
         }
     }
 
@@ -627,28 +795,17 @@ impl LineChart {
             return None;
         }
         let (min, max) = self.value_range()?;
-        let y_label_w = 36.0_f32.min(frame.w * 0.35);
+        let layout = self.visual.layout;
+        let y_label_w = layout
+            .y_label_width
+            .min(frame.w * layout.y_label_width_ratio);
         let chart_x = frame.x + y_label_w;
         let chart_w = frame.w - y_label_w;
-        let chart_h = frame.h - 14.0;
+        let chart_h = frame.h - layout.plot_bottom_reserve;
         if chart_w <= 0.0 || chart_h <= 0.0 {
             return None;
         }
         let map_y = |value: f32| frame.y + chart_h - normalized_ratio(value, min, max) * chart_h;
-        let points = self.points_for_data(
-            &self.data,
-            &LinePlot {
-                min,
-                max,
-                plot_y: frame.y,
-                chart_x,
-                chart_w,
-                chart_h,
-                y_label_w,
-                baseline: map_y(0.0),
-                points: Vec::new(),
-            },
-        );
         Some(LinePlot {
             min,
             max,
@@ -658,7 +815,6 @@ impl LineChart {
             chart_h,
             y_label_w,
             baseline: map_y(0.0),
-            points,
         })
     }
 
@@ -666,8 +822,11 @@ impl LineChart {
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn geometry_for_test(&self, frame: Rect) -> Option<(f32, Vec<Point>)> {
-        self.plot_geometry(frame)
-            .map(|plot| (plot.baseline, plot.points))
+        self.plot_geometry(frame).map(|plot| {
+            let mut points = Vec::new();
+            self.fill_points_for_data(&self.data, &plot, &mut points);
+            (plot.baseline, points)
+        })
     }
 
     // 测试目标保留折线序列点观测入口，供图表布局测试按需调用。
@@ -675,9 +834,13 @@ impl LineChart {
     #[cfg(test)]
     pub(crate) fn series_points_for_test(&self, frame: Rect) -> Option<Vec<Vec<Point>>> {
         self.plot_geometry(frame).map(|plot| {
-            self.series_data()
-                .into_iter()
-                .map(|data| self.points_for_data(data, &plot))
+            (0..self.series_count())
+                .filter_map(|index| self.series_at(index))
+                .map(|data| {
+                    let mut points = Vec::new();
+                    self.fill_points_for_data(data, &plot, &mut points);
+                    points
+                })
                 .collect()
         })
     }
@@ -688,6 +851,8 @@ impl LineChart {
         let tooltip_pos = self.tooltip_pos.get();
         let pan_offset = self.pan_offset.get();
         let zoom = self.zoom.get();
+        let points_scratch = std::mem::take(self.points_scratch.get_mut());
+        let smooth_points_scratch = std::mem::take(self.smooth_points_scratch.get_mut());
         let tracks_pointer = next.interaction.is_some()
             || next.brush_config.is_some()
             || next.tooltip_config.is_some();
@@ -699,6 +864,8 @@ impl LineChart {
             .is_some_and(|config| config.trigger_mode() == TooltipTrigger::Click);
 
         *self = next;
+        *self.points_scratch.get_mut() = points_scratch;
+        *self.smooth_points_scratch.get_mut() = smooth_points_scratch;
         self.last_frame.set(last_frame);
         self.hovered_pos
             .set(tracks_pointer.then_some(hovered_pos).flatten());

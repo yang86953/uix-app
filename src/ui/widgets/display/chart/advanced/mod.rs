@@ -669,11 +669,24 @@ chart_entry!(Treemap, Treemap);
 chart_entry!(Gauge, Gauge);
 
 pub(super) fn catmull_rom_points(points: &[Point], subdivisions: usize) -> Vec<Point> {
+    let mut output = Vec::new();
+    catmull_rom_points_into(points, subdivisions, &mut output);
+    output
+}
+
+// 把平滑曲线采样写入调用方复用缓冲，避免动态图表逐帧重新分配。
+pub(super) fn catmull_rom_points_into(
+    points: &[Point],
+    subdivisions: usize,
+    output: &mut Vec<Point>,
+) {
+    output.clear();
     if points.len() < 2 {
-        return points.to_vec();
+        output.extend_from_slice(points);
+        return;
     }
     let subdivisions = subdivisions.clamp(1, 32);
-    let mut output = Vec::with_capacity((points.len() - 1) * subdivisions + 1);
+    output.reserve((points.len() - 1) * subdivisions + 1);
     output.push(points[0]);
     for index in 0..points.len() - 1 {
         let p0 = points[index.saturating_sub(1)];
@@ -696,7 +709,6 @@ pub(super) fn catmull_rom_points(points: &[Point], subdivisions: usize) -> Vec<P
             ));
         }
     }
-    output
 }
 
 fn lerp_color(start: Color, end: Color, t: f32) -> Color {

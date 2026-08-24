@@ -25,6 +25,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/carousel",
     "display/calendar",
     "display/chart/bar_chart",
+    "display/chart/line_chart",
     "display/collapse",
     "display/descriptions",
     "display/empty",
