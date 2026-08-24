@@ -4,6 +4,8 @@
 //! Table, and similar lists.
 // 记录布局回调中的滚动状态与可变高度缓存。
 use std::cell::{Cell, RefCell};
+// 保存稳定测量代际下已经按原顺序计算完成的精确项目偏移。
+use std::collections::HashMap;
 
 // 导入可变行高的稀疏缓存和范围计算入口。
 pub use super::measurement_cache::{
@@ -22,8 +24,47 @@ use crate::ui::layout::engine::{finite_non_negative, finite_or_zero};
 
 // 限制一次刷新可创建的虚拟行数量，避免不可信视口或 overscan 耗尽资源。
 const MAX_MATERIALIZED_ITEMS: usize = 4_096;
+// 偏移缓存最多保留两窗结果，防止长列表滚动导致运行态无界增长。
+const MAX_CACHED_ITEM_OFFSETS: usize = MAX_MATERIALIZED_ITEMS * 2;
 // 为累计坐标保留充足算术余量，避免后续加减重新溢出为无穷大。
 const MAX_VIRTUAL_EXTENT: f32 = f32::MAX / 4.0;
+
+// 保存一个测量代际和估算行高下已经完成最终舍入的项目偏移。
+#[derive(Debug, Default)]
+struct VirtualItemOffsetCache {
+    // 代际与估算值按位共同决定全部缓存结果的有效性。
+    key: Option<(u64, u32)>,
+    // 只保存调用方实际查询过的绝对索引，避免按数据总量分配。
+    offsets: HashMap<usize, f32>,
+}
+
+impl VirtualItemOffsetCache {
+    // 读取同一几何事实下已经计算完成的最终偏移。
+    fn get(&mut self, key: (u64, u32), index: usize) -> Option<f32> {
+        // 任一测量或估算变化都会整体丢弃旧坐标。
+        if self.key != Some(key) {
+            self.key = Some(key);
+            self.offsets.clear();
+        }
+        // 命中值已经是原算法产生的最终 f32，不重新组合浮点加法。
+        self.offsets.get(&index).copied()
+    }
+
+    // 写入一次原算法完成后的最终偏移。
+    fn insert(&mut self, key: (u64, u32), index: usize, offset: f32) {
+        // 防御读取和写入之间发生键变化；常规路径不会触发该分支。
+        if self.key != Some(key) {
+            self.key = Some(key);
+            self.offsets.clear();
+        }
+        // 达到固定预算后开启新一轮有界缓存，不保留长列表历史轨迹。
+        if self.offsets.len() >= MAX_CACHED_ITEM_OFFSETS {
+            self.offsets.clear();
+        }
+        // 同一索引只保存最终有限偏移。
+        self.offsets.insert(index, offset);
+    }
+}
 
 // 把有效正度量提升为 f64，供索引与总高度计算使用。
 fn positive_measurement(value: f32) -> Option<f64> {
@@ -249,6 +290,8 @@ widget! {
         materialized_measurement_generation: Cell<u64>,
         #[snapshot(skip)]
         measurement_cache: RefCell<VirtualListMeasurementCache>,
+        #[snapshot(skip)]
+        item_offset_cache: RefCell<VirtualItemOffsetCache>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
@@ -400,6 +443,7 @@ impl VirtualScroll {
             materialized_range: Cell::new(None),
             materialized_measurement_generation: Cell::new(0),
             measurement_cache: RefCell::new(VirtualListMeasurementCache::new()),
+            item_offset_cache: RefCell::new(VirtualItemOffsetCache::default()),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -694,11 +738,25 @@ impl VirtualScroll {
     fn item_offset(&self, index: usize) -> f32 {
         // 可变模式用稀疏测量修正估算前缀。
         if self.variable_height {
-            // 借用缓存只覆盖本次坐标计算。
-            return self
+            // 测量代际与估算值按位共同绑定精确偏移结果。
+            let key = (
+                self.measurement_cache.borrow().generation(),
+                self.item_height.to_bits(),
+            );
+            // 稳定布局直接复用原算法已经完成最终舍入的 f32。
+            if let Some(offset) = self.item_offset_cache.borrow_mut().get(key, index) {
+                return offset;
+            }
+            // 未命中仍按原有基线和有序修正顺序计算，保持布局结果。
+            let offset = self
                 .measurement_cache
                 .borrow()
                 .offset_for_index(index, self.item_height);
+            // 保存最终结果，后续命中不改变任何浮点累计顺序。
+            self.item_offset_cache
+                .borrow_mut()
+                .insert(key, index, offset);
+            return offset;
         }
         // 固定模式使用安全的等高乘法。
         finite_virtual_coordinate(index as f64 * finite_virtual_size(self.item_height) as f64)

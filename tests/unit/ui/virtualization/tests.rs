@@ -330,6 +330,31 @@ fn measurement_change_preflight_matches_record_semantics() {
     assert_eq!(cache.generation(), generation.wrapping_add(1));
 }
 
+// 验证项目偏移只复用逐位相同的最终结果，并随测量代际自动失效。
+#[test]
+fn variable_item_offset_cache_preserves_exact_results_and_invalidates() {
+    // 构造带稀疏实际高度的可变列表。
+    let scroll = VirtualScroll::new()
+        .item_count(8)
+        .item_height(10.0)
+        .variable_height();
+    assert!(scroll.measure_item(0, 20.0));
+    // 首次查询仍由原前缀算法计算并保存最终 f32。
+    let first = scroll.item_offset(4);
+    assert_eq!(first, 50.0);
+    assert_eq!(scroll.item_offset_cache.borrow().offsets.len(), 1);
+    // 同一代际重复读取必须逐位复用且不增加缓存项。
+    let cached = scroll.item_offset(4);
+    assert_eq!(cached.to_bits(), first.to_bits());
+    assert_eq!(scroll.item_offset_cache.borrow().offsets.len(), 1);
+    // 新测量推进代际后，旧值必须失效并由原算法重新计算。
+    assert!(scroll.measure_item(1, 30.0));
+    let refreshed = scroll.item_offset(4);
+    assert_eq!(refreshed, 70.0);
+    assert_ne!(refreshed.to_bits(), first.to_bits());
+    assert_eq!(scroll.item_offset_cache.borrow().offsets.len(), 1);
+}
+
 // 验证可变行高模式会把已物化子项测量写回 frame 和滚动几何。
 #[test]
 fn variable_scroll_layout_uses_measured_item_frames() {
