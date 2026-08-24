@@ -1,0 +1,2 @@
+// Timeline 的固有尺寸、行/节点/连接线几何、排版缩放与主题角色由 UIX 声明；Rust 内核负责数据、反向索引、本地化、测量与绘制算法。
+<KernelView value={build_timeline_view(kernel, timeline_visual(timeline_geometry(400, 60, 28, 0.5, 40, 0.4, 0.1, 8, 5, 0.18, 0.18), timeline_typography(timeline_body_font(), timeline_small_font(), 0.75, 1, 1, 0.5), timeline_stroke(2, 1, 2), timeline_palette(timeline_text_color(), timeline_secondary_text_color(), timeline_border_color(), timeline_dot_border_color(), timeline_primary_color())))} />

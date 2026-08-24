@@ -1,6 +1,7 @@
 // 引入同模块私有算法供直接契约测试。
 use super::{
     conservative_width_from_measurement, elide_normalized_single_line_by, elide_single_line_by,
+    elide_single_line_cow_by,
 };
 
 // 注册字体缺失时的后备宽度测试。
@@ -38,6 +39,20 @@ fn elision_normalizes_newlines_without_truncating_fitting_text() {
     // 换行必须按既有契约替换为单个空格。
     assert_eq!(value.as_deref(), Some("甲 乙"));
     // 结束换行规范化测试。
+}
+
+// 注册普通无换行文本的借用型快路径测试。
+#[test]
+fn single_line_cow_borrows_fitting_input_and_owns_normalized_input() {
+    let fitting = elide_single_line_cow_by("完整文本", 4.0, |candidate| {
+        candidate.chars().count() as f32
+    });
+    assert!(matches!(fitting, Some(std::borrow::Cow::Borrowed(_))));
+    let normalized = elide_single_line_cow_by("甲\n乙", 3.0, |candidate| {
+        candidate.chars().count() as f32
+    });
+    assert_eq!(normalized.as_deref(), Some("甲 乙"));
+    assert!(matches!(normalized, Some(std::borrow::Cow::Owned(_))));
 }
 
 // 注册已规范化窄入口的等价输出测试。
