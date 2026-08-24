@@ -16,7 +16,7 @@ use crate::ui::widget_snapshot::SnapshotFields;
 // 引入窗口交互区域使用的对齐与子布局契约。
 use crate::ui::layout::{AlignItems, LayoutChild};
 // 引入窗口交互区域使用的样式类型。
-use crate::ui::theme::style::{apply_style, Style, StyleState};
+use crate::ui::theme::style::{Style, StyleState, apply_style};
 use crate::ui::view::{View, ViewNode};
 // 引入窗口交互区域复用的基础容器。
 use crate::ui::widgets::Container;
@@ -464,40 +464,12 @@ pub fn window_control_named(
     )
 }
 
-// 构造由 UIX 标准窗口控制壳调用的最小化基础 View。
-fn standard_minimize_control(content: ViewNode) -> ViewNode {
-    // 平台动作与默认无障碍语义继续由 Rust 基础内核拥有。
-    window_control(WindowControl::Minimize, content)
-}
-
-// 构造由 UIX 标准窗口控制壳调用的最大化/还原基础 View。
-fn standard_maximize_control(content: ViewNode) -> ViewNode {
-    // 复用同一交互内核，只选择对应平台动作。
-    window_control(WindowControl::MaximizeRestore, content)
-}
-
-// 构造由 UIX 标准窗口控制壳调用的关闭基础 View。
-fn standard_close_control(content: ViewNode) -> ViewNode {
-    // 关闭请求仍经窗口动作通道交给 Rust 应用生命周期处理。
-    window_control(WindowControl::Close, content)
-}
-
-/// 构造标准最小化、最大化/还原与关闭窗口控制组合。
-pub fn window_controls(
-    // 控制是否包含最小化动作。
-    show_minimize: bool,
-    // 控制是否包含最大化/还原动作。
-    show_maximize: bool,
-    // 控制是否包含关闭动作。
-    show_close: bool,
-) -> ViewNode {
-    // 条件结构与排列由 UIX 声明拥有；每个基础 View 仍保持 Rust 平台语义。
-    crate::uix!("src/ui/widgets/uix/window_controls.uix")
-}
-
 // 集中验证标准窗口控制组合的公开结构契约。
 #[cfg(test)]
+// 测试继续从窗口交互内核边界联合验证独立 UIX 组合。
+use super::window_controls::window_controls;
+#[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widgets/window_chrome__tests.rs"]
+#[path = "../../../../tests/unit/ui/widgets/window_chrome__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

@@ -335,13 +335,13 @@ impl View for BackTop {
         // 使用局部名称作为 UIX 表达式的拥有型 Rust 内核。
         let kernel = self;
         // 静态视觉完全从 UIX 文件物化，Rust 只消费生成结果。
-        crate::uix!("src/ui/widgets/uix/back_top.uix")
+        crate::uix!("src/ui/widgets/containers/back_top/back_top.uix")
     }
 }
 
 // 只在本组件边界验证声明式滚动状态与激活回写。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/containers/back_top__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/containers/back_top__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

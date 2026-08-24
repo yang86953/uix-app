@@ -321,13 +321,13 @@ impl View for Divider {
         // 使用局部名称交接拥有型 Rust 分隔线内核。
         let kernel = self;
         // 静态展示契约从 UIX 文件物化。
-        crate::uix!("src/ui/widgets/uix/divider.uix")
+        crate::uix!("src/ui/widgets/general/divider/divider.uix")
     }
 }
 
 // 集中验证 Divider 声明融合与快照契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/divider__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/divider__tests.rs"]
 // 保留原模块私有契约访问能力。
 mod tests;

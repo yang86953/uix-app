@@ -12,7 +12,6 @@ pub mod misc;
 pub mod rich_text;
 #[path = "../containers/scroll_view/mod.rs"]
 pub mod scroll_view;
-#[path = "../general/theme_toggle.rs"]
 pub mod theme_toggle;
 
 // 图表 capability 启用时才汇入其他组件公开面。

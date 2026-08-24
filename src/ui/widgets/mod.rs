@@ -24,6 +24,7 @@ mod overlay_types;
 // 输入与反馈组件共享提示气泡几何及绘制原语。
 pub(crate) mod tooltip_primitives;
 pub(crate) mod window_chrome;
+pub(crate) mod window_controls;
 
 // ── 扁平重导出──
 // 基础组件始终通过 widgets 私有路径消费画布与行组合子。
