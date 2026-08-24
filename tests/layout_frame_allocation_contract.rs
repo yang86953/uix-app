@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::{Rect, Size};
 use uix::prelude::{
-    Calendar, Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid,
-    GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView, Select, Sider, Space,
-    Splitter, Table, TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
+    Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem, Footer,
+    Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView,
+    Select, Sider, Space, Splitter, Table, TableColumn, Tabs, Transfer, TransferItem,
+    VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{
@@ -451,6 +452,32 @@ fn closed_select_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn dropdown_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let items = (0..128)
+        .map(|index| DropdownItem::from_text(format!("Item {index}"), format!("item-{index}")))
+        .collect::<Vec<_>>();
+    let mut dropdown = Dropdown::new("Menu").keyed_items(items);
+    dropdown.open();
+    tree.set_children(root, vec![dropdown.into_node()]);
+    (tree, root)
+}
+
+fn custom_trigger_dropdown_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let items = (0..128)
+        .map(|index| DropdownItem::from_text(format!("Item {index}"), format!("item-{index}")))
+        .collect::<Vec<_>>();
+    let mut dropdown = Dropdown::new("Menu")
+        .keyed_items(items)
+        .trigger_view(Container::new());
+    dropdown.open();
+    tree.set_children(root, vec![dropdown.into_node()]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -539,6 +566,8 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Closed Select", closed_select_layout_tree()),
         ("Plain Select", plain_select_layout_tree()),
         ("Select", select_layout_tree()),
+        ("Dropdown", dropdown_layout_tree()),
+        ("Dropdown trigger", custom_trigger_dropdown_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
