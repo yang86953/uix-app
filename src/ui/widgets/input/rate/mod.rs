@@ -1,17 +1,102 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 use std::cell::Cell;
+
+// Rate 使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RateRadiusRole {
+    Small,
+}
+
+impl RateRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存 UIX 声明的星级数量、尺寸映射、字符排版与焦点几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RateVisual {
+    default_count: usize,
+    small_scale: f32,
+    medium_scale: f32,
+    large_scale: f32,
+    base_cell_width: f32,
+    base_font_size: f32,
+    custom_character_padding: f32,
+    half_ratio: f32,
+    default_icon: &'static str,
+    focus_stroke_width: f32,
+    focus_radius: RateRadiusRole,
+    active: ColorValue,
+    active_disabled: ColorValue,
+    empty: ColorValue,
+    empty_disabled: ColorValue,
+    focus: ColorValue,
+}
+
+// 同目录 UIX 生成唯一评分视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/rate/rate.uix");
+
+// 保存每帧一次解析后的颜色与圆角。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedRateVisual {
+    active: Color,
+    active_disabled: Color,
+    empty: Color,
+    empty_disabled: Color,
+    focus: Color,
+    focus_radius: f32,
+}
+
+impl RateVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedRateVisual {
+        ResolvedRateVisual {
+            active: self.active.resolve(tokens),
+            active_disabled: self.active_disabled.resolve(tokens),
+            empty: self.empty.resolve(tokens),
+            empty_disabled: self.empty_disabled.resolve(tokens),
+            focus: self.focus.resolve(tokens),
+            focus_radius: self.focus_radius.resolve(tokens),
+        }
+    }
+}
+
+// 向 UIX 提供圆角和零分配主题角色。
+const fn rate_small_radius() -> RateRadiusRole {
+    RateRadiusRole::Small
+}
+const fn rate_active() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Warning)
+}
+const fn rate_active_disabled() -> ColorValue {
+    ColorValue::Palette(PaletteColor::WarningBorder)
+}
+const fn rate_empty() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+const fn rate_empty_disabled() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+const fn rate_focus() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
 
 widget! {
     /// Rate — 星级评分，点击选择分值。
@@ -28,6 +113,9 @@ widget! {
         character: String,
         rate_size: ControlSize,
         control_rect: Cell<Rect>,
+        #[snapshot(skip)]
+        /// UIX 声明的星形、排版、焦点与主题角色。
+        pub(crate) visual: &'static RateVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -104,22 +192,20 @@ widget! {
             return;
         }
 
-        let warning = ctx.tokens().color_warning();
-        let fill_tertiary = ctx.tokens().color_fill_tertiary();
-        let text_quaternary = ctx.tokens().color_text_quaternary();
+        let visual = self.visual.resolve(ctx.tokens());
         // hover 预览值优先于选中值
         let display_val = if self.hover_value > 0 { self.hover_value } else { self.value };
         let cell_width = self.cell_width_for_height(control_rect.h);
         let font_size = self.font_size_for_height(control_rect.h);
         let active_color = if self.disabled {
-            ctx.tokens().color_warning_border()
+            visual.active_disabled
         } else {
-            warning
+            visual.active
         };
         let empty_color = if self.disabled {
-            text_quaternary
+            visual.empty_disabled
         } else {
-            fill_tertiary
+            visual.empty
         };
 
         ctx.push_clip(control_rect);
@@ -138,7 +224,7 @@ widget! {
             if filled {
                 self.paint_character(ctx, star_rect, active_color, font_size);
             } else if self.half && display_val == i * 2 + 1 {
-                let half_width = star_rect.w * 0.5;
+                let half_width = star_rect.w * self.visual.half_ratio;
                 ctx.push_clip(Rect::new(
                     star_rect.x,
                     star_rect.y,
@@ -162,9 +248,9 @@ widget! {
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 control_rect,
-                ctx.tokens().color_primary(),
-                1.5,
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                visual.focus,
+                self.visual.focus_stroke_width,
+                Some(Radius::uniform(visual.focus_radius)),
             );
         }
         ctx.pop_clip();
@@ -194,7 +280,7 @@ impl Rate {
         }
         if self.half {
             let in_star_x = relative_x - star_idx as f32 * cell_width;
-            Some(star_idx * 2 + usize::from(in_star_x >= cell_width * 0.5) + 1)
+            Some(star_idx * 2 + usize::from(in_star_x >= cell_width * self.visual.half_ratio) + 1)
         } else {
             Some(star_idx + 1)
         }
@@ -247,8 +333,9 @@ impl Rate {
     /// 创建默认五级、整级、可交互且不可清空的评分组件。
     pub fn new() -> Self {
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = RATE_VISUAL_REF;
         Self {
-            count: 5,
+            count: visual.default_count,
             value: 0,
             value_binding: None,
             half: false,
@@ -260,6 +347,7 @@ impl Rate {
             character: String::new(),
             rate_size: config.size,
             control_rect: Cell::new(Rect::zero()),
+            visual,
         }
     }
     /// 设置评分项数量，并将当前值夹紧到新的可用范围。
@@ -333,9 +421,9 @@ impl Rate {
 
     fn visual_scale(&self) -> f32 {
         match self.rate_size {
-            ControlSize::Small => 0.8,
-            ControlSize::Medium => 1.0,
-            ControlSize::Large => 1.2,
+            ControlSize::Small => self.visual.small_scale,
+            ControlSize::Medium => self.visual.medium_scale,
+            ControlSize::Large => self.visual.large_scale,
         }
     }
 
@@ -353,29 +441,29 @@ impl Rate {
 
     fn cell_width_for_height(&self, height: f32) -> f32 {
         let scale = self.visual_scale_for_height(height);
-        let base_width = 24.0 * scale;
+        let base_width = self.visual.base_cell_width * scale;
         if self.character.is_empty() {
             return base_width;
         }
-        let font_size = 18.0 * scale;
+        let font_size = self.visual.base_font_size * scale;
         let text_width =
             estimate_text_metrics(&self.character, f32::INFINITY, font_size).max_line_width;
-        base_width.max(text_width + 4.0 * scale)
+        base_width.max(text_width + self.visual.custom_character_padding * scale)
     }
 
     fn font_size_for_height(&self, height: f32) -> f32 {
-        18.0 * self.visual_scale_for_height(height)
+        self.visual.base_font_size * self.visual_scale_for_height(height)
     }
 
-    fn paint_character(
-        &self,
-        ctx: &mut PaintContext,
-        frame: Rect,
-        color: crate::draw::Color,
-        font_size: f32,
-    ) {
+    fn paint_character(&self, ctx: &mut PaintContext, frame: Rect, color: Color, font_size: f32) {
         if self.character.is_empty() {
-            crate::ui::widgets::icon::Icon::paint_in_frame(ctx, "star", frame, color, font_size);
+            crate::ui::widgets::icon::Icon::paint_in_frame(
+                ctx,
+                self.visual.default_icon,
+                frame,
+                color,
+                font_size,
+            );
         } else {
             ctx.text_center(&self.character, frame, color, font_size);
         }
@@ -404,5 +492,28 @@ impl Rate {
         self.character = next.character;
         self.rate_size = next.rate_size;
         self.value = controlled_value.unwrap_or_else(|| self.value.min(self.max_value()));
+        self.visual = next.visual;
     }
 }
+
+// 把 Rate Rust 评分内核与 UIX 静态视觉组合为单一组件节点。
+fn build_rate_view(mut kernel: Rate, visual: &'static RateVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Rate {
+    fn build(self) -> ViewNode {
+        build_rate_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_rate_uix_root(kernel: Rate) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/rate/rate.uix")
+}
+
+// 验证评分组件的 UIX 视觉注入与默认值契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/input/rate__tests.rs"]
+mod tests;

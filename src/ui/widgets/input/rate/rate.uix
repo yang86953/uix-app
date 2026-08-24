@@ -1,0 +1,23 @@
+// Rate 的默认数量、星形尺寸、字符排版、焦点与主题角色由 UIX 唯一拥有。
+<Visual
+  name="RATE_VISUAL"
+  type="RateVisual"
+  defaultCount={5}
+  smallScale={0.8}
+  mediumScale={1.0}
+  largeScale={1.2}
+  baseCellWidth={24.0}
+  baseFontSize={18.0}
+  customCharacterPadding={4.0}
+  halfRatio={0.5}
+  defaultIcon="star"
+  focusStrokeWidth={1.5}
+  focusRadius={rate_small_radius()}
+  active={rate_active()}
+  activeDisabled={rate_active_disabled()}
+  empty={rate_empty()}
+  emptyDisabled={rate_empty_disabled()}
+  focus={rate_focus()}
+/>
+
+<KernelView value={build_rate_view(kernel, RATE_VISUAL_REF)} />
