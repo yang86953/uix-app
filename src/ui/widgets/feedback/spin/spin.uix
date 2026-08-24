@@ -1,0 +1,2 @@
+// Spin 可携带任意遮罩子树；UIX 声明公开根，Rust 内核负责动画与绘制。
+<KernelView value={build_spin_view(kernel, children)} />

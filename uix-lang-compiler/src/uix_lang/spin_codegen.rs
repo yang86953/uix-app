@@ -35,8 +35,8 @@ pub(crate) fn generate_spin(element: &Element) -> Result<TokenStream, Diagnostic
     }
     // 按源码顺序生成普通节点与 If/For 控制流。
     let children = generate_children(&element.children)?;
-    // 使用公开 ViewNode 承载加载指示器与可选被遮罩子树。
-    let view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
+    // 经公开桥接进入 Spin 自己的同目录 UIX 根声明，并原样移交拥有型子树。
+    let view = quote! { (#widget).build_view_with_children(#children) };
     // 消费 Spin 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(view, &element.attributes, &["spinning", "text"])
     // 结束 Spin 生成函数。
