@@ -4,7 +4,7 @@ use super::{Menu, MenuItem, MenuMode};
 use crate::core::{Constraints, Point};
 // 引入公开布局 trait 以核对 Inline 的完整递归高度。
 use crate::ui::widget_runtime::traits::WidgetLayout;
-use crate::ui::{KeyMod, MouseButton, State, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyMod, MouseButton, State, SystemEvent, WidgetTree};
 
 // 构造含递归子项的 typed 菜单数据。
 fn typed_items() -> Vec<MenuItem<String>> {
@@ -180,4 +180,115 @@ fn inline_mode_keeps_children_visible_without_toggling_open_keys() {
     assert_eq!(selected.get(), Some("settings".to_string()));
     // Inline 点击不得把呈现事实写入调用方展开状态。
     assert!(open.get().is_empty());
+}
+
+// 验证零物化遍历保持 Inline 的递归命中顺序。
+#[test]
+fn borrowed_visible_traversal_preserves_inline_hit_order() {
+    // 选择状态用于观察每个可见行的真实命中结果。
+    let selected = State::new(None::<String>);
+    // Inline 不依赖外部展开集合也必须显示完整子树。
+    let open = State::new(Vec::<String>::new());
+    // 构造同时包含顶层项、子项和禁用项的展开菜单。
+    let menu = Menu::controlled(
+        vec![
+            MenuItem::from_text("禁用", "disabled").disabled(true),
+            MenuItem::from_text("首项", "first"),
+            MenuItem::from_text("分组", "group").children(vec![
+                MenuItem::from_text("子项", "child"),
+                MenuItem::from_text("禁用子项", "child-disabled").disabled(true),
+            ]),
+            MenuItem::from_text("末项", "last"),
+        ],
+        &selected,
+        &open,
+    )
+    .mode(MenuMode::Inline)
+    .collapsible(true);
+    // 真实组件树负责布局与行命中。
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(menu));
+    tree.layout();
+
+    // 逐行点击验证先序顺序；禁用行保持前一个选择不变。
+    for (row, expected) in [
+        (0, None),
+        (1, Some("first")),
+        (2, Some("group")),
+        (3, Some("child")),
+        (4, Some("child")),
+        (5, Some("last")),
+    ] {
+        let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(8.0, row as f32 * 32.0 + 8.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        assert_eq!(selected.get().as_deref(), expected);
+    }
+    // Inline 命中不得把递归呈现事实写入外部展开状态。
+    assert!(open.get().is_empty());
+}
+
+// 验证零物化键盘导航跳过禁用项并保持首尾环绕语义。
+#[test]
+fn borrowed_keyboard_navigation_skips_disabled_items_and_wraps() {
+    // 外部状态用于观察导航写回并注入禁用当前项。
+    let selected = State::new(None::<String>);
+    let open = State::new(Vec::<String>::new());
+    // 使用与命中测试相同的可见顺序覆盖子项和禁用项。
+    let menu = Menu::controlled(
+        vec![
+            MenuItem::from_text("禁用", "disabled").disabled(true),
+            MenuItem::from_text("首项", "first"),
+            MenuItem::from_text("分组", "group").children(vec![
+                MenuItem::from_text("子项", "child"),
+                MenuItem::from_text("禁用子项", "child-disabled").disabled(true),
+            ]),
+            MenuItem::from_text("末项", "last"),
+        ],
+        &selected,
+        &open,
+    )
+    .mode(MenuMode::Inline);
+    // 把方向键通过真实焦点路径交给菜单。
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(menu));
+    tree.layout();
+    tree.set_focus(Some(root));
+    let navigate = |tree: &mut WidgetTree, key| {
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key,
+            mods: KeyMod::NONE,
+        })
+    };
+
+    // 无当前项时向前选择首个可用项。
+    assert_eq!(
+        navigate(&mut tree, crate::ui::KeyCode::Down),
+        EventResult::Handled
+    );
+    assert_eq!(selected.get().as_deref(), Some("first"));
+    // 向前依次进入分组与可用子项。
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Down);
+    assert_eq!(selected.get().as_deref(), Some("group"));
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Down);
+    assert_eq!(selected.get().as_deref(), Some("child"));
+    // 禁用子项必须被跳过。
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Down);
+    assert_eq!(selected.get().as_deref(), Some("last"));
+    // 尾项向前环绕到首个可用项。
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Down);
+    assert_eq!(selected.get().as_deref(), Some("first"));
+    // 首项向后环绕到最后可用项。
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Up);
+    assert_eq!(selected.get().as_deref(), Some("last"));
+
+    // 当前项禁用时保持旧契约：向前回到首项，向后回到末项。
+    selected.set(Some("disabled".to_string()));
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Down);
+    assert_eq!(selected.get().as_deref(), Some("first"));
+    selected.set(Some("child-disabled".to_string()));
+    let _ = navigate(&mut tree, crate::ui::KeyCode::Up);
+    assert_eq!(selected.get().as_deref(), Some("last"));
 }

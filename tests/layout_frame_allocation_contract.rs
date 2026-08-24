@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{Rect, Size};
 use uix::prelude::{
     Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem, Footer,
-    Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView,
-    Select, Sider, Space, Splitter, Table, TableColumn, Tabs, Transfer, TransferItem,
-    VirtualScroll,
+    Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, Menu, MenuItem, MenuMode,
+    ScrollDirection, ScrollView, Select, Sider, Space, Splitter, Table, TableColumn, Tabs,
+    Transfer, TransferItem, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{
@@ -478,6 +478,28 @@ fn custom_trigger_dropdown_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn menu_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let groups = (0..16)
+        .map(|group| {
+            let children = (0..8)
+                .map(|item| {
+                    MenuItem::from_text(
+                        format!("Item {group}-{item}"),
+                        format!("item-{group}-{item}"),
+                    )
+                })
+                .collect::<Vec<_>>();
+            MenuItem::from_text(format!("Group {group}"), format!("group-{group}"))
+                .children(children)
+        })
+        .collect::<Vec<_>>();
+    let menu = Menu::new().mode(MenuMode::Inline).items(groups);
+    tree.set_children(root, vec![menu.into_node()]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -568,6 +590,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Select", select_layout_tree()),
         ("Dropdown", dropdown_layout_tree()),
         ("Dropdown trigger", custom_trigger_dropdown_layout_tree()),
+        ("Menu", menu_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
