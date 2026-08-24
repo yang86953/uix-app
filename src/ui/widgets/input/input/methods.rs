@@ -4,18 +4,42 @@ impl Input {
     pub(super) fn intrinsic_size(&self) -> Size {
         if self.textarea {
             let line_count = logical_lines(&self.value).len().max(self.textarea_rows);
-            let h =
-                (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0) + self.status_message_height();
-            Size::new(80.0, h)
+            let h = (line_count as f32 * self.visual.typography.line_height
+                + self.visual.layout.textarea_intrinsic_vertical_padding)
+                .max(self.visual.layout.textarea_min_height)
+                + self.status_message_height();
+            Size::new(self.visual.layout.natural_width, h)
         } else {
-            let prefix_w = if self.prefix.is_empty() { 0.0 } else { 20.0 };
-            let suffix_w = if self.suffix.is_empty() { 0.0 } else { 20.0 };
-            let clear_w = if self.clearable { 20.0 } else { 0.0 };
-            let password_w = if self.password { 24.0 } else { 0.0 };
-            let search_w = if self.search { 24.0 } else { 0.0 };
+            let layout = self.visual.layout;
+            let prefix_w = if self.prefix.is_empty() {
+                0.0
+            } else {
+                layout.prefix_width
+            };
+            let suffix_w = if self.suffix.is_empty() {
+                0.0
+            } else {
+                layout.suffix_width
+            };
+            let clear_w = if self.clearable {
+                layout.clear_width
+            } else {
+                0.0
+            };
+            let password_w = if self.password {
+                layout.password_width
+            } else {
+                0.0
+            };
+            let search_w = if self.search {
+                layout.search_width
+            } else {
+                0.0
+            };
             Size::new(
-                80.0 + addon_width(&self.addon_before)
-                    + addon_width(&self.addon_after)
+                layout.natural_width
+                    + addon_width(&self.addon_before, self.visual)
+                    + addon_width(&self.addon_after, self.visual)
                     + prefix_w
                     + suffix_w
                     + clear_w
@@ -67,6 +91,7 @@ impl Input {
             pending_submit: RefCell::new(None),
             clear_icon_rect: Cell::new(Rect::zero()),
             pwd_icon_rect: Cell::new(Rect::zero()),
+            visual: INPUT_VISUAL_REF,
         }
     }
     /// 创建多行文本输入框。
@@ -202,6 +227,7 @@ impl Input {
         self.status_message = next.status_message;
         self.textarea_rows = next.textarea_rows;
         self.max_length = next.max_length;
+        self.visual = next.visual;
     }
     pub(crate) fn controlled_value_changed(&self, next: &Self) -> bool {
         next.value_binding.is_some() && self.value != next.value
@@ -289,7 +315,7 @@ impl Input {
         if self.status_message.is_empty() {
             0.0
         } else {
-            STATUS_MESSAGE_HEIGHT
+            self.visual.chrome.status_message_height
         }
     }
 
@@ -587,8 +613,8 @@ impl Input {
     /// 多行模式下根据 (x, y) 找字符索引
     pub(super) fn char_at_xy(&self, x: f32, y: f32) -> usize {
         let lines = logical_lines(&self.value);
-        // y < 6.0 时（点击顶部 padding 区）映射到第 0 行，防止负数转 usize panic
-        if y < 6.0 {
+        // 点击顶部 padding 区时映射到第 0 行，防止负数转 usize panic。
+        if y < self.visual.layout.textarea_top_padding {
             // 取得首行现有几何给出的原始字符位置。
             let raw_index = self.x_to_char_on_line(0, &lines, x);
             // 顶部 padding 命中也必须停在完整字素簇边界。
@@ -598,7 +624,9 @@ impl Input {
                 // 返回兼容字符下标。
                 .0;
         }
-        let line_idx = ((y - 6.0) / LINE_HEIGHT) as usize + self.scroll_line.get();
+        let line_idx = ((y - self.visual.layout.textarea_top_padding)
+            / self.visual.typography.line_height) as usize
+            + self.scroll_line.get();
         let line_idx = line_idx.min(lines.len().saturating_sub(1));
         // 取得现有逐行几何给出的原始字符位置。
         let raw_index = self.x_to_char_on_line(line_idx, &lines, x);
