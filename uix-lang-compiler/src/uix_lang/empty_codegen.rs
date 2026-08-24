@@ -40,8 +40,8 @@ pub(crate) fn generate_empty(element: &Element) -> Result<TokenStream, Diagnosti
         widget = quote! { (#widget).icon(#icon) };
     }
 
-    // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费 Empty 专有内容属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的空状态 View。
