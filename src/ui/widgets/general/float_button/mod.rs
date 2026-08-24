@@ -4,20 +4,25 @@
 
 // 声明 FloatButton 私有几何实现。
 mod geometry;
-// 声明 FloatButtonGroup 的 View 组合与构建实现。
+// 声明 FloatButtonBackTop 便捷封装。
+mod back_top;
+// 声明 FloatButtonGroup 独立组件。
 mod group;
 // 测试模块集中验证公开 authored config 与共享几何契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/float_button/tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/float_button/tests.rs"]
 mod tests;
+// 公开回到顶部便捷封装。
+pub use back_top::FloatButtonBackTop;
 // 公开保留子 View 事件所有权的浮动按钮组包装器。
-pub use group::FloatButtonGroupView;
+pub use group::{FloatButtonGroup, FloatButtonGroupView};
 
 // 引入单一几何解析入口与输入输出类型。
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Radius;
-use crate::ui::animation::{TransitionPlayer, presets};
+use crate::draw::{Color, Radius};
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 use geometry::{FloatButtonGeometry, FloatButtonGeometryInput, resolve_float_button_geometry};
@@ -26,13 +31,188 @@ use crate::ui::SnapshotFields;
 use crate::ui::widgets::TriggerMode;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, OverlayEntry, OverlayKind, Placement, SystemEvent,
-    WidgetTree,
+    ThemeTokens, View, ViewNode, WidgetTree,
 };
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::cell::Cell;
 
-const FLOAT_BUTTON_GROUP_TRIGGER_SIZE: f32 = 40.0;
-const FLOAT_BUTTON_GROUP_GAP: f32 = 8.0;
+// 保存 FloatButton 的窗口锚定、说明、提示、徽标与损伤几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FloatButtonGeometryVisual {
+    pub(crate) default_size: f32,
+    pub(crate) surface_inset: f32,
+    pub(crate) description_gap: f32,
+    pub(crate) description_trailing_padding: f32,
+    pub(crate) average_character_width: f32,
+    pub(crate) tooltip_horizontal_padding: f32,
+    pub(crate) tooltip_min_width: f32,
+    pub(crate) tooltip_height: f32,
+    pub(crate) tooltip_gap: f32,
+    pub(crate) badge_count_size: f32,
+    pub(crate) badge_dot_size: f32,
+    pub(crate) shadow_left_outset: f32,
+    pub(crate) shadow_top_outset: f32,
+    pub(crate) shadow_width_extra: f32,
+    pub(crate) shadow_height_extra: f32,
+}
+
+// 保存 FloatButton 自身的绘制参数与浮层层级。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FloatButtonPaintVisual {
+    radius_factor: f32,
+    shadow_blur: f32,
+    shadow_offset_x: f32,
+    shadow_offset_y: f32,
+    shadow_alpha: u8,
+    focus_stroke_width: f32,
+    icon_size: f32,
+    badge_font_size: f32,
+    tooltip_border_width: f32,
+    badge_overflow_threshold: i32,
+    overlay_z_index: i32,
+}
+
+// 保存 FloatButton 使用的全部主题颜色角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FloatButtonPaletteVisual {
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    primary_active: ColorValue,
+    foreground: ColorValue,
+    tooltip_text: ColorValue,
+    shadow: ColorValue,
+    focus_border: ColorValue,
+    badge: ColorValue,
+    tooltip_background: ColorValue,
+    tooltip_border: ColorValue,
+}
+
+// 保存 FloatButton 使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FloatButtonFontRole {
+    Small,
+}
+
+impl FloatButtonFontRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.font_size_sm(),
+        }
+    }
+}
+
+// 保存 FloatButton 使用的主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FloatButtonRadiusRole {
+    Small,
+}
+
+impl FloatButtonRadiusRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 全部 FloatButton 实例共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FloatButtonVisual {
+    pub(crate) geometry: FloatButtonGeometryVisual,
+    paint: FloatButtonPaintVisual,
+    palette: FloatButtonPaletteVisual,
+    description_font: FloatButtonFontRole,
+    tooltip_font: FloatButtonFontRole,
+    tooltip_radius: FloatButtonRadiusRole,
+    default_icon: &'static str,
+}
+
+crate::uix_items!("src/ui/widgets/general/float_button/float_button.uix");
+
+// 保存一次绘制解析后的主题视觉值，避免重复查询同一 token。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResolvedFloatButtonVisual {
+    primary: Color,
+    primary_hover: Color,
+    primary_active: Color,
+    foreground: Color,
+    tooltip_text: Color,
+    shadow: Color,
+    focus_border: Color,
+    badge: Color,
+    tooltip_background: Color,
+    tooltip_border: Color,
+    description_font_size: f32,
+    tooltip_font_size: f32,
+    tooltip_radius: f32,
+}
+
+impl FloatButtonVisual {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> ResolvedFloatButtonVisual {
+        ResolvedFloatButtonVisual {
+            primary: self.palette.primary.resolve(tokens),
+            primary_hover: self.palette.primary_hover.resolve(tokens),
+            primary_active: self.palette.primary_active.resolve(tokens),
+            foreground: self.palette.foreground.resolve(tokens),
+            tooltip_text: self.palette.tooltip_text.resolve(tokens),
+            shadow: self.palette.shadow.resolve(tokens),
+            focus_border: self.palette.focus_border.resolve(tokens),
+            badge: self.palette.badge.resolve(tokens),
+            tooltip_background: self.palette.tooltip_background.resolve(tokens),
+            tooltip_border: self.palette.tooltip_border.resolve(tokens),
+            description_font_size: self.description_font.resolve(tokens),
+            tooltip_font_size: self.tooltip_font.resolve(tokens),
+            tooltip_radius: self.tooltip_radius.resolve(tokens),
+        }
+    }
+}
+
+pub(crate) const fn float_button_small_font() -> FloatButtonFontRole {
+    FloatButtonFontRole::Small
+}
+
+pub(crate) const fn float_button_small_radius() -> FloatButtonRadiusRole {
+    FloatButtonRadiusRole::Small
+}
+
+pub(crate) const fn float_button_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+pub(crate) const fn float_button_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+
+pub(crate) const fn float_button_primary_active() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryActive)
+}
+
+pub(crate) const fn float_button_white() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+
+pub(crate) const fn float_button_black() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Black)
+}
+
+pub(crate) const fn float_button_text_quaternary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+
+pub(crate) const fn float_button_primary_border() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryBorder)
+}
+
+pub(crate) const fn float_button_error() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Error)
+}
+
+pub(crate) const fn float_button_bg_elevated() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgElevated)
+}
+
+pub(crate) const fn float_button_border_secondary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
 
 // FloatButton — 浮动操作按钮。
 widget! {
@@ -59,6 +239,8 @@ widget! {
         // 表面缓存是派生几何输入，不属于 authored config 快照。
         #[snapshot(skip)]
         last_surface: Cell<Rect>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static FloatButtonVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -140,30 +322,37 @@ widget! {
         // 一次解析本帧全部 FloatButton 几何。
         let geometry = self.geometry_for_surface(frame, surface);
         let loc = crate::ui::widget_runtime::locale::use_locale();
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        // 图标反白色：白色 token。
-        let white = ctx.tokens().color_white();
-        let text_sec = ctx.tokens().color_text_quaternary();
+        let resolved = self.visual.resolve(ctx.tokens());
         let bg = if self.pressed {
-            ctx.tokens().color_primary_active()
+            resolved.primary_active
         } else if self.hovered {
-            primary_hover
+            resolved.primary_hover
         } else {
-            primary
+            resolved.primary
         };
         // 以最终控件高度派生圆角，说明模式保持胶囊形状。
-        let r = Radius::uniform(geometry.control.h * 0.5);
+        let r = Radius::uniform(geometry.control.h * self.visual.paint.radius_factor);
         // 借用共享几何中的完整控件区域。
         let btn_rect = geometry.control;
         // 阴影
         // 阴影：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-        ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, ctx.tokens().color_black().with_alpha(40), Some(r));
+        ctx.draw_box_shadow(
+            btn_rect,
+            self.visual.paint.shadow_blur,
+            self.visual.paint.shadow_offset_x,
+            self.visual.paint.shadow_offset_y,
+            resolved.shadow.with_alpha(self.visual.paint.shadow_alpha),
+            Some(r),
+        );
         ctx.fill_rect(btn_rect, bg, Some(r));
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(btn_rect, ctx.tokens().color_primary_border(), 2.0, Some(r));
+            ctx.stroke_rect(
+                btn_rect,
+                resolved.focus_border,
+                self.visual.paint.focus_stroke_width,
+                Some(r),
+            );
         }
-        let icon_fs = 16.0;
         crate::ui::widgets::general::icon::Icon::paint_in_frame(
             // 传入绘制上下文。
             ctx,
@@ -172,14 +361,19 @@ widget! {
             // 只在共享图标区域内绘制。
             geometry.icon,
             // 浮动主按钮使用高对比前景色。
-            white,
+            resolved.foreground,
             // 沿用既有图标字号。
-            icon_fs,
+            self.visual.paint.icon_size,
         );
         // 展开说明存在时绘制到共享说明区域。
         if let Some(description) = geometry.description {
             // 说明文字与图标共享主按钮前景色。
-            ctx.text_center(&self.description, description, white, ctx.tokens().font_size_sm());
+            ctx.text_center(
+                &self.description,
+                description,
+                resolved.foreground,
+                resolved.description_font_size,
+            );
         }
         // Badge
         if let Some(badge_rect) = geometry.badge {
@@ -199,16 +393,25 @@ widget! {
                 // 半径由最终徽标区域派生。
                 badge_rect.w * 0.5,
                 // 使用主题错误色。
-                ctx.tokens().color_error(),
+                resolved.badge,
             );
             // 圆点徽标不绘制数字。
             if !self.badge_dot && self.badge_count > 0 {
                 // 构造本地化溢出前的数字文本。
             let badge_count = self.badge_count.to_string();
                 // 超过上限时使用本地化溢出文案。
-            let badge = if self.badge_count > 99 { loc.float_badge_overflow } else { &badge_count };
+            let badge = if self.badge_count > self.visual.paint.badge_overflow_threshold {
+                loc.float_badge_overflow
+            } else {
+                &badge_count
+            };
                 // 把数字居中绘制到同一徽标区域。
-                ctx.text_center(badge, badge_rect, white, 10.0);
+                ctx.text_center(
+                    badge,
+                    badge_rect,
+                    resolved.foreground,
+                    self.visual.paint.badge_font_size,
+                );
             }
         }
         let show_tooltip = match self.trigger_mode {
@@ -218,10 +421,20 @@ widget! {
         };
         // 只有触发状态满足且共享几何包含提示框时才绘制。
         if show_tooltip && let Some(tip) = geometry.tooltip {
-            let tip_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-            ctx.fill_rect(tip, ctx.tokens().color_bg_elevated(), tip_radius);
-            ctx.stroke_rect(tip, ctx.tokens().color_border_secondary(), 1.0, tip_radius);
-            ctx.text_center(&self.tooltip, tip, text_sec, ctx.tokens().font_size_sm());
+            let tip_radius = Some(Radius::uniform(resolved.tooltip_radius));
+            ctx.fill_rect(tip, resolved.tooltip_background, tip_radius);
+            ctx.stroke_rect(
+                tip,
+                resolved.tooltip_border,
+                self.visual.paint.tooltip_border_width,
+                tip_radius,
+            );
+            ctx.text_center(
+                &self.tooltip,
+                tip,
+                resolved.tooltip_text,
+                resolved.tooltip_font_size,
+            );
         }
     }
 }
@@ -237,7 +450,7 @@ impl FloatButton {
             badge_count: 0,
             // 默认不显示圆点徽标。
             badge_dot: false,
-            size: 40.0,
+            size: FLOAT_BUTTON_VISUAL_REF.geometry.default_size,
             x: 0.0,
             y: 0.0,
             // 未显式 placement 时保留既有 frame-relative 行为。
@@ -250,6 +463,7 @@ impl FloatButton {
             in_group: false,
             // 新组件尚未获得窗口逻辑表面。
             last_surface: Cell::new(Rect::zero()),
+            visual: FLOAT_BUTTON_VISUAL_REF,
         }
     }
 
@@ -300,7 +514,7 @@ impl FloatButton {
 
     /// 设置按钮直径；非正数或非有限值回退为 40 像素。
     pub fn size(mut self, s: f32) -> Self {
-        self.size = positive_or(s, 40.0);
+        self.size = positive_or(s, self.visual.geometry.default_size);
         self
     }
 
@@ -356,6 +570,8 @@ impl FloatButton {
             in_group: self.in_group,
             // 传入普通布局占位标记。
             reserve_layout_space: self.reserve_layout_space,
+            // 传入 UIX 拥有的全部几何参数。
+            visual: self.visual.geometry,
         })
     }
 
@@ -385,7 +601,7 @@ impl FloatButton {
                 // 命中 bounds 使用完整 description 控件区域。
                 .bounds(geometry.control)
                 // 保持既有浮动按钮层级。
-                .z_index(900),
+                .z_index(self.visual.paint.overlay_z_index),
         )
     }
 
@@ -431,266 +647,34 @@ impl FloatButton {
         self.reserve_layout_space = next.reserve_layout_space;
         self.trigger_mode = next.trigger_mode;
         self.in_group = next.in_group;
+        self.visual = next.visual;
     }
 }
 
 impl Default for FloatButton {
     fn default() -> Self {
-        Self::new("plus")
+        Self::new(FLOAT_BUTTON_VISUAL_REF.default_icon)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct FloatButtonGroupItemLayout {
-    // 保存组内子按钮的基础直径。
-    size: f32,
-    // 保存包含 description 的相对命中区域。
-    hit_bounds: Rect,
-    // 保存包含阴影、徽标与提示框的相对绘制区域。
-    paint_bounds: Rect,
+// 把 FloatButton Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_float_button_view(
+    mut kernel: FloatButton,
+    visual: &'static FloatButtonVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FloatButtonGroupPressTarget {
-    Trigger,
-}
-
-widget! {
-    /// 一组可展开的浮动操作按钮。
-    pub struct FloatButtonGroup {
-        #[snapshot(skip)]
-        buttons: Rc<RefCell<Option<Vec<FloatButton>>>>,
-        #[snapshot(skip)]
-        item_layouts: Vec<FloatButtonGroupItemLayout>,
-        trigger: TriggerMode,
-        expanded: bool,
-        closing: bool,
-        transition: TransitionPlayer,
-        transition_dirty: bool,
-        layout_requested: Cell<bool>,
-        hovered: bool,
-        focused: bool,
-        focus_within: bool,
-        pressed_target: Option<FloatButtonGroupPressTarget>,
-        pressed_button: Option<MouseButton>,
-        pressed_key: Option<KeyCode>,
-    }
-
-    build_view_children => (&self) -> Vec<crate::ui::view::ViewNode> {
-        self.buttons
-            .borrow_mut()
-            .take()
-            .unwrap_or_default()
-            .into_iter()
-            .map(crate::ui::view::ViewNode::leaf)
-            .collect()
-    }
-
-    tab_index => (&self) -> i32 { i32::from(!self.item_layouts.is_empty()) }
-
-    measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(
-            FLOAT_BUTTON_GROUP_TRIGGER_SIZE,
-            FLOAT_BUTTON_GROUP_TRIGGER_SIZE,
-        ))
-    }
-
-    child_overflow_expands_parent => (&self) -> bool { false }
-
-    child_visible => (&self, index: usize) -> bool {
-        index < self.item_layouts.len() && self.children_are_visible()
-    }
-
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
-    {
-        let progress = self.expansion_progress();
-        self.child_frames(frame, progress)
-            // 与真实子节点一一配对，任一侧较短时立即结束。
-            .zip(children.iter())
-            // 父组件只交付子节点身份与单次累加前缀计算的 frame。
-            .map(|((_item, frame), child)| (child.id, frame))
-            .collect()
-    }
-
-    hit_test_frame => (&self, frame: Rect) -> Rect {
-        self.interaction_bounds(frame)
-    }
-
-    hit_test_children => (&self) -> bool { self.children_are_visible() }
-
-    on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        match event {
-            SystemEvent::PointerEnter => {
-                self.hovered = true;
-                if self.trigger == TriggerMode::Hover {
-                    self.open();
-                }
-                EventResult::Handled
-            }
-            SystemEvent::PointerLeave => {
-                let changed = self.hovered || self.pressed_target.is_some();
-                self.hovered = false;
-                self.cancel_pending_activation();
-                if self.trigger == TriggerMode::Hover {
-                    self.close();
-                    EventResult::Handled
-                } else if changed {
-                    EventResult::Handled
-                } else {
-                    EventResult::NotHandled
-                }
-            }
-            SystemEvent::PointerDown { pos, button, .. } => {
-                if self.item_layouts.is_empty()
-                    || !Self::local_trigger_rect().contains(*pos)
-                    || !self.accepts_pointer_button(*button)
-                {
-                    return EventResult::NotHandled;
-                }
-                self.pressed_target = Some(FloatButtonGroupPressTarget::Trigger);
-                self.pressed_button = Some(*button);
-                EventResult::Handled
-            }
-            SystemEvent::PointerUp { pos, button, .. }
-                if self.pressed_target.is_some() || self.pressed_button.is_some() =>
-            {
-                let target = self.pressed_target.take();
-                let pressed_button = self.pressed_button.take();
-                if target == Some(FloatButtonGroupPressTarget::Trigger)
-                    && pressed_button == Some(*button)
-                    && Self::local_trigger_rect().contains(*pos)
-                {
-                    self.toggle();
-                }
-                EventResult::Handled
-            }
-            SystemEvent::FocusIn => {
-                self.focused = true;
-                EventResult::Handled
-            }
-            SystemEvent::FocusOut => {
-                self.focused = false;
-                self.cancel_pending_activation();
-                EventResult::Handled
-            }
-            SystemEvent::KeyDown { key: key @ (KeyCode::Enter | KeyCode::Space), .. }
-                if !self.item_layouts.is_empty() =>
-            {
-                self.pressed_key = Some(*key);
-                EventResult::Handled
-            }
-            SystemEvent::KeyUp { key: key @ (KeyCode::Enter | KeyCode::Space), .. }
-                if self.pressed_key.is_some() =>
-            {
-                let matches = self.pressed_key.take() == Some(*key);
-                if matches {
-                    self.toggle();
-                }
-                EventResult::Handled
-            }
-            SystemEvent::KeyDown { key: KeyCode::Escape, .. } if self.is_present() => {
-                self.cancel_pending_activation();
-                self.close();
-                EventResult::Handled
-            }
-            _ => EventResult::NotHandled,
-        }
-    }
-
-    on_focus_within => (&mut self, focused: bool) -> EventResult {
-        self.focus_within = focused;
-        if self.trigger != TriggerMode::Focus {
-            return EventResult::NotHandled;
-        }
-        if focused {
-            self.open();
-        } else {
-            self.cancel_pending_activation();
-            self.close();
-        }
-        EventResult::Handled
-    }
-
-    take_layout_request => (&mut self) -> bool {
-        self.layout_requested.replace(false)
-    }
-
-    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let trigger = Self::trigger_rect(frame);
-        let radius = Some(Radius::uniform(FLOAT_BUTTON_GROUP_TRIGGER_SIZE * 0.5));
-        let background = if self.pressed_target.is_some() || self.pressed_key.is_some() {
-            ctx.tokens().color_primary_active()
-        } else if self.hovered {
-            ctx.tokens().color_primary_hover()
-        } else {
-            ctx.tokens().color_primary()
-        };
-        ctx.draw_box_shadow(
-            trigger,
-            8.0,
-            0.0,
-            4.0,
-            // 阴影：黑色 token + 原 alpha（保持视觉等价，色相随主题可换）。
-            ctx.tokens().color_black().with_alpha(40),
-            radius,
-        );
-        ctx.fill_rect(trigger, background, radius);
-        if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(
-                trigger,
-                ctx.tokens().color_primary_border(),
-                2.0,
-                radius,
-            );
-        }
-        crate::ui::widgets::general::icon::Icon::paint_in_frame(
-            ctx,
-            if self.expanded { "x" } else { "plus" },
-            trigger,
-            // 触发图标：白色 token。
-            ctx.tokens().color_white(),
-            18.0,
-        );
-    }
-
-    dirty_rect => (&self, frame: Rect) -> Rect {
-        self.full_dirty_bounds(frame)
-    }
-
-    update_animation => (&mut self, dt: f64) -> bool {
-        if !self.is_present() || self.transition.finished {
-            self.transition_dirty = false;
-            return false;
-        }
-        self.transition.update(dt);
-        self.transition_dirty = true;
-        self.layout_requested.set(true);
-        if self.closing && self.transition.finished {
-            self.closing = false;
-            self.layout_requested.set(true);
-        }
-        self.is_present() && !self.transition.finished
-    }
-
-    dirty_bounds => (&self, frame: Rect) -> Rect {
-        if self.transition_dirty {
-            self.full_dirty_bounds(frame)
-        } else {
-            Rect::zero()
-        }
+impl View for FloatButton {
+    fn build(self) -> ViewNode {
+        build_float_button_uix_root(self)
     }
 }
 
-/// FloatButtonBackTop — 回到顶部按钮（FloatButton 的便捷封装）。
-pub struct FloatButtonBackTop;
-
-impl FloatButtonBackTop {
-    #[allow(clippy::new_ret_no_self)]
-    /// 创建使用向上图标与“回到顶部”提示的浮动按钮。
-    pub fn new() -> FloatButton {
-        FloatButton::new("chevron-up").tooltip("回到顶部")
-    }
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_float_button_uix_root(kernel: FloatButton) -> ViewNode {
+    crate::uix!("src/ui/widgets/general/float_button/float_button.uix")
 }
 
 fn positive_or(value: f32, fallback: f32) -> f32 {
