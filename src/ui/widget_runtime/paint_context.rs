@@ -10,6 +10,7 @@
 //! `ctx.fill_rect(rect, ctx.tokens().color_x(), …)` 这类同表达式二段式
 //! 借用）；组件无需感知两层边界。
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::core::{Point, Rect, Size};
@@ -43,11 +44,11 @@ fn conservative_width_from_measurement(measured_width: f32, text: &str, font_siz
 }
 
 // 对已经不含换行的文本执行 Unicode 安全单行省略。
-fn elide_normalized_single_line_by(
-    text: &str,
+fn elide_normalized_single_line_by<'a>(
+    text: &'a str,
     max_width: f32,
     mut text_width: impl FnMut(&str) -> f32,
-) -> Option<String> {
+) -> Option<Cow<'a, str>> {
     // 非有限或非正可用宽度无法显示任何文本。
     if !max_width.is_finite() || max_width <= 0.0 {
         // 返回空值让组件保持自身的不绘制策略。
@@ -58,8 +59,8 @@ fn elide_normalized_single_line_by(
     debug_assert!(!text.contains(['\r', '\n']));
     // 完整文本能容纳时避免不必要的分配和省略。
     if text_width(text) <= max_width {
-        // 返回调用方可跨后续可变绘制借用持有的拥有型文本。
-        return Some(text.to_owned());
+        // 常见完整容纳路径直接借用调用方文本，不分配临时 String。
+        return Some(Cow::Borrowed(text));
         // 结束完整文本分支。
     }
     // 极窄宽度连省略号也无法容纳时不绘制文本。
@@ -93,7 +94,7 @@ fn elide_normalized_single_line_by(
     // 为最终可见前缀追加唯一省略号。
     visible.push_str(TEXT_ELLIPSIS);
     // 返回保持在宽度边界内的单行结果。
-    Some(visible)
+    Some(Cow::Owned(visible))
     // 结束共享单行省略算法。
 }
 
@@ -105,7 +106,7 @@ fn elide_single_line_by(
 ) -> Option<String> {
     // 普通入口只做一次换行规范化，并把后续算法交给无重复分配的窄入口。
     let normalized = text.replace(['\r', '\n'], " ");
-    elide_normalized_single_line_by(&normalized, max_width, text_width)
+    elide_normalized_single_line_by(&normalized, max_width, text_width).map(Cow::into_owned)
 }
 
 /// 转发 `&mut self` 绘制方法（固有方法享受二段式借用）。
@@ -223,6 +224,17 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         max_width: f32,
     ) -> Option<String> {
         // 调用方已承担唯一一次换行替换，此处只执行宽度门禁与 Unicode 截断。
+        self.elide_normalized_single_line_cow(text, font_size, max_width)
+            .map(Cow::into_owned)
+    }
+
+    /// 对已规范化文本执行单行省略，完整容纳时直接借用输入。
+    pub(crate) fn elide_normalized_single_line_cow<'c>(
+        &mut self,
+        text: &'c str,
+        font_size: f32,
+        max_width: f32,
+    ) -> Option<Cow<'c, str>> {
         elide_normalized_single_line_by(text, max_width, |candidate| {
             self.conservative_text_width(candidate, font_size)
         })
