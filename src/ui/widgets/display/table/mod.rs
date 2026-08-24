@@ -31,7 +31,7 @@ pub(crate) mod types;
 
 // 引入共享列区绘制层级与列几何快照。
 pub use builder::TableBuilder;
-use geometry::COLUMN_PAINT_ORDER;
+use geometry::{COLUMN_PAINT_ORDER, TableColumnGeometryCache};
 use presentation::*;
 pub(crate) use presentation::{ResolvedTableVisual, TableVisual};
 pub(crate) use types::TableCellRenderer;
@@ -100,6 +100,9 @@ widget! {
         // 复用分页标签字符串，页码未变化时不产生临时分配。
         #[snapshot(skip)]
         pub(crate) pagination_label_cache: RefCell<TablePaginationLabelCache>,
+        // 列定义或视口未变化时复用列区几何与其列数组。
+        #[snapshot(skip)]
+        pub(crate) column_geometry_cache: RefCell<TableColumnGeometryCache>,
     }
 
     tab_index => (&self) -> i32 {
@@ -358,7 +361,7 @@ widget! {
         let sel = self.selected_row.get();
         let hover = self.hover_row.get();
         let expanded = self.expanded_row.get();
-        let column_geometry = self.column_geometry(frame.x, frame.w);
+        let column_geometry = self.column_geometry_ref(frame.x, frame.w);
         ctx.push_clip(frame);
 
         // 空状态
@@ -846,11 +849,51 @@ widget! {
         ))
     }
 
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let mut output = Vec::with_capacity(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| LayoutChild::new(id, Size::zero())),
+        );
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
         // 由独立辅助统一生成完整 View frame 与父级片段裁剪。
         self.layout_table_children(frame, children, tree)
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_table_children_into(frame, children, tree, output);
     }
 }
 

@@ -23,27 +23,43 @@ impl Table {
         // 接收用于写入父级片段元数据的组件树。
         tree: &WidgetTree,
     ) -> Vec<(WidgetId, Rect)> {
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_table_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    // 把自定义单元格或展开行位置写入布局树提供的跨帧缓冲。
+    pub(super) fn layout_table_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
         // 保存最新 frame 供可见行与滚动范围解析复用。
         self.last_frame.set(Some(frame));
+        output.clear();
+        output.reserve(children.len());
         // 泛型 View 列存在时优先布局物化单元格子树。
         if !self.view_columns.is_empty() {
-            // 返回逐单元格生成的完整 frame 与片段元数据。
-            return self.layout_cell_view_children(frame, children, tree);
+            // 逐单元格生成完整 frame 与片段元数据。
+            self.layout_cell_view_children_into(frame, children, tree, output);
+            return;
         }
         // 展开行子树不使用表格单元格片段裁剪。
         for child in children {
             // 清除可能由动态子树协调保留下来的旧片段元数据。
-            Self::set_child_clip_regions(tree, child.id, None);
+            Self::clear_child_clip_regions(tree, child.id);
         }
         // 没有展开行时不排列任何普通子项。
         let Some(expanded_row) = self.expanded_row.get() else {
             // 保持原有空布局结果。
-            return Vec::new();
+            return;
         };
         // 展开行只消费首个直接子项。
         let Some(child) = children.first() else {
             // 缺少 renderer 子树时保持空布局。
-            return Vec::new();
+            return;
         };
         // 展开内容位于目标数据行之后。
         let y = frame.y
@@ -53,17 +69,17 @@ impl Table {
             + self.visual.geometry.body_separator
             // 跳过展开行本身及其之前的普通行。
             + (expanded_row + 1) as f32 * self.row_h;
-        // 返回占满表格宽度的单一展开内容矩形。
-        vec![(
+        // 写入占满表格宽度的单一展开内容矩形。
+        output.push((
             // 保留展开子树组件标识。
             child.id,
             // 展开子树不参与固定列片段拆分。
             Rect::new(frame.x, y, frame.w, self.expand_height),
-        )]
+        ));
     }
 
     // 布局当前物化窗口中的自定义单元格子树。
-    fn layout_cell_view_children(
+    fn layout_cell_view_children_into(
         // 接收当前表格组件。
         &self,
         // 接收表格最终布局矩形。
@@ -72,7 +88,9 @@ impl Table {
         children: &[LayoutChild],
         // 接收用于更新节点片段元数据的组件树。
         tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
+        // 接收布局树跨帧复用的位置数组。
+        positions: &mut Vec<(WidgetId, Rect)>,
+    ) {
         // 解析动态子树当前实际物化的行窗口。
         let (start, end) = self
             // 优先使用刷新阶段已经记录的物化范围。
@@ -82,11 +100,9 @@ impl Table {
             // 初次布局时根据真实表体高度计算范围。
             .unwrap_or_else(|| self.visible_row_range(self.body_viewport_height()));
         // 为当前横向滚动与固定列状态建立共享列几何。
-        let column_geometry = self.column_geometry(frame.x, frame.w);
+        let column_geometry = self.column_geometry_ref(frame.x, frame.w);
         // 表体内容坐标从完整表头与分隔线之后开始。
         let body_top = frame.y + self.total_header_height() + self.visual.geometry.body_separator;
-        // 预分配与物化子项数量相同的位置结果。
-        let mut positions = Vec::with_capacity(children.len());
         // View 列非空分支保证除数至少为一。
         let column_count = self.view_columns.len();
         // 按 renderer 生成时的稳定行主序遍历全部子项。
@@ -96,7 +112,7 @@ impl Table {
             // 多余旧子项不得保留上一次布局的可见片段。
             if row >= end {
                 // 用空片段集合明确隐藏过期子树。
-                Self::set_child_clip_regions(tree, child.id, Some(Vec::new()));
+                Self::set_child_clip_regions_reusing(tree, child.id, std::iter::empty());
                 // 同时把过期子树收敛到表体起点的零尺寸矩形。
                 positions.push((child.id, Rect::new(frame.x, body_top, 0.0, 0.0)));
                 // 继续清理其余可能存在的过期子项。
@@ -114,7 +130,7 @@ impl Table {
                 .find(|column| column.index == column_index)
             else {
                 // 缺失列几何时隐藏对应动态子树。
-                Self::set_child_clip_regions(tree, child.id, Some(Vec::new()));
+                Self::set_child_clip_regions_reusing(tree, child.id, std::iter::empty());
                 // 用零尺寸位置保持结果与子项标识对应。
                 positions.push((child.id, Rect::new(frame.x, body_top, 0.0, 0.0)));
                 // 继续处理下一物化子项。
@@ -140,7 +156,7 @@ impl Table {
             // 被其他合并锚点覆盖的 View 列不应重复显示子树。
             if self.cell_anchor(row, column_index) != Some((row, column_index)) {
                 // 空片段集合同时阻止绘制与命中。
-                Self::set_child_clip_regions(tree, child.id, Some(Vec::new()));
+                Self::set_child_clip_regions_reusing(tree, child.id, std::iter::empty());
                 // 保持覆盖列物理起点但把 frame 收敛为零。
                 positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
                 // 继续处理下一单元格子树。
@@ -164,7 +180,7 @@ impl Table {
                 cell_height,
             ) else {
                 // 缺失跨度几何时明确隐藏当前子树。
-                Self::set_child_clip_regions(tree, child.id, Some(Vec::new()));
+                Self::set_child_clip_regions_reusing(tree, child.id, std::iter::empty());
                 // 回退为锚点处零尺寸位置。
                 positions.push((child.id, Rect::new(column.x, row_y, 0.0, 0.0)));
                 // 继续处理下一单元格子树。
@@ -189,31 +205,34 @@ impl Table {
                         // 片段与完整子树共享跨行高度。
                         cell_frame.h,
                     )
-                })
-                // 物化为合成与命中共同消费的小型矩形集合。
-                .collect::<Vec<_>>();
-            // 把片段快照写入同一个有状态 View 根节点。
-            Self::set_child_clip_regions(tree, child.id, Some(clip_regions));
+                });
+            // 把片段写入同一个有状态 View 根节点并复用节点自有数组。
+            Self::set_child_clip_regions_reusing(tree, child.id, clip_regions);
             // 子树始终按完整逻辑合并矩形布局一次。
             positions.push((child.id, cell_frame));
         }
-        // 返回与动态子项稳定对应的布局结果。
-        positions
     }
 
-    // 把父布局片段快照写入现有子节点。
-    fn set_child_clip_regions(
+    // 清除现有子节点的父布局片段约束。
+    fn clear_child_clip_regions(tree: &WidgetTree, child_id: WidgetId) {
+        if let Some(child) = tree.get(child_id) {
+            child.set_parent_clip_regions(None);
+        }
+    }
+
+    // 把父布局片段写入现有子节点并保留节点自有数组容量。
+    fn set_child_clip_regions_reusing(
         // 接收只读树；节点内部用 RefCell 保存布局元数据。
         tree: &WidgetTree,
         // 接收目标子节点标识。
         child_id: WidgetId,
-        // 接收无裁剪、空裁剪或多个实际片段。
-        regions: Option<Vec<Rect>>,
+        // 接收空裁剪或多个实际片段。
+        regions: impl Iterator<Item = Rect>,
     ) {
         // 动态协调期间节点可能尚未进入树，缺失时安全跳过元数据写入。
         if let Some(child) = tree.get(child_id) {
             // 更新节点供合成、可见性与命中路径共同读取。
-            child.set_parent_clip_regions(regions);
+            child.set_parent_clip_regions_reusing(regions);
         }
     }
 }

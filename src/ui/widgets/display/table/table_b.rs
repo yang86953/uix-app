@@ -302,6 +302,31 @@ impl Table {
         !grouped || y >= self.header_h
     }
 
+    // 生产热路径借用 Table 自有缓存，调用方在只读阶段内消费。
+    pub(crate) fn column_geometry_ref(
+        &self,
+        origin_x: f32,
+        viewport_width: f32,
+    ) -> Ref<'_, TableColumnGeometry> {
+        let selection_width = self.selection_width();
+        let scroll_x = self.horizontal_scroll.get();
+        {
+            let mut cache = self.column_geometry_cache.borrow_mut();
+            cache.resolve(
+                &self.columns,
+                origin_x,
+                viewport_width,
+                selection_width,
+                scroll_x,
+            );
+        }
+        Ref::map(self.column_geometry_cache.borrow(), |cache| {
+            cache.geometry()
+        })
+    }
+
+    // 单元测试保留可跨表格原位修改持有的独立几何快照。
+    #[cfg(test)]
     pub(crate) fn column_geometry(
         &self,
         origin_x: f32,
@@ -322,7 +347,7 @@ impl Table {
             .get()
             .map(|frame| frame.w)
             .unwrap_or_else(|| self.columns.iter().map(|column| column.width).sum());
-        self.column_geometry(0.0, width).column_at(x)
+        self.column_geometry_ref(0.0, width).column_at(x)
     }
 
     pub(crate) fn resize_handle_at_point(&self, point: crate::core::Point) -> Option<usize> {
@@ -330,7 +355,7 @@ impl Table {
         if !frame.contains(point) {
             return None;
         }
-        let geometry = self.column_geometry(0.0, frame.w);
+        let geometry = self.column_geometry_ref(0.0, frame.w);
         // 按绘制层级逆序检查句柄，使重叠边缘优先选择视觉最上层列区。
         for zone in COLUMN_PAINT_ORDER.into_iter().rev() {
             // 获取当前列区在表头中的可见裁剪范围。
@@ -434,7 +459,7 @@ impl Table {
     pub(crate) fn horizontal_max_scroll(&self) -> f32 {
         self.last_frame
             .get()
-            .map(|frame| self.column_geometry(0.0, frame.w).max_scroll_x)
+            .map(|frame| self.column_geometry_ref(0.0, frame.w).max_scroll_x)
             .unwrap_or(0.0)
     }
 

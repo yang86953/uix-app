@@ -113,4 +113,32 @@
         );
         // 结束跨固定区列合并矩形契约。
     }
+
+    // 验证列几何缓存复用数组，并在列宽或固定区原位变化时重新求解。
+    #[test]
+    fn geometry_cache_reuses_storage_and_detects_column_changes() {
+        let mut columns = vec![
+            TableColumn::new("左列", 40.0).fixed(Fixed::Left),
+            TableColumn::new("中列", 60.0),
+        ];
+        let mut cache = TableColumnGeometryCache::default();
+
+        let initial_ptr = {
+            let geometry = cache.resolve(&columns, 0.0, 100.0, 0.0, 0.0);
+            assert_eq!(geometry.columns[0].width, 40.0);
+            geometry.columns.as_ptr()
+        };
+        let stable_ptr = cache
+            .resolve(&columns, 0.0, 100.0, 0.0, 0.0)
+            .columns
+            .as_ptr();
+        assert_eq!(stable_ptr, initial_ptr);
+
+        columns[0].width = 50.0;
+        columns[0].fixed = Some(Fixed::Right);
+        let changed = cache.resolve(&columns, 0.0, 100.0, 0.0, 0.0);
+        assert_eq!(changed.columns[0].width, 50.0);
+        assert_eq!(changed.columns[0].zone, ColumnZone::Right);
+        assert_eq!(changed.columns.as_ptr(), initial_ptr);
+    }
     // 结束表格列几何测试模块。

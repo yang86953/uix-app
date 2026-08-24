@@ -26,6 +26,45 @@ mod visual_metadata;
 #[path = "user_select_metadata.rs"]
 // 编译声明值与 used-value 的节点私有存储入口。
 mod user_select_metadata;
+
+// Table 最多按中、左、右三个固定列区声明父级可见片段。
+struct ParentClipRegions {
+    regions: [Rect; 3],
+    len: usize,
+    enabled: bool,
+}
+
+impl Default for ParentClipRegions {
+    fn default() -> Self {
+        Self {
+            regions: [Rect::zero(); 3],
+            len: 0,
+            enabled: false,
+        }
+    }
+}
+
+impl ParentClipRegions {
+    // 覆盖内联片段并保留固定容量，不产生第二次堆申请。
+    #[cfg(feature = "table")]
+    fn set(&mut self, regions: impl IntoIterator<Item = Rect>) {
+        let mut next = [Rect::zero(); 3];
+        let mut len = 0;
+        for region in regions {
+            assert!(len < next.len(), "父布局片段不得超过三个固定列区");
+            next[len] = region;
+            len += 1;
+        }
+        self.regions = next;
+        self.len = len;
+        self.enabled = true;
+    }
+
+    fn as_slice(&self) -> &[Rect] {
+        &self.regions[..self.len]
+    }
+}
+
 pub struct BoxedWidget {
     widget: Box<dyn Widget>,
     caps: WidgetCapabilities,
@@ -37,7 +76,7 @@ pub struct BoxedWidget {
     automation_id: Option<Box<str>>,
     frame: Rect,
     // 保存父布局为当前节点子树声明的不连续可见片段。
-    parent_clip_regions: std::cell::RefCell<Option<Vec<Rect>>>,
+    parent_clip_regions: std::cell::RefCell<Option<Box<ParentClipRegions>>>,
     visible: bool,
     parent_visible: bool,
     visual_transform: ViewTransform,
@@ -524,17 +563,34 @@ impl BoxedWidget {
     // 该写入口只由 table 的跨单元格子布局消费。
     #[cfg(feature = "table")]
     pub(crate) fn set_parent_clip_regions(&self, regions: Option<Vec<Rect>>) {
-        // 用内部可变状态接收布局阶段生成的片段快照。
-        *self.parent_clip_regions.borrow_mut() = regions;
+        let mut slot = self.parent_clip_regions.borrow_mut();
+        match regions {
+            Some(regions) => slot
+                .get_or_insert_with(|| Box::new(ParentClipRegions::default()))
+                .set(regions),
+            None => {
+                if let Some(regions) = slot.as_mut() {
+                    regions.enabled = false;
+                    regions.len = 0;
+                }
+            }
+        }
+    }
+    // 把父布局片段写入节点自有数组，稳定帧保留既有容量。
+    #[cfg(feature = "table")]
+    pub(crate) fn set_parent_clip_regions_reusing(&self, regions: impl Iterator<Item = Rect>) {
+        let mut slot = self.parent_clip_regions.borrow_mut();
+        slot.get_or_insert_with(|| Box::new(ParentClipRegions::default()))
+            .set(regions);
     }
     // 在内部借用作用域内读取当前节点子树应使用的父级可见片段。
     pub(crate) fn visit_parent_clip_regions(&self, visitor: &mut dyn FnMut(&[Rect])) -> bool {
         // 借用只覆盖同步访问器调用，不向组件树或 draw 边界泄漏 RefCell guard。
         let regions = self.parent_clip_regions.borrow();
-        let Some(regions) = regions.as_deref() else {
+        let Some(regions) = regions.as_deref().filter(|regions| regions.enabled) else {
             return false;
         };
-        visitor(regions);
+        visitor(regions.as_slice());
         true
     }
     pub fn dirty_rect(&self, frame: Rect) -> Rect {
