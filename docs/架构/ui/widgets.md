@@ -41,6 +41,7 @@
 - `Divider`：`src/ui/widgets/general/divider/` 同目录保存 Rust 与 UIX；UIX 拥有标签尺寸、线段几何、固有尺寸与主题色角色，Rust 只保留文字数据、方向、对齐、虚线状态与绘制内核；声明配置融合进原叶节点，不生成标签或线段子节点。
 - `Skeleton`：`src/ui/widgets/display/skeleton/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留占位几何、流光动画和绘制；生成结果仍是原 `Skeleton` 单叶节点，不增加包装、子节点或持久配置内存。
 - `Empty`：`src/ui/widgets/display/empty/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、文本测量、图标选择和绘制；生成结果仍是原 `Empty` 单叶节点，不增加包装或子节点。
+- `ResultView`：`src/ui/widgets/display/result/` 同目录保存 Rust 与 UIX；UIX 拥有公开组件根，Rust 内核保留本地化、动作区交互、几何和绘制；生成结果仍是原 `ResultView` 单叶节点，不增加包装或子节点。
 
 ## 组件：复合组件
 

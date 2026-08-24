@@ -28,6 +28,8 @@ fn generates_result_view_contract() {
     assert!(snapshot.contains("width (320.0)"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 ResultView 自己的 View/UIX 声明边界，不能直接绕过为叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"));
 }
 
 // 验证缺省状态与动态文本保留公开 Rust 类型检查。

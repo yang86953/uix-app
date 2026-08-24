@@ -1,0 +1,2 @@
+// ResultView 是本地化交互绘制组件；UIX 声明公开根，Rust 内核负责行为与绘制。
+<KernelView value={build_result_view(kernel)} />
