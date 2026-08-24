@@ -1,7 +1,7 @@
 //! Input 字素簇光标、选择、删除与长度限制回归测试。
 
 // 引入被测 Input 及其私有交互辅助。
-use super::{Input, LogicalLineCursor};
+use super::{Input, LogicalLineCursor, logical_line_count};
 
 /// 线性行游标必须保持旧渲染路径的 Unicode 字符区间和耗尽回退语义。
 #[test]
@@ -115,4 +115,46 @@ fn cursor_line_col_streams_without_changing_positions() {
     // 旧状态中的越界光标继续收敛到末行末尾。
     input.cursor_char = usize::MAX;
     assert_eq!(input.cursor_line_col(), (2, 2));
+}
+
+// 验证字节级逻辑行计数保持 split 的空文本与尾随空行语义。
+#[test]
+fn logical_line_count_preserves_empty_and_trailing_lines() {
+    assert_eq!(logical_line_count(""), 1);
+    assert_eq!(logical_line_count("甲\n\n尾\n"), 4);
+}
+
+// 验证上下移动流式定位相邻行并保留空行与 Unicode 字符位置。
+#[test]
+fn vertical_cursor_movement_streams_adjacent_line_offsets() {
+    let mut input = Input::textarea().with_value("甲🙂\n\nab");
+    // 从末行第一列开始，字符位置五位于 a 之后。
+    input.cursor_char = 5;
+    input.sel_anchor.set(5);
+
+    input.move_cursor_up();
+    assert_eq!(input.cursor_char, 3);
+    input.move_cursor_up();
+    assert_eq!(input.cursor_char, 0);
+    input.move_cursor_down();
+    assert_eq!(input.cursor_char, 3);
+    input.move_cursor_down();
+    assert_eq!(input.cursor_char, 4);
+}
+
+// 验证多行坐标命中流式计算全文行起点并收敛到末行。
+#[test]
+fn textarea_hit_test_streams_line_offsets_without_glyphs() {
+    let input = Input::textarea().with_value("甲🙂\n\nab");
+    let top = input.visual.layout.textarea_top_padding;
+    let line_height = input.visual.typography.line_height;
+
+    // 第三逻辑行从全文字符位置四开始。
+    assert_eq!(input.char_at_xy(20.0, top + line_height * 2.0 + 1.0), 4);
+    // 超出文本的纵坐标继续收敛到末行起点。
+    assert_eq!(input.char_at_xy(20.0, top + line_height * 20.0), 4);
+    // 非有限纵坐标也只扫描现有逻辑行，不按饱和后的巨大行号循环。
+    assert_eq!(input.char_at_xy(20.0, f32::INFINITY), 4);
+    // 顶部 padding 命中首行起点。
+    assert_eq!(input.char_at_xy(20.0, top - 1.0), 0);
 }

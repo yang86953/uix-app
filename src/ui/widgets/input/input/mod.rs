@@ -43,8 +43,13 @@ pub enum InputStatus {
     Error,
 }
 
-fn logical_lines(text: &str) -> Vec<&str> {
-    text.split('\n').collect()
+fn logical_line_count(text: &str) -> usize {
+    // UTF-8 中换行标量保持单字节，直接计数避免构造切片集合或解码其他字符。
+    text.as_bytes()
+        .iter()
+        .filter(|&&byte| byte == b'\n')
+        .count()
+        + 1
 }
 
 /// 以 Unicode 字符索引线性推进逻辑行，避免渲染时反复扫描所有前置行。
@@ -61,19 +66,43 @@ impl<'a> LogicalLineCursor<'a> {
         }
     }
 
-    /// 返回当前行、全文起点与全文终点；耗尽后继续按空行推进以匹配显示行。
-    fn next_line(&mut self) -> (&'a str, usize, usize) {
-        let line = self.lines.next().unwrap_or("");
+    /// 返回仍存在的当前行、全文起点与全文终点。
+    fn next_existing_line(&mut self) -> Option<(&'a str, usize, usize)> {
+        let line = self.lines.next()?;
         let start = self.next_start;
         let end = start + line.chars().count();
         self.next_start = end + 1;
-        (line, start, end)
+        Some((line, start, end))
+    }
+
+    /// 返回当前行；耗尽后继续按空行推进以匹配额外显示行。
+    fn next_line(&mut self) -> (&'a str, usize, usize) {
+        if let Some(line) = self.next_existing_line() {
+            return line;
+        }
+        let start = self.next_start;
+        self.next_start += 1;
+        ("", start, start)
     }
 
     fn skip_lines(&mut self, count: usize) {
         for _ in 0..count {
             let _ = self.next_line();
         }
+    }
+
+    /// 返回目标行；目标越界时收敛到最后一个真实逻辑行。
+    fn line_at_or_last(&mut self, target: usize) -> (usize, &'a str, usize, usize) {
+        // split 对任意字符串至少产生一行。
+        let (line, start, end) = self.next_existing_line().unwrap_or(("", 0, 0));
+        let mut last = (0, line, start, end);
+        for index in 1..=target {
+            let Some((line, start, end)) = self.next_existing_line() else {
+                break;
+            };
+            last = (index, line, start, end);
+        }
+        last
     }
 }
 
