@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::{Rect, Size};
 use uix::prelude::{
-    Card, Container, Content, Footer, Grid, GridTrack, Header, Layout as PageLayout,
-    ScrollDirection, ScrollView, Sider, Space, Splitter,
+    Card, Collapse, CollapsePanel, Container, Content, Footer, Grid, GridTrack, Header,
+    Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter,
 };
 use uix::ui::__private::WidgetTree;
-use uix::ui::{LayoutChild, LayoutEngineScratch, WidgetId, WidgetLayout};
+use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
 
 struct CountingAllocator;
 
@@ -280,6 +280,27 @@ fn splitter_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn collapse_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    let branches = (0..3)
+        .map(|branch_index| {
+            let panels = (0..8)
+                .map(|panel_index| {
+                    CollapsePanel::new(
+                        format!("分组 {branch_index}-{panel_index}"),
+                        format!("第 {panel_index} 组的稳定内容"),
+                    )
+                    .expanded()
+                })
+                .collect();
+            View::build(Collapse::new().panels(panels)).into_node()
+        })
+        .collect();
+    tree.set_children(root, branches);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -358,6 +379,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Layout regions", page_region_layout_tree()),
         ("Layout", page_layout_tree()),
         ("Splitter", splitter_layout_tree()),
+        ("Collapse", collapse_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);

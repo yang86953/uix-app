@@ -5,6 +5,9 @@ use std::borrow::Cow;
 
 impl Collapse {
     pub(super) fn preferred_width(&self) -> f32 {
+        if let Some(width) = self.preferred_width_cache.get() {
+            return width;
+        }
         let mut width = self.visual.geometry.default_width;
         for panel in &self.panels {
             // 普通单行标题直接借用；只有真实换行时才分配规范化缓冲区。
@@ -30,15 +33,18 @@ impl Collapse {
                 + self.visual.geometry.content_horizontal_padding * 2.0;
             width = width.max(header_width).max(content_width);
         }
-        width.min(self.visual.geometry.max_intrinsic_width)
+        let width = width.min(self.visual.geometry.max_intrinsic_width);
+        self.preferred_width_cache.set(Some(width));
+        width
     }
 
     pub(super) fn intrinsic_height(&self, width: f32) -> f32 {
+        let heights = self.content_heights(width);
         let mut h = 0.0f32;
         for (idx, p) in self.panels.iter().enumerate() {
             h += self.visual.geometry.header_height;
             if self.panel_present(idx, p) {
-                h += self.content_height(&p.content, width);
+                h += heights.get(idx).copied().unwrap_or(0.0);
             }
         }
         h
@@ -65,12 +71,15 @@ impl Collapse {
             layout_requested: Cell::new(false),
             content_opacities: Vec::new(),
             materialized_content: RefCell::new(Vec::new()),
+            preferred_width_cache: Cell::new(None),
+            content_height_cache: RefCell::new(CollapseContentHeightCache::default()),
             visual: COLLAPSE_VISUAL_REF,
         }
     }
     /// 设置面板集合并按受控稳定键或非受控初值建立展开状态。
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
         self.panels = ps;
+        self.invalidate_measurement_cache();
         // 受控模式按稳定 key 同步，非受控模式只归一化面板初值。
         if self.active_keys_binding.is_some() {
             // 支持状态先于数据设置的构建顺序。
@@ -225,19 +234,59 @@ impl Collapse {
         Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
     }
 
-    pub(super) fn content_height(&self, content: &str, width: f32) -> f32 {
+    // 返回全部面板在指定内容宽度下的缓存高度切片。
+    pub(super) fn content_heights(&self, width: f32) -> Ref<'_, [f32]> {
         let text_width = (width - self.visual.geometry.content_horizontal_padding * 2.0).max(1.0);
-        let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            content,
-            text_width,
-            self.visual.typography.content_font_size,
-        )
-        .line_count
-        .max(1) as f32;
-        line_count
-            * self.visual.typography.content_font_size
-            * self.visual.typography.content_line_height_ratio
-            + self.visual.geometry.content_vertical_padding * 2.0
+        let text_width_bits = text_width.to_bits();
+        {
+            let mut cache = self.content_height_cache.borrow_mut();
+            let recent_valid = cache.recent.text_width_bits == Some(text_width_bits)
+                && cache.recent.heights.len() == self.panels.len();
+            if !recent_valid {
+                let previous_valid = cache.previous.text_width_bits == Some(text_width_bits)
+                    && cache.previous.heights.len() == self.panels.len();
+                let older_valid = cache.older.text_width_bits == Some(text_width_bits)
+                    && cache.older.heights.len() == self.panels.len();
+                let cache = &mut *cache;
+                if previous_valid {
+                    std::mem::swap(&mut cache.recent, &mut cache.previous);
+                } else if older_valid {
+                    std::mem::swap(&mut cache.previous, &mut cache.older);
+                    std::mem::swap(&mut cache.recent, &mut cache.previous);
+                } else {
+                    std::mem::swap(&mut cache.previous, &mut cache.older);
+                    std::mem::swap(&mut cache.recent, &mut cache.previous);
+                    cache.recent.text_width_bits = Some(text_width_bits);
+                    cache.recent.heights.clear();
+                    cache.recent.heights.extend(self.panels.iter().map(|panel| {
+                        let line_count =
+                            crate::draw::resources::font::text_backend::estimate_text_metrics(
+                                &panel.content,
+                                text_width,
+                                self.visual.typography.content_font_size,
+                            )
+                            .line_count
+                            .max(1) as f32;
+                        line_count
+                            * self.visual.typography.content_font_size
+                            * self.visual.typography.content_line_height_ratio
+                            + self.visual.geometry.content_vertical_padding * 2.0
+                    }));
+                }
+            }
+        }
+        Ref::map(self.content_height_cache.borrow(), |cache| {
+            cache.recent.heights.as_slice()
+        })
+    }
+
+    // 文本、视觉或面板身份改变时只失效键，保留三组数组容量。
+    fn invalidate_measurement_cache(&self) {
+        self.preferred_width_cache.set(None);
+        let mut cache = self.content_height_cache.borrow_mut();
+        cache.recent.text_width_bits = None;
+        cache.previous.text_width_bits = None;
+        cache.older.text_width_bits = None;
     }
 
     fn panel_content_key(&self, panel_index: usize) -> String {
@@ -276,6 +325,7 @@ impl Collapse {
         let content_horizontal_padding = self.visual.geometry.content_horizontal_padding;
         let default_width = self.visual.geometry.default_width;
         let text_color = self.visual.palette.text_secondary;
+        let content_heights = self.content_heights(default_width);
         entries
             .iter()
             .map(|entry| {
@@ -285,7 +335,10 @@ impl Collapse {
                     .get(entry.panel_index)
                     .cloned()
                     .unwrap_or_else(|| Rc::new(Cell::new(0.0)));
-                let natural_height = (self.content_height(&text, default_width)
+                let natural_height = (content_heights
+                    .get(entry.panel_index)
+                    .copied()
+                    .unwrap_or(0.0)
                     - content_vertical_padding * 2.0)
                     .max(0.0);
                 crate::ui::widgets::canvas(
@@ -320,13 +373,14 @@ impl Collapse {
     pub(super) fn content_frame(&self, frame: Rect, panel_index: usize) -> Option<Rect> {
         let frame = Self::normalized_frame(frame);
         let frame_bottom = frame.y + frame.h;
+        let content_heights = self.content_heights(frame.w);
         let mut y = frame.y;
         for (index, panel) in self.panels.iter().enumerate() {
             y += self.visual.geometry.header_height;
             if !self.panel_present(index, panel) {
                 continue;
             }
-            let content_height = self.content_height(&panel.content, frame.w);
+            let content_height = content_heights.get(index).copied().unwrap_or(0.0);
             if index == panel_index {
                 let body_height = content_height.min((frame_bottom - y).max(0.0));
                 return Some(Rect::new(
@@ -345,11 +399,61 @@ impl Collapse {
         &self,
         current_child_count: usize,
     ) -> Option<(Vec<crate::ui::view::ViewNode>, Vec<CollapseContentEntry>)> {
-        let entries = self.desired_content_entries();
-        if current_child_count == entries.len() && *self.materialized_content.borrow() == entries {
+        if self.materialized_content_matches(current_child_count) {
             return None;
         }
+        let entries = self.desired_content_entries();
         Some((self.content_views(&entries), entries))
+    }
+
+    // 稳定帧直接比较现有条目与面板事实，不重建 String 和 Vec。
+    fn materialized_content_matches(&self, current_child_count: usize) -> bool {
+        let entries = self.materialized_content.borrow();
+        if current_child_count != entries.len() {
+            return false;
+        }
+        let mut entries = entries.iter();
+        for (panel_index, panel) in self.panels.iter().enumerate() {
+            if self.destroy_on_hide && !self.panel_present(panel_index, panel) {
+                continue;
+            }
+            let Some(entry) = entries.next() else {
+                return false;
+            };
+            if entry.panel_index != panel_index
+                || entry.content != panel.content
+                || !self.content_entry_key_matches(&entry.key, panel_index, panel)
+            {
+                return false;
+            }
+        }
+        entries.next().is_none()
+    }
+
+    // 按既有 key 编码逐段比较，避免仅为稳定性检查格式化新字符串。
+    fn content_entry_key_matches(
+        &self,
+        entry_key: &str,
+        panel_index: usize,
+        panel: &CollapsePanel,
+    ) -> bool {
+        let stable_key = panel.stable_key();
+        let occurrence = self.panels[..panel_index]
+            .iter()
+            .filter(|candidate| candidate.stable_key() == stable_key)
+            .count();
+        let Some(encoded) = entry_key.strip_prefix("uix:collapse-content:") else {
+            return false;
+        };
+        let Some((length, encoded)) = encoded.split_once(':') else {
+            return false;
+        };
+        let Some((encoded_occurrence, encoded_key)) = encoded.split_once(':') else {
+            return false;
+        };
+        length.parse::<usize>().ok() == Some(stable_key.len())
+            && encoded_occurrence.parse::<usize>().ok() == Some(occurrence)
+            && encoded_key == stable_key
     }
 
     pub(crate) fn mark_content_materialized(&self, entries: Vec<CollapseContentEntry>) {
@@ -358,8 +462,9 @@ impl Collapse {
 
     pub(super) fn full_dirty_rect(&self, frame: Rect) -> Rect {
         let mut h = self.panels.len() as f32 * self.visual.geometry.header_height;
-        for panel in &self.panels {
-            h += self.content_height(&panel.content, frame.w);
+        let content_heights = self.content_heights(frame.w);
+        for content_height in content_heights.iter().copied() {
+            h += content_height;
         }
         Rect::new(frame.x, frame.y, frame.w, h)
     }
@@ -507,6 +612,7 @@ impl Collapse {
         self.borderless_authored = next.borderless_authored;
         self.destroy_on_hide = next.destroy_on_hide;
         self.visual = next.visual;
+        self.invalidate_measurement_cache();
         let expanded_before_normalize = self
             .panels
             .iter()
@@ -624,6 +730,7 @@ impl Collapse {
         if !frame.contains(point) {
             return None;
         }
+        let content_heights = self.content_heights(frame.w);
         let mut cursor = 0.0;
         for (index, panel) in self.panels.iter().enumerate() {
             if point.y >= cursor && point.y < cursor + self.visual.geometry.header_height {
@@ -631,7 +738,7 @@ impl Collapse {
             }
             cursor += self.visual.geometry.header_height;
             if self.panel_present(index, panel) {
-                cursor += self.content_height(&panel.content, frame.w);
+                cursor += content_heights.get(index).copied().unwrap_or(0.0);
             }
         }
         None

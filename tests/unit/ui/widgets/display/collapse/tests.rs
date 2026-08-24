@@ -153,6 +153,26 @@ fn controlled_sync_from_uses_latest_external_keys() {
     assert_eq!(active.get(), vec!["beta".to_string()]);
 }
 
+// 验证稳定动态内容不重建条目，而标题兼容 key 变化仍触发刷新。
+#[test]
+fn stable_content_refresh_detects_key_changes_without_rebuilding_first() {
+    // 使用展开面板建立与真实动态内容相同的物化条目。
+    let mut collapse = Collapse::new().panels(vec![
+        CollapsePanel::new("甲", "甲内容").expanded(),
+        CollapsePanel::new("乙", "乙内容").expanded(),
+    ]);
+    let entries = collapse.desired_content_entries();
+    let child_count = entries.len();
+    collapse.mark_content_materialized(entries);
+
+    // 未变化时稳定检查必须直接复用已有内容子树。
+    assert!(collapse.content_views_for_refresh(child_count).is_none());
+
+    // 未声明显式 key 时，标题变化会改变兼容稳定身份并要求刷新。
+    collapse.panels[0].header = "新甲".to_string();
+    assert!(collapse.content_views_for_refresh(child_count).is_some());
+}
+
 // 验证 UIX 声明根保持面板内核并注入尺寸、排版与内容留白。
 #[test]
 fn uix_root_preserves_collapse_kernel_and_visual_contract() {
