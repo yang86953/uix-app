@@ -46,6 +46,26 @@ fn uix_root_preserves_badge_kernel_and_owned_child() {
     assert_eq!(kernel.count, 6);
     assert!(kernel.composite);
     assert!(kernel.child_view.is_some());
+    assert_eq!(kernel.visual.layout.marker_diameter, 10.0);
+    assert_eq!(kernel.visual.layout.ribbon_height, 24.0);
+}
+
+// 验证完整 UIX 视觉表由 Badge 实例共享。
+#[test]
+fn uix_visual_configuration_is_shared_between_badges() {
+    let first = View::build(Badge::new().count(1));
+    let second = View::build(Badge::new().dot());
+    let first = first
+        .widget
+        .as_any()
+        .downcast_ref::<Badge>()
+        .expect("第一个 UIX 根必须保留 Badge 内核");
+    let second = second
+        .widget
+        .as_any()
+        .downcast_ref::<Badge>()
+        .expect("第二个 UIX 根必须保留 Badge 内核");
+    assert!(std::ptr::eq(first.visual, second.visual));
 }
 
 // 验证无分配计数缓冲保持零值、边界、上限后缀与最大整数文本。
@@ -81,21 +101,55 @@ fn preset_color_resolves_theme_without_rewriting_custom_color() {
     let preset = Some(BadgeColor::Blue.to_color());
     // 预设标记存在时必须解析当前品牌 token。
     assert_eq!(
-        resolve_badge_background(preset, true, &tokens),
+        resolve_badge_background(preset, true, &DEFAULT_BADGE_VISUAL.palette, &tokens),
         tokens.color_primary
     );
     // 相同数值由任意 Color 输入时仍归调用方所有。
     assert_eq!(
         // 关闭预设标记以模拟 Badge::color(Color)。
-        resolve_badge_background(preset, false, &tokens),
+        resolve_badge_background(preset, false, &DEFAULT_BADGE_VISUAL.palette, &tokens),
         // 原兼容颜色不得被主题重写。
         BadgeColor::Blue.to_color()
     );
     // 未指定颜色时必须使用当前主题错误色。
     assert_eq!(
-        resolve_badge_background(None, false, &tokens),
+        resolve_badge_background(None, false, &DEFAULT_BADGE_VISUAL.palette, &tokens),
         tokens.color_error
     );
+}
+
+// UIX 色表顺序必须逐项对应全部公开预设色与状态色。
+#[test]
+fn uix_palette_keeps_all_badge_color_and_status_mappings() {
+    let tokens = DesignTokens::antd_light();
+    let presets = [
+        (BadgeColor::Blue, tokens.color_primary),
+        (BadgeColor::Green, tokens.color_success),
+        (BadgeColor::Orange, PrimaryHue::Orange.primary()),
+        (BadgeColor::Red, tokens.color_error),
+        (BadgeColor::Purple, PrimaryHue::Purple.primary()),
+    ];
+    for (preset, expected) in presets {
+        assert_eq!(
+            preset.resolve(&DEFAULT_BADGE_VISUAL.palette, &tokens),
+            expected,
+            "{preset:?}"
+        );
+    }
+    let statuses = [
+        (BadgeStatus::Success, tokens.color_success),
+        (BadgeStatus::Processing, tokens.color_primary),
+        (BadgeStatus::Default, tokens.color_text_quaternary),
+        (BadgeStatus::Error, tokens.color_error),
+        (BadgeStatus::Warning, tokens.color_warning),
+    ];
+    for (status, expected) in statuses {
+        assert_eq!(
+            DEFAULT_BADGE_VISUAL.palette.status(status).resolve(&tokens),
+            expected,
+            "{status:?}"
+        );
+    }
 }
 
 // 验证零子节点仍使用旧固有尺寸，而组合模式由真实子外尺寸参与布局。
@@ -109,14 +163,17 @@ fn zero_child_compatibility_and_single_child_margin_layout() {
         // 通过布局 trait 测量公开组件。
         WidgetLayout::measure(&standalone, Constraints::unconstrained()).h,
         // 旧数字胶囊高度固定为二十逻辑像素。
-        Badge::PILL_HEIGHT
+        DEFAULT_BADGE_VISUAL.layout.pill_height
     );
     // 动态关闭圆点不能残留伪造数字胶囊。
     assert_eq!(Badge::new().dot_when(false).intrinsic_size(), Size::zero());
     // 动态启用圆点仍必须生成标准 marker 尺寸。
     assert_eq!(
         Badge::new().dot_when(true).intrinsic_size(),
-        Size::new(Badge::MARKER_DIAMETER, Badge::MARKER_DIAMETER)
+        Size::new(
+            DEFAULT_BADGE_VISUAL.layout.marker_diameter,
+            DEFAULT_BADGE_VISUAL.layout.marker_diameter,
+        )
     );
 
     // 构造拥有真实按钮子树的组合徽章。
@@ -227,7 +284,12 @@ fn composite_decoration_anchors_child_top_right_without_expanding_layout() {
     // 计算 marker 与文字整体矩形。
     let marker_frame = marker.composite_decoration_frame(Rect::zero(), 0.0, 0.0);
     // marker 圆心而非整段文字中心必须落在右上角。
-    assert_eq!(marker_frame.x + Badge::MARKER_DIAMETER * 0.5, 50.0);
+    assert_eq!(
+        marker_frame.x
+            + DEFAULT_BADGE_VISUAL.layout.marker_diameter
+                * DEFAULT_BADGE_VISUAL.layout.pill_radius_ratio,
+        50.0
+    );
 
     // 构造默认隐藏的零计数组合徽章。
     let hidden = Badge::new().child(ViewNode::leaf(Button::new("空收件箱")));

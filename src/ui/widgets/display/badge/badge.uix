@@ -1,2 +1,2 @@
-// Badge 的真实子树由 Rust 生命周期端口交接；UIX 只声明零包装公开根。
-<KernelView value={build_badge_view(kernel)} />
+// Badge 的胶囊、状态点、丝带几何与预设/状态主题色表由 UIX 声明；真实子树仍由 Rust 生命周期端口交接。
+<KernelView value={build_badge_view(kernel, badge_visual(badge_layout(10, 8, 20, 11, 13, 12, 24, 24, 0.22, 0.2, 0.5), badge_palette(badge_presets(badge_token(badge_primary()), badge_token(badge_success()), badge_hue(badge_orange_hue()), badge_token(badge_error()), badge_hue(badge_purple_hue())), badge_statuses(badge_success(), badge_primary(), badge_text_quaternary(), badge_error(), badge_warning()), badge_error(), badge_black(), badge_white(), badge_text())))} />
