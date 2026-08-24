@@ -26,7 +26,7 @@
 | **已实现** | 统一拒绝边界 | 私有 `WindowOps` 可选默认方法体为 0，Windows、macOS、Wayland 必须显式实现完整方法集。共享核心在可选操作的参数验证、共享状态写入、presenter 与 native Adapter 副作用之前先执行能力门禁；缺失能力稳定返回中立 `Errc::NotImplemented`。 |
 | **已实现** | Wayland `SetResizable` | 单窗口状态机唯一持有用户 min/max、最新正 logical 客户区尺寸与 resizable 状态。锁定把协议 min/max 同时设为最新有效尺寸，解锁恢复用户约束；锁定期间仍更新用户权威但不覆盖固定约束，程序化 resize 与 compositor configure 会把新有效尺寸同步为新的固定 min=max。只有协议成功后才提交规划状态。 |
 
-共享窗口层继续唯一负责正尺寸以及 min/max 交叉约束校验；Wayland 状态机只编码已经验证的中立结果，不复制上层约束规则。上述集合、显式实现和状态机分别由 `tests/test_window_capability_contract.py`、`tests/unit/native/windowing/shared/window_capability__tests.rs` 与 `tests/unit/native/backends/linux/wayland/resize_constraints__tests.rs` 锁定。
+共享窗口层继续唯一负责正尺寸以及 min/max 交叉约束校验；Wayland 状态机只编码中立结果，不复制上层约束规则。能力查询、公开操作与 typed failure 只从外部消费者使用 `uix::platform` 公开门面测试；共享核心、Wayland 状态机与原生 Adapter 均为私有实现，不建立项目测试。
 
 ## 后续候选
 

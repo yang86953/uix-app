@@ -29,9 +29,9 @@
 1. `.uix` 文件拥有公开组件的子树结构、顺序、条件分支、插槽投影、静态样式和展示文案。
 2. Rust 只保留 UIX 无法安全表达的基础内核职责；业务逻辑、持久化、异步 I/O 与平台调用仍不得进入 `.uix`。
 3. Rust 基础 View 需要进入声明树时，只能通过框架内部的 `KernelView value={...}`、单展示根 `KernelHost value={...}` 或拥有型节点列表 `KernelChildren value={...}` 窄桥接；桥接禁止事件与组件专有属性，单 View 桥接只允许统一 View 样式，列表桥接不接受任何展示属性，不能成为第二套公共组件 API。
-4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果，并用真实编译测试与最接近的行为测试验收。
+4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果；只用外部消费者测试公开编译入口与可观察行为。
 5. 条件隐藏的分支不得提前构造 Rust 基础 View；高频路径不得因语言迁移增加无条件分配、克隆或动态解析。
-6. 单 `KernelView` 组件必须由 UIX 显式向 Rust 内核注入静态视觉配置；只传 `kernel` 或 `kernel, children` 的透传壳属于未完成债务。`tests/test_widget_uix_colocation.py` 锁定当前债务清单，新迁移不得扩大清单，回填后必须删除对应项。
+6. 单 `KernelView` 组件必须由 UIX 显式向 Rust 内核注入静态视觉配置；只传 `kernel` 或 `kernel, children` 的透传壳属于未完成债务。债务清单由本文与源码审查维护，不为目录、声明位置或私有桥接结构建立测试。
 7. `.uix` 是全部静态视觉值的唯一事实源。Rust 只定义视觉结构类型，不得复制完整 `DEFAULT_*_VISUAL` 表，也不得用运行时解析或 `OnceLock` 固化第二份表；构建前直接构造、测量、布局、绘制与构建后节点必须共同读取同一文件经 `uix_items!` 生成的常量。
 8. UIX 视觉记录必须使用 `<Visual>` 具名字段和有语义的分组静态项；能表达为真实子树的部分继续使用 `<Container>`、`<If>`、`<Icon>` 等标签。禁止用单行巨型 `KernelView` 位置参数或多层匿名数字构造器代替声明结构，`build_*_view` 只接收 Rust 内核、动态 children 和少量具名 Visual 静态借用。
 
@@ -75,7 +75,7 @@
 - `PieChart`：`src/ui/widgets/display/chart/pie_chart/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/标签/图例、标题/图例/绘图区几何、扇区标签、内环、交互叠层、提示框、排版及主题角色，Rust 只保留有效数据摘要、极坐标几何、玫瑰映射、命中、交互与绘制执行；基础绘制借用原数据，不创建切片集合或图例字符串，数值文本使用栈缓冲，标签角度只计算一次正余弦。
 - `RichText`：`src/ui/widgets/display/rich_text/` 同目录保存 Rust 与 UIX；UIX 拥有默认字号、行高/字宽估算、代码/链接/选区装饰、复制按钮、主题分隔线、图片占位及主题角色，Rust 只保留 Markdown、Unicode 断行/双向布局、资源、选择、命中与绘制执行；缓存布局按借用复用，绘制 run 复用 UTF-8 缓冲，字形不再逐个保存链接 URL。
 
-当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的已迁移 widget；Rust 完整默认视觉表与 UIX 巨型位置参数壳两类债务也已清零，结构测试继续以空集合阻止回退。公开视觉 widget 清单由 `tests/test_widget_uix_colocation.py` 从真实 `widget!` 声明推导：当前 84 个中 59 个已完成、25 个仍在显式债务集合，测试绿灯不得解释为全量迁移完成。已迁移的简单叶组件、分组视觉组件以及由 Tooltip 与 Slider 共享的 `TooltipBubble` 均完成 `<Visual>` 单源闭环；共享视觉资源允许通过 `uix_items!` 只声明模块级 `Visual`，不需要伪造可实例化视图根。
+当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的已迁移 widget；Rust 完整默认视觉表与 UIX 巨型位置参数壳两类债务也已清零。公开视觉 widget 清单当前为 84 个，其中 59 个已完成、25 个仍在显式债务集合；该清单是架构迁移记录，不构成测试覆盖。已迁移的简单叶组件、分组视觉组件以及由 Tooltip 与 Slider 共享的 `TooltipBubble` 均完成 `<Visual>` 单源闭环；共享视觉资源允许通过 `uix_items!` 只声明模块级 `Visual`，不需要伪造可实例化视图根。
 
 ## 组件：复合组件
 

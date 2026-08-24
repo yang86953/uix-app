@@ -205,7 +205,7 @@ AI                        UIX 应用                      用户
 ```rust uix-compile=agent-automation-id
 use uix::prelude::*;
 
-// Agent 只读语义树并执行稳定动作，作为自动化测试与 AI 操作通道
+// Agent 只读语义树并执行稳定动作，作为应用自动化与 AI 操作通道
 let app = App::new()
     .enable_agent_control()
     .root(|| column((
@@ -218,7 +218,7 @@ let app = App::new()
 //   组件卸载/窗口关闭后，旧动作返回可识别失败
 ```
 
-- Agent 通道用于自动化测试、辅助调试与 AI 操作；业务交互不走 Agent。
+- Agent 通道用于使用方应用自动化、辅助调试与 AI 操作；它不扩大 UIX 项目的公开 API 测试范围，业务交互不走 Agent。
 - 只为需要被自动化稳定定位的目标声明唯一 `automation_id`；普通展示节点不必全部设置。
 - 敏感值（密码、令牌）默认不进快照、日志或错误回包。
 - 正式交付的应用应评估动作策略：至少为破坏性操作（删除、清空、提交）声明 `agent_require_confirm` 或 `agent_protect`。

@@ -3,7 +3,7 @@
 这是仓库唯一 demo。`src/main.uix` 声明 1200×800 应用外壳并递归导入 12 个页面；全部已
 登记组件、样式、展示数据、界面状态和局部交互都使用 uix-lang 语法。`src/main.rs` 不构造
 任何演示 View 或展示数据，只保留 UIX Lang 规范明确排除的进程参数、平台 UI 线程、字体、
-可选验收能力、Form 业务提交回调与 `App::run()` 生命周期。
+可选 Agent 控制、Form 业务提交回调与 `App::run()` 生命周期。
 
 ## 运行
 
@@ -20,13 +20,6 @@ cargo run --release --manifest-path demo/Cargo.toml --features agent-control --b
 ```
 
 普通启动不会发布 Agent 端点；只传参数但未启用 feature 会在创建窗口前以退出码 2 失败。
-
-图形恢复与 surface 回读是同一二进制内的显式验收入口，不属于组件 demo 页面：
-
-```powershell
-cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-recovery
-cargo run --release --manifest-path demo/Cargo.toml --features test-harness --bin uix-lang-demo -- --test-graphics-readback
-```
 
 Windows 与 Linux 默认首选 Vulkan；Windows 保留 D3D11、Linux/Wayland 保留 EGL OpenGL ES 兼容回退。入口统一经
 `uix::platform::run_on_ui_thread` 运行，并在窗口创建前安装仓库内固定的 CJK 字体。
