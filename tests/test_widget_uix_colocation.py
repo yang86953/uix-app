@@ -91,6 +91,7 @@ MIGRATED_WIDGET_DIRS = {
     "input/time_picker",
     "input/transfer",
     "input/tree_select",
+    "input/upload",
     "input/input_group",
     "input/input_number",
     "input/radio",
@@ -119,7 +120,6 @@ MIGRATED_SUPPORT_DIRS = {
 # 公开视觉 widget 的剩余迁移债务；完成一项时必须同步删除，最终目标为空集合。
 UNMIGRATED_PUBLIC_WIDGET_DIRS = {
     "display/chart/advanced",
-    "input/upload",
     "navigation/anchor",
     "navigation/breadcrumb",
     "navigation/dropdown",

@@ -1,0 +1,41 @@
+// Upload 的上传区、文件行、缩略图、状态、排版、图标和主题由 UIX 唯一拥有。
+<Visual name="UPLOAD_LAYOUT_VISUAL" type="UploadLayoutVisual"
+  intrinsicWidth={300.0} dropzoneHeight={100.0} listTop={104.0}
+  fileRowHeight={32.0} listRightPadding={56.0}
+  hoverInset={4.0} hoverWidthReduction={8.0} hoverHeight={92.0}
+  uploadIconHalfOffset={24.0} uploadIconY={12.0}
+  uploadIconWidth={48.0} uploadIconHeight={40.0}
+  promptHalfOffset={48.0} promptY={60.0}
+  supportingHalfOffset={36.0} supportingY={78.0}
+  thumbnailInset={4.0} thumbnailSize={24.0}
+  previewTextInset={34.0} fallbackTextInset={28.0}
+  fileIconX={6.0} fileIconWidth={18.0} fileIconHeight={24.0}
+  fileNameY={2.0} fileSizeY={17.0} progressY={28.0} progressHeight={3.0}
+  statusIconRight={48.0} removeIconRight={24.0} rowIconY={4.0}
+  rowIconWidth={20.0} rowIconHeight={24.0}
+  previewMinDeviceSide={1.0} previewMaxDeviceSide={4096.0} previewRadius={2.0}
+/>
+<Visual name="UPLOAD_TYPOGRAPHY_VISUAL" type="UploadTypographyVisual"
+  promptMidpointWeight={0.5} supportingScale={0.8333333333333334}
+  uploadIconSize={24.0} fileIconSize={14.0} rowIconSize={12.0}
+/>
+<Visual name="UPLOAD_CHROME_VISUAL" type="UploadChromeVisual"
+  borderWidth={1.0} dragBorderWidth={2.0} focusBorderWidth={2.0}
+  hoverInnerBorderWidth={1.0}
+  rootRadius={upload_radius_default()} hoverRadius={upload_radius_small()}
+/>
+<Visual name="UPLOAD_ICONS_VISUAL" type="UploadIconsVisual"
+  upload="upload" file="file" done="check" error="x"
+  pending="clock" uploading="refresh-cw" remove="x"
+/>
+<Visual name="UPLOAD_PALETTE_VISUAL" type="UploadPaletteVisual"
+  background={upload_background()} border={upload_border()} text={upload_text()}
+  textQuaternary={upload_text_quaternary()} primary={upload_primary()}
+  error={upload_error()} success={upload_success()}
+/>
+<Visual name="UPLOAD_VISUAL" type="UploadVisual"
+  layout={UPLOAD_LAYOUT_VISUAL} typography={UPLOAD_TYPOGRAPHY_VISUAL}
+  chrome={UPLOAD_CHROME_VISUAL} icons={UPLOAD_ICONS_VISUAL}
+  palette={UPLOAD_PALETTE_VISUAL}
+/>
+<KernelView value={build_upload_view(kernel, UPLOAD_VISUAL_REF)} />
