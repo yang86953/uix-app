@@ -43,12 +43,43 @@ pub(crate) struct EstimatedTextMetrics {
     pub width_wrapped: bool,
 }
 
+// 无自动折行时单次流式统计显式行，避免构造断行表、字符表和当前行缓冲。
+fn estimate_unwrapped_text_metrics(text: &str, font_size: f32) -> EstimatedTextMetrics {
+    let mut widest_line = 0.0_f32;
+    let mut current_width = 0.0_f32;
+    let mut line_count = 1_usize;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if matches!(ch, '\r' | '\n') {
+            widest_line = widest_line.max(current_width);
+            current_width = 0.0;
+            line_count += 1;
+            // CRLF 是一个显式换行，不得重复增加逻辑行数。
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+        } else {
+            current_width += estimated_scalar_width(ch, font_size);
+        }
+    }
+    EstimatedTextMetrics {
+        max_line_width: widest_line.max(current_width),
+        line_count,
+        width_wrapped: false,
+    }
+}
+
 /// 无字体上下文时使用的文本尺寸估算；显式换行与 CJK 行首禁则须与真实布局一致。
 pub(crate) fn estimate_text_metrics(
     text: &str,
     max_width: f32,
     font_size: f32,
 ) -> EstimatedTextMetrics {
+    // 非有限或非正宽度不启用自动折行，直接走无分配流式路径。
+    let wraps = max_width.is_finite() && max_width > 0.0;
+    if !wraps {
+        return estimate_unwrapped_text_metrics(text, font_size);
+    }
     // 单个估算字符保存字符值、宽度和排他源终点。
     type EstimatedScalar = (char, f32, usize);
     // 使用完整文本生成一次标准 UAX #14 边界。
@@ -77,8 +108,6 @@ pub(crate) fn estimate_text_metrics(
     let mut line_count = 1usize;
     // 记录是否发生过宽度驱动的自动折行。
     let mut width_wrapped = false;
-    // 仅有限正宽度启用自动折行。
-    let wraps = max_width.is_finite() && max_width > 0.0;
     // 从首个 Unicode 标量开始消费。
     let mut char_index = 0usize;
     // 逐个处理逻辑字符并保留 CRLF 原子语义。
@@ -181,6 +210,11 @@ pub(crate) fn estimate_text_metrics(
 
 /// 单个字形的最大光栅化字号，限制异常输入导致的面积型内存增长。
 pub(crate) const MAX_RASTER_PIXEL_SIZE: f32 = 512.0;
+
+// 单元测试验证无字体估算器的显式换行与无分配快路径契约。
+#[cfg(test)]
+#[path = "../../../../tests/unit/draw/resources/font/text_backend__tests.rs"]
+mod tests;
 
 pub(crate) fn bounded_font_size(pixel_size: f32) -> f32 {
     if pixel_size.is_finite() {
