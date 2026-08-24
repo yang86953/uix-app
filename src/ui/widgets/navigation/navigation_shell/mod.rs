@@ -14,7 +14,12 @@ use crate::ui::layout::LayoutChild;
 // 引入调用方拥有的折叠状态。
 use crate::ui::State;
 // 引入事件、快照与组件树契约。
-use crate::ui::{EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, View, ViewNode, WidgetTree,
+};
+
+mod presentation;
+use presentation::*;
 
 widget! {
     /// 组合 Navigation 的侧栏外壳，唯一直接子节点必须是受控 Menu。
@@ -30,6 +35,9 @@ widget! {
         focused: bool,
         last_width: Cell<f32>,
         layout_requested: Cell<bool>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static NavigationShellVisual,
     }
 
     // 外壳只为折叠按钮提供焦点；Menu 子节点保留自己的导航焦点。
@@ -52,9 +60,17 @@ widget! {
         // 没有受控 Menu 时不产生伪布局。
         let Some(menu) = children.first() else { return Vec::new(); };
         // 折叠态只保留顶部按钮行，展开态保留标题行。
-        let header_height = if self.collapsed { 40.0 } else { 52.0 };
+        let header_height = if self.collapsed {
+            self.visual.layout.collapsed_header_height
+        } else {
+            self.visual.layout.expanded_header_height
+        };
         // 只有展开且存在调用方版本时才预留版本行。
-        let version_height = if !self.collapsed && self.version.is_some() { 24.0 } else { 0.0 };
+        let version_height = if !self.collapsed && self.version.is_some() {
+            self.visual.layout.version_height
+        } else {
+            0.0
+        };
         // Menu 获得剩余的完整侧栏内容区域。
         vec![(menu.id, Rect::new(
             frame.x,
@@ -70,8 +86,8 @@ widget! {
             // 左键命中右上折叠按钮时切换调用方状态。
             SystemEvent::PointerDown { pos, button: MouseButton::Left, .. }
                 if pos.y >= 0.0
-                    && pos.y <= 32.0
-                    && pos.x >= (self.last_width.get() - 32.0).max(0.0) =>
+                    && pos.y <= self.visual.layout.toggle_size
+                    && pos.x >= (self.last_width.get() - self.visual.layout.toggle_size).max(0.0) =>
             {
                 // 建立新的整栏折叠事实。
                 self.toggle_collapsed();
@@ -108,27 +124,45 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         // 缓存实际宽度以保持绘制与命中同源。
         self.last_width.set(frame.w.max(0.0));
+        // 标题、版本与折叠按钮同帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = &self.visual.layout;
+        let typography = &self.visual.typography;
         // 侧栏外壳使用主题容器背景。
-        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), None);
+        ctx.fill_rect(frame, visual.container_background, None);
         // 展开态精确显示调用方标题。
         if !self.collapsed {
             // 标题占据顶部完整行并为折叠按钮留出空间。
             ctx.draw_text_in_frame(
                 &self.title,
-                Rect::new(frame.x + 12.0, frame.y, (frame.w - 48.0).max(0.0), 52.0),
-                ctx.tokens().color_text(),
-                18.0,
+                Rect::new(
+                    frame.x + layout.title_start,
+                    frame.y,
+                    (frame.w - layout.title_end_reserve).max(0.0),
+                    layout.expanded_header_height,
+                ),
+                visual.text,
+                typography.title,
             );
         }
         // 折叠按钮始终位于右上角。
-        let toggle = Rect::new(frame.x + (frame.w - 32.0).max(0.0), frame.y, 32.0, 32.0);
+        let toggle = Rect::new(
+            frame.x + (frame.w - layout.toggle_size).max(0.0),
+            frame.y,
+            layout.toggle_size,
+            layout.toggle_size,
+        );
         // 图标方向表达切换后的目标状态。
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
-            if self.collapsed { "chevron-right" } else { "chevron-left" },
+            if self.collapsed {
+                self.visual.icons.expand
+            } else {
+                self.visual.icons.collapse
+            },
             toggle,
-            ctx.tokens().color_text_secondary(),
-            14.0,
+            visual.text_secondary,
+            typography.toggle_icon,
         );
         // 展开态底部精确显示调用方版本元数据。
         if !self.collapsed {
@@ -137,16 +171,26 @@ widget! {
                 // 版本行贴近侧栏底部。
                 ctx.draw_text_in_frame(
                     version,
-                    Rect::new(frame.x + 12.0, frame.y + (frame.h - 24.0).max(0.0), (frame.w - 24.0).max(0.0), 24.0),
-                    ctx.tokens().color_text_quaternary(),
-                    11.0,
+                    Rect::new(
+                        frame.x + layout.version_start,
+                        frame.y + (frame.h - layout.version_height).max(0.0),
+                        (frame.w - layout.version_end_reserve).max(0.0),
+                        layout.version_height,
+                    ),
+                    visual.text_quaternary,
+                    typography.version,
                 );
             }
         }
         // 键盘焦点可见时只圈出折叠按钮。
         if self.focused && tree.keyboard_focus_visible() {
             // 使用主题主色绘制明确焦点边界。
-            ctx.stroke_rect(toggle, ctx.tokens().color_primary(), 1.5, None);
+            ctx.stroke_rect(
+                toggle,
+                visual.primary,
+                self.visual.chrome.focus_width,
+                None,
+            );
         }
     }
 
@@ -161,6 +205,7 @@ widget! {
 impl NavigationShell {
     /// 构造调用方状态驱动的侧栏外壳。
     pub fn new(title: impl Into<String>, version: Option<String>, collapsed: &State<bool>) -> Self {
+        let visual = NAVIGATION_SHELL_VISUAL_REF;
         // 在声明构建期读取一次 State，以登记响应式依赖。
         let collapsed_value = collapsed.get();
         // 返回只拥有外壳状态的组件。
@@ -174,17 +219,18 @@ impl NavigationShell {
             // 保存本次声明快照中的折叠值。
             collapsed: collapsed_value,
             // 使用兼容普通侧栏宽度。
-            expanded_width: 200.0,
+            expanded_width: visual.layout.expanded_width,
             // 使用只容纳图标的紧凑宽度。
-            collapsed_width: 56.0,
+            collapsed_width: visual.layout.collapsed_width,
             // 使用兼容侧栏高度。
-            fixed_height: 720.0,
+            fixed_height: visual.layout.height,
             // 初始没有键盘焦点。
             focused: false,
             // 初始命中宽度与展开宽度一致。
-            last_width: Cell::new(200.0),
+            last_width: Cell::new(visual.layout.expanded_width),
             // 初始没有待处理布局请求。
             layout_requested: Cell::new(false),
+            visual,
         }
     }
 
@@ -232,6 +278,8 @@ impl NavigationShell {
         self.collapsed_width = next.collapsed_width;
         // 同步自然高度。
         self.fixed_height = next.fixed_height;
+        // 同步 UIX 生成的视觉表引用，不保留 Rust 视觉副本。
+        self.visual = next.visual;
         // 几何变化时请求重新布局唯一 Menu 子树。
         if layout_changed {
             // 合并尚未消费的布局请求。
@@ -262,5 +310,20 @@ impl NavigationShell {
         self.collapsed = next;
         // 请求组件树重新计算外壳宽度和 Menu 内容区域。
         self.layout_requested.set(true);
+    }
+}
+
+// UIX 只注入静态视觉表，Rust 内核继续拥有折叠状态、子树布局和输入。
+fn build_navigation_shell_view(
+    mut kernel: NavigationShell,
+    visual: &'static NavigationShellVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for NavigationShell {
+    fn build(self) -> ViewNode {
+        build_navigation_shell_view(self, NAVIGATION_SHELL_VISUAL_REF)
     }
 }
