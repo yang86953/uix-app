@@ -291,10 +291,10 @@ impl<'a> TextRenderService<'a> {
         selection_bg: Color,
     ) {
         if let Some((s, e)) = selection {
-            let rects = self.selection_rects(canvas, text, font_size, pos, s, e);
-            for r in rects {
-                canvas.fill_rect(r, selection_bg, None);
-            }
+            // 立即消费选区几何，避免稳态绘制创建范围和矩形临时向量。
+            self.visit_selection_rects(text, font_size, pos, s, e, |rect| {
+                canvas.fill_rect(rect, selection_bg, None);
+            });
         }
         self.draw_text(canvas, text, pos, color, font_size);
     }
@@ -367,8 +367,29 @@ impl<'a> TextRenderService<'a> {
         start: usize,
         end: usize,
     ) -> Vec<Rect> {
+        // 只为确实需要持有几何的兼容调用方收集结果。
+        let mut rects = Vec::new();
+        // 复用与直接绘制相同的流式几何实现。
+        self.visit_selection_rects(text, font_size, pos, start, end, |rect| {
+            // 固化当前矩形供调用方后续使用。
+            rects.push(rect);
+        });
+        // 返回兼容接口要求的拥有型结果。
+        rects
+    }
+
+    /// 流式访问选中文本的矩形区域，供绘制热路径立即消费。
+    fn visit_selection_rects(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
+        mut visit: impl FnMut(Rect),
+    ) {
         if text.is_empty() || start >= end {
-            return Vec::new();
+            return;
         }
         let backend_opts = self.text_opts(
             font_size,
@@ -382,12 +403,12 @@ impl<'a> TextRenderService<'a> {
             .font_service
             .layout_text_shared(&self.font, text, &backend_opts);
         if layout.glyphs.is_empty() {
-            return Vec::new();
+            return;
         }
-        // 为直接渲染选择建立完整扩展字素簇约束。
-        let index_map = crate::draw::resources::font::text_index::TextIndexMap::new(text);
-        // 把任意调用方范围向外扩展到合法字素簇边界。
-        let (start, end) = index_map.normalize_selection(
+        // 流式扫描源文本，把一次性绘制范围扩展到合法字素簇边界。
+        let (start, end) = crate::draw::resources::font::text_index::normalize_selection_in_text(
+            // 借用布局对应的完整 UTF-8 源文本。
+            text,
             // 显式标注选择起点使用字符下标。
             crate::draw::resources::font::text_index::CharIndex(start),
             // 显式标注选择终点使用字符下标。
@@ -403,7 +424,6 @@ impl<'a> TextRenderService<'a> {
             .horizontal_line_metrics(&self.font, fs)
             .map(|m| m.ascent + m.descent)
             .unwrap_or(fs * 1.2);
-        let mut rects = Vec::new();
         for line in &layout.lines {
             let gs = line.glyph_start;
             let gc = line.glyph_count;
@@ -411,20 +431,20 @@ impl<'a> TextRenderService<'a> {
             let glyphs = &layout.glyphs[gs..ge.min(layout.glyphs.len())];
             let y0 = pos.y + line.y;
             // 双向行的一个逻辑选择区可能形成多个不连续视觉片段。
-            let line_ranges = crate::draw::resources::font::text_backend::glyph_selection_x_ranges(
-                glyphs, start, end,
+            crate::draw::resources::font::text_backend::visit_glyph_selection_x_ranges(
+                glyphs,
+                start,
+                end,
+                |line_x0, line_x1| {
+                    // 将行内片段左缘平移到绘制原点。
+                    let x0 = pos.x + line_x0;
+                    // 将行内片段右缘平移到绘制原点。
+                    let x1 = pos.x + line_x1;
+                    // 每个连续视觉片段独立形成选择矩形。
+                    visit(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
+                },
             );
-            // 逐个绘制连续视觉选择片段。
-            for (line_x0, line_x1) in line_ranges {
-                // 将行内片段左缘平移到绘制原点。
-                let x0 = pos.x + line_x0;
-                // 将行内片段右缘平移到绘制原点。
-                let x1 = pos.x + line_x1;
-                // 每个连续视觉片段独立形成选择矩形。
-                rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
-            }
         }
-        rects
     }
 
     // ── 文本测量 ──

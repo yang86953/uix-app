@@ -230,6 +230,47 @@ pub struct PositionedGlyph {
 }
 
 /// 返回逻辑选择区在视觉行中的全部连续水平片段。
+pub(crate) fn visit_glyph_selection_x_ranges(
+    // 借用按视觉顺序排列的行字形。
+    glyphs: &[PositionedGlyph],
+    // 指定逻辑选择起点。
+    start_char: usize,
+    // 指定逻辑选择排他终点。
+    end_char: usize,
+    // 每发现一个连续视觉片段就立即交给调用方。
+    mut visit: impl FnMut(f32, f32),
+) {
+    // 栈上保存当前连续片段，避免稳态绘制创建临时向量。
+    let mut current: Option<(f32, f32)> = None;
+    // 依次观察视觉字形，逻辑区间相交时纳入选择。
+    for glyph in glyphs.iter().filter(|glyph| {
+        // cluster 源区间与逻辑选择区间相交。
+        glyph.char_index < end_char && glyph.char_end > start_char
+    }) {
+        // 当前字形可见左缘。
+        let left = glyph.x;
+        // 当前字形可见右缘。
+        let right = (glyph.x + glyph.width.max(0.0)).max(left);
+        // 与当前视觉片段接触或重叠时直接扩展右缘。
+        if let Some((_, current_right)) = current.as_mut().filter(|range| left <= range.1 + 0.01) {
+            // 保留所有重叠字形的最远右缘。
+            *current_right = current_right.max(right);
+        } else {
+            // 新片段开始前先提交已经闭合的片段。
+            if let Some((current_left, current_right)) = current.take() {
+                visit(current_left, current_right);
+            }
+            // 在栈上开始新的连续视觉片段。
+            current = Some((left, right));
+        }
+    }
+    // 提交行尾仍未闭合的最后一个片段。
+    if let Some((left, right)) = current {
+        visit(left, right);
+    }
+}
+
+/// 返回逻辑选择区在视觉行中的全部连续水平片段。
 pub(crate) fn glyph_selection_x_ranges(
     // 借用按视觉顺序排列的行字形。
     glyphs: &[PositionedGlyph],
@@ -240,25 +281,11 @@ pub(crate) fn glyph_selection_x_ranges(
 ) -> Vec<(f32, f32)> {
     // 保存可能因双向 run 分离而形成的多个视觉片段。
     let mut ranges: Vec<(f32, f32)> = Vec::new();
-    // 依次观察视觉字形，逻辑区间相交时纳入选择。
-    for glyph in glyphs.iter().filter(|glyph| {
-        // cluster 源区间与逻辑选择区间相交。
-        glyph.char_index < end_char && glyph.char_end > start_char
-    }) {
-        // 当前字形可见左缘。
-        let left = glyph.x;
-        // 当前字形可见右缘。
-        let right = glyph.x + glyph.width.max(0.0);
-        // 与上一视觉片段接触或重叠时合并。
-        if let Some(last) = ranges.last_mut().filter(|last| left <= last.1 + 0.01) {
-            // 扩展上一片段右缘。
-            last.1 = last.1.max(right);
-        // 存在视觉间隔时开始新的选择片段。
-        } else {
-            // 登记有限非逆的新片段。
-            ranges.push((left, right.max(left)));
-        }
-    }
+    // 兼容需要持有结果的调用方，同时让绘制热路径复用流式实现。
+    visit_glyph_selection_x_ranges(glyphs, start_char, end_char, |left, right| {
+        // 固化当前连续视觉片段。
+        ranges.push((left, right));
+    });
     // 返回同一视觉布局派生的全部选择片段。
     ranges
 }
