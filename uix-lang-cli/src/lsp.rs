@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use uix_lang_compiler::{CompilerDiagnostic, CompilerSession, CompilerSystem};
 
@@ -63,52 +63,64 @@ impl Session {
 }
 
 pub fn run_stdio() -> Result<u8, String> {
-    let mut input = Vec::new();
-    io::stdin()
-        .read_to_end(&mut input)
-        .map_err(|e| e.to_string())?;
-    let mut offset = 0;
+    // 长寿命 LSP 只保留当前协议帧，不把整个会话历史累积到一个 Vec。
+    let stdin = io::stdin();
+    let mut input = io::BufReader::new(stdin.lock());
     let mut session = Session::default();
-    let mut stdout = io::BufWriter::new(io::stdout());
-    while let Some(body) = next_message(&input, &mut offset)? {
+    let stdout = io::stdout();
+    let mut output = io::BufWriter::new(stdout.lock());
+    while let Some(body) = read_message(&mut input)? {
         for response in handle(&mut session, &body) {
-            write_message(&mut stdout, &response)?;
+            write_message(&mut output, &response)?;
         }
+        // 每个请求后立即交付响应，不能等待进程退出或缓冲区自然填满。
+        output.flush().map_err(|error| error.to_string())?;
         if session.shutdown {
             break;
         }
     }
-    stdout.flush().map_err(|e| e.to_string())?;
     Ok(0)
 }
 
-fn next_message(input: &[u8], offset: &mut usize) -> Result<Option<Value>, String> {
-    if *offset >= input.len() {
-        return Ok(None);
-    }
-    let rest = std::str::from_utf8(&input[*offset..]).map_err(|e| e.to_string())?;
-    let Some(end) = rest.find("\r\n\r\n").or_else(|| rest.find("\n\n")) else {
-        return Err("LSP header 不完整".into());
-    };
-    let header = &rest[..end];
+fn read_message(input: &mut impl BufRead) -> Result<Option<Value>, String> {
     let mut length = None;
-    for line in header.lines() {
-        if let Some(value) = line.strip_prefix("Content-Length:") {
+    let mut saw_header = false;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = input
+            .read_line(&mut line)
+            .map_err(|error| error.to_string())?;
+        if read == 0 {
+            return if saw_header {
+                Err("LSP header 不完整".into())
+            } else {
+                Ok(None)
+            };
+        }
+        if line == "\n" || line == "\r\n" {
+            break;
+        }
+        saw_header = true;
+        let header = line.trim_end_matches(['\r', '\n']);
+        if let Some(value) = header.strip_prefix("Content-Length:") {
             length = Some(value.trim().parse::<usize>().map_err(|e| e.to_string())?);
         }
     }
     let length = length.ok_or("缺少 Content-Length")?;
-    let separator = if rest.as_bytes()[end..].starts_with(b"\r\n\r\n") {
-        4
-    } else {
-        2
-    };
-    let start = *offset + end + separator;
-    if input.len() < start + length {
-        return Err("LSP body 不完整".into());
-    }
-    *offset = start + length;
-    serde_json::from_slice(&input[start..start + length])
+    // 只为当前消息申请精确 body 容量；处理完成后立即释放。
+    let mut body = Vec::new();
+    body.try_reserve_exact(length)
+        .map_err(|error| format!("LSP body 内存申请失败：{error}"))?;
+    body.resize(length, 0);
+    input.read_exact(&mut body).map_err(|error| {
+        if error.kind() == io::ErrorKind::UnexpectedEof {
+            "LSP body 不完整".to_string()
+        } else {
+            error.to_string()
+        }
+    })?;
+    serde_json::from_slice(&body)
         .map(Some)
         .map_err(|e| e.to_string())
 }
@@ -493,17 +505,51 @@ fn word_at(text: &str, line: usize, character: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn framing_round_trip() {
-        let body = serde_json::to_vec(&json!({"method": "shutdown"})).unwrap();
+
+    fn frame(value: &Value) -> Vec<u8> {
+        let body = serde_json::to_vec(value).expect("测试消息必须可序列化");
         let mut data = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
         data.extend_from_slice(&body);
-        let mut at = 0;
+        data
+    }
+
+    #[test]
+    fn framing_round_trip() {
+        let mut input = std::io::Cursor::new(frame(&json!({"method": "shutdown"})));
         assert_eq!(
-            next_message(&data, &mut at).unwrap().unwrap()["method"],
+            read_message(&mut input).unwrap().unwrap()["method"],
             "shutdown"
         );
     }
+
+    #[test]
+    fn streaming_reader_stops_at_the_current_frame() {
+        let first = frame(&json!({"id":1,"method":"initialize"}));
+        let first_length = first.len() as u64;
+        let second = frame(&json!({"id":2,"method":"shutdown"}));
+        let mut bytes = first;
+        bytes.extend_from_slice(&second);
+        let mut input = std::io::Cursor::new(bytes);
+
+        assert_eq!(read_message(&mut input).unwrap().unwrap()["id"], 1);
+        assert_eq!(
+            input.position(),
+            first_length,
+            "单次读取不得消费下一条 LSP 消息",
+        );
+        assert_eq!(read_message(&mut input).unwrap().unwrap()["id"], 2);
+        assert!(read_message(&mut input).unwrap().is_none());
+    }
+
+    #[test]
+    fn streaming_reader_rejects_a_truncated_body() {
+        let mut input = std::io::Cursor::new(b"Content-Length: 5\r\n\r\n{}".to_vec());
+        assert_eq!(
+            read_message(&mut input).expect_err("截断 body 必须失败"),
+            "LSP body 不完整",
+        );
+    }
+
     #[test]
     fn initialize_has_core_capabilities() {
         let mut session = Session::default();
