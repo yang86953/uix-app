@@ -1,0 +1,32 @@
+// Slider 的固有尺寸、轨道/拇指、刻度、焦点和 Tooltip 呈现由 UIX 唯一拥有。
+<Visual
+  name="SLIDER_VISUAL"
+  type="SliderVisual"
+  intrinsicWidth={200.0}
+  marksHeight={18.0}
+  smallTrackHeight={3.0}
+  mediumTrackHeight={4.0}
+  largeTrackHeight={5.0}
+  smallThumbRadius={5.0}
+  mediumThumbRadius={6.0}
+  largeThumbRadius={7.5}
+  centerRatio={0.5}
+  markRadius={3.0}
+  markStrokeWidth={1.0}
+  thumbStrokeWidth={2.0}
+  focusStrokeWidth={1.5}
+  focusRadius={4.0}
+  markLabelFontSize={10.0}
+  tooltipBackgroundAlpha={230}
+  tooltipArrow={true}
+  tooltipZIndex={1100}
+  primary={slider_primary()}
+  primaryHover={slider_primary_hover()}
+  track={slider_track()}
+  thumb={slider_thumb()}
+  label={slider_label()}
+  tooltipBackground={slider_tooltip_background()}
+  tooltipText={slider_tooltip_text()}
+/>
+
+<KernelView value={build_slider_view(kernel, SLIDER_VISUAL_REF)} />

@@ -80,6 +80,7 @@ MIGRATED_WIDGET_DIRS = {
     "input/range_slider",
     "input/rate",
     "input/segmented",
+    "input/slider",
     "input/switch",
     "other/theme_toggle",
     "tooltip_primitives",

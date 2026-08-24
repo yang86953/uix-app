@@ -1,9 +1,28 @@
 // 复用被测滑块与提示位置枚举。
-use super::{Slider, TooltipPlacement};
+use super::{SLIDER_VISUAL_REF, Slider, TooltipPlacement};
 // 引入几何基础类型。
 use crate::core::Rect;
 // 引入共享解析器以核对登记与绘制几何同源。
 use crate::ui::widgets::tooltip_primitives::resolve_tooltip_geometry;
+// 引入 View 构建入口和静态指针比较。
+use crate::ui::View;
+use std::ptr;
+
+// 验证默认实例和 UIX 构建节点只使用同一份视觉事实。
+#[test]
+fn slider_uses_colocated_uix_visual() {
+    // 构建前不得复制第二份默认视觉表。
+    let slider = Slider::default();
+    assert!(ptr::eq(slider.visual, SLIDER_VISUAL_REF));
+    // UIX 注入后的叶内核仍指向同一静态记录。
+    let node = View::build(slider);
+    let slider = node
+        .widget
+        .as_any()
+        .downcast_ref::<Slider>()
+        .expect("UIX 根应保留 Slider 内核");
+    assert!(ptr::eq(slider.visual, SLIDER_VISUAL_REF));
+}
 
 // 靠近表面上边缘拖动时，提示登记必须翻转并保持在表面内。
 #[test]
@@ -45,7 +64,7 @@ fn overlay_entry_uses_current_surface_geometry() {
         // 使用滑块当前值的显示文字。
         &slider.current_value().to_string(),
         // 滑块拖动提示始终带箭头。
-        true,
+        slider.visual.tooltip_arrow,
         // 使用提示目标返回的作者方向。
         placement,
         // 使用滑块拇指目标矩形。
