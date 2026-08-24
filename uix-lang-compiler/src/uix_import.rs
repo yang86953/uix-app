@@ -1,4 +1,5 @@
 // 引入确定性名称、缓存与依赖集合。
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 // 引入编译期文件读取能力。
 use std::fs;
@@ -403,9 +404,10 @@ impl<'a> ImportResolver<'a> {
         }
         // 读取完整 UTF-8 源码。
         let source = if let Some(source) = overlay_source(self.overlays, path) {
-            source.to_owned()
+            // LSP 会话在整个请求期间拥有 overlay，解析器直接借用而不复制完整源码。
+            Cow::Borrowed(source)
         } else {
-            fs::read_to_string(path).map_err(|error| {
+            Cow::Owned(fs::read_to_string(path).map_err(|error| {
                 // 把文件系统错误归到具体目标文件。
                 source_error(
                     // 展示规范来源。
@@ -417,7 +419,7 @@ impl<'a> ImportResolver<'a> {
                     // 给出权限与 UTF-8 修复方向。
                     "确认文件存在、可读且为 UTF-8",
                 )
-            })?
+            })?)
         };
         // SourceGraph 与 parser 消费完全相同的不可变源码快照。
         self.source_graph.insert_file(path, &source);
