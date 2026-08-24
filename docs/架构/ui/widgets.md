@@ -56,6 +56,7 @@
 - `Image`：`src/ui/widgets/display/image/` 同目录保存 Rust 与 UIX；UIX 拥有默认圆角/预览/适配/延迟开关、占位和焦点视觉、预览指示器、模态布局、静态文案/图标及主题角色，Rust 只保留资源缓存、加载状态、动态错误子树、事件、主题解析与底层绘制；每帧只解析一次主题值并由实例共享完整视觉表。
 - `ImageGroup`：`src/ui/widgets/display/image_group/` 同目录保存 Rust 与 UIX；UIX 拥有固有尺寸、内嵌画廊/模态预览/缩略图布局、导航与关闭控制、静态文案/图标及主题角色，Rust 只保留资源、索引、命中、键盘交互、几何执行与底层绘制；同帧画廊和全部缩略图共享一次主题解析，预览计数复用缓存字符串。
 - `Timeline`：`src/ui/widgets/display/timeline/` 同目录保存 Rust 与 UIX；UIX 拥有固有宽度、行高边界、节点/连接线几何、排版缩放及主题色/字号角色，Rust 只保留数据、反向索引、本地化、可见行裁剪、文本测量与底层绘制；完整容纳的普通单行文本经共享 `Cow` 快路径直接借用输入，不逐帧分配临时 `String`。
+- `List`：`src/ui/widgets/display/list/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸/边框、三档行高、水平留白、兼容文字排版、分隔线和主题角色，Rust 只保留 Empty 策略、数据、三个真实插槽的稳定身份/测量/正常流布局及底层绘制；完整容纳的 header/footer/item/load-more 文本复用共享借用型省略入口。
 
 当前没有只透传 `kernel`/`children`、仍待回填静态视觉声明的内置 widget；结构测试继续以空债务集合阻止回退。
 

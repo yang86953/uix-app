@@ -27,6 +27,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/empty",
     "display/image",
     "display/image_group",
+    "display/list",
     "display/qrcode",
     "display/result",
     "display/skeleton",
