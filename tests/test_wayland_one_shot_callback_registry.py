@@ -31,7 +31,9 @@ class WaylandOneShotCallbackRegistryTests(unittest.TestCase):
         # 截取 dispatch adapter。
         dispatch = self.dispatch_source()
         # callback 必须先在 registry 锁外执行。
-        callback_call = dispatch.index("callback(&callback_proxy, event, qh)")
+        callback_call = dispatch.index(
+            "(callback_owner.as_mut())(&callback_proxy, event, qh)"
+        )
         # panic 必须先转换为 owner-thread failure。
         panic_report = dispatch.index("report_callback_panic::<I>")
         # one-shot 类型判断必须精确匹配 wl_callback 接口。
@@ -64,8 +66,10 @@ class WaylandOneShotCallbackRegistryTests(unittest.TestCase):
         self.assertIn("self.registry.insert(", dispatch)
         # 回插必须使用 dispatch 初始解析的精确对象键。
         self.assertIn("key,", dispatch)
-        # 回插必须转移当前规范 callback owner。
-        self.assertIn("Box::new(callback)", dispatch)
+        # 回插必须转移 dispatch 取出的同一个 callback owner。
+        self.assertIn("callback_owner,", dispatch)
+        # 持久事件不得为回插重新装箱。
+        self.assertNotIn("Box::new(callback", dispatch)
         # 生命周期诊断继续保留稳定回插阶段。
         self.assertIn('"callback reinsert"', dispatch)
         # wl_buffer Release 仍是实际持久 callback 使用方。

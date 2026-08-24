@@ -1,5 +1,5 @@
 // 复用被测 registry Widget 与稳定键类型。
-use super::{CallbackKey, CallbackRegistry};
+use super::{Callback, CallbackDisposition, CallbackKey, CallbackRegistry, StoredCallback};
 // 读取稳定错误分类。
 use crate::core::Errc;
 // 构造与生产 backend 相同的 bounded pending failure source。
@@ -9,7 +9,7 @@ use wayland_client::protocol::wl_surface;
 // 生成不依赖真实 Wayland connection 的测试类型身份。
 use std::any::TypeId;
 // 捕获测试主动制造的 registry mutex poison。
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 // 建立一个可独立观察 failure 的 registry fixture。
 fn registry_fixture() -> (CallbackRegistry, PendingFailureSource) {
@@ -58,6 +58,46 @@ fn healthy_registry_preserves_owner_across_reinsert() {
         .expect("callback owner type must remain stable");
     // 验证同一 owner 的可观察值未改变。
     assert_eq!(*value, 7);
+}
+
+// 持久 callback 的类型恢复与回插必须复用同一外层 owner 分配。
+#[test]
+fn persistent_callback_reuses_stored_owner_allocation() {
+    // 构造健康 registry 与稳定测试键。
+    let (registry, _source) = registry_fixture();
+    let key = test_key(2);
+    // 建立规范的持久 wl_surface callback owner。
+    let callback: Callback<wl_surface::WlSurface> =
+        Box::new(|_proxy, _event, _qh| CallbackDisposition::Keep);
+    let stored: StoredCallback = Box::new(callback);
+    // 记录 registry 实际拥有的外层 Box 地址。
+    let owner_address = std::ptr::from_ref(stored.as_ref()).cast::<()>();
+    assert!(registry.insert(key, stored, "registration"));
+
+    // dispatch take 与强类型恢复不得替换外层 owner。
+    let stored = registry
+        .remove(&key, "dispatch take")
+        .expect("registered callback owner must be present");
+    let callback_owner = registry
+        .downcast_callback::<wl_surface::WlSurface>(stored)
+        .expect("registered callback type must match");
+    assert_eq!(
+        std::ptr::from_ref(callback_owner.as_ref()).cast::<()>(),
+        owner_address
+    );
+
+    // 强类型 owner 擦除回插后仍应保持同一分配地址与类型。
+    assert!(registry.insert(key, callback_owner, "callback reinsert"));
+    let stored = registry
+        .remove(&key, "dispatch take")
+        .expect("reinserted callback owner must be present");
+    assert_eq!(
+        std::ptr::from_ref(stored.as_ref()).cast::<()>(),
+        owner_address
+    );
+    assert!(registry
+        .downcast_callback::<wl_surface::WlSurface>(stored)
+        .is_some());
 }
 
 // registry 锁中毒必须为每个生命周期阶段产生稳定 typed failure。
