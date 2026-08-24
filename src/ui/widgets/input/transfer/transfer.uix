@@ -1,0 +1,83 @@
+// Transfer 的双栏、搜索框、条目、操作按钮、排版、图标和主题由 UIX 唯一拥有。
+<Visual
+  name="TRANSFER_LAYOUT_VISUAL"
+  type="TransferLayoutVisual"
+  naturalWidth={500.0}
+  naturalHeight={200.0}
+  buttonColumnWidth={60.0}
+  headerHeight={24.0}
+  searchHeight={24.0}
+  rowHeight={28.0}
+  minPaneHalfWidth={40.0}
+  searchHorizontalInset={4.0}
+  searchVerticalInset={2.0}
+  searchBoxHeight={20.0}
+  textHorizontalInset={8.0}
+  textTopInset={6.0}
+  rowIconInset={4.0}
+  rowIconWidth={20.0}
+  rowTextInset={26.0}
+  buttonHorizontalInset={8.0}
+  buttonWidth={44.0}
+  buttonHeight={20.0}
+  buttonGroupHalfHeight={20.0}
+  buttonVerticalGap={4.0}
+  cursorCharWidth={8.0}
+  cursorPadding={8.0}
+  cursorMinWidth={8.0}
+  cursorMaxWidth={280.0}
+  cursorXInset={8.0}
+  cursorY={4.0}
+  cursorWidth={1.0}
+  cursorHeight={20.0}
+/>
+
+<Visual
+  name="TRANSFER_TYPOGRAPHY_VISUAL"
+  type="TransferTypographyVisual"
+  itemMidpointWeight={0.5}
+  checkboxIconSize={12.0}
+  arrowIconSize={14.0}
+/>
+
+<Visual
+  name="TRANSFER_CHROME_VISUAL"
+  type="TransferChromeVisual"
+  borderWidth={1.0}
+  focusBorderWidth={1.5}
+  buttonRadius={3.0}
+  radius={transfer_radius_small()}
+/>
+
+<Visual
+  name="TRANSFER_ICONS_VISUAL"
+  type="TransferIconsVisual"
+  selected="check-square"
+  unselected="square"
+  moveRight="arrow-right"
+  moveLeft="arrow-left"
+/>
+
+<Visual
+  name="TRANSFER_PALETTE_VISUAL"
+  type="TransferPaletteVisual"
+  background={transfer_background()}
+  border={transfer_border()}
+  text={transfer_text()}
+  textQuaternary={transfer_text_quaternary()}
+  primary={transfer_primary()}
+  fillTertiary={transfer_fill_tertiary()}
+  white={transfer_white()}
+/>
+
+<Visual
+  name="TRANSFER_VISUAL"
+  type="TransferVisual"
+  layout={TRANSFER_LAYOUT_VISUAL}
+  typography={TRANSFER_TYPOGRAPHY_VISUAL}
+  chrome={TRANSFER_CHROME_VISUAL}
+  icons={TRANSFER_ICONS_VISUAL}
+  palette={TRANSFER_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_transfer_view(kernel, TRANSFER_VISUAL_REF)} />

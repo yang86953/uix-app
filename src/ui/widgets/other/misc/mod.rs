@@ -5,7 +5,7 @@
 // 二维码实现物理归入 display，此处只保留兼容模块路径。
 #[path = "../../display/qrcode/mod.rs"]
 mod qrcode;
-#[path = "../../input/transfer.rs"]
+#[path = "../../input/transfer/mod.rs"]
 mod transfer;
 #[path = "../../input/upload.rs"]
 mod upload;
