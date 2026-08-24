@@ -97,13 +97,20 @@ impl EventBus {
     ) -> usize {
         let id = self.next_id;
         self.next_id += 1;
-        self.subscribers.borrow_mut().push(SubscriberEntry {
-            id,
-            event_type,
-            handler,
-            priority,
-            once,
-        });
+        let mut subscribers = self.subscribers.borrow_mut();
+        // 注册是低频路径：在此维持优先级降序，避免每次发布重复稳定排序。
+        // partition_point 越过所有同优先级旧条目，保留注册先后顺序。
+        let insertion = subscribers.partition_point(|entry| entry.priority >= priority);
+        subscribers.insert(
+            insertion,
+            SubscriberEntry {
+                id,
+                event_type,
+                handler,
+                priority,
+                once,
+            },
+        );
         id
     }
 
@@ -203,10 +210,6 @@ impl EventBus {
     /// 不通过本总线的返回值表达。
     pub(crate) fn publish(&self, event: &UiEvent) {
         let mut subs = self.subscribers.borrow_mut();
-
-        // 按优先级降序排序（高优先级先执行）
-        // 相同优先级的排序是稳定的，保持注册顺序
-        subs.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
         for entry in subs.iter_mut() {
             let matches = match entry.event_type {

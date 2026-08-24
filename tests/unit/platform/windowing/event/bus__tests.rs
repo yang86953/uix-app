@@ -1,4 +1,3 @@
-
 //! 平台输入事件分发通道的最小验证：订阅/发布、类型过滤、
 //! 通配符、优先级、一次性、注销幂等、清空与计数。
 
@@ -69,6 +68,22 @@ fn priority_order_is_highest_first() {
         });
     bus.publish(&event_of(UiEventType::PointerMove));
     assert_eq!(*order.borrow(), ["high", "low"]);
+}
+
+#[test]
+fn equal_priority_preserves_registration_order_across_publishes() {
+    let mut bus = EventBus::new();
+    let order = Rc::new(RefCell::new(Vec::new()));
+    for value in [1, 2, 3] {
+        let order = Rc::clone(&order);
+        bus.subscribe_with_priority(UiEventType::PointerMove, 7, move |_| {
+            order.borrow_mut().push(value);
+        });
+    }
+
+    bus.publish(&event_of(UiEventType::PointerMove));
+    bus.publish(&event_of(UiEventType::PointerMove));
+    assert_eq!(order.borrow().as_slice(), &[1, 2, 3, 1, 2, 3]);
 }
 
 #[test]
