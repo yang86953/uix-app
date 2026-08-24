@@ -122,14 +122,22 @@ class AgentSession:
             win32file.CloseHandle(self.handle)
 
 
-def first_window(session):
-    """从 list_windows 取第一个窗口的 id 与 generation。"""
+def resolve_window(session, window_id=None):
+    """从 list_windows 解析目标窗口的 id 与真实 generation。"""
     reply = session.list_windows()
     windows = reply.get("windows") or []
     if not windows:
         sys.exit("无可用窗口")
-    first = windows[0]
-    return first["window_id"], first["generation"]
+    if window_id is None:
+        selected = windows[0]
+    else:
+        selected = next(
+            (window for window in windows if window.get("window_id") == window_id),
+            None,
+        )
+        if selected is None:
+            sys.exit(f"窗口不存在: {window_id}")
+    return selected["window_id"], selected["generation"]
 
 
 def main():
@@ -147,15 +155,12 @@ def main():
         elif command == "snapshot":
             window_id = int(args[1]) if len(args) > 1 else None
             if window_id is None:
-                window_id, _ = first_window(session)
+                window_id, _ = resolve_window(session)
             print(json.dumps(session.snapshot(window_id), ensure_ascii=False))
         elif command == "click":
             x, y = float(args[1]), float(args[2])
-            window_id = int(args[3]) if len(args) > 3 else None
-            if window_id is None:
-                window_id, generation = first_window(session)
-            else:
-                generation = 0
+            requested_window_id = int(args[3]) if len(args) > 3 else None
+            window_id, generation = resolve_window(session, requested_window_id)
             print(json.dumps(session.perform({
                 "window_id": window_id,
                 "generation": generation,

@@ -1,15 +1,16 @@
-
 use super::*;
 use crate::app::queues::agent_command_queue::AgentCommandResult;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
 use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn pending(confirm_id: u64, created_at: Instant) -> PendingConfirmation {
     PendingConfirmation {
         confirm_id,
         generation: 1,
+        expected_revision: Some(11),
         target: SemanticTarget::AutomationId("danger-button".to_owned()),
         action: SemanticAction::Invoke,
         created_at,
@@ -69,4 +70,92 @@ fn fail_confirmations_completes_all_pending() {
     assert!(state.confirm_pending.is_empty());
     assert!(recv_result(rx1).is_ok());
     assert!(recv_result(rx2).is_ok());
+}
+
+#[derive(Default)]
+struct RecordingExecutor {
+    expected_revision: Mutex<Option<Option<u64>>>,
+}
+
+impl AgentCommandExecutor for RecordingExecutor {
+    fn perform(
+        &self,
+        _tree: &mut WidgetTree,
+        _semantic_state: &WindowSemanticState,
+        _presentable: bool,
+        _generation: u64,
+        expected_revision: Option<u64>,
+        _target: &SemanticTarget,
+        _action: &SemanticAction,
+    ) -> Result<(), AgentCommandError> {
+        *self
+            .expected_revision
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(expected_revision);
+        Err(AgentCommandError::NotPresentable)
+    }
+
+    fn perform_window(
+        &self,
+        _tree: &mut WidgetTree,
+        _semantic_state: &WindowSemanticState,
+        _presentable: bool,
+        _generation: u64,
+        _expected_revision: Option<u64>,
+        _window: &mut dyn AgentWindowOps,
+        _action: AgentWindowAction,
+    ) -> Result<(), AgentCommandError> {
+        unreachable!("本测试不执行窗口动作")
+    }
+}
+
+#[test]
+fn resolve_confirmation_preserves_expected_revision() {
+    let mut state = WindowAgentState::new();
+    let executor = Arc::new(RecordingExecutor::default());
+    state.set_executor(executor.clone());
+    state.confirm_pending.push(pending(7, Instant::now()));
+
+    let mut tree = WidgetTree::new();
+    let semantic_state = WindowSemanticState::new(crate::core::WindowId::ROOT);
+    let (tx, rx) = mpsc::sync_channel(1);
+    state.handle_resolve_confirmation(&mut tree, &semantic_state, true, tx, 7, true);
+
+    assert_eq!(
+        *executor
+            .expected_revision
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()),
+        Some(Some(11))
+    );
+    assert_eq!(recv_result(rx), Ok(Err(AgentCommandError::NotPresentable)));
+}
+
+#[test]
+fn resolve_confirmation_rejects_expired_pending() {
+    let mut state = WindowAgentState::new();
+    let executor = Arc::new(RecordingExecutor::default());
+    state.set_executor(executor.clone());
+    state
+        .confirm_pending
+        .push(pending(7, Instant::now() - Duration::from_secs(120)));
+
+    let mut tree = WidgetTree::new();
+    let semantic_state = WindowSemanticState::new(crate::core::WindowId::ROOT);
+    let (tx, rx) = mpsc::sync_channel(1);
+    state.handle_resolve_confirmation(&mut tree, &semantic_state, true, tx, 7, true);
+
+    assert_eq!(
+        *executor
+            .expected_revision
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()),
+        None
+    );
+    assert_eq!(
+        recv_result(rx),
+        Ok(Err(AgentCommandError::ConfirmationNotFound {
+            confirm_id: 7
+        }))
+    );
 }

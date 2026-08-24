@@ -6,6 +6,7 @@
 //! 不拥有队列实例（由组合根创建并注入）。
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU8, Ordering};
 #[cfg(any(test, feature = "agent-control"))]
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
@@ -119,6 +120,9 @@ pub(crate) enum AgentErrorCode {
     StaleWindow,
     #[cfg(any(test, feature = "agent-control"))]
     StaleRevision,
+    /// 命令已开始执行但等待响应超时，调用方不能假定动作未发生。
+    #[cfg(feature = "agent-control")]
+    OutcomeUnknown,
     #[cfg(any(test, feature = "agent-control"))]
     NodeNotFound,
     #[cfg(any(test, feature = "agent-control"))]
@@ -166,6 +170,8 @@ impl AgentErrorCode {
             Self::WindowNotFound => "window_not_found",
             Self::StaleWindow => "stale_window",
             Self::StaleRevision => "stale_revision",
+            #[cfg(feature = "agent-control")]
+            Self::OutcomeUnknown => "outcome_unknown",
             Self::NodeNotFound => "node_not_found",
             Self::AmbiguousTarget => "ambiguous_target",
             Self::UnsupportedAction => "unsupported_action",
@@ -306,6 +312,49 @@ impl AgentSubmitError {
 pub(crate) struct AgentCommandTicket {
     #[cfg_attr(not(any(test, feature = "agent-control")), allow(dead_code))]
     receiver: Receiver<AgentCommandResult>,
+    lifecycle: Arc<AgentCommandLifecycle>,
+}
+
+const AGENT_COMMAND_PENDING: u8 = 0;
+const AGENT_COMMAND_STARTED: u8 = 1;
+const AGENT_COMMAND_CANCELLED: u8 = 2;
+
+/// 票据与 UI 队列共享的单向命令生命周期门。
+#[derive(Debug)]
+struct AgentCommandLifecycle {
+    state: AtomicU8,
+}
+
+impl AgentCommandLifecycle {
+    fn new() -> Self {
+        Self {
+            state: AtomicU8::new(AGENT_COMMAND_PENDING),
+        }
+    }
+
+    /// 只有仍待执行的命令能够进入 UI 执行阶段。
+    fn try_start(&self) -> bool {
+        self.state
+            .compare_exchange(
+                AGENT_COMMAND_PENDING,
+                AGENT_COMMAND_STARTED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    /// 只取消尚未开始的命令；已开始时调用方必须按结果未知处理。
+    fn cancel_pending(&self) -> bool {
+        self.state
+            .compare_exchange(
+                AGENT_COMMAND_PENDING,
+                AGENT_COMMAND_CANCELLED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
 }
 
 // 票据等待入口由 agent transport 或专门 GUI 测试按需消费。
@@ -313,16 +362,35 @@ pub(crate) struct AgentCommandTicket {
 impl AgentCommandTicket {
     #[cfg(any(test, feature = "agent-control"))]
     pub(crate) fn recv_timeout(
-        self,
+        &self,
         timeout: Duration,
     ) -> Result<AgentCommandResult, RecvTimeoutError> {
         self.receiver.recv_timeout(timeout)
+    }
+
+    /// 超时或连接关闭时尝试取消仍在队列中的命令。
+    pub(crate) fn cancel_pending(&self) -> bool {
+        self.lifecycle.cancel_pending()
+    }
+}
+
+impl Drop for AgentCommandTicket {
+    fn drop(&mut self) {
+        let _ = self.cancel_pending();
     }
 }
 
 pub(crate) struct AgentCommandEnvelope {
     pub(crate) request: AgentCommandRequest,
     pub(crate) response: SyncSender<AgentCommandResult>,
+    lifecycle: Arc<AgentCommandLifecycle>,
+}
+
+impl AgentCommandEnvelope {
+    /// 与票据取消竞争；返回 false 表示调用方已放弃且动作不得执行。
+    pub(crate) fn try_start(&self) -> bool {
+        self.lifecycle.try_start()
+    }
 }
 
 // 队列容量字段由 agent 提交路径读取，默认库测试不触发该路径。
@@ -367,6 +435,7 @@ impl AgentCommandQueue {
         request: AgentCommandRequest,
     ) -> Result<(AgentCommandTicket, bool), AgentSubmitError> {
         let (response, receiver) = sync_channel(1);
+        let lifecycle = Arc::new(AgentCommandLifecycle::new());
         let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
         if inner.closed {
             return Err(AgentSubmitError::AppClosed);
@@ -375,10 +444,18 @@ impl AgentCommandQueue {
             return Err(AgentSubmitError::QueueFull);
         }
         let should_wake = inner.pending.is_empty();
-        inner
-            .pending
-            .push_back(AgentCommandEnvelope { request, response });
-        Ok((AgentCommandTicket { receiver }, should_wake))
+        inner.pending.push_back(AgentCommandEnvelope {
+            request,
+            response,
+            lifecycle: lifecycle.clone(),
+        });
+        Ok((
+            AgentCommandTicket {
+                receiver,
+                lifecycle,
+            },
+            should_wake,
+        ))
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -434,3 +511,9 @@ impl AgentCommandQueue {
 pub(crate) fn send_result(response: SyncSender<AgentCommandResult>, result: AgentCommandResult) {
     let _ = response.send(result);
 }
+
+#[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../tests/unit/app/queues/agent_command_queue__tests.rs"]
+// 保留原测试模块层级与私有契约访问能力。
+mod tests;
