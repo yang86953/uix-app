@@ -2,6 +2,9 @@
 
 use std::{collections::BTreeMap, path::Path};
 
+const STABLE_HASH_OFFSET: u64 = 0xcbf29ce484222325;
+const STABLE_HASH_PRIME: u64 = 0x100000001b3;
+
 /// 一个编译图内稳定且可排序的源码身份。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceId(u64);
@@ -9,7 +12,11 @@ pub struct SourceId(u64);
 impl SourceId {
     /// 从规范路径或内嵌来源标签建立稳定身份。
     pub fn from_source_name(source_name: &str) -> Self {
-        Self(stable_hash(source_name.replace('\\', "/").as_bytes()))
+        // 逐字节规范化路径分隔符，避免只为哈希构造临时 String。
+        let hash = source_name.bytes().fold(STABLE_HASH_OFFSET, |hash, byte| {
+            extend_stable_hash(hash, if byte == b'\\' { b'/' } else { byte })
+        });
+        Self(hash)
     }
 
     /// 返回可用于缓存键和协议传输的原始身份。
@@ -90,12 +97,17 @@ impl SourceGraph {
 
     /// 组合全部内容摘要，形成递归依赖缓存键。
     pub fn dependency_hash(&self) -> u64 {
-        let mut bytes = Vec::with_capacity(self.files.len() * 16);
+        // 直接延续同一 FNV-1a 状态，保持既有字节序列与哈希值但不分配临时 Vec。
+        let mut hash = STABLE_HASH_OFFSET;
         for file in &self.files {
-            bytes.extend_from_slice(&file.id.0.to_le_bytes());
-            bytes.extend_from_slice(&file.content_hash.to_le_bytes());
+            for byte in file.id.0.to_le_bytes() {
+                hash = extend_stable_hash(hash, byte);
+            }
+            for byte in file.content_hash.to_le_bytes() {
+                hash = extend_stable_hash(hash, byte);
+            }
         }
-        stable_hash(&bytes)
+        hash
     }
 }
 
@@ -154,15 +166,21 @@ impl SourceGraphBuilder {
     }
 
     pub(crate) fn finish(self) -> SourceGraph {
-        let files = self
-            .order
+        // 构建器已被消费，按读取顺序移出 SourceFile，避免克隆其中的完整源码 String。
+        let Self {
+            root_path,
+            mut files,
+            order,
+            imports,
+        } = self;
+        let files = order
             .into_iter()
-            .filter_map(|path| self.files.get(&path).cloned())
+            .filter_map(|path| files.remove(&path))
             .collect();
         SourceGraph {
-            root: source_id(&self.root_path),
+            root: source_id(&root_path),
             files,
-            imports: self.imports,
+            imports,
         }
     }
 }
@@ -176,17 +194,22 @@ fn source_id(path: &str) -> SourceId {
 }
 
 fn stable_hash(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf29ce484222325_u64;
+    let mut hash = STABLE_HASH_OFFSET;
     for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
+        hash = extend_stable_hash(hash, *byte);
     }
     hash
 }
 
+#[inline]
+fn extend_stable_hash(hash: u64, byte: u8) -> u64 {
+    (hash ^ u64::from(byte)).wrapping_mul(STABLE_HASH_PRIME)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SourceGraph;
+    use super::{SourceGraph, SourceGraphBuilder, normalized_path, stable_hash};
+    use std::path::Path;
 
     #[test]
     fn inline_graph_has_stable_identity_and_dependency_hash() {
@@ -198,5 +221,38 @@ mod tests {
             first.dependency_hash(),
             SourceGraph::inline("demo.uix", "<Text>Changed</Text>").dependency_hash()
         );
+    }
+
+    #[test]
+    fn dependency_hash_matches_the_original_concatenated_bytes() {
+        let graph = SourceGraph::inline("demo.uix", "<Text>Hello</Text>");
+        let mut bytes = Vec::new();
+        for file in graph.files() {
+            bytes.extend_from_slice(&file.id.value().to_le_bytes());
+            bytes.extend_from_slice(&file.content_hash.to_le_bytes());
+        }
+        assert_eq!(graph.dependency_hash(), stable_hash(&bytes));
+    }
+
+    #[test]
+    fn builder_finish_moves_source_allocations_in_read_order() {
+        let root = Path::new("root.uix");
+        let helper = Path::new("helper.uix");
+        let mut builder = SourceGraphBuilder::new(root);
+        builder.insert_file(root, "<App />");
+        builder.insert_file(helper, "<Widget name=\"Helper\" />");
+        let root_key = normalized_path(root);
+        let source_pointer = builder
+            .files
+            .get(&root_key)
+            .expect("构建器必须持有根源码")
+            .source
+            .as_ptr();
+
+        let graph = builder.finish();
+
+        assert_eq!(graph.files()[0].path, root_key);
+        assert_eq!(graph.files()[0].source.as_ptr(), source_pointer);
+        assert_eq!(graph.files()[1].path, normalized_path(helper));
     }
 }
