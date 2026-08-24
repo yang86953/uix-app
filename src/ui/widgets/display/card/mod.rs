@@ -2,6 +2,7 @@
 //! title, body, hover feedback, and configurable border radius.
 
 use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
 
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::draw::painting::PaintPass;
@@ -20,10 +21,380 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 // Card 的自动高度必须读取子树自然尺寸，而不是 flex-grow 的零 basis。
 use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
 // 接收 ViewAdapter 传入的通用尺寸样式窄契约。
-use crate::ui::theme::style::Style;
+use crate::ui::theme::style::{ColorValue, PaletteColor, Style};
+use crate::ui::theme::{NeutralRole, ShadowToken};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
+
+// 保存由 UIX 声明的卡片默认尺寸、内边距与初始外观。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardDefaultsVisual {
+    width: f32,
+    height: f32,
+    padding: f32,
+    bordered: bool,
+    elevation: u8,
+    max_elevation: u8,
+    body_gap: f32,
+}
+
+// 保存由 UIX 声明的标题区尺寸、分隔线与字体收缩边界。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardTitleVisual {
+    block_height: f32,
+    text_height: f32,
+    separator_offset: f32,
+    separator_thickness: f32,
+    font_size: f32,
+    min_font_size: f32,
+    vertical_inset: f32,
+}
+
+// 保存由 UIX 声明的动作区排版、分隔线与焦点圈几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardActionVisual {
+    height: f32,
+    font_size: f32,
+    min_font_size: f32,
+    horizontal_inset: f32,
+    vertical_inset: f32,
+    divider_inset: f32,
+    divider_thickness: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    center_ratio: f32,
+}
+
+// 保存由 UIX 声明的表面、描边、悬停混色与顶部强调线几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardSurfaceVisual {
+    border_width: f32,
+    hover_lighten: f32,
+    radius_limit_ratio: f32,
+    accent_min_elevation: u8,
+    accent_horizontal_inset: f32,
+    accent_height: f32,
+    accent_radius_ratio: f32,
+    shadow_directional_y_scale: f32,
+    shadow_ambient_x_scale: f32,
+    shadow_ambient_y_scale: f32,
+    shadow_glow_offset_x: f32,
+    shadow_glow_offset_y: f32,
+}
+
+// 保存单级阴影的三个层级缩放与脏区外扩。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardElevationVisual {
+    directional_scale: f32,
+    ambient_scale: f32,
+    glow_scale: f32,
+    alpha_boost: f32,
+    dirty_expand: f32,
+}
+
+// 卡片圆角使用的主题尺寸角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CardRadiusRole {
+    Large,
+}
+
+impl CardRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Large => tokens.border_radius_lg(),
+        }
+    }
+}
+
+// 卡片阴影使用的主题令牌角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CardShadowRole {
+    Default,
+}
+
+impl CardShadowRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ShadowToken {
+        match self {
+            Self::Default => tokens.box_shadow(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的卡片主题语义色映射。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CardPaletteVisual {
+    background: ColorValue,
+    elevated_background: ColorValue,
+    primary: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    action_hover: ColorValue,
+}
+
+// 完整视觉配置由全部 Card 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CardVisual {
+    defaults: CardDefaultsVisual,
+    title: CardTitleVisual,
+    action: CardActionVisual,
+    surface: CardSurfaceVisual,
+    elevations: [CardElevationVisual; 3],
+    radius: CardRadiusRole,
+    shadow: CardShadowRole,
+    palette: CardPaletteVisual,
+}
+
+impl CardVisual {
+    fn elevation(&self, elevation: u8) -> Option<&CardElevationVisual> {
+        elevation
+            .checked_sub(1)
+            .and_then(|index| self.elevations.get(usize::from(index)))
+    }
+}
+
+// 组合 UIX 声明的卡片默认状态。
+const fn card_defaults(
+    width: f32,
+    height: f32,
+    padding: f32,
+    bordered: bool,
+    elevation: f32,
+    max_elevation: f32,
+    body_gap: f32,
+) -> CardDefaultsVisual {
+    CardDefaultsVisual {
+        width,
+        height,
+        padding,
+        bordered,
+        elevation: elevation as u8,
+        max_elevation: max_elevation as u8,
+        body_gap,
+    }
+}
+
+// 组合 UIX 声明的标题区排版。
+#[allow(clippy::too_many_arguments)]
+const fn card_title(
+    block_height: f32,
+    text_height: f32,
+    separator_offset: f32,
+    separator_thickness: f32,
+    font_size: f32,
+    min_font_size: f32,
+    vertical_inset: f32,
+) -> CardTitleVisual {
+    CardTitleVisual {
+        block_height,
+        text_height,
+        separator_offset,
+        separator_thickness,
+        font_size,
+        min_font_size,
+        vertical_inset,
+    }
+}
+
+// 组合 UIX 声明的动作区排版与交互反馈几何。
+#[allow(clippy::too_many_arguments)]
+const fn card_action(
+    height: f32,
+    font_size: f32,
+    min_font_size: f32,
+    horizontal_inset: f32,
+    vertical_inset: f32,
+    divider_inset: f32,
+    divider_thickness: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    center_ratio: f32,
+) -> CardActionVisual {
+    CardActionVisual {
+        height,
+        font_size,
+        min_font_size,
+        horizontal_inset,
+        vertical_inset,
+        divider_inset,
+        divider_thickness,
+        focus_inset,
+        focus_stroke_width,
+        center_ratio,
+    }
+}
+
+// 组合 UIX 声明的卡片表面与顶部强调线。
+#[allow(clippy::too_many_arguments)]
+const fn card_surface(
+    border_width: f32,
+    hover_lighten: f32,
+    radius_limit_ratio: f32,
+    accent_min_elevation: f32,
+    accent_horizontal_inset: f32,
+    accent_height: f32,
+    accent_radius_ratio: f32,
+    shadow_directional_y_scale: f32,
+    shadow_ambient_x_scale: f32,
+    shadow_ambient_y_scale: f32,
+    shadow_glow_offset_x: f32,
+    shadow_glow_offset_y: f32,
+) -> CardSurfaceVisual {
+    CardSurfaceVisual {
+        border_width,
+        hover_lighten,
+        radius_limit_ratio,
+        accent_min_elevation: accent_min_elevation as u8,
+        accent_horizontal_inset,
+        accent_height,
+        accent_radius_ratio,
+        shadow_directional_y_scale,
+        shadow_ambient_x_scale,
+        shadow_ambient_y_scale,
+        shadow_glow_offset_x,
+        shadow_glow_offset_y,
+    }
+}
+
+// 组合 UIX 声明的单级阴影缩放与脏区外扩。
+const fn card_elevation(
+    directional_scale: f32,
+    ambient_scale: f32,
+    glow_scale: f32,
+    alpha_boost: f32,
+    dirty_expand: f32,
+) -> CardElevationVisual {
+    CardElevationVisual {
+        directional_scale,
+        ambient_scale,
+        glow_scale,
+        alpha_boost,
+        dirty_expand,
+    }
+}
+
+// 组合 UIX 声明的三级阴影视觉表。
+const fn card_elevations(
+    low: CardElevationVisual,
+    medium: CardElevationVisual,
+    high: CardElevationVisual,
+) -> [CardElevationVisual; 3] {
+    [low, medium, high]
+}
+
+// 组合 UIX 声明的卡片主题语义色。
+const fn card_palette(
+    background: ColorValue,
+    elevated_background: ColorValue,
+    primary: ColorValue,
+    border: ColorValue,
+    text: ColorValue,
+    action_hover: ColorValue,
+) -> CardPaletteVisual {
+    CardPaletteVisual {
+        background,
+        elevated_background,
+        primary,
+        border,
+        text,
+        action_hover,
+    }
+}
+
+// 组合 UIX 声明的完整卡片视觉配置。
+#[allow(clippy::too_many_arguments)]
+const fn card_visual(
+    defaults: CardDefaultsVisual,
+    title: CardTitleVisual,
+    action: CardActionVisual,
+    surface: CardSurfaceVisual,
+    elevations: [CardElevationVisual; 3],
+    radius: CardRadiusRole,
+    shadow: CardShadowRole,
+    palette: CardPaletteVisual,
+) -> CardVisual {
+    CardVisual {
+        defaults,
+        title,
+        action,
+        surface,
+        elevations,
+        radius,
+        shadow,
+        palette,
+    }
+}
+
+// 向 UIX 提供卡片默认边框开关。
+const fn card_bordered_default() -> bool {
+    true
+}
+
+// 向 UIX 提供大圆角主题角色。
+const fn card_large_radius() -> CardRadiusRole {
+    CardRadiusRole::Large
+}
+
+// 向 UIX 提供默认盒阴影主题角色。
+const fn card_default_shadow() -> CardShadowRole {
+    CardShadowRole::Default
+}
+
+// 向 UIX 提供卡片容器背景角色。
+const fn card_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+// 向 UIX 提供卡片抬升背景角色。
+const fn card_elevated_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgElevated)
+}
+
+// 向 UIX 提供卡片品牌主色角色。
+const fn card_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供卡片次级边框角色。
+const fn card_border() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BorderSecondary)
+}
+
+// 向 UIX 提供卡片正文色角色。
+const fn card_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供动作悬停填充角色。
+const fn card_action_hover() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_CARD_VISUAL: CardVisual = card_visual(
+    card_defaults(200.0, 120.0, 16.0, true, 1.0, 3.0, 0.0),
+    card_title(56.0, 44.0, 48.0, 1.0, 15.0, 11.0, 2.0),
+    card_action(40.0, 13.0, 10.0, 6.0, 2.0, 8.0, 1.0, 1.0, 2.0, 0.5),
+    card_surface(1.0, 0.05, 0.5, 2.0, 24.0, 3.0, 0.5, 1.5, 0.3, 0.6, 0.0, 0.0),
+    card_elevations(
+        card_elevation(0.8, 1.2, 1.6, 1.1, 50.0),
+        card_elevation(1.0, 1.6, 2.2, 1.0, 70.0),
+        card_elevation(1.2, 2.2, 3.0, 0.9, 95.0),
+    ),
+    card_large_radius(),
+    card_default_shadow(),
+    card_palette(
+        card_background(),
+        card_elevated_background(),
+        card_primary(),
+        card_border(),
+        card_text(),
+        card_action_hover(),
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_CARD_VISUAL: OnceLock<CardVisual> = OnceLock::new();
 
 widget! {
     /// 支持阴影层级、悬停高亮和内容内边距的卡片组件。
@@ -31,12 +402,18 @@ widget! {
         title: Option<String>,
         children: WidgetChildren,
         bordered: bool,
+        #[snapshot(skip)]
+        bordered_authored: bool,
         hoverable: bool,
         hovered: bool,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         padding: f32,
+        #[snapshot(skip)]
+        padding_authored: bool,
         elevation: u8,
+        #[snapshot(skip)]
+        elevation_authored: bool,
         flex_grow_val: f32,
         actions: Vec<String>,
         focused: bool,
@@ -46,6 +423,8 @@ widget! {
         pending_submit: RefCell<Option<String>>,
         // 缓存 body 子树的真实内容尺寸，供未指定高度时撑开卡片。
         cached_content_size: Cell<Size>,
+        #[snapshot(skip)]
+        visual: &'static CardVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -143,51 +522,66 @@ widget! {
         }
         let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
         self.last_frame.set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let border_radius_lg = ctx.tokens().border_radius_lg();
-        let bg_container = ctx.tokens().color_bg_container();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
-        let primary = ctx.tokens().color_primary();
-        let border_secondary = ctx.tokens().color_border_secondary();
-        let text = ctx.tokens().color_text();
+        let border_radius_lg = self.visual.radius.resolve(ctx.tokens());
+        let bg_container = self.visual.palette.background.resolve(ctx.tokens());
+        let bg_elevated = self.visual.palette.elevated_background.resolve(ctx.tokens());
+        let primary = self.visual.palette.primary.resolve(ctx.tokens());
+        let border_secondary = self.visual.palette.border.resolve(ctx.tokens());
+        let text = self.visual.palette.text.resolve(ctx.tokens());
 
         let card_radius = Some(Radius::uniform(
-            border_radius_lg.min(frame.w * 0.5).min(frame.h * 0.5).max(0.0),
+            border_radius_lg
+                .min(frame.w * self.visual.surface.radius_limit_ratio)
+                .min(frame.h * self.visual.surface.radius_limit_ratio)
+                .max(0.0),
         ));
 
         // 阴影绘制由图形引擎内部处理 clip 绕过。
         // 引擎的 draw_box_shadow 会自动恢复到脏区域 clip，
         // 绕过父级 children_clip 但保持在脏区域内。
-        draw_elevation_shadow(ctx, frame, self.elevation);
+        draw_elevation_shadow(ctx, frame, self.elevation, self.visual);
 
         ctx.push_clip(frame);
 
         // Background
         let bg = if self.hovered {
             // 悬浮时向白色混合 5%（等价 Color::lighten(0.05)，基于主题底色 token）。
-            bg_container.lighten(0.05)
+            bg_container.lighten(self.visual.surface.hover_lighten)
         } else {
             bg_elevated
         };
         ctx.fill_rect(frame, bg, card_radius);
 
         // Top accent line
-        if self.elevation > 1 {
-            let inset = 24.0f32.min(frame.w * 0.5);
+        if self.elevation >= self.visual.surface.accent_min_elevation {
+            let inset = self
+                .visual
+                .surface
+                .accent_horizontal_inset
+                .min(frame.w * self.visual.surface.radius_limit_ratio);
             let accent_w = (frame.w - inset * 2.0).max(0.0);
-            let accent_h = 3.0f32.min(frame.h);
+            let accent_h = self.visual.surface.accent_height.min(frame.h);
             if accent_w > 0.0 && accent_h > 0.0 {
                 let accent_rect = Rect::new(frame.x + inset, frame.y, accent_w, accent_h);
                 ctx.fill_rect(
                     accent_rect,
                     primary,
-                    Some(Radius::uniform((accent_h * 0.5).min(accent_w * 0.5))),
+                    Some(Radius::uniform(
+                        (accent_h * self.visual.surface.accent_radius_ratio)
+                            .min(accent_w * self.visual.surface.accent_radius_ratio),
+                    )),
                 );
             }
         }
 
         // Border
         if self.bordered {
-            ctx.stroke_rect(frame, border_secondary, 1.0, card_radius);
+            ctx.stroke_rect(
+                frame,
+                border_secondary,
+                self.visual.surface.border_width,
+                card_radius,
+            );
         }
 
         // Title
@@ -196,10 +590,10 @@ widget! {
                 if let Some((visible_title, font_size)) = fitted_text(
                     ctx,
                     title,
-                    Self::TITLE_FONT_SIZE,
-                    Self::TITLE_MIN_FONT_SIZE,
+                    self.visual.title.font_size,
+                    self.visual.title.min_font_size,
                     title_rect.w,
-                    (title_rect.h - Self::TITLE_VERTICAL_INSET * 2.0).max(0.0),
+                    (title_rect.h - self.visual.title.vertical_inset * 2.0).max(0.0),
                 ) {
                     let title_y = ctx.visual_center_y(title_rect, font_size);
                     ctx.push_clip(title_rect);
@@ -220,7 +614,12 @@ widget! {
         // Actions
         if let Some(action_rect) = self.action_rect(frame) {
             ctx.fill_rect(action_rect, bg_container, None);
-            ctx.stroke_rect(action_rect, border_secondary, 1.0, None);
+            ctx.stroke_rect(
+                action_rect,
+                border_secondary,
+                self.visual.surface.border_width,
+                None,
+            );
             let btn_w = action_rect.w / self.actions.len() as f32;
             for (i, action) in self.actions.iter().enumerate() {
                 let btn_rect = Rect::new(
@@ -230,10 +629,19 @@ widget! {
                     action_rect.h,
                 );
                 if self.hovered_action.get() == Some(i) {
-                    ctx.fill_rect(btn_rect, ctx.tokens().color_fill_tertiary(), None);
+                    ctx.fill_rect(
+                        btn_rect,
+                        self.visual.palette.action_hover.resolve(ctx.tokens()),
+                        None,
+                    );
                 }
                 if self.focused && tree.keyboard_focus_visible() && self.focused_action == i {
-                    let inset = 1.0f32.min(btn_rect.w * 0.5).min(btn_rect.h * 0.5);
+                    let inset = self
+                        .visual
+                        .action
+                        .focus_inset
+                        .min(btn_rect.w * self.visual.surface.radius_limit_ratio)
+                        .min(btn_rect.h * self.visual.surface.radius_limit_ratio);
                     ctx.stroke_rect(
                         Rect::new(
                             btn_rect.x + inset,
@@ -242,36 +650,42 @@ widget! {
                             (btn_rect.h - inset * 2.0).max(0.0),
                         ),
                         primary,
-                        2.0,
+                        self.visual.action.focus_stroke_width,
                         None,
                     );
                 }
                 if let Some((visible_action, font_size)) = fitted_text(
                     ctx,
                     action,
-                    Self::ACTION_FONT_SIZE,
-                    Self::ACTION_MIN_FONT_SIZE,
-                    (btn_rect.w - Self::ACTION_HORIZONTAL_INSET * 2.0).max(0.0),
-                    (btn_rect.h - Self::ACTION_VERTICAL_INSET * 2.0).max(0.0),
+                    self.visual.action.font_size,
+                    self.visual.action.min_font_size,
+                    (btn_rect.w - self.visual.action.horizontal_inset * 2.0).max(0.0),
+                    (btn_rect.h - self.visual.action.vertical_inset * 2.0).max(0.0),
                 ) {
                     let ay = ctx.visual_center_y(btn_rect, font_size);
                     let text_w = ctx.measure_text(&visible_action, font_size).w;
                     ctx.push_clip(btn_rect);
                     ctx.draw_text(
                         &visible_action,
-                        Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay),
+                        Point::new(
+                            btn_rect.x
+                                + (btn_w - text_w) * self.visual.action.center_ratio,
+                            ay,
+                        ),
                         primary,
                         font_size,
                     );
                     ctx.pop_clip();
                 }
                 if i < self.actions.len() - 1 {
-                    let divider_h = (action_rect.h - 16.0).max(0.0);
+                    let divider_h =
+                        (action_rect.h - self.visual.action.divider_inset * 2.0).max(0.0);
                     ctx.fill_rect(
                         Rect::new(
-                            btn_rect.x + btn_w - 1.0,
-                            action_rect.y + 8.0f32.min(action_rect.h),
-                            1.0,
+                            btn_rect.x + btn_w - self.visual.action.divider_thickness,
+                            action_rect.y
+                                + self.visual.action.divider_inset.min(action_rect.h),
+                            self.visual.action.divider_thickness,
                             divider_h,
                         ),
                         border_secondary,
@@ -287,15 +701,10 @@ widget! {
     // 引擎的 draw_box_shadow 会自动恢复到脏区域 clip（绕过父级），
     // 若 dirty_rect 不覆盖阴影边界，会产生像素叠加拖影。
     dirty_rect => (&self, frame: Rect) -> Rect {
-        let expand = match self.elevation {
-            // elevation 1: layer_3 blur=48, bounds=±49px → ±50
-            1 => 50.0,
-            // elevation 2: layer_3 blur=66, bounds=±67px → ±70
-            2 => 70.0,
-            // elevation 3: layer_3 blur=90, bounds=±91px → ±95
-            3 => 95.0,
-            _ => 0.0,
-        };
+        let expand = self
+            .visual
+            .elevation(self.elevation)
+            .map_or(0.0, |visual| visual.dirty_expand);
         if expand > 0.0 {
             Rect::new(frame.x - expand, frame.y - expand, frame.w + expand * 2.0, frame.h + expand * 2.0)
         } else {
@@ -368,7 +777,7 @@ widget! {
 
         let input = FlexInput {
             direction: FlexDirection::Column,
-            gap: 0.0,
+            gap: self.visual.defaults.body_gap,
             padding: EdgeInsets::zero(),
             container: inner,
             children: &flex_children,
@@ -408,23 +817,15 @@ widget! {
 /// Each elevation level scales the layers differently so the visual depth
 /// increases naturally: the contact shadow grows slightly, while the ambient
 /// and glow layers expand significantly.
-fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
-    if elevation == 0 {
+fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8, visual: &CardVisual) {
+    let Some(elevation_visual) = visual.elevation(elevation) else {
         return;
-    }
-    let shadow = ctx.tokens().box_shadow();
-    let corner_radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
-
-    // Per-elevation scaling factors for each layer role:
-    //   (directional_scale, ambient_spread, glow_spread, alpha_boost)
-    let (dir_s, amb_s, glow_s, alpha_b) = match elevation {
-        1 => (0.8, 1.2, 1.6, 1.1),
-        2 => (1.0, 1.6, 2.2, 1.0),
-        3 => (1.2, 2.2, 3.0, 0.9),
-        _ => return,
     };
+    let shadow = visual.shadow.resolve(ctx.tokens());
+    let corner_radius = Some(Radius::uniform(visual.radius.resolve(ctx.tokens())));
 
-    let boost = |c: Color| c.with_alpha((c.a as f32 * alpha_b).min(255.0) as u8);
+    let boost =
+        |c: Color| c.with_alpha((c.a as f32 * elevation_visual.alpha_boost).min(255.0) as u8);
 
     // ── Layer 1: Contact shadow ──
     // Directional (y-down), tight blur, sharp smoothstep falloff.
@@ -432,9 +833,9 @@ fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
     if bl1 > 0.0 && col1.a > 0 {
         ctx.draw_box_shadow(
             frame,
-            bl1 * dir_s,       // blur
-            ox1,               // x-offset (0 = centered contact)
-            oy1 * dir_s * 1.5, // y-offset (emphasise downward)
+            bl1 * elevation_visual.directional_scale, // blur
+            ox1,                                      // x-offset (0 = centered contact)
+            oy1 * elevation_visual.directional_scale * visual.surface.shadow_directional_y_scale,
             boost(col1),
             corner_radius,
         );
@@ -447,9 +848,9 @@ fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
     if bl2 > 0.0 && col2.a > 0 {
         ctx.draw_box_shadow_ambient(
             frame,
-            bl2 * amb_s,       // larger blur = wider ambient
-            ox2 * 0.3,         // slight x-spread
-            oy2 * amb_s * 0.6, // moderate y-offset
+            bl2 * elevation_visual.ambient_scale, // larger blur = wider ambient
+            ox2 * visual.surface.shadow_ambient_x_scale,
+            oy2 * elevation_visual.ambient_scale * visual.surface.shadow_ambient_y_scale,
             boost(col2),
             corner_radius,
         );
@@ -462,9 +863,9 @@ fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
     if bl3 > 0.0 && col3.a > 0 {
         ctx.draw_box_shadow_ambient(
             frame,
-            bl3 * glow_s, // very wide blur
-            0.0,
-            0.0, // no offset — uniform
+            bl3 * elevation_visual.glow_scale, // very wide blur
+            visual.surface.shadow_glow_offset_x,
+            visual.surface.shadow_glow_offset_y,
             boost(col3),
             corner_radius,
         );
@@ -478,7 +879,23 @@ impl Default for Card {
 }
 
 // 把卡片 Rust 内核与已有拥有型 View 子树融合为 UIX 声明的单一根节点。
-fn build_card_view(kernel: Card, children: Vec<ViewNode>) -> ViewNode {
+fn build_card_view(
+    mut kernel: Card,
+    children: Vec<ViewNode>,
+    declared_visual: CardVisual,
+) -> ViewNode {
+    let visual = UIX_CARD_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.bordered_authored {
+        kernel.bordered = visual.defaults.bordered;
+    }
+    if !kernel.padding_authored {
+        kernel.padding = visual.defaults.padding;
+    }
+    if !kernel.elevation_authored {
+        kernel.elevation = visual.defaults.elevation;
+    }
+    kernel.elevation = kernel.elevation.min(visual.defaults.max_elevation);
+    kernel.visual = visual;
     ViewNode::new(kernel, children)
 }
 
@@ -490,29 +907,13 @@ impl View for Card {
 }
 
 impl Card {
-    const ACTION_HEIGHT: f32 = 40.0;
-    // Card 动作区字号（13.0）；Message/Notification toast 家族同名常量为 12.0，属各自设计。
-    const ACTION_FONT_SIZE: f32 = 13.0;
-    const ACTION_HORIZONTAL_INSET: f32 = 6.0;
-    const ACTION_MIN_FONT_SIZE: f32 = 10.0;
-    const ACTION_VERTICAL_INSET: f32 = 2.0;
-    // Card 默认尺寸；各组件同名常量（descriptions 600 / selectable_list 220 / 图表 300 等）为各自设计。
-    const DEFAULT_WIDTH: f32 = 200.0;
-    const DEFAULT_HEIGHT: f32 = 120.0;
-    const TITLE_BLOCK_HEIGHT: f32 = 56.0;
-    const TITLE_FONT_SIZE: f32 = 15.0;
-    const TITLE_MIN_FONT_SIZE: f32 = 11.0;
-    const TITLE_SEPARATOR_OFFSET: f32 = 48.0;
-    const TITLE_TEXT_HEIGHT: f32 = 44.0;
-    const TITLE_VERTICAL_INSET: f32 = 2.0;
-
     fn body_rect(&self, frame: Rect) -> Rect {
         // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
         let frame_w = frame.w.max(0.0);
         let frame_h = frame.h.max(0.0);
         let padding = self.padding.max(0.0);
         let title_offset = if self.title.is_some() {
-            Self::TITLE_BLOCK_HEIGHT
+            self.visual.title.block_height
         } else {
             padding
         }
@@ -556,24 +957,30 @@ impl Card {
             .unwrap_or(frame.y + frame_h);
         (action_top - frame.y)
             .max(0.0)
-            .min(Self::TITLE_BLOCK_HEIGHT)
+            .min(self.visual.title.block_height)
     }
 
     fn title_text_rect(&self, frame: Rect) -> Option<Rect> {
         self.title.as_ref()?;
         let height = self
             .title_available_height(frame)
-            .min(Self::TITLE_TEXT_HEIGHT);
+            .min(self.visual.title.text_height);
         (height > 0.0).then(|| self.padded_horizontal_rect(frame, frame.y, height))
     }
 
     fn title_separator_rect(&self, frame: Rect) -> Option<Rect> {
         self.title.as_ref()?;
         let available_height = self.title_available_height(frame);
-        if available_height < Self::TITLE_SEPARATOR_OFFSET + 1.0 {
+        if available_height
+            < self.visual.title.separator_offset + self.visual.title.separator_thickness
+        {
             return None;
         }
-        let rect = self.padded_horizontal_rect(frame, frame.y + Self::TITLE_SEPARATOR_OFFSET, 1.0);
+        let rect = self.padded_horizontal_rect(
+            frame,
+            frame.y + self.visual.title.separator_offset,
+            self.visual.title.separator_thickness,
+        );
         (rect.w > 0.0).then_some(rect)
     }
 
@@ -582,7 +989,7 @@ impl Card {
             return None;
         }
         let frame_h = frame.h.max(0.0);
-        let action_h = Self::ACTION_HEIGHT.min(frame_h);
+        let action_h = self.visual.action.height.min(frame_h);
         Some(Rect::new(
             frame.x,
             frame.y + frame_h - action_h,
@@ -597,7 +1004,7 @@ impl Card {
         // 标题存在时占用固定标题区，否则 body 从顶部内边距后开始。
         let top = if self.title.is_some() {
             // 标题块高度包含标题文本与分隔线区域。
-            Self::TITLE_BLOCK_HEIGHT
+            self.visual.title.block_height
         } else {
             // 无标题卡片保留顶部内容内边距。
             self.padding
@@ -612,32 +1019,36 @@ impl Card {
                     0.0
                 } else {
                     // 有动作时把固定操作区完整计入 Card border-box。
-                    Self::ACTION_HEIGHT
+                    self.visual.action.height
                 }
         } else {
             // 首轮尚无子树缓存时沿用原有默认高度完成 bootstrap。
-            Self::DEFAULT_HEIGHT
+            self.visual.defaults.height
         };
         // 固有尺寸保留原有默认宽度，并只让未显式指定的高度由内容撑开。
         Size::new(
-            self.fixed_width.unwrap_or(Self::DEFAULT_WIDTH),
+            self.fixed_width.unwrap_or(self.visual.defaults.width),
             self.fixed_height
-                .unwrap_or(Self::DEFAULT_HEIGHT.max(content_height)),
+                .unwrap_or(self.visual.defaults.height.max(content_height)),
         )
     }
 
     /// 创建带边框、一级阴影和默认内边距的卡片。
     pub fn new() -> Self {
+        let visual = &DEFAULT_CARD_VISUAL;
         Self {
             title: None,
             children: WidgetChildren::new(),
-            bordered: true,
+            bordered: visual.defaults.bordered,
+            bordered_authored: false,
             hoverable: false,
             hovered: false,
             fixed_width: None,
             fixed_height: None,
-            padding: 16.0,
-            elevation: 1,
+            padding: visual.defaults.padding,
+            padding_authored: false,
+            elevation: visual.defaults.elevation,
+            elevation_authored: false,
             flex_grow_val: 0.0,
             actions: Vec::new(),
             focused: false,
@@ -647,6 +1058,7 @@ impl Card {
             pending_submit: RefCell::new(None),
             // 新卡片在首次子树布局前没有可复用的内容尺寸事实。
             cached_content_size: Cell::new(Size::zero()),
+            visual,
         }
     }
 
@@ -658,6 +1070,7 @@ impl Card {
     /// 设置是否绘制卡片边框。
     pub fn bordered(mut self, v: bool) -> Self {
         self.bordered = v;
+        self.bordered_authored = true;
         self
     }
     /// 启用卡片悬停高亮。
@@ -674,11 +1087,13 @@ impl Card {
     /// 设置内容内边距；非有限值归零，负值截断为零。
     pub fn padding(mut self, p: f32) -> Self {
         self.padding = if p.is_finite() { p.max(0.0) } else { 0.0 };
+        self.padding_authored = true;
         self
     }
     /// 设置阴影层级，最大为三级。
     pub fn elevation(mut self, e: u8) -> Self {
-        self.elevation = e.min(3);
+        self.elevation = e.min(DEFAULT_CARD_VISUAL.defaults.max_elevation);
+        self.elevation_authored = true;
         self
     }
     /// 设置弹性布局增长因子；非有限值归零，负值截断为零。
@@ -758,12 +1173,16 @@ impl Card {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.title = next.title;
         self.bordered = next.bordered;
+        self.bordered_authored = next.bordered_authored;
         self.hoverable = next.hoverable;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.padding = next.padding;
+        self.padding_authored = next.padding_authored;
         self.elevation = next.elevation;
+        self.elevation_authored = next.elevation_authored;
         self.flex_grow_val = next.flex_grow_val;
+        self.visual = next.visual;
         self.actions = next.actions;
         self.focused_action = self
             .focused_action
@@ -784,6 +1203,27 @@ impl Card {
         if self.actions.is_empty() {
             self.focused = false;
         }
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.defaults.width,
+            self.visual.defaults.height,
+            self.visual.defaults.padding,
+            self.visual.title.block_height,
+            self.visual.title.font_size,
+            self.visual.action.height,
+            self.visual.action.font_size,
+            self.visual.surface.hover_lighten,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 
     fn optional_dimension(value: f32) -> Option<f32> {
