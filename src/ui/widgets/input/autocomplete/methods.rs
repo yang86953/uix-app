@@ -1,8 +1,8 @@
 // 引入弹层缓存与视口方法所需的矩形类型。
 use crate::core::Rect;
 
-// 引入被扩展的自动完成组件与最大视口规格。
-use super::{AutoComplete, MAX_POPUP_HEIGHT};
+// 引入被扩展的自动完成组件。
+use super::AutoComplete;
 // 引入同一组件私有几何模块的解析与转换函数。
 use super::geometry::{
     // 将相对弹层转换为窗口绝对坐标。
@@ -144,6 +144,6 @@ impl AutoComplete {
             // 读取实际视口高度并防止超过自然规格。
             .h
             // 夹取到既有最大视口高度。
-            .clamp(0.0, MAX_POPUP_HEIGHT)
+            .clamp(0.0, self.visual.layout.max_popup_height)
     }
 }

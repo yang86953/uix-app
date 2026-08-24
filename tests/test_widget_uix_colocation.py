@@ -79,6 +79,7 @@ MIGRATED_WIDGET_DIRS = {
     "general/label",
     "general/space",
     "general/typography",
+    "input/autocomplete",
     "input/checkbox",
     "input/input_group",
     "input/input_number",
@@ -108,7 +109,6 @@ MIGRATED_SUPPORT_DIRS = {
 # 公开视觉 widget 的剩余迁移债务；完成一项时必须同步删除，最终目标为空集合。
 UNMIGRATED_PUBLIC_WIDGET_DIRS = {
     "display/chart/advanced",
-    "input/autocomplete",
     "input/cascader",
     "input/color_picker",
     "input/date_picker",
