@@ -1,7 +1,5 @@
 // 引入父模块的私有契约与公开构建器。
 use super::*;
-// 引入表面安全边距常量以验证 overlay 所有权。
-use super::geometry::FLOAT_BUTTON_SURFACE_INSET;
 // 引入真实声明树构建与语义点击载荷以验证事件所有权。
 use crate::ui::adapter::ViewAdapter;
 // 引入组件事件与渲染窄契约。
@@ -14,6 +12,31 @@ use crate::ui::view::ViewNode;
 use crate::ui::{ClickEvent, KeyMod, SemanticEvent};
 // 引入根替换时使用的无业务处理器叶组件。
 use crate::ui::widgets::Label;
+// 测试处理器生命周期使用单线程共享所有权。
+use std::rc::Rc;
+
+// 验证 FloatButton、FloatButtonGroup 与便捷预设都读取同目录 UIX 视觉。
+#[test]
+fn float_button_family_uses_colocated_uix_visuals() {
+    let button = FloatButton::default();
+    assert!(std::ptr::eq(button.visual, FLOAT_BUTTON_VISUAL_REF));
+    let node = crate::ui::view::View::build(button);
+    let button = node
+        .widget
+        .as_any()
+        .downcast_ref::<FloatButton>()
+        .expect("UIX 根必须保留 FloatButton Rust 内核");
+    assert!(std::ptr::eq(button.visual, FLOAT_BUTTON_VISUAL_REF));
+
+    let group = FloatButtonGroup::new();
+    assert!(std::ptr::eq(
+        group.visual,
+        group::FLOAT_BUTTON_GROUP_VISUAL_REF,
+    ));
+    let back_top = FloatButtonBackTop::new();
+    assert_eq!(back_top.icon, "chevron-up");
+    assert_eq!(back_top.tooltip, "回到顶部");
+}
 
 // 构造带稳定 key、独立点击计数与释放探针的组内按钮 View。
 fn tracked_group_button(
@@ -131,8 +154,8 @@ fn placement_uses_current_surface_without_breaking_legacy_position() {
     assert_eq!(legacy_geometry.control.x, 8.0);
     // 纵向位置继续等于 frame 起点加作者偏移。
     assert_eq!(legacy_geometry.control.y, 11.0);
-    // 常量本身必须保持文档化安全距离。
-    assert_eq!(FLOAT_BUTTON_SURFACE_INSET, 24.0);
+    // UIX 视觉记录必须保持文档化安全距离。
+    assert_eq!(FLOAT_BUTTON_VISUAL_REF.geometry.surface_inset, 24.0);
 }
 
 // 验证 description、徽标、命中、damage 与 overlay 共用同一几何。
@@ -293,7 +316,7 @@ fn non_finite_values_are_stable_and_group_includes_description_hit_bounds() {
     // 打开组并建立展开动画。
     group.open();
     // 把动画推进到完全展开。
-    group.transition.update(1.0);
+    group.finish_transition_for_test();
     // 计算父组件交互边界。
     let bounds = group.interaction_bounds(Rect::zero());
     // description 必须让父级命中宽度大于基础直径。
@@ -374,7 +397,7 @@ fn group_button_views_preserve_child_click_handler_and_parent_layout() {
         // 类型变化表示包装器发布了错误根组件。
         .expect("根组件必须是 FloatButtonGroup");
     // 父布局记录必须与直接子节点数量一致。
-    assert_eq!(runtime_group.item_layouts.len(), 1);
+    assert_eq!(runtime_group.item_layout_count_for_test(), 1);
     // 子组件必须被标记为组内布局参与者。
     let runtime_button = tree
         // 读取运行时子节点。
@@ -491,7 +514,7 @@ fn group_child_handlers_reconcile_remove_replace_and_shutdown_cleanly() {
             // 根类型必须保持不变。
             .expect("展开根必须是 FloatButtonGroup")
             // 读取父组件独占的展开状态。
-            .expanded
+            .is_expanded_for_test()
     );
     // 把父组过渡推进到完全展开以开放子项命中。
     let _ = tree.update_animations(1.0);

@@ -25,6 +25,7 @@ use crate::ui::reactive::state::{Computed, State};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities, WidgetLayout, WidgetRender};
 use std::any::Any;
+use std::sync::Arc;
 
 // 拆分命令式节点嵌入转换，保持组合器主体在文件规模约束内。
 #[path = "combinators/embed.rs"]
@@ -531,7 +532,8 @@ use crate::ui::widgets::{Button, ButtonGroupPosition};
 /// 嵌入 `tree!` / `Space::child` 等非 View 容器时，末尾调用 `.widget()`。
 pub struct ButtonBuilder {
     text: String,
-    style_set: StyleSet,
+    // 共享 UIX 选择的主题预设，避免每个构建器重复分配相同 StyleSet。
+    style_set: Arc<StyleSet>,
     disabled: bool,
     block: bool,
     size: crate::platform::windowing::ControlSize,
@@ -545,7 +547,7 @@ impl ButtonBuilder {
         (
             Button::assemble(
                 self.text,
-                self.style_set.into(),
+                self.style_set,
                 self.disabled,
                 self.block,
                 self.size,
@@ -562,23 +564,23 @@ impl ButtonBuilder {
     }
     /// 使用指定样式集合替换按钮当前的主题样式。
     pub fn style_set(mut self, style_set: StyleSet) -> Self {
-        self.style_set = style_set;
+        self.style_set = Arc::new(style_set);
         self
     }
 
     /// 应用主题定义的主要操作按钮样式。
     pub fn primary(mut self) -> Self {
-        self.style_set = StyleSet::button_primary();
+        self.style_set = Button::primary_preset_style_set();
         self
     }
     /// 应用主题定义的幽灵按钮样式。
     pub fn ghost(mut self) -> Self {
-        self.style_set = StyleSet::button_ghost();
+        self.style_set = Button::ghost_preset_style_set();
         self
     }
     /// 应用主题定义的危险操作按钮样式。
     pub fn danger(mut self) -> Self {
-        self.style_set = StyleSet::button_danger();
+        self.style_set = Button::danger_preset_style_set();
         self
     }
     /// 设置按钮是否拒绝交互并呈现禁用状态。
@@ -610,7 +612,7 @@ impl ButtonBuilder {
         // 拆分底层按钮与已登记事件处理器。
         let (button, handlers) = self.into_parts();
         // 把连体位置交给既有 Button 视觉语义。
-        let mut node = ViewNode::leaf(button.group_position(position));
+        let mut node = View::build(button.group_position(position));
         // 保留物化前已经登记的按钮事件。
         node.handlers = handlers;
         // 返回可继续应用公共样式与事件的节点。
@@ -725,7 +727,7 @@ impl ButtonBuilder {
 impl View for ButtonBuilder {
     fn build(self) -> ViewNode {
         let (button, handlers) = self.into_parts();
-        let mut node = ViewNode::leaf(button);
+        let mut node = View::build(button);
         node.handlers = handlers;
         node
     }
@@ -751,7 +753,8 @@ pub fn button(text: impl Into<String>) -> ButtonBuilder {
             .overrides
             .button
             .style_set
-            .unwrap_or_else(StyleSet::button_default),
+            .map(Arc::new)
+            .unwrap_or_else(Button::default_preset_style_set),
         disabled: config.disabled,
         block: false,
         size: config.size,

@@ -4,27 +4,8 @@
 use crate::core::{Point, Rect};
 // 引入 overlay 模块拥有的窗口放置语义。
 use crate::ui::Placement;
-
-// 声明浮动按钮与窗口边缘之间的默认安全距离。
-pub(super) const FLOAT_BUTTON_SURFACE_INSET: f32 = 24.0;
-// 声明图标与展开说明之间的水平间距。
-const DESCRIPTION_GAP: f32 = 6.0;
-// 声明说明文字末端的保守留白。
-const DESCRIPTION_TRAILING_PADDING: f32 = 14.0;
-// 声明不依赖字体后端的说明文字宽度估算。
-const DESCRIPTION_CHARACTER_WIDTH: f32 = 7.0;
-// 声明提示框文字两侧的总留白（20.0）；通用 tooltip_primitives 为 16.0。
-const TOOLTIP_HORIZONTAL_PADDING: f32 = 20.0;
-// 声明提示框的最小宽度。
-const TOOLTIP_MIN_WIDTH: f32 = 44.0;
-// 声明提示框的固定高度（28.0）；通用 tooltip_primitives 为 26.0。
-const TOOLTIP_HEIGHT: f32 = 28.0;
-// 声明提示框与按钮之间的间距。
-const TOOLTIP_GAP: f32 = 8.0;
-// 声明数字徽标的直径。
-const BADGE_COUNT_SIZE: f32 = 20.0;
-// 声明圆点徽标的直径。
-const BADGE_DOT_SIZE: f32 = 8.0;
+// 引入 UIX 生成的单一几何视觉记录。
+use super::FloatButtonGeometryVisual;
 
 // 保存一次 FloatButton 几何解析需要的只读输入。
 pub(super) struct FloatButtonGeometryInput<'a> {
@@ -50,6 +31,8 @@ pub(super) struct FloatButtonGeometryInput<'a> {
     pub(super) in_group: bool,
     // 标记按钮是否参与普通布局占位。
     pub(super) reserve_layout_space: bool,
+    // 保存 UIX 声明的全部几何参数。
+    pub(super) visual: FloatButtonGeometryVisual,
 }
 
 // 保存绘制、命中、损伤与浮层登记共同消费的几何结果。
@@ -84,7 +67,7 @@ pub(super) fn resolve_float_button_geometry(
         // 只有有效表面才能提供窗口锚点。
         && valid_surface(input.surface);
     // 计算说明文字要求的自然控件宽度。
-    let natural_width = control_width(input.size, input.description);
+    let natural_width = control_width(input.size, input.description, &input.visual);
     // 按锚定模式或兼容模式解析控件区域。
     let control = if uses_surface_placement {
         // 显式 placement 使用当前窗口逻辑表面。
@@ -98,9 +81,9 @@ pub(super) fn resolve_float_button_geometry(
     // 把图标固定在控件起始侧。
     let icon = Rect::new(control.x, control.y, icon_size, control.h);
     // 从控件剩余空间派生说明区域。
-    let description = description_rect(control, icon, input.description);
+    let description = description_rect(control, icon, input.description, &input.visual);
     // 从最终控件右上角派生徽标区域。
-    let badge = badge_rect(control, input.badge_count, input.badge_dot);
+    let badge = badge_rect(control, input.badge_count, input.badge_dot, &input.visual);
     // 从最终控件与当前表面派生提示框区域。
     let tooltip = tooltip_rect(
         // 传入最终按钮区域。
@@ -113,9 +96,11 @@ pub(super) fn resolve_float_button_geometry(
         input.tooltip,
         // 传入是否使用表面锚定。
         uses_surface_placement,
+        // 传入 UIX 几何参数。
+        &input.visual,
     );
     // 从控件阴影开始建立保守损伤区域。
-    let mut paint_bounds = shadow_bounds(control);
+    let mut paint_bounds = shadow_bounds(control, &input.visual);
     // 徽标存在时合并其绘制区域。
     if let Some(rect) = badge {
         // 把徽标纳入损伤区域。
@@ -154,6 +139,8 @@ fn control_width(
     size: f32,
     // 接收说明文字。
     description: &str,
+    // 借用 UIX 几何参数。
+    visual: &FloatButtonGeometryVisual,
     // 返回自然宽度。
 ) -> f32 {
     // 空说明保持圆形按钮。
@@ -162,9 +149,9 @@ fn control_width(
         return size;
     }
     // 按 Unicode 字符数估算稳定说明宽度。
-    let text_width = description.chars().count() as f32 * DESCRIPTION_CHARACTER_WIDTH;
+    let text_width = description.chars().count() as f32 * visual.average_character_width;
     // 合并图标、间距、文字与尾部留白。
-    size + DESCRIPTION_GAP + text_width + DESCRIPTION_TRAILING_PADDING
+    size + visual.description_gap + text_width + visual.description_trailing_padding
 }
 
 // 按窗口 placement 解析表面内控件区域。
@@ -187,13 +174,13 @@ fn anchored_control(
     // 由 overlay Placement 计算未加作者偏移的横向起点。
     let authored_x = input.surface.x
         // 使用 overlay 模块拥有的横向语义。
-        + placement.horizontal_start(input.surface.w, width, FLOAT_BUTTON_SURFACE_INSET)
+        + placement.horizontal_start(input.surface.w, width, input.visual.surface_inset)
         // 叠加兼容作者偏移。
         + input.offset.x;
     // 由 overlay Placement 计算未加作者偏移的纵向起点。
     let authored_y = input.surface.y
         // 使用 overlay 模块拥有的纵向语义。
-        + placement.vertical_start(input.surface.h, height, FLOAT_BUTTON_SURFACE_INSET)
+        + placement.vertical_start(input.surface.h, height, input.visual.surface_inset)
         // 叠加兼容作者偏移。
         + input.offset.y;
     // 计算横向允许的最远起点。
@@ -237,6 +224,8 @@ fn description_rect(
     icon: Rect,
     // 接收说明文字。
     description: &str,
+    // 借用 UIX 几何参数。
+    visual: &FloatButtonGeometryVisual,
     // 返回可选说明区域。
 ) -> Option<Rect> {
     // 空说明不产生绘制区域。
@@ -245,9 +234,9 @@ fn description_rect(
         return None;
     }
     // 计算图标之后的说明起点。
-    let start = icon.x + icon.w + DESCRIPTION_GAP;
+    let start = icon.x + icon.w + visual.description_gap;
     // 计算尾部留白之前的可用宽度。
-    let width = (control.x + control.w - start - DESCRIPTION_TRAILING_PADDING).max(0.0);
+    let width = (control.x + control.w - start - visual.description_trailing_padding).max(0.0);
     // 没有剩余宽度时隐藏说明，避免生成负矩形。
     if width <= 0.0 {
         // 返回缺省值。
@@ -265,15 +254,17 @@ fn badge_rect(
     badge_count: i32,
     // 接收圆点徽标开关。
     badge_dot: bool,
+    // 借用 UIX 几何参数。
+    visual: &FloatButtonGeometryVisual,
     // 返回可选徽标区域。
 ) -> Option<Rect> {
     // 圆点语义优先于数字显示。
     let size = if badge_dot {
         // 圆点使用紧凑直径。
-        BADGE_DOT_SIZE
+        visual.badge_dot_size
     } else if badge_count > 0 {
         // 正数徽标使用数字直径。
-        BADGE_COUNT_SIZE
+        visual.badge_count_size
     } else {
         // 无徽标配置时不产生区域。
         return None;
@@ -299,6 +290,8 @@ fn tooltip_rect(
     tooltip: &str,
     // 标记是否使用当前表面约束。
     constrained: bool,
+    // 借用 UIX 几何参数。
+    visual: &FloatButtonGeometryVisual,
     // 返回可选提示框。
 ) -> Option<Rect> {
     // 空提示不产生绘制区域。
@@ -307,11 +300,11 @@ fn tooltip_rect(
         return None;
     }
     // 按字符数估算提示框自然宽度。
-    let natural_width = (tooltip.chars().count() as f32 * DESCRIPTION_CHARACTER_WIDTH
+    let natural_width = (tooltip.chars().count() as f32 * visual.average_character_width
         // 加上水平留白。
-        + TOOLTIP_HORIZONTAL_PADDING)
+        + visual.tooltip_horizontal_padding)
         // 保持短提示可读。
-        .max(TOOLTIP_MIN_WIDTH);
+        .max(visual.tooltip_min_width);
     // 有效表面内限制提示框宽度。
     let width = if constrained {
         // 收敛到当前表面宽度。
@@ -323,10 +316,10 @@ fn tooltip_rect(
     // 有效表面内限制提示框高度。
     let height = if constrained {
         // 收敛到当前表面高度。
-        TOOLTIP_HEIGHT.min(surface.h).max(0.0)
+        visual.tooltip_height.min(surface.h).max(0.0)
     } else {
         // 兼容模式保留旧固定高度。
-        TOOLTIP_HEIGHT
+        visual.tooltip_height
     };
     // 左侧锚定按钮优先把提示框放到右侧。
     let prefers_right = matches!(
@@ -338,10 +331,10 @@ fn tooltip_rect(
     // 按放置侧向计算候选横坐标。
     let candidate_x = if prefers_right {
         // 左侧按钮的提示框向右展开。
-        control.x + control.w + TOOLTIP_GAP
+        control.x + control.w + visual.tooltip_gap
     } else {
         // 其他按钮沿用向左展开。
-        control.x - width - TOOLTIP_GAP
+        control.x - width - visual.tooltip_gap
     };
     // 垂直居中提示框。
     let candidate_y = control.y + (control.h - height) * 0.5;
@@ -371,18 +364,20 @@ fn tooltip_rect(
 fn shadow_bounds(
     // 接收最终控件区域。
     control: Rect,
+    // 借用 UIX 几何参数。
+    visual: &FloatButtonGeometryVisual,
     // 返回保守阴影矩形。
 ) -> Rect {
     // 与既有 draw_box_shadow 参数保持一致的保守外扩。
     Rect::new(
         // 向左外扩十个逻辑像素。
-        control.x - 10.0,
+        control.x - visual.shadow_left_outset,
         // 向上外扩十个逻辑像素。
-        control.y - 10.0,
+        control.y - visual.shadow_top_outset,
         // 横向总计外扩二十个逻辑像素。
-        control.w + 20.0,
+        control.w + visual.shadow_width_extra,
         // 下方阴影更长，因此纵向总计外扩二十四个逻辑像素。
-        control.h + 24.0,
+        control.h + visual.shadow_height_extra,
     )
 }
 
