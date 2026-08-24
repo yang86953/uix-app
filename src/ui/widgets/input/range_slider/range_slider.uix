@@ -1,0 +1,22 @@
+// RangeSlider 的固有宽度、轨道/拇指尺寸、焦点与主题角色由 UIX 唯一拥有。
+<Visual
+  name="RANGE_SLIDER_VISUAL"
+  type="RangeSliderVisual"
+  intrinsicWidth={200.0}
+  smallTrackHeight={3.0}
+  mediumTrackHeight={4.0}
+  largeTrackHeight={5.0}
+  smallThumbRadius={5.0}
+  mediumThumbRadius={6.0}
+  largeThumbRadius={7.5}
+  centerRatio={0.5}
+  thumbStrokeWidth={2.0}
+  focusStrokeWidth={1.5}
+  focusRadius={4.0}
+  primary={range_slider_primary()}
+  primaryHover={range_slider_primary_hover()}
+  track={range_slider_track()}
+  thumb={range_slider_thumb()}
+/>
+
+<KernelView value={build_range_slider_view(kernel, RANGE_SLIDER_VISUAL_REF)} />

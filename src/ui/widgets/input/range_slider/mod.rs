@@ -4,17 +4,93 @@ use std::cell::Cell;
 use std::ops::RangeInclusive;
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
 use crate::widget;
 
 use super::slider::decimal_places;
+
+// 保存 UIX 声明的固有宽度、轨道/拇指尺寸映射与焦点几何。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RangeSliderVisual {
+    intrinsic_width: f32,
+    small_track_height: f32,
+    medium_track_height: f32,
+    large_track_height: f32,
+    small_thumb_radius: f32,
+    medium_thumb_radius: f32,
+    large_thumb_radius: f32,
+    center_ratio: f32,
+    thumb_stroke_width: f32,
+    focus_stroke_width: f32,
+    focus_radius: f32,
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    track: ColorValue,
+    thumb: ColorValue,
+}
+
+// 同目录 UIX 生成唯一范围滑块视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/range_slider/range_slider.uix");
+
+// 保存每帧一次解析后的主题颜色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedRangeSliderVisual {
+    primary: Color,
+    primary_hover: Color,
+    track: Color,
+    thumb: Color,
+}
+
+impl RangeSliderVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedRangeSliderVisual {
+        ResolvedRangeSliderVisual {
+            primary: self.primary.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            track: self.track.resolve(tokens),
+            thumb: self.thumb.resolve(tokens),
+        }
+    }
+
+    fn track_height(self, size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => self.small_track_height,
+            ControlSize::Medium => self.medium_track_height,
+            ControlSize::Large => self.large_track_height,
+        }
+    }
+
+    fn thumb_radius(self, size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => self.small_thumb_radius,
+            ControlSize::Medium => self.medium_thumb_radius,
+            ControlSize::Large => self.large_thumb_radius,
+        }
+    }
+}
+
+// 向 UIX 提供零分配主题角色。
+const fn range_slider_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn range_slider_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn range_slider_track() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+const fn range_slider_thumb() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
 
 /// 滑块拇指标识：左（起始）或右（结束）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,12 +118,15 @@ widget! {
         slider_size: ControlSize,
         last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<(f64, f64)>>,
+        #[snapshot(skip)]
+        /// UIX 声明的轨道、拇指、焦点与主题角色。
+        pub(crate) visual: &'static RangeSliderVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(200.0, self.control_height()))
+        constraints.clamp(Size::new(self.visual.intrinsic_width, self.control_height()))
     }
 
     // 事件入口：指针拖动与键盘步进，并同步外部绑定值。
@@ -159,12 +238,10 @@ widget! {
             return;
         }
 
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        let fill = ctx.tokens().color_fill_tertiary();
+        let visual = self.visual.resolve(ctx.tokens());
         let track_h = self.track_height(control_rect);
         let thumb_r = self.thumb_radius(control_rect);
-        let cy = control_rect.y + control_rect.h * 0.5;
+        let cy = control_rect.y + control_rect.h * self.visual.center_ratio;
         let (track_x, track_w) = self.track_span(control_rect);
         let (start_x, end_x) = self.thumb_positions(control_rect);
 
@@ -172,14 +249,14 @@ widget! {
         // 底色轨道。
         ctx.fill_rect(
             Rect::new(track_x, cy - track_h * 0.5, track_w, track_h),
-            fill,
-            Some(Radius::uniform(track_h * 0.5)),
+            visual.track,
+            Some(Radius::uniform(track_h * self.visual.center_ratio)),
         );
         // 已选区间高亮轨道。
         ctx.fill_rect(
             Rect::new(start_x, cy - track_h * 0.5, (end_x - start_x).max(0.0), track_h),
-            primary,
-            Some(Radius::uniform(track_h * 0.5)),
+            visual.primary,
+            Some(Radius::uniform(track_h * self.visual.center_ratio)),
         );
 
         // 顶层拇指优先显示拖动/悬浮中的那个，先画底层再画顶层。
@@ -199,24 +276,29 @@ widget! {
             };
             // 颜色：拖动中主题高亮，悬浮主题色，否则白色 token。
             let color = if self.dragging && self.active_thumb == thumb {
-                primary_hover
+                visual.primary_hover
             } else if self.hovered_thumb == Some(thumb) {
-                primary
+                visual.primary
             } else {
-                ctx.tokens().color_white()
+                visual.thumb
             };
             ctx.fill_circle(x, cy, thumb_r, color);
             ctx.stroke_rect(
                 Rect::new(x - thumb_r, cy - thumb_r, thumb_r * 2.0, thumb_r * 2.0),
-                primary,
-                2.0,
+                visual.primary,
+                self.visual.thumb_stroke_width,
                 Some(Radius::uniform(thumb_r)),
             );
         }
 
         // 聚焦时绘制控件焦点框。
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
+            ctx.stroke_rect(
+                control_rect,
+                visual.primary,
+                self.visual.focus_stroke_width,
+                Some(Radius::uniform(self.visual.focus_radius)),
+            );
         }
         ctx.pop_clip();
     }
@@ -227,6 +309,7 @@ impl RangeSlider {
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = normalize_range(range);
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = RANGE_SLIDER_VISUAL_REF;
         Self {
             min,
             max,
@@ -242,6 +325,7 @@ impl RangeSlider {
             slider_size: config.size,
             last_frame: Cell::new(None),
             pending_change: Cell::new(None),
+            visual,
         }
     }
 
@@ -464,24 +548,16 @@ impl RangeSlider {
 
     /// 轨道厚度（按尺寸规格与视觉缩放）。
     fn track_height(&self, frame: Rect) -> f32 {
-        let nominal = match self.slider_size {
-            ControlSize::Small => 3.0,
-            ControlSize::Medium => 4.0,
-            ControlSize::Large => 5.0,
-        };
+        let nominal = self.visual.track_height(self.slider_size);
         (nominal * self.visual_scale(frame)).min(frame.h)
     }
 
     /// 拇指半径（按尺寸规格与视觉缩放）。
     fn thumb_radius(&self, frame: Rect) -> f32 {
-        let nominal = match self.slider_size {
-            ControlSize::Small => 5.0,
-            ControlSize::Medium => 6.0,
-            ControlSize::Large => 7.5,
-        };
+        let nominal = self.visual.thumb_radius(self.slider_size);
         (nominal * self.visual_scale(frame))
-            .min(frame.w * 0.5)
-            .min(frame.h * 0.5)
+            .min(frame.w * self.visual.center_ratio)
+            .min(frame.h * self.visual.center_ratio)
             .max(0.0)
     }
 
@@ -540,9 +616,35 @@ impl RangeSlider {
         self.start_value = start_value;
         self.end_value = end_value;
         self.slider_size = next.slider_size;
+        self.visual = next.visual;
         self.normalize_values();
     }
 }
+
+// 把 RangeSlider Rust 范围内核与 UIX 静态视觉组合为单一组件节点。
+fn build_range_slider_view(
+    mut kernel: RangeSlider,
+    visual: &'static RangeSliderVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for RangeSlider {
+    fn build(self) -> ViewNode {
+        build_range_slider_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_range_slider_uix_root(kernel: RangeSlider) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/range_slider/range_slider.uix")
+}
+
+// 验证范围滑块的 UIX 视觉注入契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/input/range_slider__tests.rs"]
+mod tests;
 
 /// 归一化范围：非有限值回退默认值，逆序自动交换。
 fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {

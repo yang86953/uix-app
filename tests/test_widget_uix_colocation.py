@@ -77,6 +77,7 @@ MIGRATED_WIDGET_DIRS = {
     "input/checkbox",
     "input/input_group",
     "input/radio",
+    "input/range_slider",
     "input/rate",
     "input/segmented",
     "input/switch",
