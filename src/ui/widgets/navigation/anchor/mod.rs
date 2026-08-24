@@ -4,6 +4,7 @@
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
@@ -12,6 +13,10 @@ use crate::ui::{
 use crate::widget;
 use std::cell::Cell;
 use std::rc::Rc;
+
+mod presentation;
+
+use presentation::*;
 
 widget! {
     /// Anchor — 锚点导航条。
@@ -36,6 +41,9 @@ widget! {
         last_frame: Cell<Option<Rect>>,
         focused: bool,
         pending_change: Cell<Option<usize>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static AnchorVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.items.is_empty()) }
@@ -73,7 +81,7 @@ widget! {
                 if !self.local_navigation_rect().contains(*pos) || pos.y < 0.0 {
                     return EventResult::NotHandled;
                 }
-                let idx = (pos.y / 36.0) as usize;
+                let idx = (pos.y / self.visual.layout.row_height) as usize;
                 if idx < self.items.len() {
                     self.select(idx, true);
                     EventResult::Handled
@@ -139,44 +147,69 @@ widget! {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
-        let primary = ctx.tokens().color_primary();
-        let _text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let border_color = ctx.tokens().color_border_secondary();
+        // 导航行、墨线和焦点框共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
 
         // 分割线
         ctx.stroke_rect(
-            Rect::new(navigation.x + navigation.w - 1.0, navigation.y, 1.0, navigation.h),
-            border_color, 1.0, None,
+            Rect::new(
+                navigation.x + navigation.w - self.visual.chrome.divider_width,
+                navigation.y,
+                self.visual.chrome.divider_width,
+                navigation.h,
+            ),
+            visual.border_secondary,
+            self.visual.chrome.border_width,
+            None,
         );
 
         ctx.push_clip(navigation);
         for (i, item) in self.items.iter().enumerate() {
-            let y = navigation.y + i as f32 * 36.0;
+            let y = navigation.y + i as f32 * self.visual.layout.row_height;
             let is_active = i == self.active_index;
-            let color = if is_active { primary } else { text_secondary };
+            let color = if is_active {
+                visual.primary
+            } else {
+                visual.text_secondary
+            };
 
             // 激活态左侧指示条
             if is_active && self.show_ink {
-                ctx.fill_rect(Rect::new(navigation.x, y, 3.0, 36.0), primary, None);
+                ctx.fill_rect(
+                    Rect::new(
+                        navigation.x,
+                        y,
+                        self.visual.layout.indicator_width,
+                        self.visual.layout.row_height,
+                    ),
+                    visual.primary,
+                    None,
+                );
             }
 
-            let label_x = navigation.x + 16.0;
-            let row_rect = Rect::new(navigation.x, y, navigation.w, 36.0);
-            // 锚点标签字号：统一使用主题 font_size token。
-            let label_y = ctx.visual_center_y(row_rect, ctx.tokens().font_size());
-            ctx.draw_text(&item.label, Point::new(label_x, label_y), color, ctx.tokens().font_size());
+            let label_x = navigation.x + self.visual.layout.label_x;
+            let row_rect = Rect::new(
+                navigation.x,
+                y,
+                navigation.w,
+                self.visual.layout.row_height,
+            );
+            let label_y = ctx.visual_center_y(row_rect, visual.font_size);
+            ctx.draw_text(
+                &item.label,
+                Point::new(label_x, label_y),
+                color,
+                visual.font_size,
+            );
         }
         ctx.pop_clip();
 
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
                 navigation,
-                primary,
-                1.5,
-                Some(crate::draw::Radius::uniform(
-                    ctx.tokens().border_radius_sm(),
-                )),
+                visual.primary,
+                self.visual.chrome.focus_width,
+                Some(crate::draw::Radius::uniform(visual.radius)),
             );
         }
     }
@@ -208,7 +241,10 @@ impl Anchor {
     fn intrinsic_size(&self) -> Size {
         let navigation = self.intrinsic_navigation_size();
         if self.container_enabled {
-            Size::new(navigation.w + 320.0, navigation.h.max(240.0))
+            Size::new(
+                navigation.w + self.visual.layout.container_width,
+                navigation.h.max(self.visual.layout.container_min_height),
+            )
         } else {
             navigation
         }
@@ -218,29 +254,34 @@ impl Anchor {
         let w = self
             .items
             .iter()
-            .map(|i| i.label.chars().count() as f32 * 14.0 + 32.0)
+            .map(|i| {
+                i.label.chars().count() as f32 * self.visual.layout.label_char_width
+                    + self.visual.layout.label_horizontal_space
+            })
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(120.0)
-            .max(120.0);
-        Size::new(w, self.items.len() as f32 * 36.0)
+            .unwrap_or(self.visual.layout.navigation_min_width)
+            .max(self.visual.layout.navigation_min_width);
+        Size::new(w, self.items.len() as f32 * self.visual.layout.row_height)
     }
 
     /// 创建默认显示墨线、激活首项且偏移为零的锚点导航。
     pub fn new(items: Vec<AnchorItem>) -> Self {
         let count = items.len();
+        let visual = ANCHOR_VISUAL_REF;
         Self {
             items,
             active_index: 0,
             anchor_positions: vec![0.0; count],
             offset_top: 0.0,
             bg_color: None,
-            show_ink: true,
-            bounds: 10.0,
+            show_ink: visual.defaults.show_ink,
+            bounds: visual.defaults.bounds,
             container_enabled: false,
             container_view: None,
             last_frame: Cell::new(None),
             focused: false,
             pending_change: Cell::new(None),
+            visual,
         }
     }
 
@@ -283,7 +324,7 @@ impl Anchor {
         self.bounds = if bounds.is_finite() {
             bounds.max(0.0)
         } else {
-            10.0
+            self.visual.defaults.bounds
         };
         self
     }
@@ -362,6 +403,8 @@ impl Anchor {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // UIX 视觉随下一声明更新。
+        self.visual = next.visual;
         // 保存旧运行节点的索引，供无稳定 href 的兼容条目回退。
         let previous_active_index = self.active_index;
         // 保存旧激活项的非空 href，声明重排时按稳定身份保持选择。
@@ -493,16 +536,28 @@ impl Anchor {
     }
 }
 
+// UIX 根把声明视觉注入 Rust 导航内核。
+fn build_anchor_view(mut kernel: Anchor, visual: &'static AnchorVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Anchor {
+    fn build(self) -> ViewNode {
+        build_anchor_view(self, ANCHOR_VISUAL_REF)
+    }
+}
+
 // 挂载 Anchor 动态容器的树级状态与生命周期行为门禁。
 #[cfg(test)]
 // 将大体量行为测试拆到独立文件，保持产品代码文件低于规模上限。
-#[path = "../../../../tests/unit/ui/widgets/navigation/anchor_dynamic_capture_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/navigation/anchor_dynamic_capture_tests.rs"]
 // 仅在测试构建中编译动态捕获回归用例。
 mod anchor_dynamic_capture_tests;
 
 // 集中验证 Anchor reconcile 的稳定 href 与位置缓存生命周期。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/navigation/anchor__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/navigation/anchor__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
