@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{Rect, Size};
 use uix::prelude::{
     Card, Container, Content, Footer, Grid, GridTrack, Header, Layout as PageLayout,
-    ScrollDirection, ScrollView, Sider, Space,
+    ScrollDirection, ScrollView, Sider, Space, Splitter,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{LayoutChild, LayoutEngineScratch, WidgetId, WidgetLayout};
@@ -261,6 +261,25 @@ fn page_region_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn splitter_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(root, Box::new(Splitter::new().panels(8)));
+        for leaf_index in 0..8 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(24.0 + branch_index as f32)
+                        .height(20.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -298,6 +317,34 @@ fn page_layout_reusing_path_matches_owned_geometry() {
 }
 
 #[test]
+fn splitter_reusing_path_matches_owned_geometry() {
+    // 同一组三面板输入分别经过兼容入口和树级复用入口。
+    let splitter = Splitter::new().panels(3);
+    let frame = Rect::new(10.0, 20.0, 300.0, 120.0);
+    let tree = WidgetTree::new();
+    let child_ids = [WidgetId::new(1), WidgetId::new(2), WidgetId::new(3)];
+    let expected_measured = splitter.measure_children(frame, &child_ids, &tree);
+    let mut actual_measured = Vec::new();
+    splitter.measure_children_into(frame, &child_ids, &tree, &mut actual_measured);
+    assert_eq!(actual_measured.len(), expected_measured.len());
+    for (actual, expected) in actual_measured.iter().zip(&expected_measured) {
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.measured_size, expected.measured_size);
+    }
+
+    let expected = splitter.layout_children(frame, &expected_measured, &tree);
+    let mut scratch = LayoutEngineScratch::default();
+    let mut actual = Vec::new();
+    splitter.layout_children_into(frame, &actual_measured, &tree, &mut scratch, &mut actual);
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual.len(), 3);
+    assert_eq!(actual[0].1.x, frame.x);
+    // 比例浮点累加后，最后一个面板仍应覆盖到父区域右边缘。
+    assert!((actual[2].1.x + actual[2].1.w - (frame.x + frame.w)).abs() < 0.0001);
+}
+
+#[test]
 fn warmed_nested_layout_reuses_heap_storage() {
     let scenarios = [
         ("Container", nested_layout_tree()),
@@ -310,6 +357,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("ScrollView", scroll_view_layout_tree()),
         ("Layout regions", page_region_layout_tree()),
         ("Layout", page_layout_tree()),
+        ("Splitter", splitter_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
