@@ -3,7 +3,9 @@
 // 引入可控等宽测试字体服务与布局选项。
 use super::line_break_tests::{options, service};
 // 引入共享选择片段几何辅助。
-use crate::draw::resources::font::text_backend::glyph_selection_x_ranges;
+use crate::draw::resources::font::text_backend::{
+    glyph_selection_x_ranges, visit_glyph_selection_x_ranges,
+};
 // 引入命中测试坐标。
 use crate::core::Point;
 // 引入测试字体句柄。
@@ -127,6 +129,14 @@ fn mixed_selection_returns_disjoint_visual_ranges() {
     let ranges = glyph_selection_x_ranges(&layout.glyphs, 5, 9);
     // 首个数字与 RTL 片段之间存在未选数字形成的视觉间隔。
     assert_eq!(ranges, vec![(24.0, 30.0), (42.0, 60.0)]);
+    // 流式热路径必须产生与拥有型兼容接口相同的视觉片段。
+    let mut streamed = Vec::new();
+    // 立即收集仅用于验证回调顺序和边界。
+    visit_glyph_selection_x_ranges(&layout.glyphs, 5, 9, |left, right| {
+        streamed.push((left, right));
+    });
+    // 双向分离片段不得因流式消费而被合并或重排。
+    assert_eq!(streamed, ranges);
 }
 
 // 验证混合 RTL 组合序列的命中与光标查询不会暴露内部标量位置。

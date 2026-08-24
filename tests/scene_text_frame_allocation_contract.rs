@@ -1,4 +1,4 @@
-//! 验证稳态脏文字帧复用布局、字形、显示列表、录制与呈现存储。
+//! 验证稳态脏文字选区帧复用布局、几何、字形、显示列表与呈现存储。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::Arc;
@@ -191,7 +191,14 @@ impl ScenePaint for TextScene {
     }
 
     fn paint(&self, _id: NodeId, _frame: Rect, ctx: &mut PaintContext<'_>) {
-        ctx.draw_text("steady", Point::new(2.0, 3.0), Color::blue(), 14.0);
+        ctx.draw_text_with_selection(
+            "steady",
+            Point::new(2.0, 3.0),
+            Color::blue(),
+            14.0,
+            Some((1, 5)),
+            Color::from_rgba(64, 96, 160, 128),
+        );
     }
 }
 
@@ -218,7 +225,7 @@ fn frame_input<'a>(
 }
 
 #[test]
-fn warmed_dirty_text_frame_has_zero_allocations() {
+fn warmed_dirty_text_selection_frame_has_zero_allocations() {
     let scene = TextScene;
     let font_service = FontService::new().with_text_backend(Box::new(FixedTextBackend));
     let image_service = ImageService::new();
@@ -262,6 +269,6 @@ fn warmed_dirty_text_frame_has_zero_allocations() {
         RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
     ));
     let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
-    eprintln!("稳态脏文字帧堆申请次数: {allocations}");
-    assert_eq!(allocations, 0, "预热后的脏文字帧必须保持零堆申请");
+    eprintln!("稳态脏文字选区帧堆申请次数: {allocations}");
+    assert_eq!(allocations, 0, "预热后的脏文字选区帧必须保持零堆申请");
 }

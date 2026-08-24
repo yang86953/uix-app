@@ -13,6 +13,31 @@
             .collect()
     }
 
+    /// 流式选择归一必须与缓存索引模型保持完全相同的边界语义。
+    #[test]
+    fn streaming_selection_normalization_matches_index_map() {
+        // 覆盖空文本、ASCII、组合字符、ZWJ emoji、Indic 与混合双向文本。
+        let samples = ["", "steady", "a\u{0301}b", "👩🏽‍💻Z", "क्ष", "Aא\u{05B7}בZ"];
+        // 逐段核对全部有效位置、反向选择和两个越界位置。
+        for text in samples {
+            // 建立重复查询使用的参考模型。
+            let map = TextIndexMap::new(text);
+            // 把越界行为也纳入对比范围。
+            let limit = map.char_len().0 + 2;
+            // 穷举选择的两个有向端点。
+            for a in 0..=limit {
+                for b in 0..=limit {
+                    // 流式路径必须逐项等于既有缓存模型。
+                    assert_eq!(
+                        normalize_selection_in_text(text, CharIndex(a), CharIndex(b)),
+                        map.normalize_selection(CharIndex(a), CharIndex(b)),
+                        "文本 {text:?} 的选择 {a}..{b} 归一结果不一致"
+                    );
+                }
+            }
+        }
+    }
+
     /// 组合音标必须与基础字母形成单一可编辑单元。
     #[test]
     // 验证 combining mark 不会产生内部光标位置。

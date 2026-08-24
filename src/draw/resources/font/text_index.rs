@@ -35,6 +35,37 @@ pub enum BoundaryBias {
     Nearest,
 }
 
+/// 无需建立索引表，把一次性选择区间向外归一到完整扩展字素簇边界。
+pub(crate) fn normalize_selection_in_text(
+    text: &str,
+    a: CharIndex,
+    b: CharIndex,
+) -> (CharIndex, CharIndex) {
+    // 先消除选择方向，越界值在遍历结束后统一收敛。
+    let mut start = a.0.min(b.0);
+    // 保存逻辑排他终点。
+    let mut end = a.0.max(b.0);
+    // 逐个累计扩展字素簇包含的 Unicode 标量数量。
+    let mut boundary = 0usize;
+    // 流式遍历避免为一次绘制建立两套边界向量。
+    for grapheme in text.graphemes(true) {
+        // 下一个位置是当前字素簇的排他字符终点。
+        let next = boundary + grapheme.chars().count();
+        // 内部起点必须向后扩展到当前字素簇起点。
+        if boundary < start && start < next {
+            start = boundary;
+        }
+        // 内部终点必须向前扩展到当前字素簇终点。
+        if boundary < end && end < next {
+            end = next;
+        }
+        // 推进到下一个字素簇。
+        boundary = next;
+    }
+    // 越界调用方输入保持与 TextIndexMap 相同的文本末尾收敛语义。
+    (CharIndex(start.min(boundary)), CharIndex(end.min(boundary)))
+}
+
 /// 缓存一段 UTF-8 文本的字符、字节与扩展字素簇边界转换表。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextIndexMap {
