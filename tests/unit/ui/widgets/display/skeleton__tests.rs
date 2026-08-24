@@ -22,3 +22,18 @@ fn uix_shell_preserves_single_kernel_leaf() {
         }
     );
 }
+
+/// 无分配生产枚举必须保持原段落行高、间距和末行宽度。
+#[test]
+fn paragraph_geometry_stays_exact_after_streaming_refactor() {
+    let skeleton = Skeleton::new().paragraph(3);
+    let rects = skeleton.paragraph_rects_for_test(Rect::new(0.0, 0.0, 120.0, 48.0));
+    assert_eq!(
+        rects,
+        vec![
+            Rect::new(0.0, 2.0, 120.0, 12.0),
+            Rect::new(0.0, 18.0, 120.0, 12.0),
+            Rect::new(0.0, 34.0, 72.0, 12.0),
+        ]
+    );
+}

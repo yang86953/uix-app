@@ -204,7 +204,7 @@ impl Skeleton {
         )
     }
 
-    fn paragraph_rects(&self, frame: Rect) -> Vec<Rect> {
+    fn for_each_paragraph_rect(&self, frame: Rect, mut visit: impl FnMut(Rect)) {
         let rows = if self.paragraph_lines == 0 {
             2
         } else {
@@ -224,17 +224,16 @@ impl Skeleton {
         let content_height = line_height * rows as f32 + gap * rows.saturating_sub(1) as f32;
         let start_y = frame.y + (frame.h - content_height) * 0.5;
 
-        (0..rows)
-            .map(|row| {
-                let width_factor = if row + 1 == rows { 0.6 } else { 1.0 };
-                Rect::new(
-                    frame.x,
-                    start_y + row as f32 * (line_height + gap),
-                    frame.w * width_factor,
-                    line_height,
-                )
-            })
-            .collect()
+        // 生产渲染逐行消费几何，不为每帧创建临时矩形列表。
+        for row in 0..rows {
+            let width_factor = if row + 1 == rows { 0.6 } else { 1.0 };
+            visit(Rect::new(
+                frame.x,
+                start_y + row as f32 * (line_height + gap),
+                frame.w * width_factor,
+                line_height,
+            ));
+        }
     }
 
     fn paint_placeholder(&self, frame: Rect, color: crate::draw::Color, ctx: &mut PaintContext) {
@@ -255,13 +254,13 @@ impl Skeleton {
                 }
             }
             SkeletonShape::Text => {
-                for line in self.paragraph_rects(frame) {
+                self.for_each_paragraph_rect(frame, |line| {
                     ctx.fill_rect(
                         line,
                         color,
                         Some(crate::draw::Radius::uniform(2.0_f32.min(line.h * 0.5))),
                     );
-                }
+                });
             }
         }
     }
@@ -277,7 +276,9 @@ impl Skeleton {
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
     pub(crate) fn paragraph_rects_for_test(&self, frame: Rect) -> Vec<Rect> {
-        self.paragraph_rects(Self::normalized_frame(frame))
+        let mut rects = Vec::with_capacity(self.paragraph_lines.max(2));
+        self.for_each_paragraph_rect(Self::normalized_frame(frame), |rect| rects.push(rect));
+        rects
     }
 
     // 测试目标保留骨架动画 phase 观测入口，供占位动画测试按需调用。
