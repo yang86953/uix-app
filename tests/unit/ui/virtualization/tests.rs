@@ -307,6 +307,29 @@ fn variable_measurements_keep_prefix_offsets_and_total_height() {
     );
 }
 
+// 验证稳定帧预检与正式测量写入使用完全相同的变化判定。
+#[test]
+fn measurement_change_preflight_matches_record_semantics() {
+    // 新索引的有效高度必须进入变化路径。
+    let mut cache = VirtualListMeasurementCache::new();
+    assert!(cache.would_record_change(7, 18.0));
+    assert!(cache.record(7, 18.0));
+    // 相同高度必须在锚点计算前直接退出。
+    assert!(!cache.would_record_change(7, 18.0));
+    assert!(!cache.record(7, 18.0));
+    // 非法输入同样不得被预检误判为可提交变化。
+    for height in [0.0, -1.0, f32::NAN, f32::INFINITY, f32::MAX] {
+        assert!(!cache.would_record_change(7, height));
+        assert!(!cache.record(7, height));
+    }
+    // 合法的新高度仍由原提交路径替换并推进结构代际。
+    let generation = cache.generation();
+    assert!(cache.would_record_change(7, 24.0));
+    assert!(cache.record(7, 24.0));
+    assert_eq!(cache.get(7), Some(24.0));
+    assert_eq!(cache.generation(), generation.wrapping_add(1));
+}
+
 // 验证可变行高模式会把已物化子项测量写回 frame 和滚动几何。
 #[test]
 fn variable_scroll_layout_uses_measured_item_frames() {
