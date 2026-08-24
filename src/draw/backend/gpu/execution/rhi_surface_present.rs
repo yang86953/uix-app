@@ -53,12 +53,13 @@ impl GpuBackend {
         // 从同一 GPU recipe owner 读取当前可写 swapchain image 身份。
         let present_image = self.gpu_ctx.present_image();
         // 计算本次提交携带的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
             damage,
         );
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // 将 owner-thread 借用限制在 retained 绘制调用内。
         let submitted = {
             // 分开借用 owner-thread context、renderer cache 和主 surface。
@@ -93,19 +94,14 @@ impl GpuBackend {
         // 先把 retained texture 合成到 swapchain，再进入统一成功提交边界。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // 只有最终合成成功后才消费主 surface 的全清状态。
         self.surface.needs_gpu_clear = false;
         // 清空已经由 pass load action 替代的全清标记。
         self.surface.pending_clear_rects.clear();
         // 只有 present 成功才提交 damage tracker 状态。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         // 记录本帧是否使用了软回退内容。
@@ -160,12 +156,13 @@ impl GpuBackend {
         // 从同一 GPU recipe owner 读取当前可写 swapchain image 身份。
         let present_image = self.gpu_ctx.present_image();
         // 计算本次提交携带的 damage 语义。
-        let damage_plan = self.present_damage_tracker.plan(
+        let prepared_damage = self.present_damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
             damage,
         );
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
         // 将 owner-thread 借用限制在 retained solid 绘制调用内。
         let submitted = {
             // 分别借用 context、renderer cache 和 canvas，保持 owner-thread 组合借用。
@@ -200,19 +197,14 @@ impl GpuBackend {
         // retained solid 内容必须先合成到 swapchain 才能报告最终 present 成功。
         self.present_rhi_surface_texture(
             TextureHandle::from_raw(retained_texture.raw()),
-            damage_plan.present_damage.clone(),
+            damage_plan.present_damage,
         )?;
         // 只有最终合成成功后才消费主 surface 的全清状态。
         self.surface.needs_gpu_clear = false;
         // 清空已经由 retained pass load action 替代的 clear 标记。
         self.surface.pending_clear_rects.clear();
         // 只有 present 成功才提交 damage tracker 状态。
-        self.present_damage_tracker.commit(
-            caps.present_coherency,
-            present_surface,
-            present_image,
-            damage,
-        );
+        self.present_damage_tracker.commit_prepared(damage_commit);
         // 保持与兼容路径相同的软资源 aging 语义。
         let used_soft = self.surface.canvas.finish_presented_frame();
         // 记录本帧是否使用了软回退内容。

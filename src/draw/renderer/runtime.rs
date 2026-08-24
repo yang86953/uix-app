@@ -260,25 +260,18 @@ impl Renderer {
         let present_surface = upload.owner.present_surface();
         // PixelUpload recipe 只提交单一 CPU retained buffer，不持有 acquired image 身份。
         let present_image = None;
-        let damage = upload
-            .damage_tracker
-            .plan(
-                caps.present_coherency,
-                present_surface,
-                present_image,
-                present_damage,
-            )
-            .present_damage;
-        // 直接经已验证 PixelUpload owner 提交 CPU retained pixels。
-        upload
-            .owner
-            .present_pixels(cpu.pixels(), width, height, damage)?;
-        upload.damage_tracker.commit(
+        let prepared_damage = upload.damage_tracker.prepare(
             caps.present_coherency,
             present_surface,
             present_image,
             present_damage,
         );
+        let (damage_plan, damage_commit) = prepared_damage.into_parts();
+        // 直接经已验证 PixelUpload owner 提交 CPU retained pixels。
+        upload
+            .owner
+            .present_pixels(cpu.pixels(), width, height, damage_plan.present_damage)?;
+        upload.damage_tracker.commit_prepared(damage_commit);
         Ok(())
     }
 

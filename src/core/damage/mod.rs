@@ -482,6 +482,32 @@ impl PresentDamagePlan {
     }
 }
 
+/// 已绑定本帧 surface、image 与原始损伤的内部呈现计划。
+///
+/// 原生 present 失败时直接丢弃；只有成功路径可以把它交给
+/// [`PresentDamageTracker::commit_prepared`] 推进历史。
+#[derive(Debug)]
+pub(crate) struct PreparedPresentDamage {
+    plan: PresentDamagePlan,
+    commit: PreparedPresentCommit,
+}
+
+/// 原生 present 成功后唯一可消费的历史提交事实。
+#[derive(Debug)]
+pub(crate) struct PreparedPresentCommit {
+    coherency: PresentCoherency,
+    surface: PresentSurface,
+    image: Option<PresentImage>,
+    current: PresentDamage,
+}
+
+impl PreparedPresentDamage {
+    /// 拆出可移动的损伤计划与成功后唯一可消费的提交令牌。
+    pub(crate) fn into_parts(self) -> (PresentDamagePlan, PreparedPresentCommit) {
+        (self.plan, self.commit)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct CommittedPresentDamage {
     sequence: u64,
@@ -525,6 +551,44 @@ impl PresentDamageTracker {
             return PresentDamagePlan::full();
         }
         let current = logical_damage.to_present_damage(surface);
+        self.plan_present_damage(coherency, surface, image, current)
+    }
+
+    /// 一次完成逻辑损伤转换，并把成功提交所需事实绑定到不可克隆令牌。
+    pub(crate) fn prepare(
+        &self,
+        coherency: PresentCoherency,
+        surface: PresentSurface,
+        image: Option<PresentImage>,
+        logical_damage: &DamageRegion,
+    ) -> PreparedPresentDamage {
+        let current = if coherency == PresentCoherency::FullOnly || !surface.is_valid() {
+            PresentDamage::Full
+        } else {
+            logical_damage.to_present_damage(surface)
+        };
+        let plan = self.plan_present_damage(coherency, surface, image, current.clone());
+        PreparedPresentDamage {
+            plan,
+            commit: PreparedPresentCommit {
+                coherency,
+                surface,
+                image,
+                current,
+            },
+        }
+    }
+
+    fn plan_present_damage(
+        &self,
+        coherency: PresentCoherency,
+        surface: PresentSurface,
+        image: Option<PresentImage>,
+        current: PresentDamage,
+    ) -> PresentDamagePlan {
+        if coherency == PresentCoherency::FullOnly || !surface.is_valid() {
+            return PresentDamagePlan::full();
+        }
         if current.is_full() || self.surface != Some(surface) || self.coherency != Some(coherency) {
             return PresentDamagePlan::full();
         }
@@ -575,6 +639,30 @@ impl PresentDamageTracker {
         }
 
         let current = logical_damage.to_present_damage(surface);
+        self.commit_present_damage(coherency, surface, image, current);
+    }
+
+    /// 仅在匹配的原生 present 成功后消费准备令牌并推进历史。
+    pub(crate) fn commit_prepared(&mut self, prepared: PreparedPresentCommit) {
+        self.commit_present_damage(
+            prepared.coherency,
+            prepared.surface,
+            prepared.image,
+            prepared.current,
+        );
+    }
+
+    fn commit_present_damage(
+        &mut self,
+        coherency: PresentCoherency,
+        surface: PresentSurface,
+        image: Option<PresentImage>,
+        current: PresentDamage,
+    ) {
+        if coherency == PresentCoherency::FullOnly || !surface.is_valid() {
+            self.reset();
+            return;
+        }
         let state_changed = self.surface != Some(surface) || self.coherency != Some(coherency);
         if state_changed {
             self.reset();
