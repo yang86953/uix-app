@@ -4,10 +4,13 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Color;
 use crate::draw::painting::PaintPass;
 use crate::ui::SnapshotFields;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,10 +24,183 @@ pub enum SpinSize {
     Large,
 }
 
+// 保存由 UIX 声明、由 Rust 测量与几何算法消费的加载视觉常量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpinLayoutVisual {
+    small_diameter: f32,
+    default_diameter: f32,
+    large_diameter: f32,
+    orbit_radius_ratio: f32,
+    dot_radius_ratio: f32,
+    dirty_padding: f32,
+    tip_gap: f32,
+    tip_height: f32,
+    tip_font_size: f32,
+}
+
+// 保存由 UIX 声明、由 Rust 圆点递推算法消费的序列参数。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpinDotsVisual {
+    count: u8,
+    step_sin: f32,
+    step_cos: f32,
+    opacity_start: f32,
+    opacity_range: f32,
+}
+
+// 保存由 UIX 声明、由 Rust 动画状态机消费的运动参数。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpinMotionVisual {
+    initial_phase: f32,
+    turns_per_second: f32,
+}
+
+// 保存加载指示器使用的主题语义色与遮罩透明度。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpinPaletteVisual {
+    indicator: ColorValue,
+    overlay: ColorValue,
+    overlay_alpha: u8,
+    tip: ColorValue,
+}
+
+// 完整视觉配置由全部 Spin 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SpinVisual {
+    default_size: SpinSize,
+    layout: SpinLayoutVisual,
+    dots: SpinDotsVisual,
+    motion: SpinMotionVisual,
+    palette: SpinPaletteVisual,
+}
+
+// 组合 UIX 声明的加载尺寸、留白与提示排版。
+#[allow(clippy::too_many_arguments)]
+const fn spin_layout(
+    small_diameter: f32,
+    default_diameter: f32,
+    large_diameter: f32,
+    orbit_radius_ratio: f32,
+    dot_radius_ratio: f32,
+    dirty_padding: f32,
+    tip_gap: f32,
+    tip_height: f32,
+    tip_font_size: f32,
+) -> SpinLayoutVisual {
+    SpinLayoutVisual {
+        small_diameter,
+        default_diameter,
+        large_diameter,
+        orbit_radius_ratio,
+        dot_radius_ratio,
+        dirty_padding,
+        tip_gap,
+        tip_height,
+        tip_font_size,
+    }
+}
+
+// 组合 UIX 声明的圆点序列与透明度节奏。
+const fn spin_dots(
+    count: f32,
+    step_sin: f32,
+    step_cos: f32,
+    opacity_start: f32,
+    opacity_range: f32,
+) -> SpinDotsVisual {
+    SpinDotsVisual {
+        count: count as u8,
+        step_sin,
+        step_cos,
+        opacity_start,
+        opacity_range,
+    }
+}
+
+// 组合 UIX 声明的加载动画运动参数。
+const fn spin_motion(initial_phase: f32, turns_per_second: f32) -> SpinMotionVisual {
+    SpinMotionVisual {
+        initial_phase,
+        turns_per_second,
+    }
+}
+
+// 组合 UIX 声明的主题色与遮罩透明度。
+const fn spin_palette(
+    indicator: ColorValue,
+    overlay: ColorValue,
+    overlay_alpha: f32,
+    tip: ColorValue,
+) -> SpinPaletteVisual {
+    SpinPaletteVisual {
+        indicator,
+        overlay,
+        overlay_alpha: overlay_alpha as u8,
+        tip,
+    }
+}
+
+// 组合 UIX 声明的完整加载指示器视觉配置。
+const fn spin_visual(
+    default_size: SpinSize,
+    layout: SpinLayoutVisual,
+    dots: SpinDotsVisual,
+    motion: SpinMotionVisual,
+    palette: SpinPaletteVisual,
+) -> SpinVisual {
+    SpinVisual {
+        default_size,
+        layout,
+        dots,
+        motion,
+        palette,
+    }
+}
+
+// 向 UIX 提供默认尺寸语义。
+const fn spin_default_size() -> SpinSize {
+    SpinSize::Default
+}
+
+// 向 UIX 提供加载指示器品牌主题角色。
+const fn spin_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供包裹遮罩基础主题角色。
+const fn spin_overlay() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供提示文字主题角色。
+const fn spin_tip() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_SPIN_VISUAL: SpinVisual = spin_visual(
+    spin_default_size(),
+    spin_layout(16.0, 24.0, 36.0, 0.35, 0.18, 1.0, 8.0, 18.0, 13.0),
+    spin_dots(
+        8.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+        std::f32::consts::FRAC_1_SQRT_2,
+        0.25,
+        0.75,
+    ),
+    spin_motion(0.0, 1.0),
+    spin_palette(spin_primary(), spin_overlay(), 30.0, spin_tip()),
+);
+
+// 正常 UIX 构建首次写入声明配置，后续 Spin 实例只共享该静态对象。
+static UIX_SPIN_VISUAL: OnceLock<SpinVisual> = OnceLock::new();
+
 widget! {
     /// 显示可延迟启动的动画加载指示器。
     pub struct Spin {
         size: SpinSize,
+        #[snapshot(skip)]
+        size_authored: bool,
         color: Option<Color>,
         spinning: bool,
         tip: String,
@@ -32,6 +208,8 @@ widget! {
         delay: Duration,
         delay_elapsed: f32,
         phase: f32,
+        #[snapshot(skip)]
+        visual: &'static SpinVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -66,16 +244,32 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let c = self.color.unwrap_or(ctx.tokens().color_primary());
+        let c = self
+            .color
+            .unwrap_or_else(|| self.visual.palette.indicator.resolve(ctx.tokens()));
         let (cx, cy, d, tip_frame) = self.content_geometry(frame);
 
         ctx.push_clip(frame);
         if self.wrapper_mode {
-            ctx.fill_rect(frame, ctx.tokens().color_text().with_alpha(30), None);
+            ctx.fill_rect(
+                frame,
+                self.visual
+                    .palette
+                    .overlay
+                    .resolve(ctx.tokens())
+                    .with_alpha(self.visual.palette.overlay_alpha),
+                None,
+            );
         }
 
         if d > 0.0 {
-            self.render_dots(ctx, cx, cy, d * 0.35, c);
+            self.render_dots(
+                ctx,
+                cx,
+                cy,
+                d * self.visual.layout.orbit_radius_ratio,
+                c,
+            );
         }
 
         if let Some(tip_frame) = tip_frame {
@@ -101,7 +295,8 @@ widget! {
             return true;
         }
 
-        self.phase = (self.phase + dt * Self::SPIN_ANGULAR_SPEED)
+        self.phase = (self.phase
+            + dt * self.visual.motion.turns_per_second * std::f32::consts::TAU)
             .rem_euclid(std::f32::consts::TAU);
         true
     }
@@ -119,47 +314,59 @@ widget! {
 }
 
 impl Spin {
-    const SPIN_ANGULAR_SPEED: f32 = std::f32::consts::TAU;
-
     fn diameter(&self) -> f32 {
         match self.size {
-            SpinSize::Small => 16.0,
-            SpinSize::Default => 24.0,
-            SpinSize::Large => 36.0,
+            SpinSize::Small => self.visual.layout.small_diameter,
+            SpinSize::Default => self.visual.layout.default_diameter,
+            SpinSize::Large => self.visual.layout.large_diameter,
         }
     }
 
     fn render_dots(&self, ctx: &mut PaintContext, cx: f32, cy: f32, r: f32, c: Color) {
-        let dot_r = r * 0.18;
-        Self::for_each_dot_offset(self.phase, r, |i, dx, dy| {
-            let opacity = 0.25 + (i as f32 / 8.0) * 0.75;
-            // 点渐隐：对主题色做预乘淡化（保持原算法，避免直接 alpha 在亮背景上过亮）。
-            let dot_color = Color::from_rgba(
-                (c.r as f32 * opacity) as u8,
-                (c.g as f32 * opacity) as u8,
-                (c.b as f32 * opacity) as u8,
-                (c.a as f32 * opacity) as u8,
-            );
-            ctx.fill_circle(cx + dx, cy + dy, dot_r, dot_color);
-        });
+        let dots = self.visual.dots;
+        let dot_r = r * self.visual.layout.dot_radius_ratio;
+        Self::for_each_dot_offset(
+            self.phase,
+            r,
+            dots.count,
+            dots.step_sin,
+            dots.step_cos,
+            |i, dx, dy| {
+                let opacity = dots.opacity_start
+                    + (f32::from(i) / f32::from(dots.count)) * dots.opacity_range;
+                // 点渐隐：对主题色做预乘淡化（保持原算法，避免直接 alpha 在亮背景上过亮）。
+                let dot_color = Color::from_rgba(
+                    (c.r as f32 * opacity) as u8,
+                    (c.g as f32 * opacity) as u8,
+                    (c.b as f32 * opacity) as u8,
+                    (c.a as f32 * opacity) as u8,
+                );
+                ctx.fill_circle(cx + dx, cy + dy, dot_r, dot_color);
+            },
+        );
     }
 
     // 每帧只求一次相位三角函数，其余圆点通过固定 45° 旋转递推得到。
     #[inline]
-    fn for_each_dot_offset(phase: f32, radius: f32, mut visit: impl FnMut(u8, f32, f32)) {
+    fn for_each_dot_offset(
+        phase: f32,
+        radius: f32,
+        count: u8,
+        step_sin: f32,
+        step_cos: f32,
+        mut visit: impl FnMut(u8, f32, f32),
+    ) {
         // 第一个圆点直接使用动画相位，避免递推跨帧累计误差。
         let (mut sin, mut cos) = phase.sin_cos();
-        // 45° 的正弦与余弦相同，使用标准常量保持精度。
-        const STEP: f32 = std::f32::consts::FRAC_1_SQRT_2;
-        for index in 0..8 {
+        for index in 0..count {
             // 保持原实现以 cos 控制横轴、sin 控制纵轴的顺时针屏幕轨迹。
             visit(index, cos * radius, sin * radius);
-            if index == 7 {
+            if index + 1 == count {
                 break;
             }
             // 复数乘法完成固定角度旋转，不分配临时集合。
-            let next_sin = sin * STEP + cos * STEP;
-            let next_cos = cos * STEP - sin * STEP;
+            let next_sin = sin * step_cos + cos * step_sin;
+            let next_cos = cos * step_cos - sin * step_sin;
             sin = next_sin;
             cos = next_cos;
         }
@@ -167,17 +374,20 @@ impl Spin {
 
     fn spinner_bounds(&self, frame: Rect) -> Rect {
         let (cx, cy, d, _) = self.content_geometry(frame);
-        let orbit_r = d * 0.35;
-        let dot_r = orbit_r * 0.18;
-        let extent = orbit_r + dot_r + 1.0;
+        let orbit_r = d * self.visual.layout.orbit_radius_ratio;
+        let dot_r = orbit_r * self.visual.layout.dot_radius_ratio;
+        let extent = orbit_r + dot_r + self.visual.layout.dirty_padding;
         Rect::new(cx - extent, cy - extent, extent * 2.0, extent * 2.0)
     }
 
     fn content_geometry(&self, frame: Rect) -> (f32, f32, f32, Option<Rect>) {
-        const TIP_GAP: f32 = 8.0;
-        const TIP_HEIGHT: f32 = 18.0;
-        let has_tip = self.wrapper_mode && !self.tip.is_empty() && frame.h >= TIP_HEIGHT;
-        let reserved_tip_height = if has_tip { TIP_GAP + TIP_HEIGHT } else { 0.0 };
+        let layout = &self.visual.layout;
+        let has_tip = self.wrapper_mode && !self.tip.is_empty() && frame.h >= layout.tip_height;
+        let reserved_tip_height = if has_tip {
+            layout.tip_gap + layout.tip_height
+        } else {
+            0.0
+        };
         let d = self
             .diameter()
             .min(frame.w)
@@ -189,28 +399,30 @@ impl Spin {
         let tip_frame = has_tip.then(|| {
             Rect::new(
                 frame.x,
-                top + d + TIP_GAP,
+                top + d + layout.tip_gap,
                 frame.w,
-                TIP_HEIGHT.min(frame.y + frame.h - (top + d + TIP_GAP)),
+                layout
+                    .tip_height
+                    .min(frame.y + frame.h - (top + d + layout.tip_gap)),
             )
         });
         (cx, cy, d, tip_frame)
     }
 
     fn render_tip(&self, ctx: &mut PaintContext, frame: Rect) {
-        const FONT_SIZE: f32 = 13.0;
+        let font_size = self.visual.layout.tip_font_size;
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(text) = ctx.elide_single_line(&self.tip, FONT_SIZE, frame.w) else {
+        let Some(text) = ctx.elide_single_line(&self.tip, font_size, frame.w) else {
             return;
         };
         // 使用同一保守宽度契约居中截断后的提示文本。
-        let text_width = ctx.conservative_text_width(&text, FONT_SIZE);
-        let y = ctx.visual_center_y(frame, FONT_SIZE);
+        let text_width = ctx.conservative_text_width(&text, font_size);
+        let y = ctx.visual_center_y(frame, font_size);
         ctx.draw_text(
             &text,
             Point::new(frame.x + (frame.w - text_width) * 0.5, y),
-            ctx.tokens().color_text_secondary(),
-            FONT_SIZE,
+            self.visual.palette.tip.resolve(ctx.tokens()),
+            font_size,
         );
     }
 
@@ -238,8 +450,22 @@ impl Default for Spin {
     }
 }
 
-// 把加载指示器 Rust 内核与已有拥有型子树融合为 UIX 声明的单一根节点。
-fn build_spin_view(kernel: Spin, children: Vec<ViewNode>) -> ViewNode {
+// 把 UIX 声明的共享视觉配置融合进加载指示器 Rust 内核与已有拥有型子树。
+fn build_spin_view(
+    mut kernel: Spin,
+    children: Vec<ViewNode>,
+    declared_visual: SpinVisual,
+) -> ViewNode {
+    let visual = UIX_SPIN_VISUAL.get_or_init(|| declared_visual);
+    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.size_authored {
+        kernel.size = visual.default_size;
+    }
+    if kernel.phase == DEFAULT_SPIN_VISUAL.motion.initial_phase {
+        kernel.phase = visual.motion.initial_phase;
+    }
+    kernel.visual = visual;
     ViewNode::new(kernel, children)
 }
 
@@ -255,31 +481,36 @@ impl Spin {
     pub fn new() -> Self {
         Self {
             size: SpinSize::Default,
+            size_authored: false,
             color: None,
             spinning: true,
             tip: String::new(),
             wrapper_mode: false,
             delay: Duration::ZERO,
             delay_elapsed: 0.0,
-            phase: 0.0,
+            phase: DEFAULT_SPIN_VISUAL.motion.initial_phase,
+            visual: &DEFAULT_SPIN_VISUAL,
         }
     }
 
     /// 将加载指示器设为小尺寸。
     pub fn small(mut self) -> Self {
         self.size = SpinSize::Small;
+        self.size_authored = true;
         self
     }
 
     /// 将加载指示器设为大尺寸。
     pub fn large(mut self) -> Self {
         self.size = SpinSize::Large;
+        self.size_authored = true;
         self
     }
 
     /// 设置加载指示器的预设尺寸。
     pub fn size(mut self, size: SpinSize) -> Self {
         self.size = size;
+        self.size_authored = true;
         self
     }
 
@@ -317,7 +548,7 @@ impl Spin {
     /// 经由同目录 UIX 根声明构建加载指示器及其遮罩子树。
     #[doc(hidden)]
     pub fn build_view_with_children(self, children: Vec<ViewNode>) -> ViewNode {
-        // UIX 只拥有公开根；Rust 内核继续独占动画、布局、几何与绘制机制。
+        // UIX 拥有视觉配置；Rust 内核继续独占动画状态、布局执行与底层绘制。
         let kernel = self;
         crate::uix!("src/ui/widgets/feedback/spin/spin.uix")
     }
@@ -349,10 +580,12 @@ impl Spin {
     pub(crate) fn sync_from(&mut self, next: Self) {
         let restarting = !self.spinning && next.spinning;
         self.size = next.size;
+        self.size_authored = next.size_authored;
         self.color = next.color;
         self.spinning = next.spinning;
         self.tip = next.tip;
         self.wrapper_mode = next.wrapper_mode;
+        self.visual = next.visual;
         let delay_changed = self.delay != next.delay;
         self.delay = next.delay;
         if delay_changed || restarting || !self.spinning {
