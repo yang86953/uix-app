@@ -1,0 +1,2 @@
+// ProgressBar 是动画绘制组件；UIX 声明公开根，Rust 内核负责状态与绘制。
+<KernelView value={build_progress_view(kernel)} />
