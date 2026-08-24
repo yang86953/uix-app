@@ -134,6 +134,23 @@ impl<'a> PaintContext<'a> {
         }
     }
 
+    /// 脏重录时优先原位更新同位置操作，避免重复构造其共享载荷。
+    pub(super) fn record_op_reusing(
+        &mut self,
+        reuse: impl FnOnce(&mut PaintOp) -> bool,
+        build: impl FnOnce() -> PaintOp,
+    ) {
+        if !self.record_ops {
+            return;
+        }
+        if let Some(mut list) = self.recorder {
+            // SAFETY: recorder 仅在 with_recorder 闭包内有效，闭包返回前会清除。
+            unsafe {
+                list.as_mut().push_reusing(reuse, build);
+            }
+        }
+    }
+
     /// 当前逻辑 DPI；只读查询不会使 DisplayList 录制失效。
     pub fn dpi(&self) -> f32 {
         self.spatial.dpi()

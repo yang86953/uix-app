@@ -13,6 +13,11 @@ use crate::draw::resources::image::{BitmapHandle, ImageService, blit_handle};
 use crate::draw::{BlendMode, Color, FontHandle, GradientDirection, Radius, Transform};
 use std::sync::Arc;
 
+// 常见短显示列表至少保留一轮增长余量。
+const MIN_RETAINED_OP_CAPACITY: usize = 16;
+// 场景骤减后容量超过当前操作数四倍时主动回落。
+const MAX_RETAINED_OP_CAPACITY_RATIO: usize = 4;
+
 /// 绘制阶段：合成器在子节点前后分别调用 `paint`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PaintPass {
@@ -322,6 +327,8 @@ pub enum PaintOp {
 #[derive(Debug, Clone, Default)]
 pub struct DisplayList {
     ops: Arc<Vec<PaintOp>>,
+    /// 脏重录游标加一；零表示当前不在重录，避免扩大为双字 `Option<usize>`。
+    rewrite_cursor: usize,
 }
 
 impl DisplayList {
@@ -330,11 +337,28 @@ impl DisplayList {
         Self::default()
     }
 
-    // 按上一份显示列表的指令数量预留录制空间。
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
-        // 新列表仍拥有独立 Arc，容量提示只减少后续 Vec 扩容。
-        Self {
-            ops: Arc::new(Vec::with_capacity(capacity)),
+    /// 开始原位重录；唯一所有的旧操作槽位与嵌套载荷可按位置复用。
+    pub(crate) fn begin_rewrite(&mut self) {
+        debug_assert_eq!(self.rewrite_cursor, 0);
+        self.rewrite_cursor = 1;
+    }
+
+    /// 完成原位重录并丢弃本轮未覆盖的旧尾部。
+    pub(crate) fn finish_rewrite(&mut self) {
+        let encoded_cursor = std::mem::take(&mut self.rewrite_cursor);
+        if encoded_cursor == 0 {
+            return;
+        }
+        let recorded_len = encoded_cursor - 1;
+        let retain_limit = recorded_len
+            .max(MIN_RETAINED_OP_CAPACITY)
+            .saturating_mul(MAX_RETAINED_OP_CAPACITY_RATIO);
+        if recorded_len < self.ops.len() || self.ops.capacity() > retain_limit {
+            let ops = Arc::make_mut(&mut self.ops);
+            ops.truncate(recorded_len);
+            if ops.capacity() > retain_limit {
+                ops.shrink_to(recorded_len.max(MIN_RETAINED_OP_CAPACITY));
+            }
         }
     }
 
@@ -354,6 +378,12 @@ impl DisplayList {
         self.ops.capacity()
     }
 
+    // 测试目标观测原位重录是否保留同一操作数组分配。
+    #[cfg(test)]
+    pub(crate) fn operation_storage_ptr(&self) -> *const PaintOp {
+        self.ops.as_ptr()
+    }
+
     // 测试目标保留绘制操作只读观测入口，供 display-list 语义测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
@@ -363,7 +393,29 @@ impl DisplayList {
 
     /// 追加一条绘制指令（共享存储上执行写时复制）。
     pub fn push(&mut self, op: PaintOp) {
-        Arc::make_mut(&mut self.ops).push(op);
+        self.push_reusing(|_| false, || op);
+    }
+
+    /// 在原位重录时优先更新当前位置的旧指令；不匹配才惰性构造新指令。
+    pub(crate) fn push_reusing(
+        &mut self,
+        reuse: impl FnOnce(&mut PaintOp) -> bool,
+        build: impl FnOnce() -> PaintOp,
+    ) {
+        if self.rewrite_cursor == 0 {
+            Arc::make_mut(&mut self.ops).push(build());
+            return;
+        }
+        let index = self.rewrite_cursor - 1;
+        let ops = Arc::make_mut(&mut self.ops);
+        if index < ops.len() {
+            if !reuse(&mut ops[index]) {
+                ops[index] = build();
+            }
+        } else {
+            ops.push(build());
+        }
+        self.rewrite_cursor = index.saturating_add(2);
     }
 
     // 测试目标保留操作存储共享性观测入口，供写时复制测试按需调用。
@@ -801,5 +853,129 @@ mod tests {
             unreachable!("克隆后的操作类型必须保持不变");
         };
         assert!(Arc::ptr_eq(&layout, &cloned_layout));
+    }
+
+    // 唯一所有的显示列表重录应复用稳定文字，并截断本轮未覆盖的旧尾部。
+    #[test]
+    fn rewrite_reuses_text_storage_and_truncates_old_tail() {
+        let text: Arc<str> = Arc::from("steady");
+        let mut list = DisplayList::new();
+        list.push(PaintOp::DrawText {
+            text: Arc::clone(&text),
+            pos: Point::new(1.0, 2.0),
+            color: Color::black(),
+            font_size: 12.0,
+        });
+        list.push(PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+            color: Color::red(),
+            radius: None,
+        });
+
+        list.begin_rewrite();
+        list.push_reusing(
+            |op| match op {
+                PaintOp::DrawText {
+                    text: recorded_text,
+                    pos,
+                    color,
+                    font_size,
+                } if recorded_text.as_ref() == "steady" => {
+                    *pos = Point::new(3.0, 4.0);
+                    *color = Color::blue();
+                    *font_size = 14.0;
+                    true
+                }
+                _ => false,
+            },
+            || unreachable!("稳定文字必须复用旧操作"),
+        );
+        list.finish_rewrite();
+
+        let [
+            PaintOp::DrawText {
+                text: rewritten_text,
+                pos,
+                color,
+                font_size,
+            },
+        ] = list.ops()
+        else {
+            panic!("重录后只应保留一条文字操作");
+        };
+        assert!(Arc::ptr_eq(&text, rewritten_text));
+        assert_eq!(*pos, Point::new(3.0, 4.0));
+        assert_eq!(*color, Color::blue());
+        assert_eq!(*font_size, 14.0);
+    }
+
+    // 存在外部快照时，原位重录仍必须遵守 Arc 写时复制并保留旧内容。
+    #[test]
+    fn rewrite_preserves_shared_snapshot_content() {
+        let mut list = DisplayList::new();
+        list.push(PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+            color: Color::red(),
+            radius: None,
+        });
+        let snapshot = list.clone();
+
+        list.begin_rewrite();
+        list.push(PaintOp::FillRect {
+            rect: Rect::new(1.0, 1.0, 2.0, 2.0),
+            color: Color::blue(),
+            radius: None,
+        });
+        list.finish_rewrite();
+
+        let PaintOp::FillRect {
+            rect: snapshot_rect,
+            color: snapshot_color,
+            ..
+        } = &snapshot.ops()[0]
+        else {
+            panic!("快照应保留原矩形操作");
+        };
+        let PaintOp::FillRect {
+            rect: rewritten_rect,
+            color: rewritten_color,
+            ..
+        } = &list.ops()[0]
+        else {
+            panic!("重录列表应保留新矩形操作");
+        };
+        assert_eq!(*snapshot_rect, Rect::new(0.0, 0.0, 4.0, 4.0));
+        assert_eq!(*snapshot_color, Color::red());
+        assert_eq!(*rewritten_rect, Rect::new(1.0, 1.0, 2.0, 2.0));
+        assert_eq!(*rewritten_color, Color::blue());
+        assert!(!list.shares_operation_storage_with(&snapshot));
+    }
+
+    // 操作数量骤减后不应长期驻留峰值显示列表容量。
+    #[test]
+    fn rewrite_releases_oversized_operation_capacity_after_shrink() {
+        let mut list = DisplayList::new();
+        for x in 0..256 {
+            list.push(PaintOp::FillRect {
+                rect: Rect::new(x as f32, 0.0, 1.0, 1.0),
+                color: Color::red(),
+                radius: None,
+            });
+        }
+        let peak_capacity = list.capacity();
+
+        list.begin_rewrite();
+        list.push(PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 1.0, 1.0),
+            color: Color::blue(),
+            radius: None,
+        });
+        list.finish_rewrite();
+
+        assert!(list.capacity() < peak_capacity);
+        assert!(
+            list.capacity()
+                <= MIN_RETAINED_OP_CAPACITY.saturating_mul(MAX_RETAINED_OP_CAPACITY_RATIO)
+        );
     }
 }

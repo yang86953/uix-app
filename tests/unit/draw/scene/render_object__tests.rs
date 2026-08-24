@@ -116,7 +116,7 @@ impl ScenePaint for SnapshotScene {
     }
 
     fn paint(&self, _id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
-        // 使用两条稳定绘制指令验证重复录制的内容和容量提示。
+        // 使用两条稳定绘制指令验证重复录制的内容和存储复用。
         ctx.fill_rect(frame, Color::red(), None);
         ctx.fill_rect(
             Rect::new(frame.x + 1.0, frame.y + 1.0, 2.0, 2.0),
@@ -126,7 +126,7 @@ impl ScenePaint for SnapshotScene {
     }
 }
 
-// 读取测试显示列表中的矩形序列，验证容量优化不改变录制内容。
+// 读取测试显示列表中的矩形序列，验证原位重录不改变内容。
 fn recorded_rects(tree: &RenderObjectTree, id: NodeId) -> Vec<Rect> {
     tree.get(id)
         .and_then(|entry| entry.display_list.as_ref())
@@ -212,7 +212,7 @@ fn batch_snapshot_does_not_hide_frame_changes() {
     assert_eq!(scene.node_dirty_calls.get(), 0);
 }
 
-// 重复脏绘制必须复用旧指令数作为容量提示，并保持重建后的缓存内容。
+// 重复脏绘制必须复用旧显示列表存储，并保持重建后的缓存内容。
 #[test]
 fn dirty_repaint_and_rebuild_preserve_display_list_content() {
     // 根节点持续为脏，确保两次调用都进入真实重录路径。
@@ -240,7 +240,12 @@ fn dirty_repaint_and_rebuild_preserve_display_list_content() {
     tree.paint_content(ROOT, frame, &scene, &mut ctx);
     let first_rects = recorded_rects(&tree, ROOT);
     assert_eq!(first_rects.len(), 2);
-    // 第二次重录必须生成相同内容，且容量至少覆盖上一份指令数。
+    let first_storage = tree
+        .get(ROOT)
+        .and_then(|entry| entry.display_list.as_ref())
+        .expect("first display list should exist")
+        .operation_storage_ptr();
+    // 第二次重录必须生成相同内容并保留原操作数组分配。
     tree.paint_content(ROOT, frame, &scene, &mut ctx);
     assert_eq!(recorded_rects(&tree, ROOT), first_rects);
     let second = tree
@@ -248,6 +253,7 @@ fn dirty_repaint_and_rebuild_preserve_display_list_content() {
         .and_then(|entry| entry.display_list.as_ref())
         .expect("second display list should exist");
     assert!(second.capacity() >= first_rects.len());
+    assert_eq!(second.operation_storage_ptr(), first_storage);
 
     // 结构版本变化使用预留表重建，并继续保留同 frame 的显示列表。
     scene.dirty_nodes.clear();
