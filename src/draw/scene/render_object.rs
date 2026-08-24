@@ -1,6 +1,6 @@
 //! RenderObjectTree — 从 ScenePaint 构建的 DisplayList 缓存索引。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::core::Rect;
 
@@ -36,6 +36,8 @@ impl RenderObjectEntry {
 #[derive(Debug, Default)]
 pub struct RenderObjectTree {
     entries: HashMap<NodeId, RenderObjectEntry>,
+    /// 每帧复用的 Paint 失效身份快照，避免为每个节点重复同步与分配。
+    dirty_nodes: HashSet<NodeId>,
     synced_version: u64,
 }
 
@@ -67,7 +69,8 @@ impl RenderObjectTree {
             self.rebuild(scene);
             self.synced_version = version;
         }
-        self.refresh_dirty(scene);
+        let full_paint = scene.paint_invalidation_snapshot_into(&mut self.dirty_nodes);
+        Self::refresh_dirty(&mut self.entries, &self.dirty_nodes, full_paint, scene);
     }
 
     /// 尝试重放 Content DisplayList；成功则跳过 widget 直接绘制。
@@ -153,8 +156,13 @@ impl RenderObjectTree {
         }
     }
 
-    fn refresh_dirty(&mut self, scene: &impl ScenePaint) {
-        for (id, entry) in &mut self.entries {
+    fn refresh_dirty(
+        entries: &mut HashMap<NodeId, RenderObjectEntry>,
+        dirty_nodes: &HashSet<NodeId>,
+        full_paint: Option<bool>,
+        scene: &impl ScenePaint,
+    ) {
+        for (id, entry) in entries {
             if scene.node_visible(*id) {
                 let frame = scene.node_frame(*id);
                 if entry.frame != frame {
@@ -162,7 +170,12 @@ impl RenderObjectTree {
                     entry.is_dirty = true;
                     entry.display_list = None;
                 }
-                if scene.node_dirty(*id) {
+                let node_dirty = match full_paint {
+                    Some(true) => true,
+                    Some(false) => dirty_nodes.contains(id),
+                    None => scene.node_dirty(*id),
+                };
+                if node_dirty {
                     entry.is_dirty = true;
                 }
             } else {
@@ -172,3 +185,7 @@ impl RenderObjectTree {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/draw/scene/render_object__tests.rs"]
+mod tests;

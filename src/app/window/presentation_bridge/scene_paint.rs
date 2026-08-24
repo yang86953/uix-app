@@ -52,6 +52,15 @@ impl ScenePaint for WidgetTree {
             .node_needs_paint(id)
     }
 
+    fn paint_invalidation_snapshot_into(&self, ids: &mut HashSet<NodeId>) -> Option<bool> {
+        let invalidation = self
+            .invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        invalidation.paint_ids_into(ids);
+        Some(invalidation.needs_full_frame())
+    }
+
     fn node_z_index(&self, id: NodeId) -> i32 {
         self.get(id).map(|n| n.z_index()).unwrap_or(0)
     }
