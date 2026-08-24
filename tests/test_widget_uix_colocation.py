@@ -75,6 +75,7 @@ MIGRATED_WIDGET_DIRS = {
     "general/space",
     "general/typography",
     "input/checkbox",
+    "input/input_group",
     "input/radio",
     "input/switch",
     "other/theme_toggle",
