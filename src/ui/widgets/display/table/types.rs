@@ -9,14 +9,6 @@ use std::rc::Rc;
 
 use super::Table;
 
-pub(crate) const COLUMN_RESIZE_HANDLE_HALF_WIDTH: f32 = 4.0;
-pub(crate) const MIN_RESIZABLE_COLUMN_WIDTH: f32 = 32.0;
-pub(crate) const TABLE_PAGINATION_HEIGHT: f32 = 40.0;
-pub(crate) const TABLE_PAGINATION_ITEM_SIZE: f32 = 28.0;
-pub(crate) const TABLE_PAGINATION_GAP: f32 = 4.0;
-pub(crate) const TABLE_PAGINATION_LABEL_WIDTH: f32 = 80.0;
-pub(crate) const TABLE_PAGINATION_INSET: f32 = 8.0;
-
 pub(crate) fn finite_nonnegative(value: f32) -> f32 {
     if value.is_finite() {
         value.max(0.0)

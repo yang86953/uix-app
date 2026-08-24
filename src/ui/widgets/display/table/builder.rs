@@ -66,6 +66,7 @@ impl<R> DataTable<R> {
     /// 设置表体行高，并将非法或过小数值归一化。
     pub fn row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
+        self.table.row_h_authored = true;
         self
     }
 
@@ -85,6 +86,7 @@ impl<R> DataTable<R> {
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
+        self.table.row_h_authored = true;
         self
     }
 
@@ -197,11 +199,12 @@ impl<R: 'static> crate::ui::IntoWidgetNode for DataTable<R> {
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
         }
-        let mut node = crate::ui::IntoWidgetNode::into_node(table);
+        // 泛型表格与普通 Table 统一经过同目录 UIX 根，避免命令式转换绕过视觉声明。
+        let mut node = super::build_table_uix_root(table);
         if let Some(handler) = handler {
             node.render_handlers.push(handler);
         }
-        node
+        crate::ui::IntoWidgetNode::into_node(node)
     }
 }
 
@@ -302,6 +305,7 @@ impl TableBuilder {
     /// 设置表体行高，并将非法或过小数值归一化。
     pub fn row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
+        self.table.row_h_authored = true;
         self
     }
 
@@ -320,6 +324,7 @@ impl TableBuilder {
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.table.row_h = Table::normalized_row_height(height);
+        self.table.row_h_authored = true;
         self
     }
 
@@ -351,8 +356,9 @@ impl crate::ui::IntoWidgetNode for TableBuilder {
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return crate::ui::IntoWidgetNode::into_node(empty);
         }
-        crate::ui::widget_runtime::widget::WidgetNode::leaf(Box::new(table))
-            .with_render_handlers(handlers)
+        let mut view = super::build_table_uix_root(table);
+        view.render_handlers.extend(handlers);
+        crate::ui::IntoWidgetNode::into_node(view)
     }
 }
 
@@ -362,7 +368,7 @@ impl crate::ui::view::View for TableBuilder {
         if let Some(empty) = resolve_table_empty_view(&table, empty_renderer.as_ref()) {
             return empty;
         }
-        let mut node = crate::ui::view::ViewNode::leaf(table);
+        let mut node = super::build_table_uix_root(table);
         node.render_handlers.extend(handlers);
         node
     }
@@ -379,6 +385,6 @@ impl crate::ui::view::View for Table {
         if let Some(empty) = resolve_table_empty_view(&self, None) {
             return empty;
         }
-        crate::ui::view::ViewNode::leaf(self)
+        super::build_table_uix_root(self)
     }
 }

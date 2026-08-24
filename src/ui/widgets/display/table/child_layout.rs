@@ -50,7 +50,7 @@ impl Table {
             // 跳过完整表头区域。
             + self.total_header_height()
             // 跳过表头与表体分隔线。
-            + 1.0
+            + self.visual.geometry.body_separator
             // 跳过展开行本身及其之前的普通行。
             + (expanded_row + 1) as f32 * self.row_h;
         // 返回占满表格宽度的单一展开内容矩形。
@@ -84,7 +84,7 @@ impl Table {
         // 为当前横向滚动与固定列状态建立共享列几何。
         let column_geometry = self.column_geometry(frame.x, frame.w);
         // 表体内容坐标从完整表头与分隔线之后开始。
-        let body_top = frame.y + self.total_header_height() + 1.0;
+        let body_top = frame.y + self.total_header_height() + self.visual.geometry.body_separator;
         // 预分配与物化子项数量相同的位置结果。
         let mut positions = Vec::with_capacity(children.len());
         // View 列非空分支保证除数至少为一。

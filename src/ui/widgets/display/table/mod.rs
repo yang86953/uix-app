@@ -20,6 +20,7 @@ mod child_layout;
 mod config;
 pub(crate) mod geometry;
 mod header;
+mod presentation;
 mod table_a;
 mod table_b;
 #[cfg(test)]
@@ -31,6 +32,8 @@ pub(crate) mod types;
 // 引入共享列区绘制层级与列几何快照。
 pub use builder::TableBuilder;
 use geometry::COLUMN_PAINT_ORDER;
+use presentation::*;
+pub(crate) use presentation::{ResolvedTableVisual, TableVisual};
 pub(crate) use types::TableCellRenderer;
 use types::{
     ColumnGroupRange, TablePaginationCallback, TablePointerAction, TableResizeDrag,
@@ -51,6 +54,9 @@ widget! {
         view_columns: Vec<usize>,
         materialized_cell_range: Cell<Option<(usize, usize)>>,
         pub(crate) row_h: f32,
+        // 标记行高是否由 Rust 调用方显式覆盖。
+        #[snapshot(skip)]
+        pub(crate) row_h_authored: bool,
         header_h: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
@@ -88,6 +94,12 @@ widget! {
         pressed_action: Cell<Option<TablePointerAction>>,
         resize_drag: Cell<Option<TableResizeDrag>>,
         hover_resize_column: Cell<Option<usize>>,
+        // 全部实例共享 UIX 声明固化后的只读视觉配置。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static TableVisual,
+        // 复用分页标签字符串，页码未变化时不产生临时分配。
+        #[snapshot(skip)]
+        pub(crate) pagination_label_cache: RefCell<TablePaginationLabelCache>,
     }
 
     tab_index => (&self) -> i32 {
@@ -104,7 +116,7 @@ widget! {
         let extra = if self.expandable && self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let body_h = self.rows.len() as f32 * self.row_h + extra;
         let body_separator = if !self.rows.is_empty() || self.loading {
-            1.0
+            self.visual.geometry.body_separator
         } else {
             0.0
         };
@@ -114,7 +126,8 @@ widget! {
             + self.pagination_height();
         constraints.clamp(Size::new(
             self.fixed_width.unwrap_or(w),
-            self.fixed_height.unwrap_or(h.max(60.0)),
+            self.fixed_height
+                .unwrap_or(h.max(self.visual.geometry.min_height)),
         ))
     }
 
@@ -133,7 +146,8 @@ widget! {
     }
 
     scroll_composite_viewport => (&self, frame: Rect) -> Option<Rect> {
-        let header_height = self.total_header_height() + 1.0;
+        let header_height =
+            self.total_header_height() + self.visual.geometry.body_separator;
         let body_height = (frame.h - header_height - self.pagination_height()).max(0.0);
         (body_height > 0.0).then(|| {
             Rect::new(frame.x, frame.y + header_height, frame.w, body_height)
@@ -200,12 +214,12 @@ widget! {
                 let viewport_h = self.body_viewport_height();
                 let old_y = self.body_scroll.scroll_offset();
                 let max = (self.body_content_height() - viewport_h).max(0.0);
-                let next_y = (old_y + delta.y * 40.0).clamp(0.0, max);
+                let next_y = (old_y + delta.y * self.visual.geometry.wheel_step).clamp(0.0, max);
                 self.body_scroll.set_scroll_offset(next_y);
                 let dy = next_y - old_y;
 
                 let old_x = self.horizontal_scroll.get();
-                let next_x = (old_x + delta.x * 40.0)
+                let next_x = (old_x + delta.x * self.visual.geometry.wheel_step)
                     .clamp(0.0, self.horizontal_max_scroll());
                 self.horizontal_scroll.set(next_x);
                 let dx = next_x - old_x;
@@ -334,17 +348,11 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let bg = ctx.tokens().color_bg_elevated();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let primary = ctx.tokens().color_primary();
-        let hover_bg = ctx.tokens().color_fill_quaternary();
-        let sel_bg = ctx.tokens().color_primary_bg();
-        let radius = ctx
-            .tokens()
-            .border_radius_sm()
-            .min(frame.w.min(frame.h) * 0.5);
+        let resolved = self.visual.resolve(ctx.tokens());
+        let frame_visual = self.visual.frame;
+        let radius = resolved
+            .radius
+            .min(frame.w.min(frame.h) * frame_visual.radius_frame_ratio);
         let r = Some(Radius::uniform(radius));
         let mut y = frame.y;
         let sel = self.selected_row.get();
@@ -357,7 +365,9 @@ widget! {
         if self.rows.is_empty() && !self.loading {
             let loc = crate::ui::widget_runtime::locale::use_locale();
             let empty = if self.empty_text.is_empty() { loc.empty_data } else { &self.empty_text };
-            let horizontal_inset = 16.0_f32.min(frame.w * 0.25);
+            let horizontal_inset = frame_visual
+                .empty_inset
+                .min(frame.w * frame_visual.empty_inset_ratio);
             Self::paint_single_line(
                 ctx,
                 empty,
@@ -367,23 +377,38 @@ widget! {
                     (frame.w - horizontal_inset * 2.0).max(0.0),
                     (frame.h - self.pagination_height()).max(0.0),
                 ),
-                text_sec,
-                14.0,
+                resolved.text_secondary,
+                frame_visual.empty_font_size,
             );
             if self.bordered {
-                ctx.stroke_rect(frame, border, 1.0, r);
+                ctx.stroke_rect(frame, resolved.border, frame_visual.border_width, r);
             }
-            self.paint_pagination(frame, ctx);
+            self.paint_pagination(frame, ctx, resolved);
             ctx.pop_clip();
             return;
         }
 
-        header::paint(self, Rect::new(frame.x, y, frame.w, frame.h), ctx, &column_geometry);
+        header::paint(
+            self,
+            Rect::new(frame.x, y, frame.w, frame.h),
+            ctx,
+            &column_geometry,
+            resolved,
+        );
         y += self.total_header_height();
 
         // 分隔线
-        ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
-        y += 1.0;
+        ctx.fill_rect(
+            Rect::new(
+                frame.x,
+                y,
+                frame.w,
+                self.visual.geometry.body_separator,
+            ),
+            resolved.border,
+            None,
+        );
+        y += self.visual.geometry.body_separator;
 
         // 数据行（虚拟滚动：仅绘制 viewport ± overscan）
         let body_top = y;
@@ -420,15 +445,15 @@ widget! {
             }
 
             let row_bg = if is_pressed {
-                ctx.tokens().color_fill_secondary()
+                resolved.pressed_background
             } else if is_selected {
-                sel_bg
+                resolved.selected_background
             } else if is_hovered {
-                hover_bg
+                resolved.hover_background
             } else if actual_ri.is_multiple_of(2) {
-                bg
+                resolved.background
             } else {
-                ctx.tokens().color_bg_container()
+                resolved.alternate_background
             };
             let row_rect = Rect::new(frame.x, row_y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
@@ -436,20 +461,30 @@ widget! {
             if self.selection {
                 crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
-                    if is_checked { "check-square" } else { "square" },
-                    Rect::new(frame.x + 6.0, row_rect.y, 18.0, row_rect.h),
-                    primary,
-                    14.0,
+                    if is_checked {
+                        frame_visual.checked_icon
+                    } else {
+                        frame_visual.unchecked_icon
+                    },
+                    Rect::new(
+                        frame.x + frame_visual.selection_icon_x,
+                        row_rect.y,
+                        frame_visual.selection_icon_width,
+                        row_rect.h,
+                    ),
+                    resolved.primary,
+                    frame_visual.selection_icon_size,
                 );
                 if self.bordered {
                     ctx.fill_rect(
                         Rect::new(
-                            frame.x + self.selection_width() - 1.0,
+                            frame.x + self.selection_width()
+                                - frame_visual.selection_divider_width,
                             row_rect.y,
-                            1.0,
+                            frame_visual.selection_divider_width,
                             row_rect.h,
                         ),
-                        border,
+                        resolved.border,
                         None,
                     );
                 }
@@ -492,9 +527,15 @@ widget! {
                             .get(laid_out.index)
                             .map(String::as_str)
                             .unwrap_or("");
-                        let tc = if is_selected { primary } else { text_color };
+                        let tc = if is_selected {
+                            resolved.primary
+                        } else {
+                            resolved.text
+                        };
                         if let Some(cell_frame) = cell_frame.intersect(&clip) {
-                            let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
+                            let horizontal_inset = frame_visual
+                                .cell_inset
+                                .min(cell_frame.w * frame_visual.cell_inset_ratio);
                             Self::paint_single_line(
                                 ctx,
                                 cell,
@@ -505,7 +546,7 @@ widget! {
                                     cell_frame.h,
                                 ),
                                 tc,
-                                12.0,
+                                frame_visual.cell_font_size,
                             );
                         }
                     }
@@ -513,12 +554,12 @@ widget! {
                         ctx.fill_rect(
                             Rect::new(
                                 // 纵向边界跟随合并矩形的真实物理右边缘。
-                                cell_frame.x + cell_frame.w - 1.0,
+                                cell_frame.x + cell_frame.w - frame_visual.border_width,
                                 row_rect.y,
-                                1.0,
+                                frame_visual.border_width,
                                 cell_height,
                             ),
-                            border,
+                            resolved.border,
                             None,
                         );
                     }
@@ -527,7 +568,16 @@ widget! {
             }
 
             if actual_ri + 1 < end || is_expanded {
-                ctx.fill_rect(Rect::new(frame.x, row_y + self.row_h, frame.w, 1.0), border, None);
+                ctx.fill_rect(
+                    Rect::new(
+                        frame.x,
+                        row_y + self.row_h,
+                        frame.w,
+                        frame_visual.border_width,
+                    ),
+                    resolved.border,
+                    None,
+                );
             }
 
             // 扩展行内容
@@ -538,7 +588,7 @@ widget! {
                     frame.w,
                     self.expand_height,
                 );
-                ctx.fill_rect(expand_rect, ctx.tokens().color_bg_container(), None);
+                ctx.fill_rect(expand_rect, resolved.alternate_background, None);
             }
         }
 
@@ -603,15 +653,15 @@ widget! {
                     == Some(row_index)
                     && is_hovered;
                 let cell_bg = if is_pressed {
-                    ctx.tokens().color_fill_secondary()
+                    resolved.pressed_background
                 } else if is_selected {
-                    sel_bg
+                    resolved.selected_background
                 } else if is_hovered {
-                    hover_bg
+                    resolved.hover_background
                 } else if row_index.is_multiple_of(2) {
-                    bg
+                    resolved.background
                 } else {
-                    ctx.tokens().color_bg_container()
+                    resolved.alternate_background
                 };
 
                 // 按共享列区层级重绘跨度在每个固定区中的真实可见片段。
@@ -642,7 +692,9 @@ widget! {
                         // 从锚点列读取合并单元格唯一文本。
                         let cell = row.get(column_index).map(String::as_str).unwrap_or("");
                         // 水平留白按完整合并矩形收敛，跨区片段只负责裁剪。
-                        let horizontal_inset = 8.0_f32.min(cell_frame.w * 0.25);
+                        let horizontal_inset = frame_visual
+                            .cell_inset
+                            .min(cell_frame.w * frame_visual.cell_inset_ratio);
                         // 在统一矩形中绘制一次逻辑内容的当前可见切片。
                         Self::paint_single_line(
                             ctx,
@@ -653,14 +705,23 @@ widget! {
                                 (cell_frame.w - horizontal_inset * 2.0).max(0.0),
                                 cell_frame.h,
                             ),
-                            if is_selected { primary } else { text_color },
-                            12.0,
+                            if is_selected {
+                                resolved.primary
+                            } else {
+                                resolved.text
+                            },
+                            frame_visual.cell_font_size,
                         );
                     }
                     // 带边框表格沿完整逻辑矩形绘制外框并由片段裁剪。
                     if self.bordered {
                         // 提交完整合并矩形描边。
-                        ctx.stroke_rect(cell_frame, border, 1.0, None);
+                        ctx.stroke_rect(
+                            cell_frame,
+                            resolved.border,
+                            frame_visual.border_width,
+                            None,
+                        );
                     } else {
                         // 无边框表格只补绘合并单元格底部分隔线。
                         ctx.fill_rect(
@@ -668,9 +729,9 @@ widget! {
                                 cell_frame.x,
                                 cell_frame.y + cell_frame.h,
                                 cell_frame.w,
-                                1.0,
+                                frame_visual.border_width,
                             ),
-                            border,
+                            resolved.border,
                             None,
                         );
                     }
@@ -692,36 +753,43 @@ widget! {
                 };
                 let row_y = body_top + actual_ri as f32 * self.row_h + expanded_offset
                     - self.body_scroll.scroll_offset();
-                let icon_size = 18.0_f32.min(self.row_h).min(frame.w);
+                let icon_size = frame_visual
+                    .expand_icon_size
+                    .min(self.row_h)
+                    .min(frame.w);
                 crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
                     if expanded == Some(actual_ri) {
-                        "chevron-up"
+                        frame_visual.expanded_icon
                     } else {
-                        "chevron-down"
+                        frame_visual.collapsed_icon
                     },
                     Rect::new(
-                        frame.x + (frame.w - icon_size - 6.0).max(0.0),
-                        row_y + (self.row_h - icon_size) * 0.5,
+                        frame.x
+                            + (frame.w - icon_size - frame_visual.expand_icon_right).max(0.0),
+                        row_y + (self.row_h - icon_size) * frame_visual.center_ratio,
                         icon_size,
                         icon_size,
                     ),
-                    text_sec,
-                    10.0,
+                    resolved.text_secondary,
+                    frame_visual.expand_icon_font_size,
                 );
             }
         }
 
         ctx.pop_clip();
-        self.paint_pagination(frame, ctx);
+        self.paint_pagination(frame, ctx, resolved);
         if self.loading {
-            self.paint_loading_overlay(frame, ctx);
+            self.paint_loading_overlay(frame, ctx, resolved);
         }
         if self.bordered {
-            ctx.stroke_rect(frame, border, 1.0, r);
+            ctx.stroke_rect(frame, resolved.border, frame_visual.border_width, r);
         }
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = frame_visual
+                .focus_inset
+                .min(frame.w * frame_visual.center_ratio)
+                .min(frame.h * frame_visual.center_ratio);
             ctx.stroke_rect(
                 Rect::new(
                     frame.x + inset,
@@ -729,10 +797,13 @@ widget! {
                     (frame.w - inset * 2.0).max(0.0),
                     (frame.h - inset * 2.0).max(0.0),
                 ),
-                primary,
-                2.0,
+                resolved.primary,
+                frame_visual.focus_stroke,
                 Some(Radius::uniform(
-                    radius.min((frame.w - inset * 2.0).min(frame.h - inset * 2.0) * 0.5),
+                    radius.min(
+                        (frame.w - inset * 2.0).min(frame.h - inset * 2.0)
+                            * frame_visual.center_ratio,
+                    ),
                 )),
             );
         }
@@ -746,7 +817,8 @@ widget! {
         }
         let before = self.loading_phase;
         self.loading_phase = (self.loading_phase
-            + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+            + dt.max(0.0) as f32 * std::f32::consts::TAU
+                / self.visual.loading.duration_seconds)
             .rem_euclid(std::f32::consts::TAU);
         self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
         true
@@ -764,9 +836,13 @@ widget! {
         let header_height = self.total_header_height();
         Some(Rect::new(
             frame.x,
-            frame.y + header_height + 1.0,
+            frame.y + header_height + self.visual.geometry.body_separator,
             frame.w,
-            (frame.h - header_height - 1.0 - self.pagination_height()).max(0.0),
+            (frame.h
+                - header_height
+                - self.visual.geometry.body_separator
+                - self.pagination_height())
+            .max(0.0),
         ))
     }
 
@@ -776,6 +852,22 @@ widget! {
         // 由独立辅助统一生成完整 View frame 与父级片段裁剪。
         self.layout_table_children(frame, children, tree)
     }
+}
+
+// 把表格数据、交互状态与 UIX 静态视觉融合为单一根节点。
+fn build_table_view(mut kernel: Table, declared_visual: TableVisual) -> crate::ui::view::ViewNode {
+    let visual = UIX_TABLE_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.row_h_authored {
+        kernel.row_h = visual.geometry.row_height;
+    }
+    kernel.header_h = visual.geometry.header_height;
+    kernel.visual = visual;
+    crate::ui::view::ViewNode::leaf(kernel)
+}
+
+// 让 Table 与泛型 DataTable 的最终内核统一进入同一 UIX 根。
+pub(crate) fn build_table_uix_root(kernel: Table) -> crate::ui::view::ViewNode {
+    crate::uix!("src/ui/widgets/display/table/table.uix")
 }
 
 impl TableChange {
