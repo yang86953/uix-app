@@ -9,17 +9,19 @@ impl Popover {
             title: String::new(),
             content: content.into(),
             visible: false,
-            placement: PopoverPlacement::Top,
+            placement: DEFAULT_POPOVER_VISUAL.defaults.placement,
             trigger: PopoverTrigger::Click,
-            arrow: true,
+            arrow: DEFAULT_POPOVER_VISUAL.defaults.arrow,
             background: None,
             custom_trigger: false,
             custom_trigger_view: None,
             open_binding: None,
             timer: 0.0,
-            enter_animation: presets::tooltip_enter(),
-            leave_animation: presets::tooltip_exit(),
-            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            enter_animation: AnimationConfig::fade_in(DEFAULT_POPOVER_VISUAL.motion.enter_duration),
+            leave_animation: AnimationConfig::fade_out(DEFAULT_POPOVER_VISUAL.motion.exit_duration),
+            transition: TransitionPlayer::new(AnimationConfig::fade_in(
+                DEFAULT_POPOVER_VISUAL.motion.enter_duration,
+            )),
             closing: false,
             transition_dirty: false,
             focused: false,
@@ -29,11 +31,14 @@ impl Popover {
             last_frame: Cell::new(Rect::zero()),
             popup_rect: Cell::new(Rect::new(
                 0.0,
-                -POPOVER_HEIGHT - 10.0,
-                POPOVER_WIDTH,
-                POPOVER_HEIGHT,
+                -DEFAULT_POPOVER_VISUAL.defaults.popup_height
+                    - DEFAULT_POPOVER_VISUAL.layout.arrow_gap,
+                DEFAULT_POPOVER_VISUAL.defaults.popup_width,
+                DEFAULT_POPOVER_VISUAL.defaults.popup_height,
             )),
             surface_rect: Cell::new(Rect::zero()),
+            visual: &DEFAULT_POPOVER_VISUAL,
+            authored: PopoverAuthored::default(),
         }
     }
     /// 设置气泡卡片标题。
@@ -44,6 +49,7 @@ impl Popover {
     /// 设置气泡卡片相对触发区域的放置方向。
     pub fn placement(mut self, p: PopoverPlacement) -> Self {
         self.placement = p;
+        self.authored.set(PopoverAuthored::PLACEMENT);
         self
     }
     /// 设置打开和关闭气泡卡片的触发方式。
@@ -54,6 +60,7 @@ impl Popover {
     /// 设置是否绘制指向触发区域的箭头。
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
+        self.authored.set(PopoverAuthored::ARROW);
         self
     }
 
@@ -75,6 +82,7 @@ impl Popover {
     /// 设置打开时播放的动画；已打开时从当前声明重新开始进场。
     pub fn enter_animation(mut self, animation: AnimationConfig) -> Self {
         self.enter_animation = animation;
+        self.authored.set(PopoverAuthored::ENTER_ANIMATION);
         if self.visible && !self.closing {
             self.transition = TransitionPlayer::new(animation);
             self.transition_dirty = true;
@@ -85,6 +93,7 @@ impl Popover {
     /// 设置关闭时播放的动画。
     pub fn leave_animation(mut self, animation: AnimationConfig) -> Self {
         self.leave_animation = animation;
+        self.authored.set(PopoverAuthored::LEAVE_ANIMATION);
         if self.closing {
             self.transition = TransitionPlayer::new(animation);
             self.transition_dirty = true;
@@ -169,6 +178,8 @@ impl Popover {
         self.open_binding = next.open_binding;
         self.enter_animation = next.enter_animation;
         self.leave_animation = next.leave_animation;
+        self.visual = next.visual;
+        self.authored = next.authored;
         if let Some(open) = controlled_open {
             self.apply_bound_open(open);
         }
@@ -223,12 +234,12 @@ impl Popover {
         let width = if frame.w > 0.0 {
             frame.w
         } else {
-            TRIGGER_WIDTH
+            self.visual.defaults.trigger_width
         };
         let height = if frame.h > 0.0 {
             frame.h
         } else {
-            TRIGGER_HEIGHT
+            self.visual.defaults.trigger_height
         };
         Rect::new(0.0, 0.0, width, height)
     }
@@ -238,8 +249,8 @@ impl Popover {
         let width = rect.w * scale;
         let height = rect.h * scale;
         Rect::new(
-            rect.x + (rect.w - width) * 0.5 + self.transition.offset.x,
-            rect.y + (rect.h - height) * 0.5 + self.transition.offset.y,
+            rect.x + (rect.w - width) * self.visual.layout.center_ratio + self.transition.offset.x,
+            rect.y + (rect.h - height) * self.visual.layout.center_ratio + self.transition.offset.y,
             width,
             height,
         )
@@ -253,7 +264,10 @@ impl Popover {
 
     pub(super) fn transition_dirty_rect(&self, frame: Rect) -> Rect {
         let frame = Self::normalize_frame(frame);
-        let popup = expand_popover_rect(self.absolute_popup_rect(frame), 12.0);
+        let popup = expand_popover_rect(
+            self.absolute_popup_rect(frame),
+            self.visual.layout.shadow_expand,
+        );
         let bounds = frame.union(&self.transition_sweep_rect(popup));
         bounds
             .intersect(&self.surface_or_fallback(frame))
@@ -261,7 +275,10 @@ impl Popover {
     }
 
     pub(super) fn intrinsic_size(&self) -> Size {
-        Size::new(TRIGGER_WIDTH, TRIGGER_HEIGHT)
+        Size::new(
+            self.visual.defaults.trigger_width,
+            self.visual.defaults.trigger_height,
+        )
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -286,10 +303,8 @@ impl Popover {
             self.placement,
             // 保留箭头间距配置。
             self.arrow,
-            // 使用标准气泡宽度。
-            POPOVER_WIDTH,
-            // 使用标准气泡高度。
-            POPOVER_HEIGHT,
+            // 使用 UIX 声明的完整视觉表。
+            self.visual,
         )
         // 返回同一解析器生成的最终矩形。
         .popup
@@ -301,10 +316,14 @@ impl Popover {
             surface
         } else {
             frame.union(&Rect::new(
-                frame.x - POPOVER_WIDTH * 2.0,
-                frame.y - POPOVER_HEIGHT * 2.0,
-                POPOVER_WIDTH * 5.0 + frame.w,
-                POPOVER_HEIGHT * 5.0 + frame.h,
+                frame.x
+                    - self.visual.defaults.popup_width * self.visual.layout.fallback_offset_popups,
+                frame.y
+                    - self.visual.defaults.popup_height * self.visual.layout.fallback_offset_popups,
+                self.visual.defaults.popup_width * self.visual.layout.fallback_span_popups
+                    + frame.w,
+                self.visual.defaults.popup_height * self.visual.layout.fallback_span_popups
+                    + frame.h,
             ))
         }
     }
@@ -335,7 +354,7 @@ impl Popover {
         centered: bool,
     ) {
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         if frame.h <= 0.0 {
@@ -343,10 +362,10 @@ impl Popover {
         }
         ctx.push_clip(frame);
         if centered {
-            ctx.text_center(&value, frame, color, font_size);
+            ctx.text_center(value.as_ref(), frame, color, font_size);
         } else {
             let y = ctx.visual_center_y(frame, font_size);
-            ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
+            ctx.draw_text(value.as_ref(), Point::new(frame.x, y), color, font_size);
         }
         ctx.pop_clip();
     }
@@ -363,11 +382,10 @@ pub(super) fn resolve_popover_geometry(
     surface: Rect,
     placement: PopoverPlacement,
     arrow: bool,
-    preferred_width: f32,
-    preferred_height: f32,
+    visual: &PopoverVisual,
 ) -> PopoverGeometry {
-    let width = preferred_width.min(surface.w).max(0.0);
-    let height = preferred_height.min(surface.h).max(0.0);
+    let width = visual.defaults.popup_width.min(surface.w).max(0.0);
+    let height = visual.defaults.popup_height.min(surface.h).max(0.0);
     if width <= 0.0 || height <= 0.0 {
         return PopoverGeometry {
             popup: Rect::zero(),
@@ -376,8 +394,10 @@ pub(super) fn resolve_popover_geometry(
     }
 
     let flipped = flip_popover_placement(placement);
-    let authored = rect_for_popover_placement(trigger, placement, arrow, width, height);
-    let alternate = rect_for_popover_placement(trigger, flipped, arrow, width, height);
+    let authored =
+        rect_for_popover_placement(trigger, placement, arrow, width, height, &visual.layout);
+    let alternate =
+        rect_for_popover_placement(trigger, flipped, arrow, width, height, &visual.layout);
     let (candidate, resolved) =
         if overflow_score(alternate, surface) < overflow_score(authored, surface) {
             (alternate, flipped)
@@ -403,8 +423,9 @@ pub(super) fn rect_for_popover_placement(
     arrow: bool,
     width: f32,
     height: f32,
+    visual: &PopoverLayoutVisual,
 ) -> Rect {
-    let (x, y) = popover_position(frame, placement, arrow, width, height);
+    let (x, y) = popover_position(frame, placement, arrow, width, height, visual);
     Rect::new(x, y, width, height)
 }
 
@@ -438,8 +459,13 @@ pub(super) fn popover_position(
     arrow: bool,
     pw: f32,
     ph: f32,
+    visual: &PopoverLayoutVisual,
 ) -> (f32, f32) {
-    let gap = if arrow { 10.0 } else { 4.0 };
+    let gap = if arrow {
+        visual.arrow_gap
+    } else {
+        visual.plain_gap
+    };
     match placement {
         PopoverPlacement::Top | PopoverPlacement::TopLeft => (frame.x, frame.y - ph - gap),
         PopoverPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
@@ -447,10 +473,16 @@ pub(super) fn popover_position(
             (frame.x, frame.y + frame.h + gap)
         }
         PopoverPlacement::BottomRight => (frame.x + frame.w - pw, frame.y + frame.h + gap),
-        PopoverPlacement::Left => (frame.x - pw - gap, frame.y + frame.h * 0.5 - ph * 0.5),
+        PopoverPlacement::Left => (
+            frame.x - pw - gap,
+            frame.y + frame.h * visual.center_ratio - ph * visual.center_ratio,
+        ),
         PopoverPlacement::LeftTop => (frame.x - pw - gap, frame.y),
         PopoverPlacement::LeftBottom => (frame.x - pw - gap, frame.y + frame.h - ph),
-        PopoverPlacement::Right => (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - ph * 0.5),
+        PopoverPlacement::Right => (
+            frame.x + frame.w + gap,
+            frame.y + frame.h * visual.center_ratio - ph * visual.center_ratio,
+        ),
         PopoverPlacement::RightTop => (frame.x + frame.w + gap, frame.y),
         PopoverPlacement::RightBottom => (frame.x + frame.w + gap, frame.y + frame.h - ph),
     }
@@ -486,11 +518,18 @@ pub(super) fn draw_popover_arrow(
     popup: Rect,
     placement: PopoverPlacement,
     color: Color,
+    visual: &PopoverLayoutVisual,
 ) {
-    let arrow_sz = 8.0;
+    let arrow_sz = visual.arrow_size;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopoverPlacement::Top | PopoverPlacement::TopLeft | PopoverPlacement::TopRight => {
-            let cx = arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
+            let cx = arrow_anchor(
+                trigger.x + trigger.w * visual.center_ratio,
+                popup.x,
+                popup.w,
+                arrow_sz,
+                visual.center_ratio,
+            );
             (
                 cx - arrow_sz,
                 popup.y + popup.h,
@@ -501,7 +540,13 @@ pub(super) fn draw_popover_arrow(
             )
         }
         PopoverPlacement::Bottom | PopoverPlacement::BottomLeft | PopoverPlacement::BottomRight => {
-            let cx = arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
+            let cx = arrow_anchor(
+                trigger.x + trigger.w * visual.center_ratio,
+                popup.x,
+                popup.w,
+                arrow_sz,
+                visual.center_ratio,
+            );
             (
                 cx - arrow_sz,
                 popup.y,
@@ -512,7 +557,13 @@ pub(super) fn draw_popover_arrow(
             )
         }
         PopoverPlacement::Left | PopoverPlacement::LeftTop | PopoverPlacement::LeftBottom => {
-            let cy = arrow_anchor(trigger.y + trigger.h * 0.5, popup.y, popup.h, arrow_sz);
+            let cy = arrow_anchor(
+                trigger.y + trigger.h * visual.center_ratio,
+                popup.y,
+                popup.h,
+                arrow_sz,
+                visual.center_ratio,
+            );
             (
                 popup.x + popup.w,
                 cy - arrow_sz,
@@ -523,7 +574,13 @@ pub(super) fn draw_popover_arrow(
             )
         }
         PopoverPlacement::Right | PopoverPlacement::RightTop | PopoverPlacement::RightBottom => {
-            let cy = arrow_anchor(trigger.y + trigger.h * 0.5, popup.y, popup.h, arrow_sz);
+            let cy = arrow_anchor(
+                trigger.y + trigger.h * visual.center_ratio,
+                popup.y,
+                popup.h,
+                arrow_sz,
+                visual.center_ratio,
+            );
             (
                 popup.x,
                 cy - arrow_sz,
@@ -542,9 +599,15 @@ pub(super) fn draw_popover_arrow(
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
-pub(super) fn arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) -> f32 {
+pub(super) fn arrow_anchor(
+    desired: f32,
+    start: f32,
+    length: f32,
+    inset: f32,
+    center_ratio: f32,
+) -> f32 {
     if length <= inset * 2.0 {
-        start + length * 0.5
+        start + length * center_ratio
     } else {
         desired.clamp(start + inset, start + length - inset)
     }

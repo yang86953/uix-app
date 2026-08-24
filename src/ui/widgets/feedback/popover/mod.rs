@@ -6,23 +6,40 @@ use crate::widget;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::animation::{AnimationConfig, TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, KeyCode, MouseButton, State, SystemEvent, WidgetTree};
+
+mod presentation;
+use self::presentation::*;
 
 mod geometry;
 
 use self::geometry::*;
 
-const POPOVER_WIDTH: f32 = 220.0;
-const POPOVER_HEIGHT: f32 = 100.0;
-const TRIGGER_WIDTH: f32 = 80.0;
-// Popover 触发器高度（28.0）；cascader 触发器为 32.0，组件独立设计。
-const TRIGGER_HEIGHT: f32 = 28.0;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PopoverPressTarget {
     Trigger,
+}
+
+// 记录会覆盖 UIX 默认值的 Rust 调用方声明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PopoverAuthored(u8);
+
+impl PopoverAuthored {
+    const PLACEMENT: u8 = 1 << 0;
+    const ARROW: u8 = 1 << 1;
+    const ENTER_ANIMATION: u8 = 1 << 2;
+    const LEAVE_ANIMATION: u8 = 1 << 3;
+
+    fn contains(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn set(&mut self, flag: u8) {
+        self.0 |= flag;
+    }
 }
 
 /// Popover placement.
@@ -94,6 +111,10 @@ widget! {
         last_frame: Cell<Rect>,
         popup_rect: Cell<Rect>,
         surface_rect: Cell<Rect>,
+        #[snapshot(skip)]
+        visual: &'static PopoverVisual,
+        #[snapshot(skip)]
+        authored: PopoverAuthored,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -251,8 +272,7 @@ widget! {
             surface,
             self.placement,
             self.arrow,
-            POPOVER_WIDTH,
-            POPOVER_HEIGHT,
+            self.visual,
         );
         self.popup_rect.set(Rect::new(
             popup_geometry.popup.x - frame.x,
@@ -261,48 +281,57 @@ widget! {
             popup_geometry.popup.h,
         ));
 
-        let bg = self
-            .background
-            .unwrap_or_else(|| ctx.tokens().color_bg_elevated());
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        // 同帧全部颜色、字体、圆角与阴影只解析一次主题令牌。
+        let resolved = self.visual.resolve(ctx.tokens(), self.is_present());
+        let bg = self.background.unwrap_or(resolved.popup_background);
+        let r = Some(Radius::uniform(resolved.radius));
+        let focus_visible = self.focused && tree.keyboard_focus_visible();
 
         ctx.push_clip(surface);
         if self.hovered || self.pressed_target.is_some() {
             ctx.fill_rect(
                 frame,
                 if self.pressed_target.is_some() {
-                    ctx.tokens().color_fill_secondary()
+                    resolved.fill_secondary
                 } else {
-                    ctx.tokens().color_fill_tertiary()
+                    resolved.fill_tertiary
                 },
                 r,
             );
         }
         ctx.stroke_rect(
             frame,
-            if self.focused && tree.keyboard_focus_visible() {
-                ctx.tokens().color_primary()
+            if focus_visible {
+                resolved.primary
             } else {
-                border
+                resolved.border
             },
-            if self.focused && tree.keyboard_focus_visible() { 2.0 } else { 1.0 },
+            if focus_visible {
+                self.visual.chrome.focus_stroke
+            } else {
+                self.visual.chrome.trigger_stroke
+            },
             r,
         );
         if !self.custom_trigger {
-            Self::paint_elided_text(ctx, "Popover", frame, text_secondary, ctx.tokens().font_size_sm(), true);
+            Self::paint_elided_text(
+                ctx,
+                self.visual.chrome.default_trigger_label,
+                frame,
+                resolved.text_secondary,
+                resolved.trigger_font_size,
+                true,
+            );
         }
 
         if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let popup_bg = fade_color(bg, opacity);
-            let popup_border = fade_color(border, opacity);
-            let popup_text = fade_color(text_color, opacity);
-            let popup_secondary = fade_color(text_secondary, opacity);
+            let popup_border = fade_color(resolved.border, opacity);
+            let popup_text = fade_color(resolved.text, opacity);
+            let popup_secondary = fade_color(resolved.text_secondary, opacity);
             let pop_rect = self.transitioned_rect(popup_geometry.popup);
-            let shadow = ctx.tokens().box_shadow_secondary();
+            let shadow = resolved.shadow;
             ctx.draw_box_shadow(
                 pop_rect,
                 shadow.layer_1.2,
@@ -321,12 +350,13 @@ widget! {
                     pop_rect,
                     popup_geometry.placement,
                     popup_bg,
+                    &self.visual.layout,
                 );
             }
 
-            let inset = 12.0_f32.min(pop_rect.w * 0.5);
+            let inset = self.visual.layout.content_inset.min(pop_rect.w * 0.5);
             let content_width = (pop_rect.w - inset * 2.0).max(0.0);
-            let title_height = 32.0_f32.min(pop_rect.h);
+            let title_height = self.visual.layout.title_height.min(pop_rect.h);
             if !self.title.is_empty() && content_width > 0.0 {
                 let title_rect = Rect::new(
                     pop_rect.x + inset,
@@ -334,14 +364,21 @@ widget! {
                     content_width,
                     title_height,
                 );
-                Self::paint_elided_text(ctx, &self.title, title_rect, popup_text, ctx.tokens().font_size(), false);
+                Self::paint_elided_text(
+                    ctx,
+                    &self.title,
+                    title_rect,
+                    popup_text,
+                    resolved.title_font_size,
+                    false,
+                );
                 if pop_rect.h > title_height {
                     ctx.fill_rect(
                         Rect::new(
                             pop_rect.x + inset,
                             pop_rect.y + title_height,
                             content_width,
-                            1.0,
+                            self.visual.layout.divider_thickness,
                         ),
                         popup_border,
                         None,
@@ -351,7 +388,8 @@ widget! {
             let content_top = if self.title.is_empty() {
                 pop_rect.y
             } else {
-                (pop_rect.y + title_height + 1.0).min(pop_rect.y + pop_rect.h)
+                (pop_rect.y + title_height + self.visual.layout.divider_thickness)
+                    .min(pop_rect.y + pop_rect.h)
             };
             let content_rect = Rect::new(
                 pop_rect.x + inset,
@@ -364,7 +402,7 @@ widget! {
                 &self.content,
                 content_rect,
                 popup_secondary,
-                12.0,
+                resolved.content_font_size,
                 false,
             );
         }
@@ -381,7 +419,10 @@ widget! {
         }
 
         let frame = Self::normalize_frame(frame);
-        let popup = expand_popover_rect(self.absolute_popup_rect(frame), 12.0);
+        let popup = expand_popover_rect(
+            self.absolute_popup_rect(frame),
+            self.visual.layout.shadow_expand,
+        );
         let popup = self
             .transition_sweep_rect(popup)
             .intersect(&self.surface_or_fallback(frame))
@@ -389,7 +430,7 @@ widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(popup)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
                 // 外部点击由树的 System 私有取消端口回调 owner 关闭。
                 .dismiss_on_outside(true),
         )
@@ -426,6 +467,37 @@ widget! {
         } else {
             Rect::zero()
         }
+    }
+}
+
+// 把内容/交互状态与 UIX 静态视觉融合为单一 Popover 根节点。
+fn build_popover_view(mut kernel: Popover, declared_visual: PopoverVisual) -> ViewNode {
+    let visual = UIX_POPOVER_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.authored.contains(PopoverAuthored::PLACEMENT) {
+        kernel.placement = visual.defaults.placement;
+    }
+    if !kernel.authored.contains(PopoverAuthored::ARROW) {
+        kernel.arrow = visual.defaults.arrow;
+    }
+    if !kernel.authored.contains(PopoverAuthored::ENTER_ANIMATION) {
+        kernel.enter_animation = AnimationConfig::fade_in(visual.motion.enter_duration);
+    }
+    if !kernel.authored.contains(PopoverAuthored::LEAVE_ANIMATION) {
+        kernel.leave_animation = AnimationConfig::fade_out(visual.motion.exit_duration);
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_popover_uix_root(kernel: Popover) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/popover/popover.uix")
+}
+
+impl View for Popover {
+    fn build(self) -> ViewNode {
+        build_popover_uix_root(self)
     }
 }
 

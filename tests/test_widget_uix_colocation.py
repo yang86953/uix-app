@@ -44,6 +44,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/tree",
     "display/watermark",
     "feedback/alert",
+    "feedback/popover",
     "feedback/progress",
     "feedback/spin",
     "feedback/tooltip",
