@@ -67,8 +67,8 @@ pub(crate) fn generate_progress_bar(element: &Element) -> Result<TokenStream, Di
         }
     }
 
-    // ProgressBar 物化为公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置 fraction、模式与形态的公开 View。

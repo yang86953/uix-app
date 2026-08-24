@@ -31,6 +31,8 @@ fn generates_progress_bar_contract() {
         tokens.contains("width (96.0)") && tokens.contains("automation_id"),
         "{tokens}"
     );
+    // 生成器必须进入 ProgressBar 自己的 View/UIX 声明边界。
+    assert!(!tokens.contains("ViewNode :: leaf"), "{tokens}");
 }
 
 // 验证默认值与静态 fraction 边界。

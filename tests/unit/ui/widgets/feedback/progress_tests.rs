@@ -4,6 +4,30 @@ use super::{ProgressBar, ProgressMode, ProgressNormalizationReason, ProgressType
 use crate::ui::widget_runtime::traits::WidgetAnimation;
 // 引入快照枚举以核对自动化可观察字段。
 use crate::ui::SnapshotFields;
+// 引入公开 View 构建入口以验证组件自己的 UIX 声明壳。
+use crate::ui::view::View;
+
+// 验证 UIX 声明壳保持原进度条单叶节点及 fraction。
+#[test]
+fn uix_shell_preserves_single_progress_kernel_leaf() {
+    // 通过公开 View 入口构建已配置进度条。
+    let node = View::build(ProgressBar::new().progress(0.4).circle());
+    // 声明壳不得引入包装子节点。
+    assert!(node.children.is_empty());
+    // 运行时动态类型必须仍是原 ProgressBar。
+    assert!(node.widget.as_any().is::<ProgressBar>());
+    // 快照必须保留配置后的 fraction 与形态。
+    let SnapshotFields::ProgressBar {
+        progress,
+        progress_type,
+        ..
+    } = node.widget.snapshot_fields()
+    else {
+        panic!("ProgressBar 必须生成专属快照");
+    };
+    assert_eq!(progress, 0.4);
+    assert_eq!(progress_type, ProgressType::Circle);
+}
 
 // 验证四类 fraction 输入共享唯一归一值与原因。
 #[test]

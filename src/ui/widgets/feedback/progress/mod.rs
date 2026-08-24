@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintPass;
 use crate::draw::{Color, GradientDirection, Radius};
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
@@ -227,6 +228,19 @@ widget! {
 impl Default for ProgressBar {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// 把进度条 Rust 状态与绘制内核融合为 UIX 声明的单一叶节点。
+fn build_progress_view(kernel: ProgressBar) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for ProgressBar {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 保留归一化、动画、几何和绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/feedback/progress/progress.uix")
     }
 }
 
