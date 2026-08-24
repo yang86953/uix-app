@@ -57,15 +57,19 @@ fn child_outer_extent(child: &GridChild, horizontal: bool) -> f32 {
 }
 
 // 汇总 Auto 轨道的单格内容与跨格内容贡献。
-pub(super) fn intrinsic_auto_track_sizes(
+pub(super) fn intrinsic_auto_track_sizes_into(
     tracks: &[GridTrack],
     assignments: &[CellAssignment],
     children: &[GridChild],
     gap: f32,
     horizontal: bool,
-) -> Vec<f32> {
+    sizes: &mut Vec<f32>,
+    spanning_indices: &mut Vec<usize>,
+    planned_increases: &mut Vec<f32>,
+) {
     // 为每条轨道建立独立的固有尺寸账本。
-    let mut sizes = vec![0.0f32; tracks.len()];
+    sizes.clear();
+    sizes.resize(tracks.len(), 0.0);
 
     // 先用单轨道子项确定每条 Auto 轨道的基础尺寸。
     for assignment in assignments {
@@ -104,26 +108,31 @@ pub(super) fn intrinsic_auto_track_sizes(
     }
 
     // 只收集真正跨越多条轨道的子项，避免单轨道贡献重复结算。
-    let mut spanning_assignments: Vec<&CellAssignment> = assignments
-        // 借用既有定位账本，不复制子项或轨道数据。
-        .iter()
-        // 按当前轴过滤掉空 span 与单轨道 span。
-        .filter(|assignment| {
-            // 水平轴读取列 span，垂直轴读取行 span。
-            let span = if horizontal {
-                // 列 span 已由放置阶段收敛到轨道预算。
-                assignment.col_span as usize
-            } else {
-                // 行 span 已由放置阶段收敛到轨道预算。
-                assignment.row_span as usize
-            };
-            // 只有至少覆盖两条轨道的子项进入后续批次。
-            span > 1
-        })
-        // 物化有界引用表，供跨度排序和同批结算复用。
-        .collect();
+    spanning_indices.clear();
+    spanning_indices.extend(
+        assignments
+            // 借用既有定位账本，不复制子项或轨道数据。
+            .iter()
+            .enumerate()
+            // 按当前轴过滤掉空 span 与单轨道 span。
+            .filter(|(_, assignment)| {
+                // 水平轴读取列 span，垂直轴读取行 span。
+                let span = if horizontal {
+                    // 列 span 已由放置阶段收敛到轨道预算。
+                    assignment.col_span as usize
+                } else {
+                    // 行 span 已由放置阶段收敛到轨道预算。
+                    assignment.row_span as usize
+                };
+                // 只有至少覆盖两条轨道的子项进入后续批次。
+                span > 1
+            })
+            // 物化有界引用表，供跨度排序和同批结算复用。
+            .map(|(index, _)| index),
+    );
     // 较短 span 先建立基础尺寸，同跨度子项保持同批处理。
-    spanning_assignments.sort_by_key(|assignment| {
+    spanning_indices.sort_by_key(|&index| {
+        let assignment = &assignments[index];
         // 排序键只依赖布局约束，不依赖子项声明顺序。
         if horizontal {
             // 水平轴按有界列 span 升序排列。
@@ -134,30 +143,31 @@ pub(super) fn intrinsic_auto_track_sizes(
         }
     });
     // 每条轨道只记录当前跨度批次要求的最大计划增量。
-    let mut planned_increases = vec![0.0f32; tracks.len()];
+    planned_increases.clear();
+    planned_increases.resize(tracks.len(), 0.0);
     // 从排序后的首个跨格子项开始扫描。
     let mut group_start = 0usize;
     // 每轮处理一组跨度相同的子项。
-    while group_start < spanning_assignments.len() {
+    while group_start < spanning_indices.len() {
         // 读取当前批次在目标轴上的统一 span。
         let group_span = if horizontal {
             // 水平轴使用当前首项的列 span。
-            spanning_assignments[group_start].col_span
+            assignments[spanning_indices[group_start]].col_span
         } else {
             // 垂直轴使用当前首项的行 span。
-            spanning_assignments[group_start].row_span
+            assignments[spanning_indices[group_start]].row_span
         };
         // 至少把当前首项纳入批次。
         let mut group_end = group_start + 1;
         // 向后收集所有跨度相同的连续子项。
-        while group_end < spanning_assignments.len() {
+        while group_end < spanning_indices.len() {
             // 读取候选子项在目标轴上的 span。
             let candidate_span = if horizontal {
                 // 水平轴读取候选列 span。
-                spanning_assignments[group_end].col_span
+                assignments[spanning_indices[group_end]].col_span
             } else {
                 // 垂直轴读取候选行 span。
-                spanning_assignments[group_end].row_span
+                assignments[spanning_indices[group_end]].row_span
             };
             // 遇到下一种跨度时结束当前批次。
             if candidate_span != group_span {
@@ -171,7 +181,8 @@ pub(super) fn intrinsic_auto_track_sizes(
         planned_increases.fill(0.0);
 
         // 同跨度子项全部基于批次开始时的同一轨道快照计算贡献。
-        for assignment in &spanning_assignments[group_start..group_end] {
+        for &assignment_index in &spanning_indices[group_start..group_end] {
+            let assignment = &assignments[assignment_index];
             // 按当前轴选取起始轨道。
             let start = if horizontal {
                 // 水平轴使用列起点。
@@ -267,9 +278,6 @@ pub(super) fn intrinsic_auto_track_sizes(
         // 下一轮从后续跨度批次开始。
         group_start = group_end;
     }
-
-    // 返回仅对 Auto 轨道有意义的固有尺寸账本。
-    sizes
 }
 
 // 在不扩大父级约束的前提下满足 Auto/Fr 混合 span 的自然尺寸。
@@ -290,6 +298,8 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
     horizontal: bool,
     // 前一阶段建立的 Auto 固有尺寸账本。
     auto_sizes: &mut [f32],
+    // 调用方复用的跨轨子项索引。
+    spanning_indices: &mut Vec<usize>,
 ) {
     // 汇总当前轴所有有效 Fr 权重，供 span 内外份额换算。
     let total_fraction_weight = tracks
@@ -311,26 +321,32 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
     }
 
     // 收集真正跨越多轨道的约束，后续按约束本身确定顺序。
-    let mut spanning_assignments: Vec<&CellAssignment> = assignments
-        // 借用既有有界放置账本。
-        .iter()
-        // 单轨道子项已经在 Auto 基础阶段处理。
-        .filter(|assignment| {
-            // 水平轴读取列 span，垂直轴读取行 span。
-            let span = if horizontal {
-                // 列 span 已由放置预算收敛。
-                assignment.col_span
-            } else {
-                // 行 span 已由放置预算收敛。
-                assignment.row_span
-            };
-            // 只有真正跨轨的子项需要混合约束松弛。
-            span > 1
-        })
-        // 物化有界引用表以消除声明顺序影响。
-        .collect();
+    spanning_indices.clear();
+    spanning_indices.extend(
+        assignments
+            // 借用既有有界放置账本。
+            .iter()
+            .enumerate()
+            // 单轨道子项已经在 Auto 基础阶段处理。
+            .filter(|(_, assignment)| {
+                // 水平轴读取列 span，垂直轴读取行 span。
+                let span = if horizontal {
+                    // 列 span 已由放置预算收敛。
+                    assignment.col_span
+                } else {
+                    // 行 span 已由放置预算收敛。
+                    assignment.row_span
+                };
+                // 只有真正跨轨的子项需要混合约束松弛。
+                span > 1
+            })
+            // 物化有界引用表以消除声明顺序影响。
+            .map(|(index, _)| index),
+    );
     // 按 span、起点与自然外尺寸建立确定性处理顺序。
-    spanning_assignments.sort_by(|left, right| {
+    spanning_indices.sort_by(|&left_index, &right_index| {
+        let left = &assignments[left_index];
+        let right = &assignments[right_index];
         // 读取左侧约束的起始轨道。
         let left_start = if horizontal { left.col } else { left.row };
         // 读取右侧约束的起始轨道。
@@ -364,7 +380,7 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
             })
     });
     // 没有跨轨约束时无需进入松弛循环。
-    if spanning_assignments.is_empty() {
+    if spanning_indices.is_empty() {
         // 保留已有 Auto 尺寸。
         return;
     }
@@ -395,7 +411,8 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
         // 本轮尚未增加任何 Auto 尺寸。
         let mut made_progress = false;
         // 按确定性约束顺序逐项消除可由外部 Fr 让出的缺口。
-        for assignment in &spanning_assignments {
+        for &assignment_index in spanning_indices.iter() {
+            let assignment = &assignments[assignment_index];
             // 按当前轴读取起始轨道。
             let start = if horizontal {
                 assignment.col
@@ -537,14 +554,16 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
 }
 
 // 在固定与 Auto 尺寸确定后把剩余空间分配给 Fr 轨道。
-pub(super) fn resolve_tracks(
+pub(super) fn resolve_tracks_into(
     tracks: &[GridTrack],
     available: f32,
     total_gap: f32,
     auto_sizes: &[f32],
-) -> Vec<f32> {
+    sizes: &mut Vec<f32>,
+) {
     // 为每条轨道建立最终尺寸账本。
-    let mut sizes = vec![0.0; tracks.len()];
+    sizes.clear();
+    sizes.resize(tracks.len(), 0.0);
     // 使用 f64 累加已确定尺寸，避免多轨道求和溢出。
     let mut used = 0.0f64;
     // 使用 f64 累加比例权重，避免极大权重求和溢出。
@@ -591,7 +610,7 @@ pub(super) fn resolve_tracks(
     // 没有可分配空间或有效 Fr 权重时直接保留基础尺寸。
     if remaining <= 0.0 || total_fr <= 0.0 {
         // 纯 Auto 网格因此不会无条件填满父容器。
-        return sizes;
+        return;
     }
 
     // 按权重将全部剩余空间分配给 Fr 轨道。
@@ -604,7 +623,4 @@ pub(super) fn resolve_tracks(
             sizes[index] = finite_non_negative((remaining * weight / total_fr) as f32);
         }
     }
-
-    // 返回已完成 Px、Auto 与 Fr 分配的轨道尺寸。
-    sizes
 }

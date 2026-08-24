@@ -1,6 +1,5 @@
 //! Grid widget - CSS Grid-like layout container.
 
-use std::borrow::Cow;
 // Grid 在布局轮次间保存由轨道求解得到的固有内容尺寸。
 use std::cell::Cell;
 
@@ -346,97 +345,39 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        if self.style.grid_template_columns.is_empty() || children.is_empty() {
-            return Vec::new();
-        }
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_children_reusing(frame, children, tree, &mut output);
+        output
+    }
 
-        let content_rect = BoxModel {
-            margin: self.style.margin,
-            border_width: self.style.border_width,
-            padding: self.style.padding,
-        }
-        .content_rect(frame);
-
-        // 无显式宽度时允许 Auto 列读取子项自然宽度完成首轮启动。
-        let max_width = if self.style.width.is_some_and(|width| width > 0.0) {
-            // 显式宽度继续约束横向子项测量。
-            content_rect.w
-        } else {
-            // 无界哨兵仅停留在测量阶段，不会写入实际 frame。
-            f32::MAX
-        };
-        // 无显式高度时允许 Auto 行读取子项自然高度完成首轮启动。
-        let max_height = if self.style.height.is_some_and(|height| height > 0.0) {
-            // 显式高度继续约束纵向子项测量。
-            content_rect.h
-        } else {
-            // 无界哨兵仅作为测量上限。
-            f32::MAX
-        };
-        // 使用逐轴明确的宽松约束测量 Grid 子项。
-        let constraints = Constraints::loose(Size::new(max_width, max_height));
-        children
-            .iter()
-            .copied()
-            .map(|cid| child_from_tree_with_constraints(cid, tree, constraints))
-            .collect()
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_children_reusing(frame, children, tree, output);
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        if self.style.grid_template_columns.is_empty() || children.is_empty() {
-            // 无有效轨道或子项时清除旧内容缓存。
-            self.cached_content_size.set(Size::zero());
-            return Vec::new();
-        }
+        let mut scratch = crate::ui::LayoutEngineScratch::default();
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_reusing(frame, children, &mut scratch, &mut output);
+        output
+    }
 
-        let box_model = BoxModel {
-            margin: self.style.margin,
-            border_width: self.style.border_width,
-            padding: self.style.padding,
-        };
-        let content_rect = box_model.content_rect(frame);
-
-        let engine = GridLayout {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            col_gap: self.effective_col_gap(),
-            row_gap: self.effective_row_gap(),
-            align_items: self.style.align_items,
-            // Grid::justify 声明整组列轨的水平内容对齐，不改写单元格内子项。
-            justify_items: self.visual.layout.default_justify_items,
-            // 复用 Style 的主轴对齐字段驱动 Grid 内容分布。
-            justify_content: self.style.justify_content,
-        };
-
-        let responsive_children = self.responsive_children(content_rect.w, children);
-        let output = engine.layout_with_tracks(
-            content_rect,
-            &self.style.grid_template_columns,
-            &self.style.grid_template_rows,
-            &responsive_children,
-        );
-
-        // 在零可用空间中再求一次自然轨道占用，避免 Stretch 缓存父级分配尺寸。
-        let intrinsic_output = engine.layout_with_tracks(
-            // 保留内容原点，同时把两个可用轴设为未分配状态。
-            Rect::new(content_rect.x, content_rect.y, 0.0, 0.0),
-            // 使用与实际布局相同的列轨定义。
-            &self.style.grid_template_columns,
-            // 使用与实际布局相同的显式或隐式行定义。
-            &self.style.grid_template_rows,
-            // 响应式映射必须与当前实际宽度保持一致。
-            &responsive_children,
-        );
-        // 缓存不包含 border 与 padding 的自然内容尺寸。
-        self.cached_content_size.set(intrinsic_output.total_size);
-
-        responsive_children
-            .iter()
-            .zip(output.positions)
-            .map(|(child, rect)| (child.id, rect))
-            .collect()
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_children_reusing(frame, children, scratch, output);
     }
 }
 
@@ -705,6 +646,109 @@ impl Grid {
         ])
     }
 
+    // 统一拥有型与树级复用入口，保持 Grid 子项约束只有一套语义。
+    fn measure_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        output.clear();
+        if self.style.grid_template_columns.is_empty() || children.is_empty() {
+            return;
+        }
+        let content_rect = BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
+        .content_rect(frame);
+        let max_width = if self.style.width.is_some_and(|width| width > 0.0) {
+            content_rect.w
+        } else {
+            f32::MAX
+        };
+        let max_height = if self.style.height.is_some_and(|height| height > 0.0) {
+            content_rect.h
+        } else {
+            f32::MAX
+        };
+        let constraints = Constraints::loose(Size::new(max_width, max_height));
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| child_from_tree_with_constraints(id, tree, constraints)),
+        );
+    }
+
+    // Grid 借用布局树唯一工作区，先求自然尺寸，再以实际 frame 复写最终位置。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        if self.style.grid_template_columns.is_empty() || children.is_empty() {
+            self.cached_content_size.set(Size::zero());
+            return;
+        }
+        let content_rect = BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
+        .content_rect(frame);
+        let grid = scratch.grid();
+        let layout_children = if self.breakpoints.is_some() {
+            self.responsive_children_into(
+                content_rect.w,
+                children,
+                &mut grid.layout_children,
+                &mut grid.visual_order,
+            );
+            grid.layout_children.as_slice()
+        } else {
+            children
+        };
+        let engine = GridLayout {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            col_gap: self.effective_col_gap(),
+            row_gap: self.effective_row_gap(),
+            align_items: self.style.align_items,
+            justify_items: self.visual.layout.default_justify_items,
+            justify_content: self.style.justify_content,
+        };
+        let intrinsic_size = engine.layout_with_tracks_into(
+            Rect::new(content_rect.x, content_rect.y, 0.0, 0.0),
+            &self.style.grid_template_columns,
+            &self.style.grid_template_rows,
+            layout_children,
+            &mut grid.children,
+            &mut grid.compute,
+        );
+        self.cached_content_size.set(intrinsic_size);
+        let _ = engine.layout_with_tracks_into(
+            content_rect,
+            &self.style.grid_template_columns,
+            &self.style.grid_template_rows,
+            layout_children,
+            &mut grid.children,
+            &mut grid.compute,
+        );
+        output.reserve(layout_children.len());
+        output.extend(
+            layout_children
+                .iter()
+                .zip(grid.compute.child_rects.iter())
+                .map(|(child, rect)| (child.id, *rect)),
+        );
+    }
+
     fn effective_col_gap(&self) -> f32 {
         if self.style.grid_column_gap != 0.0 {
             self.style.grid_column_gap
@@ -731,17 +775,21 @@ impl Grid {
         }
     }
 
-    fn responsive_children<'a>(
+    fn responsive_children_into(
         &self,
         available_width: f32,
-        children: &'a [LayoutChild],
-    ) -> Cow<'a, [LayoutChild]> {
+        children: &[LayoutChild],
+        configured: &mut Vec<LayoutChild>,
+        visual_order: &mut Vec<usize>,
+    ) {
+        configured.clear();
+        configured.extend_from_slice(children);
         let Some(breakpoints) = self.breakpoints else {
-            return Cow::Borrowed(children);
+            return;
         };
 
-        let mut configured = children.to_vec();
-        let mut visual_order: Vec<usize> = (0..configured.len()).collect();
+        visual_order.clear();
+        visual_order.extend(0..configured.len());
         visual_order.sort_by_key(|index| {
             (
                 self.cols.get(*index).copied().unwrap_or_default().order,
@@ -750,7 +798,7 @@ impl Grid {
         });
 
         let mut next_cell = 0usize;
-        for index in visual_order {
+        for &index in visual_order.iter() {
             let col = self.cols.get(index).copied().unwrap_or_default();
             let span = col.span_at(available_width, breakpoints);
             let offset = col.effective_offset(span);
@@ -764,7 +812,6 @@ impl Grid {
             configured[index].grid_column_span = span as u32;
             next_cell = cell + span;
         }
-        Cow::Owned(configured)
     }
 }
 

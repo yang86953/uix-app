@@ -6,7 +6,7 @@
 //! 盒模型计算也统一在此层，所有容器组件通过 BoxModel 获得一致的内框计算。
 
 use super::flex::compute_flex_layout_into;
-use super::grid::compute_grid_layout;
+use super::grid::{GridComputeScratch, compute_grid_layout_into};
 use super::{AlignItems, FlexChild, FlexComputeScratch, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use crate::core::{EdgeInsets, Rect, Size, WidgetId};
@@ -193,6 +193,24 @@ pub struct LayoutEngineScratch {
     pub(crate) layout_children: Vec<LayoutChild>,
     pub(crate) flex_children: Vec<FlexChild>,
     pub(crate) flex: FlexComputeScratch,
+    grid: Option<Box<GridLayoutScratch>>,
+}
+
+/// 仅在组件树实际包含 Grid 时创建的树级求解工作区。
+#[derive(Default)]
+pub(crate) struct GridLayoutScratch {
+    pub(crate) layout_children: Vec<LayoutChild>,
+    pub(crate) visual_order: Vec<usize>,
+    pub(crate) children: Vec<GridChild>,
+    pub(crate) compute: GridComputeScratch,
+}
+
+impl LayoutEngineScratch {
+    /// 惰性取得 Grid 工作区，避免普通 Flex 树承担全部 Grid 缓冲头。
+    pub(crate) fn grid(&mut self) -> &mut GridLayoutScratch {
+        self.grid
+            .get_or_insert_with(|| Box::new(GridLayoutScratch::default()))
+    }
 }
 
 impl LayoutOutput {
@@ -774,34 +792,54 @@ impl GridLayout {
         rows: &[GridTrack],
         children: &[LayoutChild],
     ) -> LayoutOutput {
+        let mut grid_children = Vec::new();
+        let mut scratch = GridComputeScratch::default();
+        let total_size = self.layout_with_tracks_into(
+            content_rect,
+            columns,
+            rows,
+            children,
+            &mut grid_children,
+            &mut scratch,
+        );
+        LayoutOutput {
+            positions: std::mem::take(&mut scratch.child_rects),
+            total_size,
+        }
+    }
+
+    pub(crate) fn layout_with_tracks_into(
+        &self,
+        content_rect: Rect,
+        columns: &[GridTrack],
+        rows: &[GridTrack],
+        children: &[LayoutChild],
+        grid_children: &mut Vec<GridChild>,
+        scratch: &mut GridComputeScratch,
+    ) -> Size {
         // Grid 与 Flex 共享同一实际 frame 输入边界。
         let content_rect = normalize_layout_rect(content_rect);
         if columns.is_empty() || children.is_empty() {
             // 空 track 或空子集不能把父级无界哨兵直传到输出。
-            return LayoutOutput {
-                positions: Vec::new(),
-                total_size: Size::new(content_rect.w, content_rect.h),
-            }
-            .normalized();
+            scratch.child_rects.clear();
+            return Size::new(content_rect.w, content_rect.h);
         }
 
-        let grid_children: Vec<GridChild> = children
-            .iter()
-            .map(|c| GridChild {
-                cell: c.grid_cell,
-                col_span: c.grid_column_span,
-                row_span: c.grid_row_span,
-                // 子项测量哨兵不能进入 cell 尺寸与对齐算术。
-                measured_size: normalize_layout_size(c.measured_size),
-                // 外边距保留有限负值语义并清除非法分量。
-                margin: normalize_margin(c.margin),
-                // Grid 交叉轴继承公开 LayoutChild 的逐项对齐覆盖。
-                align: c.align_self,
-                justify: None,
-            })
-            .collect();
+        grid_children.clear();
+        grid_children.extend(children.iter().map(|c| GridChild {
+            cell: c.grid_cell,
+            col_span: c.grid_column_span,
+            row_span: c.grid_row_span,
+            // 子项测量哨兵不能进入 cell 尺寸与对齐算术。
+            measured_size: normalize_layout_size(c.measured_size),
+            // 外边距保留有限负值语义并清除非法分量。
+            margin: normalize_margin(c.margin),
+            // Grid 交叉轴继承公开 LayoutChild 的逐项对齐覆盖。
+            align: c.align_self,
+            justify: None,
+        }));
 
-        let output = compute_grid_layout(&GridInput {
+        let input = GridInput {
             container: content_rect,
             // 纯求解器逐值归一 track，保持普通布局继续借用列定义。
             columns,
@@ -812,19 +850,19 @@ impl GridLayout {
             // Grid gap 语义为非负距离。
             row_gap: finite_non_negative(self.row_gap),
             padding: crate::core::EdgeInsets::zero(),
-            children: &grid_children,
+            children: grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,
             // 把整组列轨对齐声明传给纯求解器。
             justify_content: self.justify_content,
-        });
+        };
+        let total_size = compute_grid_layout_into(&input, scratch);
 
         // Grid 求解结果在公开边界执行最终有限化。
-        LayoutOutput {
-            positions: output.child_rects,
-            total_size: output.total_size,
+        for frame in &mut scratch.child_rects {
+            *frame = normalize_layout_rect(*frame);
         }
-        .normalized()
+        normalize_layout_size(total_size)
     }
 }
 
