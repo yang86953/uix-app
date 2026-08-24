@@ -255,46 +255,9 @@ widget! {
 
         let vertical = self.position.is_vertical();
         let tab_bar = self.tab_bar_rect(frame);
-        let mut ranges = Vec::with_capacity(self.tabs.len());
-        let mut cursor = if vertical {
-            0.0
-        } else {
-            layout.horizontal_padding
-        };
-        for tab in &self.tabs {
-            let icon_w = if tab.icon.is_empty() {
-                0.0
-            } else {
-                layout.icon_reserve
-            };
-            let close_w = if self.editable {
-                layout.close_reserve
-            } else {
-                0.0
-            };
-            let extent = if vertical {
-                self.tab_height
-            } else {
-                ctx.measure_text(&tab.label, visual.label_font_size).w
-                    + layout.horizontal_padding * 2.0
-                    + icon_w
-                    + close_w
-            };
-            ranges.push((cursor, cursor + extent));
-            cursor += extent + if vertical { 0.0 } else { layout.gap };
-        }
-        let mut content_extent = ranges.last().map_or(0.0, |(_, end)| *end);
-        if !vertical && !ranges.is_empty() {
-            content_extent += layout.horizontal_padding;
-        }
-        if self.editable {
-            content_extent += if vertical {
-                self.tab_height
-            } else {
-                layout.gap + layout.add_size
-            };
-        }
-        *self.tab_main_ranges.borrow_mut() = ranges;
+        let content_extent = self.rebuild_tab_main_ranges(|label| {
+            ctx.measure_text(label, visual.label_font_size).w
+        });
         self.tab_content_extent.set(content_extent);
         let viewport_extent = if vertical { tab_bar.h } else { tab_bar.w };
         let offset = if self.scrollable {
@@ -336,8 +299,9 @@ widget! {
         ctx.fill_rect(divider, border_secondary, None);
 
         ctx.push_clip(tab_bar);
+        let ranges = self.tab_main_ranges.borrow();
         for (i, tab) in self.tabs.iter().enumerate() {
-            let (start, end) = self.tab_main_ranges.borrow()[i];
+            let (start, end) = ranges[i];
             let tab_rect = if vertical {
                 Rect::new(tab_bar.x, tab_bar.y + start - offset, tab_bar.w, end - start)
             } else {
@@ -433,6 +397,7 @@ widget! {
                 );
             }
         }
+        drop(ranges);
         if self.editable {
             let add = Self::absolute_rect(frame, self.add_rect());
             crate::ui::widgets::icon::Icon::paint_in_frame(
@@ -457,11 +422,62 @@ widget! {
         }
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        if self.active_index >= self.tabs.len() { return Vec::new(); }
-        let Some(child) = children.first() else { return Vec::new(); };
+        let mut output = Vec::new();
+        self.layout_active_child_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(crate::ui::WidgetId, Rect)>
+    ) {
+        self.layout_active_child_into(frame, children, output);
+    }
+
+    child_visible => (&self, index: usize) -> bool {
+        index == self.active_index && index < self.tabs.len()
+    }
+}
+
+impl Tabs {
+    // 把活动面板位置写入布局树拥有的跨帧数组。
+    fn layout_active_child_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        output: &mut Vec<(crate::ui::WidgetId, Rect)>,
+    ) {
+        output.clear();
+        if self.active_index >= self.tabs.len() {
+            return;
+        }
+        let Some(child) = children.first() else {
+            return;
+        };
         let content = self.content_rect(Self::normalized_frame(frame));
         let horizontal_inset = self
             .visual
@@ -473,16 +489,16 @@ widget! {
             .layout
             .content_vertical_inset
             .min(content.h * 0.5);
-        vec![(child.id, Rect::new(
-            content.x + horizontal_inset,
-            content.y + vertical_inset,
-            (content.w - horizontal_inset * 2.0).max(0.0),
-            (content.h - vertical_inset * 2.0).max(0.0),
-        ))]
-    }
-
-    child_visible => (&self, index: usize) -> bool {
-        index == self.active_index && index < self.tabs.len()
+        output.reserve(1);
+        output.push((
+            child.id,
+            Rect::new(
+                content.x + horizontal_inset,
+                content.y + vertical_inset,
+                (content.w - horizontal_inset * 2.0).max(0.0),
+                (content.h - vertical_inset * 2.0).max(0.0),
+            ),
+        ));
     }
 }
 
@@ -493,6 +509,54 @@ impl Default for Tabs {
 }
 
 impl Tabs {
+    // 重建标签主轴区间并复用组件已有缓存，避免稳态渲染重新申请数组。
+    fn rebuild_tab_main_ranges(&self, mut measure_label_width: impl FnMut(&str) -> f32) -> f32 {
+        let vertical = self.position.is_vertical();
+        let layout = &self.visual.layout;
+        let mut ranges = self.tab_main_ranges.borrow_mut();
+        ranges.clear();
+        ranges.reserve(self.tabs.len());
+        let mut cursor = if vertical {
+            0.0
+        } else {
+            layout.horizontal_padding
+        };
+        for tab in &self.tabs {
+            let icon_width = if tab.icon.is_empty() {
+                0.0
+            } else {
+                layout.icon_reserve
+            };
+            let close_width = if self.editable {
+                layout.close_reserve
+            } else {
+                0.0
+            };
+            let extent = if vertical {
+                self.tab_height
+            } else {
+                measure_label_width(&tab.label)
+                    + layout.horizontal_padding * 2.0
+                    + icon_width
+                    + close_width
+            };
+            ranges.push((cursor, cursor + extent));
+            cursor += extent + if vertical { 0.0 } else { layout.gap };
+        }
+        let mut content_extent = ranges.last().map_or(0.0, |(_, end)| *end);
+        if !vertical && !ranges.is_empty() {
+            content_extent += layout.horizontal_padding;
+        }
+        if self.editable {
+            content_extent += if vertical {
+                self.tab_height
+            } else {
+                layout.gap + layout.add_size
+            };
+        }
+        content_extent
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(
             self.fixed_width.unwrap_or(self.visual.layout.default_width),
@@ -950,3 +1014,9 @@ impl View for Tabs {
         build_tabs_view(self, TABS_VISUAL_REF)
     }
 }
+
+// 仅在测试构建中编译标签布局与缓存复用回归。
+#[cfg(test)]
+// 将私有几何契约测试统一存放在根 tests 目录。
+#[path = "../../../../../tests/unit/ui/widgets/navigation/tabs_allocation_tests.rs"]
+mod allocation_tests;
