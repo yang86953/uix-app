@@ -1,0 +1,56 @@
+// 高级图表共享内核的默认配置、画布、图例、轴、提示、各图形装饰和主题由 UIX 唯一拥有。
+<Visual name="ADVANCED_CHART_DEFAULTS_VISUAL" type="AdvancedChartDefaultsVisual"
+  width={300.0} height={200.0} padding={16.0} legend={advanced_legend_none()}
+  barGap={0.1} categoryGap={0.2} roseStyle={advanced_rose_radius()}
+  startAngle={0.0} endAngle={360.0} labelVisible={true}
+  labelPosition={advanced_label_outside()} bubbleScale={1.0} pointSize={5.0}
+  pointStyle={advanced_point_circle()} gridLevels={5} fillOpacity={0.25}
+  heatmapColorMin={advanced_heatmap_min()} heatmapColorMax={advanced_heatmap_max()}
+  cellSize={14.0} cellGap={2.0} funnelAlign={advanced_funnel_center()}
+  funnelShape={advanced_funnel_normal()} funnelGap={4.0} treemapGap={4.0}
+  radarShape={advanced_radar_polygon()} gaugeMin={0.0} gaugeMax={100.0}
+  gaugeType={advanced_gauge_dashboard()} pointerWidth={3.0} zoom={1.0}
+/>
+<Visual name="ADVANCED_CHART_LAYOUT_VISUAL" type="AdvancedChartLayoutVisual"
+  titleHeight={20.0} subtitleHeight={16.0} axisTitleHeight={16.0}
+  legendRowHeight={18.0} legendSideRatio={0.24}
+  legendSideMinWidth={64.0} legendSideMaxWidth={120.0}
+  legendSwatchX={4.0} legendSwatchY={5.0} legendSwatchSize={8.0}
+  legendTextX={16.0} legendTextY={3.0}
+  tooltipPointerOffset={12.0} tooltipEdgeInset={4.0} tooltipPadding={4.0}
+  referenceLabelX={4.0} referenceLabelY={-2.0} outsideLabelGap={4.0}
+  categoryLabelGap={2.0} categoryLabelHeight={14.0}
+  radarRadiusRatio={0.38} radarLabelOffset={12.0}
+  heatmapLeftLabelWidth={42.0} heatmapBottomLabelHeight={20.0}
+  heatmapLabelGap={4.0} heatmapMonthOffset={12.0} funnelMinRatio={0.05}
+  waterfallBarRatio={0.7} waterfallBarInsetRatio={0.15}
+  treemapLabelX={4.0} treemapLabelY={12.0} treemapInnerX={2.0}
+  treemapInnerY={16.0} treemapInnerWidthReduction={4.0}
+  treemapInnerHeightReduction={18.0}
+  gaugeCenterYRatio={0.56} gaugeRadiusRatio={0.38} gaugeRingInnerRatio={0.62}
+  gaugePointerLengthRatio={0.9} gaugePointerHubRatio={1.5}
+  gaugeLabelYOffset={12.0} gaugeLabelHeight={24.0}
+  bubbleRadiusRatio={0.2} bubbleRadiusMax={48.0} bubbleRadiusMin={2.0}
+  scatterRadiusMin={1.0} scatterRadiusMax={12.0}
+/>
+<Visual name="ADVANCED_CHART_TYPOGRAPHY_VISUAL" type="AdvancedChartTypographyVisual"
+  title={15.0} subtitle={11.0} body={10.0} caption={9.0}
+  treemapLeaf={11.0} gaugeValue={16.0}
+/>
+<Visual name="ADVANCED_CHART_CHROME_VISUAL" type="AdvancedChartChromeVisual"
+  borderWidth={1.0} seriesWidth={2.0} radarOutlineWidth={1.5}
+  referenceSegments={12} comboDashSegments={8} smoothSubdivisions={8}
+  brushAlpha={48}
+/>
+<Visual name="ADVANCED_CHART_PALETTE_VISUAL" type="AdvancedChartPaletteVisual"
+  background={advanced_background()} elevatedBackground={advanced_elevated_background()}
+  border={advanced_border()} text={advanced_text()} textSecondary={advanced_text_secondary()}
+  primary={advanced_primary()} warning={advanced_warning()} white={advanced_white()}
+  success={advanced_success()} error={advanced_error()} fillTertiary={advanced_fill_tertiary()}
+/>
+<Visual name="ADVANCED_CHART_VISUAL" type="AdvancedChartVisual"
+  defaults={ADVANCED_CHART_DEFAULTS_VISUAL} layout={ADVANCED_CHART_LAYOUT_VISUAL}
+  typography={ADVANCED_CHART_TYPOGRAPHY_VISUAL} chrome={ADVANCED_CHART_CHROME_VISUAL}
+  palette={ADVANCED_CHART_PALETTE_VISUAL}
+/>
+<KernelView value={build_advanced_chart_view(kernel, ADVANCED_CHART_VISUAL_REF)} />

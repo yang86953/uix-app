@@ -7,13 +7,19 @@ use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;
 use super::{
     AxisSide, ChartPayload, ChartPlaceholder, ChartType, FunnelAlign, FunnelShape, GaugeType,
-    LabelPosition, LineStyle, MAX_HEATMAP_DIMENSION, TooltipTrigger, TreemapNode, WaterfallKind,
-    calendar_day_count, is_leap_year, january_first_weekday, normalized_ratio, palette_color,
+    LabelPosition, LineStyle, MAX_HEATMAP_DIMENSION, ResolvedAdvancedChartVisual, TooltipTrigger,
+    TreemapNode, WaterfallKind, calendar_day_count, is_leap_year, january_first_weekday,
+    normalized_ratio, palette_color,
 };
 
 impl ChartPlaceholder {
     /// 热力图绘制：普通网格或日历模式，含坐标标签与数值。
-    pub(crate) fn paint_heatmap(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_heatmap(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         let ChartPayload::Heatmap(cells) = &self.payload else {
             return;
         };
@@ -73,8 +79,16 @@ impl ChartPlaceholder {
             .fold(0.0_f32, f32::max)
             .max(1.0);
         // 坐标标签占用区域。
-        let label_left = if self.y_labels.is_empty() { 0.0 } else { 42.0 };
-        let label_bottom = if self.x_labels.is_empty() { 0.0 } else { 20.0 };
+        let label_left = if self.y_labels.is_empty() {
+            0.0
+        } else {
+            self.visual.layout.heatmap_left_label_width
+        };
+        let label_bottom = if self.x_labels.is_empty() {
+            0.0
+        } else {
+            self.visual.layout.heatmap_bottom_label_height
+        };
         let cells_plot = Rect::new(
             plot.x + label_left,
             plot.y,
@@ -117,8 +131,8 @@ impl ChartPlaceholder {
                 ctx.text_center(
                     &format!("{}", finite_value),
                     rect,
-                    ctx.tokens().color_white(),
-                    9.0,
+                    visual.white,
+                    self.visual.typography.caption,
                 );
             }
         }
@@ -126,21 +140,31 @@ impl ChartPlaceholder {
         for (index, label) in self.x_labels.iter().take(max_x).enumerate() {
             let rect = Rect::new(
                 cells_plot.x + index as f32 * (w + self.cell_gap),
-                cells_plot.y + cells_plot.h + 2.0,
+                cells_plot.y + cells_plot.h + self.visual.layout.category_label_gap,
                 w,
                 label_bottom,
             );
-            ctx.text_center(label, rect, ctx.tokens().color_text_secondary(), 9.0);
+            ctx.text_center(
+                label,
+                rect,
+                visual.text_secondary,
+                self.visual.typography.caption,
+            );
         }
         // y 轴标签（左侧）。
         for (index, label) in self.y_labels.iter().take(max_y).enumerate() {
             let rect = Rect::new(
                 plot.x,
                 cells_plot.y + index as f32 * (h + self.cell_gap),
-                label_left - 4.0,
+                label_left - self.visual.layout.heatmap_label_gap,
                 h,
             );
-            ctx.text_center(label, rect, ctx.tokens().color_text_secondary(), 9.0);
+            ctx.text_center(
+                label,
+                rect,
+                visual.text_secondary,
+                self.visual.typography.caption,
+            );
         }
         // 日历模式：每月首行绘制「N月」标签（2 月按闰年处理）。
         if self.calendar_mode {
@@ -154,10 +178,10 @@ impl ChartPlaceholder {
                     &label,
                     Point::new(
                         cells_plot.x + week as f32 * (w + self.cell_gap),
-                        cells_plot.y - 12.0,
+                        cells_plot.y - self.visual.layout.heatmap_month_offset,
                     ),
-                    ctx.tokens().color_text_secondary(),
-                    9.0,
+                    visual.text_secondary,
+                    self.visual.typography.caption,
                 );
                 day += length;
             }
@@ -165,7 +189,12 @@ impl ChartPlaceholder {
     }
 
     /// 漏斗图绘制：按值比例收窄的梯形，支持对齐、对称与转化率。
-    pub(crate) fn paint_funnel(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_funnel(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         let ChartPayload::Funnel(data) = &self.payload else {
             return;
         };
@@ -193,15 +222,18 @@ impl ChartPlaceholder {
                 0.0
             };
             // 本段宽度与下一段宽度（最小 5%）。
-            let width = plot.w * (value / max).clamp(0.05, 1.0);
-            let next_width = data.get(index + 1).map_or(0.05, |item| {
-                let value = if item.value.is_finite() {
-                    item.value.max(0.0)
-                } else {
-                    0.0
-                };
-                (value / max).clamp(0.05, 1.0)
-            }) * plot.w;
+            let width = plot.w * (value / max).clamp(self.visual.layout.funnel_min_ratio, 1.0);
+            let next_width =
+                data.get(index + 1)
+                    .map_or(self.visual.layout.funnel_min_ratio, |item| {
+                        let value = if item.value.is_finite() {
+                            item.value.max(0.0)
+                        } else {
+                            0.0
+                        };
+                        (value / max).clamp(self.visual.layout.funnel_min_ratio, 1.0)
+                    })
+                    * plot.w;
             // 对称形状强制居中，否则按对齐配置。
             let align = if self.funnel_shape == FunnelShape::Symmetric {
                 FunnelAlign::Center
@@ -226,7 +258,7 @@ impl ChartPlaceholder {
             path.line_to(bottom_x + next_width, y + h.max(0.0));
             path.line_to(bottom_x, y + h.max(0.0));
             path.close();
-            let funnel_color = ctx.tokens().color_primary();
+            let funnel_color = visual.primary;
             ctx.fill_path(&path.build(), funnel_color, FillRule::NonZero);
             // 标签：可含转化率（相对上一段）。
             if self.label_visible {
@@ -244,27 +276,40 @@ impl ChartPlaceholder {
                 if self.label_position == LabelPosition::Right {
                     ctx.draw_text(
                         &label,
-                        Point::new(x + width + 4.0, y + h * 0.5),
-                        ctx.tokens().color_text(),
-                        10.0,
+                        Point::new(
+                            x + width + self.visual.layout.outside_label_gap,
+                            y + h * 0.5,
+                        ),
+                        visual.text,
+                        self.visual.typography.body,
                     );
                 } else {
                     // 轴标签（深色块上反白）：白色 token。
-                    ctx.text_center(&label, label_rect, ctx.tokens().color_white(), 10.0);
+                    ctx.text_center(
+                        &label,
+                        label_rect,
+                        visual.white,
+                        self.visual.typography.body,
+                    );
                 }
             }
         }
     }
 
     /// 瀑布图绘制：增量/减量/总计三种段的起止范围与连接线。
-    pub(crate) fn paint_waterfall(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_waterfall(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         let ChartPayload::Waterfall(data) = &self.payload else {
             return;
         };
         if data.is_empty() {
             return;
         }
-        let plot = self.paint_axes(ctx, plot);
+        let plot = self.paint_axes(ctx, plot, visual);
         // 逐个计算段的起止值并跟踪累计值与全局范围。
         let mut ranges = Vec::with_capacity(data.len());
         let mut cumulative = 0.0;
@@ -295,27 +340,31 @@ impl ChartPlaceholder {
             |value: f32| plot.y + plot.h - normalized_ratio(value, min_value, max_value) * plot.h;
         let category_w = plot.w / data.len() as f32;
         let category_h = plot.h / data.len() as f32;
-        let bar_w = category_w * 0.7;
-        let bar_h = category_h * 0.7;
+        let bar_w = category_w * self.visual.layout.waterfall_bar_ratio;
+        let bar_h = category_h * self.visual.layout.waterfall_bar_ratio;
         for (index, (item, (start, end))) in data.iter().zip(ranges.iter()).enumerate() {
             // 按段类型着色：增/减/总计。
             let color = match item.kind {
-                WaterfallKind::Increase => ctx.tokens().color_success(),
-                WaterfallKind::Decrease => ctx.tokens().color_error(),
-                WaterfallKind::Total => ctx.tokens().color_primary(),
+                WaterfallKind::Increase => visual.success,
+                WaterfallKind::Decrease => visual.error,
+                WaterfallKind::Total => visual.primary,
             };
             let rect = if self.horizontal {
                 let x = to_x((*start).min(*end));
                 Rect::new(
                     x,
-                    plot.y + index as f32 * category_h + category_h * 0.15,
+                    plot.y
+                        + index as f32 * category_h
+                        + category_h * self.visual.layout.waterfall_bar_inset_ratio,
                     (to_x((*start).max(*end)) - x).max(1.0),
                     bar_h.max(1.0),
                 )
             } else {
                 let y = to_y((*start).max(*end));
                 Rect::new(
-                    plot.x + index as f32 * category_w + category_w * 0.15,
+                    plot.x
+                        + index as f32 * category_w
+                        + category_w * self.visual.layout.waterfall_bar_inset_ratio,
                     y,
                     bar_w.max(1.0),
                     (to_y((*start).min(*end)) - y).max(1.0),
@@ -326,30 +375,40 @@ impl ChartPlaceholder {
             if self.horizontal {
                 ctx.draw_text(
                     &item.label,
-                    Point::new(rect.x + rect.w + 4.0, rect.y + rect.h * 0.5),
-                    ctx.tokens().color_text_secondary(),
-                    9.0,
+                    Point::new(
+                        rect.x + rect.w + self.visual.layout.outside_label_gap,
+                        rect.y + rect.h * 0.5,
+                    ),
+                    visual.text_secondary,
+                    self.visual.typography.caption,
                 );
             } else {
                 ctx.text_center(
                     &item.label,
-                    Rect::new(rect.x, plot.y + plot.h + 2.0, rect.w, 14.0),
-                    ctx.tokens().color_text_secondary(),
-                    9.0,
+                    Rect::new(
+                        rect.x,
+                        plot.y + plot.h + self.visual.layout.category_label_gap,
+                        rect.w,
+                        self.visual.layout.category_label_height,
+                    ),
+                    visual.text_secondary,
+                    self.visual.typography.caption,
                 );
             }
             // 段间连接线（从本段末端到下一段起点）。
             if let Some((next_start, _)) = ranges.get(index + 1) {
-                let connector_color = ctx.tokens().color_border();
+                let connector_color = visual.border;
                 if self.horizontal {
                     let y = rect.y + rect.h;
                     ctx.draw_line(
                         rect.x + rect.w,
                         y,
                         rect.x + rect.w,
-                        plot.y + (index + 1) as f32 * category_h + category_h * 0.15,
+                        plot.y
+                            + (index + 1) as f32 * category_h
+                            + category_h * self.visual.layout.waterfall_bar_inset_ratio,
                         connector_color,
-                        1.0,
+                        self.visual.chrome.border_width,
                     );
                     let _ = next_start;
                 } else {
@@ -357,10 +416,12 @@ impl ChartPlaceholder {
                     ctx.draw_line(
                         x,
                         to_y(*end),
-                        plot.x + (index + 1) as f32 * category_w + category_w * 0.15,
+                        plot.x
+                            + (index + 1) as f32 * category_w
+                            + category_w * self.visual.layout.waterfall_bar_inset_ratio,
                         to_y(*next_start),
                         connector_color,
-                        1.0,
+                        self.visual.chrome.border_width,
                     );
                 }
             }
@@ -368,16 +429,24 @@ impl ChartPlaceholder {
     }
 
     /// 组合图绘制：柱 + 线/面积按左右轴共存，虚线/面积样式可选。
-    pub(crate) fn paint_combo(&self, ctx: &mut PaintContext, plot: Rect) {
-        let plot = self.paint_axes(ctx, plot);
+    pub(crate) fn paint_combo(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
+        let plot = self.paint_axes(ctx, plot, visual);
         // 右侧轴标题。
         if !self.y_axis_right.is_empty() {
-            let size = ctx.measure_text(&self.y_axis_right, 10.0);
+            let size = ctx.measure_text(&self.y_axis_right, self.visual.typography.body);
             ctx.draw_text(
                 &self.y_axis_right,
-                Point::new(plot.x + plot.w - size.w, plot.y - 16.0),
-                ctx.tokens().color_text_secondary(),
-                10.0,
+                Point::new(
+                    plot.x + plot.w - size.w,
+                    plot.y - self.visual.layout.axis_title_height,
+                ),
+                visual.text_secondary,
+                self.visual.typography.body,
             );
         }
         // 汇集柱/线数据：优先组合系列，否则回退到独立系列。
@@ -501,9 +570,14 @@ impl ChartPlaceholder {
                 if bar_index == 0 {
                     ctx.text_center(
                         &item.label,
-                        Rect::new(x, plot.y + plot.h + 2.0, bar_w, 14.0),
-                        ctx.tokens().color_text_secondary(),
-                        9.0,
+                        Rect::new(
+                            x,
+                            plot.y + plot.h + self.visual.layout.category_label_gap,
+                            bar_w,
+                            self.visual.layout.category_label_height,
+                        ),
+                        visual.text_secondary,
+                        self.visual.typography.caption,
                     );
                 }
             }
@@ -555,12 +629,13 @@ impl ChartPlaceholder {
             // 连线：虚线按 8 段交替绘制。
             for pair in points.windows(2) {
                 if *line_style == LineStyle::Dashed {
-                    for segment in 0..8 {
+                    for segment in 0..self.visual.chrome.combo_dash_segments {
                         if segment % 2 == 1 {
                             continue;
                         }
-                        let start = segment as f32 / 8.0;
-                        let end = (segment + 1) as f32 / 8.0;
+                        let start = segment as f32 / self.visual.chrome.combo_dash_segments as f32;
+                        let end =
+                            (segment + 1) as f32 / self.visual.chrome.combo_dash_segments as f32;
                         let from = Point::new(
                             pair[0].x + (pair[1].x - pair[0].x) * start,
                             pair[0].y + (pair[1].y - pair[0].y) * start,
@@ -569,10 +644,24 @@ impl ChartPlaceholder {
                             pair[0].x + (pair[1].x - pair[0].x) * end,
                             pair[0].y + (pair[1].y - pair[0].y) * end,
                         );
-                        ctx.draw_line(from.x, from.y, to.x, to.y, color, 2.0);
+                        ctx.draw_line(
+                            from.x,
+                            from.y,
+                            to.x,
+                            to.y,
+                            color,
+                            self.visual.chrome.series_width,
+                        );
                     }
                 } else {
-                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(
+                        pair[0].x,
+                        pair[0].y,
+                        pair[1].x,
+                        pair[1].y,
+                        color,
+                        self.visual.chrome.series_width,
+                    );
                 }
             }
             // 数据点标记。
@@ -583,11 +672,16 @@ impl ChartPlaceholder {
     }
 
     /// 矩形树图入口：从根节点列表开始递归分块。
-    pub(crate) fn paint_treemap(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_treemap(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         let ChartPayload::Treemap(nodes) = &self.payload else {
             return;
         };
-        self.paint_treemap_nodes(ctx, nodes, plot, 0);
+        self.paint_treemap_nodes(ctx, nodes, plot, 0, visual);
     }
 
     /// 矩形树递归分块：奇偶深度交替水平/垂直切分，权重取子节点总和。
@@ -597,6 +691,7 @@ impl ChartPlaceholder {
         nodes: &[TreemapNode],
         plot: Rect,
         depth: usize,
+        visual: &ResolvedAdvancedChartVisual,
     ) {
         if nodes.is_empty() || plot.w <= 0.0 || plot.h <= 0.0 {
             return;
@@ -659,35 +754,51 @@ impl ChartPlaceholder {
             if node.children.is_empty() {
                 // 叶子：居中显示标签（深色块上反白）：白色 token。
                 if self.label_visible {
-                    ctx.text_center(&node.label, rect, ctx.tokens().color_white(), 11.0);
+                    ctx.text_center(
+                        &node.label,
+                        rect,
+                        visual.white,
+                        self.visual.typography.treemap_leaf,
+                    );
                 }
             } else {
                 // 分支：顶部显示标签并递归分块子节点。
                 if self.label_visible {
                     ctx.draw_text(
                         &node.label,
-                        Point::new(rect.x + 4.0, rect.y + 12.0),
+                        Point::new(
+                            rect.x + self.visual.layout.treemap_label_x,
+                            rect.y + self.visual.layout.treemap_label_y,
+                        ),
                         // 分支标题（深色块上反白）：白色 token。
-                        ctx.tokens().color_white(),
-                        10.0,
+                        visual.white,
+                        self.visual.typography.body,
                     );
                 }
                 let inner = Rect::new(
-                    rect.x + 2.0,
-                    rect.y + 16.0,
-                    rect.w - 4.0,
-                    (rect.h - 18.0).max(0.0),
+                    rect.x + self.visual.layout.treemap_inner_x,
+                    rect.y + self.visual.layout.treemap_inner_y,
+                    rect.w - self.visual.layout.treemap_inner_width_reduction,
+                    (rect.h - self.visual.layout.treemap_inner_height_reduction).max(0.0),
                 );
-                self.paint_treemap_nodes(ctx, &node.children, inner, depth + 1);
+                self.paint_treemap_nodes(ctx, &node.children, inner, depth + 1, visual);
             }
             cursor += extent;
         }
     }
 
     /// 仪表盘绘制：扇区/环、分段色、指针与读数标签。
-    pub(crate) fn paint_gauge(&self, ctx: &mut PaintContext, plot: Rect) {
-        let center = Point::new(plot.x + plot.w * 0.5, plot.y + plot.h * 0.56);
-        let radius = plot.w.min(plot.h) * 0.38;
+    pub(crate) fn paint_gauge(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
+        let center = Point::new(
+            plot.x + plot.w * 0.5,
+            plot.y + plot.h * self.visual.layout.gauge_center_y_ratio,
+        );
+        let radius = plot.w.min(plot.h) * self.visual.layout.gauge_radius_ratio;
         // 仪表盘类型决定起始角与扫过角度。
         let (start, sweep) = match self.gauge_type {
             GaugeType::Dashboard => (std::f32::consts::PI, std::f32::consts::PI),
@@ -698,12 +809,12 @@ impl ChartPlaceholder {
         let range_min = self.gauge_min.min(self.gauge_max);
         let range_max = self.gauge_min.max(self.gauge_max);
         let ratio = normalized_ratio(self.gauge_value, range_min, range_max);
-        let bg = ctx.tokens().color_fill_tertiary();
+        let bg = visual.fill_tertiary;
         // 底色扇区。
         ctx.fill_sector(center.x, center.y, radius, start, start + sweep, bg);
         if self.gauge_ranges.is_empty() {
             // 无分段：单色按比例填充。
-            let color = ctx.tokens().color_primary();
+            let color = visual.primary;
             ctx.fill_sector(
                 center.x,
                 center.y,
@@ -740,23 +851,28 @@ impl ChartPlaceholder {
             ctx.fill_circle(
                 center.x,
                 center.y,
-                radius * 0.62,
-                ctx.tokens().color_bg_container(),
+                radius * self.visual.layout.gauge_ring_inner_ratio,
+                visual.background,
             );
         }
         // 指针：从中心指向当前角度。
         if self.pointer_width > 0.0 {
             let angle = start + sweep * ratio;
-            let pointer_color = self.pointer_color.unwrap_or(ctx.tokens().color_text());
+            let pointer_color = self.pointer_color.unwrap_or(visual.text);
             ctx.draw_line(
                 center.x,
                 center.y,
-                center.x + radius * 0.9 * angle.cos(),
-                center.y + radius * 0.9 * angle.sin(),
+                center.x + radius * self.visual.layout.gauge_pointer_length_ratio * angle.cos(),
+                center.y + radius * self.visual.layout.gauge_pointer_length_ratio * angle.sin(),
                 pointer_color,
                 self.pointer_width,
             );
-            ctx.fill_circle(center.x, center.y, self.pointer_width * 1.5, pointer_color);
+            ctx.fill_circle(
+                center.x,
+                center.y,
+                self.pointer_width * self.visual.layout.gauge_pointer_hub_ratio,
+                pointer_color,
+            );
         }
         // 读数标签（可自定义格式化）。
         let label = self
@@ -766,9 +882,14 @@ impl ChartPlaceholder {
             .unwrap_or_else(|| format!("{:.0}", self.gauge_value));
         ctx.text_center(
             &label,
-            Rect::new(center.x - radius, center.y - 12.0, radius * 2.0, 24.0),
-            ctx.tokens().color_text(),
-            16.0,
+            Rect::new(
+                center.x - radius,
+                center.y - self.visual.layout.gauge_label_y_offset,
+                radius * 2.0,
+                self.visual.layout.gauge_label_height,
+            ),
+            visual.text,
+            self.visual.typography.gauge_value,
         );
     }
 
@@ -815,7 +936,11 @@ impl ChartPlaceholder {
         self.pan_origin.set(0.0);
         self.pan_offset
             .set(if keeps_pan { pan_offset } else { 0.0 });
-        self.zoom.set(if keeps_zoom { zoom } else { 1.0 });
+        self.zoom.set(if keeps_zoom {
+            zoom
+        } else {
+            self.visual.defaults.zoom
+        });
         self.animation_player = animation_player;
         self.animation_dirty.set(animation_dirty);
     }
@@ -873,12 +998,12 @@ impl ChartPlaceholder {
             (frame.h - self.padding * 2.0).max(0.0),
         );
         if !self.title.is_empty() {
-            plot.y += 20.0;
-            plot.h = (plot.h - 20.0).max(0.0);
+            plot.y += self.visual.layout.title_height;
+            plot.h = (plot.h - self.visual.layout.title_height).max(0.0);
         }
         if !self.subtitle.is_empty() {
-            plot.y += 16.0;
-            plot.h = (plot.h - 16.0).max(0.0);
+            plot.y += self.visual.layout.subtitle_height;
+            plot.h = (plot.h - self.visual.layout.subtitle_height).max(0.0);
         }
         let (plot, legend) = self.legend_layout(plot);
         legend.map(|legend| (plot, legend))

@@ -21,7 +21,9 @@ mod widget;
 mod heatmap_color;
 mod paint_advanced;
 mod paint_series;
+mod presentation;
 
+pub(crate) use presentation::*;
 pub use widget::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -627,15 +629,26 @@ impl ChartPlaceholder {
     }
 }
 
+// UIX 根把共享静态视觉注入 Rust 数据与交互内核。
+fn build_advanced_chart_view(
+    mut kernel: ChartPlaceholder,
+    visual: &'static AdvancedChartVisual,
+) -> crate::ui::view::ViewNode {
+    kernel.visual = visual;
+    if !kernel.has_data() {
+        if let Some(empty) =
+            crate::ui::widget_runtime::config::render_empty_for::<ChartPlaceholder>()
+        {
+            return empty;
+        }
+        return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());
+    }
+    crate::ui::view::ViewNode::leaf(kernel)
+}
+
 impl crate::ui::view::View for ChartPlaceholder {
     fn build(self) -> crate::ui::view::ViewNode {
-        if !self.has_data() {
-            if let Some(empty) = crate::ui::widget_runtime::config::render_empty_for::<Self>() {
-                return empty;
-            }
-            return crate::ui::view::ViewNode::leaf(crate::ui::widgets::display::Empty::new());
-        }
-        crate::ui::view::ViewNode::leaf(self)
+        build_advanced_chart_view(self, ADVANCED_CHART_VISUAL_REF)
     }
 }
 

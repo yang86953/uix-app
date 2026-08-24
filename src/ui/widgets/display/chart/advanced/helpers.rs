@@ -372,26 +372,31 @@ impl ChartPlaceholder {
         if self.legend == LegendPosition::None || self.legend_labels().is_empty() {
             return (plot, None);
         }
-        const ROW: f32 = 18.0;
+        let row = self.visual.layout.legend_row_height;
         match self.legend {
             // 顶部：图例占最上方一行。
             LegendPosition::Top => (
-                Rect::new(plot.x, plot.y + ROW, plot.w, (plot.h - ROW).max(0.0)),
-                Some(Rect::new(plot.x, plot.y, plot.w, ROW)),
+                Rect::new(plot.x, plot.y + row, plot.w, (plot.h - row).max(0.0)),
+                Some(Rect::new(plot.x, plot.y, plot.w, row)),
             ),
             // 底部：图例占最下方一行。
             LegendPosition::Bottom => (
-                Rect::new(plot.x, plot.y, plot.w, (plot.h - ROW).max(0.0)),
+                Rect::new(plot.x, plot.y, plot.w, (plot.h - row).max(0.0)),
                 Some(Rect::new(
                     plot.x,
-                    plot.y + (plot.h - ROW).max(0.0),
+                    plot.y + (plot.h - row).max(0.0),
                     plot.w,
-                    ROW.min(plot.h),
+                    row.min(plot.h),
                 )),
             ),
             // 左/右：图例占约 1/4 宽度（64~120px）。
             LegendPosition::Left | LegendPosition::Right => {
-                let width = (plot.w * 0.24).clamp(64.0, 120.0).min(plot.w);
+                let width = (plot.w * self.visual.layout.legend_side_ratio)
+                    .clamp(
+                        self.visual.layout.legend_side_min_width,
+                        self.visual.layout.legend_side_max_width,
+                    )
+                    .min(plot.w);
                 if self.legend == LegendPosition::Left {
                     (
                         Rect::new(plot.x + width, plot.y, (plot.w - width).max(0.0), plot.h),
@@ -414,30 +419,48 @@ impl ChartPlaceholder {
     }
 
     /// 绘制图例：顶部/底部为一行串联文本，左/右为色块 + 标签列表。
-    pub(crate) fn paint_legend(&self, ctx: &mut PaintContext, rect: Rect) {
+    pub(crate) fn paint_legend(
+        &self,
+        ctx: &mut PaintContext,
+        rect: Rect,
+        visual: &super::ResolvedAdvancedChartVisual,
+    ) {
         let labels = self.legend_labels();
         // 无标签或空矩形时跳过。
         if labels.is_empty() || rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
-        let color = ctx.tokens().color_text_secondary();
+        let color = visual.text_secondary;
         // 顶部/底部：单行居中显示全部标签。
         if matches!(self.legend, LegendPosition::Top | LegendPosition::Bottom) {
-            ctx.text_center(&labels.join("  "), rect, color, 10.0);
+            ctx.text_center(&labels.join("  "), rect, color, self.visual.typography.body);
             return;
         }
         // 左/右：逐行绘制色块与标签，越界截断。
         for (index, label) in labels.iter().enumerate() {
-            let y = rect.y + index as f32 * 18.0;
-            if y + 18.0 > rect.y + rect.h {
+            let y = rect.y + index as f32 * self.visual.layout.legend_row_height;
+            if y + self.visual.layout.legend_row_height > rect.y + rect.h {
                 break;
             }
             ctx.fill_rect(
-                Rect::new(rect.x + 4.0, y + 5.0, 8.0, 8.0),
+                Rect::new(
+                    rect.x + self.visual.layout.legend_swatch_x,
+                    y + self.visual.layout.legend_swatch_y,
+                    self.visual.layout.legend_swatch_size,
+                    self.visual.layout.legend_swatch_size,
+                ),
                 palette_color(index),
                 None,
             );
-            ctx.draw_text(label, Point::new(rect.x + 16.0, y + 3.0), color, 10.0);
+            ctx.draw_text(
+                label,
+                Point::new(
+                    rect.x + self.visual.layout.legend_text_x,
+                    y + self.visual.layout.legend_text_y,
+                ),
+                color,
+                self.visual.typography.body,
+            );
         }
     }
 }

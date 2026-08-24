@@ -11,9 +11,10 @@ use crate::widget;
 use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;
 use super::{
-    BrushConfig, ChartKind, ChartPayload, ChartSeries, ComboSeries, FunnelAlign, FunnelShape,
-    GaugeRange, GaugeType, InteractionConfig, LabelPosition, LegendPosition, LineStyle, PointStyle,
-    RadarAxis, RadarData, RadarShape, RoseStyle, ScatterData, TooltipConfig, TooltipTrigger,
+    AdvancedChartVisual, BrushConfig, ChartKind, ChartPayload, ChartSeries, ComboSeries,
+    FunnelAlign, FunnelShape, GaugeRange, GaugeType, InteractionConfig, LabelPosition,
+    LegendPosition, LineStyle, PointStyle, RadarAxis, RadarData, RadarShape, RoseStyle,
+    ScatterData, TooltipConfig, TooltipTrigger,
 };
 
 widget! {
@@ -107,6 +108,9 @@ widget! {
         pub(crate) pan_offset: Cell<f32>,
         #[snapshot(skip)]
         pub(crate) zoom: Cell<f32>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static AdvancedChartVisual,
     }
 
     // 测量：响应式时取约束最大尺寸，否则取配置尺寸。

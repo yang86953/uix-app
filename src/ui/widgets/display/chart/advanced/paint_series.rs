@@ -5,20 +5,20 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use super::super::bar_chart::BarData;
 use super::super::line_chart::LineData;
 use super::{
-    ChartKind, ChartPayload, ChartPlaceholder, LineStyle, PointStyle, RadarShape, TooltipTrigger,
-    catmull_rom_points, finite_or_zero, normalized_ratio, palette_color,
+    AdvancedChartLayoutVisual, ChartKind, ChartPayload, ChartPlaceholder, LineStyle, PointStyle,
+    RadarShape, ResolvedAdvancedChartVisual, TooltipTrigger, catmull_rom_points, finite_or_zero,
+    normalized_ratio, palette_color,
 };
 
 // 把散点标记半径限制在绘图区可完整容纳的范围内。
-fn bubble_radius_limit(plot: Rect) -> f32 {
-    // 最多使用短边五分之一并封顶 48，防止单个值吃掉整个坐标区。
-    (plot.w.min(plot.h).max(0.0) * 0.2).min(48.0)
+fn bubble_radius_limit(plot: Rect, visual: AdvancedChartLayoutVisual) -> f32 {
+    (plot.w.min(plot.h).max(0.0) * visual.bubble_radius_ratio).min(visual.bubble_radius_max)
 }
 
 // 全系列等比缩小到绘图区容量，避免不同原始大小同时撞上固定上限。
-fn bubble_radius_fit_scale(max_raw: f32, plot: Rect) -> f32 {
+fn bubble_radius_fit_scale(max_raw: f32, plot: Rect, visual: AdvancedChartLayoutVisual) -> f32 {
     let max_raw = finite_or_zero(max_raw).max(0.0);
-    let limit = bubble_radius_limit(plot);
+    let limit = bubble_radius_limit(plot, visual);
     if max_raw > limit && max_raw > 0.0 {
         limit / max_raw
     } else {
@@ -26,14 +26,19 @@ fn bubble_radius_fit_scale(max_raw: f32, plot: Rect) -> f32 {
     }
 }
 
-fn scatter_marker_radius(raw: f32, bubble: bool, plot: Rect) -> f32 {
+fn scatter_marker_radius(
+    raw: f32,
+    bubble: bool,
+    plot: Rect,
+    visual: AdvancedChartLayoutVisual,
+) -> f32 {
     let radius = if bubble {
-        finite_or_zero(raw).max(0.0).max(2.0)
+        finite_or_zero(raw).max(0.0).max(visual.bubble_radius_min)
     } else {
-        finite_or_zero(raw).clamp(1.0, 12.0)
+        finite_or_zero(raw).clamp(visual.scatter_radius_min, visual.scatter_radius_max)
     };
     let limit = if bubble {
-        bubble_radius_limit(plot)
+        bubble_radius_limit(plot, visual)
     } else {
         plot.w.min(plot.h).max(0.0) * 0.5
     };
@@ -55,15 +60,19 @@ fn inset_scatter_plot(plot: Rect, inset: f32) -> Rect {
 }
 
 // 从笛卡尔图外框扣除横纵轴标题槽，返回唯一的数据绘制区域。
-fn cartesian_data_plot(plot: Rect, has_x_title: bool, has_y_title: bool) -> Rect {
-    const AXIS_LABEL_HEIGHT: f32 = 16.0;
+fn cartesian_data_plot(
+    plot: Rect,
+    has_x_title: bool,
+    has_y_title: bool,
+    axis_title_height: f32,
+) -> Rect {
     let top = if has_y_title {
-        AXIS_LABEL_HEIGHT.min(plot.h.max(0.0))
+        axis_title_height.min(plot.h.max(0.0))
     } else {
         0.0
     };
     let bottom = if has_x_title {
-        AXIS_LABEL_HEIGHT.min((plot.h - top).max(0.0))
+        axis_title_height.min((plot.h - top).max(0.0))
     } else {
         0.0
     };
@@ -83,7 +92,9 @@ impl ChartPlaceholder {
             return;
         }
         self.last_frame.set(Some(frame));
-        let bg = self.background.unwrap_or(ctx.tokens().color_bg_container());
+        // 全部图表分支在同一帧共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let bg = self.background.unwrap_or(visual.background);
         ctx.fill_rect(frame, bg, None);
         // 绘图区 = 帧减去内边距。
         let mut plot = Rect::new(
@@ -97,22 +108,22 @@ impl ChartPlaceholder {
             ctx.draw_text(
                 &self.title,
                 Point::new(plot.x, plot.y),
-                ctx.tokens().color_text(),
-                15.0,
+                visual.text,
+                self.visual.typography.title,
             );
-            plot.y += 20.0;
-            plot.h = (plot.h - 20.0).max(0.0);
+            plot.y += self.visual.layout.title_height;
+            plot.h = (plot.h - self.visual.layout.title_height).max(0.0);
         }
         // 副标题占一行（字号更小）。
         if !self.subtitle.is_empty() && plot.h > 0.0 {
             ctx.draw_text(
                 &self.subtitle,
                 Point::new(plot.x, plot.y),
-                ctx.tokens().color_text_secondary(),
-                11.0,
+                visual.text_secondary,
+                self.visual.typography.subtitle,
             );
-            plot.y += 16.0;
-            plot.h = (plot.h - 16.0).max(0.0);
+            plot.y += self.visual.layout.subtitle_height;
+            plot.h = (plot.h - self.visual.layout.subtitle_height).max(0.0);
         }
         // 标题/副标题占满后无剩余绘图空间。
         if plot.w <= 0.0 || plot.h <= 0.0 {
@@ -122,7 +133,7 @@ impl ChartPlaceholder {
         let (mut plot, legend_rect) = self.legend_layout(plot);
         if plot.w <= 0.0 || plot.h <= 0.0 {
             if let Some(legend_rect) = legend_rect {
-                self.paint_legend(ctx, legend_rect);
+                self.paint_legend(ctx, legend_rect, &visual);
             }
             return;
         }
@@ -148,42 +159,47 @@ impl ChartPlaceholder {
         // 按图表类型分发到对应绘制实现。
         if self.has_data() {
             match self.kind {
-                ChartKind::Bar => self.paint_bars(ctx, plot),
-                ChartKind::Line | ChartKind::Area => self.paint_lines(ctx, plot),
-                ChartKind::Scatter => self.paint_scatter(ctx, plot),
-                ChartKind::Radar => self.paint_radar(ctx, plot),
-                ChartKind::Heatmap => self.paint_heatmap(ctx, plot),
-                ChartKind::Funnel => self.paint_funnel(ctx, plot),
-                ChartKind::Waterfall => self.paint_waterfall(ctx, plot),
-                ChartKind::Combo => self.paint_combo(ctx, plot),
-                ChartKind::Treemap => self.paint_treemap(ctx, plot),
-                ChartKind::Gauge => self.paint_gauge(ctx, plot),
+                ChartKind::Bar => self.paint_bars(ctx, plot, &visual),
+                ChartKind::Line | ChartKind::Area => self.paint_lines(ctx, plot, &visual),
+                ChartKind::Scatter => self.paint_scatter(ctx, plot, &visual),
+                ChartKind::Radar => self.paint_radar(ctx, plot, &visual),
+                ChartKind::Heatmap => self.paint_heatmap(ctx, plot, &visual),
+                ChartKind::Funnel => self.paint_funnel(ctx, plot, &visual),
+                ChartKind::Waterfall => self.paint_waterfall(ctx, plot, &visual),
+                ChartKind::Combo => self.paint_combo(ctx, plot, &visual),
+                ChartKind::Treemap => self.paint_treemap(ctx, plot, &visual),
+                ChartKind::Gauge => self.paint_gauge(ctx, plot, &visual),
                 ChartKind::Generic => unreachable!("generic charts do not contain data"),
             }
         } else {
             // 无数据：空态提示。
-            ctx.stroke_rect(plot, ctx.tokens().color_border(), 1.0, None);
+            ctx.stroke_rect(plot, visual.border, self.visual.chrome.border_width, None);
             // 空态提示字号：统一使用主题 font_size_sm token。
             ctx.text_center(
                 "暂无数据",
                 plot,
-                ctx.tokens().color_text_secondary(),
-                ctx.tokens().font_size_sm(),
+                visual.text_secondary,
+                visual.empty_font_size,
             );
         }
         if animated {
             ctx.pop_clip();
         }
         if let Some(legend_rect) = legend_rect {
-            self.paint_legend(ctx, legend_rect);
+            self.paint_legend(ctx, legend_rect, &visual);
         }
         // 交互层（框选、十字线、tooltip）在数据之上绘制。
-        self.paint_interaction(ctx, frame);
+        self.paint_interaction(ctx, frame, &visual);
         ctx.pop_clip();
     }
 
     /// 交互层绘制：框选矩形、十字线、悬停/点击 tooltip。
-    pub(crate) fn paint_interaction(&self, ctx: &mut PaintContext, frame: Rect) {
+    pub(crate) fn paint_interaction(
+        &self,
+        ctx: &mut PaintContext,
+        frame: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         // 框选：从起点到当前悬浮点绘制半透明矩形。
         if let Some(start) = self.brush_start.get() {
             if let Some(end) = self.hovered_pos.get() {
@@ -194,7 +210,7 @@ impl ChartPlaceholder {
                 ctx.fill_rect(
                     Rect::new(x, y, (right - x).max(0.0), (bottom - y).max(0.0)),
                     // 框选填充：token 主色 + 固定 alpha（替换原硬编码 22,119,255，随主题换肤）。
-                    ctx.tokens().color_primary().with_alpha(48),
+                    visual.primary.with_alpha(self.visual.chrome.brush_alpha),
                     None,
                 );
             }
@@ -207,9 +223,10 @@ impl ChartPlaceholder {
             .is_some_and(|config| config.crosshair)
         {
             if let Some(pos) = hovered {
-                let color = ctx.tokens().color_primary();
-                ctx.draw_line(pos.x, frame.y, pos.x, frame.y + frame.h, color, 1.0);
-                ctx.draw_line(frame.x, pos.y, frame.x + frame.w, pos.y, color, 1.0);
+                let color = visual.primary;
+                let width = self.visual.chrome.border_width;
+                ctx.draw_line(pos.x, frame.y, pos.x, frame.y + frame.h, color, width);
+                ctx.draw_line(frame.x, pos.y, frame.x + frame.w, pos.y, color, width);
             }
         }
         // tooltip：按触发模式取位置并绘制气泡。
@@ -220,46 +237,66 @@ impl ChartPlaceholder {
             };
             let Some(pos) = pos else { return };
             if let Some(text) = self.tooltip_text_at(pos, frame) {
-                let size = ctx.measure_text(&text, 10.0);
+                let size = ctx.measure_text(&text, self.visual.typography.body);
                 // 气泡位置偏向指针右下，越界时向内收拢。
-                let x = (pos.x + 12.0).min(frame.x + frame.w - size.w - 12.0);
-                let y = (pos.y - size.h - 12.0).max(frame.y + 4.0);
-                let rect = Rect::new(x.max(frame.x + 4.0), y, size.w + 8.0, size.h + 8.0);
-                ctx.fill_rect(rect, ctx.tokens().color_bg_elevated(), None);
-                ctx.stroke_rect(rect, ctx.tokens().color_border(), 1.0, None);
+                let pointer_offset = self.visual.layout.tooltip_pointer_offset;
+                let edge_inset = self.visual.layout.tooltip_edge_inset;
+                let padding = self.visual.layout.tooltip_padding;
+                let x = (pos.x + pointer_offset).min(frame.x + frame.w - size.w - pointer_offset);
+                let y = (pos.y - size.h - pointer_offset).max(frame.y + edge_inset);
+                let rect = Rect::new(
+                    x.max(frame.x + edge_inset),
+                    y,
+                    size.w + padding * 2.0,
+                    size.h + padding * 2.0,
+                );
+                ctx.fill_rect(rect, visual.elevated_background, None);
+                ctx.stroke_rect(rect, visual.border, self.visual.chrome.border_width, None);
                 ctx.draw_text(
                     &text,
-                    Point::new(rect.x + 4.0, rect.y + 4.0),
-                    ctx.tokens().color_text(),
-                    10.0,
+                    Point::new(rect.x + padding, rect.y + padding),
+                    visual.text,
+                    self.visual.typography.body,
                 );
             }
         }
     }
 
     /// 坐标轴绘制：x/y 轴线、轴标题与参考线。
-    pub(crate) fn paint_axes(&self, ctx: &mut PaintContext, plot: Rect) -> Rect {
+    pub(crate) fn paint_axes(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) -> Rect {
         let outer_plot = plot;
         // 轴标题拥有独立的上下布局槽，不再与数据标记或组件裁剪边界重叠。
         let plot = cartesian_data_plot(
             plot,
             !self.x_axis.is_empty(),
             !self.y_axis.is_empty() || !self.y_axis_right.is_empty(),
+            self.visual.layout.axis_title_height,
         );
-        let axis = ctx.tokens().color_border();
+        let axis = visual.border;
+        let border_width = self.visual.chrome.border_width;
         ctx.fill_rect(
-            Rect::new(plot.x, plot.y + plot.h - 1.0, plot.w, 1.0),
+            Rect::new(plot.x, plot.y + plot.h - border_width, plot.w, border_width),
             axis,
             None,
         );
-        ctx.fill_rect(Rect::new(plot.x, plot.y, 1.0, plot.h), axis, None);
+        ctx.fill_rect(Rect::new(plot.x, plot.y, border_width, plot.h), axis, None);
         // x 轴标题（底部居中）。
         if !self.x_axis.is_empty() {
             ctx.text_center(
                 &self.x_axis,
-                Rect::new(plot.x, plot.y + plot.h, plot.w, 16.0),
-                ctx.tokens().color_text_secondary(),
-                10.0,
+                Rect::new(
+                    plot.x,
+                    plot.y + plot.h,
+                    plot.w,
+                    self.visual.layout.axis_title_height,
+                ),
+                visual.text_secondary,
+                self.visual.typography.body,
             );
         }
         // y 轴标题（左上角）。
@@ -267,8 +304,8 @@ impl ChartPlaceholder {
             ctx.draw_text(
                 &self.y_axis,
                 Point::new(outer_plot.x, outer_plot.y),
-                ctx.tokens().color_text_secondary(),
-                10.0,
+                visual.text_secondary,
+                self.visual.typography.body,
             );
         }
         // 参考线：按最大绝对值归一化位置，虚线分 12 段绘制。
@@ -279,8 +316,12 @@ impl ChartPlaceholder {
             .fold(1.0_f32, f32::max);
         for (value, label, style) in &self.reference_lines {
             let y = plot.y + plot.h - plot.h * (value / max).clamp(-1.0, 1.0).abs();
-            let color = ctx.tokens().color_warning();
-            let segments = if *style == LineStyle::Dashed { 12 } else { 1 };
+            let color = visual.warning;
+            let segments = if *style == LineStyle::Dashed {
+                self.visual.chrome.reference_segments
+            } else {
+                1
+            };
             for segment in 0..segments {
                 // 虚线跳过偶数段间隙。
                 if *style == LineStyle::Dashed && segment % 2 == 1 {
@@ -288,18 +329,31 @@ impl ChartPlaceholder {
                 }
                 let start = plot.x + plot.w * segment as f32 / segments as f32;
                 let end = plot.x + plot.w * (segment + 1) as f32 / segments as f32;
-                ctx.draw_line(start, y, end, y, color, 1.0);
+                ctx.draw_line(start, y, end, y, color, border_width);
             }
             if !label.is_empty() {
-                ctx.draw_text(label, Point::new(plot.x + 4.0, y - 2.0), color, 9.0);
+                ctx.draw_text(
+                    label,
+                    Point::new(
+                        plot.x + self.visual.layout.reference_label_x,
+                        y + self.visual.layout.reference_label_y,
+                    ),
+                    color,
+                    self.visual.typography.caption,
+                );
             }
         }
         plot
     }
 
     /// 柱状图绘制：支持分组/堆叠、横向/纵向，以及标签。
-    pub(crate) fn paint_bars(&self, ctx: &mut PaintContext, plot: Rect) {
-        let plot = self.paint_axes(ctx, plot);
+    pub(crate) fn paint_bars(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
+        let plot = self.paint_axes(ctx, plot, visual);
         // 汇集载荷中的柱数据序列。
         let series: Vec<&[BarData]> = match &self.payload {
             ChartPayload::Bars(data) => vec![data.as_slice()],
@@ -395,9 +449,12 @@ impl ChartPlaceholder {
                     if series_index == 0 {
                         ctx.draw_text(
                             &item.label,
-                            Point::new(plot.x + plot.w + 4.0, y + bar_h * 0.5),
-                            ctx.tokens().color_text_secondary(),
-                            10.0,
+                            Point::new(
+                                plot.x + plot.w + self.visual.layout.outside_label_gap,
+                                y + bar_h * 0.5,
+                            ),
+                            visual.text_secondary,
+                            self.visual.typography.body,
                         );
                     }
                 } else {
@@ -427,9 +484,14 @@ impl ChartPlaceholder {
                     if series_index == 0 {
                         ctx.text_center(
                             &item.label,
-                            Rect::new(x, plot.y + plot.h + 2.0, bar_w, 14.0),
-                            ctx.tokens().color_text_secondary(),
-                            10.0,
+                            Rect::new(
+                                x,
+                                plot.y + plot.h + self.visual.layout.category_label_gap,
+                                bar_w,
+                                self.visual.layout.category_label_height,
+                            ),
+                            visual.text_secondary,
+                            self.visual.typography.body,
                         );
                     }
                 }
@@ -438,8 +500,13 @@ impl ChartPlaceholder {
     }
 
     /// 折线/面积图绘制：支持堆叠、阶梯、平滑与面积填充。
-    pub(crate) fn paint_lines(&self, ctx: &mut PaintContext, plot: Rect) {
-        let plot = self.paint_axes(ctx, plot);
+    pub(crate) fn paint_lines(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
+        let plot = self.paint_axes(ctx, plot, visual);
         // 汇集载荷中的线数据序列。
         let series: Vec<Vec<LineData>> = match &self.payload {
             ChartPayload::Lines(data) => vec![data.clone()],
@@ -518,18 +585,39 @@ impl ChartPlaceholder {
             if self.step {
                 // 阶梯线：先水平后垂直。
                 for pair in points.windows(2) {
-                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[0].y, color, 2.0);
-                    ctx.draw_line(pair[1].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(
+                        pair[0].x,
+                        pair[0].y,
+                        pair[1].x,
+                        pair[0].y,
+                        color,
+                        self.visual.chrome.series_width,
+                    );
+                    ctx.draw_line(
+                        pair[1].x,
+                        pair[0].y,
+                        pair[1].x,
+                        pair[1].y,
+                        color,
+                        self.visual.chrome.series_width,
+                    );
                 }
             } else {
                 // 平滑时对点集做 Catmull-Rom 插值后连线。
                 let line_points = if self.smooth {
-                    catmull_rom_points(&points, 8)
+                    catmull_rom_points(&points, self.visual.chrome.smooth_subdivisions)
                 } else {
                     points.clone()
                 };
                 for pair in line_points.windows(2) {
-                    ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 2.0);
+                    ctx.draw_line(
+                        pair[0].x,
+                        pair[0].y,
+                        pair[1].x,
+                        pair[1].y,
+                        color,
+                        self.visual.chrome.series_width,
+                    );
                 }
             }
             // 数据点标记。
@@ -540,8 +628,13 @@ impl ChartPlaceholder {
     }
 
     /// 散点/气泡图绘制：按数据极值归一化坐标，支持多种点样式。
-    pub(crate) fn paint_scatter(&self, ctx: &mut PaintContext, plot: Rect) {
-        let plot = self.paint_axes(ctx, plot);
+    pub(crate) fn paint_scatter(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
+        let plot = self.paint_axes(ctx, plot, visual);
         // 汇集 (x, y, 半径, 是否气泡) 元组序列。
         let series: Vec<Vec<(f32, f32, f32, bool)>> = match &self.payload {
             ChartPayload::Scatter(data) => vec![
@@ -601,6 +694,7 @@ impl ChartPlaceholder {
                 .map(|point| finite_or_zero(point.2).max(0.0))
                 .fold(0.0_f32, f32::max),
             plot,
+            self.visual.layout,
         );
         // 坐标极值需要为最大标记预留完整半径，避免气泡贴边时只剩半圆。
         let marker_inset = points
@@ -611,7 +705,7 @@ impl ChartPlaceholder {
                 } else {
                     point.2
                 };
-                scatter_marker_radius(raw, point.3, plot)
+                scatter_marker_radius(raw, point.3, plot, self.visual.layout)
             })
             .fold(0.0f32, f32::max);
         let data_plot = inset_scatter_plot(plot, marker_inset);
@@ -630,7 +724,7 @@ impl ChartPlaceholder {
                 } else {
                     *radius
                 };
-                let radius = scatter_marker_radius(raw_radius, *bubbles, plot);
+                let radius = scatter_marker_radius(raw_radius, *bubbles, plot, self.visual.layout);
                 match self.point_style {
                     PointStyle::Circle => ctx.fill_circle(px, py, radius, point_color),
                     PointStyle::Diamond => {
@@ -642,8 +736,22 @@ impl ChartPlaceholder {
                         );
                     }
                     PointStyle::Cross => {
-                        ctx.draw_line(px - radius, py, px + radius, py, point_color, 2.0);
-                        ctx.draw_line(px, py - radius, px, py + radius, point_color, 2.0);
+                        ctx.draw_line(
+                            px - radius,
+                            py,
+                            px + radius,
+                            py,
+                            point_color,
+                            self.visual.chrome.series_width,
+                        );
+                        ctx.draw_line(
+                            px,
+                            py - radius,
+                            px,
+                            py + radius,
+                            point_color,
+                            self.visual.chrome.series_width,
+                        );
                     }
                 }
             }
@@ -651,7 +759,12 @@ impl ChartPlaceholder {
     }
 
     /// 雷达图绘制：网格（多边形/圆形）、轴线标签与各系列数据多边形。
-    pub(crate) fn paint_radar(&self, ctx: &mut PaintContext, plot: Rect) {
+    pub(crate) fn paint_radar(
+        &self,
+        ctx: &mut PaintContext,
+        plot: Rect,
+        visual: &ResolvedAdvancedChartVisual,
+    ) {
         // 轴数取轴列表与各系列数据的最大长度（至少 3）。
         let count = self
             .radar_axes
@@ -665,13 +778,13 @@ impl ChartPlaceholder {
             )
             .max(3);
         let center = Point::new(plot.x + plot.w * 0.5, plot.y + plot.h * 0.5);
-        let radius = plot.w.min(plot.h) * 0.38;
-        let grid = ctx.tokens().color_border();
+        let radius = plot.w.min(plot.h) * self.visual.layout.radar_radius_ratio;
+        let grid = visual.border;
         // 分层网格：圆形或正多边形。
         for level in 1..=self.grid_levels.max(1) {
             let r = radius * level as f32 / self.grid_levels.max(1) as f32;
             if self.radar_shape == RadarShape::Circle {
-                ctx.stroke_circle(center.x, center.y, r, grid, 1.0);
+                ctx.stroke_circle(center.x, center.y, r, grid, self.visual.chrome.border_width);
             } else {
                 for axis in 0..count {
                     let a = -std::f32::consts::FRAC_PI_2
@@ -684,7 +797,7 @@ impl ChartPlaceholder {
                         center.x + r * next.cos(),
                         center.y + r * next.sin(),
                         grid,
-                        1.0,
+                        self.visual.chrome.border_width,
                     );
                 }
             }
@@ -699,19 +812,19 @@ impl ChartPlaceholder {
                 center.x + radius * angle.cos(),
                 center.y + radius * angle.sin(),
                 grid,
-                1.0,
+                self.visual.chrome.border_width,
             );
             if let Some(label) = self.radar_axes.get(axis).map(|axis| axis.label.as_str()) {
                 let label_center = Point::new(
-                    center.x + (radius + 12.0) * angle.cos(),
-                    center.y + (radius + 12.0) * angle.sin(),
+                    center.x + (radius + self.visual.layout.radar_label_offset) * angle.cos(),
+                    center.y + (radius + self.visual.layout.radar_label_offset) * angle.sin(),
                 );
-                let size = ctx.measure_text(label, 9.0);
+                let size = ctx.measure_text(label, self.visual.typography.caption);
                 ctx.draw_text(
                     label,
                     Point::new(label_center.x - size.w * 0.5, label_center.y),
-                    ctx.tokens().color_text_secondary(),
-                    9.0,
+                    visual.text_secondary,
+                    self.visual.typography.caption,
                 );
             }
         }
@@ -772,7 +885,12 @@ impl ChartPlaceholder {
                 let fill = color.with_alpha((255.0 * self.fill_opacity) as u8);
                 ctx.fill_path(&path.build(), fill, FillRule::NonZero);
             } else {
-                ctx.fill_circle(points[0].x, points[0].y, 3.0, color);
+                ctx.fill_circle(
+                    points[0].x,
+                    points[0].y,
+                    self.visual.defaults.pointer_width,
+                    color,
+                );
             }
             // 首尾闭合的轮廓线。
             for pair in points
@@ -781,7 +899,14 @@ impl ChartPlaceholder {
                 .collect::<Vec<_>>()
                 .windows(2)
             {
-                ctx.draw_line(pair[0].x, pair[0].y, pair[1].x, pair[1].y, color, 1.5);
+                ctx.draw_line(
+                    pair[0].x,
+                    pair[0].y,
+                    pair[1].x,
+                    pair[1].y,
+                    color,
+                    self.visual.chrome.radar_outline_width,
+                );
             }
         }
     }
@@ -795,8 +920,9 @@ mod tests {
     #[test]
     fn bubble_plot_inset_keeps_marker_inside_frame() {
         let plot = Rect::new(10.0, 20.0, 100.0, 80.0);
-        let fit = bubble_radius_fit_scale(80.0, plot);
-        let radius = scatter_marker_radius(80.0 * fit, true, plot);
+        let visual = super::super::ADVANCED_CHART_VISUAL_REF.layout;
+        let fit = bubble_radius_fit_scale(80.0, plot, visual);
+        let radius = scatter_marker_radius(80.0 * fit, true, plot, visual);
         assert_eq!(radius, 16.0);
         assert_eq!(
             inset_scatter_plot(plot, radius),
@@ -808,9 +934,10 @@ mod tests {
     #[test]
     fn bubble_fit_preserves_relative_sizes() {
         let plot = Rect::new(0.0, 0.0, 420.0, 240.0);
-        let fit = bubble_radius_fit_scale(64.0, plot);
-        let large = scatter_marker_radius(64.0 * fit, true, plot);
-        let small = scatter_marker_radius(40.0 * fit, true, plot);
+        let visual = super::super::ADVANCED_CHART_VISUAL_REF.layout;
+        let fit = bubble_radius_fit_scale(64.0, plot, visual);
+        let large = scatter_marker_radius(64.0 * fit, true, plot, visual);
+        let small = scatter_marker_radius(40.0 * fit, true, plot, visual);
         assert_eq!(large, 48.0);
         assert_eq!(small, 30.0);
     }
@@ -820,7 +947,14 @@ mod tests {
     fn cartesian_axis_titles_reserve_data_space() {
         let outer = Rect::new(10.0, 20.0, 420.0, 200.0);
         assert_eq!(
-            cartesian_data_plot(outer, true, true),
+            cartesian_data_plot(
+                outer,
+                true,
+                true,
+                super::super::ADVANCED_CHART_VISUAL_REF
+                    .layout
+                    .axis_title_height,
+            ),
             Rect::new(10.0, 36.0, 420.0, 168.0)
         );
     }
