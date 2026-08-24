@@ -3,7 +3,7 @@
 use crate::core::{Point, Rect};
 use crate::ui::widgets::input::date_picker::{days_in_month, first_weekday};
 
-use super::{HEADER_HEIGHT, TITLE_HEIGHT, WEEKDAY_HEIGHT};
+use super::CalendarGeometryVisual;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct CalendarGeometry {
     pub(crate) control: Rect,
@@ -13,20 +13,25 @@ pub(crate) struct CalendarGeometry {
     pub(crate) cell_size: f32,
     pub(crate) navigation_width: f32,
     pub(crate) scale: f32,
+    grid_columns: usize,
 }
 
 impl CalendarGeometry {
-    pub(crate) fn new(frame: Rect, preferred_cell_size: f32) -> Option<Self> {
+    pub(crate) fn new(
+        frame: Rect,
+        preferred_cell_size: f32,
+        visual: CalendarGeometryVisual,
+    ) -> Option<Self> {
         let frame = Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0));
-        let intrinsic_width = preferred_cell_size * 7.0;
-        let intrinsic_height = preferred_cell_size * 6.0 + HEADER_HEIGHT;
+        let intrinsic_width = preferred_cell_size * visual.grid_columns as f32;
+        let intrinsic_height = preferred_cell_size * visual.grid_rows as f32 + visual.header_height;
         if frame.w <= 0.0 || frame.h <= 0.0 || intrinsic_width <= 0.0 || intrinsic_height <= 0.0 {
             return None;
         }
 
         let scale = (frame.w / intrinsic_width)
             .min(frame.h / intrinsic_height)
-            .min(1.0);
+            .min(visual.max_scale);
         if !scale.is_finite() || scale <= 0.0 {
             return None;
         }
@@ -34,13 +39,13 @@ impl CalendarGeometry {
         let control_width = intrinsic_width * scale;
         let control_height = intrinsic_height * scale;
         let control = Rect::new(
-            frame.x + (frame.w - control_width) * 0.5,
-            frame.y + (frame.h - control_height) * 0.5,
+            frame.x + (frame.w - control_width) * visual.center_ratio,
+            frame.y + (frame.h - control_height) * visual.center_ratio,
             control_width,
             control_height,
         );
-        let title_height = TITLE_HEIGHT * scale;
-        let weekday_height = WEEKDAY_HEIGHT * scale;
+        let title_height = visual.title_height * scale;
+        let weekday_height = visual.weekday_height * scale;
         let title_row = Rect::new(control.x, control.y, control.w, title_height);
         let weekday_row = Rect::new(
             control.x,
@@ -52,7 +57,7 @@ impl CalendarGeometry {
             control.x,
             weekday_row.y + weekday_row.h,
             control.w,
-            preferred_cell_size * 6.0 * scale,
+            preferred_cell_size * visual.grid_rows as f32 * scale,
         );
 
         Some(Self {
@@ -61,8 +66,10 @@ impl CalendarGeometry {
             weekday_row,
             grid,
             cell_size: preferred_cell_size * scale,
-            navigation_width: (TITLE_HEIGHT * scale).min(control.w / 3.0),
+            navigation_width: (visual.title_height * scale)
+                .min(control.w * visual.navigation_width_ratio),
             scale,
+            grid_columns: visual.grid_columns.max(1),
         })
     }
 
@@ -100,8 +107,8 @@ impl CalendarGeometry {
             return None;
         }
         let slot = first_weekday(year, month) + day - 1;
-        let row = slot / 7;
-        let column = slot % 7;
+        let row = slot / self.grid_columns;
+        let column = slot % self.grid_columns;
         Some(Rect::new(
             self.grid.x + column as f32 * self.cell_size,
             self.grid.y + row as f32 * self.cell_size,
@@ -120,7 +127,7 @@ impl CalendarGeometry {
         }
         let column = ((position.x - self.grid.x) / self.cell_size) as usize;
         let row = ((position.y - self.grid.y) / self.cell_size) as usize;
-        let slot = row * 7 + column;
+        let slot = row * self.grid_columns + column;
         let first = first_weekday(year, month);
         let day = slot.checked_sub(first)? + 1;
         (day <= days_in_month(year, month)).then_some(day)
