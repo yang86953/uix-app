@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::uix_import::{
     SourceStageCache, normalized_overlay_path, resolve_file_with_overlays_cached,
@@ -24,8 +25,9 @@ struct PipelineIdentity {
 struct CachedPipeline {
     compilation_key: CompilationKey,
     tracked_files: Vec<PathBuf>,
-    analysis: Result<AnalyzedUnit, CompilerDiagnostic>,
-    lowering: Option<Result<RustUiPlan, CompilerDiagnostic>>,
+    // 阶段产物不可变且可能很大；缓存命中只共享所有权，不深拷贝完整语义模型。
+    analysis: Result<Arc<AnalyzedUnit>, CompilerDiagnostic>,
+    lowering: Option<Result<Arc<RustUiPlan>, CompilerDiagnostic>>,
     compile: Option<Result<CompileOutput, CompilerDiagnostic>>,
     check: Option<Result<CheckOutput, CompilerDiagnostic>>,
 }
@@ -156,7 +158,8 @@ impl CompilerSession {
         {
             self.stats.compile_runs = self.stats.compile_runs.saturating_add(1);
         }
-        let result = compile_lowered(analysis, plan);
+        // 公开输出保持拥有型契约；仅首次 Emit 物化一份，重复命中不再复制阶段缓存。
+        let result = compile_lowered(analysis.as_ref().clone(), plan.as_ref().clone());
         self.pipelines
             .get_mut(&identity)
             .expect("分析成功后必须保留对应流水线")
@@ -187,7 +190,8 @@ impl CompilerSession {
         {
             self.stats.check_runs = self.stats.check_runs.saturating_add(1);
         }
-        let result = Ok(check_lowered(analysis));
+        // 公开检查结果保持拥有型契约，缓存内部继续共享同一不可变分析产物。
+        let result = Ok(check_lowered(analysis.as_ref().clone()));
         self.pipelines
             .get_mut(&identity)
             .expect("分析成功后必须保留对应流水线")
@@ -200,7 +204,7 @@ impl CompilerSession {
         path: &Path,
         overlays: &BTreeMap<PathBuf, String>,
         requested_target: Option<CompileTarget>,
-    ) -> Result<(PipelineIdentity, AnalyzedUnit), CompilerDiagnostic> {
+    ) -> Result<(PipelineIdentity, Arc<AnalyzedUnit>), CompilerDiagnostic> {
         let root = normalized_overlay_path(path);
         self.source_cache.begin_request();
         let resolved = resolve_file_with_overlays_cached(
@@ -233,7 +237,12 @@ impl CompilerSession {
             {
                 self.stats.analysis_hits = self.stats.analysis_hits.saturating_add(1);
             }
-            return cached.analysis.clone().map(|analysis| (identity, analysis));
+            let analysis = cached.analysis.clone()?;
+            #[cfg(test)]
+            {
+                self.stats.analysis_handle = Arc::as_ptr(&analysis) as usize;
+            }
+            return Ok((identity, analysis));
         }
 
         #[cfg(test)]
@@ -241,7 +250,7 @@ impl CompilerSession {
             self.stats.analysis_runs = self.stats.analysis_runs.saturating_add(1);
         }
         let tracked_files = resolved.tracked_files.clone();
-        let analysis = analyze_resolved_file(resolved, path, Some(target));
+        let analysis = analyze_resolved_file(resolved, path, Some(target)).map(Arc::new);
         self.pipelines.insert(
             identity.clone(),
             CachedPipeline {
@@ -254,14 +263,19 @@ impl CompilerSession {
             },
         );
         self.prune_source_cache();
-        analysis.map(|analysis| (identity, analysis))
+        let analysis = analysis?;
+        #[cfg(test)]
+        {
+            self.stats.analysis_handle = Arc::as_ptr(&analysis) as usize;
+        }
+        Ok((identity, analysis))
     }
 
     fn lower(
         &mut self,
         identity: &PipelineIdentity,
         analysis: &AnalyzedUnit,
-    ) -> Result<RustUiPlan, CompilerDiagnostic> {
+    ) -> Result<Arc<RustUiPlan>, CompilerDiagnostic> {
         if let Some(cached) = self
             .pipelines
             .get(identity)
@@ -271,18 +285,28 @@ impl CompilerSession {
             {
                 self.stats.lowering_hits = self.stats.lowering_hits.saturating_add(1);
             }
-            return cached.clone();
+            let plan = cached.clone()?;
+            #[cfg(test)]
+            {
+                self.stats.lowering_handle = Arc::as_ptr(&plan) as usize;
+            }
+            return Ok(plan);
         }
         #[cfg(test)]
         {
             self.stats.lowering_runs = self.stats.lowering_runs.saturating_add(1);
         }
-        let result = lower_analyzed(analysis);
+        let result = lower_analyzed(analysis).map(Arc::new);
         self.pipelines
             .get_mut(identity)
             .expect("分析成功后必须保留对应流水线")
             .lowering = Some(result.clone());
-        result
+        let plan = result?;
+        #[cfg(test)]
+        {
+            self.stats.lowering_handle = Arc::as_ptr(&plan) as usize;
+        }
+        Ok(plan)
     }
 
     fn prune_source_cache(&mut self) {
@@ -318,8 +342,10 @@ struct CompilerSessionStats {
     source_files: usize,
     analysis_runs: usize,
     analysis_hits: usize,
+    analysis_handle: usize,
     lowering_runs: usize,
     lowering_hits: usize,
+    lowering_handle: usize,
     compile_runs: usize,
     compile_hits: usize,
     check_runs: usize,
@@ -358,6 +384,8 @@ mod tests {
         assert_eq!(second_stats.source_parses, first_stats.source_parses);
         assert_eq!(second_stats.analysis_runs, first_stats.analysis_runs);
         assert_eq!(second_stats.check_runs, first_stats.check_runs);
+        assert_ne!(first_stats.analysis_handle, 0);
+        assert_eq!(second_stats.analysis_handle, first_stats.analysis_handle);
         assert_eq!(second_stats.analysis_hits, first_stats.analysis_hits + 1);
         assert_eq!(second_stats.check_hits, first_stats.check_hits + 1);
     }
@@ -411,6 +439,8 @@ mod tests {
 
         assert_eq!(compiled.analysis_runs, checked.analysis_runs);
         assert_eq!(compiled.lowering_runs, checked.lowering_runs);
+        assert_ne!(checked.lowering_handle, 0);
+        assert_eq!(compiled.lowering_handle, checked.lowering_handle);
         assert_eq!(compiled.lowering_hits, checked.lowering_hits + 1);
         assert_eq!(compiled.compile_runs, checked.compile_runs + 1);
         assert_eq!(repeated.compile_runs, compiled.compile_runs);
