@@ -27,6 +27,10 @@ const MAX_RETAINED_COMMAND_CAPACITY_RATIO: usize = 4;
 const MIN_RETAINED_GLYPH_CAPACITY: usize = 16;
 // 字形批次骤减后同样只保留当前规模四倍以内的槽位。
 const MAX_RETAINED_GLYPH_CAPACITY_RATIO: usize = 4;
+// 常见边框至少保留一个小型描边批次。
+const MIN_RETAINED_STROKE_CAPACITY: usize = 4;
+// 描边批次骤减后只保留当前规模四倍以内的槽位。
+const MAX_RETAINED_STROKE_CAPACITY_RATIO: usize = 4;
 
 /// 状态保持的 CPU scratch 光栅化器。连续的 CPU 绘制累积在 scratch 中，
 /// 在 painter-order 屏障（native / Picture / finish）处 flush，使字形与
@@ -150,6 +154,7 @@ impl FrameRecordingCanvas {
     pub(super) fn recycle_encoder(&mut self, mut encoder: FrameEncoder) {
         let command_count = encoder.commands().len();
         let glyph_batch_len = encoder.max_glyph_batch_len();
+        let stroke_batch_len = encoder.max_stroke_batch_len();
         self.command_capacity_hint = command_count;
         let retain_limit = command_count
             .max(MIN_RETAINED_COMMAND_CAPACITY)
@@ -164,8 +169,11 @@ impl FrameRecordingCanvas {
         let glyph_capacity_limit = glyph_batch_len
             .max(MIN_RETAINED_GLYPH_CAPACITY)
             .saturating_mul(MAX_RETAINED_GLYPH_CAPACITY_RATIO);
-        // 图片等大载荷立即释放；只保留一组有界字形槽位和命令数组分配。
-        encoder.clear_commands_for_reuse(glyph_capacity_limit);
+        let stroke_capacity_limit = stroke_batch_len
+            .max(MIN_RETAINED_STROKE_CAPACITY)
+            .saturating_mul(MAX_RETAINED_STROKE_CAPACITY_RATIO);
+        // 图片等大载荷立即释放；只保留有界字形、描边槽位和命令数组分配。
+        encoder.clear_commands_for_reuse(glyph_capacity_limit, stroke_capacity_limit);
         self.spare_encoder = Some(encoder);
     }
 

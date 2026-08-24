@@ -708,19 +708,16 @@ impl FontService {
             return 0.0;
         }
         let f = *font;
-        // 建立源文本字素簇边界表。
-        let index_map = crate::draw::resources::font::text_index::TextIndexMap::new(text);
-        // 外部传入的任意字符位置必须先收敛到可停靠边界。
-        let char_index = index_map
-            // 光标查询使用最近字素簇边界。
-            .normalize_char(
-                // 显式标注输入单位为字符下标。
-                crate::draw::resources::font::text_index::CharIndex(char_index),
-                // 距离相同时沿前进方向收敛。
-                crate::draw::resources::font::text_index::BoundaryBias::Nearest,
-            )
-            // 继续复用现有布局接口的数值字符下标。
-            .0;
+        // 一次性光标查询流式归一，避免每帧建立两套边界数组。
+        let char_index = crate::draw::resources::font::text_index::normalize_char_in_text(
+            text,
+            // 显式标注输入单位为字符下标。
+            crate::draw::resources::font::text_index::CharIndex(char_index),
+            // 距离相同时沿前进方向收敛。
+            crate::draw::resources::font::text_index::BoundaryBias::Nearest,
+        )
+        // 继续复用现有布局接口的数值字符下标。
+        .0;
         let layout = self.layout_text_shared(&f, text, opts);
         // 逐行从同一视觉 cluster 数据查询方向感知光标边界。
         for line in &layout.lines {

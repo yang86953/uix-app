@@ -513,20 +513,23 @@ impl Input {
 
     /// 返回 (行号, 列号) 对应 cursor_char 的位置
     pub(super) fn cursor_line_col(&self) -> (usize, usize) {
-        let lines = logical_lines(&self.value);
+        // 从首行开始流式定位，避免光标闪烁重绘时收集临时行数组。
         let mut remaining = self.cursor_char;
-        for (i, line) in lines.iter().enumerate() {
+        // 保存越界光标最终收敛所需的末行位置。
+        let mut last = (0usize, 0usize);
+        // split 对空文本也产生一个空行，保持旧 logical_lines 语义。
+        for (i, line) in self.value.split('\n').enumerate() {
             let line_len = line.chars().count();
+            // 持续更新末行兜底位置。
+            last = (i, line_len);
             // 每个换行符消耗 1 个字符位置（'\n'）
             if remaining <= line_len {
                 return (i, remaining);
             }
             remaining -= line_len + 1; // +1 for the newline
         }
-        (
-            lines.len().saturating_sub(1),
-            lines.last().map(|l| l.chars().count()).unwrap_or(0),
-        )
+        // 旧状态中的越界位置收敛到最后一个逻辑行末尾。
+        last
     }
 
     fn insert_at_cursor(&mut self, ch: char) {

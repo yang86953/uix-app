@@ -48,6 +48,8 @@ pub struct FrameEncoder {
     commands: Vec<FrameCommand>,
     /// 上一帧回收的一组字形槽位；仅由同一录制器跨帧复用。
     spare_glyphs: Vec<FrameGlyphBlit>,
+    /// 上一帧回收的一组描边槽位；仅由同一录制器跨帧复用。
+    spare_strokes: Vec<FrameStrokeRect>,
 }
 
 impl FrameEncoder {
@@ -73,6 +75,7 @@ impl FrameEncoder {
             pixel_count,
             commands,
             spare_glyphs: Vec::new(),
+            spare_strokes: Vec::new(),
         })
     }
 
@@ -110,28 +113,58 @@ impl FrameEncoder {
             .unwrap_or(0)
     }
 
-    /// 清空上一帧命令载荷，并有界保留最大字形批次与命令数组分配。
-    pub(crate) fn clear_commands_for_reuse(&mut self, glyph_capacity_limit: usize) {
+    /// 返回当前帧最大描边批次长度，供录制器制定有界复用策略。
+    pub(crate) fn max_stroke_batch_len(&self) -> usize {
+        self.commands
+            .iter()
+            .filter_map(|command| match command {
+                FrameCommand::Native {
+                    operation: FrameRasterOp::StrokeRoundedRects { strokes, .. },
+                } => Some(strokes.len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// 清空上一帧命令载荷，并有界保留最大字形、描边批次与命令数组分配。
+    pub(crate) fn clear_commands_for_reuse(
+        &mut self,
+        glyph_capacity_limit: usize,
+        stroke_capacity_limit: usize,
+    ) {
         let mut spare_glyphs = std::mem::take(&mut self.spare_glyphs);
         if spare_glyphs.capacity() > glyph_capacity_limit {
             spare_glyphs = Vec::new();
         }
+        let mut spare_strokes = std::mem::take(&mut self.spare_strokes);
+        if spare_strokes.capacity() > stroke_capacity_limit {
+            spare_strokes = Vec::new();
+        }
         for command in &mut self.commands {
-            let FrameCommand::Native {
-                operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
-            } = command
-            else {
-                continue;
-            };
-            if glyphs.capacity() <= glyph_capacity_limit
-                && glyphs.capacity() > spare_glyphs.capacity()
-            {
-                std::mem::swap(glyphs, &mut spare_glyphs);
+            match command {
+                FrameCommand::Native {
+                    operation: FrameRasterOp::BlitGlyphs { glyphs, .. },
+                } if glyphs.capacity() <= glyph_capacity_limit
+                    && glyphs.capacity() > spare_glyphs.capacity() =>
+                {
+                    std::mem::swap(glyphs, &mut spare_glyphs);
+                }
+                FrameCommand::Native {
+                    operation: FrameRasterOp::StrokeRoundedRects { strokes, .. },
+                } if strokes.capacity() <= stroke_capacity_limit
+                    && strokes.capacity() > spare_strokes.capacity() =>
+                {
+                    std::mem::swap(strokes, &mut spare_strokes);
+                }
+                _ => {}
             }
         }
         self.commands.clear();
         spare_glyphs.clear();
+        spare_strokes.clear();
         self.spare_glyphs = spare_glyphs;
+        self.spare_strokes = spare_strokes;
     }
 
     /// 统计帧内 CPU 生成的光栅载荷（字形 coverage、CPU 分段、物化 Picture），
@@ -205,6 +238,11 @@ impl FrameEncoder {
                 self.spare_glyphs
                     .capacity()
                     .saturating_mul(std::mem::size_of::<FrameGlyphBlit>()),
+            )
+            .saturating_add(
+                self.spare_strokes
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<FrameStrokeRect>()),
             );
         for command in &self.commands {
             bytes = bytes.saturating_add(match command {
@@ -368,48 +406,59 @@ impl FrameEncoder {
             additive,
         } = operation
         {
-            if clip.is_empty() {
-                return;
-            }
             for stroke in strokes {
-                if stroke_visible_bounds(stroke, clip, self.width, self.height).is_none() {
-                    continue;
-                }
-                if let Some(FrameCommand::Native {
-                    operation:
-                        FrameRasterOp::StrokeRoundedRects {
-                            strokes: previous,
-                            clip: previous_clip,
-                            additive: previous_additive,
-                        },
-                }) = self.commands.last_mut()
-                {
-                    if *previous_clip == clip
-                        && *previous_additive == additive
-                        && stroke_batches_can_merge(
-                            previous,
-                            std::slice::from_ref(&stroke),
-                            clip,
-                            self.width,
-                            self.height,
-                        )
-                    {
-                        previous.push(stroke);
-                        continue;
-                    }
-                }
-                self.commands.push(FrameCommand::Native {
-                    operation: FrameRasterOp::StrokeRoundedRects {
-                        strokes: vec![stroke],
-                        clip,
-                        // 新批次继承调用方已经证明的 blend 事实。
-                        additive,
-                    },
-                });
+                self.native_stroke(stroke, clip, additive);
             }
             return;
         }
         self.commands.push(FrameCommand::Native { operation });
+    }
+
+    /// 直接追加单条描边，避免为单元素输入和新批次各构造一次临时 `Vec`。
+    pub(crate) fn native_stroke(
+        &mut self,
+        stroke: FrameStrokeRect,
+        clip: FrameRect,
+        additive: bool,
+    ) {
+        if clip.is_empty() || stroke_visible_bounds(stroke, clip, self.width, self.height).is_none()
+        {
+            return;
+        }
+        if let Some(FrameCommand::Native {
+            operation:
+                FrameRasterOp::StrokeRoundedRects {
+                    strokes: previous,
+                    clip: previous_clip,
+                    additive: previous_additive,
+                },
+        }) = self.commands.last_mut()
+        {
+            if *previous_clip == clip
+                && *previous_additive == additive
+                && stroke_batches_can_merge(
+                    previous,
+                    std::slice::from_ref(&stroke),
+                    clip,
+                    self.width,
+                    self.height,
+                )
+            {
+                previous.push(stroke);
+                return;
+            }
+        }
+        let mut strokes = std::mem::take(&mut self.spare_strokes);
+        strokes.clear();
+        strokes.push(stroke);
+        self.commands.push(FrameCommand::Native {
+            operation: FrameRasterOp::StrokeRoundedRects {
+                strokes,
+                clip,
+                // 新批次继承调用方已经证明的 blend 事实。
+                additive,
+            },
+        });
     }
 
     /// 直接追加单个字形，避免为每个 glyph 构造一次临时 `Vec`。

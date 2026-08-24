@@ -493,6 +493,54 @@ fn recording_reuses_recycled_glyph_batch_allocation() {
     assert_eq!(second.render_reference().pixels(), first_pixels);
 }
 
+// 稳定边框录制应复用上一帧描边批次，不再为单条描边申请临时 Vec。
+#[test]
+fn recording_reuses_recycled_stroke_batch_allocation() {
+    let mut canvas = FrameRecordingCanvas::new(32, 16);
+    canvas
+        .begin_recording(false)
+        .expect("first stroke recording should begin");
+    canvas.stroke_rect(
+        Rect::new(2.0, 2.0, 20.0, 10.0),
+        Color::white(),
+        1.0,
+        None,
+    );
+    let first = canvas
+        .finish_recording()
+        .expect("first stroke recording should finish");
+    let [FrameCommand::Native {
+        operation: FrameRasterOp::StrokeRoundedRects { strokes, .. },
+    }] = first.commands()
+    else {
+        panic!("expected one stroke batch");
+    };
+    let first_storage = strokes.as_ptr();
+    let first_pixels = first.render_reference().pixels().to_vec();
+    canvas.recycle_encoder(first);
+
+    canvas
+        .begin_recording(false)
+        .expect("second stroke recording should begin");
+    canvas.stroke_rect(
+        Rect::new(2.0, 2.0, 20.0, 10.0),
+        Color::white(),
+        1.0,
+        None,
+    );
+    let second = canvas
+        .finish_recording()
+        .expect("second stroke recording should finish");
+    let [FrameCommand::Native {
+        operation: FrameRasterOp::StrokeRoundedRects { strokes, .. },
+    }] = second.commands()
+    else {
+        panic!("expected one recycled stroke batch");
+    };
+    assert_eq!(strokes.as_ptr(), first_storage);
+    assert_eq!(second.render_reference().pixels(), first_pixels);
+}
+
 // 文字场景骤减后不应长期驻留上一峰值字形槽位。
 #[test]
 fn recording_drops_oversized_recycled_glyph_allocation_after_shrink() {

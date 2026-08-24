@@ -35,6 +35,40 @@ pub enum BoundaryBias {
     Nearest,
 }
 
+/// 无需建立索引表，把一次性字符位置归一到扩展字素簇边界。
+pub(crate) fn normalize_char_in_text(
+    text: &str,
+    index: CharIndex,
+    bias: BoundaryBias,
+) -> CharIndex {
+    // 保存目标位置；越界输入在遍历结束后统一收敛到文本末尾。
+    let index = index.0;
+    // 当前字素簇的字符起点。
+    let mut backward = 0usize;
+    // 流式寻找首个包住目标位置的完整字素簇。
+    for grapheme in text.graphemes(true) {
+        // 当前字素簇的排他字符终点。
+        let forward = backward + grapheme.chars().count();
+        // 精确边界无需应用偏向。
+        if index == backward {
+            return CharIndex(backward);
+        }
+        // 内部位置按既有 TextIndexMap 规则选择两侧边界。
+        if index < forward {
+            return CharIndex(match bias {
+                BoundaryBias::Backward => backward,
+                BoundaryBias::Forward => forward,
+                BoundaryBias::Nearest if index - backward < forward - index => backward,
+                BoundaryBias::Nearest => forward,
+            });
+        }
+        // 推进到下一字素簇。
+        backward = forward;
+    }
+    // 文本末尾和全部越界位置都收敛到最后边界。
+    CharIndex(backward)
+}
+
 /// 无需建立索引表，把一次性选择区间向外归一到完整扩展字素簇边界。
 pub(crate) fn normalize_selection_in_text(
     text: &str,

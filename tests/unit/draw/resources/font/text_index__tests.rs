@@ -38,6 +38,33 @@
         }
     }
 
+    /// 流式单点归一必须与缓存索引模型保持完全相同的边界语义。
+    #[test]
+    fn streaming_char_normalization_matches_index_map() {
+        // 覆盖空文本、ASCII、组合字符、ZWJ emoji、Indic 与混合双向文本。
+        let samples = ["", "steady", "a\u{0301}b", "👩🏽‍💻Z", "क्ष", "Aא\u{05B7}בZ"];
+        // 三种偏向都必须覆盖全部有效位置和两个越界位置。
+        let biases = [
+            BoundaryBias::Backward,
+            BoundaryBias::Forward,
+            BoundaryBias::Nearest,
+        ];
+        for text in samples {
+            // 缓存模型作为现有语义参考。
+            let map = TextIndexMap::new(text);
+            let limit = map.char_len().0 + 2;
+            for index in 0..=limit {
+                for bias in biases {
+                    assert_eq!(
+                        normalize_char_in_text(text, CharIndex(index), bias),
+                        map.normalize_char(CharIndex(index), bias),
+                        "文本 {text:?} 的位置 {index} 使用 {bias:?} 归一结果不一致"
+                    );
+                }
+            }
+        }
+    }
+
     /// 组合音标必须与基础字母形成单一可编辑单元。
     #[test]
     // 验证 combining mark 不会产生内部光标位置。
