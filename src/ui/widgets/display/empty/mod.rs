@@ -2,6 +2,7 @@
 
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
@@ -111,6 +112,19 @@ impl Default for Empty {
     }
 }
 
+// 把空状态 Rust 绘制内核融合为 UIX 声明的单一叶节点。
+fn build_empty_view(kernel: Empty) -> ViewNode {
+    ViewNode::leaf(kernel)
+}
+
+impl View for Empty {
+    fn build(self) -> ViewNode {
+        // UIX 拥有公开组件根，Rust 保留本地化、测量和绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/empty/empty.uix")
+    }
+}
+
 impl Empty {
     /// 创建不带说明文字和视觉资源的空状态组件。
     pub fn new() -> Self {
@@ -202,3 +216,8 @@ impl Empty {
         self.image = next.image;
     }
 }
+
+// 集中验证 UIX 声明壳与 Rust 内核的单节点契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/display/empty__tests.rs"]
+mod tests;

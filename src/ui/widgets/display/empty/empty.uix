@@ -1,0 +1,2 @@
+// Empty 是本地化原子绘制组件；UIX 声明公开根，Rust 内核负责测量与绘制。
+<KernelView value={build_empty_view(kernel)} />

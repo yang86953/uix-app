@@ -26,6 +26,8 @@ fn generates_empty_contract() {
     assert!(snapshot.contains("width (240.0)"));
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
+    // 生成器必须进入 Empty 自己的 View/UIX 声明边界，不能直接绕过为叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"));
 }
 
 // 验证动态文本保留公开 Into<String> 类型检查。
