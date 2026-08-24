@@ -35,22 +35,30 @@ fn visual_path_transform(scene: &impl ScenePaint, id: NodeId, index: usize) -> T
     }
 }
 
+// 按既有根到叶顺序累计一条已解析视觉路径的完整变换。
+fn transform_for_visual_path(scene: &impl ScenePaint, path: &[NodeId]) -> Transform {
+    // 保持原实现从单位矩阵开始的累计顺序。
+    let mut transform = Transform::identity();
+    for (index, id) in path.iter().copied().enumerate() {
+        // 节点变换继续先于其后代和滚动位移生效。
+        transform = transform.concat(visual_path_transform(scene, id, index));
+        if index + 1 < path.len()
+            && let Some((sx, sy)) = scene.scroll_offset(id)
+        {
+            // 祖先滚动仍在同一位置进入变换链。
+            transform = transform.concat(Transform::translate(-sx, -sy));
+        }
+    }
+    transform
+}
+
 /// Layout coordinates to viewport/screen coordinates for a node.
 ///
 /// Each node transform applies before its descendants. A viewport's scroll
 /// translation applies between the viewport transform and the child transform.
 pub fn node_visual_transform(scene: &impl ScenePaint, node_id: NodeId) -> Transform {
     let path = visual_path(scene, node_id);
-    let mut transform = Transform::identity();
-    for (index, id) in path.iter().copied().enumerate() {
-        transform = transform.concat(visual_path_transform(scene, id, index));
-        if index + 1 < path.len() {
-            if let Some((sx, sy)) = scene.scroll_offset(id) {
-                transform = transform.concat(Transform::translate(-sx, -sy));
-            }
-        }
-    }
-    transform
+    transform_for_visual_path(scene, &path)
 }
 
 /// 计算被提升为根浮层的节点在原组件树中的完整视觉变换。
@@ -127,12 +135,14 @@ fn visible_viewport_rect_for(
     if !scene.node_visible(node_id) {
         return None;
     }
-    let mut rect = node_visual_rect(scene, node_id, source_rect);
+    // 可见矩形投影与祖先裁剪复用同一条稳定场景路径。
+    let path = visual_path(scene, node_id);
+    // 完整变换仍按原根到叶顺序累计，再投影源矩形。
+    let mut rect = transform_for_visual_path(scene, &path).transform_rect(source_rect);
     if rect.w <= 0.0 || rect.h <= 0.0 {
         return None;
     }
 
-    let path = visual_path(scene, node_id);
     let mut transform = Transform::identity();
     for (index, id) in path.iter().copied().enumerate() {
         if !scene.node_visible(id) {
