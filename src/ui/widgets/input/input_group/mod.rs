@@ -69,7 +69,10 @@ impl Default for InputGroup {
 
 impl View for InputGroup {
     fn build(self) -> ViewNode {
-        ViewNode::leaf(self.into_input())
+        // Rust 只负责把附加文本和状态绑定融合进唯一 Input 内核。
+        let grouped_input = ViewNode::leaf(self.into_input());
+        // UIX 明确声明此组合不增加另一层视觉容器。
+        crate::uix!("src/ui/widgets/input/input_group/input_group.uix")
     }
 }
 
@@ -82,6 +85,6 @@ impl From<InputGroup> for ViewNode {
 // 验证 InputGroup 附加文本与状态绑定组合契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/input/input_group__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/input_group__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
