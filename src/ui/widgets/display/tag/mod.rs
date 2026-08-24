@@ -491,6 +491,8 @@ widget! {
         focused: bool,
         /// Lucide 图标名称，绘制在文字之前。
         icon: String,
+        #[snapshot(skip)]
+        cached_text_width: Cell<f32>,
         last_size: Cell<Size>,
         layout_requested: Cell<bool>,
         pending_action: Cell<Option<TagAction>>,
@@ -795,6 +797,9 @@ fn build_tag_view(mut kernel: Tag, declared_visual: TagVisual) -> ViewNode {
     // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
     debug_assert_eq!(*visual, declared_visual);
     if !kernel.font_size_authored {
+        if kernel.font_size != visual.layout.default_font_size {
+            kernel.cached_text_width.set(f32::NAN);
+        }
         kernel.font_size = visual.layout.default_font_size;
     }
     kernel.visual = visual;
@@ -836,6 +841,7 @@ impl Tag {
             visible: true,
             focused: false,
             icon: String::new(),
+            cached_text_width: Cell::new(f32::NAN),
             last_size: Cell::new(Size::zero()),
             layout_requested: Cell::new(false),
             pending_action: Cell::new(None),
@@ -877,6 +883,7 @@ impl Tag {
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size_authored = s.is_finite() && s > 0.0;
         self.font_size = normalized_tag_font_size(s, self.visual.layout.default_font_size);
+        self.cached_text_width.set(f32::NAN);
         self
     }
 
@@ -889,12 +896,19 @@ impl Tag {
     fn intrinsic_size(&self) -> Size {
         let layout = &self.visual.layout;
         let font_size = normalized_tag_font_size(self.font_size, layout.default_font_size);
-        let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            &self.text,
-            f32::INFINITY,
-            font_size,
-        )
-        .max_line_width;
+        let cached_text_width = self.cached_text_width.get();
+        let text_width = if cached_text_width.is_finite() {
+            cached_text_width
+        } else {
+            let measured = crate::draw::resources::font::text_backend::estimate_text_metrics(
+                &self.text,
+                f32::INFINITY,
+                font_size,
+            )
+            .max_line_width;
+            self.cached_text_width.set(measured);
+            measured
+        };
         let icon_width = if !self.icon.is_empty() {
             font_size * layout.leading_icon_reserve_scale + layout.icon_gap
         } else {
@@ -1071,6 +1085,9 @@ impl Tag {
     pub(crate) fn sync_from(&mut self, next: Self) {
         let was_checkable = self.checkable;
         let runtime_checked = self.checked;
+        let text_metrics_changed = self.text != next.text
+            || self.font_size != next.font_size
+            || !std::ptr::eq(self.visual, next.visual);
         self.text = next.text;
         self.color = next.color;
         self.closable = next.closable;
@@ -1080,6 +1097,9 @@ impl Tag {
         self.checkable = next.checkable;
         self.icon = next.icon;
         self.visual = next.visual;
+        if text_metrics_changed {
+            self.cached_text_width.set(f32::NAN);
+        }
         self.checked = if !self.checkable {
             false
         } else if was_checkable {
