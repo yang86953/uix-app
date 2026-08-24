@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::{Rect, Size};
 use uix::prelude::{
-    Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid, GridTrack,
-    Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter, Table,
-    TableColumn, Tabs, VirtualScroll,
+    Calendar, Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid,
+    GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter,
+    Table, TableColumn, Tabs, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
@@ -366,6 +366,16 @@ fn virtual_scroll_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn calendar_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let calendar = Calendar::new()
+        .date_cell(|_, _| Container::new())
+        .into_node();
+    tree.set_children(root, vec![calendar]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -449,6 +459,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Form", form_layout_tree()),
         ("Tabs", tabs_layout_tree()),
         ("VirtualScroll", virtual_scroll_layout_tree()),
+        ("Calendar", calendar_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);

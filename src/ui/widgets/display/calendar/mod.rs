@@ -247,15 +247,59 @@ widget! {
         constraints.clamp(Size::zero())
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        children.iter().map(|child| (child.id, frame)).collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_cell_children_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_cell_children_into(frame, children, output);
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> { Some(frame) }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
+}
+
+impl CalendarCellHost {
+    // 将日期格内容位置写入布局树拥有的跨帧数组。
+    fn layout_cell_children_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(children.iter().map(|child| (child.id, frame)));
+    }
 }
 
 // Calendar — 日历组件。
@@ -297,34 +341,40 @@ widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<crate::ui::LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        let geometry = CalendarGeometry::new(
-            Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0)),
-            self.cell_size,
-            self.visual.geometry,
-        );
-        let entries = self.materialized_cells.borrow();
-        children
-            .iter()
-            .enumerate()
-            .filter_map(|(index, child)| {
-                let entry = entries.get(index)?;
-                let child_frame = geometry
-                    .and_then(|geometry| {
-                        geometry
-                            .cell_rect(
-                                self.year.get(),
-                                self.month.get(),
-                                entry.date.day,
-                            )
-                            .map(|rect| Rect::new(frame.x + rect.x, frame.y + rect.y, rect.w, rect.h))
-                    })
-                    .unwrap_or_default();
-                Some((child.id, child_frame))
-            })
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_calendar_children_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(crate::ui::WidgetId, Rect)>
+    ) {
+        self.layout_calendar_children_into(frame, children, output);
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -661,6 +711,36 @@ widget! {
 }
 
 impl Calendar {
+    // 将当前月份的自定义日期格位置写入布局树拥有的跨帧数组。
+    fn layout_calendar_children_into(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        let geometry = CalendarGeometry::new(
+            Rect::new(0.0, 0.0, frame.w.max(0.0), frame.h.max(0.0)),
+            self.cell_size,
+            self.visual.geometry,
+        );
+        let entries = self.materialized_cells.borrow();
+        output.clear();
+        output.reserve(children.len().min(entries.len()));
+        for (index, child) in children.iter().enumerate() {
+            let Some(entry) = entries.get(index) else {
+                break;
+            };
+            let child_frame = geometry
+                .and_then(|geometry| {
+                    geometry
+                        .cell_rect(self.year.get(), self.month.get(), entry.date.day)
+                        .map(|rect| Rect::new(frame.x + rect.x, frame.y + rect.y, rect.w, rect.h))
+                })
+                .unwrap_or_default();
+            output.push((child.id, child_frame));
+        }
+    }
+
     /// 创建展示 2026 年 6 月、尚未选择日期的日历。
     pub fn new() -> Self {
         Self {

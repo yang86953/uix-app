@@ -1,5 +1,10 @@
 // 引入受测 Calendar 与日期值类型。
-use super::{CALENDAR_VISUAL_REF, Calendar, CalendarEvent, Date};
+use super::{
+    CALENDAR_VISUAL_REF, Calendar, CalendarCellEntry, CalendarCellHost, CalendarCellInfo,
+    CalendarEvent, Date,
+};
+// 引入布局几何值。
+use crate::core::{Rect, Size};
 // 引入事件颜色与公开 View 构建入口。
 use crate::draw::Color;
 use crate::ui::view::View;
@@ -9,6 +14,9 @@ use crate::ui::{
     // 引入键盘输入值。
     KeyCode,
     KeyMod,
+    // 引入布局复用工作区、子项描述与组件树。
+    LayoutChild,
+    LayoutEngineScratch,
     // 引入统一语义事件类型。
     SemanticKind,
     SemanticPayload,
@@ -17,7 +25,19 @@ use crate::ui::{
     SystemEvent,
     // 引入组件身份与事件分发接口。
     WidgetId,
+    WidgetLayout,
+    WidgetTree,
 };
+
+// 比较拥有型与复用型测量结果的稳定布局字段。
+fn assert_measured_matches(actual: &[LayoutChild], expected: &[LayoutChild]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.measured_size, expected.measured_size);
+        assert_eq!(actual.margin, expected.margin);
+    }
+}
 
 // 验证受控构造器建立日期、月份与焦点的同一投影。
 #[test]
@@ -255,4 +275,64 @@ fn calendar_instances_share_uix_visual_table() {
     let second = second.widget.as_any().downcast_ref::<Calendar>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
     assert!(std::ptr::eq(first.visual, CALENDAR_VISUAL_REF));
+}
+
+// 验证日历容器复用路径保持当前月份全部日期格几何。
+#[test]
+fn calendar_reusing_paths_match_owned_month_geometry() {
+    let calendar = Calendar::new();
+    let entries = (1..=30)
+        .map(|day| CalendarCellEntry {
+            date: Date::new(2026, 6, day),
+            info: CalendarCellInfo {
+                is_today: false,
+                is_selected: false,
+                is_current_month: true,
+            },
+            factory_generation: 0,
+        })
+        .collect();
+    calendar.mark_cells_materialized(entries);
+    let tree = WidgetTree::new();
+    let frame = Rect::new(10.0, 20.0, 280.0, 260.0);
+    let child_ids: Vec<_> = (1..=30).map(WidgetId::new).collect();
+    let expected_measured = calendar.measure_children(frame, &child_ids, &tree);
+    let mut reused_measured = Vec::new();
+    calendar.measure_children_into(frame, &child_ids, &tree, &mut reused_measured);
+    assert_measured_matches(&reused_measured, &expected_measured);
+
+    let expected = calendar.layout_children(frame, &expected_measured, &tree);
+    let mut scratch = LayoutEngineScratch::default();
+    let mut actual = Vec::new();
+    calendar.layout_children_into(frame, &reused_measured, &tree, &mut scratch, &mut actual);
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual.len(), 30);
+}
+
+// 验证日期格宿主复用路径保持内容铺满与测量描述符契约。
+#[test]
+fn calendar_cell_host_reusing_paths_match_owned_geometry() {
+    let host = CalendarCellHost {
+        _date: Date::new(2026, 6, 1),
+    };
+    let tree = WidgetTree::new();
+    let frame = Rect::new(3.0, 5.0, 40.0, 40.0);
+    let child_ids = [WidgetId::new(1), WidgetId::new(2)];
+    let expected_measured = host.measure_children(frame, &child_ids, &tree);
+    let mut reused_measured = Vec::new();
+    host.measure_children_into(frame, &child_ids, &tree, &mut reused_measured);
+    assert_measured_matches(&reused_measured, &expected_measured);
+
+    let children = [
+        LayoutChild::new(child_ids[0], Size::new(10.0, 12.0)),
+        LayoutChild::new(child_ids[1], Size::new(14.0, 16.0)),
+    ];
+    let expected = host.layout_children(frame, &children, &tree);
+    let mut scratch = LayoutEngineScratch::default();
+    let mut actual = Vec::new();
+    host.layout_children_into(frame, &children, &tree, &mut scratch, &mut actual);
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual, vec![(child_ids[0], frame), (child_ids[1], frame)]);
 }
