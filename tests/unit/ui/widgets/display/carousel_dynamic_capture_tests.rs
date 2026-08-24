@@ -1,5 +1,5 @@
 // 复用父模块私有 Carousel 类型与固定动态身份。
-use super::Carousel;
+use super::{Carousel, CarouselEffect, SelectionSource};
 // 导入真实声明建树和原位协调入口。
 use crate::ui::adapter::ViewAdapter;
 // 导入组件私有状态 scope 与槽位创建入口。
@@ -33,9 +33,69 @@ fn uix_root_preserves_carousel_kernel_and_slides() {
     // UIX 声明不得增加包装或复制幻灯片节点。
     assert_eq!(node.children.len(), 2);
     // 根动态类型必须继续是拥有计时器、选择与动画机制的 Carousel。
-    assert!(node.widget.as_any().is::<Carousel>());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("UIX 根必须保留 Carousel 内核");
+    // UIX 视觉配置必须进入真实内核，而不是只保留根节点壳。
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (300.0, 200.0, 30.0, 16.0, 18.0, 6.0, 0.3)
+    );
     // 公开 View 入口的空轮播同样保持零子节点形状。
     assert!(View::build(Carousel::new()).children.is_empty());
+}
+
+// UIX 默认控制只填充未显式设置字段，且实例共享静态视觉表。
+#[test]
+fn uix_defaults_preserve_authored_carousel_controls_and_share_visuals() {
+    let authored = View::build(
+        Carousel::new()
+            .show_dots(false)
+            .show_arrows(false)
+            .effect(CarouselEffect::Fade),
+    );
+    let defaults = View::build(Carousel::new());
+    let authored = authored
+        .widget
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("作者 Carousel 必须保留内核");
+    let defaults = defaults
+        .widget
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("默认 Carousel 必须保留内核");
+    assert_eq!(
+        (authored.show_dots, authored.show_arrows, authored.effect),
+        (false, false, CarouselEffect::Fade)
+    );
+    assert_eq!(
+        (defaults.show_dots, defaults.show_arrows, defaults.effect),
+        (true, true, CarouselEffect::Slide)
+    );
+    assert!(authored.shares_visual_with_for_test(defaults));
+}
+
+// 淡入淡出透明度必须严格复用 UIX 关键点，并保持三角峰值质量。
+#[test]
+fn fade_opacity_uses_uix_motion_keypoints() {
+    let node = View::build(Carousel::new().effect(CarouselEffect::Fade));
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Carousel>()
+        .expect("淡入淡出 Carousel 必须保留内核");
+    kernel.runtime.set_child_count(2);
+    kernel.runtime.select(1, SelectionSource::User);
+    assert_eq!(kernel.runtime.fade_overlay_opacity(), 0.0);
+    kernel.runtime.fade_progress.set(0.25);
+    assert_eq!(kernel.runtime.fade_overlay_opacity(), 0.5);
+    kernel.runtime.fade_progress.set(0.5);
+    assert_eq!(kernel.runtime.fade_overlay_opacity(), 1.0);
+    kernel.runtime.fade_progress.set(0.75);
+    assert_eq!(kernel.runtime.fade_overlay_opacity(), 0.5);
 }
 
 // 读取当前 Carousel 根 owner 身份。

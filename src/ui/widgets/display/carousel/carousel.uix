@@ -1,2 +1,2 @@
-// Carousel 可携带有序幻灯片子树；UIX 声明公开根，Rust 内核负责计时器与动画。
-<KernelView value={build_carousel_view(kernel, children)} />
+// Carousel 的默认尺寸/控制、箭头、页码点、焦点圈、淡入淡出节奏及主题角色由 UIX 声明；Rust 内核负责子树、计时器、选择与动画状态。
+<KernelView value={build_carousel_view(kernel, children, carousel_visual(carousel_defaults(300, 200, carousel_show_dots_default(), carousel_show_arrows_default(), carousel_slide_effect(), 1), carousel_arrow(30, 16, 0.6, 1, carousel_previous_icon(), carousel_next_icon()), carousel_dots(18, 16, 6, 8, 0.75, 1, 16, 8, 0.88, 0.45, 0.5, 3), carousel_focus(0.75, 1.5, carousel_small_radius()), carousel_motion(0.3, 0, 0.5, 1), carousel_palette(carousel_background(), carousel_primary(), carousel_inactive_dot(), carousel_arrow_color())))} />

@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::core::{Constraints, Point, Rect, Size};
@@ -10,19 +11,13 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 
 use crate::ui::children::WidgetChildren;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
-use crate::ui::{SemanticKind, SemanticPayload, SnapshotFields};
-
-const ARROW_HIT_WIDTH: f32 = 30.0;
-const DOT_SLOT_WIDTH: f32 = 18.0;
-const DOT_HIT_HEIGHT: f32 = 16.0;
-const DOT_HEIGHT: f32 = 6.0;
-const DOT_BOTTOM_INSET: f32 = 8.0;
-const ARROW_ICON_SIZE: f32 = 16.0;
-const FADE_DURATION_SECS: f32 = 0.3;
+use crate::ui::{SemanticKind, SemanticPayload, SnapshotFields, ThemeTokens};
 
 /// 轮播切换效果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +27,305 @@ pub enum CarouselEffect {
     /// 使用前后页面淡入淡出切换。
     Fade,
 }
+
+// 保存由 UIX 声明的轮播默认尺寸、控制开关与切换效果。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselDefaultsVisual {
+    width: f32,
+    height: f32,
+    show_dots: bool,
+    show_arrows: bool,
+    effect: CarouselEffect,
+    flex_grow: f32,
+}
+
+// 保存由 UIX 声明的默认箭头命中区、图标与缩放比例。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselArrowVisual {
+    hit_width: f32,
+    icon_size: f32,
+    icon_frame_ratio: f32,
+    min_icon_size: f32,
+    previous_icon: &'static str,
+    next_icon: &'static str,
+}
+
+// 保存由 UIX 声明的页码点槽位、尺寸、圆角与激活态比例。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselDotsVisual {
+    slot_width: f32,
+    hit_height: f32,
+    height: f32,
+    bottom_inset: f32,
+    height_slot_ratio: f32,
+    min_height: f32,
+    active_width: f32,
+    inactive_width: f32,
+    active_fill_ratio: f32,
+    inactive_fill_ratio: f32,
+    center_ratio: f32,
+    radius: f32,
+}
+
+// 保存由 UIX 声明的焦点圈几何与主题圆角角色。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselFocusVisual {
+    inset: f32,
+    stroke_width: f32,
+    radius: CarouselRadiusRole,
+}
+
+// 保存由 UIX 声明的淡入淡出时长与三角透明度关键点。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselMotionVisual {
+    fade_duration_secs: f32,
+    fade_start: f32,
+    fade_midpoint: f32,
+    fade_end: f32,
+}
+
+// 轮播焦点圈使用的主题圆角尺寸角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CarouselRadiusRole {
+    Small,
+}
+
+impl CarouselRadiusRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 保存由 UIX 声明的轮播背景、控制与指示器主题角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CarouselPaletteVisual {
+    background: ColorValue,
+    primary: ColorValue,
+    inactive_dot: ColorValue,
+    arrow: ColorValue,
+}
+
+// 完整视觉配置由全部 Carousel 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CarouselVisual {
+    defaults: CarouselDefaultsVisual,
+    arrow: CarouselArrowVisual,
+    dots: CarouselDotsVisual,
+    focus: CarouselFocusVisual,
+    motion: CarouselMotionVisual,
+    palette: CarouselPaletteVisual,
+}
+
+// 组合 UIX 声明的轮播默认值。
+const fn carousel_defaults(
+    width: f32,
+    height: f32,
+    show_dots: bool,
+    show_arrows: bool,
+    effect: CarouselEffect,
+    flex_grow: f32,
+) -> CarouselDefaultsVisual {
+    CarouselDefaultsVisual {
+        width,
+        height,
+        show_dots,
+        show_arrows,
+        effect,
+        flex_grow,
+    }
+}
+
+// 组合 UIX 声明的默认箭头几何与图标。
+const fn carousel_arrow(
+    hit_width: f32,
+    icon_size: f32,
+    icon_frame_ratio: f32,
+    min_icon_size: f32,
+    previous_icon: &'static str,
+    next_icon: &'static str,
+) -> CarouselArrowVisual {
+    CarouselArrowVisual {
+        hit_width,
+        icon_size,
+        icon_frame_ratio,
+        min_icon_size,
+        previous_icon,
+        next_icon,
+    }
+}
+
+// 组合 UIX 声明的页码点槽位、尺寸与激活态比例。
+#[allow(clippy::too_many_arguments)]
+const fn carousel_dots(
+    slot_width: f32,
+    hit_height: f32,
+    height: f32,
+    bottom_inset: f32,
+    height_slot_ratio: f32,
+    min_height: f32,
+    active_width: f32,
+    inactive_width: f32,
+    active_fill_ratio: f32,
+    inactive_fill_ratio: f32,
+    center_ratio: f32,
+    radius: f32,
+) -> CarouselDotsVisual {
+    CarouselDotsVisual {
+        slot_width,
+        hit_height,
+        height,
+        bottom_inset,
+        height_slot_ratio,
+        min_height,
+        active_width,
+        inactive_width,
+        active_fill_ratio,
+        inactive_fill_ratio,
+        center_ratio,
+        radius,
+    }
+}
+
+// 组合 UIX 声明的焦点圈几何。
+const fn carousel_focus(
+    inset: f32,
+    stroke_width: f32,
+    radius: CarouselRadiusRole,
+) -> CarouselFocusVisual {
+    CarouselFocusVisual {
+        inset,
+        stroke_width,
+        radius,
+    }
+}
+
+// 组合 UIX 声明的淡入淡出时长与关键点。
+const fn carousel_motion(
+    fade_duration_secs: f32,
+    fade_start: f32,
+    fade_midpoint: f32,
+    fade_end: f32,
+) -> CarouselMotionVisual {
+    CarouselMotionVisual {
+        fade_duration_secs,
+        fade_start,
+        fade_midpoint,
+        fade_end,
+    }
+}
+
+// 组合 UIX 声明的轮播主题语义色。
+const fn carousel_palette(
+    background: ColorValue,
+    primary: ColorValue,
+    inactive_dot: ColorValue,
+    arrow: ColorValue,
+) -> CarouselPaletteVisual {
+    CarouselPaletteVisual {
+        background,
+        primary,
+        inactive_dot,
+        arrow,
+    }
+}
+
+// 组合 UIX 声明的完整轮播视觉配置。
+const fn carousel_visual(
+    defaults: CarouselDefaultsVisual,
+    arrow: CarouselArrowVisual,
+    dots: CarouselDotsVisual,
+    focus: CarouselFocusVisual,
+    motion: CarouselMotionVisual,
+    palette: CarouselPaletteVisual,
+) -> CarouselVisual {
+    CarouselVisual {
+        defaults,
+        arrow,
+        dots,
+        focus,
+        motion,
+        palette,
+    }
+}
+
+// 向 UIX 提供默认显示页码点开关。
+const fn carousel_show_dots_default() -> bool {
+    true
+}
+
+// 向 UIX 提供默认显示箭头开关。
+const fn carousel_show_arrows_default() -> bool {
+    true
+}
+
+// 向 UIX 提供默认滑动效果。
+const fn carousel_slide_effect() -> CarouselEffect {
+    CarouselEffect::Slide
+}
+
+// 向 UIX 提供上一页图标名称。
+const fn carousel_previous_icon() -> &'static str {
+    "chevron-left"
+}
+
+// 向 UIX 提供下一页图标名称。
+const fn carousel_next_icon() -> &'static str {
+    "chevron-right"
+}
+
+// 向 UIX 提供小圆角主题角色。
+const fn carousel_small_radius() -> CarouselRadiusRole {
+    CarouselRadiusRole::Small
+}
+
+// 向 UIX 提供轮播背景主题角色。
+const fn carousel_background() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+// 向 UIX 提供轮播品牌主色角色。
+const fn carousel_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供未激活页码点主题角色。
+const fn carousel_inactive_dot() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextQuaternary)
+}
+
+// 向 UIX 提供默认箭头主题角色。
+const fn carousel_arrow_color() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_CAROUSEL_VISUAL: CarouselVisual = carousel_visual(
+    carousel_defaults(300.0, 200.0, true, true, carousel_slide_effect(), 1.0),
+    carousel_arrow(
+        30.0,
+        16.0,
+        0.6,
+        1.0,
+        carousel_previous_icon(),
+        carousel_next_icon(),
+    ),
+    carousel_dots(
+        18.0, 16.0, 6.0, 8.0, 0.75, 1.0, 16.0, 8.0, 0.88, 0.45, 0.5, 3.0,
+    ),
+    carousel_focus(0.75, 1.5, carousel_small_radius()),
+    carousel_motion(0.3, 0.0, 0.5, 1.0),
+    carousel_palette(
+        carousel_background(),
+        carousel_primary(),
+        carousel_inactive_dot(),
+        carousel_arrow_color(),
+    ),
+);
+
+// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
+static UIX_CAROUSEL_VISUAL: OnceLock<CarouselVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SelectionSource {
@@ -49,10 +343,11 @@ struct CarouselRuntime {
     fade_from: Cell<Option<usize>>,
     fade_progress: Cell<f32>,
     fade_dirty: Cell<bool>,
+    motion: Cell<&'static CarouselMotionVisual>,
 }
 
 impl CarouselRuntime {
-    fn new() -> Self {
+    fn new(motion: &'static CarouselMotionVisual) -> Self {
         Self {
             current: Cell::new(0),
             child_count: Cell::new(0),
@@ -61,8 +356,9 @@ impl CarouselRuntime {
             manually_paused: Cell::new(false),
             effect: Cell::new(CarouselEffect::Slide),
             fade_from: Cell::new(None),
-            fade_progress: Cell::new(1.0),
+            fade_progress: Cell::new(motion.fade_end),
             fade_dirty: Cell::new(false),
+            motion: Cell::new(motion),
         }
     }
 
@@ -82,7 +378,7 @@ impl CarouselRuntime {
                 self.layout_requested.set(true);
             }
             self.fade_from.set(None);
-            self.fade_progress.set(1.0);
+            self.fade_progress.set(self.motion.get().fade_end);
             self.fade_dirty.set(false);
         }
     }
@@ -135,7 +431,7 @@ impl CarouselRuntime {
         }
         if self.effect.get() == CarouselEffect::Fade {
             self.fade_from.set(Some(displayed));
-            self.fade_progress.set(0.0);
+            self.fade_progress.set(self.motion.get().fade_start);
             self.fade_dirty.set(true);
         } else {
             self.finish_fade();
@@ -161,7 +457,9 @@ impl CarouselRuntime {
     }
 
     fn displayed_index(&self) -> usize {
-        if self.effect.get() == CarouselEffect::Fade && self.fade_progress.get() < 0.5 {
+        if self.effect.get() == CarouselEffect::Fade
+            && self.fade_progress.get() < self.motion.get().fade_midpoint
+        {
             self.fade_from.get().unwrap_or_else(|| self.current.get())
         } else {
             self.current.get()
@@ -172,17 +470,23 @@ impl CarouselRuntime {
         if self.effect.get() != CarouselEffect::Fade || self.fade_from.get().is_none() {
             return 0.0;
         }
-        let progress = self.fade_progress.get().clamp(0.0, 1.0);
-        if progress < 0.5 {
-            progress * 2.0
+        let motion = self.motion.get();
+        let progress = self
+            .fade_progress
+            .get()
+            .clamp(motion.fade_start, motion.fade_end);
+        if progress < motion.fade_midpoint {
+            (progress - motion.fade_start)
+                / (motion.fade_midpoint - motion.fade_start).max(f32::EPSILON)
         } else {
-            (1.0 - progress) * 2.0
+            (motion.fade_end - progress)
+                / (motion.fade_end - motion.fade_midpoint).max(f32::EPSILON)
         }
     }
 
     fn finish_fade(&self) {
         self.fade_from.set(None);
-        self.fade_progress.set(1.0);
+        self.fade_progress.set(self.motion.get().fade_end);
     }
 }
 
@@ -205,10 +509,16 @@ widget! {
         #[snapshot(skip)]
         runtime: Rc<CarouselRuntime>,
         show_dots: bool,
+        #[snapshot(skip)]
+        show_dots_authored: bool,
         show_arrows: bool,
+        #[snapshot(skip)]
+        show_arrows_authored: bool,
         autoplay: Option<Duration>,
         autoplay_timer_id: u32,
         effect: CarouselEffect,
+        #[snapshot(skip)]
+        effect_authored: bool,
         pause_on_hover: bool,
         custom_arrows: bool,
         #[snapshot(skip)]
@@ -218,6 +528,8 @@ widget! {
         fixed_height: Option<f32>,
         focused: bool,
         last_frame: Cell<Option<Rect>>,
+        #[snapshot(skip)]
+        visual: &'static CarouselVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(self.runtime.child_count.get() > 1) }
@@ -231,7 +543,11 @@ widget! {
     }
 
     flex_grow => (&self) -> f32 {
-        if self.fixed_width.is_some() || self.fixed_height.is_some() { 0.0 } else { 1.0 }
+        if self.fixed_width.is_some() || self.fixed_height.is_some() {
+            0.0
+        } else {
+            self.visual.defaults.flex_grow
+        }
     }
 
     build => (&self) -> Vec<Box<dyn Widget>> {
@@ -273,7 +589,7 @@ widget! {
                         && count > 1
                         && frame.contains(*pos)
                     {
-                        let (left, right) = Self::arrow_frames(frame);
+                        let (left, right) = self.arrow_frames(frame);
                         if pos.x < left.x + left.w {
                             self.select(self.previous_index(), SelectionSource::User);
                             return EventResult::Handled;
@@ -375,21 +691,22 @@ widget! {
             self.runtime.fade_dirty.set(false);
             return false;
         }
+        let motion = self.runtime.motion.get();
         let delta = if dt.is_finite() && dt > 0.0 {
-            (dt as f32 / FADE_DURATION_SECS).max(0.0)
+            (dt as f32 / motion.fade_duration_secs.max(f32::EPSILON)).max(0.0)
         } else {
             0.0
         };
         let previous = self.runtime.fade_progress.get();
-        let progress = (previous + delta).min(1.0);
+        let progress = (previous + delta).min(motion.fade_end);
         if progress != previous {
             self.runtime.fade_progress.set(progress);
             self.runtime.fade_dirty.set(true);
         }
-        if previous < 0.5 && progress >= 0.5 {
+        if previous < motion.fade_midpoint && progress >= motion.fade_midpoint {
             self.runtime.layout_requested.set(true);
         }
-        if progress >= 1.0 {
+        if progress >= motion.fade_end {
             self.runtime.finish_fade();
             false
         } else {
@@ -405,7 +722,7 @@ widget! {
         let frame = Self::normalized_frame(frame);
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let bg = ctx.tokens().color_bg_container();
+        let bg = self.visual.palette.background.resolve(ctx.tokens());
         if ctx.paint_pass() == PaintPass::Content {
             if frame.w > 0.0 && frame.h > 0.0 {
                 ctx.fill_rect(frame, bg, None);
@@ -418,8 +735,9 @@ widget! {
             return;
         }
         let idx = self.runtime.current.get().min(count - 1);
-        let primary = ctx.tokens().color_primary();
-        let dot_color = ctx.tokens().color_text_quaternary();
+        let primary = self.visual.palette.primary.resolve(ctx.tokens());
+        let dot_color = self.visual.palette.inactive_dot.resolve(ctx.tokens());
+        let arrow_color = self.visual.palette.arrow.resolve(ctx.tokens());
         ctx.push_clip(frame);
 
         let fade_opacity = self.runtime.fade_overlay_opacity();
@@ -431,39 +749,50 @@ widget! {
         }
 
         if self.show_arrows && !self.has_custom_arrows() && count > 1 {
-            let (left, right) = Self::arrow_frames(frame);
-            let icon_size = ARROW_ICON_SIZE
-                .min(left.w * 0.6)
-                .min(frame.h * 0.6);
-            if icon_size >= 1.0 {
+            let (left, right) = self.arrow_frames(frame);
+            let icon_size = self
+                .visual
+                .arrow
+                .icon_size
+                .min(left.w * self.visual.arrow.icon_frame_ratio)
+                .min(frame.h * self.visual.arrow.icon_frame_ratio);
+            if icon_size >= self.visual.arrow.min_icon_size {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "chevron-left",
+                    self.visual.arrow.previous_icon,
                     left,
-                    ctx.tokens().color_text(),
+                    arrow_color,
                     icon_size,
                 );
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "chevron-right",
+                    self.visual.arrow.next_icon,
                     right,
-                    ctx.tokens().color_text(),
+                    arrow_color,
                     icon_size,
                 );
             }
         }
 
         if self.show_dots && count > 1 {
-            let strip = Self::dot_strip(frame, count);
+            let strip = self.dot_strip(frame, count);
             for i in 0..count {
                 let is_active = i == idx;
-                let preferred_width: f32 = if is_active { 16.0 } else { 8.0 };
-                let fill_ratio: f32 = if is_active { 0.88 } else { 0.45 };
+                let preferred_width = if is_active {
+                    self.visual.dots.active_width
+                } else {
+                    self.visual.dots.inactive_width
+                };
+                let fill_ratio = if is_active {
+                    self.visual.dots.active_fill_ratio
+                } else {
+                    self.visual.dots.inactive_fill_ratio
+                };
                 let dot_width = preferred_width.min(strip.slot_width * fill_ratio);
                 let dot_rect = Rect::new(
                     strip.hit_rect.x
                         + i as f32 * strip.slot_width
-                        + (strip.slot_width - dot_width) * 0.5,
+                        + (strip.slot_width - dot_width) * self.visual.dots.center_ratio,
                     strip.dot_y,
                     dot_width,
                     strip.dot_height,
@@ -471,12 +800,17 @@ widget! {
                 ctx.fill_rect(
                     dot_rect,
                     if is_active { primary } else { dot_color },
-                    Some(crate::draw::Radius::uniform(3.0)),
+                    Some(crate::draw::Radius::uniform(self.visual.dots.radius)),
                 );
             }
         }
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = self
+                .visual
+                .focus
+                .inset
+                .min(frame.w * self.visual.dots.center_ratio)
+                .min(frame.h * self.visual.dots.center_ratio);
             let focus_rect = Rect::new(
                 frame.x + inset,
                 frame.y + inset,
@@ -487,8 +821,10 @@ widget! {
                 ctx.stroke_rect(
                     focus_rect,
                     primary,
-                    1.5,
-                    Some(crate::draw::Radius::uniform(ctx.tokens().border_radius_sm())),
+                    self.visual.focus.stroke_width,
+                    Some(crate::draw::Radius::uniform(
+                        self.visual.focus.radius.resolve(ctx.tokens()),
+                    )),
                 );
             }
         }
@@ -536,7 +872,24 @@ impl Default for Carousel {
 }
 
 // 把轮播 Rust 内核与已有拥有型幻灯片子树融合为 UIX 声明的单一根节点。
-fn build_carousel_view(kernel: Carousel, children: Vec<ViewNode>) -> ViewNode {
+fn build_carousel_view(
+    mut kernel: Carousel,
+    children: Vec<ViewNode>,
+    declared_visual: CarouselVisual,
+) -> ViewNode {
+    let visual = UIX_CAROUSEL_VISUAL.get_or_init(|| declared_visual);
+    if !kernel.show_dots_authored {
+        kernel.show_dots = visual.defaults.show_dots;
+    }
+    if !kernel.show_arrows_authored {
+        kernel.show_arrows = visual.defaults.show_arrows;
+    }
+    if !kernel.effect_authored {
+        kernel.effect = visual.defaults.effect;
+    }
+    kernel.visual = visual;
+    kernel.runtime.motion.set(&visual.motion);
+    kernel.runtime.effect.set(kernel.effect);
     ViewNode::new(kernel, children)
 }
 
@@ -552,34 +905,45 @@ impl Carousel {
     pub(crate) const CUSTOM_ARROWS_CHILD_KEY: &'static str = "uix:carousel:custom-arrows";
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(300.0, 200.0)
+        Size::new(self.visual.defaults.width, self.visual.defaults.height)
     }
 
     fn normalized_frame(frame: Rect) -> Rect {
         Rect::new(frame.x, frame.y, frame.w.max(0.0), frame.h.max(0.0))
     }
 
-    fn arrow_frames(frame: Rect) -> (Rect, Rect) {
-        let width = ARROW_HIT_WIDTH.min(frame.w * 0.5);
+    fn arrow_frames(&self, frame: Rect) -> (Rect, Rect) {
+        let width = self
+            .visual
+            .arrow
+            .hit_width
+            .min(frame.w * self.visual.dots.center_ratio);
         (
             Rect::new(frame.x, frame.y, width, frame.h),
             Rect::new(frame.x + frame.w - width, frame.y, width, frame.h),
         )
     }
 
-    fn dot_strip(frame: Rect, count: usize) -> DotStrip {
+    fn dot_strip(&self, frame: Rect, count: usize) -> DotStrip {
         let count_f = count.max(1) as f32;
-        let total_width = (count_f * DOT_SLOT_WIDTH).min(frame.w);
+        let total_width = (count_f * self.visual.dots.slot_width).min(frame.w);
         let slot_width = total_width / count_f;
-        let dot_height = DOT_HEIGHT.min(frame.h).min((slot_width * 0.75).max(1.0));
-        let bottom_inset = DOT_BOTTOM_INSET.min((frame.h - dot_height).max(0.0));
+        let dot_height = self.visual.dots.height.min(frame.h).min(
+            (slot_width * self.visual.dots.height_slot_ratio).max(self.visual.dots.min_height),
+        );
+        let bottom_inset = self
+            .visual
+            .dots
+            .bottom_inset
+            .min((frame.h - dot_height).max(0.0));
         let dot_y = frame.y + frame.h - bottom_inset - dot_height;
-        let hit_height = DOT_HIT_HEIGHT.min(frame.h);
-        let hit_y = (dot_y + dot_height * 0.5 - hit_height * 0.5)
+        let hit_height = self.visual.dots.hit_height.min(frame.h);
+        let hit_y = (dot_y + dot_height * self.visual.dots.center_ratio
+            - hit_height * self.visual.dots.center_ratio)
             .clamp(frame.y, frame.y + frame.h - hit_height);
         DotStrip {
             hit_rect: Rect::new(
-                frame.x + (frame.w - total_width) * 0.5,
+                frame.x + (frame.w - total_width) * self.visual.dots.center_ratio,
                 hit_y,
                 total_width,
                 hit_height,
@@ -592,14 +956,18 @@ impl Carousel {
 
     /// 创建显示指示点和默认箭头的空轮播组件。
     pub fn new() -> Self {
+        let visual = &DEFAULT_CAROUSEL_VISUAL;
         Self {
             children: WidgetChildren::new(),
-            runtime: Rc::new(CarouselRuntime::new()),
-            show_dots: true,
-            show_arrows: true,
+            runtime: Rc::new(CarouselRuntime::new(&visual.motion)),
+            show_dots: visual.defaults.show_dots,
+            show_dots_authored: false,
+            show_arrows: visual.defaults.show_arrows,
+            show_arrows_authored: false,
             autoplay: None,
             autoplay_timer_id: 0xCAFE_0001,
-            effect: CarouselEffect::Slide,
+            effect: visual.defaults.effect,
+            effect_authored: false,
             pause_on_hover: false,
             custom_arrows: false,
             custom_arrows_view: None,
@@ -608,18 +976,21 @@ impl Carousel {
             fixed_height: None,
             focused: false,
             last_frame: Cell::new(None),
+            visual,
         }
     }
 
     /// 设置是否显示底部页码指示点。
     pub fn show_dots(mut self, v: bool) -> Self {
         self.show_dots = v;
+        self.show_dots_authored = true;
         self
     }
 
     /// 设置是否显示上一页和下一页箭头。
     pub fn show_arrows(mut self, v: bool) -> Self {
         self.show_arrows = v;
+        self.show_arrows_authored = true;
         self
     }
 
@@ -632,6 +1003,7 @@ impl Carousel {
     /// 设置幻灯片切换效果。
     pub fn effect(mut self, effect: CarouselEffect) -> Self {
         self.effect = effect;
+        self.effect_authored = true;
         self.runtime.effect.set(effect);
         self
     }
@@ -757,17 +1129,22 @@ impl Carousel {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        next.runtime.motion.set(&next.visual.motion);
         next.runtime.copy_state_from(&self.runtime, next.effect);
         self.show_dots = next.show_dots;
+        self.show_dots_authored = next.show_dots_authored;
         self.show_arrows = next.show_arrows;
+        self.show_arrows_authored = next.show_arrows_authored;
         self.autoplay = next.autoplay;
         self.effect = next.effect;
+        self.effect_authored = next.effect_authored;
         self.pause_on_hover = next.pause_on_hover;
         self.custom_arrows = next.custom_arrows;
         self.custom_arrows_view = next.custom_arrows_view;
         self.runtime = next.runtime;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
+        self.visual = next.visual;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -779,6 +1156,26 @@ impl Carousel {
             current: self.runtime.current.get(),
             slide_count: self.runtime.child_count.get(),
         }
+    }
+
+    // 测试目标观察 UIX 声明的关键视觉契约，不暴露到公开 API。
+    #[cfg(test)]
+    fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.defaults.width,
+            self.visual.defaults.height,
+            self.visual.arrow.hit_width,
+            self.visual.arrow.icon_size,
+            self.visual.dots.slot_width,
+            self.visual.dots.height,
+            self.visual.motion.fade_duration_secs,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
     }
 
     fn has_custom_arrows(&self) -> bool {
@@ -802,7 +1199,7 @@ impl Carousel {
         if !self.show_dots || count <= 1 || !frame.contains(pos) {
             return None;
         }
-        let strip = Self::dot_strip(frame, count);
+        let strip = self.dot_strip(frame, count);
         if strip.slot_width <= 0.0
             || pos.x < strip.hit_rect.x
             || pos.x >= strip.hit_rect.x + strip.hit_rect.w
