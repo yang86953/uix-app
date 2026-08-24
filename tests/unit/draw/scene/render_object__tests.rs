@@ -3,8 +3,13 @@ use std::collections::HashSet;
 
 use super::RenderObjectTree;
 use crate::core::{DirtyRegion, Point, Rect};
-use crate::draw::painting::PaintContext;
+use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::geometry::spatial::Orientation;
+use crate::draw::painting::{PaintContext, PaintOp};
+use crate::draw::resources::font::font_service::FontService;
+use crate::draw::resources::image::ImageService;
 use crate::draw::scene::{NodeId, ScenePaint};
+use crate::draw::{Color, FontHandle};
 
 const ROOT: NodeId = NodeId::new(1);
 const CHILD: NodeId = NodeId::new(2);
@@ -12,6 +17,7 @@ const ROOT_CHILDREN: &[NodeId] = &[CHILD];
 
 // 提供可切换批量快照能力的最小场景，计数逐节点查询是否被安全跳过。
 struct SnapshotScene {
+    tree_version: u64,
     dirty_nodes: HashSet<NodeId>,
     full_paint: bool,
     supports_snapshot: bool,
@@ -22,6 +28,7 @@ struct SnapshotScene {
 impl SnapshotScene {
     fn new(dirty_nodes: impl IntoIterator<Item = NodeId>, supports_snapshot: bool) -> Self {
         Self {
+            tree_version: 1,
             dirty_nodes: dirty_nodes.into_iter().collect(),
             full_paint: false,
             supports_snapshot,
@@ -37,7 +44,7 @@ impl ScenePaint for SnapshotScene {
     }
 
     fn tree_version(&self) -> u64 {
-        1
+        self.tree_version
     }
 
     fn dirty_region(&self) -> DirtyRegion {
@@ -108,7 +115,29 @@ impl ScenePaint for SnapshotScene {
         (id == CHILD).then_some(ROOT)
     }
 
-    fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {}
+    fn paint(&self, _id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+        // 使用两条稳定绘制指令验证重复录制的内容和容量提示。
+        ctx.fill_rect(frame, Color::red(), None);
+        ctx.fill_rect(
+            Rect::new(frame.x + 1.0, frame.y + 1.0, 2.0, 2.0),
+            Color::blue(),
+            None,
+        );
+    }
+}
+
+// 读取测试显示列表中的矩形序列，验证容量优化不改变录制内容。
+fn recorded_rects(tree: &RenderObjectTree, id: NodeId) -> Vec<Rect> {
+    tree.get(id)
+        .and_then(|entry| entry.display_list.as_ref())
+        .expect("display list should exist")
+        .ops()
+        .iter()
+        .map(|op| match op {
+            PaintOp::FillRect { rect, .. } => *rect,
+            other => panic!("测试场景只应录制矩形，实际为 {other:?}"),
+        })
+        .collect()
 }
 
 // 批量局部快照必须标记精确节点，且同步阶段不再逐节点调用 node_dirty。
@@ -181,4 +210,49 @@ fn batch_snapshot_does_not_hide_frame_changes() {
     assert!(tree.get(CHILD).expect("子节点必须存在").is_dirty);
     assert_eq!(tree.get(CHILD).expect("子节点必须存在").frame.y, 24.0);
     assert_eq!(scene.node_dirty_calls.get(), 0);
+}
+
+// 重复脏绘制必须复用旧指令数作为容量提示，并保持重建后的缓存内容。
+#[test]
+fn dirty_repaint_and_rebuild_preserve_display_list_content() {
+    // 根节点持续为脏，确保两次调用都进入真实重录路径。
+    let mut scene = SnapshotScene::new([ROOT], true);
+    let mut tree = RenderObjectTree::new();
+    tree.sync(&scene);
+    let frame = scene.node_frame(ROOT);
+    // 构造无像素副作用的绘制上下文。
+    let mut canvas = NoopCanvas2D;
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let mut ctx = PaintContext::new_for_test(
+        &mut canvas,
+        FontHandle::new(0),
+        &font_service,
+        &image_service,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        64,
+        64,
+    );
+
+    // 首次录制建立可供下一轮估算的稳定指令列表。
+    tree.paint_content(ROOT, frame, &scene, &mut ctx);
+    let first_rects = recorded_rects(&tree, ROOT);
+    assert_eq!(first_rects.len(), 2);
+    // 第二次重录必须生成相同内容，且容量至少覆盖上一份指令数。
+    tree.paint_content(ROOT, frame, &scene, &mut ctx);
+    assert_eq!(recorded_rects(&tree, ROOT), first_rects);
+    let second = tree
+        .get(ROOT)
+        .and_then(|entry| entry.display_list.as_ref())
+        .expect("second display list should exist");
+    assert!(second.capacity() >= first_rects.len());
+
+    // 结构版本变化使用预留表重建，并继续保留同 frame 的显示列表。
+    scene.dirty_nodes.clear();
+    scene.tree_version = 2;
+    tree.sync(&scene);
+    assert_eq!(tree.len(), 2);
+    assert_eq!(recorded_rects(&tree, ROOT), first_rects);
 }
