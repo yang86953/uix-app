@@ -1,9 +1,48 @@
 use crate::core::{Constraints, Point, Rect, Size};
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, WidgetTree};
 use crate::widget;
 use qrcode::{EcLevel, QrCode, types::Color as QrModuleColor};
+
+// 保存由 UIX 声明、由 Rust 编码与绘制内核消费的静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct QRCodeVisual {
+    default_size: f32,
+    background_color: ColorValue,
+    foreground_color: ColorValue,
+    error_color: ColorValue,
+    error_label: &'static str,
+    error_font: QRCodeFontRole,
+}
+
+impl Default for QRCodeVisual {
+    fn default() -> Self {
+        Self {
+            default_size: 160.0,
+            background_color: ColorValue::Palette(PaletteColor::White),
+            foreground_color: ColorValue::Palette(PaletteColor::Black),
+            error_color: ColorValue::Palette(PaletteColor::Error),
+            error_label: "QR !",
+            error_font: QRCodeFontRole::Body,
+        }
+    }
+}
+
+// 二维码错误提示使用的主题字号角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QRCodeFontRole {
+    Body,
+}
+
+impl QRCodeFontRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Body => tokens.font_size(),
+        }
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -14,10 +53,14 @@ widget! {
     pub struct QRCode {
         value: String,
         size: f32,
+        #[snapshot(skip)]
+        size_authored: bool,
         error_level: u8,
         modules: Vec<bool>,
         module_count: usize,
         encoding_error: Option<String>,
+        #[snapshot(skip)]
+        visual: QRCodeVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -29,14 +72,17 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        // QR 码默认底色/前景色：黑白 token（可被用户配置覆盖）。
-        let bg = ctx.tokens().color_white();
-        let fg = ctx.tokens().color_black();
+        let bg = self.visual.background_color.resolve(ctx.tokens());
+        let fg = self.visual.foreground_color.resolve(ctx.tokens());
         ctx.fill_rect(frame, bg, None);
 
         if self.encoding_error.is_some() || self.module_count == 0 {
-            // QR 错误提示字号：统一使用主题 font_size token。
-            ctx.text_center("QR !", frame, ctx.tokens().color_error(), ctx.tokens().font_size());
+            ctx.text_center(
+                self.visual.error_label,
+                frame,
+                self.visual.error_color.resolve(ctx.tokens()),
+                self.visual.error_font.resolve(ctx.tokens()),
+            );
             return;
         }
 
@@ -69,14 +115,60 @@ widget! {
     }
 }
 
-// 把二维码编码矩阵与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_qrcode_view(kernel: QRCode) -> ViewNode {
+// 向 UIX 提供二维码背景主题角色。
+const fn qrcode_white() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+
+// 向 UIX 提供二维码前景主题角色。
+const fn qrcode_black() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Black)
+}
+
+// 向 UIX 提供二维码编码失败主题角色。
+const fn qrcode_error() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Error)
+}
+
+// 向 UIX 提供二维码编码失败展示文案。
+const fn qrcode_error_label() -> &'static str {
+    "QR !"
+}
+
+// 向 UIX 提供二维码编码失败的正文主题字号角色。
+const fn qrcode_body_font() -> QRCodeFontRole {
+    QRCodeFontRole::Body
+}
+
+// 把 UIX 声明的视觉配置融合进二维码编码矩阵与绘制内核。
+#[allow(clippy::too_many_arguments)]
+fn build_qrcode_view(
+    mut kernel: QRCode,
+    default_size: f32,
+    background_color: ColorValue,
+    foreground_color: ColorValue,
+    error_color: ColorValue,
+    error_label: &'static str,
+    error_font: QRCodeFontRole,
+) -> ViewNode {
+    // Rust 直接构造且未设置尺寸时采用 UIX 声明的默认边长。
+    if !kernel.size_authored {
+        kernel.size = default_size;
+    }
+    kernel.visual = QRCodeVisual {
+        default_size,
+        background_color,
+        foreground_color,
+        error_color,
+        error_label,
+        error_font,
+    };
     ViewNode::leaf(kernel)
 }
 
 impl View for QRCode {
     fn build(self) -> ViewNode {
-        // UIX 拥有公开组件根，Rust 内核继续独占编码、缓存矩阵与绘制。
+        // UIX 拥有视觉声明，Rust 内核继续独占编码、缓存矩阵与几何绘制。
         let kernel = self;
         crate::uix!("src/ui/widgets/display/qrcode/qrcode.uix")
     }
@@ -85,13 +177,16 @@ impl View for QRCode {
 impl QRCode {
     /// 创建承载指定文本且使用默认尺寸和纠错等级的二维码。
     pub fn new(value: &str) -> Self {
+        let visual = QRCodeVisual::default();
         let mut qr = Self {
             value: value.to_string(),
-            size: 160.0,
+            size: visual.default_size,
+            size_authored: false,
             error_level: 1,
             modules: Vec::new(),
             module_count: 0,
             encoding_error: None,
+            visual,
         };
         qr.rebuild_encoding();
         qr
@@ -100,6 +195,7 @@ impl QRCode {
     pub fn size(mut self, s: f32) -> Self {
         if s.is_finite() {
             self.size = s.max(1.0);
+            self.size_authored = true;
         }
         self
     }
@@ -186,10 +282,12 @@ impl QRCode {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.value = next.value;
         self.size = next.size;
+        self.size_authored = next.size_authored;
         self.error_level = next.error_level;
         self.modules = next.modules;
         self.module_count = next.module_count;
         self.encoding_error = next.encoding_error;
+        self.visual = next.visual;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

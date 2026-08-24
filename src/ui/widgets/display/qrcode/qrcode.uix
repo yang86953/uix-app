@@ -1,2 +1,2 @@
-// QRCode 是编码矩阵绘制组件；UIX 声明公开根，Rust 内核负责编码与扫描质量。
-<KernelView value={build_qrcode_view(kernel)} />
+// QRCode 的默认尺寸、模块色、错误文案与主题角色由 UIX 声明；静区保持 Rust 扫描质量契约。
+<KernelView value={build_qrcode_view(kernel, 160, qrcode_white(), qrcode_black(), qrcode_error(), qrcode_error_label(), qrcode_body_font())} />
