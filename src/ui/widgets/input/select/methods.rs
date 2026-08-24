@@ -6,21 +6,18 @@ use crate::ui::WidgetTree;
 
 use super::search::VisibleRow;
 // 复用选择弹层的共享表面解析原语。
-use super::{
-    DROPDOWN_ROW_HEIGHT, Select, normalize_select_rect, resolve_select_popup_rect,
-    select_fallback_surface,
-};
+use super::{Select, normalize_select_rect, resolve_select_popup_rect, select_fallback_surface};
 
 impl Select {
     pub(crate) fn control_height(&self) -> f32 {
-        crate::ui::widget_runtime::config::control_height(self.select_size)
+        self.visual.layout.control_height(self.select_size)
     }
 
     pub(crate) fn intrinsic_size(&self) -> Size {
         let mut max_text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &self.placeholder,
             f32::INFINITY,
-            13.0,
+            self.visual.intrinsic_text_size(),
         )
         .max_line_width;
         for option in &self.options {
@@ -29,7 +26,7 @@ impl Select {
                     // 固有宽度由实际显示文案决定，而不是内部稳定值。
                     &option.label,
                     f32::INFINITY,
-                    13.0,
+                    self.visual.intrinsic_text_size(),
                 )
                 .max_line_width,
             );
@@ -39,7 +36,7 @@ impl Select {
                 crate::draw::resources::font::text_backend::estimate_text_metrics(
                     &group.label,
                     f32::INFINITY,
-                    12.0,
+                    self.visual.intrinsic_group_text_size(),
                 )
                 .max_line_width,
             );
@@ -48,13 +45,17 @@ impl Select {
                     crate::draw::resources::font::text_backend::estimate_text_metrics(
                         option,
                         f32::INFINITY,
-                        13.0,
+                        self.visual.intrinsic_text_size(),
                     )
                     .max_line_width,
                 );
             }
         }
-        Size::new((max_text_width + 40.0).max(120.0), self.control_height())
+        Size::new(
+            (max_text_width + self.visual.layout.intrinsic_extra_width)
+                .max(self.visual.layout.natural_min_width),
+            self.control_height(),
+        )
     }
 
     pub(crate) fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -187,8 +188,8 @@ impl Select {
         // 键盘滚动使用受当前表面缩高后的实际视口。
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
         let old_offset = self.dropdown_scroll.scroll_offset();
-        let row_top = row_index as f32 * DROPDOWN_ROW_HEIGHT;
-        let row_bottom = row_top + DROPDOWN_ROW_HEIGHT;
+        let row_top = row_index as f32 * self.visual.layout.row_height;
+        let row_bottom = row_top + self.visual.layout.row_height;
         let new_offset = if row_top < old_offset {
             row_top
         } else if row_bottom > old_offset + viewport_height {
@@ -197,8 +198,11 @@ impl Select {
             old_offset
         };
         self.dropdown_scroll.set_scroll_offset(new_offset);
-        self.dropdown_scroll
-            .clamp_to_content(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        self.dropdown_scroll.clamp_to_content(
+            row_count,
+            self.visual.layout.row_height,
+            viewport_height,
+        );
         let applied = self.dropdown_scroll.scroll_offset() - old_offset;
         if applied.abs() > 0.01 {
             self.push_scroll_delta(0.0, applied);
@@ -303,9 +307,11 @@ impl Select {
         let row_count = self.dropdown_row_count();
         // 自定义选项物化使用受当前表面缩高后的实际视口。
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
-        let (start, end) =
-            self.dropdown_scroll
-                .scroll_range(row_count, DROPDOWN_ROW_HEIGHT, viewport_height);
+        let (start, end) = self.dropdown_scroll.scroll_range(
+            row_count,
+            self.visual.layout.row_height,
+            viewport_height,
+        );
         rows[start.min(rows.len())..end.min(rows.len())]
             .iter()
             .filter_map(|row| match row {

@@ -8,11 +8,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::{
-    OptGroup, Select, SelectOption, SelectOptionGroup, SelectOptionView, SelectValue,
-    SelectValueBinding, SelectValueMode,
+    OptGroup, SELECT_VISUAL_REF, Select, SelectOption, SelectOptionGroup, SelectOptionView,
+    SelectValue, SelectValueBinding, SelectValueMode,
 };
-
-const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
 
 impl Default for Select {
     fn default() -> Self {
@@ -24,7 +22,8 @@ impl Select {
     /// 创建继承全局尺寸、禁用和搜索配置的单选选择器。
     pub fn new() -> Self {
         let config = crate::ui::widget_runtime::config::use_config();
-        let control_height = crate::ui::widget_runtime::config::control_height(config.size);
+        let visual = SELECT_VISUAL_REF;
+        let control_height = visual.layout.control_height(config.size);
         Self {
             options: Vec::new(),
             optgroups: Vec::new(),
@@ -52,13 +51,19 @@ impl Select {
             custom_option_views: false,
             materialized_custom_options: RefCell::new(Vec::new()),
             search_cursor_rect: Cell::new(Rect::zero()),
-            control_rect: Cell::new(Rect::new(0.0, 0.0, 120.0, control_height)),
+            control_rect: Cell::new(Rect::new(
+                0.0,
+                0.0,
+                visual.layout.natural_min_width,
+                control_height,
+            )),
             dropdown_rect: Cell::new(Rect::zero()),
             // 新选择器尚未接收布局或绘制表面。
             surface_rect: Cell::new(None),
             multi_remove_rects: RefCell::new(Vec::new()),
             dropdown_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
+            visual,
         }
     }
 
@@ -308,6 +313,14 @@ impl Select {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // UIX 视觉引用变化时先更新几何事实并清除依赖旧视觉的缓存。
+        if !std::ptr::eq(self.visual, next.visual) {
+            self.visual = next.visual;
+            self.dropdown_rect.set(Rect::zero());
+            self.surface_rect.set(None);
+            self.multi_remove_rects.borrow_mut().clear();
+            self.invalidate_custom_option_materialization();
+        }
         let controlled_selection = next
             .value_binding
             .as_ref()
@@ -341,7 +354,7 @@ impl Select {
         let row_count = self.dropdown_row_count();
         self.dropdown_scroll.clamp_to_content(
             row_count,
-            DROPDOWN_ROW_HEIGHT,
+            self.visual.layout.row_height,
             self.dropdown_viewport_height(row_count),
         );
         let popup = self.dropdown_rect.get();

@@ -1,4 +1,4 @@
-use super::{DROPDOWN_ROW_HEIGHT, Select};
+use super::Select;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum VisibleRow {
@@ -117,7 +117,8 @@ impl Select {
     }
 
     pub(crate) fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
-        (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(super::MAX_DROPDOWN_VIEWPORT_HEIGHT)
+        (row_count as f32 * self.visual.layout.row_height)
+            .min(self.visual.layout.max_dropdown_height)
     }
 
     pub(crate) fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
@@ -127,7 +128,7 @@ impl Select {
             return None;
         }
         let content_y = visible_y + self.dropdown_scroll.scroll_offset();
-        let index = (content_y / DROPDOWN_ROW_HEIGHT) as usize;
+        let index = (content_y / self.visual.layout.row_height) as usize;
         (index < self.dropdown_row_count()).then_some(index)
     }
 

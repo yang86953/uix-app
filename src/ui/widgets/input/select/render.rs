@@ -1,89 +1,89 @@
 // 复用选择弹层的共享表面解析与绝对坐标转换。
 use super::{
-    DROPDOWN_ROW_HEIGHT, Select, VisibleRow, fade_color, normalize_select_rect, select_popup_rect,
+    ResolvedSelectVisual, Select, VisibleRow, fade_color, normalize_select_rect, select_popup_rect,
 };
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 
-const TEXT_SIZE: f32 = 13.0;
-const CONTROL_LEFT_PADDING: f32 = 10.0;
-const ARROW_SLOT_WIDTH: f32 = 28.0;
-
 impl Select {
     pub(super) fn render_select(&self, frame: Rect, ctx: &mut PaintContext) {
         self.capture_bound_value_dependency();
         self.multi_remove_rects.borrow_mut().clear();
+        // 控件与弹层共享同一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
 
         let control_height = frame.h.max(0.0).min(self.control_height());
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
         self.control_rect
             .set(Rect::new(0.0, 0.0, control_rect.w, control_rect.h));
 
-        let text = if self.disabled {
-            ctx.tokens().color_text_quaternary()
-        } else {
-            ctx.tokens().color_text()
-        };
         let text_secondary = if self.disabled {
-            ctx.tokens().color_text_quaternary()
+            visual.text_quaternary
         } else {
-            ctx.tokens().color_text_secondary()
+            visual.text_secondary
         };
-        let primary = ctx.tokens().color_primary();
-        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let primary = visual.primary;
+        let radius = Some(Radius::uniform(visual.radius));
         let background = if self.disabled {
-            ctx.tokens().color_fill_tertiary()
+            visual.fill_tertiary
         } else if self.hovered || self.open {
-            ctx.tokens().color_bg_container()
+            visual.background
         } else {
-            ctx.tokens().color_bg_elevated()
+            visual.background_elevated
         };
         let border = if self.focused || self.open {
             primary
         } else if self.disabled {
-            ctx.tokens().color_border_secondary()
+            visual.border_secondary
         } else {
-            ctx.tokens().color_border()
+            visual.border
         };
 
         ctx.fill_rect(control_rect, background, radius);
 
         let text_area = Rect::new(
-            control_rect.x + CONTROL_LEFT_PADDING,
+            control_rect.x + self.visual.layout.control_left_padding,
             control_rect.y,
-            (control_rect.w - CONTROL_LEFT_PADDING - ARROW_SLOT_WIDTH).max(0.0),
+            (control_rect.w
+                - self.visual.layout.control_left_padding
+                - self.visual.layout.arrow_slot_width)
+                .max(0.0),
             control_rect.h,
         );
-        self.render_control_value(control_rect, text_area, ctx, text, text_secondary, primary);
+        self.render_control_value(control_rect, text_area, ctx, &visual);
 
         let arrow_rect = Rect::new(
-            control_rect.x + (control_rect.w - ARROW_SLOT_WIDTH).max(0.0),
+            control_rect.x + (control_rect.w - self.visual.layout.arrow_slot_width).max(0.0),
             control_rect.y,
-            ARROW_SLOT_WIDTH,
+            self.visual.layout.arrow_slot_width,
             control_rect.h,
         );
         crate::ui::widgets::icon::Icon::paint_in_frame(
             ctx,
             if self.is_present() {
-                "chevron-up"
+                self.visual.icons.arrow_up
             } else {
-                "chevron-down"
+                self.visual.icons.arrow_down
             },
             arrow_rect,
             text_secondary,
-            12.0,
+            visual.arrow_icon_size,
         );
         ctx.stroke_rect(
             control_rect,
             border,
-            if self.focused || self.open { 2.0 } else { 1.0 },
+            if self.focused || self.open {
+                self.visual.chrome.focus_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
             radius,
         );
 
         if self.is_present() {
             // 弹层几何由共享解析器从 frame 与当前表面派生。
-            self.render_dropdown(frame, ctx);
+            self.render_dropdown(frame, ctx, &visual);
         }
     }
 
@@ -92,27 +92,35 @@ impl Select {
         control_rect: Rect,
         text_area: Rect,
         ctx: &mut PaintContext,
-        text: Color,
-        text_secondary: Color,
-        primary: Color,
+        visual: &ResolvedSelectVisual,
     ) {
+        let text = if self.disabled {
+            visual.text_quaternary
+        } else {
+            visual.text
+        };
+        let text_secondary = if self.disabled {
+            visual.text_quaternary
+        } else {
+            visual.text_secondary
+        };
         if text_area.w <= 0.0 || text_area.h <= 0.0 {
             self.search_cursor_rect.set(Rect::new(
                 text_area.x,
-                control_rect.y + 4.0,
-                1.5,
-                (control_rect.h - 8.0).max(0.0),
+                control_rect.y + self.visual.layout.caret_vertical_inset,
+                self.visual.layout.caret_width,
+                (control_rect.h - self.visual.layout.caret_vertical_inset * 2.0).max(0.0),
             ));
             return;
         }
 
         if self.multiple && !self.selected_multi.is_empty() && self.search_query.is_empty() {
-            self.render_multi_value(control_rect, text_area, ctx, text, text_secondary);
+            self.render_multi_value(control_rect, text_area, ctx, visual, text, text_secondary);
             self.search_cursor_rect.set(Rect::new(
                 text_area.x,
-                control_rect.y + 4.0,
-                1.5,
-                (control_rect.h - 8.0).max(0.0),
+                control_rect.y + self.visual.layout.caret_vertical_inset,
+                self.visual.layout.caret_width,
+                (control_rect.h - self.visual.layout.caret_vertical_inset * 2.0).max(0.0),
             ));
             return;
         }
@@ -138,21 +146,21 @@ impl Select {
         let display_width = if display_text.is_empty() {
             0.0
         } else {
-            ctx.measure_text(display_text, TEXT_SIZE).w
+            ctx.measure_text(display_text, visual.text_size).w
         };
         let draw_x = if showing_query && display_width > text_area.w {
             text_area.x + text_area.w - display_width
         } else {
             text_area.x
         };
-        let draw_y = ctx.visual_center_y(text_area, TEXT_SIZE);
+        let draw_y = ctx.visual_center_y(text_area, visual.text_size);
         ctx.push_clip(text_area);
         if !display_text.is_empty() {
             ctx.draw_text(
                 display_text,
                 Point::new(draw_x, draw_y),
                 display_color,
-                TEXT_SIZE,
+                visual.text_size,
             );
         }
         ctx.pop_clip();
@@ -160,7 +168,7 @@ impl Select {
         let query_width = if self.search_query.is_empty() {
             0.0
         } else {
-            ctx.measure_text(&self.search_query, TEXT_SIZE).w
+            ctx.measure_text(&self.search_query, visual.text_size).w
         };
         let query_draw_x = if query_width > text_area.w {
             text_area.x + text_area.w - query_width
@@ -170,13 +178,13 @@ impl Select {
         let cursor_x = (query_draw_x + query_width).clamp(text_area.x, text_area.x + text_area.w);
         let cursor = Rect::new(
             cursor_x,
-            control_rect.y + 4.0,
-            1.5,
-            (control_rect.h - 8.0).max(0.0),
+            control_rect.y + self.visual.layout.caret_vertical_inset,
+            self.visual.layout.caret_width,
+            (control_rect.h - self.visual.layout.caret_vertical_inset * 2.0).max(0.0),
         );
         self.search_cursor_rect.set(cursor);
         if self.search && self.focused && self.open {
-            ctx.fill_rect(cursor, primary, None);
+            ctx.fill_rect(cursor, visual.primary, None);
         }
     }
 
@@ -185,10 +193,12 @@ impl Select {
         control_rect: Rect,
         text_area: Rect,
         ctx: &mut PaintContext,
+        visual: &ResolvedSelectVisual,
         text: Color,
         text_secondary: Color,
     ) {
-        let tag_height = (control_rect.h - 8.0).clamp(0.0, 24.0);
+        let tag_height = (control_rect.h - self.visual.layout.tag_vertical_inset)
+            .clamp(0.0, self.visual.layout.tag_max_height);
         if tag_height <= 0.0 {
             return;
         }
@@ -202,19 +212,23 @@ impl Select {
                 continue;
             };
             let remaining = (right - x).max(0.0);
-            if remaining < 20.0 {
+            if remaining < self.visual.layout.tag_min_remaining {
                 break;
             }
-            let close_width = if self.disabled { 0.0 } else { 18.0 };
-            // 标签字号统一使用主题 font_size_sm token（后一个 12.0 是间距，保留）。
-            let desired_width =
-                ctx.measure_text(label, ctx.tokens().font_size_sm()).w + 12.0 + close_width;
+            let close_width = if self.disabled {
+                0.0
+            } else {
+                self.visual.layout.tag_close_width
+            };
+            let desired_width = ctx.measure_text(label, visual.tag_text_size).w
+                + self.visual.layout.tag_horizontal_padding * 2.0
+                + close_width;
             let tag_width = desired_width.min(remaining);
             let tag_rect = Rect::new(x, tag_y, tag_width, tag_height);
             ctx.fill_rect(
                 tag_rect,
-                ctx.tokens().color_fill_tertiary(),
-                Some(Radius::uniform(4.0)),
+                visual.fill_tertiary,
+                Some(Radius::uniform(self.visual.chrome.tag_radius)),
             );
 
             let close_rect = Rect::new(
@@ -224,29 +238,30 @@ impl Select {
                 tag_rect.h,
             );
             let label_rect = Rect::new(
-                tag_rect.x + 6.0,
+                tag_rect.x + self.visual.layout.tag_horizontal_padding,
                 tag_rect.y,
-                (tag_rect.w - 12.0 - close_width).max(0.0),
+                (tag_rect.w - self.visual.layout.tag_horizontal_padding * 2.0 - close_width)
+                    .max(0.0),
                 tag_rect.h,
             );
             if label_rect.w > 0.0 {
-                let y = ctx.visual_center_y(label_rect, ctx.tokens().font_size_sm());
+                let y = ctx.visual_center_y(label_rect, visual.tag_text_size);
                 ctx.push_clip(label_rect);
                 ctx.draw_text(
                     label,
                     Point::new(label_rect.x, y),
                     text,
-                    ctx.tokens().font_size_sm(),
+                    visual.tag_text_size,
                 );
                 ctx.pop_clip();
             }
             if close_width > 0.0 && close_rect.w > 0.0 {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "x",
+                    self.visual.icons.close,
                     close_rect,
                     text_secondary,
-                    10.0,
+                    visual.tag_close_icon_size,
                 );
                 self.multi_remove_rects.borrow_mut().push((
                     option_index,
@@ -258,7 +273,7 @@ impl Select {
                     ),
                 ));
             }
-            x += tag_width + 4.0;
+            x += tag_width + self.visual.layout.tag_gap;
             if tag_width < desired_width {
                 break;
             }
@@ -267,7 +282,7 @@ impl Select {
     }
 
     // 绘制受当前逻辑表面约束的选择弹层。
-    fn render_dropdown(&self, frame: Rect, ctx: &mut PaintContext) {
+    fn render_dropdown(&self, frame: Rect, ctx: &mut PaintContext, visual: &ResolvedSelectVisual) {
         // 读取当前可见行集合。
         let visible_rows = self.visible_rows();
         // 记录是否需要绘制空状态。
@@ -292,16 +307,16 @@ impl Select {
 
         // 读取当前过渡透明度。
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let background = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-        let border = fade_color(ctx.tokens().color_border(), opacity);
-        let text = fade_color(ctx.tokens().color_text(), opacity);
-        let primary = fade_color(ctx.tokens().color_primary(), opacity);
-        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
-        let hover = fade_color(ctx.tokens().color_fill_tertiary(), opacity);
-        let text_secondary = fade_color(ctx.tokens().color_text_secondary(), opacity);
-        let group_background = fade_color(ctx.tokens().color_fill_quaternary(), opacity);
-        let shadow = ctx.tokens().box_shadow_secondary();
-        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let background = fade_color(visual.background_elevated, opacity);
+        let border = fade_color(visual.border, opacity);
+        let text = fade_color(visual.text, opacity);
+        let primary = fade_color(visual.primary, opacity);
+        let primary_bg = fade_color(visual.primary_background, opacity);
+        let hover = fade_color(visual.fill_tertiary, opacity);
+        let text_secondary = fade_color(visual.text_secondary, opacity);
+        let group_background = fade_color(visual.fill_quaternary, opacity);
+        let shadow = visual.shadow;
+        let radius = Some(Radius::uniform(visual.radius));
         ctx.draw_box_shadow(
             list_rect,
             shadow.layer_1.2,
@@ -311,47 +326,69 @@ impl Select {
             radius,
         );
         ctx.fill_rect(list_rect, background, radius);
-        ctx.stroke_rect(list_rect, border, 1.0, radius);
+        ctx.stroke_rect(list_rect, border, self.visual.chrome.border_width, radius);
 
         // 读取当前列表滚动偏移。
         let scroll_offset = self.dropdown_scroll.scroll_offset();
         // 使用受表面缩高后的实际列表高度计算物化范围。
-        let (start, end) =
-            self.dropdown_scroll
-                .scroll_range(row_count, DROPDOWN_ROW_HEIGHT, list_rect.h);
+        let (start, end) = self.dropdown_scroll.scroll_range(
+            row_count,
+            self.visual.layout.row_height,
+            list_rect.h,
+        );
         // 行内容继续裁在弹层本体内。
         ctx.push_clip(list_rect);
         for flat_index in start..end {
-            let item_y = list_y + flat_index as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
-            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_rect.h {
+            let item_y = list_y + flat_index as f32 * self.visual.layout.row_height - scroll_offset;
+            if item_y + self.visual.layout.row_height < list_y || item_y > list_y + list_rect.h {
                 continue;
             }
             if self.loading {
                 // 加载行使用最终弹层横向几何。
-                let row = Rect::new(list_rect.x, item_y, list_rect.w, DROPDOWN_ROW_HEIGHT);
-                let radius = 5.0_f32.min(row.w.min(row.h) * 0.25);
+                let row = Rect::new(
+                    list_rect.x,
+                    item_y,
+                    list_rect.w,
+                    self.visual.layout.row_height,
+                );
+                let radius = self
+                    .visual
+                    .layout
+                    .loading_radius
+                    .min(row.w.min(row.h) * self.visual.layout.loading_radius_ratio);
                 if radius > 0.0 {
                     ctx.stroke_arc(
                         row.x + row.w * 0.5,
                         row.y + row.h * 0.5,
                         radius,
                         self.loading_phase,
-                        self.loading_phase + std::f32::consts::PI * 1.45,
+                        self.loading_phase
+                            + std::f32::consts::PI * self.visual.chrome.loading_sweep_pi,
                         primary,
-                        1.8,
+                        self.visual.chrome.loading_stroke,
                     );
                 }
             } else if no_data {
                 // 空状态行使用最终弹层横向几何。
-                let row = Rect::new(list_rect.x, item_y, list_rect.w, DROPDOWN_ROW_HEIGHT);
-                let content = Rect::new(row.x + 10.0, row.y, (row.w - 20.0).max(0.0), row.h);
-                let y = ctx.visual_center_y(content, TEXT_SIZE);
+                let row = Rect::new(
+                    list_rect.x,
+                    item_y,
+                    list_rect.w,
+                    self.visual.layout.row_height,
+                );
+                let content = Rect::new(
+                    row.x + self.visual.layout.row_horizontal_padding,
+                    row.y,
+                    (row.w - self.visual.layout.row_horizontal_padding * 2.0).max(0.0),
+                    row.h,
+                );
+                let y = ctx.visual_center_y(content, visual.text_size);
                 ctx.push_clip(content);
                 ctx.draw_text(
                     crate::ui::widget_runtime::locale::use_locale().no_data,
                     Point::new(content.x, y),
                     text_secondary,
-                    TEXT_SIZE,
+                    visual.text_size,
                 );
                 ctx.pop_clip();
             } else if let Some(row) = visible_rows.get(flat_index).copied() {
@@ -367,6 +404,7 @@ impl Select {
                     hover,
                     text_secondary,
                     group_background,
+                    visual,
                 );
             }
         }
@@ -390,6 +428,7 @@ impl Select {
         hover: Color,
         text_secondary: Color,
         group_background: Color,
+        visual: &ResolvedSelectVisual,
     ) {
         // 每行使用受表面约束后的实际弹层横向几何。
         let row_rect = Rect::new(
@@ -400,25 +439,25 @@ impl Select {
             // 行宽度跟随弹层受限宽度。
             popup_rect.w,
             // 保持既有固定行高。
-            DROPDOWN_ROW_HEIGHT,
+            self.visual.layout.row_height,
         );
         match row {
             VisibleRow::Group(group_index) => {
                 ctx.fill_rect(row_rect, group_background, None);
                 if let Some(label) = self.group_label(group_index) {
                     let content = Rect::new(
-                        row_rect.x + 10.0,
+                        row_rect.x + self.visual.layout.row_horizontal_padding,
                         row_rect.y,
-                        (row_rect.w - 20.0).max(0.0),
+                        (row_rect.w - self.visual.layout.row_horizontal_padding * 2.0).max(0.0),
                         row_rect.h,
                     );
-                    let y = ctx.visual_center_y(content, ctx.tokens().font_size_sm());
+                    let y = ctx.visual_center_y(content, visual.group_text_size);
                     ctx.push_clip(content);
                     ctx.draw_text(
                         label,
                         Point::new(content.x, y),
                         text_secondary,
-                        ctx.tokens().font_size_sm(),
+                        visual.group_text_size,
                     );
                     ctx.pop_clip();
                 }
@@ -443,55 +482,75 @@ impl Select {
                 let text_color = if selected { primary } else { text };
                 if self.multiple {
                     let check_rect = Rect::new(
-                        row_rect.x + 10.0,
-                        row_rect.y + (row_rect.h - 14.0) * 0.5,
-                        14.0,
-                        14.0,
+                        row_rect.x + self.visual.layout.row_horizontal_padding,
+                        row_rect.y + (row_rect.h - self.visual.layout.check_size) * 0.5,
+                        self.visual.layout.check_size,
+                        self.visual.layout.check_size,
                     );
                     if selected {
-                        ctx.fill_rect(check_rect, primary, Some(Radius::uniform(3.0)));
+                        ctx.fill_rect(
+                            check_rect,
+                            primary,
+                            Some(Radius::uniform(self.visual.chrome.check_radius)),
+                        );
                         crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
-                            "check",
+                            self.visual.icons.check,
                             check_rect,
-                            // 选中勾：白色 token。
-                            ctx.tokens().color_white(),
-                            10.0,
+                            visual.white,
+                            visual.option_check_icon_size,
                         );
                     } else {
                         ctx.stroke_rect(
                             check_rect,
                             text_secondary,
-                            1.0,
-                            Some(Radius::uniform(3.0)),
+                            self.visual.chrome.border_width,
+                            Some(Radius::uniform(self.visual.chrome.check_radius)),
                         );
                     }
                     let content = Rect::new(
-                        row_rect.x + 32.0,
+                        row_rect.x + self.visual.layout.custom_multi_left,
                         row_rect.y,
-                        (row_rect.w - 42.0).max(0.0),
+                        (row_rect.w - self.visual.layout.option_right_inset).max(0.0),
                         row_rect.h,
                     );
                     if !self.custom_option_views {
-                        self.draw_clipped_row_text(label, content, ctx, text_color);
+                        self.draw_clipped_row_text(
+                            label,
+                            content,
+                            ctx,
+                            text_color,
+                            visual.text_size,
+                        );
                     }
                 } else {
                     let content = Rect::new(
-                        row_rect.x + 10.0,
+                        row_rect.x + self.visual.layout.row_horizontal_padding,
                         row_rect.y,
-                        (row_rect.w - 42.0).max(0.0),
+                        (row_rect.w - self.visual.layout.option_right_inset).max(0.0),
                         row_rect.h,
                     );
                     if !self.custom_option_views {
-                        self.draw_clipped_row_text(label, content, ctx, text_color);
+                        self.draw_clipped_row_text(
+                            label,
+                            content,
+                            ctx,
+                            text_color,
+                            visual.text_size,
+                        );
                     }
                     if selected {
                         crate::ui::widgets::icon::Icon::paint_in_frame(
                             ctx,
-                            "check",
-                            Rect::new(row_rect.x + row_rect.w - 28.0, row_rect.y, 20.0, row_rect.h),
+                            self.visual.icons.check,
+                            Rect::new(
+                                row_rect.x + row_rect.w - self.visual.layout.selected_icon_slot,
+                                row_rect.y,
+                                self.visual.layout.selected_icon_width,
+                                row_rect.h,
+                            ),
                             primary,
-                            12.0,
+                            visual.selected_check_icon_size,
                         );
                     }
                 }
@@ -505,13 +564,14 @@ impl Select {
         content: Rect,
         ctx: &mut PaintContext,
         color: Color,
+        text_size: f32,
     ) {
         if content.w <= 0.0 {
             return;
         }
-        let y = ctx.visual_center_y(content, TEXT_SIZE);
+        let y = ctx.visual_center_y(content, text_size);
         ctx.push_clip(content);
-        ctx.draw_text(label, Point::new(content.x, y), color, TEXT_SIZE);
+        ctx.draw_text(label, Point::new(content.x, y), color, text_size);
         ctx.pop_clip();
     }
 }
