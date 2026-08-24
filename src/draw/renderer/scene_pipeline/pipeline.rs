@@ -95,8 +95,6 @@ impl ScenePipeline {
                 dirty_for_paint.add_rect(exposed);
             }
         }
-        let dirty_for_paint = dirty_for_paint.for_paint_clear();
-
         // 仅在保留缓冲明确支持重叠 memmove，且几何能无损映射到像素时启用。
         // 任一滚动不满足条件时，整批退回既有整视口重绘，避免同帧部分 copy。
         let use_scroll_copies = input.rendered_first
@@ -303,7 +301,8 @@ impl ScenePipeline {
         } else {
             UpdateStrategy::DirtyRects(requested_region.rects().to_vec())
         };
-        let begin_outcome = engine.begin_frame(strategy.clone());
+        // 策略只提交一次，直接移交其矩形与滚动所有权。
+        let begin_outcome = engine.begin_frame(strategy);
         let begin_damage = match begin_outcome {
             RenderOutcome::FrameReady(damage) => damage,
             RenderOutcome::Present(_) => {
