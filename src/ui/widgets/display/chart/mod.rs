@@ -14,6 +14,7 @@ pub mod advanced;
 pub mod bar_chart;
 pub mod line_chart;
 pub mod pie_chart;
+mod value_label;
 
 pub use advanced::*;
 pub use bar_chart::*;

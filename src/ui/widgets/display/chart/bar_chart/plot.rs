@@ -1,51 +1,12 @@
 //! 柱状图几何计算与绘制辅助。
 
-use std::fmt::{self, Write as _};
-
 use crate::core::{Point, Rect, Size};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use super::super::advanced::{LegendPosition, TooltipDatum, normalized_ratio};
+use super::super::value_label::ChartValueLabel;
 use super::presentation::ResolvedBarChartVisual;
 use super::{BarChart, BarData};
-
-// 保存无需堆分配的有限 f32 标签；最大 f32 的定点一位文本小于此容量。
-pub(super) struct BarValueLabel {
-    bytes: [u8; 48],
-    len: u8,
-}
-
-impl BarValueLabel {
-    fn new(value: f32) -> Self {
-        let mut label = Self {
-            bytes: [0; 48],
-            len: 0,
-        };
-        let result = if value == value.trunc() {
-            write!(&mut label, "{value:.0}")
-        } else {
-            write!(&mut label, "{value:.1}")
-        };
-        debug_assert!(result.is_ok(), "f32 标签必须适配固定栈缓冲");
-        label
-    }
-
-    pub(super) fn as_str(&self) -> &str {
-        // 写入来源是 Rust 格式化器，始终产生合法 UTF-8。
-        std::str::from_utf8(&self.bytes[..usize::from(self.len)]).unwrap_or("")
-    }
-}
-
-impl fmt::Write for BarValueLabel {
-    fn write_str(&mut self, value: &str) -> fmt::Result {
-        let start = usize::from(self.len);
-        let end = start.checked_add(value.len()).ok_or(fmt::Error)?;
-        let target = self.bytes.get_mut(start..end).ok_or(fmt::Error)?;
-        target.copy_from_slice(value.as_bytes());
-        self.len = end as u8;
-        Ok(())
-    }
-}
 
 pub(super) fn map_x(value: f32, x: f32, width: f32, min: f32, max: f32) -> f32 {
     x + normalized_ratio(value, min, max) * width
@@ -160,8 +121,8 @@ impl BarChart {
         }
     }
 
-    pub(super) fn format_value(value: f32) -> BarValueLabel {
-        BarValueLabel::new(value)
+    pub(super) fn format_value(value: f32) -> ChartValueLabel {
+        ChartValueLabel::from_f32(value)
     }
 
     pub(super) fn paint_tooltip(

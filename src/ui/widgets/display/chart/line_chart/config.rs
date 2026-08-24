@@ -13,30 +13,25 @@ impl Default for LineChart {
 }
 
 impl LineChart {
-    // 图表组件默认尺寸；其他组件同名常量值不同，属各自设计。
-    pub(super) const DEFAULT_WIDTH: f32 = 300.0;
-    // 图表在未提供有效高度时使用的默认高度。
-    pub(super) const DEFAULT_HEIGHT: f32 = 200.0;
-
     /// 创建使用默认尺寸、网格和数据点标记的空折线图。
     pub fn new() -> Self {
         Self {
             data: Vec::new(),
             fixed_width: 0.0,
-            fixed_height: 200.0,
+            fixed_height: DEFAULT_LINE_CHART_VISUAL.defaults.height,
             line_color: None,
             max_value: 0.0,
             auto_min: false,
-            show_grid: true,
-            show_dots: true,
-            line_width: 2.0,
-            dot_radius: 3.0,
+            show_grid: DEFAULT_LINE_CHART_VISUAL.defaults.show_grid,
+            show_dots: DEFAULT_LINE_CHART_VISUAL.defaults.show_dots,
+            line_width: DEFAULT_LINE_CHART_VISUAL.defaults.line_width,
+            dot_radius: DEFAULT_LINE_CHART_VISUAL.defaults.dot_radius,
             series: Vec::new(),
             legend: LegendPosition::None,
             smooth: false,
             step: false,
             background: None,
-            padding: 0.0,
+            padding: DEFAULT_LINE_CHART_VISUAL.defaults.padding,
             title: String::new(),
             subtitle: String::new(),
             responsive: false,
@@ -52,6 +47,10 @@ impl LineChart {
             pan_origin: Cell::new(0.0),
             pan_offset: Cell::new(0.0),
             zoom: Cell::new(1.0),
+            visual: &DEFAULT_LINE_CHART_VISUAL,
+            authored: LineChartAuthored::default(),
+            points_scratch: RefCell::new(Vec::new()),
+            smooth_points_scratch: RefCell::new(Vec::new()),
         }
     }
 
@@ -69,7 +68,9 @@ impl LineChart {
 
     /// 设置固定高度；非有限或非正值恢复为默认高度。
     pub fn height(mut self, height: f32) -> Self {
-        self.fixed_height = Self::optional_dimension(height);
+        let height = Self::optional_dimension(height);
+        self.authored.set(LineChartAuthored::HEIGHT, height > 0.0);
+        self.fixed_height = height;
         self
     }
 
@@ -98,12 +99,14 @@ impl LineChart {
     /// 设置是否绘制纵轴参考网格。
     pub fn show_grid(mut self, value: bool) -> Self {
         self.show_grid = value;
+        self.authored.set(LineChartAuthored::SHOW_GRID, true);
         self
     }
 
     /// 设置是否在折线顶点绘制数据点标记。
     pub fn show_dots(mut self, value: bool) -> Self {
         self.show_dots = value;
+        self.authored.set(LineChartAuthored::SHOW_DOTS, true);
         self
     }
 
@@ -114,6 +117,7 @@ impl LineChart {
         } else {
             1.0
         };
+        self.authored.set(LineChartAuthored::LINE_WIDTH, true);
         self
     }
 
@@ -124,6 +128,7 @@ impl LineChart {
         } else {
             0.0
         };
+        self.authored.set(LineChartAuthored::DOT_RADIUS, true);
         self
     }
 
@@ -166,11 +171,13 @@ impl LineChart {
 
     /// 设置图表内容内边距；非有限值归零，负值夹取为零。
     pub fn padding(mut self, padding: f32) -> Self {
-        self.padding = if padding.is_finite() {
+        let authored = padding.is_finite();
+        self.padding = if authored {
             padding.max(0.0)
         } else {
-            0.0
+            self.visual.defaults.padding
         };
+        self.authored.set(LineChartAuthored::PADDING, authored);
         self
     }
 
