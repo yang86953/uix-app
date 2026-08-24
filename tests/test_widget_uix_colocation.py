@@ -43,6 +43,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/timeline",
     "display/tree",
     "display/watermark",
+    "feedback/alert",
     "feedback/progress",
     "feedback/spin",
     "general/button_group",

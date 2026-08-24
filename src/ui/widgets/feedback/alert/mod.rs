@@ -7,10 +7,31 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::SnapshotFields;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId};
 use crate::widget;
+
+mod presentation;
+use presentation::*;
+
+// 记录会覆盖 UIX 默认值的 Rust 调用方声明。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct AlertAuthored(u8);
+
+impl AlertAuthored {
+    const SHOW_ICON: u8 = 1 << 0;
+    const BANNER: u8 = 1 << 1;
+
+    fn contains(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn set(&mut self, flag: u8) {
+        self.0 |= flag;
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AlertTarget {
@@ -55,6 +76,10 @@ widget! {
         layout_requested: Cell<bool>,
         pending_close: Cell<bool>,
         pending_action: Cell<bool>,
+        #[snapshot(skip)]
+        visual: &'static AlertVisual,
+        #[snapshot(skip)]
+        authored: AlertAuthored,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -110,14 +135,10 @@ widget! {
             }
             SystemEvent::PointerMove { pos, .. } => {
                 let target = self.target_at(*pos);
-                let action_changed = self
-                    .action_hovered
-                    .replace(target == Some(AlertTarget::Action))
-                    != (target == Some(AlertTarget::Action));
-                let close_changed = self
-                    .close_hovered
-                    .replace(target == Some(AlertTarget::Close))
-                    != (target == Some(AlertTarget::Close));
+                let action_hovered = target == Some(AlertTarget::Action);
+                let close_hovered = target == Some(AlertTarget::Close);
+                let action_changed = self.action_hovered.replace(action_hovered) != action_hovered;
+                let close_changed = self.close_hovered.replace(close_hovered) != close_hovered;
                 if action_changed || close_changed {
                     EventResult::Handled
                 } else {
@@ -209,52 +230,54 @@ widget! {
         if layout.frame.w <= 0.0 || layout.frame.h <= 0.0 {
             return;
         }
-        let (bg, border, fg) = match self.type_ {
-            StatusLevel::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success(), ctx.tokens().color_success()),
-            StatusLevel::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info(), ctx.tokens().color_info()),
-            StatusLevel::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning(), ctx.tokens().color_warning()),
-            StatusLevel::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error(), ctx.tokens().color_error()),
-        };
-        let r = (!self.banner).then(|| Radius::uniform(ctx.tokens().border_radius()));
+        let resolved = self.visual.resolve(self.type_, ctx.tokens());
+        let chrome = self.visual.chrome;
+        let typography = self.visual.typography;
+        let r = (!self.banner).then(|| Radius::uniform(resolved.container_radius));
         ctx.push_clip(layout.frame);
-        ctx.fill_rect(layout.frame, bg, r);
+        ctx.fill_rect(layout.frame, resolved.background, r);
         if layout.accent.w > 0.0 && layout.accent.h > 0.0 {
-            ctx.fill_rect(layout.accent, border, Some(Radius::uniform(1.5)));
+            ctx.fill_rect(
+                layout.accent,
+                resolved.status,
+                Some(Radius::uniform(chrome.accent_radius)),
+            );
         }
 
         if self.show_icon && layout.icon.w > 0.0 && layout.icon.h > 0.0 {
             let icon_name = match self.type_ {
-                StatusLevel::Success => "check-circle",
-                StatusLevel::Info => "info",
-                StatusLevel::Warning => "alert-triangle",
-                StatusLevel::Error => "x-circle",
+                StatusLevel::Success => typography.success_icon,
+                StatusLevel::Info => typography.info_icon,
+                StatusLevel::Warning => typography.warning_icon,
+                StatusLevel::Error => typography.error_icon,
             };
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 icon_name,
                 layout.icon,
-                fg,
-                14.0,
+                resolved.status,
+                typography.status_icon,
             );
         }
         Self::paint_elided_text(
             ctx,
             &self.message,
             layout.message,
-            ctx.tokens().color_text(),
-            14.0,
+            resolved.text,
+            typography.message,
         );
         if !self.description.is_empty() {
             Self::paint_elided_text(
                 ctx,
                 &self.description,
                 layout.description,
-                ctx.tokens().color_text_secondary(),
-                12.0,
+                resolved.text_secondary,
+                typography.description,
             );
         }
+        let pressed = self.pressed.get();
         if !self.action_label.is_empty() {
-            if self.pressed.get().is_some_and(|pressed| {
+            if pressed.is_some_and(|pressed| {
                 matches!(
                     pressed,
                     AlertPress::Pointer(AlertTarget::Action)
@@ -262,22 +285,28 @@ widget! {
                 )
             }) {
                 ctx.fill_rect(
-                    Self::inset_rect(layout.action, 3.0),
-                    ctx.tokens().color_fill_secondary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    Self::inset_rect(layout.action, chrome.action_inset),
+                    resolved.fill_secondary,
+                    Some(Radius::uniform(resolved.interaction_radius)),
                 );
             } else if self.action_hovered.get() {
                 ctx.fill_rect(
-                    Self::inset_rect(layout.action, 3.0),
-                    ctx.tokens().color_fill_tertiary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    Self::inset_rect(layout.action, chrome.action_inset),
+                    resolved.fill_tertiary,
+                    Some(Radius::uniform(resolved.interaction_radius)),
                 );
             }
-            Self::paint_elided_text(ctx, &self.action_label, layout.action, fg, 13.0);
+            Self::paint_elided_text(
+                ctx,
+                &self.action_label,
+                layout.action,
+                resolved.status,
+                typography.action,
+            );
         }
         if self.closable && layout.close.w > 0.0 && layout.close.h > 0.0 {
-            let close_button = Self::inset_rect(layout.close, 4.0);
-            if self.pressed.get().is_some_and(|pressed| {
+            let close_button = Self::inset_rect(layout.close, chrome.close_inset);
+            if pressed.is_some_and(|pressed| {
                 matches!(
                     pressed,
                     AlertPress::Pointer(AlertTarget::Close)
@@ -286,33 +315,58 @@ widget! {
             }) {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_secondary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    resolved.fill_secondary,
+                    Some(Radius::uniform(resolved.interaction_radius)),
                 );
             } else if self.close_hovered.get() {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_tertiary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    resolved.fill_tertiary,
+                    Some(Radius::uniform(resolved.interaction_radius)),
                 );
             }
             if self.focused && tree.keyboard_focus_visible() {
                 ctx.stroke_rect(
                     close_button,
-                    ctx.tokens().color_primary(),
-                    2.0,
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    resolved.primary,
+                    chrome.focus_stroke,
+                    Some(Radius::uniform(resolved.interaction_radius)),
                 );
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
+                typography.close_icon_name,
                 close_button,
-                ctx.tokens().color_text_secondary(),
-                14.0,
+                resolved.text_secondary,
+                typography.close_icon,
             );
         }
         ctx.pop_clip();
+    }
+}
+
+// 把内容/交互状态与 UIX 静态视觉融合为单一 Alert 根节点。
+fn build_alert_view(mut kernel: Alert, declared_visual: AlertVisual) -> ViewNode {
+    let visual = UIX_ALERT_VISUAL.get_or_init(|| declared_visual);
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.authored.contains(AlertAuthored::SHOW_ICON) {
+        kernel.show_icon = visual.defaults.show_icon;
+    }
+    if !kernel.authored.contains(AlertAuthored::BANNER) {
+        kernel.banner = visual.defaults.banner;
+    }
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 让声明式 View 构建统一进入同目录 UIX 根。
+fn build_alert_uix_root(kernel: Alert) -> ViewNode {
+    crate::uix!("src/ui/widgets/feedback/alert/alert.uix")
+}
+
+impl View for Alert {
+    fn build(self) -> ViewNode {
+        build_alert_uix_root(self)
     }
 }
 
@@ -330,19 +384,24 @@ impl Alert {
             description: String::new(),
             type_: StatusLevel::Info,
             closable: false,
-            show_icon: true,
+            show_icon: DEFAULT_ALERT_VISUAL.defaults.show_icon,
             visible: true,
             action_label: String::new(),
             action_callback: None,
-            banner: false,
+            banner: DEFAULT_ALERT_VISUAL.defaults.banner,
             focused: false,
             action_hovered: Cell::new(false),
             close_hovered: Cell::new(false),
             pressed: Cell::new(None),
-            last_size: Cell::new(Size::new(300.0, 36.0)),
+            last_size: Cell::new(Size::new(
+                DEFAULT_ALERT_VISUAL.defaults.width,
+                DEFAULT_ALERT_VISUAL.defaults.base_height,
+            )),
             layout_requested: Cell::new(false),
             pending_close: Cell::new(false),
             pending_action: Cell::new(false),
+            visual: &DEFAULT_ALERT_VISUAL,
+            authored: AlertAuthored::default(),
         }
     }
 
@@ -379,6 +438,7 @@ impl Alert {
     /// 设置是否使用无圆角的横幅外观。
     pub fn banner(mut self, banner: bool) -> Self {
         self.banner = banner;
+        self.authored.set(AlertAuthored::BANNER);
         self
     }
     /// 设置警示条的补充说明文本。
@@ -399,6 +459,7 @@ impl Alert {
     /// 设置是否显示状态图标。
     pub fn show_icon(mut self, show: bool) -> Self {
         self.show_icon = show;
+        self.authored.set(AlertAuthored::SHOW_ICON);
         self
     }
 
@@ -478,41 +539,54 @@ impl Alert {
 
     fn layout(&self, frame: Rect) -> AlertLayout {
         let frame = Self::normalize_frame(frame);
+        let layout = self.visual.layout;
         let close_width = if self.closable {
-            frame.w.min(36.0)
+            frame.w.min(layout.close_width)
         } else {
             0.0
         };
         let close_left = frame.x + frame.w - close_width;
-        let action_right = (close_left - if self.closable { 4.0 } else { 8.0 }).max(frame.x);
+        let action_right = (close_left
+            - if self.closable {
+                layout.close_action_gap
+            } else {
+                layout.content_right_gap
+            })
+        .max(frame.x);
         let action_width = if self.action_label.is_empty() {
             0.0
         } else {
-            64.0_f32.min((action_right - frame.x).max(0.0))
+            layout.action_width.min((action_right - frame.x).max(0.0))
         };
         let action_left = action_right - action_width;
         let content_right = if action_width > 0.0 {
-            (action_left - 8.0).max(frame.x)
+            (action_left - layout.action_content_gap).max(frame.x)
         } else {
-            (close_left - 8.0).max(frame.x)
+            (close_left - layout.content_right_gap).max(frame.x)
         };
         let icon_width = if self.show_icon {
-            (content_right - frame.x).clamp(0.0, 28.0)
+            (content_right - frame.x).clamp(0.0, layout.icon_max_width)
         } else {
             0.0
         };
         let content_left = (frame.x
             + if self.show_icon {
-                icon_width + 8.0
+                icon_width + layout.icon_gap
             } else {
-                14.0
+                layout.no_icon_left
             })
         .min(content_right);
         let content = Rect::new(
             content_left,
-            frame.y + 4.0_f32.min(frame.h * 0.25),
+            frame.y
+                + layout
+                    .content_vertical_inset
+                    .min(frame.h * layout.content_vertical_ratio * 0.5),
             (content_right - content_left).max(0.0),
-            (frame.h - 8.0_f32.min(frame.h * 0.5)).max(0.0),
+            (frame.h
+                - (layout.content_vertical_inset * 2.0)
+                    .min(frame.h * layout.content_vertical_ratio))
+            .max(0.0),
         );
         let (message, description) = if self.description.is_empty() {
             (
@@ -520,7 +594,7 @@ impl Alert {
                 Rect::new(content.x, content.y + content.h, content.w, 0.0),
             )
         } else {
-            let message_height = (content.h * 0.52).max(0.0);
+            let message_height = (content.h * layout.message_height_ratio).max(0.0);
             (
                 Rect::new(content.x, content.y, content.w, message_height),
                 Rect::new(
@@ -534,12 +608,19 @@ impl Alert {
         AlertLayout {
             frame,
             accent: Rect::new(
-                frame.x + 2.0_f32.min(frame.w),
-                frame.y + 4.0_f32.min(frame.h * 0.5),
-                3.0_f32.min((frame.w - 2.0).max(0.0)),
-                (frame.h - 8.0).max(0.0),
+                frame.x + layout.accent_x.min(frame.w),
+                frame.y + layout.accent_y.min(frame.h * 0.5),
+                layout
+                    .accent_width
+                    .min((frame.w - layout.accent_x).max(0.0)),
+                (frame.h - layout.accent_y * 2.0).max(0.0),
             ),
-            icon: Rect::new(frame.x + 8.0_f32.min(frame.w), frame.y, icon_width, frame.h),
+            icon: Rect::new(
+                frame.x + layout.icon_x.min(frame.w),
+                frame.y,
+                icon_width,
+                frame.h,
+            ),
             message,
             description,
             action: Rect::new(
@@ -593,7 +674,7 @@ impl Alert {
         font_size: f32,
     ) {
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         if frame.h <= 0.0 {
@@ -602,7 +683,7 @@ impl Alert {
         ctx.push_clip(frame);
         let text_y = ctx.visual_center_y(frame, font_size);
         ctx.draw_text(
-            &value,
+            value.as_ref(),
             crate::core::Point::new(frame.x, text_y),
             color,
             font_size,
@@ -611,13 +692,13 @@ impl Alert {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let h = 36.0
+        let h = self.visual.defaults.base_height
             + if self.description.is_empty() {
                 0.0
             } else {
-                18.0
+                self.visual.defaults.description_height
             };
-        Size::new(300.0, h)
+        Size::new(self.visual.defaults.width, h)
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -639,6 +720,8 @@ impl Alert {
         self.action_label = next.action_label;
         self.action_callback = next.action_callback;
         self.banner = next.banner;
+        self.visual = next.visual;
+        self.authored = next.authored;
         self.action_hovered.set(false);
         self.close_hovered.set(false);
         self.pressed.set(None);
@@ -653,6 +736,6 @@ impl Alert {
 // 集中验证 Alert 声明刷新与用户关闭状态的生命周期边界。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/alert__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/feedback/alert__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
