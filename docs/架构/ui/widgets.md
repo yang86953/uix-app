@@ -38,11 +38,14 @@ Button、Label、Typography、Icon、Container 等基础 widget 只组合 widget
 
 1. `.uix` 文件拥有公开组件的子树结构、顺序、条件分支、插槽投影、静态样式和展示文案。
 2. Rust 只保留 UIX 无法安全表达的基础内核职责；业务逻辑、持久化、异步 I/O 与平台调用仍不得进入 `.uix`。
-3. Rust 基础 View 需要进入声明树时，只能通过框架内部的 `KernelView value={...}` 或单展示根 `KernelHost value={...}` 窄桥接；桥接禁止事件与组件专有属性，只允许统一 View 样式，不能成为第二套公共组件 API。
+3. Rust 基础 View 需要进入声明树时，只能通过框架内部的 `KernelView value={...}`、单展示根 `KernelHost value={...}` 或拥有型节点列表 `KernelChildren value={...}` 窄桥接；桥接禁止事件与组件专有属性，单 View 桥接只允许统一 View 样式，列表桥接不接受任何展示属性，不能成为第二套公共组件 API。
 4. 迁移必须保留公开类型、事件、无障碍、状态协调、稳定 key、布局和视觉结果，并用真实编译测试与最接近的行为测试验收。
 5. 条件隐藏的分支不得提前构造 Rust 基础 View；高频路径不得因语言迁移增加无条件分配、克隆或动态解析。
 
-首个完成迁移的非基础组件是标准 `WindowControl` 组合：`src/ui/widgets/uix/window_controls.uix` 拥有三个动作的图标、尺寸、状态色、条件结构和排列，`window_chrome` Rust Module 只保留窗口动作、无障碍语义与交互状态。
+已完成的首批非基础组件：
+
+- 标准 `WindowControl` 组合：`src/ui/widgets/uix/window_controls.uix` 拥有三个动作的图标、尺寸、状态色、条件结构和排列，`window_chrome` Rust Module 只保留窗口动作、无障碍语义与交互状态。
+- `ButtonGroup`：`src/ui/widgets/uix/button_group.uix` 拥有容器结构、横向排列与零间距，Rust 只计算每个按钮的连体位置；`KernelChildren` 直接消费已有 `ViewNode` 列表，不引入克隆或额外容器。
 
 ## 组件：复合组件
 

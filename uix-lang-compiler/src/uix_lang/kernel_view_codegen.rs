@@ -1,10 +1,10 @@
 // 引入过程宏令牌流。
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 // 引入确定性令牌拼接宏。
 use quote::quote;
 
 // 引入受限表达式、元素形状与诊断契约。
-use super::{generate_expression, AttributeValue, Diagnostic, Element, Node};
+use super::{generate_expression, AttributeValue, Diagnostic, Element, Node, SOURCE_ID_ATTRIBUTE};
 // 引入公共 View 属性、子树生成与可见子节点判定。
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 
@@ -44,6 +44,51 @@ pub(crate) fn generate_kernel_host(element: &Element) -> Result<TokenStream, Dia
     let base = quote! { (#host)(#child) };
     // 组件专有配置仍不允许穿透框架内部桥接。
     apply_common_attributes(base, &element.attributes, &["value"])
+}
+
+// 把 Rust 基础内核返回的已有 ViewNode 列表追加到 UIX 容器。
+pub(crate) fn generate_kernel_children(
+    element: &Element,
+    output: &Ident,
+) -> Result<TokenStream, Diagnostic> {
+    // 列表桥接只交接已有节点，不能再拥有第二棵子树。
+    if element.children.iter().any(is_renderable_node) {
+        // 返回明确的多根所有权诊断。
+        return Err(Diagnostic::new(
+            // 指向完整列表桥接元素。
+            element.span,
+            // 说明不允许混合已有列表与声明子节点。
+            "<KernelChildren> 不接受子节点",
+            // 给出规范列表交接形状。
+            "使用 <KernelChildren value={build_kernel_children()} />",
+        ));
+    }
+    // 列表桥接不是交互 View，不能承载事件。
+    reject_events(element, "KernelChildren")?;
+    // 只允许 value，避免把列表桥接扩展成第二套容器 API。
+    if let Some(attribute) = element
+        // 遍历已完成重复属性检查的列表。
+        .attributes
+        // 排除唯一合法专有输入。
+        .iter()
+        .find(|attribute| attribute.name != "value" && attribute.name != SOURCE_ID_ATTRIBUTE)
+    {
+        // 返回指向越界属性的窄边界诊断。
+        return Err(Diagnostic::new(
+            // 使用属性自身跨度。
+            attribute.span,
+            // 保留实际属性名便于修正。
+            format!("<KernelChildren> 不接受属性 {}", attribute.name),
+            // 说明样式和身份应归外层 UIX 容器。
+            "把布局、样式和身份声明在外层 Container、Row 或 Column 上",
+        ));
+    }
+    // value 必须是产生拥有型 ViewNode 迭代器的 Rust 表达式。
+    let value = kernel_expression(element, "KernelChildren", "build_kernel_children()")?;
+    // 直接消费节点列表，不克隆容器或列表元素。
+    Ok(quote! {
+        #output.extend(::std::iter::IntoIterator::into_iter(#value));
+    })
 }
 
 // 读取桥接元素唯一 value 表达式并生成 Rust 令牌。

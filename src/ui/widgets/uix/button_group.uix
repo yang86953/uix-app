@@ -1,0 +1,5 @@
+// 按钮组的公开子树结构、排列方向与连体间距由 UIX 拥有。
+<Container direction="row" gap="0px">
+  // Rust 只交付已按行为语义标记位置的按钮节点，不再选择布局。
+  <KernelChildren value={positioned_buttons} />
+</Container>

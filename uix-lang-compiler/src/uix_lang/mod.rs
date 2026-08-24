@@ -629,7 +629,9 @@ pub(crate) use button_group_codegen::generate_button_group;
 // 向过程宏入口暴露核心 View 生成函数。
 pub(crate) use codegen::generate_view;
 // 向核心元素生成器暴露基础 View 桥接映射。
-pub(crate) use kernel_view_codegen::{generate_kernel_host, generate_kernel_view};
+pub(crate) use kernel_view_codegen::{
+    generate_kernel_children, generate_kernel_host, generate_kernel_view,
+};
 // 向核心元素生成器暴露 Divider 专用映射。
 pub(crate) use divider_codegen::generate_divider;
 // 向核心元素生成器暴露 Space 专用映射。
