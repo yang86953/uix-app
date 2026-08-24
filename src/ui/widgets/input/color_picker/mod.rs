@@ -5,8 +5,9 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
-use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
@@ -19,19 +20,13 @@ use std::cell::Cell;
 mod geometry;
 // 声明颜色选择器的私有弹层缓存方法模块。
 mod methods;
+// 声明颜色选择器的 UIX 静态视觉与主题解析模块。
+mod presentation;
+
+use presentation::*;
 
 // 引入颜色面板的绝对坐标转换、表面裁剪与共享网格指标。
 use geometry::{ColorPanelGeometry, absolute_color_popup_rect, color_surface_rect};
-
-const PRESET_COLORS: &[u32] = &[
-    0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,
-    0xEB2F96, 0xFF85C0, 0xFFEC3D, 0x95DE64, 0x5CDBD3, 0x85A5FF, 0xB37FEB, 0xF0F0F0, 0xD9D9D9,
-    0xBFBFBF, 0x8C8C8C, 0x434343, 0x262626, 0x1F1F1F, 0x141414,
-];
-const PANEL_GAP: f32 = 4.0;
-const PANEL_COLUMNS: usize = 8;
-const PANEL_CELL: f32 = 24.0;
-const PANEL_PADDING: f32 = 8.0;
 
 // ColorPicker — 颜色选择器。
 widget! {
@@ -58,6 +53,9 @@ widget! {
         popup_anchor_frame: Cell<Option<Rect>>,
         // 累计当前呈现周期内的绝对颜色面板脏区。
         popup_damage_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static ColorPickerVisual,
     }
 
 
@@ -227,8 +225,9 @@ widget! {
         self.sync_bound_value();
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let border = ctx.tokens().color_border();
-        let primary = ctx.tokens().color_primary();
+        // 触发色块、棋盘格与弹层共享一次 UIX 主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
         let nominal_height = self.control_height();
         let scale = if nominal_height > 0.0 {
             (frame.h.min(frame.w) / nominal_height).clamp(0.0, 1.0)
@@ -236,7 +235,7 @@ widget! {
             0.0
         };
         let available = frame.w.min(frame.h).max(0.0);
-        let swatch_inset = (4.0 * scale).min(available * 0.5);
+        let swatch_inset = (layout.swatch_inset * scale).min(available * 0.5);
         let swatch_size = (available - swatch_inset * 2.0).max(0.0);
 
         ctx.push_clip(frame);
@@ -248,15 +247,31 @@ widget! {
                 swatch_size,
             );
             let radius = Some(Radius::uniform(
-                (ctx.tokens().border_radius_sm() * scale).min(swatch_size * 0.5),
+                (visual.swatch_radius * scale).min(swatch_size * 0.5),
             ));
-            paint_transparency_checkerboard(ctx, swatch, scale);
+            paint_transparency_checkerboard(
+                ctx,
+                swatch,
+                scale,
+                layout,
+                visual.checker_light,
+                visual.checker_dark,
+            );
             ctx.fill_rect(swatch, self.value.get(), radius);
-            let border_c = if self.hovered || self.focused { primary } else { border };
-            ctx.stroke_rect(swatch, border_c, 1.5 * scale, radius);
+            let border_c = if self.hovered || self.focused {
+                visual.primary
+            } else {
+                visual.border
+            };
+            ctx.stroke_rect(
+                swatch,
+                border_c,
+                layout.swatch_border_width * scale,
+                radius,
+            );
 
             if self.focused {
-                let focus_outset = scale.min(swatch_inset);
+                let focus_outset = (layout.focus_outset * scale).min(swatch_inset);
                 ctx.stroke_rect(
                     Rect::new(
                         swatch.x - focus_outset,
@@ -264,8 +279,8 @@ widget! {
                         swatch.w + focus_outset * 2.0,
                         swatch.h + focus_outset * 2.0,
                     ),
-                    primary,
-                    scale,
+                    visual.primary,
+                    layout.focus_border_width * scale,
                     radius,
                 );
             }
@@ -286,14 +301,19 @@ widget! {
                 // 使用实际颜色面板和当前预设数量。
                 ColorPanelGeometry::new(panel_rect, self.preset_colors.len());
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
-            let border = fade_color(border, opacity);
-            let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius()));
+            let bg = fade_color(visual.popup_background, opacity);
+            let border = fade_color(visual.border, opacity);
+            let panel_radius = Some(Radius::uniform(visual.panel_radius));
             // 将整个弹层绘制限制在当前逻辑表面内。
             ctx.push_clip(surface);
             ctx.push_clip(panel_rect);
             ctx.fill_rect(panel_rect, bg, panel_radius);
-            ctx.stroke_rect(panel_rect, border, 1.0, panel_radius);
+            ctx.stroke_rect(
+                panel_rect,
+                border,
+                self.visual.chrome.panel_border_width,
+                panel_radius,
+            );
 
             for (i, c) in self.preset_colors.iter().enumerate() {
                 // 从共享网格读取当前色块的实际缩放矩形。
@@ -304,20 +324,20 @@ widget! {
                 // 使用较小轴比例缩放圆角、描边和选中图标。
                 let visual_scale = panel_geometry.visual_scale();
                 // 构造与实际色块尺寸一致的圆角。
-                let cell_radius = Some(Radius::uniform(2.0 * visual_scale));
+                let cell_radius = Some(Radius::uniform(layout.cell_radius * visual_scale));
                 ctx.fill_rect(cell_rect, fade_color(*c, opacity), cell_radius);
                 if self.highlighted_idx == Some(i) {
                     // 高亮描边：按色块亮度取黑白 token 对比色。
                     let highlight_color = if c.is_light() {
-                        ctx.tokens().color_black()
+                        visual.contrast_light
                     } else {
-                        ctx.tokens().color_white()
+                        visual.contrast_dark
                     };
                     ctx.stroke_rect(
                         cell_rect,
                         fade_color(highlight_color, opacity),
                         // 缩放描边以避免窄色块被边框完全覆盖。
-                        2.0 * visual_scale,
+                        layout.highlight_border_width * visual_scale,
                         // 复用当前色块圆角。
                         cell_radius,
                     );
@@ -325,17 +345,17 @@ widget! {
                 if self.value.get() == *c {
                     // 选中图标色：按色块亮度取黑白 token 对比色。
                     let icon_color = if c.is_light() {
-                        ctx.tokens().color_black()
+                        visual.contrast_light
                     } else {
-                        ctx.tokens().color_white()
+                        visual.contrast_dark
                     };
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "check",
+                        self.visual.icons.selected,
                         cell_rect,
                         fade_color(icon_color, opacity),
                         // 缩放选中图标以保持在实际色块内。
-                        12.0 * visual_scale,
+                        layout.selected_icon_size * visual_scale,
                     );
                 }
             }
@@ -361,7 +381,7 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // OverlayStack 只登记实际颜色面板，不并入触发器。
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -409,17 +429,22 @@ impl ColorPicker {
     /// 创建使用内置色板、当前配置尺寸且未展开的颜色选择器。
     pub fn new() -> Self {
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = COLOR_PICKER_VISUAL_REF;
         Self {
             value: Cell::new(Color::default()),
             value_binding: None,
             open: false,
-            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            transition: TransitionPlayer::new(AnimationConfig::fade_in(
+                visual.motion.enter_duration,
+            )),
             closing: false,
             transition_dirty: false,
-            // 预设色板：从 u32 常量解包构造（色板常量见 PRESET_COLORS，保留原构造）。
-            preset_colors: PRESET_COLORS
-                .iter()
-                .map(|&c| {
+            // 预设色板从 UIX 展示数据解包构造，实例继续拥有可协调的 Vec。
+            preset_colors: visual
+                .presets
+                .values()
+                .into_iter()
+                .map(|c| {
                     Color::from_rgba(
                         ((c >> 16) & 0xFF) as u8,
                         ((c >> 8) & 0xFF) as u8,
@@ -442,6 +467,8 @@ impl ColorPicker {
             popup_anchor_frame: Cell::new(None),
             // 初始呈现周期没有历史颜色面板脏区。
             popup_damage_rect: Cell::new(Rect::zero()),
+            // 默认实例直接引用 UIX 生成的唯一静态视觉表。
+            visual,
         }
     }
     /// 将颜色绑定到外部 `State<Color>`。
@@ -489,7 +516,8 @@ impl ColorPicker {
         self.open = true;
         self.closing = false;
         self.highlighted_idx = self.default_highlight();
-        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_in(self.visual.motion.enter_duration));
         self.transition_dirty = true;
     }
 
@@ -505,7 +533,8 @@ impl ColorPicker {
         self.open = false;
         self.closing = true;
         self.highlighted_idx = self.selected_index();
-        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_out(self.visual.motion.exit_duration));
         self.transition_dirty = true;
     }
 
@@ -519,9 +548,15 @@ impl ColorPicker {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
+        let visual_changed = !std::ptr::eq(self.visual, next.visual);
         self.value_binding = next.value_binding;
         self.preset_colors = next.preset_colors;
         self.picker_size = next.picker_size;
+        self.visual = next.visual;
+        if visual_changed {
+            // 静态视觉几何变化后丢弃上一呈现周期的表面缓存。
+            self.reset_popup_presentation();
+        }
         if let Some(value) = controlled_value {
             self.value.set(value);
         }
@@ -578,8 +613,10 @@ impl ColorPicker {
         let next = match direction {
             ColorMove::Previous => current.saturating_sub(1),
             ColorMove::Next => (current + 1).min(last),
-            ColorMove::PreviousRow => current.saturating_sub(PANEL_COLUMNS),
-            ColorMove::NextRow => (current + PANEL_COLUMNS).min(last),
+            ColorMove::PreviousRow => {
+                current.saturating_sub(self.visual.layout.panel_columns.max(1))
+            }
+            ColorMove::NextRow => (current + self.visual.layout.panel_columns.max(1)).min(last),
         };
         self.highlighted_idx = Some(next);
     }
@@ -598,13 +635,20 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
-fn paint_transparency_checkerboard(ctx: &mut PaintContext, frame: Rect, scale: f32) {
-    let tile = (4.0 * scale).max(1.0);
+fn paint_transparency_checkerboard(
+    ctx: &mut PaintContext,
+    frame: Rect,
+    scale: f32,
+    layout: ColorPickerLayoutVisual,
+    light: Color,
+    dark: Color,
+) {
+    let tile = (layout.checker_tile * scale).max(layout.checker_tile_min);
     let columns = (frame.w / tile).ceil() as usize;
     let rows = (frame.h / tile).ceil() as usize;
     ctx.push_clip(frame);
-    // 棋盘格白色格：白色 token。
-    ctx.fill_rect(frame, ctx.tokens().color_white(), None);
+    // 棋盘格明暗色均来自 UIX 视觉角色。
+    ctx.fill_rect(frame, light, None);
     for row in 0..rows {
         for column in 0..columns {
             if (row + column) % 2 == 0 {
@@ -615,8 +659,7 @@ fn paint_transparency_checkerboard(ctx: &mut PaintContext, frame: Rect, scale: f
                         tile,
                         tile,
                     ),
-                    // 棋盘格灰格：固定中性灰（透明度指示功能，不随主题换肤）。
-                    Color::from_rgb(0xD9, 0xD9, 0xD9),
+                    dark,
                     None,
                 );
             }
@@ -633,4 +676,22 @@ enum ColorMove {
     NextRow,
 }
 
-// 在测试构建中加载颜色面板的表面几何契约。
+// 把 ColorPicker Rust 状态内核与 UIX 静态视觉组合为单一组件节点。
+fn build_color_picker_view(
+    mut kernel: ColorPicker,
+    visual: &'static ColorPickerVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_color_picker_uix_root(kernel: ColorPicker) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/color_picker/color_picker.uix")
+}
+
+impl View for ColorPicker {
+    fn build(self) -> ViewNode {
+        build_color_picker_uix_root(self)
+    }
+}

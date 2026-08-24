@@ -1,0 +1,96 @@
+// ColorPicker 的默认色板、网格、触发视觉、主题和时序由 UIX 唯一拥有。
+<Visual
+  name="COLOR_PICKER_PRESETS_VISUAL"
+  type="ColorPickerPresetsVisual"
+  color01={16065058}
+  color02={16405532}
+  color03={16419862}
+  color04={16440084}
+  color05={5424154}
+  color06={1295042}
+  color07={1472511}
+  color08={3101931}
+  color09={7483089}
+  color10={15413142}
+  color11={16745920}
+  color12={16772157}
+  color13={9821796}
+  color14={6085587}
+  color15={8758783}
+  color16={11763691}
+  color17={15790320}
+  color18={14277081}
+  color19={12566463}
+  color20={9211020}
+  color21={4408131}
+  color22={2500134}
+  color23={2039583}
+  color24={1315860}
+/>
+
+<Visual
+  name="COLOR_PICKER_LAYOUT_VISUAL"
+  type="ColorPickerLayoutVisual"
+  panelGap={4.0}
+  panelColumns={8}
+  panelCell={24.0}
+  panelPadding={8.0}
+  fallbackPanelSides={2.0}
+  swatchInset={4.0}
+  swatchBorderWidth={1.5}
+  focusOutset={1.0}
+  focusBorderWidth={1.0}
+  checkerTile={4.0}
+  checkerTileMin={1.0}
+  cellInset={1.0}
+  cellRadius={2.0}
+  highlightBorderWidth={2.0}
+  selectedIconSize={12.0}
+/>
+
+<Visual
+  name="COLOR_PICKER_MOTION_VISUAL"
+  type="ColorPickerMotionVisual"
+  enterDuration={0.15}
+  exitDuration={0.1}
+/>
+
+<Visual
+  name="COLOR_PICKER_ICONS_VISUAL"
+  type="ColorPickerIconsVisual"
+  selected="check"
+/>
+
+<Visual
+  name="COLOR_PICKER_CHROME_VISUAL"
+  type="ColorPickerChromeVisual"
+  panelBorderWidth={1.0}
+  overlayZ={900}
+  swatchRadius={color_picker_radius_small()}
+  panelRadius={color_picker_radius_base()}
+/>
+
+<Visual
+  name="COLOR_PICKER_PALETTE_VISUAL"
+  type="ColorPickerPaletteVisual"
+  popupBackground={color_picker_popup_background()}
+  border={color_picker_border()}
+  primary={color_picker_primary()}
+  contrastLight={color_picker_black()}
+  contrastDark={color_picker_white()}
+  checkerLight={color_picker_white()}
+  checkerDark={color_picker_checker_dark()}
+/>
+
+<Visual
+  name="COLOR_PICKER_VISUAL"
+  type="ColorPickerVisual"
+  presets={COLOR_PICKER_PRESETS_VISUAL}
+  layout={COLOR_PICKER_LAYOUT_VISUAL}
+  motion={COLOR_PICKER_MOTION_VISUAL}
+  icons={COLOR_PICKER_ICONS_VISUAL}
+  chrome={COLOR_PICKER_CHROME_VISUAL}
+  palette={COLOR_PICKER_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_color_picker_view(kernel, COLOR_PICKER_VISUAL_REF)} />
