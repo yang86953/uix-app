@@ -1,5 +1,7 @@
 // 引入受测稳定面板与折叠组。
 use super::{Collapse, CollapsePanel};
+// 引入公开 View 构建入口。
+use crate::ui::view::View;
 // 引入语义事件与受控状态测试类型。
 use crate::ui::{EventHandler, SemanticKind, SemanticPayload, State, SystemEvent, WidgetId};
 
@@ -149,4 +151,33 @@ fn controlled_sync_from_uses_latest_external_keys() {
     assert_eq!(beta_opacity.get(), 1.0);
     // 外部状态不得被旧内部快照覆盖。
     assert_eq!(active.get(), vec!["beta".to_string()]);
+}
+
+// 验证 UIX 声明根保持面板内核并注入尺寸、排版与内容留白。
+#[test]
+fn uix_root_preserves_collapse_kernel_and_visual_contract() {
+    let node = View::build(Collapse::new().panels(panels()));
+    assert!(node.children.is_empty());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Collapse>()
+        .expect("UIX 根必须保留 Collapse 内核");
+    assert_eq!(kernel.panels.len(), 2);
+    assert!(!kernel.borderless);
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (240.0, 320.0, 36.0, 14.0, 12.0, 16.0)
+    );
+}
+
+// 验证 Collapse 实例共享 UIX 视觉表且显式无边框设置优先。
+#[test]
+fn collapse_instances_share_uix_visual_and_preserve_authored_borderless() {
+    let first = View::build(Collapse::new().panels(panels()));
+    let second = View::build(Collapse::new().panels(panels()).borderless(true));
+    let first = first.widget.as_any().downcast_ref::<Collapse>().unwrap();
+    let second = second.widget.as_any().downcast_ref::<Collapse>().unwrap();
+    assert!(first.shares_visual_with_for_test(second));
+    assert!(second.borderless);
 }

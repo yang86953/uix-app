@@ -23,6 +23,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/badge",
     "display/card",
     "display/carousel",
+    "display/collapse",
     "display/descriptions",
     "display/empty",
     "display/image",
