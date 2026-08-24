@@ -622,7 +622,10 @@ impl ScenePipeline {
                 };
             }
         };
-        match engine.try_execute_encoded_frame(&encoded_frame) {
+        let execute_result = engine.try_execute_encoded_frame(&encoded_frame);
+        // RenderTarget 同步借用结束后，recorder 收回空命令缓冲供下一帧复用。
+        self.recorder.recycle_frame_encoder(encoded_frame);
+        match execute_result {
             Ok(EncodedFrameExecution::Executed) => {}
             Ok(EncodedFrameExecution::Unsupported) => {
                 self.layer_tree.invalidate();

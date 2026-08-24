@@ -19,12 +19,19 @@ use super::geometry::{
 // 保真下放准入与 picture 几何换算拆分到独立模块。
 mod geometry_ops;
 
+// 小命令流至少允许保留一轮常见 Vec 增长余量。
+const MIN_RETAINED_COMMAND_CAPACITY: usize = 16;
+// 场景骤减后容量超过当前命令数四倍时释放，避免峰值命令流长期驻留。
+const MAX_RETAINED_COMMAND_CAPACITY_RATIO: usize = 4;
+
 /// 状态保持的 CPU scratch 光栅化器。连续的 CPU 绘制累积在 scratch 中，
 /// 在 painter-order 屏障（native / Picture / finish）处 flush，使字形与
 /// 圆角填充共享一个打包的 CpuSegment，而不是每笔操作后重新扫描窗口。
 pub(super) struct FrameRecordingCanvas {
     pub(super) scratch: SharedRasterizer,
     pub(super) encoder: Option<FrameEncoder>,
+    /// 同尺寸上一已执行帧归还的空命令缓冲；只保留 Vec 容量，不保留命令载荷。
+    pub(super) spare_encoder: Option<FrameEncoder>,
     /// 上一成功帧的命令数，用于减少稳定场景每帧 Vec 扩容。
     pub(super) command_capacity_hint: usize,
     pub(super) blend_mode: BlendMode,
@@ -50,6 +57,7 @@ impl FrameRecordingCanvas {
         Self {
             scratch,
             encoder: None,
+            spare_encoder: None,
             command_capacity_hint: 0,
             blend_mode: BlendMode::default(),
             blend_stack: Vec::new(),
@@ -78,6 +86,7 @@ impl FrameRecordingCanvas {
             .replace_surface_preserving_state(PixelSurface::one_pixel());
         self.scratch.reset_state_for_extent(width, height);
         self.encoder = None;
+        self.spare_encoder = None;
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
@@ -101,12 +110,15 @@ impl FrameRecordingCanvas {
         self.scratch_additive = false;
         self.scratch_pack_bounds = None;
         self.deferred_error = None;
-        let mut encoder = FrameEncoder::with_command_capacity(
-            self.width,
-            self.height,
-            self.command_capacity_hint,
-        )
-        .map_err(frame_encoder_error)?;
+        let mut encoder = match self.spare_encoder.take() {
+            Some(encoder) => encoder,
+            None => FrameEncoder::with_command_capacity(
+                self.width,
+                self.height,
+                self.command_capacity_hint,
+            )
+            .map_err(frame_encoder_error)?,
+        };
         if clear_target {
             encoder.clear(Color::transparent());
         }
@@ -130,6 +142,25 @@ impl FrameRecordingCanvas {
         Ok(encoder)
     }
 
+    /// 收回同步执行完成的同尺寸编码器；释放命令载荷并有界保留 Vec 容量。
+    pub(super) fn recycle_encoder(&mut self, mut encoder: FrameEncoder) {
+        let command_count = encoder.commands().len();
+        self.command_capacity_hint = command_count;
+        let retain_limit = command_count
+            .max(MIN_RETAINED_COMMAND_CAPACITY)
+            .saturating_mul(MAX_RETAINED_COMMAND_CAPACITY_RATIO);
+        if self.encoder.is_some()
+            || encoder.width() != self.width
+            || encoder.height() != self.height
+            || encoder.command_capacity() > retain_limit
+        {
+            return;
+        }
+        // 立即释放图片、字形等嵌套载荷，只让 recorder owner 保留命令数组分配。
+        encoder.clear_commands_for_reuse();
+        self.spare_encoder = Some(encoder);
+    }
+
     /// 仅 flush 当前 scratch 并检查 deferred 错误（不结束录制）。
     pub(super) fn flush_recording(&mut self) -> Result<(), Error> {
         self.flush_scratch()?;
@@ -151,6 +182,7 @@ impl FrameRecordingCanvas {
         }
         self.scratch.reset_state_for_extent(self.width, self.height);
         self.encoder = None;
+        self.spare_encoder = None;
         self.blend_mode = BlendMode::default();
         self.blend_stack.clear();
         self.scratch_dirty = false;
@@ -173,14 +205,22 @@ impl FrameRecordingCanvas {
         self.scratch.reset_state_for_extent(self.width, self.height);
     }
 
-    /// 保留内存估算：scratch 与未提交编码器之和。
+    /// 保留内存估算：scratch、活动编码器与空闲命令缓冲之和。
     pub(super) fn retained_memory_usage(&self) -> usize {
-        self.scratch.memory_usage().saturating_add(
-            self.encoder
-                .as_ref()
-                .map(FrameEncoder::retained_memory_usage)
-                .unwrap_or(0),
-        )
+        self.scratch
+            .memory_usage()
+            .saturating_add(
+                self.encoder
+                    .as_ref()
+                    .map(FrameEncoder::retained_memory_usage)
+                    .unwrap_or(0),
+            )
+            .saturating_add(
+                self.spare_encoder
+                    .as_ref()
+                    .map(FrameEncoder::retained_memory_usage)
+                    .unwrap_or(0),
+            )
     }
 
     /// 追加一组已验证命令（先 flush 前置 scratch）。

@@ -88,10 +88,14 @@ impl FrameEncoder {
         &self.commands
     }
 
-    /// 测试观察入口：验证录制器只复用容量，不改变命令语义。
-    #[cfg(test)]
+    /// 返回命令缓冲容量，供录制器执行有界跨帧复用。
     pub(crate) fn command_capacity(&self) -> usize {
         self.commands.capacity()
+    }
+
+    /// 清空上一帧命令载荷但保留 Vec 分配，供同尺寸录制器开始下一帧。
+    pub(crate) fn clear_commands_for_reuse(&mut self) {
+        self.commands.clear();
     }
 
     /// 统计帧内 CPU 生成的光栅载荷（字形 coverage、CPU 分段、物化 Picture），

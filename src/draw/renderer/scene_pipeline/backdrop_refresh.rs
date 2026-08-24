@@ -182,6 +182,8 @@ impl ScenePipeline {
         };
         // CPU 光栅分段等非原生载荷只表示 retained backdrop 优化无法无损执行。
         if normal_frame.validate_gpu_native().is_err() {
+            // 验证只读结束后即可回收命令容量，降级最终帧会立即复用。
+            self.recorder.recycle_frame_encoder(normal_frame);
             // 记录当前 overlay 生命周期的能力事实，避免每帧重复录制同一个非原生树。
             self.overlay_backdrop_blocked = true;
             // 丢弃可能来自上一代正常树的快照，禁止复用过期像素。
@@ -254,7 +256,10 @@ impl ScenePipeline {
             );
         }
         // 第一阶段只写 retained texture，不触发 acquire 或 present。
-        match engine.try_execute_encoded_frame(&normal_frame) {
+        let execute_result = engine.try_execute_encoded_frame(&normal_frame);
+        // 中间提交为同步借用；snapshot 阶段不再需要读取该命令流。
+        self.recorder.recycle_frame_encoder(normal_frame);
+        match execute_result {
             // 完整 normal tree 已成为新的 clean retained 内容。
             Ok(EncodedFrameExecution::Executed) => {}
             // GPU refresh 不允许绕回私有 adapter 或不完整执行。
