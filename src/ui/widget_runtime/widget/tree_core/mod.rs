@@ -4,7 +4,7 @@ use crate::draw::renderer::{Invalidation, InvalidationQueueHandle};
 use crate::platform::windowing::{KeyCode, KeyMod};
 use crate::ui::animation::AnimatedSource;
 use crate::ui::event::{HandlerTable, SemanticEvent, WindowAction};
-use crate::ui::overlay::OverlayStack;
+use crate::ui::overlay::{OverlayRebuildScratch, OverlayStack};
 use crate::ui::render_handler::RenderHandlerTable;
 use crate::ui::theme::Theme;
 use crate::ui::theme::traits::ThemeTokens;
@@ -93,6 +93,8 @@ pub struct WidgetTree {
     /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
     theme_tokens: std::sync::Arc<dyn ThemeTokens>,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
+    // 先序遍历缓存失效时复用的深度优先栈。
+    traversal_stack_scratch: std::cell::RefCell<Vec<WidgetId>>,
     /// 二维与三维命中递归复用的 `(子节点, 原始顺序)` 排序工作区。
     pub(crate) hit_test_order_scratch: std::cell::RefCell<Vec<(WidgetId, usize)>>,
     /// 坐标投影、裁剪与命中逆变换复用的根到节点视觉路径工作区。
@@ -101,6 +103,8 @@ pub struct WidgetTree {
     pub(crate) handler_table: HandlerTable,
     pub(crate) render_handler_table: RenderHandlerTable,
     pub(crate) overlay_stack: OverlayStack,
+    // 组件浮层重建跨帧复用的树级临时集合。
+    pub(crate) overlay_rebuild_scratch: OverlayRebuildScratch,
 
     pub(crate) invalidation: InvalidationQueueHandle,
     pub(crate) pending_invalidations: Vec<Invalidation>,
@@ -177,11 +181,13 @@ impl Default for WidgetTree {
             pending_window_actions: Vec::new(),
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
+            traversal_stack_scratch: std::cell::RefCell::new(Vec::new()),
             hit_test_order_scratch: std::cell::RefCell::new(Vec::new()),
             visual_path_scratch: std::cell::RefCell::new(Vec::new()),
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),
+            overlay_rebuild_scratch: OverlayRebuildScratch::default(),
             invalidation: crate::draw::renderer::InvalidationQueue::shared(),
             pending_invalidations: Vec::new(),
             invalidation_batch_depth: 0,

@@ -14,48 +14,53 @@ impl Select {
     }
 
     pub(crate) fn intrinsic_size(&self) -> Size {
-        let mut max_text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            &self.placeholder,
-            f32::INFINITY,
-            self.visual.intrinsic_text_size(),
-        )
-        .max_line_width;
-        for option in &self.options {
-            max_text_width = max_text_width.max(
+        let width = if let Some(width) = self.intrinsic_width.get() {
+            width
+        } else {
+            let mut max_text_width =
                 crate::draw::resources::font::text_backend::estimate_text_metrics(
-                    // 固有宽度由实际显示文案决定，而不是内部稳定值。
-                    &option.label,
+                    &self.placeholder,
                     f32::INFINITY,
                     self.visual.intrinsic_text_size(),
                 )
-                .max_line_width,
-            );
-        }
-        for group in &self.optgroups {
-            max_text_width = max_text_width.max(
-                crate::draw::resources::font::text_backend::estimate_text_metrics(
-                    &group.label,
-                    f32::INFINITY,
-                    self.visual.intrinsic_group_text_size(),
-                )
-                .max_line_width,
-            );
-            for option in &group.options {
+                .max_line_width;
+            for option in &self.options {
                 max_text_width = max_text_width.max(
                     crate::draw::resources::font::text_backend::estimate_text_metrics(
-                        option,
+                        // 固有宽度由实际显示文案决定，而不是内部稳定值。
+                        &option.label,
                         f32::INFINITY,
                         self.visual.intrinsic_text_size(),
                     )
                     .max_line_width,
                 );
             }
-        }
-        Size::new(
-            (max_text_width + self.visual.layout.intrinsic_extra_width)
-                .max(self.visual.layout.natural_min_width),
-            self.control_height(),
-        )
+            for group in &self.optgroups {
+                max_text_width = max_text_width.max(
+                    crate::draw::resources::font::text_backend::estimate_text_metrics(
+                        &group.label,
+                        f32::INFINITY,
+                        self.visual.intrinsic_group_text_size(),
+                    )
+                    .max_line_width,
+                );
+                for option in &group.options {
+                    max_text_width = max_text_width.max(
+                        crate::draw::resources::font::text_backend::estimate_text_metrics(
+                            option,
+                            f32::INFINITY,
+                            self.visual.intrinsic_text_size(),
+                        )
+                        .max_line_width,
+                    );
+                }
+            }
+            let width = (max_text_width + self.visual.layout.intrinsic_extra_width)
+                .max(self.visual.layout.natural_min_width);
+            self.intrinsic_width.set(Some(width));
+            width
+        };
+        Size::new(width, self.control_height())
     }
 
     pub(crate) fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -300,10 +305,16 @@ impl Select {
     }
 
     pub(crate) fn custom_option_indices(&self) -> Vec<usize> {
+        let mut indices = Vec::new();
+        self.for_each_custom_option_index(|index| indices.push(index));
+        indices
+    }
+
+    // 遍历当前虚拟窗口内的自定义选项索引，不物化完整可见行集合。
+    fn for_each_custom_option_index(&self, mut visit: impl FnMut(usize)) {
         if !self.custom_option_views || !self.is_present() || self.loading {
-            return Vec::new();
+            return;
         }
-        let rows = self.visible_rows();
         let row_count = self.dropdown_row_count();
         // 自定义选项物化使用受当前表面缩高后的实际视口。
         let viewport_height = self.effective_dropdown_viewport_height(row_count);
@@ -312,13 +323,15 @@ impl Select {
             self.visual.layout.row_height,
             viewport_height,
         );
-        rows[start.min(rows.len())..end.min(rows.len())]
-            .iter()
-            .filter_map(|row| match row {
-                VisibleRow::Option(index) => Some(*index),
-                VisibleRow::Group(_) => None,
-            })
-            .collect()
+        let mut row_index = 0_usize;
+        self.for_each_visible_row(|row| {
+            if row_index >= start && row_index < end {
+                if let VisibleRow::Option(index) = row {
+                    visit(index);
+                }
+            }
+            row_index += 1;
+        });
     }
 
     pub(crate) fn custom_option_labels(&self, indices: &[usize]) -> Vec<String> {
@@ -328,13 +341,17 @@ impl Select {
             .collect()
     }
 
-    pub(crate) fn needs_custom_option_refresh(
-        &self,
-        indices: &[usize],
-        child_count: usize,
-    ) -> bool {
-        self.materialized_custom_options.borrow().as_slice() != indices
-            || child_count != indices.len()
+    pub(crate) fn needs_custom_option_refresh(&self, child_count: usize) -> bool {
+        let materialized = self.materialized_custom_options.borrow();
+        let mut expected_count = 0_usize;
+        let mut indices_match = true;
+        self.for_each_custom_option_index(|index| {
+            if materialized.get(expected_count) != Some(&index) {
+                indices_match = false;
+            }
+            expected_count += 1;
+        });
+        !indices_match || materialized.len() != expected_count || child_count != expected_count
     }
 
     pub(crate) fn mark_custom_options_materialized(&self, indices: Vec<usize>) {

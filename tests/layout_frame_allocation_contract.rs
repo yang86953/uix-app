@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{Rect, Size};
 use uix::prelude::{
     Calendar, Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid,
-    GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter,
-    Table, TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
+    GridTrack, Header, Layout as PageLayout, ScrollDirection, ScrollView, Select, Sider, Space,
+    Splitter, Table, TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{
@@ -404,6 +404,53 @@ fn transfer_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn select_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let options = (0..128)
+        .map(|index| format!("Option {index}"))
+        .collect::<Vec<_>>();
+    let mut select = Select::searchable().options(options);
+    select.open();
+    assert_eq!(
+        select.on_event(&SystemEvent::TextInput {
+            text: "OPTION 1".to_owned(),
+        }),
+        uix::ui::EventResult::Handled
+    );
+    let select = select.render_option(|_| Container::new()).into_node();
+    tree.set_children(root, vec![select]);
+    (tree, root)
+}
+
+fn plain_select_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let options = (0..128)
+        .map(|index| format!("Option {index}"))
+        .collect::<Vec<_>>();
+    let mut select = Select::searchable().options(options);
+    select.open();
+    assert_eq!(
+        select.on_event(&SystemEvent::TextInput {
+            text: "OPTION 1".to_owned(),
+        }),
+        uix::ui::EventResult::Handled
+    );
+    tree.set_children(root, vec![select.into_node()]);
+    (tree, root)
+}
+
+fn closed_select_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let options = (0..128)
+        .map(|index| format!("Option {index}"))
+        .collect::<Vec<_>>();
+    tree.set_children(root, vec![Select::new().options(options).into_node()]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -489,6 +536,9 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("VirtualScroll", virtual_scroll_layout_tree()),
         ("Calendar", calendar_layout_tree()),
         ("Transfer", transfer_layout_tree()),
+        ("Closed Select", closed_select_layout_tree()),
+        ("Plain Select", plain_select_layout_tree()),
+        ("Select", select_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);

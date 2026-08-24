@@ -50,6 +50,7 @@ impl Select {
             search_query: String::new(),
             custom_option_views: false,
             materialized_custom_options: RefCell::new(Vec::new()),
+            intrinsic_width: Cell::new(None),
             search_cursor_rect: Cell::new(Rect::zero()),
             control_rect: Cell::new(Rect::new(
                 0.0,
@@ -100,6 +101,7 @@ impl Select {
             // 兼容既有字符串选项：显示文案与稳定值保持一致。
             .map(|option| SelectOption::new(option.as_ref(), option.as_ref()))
             .collect();
+        self.intrinsic_width.set(None);
         self.sync_bound_selection();
         self
     }
@@ -112,6 +114,7 @@ impl Select {
     {
         // 保留调用方声明顺序作为稳定的交互索引顺序。
         self.options = options.into_iter().collect();
+        self.intrinsic_width.set(None);
         // 新选项集合写入后立即同步外部绑定的当前值。
         self.sync_bound_selection();
         // 返回更新后的流式构造器。
@@ -134,6 +137,7 @@ impl Select {
     /// 设置兼容格式的分组选项，并同步外部绑定值。
     pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
         self.optgroups = groups;
+        self.intrinsic_width.set(None);
         self.sync_bound_selection();
         self
     }
@@ -144,6 +148,7 @@ impl Select {
         I: IntoIterator<Item = SelectOptionGroup>,
     {
         self.optgroups = groups.into_iter().map(OptGroup::from).collect();
+        self.intrinsic_width.set(None);
         self.sync_bound_selection();
         self
     }
@@ -189,6 +194,7 @@ impl Select {
     /// 设置未选择内容时显示的占位文本。
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
         self.placeholder = p.into();
+        self.intrinsic_width.set(None);
         self
     }
 
@@ -313,6 +319,13 @@ impl Select {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        let intrinsic_width_changed = !std::ptr::eq(self.visual, next.visual)
+            || self.options != next.options
+            || self.optgroups != next.optgroups
+            || self.placeholder != next.placeholder;
+        if intrinsic_width_changed {
+            self.intrinsic_width.set(None);
+        }
         // UIX 视觉引用变化时先更新几何事实并清除依赖旧视觉的缓存。
         if !std::ptr::eq(self.visual, next.visual) {
             self.visual = next.visual;

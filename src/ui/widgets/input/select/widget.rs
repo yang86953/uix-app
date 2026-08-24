@@ -44,6 +44,9 @@ widget! {
         pub(crate) search_query: String,
         pub(crate) custom_option_views: bool,
         pub(crate) materialized_custom_options: RefCell<Vec<usize>>,
+        // 缓存只由选项文案与静态视觉决定的固有宽度。
+        #[snapshot(skip)]
+        pub(crate) intrinsic_width: Cell<Option<f32>>,
         pub(crate) search_cursor_rect: Cell<Rect>,
         pub(crate) control_rect: Cell<Rect>,
         pub(crate) dropdown_rect: Cell<Rect>,
@@ -67,46 +70,40 @@ widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| LayoutChild::new(id, Size::zero())),
+        );
+    }
+
     layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        // 从当前组件树根节点读取同帧逻辑表面。
-        let surface = self.surface_from_tree(frame, tree);
-        // 在放置自定义选项前解析并缓存最终弹层矩形。
-        let popup = self.remember_dropdown_rect(frame, surface, self.dropdown_row_count());
-        // 读取当前可见行集合。
-        let rows = self.visible_rows();
-        // 将弹层相对纵坐标转换为绝对列表起点。
-        let list_y = frame.y + popup.y;
-        // 多选行需要为复选框预留更宽左槽。
-        let text_left = if self.multiple {
-            self.visual.layout.custom_multi_left
-        } else {
-            self.visual.layout.row_horizontal_padding
-        };
-        // 自定义选项宽度使用受表面约束后的实际弹层宽度。
-        let content_width = (popup.w - text_left - self.visual.layout.custom_right_inset).max(0.0);
-        // 读取当前物化的自定义选项索引。
-        let indices = self.materialized_custom_options.borrow();
-        children
-            .iter()
-            .zip(indices.iter().copied())
-            .filter_map(|(child, option_index)| {
-                let row_index = rows.iter().position(
-                    |row| matches!(row, VisibleRow::Option(index) if *index == option_index),
-                )?;
-                Some((
-                    child.id,
-                    Rect::new(
-                        frame.x + popup.x + text_left,
-                        list_y + row_index as f32 * self.visual.layout.row_height
-                            - self.dropdown_scroll.scroll_offset(),
-                        content_width,
-                        self.visual.layout.row_height,
-                    ),
-                ))
-            })
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_select_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_select_children_into(frame, children, tree, output);
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
@@ -462,6 +459,82 @@ widget! {
             select_dirty_rect(frame, popup, surface, self.visual)
         } else {
             Rect::zero()
+        }
+    }
+}
+
+impl Select {
+    // 将当前物化自定义选项的位置写入布局树拥有的跨帧数组。
+    fn layout_select_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        tree: &WidgetTree,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        let surface = self.surface_from_tree(frame, tree);
+        let popup = self.remember_dropdown_rect(frame, surface, self.visible_row_count().max(1));
+        let list_y = frame.y + popup.y;
+        let text_left = if self.multiple {
+            self.visual.layout.custom_multi_left
+        } else {
+            self.visual.layout.row_horizontal_padding
+        };
+        let content_width = (popup.w - text_left - self.visual.layout.custom_right_inset).max(0.0);
+        let indices = self.materialized_custom_options.borrow();
+        let pair_count = children.len().min(indices.len());
+        let mut next_pair = 0_usize;
+        let mut row_index = 0_usize;
+
+        output.clear();
+        output.reserve(pair_count);
+        self.for_each_visible_row(|row| {
+            if next_pair < pair_count {
+                if let VisibleRow::Option(option_index) = row {
+                    if indices[next_pair] == option_index {
+                        output.push((
+                            children[next_pair].id,
+                            Rect::new(
+                                frame.x + popup.x + text_left,
+                                list_y + row_index as f32 * self.visual.layout.row_height
+                                    - self.dropdown_scroll.scroll_offset(),
+                                content_width,
+                                self.visual.layout.row_height,
+                            ),
+                        ));
+                        next_pair += 1;
+                    }
+                }
+            }
+            row_index += 1;
+        });
+        if next_pair < pair_count {
+            // 异常的非声明顺序物化快照仍保持旧入口逐项查找语义。
+            output.clear();
+            for (child, option_index) in children.iter().zip(indices.iter().copied()) {
+                let mut current_row = 0_usize;
+                let mut matched_row = None;
+                self.for_each_visible_row(|row| {
+                    if matched_row.is_none()
+                        && matches!(row, VisibleRow::Option(index) if index == option_index)
+                    {
+                        matched_row = Some(current_row);
+                    }
+                    current_row += 1;
+                });
+                if let Some(row_index) = matched_row {
+                    output.push((
+                        child.id,
+                        Rect::new(
+                            frame.x + popup.x + text_left,
+                            list_y + row_index as f32 * self.visual.layout.row_height
+                                - self.dropdown_scroll.scroll_offset(),
+                            content_width,
+                            self.visual.layout.row_height,
+                        ),
+                    ));
+                }
+            }
         }
     }
 }

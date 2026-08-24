@@ -79,3 +79,18 @@ fn backdrop_effect_resolves_theme_and_independent_region() {
     // 小于半像素按契约为 no-op。
     assert!(stack.backdrop_effect(0.49).is_none());
 }
+
+// 验证无排序缓冲的插入仍保持层级与同层声明顺序。
+#[test]
+fn overlay_entry_insertion_preserves_stable_z_order() {
+    let mut stack = OverlayStack::new();
+    stack.push_entry(OverlayEntry::new(WidgetId::new(1), OverlayKind::Popover).z_index(10));
+    stack.push_entry(OverlayEntry::new(WidgetId::new(2), OverlayKind::Tooltip).z_index(5));
+    stack.push_entry(OverlayEntry::new(WidgetId::new(3), OverlayKind::Custom).z_index(10));
+
+    let owners: Vec<_> = stack.iter().map(OverlayEntry::owner).collect();
+    assert_eq!(
+        owners,
+        vec![WidgetId::new(2), WidgetId::new(1), WidgetId::new(3)]
+    );
+}

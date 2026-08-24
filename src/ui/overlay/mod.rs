@@ -121,7 +121,41 @@ pub struct OverlayEntry {
     backdrop_blur: Option<OverlayBackdropBlur>,
 }
 
+// 保存一次组件浮层重建中需要跨阶段复用的临时集合。
+#[derive(Default)]
+pub(crate) struct OverlayRebuildScratch {
+    pub(crate) previous_trap_owners: Vec<WidgetId>,
+    pub(crate) entries: Vec<OverlayEntry>,
+}
+
+// 只保留判断浮层拓扑变化所需的复制值。
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct OverlayTopologySnapshot {
+    owner: WidgetId,
+    kind: OverlayKind,
+    bounds: Option<Rect>,
+    z_index: i32,
+    modal: bool,
+    dismiss_on_outside: bool,
+    focus_trap: bool,
+    backdrop_blur: Option<OverlayBackdropBlur>,
+}
+
 impl OverlayEntry {
+    // 提取不携带浮层实例所有权的拓扑比较快照。
+    pub(crate) fn topology_snapshot(&self) -> OverlayTopologySnapshot {
+        OverlayTopologySnapshot {
+            owner: self.owner,
+            kind: self.kind,
+            bounds: self.bounds,
+            z_index: self.z_index,
+            modal: self.modal,
+            dismiss_on_outside: self.dismiss_on_outside,
+            focus_trap: self.focus_trap,
+            backdrop_blur: self.backdrop_blur,
+        }
+    }
+
     /// 为组件所有者和语义类别创建默认浮层登记。
     pub fn new(owner: WidgetId, kind: OverlayKind) -> Self {
         Self {
@@ -258,8 +292,11 @@ impl OverlayStack {
         self.next_id += 1;
         let id = OverlayId(self.next_id);
         entry.id = id;
-        self.entries.push(entry);
-        self.entries.sort_by_key(|entry| entry.z_index);
+        // 在相同层级的既有项之后插入，保持稳定声明顺序且不创建排序缓冲。
+        let insertion = self
+            .entries
+            .partition_point(|current| current.z_index <= entry.z_index);
+        self.entries.insert(insertion, entry);
         id
     }
 

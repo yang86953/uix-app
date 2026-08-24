@@ -53,6 +53,8 @@ pub struct InvalidationQueue {
     paint_indices: HashMap<NodeId, usize>,
     /// 队列中是否存在任意 Paint、Composite 或 FullComposite 工作。
     has_paint_or_composite: bool,
+    /// 队列中是否已经存在可合并的全帧合成请求。
+    has_full_composite: bool,
     /// 队列中是否存在 `rect: None` 的全帧 Paint。
     needs_full_frame: bool,
     revision: u64,
@@ -97,7 +99,13 @@ impl InvalidationQueue {
                 self.paint_indices.insert(*id, self.items.len());
                 self.needs_full_frame |= rect.is_none();
             }
-            Invalidation::Composite { .. } | Invalidation::FullComposite => {}
+            Invalidation::Composite { .. } => {}
+            Invalidation::FullComposite => {
+                if self.has_full_composite {
+                    return;
+                }
+                self.has_full_composite = true;
+            }
         }
         self.has_paint_or_composite |= !matches!(&inv, Invalidation::Layout(_));
         self.items.push(inv);
@@ -220,6 +228,7 @@ impl InvalidationQueue {
         self.layout_ids.clear();
         self.paint_indices.clear();
         self.has_paint_or_composite = false;
+        self.has_full_composite = false;
         self.needs_full_frame = false;
     }
 

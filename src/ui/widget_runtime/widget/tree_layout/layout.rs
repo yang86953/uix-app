@@ -434,30 +434,14 @@ impl WidgetTree {
     }
 
     pub(crate) fn rebuild_widget_overlays(&mut self) {
-        let previous_trap_owners: Vec<_> = self
-            .overlay_stack
-            .iter()
-            .filter(|entry| entry.traps_focus())
-            .map(|entry| entry.owner())
-            .collect();
-        let previous_widget_overlays: Vec<_> = self
-            .overlay_stack
-            .iter()
-            .filter(|entry| !entry.is_managed())
-            .map(|entry| {
-                (
-                    entry.owner(),
-                    entry.kind(),
-                    entry.bounds_rect(),
-                    entry.z_index_value(),
-                    entry.is_modal(),
-                    entry.dismisses_on_outside(),
-                    entry.traps_focus(),
-                    // backdrop 请求属于 overlay 拓扑与效果失效事实。
-                    entry.backdrop_blur_value(),
-                )
-            })
-            .collect();
+        let mut scratch = std::mem::take(&mut self.overlay_rebuild_scratch);
+        scratch.previous_trap_owners.clear();
+        scratch.previous_trap_owners.extend(
+            self.overlay_stack
+                .iter()
+                .filter(|entry| entry.traps_focus())
+                .map(|entry| entry.owner()),
+        );
         // 从当前根布局矩形提取逻辑表面，避免复用上一帧窗口尺寸。
         let overlay_surface = self
             // 获取当前组件树根节点。
@@ -469,11 +453,10 @@ impl WidgetTree {
             // 无根节点时使用空表面。
             .unwrap_or_default();
         // 以当前表面重建所有组件声明的浮层登记。
-        let entries: Vec<_> = self
-            .traverse()
-            .iter()
-            .copied()
-            .filter_map(|id| {
+        scratch.entries.clear();
+        scratch
+            .entries
+            .extend(self.traverse().iter().copied().filter_map(|id| {
                 if !self.is_effectively_visible(id) || self.is_pending_removal_subtree(id) {
                     return None;
                 }
@@ -492,32 +475,25 @@ impl WidgetTree {
                     entry = entry.bounds(overlay_transform.transform_rect(bounds));
                 }
                 Some(entry)
-            })
-            .collect();
-        let widget_overlays_changed = !previous_widget_overlays.iter().copied().eq(entries
+            }));
+        let widget_overlays_changed = !self
+            .overlay_stack
             .iter()
             .filter(|entry| !entry.is_managed())
-            .map(|entry| {
-                (
-                    entry.owner(),
-                    entry.kind(),
-                    entry.bounds_rect(),
-                    entry.z_index_value(),
-                    entry.is_modal(),
-                    entry.dismisses_on_outside(),
-                    entry.traps_focus(),
-                    // 请求变化必须触发同帧 effect 重解析与合成失效。
-                    entry.backdrop_blur_value(),
-                )
-            }));
+            .map(|entry| entry.topology_snapshot())
+            .eq(scratch
+                .entries
+                .iter()
+                .filter(|entry| !entry.is_managed())
+                .map(|entry| entry.topology_snapshot()));
 
         self.overlay_stack
             .retain_entries(|entry| entry.is_managed());
-        for entry in entries {
+        for entry in scratch.entries.drain(..) {
             self.overlay_stack.push_entry(entry);
         }
 
-        for owner in previous_trap_owners {
+        for owner in scratch.previous_trap_owners.iter().copied() {
             if !self
                 .overlay_stack
                 .iter()
@@ -532,6 +508,7 @@ impl WidgetTree {
             self.tree_version = self.tree_version.wrapping_add(1);
             self.mark_full_frame_composite();
         }
+        self.overlay_rebuild_scratch = scratch;
     }
 
     pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {
