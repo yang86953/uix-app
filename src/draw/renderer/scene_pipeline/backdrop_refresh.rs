@@ -250,7 +250,7 @@ impl ScenePipeline {
                 // refresh 原本已要求完整树区域。
                 region,
                 // 降级帧保留调用方计算的完整 damage。
-                damage,
+                Some(damage),
                 // 无有效 clean snapshot 时禁止恢复 backdrop。
                 false,
             );

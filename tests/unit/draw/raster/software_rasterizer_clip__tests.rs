@@ -29,6 +29,19 @@
         assert_eq!(rasterizer.clip_mask_value(12, 12), u8::MAX);
     }
 
+    // 一次性固定裁剪不得为永远不会 pop 的栈申请内存。
+    #[test]
+    fn fixed_surface_clip_starts_without_stack_allocation() {
+        let rasterizer = SoftwareRasterizer::new_with_surface_clip(
+            32,
+            24,
+            Rect::new(2.0, 3.0, 12.0, 10.0),
+        );
+
+        assert_eq!(rasterizer.clip_rect, Rect::new(2.0, 3.0, 12.0, 10.0));
+        assert_eq!(rasterizer.transient_stack_capacities(), (0, 0, 0));
+    }
+
     // 帧重置应清空状态，但保留已经预热的栈分配。
     #[test]
     fn reset_for_extent_reuses_transient_stack_capacity() {

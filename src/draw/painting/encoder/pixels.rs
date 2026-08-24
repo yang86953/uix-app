@@ -478,13 +478,16 @@ fn fill_rounded_rect_pixels_clipped(
     if rect.is_empty() || clip.is_empty() {
         return;
     }
-    let mut renderer = SoftwareRasterizer::new(width, height);
-    renderer.push_clip_surface(Rect::new(
-        clip.x as f32,
-        clip.y as f32,
-        clip.width as f32,
-        clip.height as f32,
-    ));
+    let renderer = SoftwareRasterizer::new_with_surface_clip(
+        width,
+        height,
+        Rect::new(
+            clip.x as f32,
+            clip.y as f32,
+            clip.width as f32,
+            clip.height as f32,
+        ),
+    );
     renderer.fill_rect(
         pixels,
         width,

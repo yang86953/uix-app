@@ -257,9 +257,11 @@ impl ScenePipeline {
         }
         // 只有同步/降级事务未失败时才消费本帧请求计划。
         self.overlay_backdrop_effect = requested_backdrop_effect;
-        let present_damage_region = present_region.as_ref().unwrap_or(&paint_region);
-        let requested_present_damage =
-            compute_present_damage(present_damage_region, draw_full, input.rendered_first);
+        // 只有滚动存在独立 present 区域时才提前构造 damage；普通帧稍后接管
+        // backend 返回的实际绘制区分配，避免为同一组矩形建立第二个 Vec。
+        let requested_present_damage = present_region.as_ref().map(|present_damage_region| {
+            compute_present_damage(present_damage_region, draw_full, input.rendered_first)
+        });
         let requested_region = if draw_full {
             DirtyRegion::full()
         } else if use_scroll_copies {
@@ -366,7 +368,7 @@ impl ScenePipeline {
                 }
             };
         let damage = if begin_promoted_full {
-            DamageRegion::full()
+            Some(DamageRegion::full())
         } else {
             requested_present_damage
         };
@@ -654,6 +656,10 @@ impl ScenePipeline {
                 };
             }
         }
+        let present_inv_source =
+            classify_invalidation(input.rendered_first, &region, input.invalidation_source);
+        let damage =
+            damage.unwrap_or_else(|| compute_present_damage_owned(region, input.rendered_first));
         let end_outcome = engine.end_frame(&damage);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
@@ -679,9 +685,7 @@ impl ScenePipeline {
             RenderOutcome::Failed(error) => RenderOutcome::Failed(error),
         };
         let inv_source = match outcome {
-            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
-                classify_invalidation(input.rendered_first, &region, input.invalidation_source)
-            }
+            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => present_inv_source,
             RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
                 InvalidationSource::None
             }
@@ -702,7 +706,7 @@ impl ScenePipeline {
         input: FrameRenderInput<'_>,
         cur_version: u64,
         region: DirtyRegion,
-        damage: DamageRegion,
+        damage: Option<DamageRegion>,
         use_overlay_backdrop: bool,
     ) -> FrameRenderOutput {
         // 帧诊断：GPU 路径记录阶段起点（含场景遍历与绘制编码）。
@@ -846,6 +850,10 @@ impl ScenePipeline {
                 input.font_service,
             );
         }
+        let present_inv_source =
+            classify_invalidation(input.rendered_first, &region, input.invalidation_source);
+        let damage =
+            damage.unwrap_or_else(|| compute_present_damage_owned(region, input.rendered_first));
         // 帧诊断：提交阶段起点（end_frame 含 GPU 提交与 present 等待）。
         let submit_start = Instant::now();
         let end_outcome = engine.end_frame(&damage);
@@ -855,9 +863,7 @@ impl ScenePipeline {
         let caps = engine.capabilities();
         let outcome = normalize_end_outcome(end_outcome, caps, damage);
         let inv_source = match outcome {
-            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
-                classify_invalidation(input.rendered_first, &region, input.invalidation_source)
-            }
+            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => present_inv_source,
             RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
                 InvalidationSource::None
             }
