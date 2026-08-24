@@ -18,6 +18,18 @@ const ROOT_NODE: NodeId = WidgetId::new(1);
 // 固定 overlay 子节点，供 clean refresh 两阶段事务测试。
 const OVERLAY_NODE: NodeId = WidgetId::new(2);
 
+// 普通局部帧的最终 damage 应接管实际绘制区矩形分配。
+#[test]
+fn owned_present_damage_reuses_render_region_allocation() {
+    let region = DirtyRegion::area(Rect::new(2.0, 3.0, 8.0, 9.0));
+    let allocation = region.rects.as_ptr();
+
+    let damage = compute_present_damage_owned(region, true);
+
+    assert_eq!(damage.rects.as_ptr(), allocation);
+    assert_eq!(damage.rects, vec![Rect::new(1.0, 2.0, 10.0, 11.0)]);
+}
+
 // 描述本次调用应注入失败的 backdrop 生命周期边界。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BackdropFailurePoint {

@@ -122,6 +122,13 @@ impl SoftwareRasterizer {
         }
     }
 
+    /// 创建只使用单个固定 surface clip 的一次性光栅器，不建立可弹出的裁剪栈。
+    pub(crate) fn new_with_surface_clip(surface_w: i32, surface_h: i32, clip: Rect) -> Self {
+        let mut renderer = Self::new(surface_w, surface_h);
+        renderer.apply_clip_surface(clip);
+        renderer
+    }
+
     /// 重置瞬态画布状态，同时保留稳态裁剪与快照栈容量。
     pub(crate) fn reset_for_extent(&mut self, surface_w: i32, surface_h: i32) {
         let surface_w = surface_w.max(1);
@@ -277,6 +284,10 @@ impl SoftwareRasterizer {
         // 统一记录当前路径 mask，让矩形与路径裁剪可以混合嵌套。
         self.clip_stack.push(self.clip_rect);
         self.clip_mask_stack.push(self.clip_mask.clone());
+        self.apply_clip_surface(rect);
+    }
+
+    fn apply_clip_surface(&mut self, rect: Rect) {
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;
             self.sync_clip_int();

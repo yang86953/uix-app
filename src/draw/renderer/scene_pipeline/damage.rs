@@ -86,6 +86,26 @@ pub(super) fn compute_present_damage(
     }
 }
 
+/// 消费实际绘制区，在原矩形分配内建立最终呈现损伤。
+pub(super) fn compute_present_damage_owned(
+    dirty: DirtyRegion,
+    rendered_first: bool,
+) -> DamageRegion {
+    if !rendered_first || dirty.full_frame {
+        return DamageRegion::full();
+    }
+    let mut rects = dirty.into_rects();
+    rects.retain(|rect| rect.w > 0.0 && rect.h > 0.0);
+    for rect in &mut rects {
+        *rect = pad_damage_rect(rect);
+    }
+    if rects.is_empty() {
+        DamageRegion::full()
+    } else {
+        DamageRegion::partial(rects)
+    }
+}
+
 /// 将高密度局部脏区收敛为一次包围盒重绘。
 ///
 /// 多矩形逐块绘制会为每个矩形重复遍历并编码整棵场景；当包围盒额外面积受控时，

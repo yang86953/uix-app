@@ -1,4 +1,4 @@
-//! 验证稳态局部帧复用脏区所有权，不因几何快照重复申请堆内存。
+//! 验证稳态局部帧复用脏区与裁剪状态，保持零堆申请。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -204,7 +204,7 @@ fn warmed_partial_frame_has_bounded_geometry_allocations() {
         "测量局部帧必须完成呈现"
     );
     assert_eq!(
-        allocations, 3,
-        "预热后的单矩形局部帧不得恢复已消除的脏区、光栅栈与状态快照申请"
+        allocations, 0,
+        "预热后的单矩形局部帧必须复用脏区、固定裁剪与光栅状态，保持零堆申请"
     );
 }
