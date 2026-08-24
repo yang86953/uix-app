@@ -62,7 +62,7 @@ impl View for ButtonGroup {
             .map(ViewNode::leaf)
             .collect::<Vec<_>>();
         // 容器结构、横向排列与间距由 UIX 声明壳拥有。
-        crate::uix!("src/ui/widgets/uix/button_group.uix")
+        crate::uix!("src/ui/widgets/general/button_group/button_group.uix")
     }
 }
 
@@ -75,6 +75,6 @@ impl From<ButtonGroup> for ViewNode {
 // 集中验证 ButtonBuilder 与既有 ButtonGroupPosition 的桥接契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/button_group__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/button_group__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

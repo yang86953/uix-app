@@ -244,7 +244,7 @@ impl View for ThemeToggle {
         // 使用局部名称交接拥有型 Rust 主题状态内核。
         let kernel = self;
         // 静态展示契约从 UIX 文件物化。
-        crate::uix!("src/ui/widgets/uix/theme_toggle.uix")
+        crate::uix!("src/ui/widgets/other/theme_toggle/theme_toggle.uix")
     }
 }
 
@@ -257,6 +257,6 @@ impl Default for ThemeToggle {
 // 集中验证 ThemeToggle 声明融合与交互契约。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/theme_toggle__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/general/theme_toggle__tests.rs"]
 // 保留原模块私有契约访问能力。
 mod tests;
