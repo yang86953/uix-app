@@ -1,2 +1,2 @@
-// Empty 是本地化原子绘制组件；UIX 声明公开根，Rust 内核负责测量与绘制。
-<KernelView value={build_empty_view(kernel)} />
+// Empty 的尺寸边界、排版、留白、图标比例与主题角色由 UIX 声明。
+<KernelView value={build_empty_view(kernel, 160, 320, 100, 13, 1.5, 16, 12, 32, 12, 0.4, empty_text_secondary(), empty_text_tertiary())} />

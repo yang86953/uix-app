@@ -2,24 +2,48 @@
 
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
 
-const MIN_WIDTH: f32 = 160.0;
-const MAX_WIDTH: f32 = 320.0;
-const MIN_HEIGHT: f32 = 100.0;
-const TEXT_FONT_SIZE: f32 = 13.0;
-const TEXT_LINE_HEIGHT: f32 = 1.5;
-// 空状态水平内边距（16.0）；descriptions 为 8.0，组件独立设计。
-const HORIZONTAL_PADDING: f32 = 16.0;
-// 空状态垂直内边距（12.0）；descriptions 为 6.0，组件独立设计。
-const VERTICAL_PADDING: f32 = 12.0;
-// 空状态插图（32.0）；breadcrumb 导航图标为 14.0，语境不同。
-const ICON_SIZE: f32 = 32.0;
-// 空状态图标与文字间距（12.0）；breadcrumb 为 4.0，语境不同。
-const ICON_TEXT_GAP: f32 = 12.0;
+// 保存由 UIX 声明、由 Rust 本地化与测量内核消费的静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct EmptyVisual {
+    min_width: f32,
+    max_width: f32,
+    min_height: f32,
+    text_font_size: f32,
+    text_line_height: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    icon_size: f32,
+    icon_text_gap: f32,
+    icon_max_height_ratio: f32,
+    text_color: ColorValue,
+    icon_color: ColorValue,
+}
+
+impl Default for EmptyVisual {
+    fn default() -> Self {
+        Self {
+            min_width: 160.0,
+            max_width: 320.0,
+            min_height: 100.0,
+            text_font_size: 13.0,
+            text_line_height: 1.5,
+            horizontal_padding: 16.0,
+            vertical_padding: 12.0,
+            icon_size: 32.0,
+            icon_text_gap: 12.0,
+            icon_max_height_ratio: 0.4,
+            text_color: ColorValue::Neutral(NeutralRole::TextSecondary),
+            icon_color: ColorValue::Neutral(NeutralRole::TextTertiary),
+        }
+    }
+}
 
 widget! {
     /// Empty — 空状态展示。
@@ -27,6 +51,8 @@ widget! {
         description: String,
         icon_name: String,
         image: String,
+        #[snapshot(skip)]
+        visual: EmptyVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -53,21 +79,24 @@ widget! {
         }
         let loc = crate::ui::widget_runtime::locale::use_locale();
         let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
-        let text_color = ctx.tokens().color_text_secondary();
-        let icon_color = ctx.tokens().color_text_tertiary();
+        let text_color = self.visual.text_color.resolve(ctx.tokens());
+        let icon_color = self.visual.icon_color.resolve(ctx.tokens());
         let icon_name = self.visual_icon_name();
-        let text_width = (frame.w - HORIZONTAL_PADDING * 2.0).max(1.0);
+        let text_width = (frame.w - self.visual.horizontal_padding * 2.0).max(1.0);
         // 一次文本测量同时取得行数与高度，避免同帧重复估算。
-        let (line_count, text_height) = Self::description_layout(desc, text_width);
+        let (line_count, text_height) = self.description_layout(desc, text_width);
         let icon_size = icon_name
             .map(|_| {
-                ICON_SIZE
-                    .min((frame.w - HORIZONTAL_PADDING * 2.0).max(0.0))
-                    .min(frame.h * 0.4)
+                self.visual
+                    .icon_size
+                    .min((frame.w - self.visual.horizontal_padding * 2.0).max(0.0))
+                    .min(frame.h * self.visual.icon_max_height_ratio.clamp(0.0, 1.0))
             })
             .unwrap_or(0.0);
         let gap = if icon_size > 0.0 {
-            ICON_TEXT_GAP.min((frame.h - icon_size).max(0.0))
+            self.visual
+                .icon_text_gap
+                .min((frame.h - icon_size).max(0.0))
         } else {
             0.0
         };
@@ -88,17 +117,17 @@ widget! {
         }
 
         let text_frame = Rect::new(
-            frame.x + HORIZONTAL_PADDING,
+            frame.x + self.visual.horizontal_padding,
             y,
             text_width,
             text_height.min((frame.y + frame.h - y).max(0.0)),
         );
         if text_frame.h > 0.0 {
             if line_count <= 1 {
-                ctx.text_center(desc, text_frame, text_color, TEXT_FONT_SIZE);
+                ctx.text_center(desc, text_frame, text_color, self.visual.text_font_size);
             } else {
                 ctx.push_clip(text_frame);
-                ctx.draw_text_wrapped(desc, text_frame, text_color, TEXT_FONT_SIZE);
+                ctx.draw_text_wrapped(desc, text_frame, text_color, self.visual.text_font_size);
                 ctx.pop_clip();
             }
         }
@@ -112,8 +141,47 @@ impl Default for Empty {
     }
 }
 
-// 把空状态 Rust 绘制内核融合为 UIX 声明的单一叶节点。
-fn build_empty_view(kernel: Empty) -> ViewNode {
+// 向 UIX 提供空状态说明文字主题角色。
+const fn empty_text_secondary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+
+// 向 UIX 提供空状态图标主题角色。
+const fn empty_text_tertiary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextTertiary)
+}
+
+// 把 UIX 声明的静态视觉融合进空状态本地化与测量内核。
+#[allow(clippy::too_many_arguments)]
+fn build_empty_view(
+    mut kernel: Empty,
+    min_width: f32,
+    max_width: f32,
+    min_height: f32,
+    text_font_size: f32,
+    text_line_height: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    icon_size: f32,
+    icon_text_gap: f32,
+    icon_max_height_ratio: f32,
+    text_color: ColorValue,
+    icon_color: ColorValue,
+) -> ViewNode {
+    kernel.visual = EmptyVisual {
+        min_width,
+        max_width,
+        min_height,
+        text_font_size,
+        text_line_height,
+        horizontal_padding,
+        vertical_padding,
+        icon_size,
+        icon_text_gap,
+        icon_max_height_ratio,
+        text_color,
+        icon_color,
+    };
     ViewNode::leaf(kernel)
 }
 
@@ -132,6 +200,7 @@ impl Empty {
             description: String::new(),
             icon_name: String::new(),
             image: String::new(),
+            visual: EmptyVisual::default(),
         }
     }
     /// 设置空状态的说明文字。
@@ -154,35 +223,36 @@ impl Empty {
         let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             description,
             f32::INFINITY,
-            TEXT_FONT_SIZE,
+            self.visual.text_font_size,
         )
         .max_line_width;
-        (text_width + HORIZONTAL_PADDING * 2.0).clamp(MIN_WIDTH, MAX_WIDTH)
+        (text_width + self.visual.horizontal_padding * 2.0)
+            .clamp(self.visual.min_width, self.visual.max_width)
     }
 
     fn intrinsic_height(&self, description: &str, width: f32) -> f32 {
-        let text_width = (width - HORIZONTAL_PADDING * 2.0).max(1.0);
+        let text_width = (width - self.visual.horizontal_padding * 2.0).max(1.0);
         let visual_height = if self.visual_icon_name().is_some() {
-            ICON_SIZE + ICON_TEXT_GAP
+            self.visual.icon_size + self.visual.icon_text_gap
         } else {
             0.0
         };
-        let (_, description_height) = Self::description_layout(description, text_width);
-        (VERTICAL_PADDING * 2.0 + visual_height + description_height)
-            .max(MIN_HEIGHT)
+        let (_, description_height) = self.description_layout(description, text_width);
+        (self.visual.vertical_padding * 2.0 + visual_height + description_height)
+            .max(self.visual.min_height)
     }
 
-    fn description_layout(description: &str, width: f32) -> (usize, f32) {
+    fn description_layout(&self, description: &str, width: f32) -> (usize, f32) {
         let line_count = crate::draw::resources::font::text_backend::estimate_text_metrics(
             description,
             width.max(1.0),
-            TEXT_FONT_SIZE,
+            self.visual.text_font_size,
         )
         .line_count
         .max(1);
         (
             line_count,
-            line_count as f32 * TEXT_FONT_SIZE * TEXT_LINE_HEIGHT,
+            line_count as f32 * self.visual.text_font_size * self.visual.text_line_height,
         )
     }
 
@@ -215,6 +285,7 @@ impl Empty {
         self.description = next.description;
         self.icon_name = next.icon_name;
         self.image = next.image;
+        self.visual = next.visual;
     }
 }
 

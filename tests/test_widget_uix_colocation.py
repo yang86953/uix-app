@@ -19,7 +19,6 @@ VISUAL_OWNERSHIP_DEBT = {
     "display/card/card.uix",
     "display/carousel/carousel.uix",
     "display/descriptions/descriptions.uix",
-    "display/empty/empty.uix",
     "display/image/image.uix",
     "display/image_group/image_group.uix",
     "display/qrcode/qrcode.uix",
