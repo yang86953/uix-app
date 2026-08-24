@@ -12,8 +12,8 @@ use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, Widget,
-    WidgetId, WidgetTree,
+    EventResult, KeyCode, LayoutChild, MouseButton, SemanticEvent, SystemEvent, View, ViewNode,
+    Widget, WidgetId, WidgetTree,
 };
 use crate::widget;
 
@@ -277,31 +277,43 @@ widget! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+    measure_children => (&self, _frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let mut output = Vec::with_capacity(children.len());
+        Self::measure_children_reusing(children, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        _frame: Rect,
+        children: &[WidgetId],
+        _tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        // Splitter 精确分配面板尺寸，树级测量只需保存身份与零尺寸占位。
+        Self::measure_children_reusing(children, output);
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        self.last_frame
-            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let mut result = Vec::new();
-        let n = children.len().min(self.ratios.len());
-        if n == 0 { return result; }
+        let mut output = Vec::with_capacity(children.len().min(self.ratios.len()));
+        self.layout_children_reusing(frame, children, &mut output);
+        output
+    }
 
-        let total = if self.vertical { frame.h } else { frame.w };
-        let handle_total = self.handle_size * (n - 1) as f32;
-        let content_total = (total - handle_total).max(0.0);
-        let mut pos = if self.vertical { frame.y } else { frame.x };
-
-        for (child, ratio) in children.iter().zip(&self.ratios).take(n) {
-            let size = ratio * content_total;
-            let child_frame = if self.vertical {
-                Rect::new(frame.x, pos, frame.w, size)
-            } else {
-                Rect::new(pos, frame.y, size, frame.h)
-            };
-            result.push((child.id, child_frame));
-            pos += size + self.handle_size;
-        }
-        result
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        // 比例属于 Splitter，最终位置数组由布局树跨帧持有。
+        self.layout_children_reusing(frame, children, output);
     }
 }
 
@@ -312,6 +324,50 @@ impl Default for Splitter {
 }
 
 impl Splitter {
+    // 把精确填充面板的测量身份写入调用方缓冲。
+    fn measure_children_reusing(children: &[WidgetId], output: &mut Vec<LayoutChild>) {
+        output.clear();
+        output.extend(
+            children
+                .iter()
+                .copied()
+                .map(|id| LayoutChild::new(id, Size::zero())),
+        );
+    }
+
+    // 复用调用方位置数组并保持比例、手柄和坐标语义不变。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        self.last_frame
+            .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
+        output.clear();
+        let n = children.len().min(self.ratios.len());
+        if n == 0 {
+            return;
+        }
+
+        let total = if self.vertical { frame.h } else { frame.w };
+        let handle_total = self.handle_size * (n - 1) as f32;
+        let content_total = (total - handle_total).max(0.0);
+        let mut pos = if self.vertical { frame.y } else { frame.x };
+        output.reserve(n);
+
+        for (child, ratio) in children.iter().zip(&self.ratios).take(n) {
+            let size = ratio * content_total;
+            let child_frame = if self.vertical {
+                Rect::new(frame.x, pos, frame.w, size)
+            } else {
+                Rect::new(pos, frame.y, size, frame.h)
+            };
+            output.push((child.id, child_frame));
+            pos += size + self.handle_size;
+        }
+    }
+
     /// 创建两个等分、水平排列且最小尺寸均为 50 像素的分割面板。
     pub fn new() -> Self {
         let visual = SPLITTER_VISUAL_REF;
