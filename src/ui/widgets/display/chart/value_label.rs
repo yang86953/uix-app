@@ -20,7 +20,6 @@ impl ChartValueLabel {
         label
     }
 
-    #[allow(dead_code, reason = "PieChart 迁移后复用同一无堆分配格式化器")]
     pub(crate) fn from_f64(value: f64) -> Self {
         let mut label = Self::empty();
         let rounded = value.round();
@@ -29,7 +28,12 @@ impl ChartValueLabel {
         } else {
             write!(&mut label, "{value:.1}")
         };
-        debug_assert!(result.is_ok(), "f64 标签必须适配固定栈缓冲");
+        if result.is_err() {
+            // 超大累计值的定点文本可能超过缓冲；科学计数法仍保持完整数量级。
+            label = Self::empty();
+            let fallback = write!(&mut label, "{value:.6e}");
+            debug_assert!(fallback.is_ok(), "f64 科学计数标签必须适配固定栈缓冲");
+        }
         label
     }
 
@@ -43,6 +47,12 @@ impl ChartValueLabel {
     pub(crate) fn as_str(&self) -> &str {
         // 写入来源是 Rust 格式化器，始终产生合法 UTF-8。
         std::str::from_utf8(&self.bytes[..usize::from(self.len)]).unwrap_or("")
+    }
+
+    pub(crate) fn with_suffix(mut self, suffix: &str) -> Self {
+        let result = self.write_str(suffix);
+        debug_assert!(result.is_ok(), "静态后缀必须适配固定栈缓冲");
+        self
     }
 }
 
