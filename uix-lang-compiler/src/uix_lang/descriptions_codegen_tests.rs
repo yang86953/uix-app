@@ -26,8 +26,8 @@ fn generates_descriptions_contract() {
     assert!(snapshot.contains("DescriptionsItem"));
     // 静态列数必须进入公开 column 构建器。
     assert!(snapshot.contains("column (2usize)"));
-    // 组件必须物化为公开叶节点。
-    assert!(snapshot.contains("ViewNode :: leaf"));
+    // 生成器必须进入 Descriptions 自己的 UIX 根声明，不能直接构造运行时叶节点。
+    assert!(!snapshot.contains("ViewNode :: leaf"), "{snapshot}");
     // 公共宽度必须继续映射。
     assert!(snapshot.contains("width (480.0)"));
     // 自动化标识仍由公共属性层消费。

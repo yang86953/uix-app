@@ -60,8 +60,8 @@ pub(crate) fn generate_descriptions(element: &Element) -> Result<TokenStream, Di
             .items(#items)
             .column(#columns)
     };
-    // Descriptions 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 经公开 View 契约进入 Descriptions 自己的同目录 UIX 声明根。
+    let view = quote! { ::uix::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(view, &element.attributes, &["data", "columns"])
     // 结束 Descriptions 生成函数。
