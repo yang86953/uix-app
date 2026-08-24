@@ -13,6 +13,11 @@ mod layout_measure;
 // 拆分定位元数据与子布局求解，保持主体低于规模上限。
 #[path = "position_layout.rs"]
 mod position_layout;
+// 测试只读取布局过滤分配计数，不扩大生产模块公开面。
+#[cfg(test)]
+pub(crate) use position_layout::{
+    filtered_child_allocation_count, reset_filtered_child_allocation_count,
+};
 // 拆分视觉变换与光标元数据访问，保持主体文件低于规模上限。
 #[path = "visual_metadata.rs"]
 // 编译运行时节点视觉元数据的私有实现模块。
