@@ -238,10 +238,10 @@ impl LayerTree {
         surface_h: i32,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) -> Result<(), crate::core::Error> {
-        // 克隆小型片段集合，避免在重复渲染期间借用可变节点。
-        let clip_regions = node.clip_regions().map(<[Rect]>::to_vec);
+        // 先复制片段数量，让切片借用在进入可变节点重放前结束。
+        let clip_region_count = node.clip_regions().map(<[Rect]>::len);
         // 只有父布局显式声明片段时才进入逐片重放路径。
-        let Some(clip_regions) = clip_regions else {
+        let Some(clip_region_count) = clip_region_count else {
             // 普通节点保持原有单次绘制路径。
             return Self::render_node_unclipped(
                 // 传入当前节点及共享渲染环境。
@@ -256,12 +256,16 @@ impl LayerTree {
             );
         };
         // 片段为空表示父布局明确隐藏整个节点子树。
-        if clip_regions.is_empty() {
+        if clip_region_count == 0 {
             // 不提交任何内容也不穿透为未裁剪绘制。
             return Ok(());
         }
         // 同一有状态节点按父布局提供的每个不连续片段重放。
-        for clip_region in clip_regions {
+        for clip_region_index in 0..clip_region_count {
+            // Rect 是 Copy 值；逐项读取避免每帧克隆整个 Vec 并申请堆内存。
+            let clip_region = node
+                .clip_regions()
+                .expect("裁剪片段数量确定后节点元数据必须保持存在")[clip_region_index];
             // 在节点自身变换之前压入父级内容坐标裁剪。
             engine.canvas_2d().push_clip(clip_region);
             // 在当前片段内执行一次完整节点与后代绘制。
