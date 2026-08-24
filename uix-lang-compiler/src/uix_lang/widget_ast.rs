@@ -149,7 +149,7 @@ pub(crate) struct RecordField {
     pub(crate) span: SourceSpan,
 }
 
-// 表示由 UIX 唯一拥有并生成为 Rust 模块级常量的静态视觉记录。
+// 表示由 UIX 唯一拥有并生成为 Rust 模块级静态项的视觉记录。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VisualDeclaration {
     // 保存 SCREAMING_SNAKE_CASE 常量名称。

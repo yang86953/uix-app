@@ -1,2 +1,19 @@
-// Empty 的尺寸边界、排版、留白、图标比例与主题角色由 UIX 声明。
-<KernelView value={build_empty_view(kernel, 160, 320, 100, 13, 1.5, 16, 12, 32, 12, 0.4, empty_text_secondary(), empty_text_tertiary())} />
+// Empty 的尺寸边界、排版、留白、图标比例与主题角色由 UIX 唯一拥有。
+<Visual
+  name="EMPTY_VISUAL"
+  type="EmptyVisual"
+  minWidth={160.0}
+  maxWidth={320.0}
+  minHeight={100.0}
+  textFontSize={13.0}
+  textLineHeight={1.5}
+  horizontalPadding={16.0}
+  verticalPadding={12.0}
+  iconSize={32.0}
+  iconTextGap={12.0}
+  iconMaxHeightRatio={0.4}
+  textColor={empty_text_secondary()}
+  iconColor={empty_text_tertiary()}
+/>
+
+<KernelView value={build_empty_view(kernel, EMPTY_VISUAL_REF)} />

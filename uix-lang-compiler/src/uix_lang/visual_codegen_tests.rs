@@ -31,7 +31,12 @@ fn generates_named_visual_const_for_uix_items() {
         .to_string();
 
     assert!(
-        tokens.contains("pub (crate) const ICON_VISUAL : IconVisual"),
+        tokens.contains("pub (crate) static ICON_VISUAL : IconVisual"),
+        "{tokens}"
+    );
+    assert!(
+        tokens
+            .contains("pub (crate) static ICON_VISUAL_REF : & 'static IconVisual = & ICON_VISUAL"),
         "{tokens}"
     );
     assert!(tokens.contains("default_size : 24.0"), "{tokens}");
@@ -65,6 +70,12 @@ fn rejects_invalid_or_ambiguous_visual_declarations() {
         "{}",
         invalid_name.message
     );
+
+    let reserved_name = parse_document(
+        r#"<Visual name="ICON_VISUAL_REF" type="IconVisual" size={24} /><Text>根</Text>"#,
+    )
+    .expect_err("_REF 后缀必须留给编译器生成静态借用");
+    assert!(reserved_name.suggestion.contains("_REF"));
 
     let nested = parse_document(
         r#"<Container><Visual name="ICON_VISUAL" type="IconVisual" size={24} /></Container>"#,

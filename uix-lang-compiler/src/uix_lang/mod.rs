@@ -45,7 +45,7 @@ mod item_codegen;
 // 集中验证 record 生成、对象初始值与拒绝路径。
 #[cfg(test)]
 mod record_codegen_tests;
-// 集中验证 Visual 具名常量生成、拒绝路径与来源定位。
+// 集中验证 Visual 具名静态项生成、拒绝路径与来源定位。
 #[cfg(test)]
 mod visual_codegen_tests;
 // 集中验证数据构造生成、枚举映射与拒绝路径。

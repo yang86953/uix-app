@@ -1,2 +1,14 @@
-// BackTop 的图标、固有尺寸、环形几何与主题色角色由 UIX 声明。
-<KernelView value={build_back_top_view(kernel, back_top_chevron_up(), 14, 40, 2, 0.4, back_top_primary(), back_top_elevated())} />
+// BackTop 的图标、尺寸、环形几何与主题色角色由 UIX 唯一拥有。
+<Visual
+  name="BACK_TOP_VISUAL"
+  type="BackTopVisual"
+  iconName="chevron-up"
+  iconSize={14.0}
+  extent={40.0}
+  ringWidth={2.0}
+  ringRadiusRatio={0.4}
+  ringColor={back_top_primary()}
+  fillColor={back_top_elevated()}
+/>
+
+<KernelView value={build_back_top_view(kernel, BACK_TOP_VISUAL_REF)} />

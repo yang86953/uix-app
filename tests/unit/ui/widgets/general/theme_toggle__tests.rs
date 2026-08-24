@@ -22,6 +22,11 @@
             .downcast_mut::<ThemeToggle>()
             // 类型变化表示 UIX 融合路径破坏。
             .expect("UIX ThemeToggle 根必须保持 ThemeToggle 内核");
+        assert!(std::ptr::eq(kernel.visual, THEME_TOGGLE_VISUAL_REF));
+        assert!(
+            std::mem::size_of::<ThemeToggleVisual>()
+                > std::mem::size_of::<&'static ThemeToggleVisual>()
+        );
         // UIX 声明必须保留两个无分配静态图标角色。
         assert_eq!(
             (kernel.visual.dark_icon, kernel.visual.light_icon),

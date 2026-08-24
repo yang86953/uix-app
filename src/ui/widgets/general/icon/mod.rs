@@ -242,7 +242,7 @@ const fn icon_text_color() -> ColorValue {
 }
 
 // 把 UIX 声明视觉融合进原有 Icon 叶内核，不创建包装节点。
-fn build_icon_view(mut kernel: Icon, visual: IconVisual) -> ViewNode {
+fn build_icon_view(mut kernel: Icon, visual: &'static IconVisual) -> ViewNode {
     if !kernel.size_authored {
         kernel.size = visual.default_size;
     }

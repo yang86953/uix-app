@@ -1,2 +1,15 @@
-// Avatar 的默认尺寸、文字缩放、形状留白与主题角色由 UIX 声明。
-<KernelView value={build_avatar_view(kernel, 32, 0.45, 0.78, 0.68, 0.5, avatar_primary_bg(), avatar_text(), avatar_radius_sm())} />
+// Avatar 的默认尺寸、文字缩放、形状留白与主题角色由 UIX 唯一拥有。
+<Visual
+  name="AVATAR_VISUAL"
+  type="AvatarVisual"
+  defaultExtent={32.0}
+  textScale={0.45}
+  squareTextFit={0.78}
+  circleTextFit={0.68}
+  cornerRadiusLimit={0.5}
+  backgroundColor={avatar_primary_bg()}
+  textColor={avatar_text()}
+  cornerRadius={avatar_radius_sm()}
+/>
+
+<KernelView value={build_avatar_view(kernel, AVATAR_VISUAL_REF)} />

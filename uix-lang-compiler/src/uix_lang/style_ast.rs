@@ -18,7 +18,7 @@ pub(crate) enum Declaration {
     Widget(WidgetDeclaration),
     // 保存语言面声明的类型化业务模型。
     Record(RecordDeclaration),
-    // 保存语言面唯一拥有的静态视觉常量记录。
+    // 保存语言面唯一拥有的静态视觉记录。
     Visual(VisualDeclaration),
 }
 

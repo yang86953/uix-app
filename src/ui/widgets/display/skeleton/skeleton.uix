@@ -1,2 +1,21 @@
-// Skeleton 的默认尺寸、段落几何、圆角、流光节奏和主题角色由 UIX 声明。
-<KernelView value={build_skeleton_view(kernel, 200, 16, 2, 12, 4, 0.6, 4, 2, 0.35, 8, 0.8, 96, skeleton_fill_tertiary(), skeleton_bg_container())} />
+// Skeleton 的默认尺寸、段落几何、圆角、流光节奏和主题角色由 UIX 唯一拥有。
+<Visual
+  name="SKELETON_VISUAL"
+  type="SkeletonVisual"
+  defaultWidth={200.0}
+  defaultHeight={16.0}
+  defaultParagraphRows={2}
+  paragraphLineHeight={12.0}
+  paragraphGap={4.0}
+  paragraphLastWidth={0.6}
+  rectRadius={4.0}
+  textRadius={2.0}
+  shimmerWidthRatio={0.35}
+  shimmerMinWidth={8.0}
+  shimmerSpeed={0.8}
+  shimmerAlpha={96}
+  baseColor={skeleton_fill_tertiary()}
+  shimmerColor={skeleton_bg_container()}
+/>
+
+<KernelView value={build_skeleton_view(kernel, SKELETON_VISUAL_REF)} />

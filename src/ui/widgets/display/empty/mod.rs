@@ -11,7 +11,7 @@ use crate::widget;
 
 // 保存由 UIX 声明、由 Rust 本地化与测量内核消费的静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct EmptyVisual {
+pub(crate) struct EmptyVisual {
     min_width: f32,
     max_width: f32,
     min_height: f32,
@@ -26,24 +26,8 @@ struct EmptyVisual {
     icon_color: ColorValue,
 }
 
-impl Default for EmptyVisual {
-    fn default() -> Self {
-        Self {
-            min_width: 160.0,
-            max_width: 320.0,
-            min_height: 100.0,
-            text_font_size: 13.0,
-            text_line_height: 1.5,
-            horizontal_padding: 16.0,
-            vertical_padding: 12.0,
-            icon_size: 32.0,
-            icon_text_gap: 12.0,
-            icon_max_height_ratio: 0.4,
-            text_color: ColorValue::Neutral(NeutralRole::TextSecondary),
-            icon_color: ColorValue::Neutral(NeutralRole::TextTertiary),
-        }
-    }
-}
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/display/empty/empty.uix");
 
 widget! {
     /// Empty — 空状态展示。
@@ -52,7 +36,7 @@ widget! {
         icon_name: String,
         image: String,
         #[snapshot(skip)]
-        visual: EmptyVisual,
+        visual: &'static EmptyVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -152,36 +136,8 @@ const fn empty_text_tertiary() -> ColorValue {
 }
 
 // 把 UIX 声明的静态视觉融合进空状态本地化与测量内核。
-#[allow(clippy::too_many_arguments)]
-fn build_empty_view(
-    mut kernel: Empty,
-    min_width: f32,
-    max_width: f32,
-    min_height: f32,
-    text_font_size: f32,
-    text_line_height: f32,
-    horizontal_padding: f32,
-    vertical_padding: f32,
-    icon_size: f32,
-    icon_text_gap: f32,
-    icon_max_height_ratio: f32,
-    text_color: ColorValue,
-    icon_color: ColorValue,
-) -> ViewNode {
-    kernel.visual = EmptyVisual {
-        min_width,
-        max_width,
-        min_height,
-        text_font_size,
-        text_line_height,
-        horizontal_padding,
-        vertical_padding,
-        icon_size,
-        icon_text_gap,
-        icon_max_height_ratio,
-        text_color,
-        icon_color,
-    };
+fn build_empty_view(mut kernel: Empty, visual: &'static EmptyVisual) -> ViewNode {
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -200,7 +156,7 @@ impl Empty {
             description: String::new(),
             icon_name: String::new(),
             image: String::new(),
-            visual: EmptyVisual::default(),
+            visual: EMPTY_VISUAL_REF,
         }
     }
     /// 设置空状态的说明文字。

@@ -12,7 +12,7 @@ use std::cell::Cell;
 
 // 保存由 UIX 声明、由 Rust 动画与几何内核消费的静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SkeletonVisual {
+pub(crate) struct SkeletonVisual {
     default_width: f32,
     default_height: f32,
     default_paragraph_rows: usize,
@@ -29,30 +29,12 @@ struct SkeletonVisual {
     shimmer_color: ColorValue,
 }
 
+// 同目录 UIX 生成唯一视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/display/skeleton/skeleton.uix");
+
 impl SkeletonVisual {
     fn paragraph_extent(self) -> f32 {
         self.paragraph_line_height + self.paragraph_gap
-    }
-}
-
-impl Default for SkeletonVisual {
-    fn default() -> Self {
-        Self {
-            default_width: 200.0,
-            default_height: 16.0,
-            default_paragraph_rows: 2,
-            paragraph_line_height: 12.0,
-            paragraph_gap: 4.0,
-            paragraph_last_width: 0.6,
-            rect_radius: 4.0,
-            text_radius: 2.0,
-            shimmer_width_ratio: 0.35,
-            shimmer_min_width: 8.0,
-            shimmer_speed: 0.8,
-            shimmer_alpha: 96,
-            base_color: ColorValue::Neutral(NeutralRole::FillTertiary),
-            shimmer_color: ColorValue::Neutral(NeutralRole::BgContainer),
-        }
     }
 }
 
@@ -91,7 +73,7 @@ widget! {
         phase: Cell<f32>,
         animation_dirty: Cell<bool>,
         #[snapshot(skip)]
-        visual: SkeletonVisual,
+        visual: &'static SkeletonVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -168,49 +150,7 @@ const fn skeleton_bg_container() -> ColorValue {
 }
 
 // 把 UIX 声明的静态视觉融合进 Rust 动画与几何内核。
-#[allow(clippy::too_many_arguments)]
-fn build_skeleton_view(
-    mut kernel: Skeleton,
-    default_width: f32,
-    default_height: f32,
-    default_paragraph_rows: f32,
-    paragraph_line_height: f32,
-    paragraph_gap: f32,
-    paragraph_last_width: f32,
-    rect_radius: f32,
-    text_radius: f32,
-    shimmer_width_ratio: f32,
-    shimmer_min_width: f32,
-    shimmer_speed: f64,
-    shimmer_alpha: f32,
-    base_color: ColorValue,
-    shimmer_color: ColorValue,
-) -> ViewNode {
-    let fallback = SkeletonVisual::default();
-    let visual = SkeletonVisual {
-        default_width,
-        default_height,
-        default_paragraph_rows: if default_paragraph_rows.is_finite() {
-            default_paragraph_rows.round().max(1.0) as usize
-        } else {
-            fallback.default_paragraph_rows
-        },
-        paragraph_line_height,
-        paragraph_gap,
-        paragraph_last_width,
-        rect_radius,
-        text_radius,
-        shimmer_width_ratio,
-        shimmer_min_width,
-        shimmer_speed,
-        shimmer_alpha: if shimmer_alpha.is_finite() {
-            shimmer_alpha.round().clamp(0.0, 255.0) as u8
-        } else {
-            fallback.shimmer_alpha
-        },
-        base_color,
-        shimmer_color,
-    };
+fn build_skeleton_view(mut kernel: Skeleton, visual: &'static SkeletonVisual) -> ViewNode {
     if !kernel.width_authored {
         kernel.w = visual.default_width;
     }
@@ -238,7 +178,7 @@ impl Skeleton {
 
     /// 创建默认宽 200、高 16 且未启用动画的矩形占位。
     pub fn new() -> Self {
-        let visual = SkeletonVisual::default();
+        let visual = SKELETON_VISUAL_REF;
         Self {
             shape: SkeletonShape::Rect,
             w: visual.default_width,
