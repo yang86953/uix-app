@@ -1,2 +1,2 @@
-// Watermark 是平铺文字绘制组件；UIX 声明公开根，Rust 内核负责旋转排版。
-<KernelView value={build_watermark_view(kernel)} />
+// Watermark 的透明度、角度、间距、偏移、外扩、主题色和排版比例由 UIX 声明；Rust 内核负责作者状态、平铺算法与底层绘制。
+<KernelView value={build_watermark_view(kernel, watermark_visual(watermark_tiling(0.15, -22, 200, 160, 0, 0, 2), watermark_typography(watermark_body_font(), 1.4), watermark_text_color()))} />

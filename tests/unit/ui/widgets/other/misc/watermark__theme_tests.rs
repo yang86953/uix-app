@@ -24,18 +24,120 @@ fn uix_root_preserves_watermark_kernel() {
     assert_eq!(kernel.text, "内部资料");
     assert_eq!(kernel.opacity, 0.2);
     assert_eq!(kernel.rotate, -30.0);
+    // UIX 声明必须进入真实绘制内核，而不是只保留根节点壳。
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (0.15, -22.0, 200.0, 160.0, 1.4, 2)
+    );
 }
 
-// 栈字符编码必须完整保留 ASCII、中文与四字节 Unicode 标量。
+// UIX 默认值只填充未显式设置的字段，并由所有实例共享。
 #[test]
-fn stack_glyph_encoding_preserves_unicode() {
-    // 逐类覆盖 UTF-8 的一、三与四字节编码宽度。
-    for character in ['A', '水', '🦀'] {
-        let mut buffer = [0_u8; 4];
-        let glyph = Watermark::encode_glyph(character, &mut buffer);
-        // 生产绘制收到的文本必须与原字符完全一致。
-        assert_eq!(glyph, character.to_string());
-    }
+fn uix_defaults_preserve_authored_values_and_share_visual_configuration() {
+    let authored = View::build(
+        Watermark::new("作者水印")
+            .opacity(0.2)
+            .rotate(-30.0)
+            .gap(220.0, 180.0)
+            .offset(5.0, 7.0),
+    );
+    let defaults = View::build(Watermark::new("默认水印"));
+    let authored = authored
+        .widget
+        .as_any()
+        .downcast_ref::<Watermark>()
+        .expect("作者水印必须保留 Watermark 内核");
+    let defaults = defaults
+        .widget
+        .as_any()
+        .downcast_ref::<Watermark>()
+        .expect("默认水印必须保留 Watermark 内核");
+    assert_eq!(
+        (
+            authored.opacity,
+            authored.rotate,
+            authored.gap_x,
+            authored.gap_y,
+            authored.x_offset,
+            authored.y_offset,
+        ),
+        (0.2, -30.0, 220.0, 180.0, 5.0, 7.0)
+    );
+    assert_eq!(
+        (
+            defaults.opacity,
+            defaults.rotate,
+            defaults.gap_x,
+            defaults.gap_y,
+            defaults.x_offset,
+            defaults.y_offset,
+        ),
+        (0.15, -22.0, 200.0, 160.0, 0.0, 0.0)
+    );
+    assert!(authored.shares_visual_with_for_test(defaults));
+}
+
+// 每个平铺实例必须按完整文本行绘制，避免逐字符命令破坏整形并放大布局次数。
+#[test]
+fn tiled_render_records_full_lines_under_shared_rotation() {
+    use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::painting::{DisplayList, PaintContext as DrawPaintContext, PaintOp};
+    use crate::draw::resources::font::font_service::FontService;
+    use crate::ui::Theme;
+    use crate::ui::widget_runtime::paint_context::PaintContext as UiPaintContext;
+    use crate::ui::widget_runtime::traits::WidgetRender;
+
+    let watermark = Watermark::new("AB\n水🦀");
+    let tree = crate::ui::WidgetTree::new();
+    let mut canvas = NoopCanvas2D;
+    let font_service = FontService::new();
+    let image_service = crate::draw::resources::image::ImageService::new();
+    let mut draw_context = DrawPaintContext::new_for_test(
+        &mut canvas,
+        crate::draw::FontHandle::new(0),
+        &font_service,
+        &image_service,
+        96.0,
+        1.0,
+        crate::draw::geometry::spatial::Orientation::YDown,
+        32,
+        32,
+    );
+    let mut list = DisplayList::new();
+    let tokens = Theme::antd_light().tokens_arc();
+    draw_context.with_recorder(&mut list, |draw_context| {
+        let mut ui_context = UiPaintContext::new(draw_context, tokens);
+        WidgetRender::render(
+            &watermark,
+            crate::core::Rect::new(0.0, 0.0, 20.0, 20.0),
+            &mut ui_context,
+            &tree,
+        );
+    });
+
+    let lines = list
+        .ops()
+        .iter()
+        .filter_map(|operation| match operation {
+            PaintOp::DrawText { text, .. } => Some(text.as_ref()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // 20x20 区域按 1 个可见单元加 2 个 UIX 外扩单元，共 3x3 个平铺实例。
+    assert_eq!(lines.len(), 18);
+    assert!(lines.iter().all(|line| *line == "AB" || *line == "水🦀"));
+    let transforms = list
+        .ops()
+        .iter()
+        .filter_map(|operation| match operation {
+            PaintOp::SetTransform { transform } => Some(transform),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(transforms.len(), 9);
+    assert!(transforms.iter().all(|transform| {
+        transform.m[1].abs() > f32::EPSILON && transform.m[3].abs() > f32::EPSILON
+    }));
 }
 
 // 默认主题值与显式作者值必须保持正确优先级。
