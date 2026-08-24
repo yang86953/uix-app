@@ -90,6 +90,8 @@ fn uix_shell_preserves_single_progress_kernel_leaf() {
 // 验证 UIX 默认尺寸与圆角只填充未显式设置的字段，并共享视觉表。
 #[test]
 fn uix_visual_defaults_keep_authored_dimensions_and_share_configuration() {
+    // 构建前默认值直接读取 UIX 生成的唯一静态视觉事实。
+    assert!(ProgressBar::new().uses_declared_visual_for_test());
     let first = View::build(ProgressBar::new().size(320.0, 12.0).round(false));
     let second = View::build(ProgressBar::new());
     let first = first
@@ -129,6 +131,7 @@ fn uix_visual_defaults_keep_authored_dimensions_and_share_configuration() {
         (200.0, 8.0, true)
     );
     assert!(first.shares_visual_with_for_test(second));
+    assert!(first.uses_declared_visual_for_test());
 }
 
 // 验证四类 fraction 输入共享唯一归一值与原因。

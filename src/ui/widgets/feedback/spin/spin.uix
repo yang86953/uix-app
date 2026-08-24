@@ -1,2 +1,52 @@
-// Spin 的三档尺寸、圆点序列、透明度、提示排版、遮罩与转速由 UIX 声明；Rust 内核负责动画状态与绘制。
-<KernelView value={build_spin_view(kernel, children, spin_visual(spin_default_size(), spin_layout(16, 24, 36, 0.35, 0.18, 1, 8, 18, 13), spin_dots(8, 0.70710677, 0.70710677, 0.25, 0.75), spin_motion(0, 1), spin_palette(spin_primary(), spin_overlay(), 30, spin_tip())))} />
+// Spin 的分组视觉记录由 UIX 唯一拥有；Rust 内核负责动画状态、延迟与绘制。
+<Visual
+  name="SPIN_LAYOUT_VISUAL"
+  type="SpinLayoutVisual"
+  smallDiameter={16.0}
+  defaultDiameter={24.0}
+  largeDiameter={36.0}
+  orbitRadiusRatio={0.35}
+  dotRadiusRatio={0.18}
+  dirtyPadding={1.0}
+  tipGap={8.0}
+  tipHeight={18.0}
+  tipFontSize={13.0}
+/>
+
+<Visual
+  name="SPIN_DOTS_VISUAL"
+  type="SpinDotsVisual"
+  count={8}
+  stepSin={0.70710677}
+  stepCos={0.70710677}
+  opacityStart={0.25}
+  opacityRange={0.75}
+/>
+
+<Visual
+  name="SPIN_MOTION_VISUAL"
+  type="SpinMotionVisual"
+  initialPhase={0.0}
+  turnsPerSecond={1.0}
+/>
+
+<Visual
+  name="SPIN_PALETTE_VISUAL"
+  type="SpinPaletteVisual"
+  indicator={spin_primary()}
+  overlay={spin_overlay()}
+  overlayAlpha={30}
+  tip={spin_tip()}
+/>
+
+<Visual
+  name="SPIN_VISUAL"
+  type="SpinVisual"
+  defaultSize={spin_default_size()}
+  layout={SPIN_LAYOUT_VISUAL}
+  dots={SPIN_DOTS_VISUAL}
+  motion={SPIN_MOTION_VISUAL}
+  palette={SPIN_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_spin_view(kernel, children, SPIN_VISUAL_REF)} />

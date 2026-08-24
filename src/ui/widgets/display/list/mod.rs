@@ -16,11 +16,10 @@ use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
 use crate::ui::{LayoutChild, SnapshotFields, WidgetId, WidgetTree};
 // 引入一次性交接声明子树所需的内部可变单元。
 use std::cell::{Cell, RefCell};
-use std::sync::OnceLock;
 
 // 保存由 UIX 声明的 List 默认尺寸与边框开关。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ListDefaultsVisual {
+pub(crate) struct ListDefaultsVisual {
     width: f32,
     min_height: f32,
     bordered: bool,
@@ -28,7 +27,7 @@ struct ListDefaultsVisual {
 
 // 保存由 UIX 声明的三档行高、留白与兼容文本排版。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ListRowsVisual {
+pub(crate) struct ListRowsVisual {
     small_height: f32,
     medium_height: f32,
     large_height: f32,
@@ -79,7 +78,7 @@ impl ListRadiusRole {
 
 // 保存由 UIX 声明的外框、分隔线与圆角几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ListFrameVisual {
+pub(crate) struct ListFrameVisual {
     radius: ListRadiusRole,
     radius_limit_ratio: f32,
     border_inset: f32,
@@ -89,7 +88,7 @@ struct ListFrameVisual {
 
 // 保存由 UIX 声明的主题语义色与正文字号角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ListPaletteVisual {
+pub(crate) struct ListPaletteVisual {
     background: ColorValue,
     border: ColorValue,
     text: ColorValue,
@@ -100,12 +99,15 @@ struct ListPaletteVisual {
 
 // 完整视觉配置由全部 List 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ListVisual {
+pub(crate) struct ListVisual {
     defaults: ListDefaultsVisual,
     rows: ListRowsVisual,
     frame: ListFrameVisual,
     palette: ListPaletteVisual,
 }
+
+// 同目录 UIX 生成四组视觉记录、根视觉记录及稳定静态借用。
+crate::uix_items!("src/ui/widgets/display/list/list.uix");
 
 // 保存 List 每帧复用的主题值。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -131,94 +133,7 @@ impl ListVisual {
     }
 }
 
-// 组合 UIX 声明的默认尺寸与边框开关。
-const fn list_defaults(width: f32, min_height: f32, bordered: bool) -> ListDefaultsVisual {
-    ListDefaultsVisual {
-        width,
-        min_height,
-        bordered,
-    }
-}
-
-// 组合 UIX 声明的三档行高、留白与兼容文本排版。
-#[allow(clippy::too_many_arguments)]
-const fn list_rows(
-    small_height: f32,
-    medium_height: f32,
-    large_height: f32,
-    horizontal_padding: f32,
-    horizontal_padding_frame_ratio: f32,
-    header_footer_font_size: f32,
-    load_more_height: f32,
-    load_more_font_size: f32,
-) -> ListRowsVisual {
-    ListRowsVisual {
-        small_height,
-        medium_height,
-        large_height,
-        horizontal_padding,
-        horizontal_padding_frame_ratio,
-        header_footer_font_size,
-        load_more_height,
-        load_more_font_size,
-    }
-}
-
-// 组合 UIX 声明的边框、分隔线与圆角视觉。
-const fn list_frame(
-    radius: ListRadiusRole,
-    radius_limit_ratio: f32,
-    border_inset: f32,
-    border_width: f32,
-    divider_width: f32,
-) -> ListFrameVisual {
-    ListFrameVisual {
-        radius,
-        radius_limit_ratio,
-        border_inset,
-        border_width,
-        divider_width,
-    }
-}
-
-// 组合 UIX 声明的主题语义色与正文字号角色。
-const fn list_palette(
-    background: ColorValue,
-    border: ColorValue,
-    text: ColorValue,
-    text_secondary: ColorValue,
-    primary: ColorValue,
-    item_font: ListFontRole,
-) -> ListPaletteVisual {
-    ListPaletteVisual {
-        background,
-        border,
-        text,
-        text_secondary,
-        primary,
-        item_font,
-    }
-}
-
-// 组合 UIX 声明的完整 List 视觉配置。
-const fn list_visual(
-    defaults: ListDefaultsVisual,
-    rows: ListRowsVisual,
-    frame: ListFrameVisual,
-    palette: ListPaletteVisual,
-) -> ListVisual {
-    ListVisual {
-        defaults,
-        rows,
-        frame,
-        palette,
-    }
-}
-
 // 向 UIX 提供受限表达式不能直接写入的默认值与主题角色。
-const fn list_bordered_default() -> bool {
-    true
-}
 const fn list_body_font() -> ListFontRole {
     ListFontRole::Body
 }
@@ -241,27 +156,9 @@ const fn list_primary_color() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
 }
 
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_LIST_VISUAL: ListVisual = list_visual(
-    list_defaults(400.0, 100.0, true),
-    list_rows(32.0, 40.0, 48.0, 16.0, 0.25, 13.0, 40.0, 14.0),
-    list_frame(ListRadiusRole::Body, 0.5, 0.5, 1.0, 1.0),
-    list_palette(
-        ColorValue::Neutral(NeutralRole::BgContainer),
-        ColorValue::Neutral(NeutralRole::BorderSecondary),
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Palette(PaletteColor::Primary),
-        ListFontRole::Body,
-    ),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_LIST_VISUAL: OnceLock<ListVisual> = OnceLock::new();
-
 /// List 尺寸对应的行高。
 pub fn list_item_height(size: ControlSize) -> f32 {
-    DEFAULT_LIST_VISUAL.rows.height(size)
+    LIST_VISUAL.rows.height(size)
 }
 
 // List — 列表组件。
@@ -860,7 +757,7 @@ impl List {
         Self {
             header: String::new(),
             footer: String::new(),
-            bordered: DEFAULT_LIST_VISUAL.defaults.bordered,
+            bordered: LIST_VISUAL.defaults.bordered,
             bordered_authored: false,
             list_size: crate::ui::widget_runtime::config::use_config().size,
             items: Vec::new(),
@@ -885,7 +782,7 @@ impl List {
             footer_view_height: Cell::new(0.0),
             // 加载入口尚未产生真实布局高度。
             load_more_view_height: Cell::new(0.0),
-            visual: &DEFAULT_LIST_VISUAL,
+            visual: LIST_VISUAL_REF,
         }
     }
     /// 替换列表按声明顺序展示的文本项。
@@ -1046,8 +943,7 @@ impl Default for List {
 }
 
 // 把列表数据、真实插槽与 UIX 视觉表融合为单一根节点。
-fn build_list_view(mut kernel: List, declared_visual: ListVisual) -> ViewNode {
-    let visual = UIX_LIST_VISUAL.get_or_init(|| declared_visual);
+fn build_list_view(mut kernel: List, visual: &'static ListVisual) -> ViewNode {
     if !kernel.bordered_authored {
         kernel.bordered = visual.defaults.bordered;
     }

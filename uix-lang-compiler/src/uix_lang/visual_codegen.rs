@@ -48,8 +48,9 @@ pub(crate) fn generate_visual_items(document: &Document) -> Result<TokenStream, 
                     pub(crate) static #name: #rust_type = #rust_type {
                         #(#fields,)*
                     };
-                    // 实例字段优先保存该静态借用，避免逐实例复制完整视觉表。
-                    pub(crate) static #reference_name: &'static #rust_type = &#name;
+                    // 借用常量直接指向唯一静态值，不额外占用一份静态指针存储。
+                    #[allow(dead_code)]
+                    pub(crate) const #reference_name: &'static #rust_type = &#name;
                 })
             })
         })

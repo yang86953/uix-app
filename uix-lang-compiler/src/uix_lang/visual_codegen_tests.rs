@@ -35,8 +35,7 @@ fn generates_named_visual_const_for_uix_items() {
         "{tokens}"
     );
     assert!(
-        tokens
-            .contains("pub (crate) static ICON_VISUAL_REF : & 'static IconVisual = & ICON_VISUAL"),
+        tokens.contains("pub (crate) const ICON_VISUAL_REF : & 'static IconVisual = & ICON_VISUAL"),
         "{tokens}"
     );
     assert!(tokens.contains("default_size : 24.0"), "{tokens}");

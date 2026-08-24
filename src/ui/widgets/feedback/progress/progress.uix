@@ -1,2 +1,56 @@
-// ProgressBar 的尺寸、几何比例、运动参数、渐变方向和主题角色由 UIX 声明；Rust 内核负责状态与绘制。
-<KernelView value={build_progress_view(kernel, progress_visual(progress_layout(200, 8, progress_round_default(), 0.4, 0.25, 1, 8, -0.25, 0.08, 2, 0.3, 0.72, 0.42, 0.65, 0.2, 1, 8, 0.5, 0.5, 11, 0.5, 1, progress_horizontal_gradient()), progress_motion(0, 0.75, 0.25, 0.25), progress_palette(progress_track(), progress_stroke(), progress_label(), progress_inner())))} />
+// ProgressBar 的分组视觉记录由 UIX 唯一拥有；Rust 内核负责状态、归一化、动画和绘制。
+<Visual
+  name="PROGRESS_LAYOUT_VISUAL"
+  type="ProgressLayoutVisual"
+  defaultWidth={200.0}
+  defaultHeight={8.0}
+  defaultRound={true}
+  circleRadiusRatio={0.4}
+  circleTrackWidthRatio={0.25}
+  circleTrackWidthMin={1.0}
+  circleTrackWidthMax={8.0}
+  circleStartTurns={-0.25}
+  stepGapRatio={0.08}
+  stepGapMax={2.0}
+  indeterminateBarWidthRatio={0.3}
+  dashboardCenterYRatio={0.72}
+  dashboardRadiusWidthRatio={0.42}
+  dashboardRadiusHeightRatio={0.65}
+  dashboardTrackWidthRatio={0.2}
+  dashboardTrackWidthMin={1.0}
+  dashboardTrackWidthMax={8.0}
+  dashboardStartTurns={0.5}
+  dashboardSweepTurns={0.5}
+  labelFontSize={11.0}
+  lineRadiusRatio={0.5}
+  dirtyPadding={1.0}
+  gradientDirection={progress_horizontal_gradient()}
+/>
+
+<Visual
+  name="PROGRESS_MOTION_VISUAL"
+  type="ProgressMotionVisual"
+  initialPhase={0.0}
+  phaseSpeed={0.75}
+  circleIndeterminateSweepTurns={0.25}
+  dashboardIndeterminateSweepRatio={0.25}
+/>
+
+<Visual
+  name="PROGRESS_PALETTE_VISUAL"
+  type="ProgressPaletteVisual"
+  track={progress_track()}
+  stroke={progress_stroke()}
+  label={progress_label()}
+  inner={progress_inner()}
+/>
+
+<Visual
+  name="PROGRESS_VISUAL"
+  type="ProgressVisual"
+  layout={PROGRESS_LAYOUT_VISUAL}
+  motion={PROGRESS_MOTION_VISUAL}
+  palette={PROGRESS_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_progress_view(kernel, PROGRESS_VISUAL_REF)} />

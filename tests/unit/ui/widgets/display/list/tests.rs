@@ -336,10 +336,13 @@ fn uix_root_preserves_list_kernel_and_visual_contract() {
 // 验证 List 实例共享 UIX 视觉表，显式边框开关仍保持最高优先级。
 #[test]
 fn list_instances_share_uix_visual_table_and_preserve_authored_border() {
+    // 构建前默认值直接读取 UIX 生成的唯一静态视觉事实。
+    assert!(std::ptr::eq(List::new().visual, LIST_VISUAL_REF));
     let first = crate::ui::view::View::build(List::new().items(vec!["一"]));
     let second = crate::ui::view::View::build(List::new().items(vec!["二"]).bordered(false));
     let first = first.widget.as_any().downcast_ref::<List>().unwrap();
     let second = second.widget.as_any().downcast_ref::<List>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, LIST_VISUAL_REF));
     assert!(!second.bordered);
 }

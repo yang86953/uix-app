@@ -11,7 +11,6 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,7 +43,7 @@ pub enum ProgressNormalizationReason {
 
 // 保存由 UIX 声明、由 Rust 几何与绘制算法消费的进度视觉常量。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ProgressLayoutVisual {
+pub(crate) struct ProgressLayoutVisual {
     default_width: f32,
     default_height: f32,
     default_round: bool,
@@ -72,7 +71,7 @@ struct ProgressLayoutVisual {
 
 // 保存由 UIX 声明、由 Rust 动画状态机消费的运动参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ProgressMotionVisual {
+pub(crate) struct ProgressMotionVisual {
     initial_phase: f32,
     phase_speed: f32,
     circle_indeterminate_sweep_turns: f32,
@@ -81,7 +80,7 @@ struct ProgressMotionVisual {
 
 // 保存进度组件使用的主题语义色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ProgressPaletteVisual {
+pub(crate) struct ProgressPaletteVisual {
     track: ColorValue,
     stroke: ColorValue,
     label: ColorValue,
@@ -90,113 +89,14 @@ struct ProgressPaletteVisual {
 
 // 完整视觉配置由全部 ProgressBar 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ProgressVisual {
+pub(crate) struct ProgressVisual {
     layout: ProgressLayoutVisual,
     motion: ProgressMotionVisual,
     palette: ProgressPaletteVisual,
 }
 
-// 组合 UIX 声明的进度几何、排版与渐变方向。
-#[allow(clippy::too_many_arguments)]
-const fn progress_layout(
-    default_width: f32,
-    default_height: f32,
-    default_round: bool,
-    circle_radius_ratio: f32,
-    circle_track_width_ratio: f32,
-    circle_track_width_min: f32,
-    circle_track_width_max: f32,
-    circle_start_turns: f32,
-    step_gap_ratio: f32,
-    step_gap_max: f32,
-    indeterminate_bar_width_ratio: f32,
-    dashboard_center_y_ratio: f32,
-    dashboard_radius_width_ratio: f32,
-    dashboard_radius_height_ratio: f32,
-    dashboard_track_width_ratio: f32,
-    dashboard_track_width_min: f32,
-    dashboard_track_width_max: f32,
-    dashboard_start_turns: f32,
-    dashboard_sweep_turns: f32,
-    label_font_size: f32,
-    line_radius_ratio: f32,
-    dirty_padding: f32,
-    gradient_direction: GradientDirection,
-) -> ProgressLayoutVisual {
-    ProgressLayoutVisual {
-        default_width,
-        default_height,
-        default_round,
-        circle_radius_ratio,
-        circle_track_width_ratio,
-        circle_track_width_min,
-        circle_track_width_max,
-        circle_start_turns,
-        step_gap_ratio,
-        step_gap_max,
-        indeterminate_bar_width_ratio,
-        dashboard_center_y_ratio,
-        dashboard_radius_width_ratio,
-        dashboard_radius_height_ratio,
-        dashboard_track_width_ratio,
-        dashboard_track_width_min,
-        dashboard_track_width_max,
-        dashboard_start_turns,
-        dashboard_sweep_turns,
-        label_font_size,
-        line_radius_ratio,
-        dirty_padding,
-        gradient_direction,
-    }
-}
-
-// 组合 UIX 声明的不确定动画参数。
-const fn progress_motion(
-    initial_phase: f32,
-    phase_speed: f32,
-    circle_indeterminate_sweep_turns: f32,
-    dashboard_indeterminate_sweep_ratio: f32,
-) -> ProgressMotionVisual {
-    ProgressMotionVisual {
-        initial_phase,
-        phase_speed,
-        circle_indeterminate_sweep_turns,
-        dashboard_indeterminate_sweep_ratio,
-    }
-}
-
-// 组合 UIX 声明的进度主题色角色。
-const fn progress_palette(
-    track: ColorValue,
-    stroke: ColorValue,
-    label: ColorValue,
-    inner: ColorValue,
-) -> ProgressPaletteVisual {
-    ProgressPaletteVisual {
-        track,
-        stroke,
-        label,
-        inner,
-    }
-}
-
-// 组合 UIX 声明的完整进度视觉配置。
-const fn progress_visual(
-    layout: ProgressLayoutVisual,
-    motion: ProgressMotionVisual,
-    palette: ProgressPaletteVisual,
-) -> ProgressVisual {
-    ProgressVisual {
-        layout,
-        motion,
-        palette,
-    }
-}
-
-// 向 UIX 提供线形进度默认圆角状态。
-const fn progress_round_default() -> bool {
-    true
-}
+// 同目录 UIX 生成三组视觉记录、根视觉记录及稳定静态借用。
+crate::uix_items!("src/ui/widgets/feedback/progress/progress.uix");
 
 // 向 UIX 提供进度轨道主题角色。
 const fn progress_track() -> ColorValue {
@@ -222,45 +122,6 @@ const fn progress_inner() -> ColorValue {
 const fn progress_horizontal_gradient() -> GradientDirection {
     GradientDirection::Horizontal
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_PROGRESS_VISUAL: ProgressVisual = progress_visual(
-    progress_layout(
-        200.0,
-        8.0,
-        progress_round_default(),
-        0.4,
-        0.25,
-        1.0,
-        8.0,
-        -0.25,
-        0.08,
-        2.0,
-        0.3,
-        0.72,
-        0.42,
-        0.65,
-        0.2,
-        1.0,
-        8.0,
-        0.5,
-        0.5,
-        11.0,
-        0.5,
-        1.0,
-        progress_horizontal_gradient(),
-    ),
-    progress_motion(0.0, 0.75, 0.25, 0.25),
-    progress_palette(
-        progress_track(),
-        progress_stroke(),
-        progress_label(),
-        progress_inner(),
-    ),
-);
-
-// 正常 UIX 构建首次写入声明配置，后续 ProgressBar 实例只共享该静态对象。
-static UIX_PROGRESS_VISUAL: OnceLock<ProgressVisual> = OnceLock::new();
 
 // 为诊断日志提供稳定、无本地化依赖的原因标识。
 impl ProgressNormalizationReason {
@@ -476,10 +337,7 @@ impl Default for ProgressBar {
 }
 
 // 把 UIX 声明的共享视觉配置融合进进度条 Rust 状态与绘制内核。
-fn build_progress_view(mut kernel: ProgressBar, declared_visual: ProgressVisual) -> ViewNode {
-    let visual = UIX_PROGRESS_VISUAL.get_or_init(|| declared_visual);
-    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
-    debug_assert_eq!(*visual, declared_visual);
+fn build_progress_view(mut kernel: ProgressBar, visual: &'static ProgressVisual) -> ViewNode {
     if !kernel.width_authored {
         kernel.width = visual.layout.default_width;
     }
@@ -492,7 +350,7 @@ fn build_progress_view(mut kernel: ProgressBar, declared_visual: ProgressVisual)
     if !kernel.progress_type_authored {
         kernel.progress_type = ProgressType::Line;
     }
-    if kernel.indeterminate_phase == DEFAULT_PROGRESS_VISUAL.motion.initial_phase {
+    if kernel.indeterminate_phase == PROGRESS_VISUAL.motion.initial_phase {
         kernel.indeterminate_phase = visual.motion.initial_phase;
         kernel.previous_indeterminate_phase = visual.motion.initial_phase;
     }
@@ -522,11 +380,11 @@ impl ProgressBar {
             normalization_reported: false,
             stroke_color: None,
             track_color: None,
-            height: DEFAULT_PROGRESS_VISUAL.layout.default_height,
+            height: PROGRESS_VISUAL.layout.default_height,
             height_authored: false,
-            width: DEFAULT_PROGRESS_VISUAL.layout.default_width,
+            width: PROGRESS_VISUAL.layout.default_width,
             width_authored: false,
-            round: DEFAULT_PROGRESS_VISUAL.layout.default_round,
+            round: PROGRESS_VISUAL.layout.default_round,
             round_authored: false,
             progress_type: ProgressType::Line,
             progress_type_authored: false,
@@ -535,9 +393,9 @@ impl ProgressBar {
             steps: 0,
             dashboard: false,
             format_text: None,
-            indeterminate_phase: DEFAULT_PROGRESS_VISUAL.motion.initial_phase,
-            previous_indeterminate_phase: DEFAULT_PROGRESS_VISUAL.motion.initial_phase,
-            visual: &DEFAULT_PROGRESS_VISUAL,
+            indeterminate_phase: PROGRESS_VISUAL.motion.initial_phase,
+            previous_indeterminate_phase: PROGRESS_VISUAL.motion.initial_phase,
+            visual: PROGRESS_VISUAL_REF,
         }
     }
 
@@ -693,6 +551,12 @@ impl ProgressBar {
     #[cfg(test)]
     pub(crate) fn shares_visual_with_for_test(&self, other: &Self) -> bool {
         std::ptr::eq(self.visual, other.visual)
+    }
+
+    // 测试目标确认构建前后都直接借用 UIX 生成的唯一静态视觉值。
+    #[cfg(test)]
+    pub(crate) fn uses_declared_visual_for_test(&self) -> bool {
+        std::ptr::eq(self.visual, PROGRESS_VISUAL_REF)
     }
 
     fn render_dashboard(
