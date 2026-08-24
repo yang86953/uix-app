@@ -58,6 +58,32 @@ fn expire_confirmations_keeps_fresh_pending() {
 }
 
 #[test]
+fn expire_confirmations_compacts_mixed_batch_in_order() {
+    let mut state = WindowAgentState::new();
+    let (tx1, rx1) = mpsc::sync_channel(1);
+    let (tx3, rx3) = mpsc::sync_channel(1);
+    let expired_at = Instant::now() - Duration::from_secs(120);
+    state.confirm_pending.push(pending(1, expired_at));
+    state.confirm_pending[0].response = Some(tx1);
+    state.confirm_pending.push(pending(2, Instant::now()));
+    state.confirm_pending.push(pending(3, expired_at));
+    state.confirm_pending[2].response = Some(tx3);
+
+    state.expire_confirmations();
+
+    assert_eq!(state.confirm_pending.len(), 1);
+    assert_eq!(state.confirm_pending[0].confirm_id, 2);
+    for (rx, expected_id) in [(rx1, 1), (rx3, 3)] {
+        match recv_result(rx) {
+            Ok(Err(AgentCommandError::ConfirmationNotFound { confirm_id })) => {
+                assert_eq!(confirm_id, expected_id);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn fail_confirmations_completes_all_pending() {
     let mut state = WindowAgentState::new();
     let (tx1, rx1) = mpsc::sync_channel(1);
