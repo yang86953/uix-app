@@ -4,9 +4,11 @@ use std::cell::Cell;
 use std::ops::RangeInclusive;
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
@@ -16,8 +18,110 @@ use crate::ui::widgets::tooltip_primitives::{
     paint_tooltip_bubble, tooltip_bubble_rect, tooltip_fallback_surface,
 };
 use crate::ui::{
-    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
+    WidgetTree,
 };
+
+// 保存 UIX 声明的固有尺寸、轨道/拇指、刻度与 Tooltip 呈现参数。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SliderVisual {
+    intrinsic_width: f32,
+    marks_height: f32,
+    small_track_height: f32,
+    medium_track_height: f32,
+    large_track_height: f32,
+    small_thumb_radius: f32,
+    medium_thumb_radius: f32,
+    large_thumb_radius: f32,
+    center_ratio: f32,
+    mark_radius: f32,
+    mark_stroke_width: f32,
+    thumb_stroke_width: f32,
+    focus_stroke_width: f32,
+    focus_radius: f32,
+    mark_label_font_size: f32,
+    tooltip_background_alpha: u8,
+    tooltip_arrow: bool,
+    tooltip_z_index: i32,
+    primary: ColorValue,
+    primary_hover: ColorValue,
+    track: ColorValue,
+    thumb: ColorValue,
+    label: ColorValue,
+    tooltip_background: ColorValue,
+    tooltip_text: ColorValue,
+}
+
+// 同目录 UIX 生成唯一单值滑块视觉值及静态借用。
+crate::uix_items!("src/ui/widgets/input/slider/slider.uix");
+
+// 保存每帧一次解析后的主题颜色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedSliderVisual {
+    primary: Color,
+    primary_hover: Color,
+    track: Color,
+    thumb: Color,
+    label: Color,
+    tooltip_background: Color,
+    tooltip_text: Color,
+}
+
+impl SliderVisual {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> ResolvedSliderVisual {
+        ResolvedSliderVisual {
+            primary: self.primary.resolve(tokens),
+            primary_hover: self.primary_hover.resolve(tokens),
+            track: self.track.resolve(tokens),
+            thumb: self.thumb.resolve(tokens),
+            label: self.label.resolve(tokens),
+            tooltip_background: self
+                .tooltip_background
+                .resolve(tokens)
+                .with_alpha(self.tooltip_background_alpha),
+            tooltip_text: self.tooltip_text.resolve(tokens),
+        }
+    }
+
+    fn track_height(self, size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => self.small_track_height,
+            ControlSize::Medium => self.medium_track_height,
+            ControlSize::Large => self.large_track_height,
+        }
+    }
+
+    fn thumb_radius(self, size: ControlSize) -> f32 {
+        match size {
+            ControlSize::Small => self.small_thumb_radius,
+            ControlSize::Medium => self.medium_thumb_radius,
+            ControlSize::Large => self.large_thumb_radius,
+        }
+    }
+}
+
+// 向 UIX 提供零分配主题角色。
+const fn slider_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+const fn slider_primary_hover() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryHover)
+}
+const fn slider_track() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+const fn slider_thumb() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+const fn slider_label() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::TextSecondary)
+}
+const fn slider_tooltip_background() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Black)
+}
+const fn slider_tooltip_text() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
 
 pub(super) fn decimal_places(value: f64) -> i32 {
     if !value.is_finite() || value == 0.0 {
@@ -54,6 +158,9 @@ widget! {
         // 缓存当前逻辑表面，统一拖动提示的绘制、脏区与登记边界。
         surface_rect: Cell<Option<Rect>>,
         pending_change: Cell<Option<f64>>,
+        #[snapshot(skip)]
+        /// UIX 声明的轨道、拇指、刻度、焦点与 Tooltip 视觉。
+        pub(crate) visual: &'static SliderVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -164,12 +271,10 @@ widget! {
             return;
         }
 
-        let primary = ctx.tokens().color_primary();
-        let primary_hover = ctx.tokens().color_primary_hover();
-        let fill = ctx.tokens().color_fill_tertiary();
+        let visual = self.visual.resolve(ctx.tokens());
         let track_h = self.track_height(control_rect);
         let thumb_r = self.thumb_radius(control_rect);
-        let cy = control_rect.y + control_rect.h * 0.5;
+        let cy = control_rect.y + control_rect.h * self.visual.center_ratio;
 
         let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
         let (track_x, track_w) = self.track_span(control_rect);
@@ -178,16 +283,16 @@ widget! {
         ctx.push_clip(control_rect);
         ctx.fill_rect(
             Rect::new(track_x, cy - track_h * 0.5, track_w, track_h),
-            fill,
-            Some(Radius::uniform(track_h * 0.5)),
+            visual.track,
+            Some(Radius::uniform(track_h * self.visual.center_ratio)),
         );
         ctx.fill_rect(
             Rect::new(track_x, cy - track_h * 0.5, thumb_x - track_x, track_h),
-            primary,
-            Some(Radius::uniform(track_h * 0.5)),
+            visual.primary,
+            Some(Radius::uniform(track_h * self.visual.center_ratio)),
         );
-        let mark_radius = (3.0 * self.visual_scale(control_rect))
-            .min(control_rect.h * 0.5)
+        let mark_radius = (self.visual.mark_radius * self.visual_scale(control_rect))
+            .min(control_rect.h * self.visual.center_ratio)
             .max(0.0);
         for (mark, _) in &self.marks {
             let mark_pct = ((*mark - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
@@ -196,7 +301,11 @@ widget! {
                 mark_x,
                 cy,
                 mark_radius,
-                if *mark <= self.value { primary } else { fill },
+                if *mark <= self.value {
+                    visual.primary
+                } else {
+                    visual.track
+                },
             );
             ctx.stroke_rect(
                 Rect::new(
@@ -205,37 +314,41 @@ widget! {
                     mark_radius * 2.0,
                     mark_radius * 2.0,
                 ),
-                primary,
-                1.0,
+                visual.primary,
+                self.visual.mark_stroke_width,
                 Some(Radius::uniform(mark_radius)),
             );
         }
         let thumb_color = if self.dragging {
-            primary_hover
+            visual.primary_hover
         } else if self.hovered {
-            primary
+            visual.primary
         } else {
-            // 默认滑块头：白色 token。
-            ctx.tokens().color_white()
+            visual.thumb
         };
         ctx.fill_circle(thumb_x, cy, thumb_r, thumb_color);
         ctx.stroke_rect(
             Rect::new(thumb_x - thumb_r, cy - thumb_r, thumb_r * 2.0, thumb_r * 2.0),
-            primary,
-            2.0,
+            visual.primary,
+            self.visual.thumb_stroke_width,
             Some(Radius::uniform(thumb_r)),
         );
 
         if self.focused && tree.keyboard_focus_visible() {
-            ctx.stroke_rect(control_rect, primary, 1.5, Some(Radius::uniform(4.0)));
+            ctx.stroke_rect(
+                control_rect,
+                visual.primary,
+                self.visual.focus_stroke_width,
+                Some(Radius::uniform(self.visual.focus_radius)),
+            );
         }
         ctx.pop_clip();
 
         let label_height = (frame.h - control_rect.h).max(0.0);
         if label_height > 0.0 && !self.marks.is_empty() {
-            let label_color = ctx.tokens().color_text_secondary();
             let label_top = control_rect.y + control_rect.h;
-            let font_size = (10.0 * self.visual_scale(control_rect)).min(label_height);
+            let font_size = (self.visual.mark_label_font_size * self.visual_scale(control_rect))
+                .min(label_height);
             ctx.push_clip(frame);
             for (index, (mark, label)) in self.marks.iter().enumerate() {
                 let pct = ((*mark - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
@@ -259,7 +372,7 @@ widget! {
                 let label_rect = Rect::new(left, label_top, (right - left).max(0.0), label_height);
                 if label_rect.w > 0.0 && font_size > 0.0 {
                     ctx.push_clip(label_rect);
-                    ctx.text_center(label, label_rect, label_color, font_size);
+                    ctx.text_center(label, label_rect, visual.label, font_size);
                     ctx.pop_clip();
                 }
             }
@@ -273,10 +386,9 @@ widget! {
                 &text,
                 target,
                 placement,
-                // 气泡底：原为 50,50,50 深灰，收敛为黑色 token（AntD 标准 tooltip 色，alpha 保持原值）。
-                ctx.tokens().color_black().with_alpha(230),
-                ctx.tokens().color_white(),
-                true,
+                visual.tooltip_background,
+                visual.tooltip_text,
+                self.visual.tooltip_arrow,
             )
         });
         self.last_tooltip_rect.set(tooltip_rect);
@@ -290,7 +402,7 @@ widget! {
         if let Some((placement, target)) = self.tooltip_target(frame) {
             dirty = dirty.union(&tooltip_bubble_rect(
                 &self.value.to_string(),
-                true,
+                self.visual.tooltip_arrow,
                 placement,
                 target,
                 self.tooltip_surface_or_fallback(target),
@@ -305,12 +417,12 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
                 .bounds(tooltip_bubble_rect(
                     &self.value.to_string(),
-                    true,
+                    self.visual.tooltip_arrow,
                     placement,
                     target,
                     self.tooltip_surface_or_fallback(target),
                 ))
-                .z_index(1100),
+                .z_index(self.visual.tooltip_z_index),
         )
     }
 
@@ -415,23 +527,15 @@ impl Slider {
     }
 
     fn track_height(&self, frame: Rect) -> f32 {
-        let nominal = match self.slider_size {
-            ControlSize::Small => 3.0,
-            ControlSize::Medium => 4.0,
-            ControlSize::Large => 5.0,
-        };
+        let nominal = self.visual.track_height(self.slider_size);
         (nominal * self.visual_scale(frame)).min(frame.h)
     }
 
     fn thumb_radius(&self, frame: Rect) -> f32 {
-        let nominal = match self.slider_size {
-            ControlSize::Small => 5.0,
-            ControlSize::Medium => 6.0,
-            ControlSize::Large => 7.5,
-        };
+        let nominal = self.visual.thumb_radius(self.slider_size);
         (nominal * self.visual_scale(frame))
-            .min(frame.w * 0.5)
-            .min(frame.h * 0.5)
+            .min(frame.w * self.visual.center_ratio)
+            .min(frame.h * self.visual.center_ratio)
             .max(0.0)
     }
 
@@ -463,7 +567,7 @@ impl Slider {
             placement,
             Rect::new(
                 thumb_x - thumb_r,
-                control_rect.y + control_rect.h * 0.5 - thumb_r,
+                control_rect.y + control_rect.h * self.visual.center_ratio - thumb_r,
                 thumb_r * 2.0,
                 thumb_r * 2.0,
             ),
@@ -503,6 +607,7 @@ impl Slider {
         self.value_binding = next.value_binding;
         self.value = controlled_value.unwrap_or_else(|| self.clamp_value(self.value));
         self.slider_size = next.slider_size;
+        self.visual = next.visual;
     }
 }
 
@@ -523,6 +628,7 @@ impl Slider {
     pub fn new(range: RangeInclusive<f64>) -> Self {
         let (min, max) = Self::normalize_range(range);
         let config = crate::ui::widget_runtime::config::use_config();
+        let visual = SLIDER_VISUAL_REF;
         Self {
             min,
             max,
@@ -540,6 +646,7 @@ impl Slider {
             // 新滑块尚未接收布局或绘制表面。
             surface_rect: Cell::new(None),
             pending_change: Cell::new(None),
+            visual,
         }
     }
 
@@ -622,15 +729,39 @@ impl Slider {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let marks_height = if self.marks.is_empty() { 0.0 } else { 18.0 };
-        Size::new(200.0, self.control_height() + marks_height)
+        let marks_height = if self.marks.is_empty() {
+            0.0
+        } else {
+            self.visual.marks_height
+        };
+        Size::new(
+            self.visual.intrinsic_width,
+            self.control_height() + marks_height,
+        )
     }
+}
+
+// 把 Slider Rust 值与 Overlay 内核和 UIX 静态视觉组合为单一组件节点。
+fn build_slider_view(mut kernel: Slider, visual: &'static SliderVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Slider {
+    fn build(self) -> ViewNode {
+        build_slider_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_slider_uix_root(kernel: Slider) -> ViewNode {
+    crate::uix!("src/ui/widgets/input/slider/slider.uix")
 }
 
 // 验证滑块拖动提示复用共享表面约束几何。
 #[cfg(test)]
 // 将拖动状态构造限制在当前模块的内部测试中。
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/input/slider__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/input/slider__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;
