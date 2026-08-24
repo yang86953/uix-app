@@ -1,0 +1,31 @@
+// Steps 的方向、标记、连接线、标题、说明、焦点和主题由 UIX 唯一拥有。
+<Visual name="STEPS_LAYOUT_VISUAL" type="StepsLayoutVisual"
+  stepExtent={80.0} horizontalStepMaxWidth={200.0}
+  horizontalWidth={600.0} horizontalHeight={96.0} verticalWidth={200.0}
+  circleRadius={14.0} centerOffset={28.0} lineHalfWidth={1.0} lineThickness={2.0}
+  dotRadiusFactor={0.35} titleGap={4.0} titleHeight={20.0}
+  descriptionOffset={24.0} descriptionHeight={18.0}
+  verticalTextStart={24.0} verticalTitleOffset={-20.0} verticalTextEndReserve={60.0}
+  verticalTitleHeight={24.0} verticalDescriptionOffset={4.0}
+  verticalDescriptionHeight={22.0}
+/>
+<Visual name="STEPS_TYPOGRAPHY_VISUAL" type="StepsTypographyVisual"
+  marker={steps_font_base()} title={13.0} description={11.0}
+/>
+<Visual name="STEPS_CHROME_VISUAL" type="StepsChromeVisual"
+  markerBorderWidth={2.0} focusWidth={1.5} radius={steps_radius_small()}
+/>
+<Visual name="STEPS_DEFAULTS_VISUAL" type="StepsDefaultsVisual"
+  direction={steps_direction_horizontal()} clickable={true} dot={false}
+/>
+<Visual name="STEPS_ICONS_VISUAL" type="StepsIconsVisual" finish="check" />
+<Visual name="STEPS_PALETTE_VISUAL" type="StepsPaletteVisual"
+  primary={steps_primary()} error={steps_error()} text={steps_text()}
+  textSecondary={steps_text_secondary()} fill={steps_fill()} white={steps_white()}
+/>
+<Visual name="STEPS_VISUAL" type="StepsVisual"
+  layout={STEPS_LAYOUT_VISUAL} typography={STEPS_TYPOGRAPHY_VISUAL}
+  chrome={STEPS_CHROME_VISUAL} defaults={STEPS_DEFAULTS_VISUAL}
+  icons={STEPS_ICONS_VISUAL} palette={STEPS_PALETTE_VISUAL}
+/>
+<KernelView value={build_steps_view(kernel, STEPS_VISUAL_REF)} />
