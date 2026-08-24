@@ -56,7 +56,8 @@ impl ModalBuilder {
 
     /// 设置对话框标题。
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.modal.title = title.into();
+        // 标题配置完成后收紧为精确容量文本，避免每实例保留闲置 capacity。
+        self.modal.title = title.into().into_boxed_str();
         self
     }
 
@@ -170,8 +171,8 @@ impl ModalBuilder {
 
 impl crate::ui::view::View for ModalBuilder {
     fn build(self) -> crate::ui::view::ViewNode {
-        // 把完整有序内容集合交给 Modal 运行节点拥有。
-        crate::ui::view::ViewNode::new(self.modal, self.content)
+        // UIX 拥有视觉配置；Rust 内核继续独占状态、事件、布局与内容生命周期。
+        self.modal.build_view_with_children(self.content)
     }
 }
 

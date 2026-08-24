@@ -1,0 +1,106 @@
+<Visual
+  name="MODAL_DEFAULTS_VISUAL"
+  type="ModalDefaultsVisual"
+  smallWidth={400.0}
+  smallHeight={200.0}
+  mediumWidth={520.0}
+  mediumHeight={300.0}
+  largeWidth={720.0}
+  largeHeight={400.0}
+  closable={true}
+  maskClosable={true}
+  footerVisible={true}
+  centered={true}
+  overlay={false}
+  destroyOnClose={false}
+/>
+
+<Visual
+  name="MODAL_LAYOUT_VISUAL"
+  type="ModalLayoutVisual"
+  triggerWidth={96.0}
+  triggerHeight={32.0}
+  surfaceFallbackWidth={1200.0}
+  surfaceFallbackHeight={760.0}
+  overlayFallbackOrigin={-2000.0}
+  overlayFallbackExtent={4000.0}
+  safeMargin={16.0}
+  safeMarginRatio={0.1}
+  headerHeight={56.0}
+  footerHeight={56.0}
+  closeWidth={48.0}
+  titleInset={24.0}
+  closeInset={8.0}
+  dividerThickness={1.0}
+  bodyPadding={24.0}
+  footerSideInset={16.0}
+  footerSideInsetRatio={0.25}
+  footerGap={8.0}
+  footerGapRatio={0.1}
+  footerButtonMaxWidth={80.0}
+  footerButtonVerticalInset={16.0}
+  footerButtonMaxHeight={32.0}
+/>
+
+<Visual
+  name="MODAL_TYPOGRAPHY_VISUAL"
+  type="ModalTypographyVisual"
+  trigger={modal_font_fixed(13.0)}
+  title={modal_font_large()}
+  closeIcon={16.0}
+  footer={modal_font_fixed(13.0)}
+/>
+
+<Visual
+  name="MODAL_MOTION_VISUAL"
+  type="ModalMotionVisual"
+  enterDuration={0.0}
+  leaveDuration={0.2}
+/>
+
+<Visual
+  name="MODAL_ICONS_VISUAL"
+  type="ModalIconsVisual"
+  close="x"
+/>
+
+<Visual
+  name="MODAL_CHROME_VISUAL"
+  type="ModalChromeVisual"
+  overlayZ={1000}
+  panelStroke={1.0}
+  triggerLabel="打开 Modal"
+  panelRadius={modal_radius_large()}
+  triggerRadius={modal_radius_normal()}
+  controlRadius={modal_radius_small()}
+/>
+
+<Visual
+  name="MODAL_PALETTE_VISUAL"
+  type="ModalPaletteVisual"
+  mask={modal_bg_mask()}
+  panelBackground={modal_bg_container()}
+  border={modal_border_secondary()}
+  text={modal_text()}
+  textSecondary={modal_text_secondary()}
+  primary={modal_primary()}
+  primaryHover={modal_primary_hover()}
+  primaryActive={modal_primary_active()}
+  fillSecondary={modal_fill_secondary()}
+  fillTertiary={modal_fill_tertiary()}
+  white={modal_white()}
+/>
+
+<Visual
+  name="MODAL_VISUAL"
+  type="ModalVisual"
+  defaults={MODAL_DEFAULTS_VISUAL}
+  layout={MODAL_LAYOUT_VISUAL}
+  typography={MODAL_TYPOGRAPHY_VISUAL}
+  motion={MODAL_MOTION_VISUAL}
+  icons={MODAL_ICONS_VISUAL}
+  chrome={MODAL_CHROME_VISUAL}
+  palette={MODAL_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_modal_view(kernel, children, MODAL_VISUAL_REF)} />

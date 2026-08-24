@@ -5,10 +5,14 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 use crate::widget;
 use std::rc::Rc;
+
+mod presentation;
+use self::presentation::*;
 
 mod builder;
 mod methods;
@@ -80,7 +84,8 @@ pub(crate) enum ModalPointerTarget {
 widget! {
     /// Modal dialog.
     pub struct Modal {
-        pub(crate) title: String,
+        // 精确容量文本避免为不可变标题保留 String capacity 字段。
+        pub(crate) title: Box<str>,
         pub(crate) visible: bool,
         pub(crate) width: f32,
         pub(crate) height: f32,
@@ -115,6 +120,9 @@ widget! {
         pub(crate) footer_hovered: Cell<Option<ModalPointerTarget>>,
         pub(crate) pressed_target: Cell<Option<ModalPointerTarget>>,
         pub(crate) activation_key: Cell<Option<crate::ui::KeyCode>>,
+        // 全部实例只保存指向 UIX 唯一视觉静态项的共享引用。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static ModalVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -128,7 +136,7 @@ widget! {
         if self.overlay && self.is_present() {
             Rect::new(0.0, 0.0, self.last_win_w.get(), self.last_win_h.get())
         } else if !self.is_present() {
-            let trigger = Self::trigger_rect_for_size(actual_frame.w, actual_frame.h);
+            let trigger = self.trigger_rect_for_size(actual_frame.w, actual_frame.h);
             self.last_trigger_rect.set(trigger);
             Rect::new(
                 actual_frame.x + trigger.x,
@@ -280,17 +288,20 @@ widget! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let frame = Self::normalize_frame(frame);
         self.last_frame.set(frame);
+        let visual = self.visual;
         if !self.is_present() {
-            let local_trigger = Self::trigger_rect_for_size(frame.w, frame.h);
+            let local_trigger = self.trigger_rect_for_size(frame.w, frame.h);
             self.last_trigger_rect.set(local_trigger);
+            // 关闭态只解析触发器实际使用的主题角色。
+            let resolved = visual.resolve_trigger(ctx.tokens());
             let primary = if self.pressed_target.get() == Some(ModalPointerTarget::Trigger)
                 || self.activation_key.get().is_some()
             {
-                ctx.tokens().color_primary_active()
+                resolved.primary_active
             } else if self.close_hovered.get() {
-                ctx.tokens().color_primary_hover()
+                resolved.primary_hover
             } else {
-                ctx.tokens().color_primary()
+                resolved.primary
             };
             let trigger = Rect::new(
                 frame.x + local_trigger.x,
@@ -302,17 +313,20 @@ widget! {
                 return;
             }
             ctx.push_clip(trigger);
-            ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
-            ctx.text_center("打开 Modal", trigger, ctx.tokens().color_white(), 13.0);
+            ctx.fill_rect(trigger, primary, Some(Radius::uniform(resolved.radius)));
+            ctx.text_center(
+                visual.chrome.trigger_label,
+                trigger,
+                resolved.white,
+                resolved.font_size,
+            );
             ctx.pop_clip();
             return;
         }
 
-        let border_radius_lg = ctx.tokens().border_radius_lg();
-        let bg_container = ctx.tokens().color_bg_container();
-        let border_secondary = ctx.tokens().color_border_secondary();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
+        // 打开态按真实可见分支一次解析主题，避免同一帧重复动态分派。
+        let resolved = visual.resolve_dialog(ctx.tokens(), self.closable, self.footer_visible);
+        let layout = &visual.layout;
         let surface_size = ctx.surface_size();
         let surface = Rect::new(0.0, 0.0, surface_size.w, surface_size.h);
         let dialog = if self.overlay {
@@ -326,8 +340,8 @@ widget! {
         self.last_dialog_rect.set(dialog);
         // 保留主题遮罩色的基础 alpha，并按当前进出场进度衰减。
         let mask = super::fade_token_color(
-            // 读取当前组件主题作用域的遮罩 token。
-            ctx.tokens().color_bg_mask(),
+            // 使用本帧已经解析的遮罩角色。
+            resolved.mask,
             // 使用 Modal 生命周期拥有的过渡不透明度。
             self.transition_opacity(),
         );
@@ -343,29 +357,44 @@ widget! {
             return;
         }
         ctx.push_clip(dialog);
-        let radius = Some(Radius::uniform(border_radius_lg));
-        ctx.fill_rect(dialog, bg_container, radius);
-        ctx.stroke_rect(dialog, border_secondary, 1.0, radius);
+        let radius = Some(Radius::uniform(resolved.panel_radius));
+        ctx.fill_rect(dialog, resolved.background, radius);
+        ctx.stroke_rect(dialog, resolved.border, visual.chrome.panel_stroke, radius);
 
-        let title_h = dialog.h.min(56.0);
+        let title_h = dialog.h.min(layout.header_height);
         let footer_h = if self.footer_visible {
-            (dialog.h - title_h).clamp(0.0, 56.0)
+            (dialog.h - title_h).clamp(0.0, layout.footer_height)
         } else {
             0.0
         };
-        let close_w = if self.closable { dialog.w.min(48.0) } else { 0.0 };
-        let title_x = dialog.x + 24.0_f32.min(dialog.w);
+        let close_w = if self.closable {
+            dialog.w.min(layout.close_width)
+        } else {
+            0.0
+        };
+        let title_x = dialog.x + layout.title_inset.min(dialog.w);
         let title_content = Rect::new(
             title_x,
             dialog.y,
             (dialog.x + dialog.w - close_w - title_x).max(0.0),
             title_h,
         );
-        Self::paint_elided_text(ctx, &self.title, title_content, text_color, ctx.tokens().font_size_lg());
+        Self::paint_elided_text(
+            ctx,
+            &self.title,
+            title_content,
+            resolved.text,
+            resolved.title_font_size,
+        );
         if title_h < dialog.h {
             ctx.fill_rect(
-                Rect::new(dialog.x, dialog.y + title_h, dialog.w, 1.0),
-                border_secondary,
+                Rect::new(
+                    dialog.x,
+                    dialog.y + title_h,
+                    dialog.w,
+                    layout.divider_thickness,
+                ),
+                resolved.border,
                 None,
             );
         }
@@ -377,80 +406,92 @@ widget! {
                 close_w,
                 title_h,
             );
-            let close_button = Self::inset_rect(close_rect, 8.0);
+            let close_button = Self::inset_rect(close_rect, layout.close_inset);
             if self.pressed_target.get() == Some(ModalPointerTarget::Close) {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_secondary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    resolved.fill_secondary,
+                    Some(Radius::uniform(resolved.control_radius)),
                 );
             } else if self.close_hovered.get() {
                 ctx.fill_rect(
                     close_button,
-                    ctx.tokens().color_fill_tertiary(),
-                    Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                    resolved.fill_tertiary,
+                    Some(Radius::uniform(resolved.control_radius)),
                 );
             }
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
+                visual.icons.close,
                 close_button,
-                text_secondary,
-                16.0,
+                resolved.text_secondary,
+                visual.typography.close_icon,
             );
         }
         if footer_h > 0.0 {
             ctx.fill_rect(
-                Rect::new(dialog.x, dialog.y + dialog.h - footer_h, dialog.w, 1.0),
-                border_secondary,
+                Rect::new(
+                    dialog.x,
+                    dialog.y + dialog.h - footer_h,
+                    dialog.w,
+                    layout.divider_thickness,
+                ),
+                resolved.border,
                 None,
             );
             // 从与命中共用的几何函数取得取消和确认按钮区域。
-            let (cancel_rect, ok_rect) = Self::footer_action_rects(dialog);
+            let (cancel_rect, ok_rect) = self.footer_action_rects(dialog);
             // 使用统一的小圆角绘制底部操作。
-            let action_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+            let action_radius = Some(Radius::uniform(resolved.control_radius));
             // 按压与悬停状态只影响取消按钮的背景反馈。
             let cancel_fill = if self.pressed_target.get() == Some(ModalPointerTarget::Cancel) {
                 // 按压取消使用更强的填充状态。
-                ctx.tokens().color_fill_secondary()
+                resolved.fill_secondary
             } else if self.footer_hovered.get() == Some(ModalPointerTarget::Cancel) {
                 // 悬停取消使用较轻的填充状态。
-                ctx.tokens().color_fill_tertiary()
+                resolved.fill_tertiary
             } else {
                 // 默认取消按钮保持容器背景。
-                bg_container
+                resolved.background
             };
             // 绘制取消按钮背景。
             ctx.fill_rect(cancel_rect, cancel_fill, action_radius);
             // 绘制取消按钮边框。
-            ctx.stroke_rect(cancel_rect, border_secondary, 1.0, action_radius);
+            ctx.stroke_rect(
+                cancel_rect,
+                resolved.border,
+                visual.chrome.panel_stroke,
+                action_radius,
+            );
+            // 同一 footer 帧只读取一次当前语言环境。
+            let locale = crate::ui::widget_runtime::locale::use_locale();
             // 使用当前语言环境绘制取消文案。
             ctx.text_center(
-                crate::ui::widget_runtime::locale::use_locale().cancel_text,
+                locale.cancel_text,
                 cancel_rect,
-                text_color,
-                13.0,
+                resolved.text,
+                resolved.footer_font_size,
             );
             // 确认按钮按交互状态选择主色。
             let ok_fill = if self.pressed_target.get() == Some(ModalPointerTarget::Ok) {
                 // 按压确认使用主色激活态。
-                ctx.tokens().color_primary_active()
+                resolved.primary_active
             } else if self.footer_hovered.get() == Some(ModalPointerTarget::Ok) {
                 // 悬停确认使用主色悬停态。
-                ctx.tokens().color_primary_hover()
+                resolved.primary_hover
             } else {
                 // 默认确认使用主色。
-                ctx.tokens().color_primary()
+                resolved.primary
             };
             // 绘制确认按钮背景。
             ctx.fill_rect(ok_rect, ok_fill, action_radius);
             // 使用当前语言环境绘制确认文案。
             ctx.text_center(
-                crate::ui::widget_runtime::locale::use_locale().ok_text,
+                locale.ok_text,
                 ok_rect,
                 // 确认按钮文字：白色 token。
-                ctx.tokens().color_white(),
-                13.0,
+                resolved.white,
+                resolved.footer_font_size,
             );
         }
         ctx.pop_clip();
@@ -460,8 +501,13 @@ widget! {
         if self.is_present() && self.overlay {
             Some(
                 crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
-                    .bounds(Rect::new(-2000.0, -2000.0, 4000.0, 4000.0))
-                    .z_index(1000),
+                    .bounds(Rect::new(
+                        self.visual.layout.overlay_fallback_origin,
+                        self.visual.layout.overlay_fallback_origin,
+                        self.visual.layout.overlay_fallback_extent,
+                        self.visual.layout.overlay_fallback_extent,
+                    ))
+                    .z_index(self.visual.chrome.overlay_z),
             )
         } else {
             None
@@ -480,7 +526,7 @@ widget! {
             // mask bounds 精确等于当前逻辑表面。
             .bounds(surface)
             // 保留既有 Modal 层级。
-            .z_index(1000);
+            .z_index(self.visual.chrome.overlay_z);
         // 离场开始即停止 blur，但 Modal mask 与内容继续完成离场动画。
         if !self.closing {
             // 只有显式 opt-in 才附加效果请求。
@@ -509,7 +555,10 @@ widget! {
                 .map(|root| (root.frame().w, root.frame().h))
                 .map(|(w, h)| (Self::normalize_dimension(w), Self::normalize_dimension(h)))
                 .filter(|(w, h)| *w > 0.0 && *h > 0.0)
-                .unwrap_or((1200.0, 760.0));
+                .unwrap_or((
+                    self.visual.layout.surface_fallback_width,
+                    self.visual.layout.surface_fallback_height,
+                ));
             self.last_win_w.set(win_w);
             self.last_win_h.set(win_h);
             self.dialog_rect_for_surface(Rect::new(0.0, 0.0, win_w, win_h))
@@ -522,15 +571,15 @@ widget! {
         // animation sample without a matching layout pass.
         self.last_dialog_rect.set(dialog);
 
-        let title_h = dialog.h.min(56.0);
+        let title_h = dialog.h.min(self.visual.layout.header_height);
         let footer_h = if self.footer_visible {
-            (dialog.h - title_h).clamp(0.0, 56.0)
+            (dialog.h - title_h).clamp(0.0, self.visual.layout.footer_height)
         } else {
             0.0
         };
         let body_y = dialog.y + title_h;
         let body_h = (dialog.h - title_h - footer_h).max(0.0);
-        let padding = 24.0;
+        let padding = self.visual.layout.body_padding;
         children
             .iter()
             .map(|child| {
@@ -590,5 +639,29 @@ widget! {
         } else {
             Rect::zero()
         }
+    }
+}
+
+// 把 Modal 行为内核、已有拥有型内容子树与 UIX 唯一视觉静态项融合为单一节点。
+fn build_modal_view(
+    mut kernel: Modal,
+    children: Vec<ViewNode>,
+    visual: &'static ModalVisual,
+) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::new(kernel, children)
+}
+
+impl Modal {
+    // 经由同目录 UIX 根声明构建对话框及其有序内容子树。
+    pub(crate) fn build_view_with_children(self, children: Vec<ViewNode>) -> ViewNode {
+        let kernel = self;
+        crate::uix!("src/ui/widgets/feedback/modal/modal.uix")
+    }
+}
+
+impl View for Modal {
+    fn build(self) -> ViewNode {
+        self.build_view_with_children(Vec::new())
     }
 }
