@@ -1,21 +1,24 @@
 use crate::core::{Point, Rect, Size};
 use crate::ui::SnapshotFields;
-use crate::ui::animation::{TransitionPlayer, presets};
+use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 // 引入公开双向状态句柄。
 use crate::ui::reactive::state::State;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::{
-    Cascader, CascaderOption, CascaderPopupGeometry, CascaderValue, ITEM_HEIGHT, POPUP_HEIGHT,
-    TRIGGER_HEIGHT, byte_index_for_char, cascader_fallback_surface, collect_search_results,
-    first_enabled_index, local_cascader_popup_geometry, next_enabled_index,
-    normalize_cascader_rect, point_in_half_open_rect, resolve_cascader_popup_geometry,
+    CASCADER_VISUAL_REF, Cascader, CascaderOption, CascaderPopupGeometry, CascaderValue,
+    byte_index_for_char, cascader_fallback_surface, collect_search_results, first_enabled_index,
+    local_cascader_popup_geometry, next_enabled_index, normalize_cascader_rect,
+    point_in_half_open_rect, resolve_cascader_popup_geometry,
 };
 
 impl Cascader {
     pub(crate) fn intrinsic_size(&self) -> Size {
-        Size::new(120.0, 32.0)
+        Size::new(
+            self.visual.defaults.intrinsic_width,
+            self.visual.layout.trigger_height,
+        )
     }
 
     /// 创建持有候选树、空选择路径且未展开的级联选择器。
@@ -33,7 +36,9 @@ impl Cascader {
             scroll_offsets: vec![0.0],
             hovered_option: None,
             open: false,
-            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            transition: TransitionPlayer::new(AnimationConfig::fade_in(
+                CASCADER_VISUAL_REF.motion.enter_duration,
+            )),
             closing: false,
             transition_dirty: false,
             loading_children: HashSet::new(),
@@ -60,6 +65,8 @@ impl Cascader {
             // 首次登记或绘制前尚未取得当前逻辑表面。
             surface_rect: Cell::new(None),
             pending_change: RefCell::new(None),
+            // 默认实例直接引用 UIX 生成的唯一静态视觉表。
+            visual: CASCADER_VISUAL_REF,
         }
     }
 
@@ -225,7 +232,8 @@ impl Cascader {
         self.open = true;
         self.closing = false;
         self.hovered_option = None;
-        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_in(self.visual.motion.enter_duration));
         self.transition_dirty = true;
     }
 
@@ -243,7 +251,8 @@ impl Cascader {
         self.closing = true;
         self.hovered_option = None;
         self.clear_search();
-        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition =
+            TransitionPlayer::new(AnimationConfig::fade_out(self.visual.motion.exit_duration));
         self.transition_dirty = true;
     }
 
@@ -271,6 +280,7 @@ impl Cascader {
         let options_changed = self.options != next.options;
         let searchable_changed = self.searchable != next.searchable;
         let loading_changed = self.loading_children != next.loading_children;
+        let visual_changed = !std::ptr::eq(self.visual, next.visual);
         self.options = next.options;
         // 声明式重建时以外部状态快照覆盖内部显示值。
         self.selected = next.selected;
@@ -279,6 +289,14 @@ impl Cascader {
         self.placeholder = next.placeholder;
         self.loading_children = next.loading_children;
         self.searchable = next.searchable;
+        self.visual = next.visual;
+        if visual_changed {
+            // 静态视觉几何变化后丢弃上一份弹层与表面缓存。
+            self.popup_rect.set(Rect::zero());
+            self.popup_column_width.set(0.0);
+            self.popup_column_count.set(0);
+            self.surface_rect.set(None);
+        }
         if self.loading_children.is_empty() {
             self.loading_phase = 0.0;
             self.loading_dirty = false;
@@ -403,8 +421,9 @@ impl Cascader {
         if self.search_index >= self.search_results.len() {
             return;
         }
-        let row_top = self.search_index as f32 * ITEM_HEIGHT;
-        let row_bottom = row_top + ITEM_HEIGHT;
+        let item_height = self.visual.layout.item_height;
+        let row_top = self.search_index as f32 * item_height;
+        let row_bottom = row_top + item_height;
         // 键盘显露使用受当前表面缩高后的实际视口。
         let viewport_height = self.effective_popup_height();
         if row_top < self.search_scroll_offset {
@@ -414,7 +433,7 @@ impl Cascader {
         }
         // 最大滚动距离同样使用实际视口高度。
         let max_scroll =
-            (self.search_results.len() as f32 * ITEM_HEIGHT - viewport_height).max(0.0);
+            (self.search_results.len() as f32 * item_height - viewport_height).max(0.0);
         self.search_scroll_offset = self.search_scroll_offset.clamp(0.0, max_scroll);
     }
 
@@ -425,8 +444,9 @@ impl Cascader {
         // 搜索结果滚动使用受当前表面约束后的实际视口。
         let viewport_height = self.effective_popup_height();
         // 按实际视口计算最大滚动距离。
-        let max_scroll =
-            (self.search_results.len() as f32 * ITEM_HEIGHT - viewport_height).max(0.0);
+        let max_scroll = (self.search_results.len() as f32 * self.visual.layout.item_height
+            - viewport_height)
+            .max(0.0);
         let next = (self.search_scroll_offset + delta).clamp(0.0, max_scroll);
         if (next - self.search_scroll_offset).abs() <= f32::EPSILON {
             false
@@ -443,7 +463,8 @@ impl Cascader {
         if !point_in_half_open_rect(popup, pos) {
             return None;
         }
-        let index = ((pos.y - popup.y + self.search_scroll_offset) / ITEM_HEIGHT).floor() as usize;
+        let index = ((pos.y - popup.y + self.search_scroll_offset) / self.visual.layout.item_height)
+            .floor() as usize;
         (index < self.search_results.len()).then_some(index)
     }
 
@@ -453,8 +474,11 @@ impl Cascader {
             self.search_cursor_char = self.search_query.chars().count();
             return;
         }
-        let scale = (self.interaction_frame().h / TRIGGER_HEIGHT).clamp(0.0, 1.0);
-        let target = (x - 12.0 * scale + self.search_text_scroll_x.get()).max(0.0);
+        let scale =
+            (self.interaction_frame().h / self.visual.layout.trigger_height).clamp(0.0, 1.0);
+        let target = (x - self.visual.layout.trigger_horizontal_padding * scale
+            + self.search_text_scroll_x.get())
+        .max(0.0);
         let mut index = glyph_xs.len().saturating_sub(1);
         for candidate in 0..glyph_xs.len().saturating_sub(1) {
             let midpoint = (glyph_xs[candidate] + glyph_xs[candidate + 1]) * 0.5;
@@ -596,10 +620,13 @@ impl Cascader {
         // 已完成表面解析时使用最终受约束高度。
         if self.popup_column_count.get() > 0 {
             // 防止缓存高度超过自然规格。
-            self.popup_rect.get().h.clamp(0.0, POPUP_HEIGHT)
+            self.popup_rect
+                .get()
+                .h
+                .clamp(0.0, self.visual.layout.popup_height)
         } else {
             // 首次表面解析前保持既有自然视口。
-            POPUP_HEIGHT
+            self.visual.layout.popup_height
         }
     }
 
@@ -627,7 +654,7 @@ impl Cascader {
         let level = ((pos.x - popup.x) / column_width).floor() as usize;
         let options = self.current_levels.get(level)?;
         let scroll = self.scroll_offsets.get(level).copied().unwrap_or(0.0);
-        let index = ((pos.y - popup.y + scroll) / ITEM_HEIGHT).floor() as usize;
+        let index = ((pos.y - popup.y + scroll) / self.visual.layout.item_height).floor() as usize;
         (index < options.len()).then_some((level, index))
     }
 
@@ -644,7 +671,8 @@ impl Cascader {
             return false;
         };
         // 按实际视口计算最大滚动距离。
-        let max_scroll = (options.len() as f32 * ITEM_HEIGHT - viewport_height).max(0.0);
+        let max_scroll =
+            (options.len() as f32 * self.visual.layout.item_height - viewport_height).max(0.0);
         let next = (*offset + delta).clamp(0.0, max_scroll);
         if (next - *offset).abs() <= f32::EPSILON {
             false
@@ -667,15 +695,16 @@ impl Cascader {
         let Some(offset) = self.scroll_offsets.get_mut(level) else {
             return;
         };
-        let row_top = index as f32 * ITEM_HEIGHT;
-        let row_bottom = row_top + ITEM_HEIGHT;
+        let item_height = self.visual.layout.item_height;
+        let row_top = index as f32 * item_height;
+        let row_bottom = row_top + item_height;
         if row_top < *offset {
             *offset = row_top;
         } else if row_bottom > *offset + viewport_height {
             *offset = row_bottom - viewport_height;
         }
         // 最大滚动距离同样使用实际视口高度。
-        let max_scroll = (options.len() as f32 * ITEM_HEIGHT - viewport_height).max(0.0);
+        let max_scroll = (options.len() as f32 * item_height - viewport_height).max(0.0);
         *offset = (*offset).clamp(0.0, max_scroll);
     }
 

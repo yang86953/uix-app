@@ -14,13 +14,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 use super::{
-    CascaderOption, CascaderSearchResult, CascaderValue, absolute_cascader_popup_rect,
-    cascader_dirty_rect, fade_color, paint_loading_spinner, point_in_half_open_rect,
+    CascaderOption, CascaderSearchResult, CascaderValue, CascaderVisual,
+    absolute_cascader_popup_rect, cascader_dirty_rect, fade_color, paint_loading_spinner,
+    point_in_half_open_rect,
 };
-
-const TRIGGER_HEIGHT: f32 = 32.0;
-const ITEM_HEIGHT: f32 = 32.0;
-const WHEEL_STEP: f32 = 40.0;
 
 widget! {
     /// 按层级浏览并以完整稳定路径提交叶节点选择的级联组件。
@@ -61,6 +58,9 @@ widget! {
         // 缓存布局或绘制阶段取得的当前逻辑表面。
         pub(crate) surface_rect: Cell<Option<Rect>>,
         pub(crate) pending_change: RefCell<Option<String>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static CascaderVisual,
     }
 
     semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
@@ -178,7 +178,7 @@ widget! {
                     return EventResult::NotHandled;
                 }
                 if self.search_active() {
-                    return if self.scroll_search_results(delta.y * WHEEL_STEP) {
+                    return if self.scroll_search_results(delta.y * self.visual.layout.wheel_step) {
                         EventResult::Handled
                     } else {
                         EventResult::NotHandled
@@ -192,7 +192,7 @@ widget! {
                     return EventResult::NotHandled;
                 }
                 let level = ((pos.x - popup.x) / column_width).floor() as usize;
-                if self.scroll_level(level, delta.y * WHEEL_STEP) {
+                if self.scroll_level(level, delta.y * self.visual.layout.wheel_step) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -304,33 +304,38 @@ widget! {
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
         let loc = crate::ui::widget_runtime::locale::use_locale();
-        let primary = ctx.tokens().color_primary();
-        let border_color = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_tertiary = ctx.tokens().color_text_tertiary();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
-        let nominal_height = TRIGGER_HEIGHT;
+        // 触发器和弹层共享一次 UIX 主题与排版角色解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let layout = self.visual.layout;
+        let nominal_height = layout.trigger_height;
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let font_size = 14.0 * scale;
-        let horizontal_padding = 12.0 * scale;
-        let arrow_gap = 4.0 * scale;
-        let arrow_slot_width = 24.0 * scale;
-        let arrow_right_inset = 4.0 * scale;
+        let font_size = visual.trigger_font_size * scale;
+        let horizontal_padding = layout.trigger_horizontal_padding * scale;
+        let arrow_gap = layout.trigger_arrow_gap * scale;
+        let arrow_slot_width = layout.trailing_slot_width * scale;
+        let arrow_right_inset = layout.trigger_arrow_right_inset * scale;
         let trigger_radius = Some(Radius::uniform(
-            (ctx.tokens().border_radius_sm() * scale).min(frame.h.max(0.0) * 0.5),
+            (visual.radius * scale).min(frame.h.max(0.0) * 0.5),
         ));
 
         ctx.push_clip(frame);
-        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), trigger_radius);
+        ctx.fill_rect(frame, visual.input_background, trigger_radius);
         ctx.stroke_rect(
             frame,
-            if self.focused { primary } else { border_color },
-            if self.focused { 2.0 } else { 1.0 },
+            if self.focused {
+                visual.primary
+            } else {
+                visual.border
+            },
+            if self.focused {
+                self.visual.chrome.focused_border_width
+            } else {
+                self.visual.chrome.normal_border_width
+            },
             trigger_radius,
         );
 
@@ -375,14 +380,14 @@ widget! {
                     ctx.draw_text(
                         &self.search_query,
                         Point::new(text_left - scroll, draw_y),
-                        text_color,
+                        visual.text,
                         font_size,
                     );
                 } else if self.selected.labels.is_empty() {
                     ctx.draw_text(
                         &self.placeholder,
                         Point::new(text_left, draw_y),
-                        text_tertiary,
+                        visual.tertiary_text,
                         font_size,
                     );
                 } else {
@@ -390,22 +395,22 @@ widget! {
                     ctx.draw_text(
                         &display_text,
                         Point::new(text_left, draw_y),
-                        text_color,
+                        visual.text,
                         font_size,
                     );
                 }
-                let caret_height = (18.0 * scale).min(text_area.h);
+                let caret_height = (layout.caret_height * scale).min(text_area.h);
                 let caret_x = (text_area.x + cursor_offset - scroll)
                     .clamp(text_area.x, text_area.x + text_area.w);
                 let caret = Rect::new(
                     caret_x,
                     text_area.y + (text_area.h - caret_height) * 0.5,
-                    1.0,
+                    layout.caret_width,
                     caret_height,
                 );
                 self.search_cursor_rect.set(caret);
                 if self.searchable && self.focused && self.open {
-                    ctx.fill_rect(caret, primary, None);
+                    ctx.fill_rect(caret, visual.primary, None);
                 }
                 ctx.pop_clip();
             } else {
@@ -417,12 +422,12 @@ widget! {
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
                 if self.is_present() {
-                    "chevron-up"
+                    self.visual.icons.expanded
                 } else {
-                    "chevron-down"
+                    self.visual.icons.collapsed
                 },
                 arrow_frame,
-                text_secondary,
+                visual.secondary_text,
                 font_size,
             );
         }
@@ -447,13 +452,13 @@ widget! {
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         // 所有列绘制使用表面约束后的实际列宽。
         let column_width = geometry.column_width;
-        let bg_elevated = fade_color(bg_elevated, opacity);
-        let border_color = fade_color(border_color, opacity);
-        let text_color = fade_color(text_color, opacity);
-        let text_secondary = fade_color(text_secondary, opacity);
-        let text_tertiary = fade_color(text_tertiary, opacity);
-        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
-        let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+        let bg_elevated = fade_color(visual.popup_background, opacity);
+        let border_color = fade_color(visual.border, opacity);
+        let text_color = fade_color(visual.text, opacity);
+        let text_secondary = fade_color(visual.secondary_text, opacity);
+        let text_tertiary = fade_color(visual.tertiary_text, opacity);
+        let primary_bg = fade_color(visual.primary_background, opacity);
+        let panel_radius = Some(Radius::uniform(visual.radius));
 
         // 将整个级联弹层裁剪到当前逻辑表面。
         ctx.push_clip(surface);
@@ -466,33 +471,37 @@ widget! {
             ctx.push_clip(column);
             if self.search_results.is_empty() {
                 // 级联下拉字号：统一使用主题 font_size token。
-                ctx.text_center(loc.no_data, column, text_tertiary, ctx.tokens().font_size());
+                ctx.text_center(loc.no_data, column, text_tertiary, visual.empty_font_size);
             }
             for (index, result) in self.search_results.iter().enumerate() {
-                let y = column.y + index as f32 * ITEM_HEIGHT - self.search_scroll_offset;
-                if y + ITEM_HEIGHT <= column.y || y >= column.y + column.h {
+                let y = column.y + index as f32 * layout.item_height - self.search_scroll_offset;
+                if y + layout.item_height <= column.y || y >= column.y + column.h {
                     continue;
                 }
-                let row = Rect::new(column.x, y, column.w, ITEM_HEIGHT);
+                let row = Rect::new(column.x, y, column.w, layout.item_height);
                 if self.hovered_option == Some((0, index)) || self.search_index == index {
                     ctx.fill_rect(row, primary_bg, None);
                 }
-                let loading_width = if result.loading { 24.0 } else { 0.0 };
+                let loading_width = if result.loading {
+                    layout.trailing_slot_width
+                } else {
+                    0.0
+                };
                 let text_area = Rect::new(
-                    row.x + 12.0,
+                    row.x + layout.item_horizontal_padding,
                     row.y,
-                    (row.w - 24.0 - loading_width).max(0.0),
+                    (row.w - layout.item_horizontal_padding * 2.0 - loading_width).max(0.0),
                     row.h,
                 );
                 if text_area.w > 0.0 {
                     let label = result.value.labels.join(loc.cascader_separator);
                     ctx.push_clip(text_area);
-                    let text_y = ctx.visual_center_y(row, ctx.tokens().font_size());
+                    let text_y = ctx.visual_center_y(row, visual.empty_font_size);
                     ctx.draw_text(
                         &label,
                         Point::new(text_area.x, text_y),
                         if result.disabled { text_tertiary } else { text_color },
-                        14.0,
+                        visual.item_font_size,
                     );
                     ctx.pop_clip();
                 }
@@ -512,15 +521,15 @@ widget! {
             ctx.push_clip(column);
             if options.is_empty() {
                 // 级联下拉字号：统一使用主题 font_size token。
-                ctx.text_center(loc.no_data, column, text_tertiary, ctx.tokens().font_size());
+                ctx.text_center(loc.no_data, column, text_tertiary, visual.empty_font_size);
             }
             let scroll = self.scroll_offsets.get(level).copied().unwrap_or(0.0);
             for (index, option) in options.iter().enumerate() {
-                let y = column.y + index as f32 * ITEM_HEIGHT - scroll;
-                if y + ITEM_HEIGHT <= column.y || y >= column.y + column.h {
+                let y = column.y + index as f32 * layout.item_height - scroll;
+                if y + layout.item_height <= column.y || y >= column.y + column.h {
                     continue;
                 }
-                let row = Rect::new(column.x, y, column.w, ITEM_HEIGHT);
+                let row = Rect::new(column.x, y, column.w, layout.item_height);
                 let highlighted = self.hovered_option == Some((level, index))
                     || self.level_indices.get(level) == Some(&index);
                 if highlighted {
@@ -531,49 +540,64 @@ widget! {
                 let arrow_width = if option.children.is_empty() && !loading {
                     0.0
                 } else {
-                    24.0
+                    layout.trailing_slot_width
                 };
                 let text_area = Rect::new(
-                    row.x + 12.0,
+                    row.x + layout.item_horizontal_padding,
                     row.y,
-                    (row.w - 24.0 - arrow_width).max(0.0),
+                    (row.w - layout.item_horizontal_padding * 2.0 - arrow_width).max(0.0),
                     row.h,
                 );
                 if text_area.w > 0.0 {
                     ctx.push_clip(text_area);
-                    let text_y = ctx.visual_center_y(row, ctx.tokens().font_size());
+                    let text_y = ctx.visual_center_y(row, visual.empty_font_size);
                     ctx.draw_text(
                         &option.label,
                         Point::new(text_area.x, text_y),
                         if option.disabled { text_tertiary } else { text_color },
-                        14.0,
+                        visual.item_font_size,
                     );
                     ctx.pop_clip();
                 }
                 if loading {
                     paint_loading_spinner(ctx, row, self.loading_phase, text_secondary);
                 } else if !option.children.is_empty() {
-                    let arrow = Rect::new(row.x + row.w - 24.0, row.y, 24.0, row.h);
+                    let arrow = Rect::new(
+                        row.x + row.w - layout.trailing_slot_width,
+                        row.y,
+                        layout.trailing_slot_width,
+                        row.h,
+                    );
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
-                        "chevron-right",
+                        self.visual.icons.child,
                         arrow,
                         text_secondary,
-                        14.0,
+                        visual.item_font_size,
                     );
                 }
             }
             ctx.pop_clip();
             if level > 0 {
                 ctx.fill_rect(
-                    Rect::new(column.x, column.y, 1.0, column.h),
+                    Rect::new(
+                        column.x,
+                        column.y,
+                        layout.column_separator_width,
+                        column.h,
+                    ),
                     border_color,
                     None,
                 );
             }
         }
         }
-        ctx.stroke_rect(popup, border_color, 1.0, panel_radius);
+        ctx.stroke_rect(
+            popup,
+            border_color,
+            self.visual.chrome.popup_border_width,
+            panel_radius,
+        );
         ctx.pop_clip();
         // 恢复弹层外层的逻辑表面裁剪。
         ctx.pop_clip();
@@ -621,7 +645,7 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // 登记边界与绘制、命中共用同一矩形。
                 .bounds(bounds)
-                .z_index(900)
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -660,7 +684,8 @@ widget! {
         if loading_active {
             let before = self.loading_phase;
             self.loading_phase = (self.loading_phase
-                + dt.max(0.0) as f32 * std::f32::consts::TAU / 0.8)
+                + dt.max(0.0) as f32 * std::f32::consts::TAU
+                    / self.visual.motion.loading_cycle as f32)
                 .rem_euclid(std::f32::consts::TAU);
             self.loading_dirty = (self.loading_phase - before).abs() > f32::EPSILON;
         }
