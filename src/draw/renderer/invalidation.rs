@@ -51,6 +51,10 @@ pub struct InvalidationQueue {
     pub(crate) items: Vec<Invalidation>,
     layout_ids: HashSet<NodeId>,
     paint_indices: HashMap<NodeId, usize>,
+    /// 队列中是否存在任意 Paint、Composite 或 FullComposite 工作。
+    has_paint_or_composite: bool,
+    /// 队列中是否存在 `rect: None` 的全帧 Paint。
+    needs_full_frame: bool,
     revision: u64,
 }
 
@@ -86,13 +90,16 @@ impl InvalidationQueue {
                     } = existing
                     {
                         *existing_rect = merge_paint_rect(*existing_rect, *rect);
+                        self.needs_full_frame |= existing_rect.is_none();
                     }
                     return;
                 }
                 self.paint_indices.insert(*id, self.items.len());
+                self.needs_full_frame |= rect.is_none();
             }
             Invalidation::Composite { .. } | Invalidation::FullComposite => {}
         }
+        self.has_paint_or_composite |= !matches!(&inv, Invalidation::Layout(_));
         self.items.push(inv);
     }
 
@@ -143,21 +150,12 @@ impl InvalidationQueue {
 
     /// 是否含 Paint 或 Composite 失效（需要绘制）。
     pub fn has_paint_or_composite(&self) -> bool {
-        self.items.iter().any(|i| {
-            matches!(
-                i,
-                Invalidation::Paint { .. }
-                    | Invalidation::Composite { .. }
-                    | Invalidation::FullComposite
-            )
-        })
+        self.has_paint_or_composite
     }
 
     /// 是否含全帧 Paint（`rect: None`）。
     pub fn needs_full_frame(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| matches!(i, Invalidation::Paint { rect: None, .. }))
+        self.needs_full_frame
     }
 
     /// 含 Layout 失效的节点 id 集合。
@@ -221,6 +219,8 @@ impl InvalidationQueue {
         self.items.clear();
         self.layout_ids.clear();
         self.paint_indices.clear();
+        self.has_paint_or_composite = false;
+        self.needs_full_frame = false;
     }
 
     /// 仅当采样修订号之后没有生产者推送失效时清空队列。
@@ -276,3 +276,7 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
     let y2 = (a.y + a.h).max(b.y + b.h);
     Rect::new(x1, y1, x2 - x1, y2 - y1)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/draw/renderer/invalidation__tests.rs"]
+mod tests;
