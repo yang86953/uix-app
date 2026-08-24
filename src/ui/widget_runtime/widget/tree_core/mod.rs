@@ -92,6 +92,8 @@ pub struct WidgetTree {
     /// UI 域主题令牌根；ScenePaint::paint 用它构造 UI-owned 绘制上下文。
     theme_tokens: std::sync::Arc<dyn ThemeTokens>,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
+    /// 二维与三维命中递归复用的 `(子节点, 原始顺序)` 排序工作区。
+    pub(crate) hit_test_order_scratch: std::cell::RefCell<Vec<(WidgetId, usize)>>,
 
     pub(crate) handler_table: HandlerTable,
     pub(crate) render_handler_table: RenderHandlerTable,
@@ -172,6 +174,7 @@ impl Default for WidgetTree {
             pending_window_actions: Vec::new(),
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
+            hit_test_order_scratch: std::cell::RefCell::new(Vec::new()),
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),
             overlay_stack: OverlayStack::new(),

@@ -26,8 +26,13 @@ impl WidgetTree {
             // 对事件入口报告没有可交互目标。
             return None;
         }
-        self.root_id
-            .and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
+        let root = self.root_id?;
+        // 复用与二维命中相同的树级排序工作区；重入时安全回退到局部容器。
+        if let Ok(mut order_scratch) = self.hit_test_order_scratch.try_borrow_mut() {
+            order_scratch.clear();
+            return self.hit_test_3d_internal(root, ray, spatial, &mut order_scratch);
+        }
+        self.hit_test_3d_internal(root, ray, spatial, &mut Vec::new())
     }
 
     /// 3D 命中测试内部递归。
@@ -36,21 +41,42 @@ impl WidgetTree {
         id: WidgetId,
         ray: &crate::draw::geometry::spatial::Ray3D,
         spatial: &crate::draw::geometry::spatial::SpatialContext,
+        order_scratch: &mut Vec<(WidgetId, usize)>,
     ) -> Option<WidgetId> {
         let node = self.get(id)?;
         if !node.visible() || self.is_pending_removal_subtree(id) {
             return None;
         }
-        let mut sorted: Vec<WidgetId> = node.children().to_vec();
-        sorted.sort_by(|&a, &b| {
-            let za = self.get(a).map_or(0, |c| c.z_index());
-            let zb = self.get(b).map_or(0, |c| c.z_index());
-            zb.cmp(&za)
-        });
-        for &child_id in &sorted {
-            if let Some(hit) = self.hit_test_3d_internal(child_id, ray, spatial) {
-                return Some(hit);
+        // 把当前层追加到树级工作区；递归子层只使用尾部并在返回前截断。
+        let children_start = order_scratch.len();
+        order_scratch.extend(
+            node.children()
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(original_order, child_id)| (child_id, original_order)),
+        );
+        let children_end = order_scratch.len();
+        order_scratch[children_start..children_end].sort_unstable_by(
+            |&(a, original_a), &(b, original_b)| {
+                let za = self.get(a).map_or(0, |c| c.z_index());
+                let zb = self.get(b).map_or(0, |c| c.z_index());
+                // 保持旧稳定排序：同 z-index 的 3D 子节点仍按声明顺序检查。
+                zb.cmp(&za).then_with(|| original_a.cmp(&original_b))
+            },
+        );
+        let mut child_hit = None;
+        for child_index in children_start..children_end {
+            let child_id = order_scratch[child_index].0;
+            if let Some(hit) = self.hit_test_3d_internal(child_id, ray, spatial, order_scratch) {
+                child_hit = Some(hit);
+                break;
             }
+        }
+        // 当前层完成后释放逻辑长度，保留容量供下一次命中测试复用。
+        order_scratch.truncate(children_start);
+        if child_hit.is_some() {
+            return child_hit;
         }
         let frame = node.frame();
         if node.hit_test_3d(ray, spatial, frame) {
@@ -61,6 +87,20 @@ impl WidgetTree {
     }
 
     pub(super) fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
+        // 正常事件循环复用树级工作区；极少数重入调用回退到局部容器避免 RefCell panic。
+        if let Ok(mut order_scratch) = self.hit_test_order_scratch.try_borrow_mut() {
+            order_scratch.clear();
+            return self.hit_test_internal_with_scratch(id, pos, &mut order_scratch);
+        }
+        self.hit_test_internal_with_scratch(id, pos, &mut Vec::new())
+    }
+
+    fn hit_test_internal_with_scratch(
+        &self,
+        id: WidgetId,
+        pos: Point,
+        order_scratch: &mut Vec<(WidgetId, usize)>,
+    ) -> Option<WidgetId> {
         let node = self.get(id)?;
         if !node.visible() || self.is_pending_removal_subtree(id) {
             return None;
@@ -86,24 +126,27 @@ impl WidgetTree {
                 })
                 // 非滚动父节点直接沿用当前布局坐标。
                 .unwrap_or(layout_pos);
-            let mut sorted: Vec<WidgetId> = node.children().to_vec();
-            sorted.sort_by(|&a, &b| {
-                let za = self.get(a).map_or(0, |c| c.z_index());
-                let zb = self.get(b).map_or(0, |c| c.z_index());
-                zb.cmp(&za)
-            });
-            // 同 z-index 时，后出现的兄弟绘制在上层，hit-test 应优先命中
-            let mut start = 0;
-            while start < sorted.len() {
-                let z = self.get(sorted[start]).map_or(0, |c| c.z_index());
-                let mut end = start + 1;
-                while end < sorted.len() && self.get(sorted[end]).map_or(0, |c| c.z_index()) == z {
-                    end += 1;
-                }
-                sorted[start..end].reverse();
-                start = end;
-            }
-            for &child_id in &sorted {
+            // 把本层子节点与原始顺序追加到唯一工作区，避免每个递归节点创建 Vec。
+            let children_start = order_scratch.len();
+            order_scratch.extend(
+                node.children()
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(original_order, child_id)| (child_id, original_order)),
+            );
+            let children_end = order_scratch.len();
+            order_scratch[children_start..children_end].sort_unstable_by(
+                |&(a, original_a), &(b, original_b)| {
+                    let za = self.get(a).map_or(0, |c| c.z_index());
+                    let zb = self.get(b).map_or(0, |c| c.z_index());
+                    // 同 z-index 时，后声明的兄弟绘制在上层，必须优先命中。
+                    zb.cmp(&za).then_with(|| original_b.cmp(&original_a))
+                },
+            );
+            let mut child_hit = None;
+            for child_index in children_start..children_end {
+                let child_id = order_scratch[child_index].0;
                 // fixed 子树脱离当前父级的滚动与裁剪命中门禁。
                 let fixed = self.node_is_fixed(child_id);
                 // 普通子树仍要求指针位于父级可命中裁剪内。
@@ -128,9 +171,16 @@ impl WidgetTree {
                     // 继续检查下一层视觉兄弟节点。
                     continue;
                 }
-                if let Some(hit) = self.hit_test_internal(child_id, pos) {
-                    return Some(hit);
+                if let Some(hit) = self.hit_test_internal_with_scratch(child_id, pos, order_scratch)
+                {
+                    child_hit = Some(hit);
+                    break;
                 }
+            }
+            // 当前层无论命中与否都恢复逻辑长度，容量留给后续高频事件。
+            order_scratch.truncate(children_start);
+            if child_hit.is_some() {
+                return child_hit;
             }
         }
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
@@ -567,3 +617,7 @@ impl WidgetTree {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_events/hit_test__tests.rs"]
+mod tests;
