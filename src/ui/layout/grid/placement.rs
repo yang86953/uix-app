@@ -21,6 +21,7 @@ pub(super) struct CellAssignment {
 }
 
 // 保存有界放置阶段的完整结果。
+#[cfg(test)]
 pub(super) struct PlacementPlan {
     // 记录真正用于后续求解的行数。
     pub(super) row_count: usize,
@@ -140,11 +141,38 @@ fn find_available_rect(
 }
 
 // 在统一轨道与单元格预算内完成显式和自动放置。
+#[cfg(test)]
 pub(super) fn place_grid_children(
     column_count: usize,
     explicit_row_count: usize,
     children: &[GridChild],
 ) -> PlacementPlan {
+    let mut occupied = Vec::new();
+    let mut assignments = Vec::new();
+    let mut prefix = Vec::new();
+    let row_count = place_grid_children_into(
+        column_count,
+        explicit_row_count,
+        children,
+        &mut occupied,
+        &mut assignments,
+        &mut prefix,
+    );
+    PlacementPlan {
+        row_count,
+        assignments,
+    }
+}
+
+// 在调用方拥有的工作区内完成放置，避免布局收敛轮次重复申请账本。
+pub(super) fn place_grid_children_into(
+    column_count: usize,
+    explicit_row_count: usize,
+    children: &[GridChild],
+    occupied: &mut Vec<bool>,
+    assignments: &mut Vec<CellAssignment>,
+    prefix: &mut Vec<usize>,
+) -> usize {
     // 调用方已在空列快速返回后才进入放置阶段。
     debug_assert!(column_count > 0);
     // 根据当前列数计算同时满足两类预算的行数上限。
@@ -154,13 +182,15 @@ pub(super) fn place_grid_children(
     // 列数与行数已由总单元格预算约束，乘积可安全物化。
     let initial_cells = column_count * initial_rows;
     // 仅为当前必要行建立稠密 bool 占用账本。
-    let mut occupied = vec![false; initial_cells];
-    // 输出定位数不可能超过输入子项数。
-    let mut assignments = Vec::with_capacity(children.len());
+    occupied.clear();
+    occupied.resize(initial_cells, false);
+    // 输出定位数不可能超过输入子项数，容量由树级工作区跨轮次保留。
+    assignments.clear();
+    assignments.reserve(children.len());
     // 最终轨道数只记录显式行和真正放置成功的子项。
     let mut used_rows = initial_rows;
     // 前缀和缓冲在所有自动子项之间复用。
-    let mut prefix = Vec::new();
+    prefix.clear();
     // 线性 cell 索引只能落在有界行列矩阵中。
     let cell_capacity = column_count * row_limit;
 
@@ -189,7 +219,7 @@ pub(super) fn place_grid_children(
             occupied.resize(column_count * needed_rows, false);
         }
         // 将收敛后的显式矩形写入占用账本。
-        mark_occupied(&mut occupied, column_count, col, row, col_span, row_span);
+        mark_occupied(occupied, column_count, col, row, col_span, row_span);
         // 显式子项可以把最终行数推高到自身底部。
         used_rows = used_rows.max(needed_rows);
         // 保存与资源契约一致的最终定位。
@@ -226,8 +256,7 @@ pub(super) fn place_grid_children(
             occupied.resize(column_count * row_span, false);
         }
         // 先在当前已物化行中按行优先顺序搜索。
-        let mut placement =
-            find_available_rect(&occupied, column_count, col_span, row_span, &mut prefix);
+        let mut placement = find_available_rect(occupied, column_count, col_span, row_span, prefix);
         // 当前矩阵无空闲矩形时，在预算内至多扩展一个 span 的行数。
         if placement.is_none() {
             // 重新读取可能因初始 span 而增长的行数。
@@ -239,8 +268,7 @@ pub(super) fn place_grid_children(
                 // 扩容乘积继续受总单元格预算保护。
                 occupied.resize(column_count * expanded_rows, false);
                 // 新增行可能与原矩阵底部共同形成更早的合法矩形，因此重新按行优先搜索。
-                placement =
-                    find_available_rect(&occupied, column_count, col_span, row_span, &mut prefix);
+                placement = find_available_rect(occupied, column_count, col_span, row_span, prefix);
             }
         }
         // 资源窗口内没有完整空闲矩形时，该子项保留零 frame。
@@ -251,7 +279,7 @@ pub(super) fn place_grid_children(
         // 搜索结果与已归一 span 之和位于当前物化矩阵内。
         let needed_rows = row + row_span;
         // 登记自动子项的完整占用矩形。
-        mark_occupied(&mut occupied, column_count, col, row, col_span, row_span);
+        mark_occupied(occupied, column_count, col, row, col_span, row_span);
         // 只有成功放置的子项才会推高最终行数。
         used_rows = used_rows.max(needed_rows);
         // 保存自动放置的有界结果。
@@ -269,13 +297,8 @@ pub(super) fn place_grid_children(
         });
     }
 
-    // 返回不超过轨道预算的行数和成功定位账本。
-    PlacementPlan {
-        // 保留显式行与已放置子项所需的最大行数。
-        row_count: used_rows,
-        // 将定位账本交给轨道尺寸与 frame 求解阶段。
-        assignments,
-    }
+    // 定位账本保留在调用方工作区，只返回不超过轨道预算的行数。
+    used_rows
 }
 
 // 放置算法的资源上限与极值输入回归。

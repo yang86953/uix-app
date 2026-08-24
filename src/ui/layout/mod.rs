@@ -232,6 +232,7 @@ impl Default for GridInput<'_> {
 }
 
 /// grid 布局输出。
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub(crate) struct GridOutput {
     pub child_rects: Vec<Rect>,

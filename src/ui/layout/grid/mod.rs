@@ -7,17 +7,64 @@ mod track_sizing;
 // 将整组列轨的水平内容对齐集中在独立模块。
 mod justify;
 // 引入有界列数、放置计划与后续尺寸求解所需的定位类型。
-use placement::{CellAssignment, bounded_column_count, place_grid_children};
+use placement::{CellAssignment, bounded_column_count, place_grid_children_into};
 // 引入拆分后的轨道尺寸求解与有限化辅助。
 use track_sizing::{
     finite_insets, finite_non_negative, fit_fraction_spanning_auto_tracks,
-    intrinsic_auto_track_sizes, resolve_tracks,
+    intrinsic_auto_track_sizes_into, resolve_tracks_into,
 };
 // 引入拆分后的列轨内容对齐入口。
 use justify::justify_grid_content;
 
-/// Pure function: no side effects.
+/// Grid 求解器在布局树生命周期内复用的全部动态账本。
+#[derive(Default)]
+pub(crate) struct GridComputeScratch {
+    occupied: Vec<bool>,
+    assignments: Vec<CellAssignment>,
+    prefix: Vec<usize>,
+    rows: Vec<GridTrack>,
+    spanning_indices: Vec<usize>,
+    planned_increases: Vec<f32>,
+    col_auto_sizes: Vec<f32>,
+    row_auto_sizes: Vec<f32>,
+    col_sizes: Vec<f32>,
+    row_sizes: Vec<f32>,
+    col_positions: Vec<(f32, f32)>,
+    row_positions: Vec<(f32, f32)>,
+    pub(crate) child_rects: Vec<Rect>,
+}
+
+/// 测试兼容入口把临时工作区的结果所有权移交给调用方。
+#[cfg(test)]
 pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
+    let mut scratch = GridComputeScratch::default();
+    let total_size = compute_grid_layout_into(input, &mut scratch);
+    GridOutput {
+        child_rects: std::mem::take(&mut scratch.child_rects),
+        total_size,
+    }
+}
+
+/// 在调用方工作区内求解 Grid；几何语义与独立入口保持一致。
+pub(crate) fn compute_grid_layout_into(
+    input: &GridInput<'_>,
+    scratch: &mut GridComputeScratch,
+) -> Size {
+    let GridComputeScratch {
+        occupied,
+        assignments,
+        prefix,
+        rows,
+        spanning_indices,
+        planned_increases,
+        col_auto_sizes,
+        row_auto_sizes,
+        col_sizes,
+        row_sizes,
+        col_positions,
+        row_positions,
+        child_rects,
+    } = scratch;
     let inner = Rect::new(
         input.container.x + input.padding.left,
         input.container.y + input.padding.top,
@@ -28,25 +75,27 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
     // 列轨道同样纳入单轴资源上限。
     let n_cols = bounded_column_count(input.columns.len());
     if n_cols == 0 || input.children.is_empty() {
-        return GridOutput {
-            child_rects: Vec::new(),
-            total_size: Size::new(inner.w, inner.h),
-        };
+        child_rects.clear();
+        return Size::new(inner.w, inner.h);
     }
 
     // 后续所有列尺寸与索引都只能使用收敛后的列窗口。
     let columns = &input.columns[..n_cols];
     // ── Phase 1: resolve bounded explicit and automatic placements ──
     // 统一收敛 cell、span、行数、占用矩阵与自动搜索。
-    let placement = place_grid_children(n_cols, input.rows.len(), input.children);
-    // 后续轨道尺寸求解沿用有界定位账本。
-    let assignments = placement.assignments;
-    // 只物化显式行与成功放置子项真正需要的行。
-    let n_rows = placement.row_count;
+    let n_rows = place_grid_children_into(
+        n_cols,
+        input.rows.len(),
+        input.children,
+        occupied,
+        assignments,
+        prefix,
+    );
 
     // ── Phase 2: build full rows (explicit + implicit auto) ──
     // 显式行只复制有界求解窗口内的部分。
-    let mut rows: Vec<GridTrack> = input.rows.iter().copied().take(n_rows).collect();
+    rows.clear();
+    rows.extend(input.rows.iter().copied().take(n_rows));
     // 成功放置产生的隐式行继续使用 Auto 轨道。
     rows.resize(n_rows, GridTrack::Auto);
 
@@ -57,14 +106,22 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
     let total_row_gap = row_gap * (n_rows.saturating_sub(1)) as f32;
 
     // 先汇总子项在自动列上的固有宽度贡献。
-    let mut col_auto_sizes =
-        intrinsic_auto_track_sizes(columns, &assignments, input.children, col_gap, true);
+    intrinsic_auto_track_sizes_into(
+        columns,
+        assignments,
+        input.children,
+        col_gap,
+        true,
+        col_auto_sizes,
+        spanning_indices,
+        planned_increases,
+    );
     // 把 span 外 Fr 可让出的份额转给 span 内 Auto，避免混合跨轨子项被竞争 Fr 裁剪。
     fit_fraction_spanning_auto_tracks(
         // 水平轴使用有界列定义。
         columns,
         // 复用放置阶段的有界子项账本。
-        &assignments,
+        assignments,
         // 读取子项自然外宽。
         input.children,
         // 列间距属于跨轨可用宽度。
@@ -76,17 +133,26 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         // 选择水平尺寸分支。
         true,
         // 原位扩展 Auto 列固有尺寸。
-        &mut col_auto_sizes,
+        col_auto_sizes,
+        spanning_indices,
     );
     // 再汇总子项在显式与隐式自动行上的固有高度贡献。
-    let mut row_auto_sizes =
-        intrinsic_auto_track_sizes(&rows, &assignments, input.children, row_gap, false);
+    intrinsic_auto_track_sizes_into(
+        rows,
+        assignments,
+        input.children,
+        row_gap,
+        false,
+        row_auto_sizes,
+        spanning_indices,
+        planned_increases,
+    );
     // 行轴使用相同规则处理 Auto/Fr 混合跨轨约束。
     fit_fraction_spanning_auto_tracks(
         // 垂直轴使用显式与隐式行定义。
-        &rows,
+        rows,
         // 复用同一放置账本。
-        &assignments,
+        assignments,
         // 读取子项自然外高。
         input.children,
         // 行间距属于跨轨可用高度。
@@ -98,16 +164,17 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         // 选择垂直尺寸分支。
         false,
         // 原位扩展 Auto 行固有尺寸。
-        &mut row_auto_sizes,
+        row_auto_sizes,
+        spanning_indices,
     );
     // Auto 保留内容宽度，Fr 列仅分配剩余水平空间。
-    let mut col_sizes = resolve_tracks(columns, inner.w, total_col_gap, &col_auto_sizes);
+    resolve_tracks_into(columns, inner.w, total_col_gap, col_auto_sizes, col_sizes);
     // 在轨道尺寸确定后应用整组列轨的水平内容对齐。
     let (content_offset, distributed_col_gap, content_uses_available_width) = justify_grid_content(
         // 原始轨道类型用于识别 Stretch 可扩展的 Auto 列。
         columns,
         // 内容对齐可以原位扩展 Auto 列。
-        &mut col_sizes,
+        col_sizes,
         // 父级内容宽度提供可分布空间。
         inner.w,
         // 作者声明的基础 gap 先从可用空间扣除。
@@ -116,10 +183,11 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         input.justify_content,
     );
     // Auto 保留内容高度，Fr 行仅分配剩余垂直空间。
-    let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap, &row_auto_sizes);
+    resolve_tracks_into(rows, inner.h, total_row_gap, row_auto_sizes, row_sizes);
 
     // ── Phase 4: build cell positions ──
-    let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
+    col_positions.clear();
+    col_positions.reserve(n_cols);
 
     let mut cx = inner.x + content_offset;
     for (index, size) in col_sizes.iter().copied().enumerate() {
@@ -131,7 +199,8 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         }
     }
 
-    let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(n_rows);
+    row_positions.clear();
+    row_positions.reserve(n_rows);
     let mut cy = inner.y;
     for (index, size) in row_sizes.iter().copied().enumerate() {
         row_positions.push((cy, size));
@@ -161,9 +230,10 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         + input.padding.vertical();
 
     // ── Phase 5: compute child rects ──
-    let mut child_rects = vec![Rect::zero(); input.children.len()];
+    child_rects.clear();
+    child_rects.resize(input.children.len(), Rect::zero());
 
-    for assignment in &assignments {
+    for assignment in assignments.iter() {
         let child = &input.children[assignment.child_idx];
         let cell_x = col_positions[assignment.col].0;
         let cell_y = row_positions[assignment.row].0;
@@ -209,10 +279,7 @@ pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
         child_rects[assignment.child_idx] = Rect::new(child_x, child_y, child_w, child_h);
     }
 
-    GridOutput {
-        child_rects,
-        total_size: Size::new(total_w, total_h),
-    }
+    Size::new(total_w, total_h)
 }
 
 // 计算整组 Grid 列轨的水平内容偏移、附加间距与占用边界。

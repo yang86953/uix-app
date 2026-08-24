@@ -4,7 +4,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::Rect;
-use uix::prelude::{Card, Container, Space};
+use uix::prelude::{Card, Container, Grid, GridTrack, Space};
 use uix::ui::__private::WidgetTree;
 
 struct CountingAllocator;
@@ -127,6 +127,71 @@ fn card_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn grid_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..3 {
+        let branch = tree.add_child(
+            root,
+            Box::new(
+                Grid::new()
+                    .size(100.0, 60.0)
+                    .columns(vec![GridTrack::Auto, GridTrack::Fr(1.0)])
+                    .rows(vec![GridTrack::Auto, GridTrack::Fr(1.0)]),
+            ),
+        );
+        for leaf_index in 0..4 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(18.0 + branch_index as f32)
+                        .height(10.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
+fn responsive_grid_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    for branch_index in 0..1 {
+        let branch = tree.add_child(root, Box::new(Grid::responsive().size(300.0, 180.0)));
+        for leaf_index in 0..40 {
+            tree.add_child(
+                branch,
+                Box::new(
+                    Space::new()
+                        .width(18.0 + branch_index as f32)
+                        .height(10.0 + leaf_index as f32),
+                ),
+            );
+        }
+    }
+    (tree, root)
+}
+
+fn spanning_grid_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    let branch = tree.add_child(
+        root,
+        Box::new(
+            Grid::new()
+                .size(300.0, 180.0)
+                .columns(vec![GridTrack::Auto; 8]),
+        ),
+    );
+    for index in 0..40 {
+        let mut leaf = Container::new().size(18.0 + index as f32, 10.0);
+        leaf.style.grid_column_span = 2 + (index % 3) as u32;
+        tree.add_child(branch, Box::new(leaf));
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -148,6 +213,9 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Container wrap", wrapped_container_tree()),
         ("Space wrap", wrapped_space_tree()),
         ("Card", card_layout_tree()),
+        ("Grid", grid_layout_tree()),
+        ("Responsive Grid", responsive_grid_layout_tree()),
+        ("Spanning Grid", spanning_grid_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
