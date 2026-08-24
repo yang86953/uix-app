@@ -400,8 +400,12 @@ widget! {
         let backend_opts = crate::draw::resources::font::text_backend::TextLayoutOptions::from(opts);
         // 字体族选择与布局、选区度量和绘制共享同一最终句柄。
         let fh = crate::ui::text_family::resolve(ctx, self.font_family.as_ref());
-        let mut layout = ctx.font_service().layout_text(&fh, &self.content, &backend_opts);
+        let mut layout = ctx
+            .font_service()
+            .layout_text_shared(&fh, &self.content, &backend_opts);
         if indent > 0.0 {
+            // 只有段首缩进真正修改几何时才复制共享缓存布局。
+            let layout = std::sync::Arc::make_mut(&mut layout);
             if let Some(first_line) = layout.lines.first_mut() {
                 let end = (first_line.glyph_start + first_line.glyph_count).min(layout.glyphs.len());
                 for glyph in &mut layout.glyphs[first_line.glyph_start..end] {

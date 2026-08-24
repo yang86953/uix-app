@@ -289,21 +289,20 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
+        self.text
+            .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
         self.record_op_lazy(|| PaintOp::BlitGlyphLayout {
-            layout: layout.clone(),
+            layout: Arc::new(layout.clone()),
             pos,
             color,
             font_size,
         });
-        self.text
-            .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
     }
 
-    /// 绘制并录制 owned glyph layout；只绘制一次的内置组件用它把新布局
-    /// 直接移交给 DisplayList，避免录制时复制 glyph / line 缓冲。
-    pub(crate) fn blit_owned_glyph_layout(
+    /// 绘制并录制共享 glyph layout；缓存命中与 DisplayList 只增加引用计数。
+    pub(crate) fn blit_shared_glyph_layout(
         &mut self,
-        layout: crate::draw::resources::font::text_backend::TextLayout,
+        layout: Arc<crate::draw::resources::font::text_backend::TextLayout>,
         pos: Point,
         color: Color,
         font_size: f32,

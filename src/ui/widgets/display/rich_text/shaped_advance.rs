@@ -106,7 +106,7 @@ pub(super) fn real_char_advances(
         // 结束布局选项构造。
     };
     // 执行真实字体 shaping 与多字体回退。
-    let layout = font_service.layout_text(font, text, &options);
+    let layout = font_service.layout_text_shared(font, text, &options);
     // 固化源字符以构建逐字符 advance 数组。
     let chars = text.chars().collect::<Vec<_>>();
     // 为每个源字符预留一个宽度槽位。

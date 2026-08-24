@@ -159,7 +159,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         self.blit_glyph_layout(canvas, &layout, pos, color, font_size);
     }
 
@@ -209,7 +209,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         let x = cnt - layout.width * 0.5;
         let y = self.visual_center_y(rect, font_size);
         self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
@@ -237,7 +237,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         let x = rect.x;
         let y = self.visual_center_y(rect, font_size);
         self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
@@ -265,7 +265,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         self.blit_glyph_layout(
             canvas,
             &layout,
@@ -347,7 +347,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         let quad = spatial.project_aabb(&box_3d);
         let bounds = quad.bounds();
         let x = bounds.x + (bounds.w - layout.width) * 0.5;
@@ -380,7 +380,7 @@ impl<'a> TextRenderService<'a> {
         );
         let layout = self
             .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .layout_text_shared(&self.font, text, &backend_opts);
         if layout.glyphs.is_empty() {
             return Vec::new();
         }

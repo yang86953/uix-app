@@ -353,16 +353,16 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         self.inner.logical_surface_rect()
     }
 
-    /// 绘制并录制 owned glyph layout（UI 内部使用）。
-    pub(crate) fn blit_owned_glyph_layout(
+    /// 绘制并录制共享 glyph layout（UI 内部使用）。
+    pub(crate) fn blit_shared_glyph_layout(
         &mut self,
-        layout: TextLayout,
+        layout: Arc<TextLayout>,
         pos: Point,
         color: Color,
         font_size: f32,
     ) {
         self.inner
-            .blit_owned_glyph_layout(layout, pos, color, font_size);
+            .blit_shared_glyph_layout(layout, pos, color, font_size);
     }
 }
 

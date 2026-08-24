@@ -496,7 +496,7 @@ impl FontService {
     pub fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size {
         if self.text_backend.is_valid(font) {
             let f = *font;
-            let layout = self.layout_text(&f, text, opts);
+            let layout = self.layout_text_shared(&f, text, opts);
             Size::new(
                 layout.width,
                 layout.height.max(tb::bounded_font_size(opts.font_size)),
@@ -625,7 +625,7 @@ impl FontService {
         }
         if self.text_backend.is_valid(font) {
             let f = *font;
-            let layout = self.layout_text(&f, text, opts);
+            let layout = self.layout_text_shared(&f, text, opts);
             let total_chars = text.chars().count();
             for li in &layout.lines {
                 if point.y >= li.y && point.y < li.y + li.height {
@@ -721,7 +721,7 @@ impl FontService {
             )
             // 继续复用现有布局接口的数值字符下标。
             .0;
-        let layout = self.layout_text(&f, text, opts);
+        let layout = self.layout_text_shared(&f, text, opts);
         // 逐行从同一视觉 cluster 数据查询方向感知光标边界。
         for line in &layout.lines {
             // 逻辑边界必须落在当前行源范围内。

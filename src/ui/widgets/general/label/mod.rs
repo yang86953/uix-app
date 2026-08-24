@@ -288,7 +288,9 @@ widget! {
             // 从统一样式借用显式有序字体族列表。
             self.style.as_ref().and_then(|style| style.font_family.as_ref()),
         );
-        let layout = ctx.font_service().layout_text(&fh, &self.text, &backend_opts);
+        let layout = ctx
+            .font_service()
+            .layout_text_shared(&fh, &self.text, &backend_opts);
 
         // 内边距 + 顶对齐绘制。过高 frame 时的垂直居中由父级 AlignItems 负责，
         // 不在此用 visual_center_y 二次修正。
