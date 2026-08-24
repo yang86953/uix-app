@@ -3,11 +3,13 @@ use super::QRCode;
 // 引入公开 View 构建入口。
 use crate::ui::view::View;
 
-// 验证 UIX 声明壳保持原二维码单叶节点与编码结果。
+// 验证 UIX 视觉声明保持二维码单叶节点、编码结果与作者尺寸优先级。
 #[test]
 fn uix_root_preserves_qrcode_kernel_and_encoding() {
     // 构建已完成高纠错等级编码的二维码。
-    let expected = QRCode::new("https://example.com").error_level(3);
+    let expected = QRCode::new("https://example.com")
+        .size(192.0)
+        .error_level(3);
     let expected_modules = expected.module_count();
     let node = View::build(expected);
     // UIX 声明不得增加包装或展示子节点。
@@ -23,6 +25,26 @@ fn uix_root_preserves_qrcode_kernel_and_encoding() {
     assert_eq!(kernel.error_level, 3);
     assert_eq!(kernel.module_count(), expected_modules);
     assert!(kernel.is_valid());
+    // 显式尺寸必须覆盖 UIX 声明的 Rust 直构默认尺寸。
+    assert_eq!(kernel.size, 192.0);
+    assert!(kernel.size_authored);
+    // UIX 声明必须真实注入模块色、错误文案与字体角色。
+    assert_eq!(kernel.visual, super::QRCodeVisual::default());
+    assert_eq!(kernel.visual.error_label, "QR !");
+}
+
+// 验证未显式设置尺寸时采用 UIX 声明的默认边长。
+#[test]
+fn uix_root_injects_qrcode_default_size() {
+    let node = View::build(QRCode::new("default-size"));
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<QRCode>()
+        .expect("UIX 根必须保留 QRCode 内核");
+    assert_eq!(kernel.size, kernel.visual.default_size);
+    assert_eq!(kernel.size, 160.0);
+    assert!(!kernel.size_authored);
 }
 
 // 验证连续区间合并逐位保持二维码矩阵，并确实减少绘制提交数量。
