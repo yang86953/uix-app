@@ -1,0 +1,70 @@
+// AutoComplete 的尺寸、几何、排版、时序、层级和主题角色由 UIX 唯一拥有。
+<Visual
+  name="AUTOCOMPLETE_DEFAULTS_VISUAL"
+  type="AutoCompleteDefaultsVisual"
+  intrinsicWidth={200.0}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_LAYOUT_VISUAL"
+  type="AutoCompleteLayoutVisual"
+  controlHeight={32.0}
+  rowHeight={28.0}
+  maxPopupHeight={280.0}
+  minPopupWidth={200.0}
+  inputHorizontalPadding={10.0}
+  optionHorizontalPadding={10.0}
+  caretHeight={18.0}
+  caretWidth={1.0}
+  fallbackPopupSides={2.0}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_TYPOGRAPHY_VISUAL"
+  type="AutoCompleteTypographyVisual"
+  fontSize={13.0}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_MOTION_VISUAL"
+  type="AutoCompleteMotionVisual"
+  enterDuration={0.15}
+  exitDuration={0.1}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_CHROME_VISUAL"
+  type="AutoCompleteChromeVisual"
+  normalBorderWidth={1.0}
+  focusedBorderWidth={2.0}
+  popupBorderWidth={1.0}
+  overlayZ={900}
+  radius={autocomplete_radius_small()}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_PALETTE_VISUAL"
+  type="AutoCompletePaletteVisual"
+  inputBackground={autocomplete_input_background()}
+  popupBackground={autocomplete_popup_background()}
+  border={autocomplete_border()}
+  primary={autocomplete_primary()}
+  primaryHover={autocomplete_primary_hover()}
+  text={autocomplete_text()}
+  secondaryText={autocomplete_secondary_text()}
+  placeholder={autocomplete_placeholder()}
+  optionHover={autocomplete_option_hover()}
+/>
+
+<Visual
+  name="AUTOCOMPLETE_VISUAL"
+  type="AutoCompleteVisual"
+  defaults={AUTOCOMPLETE_DEFAULTS_VISUAL}
+  layout={AUTOCOMPLETE_LAYOUT_VISUAL}
+  typography={AUTOCOMPLETE_TYPOGRAPHY_VISUAL}
+  motion={AUTOCOMPLETE_MOTION_VISUAL}
+  chrome={AUTOCOMPLETE_CHROME_VISUAL}
+  palette={AUTOCOMPLETE_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_autocomplete_view(kernel, AUTOCOMPLETE_VISUAL_REF)} />
