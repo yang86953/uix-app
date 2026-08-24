@@ -70,25 +70,39 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        let content = self.content_rect(frame);
-        let constraints = Constraints::loose(Size::new(content.w, content.h));
-        children
-            .iter()
-            .map(|&id| {
-                let mut child = child_from_tree_with_constraints(id, tree, constraints);
-                // 子项尺寸夹紧到内容区。
-                child.measured_size = constraints.clamp(child.measured_size);
-                child
-            })
-            .collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_item_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_item_children_into(frame, children, tree, output);
     }
 
     // 布局子项：全部铺满内容区。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        let content = self.content_rect(frame);
-        children.iter().map(|child| (child.id, content)).collect()
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_item_children_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_item_children_into(frame, children, output);
     }
 }
 
@@ -98,6 +112,39 @@ impl FormItem {
     const CONTENT_TOP_INSET: f32 = 2.0;
     const LABEL_GAP: f32 = 8.0;
     const INLINE_LABEL_WIDTH: f32 = 60.0;
+
+    // 把内容子项测量结果写入布局树拥有的跨帧数组。
+    fn measure_item_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        let content = self.content_rect(frame);
+        let constraints = Constraints::loose(Size::new(content.w, content.h));
+        output.clear();
+        output.reserve(children.len());
+        output.extend(children.iter().map(|&id| {
+            let mut child = child_from_tree_with_constraints(id, tree, constraints);
+            // 子项尺寸夹紧到内容区。
+            child.measured_size = constraints.clamp(child.measured_size);
+            child
+        }));
+    }
+
+    // 把铺满内容区的子项位置写入布局树拥有的跨帧数组。
+    fn layout_item_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        let content = self.content_rect(frame);
+        output.clear();
+        output.reserve(children.len());
+        output.extend(children.iter().map(|child| (child.id, content)));
+    }
 
     /// 帮助文本占用的高度（无帮助文本为 0）。
     fn help_height(&self, frame_h: f32) -> f32 {
@@ -415,98 +462,39 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        let mut measured = Vec::with_capacity(children.len());
-        match self.layout {
-            // 行内：从左向右排，剩余宽度递减，超界夹紧。
-            FormLayout::Inline => {
-                let mut x = frame.x;
-                let right = frame.x + frame.w.max(0.0);
-                for &cid in children {
-                    let item_x = x.min(right);
-                    let remaining_w = (right - item_x).max(0.0);
-                    let max = Size::new(remaining_w, frame.h.max(0.0));
-                    let child_constraints = Constraints::new(
-                        Size::new(120.0f32.min(remaining_w), 0.0),
-                        max,
-                        None,
-                    );
-                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
-                    // 无测量结果时用默认尺寸兜底。
-                    child.measured_size = if tree.get(cid).is_some() {
-                        child_constraints.clamp(child.measured_size)
-                    } else {
-                        child_constraints.clamp(Size::new(200.0, 44.0))
-                    };
-                    x = (item_x + child.measured_size.w + self.gap).min(right);
-                    measured.push(child);
-                }
-            }
-            // 水平/垂直：从上向下排，剩余高度递减。
-            FormLayout::Horizontal | FormLayout::Vertical => {
-                let mut y = frame.y;
-                let bottom = frame.y + frame.h.max(0.0);
-                for &cid in children {
-                    let item_y = y.min(bottom);
-                    let remaining_h = (bottom - item_y).max(0.0);
-                    let max = Size::new(frame.w.max(0.0), remaining_h);
-                    let child_constraints = Constraints::new(
-                        Size::new(0.0, 44.0f32.min(remaining_h)),
-                        max,
-                        None,
-                    );
-                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
-                    // 无测量结果时用默认尺寸兜底。
-                    child.measured_size = if tree.get(cid).is_some() {
-                        child_constraints.clamp(child.measured_size)
-                    } else {
-                        child_constraints.clamp(Size::new(frame.w, 44.0))
-                    };
-                    y = (item_y + child.measured_size.h + self.gap).min(bottom);
-                    measured.push(child);
-                }
-            }
-        }
-        measured
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_form_children_into(frame, children, tree, &mut output);
+        output
+    }
+
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_form_children_into(frame, children, tree, output);
     }
 
     // 布局子项：按测量尺寸顺序摆放。
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        let mut result = Vec::with_capacity(children.len());
-        match self.layout {
-            // 行内：水平逐个摆放。
-            FormLayout::Inline => {
-                let mut x = frame.x;
-                let right = frame.x + frame.w.max(0.0);
-                for child in children {
-                    let item_x = x.min(right);
-                    let remaining_w = (right - item_x).max(0.0);
-                    let item_w = child.measured_size.w.max(0.0).min(remaining_w);
-                    result.push((
-                        child.id,
-                        Rect::new(item_x, frame.y, item_w, frame.h.max(0.0)),
-                    ));
-                    x = (item_x + item_w + self.gap).min(right);
-                }
-            }
-            // 水平/垂直：垂直逐个摆放。
-            FormLayout::Horizontal | FormLayout::Vertical => {
-                let mut y = frame.y;
-                let bottom = frame.y + frame.h.max(0.0);
-                for child in children {
-                    let item_y = y.min(bottom);
-                    let remaining_h = (bottom - item_y).max(0.0);
-                    let item_h = child.measured_size.h.max(0.0).min(remaining_h);
-                    result.push((
-                        child.id,
-                        Rect::new(frame.x, item_y, frame.w.max(0.0), item_h),
-                    ));
-                    y = (item_y + item_h + self.gap).min(bottom);
-                }
-            }
-        }
-        result
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_form_children_into(frame, children, &mut output);
+        output
+    }
+
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        _scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_form_children_into(frame, children, output);
     }
 }
 
@@ -530,6 +518,105 @@ impl Form {
     /// 固有尺寸：400×200。
     fn intrinsic_size(&self) -> Size {
         Size::new(400.0, 200.0)
+    }
+
+    // 按布局方向测量子项，并把结果写入布局树拥有的跨帧数组。
+    fn measure_form_children_into(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        match self.layout {
+            // 行内：从左向右排，剩余宽度递减，超界夹紧。
+            FormLayout::Inline => {
+                let mut x = frame.x;
+                let right = frame.x + frame.w.max(0.0);
+                for &cid in children {
+                    let item_x = x.min(right);
+                    let remaining_w = (right - item_x).max(0.0);
+                    let max = Size::new(remaining_w, frame.h.max(0.0));
+                    let child_constraints =
+                        Constraints::new(Size::new(120.0f32.min(remaining_w), 0.0), max, None);
+                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    // 无测量结果时用默认尺寸兜底。
+                    child.measured_size = if tree.get(cid).is_some() {
+                        child_constraints.clamp(child.measured_size)
+                    } else {
+                        child_constraints.clamp(Size::new(200.0, 44.0))
+                    };
+                    x = (item_x + child.measured_size.w + self.gap).min(right);
+                    output.push(child);
+                }
+            }
+            // 水平/垂直：从上向下排，剩余高度递减。
+            FormLayout::Horizontal | FormLayout::Vertical => {
+                let mut y = frame.y;
+                let bottom = frame.y + frame.h.max(0.0);
+                for &cid in children {
+                    let item_y = y.min(bottom);
+                    let remaining_h = (bottom - item_y).max(0.0);
+                    let max = Size::new(frame.w.max(0.0), remaining_h);
+                    let child_constraints =
+                        Constraints::new(Size::new(0.0, 44.0f32.min(remaining_h)), max, None);
+                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    // 无测量结果时用默认尺寸兜底。
+                    child.measured_size = if tree.get(cid).is_some() {
+                        child_constraints.clamp(child.measured_size)
+                    } else {
+                        child_constraints.clamp(Size::new(frame.w, 44.0))
+                    };
+                    y = (item_y + child.measured_size.h + self.gap).min(bottom);
+                    output.push(child);
+                }
+            }
+        }
+    }
+
+    // 按测量尺寸排列子项，并把位置写入布局树拥有的跨帧数组。
+    fn layout_form_children_into(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        output.reserve(children.len());
+        match self.layout {
+            // 行内：水平逐个摆放。
+            FormLayout::Inline => {
+                let mut x = frame.x;
+                let right = frame.x + frame.w.max(0.0);
+                for child in children {
+                    let item_x = x.min(right);
+                    let remaining_w = (right - item_x).max(0.0);
+                    let item_w = child.measured_size.w.max(0.0).min(remaining_w);
+                    output.push((
+                        child.id,
+                        Rect::new(item_x, frame.y, item_w, frame.h.max(0.0)),
+                    ));
+                    x = (item_x + item_w + self.gap).min(right);
+                }
+            }
+            // 水平/垂直：垂直逐个摆放。
+            FormLayout::Horizontal | FormLayout::Vertical => {
+                let mut y = frame.y;
+                let bottom = frame.y + frame.h.max(0.0);
+                for child in children {
+                    let item_y = y.min(bottom);
+                    let remaining_h = (bottom - item_y).max(0.0);
+                    let item_h = child.measured_size.h.max(0.0).min(remaining_h);
+                    output.push((
+                        child.id,
+                        Rect::new(frame.x, item_y, frame.w.max(0.0), item_h),
+                    ));
+                    y = (item_y + item_h + self.gap).min(bottom);
+                }
+            }
+        }
     }
 
     /// 创建表单容器（默认水平布局、标签宽 80、间隙 8）。
@@ -591,3 +678,9 @@ impl Form {
         self.layout = next.layout;
     }
 }
+
+// 仅在测试构建中编译表单布局缓冲复用回归。
+#[cfg(test)]
+// 将测试实现统一存放在根 tests 目录。
+#[path = "../../../tests/unit/ui/form/form_layout_tests.rs"]
+mod form_layout_tests;
