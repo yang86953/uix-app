@@ -7,7 +7,7 @@ use crate::ui::widget_state::{uix_widget_scope, uix_widget_state};
 // 导入运行时节点读取与组件 patch 所需契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
 // 导入最小声明节点类型。
-use crate::ui::view::ViewNode;
+use crate::ui::view::{View, ViewNode};
 // 导入幻灯片与箭头测试承载组件。
 use crate::ui::widgets::Label;
 // 导入动态捕获、动画、Effect 与树生命周期测试能力。
@@ -20,6 +20,23 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 // 导入可由 Effect 闭包安全持有的共享状态记录。
 use std::sync::{Arc, Mutex};
+
+// 验证 UIX 根桥接保持 Carousel 动态类型与有序幻灯片子树。
+#[test]
+fn uix_root_preserves_carousel_kernel_and_slides() {
+    // 构造两个有序幻灯片并经代码生成桥接进入 Carousel UIX 根。
+    let slides = vec![
+        ViewNode::leaf(Label::new("first")),
+        ViewNode::leaf(Label::new("second")),
+    ];
+    let node = Carousel::new().build_view_with_children(slides);
+    // UIX 声明不得增加包装或复制幻灯片节点。
+    assert_eq!(node.children.len(), 2);
+    // 根动态类型必须继续是拥有计时器、选择与动画机制的 Carousel。
+    assert!(node.widget.as_any().is::<Carousel>());
+    // 公开 View 入口的空轮播同样保持零子节点形状。
+    assert!(View::build(Carousel::new()).children.is_empty());
+}
 
 // 读取当前 Carousel 根 owner 身份。
 fn carousel_root(

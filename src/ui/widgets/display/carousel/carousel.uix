@@ -1,0 +1,2 @@
+// Carousel 可携带有序幻灯片子树；UIX 声明公开根，Rust 内核负责计时器与动画。
+<KernelView value={build_carousel_view(kernel, children)} />

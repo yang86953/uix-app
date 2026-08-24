@@ -16,8 +16,9 @@ fn generates_dynamic_carousel_contract() {
         snapshot.contains("if auto_play")
             && snapshot.contains("autoplay (:: std :: time :: Duration :: from_secs (3_u64))")
     );
-    // 子树必须通过公开 ViewNode 与有序子节点向量进入运行时。
-    assert!(snapshot.contains("ViewNode :: new") && snapshot.contains("__uix_children"));
+    // 子树必须经组件自己的 UIX 根声明与有序子节点向量进入运行时。
+    assert!(snapshot.contains("build_view_with_children") && snapshot.contains("__uix_children"));
+    assert!(!snapshot.contains("ViewNode :: new"));
     // If 与带位置身份的 For 控制流必须保持在生成代码中。
     assert!(
         snapshot.contains("if show_extra")
