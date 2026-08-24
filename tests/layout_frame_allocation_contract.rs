@@ -7,7 +7,7 @@ use uix::core::{Rect, Size};
 use uix::prelude::{
     Card, Collapse, CollapsePanel, Container, Content, Footer, Form, FormItem, Grid, GridTrack,
     Header, Layout as PageLayout, ScrollDirection, ScrollView, Sider, Space, Splitter, Table,
-    TableColumn, Tabs,
+    TableColumn, Tabs, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{IntoWidgetNode, LayoutChild, LayoutEngineScratch, View, WidgetId, WidgetLayout};
@@ -352,6 +352,20 @@ fn tabs_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn virtual_scroll_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 200.0)));
+    let mut scroll = VirtualScroll::new()
+        .item_count(10_000)
+        .item_height(24.0)
+        .overscan(8)
+        .size(300.0, 180.0)
+        .into_node();
+    scroll.children = (0..32).map(|_| Container::new().into_node()).collect();
+    tree.set_children(root, vec![scroll]);
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -434,6 +448,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Table", table_layout_tree()),
         ("Form", form_layout_tree()),
         ("Tabs", tabs_layout_tree()),
+        ("VirtualScroll", virtual_scroll_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
