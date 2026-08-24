@@ -7,6 +7,30 @@ use crate::ui::view::View;
 // 引入延迟配置类型。
 use std::time::Duration;
 
+// 验证旋转递推与原逐点三角函数几何在亚像素误差内等价。
+#[test]
+fn dot_rotation_recurrence_preserves_geometry() {
+    // 选择非轴对齐相位与常用轨道半径，覆盖实际动画路径。
+    let phase = 0.37_f32;
+    let radius = 12.6_f32;
+    let mut offsets = Vec::with_capacity(8);
+    // 收集递推结果仅用于测试；生产绘制仍以回调流式提交，无逐帧分配。
+    Spin::for_each_dot_offset(phase, radius, |index, dx, dy| {
+        offsets.push((index, dx, dy));
+    });
+    // 必须继续生成原有八个等间距圆点。
+    assert_eq!(offsets.len(), 8);
+    for (index, dx, dy) in offsets {
+        // 以原始逐点公式作为质量基准。
+        let angle = f32::from(index) * std::f32::consts::TAU / 8.0 + phase;
+        let expected_dx = angle.cos() * radius;
+        let expected_dy = angle.sin() * radius;
+        // 递推舍入误差必须远低于一个逻辑像素。
+        assert!((dx - expected_dx).abs() <= 0.000_01, "index={index}");
+        assert!((dy - expected_dy).abs() <= 0.000_01, "index={index}");
+    }
+}
+
 // 验证 UIX 根桥接保持 Spin 动态类型与原有子树形状。
 #[test]
 fn uix_root_preserves_spin_kernel_and_children() {
