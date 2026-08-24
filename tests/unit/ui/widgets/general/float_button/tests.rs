@@ -300,6 +300,36 @@ fn non_finite_values_are_stable_and_group_includes_description_hit_bounds() {
     assert!(bounds.w > 40.0);
 }
 
+// 验证浮动按钮组以单次前缀累加保持异构尺寸的原有几何。
+#[test]
+fn group_child_frames_accumulate_prefix_once_without_geometry_drift() {
+    // 使用三种直径让前缀偏移可精确区分。
+    let group = FloatButtonGroup::new().buttons(vec![
+        // 首项使用 32 像素直径。
+        FloatButton::new("a").size(32.0),
+        // 次项使用 40 像素直径。
+        FloatButton::new("b").size(40.0),
+        // 末项使用 48 像素直径。
+        FloatButton::new("c").size(48.0),
+    ]);
+    // 完全展开时收集线性迭代器产生的全部 frame。
+    let frames = group
+        // 使用非零父 frame 证明坐标原点也被保留。
+        .child_frames(Rect::new(3.0, 10.0, 40.0, 40.0), 1.0)
+        // 测试只关心实际子项 frame。
+        .map(|(_item, frame)| frame)
+        // 物化稳定顺序便于精确断言。
+        .collect::<Vec<_>>();
+    // 线性迭代不得丢失子项。
+    assert_eq!(frames.len(), 3);
+    // 首项在触发器与固定间距之后开始。
+    assert_eq!(frames[0], Rect::new(7.0, 58.0, 32.0, 32.0));
+    // 次项只累加首项直径与一个间距。
+    assert_eq!(frames[1], Rect::new(3.0, 98.0, 40.0, 40.0));
+    // 末项再累加次项直径与一个间距。
+    assert_eq!(frames[2], Rect::new(-1.0, 146.0, 48.0, 48.0));
+}
+
 // 验证 FloatButtonGroup 组合完整子 View 时保留标准点击处理器与父级几何。
 #[test]
 fn group_button_views_preserve_child_click_handler_and_parent_layout() {
