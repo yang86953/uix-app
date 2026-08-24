@@ -53,22 +53,19 @@ widget! {
             frame.x + (frame.w - symbol_size) * 0.5 + QUIET_ZONE as f32 * module_size,
             frame.y + (frame.h - symbol_size) * 0.5 + QUIET_ZONE as f32 * module_size,
         );
-        for y in 0..self.module_count {
-            for x in 0..self.module_count {
-                if self.modules[y * self.module_count + x] {
-                    ctx.fill_rect(
-                        Rect::new(
-                            origin.x + x as f32 * module_size,
-                            origin.y + y as f32 * module_size,
-                            module_size,
-                            module_size,
-                        ),
-                        fg,
-                        None,
-                    );
-                }
-            }
-        }
+        // 相邻深色模块合并为同一水平矩形，减少绘制命令且保持矩阵并集完全一致。
+        self.for_each_dark_run(|y, start_x, run_length| {
+            ctx.fill_rect(
+                Rect::new(
+                    origin.x + start_x as f32 * module_size,
+                    origin.y + y as f32 * module_size,
+                    run_length as f32 * module_size,
+                    module_size,
+                ),
+                fg,
+                None,
+            );
+        });
     }
 }
 
@@ -126,6 +123,31 @@ impl QRCode {
     /// 返回当前内容是否已成功编码为非空二维码矩阵。
     pub fn is_valid(&self) -> bool {
         self.encoding_error.is_none() && self.module_count > 0
+    }
+
+    // 逐行流式交付连续深色模块，不分配中间区间集合。
+    #[inline]
+    fn for_each_dark_run(&self, mut visit: impl FnMut(usize, usize, usize)) {
+        // 每行独立扫描，禁止跨行合并破坏二维码模块边界。
+        for y in 0..self.module_count {
+            let row_start = y * self.module_count;
+            let mut x = 0;
+            while x < self.module_count {
+                // 跳过当前行的浅色模块。
+                while x < self.module_count && !self.modules[row_start + x] {
+                    x += 1;
+                }
+                let run_start = x;
+                // 消费紧邻的全部深色模块。
+                while x < self.module_count && self.modules[row_start + x] {
+                    x += 1;
+                }
+                // 行尾没有深色模块时不提交空矩形。
+                if run_start < x {
+                    visit(y, run_start, x - run_start);
+                }
+            }
+        }
     }
 
     // 测试目标保留二维码模块观测入口，供编码矩阵测试按需调用。
