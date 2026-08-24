@@ -6,6 +6,8 @@
 use crate::core::{Point, Rect};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+// 滚动条的全部静态几何与主题角色由父组件 UIX 生成。
+use super::ScrollbarVisual;
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarOrientation {
@@ -32,21 +34,16 @@ pub struct ScrollBar {
 }
 
 impl ScrollBar {
-    /// Thumb / track thickness.
-    pub const SB_W: f32 = 6.0;
-    /// Margin between track and viewport outer edge.
-    const EDGE_PAD: f32 = 2.0;
-    const THUMB_MIN: f32 = 18.0;
-
     /// Layout gutter reserved for this axis when the bar is shown (track + edge pad).
-    pub const fn gutter() -> f32 {
-        Self::SB_W + Self::EDGE_PAD
+    pub fn gutter() -> f32 {
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
+        visual.thickness + visual.edge_padding
     }
 
     /// Create a new scrollbar for the given orientation (visible by default).
     pub fn new(orientation: ScrollbarOrientation) -> Self {
         Self {
-            show: true,
+            show: super::SCROLL_VIEW_VISUAL_REF.default_scrollbar_visible,
             dragging: false,
             hover: false,
             orientation,
@@ -58,18 +55,19 @@ impl ScrollBar {
 
     /// Track rectangle in **absolute** coordinates (for rendering).
     pub fn track_rect_abs(&self, abs_frame: Rect) -> Rect {
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
         match self.orientation {
             ScrollbarOrientation::Vertical => Rect::new(
                 abs_frame.x + abs_frame.w - Self::gutter(),
-                abs_frame.y + Self::EDGE_PAD,
-                Self::SB_W,
-                (abs_frame.h - Self::EDGE_PAD * 2.0).max(0.0),
+                abs_frame.y + visual.edge_padding,
+                visual.thickness,
+                (abs_frame.h - visual.edge_padding * 2.0).max(0.0),
             ),
             ScrollbarOrientation::Horizontal => Rect::new(
-                abs_frame.x + Self::EDGE_PAD,
+                abs_frame.x + visual.edge_padding,
                 abs_frame.y + abs_frame.h - Self::gutter(),
-                (abs_frame.w - Self::EDGE_PAD * 2.0).max(0.0),
-                Self::SB_W,
+                (abs_frame.w - visual.edge_padding * 2.0).max(0.0),
+                visual.thickness,
             ),
         }
     }
@@ -77,18 +75,19 @@ impl ScrollBar {
     /// Track rectangle in **relative** coordinates (for hit-testing with
     /// mouse positions that are relative to the viewport frame).
     pub fn track_rect_rel(&self, frame: Rect) -> Rect {
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
         match self.orientation {
             ScrollbarOrientation::Vertical => Rect::new(
                 frame.w - Self::gutter(),
-                Self::EDGE_PAD,
-                Self::SB_W,
-                (frame.h - Self::EDGE_PAD * 2.0).max(0.0),
+                visual.edge_padding,
+                visual.thickness,
+                (frame.h - visual.edge_padding * 2.0).max(0.0),
             ),
             ScrollbarOrientation::Horizontal => Rect::new(
-                Self::EDGE_PAD,
+                visual.edge_padding,
                 frame.h - Self::gutter(),
-                (frame.w - Self::EDGE_PAD * 2.0).max(0.0),
-                Self::SB_W,
+                (frame.w - visual.edge_padding * 2.0).max(0.0),
+                visual.thickness,
             ),
         }
     }
@@ -100,11 +99,12 @@ impl ScrollBar {
         if max_scroll <= 0.0 {
             return None;
         }
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
         let track = self.track_rect_abs(abs_frame);
-        let (pos, size) = self.compute_thumb_on_track(track, abs_frame, scroll, max_scroll);
+        let (pos, size) = self.compute_thumb_on_track(visual, track, abs_frame, scroll, max_scroll);
         Some(match self.orientation {
-            ScrollbarOrientation::Vertical => Rect::new(track.x, pos, Self::SB_W, size),
-            ScrollbarOrientation::Horizontal => Rect::new(pos, track.y, size, Self::SB_W),
+            ScrollbarOrientation::Vertical => Rect::new(track.x, pos, visual.thickness, size),
+            ScrollbarOrientation::Horizontal => Rect::new(pos, track.y, size, visual.thickness),
         })
     }
 
@@ -113,17 +113,19 @@ impl ScrollBar {
         if max_scroll <= 0.0 {
             return None;
         }
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
         let track = self.track_rect_rel(frame);
-        let (pos, size) = self.compute_thumb_on_track(track, frame, scroll, max_scroll);
+        let (pos, size) = self.compute_thumb_on_track(visual, track, frame, scroll, max_scroll);
         Some(match self.orientation {
-            ScrollbarOrientation::Vertical => Rect::new(track.x, pos, Self::SB_W, size),
-            ScrollbarOrientation::Horizontal => Rect::new(pos, track.y, size, Self::SB_W),
+            ScrollbarOrientation::Vertical => Rect::new(track.x, pos, visual.thickness, size),
+            ScrollbarOrientation::Horizontal => Rect::new(pos, track.y, size, visual.thickness),
         })
     }
 
     /// Compute the thumb's position offset and size along the track.
     fn compute_thumb_on_track(
         &self,
+        visual: &ScrollbarVisual,
         track: Rect,
         view: Rect,
         scroll: f32,
@@ -132,7 +134,7 @@ impl ScrollBar {
         match self.orientation {
             ScrollbarOrientation::Vertical => {
                 let ratio = view.h / (view.h + max_scroll);
-                let thumb_h = (ratio * track.h).max(Self::THUMB_MIN).min(track.h);
+                let thumb_h = (ratio * track.h).max(visual.thumb_min_extent).min(track.h);
                 let usable = track.h - thumb_h;
                 let pos = if usable > 0.0 {
                     track.y + (scroll / max_scroll) * usable
@@ -143,7 +145,7 @@ impl ScrollBar {
             }
             ScrollbarOrientation::Horizontal => {
                 let ratio = view.w / (view.w + max_scroll);
-                let thumb_w = (ratio * track.w).max(Self::THUMB_MIN).min(track.w);
+                let thumb_w = (ratio * track.w).max(visual.thumb_min_extent).min(track.w);
                 let usable = track.w - thumb_w;
                 let pos = if usable > 0.0 {
                     track.x + (scroll / max_scroll) * usable
@@ -199,8 +201,9 @@ impl ScrollBar {
         if max_scroll <= 0.0 {
             return scroll;
         }
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
         let track = self.track_rect_rel(frame);
-        let (_, thumb_size) = self.compute_thumb_on_track(track, frame, scroll, max_scroll);
+        let (_, thumb_size) = self.compute_thumb_on_track(visual, track, frame, scroll, max_scroll);
 
         let (track_extent, track_start) = match self.orientation {
             ScrollbarOrientation::Vertical => (track.h, track.y),
@@ -224,20 +227,25 @@ impl ScrollBar {
         if !self.show || max_scroll <= 0.0 {
             return;
         }
-        let corner = Radius::uniform(3.0);
+        let visual = &super::SCROLL_VIEW_VISUAL_REF.scrollbar;
+        let corner = Radius::uniform(visual.corner_radius);
 
         // Track background
         let track = self.track_rect_abs(abs_frame);
-        ctx.fill_rect(track, ctx.tokens().color_fill_tertiary(), Some(corner));
+        ctx.fill_rect(
+            track,
+            visual.track_color.resolve(ctx.tokens()),
+            Some(corner),
+        );
 
         // Thumb
         if let Some(thumb) = self.thumb_rect_abs(abs_frame, scroll, max_scroll) {
-            let color = if self.hover || self.dragging {
-                ctx.tokens().color_fill()
+            let color_role = if self.hover || self.dragging {
+                visual.active_thumb_color
             } else {
-                ctx.tokens().color_fill_secondary()
+                visual.thumb_color
             };
-            ctx.fill_rect(thumb, color, Some(corner));
+            ctx.fill_rect(thumb, color_role.resolve(ctx.tokens()), Some(corner));
         }
     }
 }
