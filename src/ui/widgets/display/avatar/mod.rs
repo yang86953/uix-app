@@ -10,6 +10,8 @@ use crate::draw::Color;
 // 该导入仅服务于头像路径解码入口。
 use crate::draw::renderer::invalidate_paint_handle;
 use crate::draw::resources::image::BitmapHandle;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 // 图片编解码 capability 启用时才追踪当前头像组件。
@@ -19,16 +21,62 @@ use crate::ui::SnapshotFields;
 use crate::ui::widget_runtime::paint_scope::current_paint_widget;
 use crate::ui::widget_runtime::widget::WidgetTree;
 
+// 保存由 UIX 声明、由 Rust 资源与后备文字内核消费的静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AvatarVisual {
+    default_extent: f32,
+    text_scale: f32,
+    square_text_fit: f32,
+    circle_text_fit: f32,
+    corner_radius_limit: f32,
+    background_color: ColorValue,
+    text_color: ColorValue,
+    corner_radius: AvatarRadiusRole,
+}
+
+impl Default for AvatarVisual {
+    fn default() -> Self {
+        Self {
+            default_extent: 32.0,
+            text_scale: 0.45,
+            square_text_fit: 0.78,
+            circle_text_fit: 0.68,
+            corner_radius_limit: 0.5,
+            background_color: ColorValue::Palette(PaletteColor::PrimaryBg),
+            text_color: ColorValue::Neutral(NeutralRole::Text),
+            corner_radius: AvatarRadiusRole::Small,
+        }
+    }
+}
+
+// 头像方形圆角使用的主题令牌角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AvatarRadiusRole {
+    Small,
+}
+
+impl AvatarRadiusRole {
+    fn resolve(self, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
 widget! {
     /// 展示图片或自适应后备文字的头像组件。
     pub struct Avatar {
         text: String,
         size: f32,
+        #[snapshot(skip)]
+        size_authored: bool,
         bg_color: Option<Color>,
         text_color: Option<Color>,
         square: bool,
         src: String,
         cached: Cell<Option<BitmapHandle>>,
+        #[snapshot(skip)]
+        visual: AvatarVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -51,12 +99,17 @@ widget! {
             side,
             side,
         );
-        let primary_bg = ctx.tokens().color_primary_bg();
-        let bg = self.bg_color.unwrap_or(primary_bg);
+        let bg = self
+            .bg_color
+            .unwrap_or_else(|| self.visual.background_color.resolve(ctx.tokens()));
         let tc = self
             .text_color
-            .unwrap_or_else(|| ctx.tokens().color_text());
-        let corner_radius = ctx.tokens().border_radius_sm().min(side * 0.5);
+            .unwrap_or_else(|| self.visual.text_color.resolve(ctx.tokens()));
+        let corner_radius = self
+            .visual
+            .corner_radius
+            .resolve(ctx.tokens())
+            .min(side * self.visual.corner_radius_limit.clamp(0.0, 0.5));
         let r = if self.square {
             Some(crate::draw::Radius::uniform(corner_radius))
         } else {
@@ -109,9 +162,15 @@ widget! {
         };
 
         if !drew_image && !self.text.is_empty() {
-            let base_font_size = side * 0.45;
+            let base_font_size = side * self.visual.text_scale.max(0.0);
             let measured = ctx.measure_text(&self.text, base_font_size);
-            let inner_side = side * if self.square { 0.78 } else { 0.68 };
+            let inner_side = side
+                * if self.square {
+                    self.visual.square_text_fit
+                } else {
+                    self.visual.circle_text_fit
+                }
+                .clamp(0.0, 1.0);
             let width_scale = if measured.w > 0.0 {
                 inner_side / measured.w
             } else {
@@ -139,8 +198,48 @@ impl Default for Avatar {
     }
 }
 
-// 把头像资源缓存、后备文字与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_avatar_view(kernel: Avatar) -> ViewNode {
+// 向 UIX 提供头像默认背景主题角色。
+const fn avatar_primary_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryBg)
+}
+
+// 向 UIX 提供头像默认文字主题角色。
+const fn avatar_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供方形头像的小号圆角令牌角色。
+const fn avatar_radius_sm() -> AvatarRadiusRole {
+    AvatarRadiusRole::Small
+}
+
+// 把 UIX 声明的视觉配置融合进头像资源与后备文字内核。
+#[allow(clippy::too_many_arguments)]
+fn build_avatar_view(
+    mut kernel: Avatar,
+    default_extent: f32,
+    text_scale: f32,
+    square_text_fit: f32,
+    circle_text_fit: f32,
+    corner_radius_limit: f32,
+    background_color: ColorValue,
+    text_color: ColorValue,
+    corner_radius: AvatarRadiusRole,
+) -> ViewNode {
+    // 未显式设置尺寸时采用 UIX 声明的默认边长。
+    if !kernel.size_authored {
+        kernel.size = default_extent;
+    }
+    kernel.visual = AvatarVisual {
+        default_extent,
+        text_scale,
+        square_text_fit,
+        circle_text_fit,
+        corner_radius_limit,
+        background_color,
+        text_color,
+        corner_radius,
+    };
     ViewNode::leaf(kernel)
 }
 
@@ -157,17 +256,24 @@ impl Avatar {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            size: 32.0,
+            size: AvatarVisual::default().default_extent,
+            size_authored: false,
             bg_color: None,
             text_color: None,
             square: false,
             src: String::new(),
             cached: Cell::new(None),
+            visual: AvatarVisual::default(),
         }
     }
     /// 设置头像边长；非正数或非有限值回退为 32 像素。
     pub fn size(mut self, s: f32) -> Self {
-        self.size = if s.is_finite() && s > 0.0 { s } else { 32.0 };
+        self.size_authored = s.is_finite() && s > 0.0;
+        self.size = if self.size_authored {
+            s
+        } else {
+            self.visual.default_extent
+        };
         self
     }
     /// 设置头像背景色，覆盖主题默认值。
@@ -235,9 +341,11 @@ impl Avatar {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.text = next.text;
         self.size = next.size;
+        self.size_authored = next.size_authored;
         self.bg_color = next.bg_color;
         self.text_color = next.text_color;
         self.square = next.square;
+        self.visual = next.visual;
         if self.src != next.src {
             self.src = next.src;
             self.cached.set(None);
