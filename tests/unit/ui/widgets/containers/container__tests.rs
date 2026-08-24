@@ -1,5 +1,19 @@
 // 导入当前模块的容器与布局类型。
 use super::*;
+
+// 验证直接构造与 View 构建共享同目录 UIX 的静态视觉地址。
+#[test]
+fn view_build_uses_uix_visual_without_a_rust_default_copy() {
+    let container = Container::new();
+    assert!(std::ptr::eq(container.visual, CONTAINER_VISUAL_REF));
+    let node = crate::ui::view::View::build(container);
+    let container = node
+        .widget
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("UIX 根必须保留 Container Rust 内核");
+    assert!(std::ptr::eq(container.visual, CONTAINER_VISUAL_REF));
+}
 // 导入调用布局 trait 所需的公开接口。
 use crate::ui::WidgetLayout;
 // 导入调用子树裁剪契约所需的渲染 trait。
@@ -63,10 +77,7 @@ fn cached_content_size_respects_finite_parent_constraints() {
     // 模拟最大化阶段记录的标题栏宽度。
     container.cached_content_size.set(Size::new(1920.0, 48.0));
     // 还原窗口提供更小但有限的客户区约束。
-    let restored = WidgetLayout::measure(
-        &container,
-        Constraints::loose(Size::new(1200.0, 800.0)),
-    );
+    let restored = WidgetLayout::measure(&container, Constraints::loose(Size::new(1200.0, 800.0)));
     // 缓存不得突破有限父宽度，否则子树会继续按最大化尺寸排列。
     assert_eq!(restored, Size::new(1200.0, 48.0));
     // 无界测量仍保留真实内容范围，供滚动容器计算溢出尺寸。
