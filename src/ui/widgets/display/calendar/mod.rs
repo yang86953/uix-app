@@ -17,7 +17,6 @@ use crate::ui::{SnapshotFields, ThemeTokens};
 use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 mod geometry;
 // 日历标题本地化与文字适配由无状态格式化子模块负责。
@@ -50,7 +49,7 @@ pub(crate) struct CalendarGeometryVisual {
 
 // 保存由 UIX 声明的排版、边框、焦点与事件标记视觉。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CalendarChromeVisual {
+pub(crate) struct CalendarChromeVisual {
     control_stroke_min: f32,
     title_side_gap: f32,
     title_font_size: f32,
@@ -93,7 +92,7 @@ impl CalendarRadiusRole {
 
 // 保存由 UIX 声明的日历主题语义角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct CalendarPaletteVisual {
+pub(crate) struct CalendarPaletteVisual {
     primary: ColorValue,
     text: ColorValue,
     text_secondary: ColorValue,
@@ -107,11 +106,14 @@ struct CalendarPaletteVisual {
 
 // 全部 Calendar 实例共享的完整静态视觉配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct CalendarVisual {
+pub(crate) struct CalendarVisual {
     geometry: CalendarGeometryVisual,
     chrome: CalendarChromeVisual,
     palette: CalendarPaletteVisual,
 }
+
+// 同目录 UIX 生成几何、装饰、色板与根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/calendar/calendar.uix");
 
 // 保存 Calendar 每帧只解析一次的主题颜色与圆角。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -143,141 +145,16 @@ impl CalendarVisual {
     }
 }
 
-// 组合 UIX 声明的日历尺寸与网格布局。
-#[allow(clippy::too_many_arguments)]
-const fn calendar_geometry_visual(
-    default_cell_size: f32,
-    min_cell_size: f32,
-    header_height: f32,
-    title_height: f32,
-    weekday_height: f32,
-    grid_columns: f32,
-    grid_rows: f32,
-    max_scale: f32,
-    center_ratio: f32,
-    navigation_width_ratio: f32,
-) -> CalendarGeometryVisual {
-    CalendarGeometryVisual {
-        default_cell_size,
-        min_cell_size,
-        header_height,
-        title_height,
-        weekday_height,
-        grid_columns: grid_columns as usize,
-        grid_rows: grid_rows as usize,
-        max_scale,
-        center_ratio,
-        navigation_width_ratio,
-    }
-}
-
-// 组合 UIX 声明的排版、焦点、网格与事件标记视觉。
-#[allow(clippy::too_many_arguments)]
-const fn calendar_chrome_visual(
-    control_stroke_min: f32,
-    title_side_gap: f32,
-    title_font_size: f32,
-    title_height_ratio: f32,
-    previous_icon: &'static str,
-    next_icon: &'static str,
-    navigation_icon_size: f32,
-    weekday_font_size: f32,
-    weekday_width_ratio: f32,
-    weekday_height_ratio: f32,
-    day_radius: f32,
-    focus_inset_min: f32,
-    focus_stroke_width: f32,
-    day_font_size: f32,
-    day_width_ratio: f32,
-    day_height_ratio: f32,
-    grid_stroke_width: f32,
-    custom_cell_stroke_width: f32,
-    event_marker_limit: f32,
-    event_marker_gap: f32,
-    event_marker_bottom: f32,
-    event_marker_radius: f32,
-    event_overflow_inset: f32,
-    event_overflow_font_size: f32,
-) -> CalendarChromeVisual {
-    let event_marker_limit = event_marker_limit as usize;
-    let event_marker_limit = if event_marker_limit > MAX_VISIBLE_EVENT_MARKERS {
+// 限制 UIX 声明的可见事件标记数量，保持固定栈数组边界。
+const fn calendar_event_marker_limit(limit: usize) -> usize {
+    if limit > MAX_VISIBLE_EVENT_MARKERS {
         MAX_VISIBLE_EVENT_MARKERS
     } else {
-        event_marker_limit
-    };
-    CalendarChromeVisual {
-        control_stroke_min,
-        title_side_gap,
-        title_font_size,
-        title_height_ratio,
-        previous_icon,
-        next_icon,
-        navigation_icon_size,
-        weekday_font_size,
-        weekday_width_ratio,
-        weekday_height_ratio,
-        day_radius,
-        focus_inset_min,
-        focus_stroke_width,
-        day_font_size,
-        day_width_ratio,
-        day_height_ratio,
-        grid_stroke_width,
-        custom_cell_stroke_width,
-        event_marker_limit,
-        event_marker_gap,
-        event_marker_bottom,
-        event_marker_radius,
-        event_overflow_inset,
-        event_overflow_font_size,
+        limit
     }
 }
 
-// 组合 UIX 声明的主题语义角色。
-#[allow(clippy::too_many_arguments)]
-const fn calendar_palette_visual(
-    primary: ColorValue,
-    text: ColorValue,
-    text_secondary: ColorValue,
-    text_quaternary: ColorValue,
-    border: ColorValue,
-    background: ColorValue,
-    white: ColorValue,
-    error: ColorValue,
-    control_radius: CalendarRadiusRole,
-) -> CalendarPaletteVisual {
-    CalendarPaletteVisual {
-        primary,
-        text,
-        text_secondary,
-        text_quaternary,
-        border,
-        background,
-        white,
-        error,
-        control_radius,
-    }
-}
-
-const fn calendar_visual(
-    geometry: CalendarGeometryVisual,
-    chrome: CalendarChromeVisual,
-    palette: CalendarPaletteVisual,
-) -> CalendarVisual {
-    CalendarVisual {
-        geometry,
-        chrome,
-        palette,
-    }
-}
-
-// 向 UIX 提供受限表达式不能直接写入的图标与主题角色。
-const fn calendar_previous_icon() -> &'static str {
-    "chevron-left"
-}
-const fn calendar_next_icon() -> &'static str {
-    "chevron-right"
-}
+// 向 UIX 提供主题角色。
 const fn calendar_small_radius() -> CalendarRadiusRole {
     CalendarRadiusRole::Small
 }
@@ -305,51 +182,6 @@ const fn calendar_white_color() -> ColorValue {
 const fn calendar_error_color() -> ColorValue {
     ColorValue::Palette(PaletteColor::Error)
 }
-
-// Rust 直接构造时保持既有视觉；正常 View 构建切换到 UIX 静态配置。
-static DEFAULT_CALENDAR_VISUAL: CalendarVisual = calendar_visual(
-    calendar_geometry_visual(40.0, 20.0, 40.0, 24.0, 16.0, 7.0, 6.0, 1.0, 0.5, 1.0 / 3.0),
-    calendar_chrome_visual(
-        0.5,
-        8.0,
-        15.0,
-        0.8,
-        "chevron-left",
-        "chevron-right",
-        12.0,
-        11.0,
-        0.82,
-        0.8,
-        4.0,
-        0.5,
-        1.5,
-        13.0,
-        0.8,
-        0.8,
-        0.5,
-        0.75,
-        3.0,
-        4.0,
-        4.0,
-        1.5,
-        2.0,
-        8.0,
-    ),
-    calendar_palette_visual(
-        ColorValue::Palette(PaletteColor::Primary),
-        ColorValue::Neutral(NeutralRole::Text),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::TextQuaternary),
-        ColorValue::Neutral(NeutralRole::BorderSecondary),
-        ColorValue::Neutral(NeutralRole::BgContainer),
-        ColorValue::Palette(PaletteColor::White),
-        ColorValue::Palette(PaletteColor::Error),
-        CalendarRadiusRole::Small,
-    ),
-);
-
-// 首次 UIX 构建固化声明值，全部日历实例共享一份视觉表。
-static UIX_CALENDAR_VISUAL: OnceLock<CalendarVisual> = OnceLock::new();
 
 // 日号静态文本避免每帧为最多三十一个日期分配 String。
 const CALENDAR_DAY_LABELS: [&str; 31] = [
@@ -838,7 +670,7 @@ impl Calendar {
             // 默认保持非受控选择生命周期。
             value_binding: None,
             focused_day: Cell::new(1),
-            cell_size: DEFAULT_CALENDAR_VISUAL.geometry.default_cell_size,
+            cell_size: CALENDAR_VISUAL.geometry.default_cell_size,
             cell_size_authored: false,
             year_jump: false,
             events: Vec::new(),
@@ -851,7 +683,7 @@ impl Calendar {
             pending_change: Cell::new(None),
             layout_requested: Cell::new(false),
             last_geometry: Cell::new(None),
-            visual: &DEFAULT_CALENDAR_VISUAL,
+            visual: CALENDAR_VISUAL_REF,
         }
     }
     /// 设置日期格首选边长；无效值会归一化到支持范围。
@@ -1276,8 +1108,7 @@ impl Calendar {
 }
 
 // 把日期状态、动态日期格与 UIX 静态视觉融合为单一根节点。
-fn build_calendar_view(mut kernel: Calendar, declared_visual: CalendarVisual) -> ViewNode {
-    let visual = UIX_CALENDAR_VISUAL.get_or_init(|| declared_visual);
+fn build_calendar_view(mut kernel: Calendar, visual: &'static CalendarVisual) -> ViewNode {
     if !kernel.cell_size_authored {
         kernel.cell_size = visual.geometry.default_cell_size;
     }

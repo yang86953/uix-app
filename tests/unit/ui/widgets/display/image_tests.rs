@@ -1,5 +1,5 @@
 // 引入被测图片组件。
-use super::Image;
+use super::{IMAGE_VISUAL_REF, Image};
 // 引入公开 View 构建入口。
 use crate::ui::view::View;
 
@@ -36,9 +36,12 @@ fn uix_root_preserves_image_kernel_and_configuration() {
 // 验证 UIX 视觉表由全部 Image 实例共享，不按实例复制大配置。
 #[test]
 fn image_instances_share_uix_visual_table() {
-    let first = View::build(Image::new(32.0, 32.0));
+    let first = Image::new(32.0, 32.0);
+    assert!(std::ptr::eq(first.visual, IMAGE_VISUAL_REF));
+    let first = View::build(first);
     let second = View::build(Image::new(64.0, 48.0));
     let first = first.widget.as_any().downcast_ref::<Image>().unwrap();
     let second = second.widget.as_any().downcast_ref::<Image>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, IMAGE_VISUAL_REF));
 }

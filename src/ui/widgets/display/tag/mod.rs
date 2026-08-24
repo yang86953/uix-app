@@ -1,7 +1,6 @@
 //! Tag widget — 彩色标签/徽标，支持关闭与勾选。
 
 use std::cell::Cell;
-use std::sync::OnceLock;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
@@ -16,8 +15,6 @@ use crate::ui::{
     WidgetId,
 };
 use crate::widget;
-
-const DEFAULT_TAG_FONT_SIZE: f32 = 12.0;
 
 fn normalized_tag_font_size(size: f32, fallback: f32) -> f32 {
     if size.is_finite() && size > 0.0 {
@@ -64,7 +61,7 @@ pub enum TagColor {
 
 // 保存由 UIX 声明、由 Rust 测量与几何算法消费的标签视觉常量。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TagLayoutVisual {
+pub(crate) struct TagLayoutVisual {
     default_font_size: f32,
     horizontal_padding: f32,
     vertical_padding: f32,
@@ -111,7 +108,7 @@ impl TagColorPair {
 
 // 保存全部公开 TagColor 变体对应的 UIX 视觉色对。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TagPaletteVisual {
+pub(crate) struct TagPaletteVisual {
     pairs: [TagColorPair; 15],
 }
 
@@ -162,7 +159,7 @@ impl TagRadiusRole {
 
 // 完整视觉配置由全部 Tag 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TagVisual {
+pub(crate) struct TagVisual {
     layout: TagLayoutVisual,
     palette: TagPaletteVisual,
     custom_light_text: ColorValue,
@@ -175,53 +172,8 @@ struct TagVisual {
     close_icon: &'static str,
 }
 
-// 组合 UIX 声明的标签尺寸、交互描边与图标比例。
-#[allow(clippy::too_many_arguments)]
-const fn tag_layout(
-    default_font_size: f32,
-    horizontal_padding: f32,
-    vertical_padding: f32,
-    compact_padding_ratio: f32,
-    close_width: f32,
-    check_width: f32,
-    corner_radius_limit: f32,
-    checked_inset: f32,
-    checked_stroke_width: f32,
-    focus_inset: f32,
-    focus_stroke_width: f32,
-    check_icon_size: f32,
-    leading_icon_scale: f32,
-    leading_icon_reserve_scale: f32,
-    icon_gap: f32,
-    close_icon_size: f32,
-    light_hover_alpha: f32,
-    light_pressed_alpha: f32,
-    dark_hover_alpha: f32,
-    dark_pressed_alpha: f32,
-) -> TagLayoutVisual {
-    TagLayoutVisual {
-        default_font_size,
-        horizontal_padding,
-        vertical_padding,
-        compact_padding_ratio,
-        close_width,
-        check_width,
-        corner_radius_limit,
-        checked_inset,
-        checked_stroke_width,
-        focus_inset,
-        focus_stroke_width,
-        check_icon_size,
-        leading_icon_scale,
-        leading_icon_reserve_scale,
-        icon_gap,
-        close_icon_size,
-        light_hover_alpha: light_hover_alpha as u8,
-        light_pressed_alpha: light_pressed_alpha as u8,
-        dark_hover_alpha: dark_hover_alpha as u8,
-        dark_pressed_alpha: dark_pressed_alpha as u8,
-    }
-}
+// 同目录 UIX 生成布局、完整预设色表与根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/tag/tag.uix");
 
 // 组合 UIX 声明的主题 token 色对。
 const fn tag_token_pair(background: ColorValue, foreground: ColorValue) -> TagColorPair {
@@ -234,61 +186,6 @@ const fn tag_token_pair(background: ColorValue, foreground: ColorValue) -> TagCo
 // 组合 UIX 声明的扩展色阶对。
 const fn tag_hue_pair(hue: PrimaryHue) -> TagColorPair {
     TagColorPair::Hue(hue)
-}
-
-// 按公开 TagColor 顺序组合全部预设色对。
-#[allow(clippy::too_many_arguments)]
-const fn tag_palette(
-    default: TagColorPair,
-    success: TagColorPair,
-    info: TagColorPair,
-    warning: TagColorPair,
-    error: TagColorPair,
-    blue: TagColorPair,
-    cyan: TagColorPair,
-    geekblue: TagColorPair,
-    purple: TagColorPair,
-    magenta: TagColorPair,
-    red: TagColorPair,
-    orange: TagColorPair,
-    gold: TagColorPair,
-    lime: TagColorPair,
-    green: TagColorPair,
-) -> TagPaletteVisual {
-    TagPaletteVisual {
-        pairs: [
-            default, success, info, warning, error, blue, cyan, geekblue, purple, magenta, red,
-            orange, gold, lime, green,
-        ],
-    }
-}
-
-// 组合 UIX 声明的完整标签视觉配置。
-#[allow(clippy::too_many_arguments)]
-const fn tag_visual(
-    layout: TagLayoutVisual,
-    palette: TagPaletteVisual,
-    custom_light_text: ColorValue,
-    custom_dark_text: ColorValue,
-    light_overlay: ColorValue,
-    dark_overlay: ColorValue,
-    focus_color: ColorValue,
-    corner_radius: TagRadiusRole,
-    check_icon: &'static str,
-    close_icon: &'static str,
-) -> TagVisual {
-    TagVisual {
-        layout,
-        palette,
-        custom_light_text,
-        custom_dark_text,
-        light_overlay,
-        dark_overlay,
-        focus_color,
-        corner_radius,
-        check_icon,
-        close_icon,
-    }
 }
 
 // 向 UIX 提供标签默认填充主题角色。
@@ -400,52 +297,6 @@ const fn tag_lime_hue() -> PrimaryHue {
 const fn tag_radius_sm() -> TagRadiusRole {
     TagRadiusRole::Small
 }
-
-// 向 UIX 提供勾选状态图标名。
-const fn tag_check_icon() -> &'static str {
-    "check"
-}
-
-// 向 UIX 提供关闭操作图标名。
-const fn tag_close_icon() -> &'static str {
-    "x"
-}
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_TAG_VISUAL: TagVisual = tag_visual(
-    tag_layout(
-        12.0, 8.0, 4.0, 0.25, 20.0, 14.0, 0.5, 0.75, 1.5, 1.0, 2.0, 10.0, 0.85, 1.0, 4.0, 10.0,
-        14.0, 28.0, 16.0, 32.0,
-    ),
-    tag_palette(
-        tag_token_pair(tag_fill_tertiary(), tag_text()),
-        tag_token_pair(tag_success_bg(), tag_success()),
-        tag_token_pair(tag_info_bg(), tag_info()),
-        tag_token_pair(tag_warning_bg(), tag_warning()),
-        tag_token_pair(tag_error_bg(), tag_error()),
-        tag_token_pair(tag_primary_bg(), tag_primary()),
-        tag_hue_pair(tag_cyan_hue()),
-        tag_hue_pair(tag_geekblue_hue()),
-        tag_hue_pair(tag_purple_hue()),
-        tag_hue_pair(tag_magenta_hue()),
-        tag_hue_pair(tag_red_hue()),
-        tag_hue_pair(tag_orange_hue()),
-        tag_token_pair(tag_warning_bg(), tag_warning()),
-        tag_hue_pair(tag_lime_hue()),
-        tag_token_pair(tag_success_bg(), tag_success()),
-    ),
-    tag_black(),
-    tag_white(),
-    tag_black(),
-    tag_white(),
-    tag_primary(),
-    tag_radius_sm(),
-    tag_check_icon(),
-    tag_close_icon(),
-);
-
-// 正常 UIX 构建首次写入声明配置，后续 Tag 实例只共享该静态对象。
-static UIX_TAG_VISUAL: OnceLock<TagVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TagAction {
@@ -792,10 +643,7 @@ impl Default for Tag {
 }
 
 // 把 UIX 声明的共享视觉配置融合进标签 Rust 交互与绘制内核。
-fn build_tag_view(mut kernel: Tag, declared_visual: TagVisual) -> ViewNode {
-    let visual = UIX_TAG_VISUAL.get_or_init(|| declared_visual);
-    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
-    debug_assert_eq!(*visual, declared_visual);
+fn build_tag_view(mut kernel: Tag, visual: &'static TagVisual) -> ViewNode {
     if !kernel.font_size_authored {
         if kernel.font_size != visual.layout.default_font_size {
             kernel.cached_text_width.set(f32::NAN);
@@ -833,7 +681,7 @@ impl Tag {
             text: text.into(),
             color: TagColor::Default,
             closable: false,
-            font_size: DEFAULT_TAG_FONT_SIZE,
+            font_size: TAG_VISUAL.layout.default_font_size,
             font_size_authored: false,
             custom_color: None,
             checkable: false,
@@ -847,7 +695,7 @@ impl Tag {
             pending_action: Cell::new(None),
             hovered_target: Cell::new(None),
             pressed: Cell::new(None),
-            visual: &DEFAULT_TAG_VISUAL,
+            visual: TAG_VISUAL_REF,
         }
     }
     /// 设置由当前主题解析的预设标签颜色。

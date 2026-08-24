@@ -34,7 +34,9 @@ fn uix_shell_preserves_single_result_kernel_leaf() {
 /// 每个实例只保存 UIX 配置的静态引用，不复制完整视觉参数表。
 #[test]
 fn uix_visual_configuration_is_shared_between_result_instances() {
-    let first = View::build(ResultView::new(ResultType::Success));
+    let first = ResultView::new(ResultType::Success);
+    assert!(std::ptr::eq(first.visual, RESULT_VISUAL_REF));
+    let first = View::build(first);
     let second = View::build(ResultView::new(ResultType::Error));
     let first = first
         .widget
@@ -47,6 +49,7 @@ fn uix_visual_configuration_is_shared_between_result_instances() {
         .downcast_ref::<ResultView>()
         .expect("第二个 UIX 根必须保留 ResultView 内核");
     assert!(std::ptr::eq(first.visual, second.visual));
+    assert!(std::ptr::eq(first.visual, RESULT_VISUAL_REF));
     assert_eq!(
         std::mem::size_of_val(&first.visual),
         std::mem::size_of::<&'static ResultVisual>()

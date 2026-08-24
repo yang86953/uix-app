@@ -1,2 +1,68 @@
-// Tree 的固有尺寸、搜索栏、行槽位/缩进、图标、焦点和主题角色由 UIX 声明；Rust 内核负责稳定 key、展开/勾选、搜索、拖拽、输入与虚拟化。
-<KernelView value={build_tree_view(kernel, tree_visual(tree_geometry_visual(200, 300, 28, 32, 20, 20, 24), tree_chrome_visual(8, 8, 8, 6, 1, 20, 1, 13, tree_search_placeholder(), 0.33333334, 0.6666667, 0.5, 0.5, 1, tree_checked_icon(), tree_unchecked_icon(), 13, 0.65, tree_expanded_icon(), tree_collapsed_icon(), 12, 0.6, 12, 0.6, 13, 0.65, 0.75, 1.5), tree_palette_visual(tree_primary_color(), tree_text_color(), tree_secondary_text_color(), tree_selected_fill_color(), tree_hover_fill_color(), tree_pressed_fill_color(), tree_search_background_color(), tree_search_border_color())))} />
+// Tree 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责稳定 key、展开/勾选、搜索、拖拽、输入与虚拟化。
+<Visual
+  name="TREE_GEOMETRY_VISUAL"
+  type="TreeGeometryVisual"
+  defaultWidth={200.0}
+  defaultHeight={300.0}
+  rowHeight={28.0}
+  searchHeight={32.0}
+  slotWidth={20.0}
+  indentWidth={20.0}
+  minTitleWidth={24.0}
+/>
+
+<Visual
+  name="TREE_CHROME_VISUAL"
+  type="TreeChromeVisual"
+  searchCursorCharWidth={8.0}
+  searchCursorBaseWidth={8.0}
+  searchHorizontalPadding={8.0}
+  searchCursorY={6.0}
+  searchCursorWidth={1.0}
+  searchCursorHeight={20.0}
+  searchStrokeWidth={1.0}
+  searchFontSize={13.0}
+  searchPlaceholder="搜索"
+  dropBeforeRatio={0.33333334}
+  dropAfterRatio={0.6666667}
+  centerRatio={0.5}
+  rowFocusInset={0.5}
+  rowFocusStroke={1.0}
+  checkedIcon="check-square"
+  uncheckedIcon="square"
+  checkIconSize={13.0}
+  checkIconHeightRatio={0.65}
+  expandedIcon="chevron-down"
+  collapsedIcon="chevron-right"
+  branchIconSize={12.0}
+  branchIconHeightRatio={0.6}
+  nodeIconSize={12.0}
+  nodeIconHeightRatio={0.6}
+  titleFontSize={13.0}
+  titleHeightRatio={0.65}
+  focusInset={0.75}
+  focusStroke={1.5}
+/>
+
+<Visual
+  name="TREE_PALETTE_VISUAL"
+  type="TreePaletteVisual"
+  primary={tree_primary_color()}
+  text={tree_text_color()}
+  textSecondary={tree_secondary_text_color()}
+  selectedFill={tree_selected_fill_color()}
+  hoverFill={tree_hover_fill_color()}
+  pressedFill={tree_pressed_fill_color()}
+  searchBackground={tree_search_background_color()}
+  searchBorder={tree_search_border_color()}
+/>
+
+<Visual
+  name="TREE_VISUAL"
+  type="TreeVisual"
+  geometry={TREE_GEOMETRY_VISUAL}
+  chrome={TREE_CHROME_VISUAL}
+  palette={TREE_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_tree_view(kernel, TREE_VISUAL_REF)} />
