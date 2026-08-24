@@ -1,5 +1,5 @@
 // 引入待验证的树组件与公开节点模型。
-use super::{Tree, TreeNode};
+use super::{TREE_VISUAL_REF, Tree, TreeNode};
 // 引入公开 View 构建入口以验证 UIX 根。
 use crate::ui::view::View;
 
@@ -154,9 +154,12 @@ fn keyboard_selection_skips_disabled_nodes_and_clamps() {
 // 验证全部 Tree 实例共享同一份 UIX 视觉表。
 #[test]
 fn tree_instances_share_uix_visual_table() {
-    let first = View::build(Tree::new(Vec::new()));
+    let first = Tree::new(Vec::new());
+    assert!(std::ptr::eq(first.visual, TREE_VISUAL_REF));
+    let first = View::build(first);
     let second = View::build(Tree::new(Vec::new()));
     let first = first.widget.as_any().downcast_ref::<Tree>().unwrap();
     let second = second.widget.as_any().downcast_ref::<Tree>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, TREE_VISUAL_REF));
 }

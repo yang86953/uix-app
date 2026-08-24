@@ -1,5 +1,5 @@
 // 引入被测颜色解析入口与预设枚举。
-use super::{DEFAULT_TAG_VISUAL, TagColor, resolve_tag_colors};
+use super::{TAG_VISUAL, TagColor, resolve_tag_colors};
 // 引入标准明暗主题。
 use crate::ui::{PrimaryHue, Theme};
 
@@ -11,17 +11,15 @@ fn tag_palette_follows_theme_mode() {
     // 构造标准暗色主题。
     let dark = Theme::antd_dark();
     // 蓝色预设必须直接使用亮色主题品牌色对。
-    let light_blue =
-        resolve_tag_colors(TagColor::Blue, &DEFAULT_TAG_VISUAL.palette, light.tokens());
+    let light_blue = resolve_tag_colors(TagColor::Blue, &TAG_VISUAL.palette, light.tokens());
     // 核对品牌背景 token。
     assert_eq!(light_blue.0, light.tokens().color_primary_bg());
     // 核对品牌前景 token。
     assert_eq!(light_blue.1, light.tokens().color_primary());
     // 分别解析扩展青色的明暗色对。
-    let light_cyan =
-        resolve_tag_colors(TagColor::Cyan, &DEFAULT_TAG_VISUAL.palette, light.tokens());
+    let light_cyan = resolve_tag_colors(TagColor::Cyan, &TAG_VISUAL.palette, light.tokens());
     // 解析暗色主题下的同一扩展色。
-    let dark_cyan = resolve_tag_colors(TagColor::Cyan, &DEFAULT_TAG_VISUAL.palette, dark.tokens());
+    let dark_cyan = resolve_tag_colors(TagColor::Cyan, &TAG_VISUAL.palette, dark.tokens());
     // 扩展色背景必须随明暗模式变化。
     assert_ne!(light_cyan.0, dark_cyan.0);
     // 亮色背景必须保持低强调的浅色表面。
@@ -96,7 +94,7 @@ fn tag_palette_keeps_all_public_variant_mappings() {
     ];
     for (color, expected) in cases {
         assert_eq!(
-            resolve_tag_colors(color, &DEFAULT_TAG_VISUAL.palette, tokens),
+            resolve_tag_colors(color, &TAG_VISUAL.palette, tokens),
             expected,
             "{color:?}"
         );

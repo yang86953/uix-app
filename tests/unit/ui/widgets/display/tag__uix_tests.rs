@@ -19,7 +19,7 @@ fn uix_shell_preserves_single_tag_kernel_leaf() {
             text: "已完成".to_owned(),
             color: TagColor::Success,
             closable: true,
-            font_size: DEFAULT_TAG_FONT_SIZE,
+            font_size: TAG_VISUAL.layout.default_font_size,
             custom_color: None,
             checkable: true,
             checked: false,
@@ -41,7 +41,9 @@ fn uix_shell_preserves_single_tag_kernel_leaf() {
 /// 显式字号必须覆盖 UIX 默认值，完整视觉表则由实例共享。
 #[test]
 fn uix_visual_configuration_is_shared_and_keeps_authored_font_size() {
-    let first = View::build(Tag::new("一").font_size(15.0));
+    let first = Tag::new("一").font_size(15.0);
+    assert!(std::ptr::eq(first.visual, TAG_VISUAL_REF));
+    let first = View::build(first);
     let second = View::build(Tag::new("二"));
     let first = first
         .widget
@@ -57,6 +59,7 @@ fn uix_visual_configuration_is_shared_and_keeps_authored_font_size() {
     assert!(first.font_size_authored);
     assert_eq!(second.font_size, 12.0);
     assert!(std::ptr::eq(first.visual, second.visual));
+    assert!(std::ptr::eq(first.visual, TAG_VISUAL_REF));
 }
 
 /// 固有尺寸测量缓存文本宽度，字号变化时必须精确失效。

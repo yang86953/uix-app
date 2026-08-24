@@ -5,7 +5,6 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::sync::OnceLock;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
@@ -20,7 +19,7 @@ use crate::widget;
 
 // 保存由 UIX 声明、由 Rust 布局算法消费的几何配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ResultLayoutVisual {
+pub(crate) struct ResultLayoutVisual {
     intrinsic_width: f32,
     intrinsic_height: f32,
     horizontal_padding_max: f32,
@@ -48,7 +47,7 @@ struct ResultLayoutVisual {
 
 // 保存由 UIX 声明、由 Rust 文本测量与栅格化消费的排版配置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ResultTypographyVisual {
+pub(crate) struct ResultTypographyVisual {
     title_font_size: f32,
     title_max_lines: u8,
     subtitle_font_size: f32,
@@ -79,7 +78,7 @@ impl ResultFontRole {
 
 // 保存结果页各绘制区域使用的主题语义色。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ResultPalette {
+pub(crate) struct ResultPalette {
     text: ColorValue,
     text_secondary: ColorValue,
     white: ColorValue,
@@ -116,19 +115,21 @@ impl ResultStatusColorRole {
 
 // 保存由 UIX 声明的单个结果状态图标与颜色角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ResultStatusVisual {
+pub(crate) struct ResultStatusVisual {
     icon: &'static str,
     color: ResultStatusColorRole,
 }
 
 // 完整视觉配置由所有 ResultView 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ResultVisual {
+pub(crate) struct ResultVisual {
     layout: ResultLayoutVisual,
     typography: ResultTypographyVisual,
     palette: ResultPalette,
     statuses: [ResultStatusVisual; 7],
 }
+
+crate::uix_items!("src/ui/widgets/display/result/result.uix");
 
 impl ResultVisual {
     fn status(&self, type_: ResultType) -> ResultStatusVisual {
@@ -185,159 +186,6 @@ impl ResultType {
             Self::ServerError => loc.result_500_desc,
             _ => "",
         }
-    }
-}
-
-// 组合 UIX 声明的结果页几何常量。
-#[allow(clippy::too_many_arguments)]
-const fn result_layout(
-    intrinsic_width: f32,
-    intrinsic_height: f32,
-    horizontal_padding_max: f32,
-    horizontal_padding_ratio: f32,
-    vertical_padding_max: f32,
-    vertical_padding_ratio: f32,
-    action_height: f32,
-    action_gap_max: f32,
-    action_gap_ratio: f32,
-    icon_ratio_with_subtitle: f32,
-    icon_ratio_without_subtitle: f32,
-    icon_size_max: f32,
-    icon_width_ratio: f32,
-    icon_title_gap_max: f32,
-    icon_title_gap_ratio: f32,
-    subtitle_gap_max: f32,
-    subtitle_gap_ratio: f32,
-    title_extra_ratio: f32,
-    action_horizontal_padding: f32,
-    action_padding_ratio: f32,
-    action_radius: f32,
-    focus_inset: f32,
-    focus_stroke_width: f32,
-) -> ResultLayoutVisual {
-    ResultLayoutVisual {
-        intrinsic_width,
-        intrinsic_height,
-        horizontal_padding_max,
-        horizontal_padding_ratio,
-        vertical_padding_max,
-        vertical_padding_ratio,
-        action_height,
-        action_gap_max,
-        action_gap_ratio,
-        icon_ratio_with_subtitle,
-        icon_ratio_without_subtitle,
-        icon_size_max,
-        icon_width_ratio,
-        icon_title_gap_max,
-        icon_title_gap_ratio,
-        subtitle_gap_max,
-        subtitle_gap_ratio,
-        title_extra_ratio,
-        action_horizontal_padding,
-        action_padding_ratio,
-        action_radius,
-        focus_inset,
-        focus_stroke_width,
-    }
-}
-
-// 组合 UIX 声明的结果页排版与图标比例常量。
-#[allow(clippy::too_many_arguments)]
-const fn result_typography(
-    title_font_size: f32,
-    title_max_lines: f32,
-    subtitle_font_size: f32,
-    subtitle_max_lines: f32,
-    action_font_fallback: f32,
-    action_font: ResultFontRole,
-    line_height: f32,
-    status_code_font_size_max: f32,
-    status_code_height_ratio: f32,
-    icon_radius_ratio: f32,
-    icon_glyph_ratio: f32,
-    icon_glyph_min_size: f32,
-) -> ResultTypographyVisual {
-    ResultTypographyVisual {
-        title_font_size,
-        title_max_lines: title_max_lines as u8,
-        subtitle_font_size,
-        subtitle_max_lines: subtitle_max_lines as u8,
-        action_font_fallback,
-        action_font,
-        line_height,
-        status_code_font_size_max,
-        status_code_height_ratio,
-        icon_radius_ratio,
-        icon_glyph_ratio,
-        icon_glyph_min_size,
-    }
-}
-
-// 组合 UIX 声明的结果页主题色角色。
-#[allow(clippy::too_many_arguments)]
-const fn result_palette(
-    text: ColorValue,
-    text_secondary: ColorValue,
-    white: ColorValue,
-    primary: ColorValue,
-    primary_active: ColorValue,
-    success: ColorValue,
-    error: ColorValue,
-    info: ColorValue,
-    warning: ColorValue,
-) -> ResultPalette {
-    ResultPalette {
-        text,
-        text_secondary,
-        white,
-        primary,
-        primary_active,
-        success,
-        error,
-        info,
-        warning,
-    }
-}
-
-// 组合 UIX 声明的单个状态图标。
-const fn result_status(icon: &'static str, color: ResultStatusColorRole) -> ResultStatusVisual {
-    ResultStatusVisual { icon, color }
-}
-
-// 按公开 ResultType 顺序组合全部状态视觉。
-const fn result_statuses(
-    success: ResultStatusVisual,
-    error: ResultStatusVisual,
-    info: ResultStatusVisual,
-    warning: ResultStatusVisual,
-    not_found: ResultStatusVisual,
-    forbidden: ResultStatusVisual,
-    server_error: ResultStatusVisual,
-) -> [ResultStatusVisual; 7] {
-    [
-        success,
-        error,
-        info,
-        warning,
-        not_found,
-        forbidden,
-        server_error,
-    ]
-}
-
-// 组合 UIX 声明的完整结果页视觉配置。
-const fn result_visual(
-    layout: ResultLayoutVisual,
-    typography: ResultTypographyVisual,
-    palette: ResultPalette,
-    statuses: [ResultStatusVisual; 7],
-) -> ResultVisual {
-    ResultVisual {
-        layout,
-        typography,
-        palette,
-        statuses,
     }
 }
 
@@ -415,86 +263,6 @@ const fn result_status_info() -> ResultStatusColorRole {
 const fn result_status_warning() -> ResultStatusColorRole {
     ResultStatusColorRole::Warning
 }
-
-// 向 UIX 提供成功状态图标名。
-const fn result_icon_success() -> &'static str {
-    "check"
-}
-
-// 向 UIX 提供错误状态图标名。
-const fn result_icon_error() -> &'static str {
-    "x"
-}
-
-// 向 UIX 提供信息状态图标名。
-const fn result_icon_info() -> &'static str {
-    "info"
-}
-
-// 向 UIX 提供警告状态图标名。
-const fn result_icon_warning() -> &'static str {
-    "alert-triangle"
-}
-
-// 向 UIX 提供资源不存在状态码文案。
-const fn result_icon_not_found() -> &'static str {
-    "404"
-}
-
-// 向 UIX 提供禁止访问状态码文案。
-const fn result_icon_forbidden() -> &'static str {
-    "403"
-}
-
-// 向 UIX 提供服务错误状态码文案。
-const fn result_icon_server_error() -> &'static str {
-    "500"
-}
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_RESULT_VISUAL: ResultVisual = result_visual(
-    result_layout(
-        400.0, 300.0, 12.0, 0.1, 12.0, 0.08, 36.0, 12.0, 0.12, 0.35, 0.45, 64.0, 0.45, 10.0, 0.16,
-        6.0, 0.1, 0.35, 16.0, 0.25, 6.0, 2.0, 2.0,
-    ),
-    result_typography(
-        20.0,
-        2.0,
-        13.0,
-        3.0,
-        14.0,
-        result_body_font(),
-        1.5,
-        48.0,
-        0.82,
-        0.5,
-        0.8,
-        1.0,
-    ),
-    result_palette(
-        result_text(),
-        result_text_secondary(),
-        result_white(),
-        result_primary(),
-        result_primary_active(),
-        result_success(),
-        result_error(),
-        result_info(),
-        result_warning(),
-    ),
-    result_statuses(
-        result_status(result_icon_success(), result_status_success()),
-        result_status(result_icon_error(), result_status_error()),
-        result_status(result_icon_info(), result_status_info()),
-        result_status(result_icon_warning(), result_status_warning()),
-        result_status(result_icon_not_found(), result_status_text_secondary()),
-        result_status(result_icon_forbidden(), result_status_warning()),
-        result_status(result_icon_server_error(), result_status_error()),
-    ),
-);
-
-// 正常 UIX 构建首次写入声明配置，后续 ResultView 实例只共享该静态对象。
-static UIX_RESULT_VISUAL: OnceLock<ResultVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct ResultGeometry {
@@ -701,7 +469,7 @@ impl ResultView {
             focused: false,
             pressed: false,
             last_action_rect: Cell::new(Rect::zero()),
-            visual: &DEFAULT_RESULT_VISUAL,
+            visual: RESULT_VISUAL_REF,
         }
     }
     /// 覆盖结果页标题；空文本继续使用本地化默认标题。
@@ -1048,10 +816,7 @@ impl Default for ResultView {
 }
 
 // 把 UIX 声明的共享视觉配置融合进结果页 Rust 交互与绘制内核。
-fn build_result_view(mut kernel: ResultView, declared_visual: ResultVisual) -> ViewNode {
-    let visual = UIX_RESULT_VISUAL.get_or_init(|| declared_visual);
-    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
-    debug_assert_eq!(*visual, declared_visual);
+fn build_result_view(mut kernel: ResultView, visual: &'static ResultVisual) -> ViewNode {
     kernel.visual = visual;
     ViewNode::leaf(kernel)
 }

@@ -6,9 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use super::widget::FlatNode;
-use super::{
-    DEFAULT_TREE_VISUAL, DropPosition, Tree, TreeNode, TreePointerAction, TreeRowGeometry,
-};
+use super::{DropPosition, TREE_VISUAL_REF, Tree, TreeNode, TreePointerAction, TreeRowGeometry};
 
 impl Tree {
     pub(crate) fn intrinsic_size(&self) -> Size {
@@ -231,7 +229,7 @@ impl Tree {
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             layout_requested: Cell::new(false),
             last_frame: Cell::new(None),
-            visual: &DEFAULT_TREE_VISUAL,
+            visual: TREE_VISUAL_REF,
         };
         tree.flatten();
         tree

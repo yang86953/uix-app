@@ -1,2 +1,127 @@
-// ResultView 的尺寸、间距、排版、状态图标和主题角色由 UIX 声明；Rust 内核负责本地化、交互与布局算法。
-<KernelView value={build_result_view(kernel, result_visual(result_layout(400, 300, 12, 0.1, 12, 0.08, 36, 12, 0.12, 0.35, 0.45, 64, 0.45, 10, 0.16, 6, 0.1, 0.35, 16, 0.25, 6, 2, 2), result_typography(20, 2, 13, 3, 14, result_body_font(), 1.5, 48, 0.82, 0.5, 0.8, 1), result_palette(result_text(), result_text_secondary(), result_white(), result_primary(), result_primary_active(), result_success(), result_error(), result_info(), result_warning()), result_statuses(result_status(result_icon_success(), result_status_success()), result_status(result_icon_error(), result_status_error()), result_status(result_icon_info(), result_status_info()), result_status(result_icon_warning(), result_status_warning()), result_status(result_icon_not_found(), result_status_text_secondary()), result_status(result_icon_forbidden(), result_status_warning()), result_status(result_icon_server_error(), result_status_error()))))} />
+// ResultView 的具名布局、排版、状态与根视觉由 UIX 唯一拥有；Rust 内核负责本地化、交互与布局算法。
+<Visual
+  name="RESULT_LAYOUT_VISUAL"
+  type="ResultLayoutVisual"
+  intrinsicWidth={400.0}
+  intrinsicHeight={300.0}
+  horizontalPaddingMax={12.0}
+  horizontalPaddingRatio={0.1}
+  verticalPaddingMax={12.0}
+  verticalPaddingRatio={0.08}
+  actionHeight={36.0}
+  actionGapMax={12.0}
+  actionGapRatio={0.12}
+  iconRatioWithSubtitle={0.35}
+  iconRatioWithoutSubtitle={0.45}
+  iconSizeMax={64.0}
+  iconWidthRatio={0.45}
+  iconTitleGapMax={10.0}
+  iconTitleGapRatio={0.16}
+  subtitleGapMax={6.0}
+  subtitleGapRatio={0.1}
+  titleExtraRatio={0.35}
+  actionHorizontalPadding={16.0}
+  actionPaddingRatio={0.25}
+  actionRadius={6.0}
+  focusInset={2.0}
+  focusStrokeWidth={2.0}
+/>
+
+<Visual
+  name="RESULT_TYPOGRAPHY_VISUAL"
+  type="ResultTypographyVisual"
+  titleFontSize={20.0}
+  titleMaxLines={2}
+  subtitleFontSize={13.0}
+  subtitleMaxLines={3}
+  actionFontFallback={14.0}
+  actionFont={result_body_font()}
+  lineHeight={1.5}
+  statusCodeFontSizeMax={48.0}
+  statusCodeHeightRatio={0.82}
+  iconRadiusRatio={0.5}
+  iconGlyphRatio={0.8}
+  iconGlyphMinSize={1.0}
+/>
+
+<Visual
+  name="RESULT_PALETTE_VISUAL"
+  type="ResultPalette"
+  text={result_text()}
+  textSecondary={result_text_secondary()}
+  white={result_white()}
+  primary={result_primary()}
+  primaryActive={result_primary_active()}
+  success={result_success()}
+  error={result_error()}
+  info={result_info()}
+  warning={result_warning()}
+/>
+
+<Visual
+  name="RESULT_SUCCESS_VISUAL"
+  type="ResultStatusVisual"
+  icon="check"
+  color={result_status_success()}
+/>
+
+<Visual
+  name="RESULT_ERROR_VISUAL"
+  type="ResultStatusVisual"
+  icon="x"
+  color={result_status_error()}
+/>
+
+<Visual
+  name="RESULT_INFO_VISUAL"
+  type="ResultStatusVisual"
+  icon="info"
+  color={result_status_info()}
+/>
+
+<Visual
+  name="RESULT_WARNING_VISUAL"
+  type="ResultStatusVisual"
+  icon="alert-triangle"
+  color={result_status_warning()}
+/>
+
+<Visual
+  name="RESULT_NOT_FOUND_VISUAL"
+  type="ResultStatusVisual"
+  icon="404"
+  color={result_status_text_secondary()}
+/>
+
+<Visual
+  name="RESULT_FORBIDDEN_VISUAL"
+  type="ResultStatusVisual"
+  icon="403"
+  color={result_status_warning()}
+/>
+
+<Visual
+  name="RESULT_SERVER_ERROR_VISUAL"
+  type="ResultStatusVisual"
+  icon="500"
+  color={result_status_error()}
+/>
+
+<Visual
+  name="RESULT_VISUAL"
+  type="ResultVisual"
+  layout={RESULT_LAYOUT_VISUAL}
+  typography={RESULT_TYPOGRAPHY_VISUAL}
+  palette={RESULT_PALETTE_VISUAL}
+  statuses={[
+    RESULT_SUCCESS_VISUAL,
+    RESULT_ERROR_VISUAL,
+    RESULT_INFO_VISUAL,
+    RESULT_WARNING_VISUAL,
+    RESULT_NOT_FOUND_VISUAL,
+    RESULT_FORBIDDEN_VISUAL,
+    RESULT_SERVER_ERROR_VISUAL
+  ]}
+/>
+
+<KernelView value={build_result_view(kernel, RESULT_VISUAL_REF)} />

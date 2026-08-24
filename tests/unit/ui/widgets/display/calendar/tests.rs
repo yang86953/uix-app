@@ -1,5 +1,5 @@
 // 引入受测 Calendar 与日期值类型。
-use super::{Calendar, CalendarEvent, Date};
+use super::{CALENDAR_VISUAL_REF, Calendar, CalendarEvent, Date};
 // 引入事件颜色与公开 View 构建入口。
 use crate::draw::Color;
 use crate::ui::view::View;
@@ -247,9 +247,12 @@ fn event_buckets_preserve_count_and_visible_order() {
 // 验证全部 Calendar 实例共享同一份 UIX 视觉表。
 #[test]
 fn calendar_instances_share_uix_visual_table() {
-    let first = View::build(Calendar::new());
+    let first = Calendar::new();
+    assert!(std::ptr::eq(first.visual, CALENDAR_VISUAL_REF));
+    let first = View::build(first);
     let second = View::build(Calendar::new());
     let first = first.widget.as_any().downcast_ref::<Calendar>().unwrap();
     let second = second.widget.as_any().downcast_ref::<Calendar>().unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, CALENDAR_VISUAL_REF));
 }
