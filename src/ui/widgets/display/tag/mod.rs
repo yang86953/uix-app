@@ -1,10 +1,13 @@
 //! Tag widget — 彩色标签/徽标，支持关闭与勾选。
 
 use std::cell::Cell;
+use std::sync::OnceLock;
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
@@ -16,11 +19,11 @@ use crate::widget;
 
 const DEFAULT_TAG_FONT_SIZE: f32 = 12.0;
 
-fn normalized_tag_font_size(size: f32) -> f32 {
+fn normalized_tag_font_size(size: f32, fallback: f32) -> f32 {
     if size.is_finite() && size > 0.0 {
         size
     } else {
-        DEFAULT_TAG_FONT_SIZE
+        fallback
     }
 }
 
@@ -59,42 +62,390 @@ pub enum TagColor {
     Green,
 }
 
-// 将标签预设映射为当前主题下的背景与前景。
-fn resolve_tag_colors(color: TagColor, tokens: &dyn ThemeTokens) -> (Color, Color) {
-    // 功能色与品牌色优先服从当前主题的可定制 token。
-    match color {
-        // 默认标签使用中性填充与正文色。
-        TagColor::Default => (tokens.color_fill_tertiary(), tokens.color_text()),
-        // 成功标签使用主题成功色对。
-        TagColor::Success => (tokens.color_success_bg(), tokens.color_success()),
-        // 信息标签使用主题信息色对。
-        TagColor::Info => (tokens.color_info_bg(), tokens.color_info()),
-        // 警告标签使用主题警告色对。
-        TagColor::Warning => (tokens.color_warning_bg(), tokens.color_warning()),
-        // 错误标签使用主题错误色对。
-        TagColor::Error => (tokens.color_error_bg(), tokens.color_error()),
-        // 蓝色预设与当前主题品牌主色保持一致。
-        TagColor::Blue => (tokens.color_primary_bg(), tokens.color_primary()),
-        // 青色预设从 theme 层色阶解析明暗模式。
-        TagColor::Cyan => PrimaryHue::Cyan.palette().subtle_pair(tokens.is_dark()),
-        // 极客蓝预设从 theme 层色阶解析明暗模式。
-        TagColor::Geekblue => PrimaryHue::Geekblue.palette().subtle_pair(tokens.is_dark()),
-        // 紫色预设从 theme 层色阶解析明暗模式。
-        TagColor::Purple => PrimaryHue::Purple.palette().subtle_pair(tokens.is_dark()),
-        // 洋红预设从 theme 层色阶解析明暗模式。
-        TagColor::Magenta => PrimaryHue::Magenta.palette().subtle_pair(tokens.is_dark()),
-        // 红色预设从 theme 层色阶解析明暗模式。
-        TagColor::Red => PrimaryHue::Red.palette().subtle_pair(tokens.is_dark()),
-        // 橙色预设从 theme 层色阶解析明暗模式。
-        TagColor::Orange => PrimaryHue::Orange.palette().subtle_pair(tokens.is_dark()),
-        // 金色预设与当前主题警告色保持一致。
-        TagColor::Gold => (tokens.color_warning_bg(), tokens.color_warning()),
-        // 青柠预设从 theme 层色阶解析明暗模式。
-        TagColor::Lime => PrimaryHue::Lime.palette().subtle_pair(tokens.is_dark()),
-        // 绿色预设与当前主题成功色保持一致。
-        TagColor::Green => (tokens.color_success_bg(), tokens.color_success()),
+// 保存由 UIX 声明、由 Rust 测量与几何算法消费的标签视觉常量。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TagLayoutVisual {
+    default_font_size: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    compact_padding_ratio: f32,
+    close_width: f32,
+    check_width: f32,
+    corner_radius_limit: f32,
+    checked_inset: f32,
+    checked_stroke_width: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    check_icon_size: f32,
+    leading_icon_scale: f32,
+    leading_icon_reserve_scale: f32,
+    icon_gap: f32,
+    close_icon_size: f32,
+    light_hover_alpha: u8,
+    light_pressed_alpha: u8,
+    dark_hover_alpha: u8,
+    dark_pressed_alpha: u8,
+}
+
+// 标签预设色可以来自主题 token 对，也可以来自扩展色阶。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagColorPair {
+    Tokens {
+        background: ColorValue,
+        foreground: ColorValue,
+    },
+    Hue(PrimaryHue),
+}
+
+impl TagColorPair {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> (Color, Color) {
+        match self {
+            Self::Tokens {
+                background,
+                foreground,
+            } => (background.resolve(tokens), foreground.resolve(tokens)),
+            Self::Hue(hue) => hue.palette().subtle_pair(tokens.is_dark()),
+        }
     }
 }
+
+// 保存全部公开 TagColor 变体对应的 UIX 视觉色对。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TagPaletteVisual {
+    pairs: [TagColorPair; 15],
+}
+
+impl TagPaletteVisual {
+    fn pair(&self, color: TagColor) -> TagColorPair {
+        self.pairs[match color {
+            TagColor::Default => 0,
+            TagColor::Success => 1,
+            TagColor::Info => 2,
+            TagColor::Warning => 3,
+            TagColor::Error => 4,
+            TagColor::Blue => 5,
+            TagColor::Cyan => 6,
+            TagColor::Geekblue => 7,
+            TagColor::Purple => 8,
+            TagColor::Magenta => 9,
+            TagColor::Red => 10,
+            TagColor::Orange => 11,
+            TagColor::Gold => 12,
+            TagColor::Lime => 13,
+            TagColor::Green => 14,
+        }]
+    }
+}
+
+// 按 UIX 声明的预设色表解析当前主题下的背景与前景。
+fn resolve_tag_colors(
+    color: TagColor,
+    palette: &TagPaletteVisual,
+    tokens: &dyn ThemeTokens,
+) -> (Color, Color) {
+    palette.pair(color).resolve(tokens)
+}
+
+// 标签圆角使用的主题令牌角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagRadiusRole {
+    Small,
+}
+
+impl TagRadiusRole {
+    fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.border_radius_sm(),
+        }
+    }
+}
+
+// 完整视觉配置由全部 Tag 实例共享，实例只保存一个静态引用。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TagVisual {
+    layout: TagLayoutVisual,
+    palette: TagPaletteVisual,
+    custom_light_text: ColorValue,
+    custom_dark_text: ColorValue,
+    light_overlay: ColorValue,
+    dark_overlay: ColorValue,
+    focus_color: ColorValue,
+    corner_radius: TagRadiusRole,
+    check_icon: &'static str,
+    close_icon: &'static str,
+}
+
+// 组合 UIX 声明的标签尺寸、交互描边与图标比例。
+#[allow(clippy::too_many_arguments)]
+const fn tag_layout(
+    default_font_size: f32,
+    horizontal_padding: f32,
+    vertical_padding: f32,
+    compact_padding_ratio: f32,
+    close_width: f32,
+    check_width: f32,
+    corner_radius_limit: f32,
+    checked_inset: f32,
+    checked_stroke_width: f32,
+    focus_inset: f32,
+    focus_stroke_width: f32,
+    check_icon_size: f32,
+    leading_icon_scale: f32,
+    leading_icon_reserve_scale: f32,
+    icon_gap: f32,
+    close_icon_size: f32,
+    light_hover_alpha: f32,
+    light_pressed_alpha: f32,
+    dark_hover_alpha: f32,
+    dark_pressed_alpha: f32,
+) -> TagLayoutVisual {
+    TagLayoutVisual {
+        default_font_size,
+        horizontal_padding,
+        vertical_padding,
+        compact_padding_ratio,
+        close_width,
+        check_width,
+        corner_radius_limit,
+        checked_inset,
+        checked_stroke_width,
+        focus_inset,
+        focus_stroke_width,
+        check_icon_size,
+        leading_icon_scale,
+        leading_icon_reserve_scale,
+        icon_gap,
+        close_icon_size,
+        light_hover_alpha: light_hover_alpha as u8,
+        light_pressed_alpha: light_pressed_alpha as u8,
+        dark_hover_alpha: dark_hover_alpha as u8,
+        dark_pressed_alpha: dark_pressed_alpha as u8,
+    }
+}
+
+// 组合 UIX 声明的主题 token 色对。
+const fn tag_token_pair(background: ColorValue, foreground: ColorValue) -> TagColorPair {
+    TagColorPair::Tokens {
+        background,
+        foreground,
+    }
+}
+
+// 组合 UIX 声明的扩展色阶对。
+const fn tag_hue_pair(hue: PrimaryHue) -> TagColorPair {
+    TagColorPair::Hue(hue)
+}
+
+// 按公开 TagColor 顺序组合全部预设色对。
+#[allow(clippy::too_many_arguments)]
+const fn tag_palette(
+    default: TagColorPair,
+    success: TagColorPair,
+    info: TagColorPair,
+    warning: TagColorPair,
+    error: TagColorPair,
+    blue: TagColorPair,
+    cyan: TagColorPair,
+    geekblue: TagColorPair,
+    purple: TagColorPair,
+    magenta: TagColorPair,
+    red: TagColorPair,
+    orange: TagColorPair,
+    gold: TagColorPair,
+    lime: TagColorPair,
+    green: TagColorPair,
+) -> TagPaletteVisual {
+    TagPaletteVisual {
+        pairs: [
+            default, success, info, warning, error, blue, cyan, geekblue, purple, magenta, red,
+            orange, gold, lime, green,
+        ],
+    }
+}
+
+// 组合 UIX 声明的完整标签视觉配置。
+#[allow(clippy::too_many_arguments)]
+const fn tag_visual(
+    layout: TagLayoutVisual,
+    palette: TagPaletteVisual,
+    custom_light_text: ColorValue,
+    custom_dark_text: ColorValue,
+    light_overlay: ColorValue,
+    dark_overlay: ColorValue,
+    focus_color: ColorValue,
+    corner_radius: TagRadiusRole,
+    check_icon: &'static str,
+    close_icon: &'static str,
+) -> TagVisual {
+    TagVisual {
+        layout,
+        palette,
+        custom_light_text,
+        custom_dark_text,
+        light_overlay,
+        dark_overlay,
+        focus_color,
+        corner_radius,
+        check_icon,
+        close_icon,
+    }
+}
+
+// 向 UIX 提供标签默认填充主题角色。
+const fn tag_fill_tertiary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+// 向 UIX 提供标签正文主题角色。
+const fn tag_text() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::Text)
+}
+
+// 向 UIX 提供成功背景主题角色。
+const fn tag_success_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::SuccessBg)
+}
+
+// 向 UIX 提供成功前景主题角色。
+const fn tag_success() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Success)
+}
+
+// 向 UIX 提供信息背景主题角色。
+const fn tag_info_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::InfoBg)
+}
+
+// 向 UIX 提供信息前景主题角色。
+const fn tag_info() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Info)
+}
+
+// 向 UIX 提供警告背景主题角色。
+const fn tag_warning_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::WarningBg)
+}
+
+// 向 UIX 提供警告前景主题角色。
+const fn tag_warning() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Warning)
+}
+
+// 向 UIX 提供错误背景主题角色。
+const fn tag_error_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::ErrorBg)
+}
+
+// 向 UIX 提供错误前景主题角色。
+const fn tag_error() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Error)
+}
+
+// 向 UIX 提供品牌弱背景主题角色。
+const fn tag_primary_bg() -> ColorValue {
+    ColorValue::Palette(PaletteColor::PrimaryBg)
+}
+
+// 向 UIX 提供品牌主色主题角色。
+const fn tag_primary() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Primary)
+}
+
+// 向 UIX 提供黑色主题角色。
+const fn tag_black() -> ColorValue {
+    ColorValue::Palette(PaletteColor::Black)
+}
+
+// 向 UIX 提供白色主题角色。
+const fn tag_white() -> ColorValue {
+    ColorValue::Palette(PaletteColor::White)
+}
+
+// 向 UIX 提供青色扩展色阶。
+const fn tag_cyan_hue() -> PrimaryHue {
+    PrimaryHue::Cyan
+}
+
+// 向 UIX 提供极客蓝扩展色阶。
+const fn tag_geekblue_hue() -> PrimaryHue {
+    PrimaryHue::Geekblue
+}
+
+// 向 UIX 提供紫色扩展色阶。
+const fn tag_purple_hue() -> PrimaryHue {
+    PrimaryHue::Purple
+}
+
+// 向 UIX 提供品红扩展色阶。
+const fn tag_magenta_hue() -> PrimaryHue {
+    PrimaryHue::Magenta
+}
+
+// 向 UIX 提供红色扩展色阶。
+const fn tag_red_hue() -> PrimaryHue {
+    PrimaryHue::Red
+}
+
+// 向 UIX 提供橙色扩展色阶。
+const fn tag_orange_hue() -> PrimaryHue {
+    PrimaryHue::Orange
+}
+
+// 向 UIX 提供青柠扩展色阶。
+const fn tag_lime_hue() -> PrimaryHue {
+    PrimaryHue::Lime
+}
+
+// 向 UIX 提供标签小号圆角主题角色。
+const fn tag_radius_sm() -> TagRadiusRole {
+    TagRadiusRole::Small
+}
+
+// 向 UIX 提供勾选状态图标名。
+const fn tag_check_icon() -> &'static str {
+    "check"
+}
+
+// 向 UIX 提供关闭操作图标名。
+const fn tag_close_icon() -> &'static str {
+    "x"
+}
+
+// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
+static DEFAULT_TAG_VISUAL: TagVisual = tag_visual(
+    tag_layout(
+        12.0, 8.0, 4.0, 0.25, 20.0, 14.0, 0.5, 0.75, 1.5, 1.0, 2.0, 10.0, 0.85, 1.0, 4.0, 10.0,
+        14.0, 28.0, 16.0, 32.0,
+    ),
+    tag_palette(
+        tag_token_pair(tag_fill_tertiary(), tag_text()),
+        tag_token_pair(tag_success_bg(), tag_success()),
+        tag_token_pair(tag_info_bg(), tag_info()),
+        tag_token_pair(tag_warning_bg(), tag_warning()),
+        tag_token_pair(tag_error_bg(), tag_error()),
+        tag_token_pair(tag_primary_bg(), tag_primary()),
+        tag_hue_pair(tag_cyan_hue()),
+        tag_hue_pair(tag_geekblue_hue()),
+        tag_hue_pair(tag_purple_hue()),
+        tag_hue_pair(tag_magenta_hue()),
+        tag_hue_pair(tag_red_hue()),
+        tag_hue_pair(tag_orange_hue()),
+        tag_token_pair(tag_warning_bg(), tag_warning()),
+        tag_hue_pair(tag_lime_hue()),
+        tag_token_pair(tag_success_bg(), tag_success()),
+    ),
+    tag_black(),
+    tag_white(),
+    tag_black(),
+    tag_white(),
+    tag_primary(),
+    tag_radius_sm(),
+    tag_check_icon(),
+    tag_close_icon(),
+);
+
+// 正常 UIX 构建首次写入声明配置，后续 Tag 实例只共享该静态对象。
+static UIX_TAG_VISUAL: OnceLock<TagVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TagAction {
@@ -131,6 +482,8 @@ widget! {
         color: TagColor,
         closable: bool,
         font_size: f32,
+        #[snapshot(skip)]
+        font_size_authored: bool,
         custom_color: Option<Color>,
         checkable: bool,
         checked: bool,
@@ -143,6 +496,8 @@ widget! {
         pending_action: Cell<Option<TagAction>>,
         hovered_target: Cell<Option<TagTarget>>,
         pressed: Cell<Option<TagPress>>,
+        #[snapshot(skip)]
+        visual: &'static TagVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -276,24 +631,29 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let geometry = Self::geometry(frame, self.checkable, self.closable);
+        let geometry = self.geometry(frame);
         let frame = geometry.frame;
         self.last_size.set(Size::new(frame.w, frame.h));
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let font_size = normalized_tag_font_size(self.font_size);
+        let layout = &self.visual.layout;
+        let font_size = normalized_tag_font_size(self.font_size, layout.default_font_size);
         let (bg, fg) = if let Some(cc) = self.custom_color {
-            // 自定义色对比文字：按亮度取黑白 token。
-            (cc, if cc.is_light() { ctx.tokens().color_black() } else { ctx.tokens().color_white() })
+            let text = if cc.is_light() {
+                self.visual.custom_light_text
+            } else {
+                self.visual.custom_dark_text
+            };
+            (cc, text.resolve(ctx.tokens()))
         } else {
-            // 非自定义标签在绘制时解析当前主题与明暗模式。
-            resolve_tag_colors(self.color, ctx.tokens())
+            resolve_tag_colors(self.color, &self.visual.palette, ctx.tokens())
         };
-        let radius = ctx
-            .tokens()
-            .border_radius_sm()
-            .min(frame.w.min(frame.h) * 0.5);
+        let radius = self
+            .visual
+            .corner_radius
+            .resolve(ctx.tokens())
+            .min(frame.w.min(frame.h) * layout.corner_radius_limit);
         let r = Some(Radius::uniform(radius));
         ctx.push_clip(frame);
         ctx.fill_rect(frame, bg, r);
@@ -316,16 +676,30 @@ widget! {
                 TagTarget::Body => geometry.body,
                 TagTarget::Close => geometry.close.unwrap_or(geometry.frame),
             };
-            // 悬停/按压叠加：按底色亮度取黑白 token + 原 alpha（保持视觉等价，色相随主题可换）。
             let overlay = if bg.is_light() {
-                ctx.tokens().color_black().with_alpha(if pressed { 28 } else { 14 })
+                self.visual.light_overlay.resolve(ctx.tokens()).with_alpha(
+                    if pressed {
+                        layout.light_pressed_alpha
+                    } else {
+                        layout.light_hover_alpha
+                    },
+                )
             } else {
-                ctx.tokens().color_white().with_alpha(if pressed { 32 } else { 16 })
+                self.visual.dark_overlay.resolve(ctx.tokens()).with_alpha(
+                    if pressed {
+                        layout.dark_pressed_alpha
+                    } else {
+                        layout.dark_hover_alpha
+                    },
+                )
             };
             ctx.fill_rect(target_frame, overlay, None);
         }
         if self.checked {
-            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = layout
+                .checked_inset
+                .min(frame.w * 0.5)
+                .min(frame.h * 0.5);
             ctx.stroke_rect(
                 Rect::new(
                     frame.x + inset,
@@ -334,12 +708,15 @@ widget! {
                     (frame.h - inset * 2.0).max(0.0),
                 ),
                 fg,
-                1.5,
+                layout.checked_stroke_width,
                 Some(Radius::uniform(radius)),
             );
         }
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 1.0_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = layout
+                .focus_inset
+                .min(frame.w * 0.5)
+                .min(frame.h * 0.5);
             ctx.stroke_rect(
                 Rect::new(
                     frame.x + inset,
@@ -347,8 +724,8 @@ widget! {
                     (frame.w - inset * 2.0).max(0.0),
                     (frame.h - inset * 2.0).max(0.0),
                 ),
-                ctx.tokens().color_primary(),
-                2.0,
+                self.visual.focus_color.resolve(ctx.tokens()),
+                layout.focus_stroke_width,
                 Some(Radius::uniform(radius)),
             );
         }
@@ -356,16 +733,16 @@ widget! {
             if let Some(check) = geometry.check {
                 crate::ui::widgets::icon::Icon::paint_in_frame(
                     ctx,
-                    "check",
+                    self.visual.check_icon,
                     check,
                     fg,
-                    10.0,
+                    layout.check_icon_size,
                 );
             }
         }
         // 图标绘制（在文字之前）
         if !self.icon.is_empty() {
-            let icon_size = font_size * 0.85;
+            let icon_size = font_size * layout.leading_icon_scale;
             let icon_rect = Rect::new(
                 geometry.text.x,
                 geometry.text.y,
@@ -380,9 +757,13 @@ widget! {
                 icon_size,
             );
             let remaining = Rect::new(
-                icon_rect.x + icon_rect.w + 4.0,
+                icon_rect.x + icon_rect.w + layout.icon_gap,
                 geometry.text.y,
-                (geometry.text.x + geometry.text.w - icon_rect.x - icon_rect.w - 4.0).max(0.0),
+                (geometry.text.x + geometry.text.w
+                    - icon_rect.x
+                    - icon_rect.w
+                    - layout.icon_gap)
+                    .max(0.0),
                 geometry.text.h,
             );
             Self::paint_single_line(ctx, &self.text, remaining, fg, font_size);
@@ -392,10 +773,10 @@ widget! {
         if let Some(close) = geometry.close {
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "x",
+                self.visual.close_icon,
                 close,
                 fg,
-                10.0,
+                layout.close_icon_size,
             );
         }
         ctx.pop_clip();
@@ -408,14 +789,21 @@ impl Default for Tag {
     }
 }
 
-// 把标签 Rust 交互与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_tag_view(kernel: Tag) -> ViewNode {
+// 把 UIX 声明的共享视觉配置融合进标签 Rust 交互与绘制内核。
+fn build_tag_view(mut kernel: Tag, declared_visual: TagVisual) -> ViewNode {
+    let visual = UIX_TAG_VISUAL.get_or_init(|| declared_visual);
+    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
+    debug_assert_eq!(*visual, declared_visual);
+    if !kernel.font_size_authored {
+        kernel.font_size = visual.layout.default_font_size;
+    }
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
 impl View for Tag {
     fn build(self) -> ViewNode {
-        // UIX 拥有公开组件根，Rust 保留关闭、勾选、布局和绘制机制。
+        // UIX 拥有视觉配置，Rust 保留关闭、勾选、状态协调与底层绘制。
         let kernel = self;
         crate::uix!("src/ui/widgets/display/tag/tag.uix")
     }
@@ -441,6 +829,7 @@ impl Tag {
             color: TagColor::Default,
             closable: false,
             font_size: DEFAULT_TAG_FONT_SIZE,
+            font_size_authored: false,
             custom_color: None,
             checkable: false,
             checked: false,
@@ -452,6 +841,7 @@ impl Tag {
             pending_action: Cell::new(None),
             hovered_target: Cell::new(None),
             pressed: Cell::new(None),
+            visual: &DEFAULT_TAG_VISUAL,
         }
     }
     /// 设置由当前主题解析的预设标签颜色。
@@ -485,7 +875,8 @@ impl Tag {
     }
     /// 设置标签字号；非法或非正值回退为默认字号。
     pub fn font_size(mut self, s: f32) -> Self {
-        self.font_size = normalized_tag_font_size(s);
+        self.font_size_authored = s.is_finite() && s > 0.0;
+        self.font_size = normalized_tag_font_size(s, self.visual.layout.default_font_size);
         self
     }
 
@@ -496,7 +887,8 @@ impl Tag {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let font_size = normalized_tag_font_size(self.font_size);
+        let layout = &self.visual.layout;
+        let font_size = normalized_tag_font_size(self.font_size, layout.default_font_size);
         let text_width = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &self.text,
             f32::INFINITY,
@@ -504,19 +896,28 @@ impl Tag {
         )
         .max_line_width;
         let icon_width = if !self.icon.is_empty() {
-            font_size + 4.0
+            font_size * layout.leading_icon_reserve_scale + layout.icon_gap
         } else {
             0.0
         };
         let w = text_width
             + icon_width
-            + 16.0
-            + if self.checkable { 14.0 } else { 0.0 }
-            + if self.closable { 20.0 } else { 0.0 };
-        Size::new(w, font_size + 8.0)
+            + layout.horizontal_padding * 2.0
+            + if self.checkable {
+                layout.check_width
+            } else {
+                0.0
+            }
+            + if self.closable {
+                layout.close_width
+            } else {
+                0.0
+            };
+        Size::new(w, font_size + layout.vertical_padding * 2.0)
     }
 
-    fn geometry(frame: Rect, checkable: bool, closable: bool) -> TagGeometry {
+    fn geometry(&self, frame: Rect) -> TagGeometry {
+        let layout = &self.visual.layout;
         let frame = Rect::new(
             frame.x,
             frame.y,
@@ -531,8 +932,8 @@ impl Tag {
                 0.0
             },
         );
-        let close_width = if closable && frame.w > 0.0 {
-            20.0_f32.min(frame.w)
+        let close_width = if self.closable && frame.w > 0.0 {
+            layout.close_width.min(frame.w)
         } else {
             0.0
         };
@@ -545,13 +946,17 @@ impl Tag {
             )
         });
         let body = Rect::new(frame.x, frame.y, (frame.w - close_width).max(0.0), frame.h);
-        let horizontal_padding = 8.0_f32.min(body.w * 0.25);
-        let check_width = if checkable {
-            14.0_f32.min((body.w - horizontal_padding * 2.0).max(0.0))
+        let horizontal_padding = layout
+            .horizontal_padding
+            .min(body.w * layout.compact_padding_ratio);
+        let check_width = if self.checkable {
+            layout
+                .check_width
+                .min((body.w - horizontal_padding * 2.0).max(0.0))
         } else {
             0.0
         };
-        let check = (checkable && check_width > 0.0)
+        let check = (self.checkable && check_width > 0.0)
             .then(|| Rect::new(body.x + horizontal_padding, body.y, check_width, body.h));
         let reserved_check = if check.is_some() { check_width } else { 0.0 };
         let text_x = body.x + horizontal_padding + reserved_check;
@@ -596,11 +1001,7 @@ impl Tag {
         } else {
             self.intrinsic_size()
         };
-        let geometry = Self::geometry(
-            Rect::new(0.0, 0.0, size.w, size.h),
-            self.checkable,
-            self.closable,
-        );
+        let geometry = self.geometry(Rect::new(0.0, 0.0, size.w, size.h));
         if self.closable && geometry.close.is_some_and(|close| close.contains(point)) {
             Some(TagTarget::Close)
         } else if self.checkable && geometry.body.contains(point) {
@@ -674,9 +1075,11 @@ impl Tag {
         self.color = next.color;
         self.closable = next.closable;
         self.font_size = next.font_size;
+        self.font_size_authored = next.font_size_authored;
         self.custom_color = next.custom_color;
         self.checkable = next.checkable;
         self.icon = next.icon;
+        self.visual = next.visual;
         self.checked = if !self.checkable {
             false
         } else if was_checkable {
