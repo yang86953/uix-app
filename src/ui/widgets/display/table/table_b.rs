@@ -4,26 +4,29 @@ use crate::core::Rect;
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{SnapshotFields, SnapshotTableColumn, SnapshotTableColumnGroup};
+use std::cell::Ref;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use super::config::merge_table_columns;
 // 引入共享列区绘制层级与列几何快照。
+use super::ResolvedTableVisual;
 use super::Table;
 use super::geometry::{COLUMN_PAINT_ORDER, TableColumnGeometry};
-use super::types::{
-    COLUMN_RESIZE_HANDLE_HALF_WIDTH, MIN_RESIZABLE_COLUMN_WIDTH, SortDirection,
-    TABLE_PAGINATION_GAP, TABLE_PAGINATION_HEIGHT, TABLE_PAGINATION_INSET,
-    TABLE_PAGINATION_ITEM_SIZE, TABLE_PAGINATION_LABEL_WIDTH, TableChange, TableResizeDrag,
-    finite_nonnegative,
-};
+use super::types::{SortDirection, TableChange, TableResizeDrag, finite_nonnegative};
 
 impl Table {
     pub(crate) fn selection_width(&self) -> f32 {
-        if self.selection { 32.0 } else { 0.0 }
+        if self.selection {
+            self.visual.geometry.selection_width
+        } else {
+            0.0
+        }
     }
 
     pub(crate) fn loading_body_rect(&self, frame: Rect) -> Rect {
-        let header_height = (self.total_header_height() + 1.0).min(frame.h);
+        let header_height =
+            (self.total_header_height() + self.visual.geometry.body_separator).min(frame.h);
         Rect::new(
             frame.x,
             frame.y + header_height,
@@ -34,9 +37,12 @@ impl Table {
 
     pub(crate) fn loading_spinner_bounds(&self, frame: Rect) -> Rect {
         let body = self.loading_body_rect(frame);
-        let radius = 10.0_f32.min(body.w.min(body.h) * 0.3);
-        let dot_radius = radius * 0.18;
-        let extent = radius + dot_radius + 1.0;
+        let loading = self.visual.loading;
+        let radius = loading
+            .radius
+            .min(body.w.min(body.h) * loading.radius_ratio);
+        let dot_radius = radius * loading.dot_radius_ratio;
+        let extent = radius + dot_radius + loading.extent_padding;
         Rect::new(
             body.x + body.w * 0.5 - extent,
             body.y + body.h * 0.5 - extent,
@@ -45,30 +51,71 @@ impl Table {
         )
     }
 
-    pub(crate) fn paint_loading_overlay(&self, frame: Rect, ctx: &mut PaintContext) {
+    // 每帧只求一次相位三角函数，其余圆点通过 UIX 声明的固定角度递推。
+    #[inline]
+    fn for_each_loading_dot_offset(
+        phase: f32,
+        radius: f32,
+        count: usize,
+        step_sin: f32,
+        step_cos: f32,
+        mut visit: impl FnMut(usize, f32, f32),
+    ) {
+        // 第一个圆点直接使用当前相位，避免跨帧积累递推误差。
+        let (mut sin, mut cos) = phase.sin_cos();
+        for index in 0..count {
+            visit(index, cos * radius, sin * radius);
+            if index + 1 == count {
+                break;
+            }
+            // 复数乘法执行固定角度旋转，不创建临时集合。
+            let next_sin = sin * step_cos + cos * step_sin;
+            let next_cos = cos * step_cos - sin * step_sin;
+            sin = next_sin;
+            cos = next_cos;
+        }
+    }
+
+    pub(crate) fn paint_loading_overlay(
+        &self,
+        frame: Rect,
+        ctx: &mut PaintContext,
+        resolved: ResolvedTableVisual,
+    ) {
         let body = self.loading_body_rect(frame);
         if body.w <= 0.0 || body.h <= 0.0 {
             return;
         }
-        ctx.fill_rect(body, ctx.tokens().color_text().with_alpha(30), None);
-        let radius = 10.0_f32.min(body.w.min(body.h) * 0.3);
+        let loading = self.visual.loading;
+        ctx.fill_rect(body, resolved.text.with_alpha(loading.overlay_alpha), None);
+        let radius = loading
+            .radius
+            .min(body.w.min(body.h) * loading.radius_ratio);
         if radius <= 0.0 {
             return;
         }
-        let cx = body.x + body.w * 0.5;
-        let cy = body.y + body.h * 0.5;
-        let dot_radius = radius * 0.18;
-        let primary = ctx.tokens().color_primary();
-        for index in 0..8 {
-            let angle = self.loading_phase + index as f32 * std::f32::consts::TAU / 8.0;
-            let opacity = 0.25 + index as f32 / 8.0 * 0.75;
-            ctx.fill_circle(
-                cx + angle.cos() * radius,
-                cy + angle.sin() * radius,
-                dot_radius,
-                primary.with_alpha((primary.a as f32 * opacity) as u8),
-            );
-        }
+        let cx = body.x + body.w * self.visual.frame.center_ratio;
+        let cy = body.y + body.h * self.visual.frame.center_ratio;
+        let dot_radius = radius * loading.dot_radius_ratio;
+        Self::for_each_loading_dot_offset(
+            self.loading_phase,
+            radius,
+            loading.dot_count,
+            loading.step_sin,
+            loading.step_cos,
+            |index, dx, dy| {
+                let opacity = loading.opacity_base
+                    + index as f32 / loading.dot_count as f32 * loading.opacity_range;
+                ctx.fill_circle(
+                    cx + dx,
+                    cy + dy,
+                    dot_radius,
+                    resolved
+                        .primary
+                        .with_alpha((resolved.primary.a as f32 * opacity) as u8),
+                );
+            },
+        );
     }
 
     pub(crate) fn total_header_height(&self) -> f32 {
@@ -81,7 +128,7 @@ impl Table {
 
     pub(crate) fn pagination_height(&self) -> f32 {
         if self.pagination.is_some() {
-            TABLE_PAGINATION_HEIGHT
+            self.visual.pagination.height
         } else {
             0.0
         }
@@ -103,18 +150,24 @@ impl Table {
 
     pub(crate) fn pagination_controls(&self, frame: Rect) -> Option<(Rect, Rect, Rect)> {
         self.pagination.as_ref()?;
-        let footer_height = TABLE_PAGINATION_HEIGHT.min(frame.h.max(0.0));
-        let inset = TABLE_PAGINATION_INSET.min(frame.w.max(0.0) * 0.1);
+        let pagination = self.visual.pagination;
+        let footer_height = pagination.height.min(frame.h.max(0.0));
+        let inset = pagination
+            .inset
+            .min(frame.w.max(0.0) * pagination.inset_ratio);
         let available = (frame.w - inset * 2.0).max(0.0);
-        let gap = TABLE_PAGINATION_GAP.min(available * 0.05);
-        let label_width = TABLE_PAGINATION_LABEL_WIDTH.min(available * 0.5);
-        let item_size = TABLE_PAGINATION_ITEM_SIZE
-            .min(((available - label_width - gap * 2.0) * 0.5).max(0.0))
+        let gap = pagination.gap.min(available * pagination.gap_ratio);
+        let label_width = pagination
+            .label_width
+            .min(available * pagination.label_width_ratio);
+        let item_size = pagination
+            .item_size
+            .min(((available - label_width - gap * 2.0) * pagination.center_ratio).max(0.0))
             .min(footer_height);
         let controls_width = item_size * 2.0 + label_width + gap * 2.0;
         let x = frame.x + (frame.w - inset - controls_width).max(0.0);
         let footer_y = frame.y + frame.h - footer_height;
-        let y = footer_y + (footer_height - item_size) * 0.5;
+        let y = footer_y + (footer_height - item_size) * pagination.center_ratio;
         let previous = Rect::new(x, y, item_size, item_size);
         let label = Rect::new(previous.x + previous.w + gap, y, label_width, item_size);
         let next = Rect::new(label.x + label.w + gap, y, item_size, item_size);
@@ -154,7 +207,29 @@ impl Table {
         ));
     }
 
-    pub(crate) fn paint_pagination(&self, frame: Rect, ctx: &mut PaintContext) {
+    fn pagination_label(&self, current: usize, total: usize) -> Ref<'_, str> {
+        let needs_refresh = {
+            let cache = self.pagination_label_cache.borrow();
+            cache.value.is_empty() || cache.current != current || cache.total != total
+        };
+        if needs_refresh {
+            let mut cache = self.pagination_label_cache.borrow_mut();
+            cache.current = current;
+            cache.total = total;
+            cache.value.clear();
+            let _ = write!(cache.value, "{current} / {total}");
+        }
+        Ref::map(self.pagination_label_cache.borrow(), |cache| {
+            cache.value.as_str()
+        })
+    }
+
+    pub(crate) fn paint_pagination(
+        &self,
+        frame: Rect,
+        ctx: &mut PaintContext,
+        resolved: ResolvedTableVisual,
+    ) {
         let Some((previous, label, next)) = self.pagination_controls(frame) else {
             return;
         };
@@ -162,39 +237,50 @@ impl Table {
         let total_pages = self.pagination_total_pages();
         let footer = Rect::new(
             frame.x,
-            frame.y + (frame.h - TABLE_PAGINATION_HEIGHT).max(0.0),
+            frame.y + (frame.h - self.visual.pagination.height).max(0.0),
             frame.w,
-            TABLE_PAGINATION_HEIGHT.min(frame.h),
+            self.visual.pagination.height.min(frame.h),
         );
-        let border = ctx.tokens().color_border();
-        let text = ctx.tokens().color_text();
-        let secondary = ctx.tokens().color_text_secondary();
-        let bg = ctx.tokens().color_bg_container();
-        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-        ctx.fill_rect(footer, bg, None);
-        ctx.fill_rect(Rect::new(footer.x, footer.y, footer.w, 1.0), border, None);
+        let pagination = self.visual.pagination;
+        let radius = Some(Radius::uniform(resolved.radius));
+        ctx.fill_rect(footer, resolved.alternate_background, None);
+        ctx.fill_rect(
+            Rect::new(footer.x, footer.y, footer.w, pagination.divider_width),
+            resolved.border,
+            None,
+        );
         for button in [previous, next] {
-            ctx.fill_rect(button, bg, radius);
-            ctx.stroke_rect(button, border, 1.0, radius);
+            ctx.fill_rect(button, resolved.alternate_background, radius);
+            ctx.stroke_rect(button, resolved.border, pagination.button_stroke, radius);
         }
         crate::ui::widgets::Icon::paint_in_frame(
             ctx,
-            "chevron-left",
+            pagination.previous_icon,
             previous,
-            if current <= 1 { secondary } else { text },
-            14.0,
+            if current <= 1 {
+                resolved.text_secondary
+            } else {
+                resolved.text
+            },
+            pagination.icon_size,
         );
-        ctx.text_center(&format!("{current} / {total_pages}"), label, text, 13.0);
+        let page_label = self.pagination_label(current, total_pages);
+        ctx.text_center(
+            &page_label,
+            label,
+            resolved.text,
+            pagination.label_font_size,
+        );
         crate::ui::widgets::Icon::paint_in_frame(
             ctx,
-            "chevron-right",
+            pagination.next_icon,
             next,
             if current >= total_pages {
-                secondary
+                resolved.text_secondary
             } else {
-                text
+                resolved.text
             },
-            14.0,
+            pagination.icon_size,
         );
     }
 
@@ -274,7 +360,8 @@ impl Table {
                             // 同时核对边缘可见性与句柄命中半径。
                             edge >= clip.x
                                 && edge <= clip.x + clip.w
-                                && (point.x - edge).abs() <= COLUMN_RESIZE_HANDLE_HALF_WIDTH
+                                && (point.x - edge).abs()
+                                    <= self.visual.geometry.resize_handle_half_width
                         }
                     // 结束当前列候选过滤。
                 })
@@ -305,7 +392,8 @@ impl Table {
             self.resize_drag.set(None);
             return;
         };
-        let width = (drag.start_width + pointer_x - drag.start_x).max(MIN_RESIZABLE_COLUMN_WIDTH);
+        let width = (drag.start_width + pointer_x - drag.start_x)
+            .max(self.visual.geometry.min_resizable_column_width);
         if (column.width - width).abs() <= 0.01 {
             return;
         }
@@ -363,11 +451,11 @@ impl Table {
             .map(|f| {
                 (finite_nonnegative(f.h)
                     - self.total_header_height()
-                    - 1.0
+                    - self.visual.geometry.body_separator
                     - self.pagination_height())
                 .max(0.0)
             })
-            .unwrap_or(300.0)
+            .unwrap_or(self.visual.geometry.default_height)
     }
 
     pub(crate) fn expanded_child_row(&self) -> Option<usize> {
@@ -381,10 +469,13 @@ impl Table {
     pub(crate) fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
         let header_height = self.total_header_height();
         let viewport_height = self.body_viewport_height();
-        if pos_y < header_height || pos_y >= header_height + 1.0 + viewport_height {
+        if pos_y < header_height
+            || pos_y >= header_height + self.visual.geometry.body_separator + viewport_height
+        {
             return None;
         }
-        let mut local_y = pos_y - header_height - 1.0 + self.body_scroll.scroll_offset();
+        let mut local_y = pos_y - header_height - self.visual.geometry.body_separator
+            + self.body_scroll.scroll_offset();
         if local_y < 0.0 {
             return None;
         }
@@ -413,7 +504,7 @@ impl Table {
             .get()
             .map(|frame| frame.w)
             .unwrap_or_else(|| self.columns.iter().map(|column| column.width).sum());
-        pos_x >= (width - 32.0).max(0.0)
+        pos_x >= (width - self.visual.geometry.selection_width).max(0.0)
     }
 
     pub(crate) fn body_content_height(&self) -> f32 {
@@ -509,6 +600,8 @@ impl Table {
             .get()
             .and_then(|row| self.row_keys.get(row))
             .cloned();
+        self.visual = next.visual;
+        self.row_h_authored = next.row_h_authored;
         self.columns = merge_table_columns(self.columns.as_slice(), next.columns, next.sortable);
         for column in &mut self.columns {
             column.width = finite_nonnegative(column.width);
@@ -572,7 +665,7 @@ impl Table {
     pub(crate) fn cell_view_range_for_frame(&self, frame: Rect) -> (usize, usize) {
         let viewport_height = (finite_nonnegative(frame.h)
             - self.total_header_height()
-            - 1.0
+            - self.visual.geometry.body_separator
             - self.pagination_height())
         .max(0.0);
         let (visible_start, end) = self.visible_row_range(viewport_height);

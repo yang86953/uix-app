@@ -34,6 +34,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/result",
     "display/selectable_list",
     "display/skeleton",
+    "display/table",
     "display/tag",
     "display/timeline",
     "display/tree",

@@ -1,9 +1,10 @@
 use crate::core::Rect;
 // 引入表头分层绘制需要的颜色与圆角类型。
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 
 // 引入共享列区绘制层级与列几何快照。
+use super::ResolvedTableVisual;
 use super::Table;
 use super::geometry::{COLUMN_PAINT_ORDER, TableColumnGeometry};
 use super::types::SortDirection;
@@ -13,15 +14,14 @@ pub(super) fn paint(
     frame: Rect,
     ctx: &mut PaintContext,
     geometry: &TableColumnGeometry,
+    resolved: ResolvedTableVisual,
 ) {
     let header_height = table.total_header_height();
     let header_rect = Rect::new(frame.x, frame.y, frame.w, header_height);
-    let header_bg = ctx.tokens().color_fill_tertiary();
-    let border = ctx.tokens().color_border();
-    let text_secondary = ctx.tokens().color_text_secondary();
-    let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
+    let frame_visual = table.visual.frame;
+    let radius = Some(Radius::uniform(resolved.radius));
 
-    ctx.fill_rect(header_rect, header_bg, radius);
+    ctx.fill_rect(header_rect, resolved.header_background, radius);
     if table.selection {
         if table.header_selection_pressed() {
             ctx.fill_rect(
@@ -31,7 +31,7 @@ pub(super) fn paint(
                     table.selection_width().min(header_rect.w),
                     header_rect.h,
                 ),
-                ctx.tokens().color_fill_secondary(),
+                resolved.pressed_background,
                 None,
             );
         }
@@ -39,23 +39,28 @@ pub(super) fn paint(
         crate::ui::widgets::Icon::paint_in_frame(
             ctx,
             if all_checked {
-                "check-square"
+                frame_visual.checked_icon
             } else {
-                "square"
+                frame_visual.unchecked_icon
             },
-            Rect::new(frame.x + 6.0, header_rect.y, 18.0, header_rect.h),
-            text_secondary,
-            14.0,
+            Rect::new(
+                frame.x + frame_visual.selection_icon_x,
+                header_rect.y,
+                frame_visual.selection_icon_width,
+                header_rect.h,
+            ),
+            resolved.text_secondary,
+            frame_visual.selection_icon_size,
         );
         if table.bordered {
             ctx.fill_rect(
                 Rect::new(
-                    frame.x + table.selection_width() - 1.0,
+                    frame.x + table.selection_width() - frame_visual.selection_divider_width,
                     header_rect.y,
-                    1.0,
+                    frame_visual.selection_divider_width,
                     header_rect.h,
                 ),
-                border,
+                resolved.border,
                 None,
             );
         }
@@ -66,9 +71,9 @@ pub(super) fn paint(
         // 把绘制上下文作为两个阶段共享的可变状态。
         ctx,
         // 分组阶段绘制当前列区的上层标题片段。
-        |ctx, zone| paint_group_titles_for_zone(table, header_rect, ctx, geometry, zone),
+        |ctx, zone| paint_group_titles_for_zone(table, header_rect, ctx, geometry, zone, resolved),
         // 叶阶段绘制当前列区的跨层单列或下层叶表头。
-        |ctx, zone| paint_leaf_headers_for_zone(table, header_rect, ctx, geometry, zone),
+        |ctx, zone| paint_leaf_headers_for_zone(table, header_rect, ctx, geometry, zone, resolved),
     );
 }
 
@@ -102,20 +107,14 @@ fn paint_leaf_headers_for_zone(
     geometry: &TableColumnGeometry,
     // 限定本次绘制的列区。
     zone: super::geometry::ColumnZone,
+    resolved: ResolvedTableVisual,
 ) {
     // 不可见列区不产生任何叶表头绘制。
     let Some(zone_clip) = geometry.clip_for(zone, header_rect.y, header_rect.h) else {
         // 提前结束当前列区。
         return;
     };
-    // 读取叶表头边框颜色。
-    let border: Color = ctx.tokens().color_border();
-    // 读取叶表头文字颜色。
-    let text_color: Color = ctx.tokens().color_text();
-    // 读取未激活排序图标颜色。
-    let text_secondary: Color = ctx.tokens().color_text_secondary();
-    // 读取激活排序与调整线颜色。
-    let primary: Color = ctx.tokens().color_primary();
+    let header_visual = table.visual.header;
     // 将当前列区全部叶表头裁剪到共同可见范围。
     ctx.push_clip(zone_clip);
     // 按扁平列声明顺序绘制当前列区。
@@ -162,19 +161,23 @@ fn paint_leaf_headers_for_zone(
                         .intersect(&zone_clip)
             {
                 // 绘制按下反馈。
-                ctx.fill_rect(pressed_frame, ctx.tokens().color_fill_secondary(), None);
+                ctx.fill_rect(pressed_frame, resolved.pressed_background, None);
             }
         }
         // 为可排序列预留右侧图标槽。
         let sort_slot = if table.sortable || column.sortable {
             // 图标槽不超过列宽的四成。
-            24.0_f32.min(laid_out.width * 0.4)
+            header_visual
+                .sort_slot
+                .min(laid_out.width * header_visual.sort_slot_ratio)
         } else {
             // 不可排序列不预留图标槽。
             0.0
         };
         // 水平留白随窄列宽度收敛。
-        let horizontal_inset = 8.0_f32.min(laid_out.width * 0.25);
+        let horizontal_inset = header_visual
+            .horizontal_inset
+            .min(laid_out.width * header_visual.horizontal_inset_ratio);
         // 仅绘制与当前列区相交的文字范围。
         if let Some(text_frame) = Rect::new(
             // 文字从列左边界加留白开始。
@@ -190,27 +193,37 @@ fn paint_leaf_headers_for_zone(
         .intersect(&zone_clip)
         {
             // 绘制单行列标题。
-            Table::paint_single_line(ctx, &column.title, text_frame, text_color, 13.0);
+            Table::paint_single_line(
+                ctx,
+                &column.title,
+                text_frame,
+                resolved.text,
+                header_visual.title_font_size,
+            );
         }
         // 表级或列级排序开启时绘制方向图标。
         if table.sortable || column.sortable {
             // 根据当前排序方向选择图标。
             let indicator = match column.sort_direction {
                 // 升序使用向上图标。
-                SortDirection::Asc => "chevron-up",
+                SortDirection::Asc => header_visual.ascending_icon,
                 // 降序和未排序使用向下图标。
-                SortDirection::Desc | SortDirection::None => "chevron-down",
+                SortDirection::Desc => header_visual.descending_icon,
+                SortDirection::None => header_visual.unsorted_icon,
             };
             // 根据激活状态选择图标颜色与字号。
             let (color, font_size) = if column.sort_direction == SortDirection::None {
                 // 未排序状态使用次要颜色与较小字号。
-                (text_secondary, 10.0)
+                (resolved.text_secondary, header_visual.unsorted_icon_size)
             } else {
                 // 已排序状态使用主色与稍大字号。
-                (primary, 11.0)
+                (resolved.primary, header_visual.sorted_icon_size)
             };
             // 图标宽度同时受槽位和列宽限制。
-            let icon_width = 18.0_f32.min(sort_slot).min(laid_out.width);
+            let icon_width = header_visual
+                .sort_icon_width
+                .min(sort_slot)
+                .min(laid_out.width);
             // 只为正宽图标提交绘制。
             if icon_width > 0.0 {
                 // 在列右侧图标槽中绘制排序图标。
@@ -226,7 +239,9 @@ fn paint_leaf_headers_for_zone(
                             // 扣除图标宽度。
                             - icon_width
                             // 扣除图标槽四分之一且最多四像素的留白。
-                            - 4.0_f32.min(sort_slot * 0.25),
+                            - header_visual
+                                .sort_icon_right
+                                .min(sort_slot * header_visual.sort_icon_right_ratio),
                         // 图标遵循当前叶层纵坐标。
                         leaf_rect.y,
                         // 使用收敛后的图标宽度。
@@ -248,16 +263,16 @@ fn paint_leaf_headers_for_zone(
                 // 将分隔线放在列实际右边缘。
                 Rect::new(
                     // 右边缘向左一像素。
-                    laid_out.x + laid_out.width - 1.0,
+                    laid_out.x + laid_out.width - header_visual.divider_width,
                     // 分隔线从当前叶层顶部开始。
                     leaf_rect.y,
                     // 分隔线宽度固定一像素。
-                    1.0,
+                    header_visual.divider_width,
                     // 分隔线高度等于当前叶层。
                     leaf_rect.h,
                 ),
                 // 使用共享边框颜色。
-                border,
+                resolved.border,
                 // 竖线无需圆角。
                 None,
             );
@@ -267,7 +282,11 @@ fn paint_leaf_headers_for_zone(
             // 判断当前列是否为激活调整目标。
             let active = table.resize_indicator_column() == Some(laid_out.index);
             // 激活调整线使用两像素，否则使用一像素。
-            let indicator_width = if active { 2.0 } else { 1.0 };
+            let indicator_width = if active {
+                header_visual.resize_active_indicator_width
+            } else {
+                header_visual.resize_indicator_width
+            };
             // 在列右边缘居中绘制调整线。
             ctx.fill_rect(
                 // 构造当前调整线矩形。
@@ -282,7 +301,11 @@ fn paint_leaf_headers_for_zone(
                     leaf_rect.h,
                 ),
                 // 激活时使用主色，否则使用边框色。
-                if active { primary } else { border },
+                if active {
+                    resolved.primary
+                } else {
+                    resolved.border
+                },
                 // 调整线无需圆角。
                 None,
             );
@@ -300,11 +323,9 @@ fn paint_group_titles_for_zone(
     geometry: &TableColumnGeometry,
     // 限定本次绘制的列区。
     zone: super::geometry::ColumnZone,
+    resolved: ResolvedTableVisual,
 ) {
-    // 读取分组表头边框颜色。
-    let border = ctx.tokens().color_border();
-    // 读取分组表头文字颜色。
-    let text_color = ctx.tokens().color_text();
+    let header_visual = table.visual.header;
     // 计算上层分组表头实际矩形。
     let group_rect = Rect::new(header_rect.x, header_rect.y, header_rect.w, table.header_h);
     // 无分配访问每个可见分组片段并立即绘制。
@@ -312,7 +333,9 @@ fn paint_group_titles_for_zone(
         // 将后续文字、底边和列边界裁剪在当前分组片段内。
         ctx.push_clip(segment);
         // 按片段宽度收敛分组标题水平留白。
-        let horizontal_inset = 8.0_f32.min(segment.w * 0.25);
+        let horizontal_inset = header_visual
+            .horizontal_inset
+            .min(segment.w * header_visual.horizontal_inset_ratio);
         // 在裁剪后的分组片段中绘制单行标题。
         Table::paint_single_line(
             ctx,
@@ -323,21 +346,31 @@ fn paint_group_titles_for_zone(
                 (segment.w - horizontal_inset * 2.0).max(0.0),
                 segment.h,
             ),
-            text_color,
-            13.0,
+            resolved.text,
+            header_visual.title_font_size,
         );
         // 绘制分组表头与叶表头之间的底部分隔线。
         ctx.fill_rect(
-            Rect::new(segment.x, segment.y + segment.h - 1.0, segment.w, 1.0),
-            border,
+            Rect::new(
+                segment.x,
+                segment.y + segment.h - header_visual.divider_width,
+                segment.w,
+                header_visual.divider_width,
+            ),
+            resolved.border,
             None,
         );
         // 仅在带边框表格中绘制分组片段右边界。
         if table.bordered {
             // 将右边界限制在当前分组片段高度内。
             ctx.fill_rect(
-                Rect::new(segment.x + segment.w - 1.0, segment.y, 1.0, segment.h),
-                border,
+                Rect::new(
+                    segment.x + segment.w - header_visual.divider_width,
+                    segment.y,
+                    header_visual.divider_width,
+                    segment.h,
+                ),
+                resolved.border,
                 None,
             );
         }

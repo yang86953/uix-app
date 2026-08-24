@@ -38,4 +38,50 @@
         );
         // 结束固定列重叠句柄命中契约。
     }
+
+    // 加载圆点必须通过一次相位求值和固定旋转递推保持八向几何。
+    #[test]
+    fn loading_dot_recurrence_preserves_cardinal_offsets() {
+        // 保存八个访问结果，仅用于验证递推后的几何位置。
+        let mut offsets = Vec::new();
+        Table::for_each_loading_dot_offset(
+            0.0,
+            10.0,
+            8,
+            std::f32::consts::FRAC_1_SQRT_2,
+            std::f32::consts::FRAC_1_SQRT_2,
+            |_, x, y| offsets.push((x, y)),
+        );
+        // 八个圆点必须完整访问且不增减序列长度。
+        assert_eq!(offsets.len(), 8);
+        // 每隔两个圆点应落在一个轴向基点，允许浮点递推误差。
+        let expected = [(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0), (0.0, -10.0)];
+        for ((actual_x, actual_y), (expected_x, expected_y)) in offsets.iter().step_by(2).zip(expected)
+        {
+            assert!((actual_x - expected_x).abs() < 0.0001);
+            assert!((actual_y - expected_y).abs() < 0.0001);
+        }
+    }
+
+    // 页码不变时必须复用同一个字符串缓冲区。
+    #[test]
+    fn pagination_label_reuses_cached_allocation() {
+        let table = Table::new();
+        let first_pointer = {
+            let label = table.pagination_label(1, 12);
+            assert_eq!(&*label, "1 / 12");
+            label.as_ptr()
+        };
+        let first_capacity = table.pagination_label_cache.borrow().value.capacity();
+        let second_pointer = {
+            let label = table.pagination_label(1, 12);
+            assert_eq!(&*label, "1 / 12");
+            label.as_ptr()
+        };
+        assert_eq!(second_pointer, first_pointer);
+        assert_eq!(
+            table.pagination_label_cache.borrow().value.capacity(),
+            first_capacity
+        );
+    }
     // 结束表格列宽句柄测试模块。

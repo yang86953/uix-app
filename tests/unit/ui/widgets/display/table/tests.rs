@@ -74,6 +74,27 @@ fn virtualized_is_alias_of_virtual_scroll() {
     assert!(!table_off.virtual_scroll);
 }
 
+// 泛型表格的命令式转换必须与普通 View 构建共享 UIX 视觉根。
+#[test]
+fn data_table_into_widget_node_uses_uix_visual() {
+    let rows = vec![UserRow {
+        id: 1,
+        name: "row-1".to_string(),
+    }];
+    let node = crate::ui::IntoWidgetNode::into_node(data_table(rows));
+    let table = node
+        .widget
+        .as_any()
+        .downcast_ref::<Table>()
+        .expect("DataTable 必须转换为 Table 内核");
+    let declared = UIX_TABLE_VISUAL
+        .get()
+        .expect("DataTable 转换必须先固化 UIX 视觉声明");
+    assert!(std::ptr::eq(table.visual, declared));
+    // 调用方显式声明的行高不能被 UIX 默认值覆盖。
+    assert_eq!(table.row_h, 32.0);
+}
+
 // 标记跨固定区列合并的命中必须回落到唯一锚点。
 #[test]
 // 验证视觉左侧覆盖列与视觉右侧锚点返回同一逻辑单元格。

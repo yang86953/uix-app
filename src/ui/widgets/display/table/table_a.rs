@@ -10,6 +10,7 @@ use std::rc::Rc;
 use super::Table;
 use super::builder::TableBuilder;
 use super::config::flatten_column_groups;
+use super::presentation::{DEFAULT_TABLE_VISUAL, TablePaginationLabelCache};
 use super::types::{
     DataTable, SortDirection, TableChange, TableColumn, TableColumnGroup, TableDataError,
     TablePagination, TablePointerAction, TableRow, finite_nonnegative, implicit_row_keys,
@@ -25,8 +26,9 @@ impl Table {
             row_keys: Vec::new(),
             view_columns: Vec::new(),
             materialized_cell_range: Cell::new(None),
-            row_h: 28.0,
-            header_h: 32.0,
+            row_h: DEFAULT_TABLE_VISUAL.geometry.row_height,
+            row_h_authored: false,
+            header_h: DEFAULT_TABLE_VISUAL.geometry.header_height,
             fixed_width: None,
             fixed_height: None,
             selected_row: Cell::new(None),
@@ -35,7 +37,7 @@ impl Table {
             expanded_row: Cell::new(None),
             expanded_child_row: Cell::new(None),
             expandable: false,
-            expand_height: 60.0,
+            expand_height: DEFAULT_TABLE_VISUAL.geometry.expand_height,
             sortable: false,
             selection: false,
             bordered: false,
@@ -59,6 +61,8 @@ impl Table {
             pressed_action: Cell::new(None),
             resize_drag: Cell::new(None),
             hover_resize_column: Cell::new(None),
+            visual: &DEFAULT_TABLE_VISUAL,
+            pagination_label_cache: RefCell::new(TablePaginationLabelCache::default()),
         }
     }
 
@@ -71,9 +75,9 @@ impl Table {
 
     pub(crate) fn normalized_row_height(height: f32) -> f32 {
         if height.is_finite() {
-            height.max(1.0)
+            height.max(DEFAULT_TABLE_VISUAL.geometry.min_row_height)
         } else {
-            28.0
+            DEFAULT_TABLE_VISUAL.geometry.row_height
         }
     }
 
@@ -97,7 +101,7 @@ impl Table {
             return;
         }
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         ctx.push_clip(frame);
@@ -115,10 +119,11 @@ impl Table {
                     .sum::<f32>()
                     + self.selection_width();
                 Size::new(
-                    self.fixed_width.unwrap_or(content_width.max(400.0)),
+                    self.fixed_width
+                        .unwrap_or(content_width.max(self.visual.geometry.default_width)),
                     self.total_header_height()
                         + self.rows.len() as f32 * self.row_h
-                        + 1.0
+                        + self.visual.geometry.body_separator
                         + self.pagination_height(),
                 )
             },
@@ -131,7 +136,7 @@ impl Table {
         let frame = self.local_frame();
         Rect::new(
             frame.x,
-            self.total_header_height() + 1.0,
+            self.total_header_height() + self.visual.geometry.body_separator,
             frame.w,
             self.body_viewport_height(),
         )
@@ -474,6 +479,7 @@ impl Table {
     /// 设置固定行高；有限值至少为一，非有限值恢复为默认行高。
     pub fn row_height(mut self, h: f32) -> Self {
         self.row_h = Self::normalized_row_height(h);
+        self.row_h_authored = true;
         self
     }
     /// 是否仅遍历表体视口及 overscan 范围内的行。
@@ -490,6 +496,7 @@ impl Table {
     /// 设置虚拟滚动使用的固定行高；不会隐式开启虚拟滚动。
     pub fn virtual_row_height(mut self, height: f32) -> Self {
         self.row_h = Self::normalized_row_height(height);
+        self.row_h_authored = true;
         self
     }
     /// 返回当前选中行的索引。
