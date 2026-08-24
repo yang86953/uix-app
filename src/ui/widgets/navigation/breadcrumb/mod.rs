@@ -2,6 +2,7 @@
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{
@@ -11,20 +12,9 @@ use crate::widget;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 
-const BREADCRUMB_HEIGHT: f32 = 22.0;
-// 面包屑标题字号（13.0）；card/descriptions 同名常量为 15.0，组件独立设计。
-const TITLE_FONT_SIZE: f32 = 13.0;
-const TITLE_GLYPH_WIDTH: f32 = 7.5;
-const SEPARATOR_FONT_SIZE: f32 = 12.0;
-const SEPARATOR_GLYPH_WIDTH: f32 = 8.0;
-// 面包屑导航小图标（14.0）；Empty 空状态插图为 32.0，语境不同。
-const ICON_SIZE: f32 = 14.0;
-const ICON_SLOT_WIDTH: f32 = 16.0;
-// 面包屑图标与文字间距（4.0）；Empty 空状态为 12.0，语境不同。
-const ICON_TEXT_GAP: f32 = 4.0;
-const OVERFLOW_ROW_HEIGHT: f32 = 28.0;
-const OVERFLOW_MIN_WIDTH: f32 = 112.0;
-const OVERFLOW_HORIZONTAL_PADDING: f32 = 8.0;
+mod presentation;
+
+use presentation::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BreadcrumbSlot {
@@ -97,6 +87,9 @@ widget! {
         overflow_highlighted: Option<usize>,
         layout_requested: Cell<bool>,
         pending_change: Cell<Option<usize>>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static BreadcrumbVisual,
     }
 
     tab_index => (&self) -> i32 { i32::from(!self.items.is_empty()) }
@@ -197,31 +190,30 @@ widget! {
     wants_continuous_pointer_move => (&self) -> bool { self.overflow_open }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_color = ctx.tokens().color_text();
-        let primary = ctx.tokens().color_primary();
+        // 主行与溢出菜单共享一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
         let slots = self.line_layout();
         for (position, (slot, local_rect)) in slots.iter().enumerate() {
             let rect = Self::absolute_rect(*local_rect, frame);
             match slot {
                 BreadcrumbSlot::Item(index) => {
                     let item = &self.items[*index];
-                    let color = if item.active { text_color } else { text_secondary };
+                    let color = if item.active { visual.text } else { visual.text_secondary };
                     self.paint_item(ctx, item, rect, color, 0.0);
                 }
                 BreadcrumbSlot::Overflow => {
                     if self.overflow_open {
                         ctx.fill_rect(
                             rect,
-                            ctx.tokens().color_fill_tertiary(),
-                            Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                            visual.fill_tertiary,
+                            Some(Radius::uniform(visual.radius)),
                         );
                     }
                     ctx.text_center(
                         "...",
                         rect,
-                        if self.overflow_open { primary } else { text_secondary },
-                        TITLE_FONT_SIZE,
+                        if self.overflow_open { visual.primary } else { visual.text_secondary },
+                        self.visual.typography.title,
                     );
                 }
             }
@@ -229,28 +221,28 @@ widget! {
                 let separator_rect = Rect::new(
                     rect.x + rect.w,
                     frame.y,
-                    Self::separator_width(&self.separator),
-                    BREADCRUMB_HEIGHT,
+                    self.separator_width(&self.separator),
+                    self.visual.layout.height,
                 );
                 ctx.text_center(
                     &self.separator,
                     separator_rect,
-                    text_secondary,
-                    SEPARATOR_FONT_SIZE,
+                    visual.text_secondary,
+                    self.visual.typography.separator,
                 );
             }
         }
 
         if self.overflow_open {
-            self.paint_overflow(frame, ctx);
+            self.paint_overflow(frame, ctx, &visual);
         }
 
         if self.focused && tree.keyboard_focus_visible() {
             ctx.stroke_rect(
-                Rect::new(frame.x, frame.y, self.line_width(), BREADCRUMB_HEIGHT),
-                primary,
-                1.5,
-                Some(Radius::uniform(ctx.tokens().border_radius_sm())),
+                Rect::new(frame.x, frame.y, self.line_width(), self.visual.layout.height),
+                visual.primary,
+                self.visual.chrome.focus_width,
+                Some(Radius::uniform(visual.radius)),
             );
         }
     }
@@ -273,11 +265,12 @@ impl Breadcrumb {
                 return Size::new(line_width.max(menu.x + menu.w), menu.y + menu.h);
             }
         }
-        Size::new(line_width, BREADCRUMB_HEIGHT)
+        Size::new(line_width, self.visual.layout.height)
     }
 
     /// 创建使用斜杠分隔且不折叠条目的空面包屑导航。
     pub fn new() -> Self {
+        let visual = BREADCRUMB_VISUAL_REF;
         Self {
             items: Vec::new(),
             separator: "/".to_string(),
@@ -287,6 +280,7 @@ impl Breadcrumb {
             overflow_highlighted: None,
             layout_requested: Cell::new(false),
             pending_change: Cell::new(None),
+            visual,
         }
     }
     /// 追加路径条目，并保证仅有一个活动条目。
@@ -327,6 +321,8 @@ impl Breadcrumb {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        // UIX 视觉随下一声明更新。
+        self.visual = next.visual;
         // 记录旧激活项的稳定身份；无 link 的旧条目兼容使用标题。
         let active_identity = self.items.get(self.active_index()).map(|item| {
             // 非空 link 是首选稳定身份。
@@ -580,7 +576,7 @@ impl Breadcrumb {
                 return Some(BreadcrumbHit::OverflowItem(index));
             }
         }
-        if pos.y < 0.0 || pos.y >= BREADCRUMB_HEIGHT || pos.x < 0.0 {
+        if pos.y < 0.0 || pos.y >= self.visual.layout.height || pos.x < 0.0 {
             return None;
         }
         self.line_layout().into_iter().find_map(|(slot, rect)| {
@@ -599,15 +595,17 @@ impl Breadcrumb {
 
     fn line_layout(&self) -> Vec<(BreadcrumbSlot, Rect)> {
         let slots = self.visible_slots();
-        let separator_width = Self::separator_width(&self.separator);
+        let separator_width = self.separator_width(&self.separator);
         let mut x = 0.0;
         let mut layout = Vec::with_capacity(slots.len());
         for (position, slot) in slots.iter().copied().enumerate() {
             let width = match slot {
-                BreadcrumbSlot::Item(index) => Self::item_width(&self.items[index]),
-                BreadcrumbSlot::Overflow => Self::text_width("...", TITLE_GLYPH_WIDTH),
+                BreadcrumbSlot::Item(index) => self.item_width(&self.items[index]),
+                BreadcrumbSlot::Overflow => {
+                    self.text_width("...", self.visual.layout.title_glyph_width)
+                }
             };
-            layout.push((slot, Rect::new(x, 0.0, width, BREADCRUMB_HEIGHT)));
+            layout.push((slot, Rect::new(x, 0.0, width, self.visual.layout.height)));
             x += width;
             if position + 1 < slots.len() {
                 x += separator_width;
@@ -634,13 +632,16 @@ impl Breadcrumb {
         }
         let width = hidden
             .iter()
-            .map(|index| Self::item_width(&self.items[*index]) + OVERFLOW_HORIZONTAL_PADDING * 2.0)
-            .fold(OVERFLOW_MIN_WIDTH, f32::max);
+            .map(|index| {
+                self.item_width(&self.items[*index])
+                    + self.visual.layout.overflow_horizontal_padding * 2.0
+            })
+            .fold(self.visual.layout.overflow_min_width, f32::max);
         let menu = Rect::new(
             trigger.x,
-            BREADCRUMB_HEIGHT,
+            self.visual.layout.height,
             width,
-            hidden.len() as f32 * OVERFLOW_ROW_HEIGHT,
+            hidden.len() as f32 * self.visual.layout.overflow_row_height,
         );
         let rows = hidden
             .into_iter()
@@ -650,9 +651,9 @@ impl Breadcrumb {
                     index,
                     Rect::new(
                         menu.x,
-                        menu.y + row as f32 * OVERFLOW_ROW_HEIGHT,
+                        menu.y + row as f32 * self.visual.layout.overflow_row_height,
                         menu.w,
-                        OVERFLOW_ROW_HEIGHT,
+                        self.visual.layout.overflow_row_height,
                     ),
                 )
             })
@@ -731,28 +732,37 @@ impl Breadcrumb {
     ) {
         let mut title_x = rect.x + horizontal_padding;
         if !item.icon.is_empty() {
-            let icon_rect = Rect::new(title_x, rect.y, ICON_SLOT_WIDTH, rect.h);
+            let icon_rect = Rect::new(title_x, rect.y, self.visual.layout.icon_slot_width, rect.h);
             crate::ui::widgets::icon::Icon::paint_in_frame(
-                ctx, &item.icon, icon_rect, color, ICON_SIZE,
+                ctx,
+                &item.icon,
+                icon_rect,
+                color,
+                self.visual.typography.icon,
             );
-            title_x += ICON_SLOT_WIDTH + ICON_TEXT_GAP;
+            title_x += self.visual.layout.icon_slot_width + self.visual.layout.icon_text_gap;
         }
         let title_rect = Rect::new(
             title_x,
             rect.y,
-            Self::text_width(&item.title, TITLE_GLYPH_WIDTH),
+            self.text_width(&item.title, self.visual.layout.title_glyph_width),
             rect.h,
         );
-        ctx.text_center(&item.title, title_rect, color, TITLE_FONT_SIZE);
+        ctx.text_center(&item.title, title_rect, color, self.visual.typography.title);
     }
 
-    fn paint_overflow(&self, frame: Rect, ctx: &mut PaintContext) {
+    fn paint_overflow(
+        &self,
+        frame: Rect,
+        ctx: &mut PaintContext,
+        visual: &ResolvedBreadcrumbVisual,
+    ) {
         let Some((local_menu, rows)) = self.overflow_layout() else {
             return;
         };
         let menu = Self::absolute_rect(local_menu, frame);
-        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-        let shadow = ctx.tokens().box_shadow_secondary();
+        let radius = Some(Radius::uniform(visual.radius));
+        let shadow = visual.shadow;
         ctx.draw_box_shadow(
             menu,
             shadow.layer_1.2,
@@ -761,43 +771,43 @@ impl Breadcrumb {
             shadow.layer_1.3,
             radius,
         );
-        ctx.fill_rect(menu, ctx.tokens().color_bg_elevated(), radius);
-        ctx.stroke_rect(menu, ctx.tokens().color_border(), 1.0, radius);
+        ctx.fill_rect(menu, visual.elevated_background, radius);
+        ctx.stroke_rect(menu, visual.border, self.visual.chrome.border_width, radius);
 
         for (index, local_row) in rows {
             let row = Self::absolute_rect(local_row, frame);
             if self.overflow_highlighted == Some(index) {
-                ctx.fill_rect(row, ctx.tokens().color_fill_tertiary(), radius);
+                ctx.fill_rect(row, visual.fill_tertiary, radius);
             }
             self.paint_item(
                 ctx,
                 &self.items[index],
                 row,
-                ctx.tokens().color_text(),
-                OVERFLOW_HORIZONTAL_PADDING,
+                visual.text,
+                self.visual.layout.overflow_horizontal_padding,
             );
         }
     }
 
-    fn item_width(item: &BreadcrumbItem) -> f32 {
-        Self::text_width(&item.title, TITLE_GLYPH_WIDTH)
+    fn item_width(&self, item: &BreadcrumbItem) -> f32 {
+        self.text_width(&item.title, self.visual.layout.title_glyph_width)
             + if item.icon.is_empty() {
                 0.0
             } else {
-                ICON_SLOT_WIDTH + ICON_TEXT_GAP
+                self.visual.layout.icon_slot_width + self.visual.layout.icon_text_gap
             }
     }
 
-    fn separator_width(separator: &str) -> f32 {
-        Self::text_width(separator, SEPARATOR_GLYPH_WIDTH)
+    fn separator_width(&self, separator: &str) -> f32 {
+        self.text_width(separator, self.visual.layout.separator_glyph_width)
     }
 
     fn absolute_rect(rect: Rect, frame: Rect) -> Rect {
         Rect::new(frame.x + rect.x, frame.y + rect.y, rect.w, rect.h)
     }
 
-    fn text_width(text: &str, glyph_width: f32) -> f32 {
-        text.chars().count() as f32 * glyph_width + 8.0
+    fn text_width(&self, text: &str, glyph_width: f32) -> f32 {
+        text.chars().count() as f32 * glyph_width + self.visual.layout.text_horizontal_padding
     }
 
     // 测试目标保留面包屑可见槽位观测入口，供导航布局测试按需调用。
@@ -853,21 +863,33 @@ impl Breadcrumb {
         let icon = (!item.icon.is_empty()).then_some(Rect::new(
             item_rect.x,
             item_rect.y,
-            ICON_SLOT_WIDTH,
+            self.visual.layout.icon_slot_width,
             item_rect.h,
         ));
         let title_x = item_rect.x
             + if icon.is_some() {
-                ICON_SLOT_WIDTH + ICON_TEXT_GAP
+                self.visual.layout.icon_slot_width + self.visual.layout.icon_text_gap
             } else {
                 0.0
             };
         let title = Rect::new(
             title_x,
             item_rect.y,
-            Self::text_width(&item.title, TITLE_GLYPH_WIDTH),
+            self.text_width(&item.title, self.visual.layout.title_glyph_width),
             item_rect.h,
         );
         Some((item_rect, icon, title))
+    }
+}
+
+// UIX 根把声明视觉注入 Rust 路径与折叠内核。
+fn build_breadcrumb_view(mut kernel: Breadcrumb, visual: &'static BreadcrumbVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Breadcrumb {
+    fn build(self) -> ViewNode {
+        build_breadcrumb_view(self, BREADCRUMB_VISUAL_REF)
     }
 }

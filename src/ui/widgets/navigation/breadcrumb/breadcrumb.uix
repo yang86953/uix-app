@@ -1,0 +1,24 @@
+// Breadcrumb 的主行、图标、分隔符、溢出菜单、排版、描边、阴影和主题由 UIX 唯一拥有。
+<Visual name="BREADCRUMB_LAYOUT_VISUAL" type="BreadcrumbLayoutVisual"
+  height={22.0} titleGlyphWidth={7.5} separatorGlyphWidth={8.0}
+  iconSlotWidth={16.0} iconTextGap={4.0} overflowRowHeight={28.0}
+  overflowMinWidth={112.0} overflowHorizontalPadding={8.0}
+  textHorizontalPadding={8.0}
+/>
+<Visual name="BREADCRUMB_TYPOGRAPHY_VISUAL" type="BreadcrumbTypographyVisual"
+  title={13.0} separator={12.0} icon={14.0}
+/>
+<Visual name="BREADCRUMB_CHROME_VISUAL" type="BreadcrumbChromeVisual"
+  borderWidth={1.0} focusWidth={1.5} radius={breadcrumb_radius_small()}
+  shadow={breadcrumb_shadow_secondary()}
+/>
+<Visual name="BREADCRUMB_PALETTE_VISUAL" type="BreadcrumbPaletteVisual"
+  text={breadcrumb_text()} textSecondary={breadcrumb_text_secondary()}
+  primary={breadcrumb_primary()} fillTertiary={breadcrumb_fill_tertiary()}
+  elevatedBackground={breadcrumb_elevated_background()} border={breadcrumb_border()}
+/>
+<Visual name="BREADCRUMB_VISUAL" type="BreadcrumbVisual"
+  layout={BREADCRUMB_LAYOUT_VISUAL} typography={BREADCRUMB_TYPOGRAPHY_VISUAL}
+  chrome={BREADCRUMB_CHROME_VISUAL} palette={BREADCRUMB_PALETTE_VISUAL}
+/>
+<KernelView value={build_breadcrumb_view(kernel, BREADCRUMB_VISUAL_REF)} />
