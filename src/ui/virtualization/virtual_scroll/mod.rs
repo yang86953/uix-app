@@ -92,6 +92,26 @@ struct VirtualRangeCacheEntry {
     range: (usize, usize),
 }
 
+// 唯一标识一次可变列表总高度计算的全部输入事实。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VirtualTotalHeightCacheKey {
+    // 实际测量变化后旧总高度立即失效。
+    measurement_generation: u64,
+    // 数据长度决定需要纳入的项目数量。
+    item_count: usize,
+    // 估算行高按原始位模式区分全部浮点输入。
+    estimated_height_bits: u32,
+}
+
+// 保存原总高度算法已经完成最终舍入的单值结果。
+#[derive(Debug, Clone, Copy)]
+struct VirtualTotalHeightCacheEntry {
+    // 精确输入键防止跨几何事实复用。
+    key: VirtualTotalHeightCacheKey,
+    // 高度是原算法产生的最终有限 f32。
+    height: f32,
+}
+
 // 把有效正度量提升为 f64，供索引与总高度计算使用。
 fn positive_measurement(value: f32) -> Option<f64> {
     // f32::MAX 是布局层的无界测量哨兵，不能作为实际行高或视口。
@@ -320,6 +340,8 @@ widget! {
         item_offset_cache: RefCell<VirtualItemOffsetCache>,
         #[snapshot(skip)]
         range_cache: Cell<Option<VirtualRangeCacheEntry>>,
+        #[snapshot(skip)]
+        total_height_cache: Cell<Option<VirtualTotalHeightCacheEntry>>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
@@ -473,6 +495,7 @@ impl VirtualScroll {
             measurement_cache: RefCell::new(VirtualListMeasurementCache::new()),
             item_offset_cache: RefCell::new(VirtualItemOffsetCache::default()),
             range_cache: Cell::new(None),
+            total_height_cache: Cell::new(None),
             last_frame: Cell::new(None),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
@@ -575,11 +598,28 @@ impl VirtualScroll {
     pub fn total_height(&self) -> f32 {
         // 可变模式优先使用稀疏测量结果和固定估算高度。
         if self.variable_height {
-            // 借用缓存只覆盖本次总高度计算。
-            return self
-                .measurement_cache
-                .borrow()
-                .total_height(self.item_count, self.item_height);
+            // 一次借用同时取得代际并执行可能需要的原总高度算法。
+            let measurements = self.measurement_cache.borrow();
+            // 全部高度输入按值或原始位模式组成精确缓存键。
+            let key = VirtualTotalHeightCacheKey {
+                measurement_generation: measurements.generation(),
+                item_count: self.item_count,
+                estimated_height_bits: self.item_height.to_bits(),
+            };
+            // 稳定状态直接复用原算法已经舍入完成的最终 f32。
+            if let Some(entry) = self
+                .total_height_cache
+                .get()
+                .filter(|entry| entry.key == key)
+            {
+                return entry.height;
+            }
+            // 未命中仍按原前缀实现计算，保持全部浮点与边界语义。
+            let height = measurements.total_height(self.item_count, self.item_height);
+            // 保存唯一结果供滚轮和边界夹取重复使用。
+            self.total_height_cache
+                .set(Some(VirtualTotalHeightCacheEntry { key, height }));
+            return height;
         }
         // 固定模式使用原有饱和有限乘法。
         finite_total_height(self.item_count, self.item_height)

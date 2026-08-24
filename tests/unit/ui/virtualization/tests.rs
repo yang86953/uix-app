@@ -386,6 +386,38 @@ fn variable_scroll_range_cache_reuses_exact_result_and_invalidates() {
     assert_ne!(refreshed_entry.key, first_entry.key);
 }
 
+// 验证总高度缓存逐位复用原结果，并随测量代际自动失效。
+#[test]
+fn variable_total_height_cache_reuses_exact_result_and_invalidates() {
+    // 构造含四个估算项目的可变列表。
+    let scroll = VirtualScroll::new()
+        .item_count(4)
+        .item_height(10.0)
+        .variable_height();
+    // 首次读取由原前缀算法计算并保存最终高度。
+    let first = scroll.total_height();
+    assert_eq!(first, 40.0);
+    let first_entry = scroll
+        .total_height_cache
+        .get()
+        .expect("total height cache should be set");
+    // 相同事实重复读取必须逐位复用同一结果。
+    assert_eq!(scroll.total_height().to_bits(), first.to_bits());
+    assert_eq!(
+        scroll.total_height_cache.get().map(|entry| entry.key),
+        Some(first_entry.key)
+    );
+    // 实际高度变化推进代际，旧总高度不得继续命中。
+    assert!(scroll.measure_item(0, 20.0));
+    let refreshed = scroll.total_height();
+    assert_eq!(refreshed, 50.0);
+    let refreshed_entry = scroll
+        .total_height_cache
+        .get()
+        .expect("total height cache should refresh");
+    assert_ne!(refreshed_entry.key, first_entry.key);
+}
+
 // 验证可变行高模式会把已物化子项测量写回 frame 和滚动几何。
 #[test]
 fn variable_scroll_layout_uses_measured_item_frames() {
