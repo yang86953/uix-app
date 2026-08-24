@@ -2,7 +2,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
-use std::sync::OnceLock;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::{Color, Radius};
@@ -20,14 +19,14 @@ use super::image::presentation::{
 
 // 保存由 UIX 声明的 ImageGroup 默认固有尺寸。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupDefaultsVisual {
+pub(crate) struct ImageGroupDefaultsVisual {
     width: f32,
     height: f32,
 }
 
 // 保存由 UIX 声明的内嵌画廊布局与焦点圈几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupGalleryVisual {
+pub(crate) struct ImageGroupGalleryVisual {
     strip_height: f32,
     strip_min_height: f32,
     strip_min_width: f32,
@@ -42,7 +41,7 @@ struct ImageGroupGalleryVisual {
 
 // 保存由 UIX 声明的模态预览布局与覆盖层级。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupPreviewVisual {
+pub(crate) struct ImageGroupPreviewVisual {
     strip_height: f32,
     strip_min_height: f32,
     strip_min_width: f32,
@@ -64,7 +63,7 @@ struct ImageGroupPreviewVisual {
 
 // 保存由 UIX 声明的缩略图条带、间距与选中边框。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupThumbnailVisual {
+pub(crate) struct ImageGroupThumbnailVisual {
     inline_max_size: f32,
     preview_max_size: f32,
     padding: f32,
@@ -79,7 +78,7 @@ struct ImageGroupThumbnailVisual {
 
 // 保存由 UIX 声明的导航、空状态与预览控制图标及文案。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupControlsVisual {
+pub(crate) struct ImageGroupControlsVisual {
     navigation_diameter: f32,
     navigation_icon_size: f32,
     navigation_icon_ratio: f32,
@@ -98,7 +97,7 @@ struct ImageGroupControlsVisual {
 
 // 保存由 UIX 声明的 ImageGroup 主题角色与圆角角色。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupPaletteVisual {
+pub(crate) struct ImageGroupPaletteVisual {
     background: ImageColorRole,
     text_secondary: ImageColorRole,
     primary: ImageColorRole,
@@ -110,7 +109,7 @@ struct ImageGroupPaletteVisual {
 
 // 完整视觉配置由全部 ImageGroup 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ImageGroupVisual {
+pub(crate) struct ImageGroupVisual {
     defaults: ImageGroupDefaultsVisual,
     gallery: ImageGroupGalleryVisual,
     preview: ImageGroupPreviewVisual,
@@ -118,6 +117,9 @@ struct ImageGroupVisual {
     controls: ImageGroupControlsVisual,
     palette: ImageGroupPaletteVisual,
 }
+
+// 同目录 UIX 生成全部分组视觉、根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/image_group/image_group.uix");
 
 // 保存 ImageGroup 每帧只解析一次的主题值。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -164,208 +166,7 @@ impl Default for ImageGroupCounterCache {
     }
 }
 
-// 组合 UIX 声明的 ImageGroup 默认尺寸。
-const fn image_group_defaults(width: f32, height: f32) -> ImageGroupDefaultsVisual {
-    ImageGroupDefaultsVisual { width, height }
-}
-
-// 组合 UIX 声明的内嵌画廊视觉。
-#[allow(clippy::too_many_arguments)]
-const fn image_group_gallery(
-    strip_height: f32,
-    strip_min_height: f32,
-    strip_min_width: f32,
-    strip_max_ratio: f32,
-    navigation_width: f32,
-    navigation_width_ratio: f32,
-    navigation_min_width: f32,
-    border_width: f32,
-    focus_inset: f32,
-    focus_stroke_width: f32,
-) -> ImageGroupGalleryVisual {
-    ImageGroupGalleryVisual {
-        strip_height,
-        strip_min_height,
-        strip_min_width,
-        strip_max_ratio,
-        navigation_width,
-        navigation_width_ratio,
-        navigation_min_width,
-        border_width,
-        focus_inset,
-        focus_stroke_width,
-    }
-}
-
-// 组合 UIX 声明的模态预览视觉。
-#[allow(clippy::too_many_arguments)]
-const fn image_group_preview(
-    strip_height: f32,
-    strip_min_height: f32,
-    strip_min_width: f32,
-    strip_max_ratio: f32,
-    margin_ratio: f32,
-    margin_min: f32,
-    margin_max: f32,
-    navigation_width: f32,
-    navigation_width_ratio: f32,
-    navigation_min_width: f32,
-    close_size: f32,
-    close_margin: f32,
-    available_center_ratio: f32,
-    panel_radius: f32,
-    counter_y: f32,
-    counter_height: f32,
-    z_index: f32,
-) -> ImageGroupPreviewVisual {
-    ImageGroupPreviewVisual {
-        strip_height,
-        strip_min_height,
-        strip_min_width,
-        strip_max_ratio,
-        margin_ratio,
-        margin_min,
-        margin_max,
-        navigation_width,
-        navigation_width_ratio,
-        navigation_min_width,
-        close_size,
-        close_margin,
-        available_center_ratio,
-        panel_radius,
-        counter_y,
-        counter_height,
-        z_index: z_index as i32,
-    }
-}
-
-// 组合 UIX 声明的缩略图视觉。
-#[allow(clippy::too_many_arguments)]
-const fn image_group_thumbnail(
-    inline_max_size: f32,
-    preview_max_size: f32,
-    padding: f32,
-    padding_strip_ratio: f32,
-    min_size: f32,
-    gap: f32,
-    gap_size_ratio: f32,
-    center_ratio: f32,
-    selected_stroke_width: f32,
-    normal_stroke_width: f32,
-) -> ImageGroupThumbnailVisual {
-    ImageGroupThumbnailVisual {
-        inline_max_size,
-        preview_max_size,
-        padding,
-        padding_strip_ratio,
-        min_size,
-        gap,
-        gap_size_ratio,
-        center_ratio,
-        selected_stroke_width,
-        normal_stroke_width,
-    }
-}
-
-// 组合 UIX 声明的图标、控制器与静态文案。
-#[allow(clippy::too_many_arguments)]
-const fn image_group_controls(
-    navigation_diameter: f32,
-    navigation_icon_size: f32,
-    navigation_icon_ratio: f32,
-    close_icon_size: f32,
-    close_icon_ratio: f32,
-    empty_icon_size: f32,
-    empty_icon_ratio: f32,
-    previous_icon: &'static str,
-    next_icon: &'static str,
-    close_icon: &'static str,
-    image_icon: &'static str,
-    loading_label: &'static str,
-    empty_label: &'static str,
-    unavailable_label: &'static str,
-) -> ImageGroupControlsVisual {
-    ImageGroupControlsVisual {
-        navigation_diameter,
-        navigation_icon_size,
-        navigation_icon_ratio,
-        close_icon_size,
-        close_icon_ratio,
-        empty_icon_size,
-        empty_icon_ratio,
-        previous_icon,
-        next_icon,
-        close_icon,
-        image_icon,
-        loading_label,
-        empty_label,
-        unavailable_label,
-    }
-}
-
-// 组合 UIX 声明的主题角色。
-#[allow(clippy::too_many_arguments)]
-const fn image_group_palette(
-    background: ImageColorRole,
-    text_secondary: ImageColorRole,
-    primary: ImageColorRole,
-    fill: ImageColorRole,
-    overlay: ImageOverlayVisual,
-    frame_radius: ImageRadiusRole,
-    thumbnail_radius: ImageRadiusRole,
-) -> ImageGroupPaletteVisual {
-    ImageGroupPaletteVisual {
-        background,
-        text_secondary,
-        primary,
-        fill,
-        overlay,
-        frame_radius,
-        thumbnail_radius,
-    }
-}
-
-// 组合 UIX 声明的完整 ImageGroup 视觉配置。
-const fn image_group_visual(
-    defaults: ImageGroupDefaultsVisual,
-    gallery: ImageGroupGalleryVisual,
-    preview: ImageGroupPreviewVisual,
-    thumbnail: ImageGroupThumbnailVisual,
-    controls: ImageGroupControlsVisual,
-    palette: ImageGroupPaletteVisual,
-) -> ImageGroupVisual {
-    ImageGroupVisual {
-        defaults,
-        gallery,
-        preview,
-        thumbnail,
-        controls,
-        palette,
-    }
-}
-
-// 向 UIX 提供受限表达式不能直接写入的文案、图标与主题角色。
-const fn image_group_previous_icon() -> &'static str {
-    "chevron-left"
-}
-const fn image_group_next_icon() -> &'static str {
-    "chevron-right"
-}
-const fn image_group_close_icon() -> &'static str {
-    "x"
-}
-const fn image_group_image_icon() -> &'static str {
-    "image"
-}
-const fn image_group_loading_label() -> &'static str {
-    "图片加载中…"
-}
-const fn image_group_empty_label() -> &'static str {
-    "暂无图片"
-}
-const fn image_group_unavailable_label() -> &'static str {
-    "图片不可用"
-}
+// 向 UIX 提供主题角色。
 const fn image_group_container_color() -> ImageColorRole {
     ImageColorRole::Container
 }
@@ -396,66 +197,6 @@ const fn image_group_body_radius() -> ImageRadiusRole {
 const fn image_group_small_radius() -> ImageRadiusRole {
     ImageRadiusRole::Small
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_IMAGE_GROUP_VISUAL: ImageGroupVisual = image_group_visual(
-    image_group_defaults(320.0, 220.0),
-    image_group_gallery(56.0, 72.0, 24.0, 0.4, 36.0, 1.0 / 3.0, 4.0, 1.0, 1.0, 2.0),
-    image_group_preview(
-        72.0,
-        120.0,
-        32.0,
-        0.25,
-        0.06,
-        4.0,
-        40.0,
-        48.0,
-        1.0 / 3.0,
-        4.0,
-        40.0,
-        12.0,
-        0.5,
-        4.0,
-        8.0,
-        24.0,
-        1100.0,
-    ),
-    image_group_thumbnail(44.0, 52.0, 6.0, 0.2, 4.0, 6.0, 0.25, 0.5, 2.0, 1.0),
-    image_group_controls(
-        30.0,
-        16.0,
-        0.6,
-        20.0,
-        0.6,
-        16.0,
-        0.5,
-        "chevron-left",
-        "chevron-right",
-        "x",
-        "image",
-        "图片加载中…",
-        "暂无图片",
-        "图片不可用",
-    ),
-    image_group_palette(
-        ImageColorRole::Container,
-        ImageColorRole::TextSecondary,
-        ImageColorRole::Primary,
-        ImageColorRole::FillTertiary,
-        image_overlay_visual(
-            ImageColorRole::Mask,
-            ImageColorRole::Overlay,
-            ImageColorRole::Text,
-            ImageColorRole::BorderSecondary,
-            0.5,
-        ),
-        ImageRadiusRole::Body,
-        ImageRadiusRole::Small,
-    ),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_IMAGE_GROUP_VISUAL: OnceLock<ImageGroupVisual> = OnceLock::new();
 
 #[derive(Debug)]
 struct GalleryGeometry {
@@ -622,8 +363,8 @@ widget! {
 }
 
 // 把画廊交互、资源绘制与 UIX 视觉表融合为单一根节点。
-fn build_image_group_view(mut kernel: ImageGroup, declared_visual: ImageGroupVisual) -> ViewNode {
-    kernel.visual = UIX_IMAGE_GROUP_VISUAL.get_or_init(|| declared_visual);
+fn build_image_group_view(mut kernel: ImageGroup, visual: &'static ImageGroupVisual) -> ViewNode {
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -661,7 +402,7 @@ impl ImageGroup {
             last_surface_h: Cell::new(0.0),
             preview_painted: Cell::new(false),
             counter_cache: RefCell::new(ImageGroupCounterCache::default()),
-            visual: &DEFAULT_IMAGE_GROUP_VISUAL,
+            visual: IMAGE_GROUP_VISUAL_REF,
         }
     }
 

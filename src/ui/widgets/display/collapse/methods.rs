@@ -51,7 +51,7 @@ impl Collapse {
             accordion: false,
             // 缺省保持既有非受控展开模式。
             active_keys_binding: None,
-            borderless: DEFAULT_COLLAPSE_VISUAL.borderless_default,
+            borderless: COLLAPSE_VISUAL.borderless_default,
             borderless_authored: false,
             destroy_on_hide: false,
             focused: false,
@@ -65,7 +65,7 @@ impl Collapse {
             layout_requested: Cell::new(false),
             content_opacities: Vec::new(),
             materialized_content: RefCell::new(Vec::new()),
-            visual: &DEFAULT_COLLAPSE_VISUAL,
+            visual: COLLAPSE_VISUAL_REF,
         }
     }
     /// 设置面板集合并按受控稳定键或非受控初值建立展开状态。

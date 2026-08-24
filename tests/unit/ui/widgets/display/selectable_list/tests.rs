@@ -1,5 +1,5 @@
 // 引入受测私有同步与选择入口。
-use super::{SelectableItem, SelectableList};
+use super::{SELECTABLE_LIST_VISUAL_REF, SelectableItem, SelectableList};
 // 引入语义事件与受控状态测试类型。
 use crate::ui::{EventHandler, SemanticKind, SemanticPayload, State, SystemEvent, WidgetId};
 // 引入公开 View 构建入口以验证 UIX 根。
@@ -113,6 +113,10 @@ fn explicit_row_height_has_priority_over_uix_default() {
 // 验证全部 SelectableList 实例共享同一份 UIX 视觉表。
 #[test]
 fn selectable_list_instances_share_uix_visual_table() {
+    assert!(std::ptr::eq(
+        SelectableList::new().visual,
+        SELECTABLE_LIST_VISUAL_REF
+    ));
     let first = View::build(SelectableList::new());
     let second = View::build(SelectableList::new());
     let first = first
@@ -126,4 +130,5 @@ fn selectable_list_instances_share_uix_visual_table() {
         .downcast_ref::<SelectableList>()
         .unwrap();
     assert!(first.shares_visual_with_for_test(second));
+    assert!(std::ptr::eq(first.visual, SELECTABLE_LIST_VISUAL_REF));
 }

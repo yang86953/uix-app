@@ -6,7 +6,6 @@
 use std::cell::{Cell, RefCell};
 // 引入组合子树声明期所有权所需的共享句柄。
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use crate::widget;
 // 引入组件与子树布局使用的身份、约束和几何类型。
@@ -60,7 +59,7 @@ pub enum BadgeColor {
 
 // 保存由 UIX 声明、由 Rust 测量与几何算法消费的徽章视觉常量。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct BadgeLayoutVisual {
+pub(crate) struct BadgeLayoutVisual {
     marker_diameter: f32,
     marker_text_gap: f32,
     pill_height: f32,
@@ -92,7 +91,7 @@ impl BadgeColorSource {
 
 // 保存由 UIX 声明的预设色、状态色与对比文字主题角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct BadgePaletteVisual {
+pub(crate) struct BadgePaletteVisual {
     presets: [BadgeColorSource; 5],
     statuses: [ColorValue; 5],
     default_background: ColorValue,
@@ -125,40 +124,13 @@ impl BadgePaletteVisual {
 
 // 完整视觉配置由全部 Badge 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct BadgeVisual {
+pub(crate) struct BadgeVisual {
     layout: BadgeLayoutVisual,
     palette: BadgePaletteVisual,
 }
 
-// 组合 UIX 声明的徽章、状态点与丝带几何。
-#[allow(clippy::too_many_arguments)]
-const fn badge_layout(
-    marker_diameter: f32,
-    marker_text_gap: f32,
-    pill_height: f32,
-    pill_font_size: f32,
-    marker_label_font_size: f32,
-    text_horizontal_padding: f32,
-    ribbon_height: f32,
-    ribbon_horizontal_padding: f32,
-    ribbon_slant_height_ratio: f32,
-    ribbon_slant_width_ratio: f32,
-    pill_radius_ratio: f32,
-) -> BadgeLayoutVisual {
-    BadgeLayoutVisual {
-        marker_diameter,
-        marker_text_gap,
-        pill_height,
-        pill_font_size,
-        marker_label_font_size,
-        text_horizontal_padding,
-        ribbon_height,
-        ribbon_horizontal_padding,
-        ribbon_slant_height_ratio,
-        ribbon_slant_width_ratio,
-        pill_radius_ratio,
-    }
-}
+// 同目录 UIX 生成布局、色板与根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/badge/badge.uix");
 
 // 组合 UIX 声明的主题 token 预设色。
 const fn badge_token(color: ColorValue) -> BadgeColorSource {
@@ -168,52 +140,6 @@ const fn badge_token(color: ColorValue) -> BadgeColorSource {
 // 组合 UIX 声明的扩展色阶预设色。
 const fn badge_hue(hue: PrimaryHue) -> BadgeColorSource {
     BadgeColorSource::Hue(hue)
-}
-
-// 按公开 BadgeColor 顺序组合全部预设色。
-const fn badge_presets(
-    blue: BadgeColorSource,
-    green: BadgeColorSource,
-    orange: BadgeColorSource,
-    red: BadgeColorSource,
-    purple: BadgeColorSource,
-) -> [BadgeColorSource; 5] {
-    [blue, green, orange, red, purple]
-}
-
-// 按公开 BadgeStatus 顺序组合全部状态色。
-const fn badge_statuses(
-    success: ColorValue,
-    processing: ColorValue,
-    default: ColorValue,
-    error: ColorValue,
-    warning: ColorValue,
-) -> [ColorValue; 5] {
-    [success, processing, default, error, warning]
-}
-
-// 组合 UIX 声明的徽章主题色表。
-const fn badge_palette(
-    presets: [BadgeColorSource; 5],
-    statuses: [ColorValue; 5],
-    default_background: ColorValue,
-    light_foreground: ColorValue,
-    dark_foreground: ColorValue,
-    marker_text: ColorValue,
-) -> BadgePaletteVisual {
-    BadgePaletteVisual {
-        presets,
-        statuses,
-        default_background,
-        light_foreground,
-        dark_foreground,
-        marker_text,
-    }
-}
-
-// 组合 UIX 声明的完整徽章视觉配置。
-const fn badge_visual(layout: BadgeLayoutVisual, palette: BadgePaletteVisual) -> BadgeVisual {
-    BadgeVisual { layout, palette }
 }
 
 // 向 UIX 提供品牌主色主题角色。
@@ -265,36 +191,6 @@ const fn badge_orange_hue() -> PrimaryHue {
 const fn badge_purple_hue() -> PrimaryHue {
     PrimaryHue::Purple
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_BADGE_VISUAL: BadgeVisual = badge_visual(
-    badge_layout(
-        10.0, 8.0, 20.0, 11.0, 13.0, 12.0, 24.0, 24.0, 0.22, 0.2, 0.5,
-    ),
-    badge_palette(
-        badge_presets(
-            badge_token(badge_primary()),
-            badge_token(badge_success()),
-            badge_hue(badge_orange_hue()),
-            badge_token(badge_error()),
-            badge_hue(badge_purple_hue()),
-        ),
-        badge_statuses(
-            badge_success(),
-            badge_primary(),
-            badge_text_quaternary(),
-            badge_error(),
-            badge_warning(),
-        ),
-        badge_error(),
-        badge_black(),
-        badge_white(),
-        badge_text(),
-    ),
-);
-
-// 正常 UIX 构建首次写入声明配置，后续 Badge 实例只共享该静态对象。
-static UIX_BADGE_VISUAL: OnceLock<BadgeVisual> = OnceLock::new();
 
 impl BadgeColor {
     /// 映射为对应的 `Color`。
@@ -749,10 +645,7 @@ impl Default for Badge {
 }
 
 // 把 UIX 声明的共享视觉配置融合进徽章组合状态、子树交接槽与绘制内核。
-fn build_badge_view(mut kernel: Badge, declared_visual: BadgeVisual) -> ViewNode {
-    let visual = UIX_BADGE_VISUAL.get_or_init(|| declared_visual);
-    // 单一同目录 UIX 源在同一程序中必须保持一份确定配置。
-    debug_assert_eq!(*visual, declared_visual);
+fn build_badge_view(mut kernel: Badge, visual: &'static BadgeVisual) -> ViewNode {
     kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
@@ -921,7 +814,7 @@ impl Badge {
             offset_x: 0.0,
             offset_y: 0.0,
             offset_unit: None,
-            visual: &DEFAULT_BADGE_VISUAL,
+            visual: BADGE_VISUAL_REF,
         }
     }
     /// 设置非负计数；负数会被归零。

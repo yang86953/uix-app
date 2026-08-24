@@ -18,20 +18,15 @@ VISUAL_OWNERSHIP_DEBT: set[str] = set()
 
 # Rust 仍保存完整静态表或 Visual::default 数值的存量双源事实；只允许逐项删除。
 RUST_VISUAL_DEFAULT_DEBT = {
-    "display/badge/mod.rs",
     "display/calendar/mod.rs",
     "display/card/mod.rs",
     "display/carousel/mod.rs",
     "display/chart/bar_chart/presentation.rs",
     "display/chart/line_chart/presentation.rs",
     "display/chart/pie_chart/presentation.rs",
-    "display/collapse/mod.rs",
-    "display/descriptions/mod.rs",
     "display/image/mod.rs",
-    "display/image_group/mod.rs",
     "display/result/mod.rs",
     "display/rich_text/presentation.rs",
-    "display/selectable_list/mod.rs",
     "display/table/presentation.rs",
     "display/tag/mod.rs",
     "display/tree/mod.rs",
@@ -43,20 +38,15 @@ RUST_VISUAL_DEFAULT_DEBT = {
 
 # 仍以单个巨型位置参数调用表达视觉的存量 UIX；新组件必须改用具名 Visual 或真实子树。
 POSITIONAL_VISUAL_SHELL_DEBT = {
-    "display/badge/badge.uix",
     "display/calendar/calendar.uix",
     "display/card/card.uix",
     "display/carousel/carousel.uix",
     "display/chart/bar_chart/bar_chart.uix",
     "display/chart/line_chart/line_chart.uix",
     "display/chart/pie_chart/pie_chart.uix",
-    "display/collapse/collapse.uix",
-    "display/descriptions/descriptions.uix",
     "display/image/image.uix",
-    "display/image_group/image_group.uix",
     "display/result/result.uix",
     "display/rich_text/rich_text.uix",
-    "display/selectable_list/selectable_list.uix",
     "display/table/table.uix",
     "display/tag/tag.uix",
     "display/tree/tree.uix",

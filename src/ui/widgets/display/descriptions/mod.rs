@@ -3,7 +3,6 @@
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
 use std::cell::{Ref, RefCell};
-use std::sync::OnceLock;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
@@ -17,7 +16,7 @@ use crate::widget;
 
 // 保存由 UIX 声明的默认宽度、列约束与初始外观。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DescriptionsDefaultsVisual {
+pub(crate) struct DescriptionsDefaultsVisual {
     width: f32,
     min_column_width: f32,
     column: usize,
@@ -27,7 +26,7 @@ struct DescriptionsDefaultsVisual {
 
 // 保存由 UIX 声明的标题、单元格与描边几何。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DescriptionsLayoutVisual {
+pub(crate) struct DescriptionsLayoutVisual {
     title_height: f32,
     title_horizontal_padding: f32,
     horizontal_padding: f32,
@@ -38,7 +37,7 @@ struct DescriptionsLayoutVisual {
 
 // 保存由 UIX 声明的标题、条目字号与行高比例。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DescriptionsTypographyVisual {
+pub(crate) struct DescriptionsTypographyVisual {
     title_font_size: f32,
     item_font_size: f32,
     line_height: f32,
@@ -46,7 +45,7 @@ struct DescriptionsTypographyVisual {
 
 // 保存由 UIX 声明的三档控件基础行高。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DescriptionsControlVisual {
+pub(crate) struct DescriptionsControlVisual {
     small_height: f32,
     medium_height: f32,
     large_height: f32,
@@ -68,7 +67,7 @@ impl DescriptionsRadiusRole {
 
 // 保存由 UIX 声明的描述列表主题语义色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct DescriptionsPaletteVisual {
+pub(crate) struct DescriptionsPaletteVisual {
     background: ColorValue,
     border: ColorValue,
     text: ColorValue,
@@ -78,7 +77,7 @@ struct DescriptionsPaletteVisual {
 
 // 完整视觉配置由全部 Descriptions 实例共享，实例只保存一个静态引用。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct DescriptionsVisual {
+pub(crate) struct DescriptionsVisual {
     defaults: DescriptionsDefaultsVisual,
     layout: DescriptionsLayoutVisual,
     typography: DescriptionsTypographyVisual,
@@ -86,6 +85,9 @@ struct DescriptionsVisual {
     radius: DescriptionsRadiusRole,
     palette: DescriptionsPaletteVisual,
 }
+
+// 同目录 UIX 生成全部分组视觉、根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/descriptions/descriptions.uix");
 
 // 复用行高向量容量，并用宽度与列数锁定当前有效结果。
 #[derive(Debug, Default)]
@@ -94,109 +96,6 @@ struct DescriptionsLayoutCache {
     columns: usize,
     valid: bool,
     row_heights: Vec<f32>,
-}
-
-// 组合 UIX 声明的默认宽度、列数与标签宽度。
-const fn descriptions_defaults(
-    width: f32,
-    min_column_width: f32,
-    column: f32,
-    label_width: f32,
-    bordered: bool,
-) -> DescriptionsDefaultsVisual {
-    DescriptionsDefaultsVisual {
-        width,
-        min_column_width,
-        column: column as usize,
-        label_width,
-        bordered,
-    }
-}
-
-// 组合 UIX 声明的标题、单元格与描边几何。
-const fn descriptions_layout(
-    title_height: f32,
-    title_horizontal_padding: f32,
-    horizontal_padding: f32,
-    vertical_padding: f32,
-    max_label_fraction: f32,
-    border_width: f32,
-) -> DescriptionsLayoutVisual {
-    DescriptionsLayoutVisual {
-        title_height,
-        title_horizontal_padding,
-        horizontal_padding,
-        vertical_padding,
-        max_label_fraction,
-        border_width,
-    }
-}
-
-// 组合 UIX 声明的标题、条目字号与行高。
-const fn descriptions_typography(
-    title_font_size: f32,
-    item_font_size: f32,
-    line_height: f32,
-) -> DescriptionsTypographyVisual {
-    DescriptionsTypographyVisual {
-        title_font_size,
-        item_font_size,
-        line_height,
-    }
-}
-
-// 组合 UIX 声明的三档基础行高。
-const fn descriptions_control(
-    small_height: f32,
-    medium_height: f32,
-    large_height: f32,
-) -> DescriptionsControlVisual {
-    DescriptionsControlVisual {
-        small_height,
-        medium_height,
-        large_height,
-    }
-}
-
-// 组合 UIX 声明的描述列表主题语义色。
-const fn descriptions_palette(
-    background: ColorValue,
-    border: ColorValue,
-    text: ColorValue,
-    label_text: ColorValue,
-    label_fill: ColorValue,
-) -> DescriptionsPaletteVisual {
-    DescriptionsPaletteVisual {
-        background,
-        border,
-        text,
-        label_text,
-        label_fill,
-    }
-}
-
-// 组合 UIX 声明的完整描述列表视觉配置。
-const fn descriptions_visual(
-    defaults: DescriptionsDefaultsVisual,
-    layout: DescriptionsLayoutVisual,
-    typography: DescriptionsTypographyVisual,
-    control: DescriptionsControlVisual,
-    radius: DescriptionsRadiusRole,
-    palette: DescriptionsPaletteVisual,
-) -> DescriptionsVisual {
-    DescriptionsVisual {
-        defaults,
-        layout,
-        typography,
-        control,
-        radius,
-        palette,
-    }
-}
-
-// 向 UIX 提供默认无边框开关。
-const fn descriptions_bordered_default() -> bool {
-    false
 }
 
 // 向 UIX 提供默认圆角主题角色。
@@ -228,25 +127,6 @@ const fn descriptions_label_text() -> ColorValue {
 const fn descriptions_label_fill() -> ColorValue {
     ColorValue::Neutral(NeutralRole::FillQuaternary)
 }
-
-// Rust 直接构造或绕过 View 声明根时保持既有视觉；正常 View 构建会改用 UIX 静态配置。
-static DEFAULT_DESCRIPTIONS_VISUAL: DescriptionsVisual = descriptions_visual(
-    descriptions_defaults(600.0, 140.0, 3.0, 100.0, false),
-    descriptions_layout(32.0, 12.0, 8.0, 6.0, 0.45, 1.0),
-    descriptions_typography(15.0, 13.0, 1.5),
-    descriptions_control(28.0, 36.0, 44.0),
-    descriptions_default_radius(),
-    descriptions_palette(
-        descriptions_background(),
-        descriptions_border(),
-        descriptions_text(),
-        descriptions_label_text(),
-        descriptions_label_fill(),
-    ),
-);
-
-// 首次 UIX 构建固化声明值，后续实例共享同一份只读视觉配置。
-static UIX_DESCRIPTIONS_VISUAL: OnceLock<DescriptionsVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct ItemPlacement {
@@ -403,9 +283,8 @@ widget! {
 // 把描述项数据、网格算法与绘制内核融合为 UIX 声明的单一叶节点。
 fn build_descriptions_view(
     mut kernel: Descriptions,
-    declared_visual: DescriptionsVisual,
+    visual: &'static DescriptionsVisual,
 ) -> ViewNode {
-    let visual = UIX_DESCRIPTIONS_VISUAL.get_or_init(|| declared_visual);
     if !kernel.bordered_authored {
         kernel.bordered = visual.defaults.bordered;
     }
@@ -431,7 +310,7 @@ impl View for Descriptions {
 impl Descriptions {
     /// 创建三列、无边框且使用全局控件尺寸的空描述列表。
     pub fn new() -> Self {
-        let visual = &DEFAULT_DESCRIPTIONS_VISUAL;
+        let visual = DESCRIPTIONS_VISUAL_REF;
         Self {
             title: String::new(),
             items: Vec::new(),

@@ -1,2 +1,60 @@
-// Descriptions 的默认列网格、标题/单元格排版、三档行高、边框与主题角色由 UIX 声明；Rust 内核负责数据、装箱、缓存、换行与绘制。
-<KernelView value={build_descriptions_view(kernel, descriptions_visual(descriptions_defaults(600, 140, 3, 100, descriptions_bordered_default()), descriptions_layout(32, 12, 8, 6, 0.45, 1), descriptions_typography(15, 13, 1.5), descriptions_control(28, 36, 44), descriptions_default_radius(), descriptions_palette(descriptions_background(), descriptions_border(), descriptions_text(), descriptions_label_text(), descriptions_label_fill())))} />
+// Descriptions 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责数据、装箱、缓存、换行与绘制。
+<Visual
+  name="DESCRIPTIONS_DEFAULTS_VISUAL"
+  type="DescriptionsDefaultsVisual"
+  width={600.0}
+  minColumnWidth={140.0}
+  column={3}
+  labelWidth={100.0}
+  bordered={false}
+/>
+
+<Visual
+  name="DESCRIPTIONS_LAYOUT_VISUAL"
+  type="DescriptionsLayoutVisual"
+  titleHeight={32.0}
+  titleHorizontalPadding={12.0}
+  horizontalPadding={8.0}
+  verticalPadding={6.0}
+  maxLabelFraction={0.45}
+  borderWidth={1.0}
+/>
+
+<Visual
+  name="DESCRIPTIONS_TYPOGRAPHY_VISUAL"
+  type="DescriptionsTypographyVisual"
+  titleFontSize={15.0}
+  itemFontSize={13.0}
+  lineHeight={1.5}
+/>
+
+<Visual
+  name="DESCRIPTIONS_CONTROL_VISUAL"
+  type="DescriptionsControlVisual"
+  smallHeight={28.0}
+  mediumHeight={36.0}
+  largeHeight={44.0}
+/>
+
+<Visual
+  name="DESCRIPTIONS_PALETTE_VISUAL"
+  type="DescriptionsPaletteVisual"
+  background={descriptions_background()}
+  border={descriptions_border()}
+  text={descriptions_text()}
+  labelText={descriptions_label_text()}
+  labelFill={descriptions_label_fill()}
+/>
+
+<Visual
+  name="DESCRIPTIONS_VISUAL"
+  type="DescriptionsVisual"
+  defaults={DESCRIPTIONS_DEFAULTS_VISUAL}
+  layout={DESCRIPTIONS_LAYOUT_VISUAL}
+  typography={DESCRIPTIONS_TYPOGRAPHY_VISUAL}
+  control={DESCRIPTIONS_CONTROL_VISUAL}
+  radius={descriptions_default_radius()}
+  palette={DESCRIPTIONS_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_descriptions_view(kernel, DESCRIPTIONS_VISUAL_REF)} />

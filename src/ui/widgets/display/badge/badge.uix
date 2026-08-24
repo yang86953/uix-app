@@ -1,2 +1,48 @@
-// Badge 的胶囊、状态点、丝带几何与预设/状态主题色表由 UIX 声明；真实子树仍由 Rust 生命周期端口交接。
-<KernelView value={build_badge_view(kernel, badge_visual(badge_layout(10, 8, 20, 11, 13, 12, 24, 24, 0.22, 0.2, 0.5), badge_palette(badge_presets(badge_token(badge_primary()), badge_token(badge_success()), badge_hue(badge_orange_hue()), badge_token(badge_error()), badge_hue(badge_purple_hue())), badge_statuses(badge_success(), badge_primary(), badge_text_quaternary(), badge_error(), badge_warning()), badge_error(), badge_black(), badge_white(), badge_text())))} />
+// Badge 的具名布局与色板由 UIX 唯一拥有；真实子树仍由 Rust 生命周期端口交接。
+<Visual
+  name="BADGE_LAYOUT_VISUAL"
+  type="BadgeLayoutVisual"
+  markerDiameter={10.0}
+  markerTextGap={8.0}
+  pillHeight={20.0}
+  pillFontSize={11.0}
+  markerLabelFontSize={13.0}
+  textHorizontalPadding={12.0}
+  ribbonHeight={24.0}
+  ribbonHorizontalPadding={24.0}
+  ribbonSlantHeightRatio={0.22}
+  ribbonSlantWidthRatio={0.2}
+  pillRadiusRatio={0.5}
+/>
+
+<Visual
+  name="BADGE_PALETTE_VISUAL"
+  type="BadgePaletteVisual"
+  presets={[
+    badge_token(badge_primary()),
+    badge_token(badge_success()),
+    badge_hue(badge_orange_hue()),
+    badge_token(badge_error()),
+    badge_hue(badge_purple_hue())
+  ]}
+  statuses={[
+    badge_success(),
+    badge_primary(),
+    badge_text_quaternary(),
+    badge_error(),
+    badge_warning()
+  ]}
+  defaultBackground={badge_error()}
+  lightForeground={badge_black()}
+  darkForeground={badge_white()}
+  markerText={badge_text()}
+/>
+
+<Visual
+  name="BADGE_VISUAL"
+  type="BadgeVisual"
+  layout={BADGE_LAYOUT_VISUAL}
+  palette={BADGE_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_badge_view(kernel, BADGE_VISUAL_REF)} />

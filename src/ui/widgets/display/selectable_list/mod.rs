@@ -15,7 +15,6 @@ use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, ThemeTokens,
     WidgetId, WidgetTree,
 };
-use std::sync::OnceLock;
 
 // 可选择条目的无状态构造方法由同名子模块维护。
 mod item;
@@ -28,7 +27,7 @@ enum SelectableListAction {
 
 // 保存由 UIX 声明的固有尺寸、头尾区域与行布局。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SelectableListGeometryVisual {
+pub(crate) struct SelectableListGeometryVisual {
     default_width: f32,
     default_height: f32,
     min_height: f32,
@@ -44,7 +43,7 @@ struct SelectableListGeometryVisual {
 
 // 保存由 UIX 声明的按钮、行、图标、活动条和焦点框视觉。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SelectableListChromeVisual {
+pub(crate) struct SelectableListChromeVisual {
     header_pressed_alpha: u8,
     row_pressed_alpha: u8,
     row_active_alpha: u8,
@@ -104,7 +103,7 @@ impl SelectableListRadiusRole {
 
 // 保存由 UIX 声明的主题语义角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SelectableListPaletteVisual {
+pub(crate) struct SelectableListPaletteVisual {
     background: ColorValue,
     border: ColorValue,
     fill_secondary: ColorValue,
@@ -118,11 +117,14 @@ struct SelectableListPaletteVisual {
 
 // 完整视觉配置由全部 SelectableList 实例共享。
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SelectableListVisual {
+pub(crate) struct SelectableListVisual {
     geometry: SelectableListGeometryVisual,
     chrome: SelectableListChromeVisual,
     palette: SelectableListPaletteVisual,
 }
+
+// 同目录 UIX 生成几何、装饰、色板与根视觉记录及稳定借用。
+crate::uix_items!("src/ui/widgets/display/selectable_list/selectable_list.uix");
 
 // 保存每帧一次性解析的主题颜色、字号与圆角。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -154,140 +156,7 @@ impl SelectableListVisual {
     }
 }
 
-// 组合 UIX 声明的固有尺寸与列表布局。
-#[allow(clippy::too_many_arguments)]
-const fn selectable_list_geometry(
-    default_width: f32,
-    default_height: f32,
-    min_height: f32,
-    default_item_height: f32,
-    min_item_height: f32,
-    header_height: f32,
-    header_inset: f32,
-    header_button_height: f32,
-    footer_height: f32,
-    row_gap: f32,
-    row_horizontal_inset: f32,
-) -> SelectableListGeometryVisual {
-    SelectableListGeometryVisual {
-        default_width,
-        default_height,
-        min_height,
-        default_item_height,
-        min_item_height,
-        header_height,
-        header_inset,
-        header_button_height,
-        footer_height,
-        row_gap,
-        row_horizontal_inset,
-    }
-}
-
-// 组合 UIX 声明的按钮、行、图标、活动条和焦点框视觉。
-#[allow(clippy::too_many_arguments)]
-const fn selectable_list_chrome(
-    header_pressed_alpha: f32,
-    row_pressed_alpha: f32,
-    row_active_alpha: f32,
-    row_icon_slot: f32,
-    row_icon_size: f32,
-    row_text_indent: f32,
-    row_icon_text_gap: f32,
-    row_text_right_pad: f32,
-    row_radius: f32,
-    active_bar_width: f32,
-    active_bar_radius: f32,
-    active_bar_vertical_inset: f32,
-    row_font_size: f32,
-    header_icon_inset: f32,
-    header_icon_frame_ratio: f32,
-    center_ratio: f32,
-    header_text_gap: f32,
-    header_text_right_pad: f32,
-    separator_y_offset: f32,
-    separator_height: f32,
-    frame_border_width: f32,
-    footer_inset: f32,
-    footer_inset_ratio: f32,
-    footer_font_size: f32,
-    focus_inset: f32,
-    focus_stroke_width: f32,
-    plus_icon: &'static str,
-) -> SelectableListChromeVisual {
-    SelectableListChromeVisual {
-        header_pressed_alpha: header_pressed_alpha as u8,
-        row_pressed_alpha: row_pressed_alpha as u8,
-        row_active_alpha: row_active_alpha as u8,
-        row_icon_slot,
-        row_icon_size,
-        row_text_indent,
-        row_icon_text_gap,
-        row_text_right_pad,
-        row_radius,
-        active_bar_width,
-        active_bar_radius,
-        active_bar_vertical_inset,
-        row_font_size,
-        header_icon_inset,
-        header_icon_frame_ratio,
-        center_ratio,
-        header_text_gap,
-        header_text_right_pad,
-        separator_y_offset,
-        separator_height,
-        frame_border_width,
-        footer_inset,
-        footer_inset_ratio,
-        footer_font_size,
-        focus_inset,
-        focus_stroke_width,
-        plus_icon,
-    }
-}
-
-// 组合 UIX 声明的主题语义角色。
-#[allow(clippy::too_many_arguments)]
-const fn selectable_list_palette(
-    background: ColorValue,
-    border: ColorValue,
-    fill_secondary: ColorValue,
-    fill_hover: ColorValue,
-    text_secondary: ColorValue,
-    text_tertiary: ColorValue,
-    primary: ColorValue,
-    icon_font: SelectableListFontRole,
-    focus_radius: SelectableListRadiusRole,
-) -> SelectableListPaletteVisual {
-    SelectableListPaletteVisual {
-        background,
-        border,
-        fill_secondary,
-        fill_hover,
-        text_secondary,
-        text_tertiary,
-        primary,
-        icon_font,
-        focus_radius,
-    }
-}
-
-const fn selectable_list_visual(
-    geometry: SelectableListGeometryVisual,
-    chrome: SelectableListChromeVisual,
-    palette: SelectableListPaletteVisual,
-) -> SelectableListVisual {
-    SelectableListVisual {
-        geometry,
-        chrome,
-        palette,
-    }
-}
-
-// 向 UIX 提供受限表达式不能直接书写的图标与主题角色。
-const fn selectable_list_plus_icon() -> &'static str {
-    "plus"
-}
+// 向 UIX 提供受限表达式不能直接书写的主题角色。
 const fn selectable_list_body_font() -> SelectableListFontRole {
     SelectableListFontRole::Body
 }
@@ -315,31 +184,6 @@ const fn selectable_list_tertiary_text_color() -> ColorValue {
 const fn selectable_list_primary_color() -> ColorValue {
     ColorValue::Palette(PaletteColor::Primary)
 }
-
-// Rust 直接构造时保持既有视觉；正常 View 构建会切换到 UIX 静态配置。
-static DEFAULT_SELECTABLE_LIST_VISUAL: SelectableListVisual = selectable_list_visual(
-    selectable_list_geometry(
-        220.0, 500.0, 100.0, 36.0, 20.0, 48.0, 8.0, 32.0, 28.0, 2.0, 8.0,
-    ),
-    selectable_list_chrome(
-        38.0, 45.0, 25.0, 26.0, 18.0, 14.0, 6.0, 10.0, 6.0, 3.0, 1.5, 6.0, 13.0, 8.0, 0.25, 0.5,
-        4.0, 10.0, 1.0, 1.0, 1.0, 12.0, 0.25, 11.0, 1.0, 1.5, "plus",
-    ),
-    selectable_list_palette(
-        ColorValue::Neutral(NeutralRole::BgContainer),
-        ColorValue::Neutral(NeutralRole::BorderSecondary),
-        ColorValue::Neutral(NeutralRole::FillSecondary),
-        ColorValue::Neutral(NeutralRole::Fill),
-        ColorValue::Neutral(NeutralRole::TextSecondary),
-        ColorValue::Neutral(NeutralRole::TextTertiary),
-        ColorValue::Palette(PaletteColor::Primary),
-        SelectableListFontRole::Body,
-        SelectableListRadiusRole::Small,
-    ),
-);
-
-// 首次 UIX 构建固化声明值，全部实例共享一份只读视觉配置。
-static UIX_SELECTABLE_LIST_VISUAL: OnceLock<SelectableListVisual> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 struct SelectableListGeometry {
@@ -762,7 +606,7 @@ widget! {
             active_binding: None,
             header_button_text: String::new(),
             footer_text: String::new(),
-            item_height: DEFAULT_SELECTABLE_LIST_VISUAL.geometry.default_item_height,
+            item_height: SELECTABLE_LIST_VISUAL.geometry.default_item_height,
             item_height_authored: false,
             hovered_index: Cell::new(None),
             hovered_header: Cell::new(false),
@@ -772,7 +616,7 @@ widget! {
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             last_frame: Cell::new(None),
             pending_action: Cell::new(None),
-            visual: &DEFAULT_SELECTABLE_LIST_VISUAL,
+            visual: SELECTABLE_LIST_VISUAL_REF,
         }
     }
     tab_index => (&self) -> i32 {
@@ -1232,9 +1076,8 @@ widget! {
 // 把列表数据、受控选择与 UIX 静态视觉融合为单一根节点。
 fn build_selectable_list_view(
     mut kernel: SelectableList,
-    declared_visual: SelectableListVisual,
+    visual: &'static SelectableListVisual,
 ) -> ViewNode {
-    let visual = UIX_SELECTABLE_LIST_VISUAL.get_or_init(|| declared_visual);
     if !kernel.item_height_authored {
         kernel.item_height = visual.geometry.default_item_height;
     }
