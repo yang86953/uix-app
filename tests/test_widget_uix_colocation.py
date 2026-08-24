@@ -36,6 +36,7 @@ MIGRATED_WIDGET_DIRS = {
     "display/skeleton",
     "display/tag",
     "display/timeline",
+    "display/tree",
     "display/watermark",
     "feedback/progress",
     "feedback/spin",

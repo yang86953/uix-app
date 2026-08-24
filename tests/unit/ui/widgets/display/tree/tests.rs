@@ -1,5 +1,7 @@
 // 引入待验证的树组件与公开节点模型。
 use super::{Tree, TreeNode};
+// 引入公开 View 构建入口以验证 UIX 根。
+use crate::ui::view::View;
 
 // 验证树级 checkable 递归覆盖完整节点层级。
 #[test]
@@ -92,4 +94,69 @@ fn tree_checkable_refresh_preserves_runtime_checked_state() {
     current.sync_from(next);
     // 用户勾选事实必须继续由运行时状态拥有。
     assert!(current.nodes[0].checked);
+}
+
+// 验证 UIX 根保留节点配置并注入真实视觉契约。
+#[test]
+fn uix_root_preserves_tree_kernel_and_visual_contract() {
+    let node = View::build(
+        Tree::new(vec![TreeNode::new("根", "root")])
+            .searchable(true)
+            .multiple(true),
+    );
+    assert!(node.children.is_empty());
+    let kernel = node
+        .widget
+        .as_any()
+        .downcast_ref::<Tree>()
+        .expect("UIX 根必须保留 Tree 内核");
+    assert_eq!(kernel.nodes.len(), 1);
+    assert!(kernel.searchable);
+    assert!(kernel.multiple);
+    assert_eq!(
+        kernel.visual_contract_for_test(),
+        (200.0, 300.0, 28.0, 32.0, 20.0, 13.0)
+    );
+}
+
+// 验证单次递归筛选只保留命中路径且维持声明顺序。
+#[test]
+fn search_filter_keeps_only_matching_paths() {
+    let mut tree = Tree::new(vec![
+        TreeNode::new("根", "root").children(vec![
+            TreeNode::new("目标叶", "target"),
+            TreeNode::new("普通叶", "other"),
+        ]),
+        TreeNode::new("旁支", "aside"),
+    ])
+    .searchable(true);
+    tree.set_search_query("目标");
+    assert_eq!(tree.visible_keys_for_test(), vec!["root", "target"]);
+}
+
+// 验证无分配键盘移动仍跳过禁用节点并在边界停留。
+#[test]
+fn keyboard_selection_skips_disabled_nodes_and_clamps() {
+    let mut tree = Tree::new(vec![
+        TreeNode::new("禁用", "disabled").disabled(true),
+        TreeNode::new("甲", "alpha"),
+        TreeNode::new("乙", "beta"),
+    ]);
+    tree.move_selection(true);
+    assert_eq!(tree.selected_key(), "alpha");
+    tree.move_selection(true);
+    tree.move_selection(true);
+    assert_eq!(tree.selected_key(), "beta");
+    tree.move_selection(false);
+    assert_eq!(tree.selected_key(), "alpha");
+}
+
+// 验证全部 Tree 实例共享同一份 UIX 视觉表。
+#[test]
+fn tree_instances_share_uix_visual_table() {
+    let first = View::build(Tree::new(Vec::new()));
+    let second = View::build(Tree::new(Vec::new()));
+    let first = first.widget.as_any().downcast_ref::<Tree>().unwrap();
+    let second = second.widget.as_any().downcast_ref::<Tree>().unwrap();
+    assert!(first.shares_visual_with_for_test(second));
 }
