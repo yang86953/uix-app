@@ -58,3 +58,21 @@ fn uix_visual_configuration_is_shared_and_keeps_authored_font_size() {
     assert_eq!(second.font_size, 12.0);
     assert!(std::ptr::eq(first.visual, second.visual));
 }
+
+/// 固有尺寸测量缓存文本宽度，字号变化时必须精确失效。
+#[test]
+fn intrinsic_size_reuses_and_invalidates_text_width_cache() {
+    let tag = Tag::new("缓存宽度");
+    assert!(tag.cached_text_width.get().is_nan());
+    let original = tag.intrinsic_size();
+    let cached = tag.cached_text_width.get();
+    assert!(cached.is_finite());
+    assert_eq!(tag.intrinsic_size(), original);
+
+    let resized = tag.font_size(18.0);
+    assert!(resized.cached_text_width.get().is_nan());
+    let resized_size = resized.intrinsic_size();
+    assert!(resized.cached_text_width.get().is_finite());
+    assert!(resized_size.w > original.w);
+    assert!(resized_size.h > original.h);
+}
