@@ -49,8 +49,9 @@
 - `ProgressBar`：`src/ui/widgets/feedback/progress/` 同目录保存 Rust 与 UIX；UIX 拥有默认尺寸与圆角、线形、圆形与仪表盘几何比例、标签字号、渐变方向、不确定动画参数和主题色角色，Rust 只保留 fraction 归一化、模式、动画相位、几何执行与底层绘制；圆形进度复用单弧绘制命令，不再提交 64 条折线。
 - `Spin`：`src/ui/widgets/feedback/spin/` 同目录保存 Rust 与 UIX；UIX 拥有三档直径、轨道与圆点比例、八点序列、透明度节奏、提示排版、包裹遮罩、转速和主题色角色，Rust 只保留延迟、相位、子树叠加、圆点递推和底层绘制；生产路径继续每帧只计算一次相位三角函数且不分配临时集合。
 - `Badge`：`src/ui/widgets/display/badge/` 同目录保存 Rust 与 UIX；UIX 拥有数字胶囊、状态点与丝带的尺寸、排版和斜切比例，以及五种预设色、五种状态色和对比文字主题角色，Rust 只保留计数、单子树生命周期、物理单位偏移、布局收敛与底层绘制；计数文本继续使用栈缓冲，测量和绘制不分配 `String`。
+- `Watermark`：`src/ui/widgets/display/watermark/` 同目录保存 Rust 与 UIX；UIX 拥有默认透明度、旋转角、平铺间距、偏移、外扩数量、行高比例及正文主题色/字号角色，Rust 只保留作者覆写、主题解析、平铺和旋转绘制；完整文本行共享整形与字体回退，避免逐字命令、测量和临时字符串。
 
-已完成同目录与公开根迁移、仍待回填视觉声明的组件：`Watermark`、`Card`、`Carousel`、`Descriptions`、`Image` 与 `ImageGroup`。这些条目不能作为最终完成状态；对应债务清单由结构测试锁定并逐项缩减。
+已完成同目录与公开根迁移、仍待回填视觉声明的组件：`Card`、`Carousel`、`Descriptions`、`Image` 与 `ImageGroup`。这些条目不能作为最终完成状态；对应债务清单由结构测试锁定并逐项缩减。
 
 ## 组件：复合组件
 
