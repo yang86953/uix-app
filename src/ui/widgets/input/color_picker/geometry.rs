@@ -1,8 +1,8 @@
 // 引入颜色面板几何所需的点与矩形类型。
 use crate::core::{Point, Rect};
 
-// 引入颜色面板的自然网格常量与触发间隙。
-use super::{PANEL_CELL, PANEL_COLUMNS, PANEL_GAP, PANEL_PADDING};
+// 引入 UIX 生成的唯一颜色面板视觉表。
+use super::COLOR_PICKER_VISUAL_REF;
 
 // 描述任意实际颜色面板中绘制与命中共享的缩放指标。
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +28,7 @@ pub(super) struct ColorPanelGeometry {
 impl ColorPanelGeometry {
     // 从最终颜色面板矩形和颜色数量构造布局指标。
     pub(super) fn new(popup: Rect, color_count: usize) -> Self {
+        let layout = COLOR_PICKER_VISUAL_REF.layout;
         // 归一化实际颜色面板矩形。
         let popup = normalize_color_rect(popup);
         // 计算当前颜色数量占用的自然行数。
@@ -61,15 +62,15 @@ impl ColorPanelGeometry {
             // 保存颜色数量用于索引边界。
             color_count,
             // 按实际宽度缩放水平内边距。
-            padding_x: PANEL_PADDING * x_scale,
+            padding_x: layout.panel_padding * x_scale,
             // 按实际高度缩放垂直内边距。
-            padding_y: PANEL_PADDING * y_scale,
+            padding_y: layout.panel_padding * y_scale,
             // 按实际宽度缩放八列色块槽。
-            cell_width: PANEL_CELL * x_scale,
+            cell_width: layout.panel_cell * x_scale,
             // 按实际高度和实际行数缩放色块槽。
             cell_height: if rows > 0 {
                 // 有颜色行时使用垂直缩放后的自然槽高。
-                PANEL_CELL * y_scale
+                layout.panel_cell * y_scale
             // 处理空颜色面板。
             } else {
                 // 空面板没有可命中的色块槽。
@@ -94,13 +95,16 @@ impl ColorPanelGeometry {
             return None;
         }
         // 按固定八列计算颜色所在列。
-        let column = index % PANEL_COLUMNS;
+        let columns = COLOR_PICKER_VISUAL_REF.layout.panel_columns.max(1);
+        let column = index % columns;
         // 按固定八列计算颜色所在行。
-        let row = index / PANEL_COLUMNS;
+        let row = index / columns;
         // 水平内缩随实际槽宽缩放。
-        let inset_x = self.visual_scale.min(self.cell_width * 0.5);
+        let inset_x = (COLOR_PICKER_VISUAL_REF.layout.cell_inset * self.visual_scale)
+            .min(self.cell_width * 0.5);
         // 垂直内缩随实际槽高缩放。
-        let inset_y = self.visual_scale.min(self.cell_height * 0.5);
+        let inset_y = (COLOR_PICKER_VISUAL_REF.layout.cell_inset * self.visual_scale)
+            .min(self.cell_height * 0.5);
         // 计算当前色块槽的左边。
         let x = self.popup.x + self.padding_x + column as f32 * self.cell_width;
         // 计算当前色块槽的顶边。
@@ -130,7 +134,8 @@ impl ColorPanelGeometry {
         // 计算实际网格的顶边。
         let content_y = self.popup.y + self.padding_y;
         // 计算固定八列网格的实际宽度。
-        let content_width = PANEL_COLUMNS as f32 * self.cell_width;
+        let columns = COLOR_PICKER_VISUAL_REF.layout.panel_columns.max(1);
+        let content_width = columns as f32 * self.cell_width;
         // 计算当前颜色行数对应的实际高度。
         let content_height = color_rows(self.color_count) as f32 * self.cell_height;
         // 面板内边距或网格外部不命中颜色。
@@ -150,7 +155,7 @@ impl ColorPanelGeometry {
         // 按实际槽高解析行号。
         let row = ((position.y - content_y) / self.cell_height).floor() as usize;
         // 将行列转换为固定八列索引。
-        let index = row * PANEL_COLUMNS + column;
+        let index = row * columns + column;
         // 最后一行空槽不得映射到不存在的颜色。
         (index < self.color_count).then_some(index)
     }
@@ -158,6 +163,7 @@ impl ColorPanelGeometry {
 
 // 使用当前逻辑表面解析颜色面板的最终绝对矩形。
 pub(super) fn resolve_color_popup_rect(frame: Rect, surface: Rect, color_count: usize) -> Rect {
+    let layout = COLOR_PICKER_VISUAL_REF.layout;
     // 归一化触发器绝对布局矩形。
     let frame = normalize_color_rect(frame);
     // 归一化当前逻辑表面矩形。
@@ -176,9 +182,9 @@ pub(super) fn resolve_color_popup_rect(frame: Rect, surface: Rect, color_count: 
     // 将触发器横向锚点限制在表面内。
     let x = frame.x.clamp(surface.x, max_x);
     // 计算保留间隙后的下方可用空间。
-    let available_below = (surface.y + surface.h - frame.y - frame.h - PANEL_GAP).max(0.0);
+    let available_below = (surface.y + surface.h - frame.y - frame.h - layout.panel_gap).max(0.0);
     // 计算保留间隙后的上方可用空间。
-    let available_above = (frame.y - surface.y - PANEL_GAP).max(0.0);
+    let available_above = (frame.y - surface.y - layout.panel_gap).max(0.0);
     // 优先完整向下，其次完整向上，均不足时选择空间较大的一侧。
     let place_below = if natural_height <= available_below {
         // 下方能够完整容纳自然高度。
@@ -206,11 +212,11 @@ pub(super) fn resolve_color_popup_rect(frame: Rect, surface: Rect, color_count: 
     // 按最终方向计算纵向起点。
     let y = if place_below {
         // 向下面板从触发器底边加间隙开始。
-        frame.y + frame.h + PANEL_GAP
+        frame.y + frame.h + layout.panel_gap
     // 处理向上布局。
     } else {
         // 向上面板紧贴触发器上方间隙。
-        frame.y - PANEL_GAP - height
+        frame.y - layout.panel_gap - height
     };
     // 返回绘制、命中、登记与脏区共享的最终矩形。
     Rect::new(x, y, width, height)
@@ -244,6 +250,7 @@ pub(super) fn color_surface_rect(frame: Rect, popup: Rect, surface: Rect) -> Rec
 
 // 构造首次正式登记前的有限回退表面。
 pub(super) fn color_fallback_surface(frame: Rect, color_count: usize) -> Rect {
+    let layout = COLOR_PICKER_VISUAL_REF.layout;
     // 归一化触发器矩形。
     let frame = normalize_color_rect(frame);
     // 计算当前颜色面板自然宽度。
@@ -255,30 +262,36 @@ pub(super) fn color_fallback_surface(frame: Rect, color_count: usize) -> Rect {
         // 从触发器左边开始。
         frame.x,
         // 向上预留完整颜色面板和间隙。
-        frame.y - height - PANEL_GAP,
+        frame.y - height - layout.panel_gap,
         // 保留自然颜色面板宽度。
         width,
         // 覆盖上下两份面板、两份间隙和触发器。
-        height * 2.0 + PANEL_GAP * 2.0 + frame.h,
+        height * layout.fallback_panel_sides
+            + layout.panel_gap * layout.fallback_panel_sides
+            + frame.h,
     )
 }
 
 // 返回当前颜色数量占用的固定八列行数。
 fn color_rows(color_count: usize) -> usize {
     // 使用向上取整保留最后一行不完整色块。
-    color_count.div_ceil(PANEL_COLUMNS)
+    color_count.div_ceil(COLOR_PICKER_VISUAL_REF.layout.panel_columns.max(1))
 }
 
 // 返回颜色面板的自然宽度。
 fn natural_color_popup_width() -> f32 {
     // 合并八列自然槽宽与两侧内边距。
-    PANEL_COLUMNS as f32 * PANEL_CELL + PANEL_PADDING * 2.0
+    let layout = COLOR_PICKER_VISUAL_REF.layout;
+    layout.panel_columns as f32 * layout.panel_cell
+        + layout.panel_padding * layout.fallback_panel_sides
 }
 
 // 返回当前颜色数量对应的自然高度。
 fn natural_color_popup_height(color_count: usize) -> f32 {
     // 合并自然行高与上下内边距。
-    color_rows(color_count) as f32 * PANEL_CELL + PANEL_PADDING * 2.0
+    let layout = COLOR_PICKER_VISUAL_REF.layout;
+    color_rows(color_count) as f32 * layout.panel_cell
+        + layout.panel_padding * layout.fallback_panel_sides
 }
 
 // 归一化颜色面板相关矩形。
