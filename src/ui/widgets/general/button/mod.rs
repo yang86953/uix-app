@@ -773,19 +773,28 @@ impl Button {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let base = self
-            .style_set
-            .normal
-            .clone()
-            .apply(self.style.as_ref().clone());
+        let base = &self.style_set.normal;
+        let fixed = self.style.as_ref();
+        // 测量只解析会改变固有尺寸的复制型字段，避免克隆完整拥有型 Style。
+        let font_size = if fixed.font_size != crate::ui::theme::style::TypographyToken::Body {
+            fixed.font_size
+        } else {
+            base.font_size
+        };
         let font_size = normalized_button_font_size(
-            base.font_size.default_size(),
+            font_size.default_size(),
             self.visual.geometry.fallback_font_size,
         );
         // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
-        let height = base
+        let height = fixed
             .height
+            .or(base.height)
             .unwrap_or_else(|| crate::ui::widget_runtime::config::control_height(self.button_size));
+        let padding = if fixed.padding != crate::core::EdgeInsets::zero() {
+            fixed.padding
+        } else {
+            base.padding
+        };
         // 纯图标按钮使用正方形尺寸。
         let width = if !self.icon.is_empty() && self.text.is_empty() {
             height
@@ -797,8 +806,10 @@ impl Button {
                 font_size,
             )
             .max_line_width;
-            base.width
-                .unwrap_or(text_w + base.padding.horizontal())
+            fixed
+                .width
+                .or(base.width)
+                .unwrap_or(text_w + padding.horizontal())
                 .max(self.visual.geometry.minimum_width)
         };
         if self.block {

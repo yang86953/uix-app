@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use uix::core::{Rect, Size};
 use uix::prelude::{
-    Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem, Footer,
-    Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, Menu, MenuItem, MenuMode,
-    ScrollDirection, ScrollView, Select, Sider, Space, Splitter, Table, TableColumn, Tabs,
-    Transfer, TransferItem, VirtualScroll,
+    Button, Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem,
+    FontFamily, Footer, Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, Menu,
+    MenuItem, MenuMode, ScrollDirection, ScrollView, Select, Sider, Space, Splitter, Style, Table,
+    TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
 };
 use uix::ui::__private::WidgetTree;
 use uix::ui::{
@@ -500,6 +500,32 @@ fn menu_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn button_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    for index in 0..128 {
+        tree.add_child(root, Box::new(Button::new(format!("Button {index}"))));
+    }
+    (tree, root)
+}
+
+fn styled_button_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let style = Style {
+        font_family: FontFamily::from_names(["UI Sans", "sans-serif"]),
+        grid_template_columns: vec![GridTrack::Auto, GridTrack::Fr(1.0)],
+        ..Style::default()
+    };
+    for index in 0..128 {
+        tree.add_child(
+            root,
+            Box::new(Button::new(format!("Styled {index}")).style(style.clone())),
+        );
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -591,6 +617,8 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Dropdown", dropdown_layout_tree()),
         ("Dropdown trigger", custom_trigger_dropdown_layout_tree()),
         ("Menu", menu_layout_tree()),
+        ("Button", button_layout_tree()),
+        ("Styled Button", styled_button_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);
