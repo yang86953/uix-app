@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SUPPORT = ROOT / "src" / "app" / "window" / "window_driver" / "support.rs"
 DRIVER = ROOT / "src" / "app" / "window" / "window_driver" / "driver.rs"
-CONTAINER = ROOT / "src" / "ui" / "widgets" / "containers" / "container.rs"
+CONTAINER = ROOT / "src" / "ui" / "widgets" / "containers" / "container" / "mod.rs"
+CONTAINER_UIX = ROOT / "src" / "ui" / "widgets" / "containers" / "container" / "container.uix"
 
 
 class WindowResizeTransactionContractTests(unittest.TestCase):
@@ -37,11 +38,19 @@ class WindowResizeTransactionContractTests(unittest.TestCase):
     # 已分配 frame 必须压过历史自然尺寸，确保最大化还原后整棵 Stretch 子树收缩。
     def test_container_cross_axis_uses_current_allocated_frame(self) -> None:
         container = CONTAINER.read_text(encoding="utf-8")
+        container_uix = CONTAINER_UIX.read_text(encoding="utf-8")
 
         cross_axis = container[container.index("let cross_axis_indefinite =") :]
         cross_axis = cross_axis[: cross_axis.index("// 委托给统一的 FlexLayout")]
-        self.assertIn("content_rect.h <= 1.0", cross_axis)
-        self.assertIn("content_rect.w <= 1.0", cross_axis)
+        self.assertIn(
+            "content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold",
+            cross_axis,
+        )
+        self.assertIn(
+            "content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold",
+            cross_axis,
+        )
+        self.assertIn("bootstrapCrossAxisThreshold={1.0}", container_uix)
         self.assertNotIn("s.width.is_none_or", cross_axis)
         self.assertNotIn("s.height.is_none_or", cross_axis)
 

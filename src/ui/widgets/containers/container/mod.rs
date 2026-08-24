@@ -17,7 +17,41 @@ use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken, apply_style,
 };
 use crate::ui::{SnapshotFields, SnapshotSource};
-use crate::ui::{WidgetId, WidgetTree};
+use crate::ui::{View, ViewNode, WidgetId, WidgetTree};
+
+// 标识 UIX 为 Container 选择的共享主题样式角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContainerStyleRole {
+    Default,
+}
+
+impl ContainerStyleRole {
+    fn resolve(self) -> Style {
+        match self {
+            Self::Default => Style::container(),
+        }
+    }
+}
+
+// 保存 Container 独有的布局阈值与子项收缩策略。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ContainerLayoutVisual {
+    bootstrap_cross_axis_threshold: f32,
+    child_flex_shrink: f32,
+}
+
+// 全部 Container 实例共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ContainerVisual {
+    default_style: ContainerStyleRole,
+    layout: ContainerLayoutVisual,
+}
+
+crate::uix_items!("src/ui/widgets/containers/container/container.uix");
+
+pub(crate) const fn container_default_style_role() -> ContainerStyleRole {
+    ContainerStyleRole::Default
+}
 
 widget! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
@@ -38,6 +72,8 @@ widget! {
         /// 缓存子节点内容尺寸（layout_children 后更新），
         /// 使 measure 在无固定 width/height 时能基于子节点内容估算尺寸。
         pub(crate) cached_content_size: Cell<Size>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static ContainerVisual,
     }
 
     visible => (&self) -> bool { self.style.visible }
@@ -196,9 +232,9 @@ widget! {
             crate::ui::theme::style::FlexDirection::Row
                 | crate::ui::theme::style::FlexDirection::RowReverse
         ) {
-            content_rect.h <= 1.0
+            content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold
         } else {
-            content_rect.w <= 1.0
+            content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
         };
 
         // 委托给统一的 FlexLayout 布局引擎
@@ -217,7 +253,7 @@ widget! {
         // Phase 1 写回矮 frame，与 Phase 2 扩展振荡（106↔121）。
         let mut children_no_shrink = children.to_vec();
         for child in &mut children_no_shrink {
-            child.flex_shrink = 0.0;
+            child.flex_shrink = self.visual.layout.child_flex_shrink;
         }
         let output = engine.layout(content_rect, &children_no_shrink);
 
@@ -274,6 +310,23 @@ impl Default for Container {
     }
 }
 
+// 把 Container Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_container_view(mut kernel: Container, visual: &'static ContainerVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Container {
+    fn build(self) -> ViewNode {
+        build_container_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_container_uix_root(kernel: Container) -> ViewNode {
+    crate::uix!("src/ui/widgets/containers/container/container.uix")
+}
+
 impl SnapshotSource for Container {
     fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Container {
@@ -286,8 +339,9 @@ impl Container {
     /// 创建使用默认容器样式的通用布局容器。
     pub fn new() -> Self {
         Self {
-            style: Style::container(),
+            style: CONTAINER_VISUAL_REF.default_style.resolve(),
             cached_content_size: Cell::new(Size::zero()),
+            visual: CONTAINER_VISUAL_REF,
         }
     }
 
@@ -298,6 +352,7 @@ impl Container {
     /// 批量设置 Style（替换所有现有值）。
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.style = next.style;
+        self.visual = next.visual;
     }
 
     /// 用指定样式完整替换容器的当前样式。
@@ -584,6 +639,6 @@ impl Container {
 // 容器布局缓存的内部回归测试。
 #[cfg(test)]
 // 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/containers/container__tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/containers/container__tests.rs"]
 // 保留原测试模块层级与私有契约访问能力。
 mod tests;

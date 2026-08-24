@@ -25,6 +25,8 @@ POSITIONAL_VISUAL_SHELL_DEBT: set[str] = set()
 # 已完成同目录 UIX 视觉迁移的 widget 目录；删除声明文件不得伪装成债务清零。
 MIGRATED_WIDGET_DIRS = {
     "containers/back_top",
+    "containers/affix",
+    "containers/container",
     "display/avatar",
     "display/badge",
     "display/card",

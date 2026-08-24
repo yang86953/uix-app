@@ -1,0 +1,8 @@
+<Visual
+  name="AFFIX_VISUAL"
+  type="AffixVisual"
+  defaultOffsetTop={0.0}
+  stickyActivationThreshold={0.01}
+/>
+
+<KernelView value={build_affix_view(kernel, AFFIX_VISUAL_REF)} />

@@ -15,7 +15,16 @@ use crate::widget;
 // Affix 的定制布局复用共享布局数值与 margin 归一化规则。
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
-use crate::ui::{SnapshotFields, Widget, WidgetId, WidgetTree};
+use crate::ui::{SnapshotFields, View, ViewNode, Widget, WidgetId, WidgetTree};
+
+// 保存 Affix 的默认偏移与吸顶状态切换阈值。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct AffixVisual {
+    default_offset_top: f32,
+    sticky_activation_threshold: f32,
+}
+
+crate::uix_items!("src/ui/widgets/containers/affix/affix.uix");
 
 widget! {
     /// 在最近滚动视口内吸顶的子树容器。
@@ -27,6 +36,8 @@ widget! {
         natural_offset_y: Cell<f32>,
         cached_child_size: Cell<Size>,
         affixed: Cell<bool>,
+        /// 同目录 UIX 生成的唯一静态视觉表。
+        pub(crate) visual: &'static AffixVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -152,6 +163,7 @@ impl Affix {
             natural_offset_y: Cell::new(0.0),
             cached_child_size: Cell::new(Size::zero()),
             affixed: Cell::new(false),
+            visual: AFFIX_VISUAL_REF,
         }
     }
 
@@ -209,6 +221,7 @@ impl Affix {
         if let Some(scroll_y) = self.controlled_scroll_y {
             self.scroll_y = scroll_y;
         }
+        self.visual = next.visual;
         self.refresh_affixed();
     }
 
@@ -238,7 +251,7 @@ impl Affix {
     }
 
     fn refresh_affixed(&self) -> bool {
-        let affixed = self.sticky_compensation() > 0.01;
+        let affixed = self.sticky_compensation() > self.visual.sticky_activation_threshold;
         let changed = self.affixed.get() != affixed;
         self.affixed.set(affixed);
         changed
@@ -255,6 +268,28 @@ impl Affix {
 
 impl Default for Affix {
     fn default() -> Self {
-        Self::new(0.0)
+        Self::new(AFFIX_VISUAL_REF.default_offset_top)
     }
 }
+
+// 把 Affix Rust 内核与 UIX 静态视觉组合为单一叶节点。
+fn build_affix_view(mut kernel: Affix, visual: &'static AffixVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+impl View for Affix {
+    fn build(self) -> ViewNode {
+        build_affix_uix_root(self)
+    }
+}
+
+// 为 UIX 根提供稳定的 Rust 内核绑定名称。
+fn build_affix_uix_root(kernel: Affix) -> ViewNode {
+    crate::uix!("src/ui/widgets/containers/affix/affix.uix")
+}
+
+// 只在单元测试目标验证 Affix UIX 视觉注入契约。
+#[cfg(test)]
+#[path = "../../../../../tests/unit/ui/widgets/containers/affix__tests.rs"]
+mod tests;
