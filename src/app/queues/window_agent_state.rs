@@ -6,21 +6,21 @@
 //! 提供执行实现（`AgentCommandExecutor`），由组合根 `session_runtime` 组装
 //! 期注入。
 
-use std::sync::Arc;
 use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
 use crate::app::queues::agent_command_queue::MAX_AGENT_CONFIRM_TTL;
 use crate::app::queues::agent_command_queue::{
-    AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
-    AgentCommandResult, AgentConfirmationRequest, MAX_AGENT_SETTLE_PASSES, send_result,
+    send_result, AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
+    AgentCommandResult, AgentConfirmationRequest, MAX_AGENT_SETTLE_PASSES,
 };
 use crate::app::window_semantics::WindowSemanticState;
-use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
+use crate::ui::WidgetTree;
 
 /// 窗口级 Agent 动作的操作契约：由 window 系统实现，经 UI turn 传入。
 ///
@@ -528,28 +528,21 @@ impl WindowAgentState {
 
     /// 惰性清理过期确认：有挂起响应的完成 `confirmation_not_found`。
     fn expire_confirmations(&mut self) {
-        let expired = self
-            .confirm_pending
-            .iter()
-            .filter(|pending| pending.created_at.elapsed() > MAX_AGENT_CONFIRM_TTL)
-            .map(|pending| pending.confirm_id)
-            .collect::<Vec<_>>();
-        for confirm_id in expired {
-            let Some(index) = self
-                .confirm_pending
-                .iter()
-                .position(|pending| pending.confirm_id == confirm_id)
-            else {
-                continue;
-            };
-            let mut pending = self.confirm_pending.remove(index);
+        // 单次稳定压缩同时完成响应，避免先收集 id 再逐项扫描、移动数组。
+        self.confirm_pending.retain_mut(|pending| {
+            if pending.created_at.elapsed() <= MAX_AGENT_CONFIRM_TTL {
+                return true;
+            }
             if let Some(ticket_response) = pending.response.take() {
                 send_result(
                     ticket_response,
-                    Err(AgentCommandError::ConfirmationNotFound { confirm_id }),
+                    Err(AgentCommandError::ConfirmationNotFound {
+                        confirm_id: pending.confirm_id,
+                    }),
                 );
             }
-        }
+            false
+        });
     }
 
     fn fail_confirmations(&mut self) {
