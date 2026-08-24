@@ -2,11 +2,67 @@
 
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::SnapshotFields;
+use crate::ui::theme::NeutralRole;
+use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::widget;
 use std::cell::Cell;
+
+// 保存由 UIX 声明、由 Rust 动画与几何内核消费的静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SkeletonVisual {
+    default_width: f32,
+    default_height: f32,
+    default_paragraph_rows: usize,
+    paragraph_line_height: f32,
+    paragraph_gap: f32,
+    paragraph_last_width: f32,
+    rect_radius: f32,
+    text_radius: f32,
+    shimmer_width_ratio: f32,
+    shimmer_min_width: f32,
+    shimmer_speed: f64,
+    shimmer_alpha: u8,
+    base_color: ColorValue,
+    shimmer_color: ColorValue,
+}
+
+impl SkeletonVisual {
+    fn paragraph_extent(self) -> f32 {
+        self.paragraph_line_height + self.paragraph_gap
+    }
+}
+
+impl Default for SkeletonVisual {
+    fn default() -> Self {
+        Self {
+            default_width: 200.0,
+            default_height: 16.0,
+            default_paragraph_rows: 2,
+            paragraph_line_height: 12.0,
+            paragraph_gap: 4.0,
+            paragraph_last_width: 0.6,
+            rect_radius: 4.0,
+            text_radius: 2.0,
+            shimmer_width_ratio: 0.35,
+            shimmer_min_width: 8.0,
+            shimmer_speed: 0.8,
+            shimmer_alpha: 96,
+            base_color: ColorValue::Neutral(NeutralRole::FillTertiary),
+            shimmer_color: ColorValue::Neutral(NeutralRole::BgContainer),
+        }
+    }
+}
+
+// 记录高度来自作者、默认视觉或段落视觉，供 UIX 融合时保留覆盖优先级。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkeletonHeightSource {
+    Default,
+    Authored,
+    Paragraph,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// 骨架占位内容的形状。
@@ -25,11 +81,17 @@ widget! {
         shape: SkeletonShape,
         w: f32,
         h: f32,
+        #[snapshot(skip)]
+        width_authored: bool,
+        #[snapshot(skip)]
+        height_source: SkeletonHeightSource,
         avatar_size: Option<Size>,
         paragraph_lines: usize,
         active: bool,
         phase: Cell<f32>,
         animation_dirty: Cell<bool>,
+        #[snapshot(skip)]
+        visual: SkeletonVisual,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -45,17 +107,22 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
-        let color = ctx.tokens().color_fill_tertiary();
+        let color = self.visual.base_color.resolve(ctx.tokens());
         ctx.push_clip(frame);
         self.paint_placeholder(frame, color, ctx);
         if self.active {
             let phase = self.phase.get();
-            let band_width = (frame.w * 0.35).max(8.0).min(frame.w);
+            let band_width = (frame.w * self.visual.shimmer_width_ratio.max(0.0))
+                .max(self.visual.shimmer_min_width.max(0.0))
+                .min(frame.w);
             let shimmer_x = frame.x + (frame.w + band_width) * phase - band_width;
             ctx.push_clip(Rect::new(shimmer_x, frame.y, band_width, frame.h));
             self.paint_placeholder(
                 frame,
-                ctx.tokens().color_bg_container().with_alpha(96),
+                self.visual
+                    .shimmer_color
+                    .resolve(ctx.tokens())
+                    .with_alpha(self.visual.shimmer_alpha),
                 ctx,
             );
             ctx.pop_clip();
@@ -66,7 +133,7 @@ widget! {
     update_animation => (&mut self, dt: f64) -> bool {
         if !self.active { return false; }
         let delta = if dt.is_finite() {
-            (dt.max(0.0) * 0.8).rem_euclid(1.0) as f32
+            (dt.max(0.0) * self.visual.shimmer_speed.max(0.0)).rem_euclid(1.0) as f32
         } else {
             0.0
         };
@@ -90,8 +157,71 @@ impl Default for Skeleton {
     }
 }
 
-// 把 Rust 动画与绘制内核融合为 UIX 声明的单一叶节点。
-fn build_skeleton_view(kernel: Skeleton) -> ViewNode {
+// 向 UIX 提供骨架基础填充色角色。
+const fn skeleton_fill_tertiary() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::FillTertiary)
+}
+
+// 向 UIX 提供流光叠加层背景色角色。
+const fn skeleton_bg_container() -> ColorValue {
+    ColorValue::Neutral(NeutralRole::BgContainer)
+}
+
+// 把 UIX 声明的静态视觉融合进 Rust 动画与几何内核。
+#[allow(clippy::too_many_arguments)]
+fn build_skeleton_view(
+    mut kernel: Skeleton,
+    default_width: f32,
+    default_height: f32,
+    default_paragraph_rows: f32,
+    paragraph_line_height: f32,
+    paragraph_gap: f32,
+    paragraph_last_width: f32,
+    rect_radius: f32,
+    text_radius: f32,
+    shimmer_width_ratio: f32,
+    shimmer_min_width: f32,
+    shimmer_speed: f64,
+    shimmer_alpha: f32,
+    base_color: ColorValue,
+    shimmer_color: ColorValue,
+) -> ViewNode {
+    let fallback = SkeletonVisual::default();
+    let visual = SkeletonVisual {
+        default_width,
+        default_height,
+        default_paragraph_rows: if default_paragraph_rows.is_finite() {
+            default_paragraph_rows.round().max(1.0) as usize
+        } else {
+            fallback.default_paragraph_rows
+        },
+        paragraph_line_height,
+        paragraph_gap,
+        paragraph_last_width,
+        rect_radius,
+        text_radius,
+        shimmer_width_ratio,
+        shimmer_min_width,
+        shimmer_speed,
+        shimmer_alpha: if shimmer_alpha.is_finite() {
+            shimmer_alpha.round().clamp(0.0, 255.0) as u8
+        } else {
+            fallback.shimmer_alpha
+        },
+        base_color,
+        shimmer_color,
+    };
+    if !kernel.width_authored {
+        kernel.w = visual.default_width;
+    }
+    kernel.h = match kernel.height_source {
+        SkeletonHeightSource::Default => visual.default_height,
+        SkeletonHeightSource::Authored => kernel.h,
+        SkeletonHeightSource::Paragraph => {
+            (kernel.paragraph_lines as f32 * visual.paragraph_extent()).max(visual.default_height)
+        }
+    };
+    kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
 
@@ -108,15 +238,19 @@ impl Skeleton {
 
     /// 创建默认宽 200、高 16 且未启用动画的矩形占位。
     pub fn new() -> Self {
+        let visual = SkeletonVisual::default();
         Self {
             shape: SkeletonShape::Rect,
-            w: 200.0,
-            h: 16.0,
+            w: visual.default_width,
+            h: visual.default_height,
+            width_authored: false,
+            height_source: SkeletonHeightSource::Default,
             avatar_size: None,
             paragraph_lines: 0,
             active: false,
             phase: Cell::new(0.0),
             animation_dirty: Cell::new(false),
+            visual,
         }
     }
 
@@ -130,18 +264,22 @@ impl Skeleton {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.w = Self::normalized_dimension(w);
         self.h = Self::normalized_dimension(h);
+        self.width_authored = true;
+        self.height_source = SkeletonHeightSource::Authored;
         self
     }
 
     /// 设置占位宽度；非有限值归零，负值截断为零。
     pub fn width(mut self, width: f32) -> Self {
         self.w = Self::normalized_dimension(width);
+        self.width_authored = true;
         self
     }
 
     /// 设置占位高度；非有限值归零，负值截断为零。
     pub fn height(mut self, height: f32) -> Self {
         self.h = Self::normalized_dimension(height);
+        self.height_source = SkeletonHeightSource::Authored;
         self
     }
 
@@ -152,6 +290,8 @@ impl Skeleton {
         self.avatar_size = Some(Size::new(side, side));
         self.w = side;
         self.h = side;
+        self.width_authored = true;
+        self.height_source = SkeletonHeightSource::Authored;
         self
     }
 
@@ -159,7 +299,9 @@ impl Skeleton {
     pub fn paragraph(mut self, lines: usize) -> Self {
         self.shape = SkeletonShape::Text;
         self.paragraph_lines = lines.clamp(1, Self::MAX_PARAGRAPH_LINES);
-        self.h = (self.paragraph_lines as f32 * 16.0).max(16.0);
+        self.height_source = SkeletonHeightSource::Paragraph;
+        self.h = (self.paragraph_lines as f32 * self.visual.paragraph_extent())
+            .max(self.visual.default_height);
         self
     }
 
@@ -206,12 +348,12 @@ impl Skeleton {
 
     fn for_each_paragraph_rect(&self, frame: Rect, mut visit: impl FnMut(Rect)) {
         let rows = if self.paragraph_lines == 0 {
-            2
+            self.visual.default_paragraph_rows
         } else {
             self.paragraph_lines
         };
-        let desired_line_height = 12.0;
-        let desired_gap = 4.0;
+        let desired_line_height = self.visual.paragraph_line_height.max(0.0);
+        let desired_gap = self.visual.paragraph_gap.max(0.0);
         let desired_height =
             desired_line_height * rows as f32 + desired_gap * rows.saturating_sub(1) as f32;
         let scale = if desired_height > 0.0 {
@@ -226,7 +368,11 @@ impl Skeleton {
 
         // 生产渲染逐行消费几何，不为每帧创建临时矩形列表。
         for row in 0..rows {
-            let width_factor = if row + 1 == rows { 0.6 } else { 1.0 };
+            let width_factor = if row + 1 == rows {
+                self.visual.paragraph_last_width.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
             visit(Rect::new(
                 frame.x,
                 start_y + row as f32 * (line_height + gap),
@@ -239,7 +385,11 @@ impl Skeleton {
     fn paint_placeholder(&self, frame: Rect, color: crate::draw::Color, ctx: &mut PaintContext) {
         match self.shape {
             SkeletonShape::Rect => {
-                let radius = 4.0_f32.min(frame.w.min(frame.h) * 0.5);
+                let radius = self
+                    .visual
+                    .rect_radius
+                    .max(0.0)
+                    .min(frame.w.min(frame.h) * 0.5);
                 ctx.fill_rect(frame, color, Some(crate::draw::Radius::uniform(radius)));
             }
             SkeletonShape::Circle => {
@@ -258,7 +408,9 @@ impl Skeleton {
                     ctx.fill_rect(
                         line,
                         color,
-                        Some(crate::draw::Radius::uniform(2.0_f32.min(line.h * 0.5))),
+                        Some(crate::draw::Radius::uniform(
+                            self.visual.text_radius.max(0.0).min(line.h * 0.5),
+                        )),
                     );
                 });
             }
@@ -301,9 +453,12 @@ impl Skeleton {
         self.shape = next.shape;
         self.w = Self::normalized_dimension(next.w);
         self.h = Self::normalized_dimension(next.h);
+        self.width_authored = next.width_authored;
+        self.height_source = next.height_source;
         self.avatar_size = next.avatar_size;
         self.paragraph_lines = next.paragraph_lines;
         self.active = next.active;
+        self.visual = next.visual;
         if active_changed {
             self.phase.set(0.0);
             self.animation_dirty.set(true);

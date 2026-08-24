@@ -1,2 +1,2 @@
-// Skeleton 是原子绘制组件；UIX 声明公开根，Rust 内核负责动画与绘制。
-<KernelView value={build_skeleton_view(kernel)} />
+// Skeleton 的默认尺寸、段落几何、圆角、流光节奏和主题角色由 UIX 声明。
+<KernelView value={build_skeleton_view(kernel, 200, 16, 2, 12, 4, 0.6, 4, 2, 0.35, 8, 0.8, 96, skeleton_fill_tertiary(), skeleton_bg_container())} />
