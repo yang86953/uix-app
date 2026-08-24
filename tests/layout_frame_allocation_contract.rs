@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use uix::core::{Rect, Size};
 use uix::prelude::{
     Button, Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem,
-    FontFamily, Footer, Form, FormItem, Grid, GridTrack, Header, Layout as PageLayout, Menu,
+    FontFamily, Footer, Form, FormItem, Grid, GridTrack, Header, Input, Layout as PageLayout, Menu,
     MenuItem, MenuMode, ScrollDirection, ScrollView, Select, Sider, Space, Splitter, Style, Table,
     TableColumn, Tabs, Transfer, TransferItem, VirtualScroll,
 };
@@ -526,6 +526,26 @@ fn styled_button_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     (tree, root)
 }
 
+fn textarea_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(320.0, 320.0)));
+    let text = (0..32)
+        .map(|line| format!("Line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for index in 0..128 {
+        tree.add_child(
+            root,
+            Box::new(
+                Input::textarea()
+                    .rows(4)
+                    .with_value(format!("Textarea {index}\n{text}")),
+            ),
+        );
+    }
+    (tree, root)
+}
+
 fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> usize {
     tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 200.0));
     tree.layout();
@@ -619,6 +639,7 @@ fn warmed_nested_layout_reuses_heap_storage() {
         ("Menu", menu_layout_tree()),
         ("Button", button_layout_tree()),
         ("Styled Button", styled_button_layout_tree()),
+        ("Textarea", textarea_layout_tree()),
     ];
     for (name, (tree, root)) in scenarios {
         let allocations = warmed_layout_allocations(tree, root);

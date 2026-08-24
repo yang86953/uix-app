@@ -3,7 +3,7 @@ use super::*;
 impl Input {
     pub(super) fn intrinsic_size(&self) -> Size {
         if self.textarea {
-            let line_count = logical_lines(&self.value).len().max(self.textarea_rows);
+            let line_count = logical_line_count(&self.value).max(self.textarea_rows);
             let h = (line_count as f32 * self.visual.typography.line_height
                 + self.visual.layout.textarea_intrinsic_vertical_padding)
                 .max(self.visual.layout.textarea_min_height)
@@ -473,13 +473,13 @@ impl Input {
         if line == 0 {
             return;
         }
-        let lines = logical_lines(&self.value);
-        let prev_line = lines[line - 1];
-        let col = col.min(prev_line.chars().count());
-        // 计算光标位置：之前所有行的字符数 + 换行符数 + col
-        let prev_chars: usize = lines[..line - 1].iter().map(|s| s.chars().count()).sum();
-        // 计算目标行的原始逻辑字符位置。
-        let target = prev_chars + (line - 1) + col;
+        let mut lines = LogicalLineCursor::new(&self.value);
+        lines.skip_lines(line - 1);
+        let Some((_previous, start, end)) = lines.next_existing_line() else {
+            return;
+        };
+        // 目标列不能越过上一逻辑行末尾。
+        let target = start + col.min(end - start);
         // 垂直移动也必须收敛到最近扩展字素簇边界。
         self.cursor_char = TextIndexMap::new(&self.value)
             // 归一目标字符位置。
@@ -492,15 +492,13 @@ impl Input {
 
     pub(super) fn move_cursor_down(&mut self) {
         let (line, col) = self.cursor_line_col();
-        let lines = logical_lines(&self.value);
-        if line + 1 >= lines.len() {
+        let mut lines = LogicalLineCursor::new(&self.value);
+        lines.skip_lines(line + 1);
+        let Some((_next, start, end)) = lines.next_existing_line() else {
             return;
-        }
-        let next_line = lines[line + 1];
-        let col = col.min(next_line.chars().count());
-        let prev_chars: usize = lines[..line + 1].iter().map(|s| s.chars().count()).sum();
-        // 计算目标行的原始逻辑字符位置。
-        let target = prev_chars + (line + 1) + col;
+        };
+        // 目标列不能越过下一逻辑行末尾。
+        let target = start + col.min(end - start);
         // 垂直移动也必须收敛到最近扩展字素簇边界。
         self.cursor_char = TextIndexMap::new(&self.value)
             // 归一目标字符位置。
@@ -615,24 +613,18 @@ impl Input {
 
     /// 多行模式下根据 (x, y) 找字符索引
     pub(super) fn char_at_xy(&self, x: f32, y: f32) -> usize {
-        let lines = logical_lines(&self.value);
-        // 点击顶部 padding 区时映射到第 0 行，防止负数转 usize panic。
-        if y < self.visual.layout.textarea_top_padding {
-            // 取得首行现有几何给出的原始字符位置。
-            let raw_index = self.x_to_char_on_line(0, &lines, x);
-            // 顶部 padding 命中也必须停在完整字素簇边界。
-            return TextIndexMap::new(&self.value)
-                // 归一首行字符位置。
-                .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
-                // 返回兼容字符下标。
-                .0;
+        // 顶部 padding 区映射到首行；其他位置按可见行偏移并收敛到末行。
+        let requested_line = if y < self.visual.layout.textarea_top_padding {
+            0
+        } else {
+            ((y - self.visual.layout.textarea_top_padding) / self.visual.typography.line_height)
+                as usize
         }
-        let line_idx = ((y - self.visual.layout.textarea_top_padding)
-            / self.visual.typography.line_height) as usize
-            + self.scroll_line.get();
-        let line_idx = line_idx.min(lines.len().saturating_sub(1));
+        .saturating_add(self.scroll_line.get());
+        let mut lines = LogicalLineCursor::new(&self.value);
+        let (line_idx, _line, line_start, _end) = lines.line_at_or_last(requested_line);
         // 取得现有逐行几何给出的原始字符位置。
-        let raw_index = self.x_to_char_on_line(line_idx, &lines, x);
+        let raw_index = self.x_to_char_on_line(line_idx, line_start, x);
         // 多行命中同样必须收敛到最近扩展字素簇边界。
         TextIndexMap::new(&self.value)
             // 归一原始字符位置。
@@ -642,12 +634,9 @@ impl Input {
     }
 
     /// 根据 x 坐标在该行内找字符索引
-    fn x_to_char_on_line(&self, line_idx: usize, lines: &[&str], x: f32) -> usize {
+    fn x_to_char_on_line(&self, line_idx: usize, line_offset: usize, x: f32) -> usize {
         // 借用逐行真实 shaping 字形簇。
         let line_glyphs = self.line_glyphs.borrow();
-        let prev: usize = lines[..line_idx].iter().map(|s| s.chars().count()).sum();
-        let newlines_before = line_idx; // each '\n' adds 1 char position
-        let line_offset = prev + newlines_before;
         if let Some(glyphs) = line_glyphs.get(line_idx) {
             // 空视觉行命中其逻辑行起点。
             if glyphs.is_empty() {
