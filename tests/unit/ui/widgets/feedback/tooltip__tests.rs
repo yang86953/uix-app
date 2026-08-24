@@ -1,9 +1,52 @@
 // 复用被测组件与位置枚举。
-use super::{Tooltip, TooltipPlacement};
+use super::{DEFAULT_TOOLTIP_VISUAL, Tooltip, TooltipPlacement, UIX_TOOLTIP_VISUAL};
 // 引入几何基础类型。
 use crate::core::Rect;
 // 引入共享解析器以核对登记与绘制几何同源。
-use crate::ui::widgets::tooltip_primitives::resolve_tooltip_geometry;
+use crate::ui::widgets::tooltip_primitives::{
+    resolve_tooltip_geometry, tooltip_bubble_rect, tooltip_bubble_rect_with_visual_and_size,
+    tooltip_bubble_size_with_visual,
+};
+
+// 验证 View 构建经过同目录 UIX，并保留调用方显式视觉覆写。
+#[test]
+fn view_build_uses_uix_visual_and_preserves_authored_values() {
+    let node = crate::ui::view::View::build(
+        Tooltip::new("提示")
+            .placement(TooltipPlacement::Bottom)
+            .arrow(false),
+    );
+    let tooltip = node
+        .widget
+        .as_any()
+        .downcast_ref::<Tooltip>()
+        .expect("UIX 根必须保留 Tooltip Rust 内核");
+    let declared = UIX_TOOLTIP_VISUAL
+        .get()
+        .expect("View 构建必须固化同目录 UIX 视觉");
+    assert!(std::ptr::eq(tooltip.visual, declared));
+    assert_eq!(tooltip.placement, TooltipPlacement::Bottom);
+    assert!(!tooltip.arrow);
+    assert_eq!(tooltip.visual.motion.enter_duration, 0.15);
+    assert_eq!(tooltip.visual.motion.exit_duration, 0.1);
+}
+
+// 验证 UIX 默认气泡参数与迁移前共享原语保持完全一致。
+#[test]
+fn uix_bubble_visual_preserves_shared_geometry() {
+    let frame = Rect::new(80.0, 40.0, 40.0, 20.0);
+    let surface = Rect::new(0.0, 0.0, 200.0, 120.0);
+    let legacy = tooltip_bubble_rect("tip", true, TooltipPlacement::Top, frame, surface);
+    let declared = tooltip_bubble_rect_with_visual_and_size(
+        true,
+        TooltipPlacement::Top,
+        frame,
+        surface,
+        tooltip_bubble_size_with_visual("tip", DEFAULT_TOOLTIP_VISUAL.bubble),
+        DEFAULT_TOOLTIP_VISUAL.bubble,
+    );
+    assert_eq!(declared, legacy);
+}
 
 // 靠近表面上边缘时，登记必须使用翻转后的受限气泡。
 #[test]
@@ -66,4 +109,9 @@ fn refresh_preserves_runtime_visibility() {
     assert!(current.is_visible());
     // 声明刷新应替换新的提示文字。
     assert_eq!(current.text, "新提示");
+    // 声明刷新必须同步新的自然尺寸，后续帧无需重新度量文字。
+    assert_eq!(
+        current.natural_bubble_size.get(),
+        tooltip_bubble_size_with_visual(&current.text, current.visual.bubble)
+    );
 }
