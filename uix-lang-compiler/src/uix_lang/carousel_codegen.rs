@@ -35,8 +35,8 @@ pub(crate) fn generate_carousel(element: &Element) -> Result<TokenStream, Diagno
 
     // 按源码顺序生成普通节点与 If/For 幻灯片。
     let children = generate_children(&element.children)?;
-    // 使用公开 ViewNode 让 Carousel 继续拥有 WidgetChildren 生命周期。
-    let view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
+    // 经公开桥接进入 Carousel 自己的同目录 UIX 根声明，并原样移交幻灯片子树。
+    let view = quote! { (#widget).build_view_with_children(#children) };
     // 消费 Carousel 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(view, &element.attributes, &["autoplay"])
     // 结束 Carousel 生成函数。

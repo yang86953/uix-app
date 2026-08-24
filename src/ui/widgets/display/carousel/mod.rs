@@ -10,6 +10,7 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 
 use crate::ui::children::WidgetChildren;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, Widget, WidgetId, WidgetTree,
 };
@@ -534,6 +535,18 @@ impl Default for Carousel {
     }
 }
 
+// 把轮播 Rust 内核与已有拥有型幻灯片子树融合为 UIX 声明的单一根节点。
+fn build_carousel_view(kernel: Carousel, children: Vec<ViewNode>) -> ViewNode {
+    ViewNode::new(kernel, children)
+}
+
+impl View for Carousel {
+    fn build(self) -> ViewNode {
+        // 空轮播同样经由组件自己的 UIX 根声明构建。
+        self.build_view_with_children(Vec::new())
+    }
+}
+
 impl Carousel {
     // 固定自定义箭头的树内根 key，并与动态状态命名空间保持完全一致。
     pub(crate) const CUSTOM_ARROWS_CHILD_KEY: &'static str = "uix:carousel:custom-arrows";
@@ -735,6 +748,14 @@ impl Carousel {
         self.runtime.child_count.get()
     }
 
+    /// 经由同目录 UIX 根声明构建轮播器及其拥有型幻灯片子树。
+    #[doc(hidden)]
+    pub fn build_view_with_children(self, children: Vec<ViewNode>) -> ViewNode {
+        // UIX 拥有公开根；Rust 内核继续独占计时器、选择、动画与绘制机制。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/carousel/carousel.uix")
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         next.runtime.copy_state_from(&self.runtime, next.effect);
         self.show_dots = next.show_dots;
@@ -798,6 +819,6 @@ impl Carousel {
 // 挂载 Carousel 自定义箭头的树级状态与生命周期行为门禁。
 #[cfg(test)]
 // 将大体量动态捕获测试拆到独立文件，保持产品组件低于规模上限。
-#[path = "../../../../tests/unit/ui/widgets/display/carousel_dynamic_capture_tests.rs"]
+#[path = "../../../../../tests/unit/ui/widgets/display/carousel_dynamic_capture_tests.rs"]
 // 仅在测试构建中编译自定义箭头 owner 回归用例。
 mod carousel_dynamic_capture_tests;
