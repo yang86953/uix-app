@@ -48,11 +48,15 @@ fn normalized_elision_preserves_fitting_and_truncated_text() {
         candidate.chars().count() as f32
     });
     assert_eq!(fitting.as_deref(), Some("甲 乙"));
+    // 完整容纳路径必须借用输入，不为每帧绘制分配 String。
+    assert!(matches!(fitting, Some(std::borrow::Cow::Borrowed(_))));
     // 已规范化超宽文本仍必须按 Unicode 标量安全截断。
     let truncated = elide_normalized_single_line_by("你🙂好", 2.0, |candidate| {
         candidate.chars().count() as f32
     });
     assert_eq!(truncated.as_deref(), Some("你…"));
+    // 只有真实截断时才需要拥有型结果缓冲。
+    assert!(matches!(truncated, Some(std::borrow::Cow::Owned(_))));
 }
 
 // 注册极窄宽度门禁测试。

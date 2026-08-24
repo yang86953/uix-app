@@ -1,6 +1,7 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 
@@ -1260,14 +1261,14 @@ impl Card {
     }
 }
 
-fn fitted_text(
+fn fitted_text<'a>(
     ctx: &mut PaintContext,
-    text: &str,
+    text: &'a str,
     base_size: f32,
     min_size: f32,
     max_width: f32,
     max_height: f32,
-) -> Option<(String, f32)> {
+) -> Option<(Cow<'a, str>, f32)> {
     if !base_size.is_finite()
         || base_size <= 0.0
         || !min_size.is_finite()
@@ -1279,7 +1280,11 @@ fn fitted_text(
     {
         return None;
     }
-    let visible = text.replace(['\r', '\n'], " ");
+    let visible = if text.contains(['\r', '\n']) {
+        Cow::Owned(text.replace(['\r', '\n'], " "))
+    } else {
+        Cow::Borrowed(text)
+    };
     let base_height = conservative_text_height(ctx, &visible, base_size);
     let height_scale = if base_height > 0.0 {
         (max_height / base_height).clamp(0.0, 1.0)
@@ -1296,7 +1301,19 @@ fn fitted_text(
         return None;
     };
     // 复用已规范化窄入口，避免对同一标题或操作文案再次替换并分配。
-    let visible = ctx.elide_normalized_single_line(&visible, font_size, max_width)?;
+    let visible = match visible {
+        Cow::Borrowed(value) => {
+            ctx.elide_normalized_single_line_cow(value, font_size, max_width)?
+        }
+        Cow::Owned(value) => {
+            match ctx.elide_normalized_single_line_cow(&value, font_size, max_width)? {
+                // 规范化字符串完整容纳时直接把其现有分配移入结果。
+                Cow::Borrowed(_) => Cow::Owned(value),
+                // 截断结果已经拥有唯一所需分配，丢弃较长的规范化缓冲。
+                Cow::Owned(truncated) => Cow::Owned(truncated),
+            }
+        }
+    };
     Some((visible, font_size))
 }
 
