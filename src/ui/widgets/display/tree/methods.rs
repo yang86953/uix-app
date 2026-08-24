@@ -7,32 +7,48 @@ use std::rc::Rc;
 
 use super::widget::FlatNode;
 use super::{
-    DropPosition, TREE_INDENT_WIDTH, TREE_MIN_TITLE_WIDTH, TREE_ROW_HEIGHT, TREE_SLOT_WIDTH, Tree,
-    TreeNode, TreePointerAction, TreeRowGeometry,
+    DEFAULT_TREE_VISUAL, DropPosition, Tree, TreeNode, TreePointerAction, TreeRowGeometry,
 };
 
 impl Tree {
     pub(crate) fn intrinsic_size(&self) -> Size {
-        let h = self.flat.len() as f32 * TREE_ROW_HEIGHT + self.search_height_for_intrinsic();
-        Size::new(200.0, h.max(TREE_ROW_HEIGHT))
+        let h = self.flat.len() as f32 * self.visual.geometry.row_height
+            + self.search_height_for_intrinsic();
+        Size::new(
+            self.visual.geometry.default_width,
+            h.max(self.visual.geometry.row_height),
+        )
     }
 
     pub(crate) fn body_viewport_height(&self) -> f32 {
         self.last_frame
             .get()
             .map(|f| (Self::normalized_frame(f).h - self.search_height_for_intrinsic()).max(0.0))
-            .unwrap_or_else(|| (300.0 - self.search_height_for_intrinsic()).max(0.0))
+            .unwrap_or_else(|| {
+                (self.visual.geometry.default_height - self.search_height_for_intrinsic()).max(0.0)
+            })
     }
 
     pub(crate) fn search_height_for_intrinsic(&self) -> f32 {
-        if self.searchable { 32.0 } else { 0.0 }
+        if self.searchable {
+            self.visual.geometry.search_height
+        } else {
+            0.0
+        }
     }
 
     pub(crate) fn local_frame(&self) -> Rect {
         self.last_frame
             .get()
             .map(|frame| Self::normalized_frame(Rect::new(0.0, 0.0, frame.w, frame.h)))
-            .unwrap_or_else(|| Rect::new(0.0, 0.0, 200.0, 300.0))
+            .unwrap_or_else(|| {
+                Rect::new(
+                    0.0,
+                    0.0,
+                    self.visual.geometry.default_width,
+                    self.visual.geometry.default_height,
+                )
+            })
     }
 
     pub(crate) fn action_at_point(&self, point: Point) -> Option<TreePointerAction> {
@@ -48,12 +64,13 @@ impl Tree {
         if content_y < 0.0 {
             return None;
         }
-        let index = (content_y / TREE_ROW_HEIGHT) as usize;
+        let row_height = self.visual.geometry.row_height;
+        let index = (content_y / row_height) as usize;
         let node = self.flat.get(index)?;
         if node.disabled {
             return None;
         }
-        let y = frame.y + self.search_height_for_intrinsic() + index as f32 * TREE_ROW_HEIGHT
+        let y = frame.y + self.search_height_for_intrinsic() + index as f32 * row_height
             - self.body_scroll.scroll_offset();
         let geometry = self.row_geometry(frame, index, y);
         if geometry.check.is_some_and(|rect| rect.contains(point)) {
@@ -72,13 +89,14 @@ impl Tree {
         let frame = self.local_frame();
         let content_y = point.y - frame.y - self.search_height_for_intrinsic()
             + self.body_scroll.scroll_offset();
-        let index = (content_y / TREE_ROW_HEIGHT).max(0.0) as usize;
-        let row_y = frame.y + self.search_height_for_intrinsic() + index as f32 * TREE_ROW_HEIGHT
+        let row_height = self.visual.geometry.row_height;
+        let index = (content_y / row_height).max(0.0) as usize;
+        let row_y = frame.y + self.search_height_for_intrinsic() + index as f32 * row_height
             - self.body_scroll.scroll_offset();
         let relative = point.y - row_y;
-        if relative < TREE_ROW_HEIGHT / 3.0 {
+        if relative < row_height * self.visual.chrome.drop_before_ratio {
             DropPosition::Before
-        } else if relative > TREE_ROW_HEIGHT * 2.0 / 3.0 {
+        } else if relative > row_height * self.visual.chrome.drop_after_ratio {
             DropPosition::After
         } else if frame.contains(point) {
             DropPosition::Inside
@@ -92,7 +110,7 @@ impl Tree {
         let body_top = frame.y + self.search_height_for_intrinsic();
         let body_bottom = body_top + self.body_viewport_height();
         let visible_top = y.max(body_top);
-        let visible_bottom = (y + TREE_ROW_HEIGHT).min(body_bottom);
+        let visible_bottom = (y + self.visual.geometry.row_height).min(body_bottom);
         let row = Rect::new(
             frame.x,
             visible_top,
@@ -102,12 +120,18 @@ impl Tree {
         let reserved_slots = usize::from(node.checkable)
             + usize::from(node.has_children)
             + usize::from(!node.icon.is_empty());
-        let max_indent =
-            (frame.w - reserved_slots as f32 * TREE_SLOT_WIDTH - TREE_MIN_TITLE_WIDTH).max(0.0);
-        let indent = (node.depth as f32 * TREE_INDENT_WIDTH).min(max_indent);
+        let max_indent = (frame.w
+            - reserved_slots as f32 * self.visual.geometry.slot_width
+            - self.visual.geometry.min_title_width)
+            .max(0.0);
+        let indent = (node.depth as f32 * self.visual.geometry.indent_width).min(max_indent);
         let mut cursor = frame.x + indent;
         let mut take_slot = || {
-            let width = TREE_SLOT_WIDTH.min((frame.x + frame.w - cursor).max(0.0));
+            let width = self
+                .visual
+                .geometry
+                .slot_width
+                .min((frame.x + frame.w - cursor).max(0.0));
             let slot = Rect::new(cursor, row.y, width, row.h);
             cursor += width;
             slot
@@ -151,6 +175,7 @@ impl Tree {
     }
 
     pub(crate) fn paint_single_line(
+        &self,
         ctx: &mut PaintContext,
         value: &str,
         frame: Rect,
@@ -161,11 +186,16 @@ impl Tree {
             return;
         }
         // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
+        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
             return;
         };
         ctx.push_clip(frame);
-        ctx.draw_text_in_frame(&value, frame, color, font_size.min(frame.h * 0.65));
+        ctx.draw_text_in_frame(
+            &value,
+            frame,
+            color,
+            font_size.min(frame.h * self.visual.chrome.title_height_ratio),
+        );
         ctx.pop_clip();
     }
 
@@ -201,6 +231,7 @@ impl Tree {
             scroll_delta_strip: Cell::new((0.0, 0.0)),
             layout_requested: Cell::new(false),
             last_frame: Cell::new(None),
+            visual: &DEFAULT_TREE_VISUAL,
         };
         tree.flatten();
         tree
@@ -407,25 +438,30 @@ impl Tree {
     }
 
     pub(crate) fn move_selection(&mut self, forward: bool) {
-        let enabled = self
-            .flat
-            .iter()
-            .enumerate()
-            .filter_map(|(index, node)| (!node.disabled).then_some(index))
-            .collect::<Vec<_>>();
-        if enabled.is_empty() {
-            return;
-        }
-        let current = enabled
-            .iter()
-            .position(|&index| self.flat[index].key == self.selected_key);
-        let position = match (current, forward) {
-            (Some(position), true) => (position + 1).min(enabled.len() - 1),
-            (Some(position), false) => position.saturating_sub(1),
-            (None, true) => 0,
-            (None, false) => enabled.len() - 1,
+        let current = self.current_visible_index();
+        let target = if forward {
+            current
+                .and_then(|index| {
+                    self.flat[index + 1..]
+                        .iter()
+                        .position(|node| !node.disabled)
+                        .map(|offset| index + 1 + offset)
+                        .or(Some(index))
+                })
+                .or_else(|| self.flat.iter().position(|node| !node.disabled))
+        } else {
+            current
+                .and_then(|index| {
+                    self.flat[..index]
+                        .iter()
+                        .rposition(|node| !node.disabled)
+                        .or(Some(index))
+                })
+                .or_else(|| self.flat.iter().rposition(|node| !node.disabled))
         };
-        self.focus_visible_index(enabled[position]);
+        if let Some(target) = target {
+            self.focus_visible_index(target);
+        }
     }
 
     pub(crate) fn focus_visible_index(&mut self, index: usize) {
@@ -531,7 +567,7 @@ impl Tree {
         }
         self.body_scroll.clamp_to_content(
             self.flat.len(),
-            TREE_ROW_HEIGHT,
+            self.visual.geometry.row_height,
             self.body_viewport_height(),
         );
     }
@@ -539,8 +575,9 @@ impl Tree {
     pub(crate) fn reveal_index(&mut self, index: usize) {
         let viewport_height = self.body_viewport_height();
         let old_offset = self.body_scroll.scroll_offset();
-        let row_top = index as f32 * TREE_ROW_HEIGHT;
-        let row_bottom = row_top + TREE_ROW_HEIGHT;
+        let row_height = self.visual.geometry.row_height;
+        let row_top = index as f32 * row_height;
+        let row_bottom = row_top + row_height;
         let new_offset = if row_top < old_offset {
             row_top
         } else if row_bottom > old_offset + viewport_height {
@@ -550,7 +587,7 @@ impl Tree {
         };
         self.body_scroll.set_scroll_offset(new_offset);
         self.body_scroll
-            .clamp_to_content(self.flat.len(), TREE_ROW_HEIGHT, viewport_height);
+            .clamp_to_content(self.flat.len(), row_height, viewport_height);
         let applied = self.body_scroll.scroll_offset() - old_offset;
         if applied.abs() > 0.01 {
             self.push_scroll_delta(0.0, applied);
@@ -586,7 +623,7 @@ impl Tree {
         self.flatten();
         self.body_scroll.clamp_to_content(
             self.flat.len(),
-            TREE_ROW_HEIGHT,
+            self.visual.geometry.row_height,
             self.body_viewport_height(),
         );
         self.layout_requested.set(true);
@@ -599,18 +636,9 @@ impl Tree {
         query: &str,
         flat: &mut Vec<FlatNode>,
     ) -> bool {
-        let matches = query.is_empty() || Self::node_matches(node, query);
-        let descendant_matches = !query.is_empty()
-            && node
-                .children
-                .iter()
-                .any(|child| Self::node_matches_descendant(child, query));
-        if !matches && !descendant_matches {
-            return false;
-        }
-
         let is_expanded = expanded_keys.contains(&node.key);
         let has_children = !node.children.is_empty() || node.lazy;
+        let branch_start = flat.len();
         flat.push(FlatNode {
             title: node.title.clone(),
             key: node.key.clone(),
@@ -623,25 +651,28 @@ impl Tree {
             checked: node.checked,
         });
 
-        let show_children = if query.is_empty() {
-            is_expanded
-        } else {
-            matches || descendant_matches
-        };
-        if show_children {
-            for child in &node.children {
-                Self::flatten_node_filtered(child, depth + 1, expanded_keys, query, flat);
+        if query.is_empty() {
+            if is_expanded {
+                for child in &node.children {
+                    Self::flatten_node_filtered(child, depth + 1, expanded_keys, query, flat);
+                }
             }
+            return true;
         }
-        true
-    }
 
-    pub(crate) fn node_matches_descendant(node: &TreeNode, query: &str) -> bool {
-        Self::node_matches(node, query)
-            || node
-                .children
-                .iter()
-                .any(|child| Self::node_matches_descendant(child, query))
+        let matches = Self::node_matches(node, query);
+        let mut descendant_matches = false;
+        for child in &node.children {
+            descendant_matches |=
+                Self::flatten_node_filtered(child, depth + 1, expanded_keys, query, flat);
+        }
+        if matches || descendant_matches {
+            true
+        } else {
+            // 当前分支没有任何命中时原位撤销节点与全部无效后代。
+            flat.truncate(branch_start);
+            false
+        }
     }
 
     pub(crate) fn node_matches(node: &TreeNode, query: &str) -> bool {
@@ -652,9 +683,29 @@ impl Tree {
         }
     }
 
+    // 测试目标观察 UIX 声明的关键视觉契约，不扩大公开 API。
+    #[cfg(test)]
+    pub(crate) fn visual_contract_for_test(&self) -> (f32, f32, f32, f32, f32, f32) {
+        (
+            self.visual.geometry.default_width,
+            self.visual.geometry.default_height,
+            self.visual.geometry.row_height,
+            self.visual.geometry.search_height,
+            self.visual.geometry.slot_width,
+            self.visual.chrome.title_font_size,
+        )
+    }
+
+    // 测试目标确认实例共享同一份 UIX 视觉表。
+    #[cfg(test)]
+    pub(crate) fn shares_visual_with_for_test(&self, other: &Self) -> bool {
+        std::ptr::eq(self.visual, other.visual)
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         let old_flat_len = self.flat.len();
         let old_searchable = self.searchable;
+        self.visual = next.visual;
         let mut nodes = next.nodes;
         Self::preserve_checked_state(&self.nodes, &mut nodes);
         self.nodes = nodes;
@@ -685,7 +736,7 @@ impl Tree {
         }
         self.body_scroll.clamp_to_content(
             self.flat.len(),
-            TREE_ROW_HEIGHT,
+            self.visual.geometry.row_height,
             self.body_viewport_height(),
         );
     }

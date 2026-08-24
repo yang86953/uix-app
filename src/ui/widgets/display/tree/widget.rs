@@ -8,10 +8,7 @@ use crate::widget;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use super::{DropPosition, TreeNode, TreePointerAction};
-
-/// 树组件行高（px），用于虚拟滚动与布局计算。
-pub(crate) const TREE_ROW_HEIGHT: f32 = 28.0;
+use super::{DropPosition, TreeNode, TreePointerAction, TreeVisual};
 
 /// 树节点的扁平化行数据：标题、键、图标、层级深度与交互状态。
 pub(crate) struct FlatNode {
@@ -50,6 +47,9 @@ widget! {
         pub(crate) scroll_delta_strip: Cell<(f32, f32)>,
         pub(crate) layout_requested: Cell<bool>,
         pub(crate) last_frame: Cell<Option<Rect>>,
+        // 全部实例共享 UIX 声明固化后的只读视觉配置。
+        #[snapshot(skip)]
+        pub(crate) visual: &'static TreeVisual,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -61,9 +61,20 @@ widget! {
     text_input_cursor_rect => (&self) -> Rect {
         let frame = self.local_frame();
         // 估算文本宽度并限制在框内。
-        let width = (self.search_query.chars().count() as f32 * 8.0 + 8.0)
-            .clamp(8.0, (frame.w - 16.0).max(8.0));
-        Rect::new(frame.x + 8.0 + width, frame.y + 6.0, 1.0, 20.0)
+        let chrome = self.visual.chrome;
+        let width = (self.search_query.chars().count() as f32 * chrome.search_cursor_char_width
+            + chrome.search_cursor_base_width)
+            .clamp(
+                chrome.search_cursor_base_width,
+                (frame.w - chrome.search_horizontal_padding * 2.0)
+                    .max(chrome.search_cursor_base_width),
+            );
+        Rect::new(
+            frame.x + chrome.search_horizontal_padding + width,
+            frame.y + chrome.search_cursor_y,
+            chrome.search_cursor_width,
+            chrome.search_cursor_height,
+        )
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -107,7 +118,7 @@ widget! {
                 let dy = self.body_scroll.scroll_by_wheel(
                     delta.y,
                     self.flat.len(),
-                    TREE_ROW_HEIGHT,
+                    self.visual.geometry.row_height,
                     viewport_h,
                 );
                 // 实际滚动发生才上报脏区。
@@ -263,31 +274,42 @@ widget! {
             return;
         }
         self.last_frame.set(Some(frame));
-        let primary = ctx.tokens().color_primary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        let fill = ctx.tokens().color_fill_tertiary();
-        let hover_fill = ctx.tokens().color_fill_tertiary();
-        let pressed_fill = ctx.tokens().color_fill_secondary();
+        let resolved = self.visual.resolve(ctx.tokens());
+        let chrome = self.visual.chrome;
+        let row_height = self.visual.geometry.row_height;
 
         let search_h = self.search_height_for_intrinsic();
         // 绘制顶部搜索栏（框线 + 提示词或查询词）。
         if self.searchable {
             let search_rect = Rect::new(frame.x, frame.y, frame.w, search_h);
-            ctx.fill_rect(search_rect, ctx.tokens().color_bg_container(), None);
-            ctx.stroke_rect(search_rect, ctx.tokens().color_border_secondary(), 1.0, None);
+            ctx.fill_rect(search_rect, resolved.search_background, None);
+            ctx.stroke_rect(
+                search_rect,
+                resolved.search_border,
+                chrome.search_stroke_width,
+                None,
+            );
             let query = if self.search_query.is_empty() {
-                "搜索"
+                chrome.search_placeholder
             } else {
                 &self.search_query
             };
-            let query_color = if self.search_query.is_empty() { text_sec } else { text };
-            Self::paint_single_line(
+            let query_color = if self.search_query.is_empty() {
+                resolved.text_secondary
+            } else {
+                resolved.text
+            };
+            self.paint_single_line(
                 ctx,
                 query,
-                Rect::new(frame.x + 8.0, frame.y, (frame.w - 16.0).max(0.0), search_h),
+                Rect::new(
+                    frame.x + chrome.search_horizontal_padding,
+                    frame.y,
+                    (frame.w - chrome.search_horizontal_padding * 2.0).max(0.0),
+                    search_h,
+                ),
                 query_color,
-                13.0,
+                chrome.search_font_size,
             );
         }
 
@@ -295,15 +317,15 @@ widget! {
         // 按虚拟滚动范围仅绘制可见行。
         let (start, end) = self
             .body_scroll
-            .scroll_range(self.flat.len(), TREE_ROW_HEIGHT, viewport_h);
+            .scroll_range(self.flat.len(), row_height, viewport_h);
         ctx.push_clip(frame);
 
         for i in start..end {
             let node = &self.flat[i];
-            let y = frame.y + search_h + i as f32 * TREE_ROW_HEIGHT
+            let y = frame.y + search_h + i as f32 * row_height
                 - self.body_scroll.scroll_offset();
             // 剔除视口外行。
-            if y + TREE_ROW_HEIGHT < frame.y + search_h
+            if y + row_height < frame.y + search_h
                 || y > frame.y + search_h + viewport_h
             {
                 continue;
@@ -319,21 +341,21 @@ widget! {
 
             // 选中/悬浮/按压行背景。
             if is_selected {
-                ctx.fill_rect(geometry.row, fill, None);
+                ctx.fill_rect(geometry.row, resolved.selected_fill, None);
             }
             if self
                 .hovered_action
                 .as_ref()
                 .is_some_and(action_matches_key)
             {
-                ctx.fill_rect(geometry.row, hover_fill, None);
+                ctx.fill_rect(geometry.row, resolved.hover_fill, None);
             }
             if self
                 .pressed_action
                 .as_ref()
                 .is_some_and(action_matches_key)
             {
-                ctx.fill_rect(geometry.row, pressed_fill, None);
+                ctx.fill_rect(geometry.row, resolved.pressed_fill, None);
             }
 
             // 多选模式下绘制当前行焦点框。
@@ -342,7 +364,10 @@ widget! {
                 && self.multiple
                 && node.key == self.selected_key
             {
-                let inset = 0.5_f32.min(geometry.row.w * 0.5).min(geometry.row.h * 0.5);
+                let inset = chrome
+                    .row_focus_inset
+                    .min(geometry.row.w * chrome.center_ratio)
+                    .min(geometry.row.h * chrome.center_ratio);
                 let focus = Rect::new(
                     geometry.row.x + inset,
                     geometry.row.y + inset,
@@ -350,7 +375,7 @@ widget! {
                     (geometry.row.h - inset * 2.0).max(0.0),
                 );
                 if focus.w > 0.0 && focus.h > 0.0 {
-                    ctx.stroke_rect(focus, primary, 1.0, None);
+                    ctx.stroke_rect(focus, resolved.primary, chrome.row_focus_stroke, None);
                 }
             }
 
@@ -359,13 +384,19 @@ widget! {
                 crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
                     if node.checked {
-                        "check-square"
+                        chrome.checked_icon
                     } else {
-                        "square"
+                        chrome.unchecked_icon
                     },
                     check,
-                    if node.checked { primary } else { text_sec },
-                    13.0_f32.min(check.h * 0.65),
+                    if node.checked {
+                        resolved.primary
+                    } else {
+                        resolved.text_secondary
+                    },
+                    chrome
+                        .check_icon_size
+                        .min(check.h * chrome.check_icon_height_ratio),
                 );
             }
 
@@ -373,10 +404,16 @@ widget! {
             if let Some(toggle) = geometry.toggle {
                 crate::ui::widgets::Icon::paint_in_frame(
                     ctx,
-                    if node.expanded { "chevron-down" } else { "chevron-right" },
+                    if node.expanded {
+                        chrome.expanded_icon
+                    } else {
+                        chrome.collapsed_icon
+                    },
                     toggle,
-                    text_sec,
-                    12.0_f32.min(toggle.h * 0.6),
+                    resolved.text_secondary,
+                    chrome
+                        .branch_icon_size
+                        .min(toggle.h * chrome.branch_icon_height_ratio),
                 );
             }
 
@@ -386,26 +423,37 @@ widget! {
                     ctx,
                     &node.icon,
                     icon,
-                    text_sec,
-                    12.0_f32.min(icon.h * 0.6),
+                    resolved.text_secondary,
+                    chrome
+                        .node_icon_size
+                        .min(icon.h * chrome.node_icon_height_ratio),
                 );
             }
 
             // 标题颜色：禁用置灰，选中用主题色。
             let tc = if node.disabled {
-                text_sec
+                resolved.text_secondary
             } else if is_selected {
-                primary
+                resolved.primary
             } else {
-                text
+                resolved.text
             };
-            Self::paint_single_line(ctx, &node.title, geometry.title, tc, 13.0);
+            self.paint_single_line(
+                ctx,
+                &node.title,
+                geometry.title,
+                tc,
+                chrome.title_font_size,
+            );
         }
 
         ctx.pop_clip();
         // 组件整体焦点框。
         if self.focused && tree.keyboard_focus_visible() {
-            let inset = 0.75_f32.min(frame.w * 0.5).min(frame.h * 0.5);
+            let inset = chrome
+                .focus_inset
+                .min(frame.w * chrome.center_ratio)
+                .min(frame.h * chrome.center_ratio);
             let focus = Rect::new(
                 frame.x + inset,
                 frame.y + inset,
@@ -413,7 +461,7 @@ widget! {
                 (frame.h - inset * 2.0).max(0.0),
             );
             if focus.w > 0.0 && focus.h > 0.0 {
-                ctx.stroke_rect(focus, primary, 1.5, None);
+                ctx.stroke_rect(focus, resolved.primary, chrome.focus_stroke, None);
             }
         }
     }
