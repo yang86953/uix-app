@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::core::{Constraints, Rect, Size};
-use std::collections::HashSet;
+use crate::ui::{LayoutChild, LayoutEngineScratch};
+use std::collections::{HashMap, HashSet};
 
 fn frame_constraints(frame: Rect) -> Constraints {
     Constraints::loose(Size::new(frame.w, frame.h))
@@ -28,6 +29,17 @@ pub(crate) struct LayoutFrameDamage {
     pub(crate) prepainted: HashSet<WidgetId>,
 }
 
+/// 布局协调器跨容器复用的测量、定位与求解工作区。
+#[derive(Default)]
+pub(crate) struct LayoutArrangeScratch {
+    pub(crate) visible_children: Vec<WidgetId>,
+    pub(crate) measured: Vec<LayoutChild>,
+    pub(crate) in_flow: Vec<LayoutChild>,
+    pub(crate) out_of_flow: Vec<WidgetId>,
+    pub(crate) positions: Vec<(WidgetId, Rect)>,
+    pub(crate) engine: LayoutEngineScratch,
+}
+
 #[derive(Default)]
 pub(crate) struct LayoutFrameScratch {
     order: Vec<WidgetId>,
@@ -40,6 +52,8 @@ pub(crate) struct LayoutFrameScratch {
     shrink_ops: Vec<ShrinkOp>,
     shrink_children: Vec<WidgetId>,
     shrink_parent_children: Vec<WidgetId>,
+    arrange: LayoutArrangeScratch,
+    subtree_bottoms: HashMap<WidgetId, (f32, f32)>,
     layout_damage: LayoutFrameDamage,
     effective_visible: HashSet<WidgetId>,
 }

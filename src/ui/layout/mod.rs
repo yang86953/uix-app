@@ -14,7 +14,9 @@ pub(crate) mod flex;
 pub(crate) mod grid;
 
 // 重新导出统一布局引擎的核心类型
-pub use engine::{BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutOutput};
+pub use engine::{
+    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutEngineScratch, LayoutOutput,
+};
 
 // ── 枚举类型（布局引擎共用）──
 
@@ -136,6 +138,14 @@ impl Default for FlexInput<'_> {
 pub(crate) struct FlexOutput {
     pub child_rects: Vec<Rect>,
     pub total_size: Size,
+}
+
+/// 同一布局帧内复用的 Flex 求解工作区。
+#[derive(Default)]
+pub(crate) struct FlexComputeScratch {
+    pub(crate) base_main_sizes: Vec<f32>,
+    pub(crate) cross_sizes: Vec<f32>,
+    pub(crate) child_rects: Vec<Rect>,
 }
 
 // ── Grid 内部类型 ──

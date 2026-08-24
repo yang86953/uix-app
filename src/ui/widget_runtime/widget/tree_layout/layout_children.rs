@@ -2,7 +2,7 @@ use super::super::super::*;
 use super::super::WidgetTree;
 use crate::core::Rect;
 
-use super::{ShrinkOp, frame_constraints};
+use super::{frame_constraints, ShrinkOp};
 
 impl WidgetTree {
     /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。
@@ -12,15 +12,18 @@ impl WidgetTree {
         frame: Rect,
         children: &[WidgetId],
         expanded: &std::collections::HashSet<WidgetId>,
-    ) -> Vec<(WidgetId, Rect)> {
+        scratch: &mut super::LayoutArrangeScratch,
+    ) {
         let Some(node) = self.get(id) else {
-            return Vec::new();
+            scratch.positions.clear();
+            return;
         };
         let Some(layout) = node.widget().as_layout() else {
-            return Vec::new();
+            scratch.positions.clear();
+            return;
         };
-        let mut measured = layout.measure_children(frame, children, self);
-        for child in &mut measured {
+        layout.measure_children_into(frame, children, self, &mut scratch.measured);
+        for child in &mut scratch.measured {
             if !expanded.contains(&child.id) {
                 continue;
             }
@@ -29,12 +32,24 @@ impl WidgetTree {
                 child.measured_size.h = child.measured_size.h.max(cf.h);
             }
         }
-        self.arrange_positioned_children(layout, frame, measured)
+        self.arrange_positioned_children_into(
+            layout,
+            frame,
+            &mut scratch.measured,
+            &mut scratch.in_flow,
+            &mut scratch.out_of_flow,
+            &mut scratch.engine,
+            &mut scratch.positions,
+        );
     }
 
     /// 更新所有 viewport 容器的 content_bounds。
     /// 只触发 content_bounds 副作用，不移动子节点位置。
-    pub(crate) fn layout_viewports(&mut self, order: &[WidgetId]) {
+    pub(crate) fn layout_viewports(
+        &mut self,
+        order: &[WidgetId],
+        scratch: &mut super::LayoutArrangeScratch,
+    ) {
         for &id in order {
             if !self.is_effectively_visible(id) {
                 continue;
@@ -58,7 +73,7 @@ impl WidgetTree {
                     children.len(),
                 );
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
-                let _ = node.layout_children(frame, children, self);
+                node.layout_children_into(frame, children, self, scratch);
             }
         }
     }
@@ -113,18 +128,23 @@ impl WidgetTree {
 
     /// 父级当前会分配给 `id` 的 frame（Phase 1 槽位）。
     /// Phase 4 不得收缩到该高度以下，否则 Stretch/flex 分配会被下一轮 Phase 1 拉回，形成 thrashing。
-    pub(crate) fn parent_allocated_frame(&self, id: WidgetId) -> Option<Rect> {
+    pub(crate) fn parent_allocated_frame(
+        &self,
+        id: WidgetId,
+        scratch: &mut super::LayoutArrangeScratch,
+    ) -> Option<Rect> {
         let parent_id = self.get(id).and_then(|n| n.parent())?;
         let parent_frame = self.get(parent_id)?.frame();
         let children = self.get(parent_id)?.children();
         if children.is_empty() {
             return None;
         }
-        let positions = self
-            .get(parent_id)?
-            .layout_children(parent_frame, children, self);
-        positions
-            .into_iter()
+        self.get(parent_id)?
+            .layout_children_into(parent_frame, children, self, scratch);
+        scratch
+            .positions
+            .iter()
+            .copied()
             .find(|(cid, _)| *cid == id)
             .map(|(_, rect)| rect)
     }
@@ -177,11 +197,12 @@ impl WidgetTree {
         ops: &mut Vec<ShrinkOp>,
         children: &mut Vec<WidgetId>,
         parent_children: &mut Vec<WidgetId>,
+        arrange: &mut super::LayoutArrangeScratch,
+        subtree_bottoms: &mut std::collections::HashMap<WidgetId, (f32, f32)>,
         layout_damage: &mut super::LayoutFrameDamage,
         effective_visible: &std::collections::HashSet<WidgetId>,
     ) -> bool {
         let mut any_changed = false;
-        let mut subtree_bottoms = std::collections::HashMap::with_capacity(order.len());
         for _pass in 0..3 {
             let mut pass_changed = false;
             // 反向遍历中每条父子边只汇总一次，避免每个祖先重复扫描全部后代。
@@ -219,13 +240,14 @@ impl WidgetTree {
                 let Some(frame) = self.get(id).map(|n| n.frame()) else {
                     continue;
                 };
-                let positions: Vec<(WidgetId, Rect)> = {
+                {
                     let Some(node) = self.get(id) else {
                         continue;
                     };
-                    node.layout_children(frame, children, self)
-                };
-                for (child_id, rect) in positions {
+                    node.layout_children_into(frame, children, self, arrange);
+                }
+                for position_index in 0..arrange.positions.len() {
+                    let (child_id, rect) = arrange.positions[position_index];
                     if self.set_layout_frame(child_id, rect, layout_damage) {
                         pass_changed = true;
                     }
@@ -256,11 +278,8 @@ impl WidgetTree {
                 let scrolls_vertically = self
                     .nearest_viewport_overflow_axes(id)
                     .is_some_and(|(_, vertical)| vertical);
-                let subtree_bottom = self.record_normal_flow_subtree_bottom(
-                    id,
-                    effective_visible,
-                    &mut subtree_bottoms,
-                );
+                let subtree_bottom =
+                    self.record_normal_flow_subtree_bottom(id, effective_visible, subtree_bottoms);
                 let (_, explicit_height) = self.phase2_explicit_size_locks(id);
                 if scrolls_vertically && explicit_height {
                     continue;
@@ -293,7 +312,9 @@ impl WidgetTree {
                 let parent_floor_h = if scrolls_vertically {
                     0.0
                 } else {
-                    self.parent_allocated_frame(id).map(|r| r.h).unwrap_or(0.0)
+                    self.parent_allocated_frame(id, arrange)
+                        .map(|r| r.h)
+                        .unwrap_or(0.0)
                 };
                 let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
@@ -334,11 +355,13 @@ impl WidgetTree {
                     }
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
                     // 收缩后重新布局子节点
-                    let new_positions = self
-                        .get(op.id)
-                        .map(|n| n.layout_children(new_frame, children, self))
-                        .unwrap_or_default();
-                    for (child_id, rect) in new_positions {
+                    if let Some(node) = self.get(op.id) {
+                        node.layout_children_into(new_frame, children, self, arrange);
+                    } else {
+                        arrange.positions.clear();
+                    }
+                    for position_index in 0..arrange.positions.len() {
+                        let (child_id, rect) = arrange.positions[position_index];
                         let _ = self.set_layout_frame(child_id, rect, layout_damage);
                     }
                     // 重新布局父容器，让兄弟组件靠拢
@@ -349,11 +372,18 @@ impl WidgetTree {
                             parent_children.extend_from_slice(parent.children());
                         }
                         if !parent_children.is_empty() {
-                            let parent_positions = self
-                                .get(pid)
-                                .map(|n| n.layout_children(parent_frame, parent_children, self))
-                                .unwrap_or_default();
-                            for (child_id, rect) in parent_positions {
+                            if let Some(parent) = self.get(pid) {
+                                parent.layout_children_into(
+                                    parent_frame,
+                                    parent_children,
+                                    self,
+                                    arrange,
+                                );
+                            } else {
+                                arrange.positions.clear();
+                            }
+                            for position_index in 0..arrange.positions.len() {
+                                let (child_id, rect) = arrange.positions[position_index];
                                 let _ = self.set_layout_frame(child_id, rect, layout_damage);
                             }
                         }

@@ -74,6 +74,7 @@ mod execution_state;
 mod execution;
 #[path = "../tree_layout/mod.rs"]
 mod tree_layout;
+pub(crate) use tree_layout::LayoutArrangeScratch;
 
 /// 拥有组件节点、布局、交互、渲染处理器及事务状态的运行时树。
 pub struct WidgetTree {

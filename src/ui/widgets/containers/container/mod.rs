@@ -11,7 +11,6 @@ use crate::widget;
 // 导入共享布局入口与内容外尺寸计算。
 use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild, content_size_from_children};
 
-use crate::ui::layout::LayoutEngine;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::theme::style::{
     BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken, apply_style,
@@ -163,111 +162,39 @@ widget! {
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        let s = &self.style;
-        let content_rect = BoxModel {
-            margin: s.margin,
-            border_width: s.border_width,
-            padding: s.padding,
-        }
-        .content_rect(frame);
-        let child_constraints = self.child_measure_constraints(content_rect);
+        let mut output = Vec::with_capacity(children.len());
+        self.measure_children_reusing(frame, children, tree, &mut output);
+        output
+    }
 
-        children
-            .iter()
-            .copied()
-            .filter(|&cid| {
-                let visible = tree.get(cid).map(|node| node.visible()).unwrap_or(true);
-                if !visible {
-                    tracing::debug!(
-                        "[Container::measure_children] child {} is invisible, skipping",
-                        cid
-                    );
-                }
-                visible
-            })
-            .map(|cid| child_from_tree_with_constraints(cid, tree, child_constraints))
-            .collect()
+    measure_children_into => (
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>
+    ) {
+        self.measure_children_reusing(frame, children, tree, output);
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        // 直接调用空子布局时也清除缓存，保持组件布局契约自洽。
-        if children.is_empty() {
-            // 空集合没有可作为测量下限的内容范围。
-            self.cached_content_size.set(Size::zero());
-            // 空布局不产生任何子节点位置。
-            return Vec::new();
-        }
+        let mut scratch = crate::ui::LayoutEngineScratch::default();
+        let mut output = Vec::with_capacity(children.len());
+        self.layout_children_reusing(frame, children, &mut scratch, &mut output);
+        output
+    }
 
-        let s = &self.style;
-
-        // 统一的盒模型计算
-        let box_model = BoxModel {
-            margin: s.margin,
-            border_width: s.border_width,
-            padding: s.padding,
-        };
-        let content_rect = box_model.content_rect(frame);
-        // 允许 0 尺寸 content_rect：首帧 / 未设高的 Row·Column 需走 Flex
-        // bootstrap（intrinsic_main）才能用子项撑开并写入 cached_content_size（#165）。
-        // 若此处直接 return，子节点 frame 会停在 (0,0)，表现为文字重叠。
-
-        // size(_, 0) 的 0 视为「主轴不指定」：让 FlexLayout 用子项撑开，
-        // 否则 Container measured_size 卡在父级分配的视口高，ScrollView 永远 max_scroll=0。
-        let main_axis_indefinite = matches!(
-            s.flex_direction,
-            crate::ui::theme::style::FlexDirection::Column
-                | crate::ui::theme::style::FlexDirection::ColumnReverse
-        ) && s.height.is_none_or(|h| h <= 0.0)
-            || matches!(
-                s.flex_direction,
-                crate::ui::theme::style::FlexDirection::Row | crate::ui::theme::style::FlexDirection::RowReverse
-            ) && s.width.is_none_or(|w| w <= 0.0);
-        // 只有父级尚未分配有效交叉轴的 bootstrap frame 才由子项自然尺寸撑开。
-        // 一旦 frame 已确定，就必须允许 Stretch 随窗口收缩；不能因 style 未写
-        // width/height 而继续使用最大化阶段缓存的自然尺寸。
-        let cross_axis_indefinite = if matches!(
-            s.flex_direction,
-            crate::ui::theme::style::FlexDirection::Row
-                | crate::ui::theme::style::FlexDirection::RowReverse
-        ) {
-            content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold
-        } else {
-            content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
-        };
-
-        // 委托给统一的 FlexLayout 布局引擎
-        let engine = FlexLayout {
-            direction: convert_flex_direction(s.flex_direction),
-            gap: s.gap,
-            justify: convert_justify(s.justify_content),
-            align: convert_align(s.align_items),
-            wrap: s.flex_wrap,
-            overflow_content: s.overflow_content,
-            intrinsic_main: main_axis_indefinite,
-            // 已分配 frame 是交叉轴的当前真相；仅 bootstrap 保留固有尺寸。
-            intrinsic_cross: cross_axis_indefinite,
-        };
-        // 与 Space 对齐：禁止子项 flex-shrink。定高 Card 若压缩 Label/wrap，
-        // Phase 1 写回矮 frame，与 Phase 2 扩展振荡（106↔121）。
-        let mut children_no_shrink = children.to_vec();
-        for child in &mut children_no_shrink {
-            child.flex_shrink = self.visual.layout.child_flex_shrink;
-        }
-        let output = engine.layout(content_rect, &children_no_shrink);
-
-        // 缓存子布局实际可见末端与正尾侧 margin，供下一轮固有测量撑开。
-        let content_size =
-            content_size_from_children(content_rect, &output.positions, &children_no_shrink);
-        // 写入不依赖求解器父级总尺寸的真实子内容范围。
-        self.cached_content_size.set(content_size);
-
-        children
-            .iter()
-            .zip(output.positions)
-            .map(|(child, rect)| (child.id, rect))
-            .collect()
+    layout_children_into => (
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        _tree: &WidgetTree,
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>
+    ) {
+        self.layout_children_reusing(frame, children, scratch, output);
     }
 }
 
@@ -343,6 +270,114 @@ impl Container {
             cached_content_size: Cell::new(Size::zero()),
             visual: CONTAINER_VISUAL_REF,
         }
+    }
+
+    // 统一拥有型与树级复用入口，避免两套测量语义随优化演进而分叉。
+    fn measure_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+        output: &mut Vec<LayoutChild>,
+    ) {
+        let content_rect = BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
+        .content_rect(frame);
+        let child_constraints = self.child_measure_constraints(content_rect);
+        output.clear();
+        output.extend(children.iter().copied().filter_map(|child_id| {
+            let visible = tree
+                .get(child_id)
+                .map(|node| node.visible())
+                .unwrap_or(true);
+            if !visible {
+                tracing::debug!(
+                    "[Container::measure_children] child {} is invisible, skipping",
+                    child_id
+                );
+            }
+            visible.then(|| child_from_tree_with_constraints(child_id, tree, child_constraints))
+        }));
+    }
+
+    // 统一拥有型与树级复用入口；工作区由调用树独占，组件只借用一次求解。
+    fn layout_children_reusing(
+        &self,
+        frame: Rect,
+        children: &[LayoutChild],
+        scratch: &mut crate::ui::LayoutEngineScratch,
+        output: &mut Vec<(WidgetId, Rect)>,
+    ) {
+        output.clear();
+        if children.is_empty() {
+            self.cached_content_size.set(Size::zero());
+            return;
+        }
+
+        let style = &self.style;
+        let content_rect = BoxModel {
+            margin: style.margin,
+            border_width: style.border_width,
+            padding: style.padding,
+        }
+        .content_rect(frame);
+        // 零主轴是首次固有尺寸 bootstrap，不得提前返回，否则子节点会堆叠在原点。
+        let main_axis_indefinite = matches!(
+            style.flex_direction,
+            crate::ui::theme::style::FlexDirection::Column
+                | crate::ui::theme::style::FlexDirection::ColumnReverse
+        ) && style.height.is_none_or(|height| height <= 0.0)
+            || matches!(
+                style.flex_direction,
+                crate::ui::theme::style::FlexDirection::Row
+                    | crate::ui::theme::style::FlexDirection::RowReverse
+            ) && style.width.is_none_or(|width| width <= 0.0);
+        let cross_axis_indefinite = if matches!(
+            style.flex_direction,
+            crate::ui::theme::style::FlexDirection::Row
+                | crate::ui::theme::style::FlexDirection::RowReverse
+        ) {
+            content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold
+        } else {
+            content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
+        };
+        let engine = FlexLayout {
+            direction: convert_flex_direction(style.flex_direction),
+            gap: style.gap,
+            justify: convert_justify(style.justify_content),
+            align: convert_align(style.align_items),
+            wrap: style.flex_wrap,
+            overflow_content: style.overflow_content,
+            intrinsic_main: main_axis_indefinite,
+            intrinsic_cross: cross_axis_indefinite,
+        };
+
+        // 临时取出输入数组，避免同时借用工作区与其中的 Flex 求解缓冲。
+        let mut layout_children = std::mem::take(&mut scratch.layout_children);
+        layout_children.clear();
+        layout_children.extend_from_slice(children);
+        for child in &mut layout_children {
+            child.flex_shrink = self.visual.layout.child_flex_shrink;
+        }
+        let _total_size = engine.layout_into(content_rect, &layout_children, scratch);
+        let positions = &scratch.flex.child_rects;
+        self.cached_content_size.set(content_size_from_children(
+            content_rect,
+            positions,
+            &layout_children,
+        ));
+        output.reserve(children.len());
+        output.extend(
+            children
+                .iter()
+                .zip(positions)
+                .map(|(child, rect)| (child.id, *rect)),
+        );
+        layout_children.clear();
+        scratch.layout_children = layout_children;
     }
 
     // ═══════════════════════════════════════════════════

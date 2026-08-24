@@ -16,6 +16,20 @@ use sizing::normalized_axis_bounds;
 /// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
 /// and multi-line wrapping.
 pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
+    // 兼容独立求解调用方：临时工作区的所有权随返回结果移交。
+    let mut scratch = FlexComputeScratch::default();
+    let total_size = compute_flex_layout_into(input, &mut scratch);
+    FlexOutput {
+        child_rects: std::mem::take(&mut scratch.child_rects),
+        total_size,
+    }
+}
+
+/// 把 Flex 结果写入调用方持有的工作区，供真实布局帧跨容器复用。
+pub(crate) fn compute_flex_layout_into(
+    input: &FlexInput<'_>,
+    scratch: &mut FlexComputeScratch,
+) -> Size {
     let inner = Rect {
         x: input.container.x + input.padding.left,
         y: input.container.y + input.padding.top,
@@ -25,10 +39,8 @@ pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
 
     let count = input.children.len();
     if count == 0 {
-        return FlexOutput {
-            child_rects: Vec::new(),
-            total_size: Size::new(inner.w, inner.h),
-        };
+        scratch.child_rects.clear();
+        return Size::new(inner.w, inner.h);
     }
 
     let is_row = matches!(
@@ -48,12 +60,19 @@ pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     let intrinsic_main = input.intrinsic_main;
 
     // Phase 1: determine flex basis and cross sizes
-    let mut base_main_sizes = vec![0.0f32; count];
-    let mut cross_sizes = vec![0.0f32; count];
+    scratch.base_main_sizes.clear();
+    scratch.base_main_sizes.resize(count, 0.0);
+    scratch.cross_sizes.clear();
+    scratch.cross_sizes.resize(count, 0.0);
+    let FlexComputeScratch {
+        base_main_sizes,
+        cross_sizes,
+        child_rects,
+    } = scratch;
 
     for ((base_main, cross), child) in base_main_sizes
         .iter_mut()
-        .zip(&mut cross_sizes)
+        .zip(cross_sizes.iter_mut())
         .zip(input.children)
     {
         let basis = match child.flex_basis {
@@ -66,24 +85,21 @@ pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
     }
 
     // 在分行和弹性分配前落实每个子项的主轴与交叉轴上下限。
-    clamp_sizes(
-        &mut base_main_sizes,
-        &mut cross_sizes,
-        input.children,
-        is_row,
-    );
+    clamp_sizes(base_main_sizes, cross_sizes, input.children, is_row);
 
     if input.wrap {
-        compute_wrapped(
+        let output = compute_wrapped(
             input,
             &inner,
             is_row,
             is_reverse,
             container_main,
             container_cross,
-            &mut base_main_sizes,
-            &mut cross_sizes,
-        )
+            base_main_sizes,
+            cross_sizes,
+        );
+        *child_rects = output.child_rects;
+        output.total_size
     } else {
         compute_single_line(
             input,
@@ -93,8 +109,9 @@ pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
             container_main,
             container_cross,
             intrinsic_main,
-            &mut base_main_sizes,
-            &mut cross_sizes,
+            base_main_sizes,
+            cross_sizes,
+            child_rects,
         )
     }
 }
@@ -196,7 +213,11 @@ fn margin_main_start(margin: EdgeInsets, is_row: bool, is_reverse: bool) -> f32 
 }
 
 fn margin_cross_start(margin: EdgeInsets, is_row: bool) -> f32 {
-    if is_row { margin.top } else { margin.left }
+    if is_row {
+        margin.top
+    } else {
+        margin.left
+    }
 }
 
 // 把正剩余空间反复分给尚未触及主轴上限的子项。
@@ -347,7 +368,8 @@ fn compute_single_line(
     intrinsic_main: bool,
     base_main_sizes: &mut [f32],
     cross_sizes: &mut [f32],
-) -> FlexOutput {
+    child_rects: &mut Vec<Rect>,
+) -> Size {
     let count = base_main_sizes.len();
     let gap = finite_or_zero(input.gap);
     // intrinsic_main（#165：未设主轴尺寸，由子项撑开）必须跳过 shrink：
@@ -435,7 +457,8 @@ fn compute_single_line(
         compute_justify(remaining, count, gap, input.justify_content);
 
     // Phase 4: position children
-    let mut child_rects = Vec::with_capacity(count);
+    child_rects.clear();
+    child_rects.reserve(count);
     let mut cursor = start_offset;
 
     for i in 0..count {
@@ -504,7 +527,7 @@ fn compute_single_line(
             // 垂直固定主轴使用内容区高度。
             inner.h
         };
-        for rect in &mut child_rects {
+        for rect in child_rects.iter_mut() {
             if is_row {
                 rect.x = inner.x + main_extent - (rect.x - inner.x) - rect.w;
             } else {
@@ -536,10 +559,7 @@ fn compute_single_line(
         )
     };
 
-    FlexOutput {
-        child_rects,
-        total_size: Size::new(total_w, total_h),
-    }
+    Size::new(total_w, total_h)
 }
 
 /// Multi-line (wrapping) flex layout.

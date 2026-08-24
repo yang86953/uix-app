@@ -147,7 +147,7 @@ pub use form::*;
 pub use i18n::{register_translations, set_translations, t_lookup, t_lookup_fmt};
 pub use layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
-    LayoutChild, LayoutEngine, LayoutOutput,
+    LayoutChild, LayoutEngine, LayoutEngineScratch, LayoutOutput,
 };
 #[cfg(feature = "table")]
 // 保持启用场景下既有的两个公开类型路径。
