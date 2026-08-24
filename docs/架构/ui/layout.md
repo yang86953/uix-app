@@ -90,9 +90,8 @@
 - 布局不执行业务 I/O、任意应用 callback、present 或跨窗 wake。
 - 布局 scratch、缓存和输出由所属窗口/树独占；稳定节点 ID 不延长组件或旧 tree generation 的生命周期。
 
-## 验证责任
+## 公开 API 测试边界
 
-- 公开契约验证应覆盖盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification 与 Table 的入口和可见失败语义。
-- 模块级验证应覆盖缓存失效、子结构协调、绘制/命中几何一致，以及非有限或病理数值的有界处理。
-- 溢出、换行、轴转置、镜像、负 margin/gap、弹性冻结和真实字体/窗口环境需要与其风险匹配的专项证据；缺少对应证据时标为未验证，不用较宽泛的测试结果替代。
-- 当前验证结果、环境矩阵和缺口由 Gitea 持有，本文只规定稳定的不变量与验证责任。
+- 只从外部消费者测试盒模型、Flex、Grid、ScrollView、VirtualScroll、RichText、Notification 与 Table 的公开入口、公开结果和可见失败语义。
+- 缓存失效、子结构协调、内部几何、病理数值处理、具体算法分支和真实字体/窗口执行路径均为私有实现，不建立项目测试。
+- 当前公开 API 测试结果与缺口由 Gitea 持有；本文只规定内部设计不变量，不把它们转换为测试目标。

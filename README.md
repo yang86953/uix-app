@@ -9,7 +9,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 - 当前版本为 `0.0.1`，处于开发中，尚未发布。
 - Windows 与 Linux 均纳入 `0.0.1` 首发交付范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留 D3D11、Linux/Wayland 保留 EGL OpenGL ES 兼容回退；平台与硬件完成度以 [Gitea 0.0.1 产品完成父 Issue #1](http://100.79.245.29:3000/admin/uix-app/issues/1) 为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
-- 仓库文档描述稳定的产品、使用与架构契约；交付任务、负责人、阻塞和带时点的测试结果只在 Gitea 中维护。
+- 仓库文档描述稳定的产品、使用与架构契约；交付任务、负责人、阻塞和带时点的公开 API 测试结果只在 Gitea 中维护。
 
 ## 从这里开始
 
@@ -17,18 +17,17 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 - **Rust API**：需要直接使用 Rust 声明式 API 时，阅读[使用 · 快速开始](docs/使用/入门/快速开始.md)。
 - **了解能力**：先看[产品能力与边界](docs/产品/能力.md)，再按[文档中心](docs/README.md)选择专题。
 
-## 仓库验证
+## 公开 API 测试
 
-以下命令用于验证 UIX 仓库，不是创建第一个应用的前置步骤。在已安装 Python、Rust 与 Cargo 的环境中，从仓库根目录执行：
+本项目只测试已经写入产品、UIX Lang 或使用文档的公开 API。测试必须站在外部使用方视角，只通过 `uix::prelude`、各 System 的公开门面或公开 UIX Lang 入口消费框架；统一放在 `tests/*_public_api.rs`。
+
+在已安装 Rust 与 Cargo 的环境中，从仓库根目录执行：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -p "test_*.py"
-cargo test --lib --quiet
-cargo test --tests --quiet
-cargo run --release --manifest-path demo/Cargo.toml --bin uix-lang-demo
+cargo test --features agent-control --test "*_public_api" --quiet
 ```
 
-这些命令只验证当前工作树的对应契约，不等同于正式发布、平台矩阵或交付任务全部完成；带时点的完成状态仍以 Gitea 为准。
+不得为私有 Module、Component、内部算法、缓存、状态机、源码目录、依赖方向、测试专用 feature/harness、GPU parity、真窗视觉、性能、打包或文档结构建立项目测试；不得使用 `cargo test --lib`、`cargo test --tests` 或 Python 源码扫描扩大测试面。发布构建与人工验收不是项目测试，也不计入公开 API 测试覆盖。带时点的公开 API 测试结果仍以 Gitea 为准。
 
 默认构建在 Windows 与 Linux 统一优先选择 Vulkan GPU-native swapchain，以同一 Drawing 语义保证外观和行为一致；Windows 的 D3D11 与 Linux/Wayland 的 OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 
@@ -44,13 +43,13 @@ bash scripts/build_internal_release.sh
 
 ## Windows 内部候选包
 
-在真实 Windows x64 桌面环境的干净 `main` 工作树中执行完整验收：
+在真实 Windows x64 桌面环境的干净 `main` 工作树中生成内部候选包：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/accept_windows_release.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_internal_release.ps1
 ```
 
-该入口验证 Vulkan 主路径、D3D11 兼容回退和主演示最终 surface 像素，连续构建并校验两份字节一致的 `uix-0.0.1-internal-win-x64.zip`，同时生成不含凭据的环境证据 JSON。只需要生成单份开发候选包时可直接运行 `scripts/build_internal_release.ps1`。
+该入口生成并校验 `uix-0.0.1-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。Vulkan 与 D3D11 只通过公开 API 外部消费者测试，当前环境结果由 Gitea 持有。
 
 ## 文档导航
 
@@ -87,9 +86,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/accept_windows_relea
 | `src/` | 框架实现与公开 API |
 | `demo/` | 只包含 `uix-lang-demo`：以 `.uix` 声明全部已登记组件、展示数据、界面状态与局部交互的全组件主演示 |
 | `uix-derive/` | UIX 派生宏 |
-| `tests/` | 契约、集成与真窗测试入口 |
+| `tests/` | 仅允许外部消费者视角的 `*_public_api.rs` 公开 API 测试 |
 | `scripts/` | 内部打包工具 |
 | `docs/` | 产品、架构、使用文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
-
-文档改动运行 `python tests/test_check_docs_links.py -q`；涉及 `uix-compile` 围栏时同时运行 `python tests/test_docs_compile_coverage.py -q`。

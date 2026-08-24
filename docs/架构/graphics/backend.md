@@ -8,25 +8,19 @@
 
 ## 当前实现状态
 
-| 状态 | 后端/范围 | 已核实实现与验收边界 |
+| 状态 | 后端/范围 | 当前实现与公开边界 |
 |---|---|---|
-| **已实现** | 共享规范 | Drawing 唯一持有 11 类 `PipelineKind` 的 canonical scenes、29 项共享采样不变量、容差与 Blur 双 pass 子区域场景；Vulkan、OpenGL、D3D11 harness 直接消费同一规范，不保留 Adapter 私有副本。三套 Adapter 同时消费同一 `RhiSurfaceLifecycle`。 |
-| **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`。`tests/vulkan_gpu_parity.rs` 的真实 harness 已在 AMD Radeon 780M Graphics（RADV PHOENIX）完成 3/3：11 pipelines / 29 invariants 与 Blur 回读、Surface 生命周期、共享设备丢失及逐窗口恢复。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
-| **已实现** | OpenGL ES | Linux 真实 EGL 1.5 / OpenGL ES 3.2 `surfaceless+pbuffer` harness 已完成同一 11 pipelines / 29 invariants 与 Blur 回读，并在同一真实 EGL owner 上覆盖 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
-| **已实现** | D3D11 静态与链接边界 | 已有真实隐藏 HWND、生产 D3D11 draw/submit、staging readback、共享 Blur 与 Surface 生命周期 runner；静态门禁确认它只消费共享规范。Windows MSVC `--no-run` 目标已完成实际链接，并核实为 PE32+ x86-64，包含 D3D11/D3DCompiler 运行库导入。此证据不等于 Windows 运行通过。 |
-| **待验收** | D3D11 真实 Windows 运行 | 真实 Windows x64 运行尚未完成；该项是 `0.0.1` 发布门禁，也不得以交叉链接或静态门禁替代运行结果。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
+| **已实现** | 共享规范 | Drawing 唯一持有 11 类 `PipelineKind` 的 canonical 语义，三套 Adapter 同时消费同一 `RhiSurfaceLifecycle`；这些是私有实现，不建立项目测试。 |
+| **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`；公开使用方通过 `GraphicsBackend` 与 `Platform` 门面选择和查询。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
+| **已实现** | OpenGL ES | Linux EGL/OpenGL ES 实现共享 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
+| **已实现** | D3D11 实现边界 | Windows D3D11 已具备生产 draw/submit、Blur 与 Surface 生命周期实现；内部 HWND、readback、RHI 和链接结构不属于公开 API，不建立项目测试。 |
+| **待验收** | D3D11 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D11` 使用路径尚未完成；该项是 `0.0.1` 发布门禁，不能由交叉链接或内部门禁替代。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
 
-上述“已实现”记录仓库当前固定实现与已完成验收边界；新增驱动、设备与系统版本覆盖仍由 Gitea 环境矩阵维护。
+上述“已实现”只记录仓库当前固定实现；公开 API 测试状态与环境结果由 Gitea 维护，内部图形执行不形成测试矩阵。
 
-### Windows 发布验收条件
+### Windows 公开 API 验收条件
 
-当前发布门禁必须在真实 Windows x64 桌面会话、可创建隐藏 HWND 的 D3D11/DXGI 运行环境中执行，并保留实际 device/driver 诊断。仓库冻结的完整单命令为：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/accept_windows_release.ps1
-```
-
-该入口同时验收 Vulkan 主路径、D3D11 共享 11 pipelines / 29 invariants、Blur、真实 acquire/submit/present、resize、失效与恢复、主演示自动图形选择、两次确定性 ZIP 与环境证据；在实际执行前继续保持 **待验收**，不建立新的图形路线图。
+当前发布门禁必须由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得启用 parity/test-harness feature，不得访问 HWND、RHI、FramePlan、readback、故障注入或其他私有入口。在公开入口实际执行并记录环境前继续保持 **待验收**。
 
 ## 责任边界
 
@@ -148,16 +142,11 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 - surface readback 是显式可选能力，可能包含敏感界面像素；只有授权的宿主流程才能请求，结果不得自动写日志、上传或跨窗口共享。
 - 原生 FFI 与 unsafe 操作收敛在 Adapter，逐次证明线程、句柄、长度、对齐和生命周期前置条件；unsafe 函数体本身不视为隐式授权。
 
-## 验证责任
+## 公开 API 测试边界
 
-backend 变更需要按风险提供以下证据；上方状态矩阵只记录已经固定到仓库实现与验收边界的结果，后续实时环境矩阵和新增缺口仍由 Gitea 持有：
-
-- 规范语义：CPU 参考与 GPU lowering 对 painter order、clip、transform、blend、opacity、文本、图片、Picture 和 effect 的一致性；
-- 资源事务：创建/替换/销毁、generation、resize、晚到 callback、OOM 与 checked shutdown；
-- 提交真相：一次最终 present、失败帧不消费 damage、partial/full 策略和不可呈现休眠；
-- 恢复：SurfaceLost、DeviceLost、teardown/rebuild、fallback 与重试上限；
-- Adapter：至少两个原生 API 复用同一 FramePlan 和 effect 编排，不复制逐 UI raster 算法；局部 retained 验收必须同时证明最终像素和共享计划实际执行 `TextureMove`，不能用整帧重绘后的相同像素代替；
-- 真实环境：DPI、resize、遮挡、多 swapchain image、GPU/驱动差异和人工可见效果；缺少环境时明确标为未验证，不以 mock 结果代替。
+- 只测试使用方能够从 `App`、`GraphicsBackend`、`Platform` 和公开 Drawing 类型观察的构造、选择、结果与 typed failure。
+- painter lowering、FramePlan、资源事务、generation、damage、present、恢复状态机、Adapter、RHI、shader、像素 readback、GPU parity 和驱动差异都是内部实现，不建立项目测试。
+- 真实环境运行或人工视觉检查可以作为发布操作记录，但不属于项目测试，也不得据此扩大测试面。
 
 ## 模块不变量
 

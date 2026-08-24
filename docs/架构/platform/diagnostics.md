@@ -84,7 +84,7 @@ crate 内编排入口（不属公开 API，由 app 组装层调用）：
 
 App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每个取出的失败调用 `attempt_recovery`：注册 handler 返回 `Recovered` 时不再 report（仅 tracing 观察），`Unhandled` / `Failed` 才最终 `report` 一次，符合「不能恢复的才报告」。`Errc::GraphicsDeviceLost` 的恢复接线只能通过共享 `RebuildRequest` 请求窗口引擎在下个帧边界执行 graphics 拥有的有界恢复序列；请求一次性且不覆盖首个未处理失败。`report` 只建立观察事实，不得隐式执行恢复 handler；实现验证必须锁定这两个入口的分离。
 
-所有跨 FFI、系统 callback 与 worker 边界必须满足同一验证义务：unwind 不跨 ABI，失败只转换并投递一次，晚到事件受 generation / teardown 状态约束，owner-thread 保持 source 内顺序，并且不会在 callback 中执行 subscriber、恢复 handler 或应用用户代码。具体平台覆盖范围和阶段性测试结果属于实现验证记录，不构成长期架构契约。
+所有跨 FFI、系统 callback 与 worker 边界必须满足同一内部实现义务：unwind 不跨 ABI，失败只转换并投递一次，晚到事件受 generation / teardown 状态约束，owner-thread 保持 source 内顺序，并且不会在 callback 中执行 subscriber、恢复 handler 或应用用户代码。这些私有 callback、队列与 generation 细节不建立项目测试；只从公开 `Diagnostics` 契约测试使用方可见结果。
 
 ## 组件：ErrorReport
 

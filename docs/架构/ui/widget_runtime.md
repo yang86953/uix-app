@@ -5,7 +5,7 @@
 > **接口**：声明 ui System 的持久组件树、基础组件能力和树级运行态。基础依赖：[core/identity](../core/identity.md)、[core/geometry](../core/geometry.md)。导出：由 ui System 编排给 view、reactive、layout、event 等 Module 的组件身份、树生命周期和阶段挂载点；不授予兄弟 Module 实例依赖。
 >
 > **术语与命名（SMC-07 语义基线）**：「component」在本仓库代码与架构文档中只指 SMC
-> 三层中的 **Component**——单一职责、窄契约、可独立测试与替换的原子代码单位
+> 三层中的 **Component**——单一职责、窄契约、独立替换边界明确的原子代码单位
 > UI 实体一律称为 widget：`Widget` 契约、`WidgetId` 身份、`WidgetHandle`、widgets 库与
 > UIX Lang `Widget` 声明均不属于该层。ui System 的 widget 运行时框架使用独立的
 > `widget_runtime` Module 名称，不得把该 Module 与 SMC Component 层混同；迁移记录见
