@@ -15,7 +15,7 @@ use crate::platform::presentation::rhi::{
     RhiPipelineResourceTable, RhiPresentTransaction, RhiResourceTable, RhiScissor,
     RhiSubmissionSequence, RhiTextureResource, RhiTextureResourceTable, RhiTextureUpload,
     SamplerDesc, SamplerHandle, SubmissionHandle, SurfaceToken, TextureCopy, TextureDesc,
-    TextureHandle, ValidatedRhiPresent,
+    TextureHandle, TextureMove, ValidatedRhiPresent,
 };
 
 use super::super::rhi::{VulkanSamplerState, index_type, texture_format};
@@ -59,6 +59,8 @@ pub(super) struct VulkanRhiDevice {
     submissions: RhiSubmissionSequence,
     frame: VulkanRhiFrame,
     immediate: VulkanImmediateCommands,
+    // 保存录制 TextureMove 后必须活到覆盖提交完成的临时纹理。
+    texture_move_scratch_after_submit: Vec<TextureHandle>,
     uniform_alignment: vk::DeviceSize,
 }
 
@@ -73,6 +75,7 @@ impl VulkanRhiDevice {
             submissions: RhiSubmissionSequence::new(),
             frame: VulkanRhiFrame::new(),
             immediate: VulkanImmediateCommands::new(),
+            texture_move_scratch_after_submit: Vec::new(),
             uniform_alignment,
         }
     }
@@ -245,6 +248,53 @@ impl VulkanRhiDevice {
         Ok(())
     }
 
+    // 把重叠安全的纹理区域移动录入当前帧，并延迟回收命令引用的临时资源。
+    fn record_texture_move(
+        &mut self,
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+        device: &ash::Device,
+        command_buffer: vk::CommandBuffer,
+        movement: TextureMove,
+    ) -> Result<()> {
+        self.pass.require_closed()?;
+        self.frame.ensure_recording(device, command_buffer)?;
+        let source_desc = self.textures.get(movement.source())?.desc();
+        let destination_desc = self.textures.get(movement.destination())?.desc();
+        movement.validate_transfer(source_desc, destination_desc)?;
+        if movement.source() != movement.destination() {
+            return self.record_texture_copy(device, command_buffer, movement.into_copy());
+        }
+        let scratch = self.create_texture(
+            instance,
+            physical_device,
+            device,
+            TextureDesc::new(movement.transfer().extent(), source_desc.format()),
+        )?;
+        // Vulkan 命令缓冲只保存原生句柄引用，临时纹理必须存活到对应 fence 完成。
+        self.texture_move_scratch_after_submit.push(scratch);
+        let (to_scratch, from_scratch) = movement.through_scratch(scratch);
+        self.record_texture_copy(device, command_buffer, to_scratch)?;
+        self.record_texture_copy(device, command_buffer, from_scratch)
+    }
+
+    // 命令缓冲已重置且覆盖提交已完成后，检查式回收 TextureMove 临时纹理。
+    fn reclaim_texture_move_scratch(&mut self, device: &ash::Device) -> Result<()> {
+        while let Some(scratch) = self.texture_move_scratch_after_submit.pop() {
+            if let Err(error) = self.destroy_texture(device, scratch) {
+                // 保留失败句柄供下一次安全边界重试或最终 shutdown 回收。
+                self.texture_move_scratch_after_submit.push(scratch);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    // 判断已结束或已提交的命令是否仍拥有待回收 TextureMove 资源。
+    pub(super) fn has_texture_move_scratch(&self) -> bool {
+        !self.texture_move_scratch_after_submit.is_empty()
+    }
+
     fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
         self.pipelines.get(packet.pipeline())?;
         self.buffers.validate_draw(packet)?;
@@ -270,7 +320,8 @@ impl VulkanRhiDevice {
         command_buffer: vk::CommandBuffer,
     ) -> Result<()> {
         self.pass.require_closed()?;
-        self.frame.prepare(device, command_buffer)
+        self.frame.prepare(device, command_buffer)?;
+        self.reclaim_texture_move_scratch(device)
     }
 
     // 复用纹理传输已经拥有的串行即时命令，供同一 Adapter 的 Surface 回读使用。
@@ -597,6 +648,8 @@ impl VulkanRhiDevice {
                 device.free_memory(buffer.memory, None);
             }
         }
+        // Device 已空闲，资源表整体回收会覆盖尚未进入下一 prepare 的临时纹理。
+        self.texture_move_scratch_after_submit.clear();
         for texture in self.textures.drain_reverse() {
             destroy_texture(device, texture);
         }
@@ -607,9 +660,10 @@ impl VulkanRhiDevice {
 
 impl GraphicsDevice for VulkanContext {
     fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
-        // Vulkan 已实现通用 Renderer 的完整 Device 基线与局部清理。
+        // Vulkan 已实现通用 Renderer 的完整 Device 基线、局部清理与安全区域移动。
         let mut capabilities = GraphicsDeviceCapabilities::full_gpu_baseline();
         capabilities.clear_rect = true;
+        capabilities.texture_region_move = true;
         capabilities
     }
 
@@ -657,6 +711,10 @@ impl GraphicsDevice for VulkanContext {
 
     fn preflight_texture_copy(&self, copy: TextureCopy) -> Result<()> {
         self.rhi_device.textures.validate_copy(copy)
+    }
+
+    fn preflight_texture_move(&self, movement: TextureMove) -> Result<()> {
+        self.rhi_device.textures.validate_move(movement)
     }
 
     fn preflight_draw_resources(&self, packet: DrawPacket) -> Result<()> {
@@ -736,7 +794,7 @@ impl GraphicsDevice for VulkanContext {
     fn begin_render_pass(&mut self, target: RenderTargetHandle, load: LoadAction) -> Result<()> {
         let owner = self.active_device()?;
         let result = (|| {
-            self.ensure_rhi_frame_prepared()?;
+            self.ensure_rhi_commands_ready()?;
             let native = if target.is_surface() {
                 self.acquired_surface_target()?
             } else {
@@ -788,9 +846,29 @@ impl GraphicsDevice for VulkanContext {
 
     fn copy_texture(&mut self, copy: TextureCopy) -> Result<()> {
         let owner = self.active_device()?;
-        let result = self.ensure_rhi_frame_prepared().and_then(|()| {
+        let result = self.ensure_rhi_commands_ready().and_then(|()| {
             self.rhi_device
                 .record_texture_copy(&self.device, self.command_buffer, copy)
+        });
+        owner.observe(result)
+    }
+
+    fn move_texture_region(&mut self, movement: TextureMove) -> Result<()> {
+        let owner = self.active_device()?;
+        let instance = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| vulkan_rhi_unavailable("move_texture_region after shutdown"))?
+            .instance()
+            .clone();
+        let result = self.ensure_rhi_commands_ready().and_then(|()| {
+            self.rhi_device.record_texture_move(
+                &instance,
+                self.physical_device,
+                &self.device,
+                self.command_buffer,
+                movement,
+            )
         });
         owner.observe(result)
     }

@@ -359,13 +359,17 @@ impl WaylandWindowOps {
                 state.fullscreen = fullscreen;
                 // 有效客户区尺寸继续生成 resize 事实。
                 if w > 0 && h > 0 {
+                    // 初始或重复 configure 可能只确认已提交尺寸，不能重复重建同代 swapchain。
+                    let extent_changed = state.width != w || state.height != h;
                     // compositor 已确认的 logical 尺寸立即同步共享窗口事实。
                     state.width = w;
                     state.height = h;
                     // presentation 消费事件时可读取同代 drawable 与 DPR。
                     toplevel_surface_scale.set_logical_extent(w, h);
-                    // resize 与本次模式快照进入同一事件事务。
-                    queued.push_back(UiEvent::resize(w, h).for_window(window_id));
+                    // 只有真实逻辑尺寸变化才排队 resize；scale 变化由独立 owner 自行投递。
+                    if extent_changed {
+                        queued.push_back(UiEvent::resize(w, h).for_window(window_id));
+                    }
                 }
                 // 保持既有最大化/恢复边沿事件语义。
                 match transition {
