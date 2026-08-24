@@ -1,7 +1,19 @@
 //! Input 字素簇光标、选择、删除与长度限制回归测试。
 
 // 引入被测 Input 及其私有交互辅助。
-use super::Input;
+use super::{Input, LogicalLineCursor};
+
+/// 线性行游标必须保持旧渲染路径的 Unicode 字符区间和耗尽回退语义。
+#[test]
+fn logical_line_cursor_preserves_unicode_and_empty_line_ranges() {
+    // 跳过首行后，空行仍必须占用一个换行字符位置。
+    let mut cursor = LogicalLineCursor::new("甲🙂\n\n尾");
+    cursor.skip_lines(1);
+    assert_eq!(cursor.next_line(), ("", 3, 3));
+    assert_eq!(cursor.next_line(), ("尾", 4, 5));
+    // composition 产生额外显示行时，耗尽值行仍按空行继续推进。
+    assert_eq!(cursor.next_line(), ("", 6, 6));
+}
 
 /// 左右移动和 Shift 选择必须按完整扩展字素簇推进。
 #[test]

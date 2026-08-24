@@ -102,8 +102,8 @@ impl Input {
             text_color
         };
 
-        let lines = logical_lines(&display_text);
-        let value_lines = logical_lines(&self.value);
+        // 仅统计一次显示行数供字形槽位初始化；逐行内容直接借用 split 迭代器。
+        let line_count = display_text.split('\n').count();
 
         // 计算光标所在行
         let cursor_line = self.cursor_line_col().0;
@@ -128,23 +128,16 @@ impl Input {
         // 清除上一帧逐行字形缓存。
         line_glyphs.clear();
         // 为每个逻辑行准备独立视觉字形数组。
-        line_glyphs.resize_with(lines.len(), Vec::new);
-        for (li, line) in lines.iter().enumerate() {
-            if li < adj_scroll {
-                continue;
-            }
+        line_glyphs.resize_with(line_count, Vec::new);
+        // 值行游标先线性越过滚动区域，后续每个显示行只推进一次。
+        let mut value_cursor = LogicalLineCursor::new(&self.value);
+        value_cursor.skip_lines(adj_scroll);
+        for (li, line) in display_text.split('\n').enumerate().skip(adj_scroll) {
             if y >= text_area.y + text_area.h {
                 break;
             }
-            // 计算该行的字符范围
-            let line_start: usize = value_lines[..li.min(value_lines.len())]
-                .iter()
-                .map(|s| s.chars().count())
-                .sum();
-            // 加上换行符的数量
-            let line_start = line_start + li; // each '\n' adds 1 char
-            let value_line = value_lines.get(li).copied().unwrap_or("");
-            let line_end = line_start + value_line.chars().count();
+            // 一次推进即可得到该行在原始值中的 Unicode 字符范围。
+            let (value_line, line_start, line_end) = value_cursor.next_line();
 
             // 选中高亮
             if !has_composition {
@@ -192,7 +185,7 @@ impl Input {
             ctx.draw_text(line, Point::new(text_area.x, text_y), disp_color, FONT_SIZE);
 
             // 收集该行每个字符的 x 坐标（用于 char_at_xy 命中）
-            let hit_text = if showing_placeholder { "" } else { *line };
+            let hit_text = if showing_placeholder { "" } else { line };
             // 构造与绘制一致的单行文本布局选项。
             let hit_options = crate::draw::TextLayoutOptions {
                 // 多行控件按逻辑换行拆分后不再限制单行宽度。
@@ -257,7 +250,7 @@ impl Input {
         }
 
         // 如果没有任何行且 focused，在顶部画光标
-        if self.focused && lines.is_empty() {
+        if self.focused && line_count == 0 {
             let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
             let caret_y = text_area.y + (line_h - caret_h) * 0.5;
             let caret = Rect::new(text_area.x, caret_y, 1.5, caret_h);

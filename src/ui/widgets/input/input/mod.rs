@@ -57,6 +57,36 @@ fn logical_lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
+/// 以 Unicode 字符索引线性推进逻辑行，避免渲染时反复扫描所有前置行。
+struct LogicalLineCursor<'a> {
+    lines: std::str::Split<'a, char>,
+    next_start: usize,
+}
+
+impl<'a> LogicalLineCursor<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            lines: text.split('\n'),
+            next_start: 0,
+        }
+    }
+
+    /// 返回当前行、全文起点与全文终点；耗尽后继续按空行推进以匹配显示行。
+    fn next_line(&mut self) -> (&'a str, usize, usize) {
+        let line = self.lines.next().unwrap_or("");
+        let start = self.next_start;
+        let end = start + line.chars().count();
+        self.next_start = end + 1;
+        (line, start, end)
+    }
+
+    fn skip_lines(&mut self, count: usize) {
+        for _ in 0..count {
+            let _ = self.next_line();
+        }
+    }
+}
+
 fn normalize_newlines(text: &str) -> Cow<'_, str> {
     if !text.contains('\r') {
         return Cow::Borrowed(text);
