@@ -32,8 +32,8 @@ use self::pixels::{
     full_frame_image_blit, pixel_len,
 };
 use self::source_over::{
-    PictureCropTranslation, crop_and_translate_source_over_command,
-    source_over_commands_have_safe_grouping, stroke_batches_can_merge, stroke_visible_bounds,
+    crop_and_translate_source_over_command, source_over_commands_have_safe_grouping,
+    stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
 };
 
 /// 恰好一帧的有序命令录制器。
@@ -51,12 +51,25 @@ pub struct FrameEncoder {
 impl FrameEncoder {
     /// 创建指定尺寸的空帧编码器；尺寸非法或不可寻址时返回错误。
     pub fn new(width: i32, height: i32) -> Result<Self, FrameEncoderError> {
+        Self::with_command_capacity(width, height, 0)
+    }
+
+    /// 创建并预留命令容量的帧编码器；用于稳定帧复用上一帧规模提示。
+    pub(crate) fn with_command_capacity(
+        width: i32,
+        height: i32,
+        command_capacity: usize,
+    ) -> Result<Self, FrameEncoderError> {
         let pixel_count = pixel_len(width, height)?;
+        let mut commands = Vec::new();
+        commands
+            .try_reserve_exact(command_capacity)
+            .map_err(|_| FrameEncoderError::CommandAllocationFailed)?;
         Ok(Self {
             width,
             height,
             pixel_count,
-            commands: Vec::new(),
+            commands,
         })
     }
 
@@ -73,6 +86,12 @@ impl FrameEncoder {
     /// 已录制的命令流（只读）。
     pub fn commands(&self) -> &[FrameCommand] {
         &self.commands
+    }
+
+    /// 测试观察入口：验证录制器只复用容量，不改变命令语义。
+    #[cfg(test)]
+    pub(crate) fn command_capacity(&self) -> usize {
+        self.commands.capacity()
     }
 
     /// 统计帧内 CPU 生成的光栅载荷（字形 coverage、CPU 分段、物化 Picture），
