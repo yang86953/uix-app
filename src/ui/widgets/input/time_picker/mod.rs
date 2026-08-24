@@ -8,6 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
@@ -19,6 +20,8 @@ use crate::widget;
 mod geometry;
 // 声明时间选择器的私有弹层缓存方法模块。
 mod methods;
+// 声明 UIX 静态视觉契约与主题解析模块。
+mod presentation;
 
 // 引入时间面板绝对与本地坐标转换。
 use geometry::{
@@ -27,12 +30,8 @@ use geometry::{
     // 将触发器与时间面板占用区裁剪到当前表面。
     time_surface_rect,
 };
+use presentation::*;
 
-const POPUP_GAP: f32 = 2.0;
-const POPUP_HEIGHT: f32 = 200.0;
-const POPUP_MIN_WIDTH: f32 = 120.0;
-// 时间选择列项高度（32.0）；timeline 时间线条目为 60.0，语境不同。
-const ITEM_HEIGHT: f32 = 32.0;
 const HOUR_COUNT: usize = 24;
 const MINUTE_COUNT: usize = 60;
 const WHEEL_STEP: f32 = 40.0;
@@ -102,6 +101,9 @@ widget! {
         popup_anchor_frame: Cell<Option<Rect>>,
         // 累计当前呈现周期内的绝对时间面板脏区。
         popup_damage_rect: Cell<Rect>,
+        // 同目录 UIX 生成的唯一静态视觉表。
+        #[snapshot(skip)]
+        visual: &'static TimePickerVisual,
     }
 
 
@@ -192,7 +194,8 @@ widget! {
                     // 读取同帧登记、绘制和命中共享的实际时间面板。
                     let popup = self.interaction_popup_rect(frame);
                     if popup.contains(*pos) {
-                        let column = if pos.x < popup.x + popup.w * 0.5 {
+                        let column =
+                            if pos.x < popup.x + popup.w * self.visual.layout.column_ratio {
                             TimeColumn::Hour
                         } else {
                             TimeColumn::Minute
@@ -293,34 +296,41 @@ widget! {
         self.capture_bound_value_dependency();
         self.last_frame
             .set(Some(Rect::new(0.0, 0.0, frame.w, frame.h)));
-        let primary = ctx.tokens().color_primary();
-        let border_color = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let text_tertiary = ctx.tokens().color_text_tertiary();
-        let bg_elevated = ctx.tokens().color_bg_elevated();
-        let primary_bg = ctx.tokens().color_primary_bg();
-        let border_radius_sm = ctx.tokens().border_radius_sm();
-        let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
+        // 触发器与双列面板共享同一次主题解析。
+        let visual = self.visual.resolve(ctx.tokens());
+        let radius = Some(crate::draw::Radius::uniform(visual.radius));
 
         let val = self.value.get();
-        let nominal_height = crate::ui::widget_runtime::config::control_height(self.picker_size);
+        let nominal_height = self.visual.layout.control_height(self.picker_size);
         let scale = if nominal_height > 0.0 {
             (frame.h / nominal_height).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        // 基准字号取自主题 token，再按控件高度缩放。
-        let font_size = ctx.tokens().font_size() * scale;
-        let horizontal_padding = 12.0 * scale;
-        let icon_gap = 4.0 * scale;
-        let icon_slot_width = 24.0 * scale;
-        let icon_right_inset = 4.0 * scale;
+        // UIX 字号与触发器几何按当前控件高度缩放。
+        let font_size = visual.trigger_font_size * scale;
+        let icon_size = visual.icon_size * scale;
+        let horizontal_padding = self.visual.layout.horizontal_padding * scale;
+        let icon_gap = self.visual.layout.icon_gap * scale;
+        let icon_slot_width = self.visual.layout.icon_slot_width * scale;
+        let icon_right_inset = self.visual.layout.icon_right_inset * scale;
 
         ctx.push_clip(frame);
-        ctx.fill_rect(frame, ctx.tokens().color_bg_container(), radius);
-        ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
-            if self.focused { 2.0 } else { 1.0 }, radius);
+        ctx.fill_rect(frame, visual.background, radius);
+        ctx.stroke_rect(
+            frame,
+            if self.focused {
+                visual.primary
+            } else {
+                visual.border
+            },
+            if self.focused {
+                self.visual.chrome.focus_border_width
+            } else {
+                self.visual.chrome.border_width
+            },
+            radius,
+        );
 
         if font_size > 0.0 && frame.w > 0.0 {
             let icon_frame = Rect::new(
@@ -339,7 +349,7 @@ widget! {
                     ctx.draw_text(
                         &self.placeholder,
                         Point::new(text_left, input_text_y),
-                        text_tertiary,
+                        visual.text_tertiary,
                         font_size,
                     );
                 } else {
@@ -347,7 +357,7 @@ widget! {
                     ctx.draw_text(
                         &formatted,
                         Point::new(text_left, input_text_y),
-                        text_color,
+                        visual.text,
                         font_size,
                     );
                 }
@@ -356,10 +366,10 @@ widget! {
 
             crate::ui::widgets::icon::Icon::paint_in_frame(
                 ctx,
-                "clock",
+                self.visual.icons.clock,
                 icon_frame,
-                text_secondary,
-                font_size,
+                visual.text_secondary,
+                icon_size,
             );
         }
         ctx.pop_clip();
@@ -377,10 +387,15 @@ widget! {
             ctx.push_clip(surface);
             // 将两列内容限制在最终实际视口内。
             ctx.push_clip(popup);
-            ctx.fill_rect(popup, bg_elevated, radius);
-            ctx.stroke_rect(popup, border_color, 1.0, radius);
+            ctx.fill_rect(popup, visual.popup_background, radius);
+            ctx.stroke_rect(
+                popup,
+                visual.border,
+                self.visual.chrome.border_width,
+                radius,
+            );
 
-            let col_w = popup.w * 0.5;
+            let col_w = popup.w * self.visual.layout.column_ratio;
             let hover_h = self.hover_hour.get();
             let hover_m = self.hover_minute.get();
 
@@ -388,54 +403,73 @@ widget! {
             let min_scroll = self.scroll_min.get();
 
             for i in 0..HOUR_COUNT {
-                let y = popup.y + i as f32 * ITEM_HEIGHT - hour_scroll;
-                if y + ITEM_HEIGHT <= popup.y || y >= popup.y + popup.h { continue; }
+                let y = popup.y + i as f32 * self.visual.layout.item_height - hour_scroll;
+                if y + self.visual.layout.item_height <= popup.y || y >= popup.y + popup.h {
+                    continue;
+                }
                 let is_hover = i == hover_h;
                 if is_hover {
-                    ctx.fill_rect(Rect::new(popup.x, y, col_w, ITEM_HEIGHT), primary_bg, None);
+                    ctx.fill_rect(
+                        Rect::new(popup.x, y, col_w, self.visual.layout.item_height),
+                        visual.primary_background,
+                        None,
+                    );
                 }
-                let item_rect = Rect::new(popup.x, y, col_w, ITEM_HEIGHT);
-                // 时间列字号：统一使用主题 font_size token。
-                let text_y = ctx.visual_center_y(item_rect, ctx.tokens().font_size());
+                let item_rect = Rect::new(popup.x, y, col_w, self.visual.layout.item_height);
+                let text_y = ctx.visual_center_y(item_rect, visual.item_font_size);
                 let label = format!("{:02}", i);
-                let text_width = ctx.measure_text(&label, ctx.tokens().font_size()).w;
+                let text_width = ctx.measure_text(&label, visual.item_font_size).w;
                 ctx.draw_text(
                     &label,
                     Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
-                    if is_hover { primary } else { text_color },
-                    // 时间列字号：统一使用主题 font_size token。
-                    ctx.tokens().font_size(),
+                    if is_hover { visual.primary } else { visual.text },
+                    visual.item_font_size,
                 );
             }
 
             for i in 0..MINUTE_COUNT {
-                let y = popup.y + i as f32 * ITEM_HEIGHT - min_scroll;
-                if y + ITEM_HEIGHT <= popup.y || y >= popup.y + popup.h { continue; }
+                let y = popup.y + i as f32 * self.visual.layout.item_height - min_scroll;
+                if y + self.visual.layout.item_height <= popup.y || y >= popup.y + popup.h {
+                    continue;
+                }
                 let is_hover = i == hover_m;
                 if is_hover {
                     ctx.fill_rect(
-                        Rect::new(popup.x + col_w, y, col_w, ITEM_HEIGHT),
-                        primary_bg,
+                        Rect::new(
+                            popup.x + col_w,
+                            y,
+                            col_w,
+                            self.visual.layout.item_height,
+                        ),
+                        visual.primary_background,
                         None,
                     );
                 }
-                let item_rect = Rect::new(popup.x + col_w, y, col_w, ITEM_HEIGHT);
-                // 时间列字号：统一使用主题 font_size token。
-                let text_y = ctx.visual_center_y(item_rect, ctx.tokens().font_size());
+                let item_rect = Rect::new(
+                    popup.x + col_w,
+                    y,
+                    col_w,
+                    self.visual.layout.item_height,
+                );
+                let text_y = ctx.visual_center_y(item_rect, visual.item_font_size);
                 let label = format!("{:02}", i);
-                let text_width = ctx.measure_text(&label, ctx.tokens().font_size()).w;
+                let text_width = ctx.measure_text(&label, visual.item_font_size).w;
                 ctx.draw_text(
                     &label,
                     Point::new(item_rect.x + (item_rect.w - text_width) * 0.5, text_y),
-                    if is_hover { primary } else { text_color },
-                    // 时间列字号：统一使用主题 font_size token。
-                    ctx.tokens().font_size(),
+                    if is_hover { visual.primary } else { visual.text },
+                    visual.item_font_size,
                 );
             }
 
             ctx.fill_rect(
-                Rect::new(popup.x + col_w - 0.5, popup.y, 1.0, popup.h),
-                border_color,
+                Rect::new(
+                    popup.x + col_w - self.visual.chrome.divider_width * 0.5,
+                    popup.y,
+                    self.visual.chrome.divider_width,
+                    popup.h,
+                ),
+                visual.border,
                 None,
             );
             ctx.pop_clip();
@@ -465,8 +499,8 @@ widget! {
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 // 登记最终时间面板而不并入触发器。
                 .bounds(bounds)
-                // 保持时间面板既有层级。
-                .z_index(900)
+                // 使用 UIX 声明的时间面板层级。
+                .z_index(self.visual.chrome.overlay_z)
         })
     }
 
@@ -511,6 +545,8 @@ impl TimePicker {
             popup_anchor_frame: Cell::new(None),
             // 初始呈现周期没有历史时间面板脏区。
             popup_damage_rect: Cell::new(Rect::zero()),
+            // 全部实例共享 UIX 编译生成的视觉表。
+            visual: TIME_PICKER_VISUAL_REF,
         }
     }
 
@@ -554,8 +590,8 @@ impl TimePicker {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(
-            120.0,
-            crate::ui::widget_runtime::config::control_height(self.picker_size),
+            self.visual.layout.natural_width,
+            self.visual.layout.control_height(self.picker_size),
         )
     }
 
@@ -571,6 +607,10 @@ impl TimePicker {
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
+        if !std::ptr::eq(self.visual, next.visual) {
+            self.visual = next.visual;
+            self.reset_popup_presentation();
+        }
         let controlled_value = next.value_binding.as_ref().map(|_| next.value.get());
         self.value_binding = next.value_binding;
         if let Some(value) = controlled_value {
@@ -626,7 +666,7 @@ impl TimePicker {
         self.sync_bound_value();
         self.active_column.set(TimeColumn::Hour);
         // 首次正式登记前按自然视口同步高亮和滚动。
-        self.sync_highlight_to_value(true, POPUP_HEIGHT);
+        self.sync_highlight_to_value(true, self.visual.layout.popup_height);
         self.open.set(true);
     }
 
@@ -640,13 +680,13 @@ impl TimePicker {
         if !popup.contains(pos) {
             return None;
         }
-        let column = if pos.x < popup.x + popup.w * 0.5 {
+        let column = if pos.x < popup.x + popup.w * self.visual.layout.column_ratio {
             TimeColumn::Hour
         } else {
             TimeColumn::Minute
         };
         let scroll = self.scroll_offset(column);
-        let index = ((pos.y - popup.y + scroll) / ITEM_HEIGHT).floor();
+        let index = ((pos.y - popup.y + scroll) / self.visual.layout.item_height).floor();
         if !index.is_finite() || index < 0.0 {
             return None;
         }
@@ -662,21 +702,22 @@ impl TimePicker {
     }
 
     // 按指定列与实际视口返回最大滚动偏移。
-    fn max_scroll(column: TimeColumn, viewport_height: f32) -> f32 {
+    fn max_scroll(&self, column: TimeColumn, viewport_height: f32) -> f32 {
         // 归一化实际视口高度以避免非有限滚动范围。
         let viewport_height = finite_viewport_height(viewport_height);
         // 使用固定行高内容与实际视口计算最大滚动。
-        (Self::row_count(column) as f32 * ITEM_HEIGHT - viewport_height).max(0.0)
+        (Self::row_count(column) as f32 * self.visual.layout.item_height - viewport_height).max(0.0)
     }
 
     // 按实际视口返回目标选项的居中滚动偏移。
-    fn centered_scroll(column: TimeColumn, index: usize, viewport_height: f32) -> f32 {
+    fn centered_scroll(&self, column: TimeColumn, index: usize, viewport_height: f32) -> f32 {
         // 归一化实际视口高度。
         let viewport_height = finite_viewport_height(viewport_height);
         // 计算让目标行尽量居中的滚动位置。
-        let centered = index as f32 * ITEM_HEIGHT - (viewport_height - ITEM_HEIGHT) * 0.5;
+        let centered = index as f32 * self.visual.layout.item_height
+            - (viewport_height - self.visual.layout.item_height) * 0.5;
         // 将居中位置限制在实际视口的合法范围内。
-        centered.clamp(0.0, Self::max_scroll(column, viewport_height))
+        centered.clamp(0.0, self.max_scroll(column, viewport_height))
     }
 
     fn scroll_offset(&self, column: TimeColumn) -> f32 {
@@ -700,7 +741,7 @@ impl TimePicker {
         }
         let current = self.scroll_offset(column);
         // 使用实际视口高度限制下一滚动位置。
-        let next = (current + delta).clamp(0.0, Self::max_scroll(column, viewport_height));
+        let next = (current + delta).clamp(0.0, self.max_scroll(column, viewport_height));
         if (next - current).abs() <= f32::EPSILON {
             false
         } else {
@@ -718,8 +759,8 @@ impl TimePicker {
             TimeColumn::Minute => self.hover_minute.get(),
         };
         let current = self.scroll_offset(column);
-        let row_top = index as f32 * ITEM_HEIGHT;
-        let row_bottom = row_top + ITEM_HEIGHT;
+        let row_top = index as f32 * self.visual.layout.item_height;
+        let row_bottom = row_top + self.visual.layout.item_height;
         let next = if row_top < current {
             row_top
         } else if row_bottom > current + viewport_height {
@@ -732,7 +773,7 @@ impl TimePicker {
             // 指定需要调整的时间列。
             column,
             // 使用实际视口计算最大滚动。
-            next.clamp(0.0, Self::max_scroll(column, viewport_height)),
+            next.clamp(0.0, self.max_scroll(column, viewport_height)),
         );
     }
 
@@ -770,7 +811,7 @@ impl TimePicker {
             // 按实际视口居中小时选项。
             self.scroll_hour
                 // 保存小时列居中滚动。
-                .set(Self::centered_scroll(
+                .set(self.centered_scroll(
                     // 指定小时列。
                     TimeColumn::Hour,
                     // 使用当前小时索引。
@@ -779,7 +820,7 @@ impl TimePicker {
                     viewport_height,
                 ));
             // 按实际视口居中分钟选项。
-            self.scroll_min.set(Self::centered_scroll(
+            self.scroll_min.set(self.centered_scroll(
                 // 指定分钟列。
                 TimeColumn::Minute,
                 // 使用当前分钟索引。
@@ -801,6 +842,19 @@ fn finite_viewport_height(value: f32) -> f32 {
     } else {
         // 非有限高度回退为零。
         0.0
+    }
+}
+
+// 把 TimePicker 的 Rust 时间状态内核与 UIX 静态视觉组合为单一组件节点。
+fn build_time_picker_view(mut kernel: TimePicker, visual: &'static TimePickerVisual) -> ViewNode {
+    kernel.visual = visual;
+    kernel.reset_popup_presentation();
+    ViewNode::leaf(kernel)
+}
+
+impl View for TimePicker {
+    fn build(self) -> ViewNode {
+        build_time_picker_view(self, TIME_PICKER_VISUAL_REF)
     }
 }
 
