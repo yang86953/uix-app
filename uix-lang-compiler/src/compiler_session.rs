@@ -8,9 +8,9 @@ use crate::uix_import::{
     SourceStageCache, normalized_overlay_path, resolve_file_with_overlays_cached,
 };
 use crate::{
-    AnalyzedUnit, CheckOutput, CompilationKey, CompileOutput, CompileTarget, CompilerDiagnostic,
-    RustUiPlan, analyze_resolved_file, check_lowered, compile_lowered, inferred_target,
-    lower_analyzed,
+    AnalyzedUnit, CheckOutput, CompilationKey, CompileOutput, CompileTarget, CompiledArtifact,
+    CompilerDiagnostic, RustUiPlan, analyze_resolved_file, compile_cached_artifact,
+    inferred_target, lower_analyzed, materialize_check_output, materialize_compile_output,
 };
 
 // 区分同一会话中不同根和目标形状的流水线；每个身份只保留最新源码图。
@@ -28,8 +28,10 @@ struct CachedPipeline {
     // 阶段产物不可变且可能很大；缓存命中只共享所有权，不深拷贝完整语义模型。
     analysis: Result<Arc<AnalyzedUnit>, CompilerDiagnostic>,
     lowering: Option<Result<Arc<RustUiPlan>, CompilerDiagnostic>>,
-    compile: Option<Result<CompileOutput, CompilerDiagnostic>>,
-    check: Option<Result<CheckOutput, CompilerDiagnostic>>,
+    // Emit 缓存只保存 analysis 之外的增量产物，避免重复持有 SourceGraph 与 TypedUiIr。
+    compile: Option<Result<Arc<CompiledArtifact>, CompilerDiagnostic>>,
+    // lowering 成功后检查已就绪；公开 CheckOutput 每次从共享 analysis 物化。
+    check_ready: bool,
 }
 
 /// 持有多个编译请求之间可复用、且有明确会话生命周期的 Compiler System 缓存。
@@ -151,20 +153,29 @@ impl CompilerSession {
             {
                 self.stats.compile_hits = self.stats.compile_hits.saturating_add(1);
             }
-            return cached.clone();
+            let artifact = cached.clone()?;
+            #[cfg(test)]
+            {
+                self.stats.compile_handle = Arc::as_ptr(&artifact) as usize;
+            }
+            return Ok(materialize_compile_output(&analysis, &artifact));
         }
         let plan = self.lower(&identity, &analysis)?;
         #[cfg(test)]
         {
             self.stats.compile_runs = self.stats.compile_runs.saturating_add(1);
         }
-        // 公开输出保持拥有型契约；仅首次 Emit 物化一份，重复命中不再复制阶段缓存。
-        let result = compile_lowered(analysis.as_ref().clone(), plan.as_ref().clone());
+        let result = compile_cached_artifact(&analysis, &plan).map(Arc::new);
         self.pipelines
             .get_mut(&identity)
             .expect("分析成功后必须保留对应流水线")
             .compile = Some(result.clone());
-        result
+        let artifact = result?;
+        #[cfg(test)]
+        {
+            self.stats.compile_handle = Arc::as_ptr(&artifact) as usize;
+        }
+        Ok(materialize_compile_output(&analysis, &artifact))
     }
 
     fn check_file_with_snapshot(
@@ -174,29 +185,28 @@ impl CompilerSession {
         requested_target: Option<CompileTarget>,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
         let (identity, analysis) = self.analyze_file(path, overlays, requested_target)?;
-        if let Some(cached) = self
+        if self
             .pipelines
             .get(&identity)
-            .and_then(|pipeline| pipeline.check.as_ref())
+            .is_some_and(|pipeline| pipeline.check_ready)
         {
             #[cfg(test)]
             {
                 self.stats.check_hits = self.stats.check_hits.saturating_add(1);
             }
-            return cached.clone();
+            return Ok(materialize_check_output(&analysis));
         }
         self.lower(&identity, &analysis)?;
         #[cfg(test)]
         {
             self.stats.check_runs = self.stats.check_runs.saturating_add(1);
         }
-        // 公开检查结果保持拥有型契约，缓存内部继续共享同一不可变分析产物。
-        let result = Ok(check_lowered(analysis.as_ref().clone()));
+        let result = materialize_check_output(&analysis);
         self.pipelines
             .get_mut(&identity)
             .expect("分析成功后必须保留对应流水线")
-            .check = Some(result.clone());
-        result
+            .check_ready = true;
+        Ok(result)
     }
 
     fn analyze_file(
@@ -259,7 +269,7 @@ impl CompilerSession {
                 analysis: analysis.clone(),
                 lowering: None,
                 compile: None,
-                check: None,
+                check_ready: false,
             },
         );
         self.prune_source_cache();
@@ -348,6 +358,7 @@ struct CompilerSessionStats {
     lowering_handle: usize,
     compile_runs: usize,
     compile_hits: usize,
+    compile_handle: usize,
     check_runs: usize,
     check_hits: usize,
 }
@@ -388,6 +399,13 @@ mod tests {
         assert_eq!(second_stats.analysis_handle, first_stats.analysis_handle);
         assert_eq!(second_stats.analysis_hits, first_stats.analysis_hits + 1);
         assert_eq!(second_stats.check_hits, first_stats.check_hits + 1);
+        assert!(
+            session
+                .pipelines
+                .values()
+                .all(|pipeline| pipeline.check_ready),
+            "检查缓存只保留 readiness，不应复制完整 CheckOutput",
+        );
     }
 
     #[test]
@@ -443,8 +461,10 @@ mod tests {
         assert_eq!(compiled.lowering_handle, checked.lowering_handle);
         assert_eq!(compiled.lowering_hits, checked.lowering_hits + 1);
         assert_eq!(compiled.compile_runs, checked.compile_runs + 1);
+        assert_ne!(compiled.compile_handle, 0);
         assert_eq!(repeated.compile_runs, compiled.compile_runs);
         assert_eq!(repeated.compile_hits, compiled.compile_hits + 1);
+        assert_eq!(repeated.compile_handle, compiled.compile_handle);
     }
 
     #[test]
