@@ -49,6 +49,19 @@ impl WidgetTree {
     ) {
         // 停止树不得重新绑定动画源或建立新的 owner 分区。
         assert!(self.accepts_coordination_work());
+        // 普通节点没有动画源时不建立空事务记录；真实旧绑定或同事务内的非空请求仍必须清除。
+        if sources.is_empty()
+            && !self.animated_source_owners.contains_key(&owner)
+            && !self
+                .pending_animated_source_owner_updates
+                .iter()
+                .any(|update| {
+                    !update.cancelled && update.owner == owner && !update.sources.is_empty()
+                })
+        {
+            // 空声明没有可变更的生命周期事实，也无需进入提交阶段的 owner 合并表。
+            return;
+        }
         // 构建或协调事务期间不得改变既有树绑定。
         if self.widget_state_transaction_depth > 0 {
             // 记录待最外层成功后提交的所有权快照。
