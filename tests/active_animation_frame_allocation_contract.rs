@@ -6,7 +6,7 @@ use std::mem::size_of;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use uix::prelude::{Animated, Easing, Label, View, ViewNode};
+use uix::prelude::{Animated, Easing, Label, State, View, ViewNode};
 use uix::ui::__private::{
     WidgetTree, animated_source_ids_for_test, build_view_tree_for_test,
     update_animated_sources_at_for_test, update_animated_sources_geometric_for_test,
@@ -290,6 +290,7 @@ fn rotating_median_batch_ns(
 
 #[test]
 fn active_animation_frame_profile() {
+    verify_single_reconcile_callback_reentrancy();
     let (mut tree, ids) = active_animation_tree();
     let start = Instant::now();
     let mut reused_updates = Vec::with_capacity(SOURCE_COUNT);
@@ -370,5 +371,29 @@ fn active_animation_frame_profile() {
     );
     assert!(transient_allocations.count < geometric_allocations.count);
     assert!(transient_allocations.allocated_bytes < geometric_allocations.allocated_bytes);
+    // 单树 reconcile 站点不得再为每个动画源发布临时回调 Vec。
+    assert_eq!(reused_allocations.count, 0);
+    assert_eq!(reused_allocations.allocated_bytes, 0);
+    assert_eq!(reused_allocations.peak_live_bytes, 0);
     assert_eq!(transient_allocations.final_live_bytes, 0);
+}
+
+fn verify_single_reconcile_callback_reentrancy() {
+    let state = State::new(0_u32);
+    let notifications = Arc::new(AtomicUsize::new(0));
+    let state_for_callback = state.clone();
+    let notifications_for_callback = Arc::clone(&notifications);
+    state.bind_reconcile_invalidation(
+        7,
+        Arc::new(move || {
+            notifications_for_callback.fetch_add(1, Ordering::Relaxed);
+            // 回调仍必须在站点锁外执行，才能同步释放自己的唯一租约。
+            state_for_callback.unbind_reconcile_invalidation(7);
+        }),
+    );
+
+    state.set(1);
+    state.set(2);
+
+    assert_eq!(notifications.load(Ordering::Relaxed), 1);
 }
