@@ -1,11 +1,12 @@
 //! Compiler System 会话缓存：按源码图身份复用 Syntax、Semantic 与 Emit 阶段。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::uix_import::{
-    SourceStageCache, normalized_overlay_path, resolve_file_with_overlays_cached,
+    SourceStageCache, normalized_overlay_path, overlay_source, resolve_file_with_overlays_cached,
 };
 use crate::{
     AnalyzedUnit, CheckOutput, CompilationKey, CompileOutput, CompileTarget, CompiledArtifact,
@@ -216,6 +217,27 @@ impl CompilerSession {
         requested_target: Option<CompileTarget>,
     ) -> Result<(PipelineIdentity, Arc<AnalyzedUnit>), CompilerDiagnostic> {
         let root = normalized_overlay_path(path);
+        if let Some(target) = requested_target {
+            let identity = PipelineIdentity {
+                root: root.clone(),
+                target,
+            };
+            let unchanged = self
+                .pipelines
+                .get(&identity)
+                .and_then(|pipeline| pipeline.analysis.as_ref().ok())
+                .filter(|analysis| single_file_snapshot_is_unchanged(&root, overlays, analysis))
+                .cloned();
+            if let Some(analysis) = unchanged {
+                #[cfg(test)]
+                {
+                    self.stats.analysis_hits = self.stats.analysis_hits.saturating_add(1);
+                    self.stats.snapshot_hits = self.stats.snapshot_hits.saturating_add(1);
+                    self.stats.analysis_handle = Arc::as_ptr(&analysis) as usize;
+                }
+                return Ok((identity, analysis));
+            }
+        }
         self.source_cache.begin_request();
         let resolved = resolve_file_with_overlays_cached(
             path,
@@ -344,6 +366,26 @@ impl CompilerSession {
     }
 }
 
+// 单文件没有导入拓扑变化；源码字节未变时可在 resolver 和 AST 克隆前命中完整分析。
+fn single_file_snapshot_is_unchanged(
+    root: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    analysis: &AnalyzedUnit,
+) -> bool {
+    let graph = &analysis.source_graph;
+    if !graph.imports().is_empty() || graph.files().len() != 1 {
+        return false;
+    }
+    let file = &graph.files()[0];
+    if file.path != root.to_string_lossy().replace('\\', "/") {
+        return false;
+    }
+    if let Some(source) = overlay_source(overlays, root) {
+        return source == file.source;
+    }
+    fs::read_to_string(root).is_ok_and(|source| source == file.source)
+}
+
 // 保存测试可观测的实际阶段执行与缓存命中次数。
 #[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -352,6 +394,7 @@ struct CompilerSessionStats {
     source_files: usize,
     analysis_runs: usize,
     analysis_hits: usize,
+    snapshot_hits: usize,
     analysis_handle: usize,
     lowering_runs: usize,
     lowering_hits: usize,
@@ -406,6 +449,41 @@ mod tests {
                 .all(|pipeline| pipeline.check_ready),
             "检查缓存只保留 readiness，不应复制完整 CheckOutput",
         );
+    }
+
+    #[test]
+    fn unchanged_single_file_overlay_skips_resolver_rebuild() {
+        let root = PathBuf::from("/tmp/uix-compiler-session-single-file.uix");
+        let mut overlays = BTreeMap::new();
+        overlays.insert(
+            root.clone(),
+            "<Column><Text>稳定内容</Text></Column>".to_string(),
+        );
+        let mut session = CompilerSession::new();
+        session
+            .check_file_with_overlays(&root, &overlays, CompileTarget::View)
+            .expect("初始单文件 overlay 必须通过检查");
+        let initial = session.test_stats();
+
+        session
+            .check_file_with_overlays(&root, &overlays, CompileTarget::View)
+            .expect("未变化单文件 overlay 必须命中快照");
+        let unchanged = session.test_stats();
+        assert_eq!(unchanged.snapshot_hits, initial.snapshot_hits + 1);
+        assert_eq!(unchanged.source_parses, initial.source_parses);
+        assert_eq!(unchanged.analysis_runs, initial.analysis_runs);
+
+        overlays.insert(
+            root.clone(),
+            "<Column><Text>变化内容</Text></Column>".to_string(),
+        );
+        session
+            .check_file_with_overlays(&root, &overlays, CompileTarget::View)
+            .expect("变化后的单文件 overlay 必须重新分析");
+        let changed = session.test_stats();
+        assert_eq!(changed.snapshot_hits, unchanged.snapshot_hits);
+        assert_eq!(changed.source_parses, unchanged.source_parses + 1);
+        assert_eq!(changed.analysis_runs, unchanged.analysis_runs + 1);
     }
 
     #[test]
