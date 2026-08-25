@@ -27,6 +27,8 @@ pub(crate) struct LayoutFrameDamage {
     pub(crate) seen: HashSet<WidgetId>,
     pub(crate) roots: HashSet<WidgetId>,
     pub(crate) prepainted: HashSet<WidgetId>,
+    /// `set_frame_dirty` 已覆盖旧视觉子树的布局根。
+    pub(crate) frame_dirty_roots: HashSet<WidgetId>,
 }
 
 /// 布局协调器跨容器复用的测量、定位与求解工作区。

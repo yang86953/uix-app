@@ -1,9 +1,12 @@
 //! 验证真实嵌套组件树在预热后的重复布局中复用布局工作区。
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use uix::core::{Rect, Size};
+use uix::draw::scene::ScenePaint;
 use uix::prelude::{
     Button, Calendar, Card, Collapse, CollapsePanel, Container, Content, Dropdown, DropdownItem,
     FontFamily, Footer, Form, FormItem, Grid, GridTrack, Header, Input, Layout as PageLayout, Menu,
@@ -20,11 +23,30 @@ struct CountingAllocator;
 
 static COUNT_ALLOCATIONS: AtomicBool = AtomicBool::new(false);
 static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+static ALLOCATED_BYTES: AtomicUsize = AtomicUsize::new(0);
+static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+static PEAK_LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+fn record_allocation(size: usize) {
+    ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    ALLOCATED_BYTES.fetch_add(size, Ordering::Relaxed);
+    let live = LIVE_BYTES.fetch_add(size, Ordering::Relaxed) + size;
+    PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
+}
+
+fn record_deallocation(size: usize) -> usize {
+    LIVE_BYTES
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |live| {
+            Some(live.saturating_sub(size))
+        })
+        .unwrap_or_else(|live| live)
+        .saturating_sub(size)
+}
 
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
-            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+            record_allocation(layout.size());
         }
         // SAFETY: 原样把有效 Layout 委托给系统分配器。
         unsafe { System.alloc(layout) }
@@ -32,13 +54,16 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
-            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+            record_allocation(layout.size());
         }
         // SAFETY: 原样把有效 Layout 委托给系统分配器。
         unsafe { System.alloc_zeroed(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
+            record_deallocation(layout.size());
+        }
         // SAFETY: 指针与 Layout 来自同一系统分配器。
         unsafe { System.dealloc(ptr, layout) }
     }
@@ -46,6 +71,14 @@ unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         if COUNT_ALLOCATIONS.load(Ordering::Relaxed) {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+            ALLOCATED_BYTES.fetch_add(new_size, Ordering::Relaxed);
+            let live = if new_size >= layout.size() {
+                LIVE_BYTES.fetch_add(new_size - layout.size(), Ordering::Relaxed) + new_size
+                    - layout.size()
+            } else {
+                record_deallocation(layout.size() - new_size)
+            };
+            PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
         }
         // SAFETY: 指针与旧 Layout 来自系统分配器，新尺寸由调用方提供。
         unsafe { System.realloc(ptr, layout, new_size) }
@@ -54,6 +87,30 @@ unsafe impl GlobalAlloc for CountingAllocator {
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+#[derive(Clone, Copy, Debug)]
+struct AllocationStats {
+    count: usize,
+    allocated_bytes: usize,
+    peak_live_bytes: usize,
+}
+
+fn begin_allocation_measurement() {
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    ALLOCATED_BYTES.store(0, Ordering::Relaxed);
+    LIVE_BYTES.store(0, Ordering::Relaxed);
+    PEAK_LIVE_BYTES.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Release);
+}
+
+fn end_allocation_measurement() -> AllocationStats {
+    COUNT_ALLOCATIONS.store(false, Ordering::Release);
+    AllocationStats {
+        count: ALLOCATION_COUNT.load(Ordering::Relaxed),
+        allocated_bytes: ALLOCATED_BYTES.load(Ordering::Relaxed),
+        peak_live_bytes: PEAK_LIVE_BYTES.load(Ordering::Relaxed),
+    }
+}
 
 fn nested_layout_tree() -> (WidgetTree, uix::ui::WidgetId) {
     let mut tree = WidgetTree::new();
@@ -558,6 +615,118 @@ fn warmed_layout_allocations(mut tree: WidgetTree, root: uix::ui::WidgetId) -> u
     tree.layout();
     COUNT_ALLOCATIONS.store(false, Ordering::Release);
     ALLOCATION_COUNT.load(Ordering::Relaxed)
+}
+
+#[test]
+fn frame_dirty_root_keeps_changed_descendant_paint_identities() {
+    // 窗口 resize 先由根 frame 覆盖旧视觉子树，再由布局发布后代最终边界。
+    let (mut tree, root) = button_layout_tree();
+    tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 320.0, 320.0));
+    tree.layout();
+    tree.reset_invalidation();
+
+    tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 321.0, 320.0));
+    tree.layout();
+
+    let mut dirty_nodes = HashSet::new();
+    assert_eq!(
+        tree.paint_invalidation_snapshot_into(&mut dirty_nodes),
+        Some(false),
+        "局部 resize 必须保留精确 Paint 身份快照",
+    );
+    assert!(
+        dirty_nodes.len() > 1 && dirty_nodes.contains(&root),
+        "根旧边界复用后仍须发布发生 frame 变化的后代 Paint 身份",
+    );
+}
+
+fn profile_layout_scenario(
+    build: fn() -> (WidgetTree, uix::ui::WidgetId),
+) -> (Duration, Duration, AllocationStats) {
+    let (mut tree, root) = build();
+    for width in [320.0, 321.0, 320.0] {
+        tree.set_frame_dirty(root, Rect::new(0.0, 0.0, width, 200.0));
+        tree.layout();
+    }
+
+    let mut frame_batches = Vec::with_capacity(9);
+    let mut layout_batches = Vec::with_capacity(9);
+    begin_allocation_measurement();
+    for batch in 0..9 {
+        let mut frame_elapsed = Duration::ZERO;
+        let mut layout_elapsed = Duration::ZERO;
+        for pass in 0..100 {
+            let width = if (batch + pass) % 2 == 0 {
+                321.0
+            } else {
+                320.0
+            };
+            let frame_started = Instant::now();
+            tree.set_frame_dirty(root, Rect::new(0.0, 0.0, width, 200.0));
+            frame_elapsed += frame_started.elapsed();
+            let layout_started = Instant::now();
+            tree.layout();
+            layout_elapsed += layout_started.elapsed();
+        }
+        frame_batches.push(frame_elapsed / 100);
+        layout_batches.push(layout_elapsed / 100);
+    }
+    let allocations = end_allocation_measurement();
+    frame_batches.sort_unstable();
+    layout_batches.sort_unstable();
+    (
+        frame_batches[frame_batches.len() / 2],
+        layout_batches[layout_batches.len() / 2],
+        allocations,
+    )
+}
+
+#[test]
+#[ignore = "手工性能剖析入口"]
+fn profile_realistic_layout_scenarios() {
+    let scenarios: [(&str, fn() -> (WidgetTree, uix::ui::WidgetId)); 27] = [
+        ("Container", nested_layout_tree),
+        ("Container wrap", wrapped_container_tree),
+        ("Space wrap", wrapped_space_tree),
+        ("Card", card_layout_tree),
+        ("Grid", grid_layout_tree),
+        ("Responsive Grid", responsive_grid_layout_tree),
+        ("Spanning Grid", spanning_grid_layout_tree),
+        ("ScrollView", scroll_view_layout_tree),
+        ("Layout regions", page_region_layout_tree),
+        ("Layout", page_layout_tree),
+        ("Splitter", splitter_layout_tree),
+        ("Collapse", collapse_layout_tree),
+        ("Table", table_layout_tree),
+        ("Form", form_layout_tree),
+        ("Tabs", tabs_layout_tree),
+        ("VirtualScroll", virtual_scroll_layout_tree),
+        ("Calendar", calendar_layout_tree),
+        ("Transfer", transfer_layout_tree),
+        ("Closed Select", closed_select_layout_tree),
+        ("Plain Select", plain_select_layout_tree),
+        ("Select", select_layout_tree),
+        ("Dropdown", dropdown_layout_tree),
+        ("Dropdown trigger", custom_trigger_dropdown_layout_tree),
+        ("Menu", menu_layout_tree),
+        ("Button", button_layout_tree),
+        ("Styled Button", styled_button_layout_tree),
+        ("Textarea", textarea_layout_tree),
+    ];
+
+    for (name, build) in scenarios {
+        let (frame_median, layout_median, allocations) = profile_layout_scenario(build);
+        eprintln!(
+            "PROFILE {name}: frame_ns={} layout_ns={} total_ns={} allocations={} allocated_bytes={} peak_live_bytes={}",
+            frame_median.as_nanos(),
+            layout_median.as_nanos(),
+            (frame_median + layout_median).as_nanos(),
+            allocations.count,
+            allocations.allocated_bytes,
+            allocations.peak_live_bytes,
+        );
+        assert_eq!(allocations.count, 0, "稳态 {name} 布局不得重新申请堆内存");
+    }
 }
 
 #[test]
