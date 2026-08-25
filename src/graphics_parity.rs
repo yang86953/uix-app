@@ -70,6 +70,8 @@ pub(crate) fn run_vulkan_ui_production_chain_test() {
 // 共享 presenter 唯一拥有 UI 场景进入 Drawing Surface 桥与中立 readback 判定。
 struct SharedUiSurfacePresenter<'a> {
     scene: &'a ProductionChainScene,
+    // 性能采样帧关闭 parity 回读，保持与普通生产提交相同的 Surface 工作量。
+    verify_readback: bool,
 }
 
 impl WsiParityFramePresenter for SharedUiSurfacePresenter<'_> {
@@ -94,7 +96,7 @@ impl WsiParityFramePresenter for SharedUiSurfacePresenter<'_> {
                 if let Some(hook) = adapter_hook.as_mut() {
                     (**hook)(surface);
                 }
-                if surface.surface_capabilities().readback {
+                if self.verify_readback && surface.surface_capabilities().readback {
                     readback = Some(surface.read_surface_pixels(RhiScissor {
                         x: 0,
                         y: 0,
@@ -232,9 +234,15 @@ fn resize_event_drawable_extent(
 }
 
 // 在真实平台窗口上复用同一 UI、Drawing、Surface 与 resize 验收事务。
-fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
+fn run_wsi_production_chain_test<A: WsiParityAdapter>(
+    mut before_profiled_frame: Option<&mut dyn FnMut()>,
+    mut after_profiled_frame: Option<&mut dyn FnMut(Duration)>,
+) {
     let scene = production_chain_scene();
-    let mut presenter = SharedUiSurfacePresenter { scene: &scene };
+    let mut presenter = SharedUiSurfacePresenter {
+        scene: &scene,
+        verify_readback: true,
+    };
     let profile = A::profile();
     let backend = profile.backend_label();
     let pacing = profile
@@ -365,6 +373,8 @@ fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
 
     let mut production_presents = 2usize;
     if let (Some(plan), Some(deadline)) = (pacing, deadline) {
+        // 只有显式性能探针关闭逐帧 parity 回读，避免把诊断分配算入生产提交。
+        presenter.verify_readback = before_profiled_frame.is_none();
         while production_presents < plan.production_presents {
             let dispatches_before = event_observation.dispatches.get();
             dispatch_wsi_events_until(
@@ -374,9 +384,22 @@ fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
                 "paced production frame",
                 |observation| observation.dispatches.get() > dispatches_before,
             );
-            let presented = presenter
-                .present(&mut context, None)
-                .expect("the paced real WSI frame must acquire, render and present");
+            let present_result = if let (Some(before), Some(after)) = (
+                before_profiled_frame.as_deref_mut(),
+                after_profiled_frame.as_deref_mut(),
+            ) {
+                // 外部测试二进制在真实 submit/present 前开启全局分配计数。
+                before();
+                let frame_started = Instant::now();
+                let result = presenter.present(&mut context, None);
+                // 无论成功或失败都及时关闭计数，避免错误诊断污染样本。
+                after(frame_started.elapsed());
+                result
+            } else {
+                presenter.present(&mut context, None)
+            };
+            let presented =
+                present_result.expect("the paced real WSI frame must acquire, render and present");
             assert_eq!(presented, resized);
             production_presents = production_presents.saturating_add(1);
         }
@@ -388,6 +411,8 @@ fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
             event_observation.dispatches.get() >= plan.production_presents,
             "paced production frames must each be preceded by real platform event dispatch",
         );
+        // 恢复路径继续执行完整 readback 验收，不让性能探针削弱像素证据。
+        presenter.verify_readback = true;
     }
     A::verify_surface_recovery(&mut context, second_present, &mut presenter);
     context
@@ -433,10 +458,22 @@ fn run_wsi_production_chain_test<A: WsiParityAdapter>() {
 // 具体 API 入口只选择 Adapter，实现差异不回流到共享组合根。
 #[cfg(feature = "vulkan-parity-test")]
 pub(crate) fn run_vulkan_wsi_production_chain_test() {
-    run_wsi_production_chain_test::<VulkanWsiParityAdapter>();
+    run_wsi_production_chain_test::<VulkanWsiParityAdapter>(None, None);
 }
 
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 pub(crate) fn run_opengl_wsi_production_chain_test() {
-    run_wsi_production_chain_test::<OpenGlWsiParityAdapter>();
+    run_wsi_production_chain_test::<OpenGlWsiParityAdapter>(None, None);
+}
+
+// 仅为真实 paced frame 性能测试开放测量边界，不暴露任何原生 Adapter。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+pub(crate) fn run_opengl_wsi_production_chain_profile(
+    before_profiled_frame: &mut dyn FnMut(),
+    after_profiled_frame: &mut dyn FnMut(Duration),
+) {
+    run_wsi_production_chain_test::<OpenGlWsiParityAdapter>(
+        Some(before_profiled_frame),
+        Some(after_profiled_frame),
+    );
 }

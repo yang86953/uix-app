@@ -236,6 +236,18 @@ pub fn __run_opengl_gpu_parity_test() {
 pub fn __run_opengl_wsi_production_chain_test() {
     graphics_parity::run_opengl_wsi_production_chain_test();
 }
+// 只为真实 Wayland/EGL paced frame 测试开放分配与耗时测量边界。
+#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[doc(hidden)]
+pub fn __run_opengl_wsi_production_chain_profile(
+    mut before_profiled_frame: impl FnMut(),
+    mut after_profiled_frame: impl FnMut(std::time::Duration),
+) {
+    graphics_parity::run_opengl_wsi_production_chain_profile(
+        &mut before_profiled_frame,
+        &mut after_profiled_frame,
+    );
+}
 // 只为显式 Windows GPU parity 测试目标转发 crate 内 D3D11 生产 Adapter harness。
 #[cfg(all(windows, feature = "d3d11-parity-test"))]
 #[doc(hidden)]

@@ -91,6 +91,20 @@ impl RenderPassPlan {
         }
     }
 
+    // 接管 Renderer 已按 painter order 建立的命令缓冲区，避免绑定目标时二次扩容。
+    pub(crate) fn from_commands(
+        target: RenderTargetRef,
+        load: LoadAction,
+        commands: Vec<FramePlanCommand>,
+    ) -> Self {
+        // target/load 仍只由 Frame owner 绑定，producer 只交出命令所有权。
+        Self {
+            target,
+            load,
+            commands,
+        }
+    }
+
     // 追加一个保持顺序的低层命令。
     pub(crate) fn push(&mut self, command: FramePlanCommand) {
         // 让通用 renderer 明确控制 painter order。
