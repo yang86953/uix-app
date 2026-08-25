@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 // 引入导入路径所有权。
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 // 引入纯 UIX 文档、声明、节点与诊断契约。
 use crate::DiagnosticPhase;
@@ -157,7 +158,7 @@ struct ImportResolver<'a> {
     // 保存当前深度优先解析栈以拒绝循环。
     stack: Vec<PathBuf>,
     // 保存同一展开内已经解析的文件单元。
-    cache: BTreeMap<PathBuf, ResolvedUnit>,
+    cache: BTreeMap<PathBuf, Arc<ResolvedUnit>>,
     // 保存首次读取顺序中的 rustc 依赖路径。
     tracked_files: Vec<PathBuf>,
     // 保存依赖路径去重集合。
@@ -260,6 +261,11 @@ pub(crate) fn resolve_file_with_overlays_cached(
         ImportResolver::new(&canonical, overlays, source_cache, allow_declaration_only);
     // 解析根及递归依赖。
     let unit = resolver.load_unit(&canonical)?;
+    // 根单元不会被递归复用；移出私有缓存后恢复唯一所有权，直接交付最终 Document。
+    let cached_root = resolver.cache.remove(&canonical);
+    debug_assert!(cached_root.is_some());
+    drop(cached_root);
+    let unit = Arc::into_inner(unit).expect("根解析单元必须只由当前解析结果持有");
     // 把带来源声明投影回既有纯 Document 契约。
     let declaration_sources = unit
         // 在消费声明前保留每项真实定义文件。
@@ -348,11 +354,11 @@ impl<'a> ImportResolver<'a> {
     }
 
     // 读取一个规范路径并完成其全部导入。
-    fn load_unit(&mut self, path: &Path) -> Result<ResolvedUnit, ImportDiagnostic> {
-        // 已完成的单元可以在同一宏展开内安全复用定义副本。
+    fn load_unit(&mut self, path: &Path) -> Result<Arc<ResolvedUnit>, ImportDiagnostic> {
+        // 已完成的单元可以在同一宏展开内安全共享不可变解析结果。
         if let Some(unit) = self.cache.get(path) {
-            // 返回解析结果副本，实例状态仍由最终生成代码各自拥有。
-            return Ok(unit.clone());
+            // 只复制共享句柄，避免为同一解析单元深拷贝完整 AST。
+            return Ok(Arc::clone(unit));
         }
         // 进入解析栈前拒绝同一文件再次出现。
         if let Some(position) = self.stack.iter().position(|entry| entry == path) {
@@ -381,15 +387,15 @@ impl<'a> ImportResolver<'a> {
         // 把当前文件压入唯一深度优先栈。
         self.stack.push(path.to_path_buf());
         // 执行可能失败的实际解析。
-        let result = self.load_unit_inner(path);
+        let result = self.load_unit_inner(path).map(Arc::new);
         // 无论成功失败都弹出当前文件，避免污染后续诊断。
         let popped = self.stack.pop();
         // 栈顶必须与本次读取目标一致。
         debug_assert_eq!(popped.as_deref(), Some(path));
         // 成功时写入本次 resolver 私有缓存。
         if let Ok(unit) = &result {
-            // 后续同路径导入复用完整解析单元。
-            self.cache.insert(path.to_path_buf(), unit.clone());
+            // 后续同路径导入共享不可变解析单元。
+            self.cache.insert(path.to_path_buf(), Arc::clone(unit));
         }
         // 返回原始解析结果。
         result
