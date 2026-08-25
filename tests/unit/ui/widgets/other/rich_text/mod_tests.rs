@@ -2,6 +2,8 @@ use super::*;
 use crate::core::Point;
 // 引入真实渲染布局所需的字体服务。
 use crate::draw::resources::font::font_service::FontService;
+// 对照连续文本与分段文本的 Unicode 索引契约。
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
 // 引入稳定的测试字体句柄。
 use crate::draw::FontHandle;
 // 引入事件与测量契约。
@@ -165,6 +167,105 @@ fn selection_expands_across_style_segments_to_complete_grapheme() {
     rich.set_selection_range(1, 1);
     // 空选择应被清除。
     assert_eq!(rich.selection.get(), None);
+}
+
+// 验证分段游标对复杂跨样式 Unicode 序列保持与连续正文完全一致。
+#[test]
+fn segmented_text_cursor_matches_contiguous_grapheme_contract() {
+    // 组合音标、ZWJ emoji、区域旗帜、Indic 连写和 Prepend 都跨段拆分。
+    let mut segments = vec![
+        RichTextSegment::Text {
+            content: "a".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::Text {
+            content: "\u{0301}".to_owned(),
+            style: RichTextStyle {
+                bold: true,
+                ..RichTextStyle::default()
+            },
+        },
+        // 空段与零宽主题分隔线不得改变虚拟连续偏移。
+        RichTextSegment::Code {
+            content: String::new(),
+        },
+        RichTextSegment::ThematicBreak,
+        RichTextSegment::Text {
+            content: "z".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::NewLine,
+        RichTextSegment::Code {
+            content: "👩".to_owned(),
+        },
+        RichTextSegment::Text {
+            content: "🏽‍".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::Link {
+            content: "💻".to_owned(),
+            url: "https://example.test".to_owned(),
+        },
+        RichTextSegment::Text {
+            content: " 🇷".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::Code {
+            content: "🇸🇮".to_owned(),
+        },
+        RichTextSegment::Text {
+            content: "🇴 क्".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::Text {
+            content: "ष \u{0600}".to_owned(),
+            style: RichTextStyle::default(),
+        },
+        RichTextSegment::Code {
+            content: "A".to_owned(),
+        },
+    ];
+    // 再构造跨三十二段的长组合链，验证上下文补充不会提前回退。
+    segments.push(RichTextSegment::Text {
+        content: " q".to_owned(),
+        style: RichTextStyle::default(),
+    });
+    for _ in 0..32 {
+        segments.push(RichTextSegment::Text {
+            content: "\u{0301}".to_owned(),
+            style: RichTextStyle::default(),
+        });
+    }
+    // 测试对照允许一次拼接，生产分段游标不得依赖该拥有型文本。
+    let source = super::layout_metrics::source_text(&segments);
+    let contiguous = TextIndexCursor::new(&source);
+    let segmented = super::segmented_text::SegmentedTextCursor::new(&segments);
+    let char_len = source.chars().count();
+
+    // 每个合法与两个越界字符位置都对照三种边界偏向。
+    for index in 0..=char_len + 2 {
+        for bias in [
+            BoundaryBias::Backward,
+            BoundaryBias::Forward,
+            BoundaryBias::Nearest,
+        ] {
+            assert_eq!(
+                segmented.normalize_char(CharIndex(index), bias),
+                contiguous.normalize_char(CharIndex(index), bias),
+                "字符位置 {index} 的 {bias:?} 归一结果必须一致"
+            );
+        }
+    }
+    // 全部端点组合都必须保持选择向外扩展和越界收敛语义。
+    for start in 0..=char_len + 2 {
+        for end in 0..=char_len + 2 {
+            assert_eq!(
+                segmented.normalize_selection(CharIndex(start), CharIndex(end)),
+                contiguous.normalize_selection(CharIndex(start), CharIndex(end)),
+                "选择范围 {start}..{end} 的归一结果必须一致"
+            );
+        }
+    }
 }
 
 // 验证默认关闭与显式开启共同约束键盘全选入口。

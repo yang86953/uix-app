@@ -5,7 +5,9 @@ use std::cmp::Ordering;
 
 use super::{LayoutGlyph, LayoutLine, RichText, RichTextPointerAction, RichTextSegment};
 // 复用富文本逻辑段借用与完整源文本投影。
-use super::layout_metrics::{segment_source_text, source_text};
+use super::layout_metrics::segment_source_text;
+// 跨样式段交互直接借用逻辑正文，不建立临时完整字符串。
+use super::segmented_text::SegmentedTextCursor;
 use crate::core::{Point, Rect};
 // 引入共享扩展字素簇边界模型。
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
@@ -250,10 +252,8 @@ impl RichText {
     pub(super) fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
         // 查询现有双向视觉几何给出的原始字符位置。
         let raw_index = self.raw_char_at_pos(pos, lines);
-        // 拼接跨样式段的完整逻辑源文本。
-        let text = source_text(&self.segments);
-        // 命中采用最近合法字素簇边界。
-        TextIndexCursor::new(&text)
+        // 直接借用全部逻辑段，命中采用最近合法跨段字素簇边界。
+        SegmentedTextCursor::new(&self.segments)
             // 归一显式字符位置。
             .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
             // 返回兼容字符下标。
@@ -337,10 +337,8 @@ impl RichText {
             // 无需构造范围。
             return;
         }
-        // 拼接跨样式段的完整逻辑源文本。
-        let text = source_text(&self.segments);
-        // 把无方向选择向外扩展到完整字素簇边界。
-        let (start, end) = TextIndexCursor::new(&text)
+        // 借用分段正文，把无方向选择向外扩展到完整跨段字素簇边界。
+        let (start, end) = SegmentedTextCursor::new(&self.segments)
             // 归一显式字符范围。
             .normalize_selection(CharIndex(a), CharIndex(b));
         // 图片能力开启时，任何与图片 alt 相交的范围扩展到完整原子跨度。

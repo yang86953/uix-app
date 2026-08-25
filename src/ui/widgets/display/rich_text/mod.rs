@@ -152,6 +152,8 @@ mod layout_types;
 pub(crate) use layout_types::*;
 // 集中保存估算字符宽度、行刷新与完整逻辑源拼接。
 mod layout_metrics;
+// 提供不拼接正文的跨段 Unicode 字素簇游标。
+mod segmented_text;
 // 保存 RichText 的段落级 UAX #9 视觉 run 定位。
 mod bidi_layout;
 mod parse;
