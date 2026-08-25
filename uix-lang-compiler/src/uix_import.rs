@@ -629,7 +629,10 @@ fn canonical_or_overlay(
 }
 
 // 按规范或父目录规范化身份查询会话快照。
-fn overlay_source<'a>(overlays: &'a BTreeMap<PathBuf, String>, path: &Path) -> Option<&'a str> {
+pub(crate) fn overlay_source<'a>(
+    overlays: &'a BTreeMap<PathBuf, String>,
+    path: &Path,
+) -> Option<&'a str> {
     overlays
         .get(path)
         .or_else(|| {
