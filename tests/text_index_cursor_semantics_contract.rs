@@ -53,6 +53,14 @@ fn streaming_cursor_matches_cached_index_map() {
             }
             for other in 0..=limit {
                 assert_eq!(
+                    cursor.char_range_to_bytes(CharIndex(index), CharIndex(other)),
+                    (
+                        map.char_to_byte(CharIndex(index.min(other))),
+                        map.char_to_byte(CharIndex(index.max(other))),
+                    ),
+                    "文本 {text:?} 的字符区间 {index}..{other} 字节转换不一致"
+                );
+                assert_eq!(
                     cursor.normalize_selection(CharIndex(index), CharIndex(other)),
                     map.normalize_selection(CharIndex(index), CharIndex(other)),
                     "文本 {text:?} 的选择 {index}..{other} 归一结果不一致"

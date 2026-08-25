@@ -61,6 +61,27 @@ impl<'a> TextIndexCursor<'a> {
         )
     }
 
+    /// 一次遍历把无方向字符区间转换为 UTF-8 字节区间，越界端点收敛到末尾。
+    pub fn char_range_to_bytes(self, a: CharIndex, b: CharIndex) -> (ByteIndex, ByteIndex) {
+        // 先消除区间方向，保持与选择归一契约一致。
+        let start = a.0.min(b.0);
+        let end = a.0.max(b.0);
+        // 未命中的越界端点默认收敛到文本末尾。
+        let mut start_byte = self.text.len();
+        let mut end_byte = self.text.len();
+        // 单次字符遍历同时寻找两个端点，命中终点后立即停止。
+        for (char_index, (byte, _)) in self.text.char_indices().enumerate() {
+            if char_index == start {
+                start_byte = byte;
+            }
+            if char_index == end {
+                end_byte = byte;
+                break;
+            }
+        }
+        (ByteIndex(start_byte), ByteIndex(end_byte))
+    }
+
     /// 按指定偏向把任意字符位置归一为扩展字素簇边界。
     pub fn normalize_char(self, index: CharIndex, bias: BoundaryBias) -> CharIndex {
         // 复用经过缓存模型逐项验证的流式归一规则。

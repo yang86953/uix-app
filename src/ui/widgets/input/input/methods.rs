@@ -364,8 +364,6 @@ impl Input {
     // ── 内部：光标移动 ──
 
     pub(super) fn move_cursor_left(&mut self, ctrl: bool, extend: bool) {
-        // 借用当前值，流式查询本次移动所需的字素簇边界。
-        let index_map = TextIndexCursor::new(&self.value);
         // 普通左移优先把现有选择折叠到逻辑起点。
         if !extend && self.selection.get().is_some() {
             // 读取已归一选择起点。
@@ -380,25 +378,32 @@ impl Input {
             return;
         }
         if ctrl {
-            // 跳到前一个单词
-            let chars: Vec<char> = self.value.chars().collect();
-            let mut pos = self.cursor_char.min(chars.len());
-            pos = pos.saturating_sub(1);
-            while pos > 0 && chars[pos] == ' ' {
-                pos -= 1;
-            }
-            while pos > 0 && chars[pos - 1] != ' ' {
-                pos -= 1;
+            // 单次正向扫描记录光标前最后一个空格分词起点。
+            let mut pos = 0usize;
+            let mut in_word = false;
+            for (index, ch) in self.value.chars().enumerate() {
+                // 光标及其后的字符不参与向左按词定位。
+                if index >= self.cursor_char {
+                    break;
+                }
+                if ch == ' ' {
+                    // 空格结束当前词，下一个非空格字符会建立新起点。
+                    in_word = false;
+                } else if !in_word {
+                    // 保存最近一个词的逻辑字符起点。
+                    pos = index;
+                    in_word = true;
+                }
             }
             // 按词结果向后收敛，禁止停在字素簇内部。
-            self.cursor_char = index_map
+            self.cursor_char = TextIndexCursor::new(&self.value)
                 // 归一原始字符位置。
                 .normalize_char(CharIndex(pos), BoundaryBias::Backward)
                 // 保存兼容字符下标。
                 .0;
         } else {
             // 普通左移一次越过整个扩展字素簇。
-            self.cursor_char = index_map
+            self.cursor_char = TextIndexCursor::new(&self.value)
                 // 从当前字符位置查找前一边界。
                 .previous_grapheme_boundary(CharIndex(self.cursor_char))
                 // 保存兼容字符下标。
@@ -417,8 +422,6 @@ impl Input {
     }
 
     pub(super) fn move_cursor_right(&mut self, ctrl: bool, extend: bool) {
-        // 借用当前值，流式查询本次移动所需的字素簇边界。
-        let index_map = TextIndexCursor::new(&self.value);
         // 普通右移优先把现有选择折叠到逻辑终点。
         if !extend && self.selection.get().is_some() {
             // 读取已归一选择终点。
@@ -432,25 +435,38 @@ impl Input {
             // 折叠已经完成本次移动。
             return;
         }
-        let len = self.value.chars().count();
         if ctrl {
-            let chars: Vec<char> = self.value.chars().collect();
-            let mut pos = self.cursor_char.min(chars.len());
-            while pos < len && chars[pos] == ' ' {
-                pos += 1;
-            }
-            while pos < len && chars[pos] != ' ' {
-                pos += 1;
+            // 单次扫描跳过光标前缀，再越过空格和紧随其后的完整单词。
+            let mut pos = 0usize;
+            let mut in_word = false;
+            for ch in self.value.chars() {
+                if pos < self.cursor_char {
+                    // 先把逻辑位置限制到现有文本末尾。
+                    pos += 1;
+                    continue;
+                }
+                if ch == ' ' {
+                    if in_word {
+                        // 已越过一个词，停在它的排他终点。
+                        break;
+                    }
+                    // 前导空格属于本次按词移动范围。
+                    pos += 1;
+                } else {
+                    // 越过当前词的每个非空格字符。
+                    in_word = true;
+                    pos += 1;
+                }
             }
             // 按词结果向前收敛，禁止停在字素簇内部。
-            self.cursor_char = index_map
+            self.cursor_char = TextIndexCursor::new(&self.value)
                 // 归一原始字符位置。
                 .normalize_char(CharIndex(pos), BoundaryBias::Forward)
                 // 保存兼容字符下标。
                 .0;
         } else {
             // 普通右移一次越过整个扩展字素簇。
-            self.cursor_char = index_map
+            self.cursor_char = TextIndexCursor::new(&self.value)
                 // 从当前字符位置查找后一边界。
                 .next_grapheme_boundary(CharIndex(self.cursor_char))
                 // 保存兼容字符下标。
@@ -709,34 +725,30 @@ impl Input {
         }
     }
     pub(super) fn slice_range(&self, start_char: usize, end_char: usize) -> String {
-        // 建立显式字符到 UTF-8 字节转换表。
-        let index_map = TextIndexMap::new(&self.value);
+        // 借用文本并流式归一选择与字节端点。
+        let index_cursor = TextIndexCursor::new(&self.value);
         // 防御性地把调用方范围扩展到完整字素簇边界。
-        let (start, end) = index_map.normalize_selection(
+        let (start, end) = index_cursor.normalize_selection(
             // 包装字符起点。
             CharIndex(start_char),
             // 包装字符终点。
             CharIndex(end_char),
         );
         // 把合法字符起点转换为字节偏移。
-        let byte_start = index_map.char_to_byte(start).0;
-        // 把合法字符终点转换为字节偏移。
-        let byte_end = index_map.char_to_byte(end).0;
+        let (byte_start, byte_end) = index_cursor.char_range_to_bytes(start, end);
         // 返回完整 UTF-8 字素簇片段。
-        self.value[byte_start..byte_end].to_owned()
+        self.value[byte_start.0..byte_end.0].to_owned()
     }
     pub(super) fn delete_selection(&mut self) {
         if let Some((s, e)) = self.selection.get() {
-            // 建立删除前的显式索引转换表。
-            let index_map = TextIndexMap::new(&self.value);
+            // 借用删除前文本并流式归一选择与字节端点。
+            let index_cursor = TextIndexCursor::new(&self.value);
             // 防御性地把选择扩展到完整字素簇边界。
-            let (start, end) = index_map.normalize_selection(CharIndex(s), CharIndex(e));
-            // 转换合法字符起点为 UTF-8 字节偏移。
-            let byte_start = index_map.char_to_byte(start).0;
-            // 转换合法字符终点为 UTF-8 字节偏移。
-            let byte_end = index_map.char_to_byte(end).0;
+            let (start, end) = index_cursor.normalize_selection(CharIndex(s), CharIndex(e));
+            // 单次字符遍历转换两个合法字节端点。
+            let (byte_start, byte_end) = index_cursor.char_range_to_bytes(start, end);
             // 删除完整字素簇范围。
-            self.value.replace_range(byte_start..byte_end, "");
+            self.value.replace_range(byte_start.0..byte_end.0, "");
             // 光标停在删除范围原起点。
             self.cursor_char = start.0;
             self.selection.set(None);
@@ -745,28 +757,26 @@ impl Input {
 
     // 删除光标前一个完整扩展字素簇。
     pub(super) fn delete_previous_grapheme(&mut self) -> bool {
-        // 建立删除前的字素簇与字节转换表。
-        let index_map = TextIndexMap::new(&self.value);
+        // 借用删除前文本，避免建立临时字素簇与字节向量。
+        let index_cursor = TextIndexCursor::new(&self.value);
         // 把光标收敛到真实可停靠位置。
-        let cursor = index_map.normalize_char(
+        let cursor = index_cursor.normalize_char(
             // 包装当前字符下标。
             CharIndex(self.cursor_char),
             // 旧状态使用最近边界修复。
             BoundaryBias::Nearest,
         );
         // 查找完整前一字素簇起点。
-        let previous = index_map.previous_grapheme_boundary(cursor);
+        let previous = index_cursor.previous_grapheme_boundary(cursor);
         // 文本起点没有可删除的前一字素簇。
         if previous == cursor {
             // 报告未发生删除。
             return false;
         }
         // 起点转换为 UTF-8 字节偏移。
-        let byte_start = index_map.char_to_byte(previous).0;
-        // 终点转换为 UTF-8 字节偏移。
-        let byte_end = index_map.char_to_byte(cursor).0;
+        let (byte_start, byte_end) = index_cursor.char_range_to_bytes(previous, cursor);
         // 删除完整前一字素簇。
-        self.value.replace_range(byte_start..byte_end, "");
+        self.value.replace_range(byte_start.0..byte_end.0, "");
         // 光标退到删除范围起点。
         self.cursor_char = previous.0;
         // 后续 Shift 选择从新光标开始。
@@ -777,28 +787,26 @@ impl Input {
 
     // 删除光标后一个完整扩展字素簇。
     pub(super) fn delete_next_grapheme(&mut self) -> bool {
-        // 建立删除前的字素簇与字节转换表。
-        let index_map = TextIndexMap::new(&self.value);
+        // 借用删除前文本，避免建立临时字素簇与字节向量。
+        let index_cursor = TextIndexCursor::new(&self.value);
         // 把光标收敛到真实可停靠位置。
-        let cursor = index_map.normalize_char(
+        let cursor = index_cursor.normalize_char(
             // 包装当前字符下标。
             CharIndex(self.cursor_char),
             // 旧状态使用最近边界修复。
             BoundaryBias::Nearest,
         );
         // 查找完整后一字素簇终点。
-        let next = index_map.next_grapheme_boundary(cursor);
+        let next = index_cursor.next_grapheme_boundary(cursor);
         // 文本末尾没有可删除的后一字素簇。
         if next == cursor {
             // 报告未发生删除。
             return false;
         }
         // 起点转换为 UTF-8 字节偏移。
-        let byte_start = index_map.char_to_byte(cursor).0;
-        // 终点转换为 UTF-8 字节偏移。
-        let byte_end = index_map.char_to_byte(next).0;
+        let (byte_start, byte_end) = index_cursor.char_range_to_bytes(cursor, next);
         // 删除完整后一字素簇。
-        self.value.replace_range(byte_start..byte_end, "");
+        self.value.replace_range(byte_start.0..byte_end.0, "");
         // 光标保持在删除范围起点。
         self.cursor_char = cursor.0;
         // 后续 Shift 选择从当前光标开始。

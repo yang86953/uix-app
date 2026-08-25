@@ -13,9 +13,7 @@ use crate::widget;
 // 保存单行真实 shaping 字形，以便方向感知命中。
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 // 引入可停靠字素簇边界与显式字符索引。
-use crate::draw::resources::font::text_index::{
-    BoundaryBias, CharIndex, TextIndexCursor, TextIndexMap,
-};
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
 use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
