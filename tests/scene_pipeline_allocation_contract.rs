@@ -8,7 +8,9 @@ use uix::draw::painting::PaintContext;
 use uix::draw::renderer::{FrameRenderInput, ScenePipeline};
 use uix::draw::resources::{FontService, ImageService};
 use uix::draw::scene::{NodeId, ScenePaint};
-use uix::draw::{Color, DirtyRegion, FontHandle, RenderOutcome, RenderTarget, Renderer};
+use uix::draw::{
+    Color, DirtyRegion, FontHandle, RenderOutcome, RenderTarget, Renderer, ScrollCopy,
+};
 
 // 只统计显式测量区间内的堆申请。
 struct CountingAllocator;
@@ -144,8 +146,38 @@ fn frame_input<'a>(
     }
 }
 
+fn scroll_frame_input<'a>(
+    dirty_region: DirtyRegion,
+    font_service: &'a FontService,
+    image_service: &'a ImageService,
+    dy: f32,
+) -> FrameRenderInput<'a> {
+    let mut input = frame_input(dirty_region, font_service, image_service, true);
+    input.scroll_move = Some(vec![ScrollCopy::new(
+        Rect::new(0.0, 0.0, 64.0, 40.0),
+        0.0,
+        dy,
+    )]);
+    input
+}
+
+fn assert_present_damage_covers(outcome: &RenderOutcome, expected: Rect) {
+    let damage = match outcome {
+        RenderOutcome::Present(damage) | RenderOutcome::PresentPending(damage) => damage,
+        other => panic!("滚动帧必须完成呈现，实际结果: {other:?}"),
+    };
+    let bounds = damage.bounds().expect("滚动帧应保留局部呈现损伤");
+    assert!(
+        bounds.x <= expected.x
+            && bounds.y <= expected.y
+            && bounds.x + bounds.w >= expected.x + expected.w
+            && bounds.y + bounds.h >= expected.y + expected.h,
+        "呈现损伤必须覆盖完整滚动 viewport"
+    );
+}
+
 #[test]
-fn warmed_partial_frame_has_bounded_geometry_allocations() {
+fn warmed_partial_and_scroll_frames_have_zero_geometry_allocations() {
     let scene = EmptyScene;
     let font_service = FontService::default();
     let image_service = ImageService::new();
@@ -206,5 +238,57 @@ fn warmed_partial_frame_has_bounded_geometry_allocations() {
     assert_eq!(
         allocations, 0,
         "预热后的单矩形局部帧必须复用脏区、固定裁剪与光栅状态，保持零堆申请"
+    );
+
+    let mixed_scroll_dirty = || {
+        let mut region = scene.dirty_region();
+        // 真实滚动失效同时包含内容变化与 composite 暴露条带。
+        region.add_rect(Rect::new(0.0, 36.0, 64.0, 4.0));
+        region
+    };
+    let warm_scroll = pipeline.render_frame(
+        &mut renderer,
+        &scene,
+        scroll_frame_input(mixed_scroll_dirty(), &font_service, &image_service, 4.0),
+    );
+    assert!(matches!(
+        warm_scroll.outcome,
+        RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
+    ));
+
+    let measured_input =
+        scroll_frame_input(mixed_scroll_dirty(), &font_service, &image_service, 4.0);
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Release);
+    let measured = pipeline.render_frame(&mut renderer, &scene, measured_input);
+    COUNT_ALLOCATIONS.store(false, Ordering::Release);
+
+    assert!(matches!(
+        measured.outcome,
+        RenderOutcome::Present(_) | RenderOutcome::PresentPending(_)
+    ));
+    assert_present_damage_covers(&measured.outcome, Rect::new(0.0, 0.0, 64.0, 40.0));
+    let allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+    eprintln!("稳态滚动帧管线堆申请次数: {allocations}");
+    assert_eq!(allocations, 0, "预热后的混合滚动帧必须保持零堆申请");
+
+    // 分数滚动不能执行像素搬移；降级整 viewport 重绘仍应复用同一几何所有权。
+    let fallback_input =
+        scroll_frame_input(mixed_scroll_dirty(), &font_service, &image_service, 4.5);
+    let fallback_warm = pipeline.render_frame(&mut renderer, &scene, fallback_input);
+    assert_present_damage_covers(&fallback_warm.outcome, Rect::new(0.0, 0.0, 64.0, 40.0));
+    let fallback_input =
+        scroll_frame_input(mixed_scroll_dirty(), &font_service, &image_service, 4.5);
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    COUNT_ALLOCATIONS.store(true, Ordering::Release);
+    let fallback = pipeline.render_frame(&mut renderer, &scene, fallback_input);
+    COUNT_ALLOCATIONS.store(false, Ordering::Release);
+
+    assert_present_damage_covers(&fallback.outcome, Rect::new(0.0, 0.0, 64.0, 40.0));
+    let fallback_allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
+    eprintln!("稳态滚动降级帧管线堆申请次数: {fallback_allocations}");
+    assert_eq!(
+        fallback_allocations, 0,
+        "预热后的滚动降级帧必须保持零堆申请"
     );
 }

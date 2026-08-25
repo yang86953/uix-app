@@ -6,6 +6,8 @@ impl ScenePipeline {
         Self {
             layer_tree: LayerTree::new(),
             render_object_tree: RenderObjectTree::new(),
+            split_dirty_region: DirtyRegion::empty(),
+            scroll_paint_region: DirtyRegion::empty(),
             last_tree_version: 0,
             recorder: CommandRecorder::new(),
             recording_extent: None,
@@ -76,22 +78,37 @@ impl ScenePipeline {
         let frame_start_caps = engine.capabilities();
         let scroll_moves = input.scroll_move.as_deref().unwrap_or_default();
         let input_dirty_full = input.dirty_region.full_frame;
-        // 接管调用方本帧快照；普通局部帧沿后端生命周期复用同一 Vec 分配。
-        let mut paint_region = std::mem::take(&mut input.dirty_region);
+        // 普通帧直接接管调用方快照；滚动帧保留该分配供最终 present damage 使用，
+        // 并从管线 scratch 取得绘制区，避免同时复制两份临时 Vec。
+        let (mut paint_region, mut present_region) = if scroll_moves.is_empty() {
+            (std::mem::take(&mut input.dirty_region), None)
+        } else {
+            let present_region = std::mem::take(&mut input.dirty_region);
+            let mut paint_region = std::mem::take(&mut self.scroll_paint_region);
+            paint_region.reuse_from(&present_region);
+            (paint_region, Some(present_region))
+        };
         // effect 变化必须把旧、新逻辑区域同时送入区域失效。
         if backdrop_effect_changed {
             // 旧区域需要清除上一策略的像素影响。
             if let Some(effect) = self.overlay_backdrop_effect {
                 // DirtyRegion 负责后续合并与裁剪。
                 paint_region.add_rect(effect.region());
+                if let Some(region) = &mut present_region {
+                    region.add_rect(effect.region());
+                }
             }
             // 新区域需要绘制新的 backdrop 结果。
             if let Some(effect) = requested_backdrop_effect {
                 // DPR 只由 backend blur boundary 应用一次。
                 paint_region.add_rect(effect.region());
+                if let Some(region) = &mut present_region {
+                    region.add_rect(effect.region());
+                }
             }
         }
-        for &(viewport, dx, dy) in scroll_moves {
+        for &ScrollCopy { viewport, delta } in scroll_moves {
+            let (dx, dy) = (delta.x, delta.y);
             if let Some(exposed) = scroll_exposed_rect(viewport, dx, dy) {
                 paint_region.add_rect(exposed);
             }
@@ -104,40 +121,19 @@ impl ScenePipeline {
             && !scroll_moves.is_empty()
             && scroll_moves
                 .iter()
-                .all(|&(viewport, dx, dy)| valid_scroll_copy(viewport, dx, dy));
-        let scroll_copies = use_scroll_copies.then(|| {
-            scroll_moves
-                .iter()
-                .map(|&(viewport, dx, dy)| ScrollCopy::new(viewport, dx.round(), dy.round()))
-                .collect::<Vec<_>>()
-        });
+                .all(|copy| valid_scroll_copy(copy.viewport, copy.delta.x, copy.delta.y));
 
         // present damage 覆盖所有实际变化像素：即使只重绘 exposed strip，滚动视口
         // 内的保留像素也发生了移动，外部 presenter 必须提交整个视口。
-        let mut present_region = if scroll_moves.is_empty() {
-            None
-        } else {
-            let mut region = paint_region.clone();
-            for &(viewport, _, _) in scroll_moves {
+        let mut present_region = present_region.map(|mut region| {
+            for copy in scroll_moves {
+                let viewport = copy.viewport;
                 if valid_frame_rect(viewport) {
                     region.add_rect(viewport);
                 }
             }
-            // present damage 同样包含旧、新 effect 区域。
-            if backdrop_effect_changed {
-                // 清除旧策略影响。
-                if let Some(effect) = self.overlay_backdrop_effect {
-                    // 记录旧逻辑区域。
-                    region.add_rect(effect.region());
-                }
-                // 呈现新策略结果。
-                if let Some(effect) = requested_backdrop_effect {
-                    // 记录新逻辑区域。
-                    region.add_rect(effect.region());
-                }
-            }
-            Some(region)
-        };
+            region
+        });
         // 页面切换等结构更新常产生多块高度重叠的脏区；若包围盒额外面积受控，
         // 扩大实际清理与 present damage，避免按矩形重复遍历和编码整棵场景。
         // 滚动搬移仍保留独立 viewport/条带契约，不参与该收敛。
@@ -257,17 +253,30 @@ impl ScenePipeline {
         }
         // 只有同步/降级事务未失败时才消费本帧请求计划。
         self.overlay_backdrop_effect = requested_backdrop_effect;
-        // 只有滚动存在独立 present 区域时才提前构造 damage；普通帧稍后接管
-        // backend 返回的实际绘制区分配，避免为同一组矩形建立第二个 Vec。
-        let requested_present_damage = present_region.as_ref().map(|present_damage_region| {
-            compute_present_damage(present_damage_region, draw_full, input.rendered_first)
-        });
-        let requested_region = if draw_full {
-            DirtyRegion::full()
+        // 有效滚动把调用方脏区分配直接转换为最终 damage，并把 scratch 绘制区送入
+        // backend；降级路径仍重绘完整 viewport，不能只画 exposed strip。
+        let (requested_present_damage, requested_region, reuse_region_after_render) = if draw_full {
+            if present_region.is_some() {
+                self.scroll_paint_region = paint_region;
+            }
+            (
+                present_region.take().map(|_| DamageRegion::full()),
+                DirtyRegion::full(),
+                false,
+            )
         } else if use_scroll_copies {
-            paint_region
+            (
+                present_region
+                    .take()
+                    .map(|region| compute_present_damage_owned(region, input.rendered_first)),
+                paint_region,
+                true,
+            )
+        } else if let Some(region) = present_region.take() {
+            self.scroll_paint_region = paint_region;
+            (None, region, false)
         } else {
-            present_region.take().unwrap_or(paint_region)
+            (None, paint_region, false)
         };
 
         // backdrop refresh 必须在任何最终 begin_frame 之前完成正常树中间提交。
@@ -295,10 +304,11 @@ impl ScenePipeline {
         let requested_bounds = requested_region.bounds();
         let strategy = if draw_full {
             UpdateStrategy::FullRedraw
-        } else if let Some(copies) = scroll_copies {
+        } else if use_scroll_copies {
             UpdateStrategy::ScrollCopies {
                 dirty_rects: requested_region.into_rects(),
-                copies,
+                // 调用方快照已拥有最终 ScrollCopy 类型，直接移交同一 Vec 分配。
+                copies: input.scroll_move.take().unwrap_or_default(),
             }
         } else {
             UpdateStrategy::DirtyRects(requested_region.into_rects())
@@ -461,6 +471,7 @@ impl ScenePipeline {
                 region,
                 damage,
                 use_gpu_overlay_backdrop,
+                reuse_region_after_render,
             );
         }
 
@@ -492,6 +503,7 @@ impl ScenePipeline {
         let render_result = if should_split_dirty_rects(&region) {
             let mut first = true;
             let mut result = Ok(());
+            let mut sub_region = std::mem::take(&mut self.split_dirty_region);
             // 直接借用原矩形切片，避免每帧复制临时 Vec。
             for rect in region
                 .rects()
@@ -500,7 +512,7 @@ impl ScenePipeline {
                 .filter(|rect| positive_dirty_rect(*rect))
             {
                 self.recorder.canvas_2d().push_clip(rect);
-                let sub_region = DirtyRegion::area(rect);
+                sub_region.reuse_area(rect);
                 let render_objects = if first && input.rendered_first {
                     first = false;
                     Some(&mut self.render_object_tree)
@@ -539,6 +551,7 @@ impl ScenePipeline {
                     break;
                 }
             }
+            self.split_dirty_region = sub_region;
             result
         } else {
             // Dirty frames: clip recording to the damage AABB when a single hole
@@ -658,8 +671,14 @@ impl ScenePipeline {
         }
         let present_inv_source =
             classify_invalidation(input.rendered_first, &region, input.invalidation_source);
-        let damage =
-            damage.unwrap_or_else(|| compute_present_damage_owned(region, input.rendered_first));
+        let damage = match damage {
+            Some(damage) if reuse_region_after_render => {
+                self.scroll_paint_region = region;
+                damage
+            }
+            Some(damage) => damage,
+            None => compute_present_damage_owned(region, input.rendered_first),
+        };
         let end_outcome = engine.end_frame(&damage);
         let outcome = match end_outcome {
             RenderOutcome::Present(_) if caps.uses_external_presenter() => {
@@ -708,6 +727,7 @@ impl ScenePipeline {
         region: DirtyRegion,
         damage: Option<DamageRegion>,
         use_overlay_backdrop: bool,
+        reuse_scroll_region: bool,
     ) -> FrameRenderOutput {
         // 帧诊断：GPU 路径记录阶段起点（含场景遍历与绘制编码）。
         let stage_start = Instant::now();
@@ -737,6 +757,7 @@ impl ScenePipeline {
         let render_result = if should_split_dirty_rects(&region) {
             let mut first = true;
             let mut result = Ok(());
+            let mut sub_region = std::mem::take(&mut self.split_dirty_region);
             // GPU 路径同样直接遍历原矩形，保持与 CPU 录制路径一致。
             for rect in region
                 .rects()
@@ -745,7 +766,7 @@ impl ScenePipeline {
                 .filter(|rect| positive_dirty_rect(*rect))
             {
                 engine.canvas_2d().push_clip(rect);
-                let sub_region = DirtyRegion::area(rect);
+                sub_region.reuse_area(rect);
                 let render_objects = if first && input.rendered_first {
                     first = false;
                     Some(&mut self.render_object_tree)
@@ -784,6 +805,7 @@ impl ScenePipeline {
                     break;
                 }
             }
+            self.split_dirty_region = sub_region;
             result
         } else {
             let damage_clip = (!region.full_frame)
@@ -852,8 +874,14 @@ impl ScenePipeline {
         }
         let present_inv_source =
             classify_invalidation(input.rendered_first, &region, input.invalidation_source);
-        let damage =
-            damage.unwrap_or_else(|| compute_present_damage_owned(region, input.rendered_first));
+        let damage = match damage {
+            Some(damage) if reuse_scroll_region => {
+                self.scroll_paint_region = region;
+                damage
+            }
+            Some(damage) => damage,
+            None => compute_present_damage_owned(region, input.rendered_first),
+        };
         // 帧诊断：提交阶段起点（end_frame 含 GPU 提交与 present 等待）。
         let submit_start = Instant::now();
         let end_outcome = engine.end_frame(&damage);

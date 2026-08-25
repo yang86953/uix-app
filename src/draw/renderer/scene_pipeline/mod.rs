@@ -25,7 +25,7 @@ pub struct FrameRenderInput<'a> {
     /// 调用方观察到的场景树版本。
     pub tree_version: u64,
     /// 可选的滚动复制操作，每项包含区域及水平、垂直位移。
-    pub scroll_move: Option<Vec<(Rect, f32, f32)>>,
+    pub scroll_move: Option<Vec<ScrollCopy>>,
     /// 本帧使用的默认字体句柄。
     pub font: FontHandle,
     /// 提供字体与文本资源的服务。
@@ -58,6 +58,10 @@ pub struct FrameRenderOutput {
 pub struct ScenePipeline {
     layer_tree: LayerTree,
     render_object_tree: RenderObjectTree,
+    /// 多矩形拆分绘制复用的单区域视图，避免每个脏洞创建临时 Vec。
+    split_dirty_region: DirtyRegion,
+    /// 滚动帧复用的绘制区；调用方脏区分配直接移交给最终呈现损伤。
+    scroll_paint_region: DirtyRegion,
     last_tree_version: u64,
     /// Private API-neutral producer for every scene path before the real
     /// backend consumes the one ordered main `FrameEncoder` (#181). It never

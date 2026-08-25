@@ -51,6 +51,24 @@ impl DirtyRegion {
         }
     }
 
+    /// 在现有矩形存储中重置为单个局部脏区，供帧内临时视图跨帧复用容量。
+    pub(crate) fn reuse_area(&mut self, rect: Rect) {
+        self.rects.clear();
+        self.full_frame = false;
+        self.clear_required = rect.w > 0.0 && rect.h > 0.0;
+        if self.clear_required {
+            self.rects.push(rect);
+        }
+    }
+
+    /// 复用当前容量复制另一脏区的几何与清理状态。
+    pub(crate) fn reuse_from(&mut self, source: &Self) {
+        self.rects.clear();
+        self.rects.extend_from_slice(&source.rects);
+        self.full_frame = source.full_frame;
+        self.clear_required = source.clear_required;
+    }
+
     /// 将脏区重置为空状态。
     pub fn reset(&mut self) {
         *self = Self::empty();
@@ -66,10 +84,17 @@ impl DirtyRegion {
         if rect.w <= 0.0 || rect.h <= 0.0 || self.full_frame {
             return;
         }
-        // 滚动 exposed strip 常与上游 dirty 同矩形；拆分路径不再并集，须跳过精确重复。
-        if self.rects.contains(&rect) {
+        // 已有矩形覆盖新区域时无需增加几何。
+        if self
+            .rects
+            .iter()
+            .any(|existing| rect_contains(*existing, rect))
+        {
             return;
         }
+        // 新矩形完整覆盖的旧区域可原地移除；滚动 viewport 因而复用 exposed strip 槽位。
+        self.rects
+            .retain(|existing| !rect_contains(rect, *existing));
         self.clear_required = true;
         if self.rects.len() >= DIRTY_MERGE_THRESHOLD - 1 {
             let bounds = self.bounds().union(&rect);
@@ -151,6 +176,13 @@ impl DirtyRegion {
             full_frame: false,
         }
     }
+}
+
+fn rect_contains(outer: Rect, inner: Rect) -> bool {
+    outer.x <= inner.x
+        && outer.y <= inner.y
+        && outer.x + outer.w >= inner.x + inner.w
+        && outer.y + outer.h >= inner.y + inner.h
 }
 
 impl Default for DirtyRegion {

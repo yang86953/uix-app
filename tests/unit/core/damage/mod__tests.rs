@@ -1,7 +1,7 @@
     // 引入被测 damage 规划类型。
     use super::{
-        DamageRegion, PresentCoherency, PresentDamage, PresentDamageTracker, PresentImage,
-        PresentSurface,
+        DamageRegion, DirtyRegion, PresentCoherency, PresentDamage, PresentDamageTracker,
+        PresentImage, PresentSurface,
     };
     // 引入逻辑矩形值。
     use crate::core::Rect;
@@ -16,6 +16,20 @@
     fn damage(x: f32, y: f32) -> DamageRegion {
         // 每个区域固定为互不接触的 5×5 矩形。
         DamageRegion::from_rect(Rect::new(x, y, 5.0, 5.0))
+    }
+
+    // 验证覆盖矩形原地替换冗余子区域，供滚动 viewport 复用 exposed strip 容量。
+    #[test]
+    fn dirty_region_replaces_fully_covered_rectangles() {
+        let mut region = DirtyRegion::area(Rect::new(0.0, 36.0, 64.0, 4.0));
+        let capacity = region.rects.capacity();
+        region.add_rect(Rect::new(0.0, 0.0, 64.0, 40.0));
+        assert_eq!(region.rects(), &[Rect::new(0.0, 0.0, 64.0, 40.0)]);
+        assert_eq!(region.rects.capacity(), capacity);
+
+        // 已被现有 viewport 覆盖的子区域不应重新进入集合。
+        region.add_rect(Rect::new(4.0, 4.0, 8.0, 8.0));
+        assert_eq!(region.rects().len(), 1);
     }
 
     // 验证双缓冲轮换会修复当前 image 错过的已提交历史。
