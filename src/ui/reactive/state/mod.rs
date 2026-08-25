@@ -11,8 +11,6 @@ use crate::core::{Rect, WidgetId};
 use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
-type GenerationCheck = Box<dyn Fn() -> u64 + Send + Sync>;
-type GenerationSnapshot = (GenerationCheck, u64);
 type StateWatcher<T> = Arc<dyn Fn(&T) + Send + Sync>;
 type StateBindCapture = (
     WidgetId,
@@ -643,9 +641,8 @@ where
 /// 通知 WidgetTree 重新渲染所属 View。reconcile 回调由 ViewAdapter 在 ViewNode 展开时自动绑定，
 /// 用户不需要手动请求 reconcile。
 pub struct State<T> {
-    inner: Arc<RwLock<StateInner<T>>>,
-    // 独立保存 Effect 订阅表，避免值锁内析构租约发生重入死锁。
-    effect_subscribers: effect::DependencySubscriberRegistry,
+    // 单一源实例同时拥有值槽与独立订阅表，公开句柄只克隆此所有权。
+    source: Arc<StateDependencySource<T>>,
     /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     pub(crate) reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（WidgetId + 队列句柄）。
@@ -660,22 +657,44 @@ struct StateInner<T> {
     watchers: Option<Arc<Vec<StateWatcher<T>>>>,
 }
 
+// 保存 State 的值槽与下游订阅端口，不把生命周期对象泄漏到 UI 协调层。
+struct StateDependencySource<T> {
+    // 值与 generation 始终在同一读写锁内观察。
+    inner: RwLock<StateInner<T>>,
+    // 订阅表保持独立锁，通知、注销与用户重入不得持有值锁。
+    subscribers: effect::DependencySubscriberRegistry,
+}
+
+impl<T: Clone + Send + Sync + 'static> effect::DependencySource for StateDependencySource<T> {
+    // 通过值锁读取与业务值同域的当前 generation。
+    fn generation(&self) -> u64 {
+        self.inner
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .generation
+    }
+
+    // 只暴露私有下游注册表的窄借用。
+    fn subscribers(&self) -> &effect::DependencySubscriberRegistry {
+        &self.subscribers
+    }
+}
+
 impl<T: Clone + Send + Sync + 'static> State<T> {
     /// 创建代数为零、拥有独立稳定槽身份的响应式状态。
     pub fn new(value: T) -> Self {
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
-        // 为当前 State 创建不与值锁共享的 Effect 订阅注册表。
-        let effect_subscribers = Arc::new(RwLock::new(effect::DependencySubscribers::new()));
-
         Self {
-            inner: Arc::new(RwLock::new(StateInner {
-                slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
-                value,
-                generation: 0,
-                watchers: None,
-            })),
-            effect_subscribers,
+            source: Arc::new(StateDependencySource {
+                inner: RwLock::new(StateInner {
+                    slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
+                    value,
+                    generation: 0,
+                    watchers: None,
+                }),
+                subscribers: RwLock::new(effect::DependencySubscribers::new()),
+            }),
             reconcile_sites,
             paint_sites,
         }
@@ -722,34 +741,22 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         // 在同一读锁快照中取得值、generation 与稳定槽身份。
         let (value, observed_generation, slot_id) = {
             // 获取状态快照锁以避免值与 generation 分离观察。
-            let inner = self.inner.read().unwrap_or_else(|error| error.into_inner());
+            let inner = self
+                .source
+                .inner
+                .read()
+                .unwrap_or_else(|error| error.into_inner());
             // 复制可安全离开锁区的值与元数据。
             (inner.value.clone(), inner.generation, inner.slot_id)
         };
         // 将该快照注册到活跃的 Computed 或 Effect 依赖收集器。
         track_dep(slot_id, || {
-            // 仅首次读取需要建立拥有型 generation 检查器与订阅入口。
-            let self_clone = self.inner.clone();
-            let subscribe_inner = self.inner.clone();
-            let subscribe_registry = self.effect_subscribers.clone();
+            // 仅首次读取克隆同一个窄依赖源，不再装箱 generation 与订阅闭包。
+            let source: Arc<dyn effect::DependencySource> = self.source.clone();
             EffectDependency {
                 slot_id,
                 observed_generation,
-                check_generation: Box::new(move || {
-                    self_clone
-                        .read()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .generation
-                }),
-                subscribe_pending: Box::new(move |subscriber, observed_generation| {
-                    // 注册 State 私有的 Effect 弱引用订阅。
-                    effect::subscribe(
-                        subscribe_registry.clone(),
-                        subscribe_inner.clone(),
-                        subscriber,
-                        observed_generation,
-                    )
-                }),
+                source,
             }
         });
         // 继续记录结构性 State 绑定捕获。
@@ -761,7 +768,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     }
 
     pub(crate) fn get_untracked(&self) -> T {
-        self.inner
+        self.source
+            .inner
             .read()
             .unwrap_or_else(|error| error.into_inner())
             .value
@@ -775,7 +783,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
         {
-            let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+            let mut inner = self.source.inner.write().unwrap_or_else(|e| e.into_inner());
             inner.value = value;
             inner.generation += 1;
             // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
@@ -785,7 +793,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 .map(|watchers| (inner.value.clone(), Arc::clone(watchers)));
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
-        effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
+        effect_subscribers = effect::collect_subscribers(&self.source.subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
         if let Some((snapshot, watchers)) = watch_notification {
@@ -806,7 +814,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
         {
-            let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+            let mut inner = self.source.inner.write().unwrap_or_else(|e| e.into_inner());
             f(&mut inner.value);
             inner.generation += 1;
             // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
@@ -816,7 +824,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 .map(|watchers| (inner.value.clone(), Arc::clone(watchers)));
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
-        effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
+        effect_subscribers = effect::collect_subscribers(&self.source.subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
         if let Some((snapshot, watchers)) = watch_notification {
@@ -837,7 +845,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 注册每次值变化后在状态写锁外同步调用的观察器。
     pub fn watch<F: Fn(&T) + Send + Sync + 'static>(&self, f: F) {
-        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.source.inner.write().unwrap_or_else(|e| e.into_inner());
         // 注册属于低频生命周期路径；活动通知快照存在时复制旧列表，保持本轮顺序稳定。
         let watchers = inner.watchers.get_or_insert_with(|| Arc::new(Vec::new()));
         Arc::make_mut(watchers).push(Arc::new(f));
@@ -848,7 +856,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     // 此计数仅用于模块私有测试，不构成公开 State 契约。
     pub(crate) fn effect_subscriber_count(&self) -> usize {
         // 委托独立注册表清理死亡弱引用并读取精确数量。
-        effect::subscriber_count(&self.effect_subscribers)
+        effect::subscriber_count(&self.source.subscribers)
     }
 
     // 暴露测试专用的活跃绘制站点数量以验证节点租约释放。
@@ -864,7 +872,8 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 返回每次 [`Self::set`] 或 [`Self::update`] 后递增的状态代数。
     pub fn generation(&self) -> u64 {
-        self.inner
+        self.source
+            .inner
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .generation
@@ -872,7 +881,11 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 返回此状态共享存储槽的稳定身份。
     pub fn slot_id(&self) -> StateSlotId {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).slot_id
+        self.source
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .slot_id
     }
 
     #[allow(dead_code)]
@@ -887,8 +900,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
-            effect_subscribers: self.effect_subscribers.clone(),
+            source: self.source.clone(),
             reconcile_sites: self.reconcile_sites.clone(),
             paint_sites: self.paint_sites.clone(),
         }

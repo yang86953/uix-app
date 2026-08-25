@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, Weak};
 
-// 引入依赖收集、generation 快照与 State 私有内部状态。
-use super::{GenerationCheck, GenerationSnapshot, StateInner, StateSlotId, collect_deps};
+// 引入依赖收集与稳定槽身份。
+use super::{StateSlotId, collect_deps};
 // 引入 View 构建期间交接 Effect 的捕获栈。
 use super::STATE_CAPTURE_STACK;
 
@@ -18,37 +18,47 @@ pub(crate) trait DependencySubscriber: Send + Sync {
     fn notify(&self);
 }
 
+// 统一 State 与 Computed 向下游暴露的窄依赖源契约。
+pub(crate) trait DependencySource: Send + Sync {
+    // 读取当前可订阅 generation，调用方不得持有源注册表锁。
+    fn generation(&self) -> u64;
+    // 借用与值或缓存锁分离的下游注册表。
+    fn subscribers(&self) -> &DependencySubscriberRegistry;
+}
+
 // 保存一次依赖读取的快照与订阅入口。
 pub(crate) struct EffectDependency {
     // 标识本次读取所属的稳定槽。
     pub(crate) slot_id: StateSlotId,
     // 保存读取值时观察到的 generation。
     pub(crate) observed_generation: u64,
-    // 供 tick 或重算复核当前 generation。
-    pub(crate) check_generation: GenerationCheck,
-    // 注册下游并返回唯一释放租约。
-    pub(crate) subscribe_pending:
-        Box<dyn Fn(Arc<dyn DependencySubscriber>, u64) -> EffectLease + Send + Sync>,
+    // 复用源自身的 generation 与订阅能力，避免每轮为唯一依赖装箱两个闭包。
+    pub(crate) source: Arc<dyn DependencySource>,
 }
+
+// 保存依赖源与读取时观察到的 generation。
+pub(crate) type GenerationSnapshot = (Arc<dyn DependencySource>, u64);
 
 // 用弱引用保存源不拥有下游生命周期的订阅表。
 pub(crate) type DependencySubscribers = HashMap<u64, Weak<dyn DependencySubscriber>>;
 // 让值锁与订阅表锁保持完全分离。
-pub(crate) type DependencySubscriberRegistry = Arc<RwLock<DependencySubscribers>>;
+pub(crate) type DependencySubscriberRegistry = RwLock<DependencySubscribers>;
 
 // 保存一次订阅的精确注销责任。
 pub(crate) struct EffectLease {
-    // 仅允许首次析构时取走注销动作。
-    release: Option<Box<dyn FnOnce() + Send + Sync>>,
+    // 强持有依赖源直到精确注销完成，与 generation 快照保持同一生命周期。
+    source: Option<Arc<dyn DependencySource>>,
+    // 保存本租约独占且永不复用的订阅令牌。
+    token: u64,
 }
 
 impl EffectLease {
-    // 构造由析构负责执行的唯一注销租约。
-    pub(crate) fn new<F: FnOnce() + Send + Sync + 'static>(release: F) -> Self {
-        // 保存调用方提供的一次性动作。
+    // 构造由析构负责从同一依赖源精确注销的唯一租约。
+    fn new(source: Arc<dyn DependencySource>, token: u64) -> Self {
+        // 具体字段即可覆盖 State 与 Computed，无需为释放动作单独分配闭包。
         Self {
-            // 装箱使不同注销闭包拥有统一存储。
-            release: Some(Box::new(release)),
+            source: Some(source),
+            token,
         }
     }
 }
@@ -56,13 +66,17 @@ impl EffectLease {
 impl Drop for EffectLease {
     // 在租约离开最后所有者时精确注销。
     fn drop(&mut self) {
-        // 取走动作保证重复析构路径幂等。
-        let Some(release) = self.release.take() else {
+        // 取走源保证重复析构路径幂等。
+        let Some(source) = self.source.take() else {
             // 空租约无需继续处理。
             return;
         };
-        // 在所有外部锁之外执行注销闭包。
-        release();
+        // 仅短暂获取源注册表写锁并精确删除本令牌。
+        source
+            .subscribers()
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&self.token);
     }
 }
 
@@ -92,11 +106,9 @@ pub(crate) fn next_subscriber_token() -> u64 {
 }
 
 // 为任意依赖源建立注册后 generation 复核的订阅。
-pub(crate) fn subscribe<T>(
-    // 接收与值锁分离的源订阅表。
-    registry: DependencySubscriberRegistry,
-    // 接收可读取 generation 的源内部状态。
-    inner: Arc<RwLock<StateInner<T>>>,
+pub(crate) fn subscribe(
+    // 接收同时提供 generation 与独立注册表的窄源能力。
+    source: Arc<dyn DependencySource>,
     // 接收不被源强持有的下游失效对象。
     subscriber: Arc<dyn DependencySubscriber>,
     // 接收读取值时记录的 generation。
@@ -107,27 +119,22 @@ pub(crate) fn subscribe<T>(
     // 先注册以覆盖观察与订阅之间的写入。
     {
         // 获取独立注册表写锁并从中毒恢复。
-        let mut subscribers = registry.write().unwrap_or_else(|error| error.into_inner());
+        let mut subscribers = source
+            .subscribers()
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
         // 仅保存弱引用避免源延长下游生命周期。
         subscribers.insert(token, Arc::downgrade(&subscriber));
     }
     // 在注册表锁释放后读取当前 generation。
-    let current_generation = inner
-        .read()
-        .unwrap_or_else(|error| error.into_inner())
-        .generation;
+    let current_generation = source.generation();
     // 补偿读取与订阅之间发生的任何变更。
     if current_generation != observed_generation {
         // 直接在锁外通知下游保留下一轮工作。
         subscriber.notify();
     }
-    // 将令牌注销责任交给不可复制租约。
-    EffectLease::new(move || {
-        // 仅短暂获取注册表写锁。
-        let mut subscribers = registry.write().unwrap_or_else(|error| error.into_inner());
-        // 删除本令牌绝不影响后续令牌。
-        subscribers.remove(&token);
-    })
+    // 将源与令牌的注销责任交给不可复制租约。
+    EffectLease::new(source, token)
 }
 
 // 快照并回收存活下游，绝不在注册表锁内通知。
@@ -213,13 +220,16 @@ pub(crate) fn refresh_dependency_leases(
         // 仅为当前未持有的槽调用源订阅入口。
         if !existing.contains(&slot) {
             // 所有订阅与可能的注册后通知均在租约锁外。
-            let lease =
-                (dependency.subscribe_pending)(subscriber.clone(), dependency.observed_generation);
+            let lease = subscribe(
+                dependency.source.clone(),
+                subscriber.clone(),
+                dependency.observed_generation,
+            );
             // 暂存至短锁插入阶段。
             additions.insert(slot, lease);
         }
         // 保存读取时 generation 而非延迟读取值。
-        next_snapshots.push((dependency.check_generation, dependency.observed_generation));
+        next_snapshots.push((dependency.source, dependency.observed_generation));
     }
     // 将新租约插入并移出防御性替换值。
     let replaced = {
@@ -374,7 +384,7 @@ impl Effect {
             .read()
             .unwrap_or_else(|error| error.into_inner())
             .iter()
-            .any(|(check, observed)| check() != *observed);
+            .any(|(source, observed)| source.generation() != *observed);
         // generation 未变仅完成本轮通知消费。
         if !need_run {
             // 不执行用户闭包。

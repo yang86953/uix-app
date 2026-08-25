@@ -17,7 +17,7 @@ use crate::core::{Rect, WidgetId};
 use crate::draw::renderer::InvalidationQueueHandle;
 
 // 引入通用依赖订阅与租约私有契约。
-use super::effect::{self, DependencySubscriber, EffectDependency, EffectLease};
+use super::effect::{self, DependencySource, DependencySubscriber, EffectDependency, EffectLease};
 // 引入父模块拥有的依赖追踪和绘制辅助函数。
 use super::{
     NEXT_STATE_SLOT, PaintBindSite, StateSlotId, bind_persistent_paint_site, collect_deps,
@@ -52,7 +52,7 @@ struct ComputedInner<T> {
     // 原子保存缓存值与其 revision，禁止两者撕裂。
     cache: RwLock<Option<ComputedCache<T>>>,
     // 保存缓存读取上游时的 generation 快照。
-    deps: RwLock<Vec<super::GenerationSnapshot>>,
+    deps: RwLock<Vec<effect::GenerationSnapshot>>,
     // 保存每个上游槽唯一的精确释放租约。
     leases: RwLock<std::collections::HashMap<StateSlotId, EffectLease>>,
     // 保存不强持有 Effect 或嵌套 Computed 的下游表。
@@ -84,6 +84,18 @@ impl<T: Clone + Send + Sync + 'static> DependencySubscriber for ComputedInner<T>
         effect::notify_subscribers(subscribers);
         // 通知当前绘制端点刷新派生值。
         fire_paint_bindings(&self.paint_sites);
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> DependencySource for ComputedInner<T> {
+    // 派生源的可订阅 generation 由无锁 revision 提供。
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    // 下游表与缓存、重算门保持独立，租约析构不会进入用户计算锁域。
+    fn subscribers(&self) -> &effect::DependencySubscriberRegistry {
+        &self.subscribers
     }
 }
 
@@ -202,7 +214,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
                 // 首次重算将安装上游租约。
                 leases: RwLock::new(std::collections::HashMap::new()),
                 // 建立与缓存锁完全分离的下游表。
-                subscribers: Arc::new(RwLock::new(effect::DependencySubscribers::new())),
+                subscribers: RwLock::new(effect::DependencySubscribers::new()),
                 // 初始 revision 为零。
                 generation: AtomicU64::new(0),
                 // 初始必须执行首次计算。
@@ -390,46 +402,15 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let slot_id = self.inner.slot_id;
         // 将派生源本身登记给外层 Computed 或 Effect。
         track_dep(slot_id, || {
-            // 仅首次读取需要建立拥有型检查器、注册表与订阅闭包。
-            let registry = self.inner.subscribers.clone();
-            let check_inner = self.inner.clone();
-            let subscribe_inner = self.inner.clone();
+            // 仅首次读取克隆统一派生源，不再为检查与订阅入口分别装箱闭包。
+            let source: Arc<dyn DependencySource> = self.inner.clone();
             EffectDependency {
                 // 使用派生值自身的稳定槽。
                 slot_id,
                 // 使用单锁缓存条目提供的 observed revision。
                 observed_generation,
-                // 读取当前可订阅 revision 供外层检测。
-                check_generation: Box::new(move || check_inner.generation.load(Ordering::Acquire)),
-                // 建立下游注册后 revision 复核。
-                subscribe_pending: Box::new(move |subscriber, observed| {
-                    // 分配唯一且不回绕的下游令牌。
-                    let token = effect::next_subscriber_token();
-                    // 在注册表锁内仅保存弱引用。
-                    {
-                        // 从中毒恢复并独占下游表。
-                        let mut subscribers =
-                            registry.write().unwrap_or_else(|error| error.into_inner());
-                        // 源不应延长下游生命周期。
-                        subscribers.insert(token, Arc::downgrade(&subscriber));
-                    }
-                    // 注册后复核不能漏掉 observe 到 subscribe 期间的变化。
-                    if subscribe_inner.generation.load(Ordering::Acquire) != observed {
-                        // 在注册表锁外补偿通知。
-                        subscriber.notify();
-                    }
-                    // 为析构闭包额外克隆注册表，避免移动 Fn 捕获。
-                    let lease_registry = registry.clone();
-                    // 返回由唯一令牌注销的租约。
-                    EffectLease::new(move || {
-                        // 短暂获取注册表写锁。
-                        let mut subscribers = lease_registry
-                            .write()
-                            .unwrap_or_else(|error| error.into_inner());
-                        // 精确移除本次登记。
-                        subscribers.remove(&token);
-                    })
-                }),
+                // 统一源契约保留注册后 revision 复核与精确租约释放。
+                source,
             }
         });
         // 返回与 observed revision 同轮的派生值。
