@@ -20,7 +20,7 @@ fn integral_scroll_delta_keeps_exact_texture_copy() {
     assert!(tree.push_scroll_composite(viewport, 0.0, 12.0));
     assert_eq!(
         tree.scroll_region_moves(),
-        Some(vec![(viewport, 0.0, 12.0)])
+        Some(vec![ScrollCopy::new(viewport, 0.0, 12.0)])
     );
 }
 

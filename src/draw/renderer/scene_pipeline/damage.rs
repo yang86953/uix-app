@@ -64,28 +64,6 @@ pub(super) fn normalize_end_outcome(
     }
 }
 
-pub(super) fn compute_present_damage(
-    dirty: &DirtyRegion,
-    full_frame: bool,
-    rendered_first: bool,
-) -> DamageRegion {
-    if !rendered_first || full_frame {
-        return DamageRegion::full();
-    }
-    // scroll 视口已并入 dirty（见 render_frame 的 dirty_with_scroll 构造）。
-    let rects: Vec<Rect> = dirty
-        .rects()
-        .iter()
-        .filter(|r| r.w > 0.0 && r.h > 0.0)
-        .map(pad_damage_rect)
-        .collect();
-    if rects.is_empty() {
-        DamageRegion::full()
-    } else {
-        DamageRegion::partial(rects)
-    }
-}
-
 /// 消费实际绘制区，在原矩形分配内建立最终呈现损伤。
 pub(super) fn compute_present_damage_owned(
     dirty: DirtyRegion,

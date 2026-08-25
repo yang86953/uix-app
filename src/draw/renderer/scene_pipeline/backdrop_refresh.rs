@@ -253,6 +253,8 @@ impl ScenePipeline {
                 Some(damage),
                 // 无有效 clean snapshot 时禁止恢复 backdrop。
                 false,
+                // refresh 使用完整区域，不借用滚动绘制 scratch。
+                false,
             );
         }
         // 第一阶段只写 retained texture，不触发 acquire 或 present。

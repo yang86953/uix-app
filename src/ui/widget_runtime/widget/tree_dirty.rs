@@ -1,6 +1,7 @@
 use super::tree_core::WidgetTree;
 use super::*;
 use crate::core::DirtyRegion;
+use crate::draw::ScrollCopy;
 use crate::draw::renderer::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -364,11 +365,16 @@ impl WidgetTree {
     }
 
     /// 获取同帧全部滚动视口；提交成功前保留，供失败帧原样重试。
-    pub(crate) fn scroll_region_moves(&self) -> Option<Vec<(Rect, f32, f32)>> {
+    pub(crate) fn scroll_region_moves(&self) -> Option<Vec<ScrollCopy>> {
         if self.scroll_region_moves.is_empty() {
             None
         } else {
-            Some(self.scroll_region_moves.clone())
+            Some(
+                self.scroll_region_moves
+                    .iter()
+                    .map(|&(viewport, dx, dy)| ScrollCopy::new(viewport, dx, dy))
+                    .collect(),
+            )
         }
     }
 
