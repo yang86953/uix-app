@@ -145,6 +145,29 @@ fn run_round(
     (started.elapsed().as_nanos(), stats)
 }
 
+// 运行一轮高扇出公开观察器通知，覆盖 State 真实写入与锁外同步交付路径。
+fn run_watched_round(
+    state: &State<u64>,
+    delivery_count: &AtomicUsize,
+    watcher_count: usize,
+    iterations: usize,
+) -> (u128, AllocationStats) {
+    // 只测已经完成订阅后的稳定更新热段。
+    let started = Instant::now();
+    begin_measurement();
+    for value in 0..iterations {
+        // 使用标量状态隔离 watcher 快照本身的时间与堆成本。
+        state.set(black_box(value as u64));
+    }
+    let stats = end_measurement();
+    // 每次更新必须按注册次序完整通知全部 watcher。
+    assert_eq!(
+        delivery_count.load(Ordering::Relaxed),
+        state.generation() as usize * watcher_count
+    );
+    (started.elapsed().as_nanos(), stats)
+}
+
 // 验证大列表状态更新不会为仅失效通知建立无消费者快照。
 #[test]
 fn list_state_update_profile() {
@@ -230,4 +253,105 @@ fn watched_state_update_preserves_snapshot_and_reentrancy() {
         *observed.lock().unwrap_or_else(|error| error.into_inner()),
         vec![7, 8, 9]
     );
+}
+
+// 验证 watcher 重入注册不会改变正在交付的有序快照。
+#[test]
+fn watched_state_reentrant_registration_preserves_snapshot_order() {
+    let state = State::new(0_u64);
+    let order = Arc::new(std::sync::Mutex::new(Vec::new()));
+    // 用一次性持有槽避免观察器长期形成 State 自引用环。
+    let reentrant_state = Arc::new(std::sync::Mutex::new(Some(state.clone())));
+    let first_order = Arc::clone(&order);
+    let first_reentrant = Arc::clone(&reentrant_state);
+    state.watch(move |_| {
+        first_order
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push("first");
+        let Some(state) = first_reentrant
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        else {
+            return;
+        };
+        let late_order = Arc::clone(&first_order);
+        state.watch(move |_| {
+            late_order
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push("late");
+        });
+    });
+    let second_order = Arc::clone(&order);
+    state.watch(move |_| {
+        second_order
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push("second");
+    });
+
+    // 本轮快照不包含第一个回调重入新增的 watcher。
+    state.set(1);
+    assert_eq!(
+        *order.lock().unwrap_or_else(|error| error.into_inner()),
+        vec!["first", "second"]
+    );
+    // 下一轮按原注册顺序追加交付新 watcher。
+    state.set(2);
+    assert_eq!(
+        *order.lock().unwrap_or_else(|error| error.into_inner()),
+        vec!["first", "second", "first", "second", "late"]
+    );
+}
+
+// 剖析应用层共享状态向大量公开观察者同步广播时的快照成本。
+#[test]
+fn high_fanout_watched_state_profile() {
+    // 真实主题、语言或应用设置状态可能同时驱动大量组件观察者。
+    let watcher_count = std::env::var("UIX_PROFILE_WATCHERS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(128);
+    let rounds = std::env::var("UIX_PROFILE_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(9);
+    let iterations = std::env::var("UIX_PROFILE_ITERATIONS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1_024);
+    let state = State::new(0_u64);
+    let delivery_count = Arc::new(AtomicUsize::new(0));
+    for _ in 0..watcher_count {
+        let delivery_sink = Arc::clone(&delivery_count);
+        state.watch(move |value| {
+            // 保留真实同步消费并阻止编译器删除动态调用。
+            black_box(*value);
+            delivery_sink.fetch_add(1, Ordering::Relaxed);
+        });
+    }
+    // 预热写锁、动态调用和分配器路径。
+    let _ = run_watched_round(&state, &delivery_count, watcher_count, 16);
+    let mut elapsed_per_update = Vec::with_capacity(rounds);
+    let mut stats = Vec::with_capacity(rounds);
+    for _ in 0..rounds {
+        let (elapsed, round_stats) =
+            run_watched_round(&state, &delivery_count, watcher_count, iterations);
+        elapsed_per_update.push(elapsed / iterations as u128);
+        stats.push(round_stats);
+    }
+    elapsed_per_update.sort_unstable();
+    stats.sort_unstable_by_key(|sample| sample.allocated_bytes);
+    let elapsed_ns = elapsed_per_update[rounds / 2];
+    let allocations = stats[rounds / 2];
+    eprintln!(
+        "PROFILE high_fanout_watched_state: rounds={rounds} iterations={iterations} watchers={watcher_count} update_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
+        allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
+    );
+    // 稳态通知只克隆共享有序快照句柄，不再按 watcher 数量申请或复制 Arc。
+    assert_eq!(allocations.count, 0);
+    assert_eq!(allocations.allocated_bytes, 0);
+    assert_eq!(allocations.peak_live_bytes, 0);
 }
