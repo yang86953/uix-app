@@ -191,13 +191,8 @@ impl<'a> RhiRendererFrame<'a> {
         load: LoadAction,
         pass: RhiRendererPass,
     ) {
-        // 只在 Frame owner 内部创建携带目标的真实 RenderPassPlan。
-        let mut plan = RenderPassPlan::new(target, load);
-        // 保持 producer 已经确定的命令顺序。
-        for command in pass.commands {
-            // 将目标无关命令逐项转移到当前帧 pass。
-            plan.push(command);
-        }
+        // Frame owner 原子绑定 target/load，并直接接管 producer 已排序的命令缓冲区。
+        let plan = RenderPassPlan::from_commands(target, load, pass.commands);
         // 把已经绑定当前帧 target 的 pass 追加到唯一计划。
         self.plan.push_pass(plan);
     }
