@@ -620,8 +620,8 @@ struct StateInner<T> {
     slot_id: StateSlotId,
     value: T,
     generation: u64,
-    #[allow(clippy::type_complexity)]
-    watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>,
+    // 以惰性写时复制集合保存有序观察器，空状态不承担额外分配。
+    watchers: Option<Arc<Vec<StateWatcher<T>>>>,
 }
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
@@ -637,7 +637,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
                 value,
                 generation: 0,
-                watchers: Vec::new(),
+                watchers: None,
             })),
             effect_subscribers,
             reconcile_sites,
@@ -735,7 +735,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     /// 替换当前值，推进代数并同步通知 Effect、观察器和失效站点。
     pub fn set(&self, value: T) {
         // 只在存在公开观察器时建立值与处理器快照；组件失效端口不消费值。
-        let watch_notification: Option<(T, Vec<StateWatcher<T>>)>;
+        let watch_notification: Option<(T, Arc<Vec<StateWatcher<T>>>)>;
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
         {
@@ -743,18 +743,17 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             inner.value = value;
             inner.generation += 1;
             // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
-            watch_notification = if inner.watchers.is_empty() {
-                None
-            } else {
-                Some((inner.value.clone(), inner.watchers.clone()))
-            };
+            watch_notification = inner
+                .watchers
+                .as_ref()
+                .map(|watchers| (inner.value.clone(), Arc::clone(watchers)));
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
         effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
         if let Some((snapshot, watchers)) = watch_notification {
-            for watcher in &watchers {
+            for watcher in watchers.iter() {
                 watcher(&snapshot);
             }
         }
@@ -767,7 +766,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         F: FnOnce(&mut T),
     {
         // 只在存在公开观察器时建立值与处理器快照；组件失效端口不消费值。
-        let watch_notification: Option<(T, Vec<StateWatcher<T>>)>;
+        let watch_notification: Option<(T, Arc<Vec<StateWatcher<T>>>)>;
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
         {
@@ -775,18 +774,17 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             f(&mut inner.value);
             inner.generation += 1;
             // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
-            watch_notification = if inner.watchers.is_empty() {
-                None
-            } else {
-                Some((inner.value.clone(), inner.watchers.clone()))
-            };
+            watch_notification = inner
+                .watchers
+                .as_ref()
+                .map(|watchers| (inner.value.clone(), Arc::clone(watchers)));
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
         effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
         if let Some((snapshot, watchers)) = watch_notification {
-            for watcher in &watchers {
+            for watcher in watchers.iter() {
                 watcher(&snapshot);
             }
         }
@@ -803,11 +801,10 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 注册每次值变化后在状态写锁外同步调用的观察器。
     pub fn watch<F: Fn(&T) + Send + Sync + 'static>(&self, f: F) {
-        self.inner
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .watchers
-            .push(Arc::new(f));
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        // 注册属于低频生命周期路径；活动通知快照存在时复制旧列表，保持本轮顺序稳定。
+        let watchers = inner.watchers.get_or_insert_with(|| Arc::new(Vec::new()));
+        Arc::make_mut(watchers).push(Arc::new(f));
     }
 
     // 暴露测试专用的活跃 Effect 订阅数量以验证租约生命周期。
