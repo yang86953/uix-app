@@ -1,11 +1,61 @@
 //! RichText 的 frame 命中、链接导航和文本选择内部逻辑。
 
-use super::{LayoutLine, RichText, RichTextPointerAction, RichTextSegment};
-// 复用富文本完整逻辑源文本拼接。
-use super::layout_metrics::source_text;
+// 为不分配的视觉次序比较提供全序结果。
+use std::cmp::Ordering;
+
+use super::{LayoutGlyph, LayoutLine, RichText, RichTextPointerAction, RichTextSegment};
+// 复用富文本逻辑段借用与完整源文本投影。
+use super::layout_metrics::{segment_source_text, source_text};
 use crate::core::{Point, Rect};
 // 引入共享扩展字素簇边界模型。
 use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
+
+// 按有限 x 坐标与原始逻辑次序复现稳定视觉排序。
+fn compare_visual_order(left: &(usize, &LayoutGlyph), right: &(usize, &LayoutGlyph)) -> Ordering {
+    left.1
+        .x
+        .total_cmp(&right.1.x)
+        // 相同 x 时保留原字形数组的稳定次序。
+        .then_with(|| left.0.cmp(&right.0))
+}
+
+// 返回光标中点右侧最靠左的视觉字形。
+fn first_visual_glyph_after(glyphs: &[LayoutGlyph], x: f32) -> Option<&LayoutGlyph> {
+    glyphs
+        .iter()
+        .enumerate()
+        .filter(|(_, glyph)| x < glyph.x + glyph.width * 0.5)
+        .min_by(compare_visual_order)
+        .map(|(_, glyph)| glyph)
+}
+
+// 返回光标中点左侧最靠右的视觉字形。
+fn last_visual_glyph_before(glyphs: &[LayoutGlyph], x: f32) -> Option<&LayoutGlyph> {
+    glyphs
+        .iter()
+        .enumerate()
+        .filter(|(_, glyph)| x >= glyph.x + glyph.width * 0.5)
+        .max_by(compare_visual_order)
+        .map(|(_, glyph)| glyph)
+}
+
+// 返回视觉次序最靠左的字形。
+fn first_visual_glyph(glyphs: &[LayoutGlyph]) -> Option<&LayoutGlyph> {
+    glyphs
+        .iter()
+        .enumerate()
+        .min_by(compare_visual_order)
+        .map(|(_, glyph)| glyph)
+}
+
+// 返回视觉次序最靠右的字形。
+fn last_visual_glyph(glyphs: &[LayoutGlyph]) -> Option<&LayoutGlyph> {
+    glyphs
+        .iter()
+        .enumerate()
+        .max_by(compare_visual_order)
+        .map(|(_, glyph)| glyph)
+}
 
 impl RichText {
     /// 设置普通文字是否允许选择；关闭时立即清除当前选择生命周期。
@@ -123,26 +173,20 @@ impl RichText {
             if pos.y < line.y || pos.y >= line.y + line.height {
                 continue;
             }
-            // 按实际 x 排序字符；RTL run 内数组仍保留逻辑文本顺序供 shaping。
-            let mut visual_glyphs = line.glyphs.iter().collect::<Vec<_>>();
-            // 使用有限布局坐标形成稳定视觉顺序。
-            visual_glyphs.sort_by(|left, right| left.x.total_cmp(&right.x));
-            // 按视觉顺序判断每个字符中点。
-            for glyph in &visual_glyphs {
-                if pos.x < glyph.x + glyph.width * 0.5 {
-                    // RTL 视觉左半区对应逻辑排他终点，LTR 对应逻辑起点。
-                    return if glyph.bidi_level % 2 == 1 {
-                        // RTL 字符左缘返回逻辑后一边界。
-                        glyph.global_char_idx + glyph.source_char_len
+            // 直接寻找光标右侧最靠左的视觉字符，避免为每次指针移动复制和排序引用。
+            if let Some(glyph) = first_visual_glyph_after(&line.glyphs, pos.x) {
+                // RTL 视觉左半区对应逻辑排他终点，LTR 对应逻辑起点。
+                return if glyph.bidi_level % 2 == 1 {
+                    // RTL 字符左缘返回逻辑后一边界。
+                    glyph.global_char_idx + glyph.source_char_len
+                // LTR 字符左缘返回逻辑起点。
+                } else {
                     // LTR 字符左缘返回逻辑起点。
-                    } else {
-                        // LTR 字符左缘返回逻辑起点。
-                        glyph.global_char_idx
-                    };
-                }
+                    glyph.global_char_idx
+                };
             }
-            // 行右侧命中使用最后一个视觉字符的方向解析逻辑边界。
-            if let Some(last) = visual_glyphs.last() {
+            // 行右侧命中使用最靠右视觉字符的方向解析逻辑边界。
+            if let Some(last) = last_visual_glyph(&line.glyphs) {
                 // RTL 右缘对应逻辑起点，LTR 右缘对应逻辑排他终点。
                 return if last.bidi_level % 2 == 1 {
                     // RTL 字符右缘返回逻辑起点。
@@ -171,18 +215,8 @@ impl RichText {
                 best_line = index;
             }
         }
-        // 最近视觉行仍按实际 x 排序后解析方向感知边界。
-        let mut visual_glyphs = lines[best_line].glyphs.iter().collect::<Vec<_>>();
-        // 使用有限布局坐标形成稳定视觉顺序。
-        visual_glyphs.sort_by(|left, right| left.x.total_cmp(&right.x));
-        // 查找指针左侧最近的视觉字符。
-        visual_glyphs
-            // 遍历视觉顺序字符。
-            .iter()
-            // 从右向左查找不晚于指针的字符。
-            .rev()
-            // 使用字符中点判断主光标侧。
-            .find(|glyph| pos.x >= glyph.x + glyph.width * 0.5)
+        // 最近视觉行直接查找指针左侧最靠右的字符，不建立临时排序表。
+        last_visual_glyph_before(&lines[best_line].glyphs, pos.x)
             // 按当前字符方向返回视觉右侧边界。
             .map(|glyph| {
                 // RTL 视觉右侧对应逻辑起点。
@@ -197,8 +231,8 @@ impl RichText {
             })
             // 指针位于整行左侧时按首字符方向返回视觉左边界。
             .unwrap_or_else(|| {
-                // 查询首个视觉字符。
-                visual_glyphs.first().map_or(0, |glyph| {
+                // 查询最靠左的视觉字符。
+                first_visual_glyph(&lines[best_line].glyphs).map_or(0, |glyph| {
                     // RTL 视觉左侧对应逻辑排他终点。
                     if glyph.bidi_level % 2 == 1 {
                         // 返回 RTL 逻辑排他终点。
@@ -366,63 +400,61 @@ impl RichText {
     }
 
     pub(super) fn extract_text_range(&self, start: usize, end: usize) -> String {
-        // 拼接跨样式段的完整逻辑源文本以归一选择边界。
-        let text = source_text(&self.segments);
-        // 防御性地把提取范围扩展到完整字素簇。
-        let (start, end) = TextIndexCursor::new(&text)
-            // 归一显式字符范围。
-            .normalize_selection(CharIndex(start), CharIndex(end));
-        // 恢复现有分段提取逻辑使用的数值字符起点。
-        let start = start.0;
-        // 恢复现有分段提取逻辑使用的数值字符终点。
-        let end = end.0;
-        let mut result = String::new();
-        let mut offset = 0;
-        for segment in &self.segments {
-            let segment_length = match segment {
-                // 图片以 alt 的完整逻辑跨度参与选择与复制。
-                #[cfg(feature = "image-codecs")]
-                RichTextSegment::Image { alt, .. } => alt.chars().count(),
-                RichTextSegment::ThematicBreak => 0,
-                RichTextSegment::NewLine => 1,
-                RichTextSegment::Text { content, .. }
-                | RichTextSegment::Code { content }
-                | RichTextSegment::Link { content, .. } => content.chars().count(),
-            };
-            let segment_start = offset;
+        // selection 字段只由 set_selection_range 写入，边界已按完整跨段字素簇归一。
+        let (start, end) = if start <= end {
+            // 正向范围直接沿用。
+            (start, end)
+        } else {
+            // 反向范围交换端点后再提取。
+            (end, start)
+        };
+        // 先计算结果的精确 UTF-8 容量，使复制只申请一次堆内存。
+        let output_bytes = self.selected_source_slices(start, end, |slice| slice.len());
+        // 空选择不会触发分配，非空选择按精确容量一次申请。
+        let mut result = String::with_capacity(output_bytes);
+        // 第二次扫描直接复制连续 UTF-8 切片，避免逐字符 extend 扩容。
+        self.selected_source_slices(start, end, |slice| {
+            result.push_str(slice);
+            // 本轮只执行副作用，返回零避免参与容量累计。
+            0
+        });
+        // 返回只包含可见逻辑正文的拥有型复制结果。
+        result
+    }
+
+    // 遍历选择覆盖的连续段内 UTF-8 切片，并累计调用方返回值。
+    fn selected_source_slices(
+        &self,
+        start: usize,
+        end: usize,
+        mut visit: impl FnMut(&str) -> usize,
+    ) -> usize {
+        // 保存当前段在完整逻辑源中的字符起点。
+        let mut offset = 0usize;
+        // 聚合容量查询结果；写入阶段保持为零。
+        let mut total = 0usize;
+        // 按公开段顺序扫描所有可见逻辑正文。
+        for text in self.segments.iter().filter_map(segment_source_text) {
+            // 当前段字符数用于把全局选择转换为局部字符范围。
+            let segment_length = text.chars().count();
+            // 计算当前段排他逻辑终点。
             let segment_end = offset + segment_length;
-            if segment_end > start && segment_start < end {
-                let local_start = start.saturating_sub(segment_start);
-                let local_end = end.min(segment_end) - segment_start;
-                match segment {
-                    // 图片复制只输出 alt，不泄漏 Markdown 标记或本地路径。
-                    #[cfg(feature = "image-codecs")]
-                    RichTextSegment::Image { alt, .. } => {
-                        // 按逻辑选择范围提取 alt 子区间。
-                        result.extend(
-                            alt.chars()
-                                // 跳过图片逻辑范围前未选字符。
-                                .skip(local_start)
-                                // 只复制当前选择覆盖的 alt 字符。
-                                .take(local_end - local_start),
-                        );
-                    }
-                    RichTextSegment::ThematicBreak => {}
-                    RichTextSegment::NewLine => result.push('\n'),
-                    RichTextSegment::Text { content, .. }
-                    | RichTextSegment::Code { content }
-                    | RichTextSegment::Link { content, .. } => {
-                        result.extend(
-                            content
-                                .chars()
-                                .skip(local_start)
-                                .take(local_end - local_start),
-                        );
-                    }
-                }
+            // 只处理与非空选择真正相交的段。
+            if segment_end > start && offset < end {
+                // 把全局起点钳制并转换为段内字符位置。
+                let local_start = start.saturating_sub(offset);
+                // 把全局终点钳制并转换为段内字符位置。
+                let local_end = end.min(segment_end) - offset;
+                // 单遍转换两个字符端点，直接取得合法 UTF-8 切片。
+                let (start_byte, end_byte) = TextIndexCursor::new(text)
+                    .char_range_to_bytes(CharIndex(local_start), CharIndex(local_end));
+                // 交付当前段被选择的连续字节范围。
+                total += visit(&text[start_byte.0..end_byte.0]);
             }
+            // 推进到下一逻辑段。
             offset = segment_end;
         }
-        result
+        // 返回调用方累计值。
+        total
     }
 }

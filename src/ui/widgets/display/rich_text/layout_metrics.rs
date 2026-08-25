@@ -1,34 +1,59 @@
 //! 保存 RichText 的估算字符宽度与全局字符索引映射。
 
+// 单段逻辑文本直接借用公开段内容，多段才拥有拼接结果。
+use std::borrow::Cow;
+
 // 引入布局字形、布局行与富文本段类型。
 use super::presentation::RichTextMetricsVisual;
 use super::{LayoutGlyph, LayoutGlyphKind, LayoutLine, LayoutLineKind, RichTextSegment};
 
-// 将富文本段拼接为保留显式换行的完整逻辑源文本。
-pub(super) fn source_text(segments: &[RichTextSegment]) -> String {
-    // 从空字符串开始按声明顺序拼接。
-    let mut source = String::new();
-    // 遍历全部富文本段。
-    for segment in segments {
-        // 按段类型追加逻辑源内容。
-        match segment {
-            // 文本、代码与链接追加其原始正文。
-            RichTextSegment::Text { content, .. }
-            | RichTextSegment::Code { content }
-            | RichTextSegment::Link { content, .. } => source.push_str(content),
-            // 图片编解码能力开启时，图片以 alt 参与逻辑选择和复制。
-            #[cfg(feature = "image-codecs")]
-            // 不把 Markdown 标记或资源路径泄漏到逻辑文本。
-            RichTextSegment::Image { alt, .. } => source.push_str(alt),
-            // 主题分隔线零宽，逻辑换行由紧随其后的 NewLine 唯一拥有。
-            RichTextSegment::ThematicBreak => {}
-            // 显式换行段追加一个 LF 作为统一逻辑边界。
-            RichTextSegment::NewLine => source.push('\n'),
-            // 结束段类型匹配。
+// 返回单个富文本段参与选择、复制与跨段断行的逻辑正文。
+pub(super) fn segment_source_text(segment: &RichTextSegment) -> Option<&str> {
+    match segment {
+        // 文本、代码与链接直接借用其原始正文。
+        RichTextSegment::Text { content, .. }
+        | RichTextSegment::Code { content }
+        | RichTextSegment::Link { content, .. } => Some(content),
+        // 图片编解码能力开启时，图片以 alt 参与逻辑文本。
+        #[cfg(feature = "image-codecs")]
+        RichTextSegment::Image { alt, .. } => Some(alt),
+        // 主题分隔线零宽，逻辑换行由紧随其后的 NewLine 唯一拥有。
+        RichTextSegment::ThematicBreak => None,
+        // 显式换行段借用静态 LF，避免单换行内容申请堆内存。
+        RichTextSegment::NewLine => Some("\n"),
+    }
+}
+
+// 将富文本段投影为保留显式换行的完整逻辑源文本。
+pub(super) fn source_text(segments: &[RichTextSegment]) -> Cow<'_, str> {
+    // 保存唯一非空贡献段，常见单段文本可直接借用。
+    let mut single = "";
+    // 统计真正改变逻辑文本的非空段数量。
+    let mut contributor_count = 0usize;
+    // 同时累计多段拼接的精确 UTF-8 容量。
+    let mut source_bytes = 0usize;
+    // 一次扫描决定借用或拥有策略。
+    for text in segments.iter().filter_map(segment_source_text) {
+        source_bytes += text.len();
+        if !text.is_empty() {
+            contributor_count += 1;
+            if contributor_count == 1 {
+                single = text;
+            }
         }
     }
-    // 返回完整逻辑源文本。
-    source
+    // 空文本与单贡献段都不需要建立临时 String。
+    if contributor_count <= 1 {
+        return Cow::Borrowed(single);
+    }
+    // 多段只申请一次精确容量，避免逐段 push 触发扩容。
+    let mut source = String::with_capacity(source_bytes);
+    // 按声明顺序拼接全部逻辑正文。
+    for text in segments.iter().filter_map(segment_source_text) {
+        source.push_str(text);
+    }
+    // 返回跨样式段共享的连续逻辑源文本。
+    Cow::Owned(source)
 }
 
 // 将当前布局字形刷新为一个稳定视觉行。
