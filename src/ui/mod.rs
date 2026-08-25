@@ -260,6 +260,14 @@ pub mod __private {
             .map(|node| super::widget_runtime::widget::WidgetCore::children(node).to_vec())
             .unwrap_or_default()
     }
+    // 只读观察节点最终文字选择策略，供协调集成测试验证继承语义。
+    #[cfg(feature = "test-harness")]
+    pub fn view_tree_effective_user_select_for_test(
+        tree: &WidgetTree,
+        id: super::WidgetId,
+    ) -> Option<super::UserSelect> {
+        tree.get(id).map(|node| node.effective_user_select())
+    }
     // 强制缩窄 keyed 摘要供碰撞回退测试使用，并返回旧掩码。
     #[cfg(feature = "test-harness")]
     pub fn set_reconcile_key_fingerprint_mask_for_test(mask: u64) -> u64 {

@@ -183,22 +183,32 @@ impl WidgetTree {
     // 安装一个节点的声明并重算其既有子树最终选择策略。
     pub(crate) fn set_node_user_select(&mut self, root: WidgetId, declared: UserSelect) {
         // 先保存当前声明，避免重算仍读取旧值。
-        let Some(root_node) = self.get_mut(root) else {
+        let Some((parent, previous_effective)) = self.get_mut(root).map(|root_node| {
+            // 声明身份与 used-value 分开保存。
+            root_node.set_declared_user_select(declared);
+            // 在释放可变借用前保存继承入口与既有最终值。
+            (root_node.parent(), root_node.effective_user_select())
+        }) else {
             // 已移除节点没有可更新的策略状态。
             return;
         };
-        // 声明身份与 used-value 分开保存。
-        root_node.set_declared_user_select(declared);
         // 读取真实父节点已经解析出的最终策略。
-        let inherited = root_node
-            // 取得可选父节点身份。
-            .parent()
+        let inherited = parent
             // 从树中读取父节点。
             .and_then(|parent| self.get(parent))
             // 复制父节点最终策略。
             .map(BoxedWidget::effective_user_select)
             // 根节点使用无约束 auto 起点。
             .unwrap_or(UserSelect::Auto);
+        // 当前节点最终策略没有变化时，后代继承结果也保持不变。
+        let effective = declared.resolve_with_parent(inherited);
+        if previous_effective == effective {
+            if let Some(root_node) = self.get_mut(root) {
+                // 新协调进来的具体组件仍需接收既有最终策略。
+                apply_widget_policy(root_node, effective);
+            }
+            return;
+        }
         // 使用显式栈按父到子顺序重算任意深度子树。
         let mut stack = vec![(root, inherited)];
         // 直到全部既有后代完成协调。

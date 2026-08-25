@@ -9,8 +9,10 @@ use std::time::Instant;
 use uix::prelude::{ViewNode, WidgetId};
 use uix::ui::__private::traits::{Widget, WidgetCapabilities};
 use uix::ui::__private::{
-    WidgetTree, build_view_tree_for_test, reconcile_view_tree_for_test, view_tree_children_for_test,
+    WidgetTree, build_view_tree_for_test, reconcile_view_tree_for_test,
+    view_tree_children_for_test, view_tree_effective_user_select_for_test,
 };
+use uix::ui::UserSelect;
 
 // 真实大列表常见的同级声明规模，足以稳定放大协调临时结构成本。
 const SIBLING_COUNT: usize = 512;
@@ -22,6 +24,8 @@ const RECONCILES_PER_ROUND: usize = 24;
 const TIMING_ROUNDS: usize = 9;
 // 只需跟踪协调期间同时存活的少量新申请，不给被测路径自身分配内存。
 const TRACKED_ALLOCATION_CAPACITY: usize = 4096;
+// 固定容量保存热段内的申请尺寸分布，避免剖析器自身进入被测堆流量。
+const ALLOCATION_SIZE_CAPACITY: usize = 64;
 
 // 只在协调热段启用精确资源统计，声明树准备与首次挂载不计入结果。
 static MEASURING: AtomicBool = AtomicBool::new(false);
@@ -45,6 +49,16 @@ const EMPTY_TRACKED_ALLOCATION: TrackedAllocation = TrackedAllocation { ptr: 0, 
 static TRACKED_ALLOCATIONS: Mutex<[TrackedAllocation; TRACKED_ALLOCATION_CAPACITY]> =
     Mutex::new([EMPTY_TRACKED_ALLOCATION; TRACKED_ALLOCATION_CAPACITY]);
 
+#[derive(Clone, Copy)]
+struct AllocationSizeCount {
+    size: usize,
+    count: usize,
+}
+
+const EMPTY_ALLOCATION_SIZE_COUNT: AllocationSizeCount = AllocationSizeCount { size: 0, count: 0 };
+static ALLOCATION_SIZE_COUNTS: Mutex<[AllocationSizeCount; ALLOCATION_SIZE_CAPACITY]> =
+    Mutex::new([EMPTY_ALLOCATION_SIZE_COUNT; ALLOCATION_SIZE_CAPACITY]);
+
 // 使用系统分配器执行生产申请，并在窄测量窗口旁路登记资源事实。
 struct CountingAllocator;
 
@@ -62,6 +76,21 @@ fn update_peak(candidate: usize) {
             Err(observed) => peak = observed,
         }
     }
+}
+
+// 记录精确申请尺寸及出现次数；超过固定种类上限说明剖析精度不足并立即失败。
+fn record_allocation_size(size: usize) {
+    let mut counts = ALLOCATION_SIZE_COUNTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(entry) = counts.iter_mut().find(|entry| entry.size == size) {
+        entry.count += 1;
+        return;
+    }
+    let Some(entry) = counts.iter_mut().find(|entry| entry.count == 0) else {
+        panic!("协调申请尺寸种类超过固定剖析容量");
+    };
+    *entry = AllocationSizeCount { size, count: 1 };
 }
 
 // 登记窗口内真实申请；固定表耗尽表示场景失去精确性，直接终止测试。
@@ -98,6 +127,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if MEASURING.load(Ordering::Relaxed) && !ptr.is_null() {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOCATED_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+            record_allocation_size(layout.size());
             track_allocation(ptr, layout.size());
         }
         ptr
@@ -109,6 +139,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
         if MEASURING.load(Ordering::Relaxed) && !ptr.is_null() {
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOCATED_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+            record_allocation_size(layout.size());
             track_allocation(ptr, layout.size());
         }
         ptr
@@ -133,6 +164,7 @@ unsafe impl GlobalAlloc for CountingAllocator {
             }
             ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOCATED_BYTES.fetch_add(new_size, Ordering::Relaxed);
+            record_allocation_size(new_size);
             track_allocation(next, new_size);
         }
         next
@@ -195,6 +227,45 @@ fn stable_rounds() -> Vec<Vec<ViewNode>> {
         .collect()
 }
 
+// 构造父子选择声明，用于验证最终值不变时仍保存新的声明事实。
+fn user_select_tree(parent: UserSelect, child: UserSelect) -> ViewNode {
+    ViewNode::new(
+        ReconcileProbe,
+        vec![ViewNode::leaf(ReconcileProbe).user_select(child)],
+    )
+    .user_select(parent)
+}
+
+#[test]
+fn unchanged_effective_policy_keeps_the_new_declaration_for_later_inheritance() {
+    let mut tree = build_view_tree_for_test(user_select_tree(UserSelect::None, UserSelect::Auto));
+    let root = tree.root_id().expect("选择策略场景必须建立根节点");
+    let child = view_tree_children_for_test(&tree, root)[0];
+    assert_eq!(
+        view_tree_effective_user_select_for_test(&tree, child),
+        Some(UserSelect::None)
+    );
+
+    // 子声明从 Auto 改成 None，但在当前父策略下最终值保持 None，命中快返路径。
+    reconcile_view_tree_for_test(
+        &mut tree,
+        user_select_tree(UserSelect::None, UserSelect::None),
+    );
+    // 随后改变父策略；子节点必须使用上轮已保存的 None，而不是旧 Auto。
+    reconcile_view_tree_for_test(
+        &mut tree,
+        user_select_tree(UserSelect::Text, UserSelect::None),
+    );
+    assert_eq!(
+        view_tree_effective_user_select_for_test(&tree, root),
+        Some(UserSelect::Text)
+    );
+    assert_eq!(
+        view_tree_effective_user_select_for_test(&tree, child),
+        Some(UserSelect::None)
+    );
+}
+
 // 在热段外准备真实尾部批量卸载与重新挂载声明。
 fn structural_rounds() -> Vec<Vec<ViewNode>> {
     (0..RECONCILES_PER_ROUND)
@@ -219,6 +290,10 @@ fn begin_measurement() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .fill(EMPTY_TRACKED_ALLOCATION);
+    ALLOCATION_SIZE_COUNTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .fill(EMPTY_ALLOCATION_SIZE_COUNT);
     MEASURING.store(true, Ordering::Release);
 }
 
@@ -282,11 +357,27 @@ fn unkeyed_reconcile_profile() {
     // 先执行稳定协调，隔离首次类型分派和运行时准备成本。
     reconcile_rounds(&mut tree, root, vec![unkeyed_children(SIBLING_COUNT)]);
     let stable_allocations = measure_allocations(&mut tree, root, stable_rounds());
+    let mut stable_sizes = ALLOCATION_SIZE_COUNTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter(|entry| entry.count > 0)
+        .map(|entry| (entry.size, entry.count))
+        .collect::<Vec<_>>();
+    stable_sizes.sort_unstable_by_key(|(_, count)| std::cmp::Reverse(*count));
     let stable_ns = median_ns_per_reconcile(&mut tree, root, stable_rounds);
     assert_eq!(view_tree_children_for_test(&tree, root), initial_order);
 
     // 交替缩短和恢复尾部，验证位置前缀身份保留及真实卸载、挂载路径。
     let structural_allocations = measure_allocations(&mut tree, root, structural_rounds());
+    let mut structural_sizes = ALLOCATION_SIZE_COUNTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter(|entry| entry.count > 0)
+        .map(|entry| (entry.size, entry.count))
+        .collect::<Vec<_>>();
+    structural_sizes.sort_unstable_by_key(|(_, count)| std::cmp::Reverse(*count));
     let structural_ns = median_ns_per_reconcile(&mut tree, root, structural_rounds);
     let final_order = view_tree_children_for_test(&tree, root);
     assert_eq!(final_order.len(), SIBLING_COUNT);
@@ -306,15 +397,17 @@ fn unkeyed_reconcile_profile() {
         structural_allocations.peak_live_bytes,
         structural_allocations.final_live_bytes,
     );
+    eprintln!("PROFILE unkeyed_reconcile stable_allocation_sizes={stable_sizes:?}");
+    eprintln!("PROFILE unkeyed_reconcile structural_allocation_sizes={structural_sizes:?}");
 
-    // 空动画源不得重新建立逐节点事务记录和 owner 合并表；门槛保留其余既有协调成本余量。
-    assert!(stable_allocations.count <= 13_000);
-    assert!(stable_allocations.allocated_bytes <= 3_500_000);
+    // 不变选择策略不得恢复逐节点祖先栈；门槛保留协调根级工作区容量余量。
+    assert!(stable_allocations.count <= 512);
+    assert!(stable_allocations.allocated_bytes <= 2_000_000);
     assert!(stable_allocations.peak_live_bytes <= 70_000);
     assert_eq!(stable_allocations.final_live_bytes, 0);
-    // 批量卸载、挂载允许新节点与槽表形成必要常驻容量，但不得恢复空 owner 临时流量。
-    assert!(structural_allocations.count <= 13_000);
-    assert!(structural_allocations.allocated_bytes <= 3_000_000);
+    // 批量卸载、挂载允许节点生命周期流量，但不得恢复每个复用节点的祖先栈。
+    assert!(structural_allocations.count <= 2_000);
+    assert!(structural_allocations.allocated_bytes <= 1_500_000);
     assert!(structural_allocations.peak_live_bytes <= 50_000);
     assert!(structural_allocations.final_live_bytes <= 1_024);
 }
