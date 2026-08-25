@@ -131,7 +131,9 @@ impl WidgetTree {
         target: WidgetId,
         event: &SystemEvent,
     ) -> EventResult {
-        let mut path = Vec::new();
+        // 从树级工作区取出独占路径，使回调重入只能使用另一份容器，不能改写当前快照。
+        let mut path = std::mem::take(&mut self.wheel_capture_path_scratch);
+        path.clear();
         let mut current = Some(target);
         while let Some(id) = current {
             path.push(id);
@@ -142,7 +144,9 @@ impl WidgetTree {
             path.pop();
         }
 
-        for id in path {
+        // 按索引复制身份，避免消费容器并保持回调前建立的路径快照不变。
+        for path_index in 0..path.len() {
+            let id = path[path_index];
             let Some(translated) = self.localize_spatial_event(id, event) else {
                 continue;
             };
@@ -154,10 +158,22 @@ impl WidgetTree {
                 node.on_event(&translated)
             };
             if result == EventResult::Handled {
-                return self.finish_scroll_aware_dispatch(id, &translated);
+                // 完成处理期间仍隔离当前快照，避免语义回调重入覆盖外层路径。
+                let result = self.finish_scroll_aware_dispatch(id, &translated);
+                self.restore_wheel_capture_path_scratch(path);
+                return result;
             }
         }
+        self.restore_wheel_capture_path_scratch(path);
         EventResult::NotHandled
+    }
+
+    // 归还容量最大的空路径容器，兼容捕获回调重入时产生的嵌套工作区。
+    fn restore_wheel_capture_path_scratch(&mut self, mut path: Vec<WidgetId>) {
+        path.clear();
+        if path.capacity() > self.wheel_capture_path_scratch.capacity() {
+            self.wheel_capture_path_scratch = path;
+        }
     }
 
     pub(super) fn dispatch_wheel_to(

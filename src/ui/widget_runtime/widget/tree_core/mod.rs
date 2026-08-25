@@ -99,6 +99,8 @@ pub struct WidgetTree {
     pub(crate) hit_test_order_scratch: std::cell::RefCell<Vec<(WidgetId, usize)>>,
     /// 坐标投影、裁剪与命中逆变换复用的根到节点视觉路径工作区。
     pub(crate) visual_path_scratch: std::cell::RefCell<Vec<WidgetId>>,
+    // 复用 Wheel 捕获阶段的根到目标祖先快照；分发期间取出以隔离回调重入。
+    pub(crate) wheel_capture_path_scratch: Vec<WidgetId>,
     /// 焦点切换复用的旧、新包含路径快照；由本树唯一拥有，不跨窗口共享。
     pub(crate) focus_transition_path_scratch: Vec<WidgetId>,
 
@@ -186,6 +188,7 @@ impl Default for WidgetTree {
             traversal_stack_scratch: std::cell::RefCell::new(Vec::new()),
             hit_test_order_scratch: std::cell::RefCell::new(Vec::new()),
             visual_path_scratch: std::cell::RefCell::new(Vec::new()),
+            wheel_capture_path_scratch: Vec::new(),
             focus_transition_path_scratch: Vec::new(),
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),
