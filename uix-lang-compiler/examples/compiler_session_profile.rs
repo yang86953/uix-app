@@ -1,4 +1,4 @@
-//! 测量 `CompilerSession` 稳定 overlay 命中的耗时与分配。
+//! 测量 `CompilerSession` 稳定或持续变更 overlay 的耗时与分配。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::BTreeMap;
@@ -64,25 +64,29 @@ fn reset_counters() -> usize {
     live
 }
 
-fn profile_source(nodes: usize) -> String {
+fn profile_source(nodes: usize, content: &str) -> String {
     let mut source = String::with_capacity(nodes * 48);
     source.push_str("<Column gap=\"4px\">\n");
     for index in 0..nodes {
         source.push_str("  <Text automationId=\"item-");
         source.push_str(&index.to_string());
-        source.push_str("\">稳定内容</Text>\n");
+        source.push_str("\">");
+        source.push_str(content);
+        source.push_str("</Text>\n");
     }
     source.push_str("</Column>\n");
     source
 }
 
-fn dependency_source(nodes: usize) -> String {
+fn dependency_source(nodes: usize, content: &str) -> String {
     let mut source = String::with_capacity(nodes * 48);
     source.push_str("@export('Helper')\n<Widget name=\"Helper\"><Column gap=\"4px\">\n");
     for index in 0..nodes {
         source.push_str("  <Text automationId=\"item-");
         source.push_str(&index.to_string());
-        source.push_str("\">稳定内容</Text>\n");
+        source.push_str("\">");
+        source.push_str(content);
+        source.push_str("</Text>\n");
     }
     source.push_str("</Column></Widget>\n<Helper />\n");
     source
@@ -101,16 +105,33 @@ fn main() {
         .nth(3)
         .unwrap_or_else(|| "single".to_string());
     let root = PathBuf::from("/tmp/uix-compiler-session-profile/root.uix");
+    let dependency = root.with_file_name("helper.uix");
+    let changing = scenario.starts_with("change-");
     let mut overlays = BTreeMap::new();
-    if scenario == "multi" {
+    if scenario.ends_with("multi") {
         overlays.insert(
             root.clone(),
             "@import('./helper.uix', 'Helper')\n<Column><Helper /></Column>\n".to_string(),
         );
-        overlays.insert(root.with_file_name("helper.uix"), dependency_source(nodes));
+        overlays.insert(dependency.clone(), dependency_source(nodes, "稳定内容"));
     } else {
-        overlays.insert(root.clone(), profile_source(nodes));
+        overlays.insert(root.clone(), profile_source(nodes, "稳定内容"));
     }
+    let changed_source = if scenario.ends_with("multi") {
+        dependency_source(nodes, "变更内容")
+    } else {
+        profile_source(nodes, "变更内容")
+    };
+    let stable_source = if scenario.ends_with("multi") {
+        dependency_source(nodes, "稳定内容")
+    } else {
+        profile_source(nodes, "稳定内容")
+    };
+    let changing_path = if scenario.ends_with("multi") {
+        &dependency
+    } else {
+        &root
+    };
     let mut session = CompilerSession::new();
 
     session
@@ -119,10 +140,21 @@ fn main() {
 
     let baseline_live = reset_counters();
     let started = Instant::now();
-    for _ in 0..iterations {
+    for iteration in 0..iterations {
+        if changing {
+            // 使用等长预构造源码，避免把编辑器输入分配混入编译器自身指标。
+            overlays
+                .get_mut(changing_path)
+                .expect("持续变更场景必须保留目标 overlay")
+                .clone_from(if iteration % 2 == 0 {
+                    &changed_source
+                } else {
+                    &stable_source
+                });
+        }
         let output = session
             .check_file_with_overlays(&root, &overlays, CompileTarget::View)
-            .expect("稳定 overlay 必须持续命中");
+            .expect("overlay 检查必须持续成功");
         black_box(output);
     }
     let elapsed = started.elapsed();
