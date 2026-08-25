@@ -11,9 +11,7 @@ use std::cell::RefCell;
 
 use crate::core::Point;
 // 引入共享扩展字素簇边界模型。
-use crate::draw::resources::font::text_index::{
-    BoundaryBias, CharIndex, TextIndexCursor, TextIndexMap,
-};
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
 // 引入布局产出的字形与行信息容器。
 use crate::draw::resources::font::text_backend::TextLayout;
 
@@ -302,20 +300,18 @@ impl PerNodeTextSelection {
     }
 
     fn slice_range(&self, text: &str, start_char: usize, end_char: usize) -> String {
-        // 建立字符到 UTF-8 字节的显式转换表。
-        let index_map = TextIndexMap::new(text);
+        // 借用文本并流式归一选择与字节端点。
+        let index_cursor = TextIndexCursor::new(text);
         // 防御性地把调用范围扩展到完整字素簇。
-        let (start, end) = index_map.normalize_selection(
+        let (start, end) = index_cursor.normalize_selection(
             // 包装字符起点。
             CharIndex(start_char),
             // 包装字符终点。
             CharIndex(end_char),
         );
         // 转换合法字符起点为字节偏移。
-        let byte_start = index_map.char_to_byte(start).0;
-        // 转换合法字符终点为字节偏移。
-        let byte_end = index_map.char_to_byte(end).0;
+        let (byte_start, byte_end) = index_cursor.char_range_to_bytes(start, end);
         // 返回完整 UTF-8 字素簇片段。
-        text[byte_start..byte_end].to_owned()
+        text[byte_start.0..byte_end.0].to_owned()
     }
 }

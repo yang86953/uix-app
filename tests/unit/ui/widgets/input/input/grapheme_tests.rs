@@ -2,6 +2,8 @@
 
 // 引入被测 Input 及其私有交互辅助。
 use super::{Input, LogicalLineCursor, logical_line_count};
+// 使用缓存索引模型复现优化前的字素簇归一语义。
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
 
 /// 线性行游标必须保持旧渲染路径的 Unicode 字符区间和耗尽回退语义。
 #[test]
@@ -51,6 +53,57 @@ fn cursor_movement_and_shift_selection_skip_whole_graphemes() {
     input.move_cursor_left(false, false);
     // 光标回到文本起点。
     assert_eq!(input.cursor_char, 0);
+}
+
+/// 流式按词移动必须逐位置保持旧字符向量算法的结果。
+#[test]
+fn ctrl_word_movement_streams_without_changing_boundaries() {
+    // 覆盖空文本、连续空格、多字节字符与复杂字素簇。
+    let samples = ["", "  alpha  beta ", "甲 乙🙂 丙", "a\u{0301} 👩🏽‍💻 क्ष"];
+    for text in samples {
+        let chars = text.chars().collect::<Vec<_>>();
+        let map = TextIndexMap::new(text);
+        for cursor in 0..=chars.len() + 2 {
+            // 精确复现优化前 Ctrl+Left 的空格分词算法。
+            let mut expected_left = cursor.min(chars.len()).saturating_sub(1);
+            while expected_left > 0 && chars[expected_left] == ' ' {
+                expected_left -= 1;
+            }
+            while expected_left > 0 && chars[expected_left - 1] != ' ' {
+                expected_left -= 1;
+            }
+            expected_left = map
+                .normalize_char(CharIndex(expected_left), BoundaryBias::Backward)
+                .0;
+
+            let mut input = Input::new("").with_value(text);
+            input.cursor_char = cursor;
+            input.move_cursor_left(true, false);
+            assert_eq!(
+                input.cursor_char, expected_left,
+                "文本 {text:?} 的位置 {cursor} 向左按词结果不一致"
+            );
+
+            // 精确复现优化前 Ctrl+Right 的空格分词算法。
+            let mut expected_right = cursor.min(chars.len());
+            while expected_right < chars.len() && chars[expected_right] == ' ' {
+                expected_right += 1;
+            }
+            while expected_right < chars.len() && chars[expected_right] != ' ' {
+                expected_right += 1;
+            }
+            expected_right = map
+                .normalize_char(CharIndex(expected_right), BoundaryBias::Forward)
+                .0;
+
+            input.cursor_char = cursor;
+            input.move_cursor_right(true, false);
+            assert_eq!(
+                input.cursor_char, expected_right,
+                "文本 {text:?} 的位置 {cursor} 向右按词结果不一致"
+            );
+        }
+    }
 }
 
 /// Backspace 与 Delete 必须删除完整扩展字素簇。

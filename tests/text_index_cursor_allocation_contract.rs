@@ -71,6 +71,7 @@ fn one_shot_text_index_cursor_eliminates_boundary_table_allocations() {
     std::hint::black_box(cursor.previous_grapheme_boundary(CharIndex(18)));
     std::hint::black_box(cursor.next_grapheme_boundary(CharIndex(2)));
     std::hint::black_box(cursor.char_to_byte(CharIndex(18)));
+    std::hint::black_box(cursor.char_range_to_bytes(CharIndex(2), CharIndex(18)));
     COUNT_ALLOCATIONS.store(false, Ordering::Release);
     let cursor_allocations = ALLOCATION_COUNT.load(Ordering::Relaxed);
 
