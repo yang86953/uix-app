@@ -1,0 +1,233 @@
+// 导入系统分配器与布局值，统计状态更新热段的堆活动。
+use std::alloc::{GlobalAlloc, Layout, System};
+// 防止编译器删除真实状态写入与协调回调观察。
+use std::hint::black_box;
+// 导入原子计数器与协调回调共享所有权。
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+// 导入多轮耗时测量。
+use std::time::Instant;
+
+// 只使用 UI System 的公开响应式状态契约。
+use uix::ui::State;
+
+// 只在目标热段启用统计，隔离初始化和测试框架分配。
+static MEASURING: AtomicBool = AtomicBool::new(false);
+// 记录热段堆申请次数。
+static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
+// 记录热段累计申请字节数。
+static ALLOCATED_BYTES: AtomicUsize = AtomicUsize::new(0);
+// 记录热段当前仍存活的临时字节数。
+static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+// 记录热段临时分配的峰值 live 字节数。
+static PEAK_LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+// 使用系统分配器并旁路记录目标热段的申请与释放。
+struct CountingAllocator;
+
+// 将一次新增分配记入无锁统计。
+fn record_allocation(size: usize) {
+    // 每次成功申请对应一个堆活动。
+    ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    // 累加本轮实际请求的字节数。
+    ALLOCATED_BYTES.fetch_add(size, Ordering::Relaxed);
+    // 更新当前 live 字节并取得更新后的值。
+    let live = LIVE_BYTES.fetch_add(size, Ordering::Relaxed) + size;
+    // 以单调最大值维护峰值，不引入锁或分配。
+    PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
+}
+
+// 从 live 统计中扣除已释放的目标热段临时分配。
+fn record_deallocation(size: usize) {
+    // 热段内部创建的快照应在同一热段释放。
+    LIVE_BYTES.fetch_sub(size, Ordering::Relaxed);
+}
+
+// 为测试二进制安装旁路计数的系统分配器。
+unsafe impl GlobalAlloc for CountingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY：直接遵守调用方提供的有效 Layout 委托系统分配器。
+        let pointer = unsafe { System.alloc(layout) };
+        // 只有目标热段内的成功申请进入统计。
+        if MEASURING.load(Ordering::Relaxed) && !pointer.is_null() {
+            record_allocation(layout.size());
+        }
+        pointer
+    }
+
+    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
+        // 目标热段内析构的临时值必须先从 live 统计扣除。
+        if MEASURING.load(Ordering::Relaxed) {
+            record_deallocation(layout.size());
+        }
+        // SAFETY：pointer 与 Layout 来自同一个 System 分配器申请。
+        unsafe { System.dealloc(pointer, layout) };
+    }
+
+    unsafe fn realloc(&self, pointer: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        // SAFETY：直接遵守 GlobalAlloc 的原指针、旧布局和新尺寸契约。
+        let next = unsafe { System.realloc(pointer, layout, new_size) };
+        // 只记录目标热段中的成功扩缩容差额。
+        if MEASURING.load(Ordering::Relaxed) && !next.is_null() {
+            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
+            if new_size >= layout.size() {
+                let growth = new_size - layout.size();
+                ALLOCATED_BYTES.fetch_add(growth, Ordering::Relaxed);
+                let live = LIVE_BYTES.fetch_add(growth, Ordering::Relaxed) + growth;
+                PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
+            } else {
+                LIVE_BYTES.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
+            }
+        }
+        next
+    }
+}
+
+// 让本测试目标中的全部堆活动经过同一个无状态统计入口。
+#[global_allocator]
+static GLOBAL_ALLOCATOR: CountingAllocator = CountingAllocator;
+
+// 保存一次热段测量的完整资源指标。
+#[derive(Clone, Copy, Debug)]
+struct AllocationStats {
+    // 申请或扩容次数。
+    count: usize,
+    // 累计申请字节数。
+    allocated_bytes: usize,
+    // 同时存活的临时字节峰值。
+    peak_live_bytes: usize,
+}
+
+// 清空计数并开始一次互不重叠的测量。
+fn begin_measurement() {
+    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
+    ALLOCATED_BYTES.store(0, Ordering::Relaxed);
+    LIVE_BYTES.store(0, Ordering::Relaxed);
+    PEAK_LIVE_BYTES.store(0, Ordering::Relaxed);
+    MEASURING.store(true, Ordering::Release);
+}
+
+// 停止统计并取得本轮最终指标。
+fn end_measurement() -> AllocationStats {
+    MEASURING.store(false, Ordering::Release);
+    AllocationStats {
+        count: ALLOCATION_COUNT.load(Ordering::Relaxed),
+        allocated_bytes: ALLOCATED_BYTES.load(Ordering::Relaxed),
+        peak_live_bytes: PEAK_LIVE_BYTES.load(Ordering::Relaxed),
+    }
+}
+
+// 运行一轮业务列表状态写入到结构协调端口的生产热段。
+fn run_round(
+    state: &State<Vec<u64>>,
+    reconcile_count: &AtomicUsize,
+    iterations: usize,
+) -> (u128, AllocationStats) {
+    // 只从状态写入开始计时，排除一次性状态与回调注册成本。
+    let started = Instant::now();
+    begin_measurement();
+    for index in 0..iterations {
+        // 模拟列表项在事件处理器中的原地业务更新。
+        state.update(|rows| {
+            let target = index % rows.len();
+            rows[target] = index as u64;
+        });
+        // 保留状态代数作为不可消除的外部观察。
+        black_box(state.generation());
+    }
+    let stats = end_measurement();
+    // 每次状态写入必须同步抵达 UI System 的结构协调端口。
+    assert_eq!(
+        reconcile_count.load(Ordering::Relaxed),
+        state.generation() as usize
+    );
+    // 返回整轮耗时，调用方按每次更新归一化。
+    (started.elapsed().as_nanos(), stats)
+}
+
+// 验证大列表状态更新不会为仅失效通知建立无消费者快照。
+#[test]
+fn list_state_update_profile() {
+    // 默认轮数足以形成稳定中位数，剖析时可通过环境变量放大。
+    let rounds = std::env::var("UIX_PROFILE_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(9);
+    // 常规回归保持快速，采样剖析可显式提高迭代数。
+    let iterations = std::env::var("UIX_PROFILE_ITERATIONS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(512);
+    // 使用真实列表体积放大按状态值线性增长的无效快照成本。
+    let state = State::new(vec![0_u64; 8_192]);
+    // 模拟 WidgetTree 持有的结构协调请求端口，保留真实 State 分发逻辑。
+    let reconcile_count = Arc::new(AtomicUsize::new(0));
+    let reconcile_sink = Arc::clone(&reconcile_count);
+    state.set_reconcile_invalidation_fn(move || {
+        reconcile_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    // 预热锁、失效站点和结构协调回调路径。
+    let _ = run_round(&state, &reconcile_count, 16);
+    // 预分配多轮结果，避免统计关闭后的容器增长影响热段。
+    let mut elapsed_per_update = Vec::with_capacity(rounds);
+    let mut stats = Vec::with_capacity(rounds);
+    for _ in 0..rounds {
+        let (elapsed, round_stats) = run_round(&state, &reconcile_count, iterations);
+        elapsed_per_update.push(elapsed / iterations as u128);
+        stats.push(round_stats);
+    }
+    // 中位数抵御共享机器上的偶发调度噪声。
+    elapsed_per_update.sort_unstable();
+    stats.sort_unstable_by_key(|sample| sample.allocated_bytes);
+    let elapsed_ns = elapsed_per_update[rounds / 2];
+    let allocations = stats[rounds / 2];
+    eprintln!(
+        "PROFILE list_state_update: rounds={rounds} iterations={iterations} update_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
+        allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
+    );
+    // 无 watcher 的组件失效路径只允许保留每轮协调回调快照的一次小申请。
+    assert_eq!(allocations.count, iterations);
+    // 动态回调 Arc 的平台指针宽度决定单元素快照大小。
+    let callback_snapshot_bytes = std::mem::size_of::<Arc<dyn Fn() + Send + Sync>>();
+    // 单次协调回调快照只保存一个 Arc，不得再按业务列表体积申请。
+    assert_eq!(
+        allocations.allocated_bytes,
+        iterations * callback_snapshot_bytes
+    );
+    // 每次回调快照在下一轮前释放，峰值不得随状态体积增长。
+    assert_eq!(allocations.peak_live_bytes, callback_snapshot_bytes);
+    // 场景必须真实推进全部状态代数，防止零工作量误判为优化。
+    assert_eq!(state.generation(), (16 + rounds * iterations) as u64);
+}
+
+// 验证仍有观察器时继续在状态锁外交付完整更新快照。
+#[test]
+fn watched_state_update_preserves_snapshot_and_reentrancy() {
+    // 使用拥有型列表证明观察值不借用写锁内存。
+    let state = State::new(vec![1_u64, 2, 3]);
+    // 观察器重入读取同一个 State；若仍持有写锁，此调用将死锁。
+    let reentrant = state.clone();
+    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed_sink = Arc::clone(&observed);
+    state.watch(move |snapshot| {
+        // 保存观察器收到的完整稳定快照。
+        *observed_sink
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = snapshot.clone();
+        // 锁外通知允许安全读取刚提交的新状态。
+        assert_eq!(reentrant.get(), *snapshot);
+    });
+    // 先覆盖 set 入口，观察器必须收到完整替换值。
+    state.set(vec![7, 8]);
+    assert_eq!(
+        *observed.lock().unwrap_or_else(|error| error.into_inner()),
+        vec![7, 8]
+    );
+    // 再覆盖 update 入口的原地修改。
+    state.update(|rows| rows.push(9));
+    // 观察器仍精确收到更新后的拥有型值。
+    assert_eq!(
+        *observed.lock().unwrap_or_else(|error| error.into_inner()),
+        vec![7, 8, 9]
+    );
+}

@@ -734,23 +734,29 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 替换当前值，推进代数并同步通知 Effect、观察器和失效站点。
     pub fn set(&self, value: T) {
-        let watchers: Vec<StateWatcher<T>>;
+        // 只在存在公开观察器时建立值与处理器快照；组件失效端口不消费值。
+        let watch_notification: Option<(T, Vec<StateWatcher<T>>)>;
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
-        let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
             inner.value = value;
             inner.generation += 1;
-            snapshot = inner.value.clone();
-            watchers = inner.watchers.clone();
+            // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
+            watch_notification = if inner.watchers.is_empty() {
+                None
+            } else {
+                Some((inner.value.clone(), inner.watchers.clone()))
+            };
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
         effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
-        for watcher in &watchers {
-            watcher(&snapshot);
+        if let Some((snapshot, watchers)) = watch_notification {
+            for watcher in &watchers {
+                watcher(&snapshot);
+            }
         }
         Self::fire_invalidation(&self.reconcile_sites, &self.paint_sites);
     }
@@ -760,23 +766,29 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     where
         F: FnOnce(&mut T),
     {
-        let watchers: Vec<StateWatcher<T>>;
+        // 只在存在公开观察器时建立值与处理器快照；组件失效端口不消费值。
+        let watch_notification: Option<(T, Vec<StateWatcher<T>>)>;
         // 保存准备在 State 锁外通知的存活 Effect。
         let effect_subscribers;
-        let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
             f(&mut inner.value);
             inner.generation += 1;
-            snapshot = inner.value.clone();
-            watchers = inner.watchers.clone();
+            // 观察器必须在锁外接收稳定快照；空观察器热段无需深克隆业务状态。
+            watch_notification = if inner.watchers.is_empty() {
+                None
+            } else {
+                Some((inner.value.clone(), inner.watchers.clone()))
+            };
         }
         // 在值锁释放后从独立注册表收集需要通知的 Effect。
         effect_subscribers = effect::collect_subscribers(&self.effect_subscribers);
         // 先在 State 写锁外通知内部 Effect，公开 watcher panic 也不能吞掉该信号。
         effect::notify_subscribers(effect_subscribers);
-        for watcher in &watchers {
-            watcher(&snapshot);
+        if let Some((snapshot, watchers)) = watch_notification {
+            for watcher in &watchers {
+                watcher(&snapshot);
+            }
         }
         Self::fire_invalidation(&self.reconcile_sites, &self.paint_sites);
     }
