@@ -1,6 +1,6 @@
 //! UIX Lang 源文件、内容摘要与递归导入关系。
 
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 const STABLE_HASH_OFFSET: u64 = 0xcbf29ce484222325;
 const STABLE_HASH_PRIME: u64 = 0x100000001b3;
@@ -53,8 +53,10 @@ pub struct ImportEdge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceGraph {
     root: SourceId,
-    files: Vec<SourceFile>,
-    imports: Vec<ImportEdge>,
+    // 文件快照构建后不可变，跨公开检查结果共享同一拥有型序列。
+    files: Arc<[SourceFile]>,
+    // 导入边构建后不可变，克隆源码图时只复制共享句柄。
+    imports: Arc<[ImportEdge]>,
 }
 
 impl SourceGraph {
@@ -70,8 +72,9 @@ impl SourceGraph {
                 path: source_name,
                 content_hash: stable_hash(source.as_bytes()),
                 source,
-            }],
-            imports: Vec::new(),
+            }]
+            .into(),
+            imports: Vec::new().into(),
         }
     }
 
@@ -82,12 +85,12 @@ impl SourceGraph {
 
     /// 返回根优先首次读取顺序中的文件快照。
     pub fn files(&self) -> &[SourceFile] {
-        &self.files
+        self.files.as_ref()
     }
 
     /// 返回源码顺序中的直接导入边。
     pub fn imports(&self) -> &[ImportEdge] {
-        &self.imports
+        self.imports.as_ref()
     }
 
     /// 按稳定身份查询源码快照。
@@ -99,7 +102,7 @@ impl SourceGraph {
     pub fn dependency_hash(&self) -> u64 {
         // 直接延续同一 FNV-1a 状态，保持既有字节序列与哈希值但不分配临时 Vec。
         let mut hash = STABLE_HASH_OFFSET;
-        for file in &self.files {
+        for file in self.files.iter() {
             for byte in file.id.0.to_le_bytes() {
                 hash = extend_stable_hash(hash, byte);
             }
@@ -173,14 +176,14 @@ impl SourceGraphBuilder {
             order,
             imports,
         } = self;
-        let files = order
+        let files: Vec<_> = order
             .into_iter()
             .filter_map(|path| files.remove(&path))
             .collect();
         SourceGraph {
             root: source_id(&root_path),
-            files,
-            imports,
+            files: files.into(),
+            imports: imports.into(),
         }
     }
 }
@@ -210,6 +213,7 @@ fn extend_stable_hash(hash: u64, byte: u8) -> u64 {
 mod tests {
     use super::{SourceGraph, SourceGraphBuilder, normalized_path, stable_hash};
     use std::path::Path;
+    use std::sync::Arc;
 
     #[test]
     fn inline_graph_has_stable_identity_and_dependency_hash() {
@@ -232,6 +236,17 @@ mod tests {
             bytes.extend_from_slice(&file.content_hash.to_le_bytes());
         }
         assert_eq!(graph.dependency_hash(), stable_hash(&bytes));
+    }
+
+    #[test]
+    fn clone_shares_immutable_source_snapshot_storage() {
+        let graph = SourceGraph::inline("demo.uix", "<Text>Hello</Text>");
+        let cloned = graph.clone();
+
+        // 公开值语义保持相等，内部不可变快照不再深拷贝源码字符串。
+        assert_eq!(graph, cloned);
+        assert!(Arc::ptr_eq(&graph.files, &cloned.files));
+        assert!(Arc::ptr_eq(&graph.imports, &cloned.imports));
     }
 
     #[test]
