@@ -799,6 +799,8 @@ impl WidgetTree {
         if !self.apply_frame_paint(id, new_frame) {
             return;
         }
+        // 旧、新视觉子树已由 apply_frame_paint 提交，布局只需补充后代最终边界。
+        self.note_frame_dirty_layout_root(id);
         self.push_layout_invalidation(id);
         self.propagate_layout_invalidation(id);
     }
@@ -829,14 +831,19 @@ impl WidgetTree {
             // 已记录的变化祖先会覆盖整棵子树，无需为每个后代重复扫描视觉边界。
             let mut ancestor = self.get(id).and_then(|node| node.parent());
             let mut covered = false;
+            let mut old_bounds_covered = false;
             while let Some(ancestor_id) = ancestor {
                 if damage.roots.contains(&ancestor_id) {
                     covered = true;
                     break;
                 }
+                if damage.frame_dirty_roots.contains(&ancestor_id) {
+                    old_bounds_covered = true;
+                    break;
+                }
                 ancestor = self.get(ancestor_id).and_then(|node| node.parent());
             }
-            if !covered {
+            if !covered && !old_bounds_covered {
                 damage.roots.insert(id);
                 damage.entries.push((id, self.visual_subtree_bounds(id)));
             }

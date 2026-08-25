@@ -15,6 +15,14 @@ use super::{LayoutFrameScratch, LayoutTraversalScratch};
 mod tests;
 
 impl WidgetTree {
+    /// 记录已由外部 frame 更新覆盖旧视觉范围的布局根。
+    pub(crate) fn note_frame_dirty_layout_root(&mut self, id: WidgetId) {
+        self.layout_scratch
+            .layout_damage
+            .frame_dirty_roots
+            .insert(id);
+    }
+
     pub(crate) fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
         crate::ui::tree_widget_hooks::nearest_viewport_overflow_axes(self, id)
     }
@@ -189,6 +197,7 @@ impl WidgetTree {
                 })
             });
             if !needs_bootstrap {
+                layout_damage.frame_dirty_roots.clear();
                 return;
             }
             if let Some(root_id) = self.root_id {
@@ -196,6 +205,7 @@ impl WidgetTree {
             }
             self.take_layout_traversal(order, traversal);
             if order.is_empty() {
+                layout_damage.frame_dirty_roots.clear();
                 return;
             }
         }
@@ -350,6 +360,7 @@ impl WidgetTree {
         self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
         self.sync_app_state_registry_from_lifecycle_states();
+        layout_damage.frame_dirty_roots.clear();
         tracing::debug!("[Layout] layout() done");
     }
 
