@@ -226,7 +226,7 @@ impl CompilerSession {
                 .pipelines
                 .get(&identity)
                 .and_then(|pipeline| pipeline.analysis.as_ref().ok())
-                .filter(|analysis| single_file_snapshot_is_unchanged(&root, overlays, analysis))
+                .filter(|analysis| cached_snapshot_is_unchanged(&root, overlays, analysis))
                 .cloned();
             if let Some(analysis) = unchanged {
                 #[cfg(test)]
@@ -366,24 +366,27 @@ impl CompilerSession {
     }
 }
 
-// 单文件没有导入拓扑变化；源码字节未变时可在 resolver 和 AST 克隆前命中完整分析。
-fn single_file_snapshot_is_unchanged(
+// 已缓存源码图的全部文件字节未变时，导入拓扑也不可能变化，可在 resolver 和 AST 克隆前命中完整分析。
+fn cached_snapshot_is_unchanged(
     root: &Path,
     overlays: &BTreeMap<PathBuf, String>,
     analysis: &AnalyzedUnit,
 ) -> bool {
     let graph = &analysis.source_graph;
-    if !graph.imports().is_empty() || graph.files().len() != 1 {
+    let Some(cached_root) = graph.files().first() else {
+        return false;
+    };
+    if cached_root.path != root.to_string_lossy().replace('\\', "/") {
         return false;
     }
-    let file = &graph.files()[0];
-    if file.path != root.to_string_lossy().replace('\\', "/") {
-        return false;
-    }
-    if let Some(source) = overlay_source(overlays, root) {
-        return source == file.source;
-    }
-    fs::read_to_string(root).is_ok_and(|source| source == file.source)
+    graph.files().iter().all(|file| {
+        let path = Path::new(&file.path);
+        if let Some(source) = overlay_source(overlays, path) {
+            source == file.source
+        } else {
+            fs::read_to_string(path).is_ok_and(|source| source == file.source)
+        }
+    })
 }
 
 // 保存测试可观测的实际阶段执行与缓存命中次数。
@@ -484,6 +487,41 @@ mod tests {
         assert_eq!(changed.snapshot_hits, unchanged.snapshot_hits);
         assert_eq!(changed.source_parses, unchanged.source_parses + 1);
         assert_eq!(changed.analysis_runs, unchanged.analysis_runs + 1);
+    }
+
+    #[test]
+    fn unchanged_multi_file_overlay_skips_resolver_rebuild() {
+        let fixture = std::env::temp_dir().join(format!(
+            "uix-session-stable-multi-file-{}",
+            std::process::id()
+        ));
+        let root = fixture.join("root.uix");
+        let dependency = fixture.join("dependency.uix");
+        let mut overlays = BTreeMap::new();
+        overlays.insert(
+            root.clone(),
+            "@import('./dependency.uix', 'Helper')\n<App><Helper /></App>".to_string(),
+        );
+        overlays.insert(
+            dependency,
+            "@export('Helper')\n<Widget name=\"Helper\"><Text>稳定依赖</Text></Widget>\n<Helper />"
+                .to_string(),
+        );
+        let mut session = CompilerSession::new();
+        session
+            .check_file_with_overlays(&root, &overlays, CompileTarget::App)
+            .expect("初始多文件 overlay 必须通过检查");
+        let initial = session.test_stats();
+
+        session
+            .check_file_with_overlays(&root, &overlays, CompileTarget::App)
+            .expect("未变化多文件 overlay 必须命中快照");
+        let unchanged = session.test_stats();
+
+        assert_eq!(unchanged.snapshot_hits, initial.snapshot_hits + 1);
+        assert_eq!(unchanged.source_parses, initial.source_parses);
+        assert_eq!(unchanged.analysis_runs, initial.analysis_runs);
+        assert_eq!(unchanged.analysis_handle, initial.analysis_handle);
     }
 
     #[test]

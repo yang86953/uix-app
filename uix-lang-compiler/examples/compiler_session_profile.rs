@@ -1,4 +1,4 @@
-//! 测量 `CompilerSession` 稳定单文件 overlay 命中的耗时与分配。
+//! 测量 `CompilerSession` 稳定 overlay 命中的耗时与分配。
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::BTreeMap;
@@ -76,6 +76,18 @@ fn profile_source(nodes: usize) -> String {
     source
 }
 
+fn dependency_source(nodes: usize) -> String {
+    let mut source = String::with_capacity(nodes * 48);
+    source.push_str("@export('Helper')\n<Widget name=\"Helper\"><Column gap=\"4px\">\n");
+    for index in 0..nodes {
+        source.push_str("  <Text automationId=\"item-");
+        source.push_str(&index.to_string());
+        source.push_str("\">稳定内容</Text>\n");
+    }
+    source.push_str("</Column></Widget>\n<Helper />\n");
+    source
+}
+
 fn main() {
     let iterations = std::env::args()
         .nth(1)
@@ -85,9 +97,20 @@ fn main() {
         .nth(2)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(500);
-    let root = PathBuf::from("/tmp/uix-compiler-session-profile.uix");
+    let scenario = std::env::args()
+        .nth(3)
+        .unwrap_or_else(|| "single".to_string());
+    let root = PathBuf::from("/tmp/uix-compiler-session-profile/root.uix");
     let mut overlays = BTreeMap::new();
-    overlays.insert(root.clone(), profile_source(nodes));
+    if scenario == "multi" {
+        overlays.insert(
+            root.clone(),
+            "@import('./helper.uix', 'Helper')\n<Column><Helper /></Column>\n".to_string(),
+        );
+        overlays.insert(root.with_file_name("helper.uix"), dependency_source(nodes));
+    } else {
+        overlays.insert(root.clone(), profile_source(nodes));
+    }
     let mut session = CompilerSession::new();
 
     session
@@ -109,6 +132,7 @@ fn main() {
 
     println!("iterations={iterations}");
     println!("nodes={nodes}");
+    println!("scenario={scenario}");
     println!("elapsed_ns={}", elapsed.as_nanos());
     println!(
         "ns_per_iteration={}",
