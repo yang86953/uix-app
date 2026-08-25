@@ -1,6 +1,9 @@
 //! UIX Lang 完成名称分类后的可查询语义 IR。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use crate::CompileTarget;
 use crate::projection_schema::{ComponentCategory, UI_PROJECTION_SCHEMA};
@@ -147,9 +150,11 @@ pub(crate) struct SemanticFailure {
 #[derive(Debug, Clone)]
 pub struct TypedUiIr {
     target: CompileTarget,
-    declarations: Vec<TypedDeclaration>,
+    // 类型化声明在分析完成后不可变，检查结果只共享拥有型序列。
+    declarations: Arc<[TypedDeclaration]>,
     root: TypedElement,
-    document: Document,
+    // 原始文档只在 lowering 时复制为发射文档，公开结果克隆无需重复持有整棵 AST。
+    document: Arc<Document>,
 }
 
 impl TypedUiIr {
@@ -160,7 +165,7 @@ impl TypedUiIr {
 
     /// 返回源码顺序中的具名声明。
     pub fn declarations(&self) -> &[TypedDeclaration] {
-        &self.declarations
+        self.declarations.as_ref()
     }
 
     /// 返回唯一根元素。
@@ -171,7 +176,7 @@ impl TypedUiIr {
     /// 查询覆盖指定源码字节的最窄语义节点。
     pub fn semantic_node_at(&self, source_id: SourceId, offset: usize) -> Option<SemanticNodeInfo> {
         let mut best = None;
-        for declaration in &self.declarations {
+        for declaration in self.declarations.iter() {
             consider_node(
                 &mut best,
                 semantic_info(
@@ -193,7 +198,7 @@ impl TypedUiIr {
     /// 返回源码顺序中的全部组件与属性级 capability 要求。
     pub fn capability_requirements(&self) -> Vec<CapabilityRequirement> {
         let mut requirements = Vec::new();
-        for declaration in &self.declarations {
+        for declaration in self.declarations.iter() {
             for node in &declaration.body {
                 collect_node_capabilities(node, &mut requirements);
             }
@@ -204,7 +209,7 @@ impl TypedUiIr {
 
     // 为 Rust Emitter 克隆文档，并把每个可生成元素标上真实源码身份。
     pub(crate) fn emission_document(&self) -> Document {
-        let mut document = self.document.clone();
+        let mut document = self.document.as_ref().clone();
         let custom_widgets = self
             .declarations
             .iter()
@@ -444,9 +449,9 @@ pub(crate) fn lower_document(
         })?;
     Ok(TypedUiIr {
         target,
-        declarations,
+        declarations: declarations.into(),
         root,
-        document,
+        document: Arc::new(document),
     })
 }
 
@@ -613,6 +618,23 @@ mod tests {
     use crate::CompileTarget;
     use crate::source_graph::SourceId;
     use crate::uix_lang::parse_document;
+    use std::sync::Arc;
+
+    #[test]
+    fn clone_shares_private_immutable_ir_storage() {
+        let document =
+            parse_document("<Widget name=\"Greeting\"><Text>Hello</Text></Widget><Greeting />")
+                .expect("测试源码必须通过解析");
+        let source = SourceId::from_source_name("clone.uix");
+        let ir = lower_document(document, CompileTarget::View, source, &[source])
+            .expect("语义 IR 必须建立");
+        let cloned = ir.clone();
+
+        // 公开根与查询语义保持拥有型值，私有不可变声明及 AST 共享同一存储。
+        assert_eq!(ir.root, cloned.root);
+        assert!(Arc::ptr_eq(&ir.declarations, &cloned.declarations));
+        assert!(Arc::ptr_eq(&ir.document, &cloned.document));
+    }
 
     #[test]
     fn semantic_ir_classifies_components_custom_widgets_and_attribute_roles() {
