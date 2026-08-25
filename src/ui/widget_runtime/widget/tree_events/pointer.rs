@@ -507,8 +507,23 @@ impl WidgetTree {
         // A keyboard gesture belongs to the focus target that accepted its KeyDown.
         // Any real focus transition cancels it before FocusOut resets widget visuals.
         self.keyboard_activation = None;
-        let old_path = self.focus_containment_path(old_focus);
-        let new_path = self.focus_containment_path(new_focus);
+        // 在任何用户回调前冻结两条包含路径，保持焦点事务观察同一份树结构。
+        let mut paths = std::mem::take(&mut self.focus_transition_path_scratch);
+        paths.clear();
+        self.append_focus_containment_path(old_focus, &mut paths);
+        let new_path_start = paths.len();
+        self.append_focus_containment_path(new_focus, &mut paths);
+        let new_path_len = paths.len() - new_path_start;
+        // 两条 target→root 路径的共同后缀就是焦点仍位于其中的祖先链。
+        let mut common_len = 0;
+        while common_len < new_path_start
+            && common_len < new_path_len
+            && paths[new_path_start - common_len - 1] == paths[paths.len() - common_len - 1]
+        {
+            common_len += 1;
+        }
+        let old_unique_end = new_path_start - common_len;
+        let new_unique_end = paths.len() - common_len;
         if let Some(old) = old_focus {
             self.invalidate_paint(old);
             if self.window_focused {
@@ -516,10 +531,9 @@ impl WidgetTree {
             }
         }
         if self.window_focused {
-            for &id in &old_path {
-                if !new_path.contains(&id) {
-                    self.dispatch_focus_within(id, false);
-                }
+            // 旧目标到共同祖先之前保持既有由内向外的离开顺序。
+            for index in 0..old_unique_end {
+                self.dispatch_focus_within(paths[index], false);
             }
         }
         self.managers_mut().focus.set_focused_widget(new_focus);
@@ -530,23 +544,34 @@ impl WidgetTree {
             }
         }
         if self.window_focused {
-            for &id in new_path.iter().rev() {
-                if !old_path.contains(&id) {
-                    self.dispatch_focus_within(id, true);
-                }
+            // 新目标独有路径反向遍历，保持由共同祖先向内进入的顺序。
+            for index in (new_path_start..new_unique_end).rev() {
+                self.dispatch_focus_within(paths[index], true);
             }
+            // 生命周期协调可能继续使用树级工作区，先归还焦点路径所有权。
+            paths.clear();
+            self.focus_transition_path_scratch = paths;
             self.reconcile_lifecycle_after_layout();
+        } else {
+            // 窗口失焦时虽然不发送 focus-within，也必须保留已扩容工作区。
+            paths.clear();
+            self.focus_transition_path_scratch = paths;
         }
     }
 
     pub(super) fn focus_containment_path(&self, target: Option<WidgetId>) -> Vec<WidgetId> {
         let mut path = Vec::new();
+        self.append_focus_containment_path(target, &mut path);
+        path
+    }
+
+    // 把目标到根的包含链追加到调用方拥有的快照，供焦点事务与窗口生命周期复用。
+    fn append_focus_containment_path(&self, target: Option<WidgetId>, path: &mut Vec<WidgetId>) {
         let mut current = target;
         while let Some(id) = current {
             path.push(id);
             current = self.get(id).and_then(|node| node.parent());
         }
-        path
     }
 
     pub(super) fn dispatch_focus_within(&mut self, id: WidgetId, focused: bool) {
