@@ -192,6 +192,30 @@ fn run_repeated_effect_reads_round(
     (started.elapsed().as_nanos(), stats)
 }
 
+// 运行一轮条件绑定分支切换，覆盖 Effect 动态依赖退订、重订与快照刷新。
+fn run_alternating_effect_dependencies_round(
+    selector: &State<bool>,
+    effect: &Effect,
+    executions: &AtomicUsize,
+    iterations: usize,
+) -> (u128, AllocationStats) {
+    // 保存轮前执行数，确保测得的是完整动态依赖刷新而非空 tick。
+    let before = executions.load(Ordering::Relaxed);
+    // 排除 State、Effect 与两组业务状态的一次性构造成本。
+    let started = Instant::now();
+    begin_measurement();
+    for index in 0..iterations {
+        // 偶数迭代进入右分支，奇数迭代返回左分支，保证每轮依赖集合都变化。
+        selector.set(black_box(index % 2 == 0));
+        // 应用调度同步消费失效并刷新下一轮精确租约集合。
+        assert!(effect.tick());
+    }
+    let stats = end_measurement();
+    // 每次条件切换必须恰好重跑一次 Effect。
+    assert_eq!(executions.load(Ordering::Relaxed) - before, iterations);
+    (started.elapsed().as_nanos(), stats)
+}
+
 // 验证大列表状态更新不会为仅失效通知建立无消费者快照。
 #[test]
 fn list_state_update_profile() {
@@ -481,4 +505,146 @@ fn repeated_computed_reads_preserve_invalidation_chain() {
     assert_eq!(latest.load(Ordering::Relaxed), 5 * 3 * 64);
     // 同一失效不得被重复读取放大成多轮 Effect 执行。
     assert!(!effect.tick());
+}
+
+// 验证条件绑定切换后只保留当前分支租约，旧分支不再唤醒 Effect。
+#[test]
+fn alternating_effect_dependencies_release_stale_branch() {
+    let selector = State::new(false);
+    let left = State::new(11_u64);
+    let right = State::new(29_u64);
+    let watched_selector = selector.clone();
+    let watched_left = left.clone();
+    let watched_right = right.clone();
+    let executions = Arc::new(AtomicUsize::new(0));
+    let execution_sink = Arc::clone(&executions);
+    let latest = Arc::new(AtomicUsize::new(0));
+    let latest_sink = Arc::clone(&latest);
+    let effect = Effect::new(move || {
+        // 每轮只读取当前条件分支，形成一份会变化的动态依赖集合。
+        let value = if watched_selector.get() {
+            watched_right.get()
+        } else {
+            watched_left.get()
+        };
+        latest_sink.store(value as usize, Ordering::Relaxed);
+        execution_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
+    assert_eq!(latest.load(Ordering::Relaxed), 11);
+
+    // 切到右分支后，Effect 必须发布右值并释放左分支租约。
+    selector.set(true);
+    assert!(effect.has_pending());
+    assert!(effect.tick());
+    assert_eq!(latest.load(Ordering::Relaxed), 29);
+    left.set(13);
+    assert!(!effect.has_pending());
+    right.set(31);
+    assert!(effect.has_pending());
+    assert!(effect.tick());
+    assert_eq!(latest.load(Ordering::Relaxed), 31);
+
+    // 再切回左分支，证明退订与重订可以反向重复且不残留旧通知。
+    selector.set(false);
+    assert!(effect.tick());
+    assert_eq!(latest.load(Ordering::Relaxed), 13);
+    right.set(37);
+    assert!(!effect.has_pending());
+    left.set(17);
+    assert!(effect.has_pending());
+    assert!(effect.tick());
+    assert_eq!(latest.load(Ordering::Relaxed), 17);
+    assert_eq!(executions.load(Ordering::Relaxed), 5);
+}
+
+// 剖析真实条件绑定在两组业务状态间切换时的动态依赖租约刷新成本。
+#[test]
+fn alternating_effect_dependencies_profile() {
+    let branch_width = std::env::var("UIX_PROFILE_EFFECT_BRANCH_WIDTH")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(32);
+    let rounds = std::env::var("UIX_PROFILE_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(9);
+    let iterations = std::env::var("UIX_PROFILE_ITERATIONS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(512);
+    // 模拟条件 View 两侧各自读取一组不同业务状态。
+    let left = Arc::new(
+        (0..branch_width)
+            .map(|index| State::new(index as u64))
+            .collect::<Vec<_>>(),
+    );
+    let right = Arc::new(
+        (0..branch_width)
+            .map(|index| State::new((index + branch_width) as u64))
+            .collect::<Vec<_>>(),
+    );
+    let selector = State::new(false);
+    let executions = Arc::new(AtomicUsize::new(0));
+    let latest = Arc::new(AtomicUsize::new(0));
+    let watched_selector = selector.clone();
+    let watched_left = Arc::clone(&left);
+    let watched_right = Arc::clone(&right);
+    let execution_sink = Arc::clone(&executions);
+    let latest_sink = Arc::clone(&latest);
+    let effect = Effect::new(move || {
+        // 首次读取选择器，随后只读取当前条件分支的完整依赖集合。
+        let branch = if watched_selector.get() {
+            &watched_right
+        } else {
+            &watched_left
+        };
+        let checksum = branch
+            .iter()
+            .fold(0_u64, |sum, state| sum.wrapping_add(state.get()));
+        black_box(checksum);
+        latest_sink.store(checksum as usize, Ordering::Relaxed);
+        execution_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    // 预热两侧注册表、租约映射与分配器路径。
+    let _ = run_alternating_effect_dependencies_round(&selector, &effect, &executions, 16);
+    let execution_base = executions.load(Ordering::Relaxed);
+    let mut elapsed_per_tick = Vec::with_capacity(rounds);
+    let mut stats = Vec::with_capacity(rounds);
+    for _ in 0..rounds {
+        let (elapsed, round_stats) =
+            run_alternating_effect_dependencies_round(&selector, &effect, &executions, iterations);
+        elapsed_per_tick.push(elapsed / iterations as u128);
+        stats.push(round_stats);
+    }
+    elapsed_per_tick.sort_unstable();
+    stats.sort_unstable_by_key(|sample| sample.allocated_bytes);
+    let elapsed_ns = elapsed_per_tick[rounds / 2];
+    let allocations = stats[rounds / 2];
+    eprintln!(
+        "PROFILE alternating_effect_dependencies: rounds={rounds} iterations={iterations} branch_width={branch_width} tick_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
+        allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
+    );
+    // 场景必须覆盖全部预热和测量执行，防止零工作量样本进入比较。
+    assert_eq!(
+        executions.load(Ordering::Relaxed),
+        execution_base + rounds * iterations
+    );
+    // 保留最终业务校验和观察；合法的单元素左分支可以恰好为零。
+    black_box(latest.load(Ordering::Relaxed));
+    // 具体依赖源与租约不得退化回按每个唯一依赖三次闭包装箱。
+    assert!(
+        allocations.count <= iterations * (branch_width / 2 + 12),
+        "动态依赖刷新申请次数回退: {allocations:?}"
+    );
+    // 哈希差集仍按依赖数保存元数据，但不得重新分配三份闭包对象。
+    assert!(
+        allocations.allocated_bytes <= iterations * (512 + branch_width * 340),
+        "动态依赖刷新申请字节回退: {allocations:?}"
+    );
+    // 单轮峰值只保留差集容器与具体租约，不得恢复完整闭包峰值。
+    assert!(
+        allocations.peak_live_bytes <= 256 + branch_width * 208,
+        "动态依赖刷新峰值 live 回退: {allocations:?}"
+    );
 }
