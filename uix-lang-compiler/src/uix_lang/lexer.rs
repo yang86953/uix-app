@@ -1,5 +1,16 @@
 // 引入共享诊断和跨度类型。
+use std::cell::Cell;
+
 use super::{Diagnostic, SourceSpan};
+
+// 保存已经定位到的最远源码位置，供后续跨度按增量更新行列。
+#[derive(Clone, Copy)]
+struct LineColumnCache {
+    offset: usize,
+    line: usize,
+    column: usize,
+    line_start: usize,
+}
 
 // 提供按 UTF-8 字符边界推进的源码词法游标。
 pub(crate) struct Cursor<'a> {
@@ -7,6 +18,8 @@ pub(crate) struct Cursor<'a> {
     source: &'a str,
     // 保存当前 UTF-8 字节偏移。
     offset: usize,
+    // 保存跨度定位的最远扫描位置，避免每个 token 都从文件开头重扫。
+    line_column_cache: Cell<LineColumnCache>,
 }
 
 // 实现解析器需要的最小词法操作。
@@ -14,7 +27,16 @@ impl<'a> Cursor<'a> {
     // 从文档起点创建词法游标。
     pub(crate) fn new(source: &'a str) -> Self {
         // 初始化零偏移游标。
-        Self { source, offset: 0 }
+        Self {
+            source,
+            offset: 0,
+            line_column_cache: Cell::new(LineColumnCache {
+                offset: 0,
+                line: 1,
+                column: 1,
+                line_start: 0,
+            }),
+        }
     }
 
     // 返回完整输入源码。
@@ -666,25 +688,67 @@ impl<'a> Cursor<'a> {
 
     // 计算给定 UTF-8 字节偏移的一基行列。
     fn line_column(&self, offset: usize) -> (usize, usize) {
-        // 初始化一基行号。
-        let mut line = 1;
-        // 初始化一基字符列号。
-        let mut column = 1;
-        // 遍历起点之前的 Unicode 字符。
-        for value in self.source[..offset].chars() {
+        let cached = self.line_column_cache.get();
+        // 正向跨度只扫描上次定位之后的增量；解析器通常按源码顺序请求位置。
+        let (scan_start, mut line, mut column, mut line_start) = if offset >= cached.offset {
+            (cached.offset, cached.line, cached.column, cached.line_start)
+        } else if offset >= cached.line_start {
+            // 同一行内的父节点回查可直接从行首计算，不回扫此前所有行。
+            (cached.line_start, cached.line, 1, cached.line_start)
+        } else {
+            // 父节点结束时可能回查更早的起点，保留最远缓存并从文档起点定位。
+            (0, 1, 1, 0)
+        };
+        // 遍历尚未计入位置缓存的 Unicode 字符。
+        for (relative_offset, value) in self.source[scan_start..offset].char_indices() {
             // 换行推进到下一行首列。
             if value == '\n' {
                 // 增加行号。
                 line += 1;
                 // 重置列号。
                 column = 1;
+                // 保存新行在完整源码中的字节起点。
+                line_start = scan_start + relative_offset + value.len_utf8();
             // 非换行字符推进一列。
             } else {
                 // 增加字符列号。
                 column += 1;
             }
         }
+        if offset >= cached.offset {
+            self.line_column_cache.set(LineColumnCache {
+                offset,
+                line,
+                column,
+                line_start,
+            });
+        }
         // 返回计算结果。
         (line, column)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cursor;
+
+    #[test]
+    fn incremental_line_column_cache_preserves_unicode_and_backward_spans() {
+        let source = "甲乙\nA好\n末";
+        let cursor = Cursor::new(source);
+
+        let second_character = cursor.span_between("甲".len(), "甲乙".len());
+        assert_eq!((second_character.line, second_character.column), (1, 2));
+
+        let last_line = source.find('末').expect("夹具必须包含末字");
+        let last_character = cursor.span_between(last_line, source.len());
+        assert_eq!((last_character.line, last_character.column), (3, 1));
+
+        let backward = source.find('好').expect("夹具必须包含好字");
+        let backward_span = cursor.span_between(backward, backward + '好'.len_utf8());
+        assert_eq!((backward_span.line, backward_span.column), (2, 2));
+
+        let forward_again = cursor.span_between(last_line, source.len());
+        assert_eq!((forward_again.line, forward_again.column), (3, 1));
     }
 }
