@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
 // 只使用 UI System 的公开响应式状态契约。
-use uix::ui::State;
+use uix::ui::{Computed, Effect, State};
 
 // 只在目标热段启用统计，隔离初始化和测试框架分配。
 static MEASURING: AtomicBool = AtomicBool::new(false);
@@ -165,6 +165,30 @@ fn run_watched_round(
         delivery_count.load(Ordering::Relaxed),
         state.generation() as usize * watcher_count
     );
+    (started.elapsed().as_nanos(), stats)
+}
+
+// 运行一轮状态写入、Effect 唤醒、重复派生读取与依赖租约刷新生产链。
+fn run_repeated_effect_reads_round(
+    state: &State<u64>,
+    effect: &Effect,
+    executions: &AtomicUsize,
+    iterations: usize,
+) -> (u128, AllocationStats) {
+    // 保存本轮前的执行数，使多轮测量共享同一 Effect 仍可独立验收。
+    let before = executions.load(Ordering::Relaxed);
+    // 排除 Effect 构造和首次订阅，只测稳定更新后的应用层响应式热段。
+    let started = Instant::now();
+    begin_measurement();
+    for value in 1..=iterations {
+        // 业务状态写入必须先只置 Effect pending。
+        state.set(black_box(value as u64));
+        // 应用 tick 同步消费失效并重新计算重复绑定表达式。
+        assert!(effect.tick());
+    }
+    let stats = end_measurement();
+    // 每次写入只执行一轮 Effect。
+    assert_eq!(executions.load(Ordering::Relaxed) - before, iterations);
     (started.elapsed().as_nanos(), stats)
 }
 
@@ -354,4 +378,107 @@ fn high_fanout_watched_state_profile() {
     assert_eq!(allocations.count, 0);
     assert_eq!(allocations.allocated_bytes, 0);
     assert_eq!(allocations.peak_live_bytes, 0);
+}
+
+// 剖析单个绑定表达式重复读取同一响应式槽时的依赖捕获与租约刷新成本。
+#[test]
+fn repeated_effect_dependency_profile() {
+    // 模拟同一动态 View/格式化绑定在一轮内多处读取共享应用状态。
+    let reads_per_tick = std::env::var("UIX_PROFILE_EFFECT_READS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(64);
+    let rounds = std::env::var("UIX_PROFILE_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(9);
+    let iterations = std::env::var("UIX_PROFILE_ITERATIONS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(512);
+    let state = State::new(0_u64);
+    let executions = Arc::new(AtomicUsize::new(0));
+    let watched = state.clone();
+    let execution_sink = Arc::clone(&executions);
+    let effect = Effect::new(move || {
+        // 保留同一轮中每次公开 State::get，覆盖真实自动依赖捕获入口。
+        let mut checksum = 0_u64;
+        for _ in 0..reads_per_tick {
+            checksum = checksum.wrapping_add(watched.get());
+        }
+        black_box(checksum);
+        execution_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    // 预热通知、捕获、差集刷新与分配器路径；计数仍用于最终语义核对。
+    let _ = run_repeated_effect_reads_round(&state, &effect, &executions, 16);
+    let execution_base = executions.load(Ordering::Relaxed);
+    let mut elapsed_per_tick = Vec::with_capacity(rounds);
+    let mut stats = Vec::with_capacity(rounds);
+    for _ in 0..rounds {
+        let before = executions.load(Ordering::Relaxed);
+        let (elapsed, round_stats) =
+            run_repeated_effect_reads_round(&state, &effect, &executions, iterations);
+        // 每个独立测量轮都必须完整执行指定次数。
+        assert_eq!(executions.load(Ordering::Relaxed) - before, iterations);
+        elapsed_per_tick.push(elapsed / iterations as u128);
+        stats.push(round_stats);
+    }
+    elapsed_per_tick.sort_unstable();
+    stats.sort_unstable_by_key(|sample| sample.allocated_bytes);
+    let elapsed_ns = elapsed_per_tick[rounds / 2];
+    let allocations = stats[rounds / 2];
+    eprintln!(
+        "PROFILE repeated_effect_dependency: rounds={rounds} iterations={iterations} reads={reads_per_tick} tick_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
+        allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
+    );
+    // 唯一依赖的稳定刷新当前只需七次小申请，重复读取不得使分配随读取数增长。
+    assert!(
+        allocations.count <= iterations * 8,
+        "重复依赖捕获申请次数回退: {allocations:?}"
+    );
+    // 为 HashMap、快照和锁外通知保留平台余量，同时拒绝重新装箱每次重复读取。
+    assert!(
+        allocations.allocated_bytes <= iterations * 640,
+        "重复依赖捕获申请字节回退: {allocations:?}"
+    );
+    // 稳态临时对象峰值必须保持常量级，不得再次接近完整重复依赖向量。
+    assert!(
+        allocations.peak_live_bytes <= 512,
+        "重复依赖捕获峰值 live 回退: {allocations:?}"
+    );
+    // 场景必须覆盖全部预热和测量执行，防止零工作量数据进入比较。
+    assert_eq!(
+        executions.load(Ordering::Relaxed),
+        execution_base + rounds * iterations
+    );
+}
+
+// 验证 State → Computed → Effect 链在重复派生读取去重后仍精确传播一次失效。
+#[test]
+fn repeated_computed_reads_preserve_invalidation_chain() {
+    let source = State::new(2_usize);
+    let computed_source = source.clone();
+    let derived = Computed::new(move || computed_source.get() * 3);
+    let watched = derived.clone();
+    let executions = Arc::new(AtomicUsize::new(0));
+    let execution_sink = Arc::clone(&executions);
+    let latest = Arc::new(AtomicUsize::new(0));
+    let latest_sink = Arc::clone(&latest);
+    let effect = Effect::new(move || {
+        // 同一轮重复读取派生槽，覆盖 Computed::get 的提前去重入口。
+        let sum = (0..64).fold(0_usize, |sum, _| sum + watched.get());
+        latest_sink.store(sum, Ordering::Relaxed);
+        execution_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    assert_eq!(executions.load(Ordering::Relaxed), 1);
+    assert_eq!(latest.load(Ordering::Relaxed), 2 * 3 * 64);
+
+    // 上游写入先同步失效 Computed，再只把下游 Effect 标记为待执行。
+    source.set(5);
+    assert!(effect.has_pending());
+    assert!(effect.tick());
+    assert_eq!(executions.load(Ordering::Relaxed), 2);
+    assert_eq!(latest.load(Ordering::Relaxed), 5 * 3 * 64);
+    // 同一失效不得被重复读取放大成多轮 Effect 执行。
+    assert!(!effect.tick());
 }
