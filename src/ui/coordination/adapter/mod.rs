@@ -35,6 +35,7 @@ use crate::ui::widgets::{Calendar, Carousel, Image, Transfer};
 use crate::ui::widgets::navigation::Anchor;
 use crate::ui::{WidgetId, WidgetTree};
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 // 复用独立生命周期模块，保持适配器主体低于文件规模上限。
 #[path = "capture_guards.rs"]
 // 编译捕获守卫与回执转移的私有实现模块。
@@ -83,6 +84,59 @@ struct WidgetPatchImpact {
     /// 组件测量或布局输出是否变化。
     layout_changed: bool,
 }
+
+// 为 keyed 协调生成无所有权摘要；命中后仍精确比较原字符串。
+fn reconcile_key_fingerprint(key: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    let fingerprint = hasher.finish();
+    // 测试宿主可收窄摘要以确定性覆盖碰撞回退，生产构建保留完整 64 位。
+    #[cfg(feature = "test-harness")]
+    {
+        return fingerprint
+            & RECONCILE_KEY_FINGERPRINT_MASK.load(std::sync::atomic::Ordering::Relaxed);
+    }
+    #[cfg(not(feature = "test-harness"))]
+    fingerprint
+}
+
+// 摘要已经完成带密钥内容哈希，表索引只需原样接纳 u64，避免二次 SipHash。
+#[derive(Default)]
+struct ReconcileFingerprintHasher(u64);
+
+impl Hasher for ReconcileFingerprintHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        // HashMap 当前只写入 u64；保留通用回退以满足 Hasher 完整契约。
+        let mut folded = 0_u64;
+        for (index, byte) in bytes.iter().copied().enumerate() {
+            folded ^= u64::from(byte) << ((index & 7) * 8);
+        }
+        self.0 = folded;
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+}
+
+type ReconcileFingerprintMap =
+    HashMap<u64, WidgetId, std::hash::BuildHasherDefault<ReconcileFingerprintHasher>>;
+
+// 只影响 test-harness 进程内的摘要宽度，不进入默认生产构建。
+#[cfg(feature = "test-harness")]
+static RECONCILE_KEY_FINGERPRINT_MASK: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(u64::MAX);
+
+// 返回旧掩码，供测试守卫在碰撞场景结束后恢复进程状态。
+#[cfg(feature = "test-harness")]
+pub(crate) fn set_reconcile_key_fingerprint_mask_for_test(mask: u64) -> u64 {
+    RECONCILE_KEY_FINGERPRINT_MASK.swap(mask, std::sync::atomic::Ordering::SeqCst)
+}
+
 impl ViewAdapter {
     /// Expands a ViewNode tree into a WidgetNode tree using explicit stack
     /// traversal to avoid stack overflow on deep trees in debug builds.
@@ -439,9 +493,9 @@ impl ViewAdapter {
             paint_changed = true;
         }
         if let Some(current) = tree.get_mut(id) {
-            let next_key = key.map(Into::into);
-            if current.key() != next_key.as_deref() {
-                current.set_key(next_key);
+            // 先借用 String 精确比较；只有 key 真变化时才转换为 Box<str>。
+            if current.key() != key.as_deref() {
+                current.set_key(key.map(Into::into));
             }
             let next_automation_id = automation_id.map(Into::into);
             if current.automation_id() != next_automation_id.as_deref() {
@@ -737,10 +791,11 @@ impl ViewAdapter {
             .get(parent_id)
             .map(|node| node.children().to_vec())
             .unwrap_or_default();
-        let mut old_by_key: HashMap<String, WidgetId> = HashMap::new();
+        // 摘要索引不取得旧 key 字符串所有权，避免每轮复制全部业务 key。
+        let mut old_by_key = ReconcileFingerprintMap::default();
         for &child_id in &old_children {
             if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
-                old_by_key.insert(key.to_string(), child_id);
+                old_by_key.insert(reconcile_key_fingerprint(key), child_id);
             }
         }
 
@@ -751,21 +806,31 @@ impl ViewAdapter {
         let mut mounted_rank = 0;
 
         for (index, mut child) in children.into_iter().enumerate() {
-            let candidate = child
-                .key
-                .as_ref()
-                .and_then(|key| old_by_key.get(key).copied())
-                .filter(|id| !used_old.contains(id))
-                .or_else(|| {
-                    if child.key.is_some() {
-                        return None;
-                    }
-                    old_children
-                        .get(index)
-                        .copied()
-                        .filter(|id| !used_old.contains(id))
-                        .filter(|id| tree.get(*id).is_some_and(|node| node.key().is_none()))
-                });
+            let candidate =
+                child
+                    .key
+                    .as_ref()
+                    .and_then(|key| {
+                        let indexed = old_by_key.get(&reconcile_key_fingerprint(key)).copied()?;
+                        if tree.get(indexed).and_then(|node| node.key()) == Some(key.as_str()) {
+                            return Some(indexed);
+                        }
+                        // 摘要碰撞时逆序精确查找，保持旧 HashMap 最后写入者语义。
+                        old_children.iter().rev().copied().find(|id| {
+                            tree.get(*id).and_then(|node| node.key()) == Some(key.as_str())
+                        })
+                    })
+                    .filter(|id| !used_old.contains(id))
+                    .or_else(|| {
+                        if child.key.is_some() {
+                            return None;
+                        }
+                        old_children
+                            .get(index)
+                            .copied()
+                            .filter(|id| !used_old.contains(id))
+                            .filter(|id| tree.get(*id).is_some_and(|node| node.key().is_none()))
+                    });
 
             let child_id = if let Some(child_id) = candidate {
                 used_old.insert(child_id);

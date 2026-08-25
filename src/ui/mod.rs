@@ -240,6 +240,31 @@ pub mod __private {
         pub use super::super::widget_runtime::traits::*;
     }
     pub use super::widget_runtime::widget::{WidgetNode, WidgetTree};
+    // 为独立集成性能测试提供窄构建端口，不公开 System 私有适配器类型。
+    #[cfg(feature = "test-harness")]
+    pub fn build_view_tree_for_test(view: impl super::view::View) -> WidgetTree {
+        super::adapter::ViewAdapter::build(view)
+    }
+    // 在真实树所有者上执行完整声明协调，保持集成测试与生产入口一致。
+    #[cfg(feature = "test-harness")]
+    pub fn reconcile_view_tree_for_test(tree: &mut WidgetTree, view: impl super::view::View) {
+        super::adapter::ViewAdapter::reconcile(tree, view);
+    }
+    // 复制直接子节点身份供集成测试核对 keyed 协调是否保持顺序与复用。
+    #[cfg(feature = "test-harness")]
+    pub fn view_tree_children_for_test(
+        tree: &WidgetTree,
+        parent: super::WidgetId,
+    ) -> Vec<super::WidgetId> {
+        tree.get(parent)
+            .map(|node| super::widget_runtime::widget::WidgetCore::children(node).to_vec())
+            .unwrap_or_default()
+    }
+    // 强制缩窄 keyed 摘要供碰撞回退测试使用，并返回旧掩码。
+    #[cfg(feature = "test-harness")]
+    pub fn set_reconcile_key_fingerprint_mask_for_test(mask: u64) -> u64 {
+        super::adapter::set_reconcile_key_fingerprint_mask_for_test(mask)
+    }
     // 重导出代码生成器使用的私有组件状态桥接。
     pub use super::widget_snapshot::snapshot_fields_from_any;
     pub use super::widget_state::{
