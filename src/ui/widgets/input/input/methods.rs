@@ -530,53 +530,79 @@ impl Input {
         last
     }
 
-    fn insert_at_cursor(&mut self, ch: char) {
-        // 使用显式索引模型把合法字符边界转换成 UTF-8 字节边界。
-        let byte_pos = TextIndexCursor::new(&self.value)
-            // 转换当前字符光标。
-            .char_to_byte(CharIndex(self.cursor_char))
-            // 提取字符串插入 API 使用的字节偏移。
-            .0;
-        self.value.insert(byte_pos, ch);
-        self.cursor_char += 1;
-    }
-
     pub(super) fn insert_text_at_cursor(&mut self, text: &str) -> bool {
+        // 多行输入先统一平台换行；没有回车时继续借用事件载荷。
         let normalized = if self.textarea {
             normalize_newlines(text)
         } else {
             Cow::Borrowed(text)
         };
-        let mut chars: Vec<char> = if self.textarea {
-            normalized
-                .chars()
-                .filter(|&c| c >= ' ' || c == '\n' || c == '\r')
-                .collect()
-        } else {
-            normalized.chars().filter(|c| !c.is_control()).collect()
+        // 统一声明当前输入模式允许进入值状态的字符。
+        let accepts = |ch: char| {
+            if self.textarea {
+                ch >= ' ' || ch == '\n' || ch == '\r'
+            } else {
+                !ch.is_control()
+            }
         };
-        if chars.is_empty() {
+        // 常见的完整合法事件保持借用；仅在确实需要过滤时构造紧凑副本。
+        let (insertion, insertion_chars) = match normalized {
+            Cow::Borrowed(value) => {
+                // 校验时同时计数字符，合法常见路径无需稍后再次扫描事件载荷。
+                let mut char_count = 0usize;
+                let valid = value.chars().all(|ch| {
+                    let accepted = accepts(ch);
+                    char_count += usize::from(accepted);
+                    accepted
+                });
+                if valid {
+                    (Cow::Borrowed(value), char_count)
+                } else {
+                    // 过滤后 UTF-8 字节数不会增长，按源长度一次预留即可避免渐进扩容。
+                    let mut filtered = String::with_capacity(value.len());
+                    char_count = 0;
+                    for ch in value.chars().filter(|ch| accepts(*ch)) {
+                        filtered.push(ch);
+                        char_count += 1;
+                    }
+                    (Cow::Owned(filtered), char_count)
+                }
+            }
+            Cow::Owned(mut value) => {
+                // 换行规范化已经取得所有权时直接原地过滤，避免第二份字符串。
+                value.retain(accepts);
+                let char_count = value.chars().count();
+                (Cow::Owned(value), char_count)
+            }
+        };
+        if insertion.is_empty() {
             return false;
         }
         let replaced_selection = self.selection.get().is_some();
         if replaced_selection {
             self.delete_selection();
         }
-        if let Some(max_length) = self.max_length {
+        // 借用最终待插入片段，并记录它消费的逻辑字符数量。
+        let insertion = insertion.as_ref();
+        let (insertion, inserted_chars) = if let Some(max_length) = self.max_length {
             // 计算还能接收的 Unicode 标量数量。
             let available = max_length.saturating_sub(self.value.chars().count());
-            // 把待插入字符固化成文本以检查完整字素簇边界。
-            let insertion = chars.iter().collect::<String>();
             // 最大长度截断只能发生在不晚于预算的完整字素簇边界。
-            let safe_len = TextIndexCursor::new(&insertion)
+            let safe_len = TextIndexCursor::new(insertion)
                 // 从字符预算向后收敛。
                 .normalize_char(CharIndex(available), BoundaryBias::Backward)
                 // 提取可安全保留的字符数量。
                 .0;
-            // 按完整字素簇边界截断待插入序列。
-            chars.truncate(safe_len);
-        }
-        if chars.is_empty() {
+            // 一次字符到字节转换得到可直接交给 String 的完整前缀。
+            let safe_byte_len = TextIndexCursor::new(insertion)
+                .char_to_byte(CharIndex(safe_len))
+                .0;
+            (&insertion[..safe_byte_len], safe_len)
+        } else {
+            // 无长度限制直接复用校验或过滤阶段得到的标量数量。
+            (insertion, insertion_chars)
+        };
+        if insertion.is_empty() {
             if replaced_selection {
                 self.sel_anchor.set(self.cursor_char);
                 self.publish_change();
@@ -584,9 +610,13 @@ impl Input {
             }
             return false;
         }
-        for ch in chars {
-            self.insert_at_cursor(ch);
-        }
+        // 只定位一次插入点，随后让 String 一次搬移尾部并完成容量增长。
+        let byte_pos = TextIndexCursor::new(&self.value)
+            .char_to_byte(CharIndex(self.cursor_char))
+            .0;
+        self.value.insert_str(byte_pos, insertion);
+        // 光标按逻辑字符而不是 UTF-8 字节推进。
+        self.cursor_char += inserted_chars;
         self.sel_anchor.set(self.cursor_char);
         self.publish_change();
         true

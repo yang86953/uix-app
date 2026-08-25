@@ -97,6 +97,31 @@ fn selection_and_max_length_preserve_complete_graphemes() {
     assert_eq!(limited.current_value(), "");
 }
 
+/// 批量插入必须一次提交过滤后的文本并保持字符光标语义。
+#[test]
+fn batch_insert_filters_controls_and_normalizes_textarea_newlines() {
+    // 单行输入过滤控制字符，但完整保留多字节字符并按标量推进光标。
+    let mut input = Input::new("").with_value("首尾");
+    input.cursor_char = 1;
+    assert!(input.insert_text_at_cursor("中\n🙂"));
+    assert_eq!(input.current_value(), "首中🙂尾");
+    assert_eq!(input.cursor_char, 3);
+
+    // 多行输入统一 CRLF/CR，并原地过滤其他控制字符。
+    let mut textarea = Input::textarea();
+    assert!(textarea.insert_text_at_cursor("甲\r\n乙\r丙\t丁"));
+    assert_eq!(textarea.current_value(), "甲\n乙\n丙丁");
+    assert_eq!(textarea.cursor_char, 6);
+
+    // 替换选择后再计算长度预算，批量插入不得按删除前长度错误拒绝。
+    let mut replacement = Input::new("").with_value("abcd").max_length(4);
+    replacement.set_selection_range(1, 3);
+    replacement.cursor_char = 3;
+    assert!(replacement.insert_text_at_cursor("中🙂"));
+    assert_eq!(replacement.current_value(), "a中🙂d");
+    assert_eq!(replacement.cursor_char, 3);
+}
+
 /// 流式行列定位必须保留空行、Unicode 字符和越界收敛语义。
 #[test]
 fn cursor_line_col_streams_without_changing_positions() {
