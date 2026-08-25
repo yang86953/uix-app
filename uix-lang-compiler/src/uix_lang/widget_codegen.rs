@@ -66,7 +66,7 @@ pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream,
             "把该调用改为 uix_app!(...)，或移除 <App> 并保留单个 View 根",
         ));
     }
-    // 创建组件感知展开器。
+    // 借用入口保留原有按需复制语义，避免其他生成路径复制整份文档。
     let mut expander = WidgetExpander::new(document)?;
     // 为文档根按需建立 hover 或 animation 生命周期作用域。
     let root_style_scope = expander.begin_document_style_scope(document);
@@ -87,13 +87,50 @@ pub(crate) fn generate_document_view(document: &Document) -> Result<TokenStream,
     }})
 }
 
+// 消费发射阶段独占的文档，把顶层声明直接移动到展开器注册表。
+pub(crate) fn generate_document_view_owned(
+    mut document: Document,
+) -> Result<TokenStream, Diagnostic> {
+    // uix! 永久保持 ViewNode 契约，不接受应用生命周期根。
+    if document.root.name == "App" {
+        // 返回定向迁移诊断。
+        return Err(Diagnostic::new(
+            // 指向完整 App 根。
+            document.root.span,
+            // 说明入口契约冲突。
+            "uix! 只生成 ViewNode，不能生成 <App> 应用入口",
+            // 指向独立的 App builder 宏。
+            "把该调用改为 uix_app!(...)，或移除 <App> 并保留单个 View 根",
+        ));
+    }
+    // 创建组件感知展开器。
+    let mut expander = WidgetExpander::new_owned(&mut document)?;
+    // 为文档根按需建立 hover 或 animation 生命周期作用域。
+    let root_style_scope = expander.begin_document_style_scope(&document);
+    // 展开根元素与全部组件调用。
+    let mut root = expander.expand_root(&document.root)?;
+    // 恢复作用域栈并把样式状态生命周期标记绑定到实际根。
+    expander.finish_document_style_scope(&mut root, root_style_scope);
+    // 委托核心映射生成 ViewNode。
+    let view = generate_view(&root)?;
+    // 取出按依赖顺序生成的局部准备语句。
+    let setup = expander.setup;
+    // 返回不向调用模块泄漏名称的单一表达式。
+    Ok(quote! {{
+        // 先创建 props、状态读值、回调适配器与更新器。
+        #(#setup)*
+        // 最后构建只含核心元素的 View。
+        #view
+    }})
+}
+
 // 保存一次文档展开所需的确定性状态。
 pub(super) struct WidgetExpander {
-    // 保存名称到组件声明的完整副本。
+    // 保存名称到组件声明的拥有型注册表。
     pub(super) widgets: BTreeMap<String, WidgetDeclaration>,
-    // 保存名称到 record 声明的完整副本。
+    // 保存名称到 record 声明的拥有型注册表。
     pub(super) records: BTreeMap<String, RecordDeclaration>,
-    // 保存名称到关键帧声明的完整副本。
+    // 保存名称到关键帧声明的拥有型注册表。
     pub(super) keyframes: BTreeMap<String, KeyframesDeclaration>,
     // 保存最终 View 之前执行的有序准备语句。
     pub(super) setup: Vec<TokenStream>,
@@ -127,66 +164,77 @@ pub(super) struct WidgetExpander {
 
 // 实现文档级组件展开与结构校验。
 impl WidgetExpander {
-    // 从顶层声明构造组件注册表。
+    // 从借用文档构造组件注册表，保持既有生成入口的分配边界。
     fn new(document: &Document) -> Result<Self, Diagnostic> {
         // 收集全部已完成名称去重验证的组件声明。
         let widgets = document
-            // 遍历顶层声明。
             .declarations
-            // 借用声明迭代器。
             .iter()
-            // 只保留组件声明。
             .filter_map(|declaration| match declaration {
-                // 复制组件名称与声明。
-                Declaration::Widget(widget) => {
-                    // 返回映射条目。
-                    Some((widget.name.clone(), widget.clone()))
-                }
-                // 其他声明由后续 Gate 处理。
+                Declaration::Widget(widget) => Some((widget.name.clone(), widget.clone())),
                 _ => None,
             })
-            // 收集到有序映射。
             .collect();
         // 收集全部 record 声明供 state 类型与结构体字面量使用。
         let records = document
-            // 遍历顶层声明。
             .declarations
-            // 借用声明迭代器。
             .iter()
-            // 只保留 record 声明。
             .filter_map(|declaration| match declaration {
-                // 复制 record 名称与声明。
-                Declaration::Record(record) => {
-                    // 返回映射条目。
-                    Some((record.name.clone(), record.clone()))
-                }
-                // 其他声明不占用 record 命名空间。
+                Declaration::Record(record) => Some((record.name.clone(), record.clone())),
                 _ => None,
             })
-            // 收集到有序映射。
             .collect();
         // 收集全部已完成名称去重验证的关键帧声明。
         let keyframes = document
-            // 遍历顶层声明。
             .declarations
-            // 借用声明迭代器。
             .iter()
-            // 只保留关键帧声明。
             .filter_map(|declaration| match declaration {
-                // 复制关键帧名称与声明。
                 Declaration::Keyframes(keyframes) => {
-                    // 返回映射条目。
                     Some((keyframes.name.clone(), keyframes.clone()))
                 }
-                // 其他声明不占用动画命名空间。
                 _ => None,
             })
-            // 收集到有序映射。
             .collect();
         // 构造并验证样式类继承注册表。
         let styles = StyleClassResolver::new(document)?;
+        Ok(Self::with_registries(widgets, records, keyframes, styles))
+    }
+
+    // 从顶层声明构造组件注册表。
+    fn new_owned(document: &mut Document) -> Result<Self, Diagnostic> {
+        // 构造并验证样式类继承注册表。
+        let styles = StyleClassResolver::new(document)?;
+        // 发射文档已经由当前 lowering 独占，声明可直接移动到各私有注册表。
+        let mut widgets = BTreeMap::new();
+        let mut records = BTreeMap::new();
+        let mut keyframes = BTreeMap::new();
+        for declaration in std::mem::take(&mut document.declarations) {
+            match declaration {
+                Declaration::Widget(widget) => {
+                    widgets.insert(widget.name.clone(), widget);
+                }
+                Declaration::Record(record) => {
+                    records.insert(record.name.clone(), record);
+                }
+                Declaration::Keyframes(keyframes_declaration) => {
+                    keyframes.insert(keyframes_declaration.name.clone(), keyframes_declaration);
+                }
+                // 样式声明已由 resolver 收口，其余声明不参与 View 组件展开。
+                _ => {}
+            }
+        }
         // 返回初始展开状态。
-        Ok(Self {
+        Ok(Self::with_registries(widgets, records, keyframes, styles))
+    }
+
+    // 用已经确定所有权的声明注册表初始化一次展开。
+    fn with_registries(
+        widgets: BTreeMap<String, WidgetDeclaration>,
+        records: BTreeMap<String, RecordDeclaration>,
+        keyframes: BTreeMap<String, KeyframesDeclaration>,
+        styles: StyleClassResolver,
+    ) -> Self {
+        Self {
             // 写入组件注册表。
             widgets,
             // 写入 record 注册表。
@@ -221,7 +269,7 @@ impl WidgetExpander {
             for_iteration_clone_stack: Vec::new(),
             // 文档根没有等待收集的逐迭代组件准备语句。
             for_iteration_setup_stack: Vec::new(),
-        })
+        }
     }
 
     // 展开根元素，并为多根组件体补充 Column。

@@ -663,7 +663,7 @@ pub(crate) use data_binding_codegen::{
     is_registered_data_type, normalize_number_literals, step_status_path,
 };
 // 向过程宏入口暴露组件感知文档生成函数。
-pub(crate) use widget_codegen::generate_document_view;
+pub(crate) use widget_codegen::{generate_document_view, generate_document_view_owned};
 // 向过程宏入口暴露 App builder 生成函数。
 pub(crate) use app_codegen::generate_document_app;
 // 向后续转换 Gate 暴露稳定诊断类型。
