@@ -76,12 +76,45 @@ pub(crate) struct ReconcileBindSite {
 // State::get() 在追踪启用时自动注册依赖，Computed 在计算完毕后收集
 // 这些依赖的 generation 快照，后续 get() 时比对以判断是否需要重新计算。
 
+// 保存单轮 Effect 或 Computed 捕获的唯一依赖，并以无分配槽位摘要加速重复判断。
+#[derive(Default)]
+struct DependencyCollector {
+    // 保持依赖首次读取顺序，使后续失效检查顺序与既有契约一致。
+    deps: Vec<EffectDependency>,
+    // 记录槽身份低六位是否出现；碰撞时再精确扫描，绝不误删依赖。
+    occupied_slots: u64,
+}
+
+impl DependencyCollector {
+    // 仅在当前槽首次出现时构造拥有型检查器与订阅闭包。
+    fn capture<F>(&mut self, slot_id: StateSlotId, register: F)
+    where
+        F: FnOnce() -> EffectDependency,
+    {
+        // 进程内槽身份单调分配，低六位为常见小依赖集提供无碰撞摘要。
+        let slot_bit = 1_u64 << (slot_id.0 & 63);
+        // 摘要命中时精确确认，碰撞槽仍保留完整依赖。
+        if self.occupied_slots & slot_bit != 0
+            && self
+                .deps
+                .iter()
+                .any(|dependency| dependency.slot_id == slot_id)
+        {
+            // 后续差集原本也只保留首次观察，本处提前避免临时闭包与向量增长。
+            return;
+        }
+        // 先登记摘要，再按首次读取顺序保存完整依赖。
+        self.occupied_slots |= slot_bit;
+        self.deps.push(register());
+    }
+}
+
 thread_local! {
     #[allow(
         clippy::missing_const_for_thread_local,
         reason = "the initializer already uses an inline const block; Clippy reports the macro expansion"
     )]
-    static TRACKING_DEPS: RefCell<Option<Vec<EffectDependency>>> =
+    static TRACKING_DEPS: RefCell<Option<DependencyCollector>> =
         const { RefCell::new(None) };
 }
 
@@ -498,7 +531,7 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
 // 保存一次依赖追踪调用替换掉的外层上下文，并在离开作用域时归还它。
 struct DependencyTrackingGuard {
     // 保存进入本层前的外层依赖收集器。
-    outer: Option<Vec<EffectDependency>>,
+    outer: Option<DependencyCollector>,
     // 标记外层上下文是否已经归还，避免析构时重复覆盖。
     restored: bool,
 }
@@ -513,7 +546,7 @@ impl DependencyTrackingGuard {
             // 暂存可能存在的外层收集器。
             let outer = deps.take();
             // 安装本层独立的空收集器。
-            *deps = Some(Vec::new());
+            *deps = Some(DependencyCollector::default());
             // 将外层收集器交给守卫保存。
             outer
         });
@@ -533,7 +566,9 @@ impl DependencyTrackingGuard {
             // 独占访问当前线程的追踪上下文。
             let mut deps = deps.borrow_mut();
             // 取走本层的收集结果；异常重入时退化为空集合。
-            deps.take().unwrap_or_default()
+            deps.take()
+                .map(|collector| collector.deps)
+                .unwrap_or_default()
         });
         // 在返回结果前归还外层上下文。
         self.restore();
@@ -588,14 +623,15 @@ where
 }
 
 /// 将当前 State 注册到追踪上下文中（如果追踪已启用）。
-fn track_dep<F>(register: F)
+fn track_dep<F>(slot_id: StateSlotId, register: F)
 where
     F: FnOnce() -> EffectDependency,
 {
     TRACKING_DEPS.with(|deps| {
         let mut deps = deps.borrow_mut();
-        if let Some(ref mut list) = *deps {
-            list.push(register());
+        if let Some(ref mut collector) = *deps {
+            // 收集器在构造拥有型依赖前完成精确去重。
+            collector.capture(slot_id, register);
         }
     });
 }
@@ -683,12 +719,6 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     /// 克隆当前值，并把本次读取登记到活动依赖捕获上下文。
     pub fn get(&self) -> T {
-        // 预先保存 generation 检查器需要共享的状态存储。
-        let self_clone = self.inner.clone();
-        // 预先保存 Effect 订阅需要共享的状态存储。
-        let subscribe_inner = self.inner.clone();
-        // 预先保存不与值锁嵌套的独立 Effect 订阅注册表。
-        let subscribe_registry = self.effect_subscribers.clone();
         // 在同一读锁快照中取得值、generation 与稳定槽身份。
         let (value, observed_generation, slot_id) = {
             // 获取状态快照锁以避免值与 generation 分离观察。
@@ -697,24 +727,30 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             (inner.value.clone(), inner.generation, inner.slot_id)
         };
         // 将该快照注册到活跃的 Computed 或 Effect 依赖收集器。
-        track_dep(move || EffectDependency {
-            slot_id,
-            observed_generation,
-            check_generation: Box::new(move || {
-                self_clone
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .generation
-            }),
-            subscribe_pending: Box::new(move |subscriber, observed_generation| {
-                // 注册 State 私有的 Effect 弱引用订阅。
-                effect::subscribe(
-                    subscribe_registry.clone(),
-                    subscribe_inner.clone(),
-                    subscriber,
-                    observed_generation,
-                )
-            }),
+        track_dep(slot_id, || {
+            // 仅首次读取需要建立拥有型 generation 检查器与订阅入口。
+            let self_clone = self.inner.clone();
+            let subscribe_inner = self.inner.clone();
+            let subscribe_registry = self.effect_subscribers.clone();
+            EffectDependency {
+                slot_id,
+                observed_generation,
+                check_generation: Box::new(move || {
+                    self_clone
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .generation
+                }),
+                subscribe_pending: Box::new(move |subscriber, observed_generation| {
+                    // 注册 State 私有的 Effect 弱引用订阅。
+                    effect::subscribe(
+                        subscribe_registry.clone(),
+                        subscribe_inner.clone(),
+                        subscriber,
+                        observed_generation,
+                    )
+                }),
+            }
         });
         // 继续记录结构性 State 绑定捕获。
         try_capture_state_bind(self);

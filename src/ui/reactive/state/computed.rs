@@ -386,51 +386,51 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let force = state_capture_active() || state_bind_capture_active();
         // 先取得缓存与其不可分离的 observed generation。
         let (value, observed_generation) = self.value_with_generation(force);
-        // 保存下游表供订阅闭包复用。
-        let registry = self.inner.subscribers.clone();
-        // 保存当前内部对象供 tick generation 复核。
-        let check_inner = self.inner.clone();
-        // 保存当前内部对象供注册后复核。
-        let subscribe_inner = self.inner.clone();
         // 保存稳定派生槽身份。
         let slot_id = self.inner.slot_id;
         // 将派生源本身登记给外层 Computed 或 Effect。
-        track_dep(move || EffectDependency {
-            // 使用派生值自身的稳定槽。
-            slot_id,
-            // 使用单锁缓存条目提供的 observed revision。
-            observed_generation,
-            // 读取当前可订阅 revision 供外层检测。
-            check_generation: Box::new(move || check_inner.generation.load(Ordering::Acquire)),
-            // 建立下游注册后 revision 复核。
-            subscribe_pending: Box::new(move |subscriber, observed| {
-                // 分配唯一且不回绕的下游令牌。
-                let token = effect::next_subscriber_token();
-                // 在注册表锁内仅保存弱引用。
-                {
-                    // 从中毒恢复并独占下游表。
-                    let mut subscribers =
-                        registry.write().unwrap_or_else(|error| error.into_inner());
-                    // 源不应延长下游生命周期。
-                    subscribers.insert(token, Arc::downgrade(&subscriber));
-                }
-                // 注册后复核不能漏掉 observe 到 subscribe 期间的变化。
-                if subscribe_inner.generation.load(Ordering::Acquire) != observed {
-                    // 在注册表锁外补偿通知。
-                    subscriber.notify();
-                }
-                // 为析构闭包额外克隆注册表，避免移动 Fn 捕获。
-                let lease_registry = registry.clone();
-                // 返回由唯一令牌注销的租约。
-                EffectLease::new(move || {
-                    // 短暂获取注册表写锁。
-                    let mut subscribers = lease_registry
-                        .write()
-                        .unwrap_or_else(|error| error.into_inner());
-                    // 精确移除本次登记。
-                    subscribers.remove(&token);
-                })
-            }),
+        track_dep(slot_id, || {
+            // 仅首次读取需要建立拥有型检查器、注册表与订阅闭包。
+            let registry = self.inner.subscribers.clone();
+            let check_inner = self.inner.clone();
+            let subscribe_inner = self.inner.clone();
+            EffectDependency {
+                // 使用派生值自身的稳定槽。
+                slot_id,
+                // 使用单锁缓存条目提供的 observed revision。
+                observed_generation,
+                // 读取当前可订阅 revision 供外层检测。
+                check_generation: Box::new(move || check_inner.generation.load(Ordering::Acquire)),
+                // 建立下游注册后 revision 复核。
+                subscribe_pending: Box::new(move |subscriber, observed| {
+                    // 分配唯一且不回绕的下游令牌。
+                    let token = effect::next_subscriber_token();
+                    // 在注册表锁内仅保存弱引用。
+                    {
+                        // 从中毒恢复并独占下游表。
+                        let mut subscribers =
+                            registry.write().unwrap_or_else(|error| error.into_inner());
+                        // 源不应延长下游生命周期。
+                        subscribers.insert(token, Arc::downgrade(&subscriber));
+                    }
+                    // 注册后复核不能漏掉 observe 到 subscribe 期间的变化。
+                    if subscribe_inner.generation.load(Ordering::Acquire) != observed {
+                        // 在注册表锁外补偿通知。
+                        subscriber.notify();
+                    }
+                    // 为析构闭包额外克隆注册表，避免移动 Fn 捕获。
+                    let lease_registry = registry.clone();
+                    // 返回由唯一令牌注销的租约。
+                    EffectLease::new(move || {
+                        // 短暂获取注册表写锁。
+                        let mut subscribers = lease_registry
+                            .write()
+                            .unwrap_or_else(|error| error.into_inner());
+                        // 精确移除本次登记。
+                        subscribers.remove(&token);
+                    })
+                }),
+            }
         });
         // 返回与 observed revision 同轮的派生值。
         value
