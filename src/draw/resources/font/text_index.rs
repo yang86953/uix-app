@@ -35,6 +35,87 @@ pub enum BoundaryBias {
     Nearest,
 }
 
+/// 借用源文本并流式完成一次性索引查询，不建立任何堆上边界表。
+#[derive(Debug, Clone, Copy)]
+pub struct TextIndexCursor<'a> {
+    /// 保留查询期间共享的 UTF-8 源文本。
+    text: &'a str,
+}
+
+impl<'a> TextIndexCursor<'a> {
+    /// 为一次或少量顺序查询借用源文本。
+    pub fn new(text: &'a str) -> Self {
+        // 只保存借用，不预计算字符或字素簇边界。
+        Self { text }
+    }
+
+    /// 把字符边界转换为 UTF-8 字节边界，越界输入收敛到文本末尾。
+    pub fn char_to_byte(self, index: CharIndex) -> ByteIndex {
+        // 第 index 个字符起点就是对应字节偏移，缺失时回退到文本末尾。
+        ByteIndex(
+            self.text
+                .char_indices()
+                .nth(index.0)
+                .map(|(byte, _)| byte)
+                .unwrap_or(self.text.len()),
+        )
+    }
+
+    /// 按指定偏向把任意字符位置归一为扩展字素簇边界。
+    pub fn normalize_char(self, index: CharIndex, bias: BoundaryBias) -> CharIndex {
+        // 复用经过缓存模型逐项验证的流式归一规则。
+        normalize_char_in_text(self.text, index, bias)
+    }
+
+    /// 返回严格早于当前位置的扩展字素簇边界。
+    pub fn previous_grapheme_boundary(self, index: CharIndex) -> CharIndex {
+        // 文本起点不存在更早边界。
+        if index.0 == 0 {
+            return CharIndex(0);
+        }
+        // 保存当前字素簇起点。
+        let mut start = 0usize;
+        // 保存最后一个真实字素簇起点，供越界输入收敛。
+        let mut last_start = 0usize;
+        for grapheme in self.text.graphemes(true) {
+            // 当前起点将成为已经确认存在的最后字素簇起点。
+            last_start = start;
+            // 计算当前完整字素簇的排他终点。
+            let end = start + grapheme.chars().count();
+            // 内部位置和精确终点都返回当前字素簇起点。
+            if index.0 <= end {
+                return CharIndex(start);
+            }
+            // 推进到下一字素簇。
+            start = end;
+        }
+        // 空文本返回零；其他越界位置返回最后字素簇起点。
+        CharIndex(last_start)
+    }
+
+    /// 返回严格晚于当前位置的扩展字素簇边界。
+    pub fn next_grapheme_boundary(self, index: CharIndex) -> CharIndex {
+        // 累计当前完整字素簇的排他终点。
+        let mut end = 0usize;
+        for grapheme in self.text.graphemes(true) {
+            // 推进到当前字素簇终点。
+            end += grapheme.chars().count();
+            // 第一个严格更晚的边界就是向右移动目标。
+            if end > index.0 {
+                return CharIndex(end);
+            }
+        }
+        // 文本末尾和越界位置都收敛到末尾。
+        CharIndex(end)
+    }
+
+    /// 把选择区间向外扩展到完整扩展字素簇边界。
+    pub fn normalize_selection(self, a: CharIndex, b: CharIndex) -> (CharIndex, CharIndex) {
+        // 复用经过缓存模型逐项验证的单遍选择归一规则。
+        normalize_selection_in_text(self.text, a, b)
+    }
+}
+
 /// 无需建立索引表，把一次性字符位置归一到扩展字素簇边界。
 pub(crate) fn normalize_char_in_text(
     text: &str,

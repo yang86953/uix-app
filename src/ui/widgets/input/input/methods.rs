@@ -364,8 +364,8 @@ impl Input {
     // ── 内部：光标移动 ──
 
     pub(super) fn move_cursor_left(&mut self, ctrl: bool, extend: bool) {
-        // 建立当前值的扩展字素簇边界表。
-        let index_map = TextIndexMap::new(&self.value);
+        // 借用当前值，流式查询本次移动所需的字素簇边界。
+        let index_map = TextIndexCursor::new(&self.value);
         // 普通左移优先把现有选择折叠到逻辑起点。
         if !extend && self.selection.get().is_some() {
             // 读取已归一选择起点。
@@ -417,8 +417,8 @@ impl Input {
     }
 
     pub(super) fn move_cursor_right(&mut self, ctrl: bool, extend: bool) {
-        // 建立当前值的扩展字素簇边界表。
-        let index_map = TextIndexMap::new(&self.value);
+        // 借用当前值，流式查询本次移动所需的字素簇边界。
+        let index_map = TextIndexCursor::new(&self.value);
         // 普通右移优先把现有选择折叠到逻辑终点。
         if !extend && self.selection.get().is_some() {
             // 读取已归一选择终点。
@@ -481,7 +481,7 @@ impl Input {
         // 目标列不能越过上一逻辑行末尾。
         let target = start + col.min(end - start);
         // 垂直移动也必须收敛到最近扩展字素簇边界。
-        self.cursor_char = TextIndexMap::new(&self.value)
+        self.cursor_char = TextIndexCursor::new(&self.value)
             // 归一目标字符位置。
             .normalize_char(CharIndex(target), BoundaryBias::Nearest)
             // 保存兼容字符下标。
@@ -500,7 +500,7 @@ impl Input {
         // 目标列不能越过下一逻辑行末尾。
         let target = start + col.min(end - start);
         // 垂直移动也必须收敛到最近扩展字素簇边界。
-        self.cursor_char = TextIndexMap::new(&self.value)
+        self.cursor_char = TextIndexCursor::new(&self.value)
             // 归一目标字符位置。
             .normalize_char(CharIndex(target), BoundaryBias::Nearest)
             // 保存兼容字符下标。
@@ -532,7 +532,7 @@ impl Input {
 
     fn insert_at_cursor(&mut self, ch: char) {
         // 使用显式索引模型把合法字符边界转换成 UTF-8 字节边界。
-        let byte_pos = TextIndexMap::new(&self.value)
+        let byte_pos = TextIndexCursor::new(&self.value)
             // 转换当前字符光标。
             .char_to_byte(CharIndex(self.cursor_char))
             // 提取字符串插入 API 使用的字节偏移。
@@ -568,7 +568,7 @@ impl Input {
             // 把待插入字符固化成文本以检查完整字素簇边界。
             let insertion = chars.iter().collect::<String>();
             // 最大长度截断只能发生在不晚于预算的完整字素簇边界。
-            let safe_len = TextIndexMap::new(&insertion)
+            let safe_len = TextIndexCursor::new(&insertion)
                 // 从字符预算向后收敛。
                 .normalize_char(CharIndex(available), BoundaryBias::Backward)
                 // 提取可安全保留的字符数量。
@@ -604,7 +604,7 @@ impl Input {
         // 空布局回退到文本起点。
         .unwrap_or(0);
         // 命中结果最终收敛到最近扩展字素簇边界。
-        TextIndexMap::new(&self.value)
+        TextIndexCursor::new(&self.value)
             // 归一后端字符边界。
             .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
             // 返回兼容字符下标。
@@ -626,7 +626,7 @@ impl Input {
         // 取得现有逐行几何给出的原始字符位置。
         let raw_index = self.x_to_char_on_line(line_idx, line_start, x);
         // 多行命中同样必须收敛到最近扩展字素簇边界。
-        TextIndexMap::new(&self.value)
+        TextIndexCursor::new(&self.value)
             // 归一原始字符位置。
             .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
             // 返回兼容字符下标。
@@ -667,7 +667,7 @@ impl Input {
             return;
         }
         // 把无方向选择向外扩展到完整字素簇边界。
-        let (start, end) = TextIndexMap::new(&self.value)
+        let (start, end) = TextIndexCursor::new(&self.value)
             // 归一显式字符索引范围。
             .normalize_selection(CharIndex(a), CharIndex(b));
         // 空范围不保留选择状态。

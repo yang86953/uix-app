@@ -11,7 +11,9 @@ use std::cell::RefCell;
 
 use crate::core::Point;
 // 引入共享扩展字素簇边界模型。
-use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
+use crate::draw::resources::font::text_index::{
+    BoundaryBias, CharIndex, TextIndexCursor, TextIndexMap,
+};
 // 引入布局产出的字形与行信息容器。
 use crate::draw::resources::font::text_backend::TextLayout;
 
@@ -271,7 +273,7 @@ impl PerNodeTextSelection {
         // 查询现有布局几何给出的原始字符位置。
         let raw_index = self.raw_char_at_xy(text, text_x, text_y);
         // 命中采用最近合法字素簇边界。
-        TextIndexMap::new(text)
+        TextIndexCursor::new(text)
             // 归一显式字符位置。
             .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
             // 返回兼容字符下标。
@@ -287,7 +289,7 @@ impl PerNodeTextSelection {
             return;
         }
         // 把无方向选择向外扩展到完整字素簇边界。
-        let (start, end) = TextIndexMap::new(text)
+        let (start, end) = TextIndexCursor::new(text)
             // 归一显式字符范围。
             .normalize_selection(CharIndex(a), CharIndex(b));
         // 空范围不保留选择。
