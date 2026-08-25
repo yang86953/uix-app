@@ -5,7 +5,7 @@ use super::{LayoutLine, RichText, RichTextPointerAction, RichTextSegment};
 use super::layout_metrics::source_text;
 use crate::core::{Point, Rect};
 // 引入共享扩展字素簇边界模型。
-use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexMap};
+use crate::draw::resources::font::text_index::{BoundaryBias, CharIndex, TextIndexCursor};
 
 impl RichText {
     /// 设置普通文字是否允许选择；关闭时立即清除当前选择生命周期。
@@ -219,7 +219,7 @@ impl RichText {
         // 拼接跨样式段的完整逻辑源文本。
         let text = source_text(&self.segments);
         // 命中采用最近合法字素簇边界。
-        TextIndexMap::new(&text)
+        TextIndexCursor::new(&text)
             // 归一显式字符位置。
             .normalize_char(CharIndex(raw_index), BoundaryBias::Nearest)
             // 返回兼容字符下标。
@@ -306,7 +306,7 @@ impl RichText {
         // 拼接跨样式段的完整逻辑源文本。
         let text = source_text(&self.segments);
         // 把无方向选择向外扩展到完整字素簇边界。
-        let (start, end) = TextIndexMap::new(&text)
+        let (start, end) = TextIndexCursor::new(&text)
             // 归一显式字符范围。
             .normalize_selection(CharIndex(a), CharIndex(b));
         // 图片能力开启时，任何与图片 alt 相交的范围扩展到完整原子跨度。
@@ -369,7 +369,7 @@ impl RichText {
         // 拼接跨样式段的完整逻辑源文本以归一选择边界。
         let text = source_text(&self.segments);
         // 防御性地把提取范围扩展到完整字素簇。
-        let (start, end) = TextIndexMap::new(&text)
+        let (start, end) = TextIndexCursor::new(&text)
             // 归一显式字符范围。
             .normalize_selection(CharIndex(start), CharIndex(end));
         // 恢复现有分段提取逻辑使用的数值字符起点。
