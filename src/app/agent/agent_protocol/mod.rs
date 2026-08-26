@@ -39,6 +39,14 @@ const AGENT_REQUEST_TYPES: &[&str] = &[
     "confirm",
     "wait",
 ];
+/// `list_windows` 稳定公开的可选状态字段；旧客户端可忽略，能力客户端必须先协商。
+const AGENT_WINDOW_STATE_FIELDS: &[&str] = &[
+    "logical_width",
+    "logical_height",
+    "maximized",
+    "minimized",
+    "fullscreen",
+];
 const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
     "invoke",
     "focus",
@@ -316,6 +324,7 @@ impl AgentProtocolSession {
                     "request_types": AGENT_REQUEST_TYPES,
                     "semantic_actions": AGENT_SEMANTIC_ACTIONS,
                     "window_actions": AGENT_WINDOW_ACTIONS,
+                    "window_state_fields": AGENT_WINDOW_STATE_FIELDS,
                     "key_names": AGENT_KEY_CODES
                         .iter()
                         .map(|(name, _)| *name)
@@ -662,6 +671,20 @@ mod capability_tests {
                 Ok(ParsedAgentAction::Window(_))
             ));
         }
+    }
+
+    #[test]
+    fn hello_catalog_freezes_window_state_field_names() {
+        assert_eq!(
+            AGENT_WINDOW_STATE_FIELDS,
+            [
+                "logical_width",
+                "logical_height",
+                "maximized",
+                "minimized",
+                "fullscreen",
+            ]
+        );
     }
 }
 
