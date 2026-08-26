@@ -340,7 +340,7 @@ fn normalize_surface_pixels(
             "Vulkan Surface readback byte length does not match its pixel count",
         ));
     }
-    let mut pixels = Vec::new();
+    let mut pixels: Vec<u32> = Vec::new();
     pixels.try_reserve_exact(pixel_count).map_err(|error| {
         Error::new(
             Errc::GraphicsOutOfMemory,
@@ -351,6 +351,30 @@ fn normalize_surface_pixels(
         format,
         vk::Format::B8G8R8A8_UNORM | vk::Format::B8G8R8A8_SRGB
     );
+
+    #[cfg(target_endian = "little")]
+    {
+        // SAFETY: 上方已校验字节数等于像素数乘四；目标容量充足且与输入不重叠，
+        // 复制完成后每个 u32 的全部字节均已初始化，随后才设置长度。
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                pixels.as_mut_ptr().cast::<u8>(),
+                bytes.len(),
+            );
+            pixels.set_len(pixel_count);
+        }
+        if !bgra {
+            for pixel in &mut pixels {
+                *pixel = (*pixel & 0xff00_ff00)
+                    | ((*pixel & 0x00ff_0000) >> 16)
+                    | ((*pixel & 0x0000_00ff) << 16);
+            }
+        }
+        return Ok(pixels);
+    }
+
+    #[cfg(target_endian = "big")]
     for texel in bytes.chunks_exact(4) {
         let (red, green, blue, alpha) = if bgra {
             (texel[2], texel[1], texel[0], texel[3])
@@ -364,6 +388,7 @@ fn normalize_surface_pixels(
                 | u32::from(blue),
         );
     }
+    #[cfg(target_endian = "big")]
     Ok(pixels)
 }
 
