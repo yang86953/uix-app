@@ -110,6 +110,11 @@ fn push_line(
     reason = "one shaping pass needs font bytes, metrics, handle, text, and constraints"
 // 结束 lint 配置。
 )]
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "direct byte parsing remains the platform shaping test boundary"
+)]
 pub(super) fn layout_text(
     // 完整字体文件字节，支持 TTF 以及集合字体。
     data: &[u8],
@@ -133,14 +138,53 @@ pub(super) fn layout_text(
     direction: Option<TextDirection>,
     // 解析或索引异常时返回空值以启用旧后端回退。
 ) -> Option<TextLayout> {
+    // 直接测试入口仍验证原始字体字节，并复用生产路径的已解析字体面实现。
+    let face = rustybuzz::Face::from_slice(data, face_index)?;
+    layout_text_with_face(
+        &face,
+        font,
+        text,
+        opts,
+        glyph_scale,
+        ascent,
+        font_height,
+        line_height,
+        direction,
+    )
+}
+
+// 使用由字体槽位拥有的已解析 OpenType 面执行 shaping。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one shaping pass needs parsed font, metrics, handle, text, and constraints"
+)]
+pub(super) fn layout_text_with_face(
+    // 借用字体槽位加载期解析的只读 OpenType 面。
+    face: &rustybuzz::Face<'_>,
+    // 字形光栅化使用的稳定字体句柄。
+    font: FontHandle,
+    // 当前单字体段的原始文本。
+    text: &str,
+    // 像素字号、宽高与换行约束。
+    opts: &TextLayoutOptions,
+    // 与 ab_glyph 光栅化一致的字体设计单位到像素缩放。
+    glyph_scale: f32,
+    // ab_glyph 计算的像素 ascent。
+    ascent: f32,
+    // ab_glyph 计算的实际字体高度。
+    font_height: f32,
+    // 调用方解析后的行高。
+    line_height: f32,
+    // 可选的 UAX #9 已解析方向；空值保留独立后端自动推断。
+    direction: Option<TextDirection>,
+    // 异常索引返回空值以启用旧后端回退。
+) -> Option<TextLayout> {
     // 控制换行与制表符继续交给已有兼容路径处理。
     if text.chars().any(|ch| matches!(ch, '\r' | '\n' | '\t')) {
         // 避免 rustybuzz 把布局控制符当成普通缺字。
         return None;
         // 结束控制字符回退分支。
     }
-    // 从完整字体文件创建只借用数据的 OpenType 字体面。
-    let face = rustybuzz::Face::from_slice(data, face_index)?;
     // 布局推进必须与实际字形光栅使用同一缩放，避免字体高度与 UPEM
     // 不相等时字形位置比可见轮廓更宽。
     if !glyph_scale.is_finite() || glyph_scale <= 0.0 {
@@ -165,7 +209,7 @@ pub(super) fn layout_text(
         });
     }
     // 使用字体默认 OpenType 特性执行 GSUB 与 GPOS。
-    let shaped = rustybuzz::shape(&face, &[], buffer);
+    let shaped = rustybuzz::shape(face, &[], buffer);
     // 字形信息保存 glyph id 与源 cluster。
     let infos = shaped.glyph_infos();
     // 字形位置保存 advance 与二维 offset。

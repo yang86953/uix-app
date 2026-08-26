@@ -16,6 +16,8 @@ use text_backend::{TOFU_GLYPH_ID, WHITESPACE_GLYPH_ID};
 pub(crate) struct FontSlot {
     handle: FontHandle,
     font: Option<FontRef<'static>>,
+    /// 与同一字体字节绑定的 OpenType shaping 面，随槽位卸载失效。
+    shaping_face: Option<rustybuzz::Face<'static>>,
     /// 字体文件字节：mmap（惰性分页，中文字体常驻收益）或 Arc（用户 Vec 数据）。
     _data: Option<FontData>,
 }
@@ -51,13 +53,20 @@ impl FontSlot {
     /// # Safety
     ///
     /// `font` 必须以 `&data[..]` 为源创建（`FontRef::try_from_slice_and_index`），
-    /// 且 data 由本槽位持有（堆上，地址稳定）；字段声明顺序保证 `font` 先于
-    /// `_data` 释放，借用不会悬垂。
+    /// 且 data 由本槽位持有（堆上，地址稳定）；字段声明顺序保证两个借用字体面
+    /// 都先于 `_data` 释放，借用不会悬垂。
     unsafe fn new_borrowed(handle: FontHandle, font: FontRef<'static>, data: FontData) -> Self {
+        // rustybuzz 只借用同一份稳定字节；解析失败保留既有逐字符回退语义。
+        let shaping_face = rustybuzz::Face::from_slice(data.as_slice(), 0).map(|face| {
+            // SAFETY: data 随槽位持有且晚于 shaping_face 释放，底层 Arc/mmap 地址稳定。
+            unsafe { std::mem::transmute::<rustybuzz::Face<'_>, rustybuzz::Face<'static>>(face) }
+        });
         Self {
             handle,
             // 将借用字体包在 Option 中，卸载时可以先结束借用再释放数据。
             font: Some(font),
+            // 保存一次解析后的共享 OpenType 表视图，避免每次动态布局重新扫描字体表。
+            shaping_face,
             // 将字体数据包在 Option 中，卸载时释放 mmap 或 Arc 的所有权。
             _data: Some(data),
         }
@@ -198,6 +207,9 @@ impl TextBackend for AbGlyphBackend {
             // 先销毁借用字体，确保其底层数据仍然存活到借用结束。
             let font = slot.font.take();
             drop(font);
+            // 再结束 rustybuzz 对同一底层字节的借用。
+            let shaping_face = slot.shaping_face.take();
+            drop(shaping_face);
             // 再释放内存映射或自有字节，避免卸载后继续占用 private bytes。
             let data = slot._data.take();
             drop(data);
@@ -253,18 +265,16 @@ impl TextBackend for AbGlyphBackend {
         };
         // 优先使用 OpenType shaping；解析失败时保留原有逐字符回退路径。
         if let Some(layout) = self.fonts[idx]
-            // 只借用当前有效槽位持有的完整字体文件。
-            ._data
-            // 缺少底层数据时不能构造 rustybuzz 字体面。
+            // 只借用当前有效槽位在加载期解析的 OpenType 字体面。
+            .shaping_face
+            // 不支持 OpenType shaping 的字体保留逐字符回退路径。
             .as_ref()
-            // 将所有权变体统一成字节切片并执行 shaping。
-            .and_then(|data| {
+            // 使用只读字体面执行本次文本 shaping。
+            .and_then(|face| {
                 // shaping 模块负责复杂脚本、cluster 与字形定位。
-                super::shaping::layout_text(
-                    // 传入完整字体文件以保留 TTC/OTC 表共享语义。
-                    data.as_slice(),
-                    // 当前后端与 ab_glyph 一致选择第一个字体面。
-                    0,
+                super::shaping::layout_text_with_face(
+                    // 字体面与 ab_glyph 使用同一首个 face，并由槽位统一拥有生命周期。
+                    face,
                     // 保留字形所属字体句柄供后续光栅化。
                     *font,
                     // 传入本段原始 UTF-8 文本。
@@ -460,18 +470,16 @@ impl TextBackend for AbGlyphBackend {
         };
         // 尝试使用同一字体数据执行显式方向 shaping。
         let shaped = self.fonts[idx]
-            // 借用字体文件所有权容器。
-            ._data
-            // 缺少字体数据时不能构造 rustybuzz 字体面。
+            // 借用加载期解析且与句柄同生命周期的 OpenType 字体面。
+            .shaping_face
+            // 不支持 OpenType shaping 时保留统一兼容布局。
             .as_ref()
-            // 对完整字体文件执行显式方向 shaping。
-            .and_then(|data| {
+            // 对缓存的只读字体面执行显式方向 shaping。
+            .and_then(|face| {
                 // 调用共享 OpenType shaping 实现。
-                super::shaping::layout_text(
-                    // 传入完整字体文件字节。
-                    data.as_slice(),
-                    // 当前后端固定使用字体集合首个面。
-                    0,
+                super::shaping::layout_text_with_face(
+                    // 传入与 ab_glyph 句柄绑定的同一字体面。
+                    face,
                     // 保留稳定字体句柄。
                     *font,
                     // 传入当前单向 run 文本。
