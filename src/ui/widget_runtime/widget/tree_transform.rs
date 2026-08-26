@@ -134,6 +134,27 @@ impl WidgetTree {
         )
     }
 
+    /// 从父节点已解析的内容坐标增量求出直接子节点布局坐标。
+    pub(super) fn point_to_child_layout(
+        &self,
+        id: WidgetId,
+        parent_content_point: Point,
+        screen_point: Point,
+    ) -> Option<Point> {
+        // fixed 与组件浮层会截断视觉父链，必须从原始屏幕坐标重新开始。
+        let (transform, point) = if self.is_overlay_node(id) {
+            (self.node_overlay_transform(id), screen_point)
+        } else {
+            // 普通后代只追加自身变换；父变换与滚动已经反映在内容坐标中。
+            (self.positioned_visual_transform(id), parent_content_point)
+        };
+        // 常见单位变换无需执行通用矩阵求逆和点乘。
+        if transform.is_identity() {
+            return Some(point);
+        }
+        Some(transform.inverse()?.transform_point(point))
+    }
+
     /// 视觉路径上是否存在任意有效视觉变换的节点。
     pub(crate) fn path_has_visual_transform(&self, id: WidgetId) -> bool {
         self.with_visual_path(id, |path| {

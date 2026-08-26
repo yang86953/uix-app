@@ -1,7 +1,14 @@
 // 引入被测 WidgetTree 命中排序私有实现。
 use super::*;
+// 使用真实滚动组件验证父内容坐标传播。
+use crate::platform::windowing::ScrollDirection;
+// 通过声明树适配器执行真实滚动布局。
+use crate::ui::adapter::ViewAdapter;
 // 使用长离场动画保持节点处于 pending-removal 状态。
 use crate::ui::animation::AnimationConfig;
+// 构造嵌套视觉变换与滚动视口。
+use crate::ui::widget_runtime::view_transform::ViewTransform;
+use crate::ui::{ScrollView, Space, ViewNode};
 // 使用普通文本节点建立可命中的重叠兄弟。
 use crate::ui::widgets::Label;
 
@@ -86,4 +93,62 @@ fn pending_removal_ancestor_blocks_public_and_subtree_hit_tests() {
     assert_eq!(tree.hit_test(point), Some(root));
     // overlay 等私有调用可从任意后代进入，仍必须检查完整祖先链。
     assert_eq!(tree.hit_test_internal(leaf, point), None);
+}
+
+// 验证递归命中只增量追加每一级视觉变换，并保留任意子树入口语义。
+#[test]
+fn nested_visual_transforms_preserve_incremental_hit_coordinates() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Label::new("root")));
+    let parent = tree.add_child(root, Box::new(Label::new("parent")));
+    let leaf = tree.add_child(parent, Box::new(Label::new("leaf")));
+    tree.set_frame_dirty(root, Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.set_frame_dirty(parent, Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.set_frame_dirty(leaf, Rect::new(10.0, 10.0, 20.0, 20.0));
+    assert!(tree.set_visual_transform(
+        parent,
+        ViewTransform {
+            offset: Point::new(40.0, 20.0),
+            ..ViewTransform::default()
+        },
+    ));
+    assert!(tree.set_visual_transform(
+        leaf,
+        ViewTransform {
+            scale: 2.0,
+            ..ViewTransform::default()
+        },
+    ));
+
+    let screen_point = Point::new(50.0, 30.0);
+    assert_eq!(tree.hit_test(screen_point), Some(leaf));
+    // overlay 路由可从后代直接进入，入口仍需独立解析完整视觉祖先链。
+    assert_eq!(tree.hit_test_internal(leaf, screen_point), Some(leaf));
+}
+
+// 验证父级滚动只增量换算一次，子节点仍使用内容坐标命中。
+#[test]
+fn scrolled_parent_propagates_content_point_to_child_hit_test() {
+    let root_view = ViewNode::new(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(100.0, 50.0)
+            .show_scrollbar(false)
+            .scroll_to(0.0, 40.0),
+        vec![ViewNode::leaf(Space::new().width(100.0).height(100.0))],
+    );
+    let mut tree = ViewAdapter::build_nodes(root_view);
+    let root = tree.root_id().expect("滚动命中根必须存在");
+    let child = tree.get(root).expect("滚动命中根必须存活").children()[0];
+    tree.get_mut(root)
+        .expect("滚动命中根必须可写")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+    tree.layout();
+    assert_eq!(
+        tree.get(root)
+            .expect("布局后的滚动根必须存活")
+            .viewport_scroll_offset(),
+        Some((0.0, 40.0))
+    );
+
+    assert_eq!(tree.hit_test(Point::new(10.0, 10.0)), Some(child));
 }
