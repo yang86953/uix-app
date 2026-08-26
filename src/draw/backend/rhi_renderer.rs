@@ -263,6 +263,9 @@ pub(crate) struct RhiRenderer {
     // 保存 coverage 内容索引，避免页面切换时逐字形创建和上传纹理。
     coverage_atlas_cache:
         std::collections::HashMap<coverage::CoverageCacheKey, coverage::CoverageAtlasEntry>,
+    // 保存仍由 atlas 条目持有的不可变 coverage 身份，稳态命中时避免重复扫描像素。
+    coverage_atlas_identity_cache:
+        std::collections::HashMap<coverage::CoverageIdentityKey, coverage::CoverageCacheKey>,
     // 缓存 MSDF 字形 pipeline。
     msdf_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 MSDF 字形常量 uniform buffer。

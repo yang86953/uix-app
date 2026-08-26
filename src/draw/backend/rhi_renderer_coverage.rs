@@ -27,6 +27,19 @@ pub(super) struct CoverageCacheKey {
     pixel_h: u32,
 }
 
+// 标识一份仍由 atlas 条目持有的不可变 coverage 载荷。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct CoverageIdentityKey {
+    // 保存 Arc 切片的数据起始地址；对应条目持有 Arc 时地址不会被复用。
+    data: usize,
+    // 保存切片长度，避免零长或不同布局共享同一数据地址时混淆。
+    len: usize,
+    // 保存像素宽度，继续服从 coverage 资源契约。
+    pixel_w: u32,
+    // 保存像素高度，继续服从 coverage 资源契约。
+    pixel_h: u32,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct CoverageAtlasPlacement {
     page: usize,
@@ -164,9 +177,31 @@ impl RhiRenderer {
         device: &mut dyn GraphicsDevice,
         quad: &RhiCoverageQuad,
     ) -> crate::core::Result<(TextureHandle, [f32; 4], bool)> {
+        let identity = Self::coverage_identity_key(quad);
+        // 上游字形缓存跨帧复用同一不可变 Arc 时，直接恢复既有内容键。
+        if let Some(key) = self.coverage_atlas_identity_cache.get(&identity).copied() {
+            if let Some(entry) = self.coverage_atlas_cache.get(&key) {
+                // 身份索引只能命中仍由主条目持有的同一 Arc，避免地址复用误判。
+                if Arc::ptr_eq(&entry.coverage, &quad.coverage) {
+                    let page = self
+                        .coverage_atlas_pages
+                        .get(entry.placement.page)
+                        .ok_or_else(|| {
+                            super::rhi_invalid("RhiRenderer coverage atlas page is missing")
+                        })?;
+                    return Ok((page.texture, entry.placement.uv, true));
+                }
+            }
+            // 主条目若已被替换，立即清除失效身份而不是保留悬空快路径。
+            self.coverage_atlas_identity_cache.remove(&identity);
+        }
         let key = Self::coverage_cache_key(quad);
         if let Some(entry) = self.coverage_atlas_cache.get(&key) {
             if entry.coverage.as_ref() == quad.coverage.as_ref() {
+                // 只登记主条目实际持有的 Arc；临时同内容 Arc 不扩张身份索引。
+                if Arc::ptr_eq(&entry.coverage, &quad.coverage) {
+                    self.coverage_atlas_identity_cache.insert(identity, key);
+                }
                 let page = self
                     .coverage_atlas_pages
                     .get(entry.placement.page)
@@ -176,7 +211,17 @@ impl RhiRenderer {
                 return Ok((page.texture, entry.placement.uv, true));
             }
         }
-        self.coverage_atlas_cache.remove(&key);
+        if let Some(previous) = self.coverage_atlas_cache.remove(&key) {
+            // 内容哈希碰撞替换前同步移除旧条目的唯一身份索引。
+            let previous_identity = CoverageIdentityKey {
+                data: previous.coverage.as_ptr() as usize,
+                len: previous.coverage.len(),
+                pixel_w: key.pixel_w,
+                pixel_h: key.pixel_h,
+            };
+            self.coverage_atlas_identity_cache
+                .remove(&previous_identity);
+        }
         if quad.pixel_w > COVERAGE_ATLAS_PAGE_SIZE || quad.pixel_h > COVERAGE_ATLAS_PAGE_SIZE {
             return Self::create_transient_coverage_texture(device, quad);
         }
@@ -239,7 +284,19 @@ impl RhiRenderer {
                 placement,
             },
         );
+        // 身份索引与主条目同生，不拥有第二份 coverage 或延长独立生命周期。
+        self.coverage_atlas_identity_cache.insert(identity, key);
         Ok((page_texture, placement.uv, true))
+    }
+
+    // 从不可变 Arc 与尺寸契约构造常数时间的稳态身份键。
+    fn coverage_identity_key(quad: &RhiCoverageQuad) -> CoverageIdentityKey {
+        CoverageIdentityKey {
+            data: quad.coverage.as_ptr() as usize,
+            len: quad.coverage.len(),
+            pixel_w: quad.pixel_w,
+            pixel_h: quad.pixel_h,
+        }
     }
 
     fn coverage_cache_key(quad: &RhiCoverageQuad) -> CoverageCacheKey {
@@ -313,6 +370,8 @@ impl RhiRenderer {
         &mut self,
         context: &mut dyn GraphicsDevice,
     ) -> crate::core::Result<()> {
+        // 身份索引不得比持有 Arc 的主 atlas 条目活得更久。
+        let _identities = std::mem::take(&mut self.coverage_atlas_identity_cache);
         let _entries = std::mem::take(&mut self.coverage_atlas_cache);
         let pages = std::mem::take(&mut self.coverage_atlas_pages);
         let mut first_error = None;
