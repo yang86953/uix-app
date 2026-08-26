@@ -111,6 +111,22 @@ impl InvalidationQueue {
         self.items.push(inv);
     }
 
+    /// 上报 Layout 并返回是否仍需向根级祖先传播。
+    pub(crate) fn push_layout_until_root(&mut self, root_id: NodeId, id: NodeId) -> bool {
+        // 每次调用都推进修订号，保持与通用 push 相同的重复上报语义。
+        self.revision = self.revision.wrapping_add(1);
+        // 根级 Layout 已在队列中时，调用方无需再次扫描或插入任何条目。
+        if self.layout_ids.contains(&root_id) {
+            return false;
+        }
+        // 按既有 Layout 去重规则插入当前节点，重复节点不新增 item。
+        if !self.layout_ids.insert(id) {
+            return true;
+        }
+        self.items.push(Invalidation::Layout(id));
+        true
+    }
+
     /// 批量上报失效；调用方可在一个锁临界区内完成一轮更新。
     pub fn extend(&mut self, invalidations: impl IntoIterator<Item = Invalidation>) {
         for invalidation in invalidations {

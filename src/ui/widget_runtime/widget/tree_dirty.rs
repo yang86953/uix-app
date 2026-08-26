@@ -136,8 +136,22 @@ impl WidgetTree {
         self.push_invalidation(Invalidation::Paint { id, rect });
     }
 
-    pub(crate) fn push_layout_invalidation(&mut self, id: WidgetId) {
-        self.push_invalidation(Invalidation::Layout(id));
+    pub(crate) fn push_layout_invalidation(&mut self, id: WidgetId) -> bool {
+        if self.invalidation_batch_depth > 0 {
+            // 批次内保持原 pending push 语义，结束批次时仍统一交给队列去重。
+            self.pending_invalidations.push(Invalidation::Layout(id));
+            return true;
+        }
+        let Some(root_id) = self.root_id else {
+            // 尚未建立根节点时保持原有共享队列上报路径。
+            self.push_invalidation(Invalidation::Layout(id));
+            return true;
+        };
+        // 根节点已存在时只锁定一次队列，由其返回是否需要继续传播祖先。
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push_layout_until_root(root_id, id)
     }
 
     pub(crate) fn begin_invalidation_batch(&mut self) {

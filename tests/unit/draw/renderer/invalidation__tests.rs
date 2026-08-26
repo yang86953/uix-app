@@ -69,3 +69,33 @@ fn full_composite_requests_are_coalesced_until_clear() {
     queue.push(Invalidation::FullComposite);
     assert_eq!(queue.items.len(), 1);
 }
+
+// 根 Layout 已在队列中时，子请求不新增条目但仍推进修订号。
+#[test]
+fn layout_until_root_suppresses_child_when_root_is_queued() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+    queue.push(Invalidation::Layout(root));
+    let before_revision = queue.revision();
+
+    assert!(!queue.push_layout_until_root(root, child));
+    assert_eq!(queue.items, vec![Invalidation::Layout(root)]);
+    assert_eq!(queue.revision(), before_revision.wrapping_add(1));
+}
+
+// 根 Layout 尚未存在时，首次与重复子请求都继续传播且只保留一个子条目。
+#[test]
+fn layout_until_root_retries_child_when_root_is_missing() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+    let initial_revision = queue.revision();
+
+    assert!(queue.push_layout_until_root(root, child));
+    let after_first_revision = queue.revision();
+    assert_eq!(after_first_revision, initial_revision.wrapping_add(1));
+    assert!(queue.push_layout_until_root(root, child));
+    assert_eq!(queue.revision(), after_first_revision.wrapping_add(1));
+    assert_eq!(queue.items, vec![Invalidation::Layout(child)]);
+}

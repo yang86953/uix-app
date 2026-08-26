@@ -293,8 +293,16 @@ fn stable_keyed_reconcile_profile() {
     }
     samples.sort_unstable_by_key(|stats| stats.elapsed_ns);
     let median = samples[TIMING_ROUNDS / 2];
+    // 计时完成后读取最终队列，稳定场景只应保留根 Layout。
+    let retained_layout_roots = {
+        let invalidation = tree
+            .invalidation()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        invalidation.layout_roots().len()
+    };
     eprintln!(
-        "PROFILE stable_keyed_reconcile label={profile_label} median_ns_per_reconcile={:.2} allocations_per_reconcile={:.2} allocated_bytes_per_reconcile={:.2} peak_live_bytes={} key_width_allocations_per_reconcile={:.2}",
+        "PROFILE stable_keyed_reconcile label={profile_label} median_ns_per_reconcile={:.2} allocations_per_reconcile={:.2} allocated_bytes_per_reconcile={:.2} peak_live_bytes={} key_width_allocations_per_reconcile={:.2} retained_layout_roots={retained_layout_roots}",
         median.elapsed_ns as f64 / RECONCILES_PER_ROUND as f64,
         median.allocations as f64 / RECONCILES_PER_ROUND as f64,
         median.allocated_bytes as f64 / RECONCILES_PER_ROUND as f64,
@@ -304,4 +312,5 @@ fn stable_keyed_reconcile_profile() {
 
     assert_eq!(stable_children.len(), SIBLING_COUNT);
     assert_eq!(view_tree_children_for_test(&tree, root), stable_children);
+    assert_eq!(retained_layout_roots, 1);
 }

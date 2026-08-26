@@ -662,8 +662,9 @@ impl ViewAdapter {
             tree.invalidate_paint(id);
         }
         if layout_changed {
-            tree.push_layout_invalidation(id);
-            tree.propagate_layout_invalidation(id);
+            if tree.push_layout_invalidation(id) {
+                tree.propagate_layout_invalidation(id);
+            }
         }
         // 本节点及其动态子树协调成功后才替换节点动画源所有权。
         tree.replace_node_animated_sources(id, animated_sources);
