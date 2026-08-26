@@ -85,11 +85,16 @@ struct WidgetPatchImpact {
     layout_changed: bool,
 }
 
-// 为 keyed 协调生成无所有权摘要；命中后仍精确比较原字符串。
-fn reconcile_key_fingerprint(key: &str) -> u64 {
+// 为 keyed 协调生成稳定摘要；索引与无申请唯一性快路共享一次实现。
+fn reconcile_key_hash(key: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     key.hash(&mut hasher);
-    let fingerprint = hasher.finish();
+    hasher.finish()
+}
+
+// 为摘要索引应用测试期位宽；命中后仍精确比较原字符串。
+fn reconcile_key_fingerprint(key: &str) -> u64 {
+    let fingerprint = reconcile_key_hash(key);
     // 测试宿主可收窄摘要以确定性覆盖碰撞回退，生产构建保留完整 64 位。
     #[cfg(feature = "test-harness")]
     {
@@ -98,6 +103,31 @@ fn reconcile_key_fingerprint(key: &str) -> u64 {
     }
     #[cfg(not(feature = "test-harness"))]
     fingerprint
+}
+
+// 用栈上摘要位图过滤常见唯一 key；位冲突时精确回看，绝不把重复 key 误判为唯一。
+// 独立栈帧保证 4 KiB 位图在递归协调子树前释放，不随声明深度叠加。
+#[inline(never)]
+fn reconcile_keys_are_unique(children: &[ViewNode]) -> bool {
+    // 32768 位只占 4 KiB 栈空间，512 个随机摘要通常仅需少量精确回看。
+    let mut seen = [0_u64; 512];
+    for (index, child) in children.iter().enumerate() {
+        let Some(key) = child.key.as_deref() else {
+            return false;
+        };
+        let fingerprint = reconcile_key_hash(key);
+        let word = fingerprint as usize & (seen.len() - 1);
+        let bit = 1_u64 << ((fingerprint >> 9) & 63);
+        if seen[word] & bit != 0
+            && children[..index]
+                .iter()
+                .any(|previous| previous.key.as_deref() == Some(key))
+        {
+            return false;
+        }
+        seen[word] |= bit;
+    }
+    true
 }
 
 // 摘要已经完成带密钥内容哈希，表索引只需原样接纳 u64，避免二次 SipHash。
@@ -787,18 +817,62 @@ impl ViewAdapter {
         children: Vec<ViewNode>,
         stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     ) -> bool {
+        let old_child_count = tree
+            .get(parent_id)
+            .map(|node| node.children().len())
+            .unwrap_or_default();
+        // 唯一 keyed 同序声明直接复用现有身份；重复 key、摘要碰撞和替换继续走通用语义。
+        let direct_keyed_reuse =
+            old_child_count == children.len()
+                && tree.get(parent_id).is_some_and(|parent| {
+                    parent.children().iter().copied().zip(children.iter()).all(
+                        |(child_id, child)| {
+                            let Some(key) = child.key.as_deref() else {
+                                return false;
+                            };
+                            tree.get(child_id).and_then(|node| node.key()) == Some(key)
+                                && Self::can_reuse(tree, child_id, child)
+                        },
+                    )
+                })
+                && reconcile_keys_are_unique(&children);
+        if direct_keyed_reuse {
+            for (index, child) in children.into_iter().enumerate() {
+                // 快路预检已经证明同序且可复用，协调期间父级直接子序列保持稳定。
+                let child_id = tree
+                    .get(parent_id)
+                    .and_then(|parent| parent.children().get(index))
+                    .copied()
+                    .expect("direct keyed reconciliation child must remain present");
+                tree.cancel_pending_removal(child_id);
+                Self::reconcile_existing(tree, child_id, child);
+            }
+            return false;
+        }
+
+        // 摘要索引不取得旧 key 字符串所有权，避免每轮复制全部业务 key。
+        let keyed_old_count = tree.get(parent_id).map_or(0, |parent| {
+            parent
+                .children()
+                .iter()
+                .filter(|&&child_id| tree.get(child_id).is_some_and(|node| node.key().is_some()))
+                .count()
+        });
+        let mut old_by_key = ReconcileFingerprintMap::with_capacity_and_hasher(
+            keyed_old_count,
+            std::hash::BuildHasherDefault::default(),
+        );
+        if let Some(parent) = tree.get(parent_id) {
+            for &child_id in parent.children() {
+                if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
+                    old_by_key.insert(reconcile_key_fingerprint(key), child_id);
+                }
+            }
+        }
         let old_children = tree
             .get(parent_id)
             .map(|node| node.children().to_vec())
             .unwrap_or_default();
-        // 摘要索引不取得旧 key 字符串所有权，避免每轮复制全部业务 key。
-        let mut old_by_key = ReconcileFingerprintMap::default();
-        for &child_id in &old_children {
-            if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
-                old_by_key.insert(reconcile_key_fingerprint(key), child_id);
-            }
-        }
-
         let mut used_old = HashSet::new();
         let mut new_order = Vec::with_capacity(children.len());
         let mut structure_changed = old_children.len() != children.len();
