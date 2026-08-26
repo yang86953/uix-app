@@ -9,7 +9,7 @@ use std::sync::Arc;
 pub(crate) use text_backend::TextLayoutOptions;
 use text_backend::{TOFU_GLYPH_ID, WHITESPACE_GLYPH_ID};
 
-/// 字体槽位：`font` 借用 `_data` 的内容（借用先声明先 drop，安全）。
+/// 字体槽位：两个字体面借用 `_data` 的内容。
 ///
 /// 数据存放位置在堆上（Box/Arc），`Vec<FontSlot>` 扩容移动本结构体时
 /// 只移动指针/句柄，数据地址不变，借用始终有效。
@@ -48,20 +48,19 @@ impl FontData {
 }
 
 impl FontSlot {
-    /// 从自有数据构造借用槽位。
-    ///
-    /// # Safety
-    ///
-    /// `font` 必须以 `&data[..]` 为源创建（`FontRef::try_from_slice_and_index`），
-    /// 且 data 由本槽位持有（堆上，地址稳定）；字段声明顺序保证两个借用字体面
-    /// 都先于 `_data` 释放，借用不会悬垂。
-    unsafe fn new_borrowed(handle: FontHandle, font: FontRef<'static>, data: FontData) -> Self {
+    /// 从即将由本槽位唯一持有的数据同时构造两个借用字体面。
+    fn parse(handle: FontHandle, data: FontData) -> Result<Self, Error> {
+        // 两个解析器必须在同一封闭构造器内借用同一份数据，调用者无法错配来源。
+        let font = FontRef::try_from_slice_and_index(data.as_slice(), 0)
+            .map_err(|error| Error::new(Errc::FormatError, format!("ab_glyph: {error:?}")))?;
         // rustybuzz 只借用同一份稳定字节；解析失败保留既有逐字符回退语义。
         let shaping_face = rustybuzz::Face::from_slice(data.as_slice(), 0).map(|face| {
             // SAFETY: data 随槽位持有且晚于 shaping_face 释放，底层 Arc/mmap 地址稳定。
             unsafe { std::mem::transmute::<rustybuzz::Face<'_>, rustybuzz::Face<'static>>(face) }
         });
-        Self {
+        // SAFETY: font 只借用 data 的堆中字节；Arc 与 mmap 的字节地址不随槽位移动。
+        let font = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(font) };
+        Ok(Self {
             handle,
             // 将借用字体包在 Option 中，卸载时可以先结束借用再释放数据。
             font: Some(font),
@@ -69,7 +68,24 @@ impl FontSlot {
             shaping_face,
             // 将字体数据包在 Option 中，卸载时释放 mmap 或 Arc 的所有权。
             _data: Some(data),
-        }
+        })
+    }
+
+    /// 显式结束全部借用后再释放底层字节，供卸载与整体析构共用。
+    fn release(&mut self) {
+        // FontRef 先结束对字体表和预解析子表的借用。
+        drop(self.font.take());
+        // rustybuzz Face 随后结束对同一字体表的借用。
+        drop(self.shaping_face.take());
+        // 最后释放 Arc 或解除 mmap；此后槽位不再包含任何借用视图。
+        drop(self._data.take());
+    }
+}
+
+impl Drop for FontSlot {
+    fn drop(&mut self) {
+        // 即使后端整体销毁而未逐项卸载，也保持与显式卸载相同的释放顺序。
+        self.release();
     }
 }
 
@@ -146,25 +162,19 @@ impl TextBackend for AbGlyphBackend {
         // 对 TTC/OTC 保留完整文件并选择首个 face。集合内表可跨 face 共享，
         // 不能把 offset 区间切成伪 TTF 后再解析。
         let id = self.fonts.len() as u32;
-        // SAFETY: f 借用 data 的内容；data 复制进 Arc 由槽位持有（见 new_borrowed 契约）。
         let data: Arc<[u8]> = Arc::from(data);
-        let f = FontRef::try_from_slice_and_index(&data, 0)
-            .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
-        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
+        // 槽位构造器从自有 Arc 内同时建立两个字体面，避免来源错配。
         self.fonts
-            .push(unsafe { FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data)) });
+            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
         Ok(FontHandle::new(id))
     }
 
     fn load_font_owned(&mut self, data: Vec<u8>) -> Result<FontHandle, Error> {
         let id = self.fonts.len() as u32;
-        // SAFETY: f 借用 data 的内容；data 由槽位持有（见 new_borrowed 契约）。
         let data: Arc<[u8]> = Arc::from(data);
-        let f = FontRef::try_from_slice_and_index(&data, 0)
-            .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
-        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
+        // 消费调用方 Vec 后由同一安全构造器封闭自引用不变式。
         self.fonts
-            .push(unsafe { FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Owned(data)) });
+            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
         Ok(FontHandle::new(id))
     }
 
@@ -172,47 +182,29 @@ impl TextBackend for AbGlyphBackend {
     fn load_font_shared(&mut self, data: Arc<[u8]>) -> Result<FontHandle, Error> {
         // 新句柄严格对应即将追加的后端槽位。
         let id = self.fonts.len() as u32;
-        // 解析器借用 Arc 稳定堆数据，并固定选择集合中的首个 face。
-        let font = FontRef::try_from_slice_and_index(&data, 0)
-            // 解析失败保持统一字体格式错误分类。
-            .map_err(|error| Error::new(Errc::FormatError, format!("ab_glyph: {error:?}")))?;
-        // SAFETY: font 借用 data；data 随 FontData::Owned 进入同一槽位并晚于 font 释放。
-        let font = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(font) };
-        // 保存共享字节本身，不制造大型字体副本。
-        self.fonts.push(unsafe {
-            // 槽位维持字体借用与数据 owner 的既有析构顺序。
-            FontSlot::new_borrowed(FontHandle::new(id), font, FontData::Owned(data))
-        });
+        // 保存共享字节本身，并由槽位封闭两个借用面与 owner 的关系。
+        self.fonts
+            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
         // 返回与追加槽位编号一致的稳定句柄。
         Ok(FontHandle::new(id))
     }
 
     fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {
         let boxed = Box::new(mmap);
-        let f = FontRef::try_from_slice_and_index(boxed.as_ref(), 0)
-            .map_err(|e| Error::new(Errc::FormatError, format!("ab_glyph: {:?}", e)))?;
         let id = self.fonts.len() as u32;
-        // SAFETY: f 借用 boxed 的映射内容；boxed 由槽位持有，堆地址稳定（见 new_borrowed 契约）。
-        let f = unsafe { std::mem::transmute::<FontRef<'_>, FontRef<'static>>(f) };
-        self.fonts.push(unsafe {
-            FontSlot::new_borrowed(FontHandle::new(id), f, FontData::Mapped(boxed))
-        });
+        // mmap 所有权先进入统一构造器，解析失败也会在返回前安全解除映射。
+        self.fonts.push(FontSlot::parse(
+            FontHandle::new(id),
+            FontData::Mapped(boxed),
+        )?);
         Ok(FontHandle::new(id))
     }
 
     fn unload_font(&mut self, handle: &FontHandle) {
-        let i = handle.0 as usize;
-        if i < self.fonts.len() {
+        if let Some(i) = self.idx(handle) {
             let slot = &mut self.fonts[i];
-            // 先销毁借用字体，确保其底层数据仍然存活到借用结束。
-            let font = slot.font.take();
-            drop(font);
-            // 再结束 rustybuzz 对同一底层字节的借用。
-            let shaping_face = slot.shaping_face.take();
-            drop(shaping_face);
-            // 再释放内存映射或自有字节，避免卸载后继续占用 private bytes。
-            let data = slot._data.take();
-            drop(data);
+            // 统一释放函数显式保证 FontRef、Face、数据的实际释放顺序。
+            slot.release();
             // 最后标记句柄无效，保留槽位编号以维持句柄稳定性。
             slot.handle = FontHandle::new(u32::MAX);
         }

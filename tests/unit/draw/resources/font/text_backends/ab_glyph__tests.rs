@@ -6,6 +6,28 @@ use crate::draw::TextBackend;
 use crate::draw::{HAlign, VAlign};
 // 引入后端内部布局选项类型。
 use super::TextLayoutOptions;
+// 引入共享所有权、线程同步与只读匿名映射，覆盖槽位并发和两种字节 owner。
+use std::sync::{Arc, Barrier};
+
+// 构造所有生命周期测试共用的有限宽度文本约束。
+fn lifecycle_layout_options() -> TextLayoutOptions {
+    TextLayoutOptions {
+        max_width: 160.0,
+        max_height: 0.0,
+        line_height: 24.0,
+        word_wrap: true,
+        h_align: HAlign::Left,
+        v_align: VAlign::Top,
+        font_size: 17.0,
+    }
+}
+
+// 把固定测试字体复制进匿名映射，再冻结为只读 mmap，避免文件并发修改风险。
+fn readonly_map(data: &[u8]) -> memmap2::Mmap {
+    let mut mapped = memmap2::MmapMut::map_anon(data.len()).expect("应能建立匿名字体映射");
+    mapped.copy_from_slice(data);
+    mapped.make_read_only().expect("匿名字体映射应能转为只读")
+}
 
 #[test]
 fn unload_releases_owned_font_data() {
@@ -31,6 +53,160 @@ fn unload_releases_owned_font_data() {
     assert_eq!(backend.memory_usage(), 0);
 }
 
+// 验证任一字节 owner 解析失败都不会发布半构造的自引用槽位。
+#[test]
+fn failed_parsing_never_publishes_font_slot() {
+    let invalid = b"not an OpenType font";
+    let mut backend = AbGlyphBackend::new();
+
+    assert!(backend.load_font(invalid).is_err());
+    assert!(backend.load_font_owned(invalid.to_vec()).is_err());
+    assert!(
+        backend
+            .load_font_shared(Arc::<[u8]>::from(invalid.as_slice()))
+            .is_err()
+    );
+    assert!(backend.load_font_mapped(readonly_map(invalid)).is_err());
+    assert!(backend.fonts.is_empty());
+    assert_eq!(backend.memory_usage(), 0);
+}
+
+// 验证共享 Arc 的最后一个强 owner 在显式卸载后立即释放。
+#[test]
+fn shared_font_owner_drops_after_unload() {
+    let data =
+        Arc::<[u8]>::from(include_bytes!("../../../../../../assets/fonts/lucide.ttf").as_slice());
+    let weak = Arc::downgrade(&data);
+    let mut backend = AbGlyphBackend::new();
+    let handle = backend
+        .load_font_shared(Arc::clone(&data))
+        .expect("共享 Lucide 字体应能加载");
+    drop(data);
+    assert!(weak.upgrade().is_some());
+
+    let layout = backend.layout_text(&handle, "A B C", &lifecycle_layout_options());
+    assert!(!layout.glyphs.is_empty());
+    backend.unload_font(&handle);
+
+    assert!(weak.upgrade().is_none(), "卸载后不得残留字体字节强引用");
+    assert!(!backend.is_valid(&handle));
+    assert!(backend.fonts[handle.0 as usize].font.is_none());
+    assert!(backend.fonts[handle.0 as usize].shaping_face.is_none());
+    assert!(backend.fonts[handle.0 as usize]._data.is_none());
+    assert_eq!(backend.memory_usage(), 0);
+}
+
+// 验证未显式卸载时，后端整体 Drop 也按相同顺序释放共享字体 owner。
+#[test]
+fn backend_drop_releases_active_shared_font_owner() {
+    let data =
+        Arc::<[u8]>::from(include_bytes!("../../../../../../assets/fonts/lucide.ttf").as_slice());
+    let weak = Arc::downgrade(&data);
+    {
+        let mut backend = AbGlyphBackend::new();
+        backend
+            .load_font_shared(Arc::clone(&data))
+            .expect("共享 Lucide 字体应能加载");
+        drop(data);
+        assert!(weak.upgrade().is_some());
+    }
+    assert!(
+        weak.upgrade().is_none(),
+        "后端 Drop 后不得残留字体字节强引用"
+    );
+}
+
+// 验证仓库实际的追加新槽等价替换路径可反复加载、塑形和卸载。
+#[test]
+fn repeated_load_shape_unload_releases_shared_and_mapped_slots() {
+    let bytes = include_bytes!("../../../../../../assets/fonts/lucide.ttf");
+    let shared = Arc::<[u8]>::from(bytes.as_slice());
+    let options = lifecycle_layout_options();
+    let mut backend = AbGlyphBackend::new();
+
+    for cycle in 0..64_u32 {
+        let handle = backend
+            .load_font_shared(Arc::clone(&shared))
+            .expect("每轮共享字体都应加载成功");
+        assert_eq!(handle.0, cycle);
+        assert!(
+            !backend
+                .layout_text(&handle, "A B C", &options)
+                .glyphs
+                .is_empty()
+        );
+        backend.unload_font(&handle);
+        assert!(!backend.is_valid(&handle));
+        assert!(
+            backend
+                .layout_text(&handle, "A", &options)
+                .glyphs
+                .is_empty()
+        );
+        assert_eq!(backend.memory_usage(), 0);
+    }
+
+    for _ in 0..8 {
+        let handle = backend
+            .load_font_mapped(readonly_map(bytes))
+            .expect("每轮只读 mmap 字体都应加载成功");
+        assert!(
+            !backend
+                .layout_text(&handle, "A B C", &options)
+                .glyphs
+                .is_empty()
+        );
+        backend.unload_font(&handle);
+        assert!(!backend.is_valid(&handle));
+        assert_eq!(backend.memory_usage(), 0);
+    }
+}
+
+// 验证缓存字体面满足后端公开 Send + Sync 契约，并允许并发只读塑形。
+#[test]
+fn cached_shaping_face_supports_concurrent_readers() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<AbGlyphBackend>();
+
+    let data = Arc::<[u8]>::from(
+        include_bytes!("../../../../../../assets/fonts/NotoSansCJKsc-Regular.otf").as_slice(),
+    );
+    let mut backend = AbGlyphBackend::new();
+    let handle = backend
+        .load_font_shared(data)
+        .expect("固定 Noto CJK 字体应能加载");
+    let backend = Arc::new(backend);
+    let readers = 4;
+    let barrier = Arc::new(Barrier::new(readers));
+    let iterations = if cfg!(miri) { 2 } else { 128 };
+    let mut threads = Vec::with_capacity(readers);
+
+    for _ in 0..readers {
+        let backend = Arc::clone(&backend);
+        let barrier = Arc::clone(&barrier);
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            let options = lifecycle_layout_options();
+            let text = "中文 English العربية Résumé e\u{301}";
+            for _ in 0..iterations {
+                let layout = backend.layout_text(&handle, text, &options);
+                assert!(!layout.glyphs.is_empty());
+                assert_eq!(
+                    layout.glyphs.last().map(|glyph| glyph.char_end),
+                    Some(text.chars().count())
+                );
+            }
+        }));
+    }
+    for thread in threads {
+        thread.join().expect("并发只读塑形线程不应失败");
+    }
+
+    let mut backend = Arc::try_unwrap(backend).expect("并发读者结束后应只剩唯一 owner");
+    backend.unload_font(&handle);
+    assert_eq!(backend.memory_usage(), 0);
+}
+
 // 验证缓存的 OpenType 面保持中英文换行、cluster 与字形输出完全稳定。
 #[test]
 fn cached_shaping_face_preserves_multiscript_layout() {
@@ -40,15 +216,7 @@ fn cached_shaping_face_preserves_multiscript_layout() {
     let handle = backend
         .load_font(data)
         .expect("Noto CJK 字体应建立 ab_glyph 与 rustybuzz 共用槽位");
-    let options = TextLayoutOptions {
-        max_width: 160.0,
-        max_height: 0.0,
-        line_height: 24.0,
-        word_wrap: true,
-        h_align: HAlign::Left,
-        v_align: VAlign::Top,
-        font_size: 17.0,
-    };
+    let options = lifecycle_layout_options();
     let text = "中文动态编辑 English words Résumé e\u{301}";
 
     let first = backend.layout_text(&handle, text, &options);
