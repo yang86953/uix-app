@@ -1,5 +1,5 @@
 // 引入被测无障碍转换与公开角色。
-use super::{rich_text_accessibility, AccessibilityRole, RichTextSegment};
+use super::{AccessibilityRole, RichTextSegment, rich_text_accessibility};
 
 // 单一主题分隔线内容必须直接暴露 separator 角色。
 #[test]

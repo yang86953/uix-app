@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error, Result};
 use crate::platform::graphics::GpuAdapterInfo;
 #[cfg(windows)]
-use crate::platform::graphics::{GraphicsBackend, GpuDeviceType};
+use crate::platform::graphics::{GpuDeviceType, GraphicsBackend};
 
 /// 枚举当前系统可供 D3D11 使用的 owned adapter 描述。
 #[cfg(windows)]

@@ -3,7 +3,7 @@
 // 引入字符范围以描述视觉行对应的逻辑源区间。
 use std::ops::Range;
 // 引入 UAX #9 的完整段落分析与 L2 重排实现。
-use unicode_bidi::BidiInfo;
+use unicode_bidi::{BidiInfo, Level};
 
 /// 描述一个段落在完整源文本中的逻辑字符范围与基准级别。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,22 @@ pub(crate) struct BidiAnalysis {
     levels: Vec<u8>,
     // 保存全部段落的逻辑范围与基准级别。
     paragraphs: Vec<BidiParagraph>,
+}
+
+/// 保存一次布局周期内可复用的第三方双向分析。
+pub(crate) struct BidiLineOrderContext<'a> {
+    // 借用字符索引、段落与安全退化结果。
+    analysis: &'a BidiAnalysis,
+    // 只在当前布局周期构造一次完整文本分析。
+    info: BidiInfo<'a>,
+}
+
+/// 保存一个视觉行的 L1 级别，允许多个对象粒度共享同一结果。
+pub(crate) struct BidiLineOrderLine<'a> {
+    // 借用完整双向分析以支持异常范围的安全退化。
+    analysis: &'a BidiAnalysis,
+    // unicode-bidi 已对当前行应用 L1 的逐字节级别；缺失表示退化路径。
+    line_levels: Option<Vec<Level>>,
 }
 
 // 为共享双向分析实现构造、查询与视觉行重排。
@@ -116,6 +132,7 @@ impl BidiAnalysis {
     }
 
     /// 按逻辑字符索引输入对象，返回应用 L1/L2 后的视觉顺序与级别。
+    #[cfg(test)]
     pub(crate) fn line_order(
         // 借用共享段落分析。
         &self,
@@ -124,70 +141,19 @@ impl BidiAnalysis {
         // 每个待排对象对应的逻辑字符起点，必须按逻辑顺序输入。
         logical_char_indices: &[usize],
     ) -> BidiLineOrder {
-        // 空对象无需执行第三方算法。
-        if logical_char_indices.is_empty() {
-            // 返回稳定空映射。
-            return BidiLineOrder {
-                // 空输入没有视觉对象。
-                visual_to_logical: Vec::new(),
-                // 空输入没有嵌入级别。
-                levels: Vec::new(),
-            };
-        }
-        // 将调用方范围限制在真实字符边界内。
-        let bounded_start = line_range.start.min(self.char_count());
-        // 排他终点不得早于起点。
-        let bounded_end = line_range.end.min(self.char_count()).max(bounded_start);
-        // 查找完整覆盖当前视觉行的原始段落。
-        let paragraph_index = self.paragraphs.iter().position(|paragraph| {
-            // 行起点与终点必须落在同一段落范围内。
-            bounded_start >= paragraph.char_range.start && bounded_end <= paragraph.char_range.end
-        });
-        // 缺少合法段落时使用段落级解析结果保持安全退化。
-        let Some(paragraph_index) = paragraph_index else {
-            // 返回不改变逻辑顺序的稳定结果。
-            return self.identity_order(logical_char_indices);
-        };
-        // 为当前视觉行重新应用 UAX #9 L1，避免复用段落尾部空白级别。
-        let info = BidiInfo::new(&self.text, None);
-        // 使用与自有段落表相同的顺序取得第三方段落对象。
-        let Some(paragraph) = info.paragraphs.get(paragraph_index) else {
-            // 第三方结果不一致时保守退化为逻辑顺序。
-            return self.identity_order(logical_char_indices);
-        };
-        // 将逻辑字符范围转换为 unicode-bidi 所需的 UTF-8 字节范围。
-        let byte_range = self.char_bytes[bounded_start]..self.char_bytes[bounded_end];
-        // 应用 UAX #9 L1 得到适用于当前视觉行的逐字节级别。
-        let line_levels = info.reordered_levels(paragraph, byte_range);
-        // 为每个布局对象读取其逻辑字符对应的行级别。
-        let object_levels = logical_char_indices
-            // 保持输入逻辑对象顺序。
-            .iter()
-            // 将对象逻辑字符起点映射为行级别。
-            .map(|char_index| {
-                // 防止异常对象索引越过文本尾部。
-                let bounded_index = (*char_index).min(self.char_count().saturating_sub(1));
-                // 从对象字符首字节读取 L1 后的级别。
-                line_levels[self.char_bytes[bounded_index]]
-            })
-            // 收集第三方级别供 L2 重排。
-            .collect::<Vec<_>>();
-        // 使用 UAX #9 L2 生成视觉对象到逻辑对象的索引映射。
-        let visual_to_logical = BidiInfo::reorder_visual(&object_levels);
-        // 将第三方级别转换为稳定数值表示。
-        let levels = object_levels
-            // 消费临时级别数组。
-            .into_iter()
-            // 只保留嵌入级别数值。
-            .map(|level| level.number())
-            // 收集为布局层可复用数组。
-            .collect::<Vec<_>>();
-        // 返回同一份行级数据派生的顺序与方向。
-        BidiLineOrder {
-            // 保存视觉到逻辑对象映射。
-            visual_to_logical,
-            // 保存逻辑对象的行级嵌入级别。
-            levels,
+        // 兼容单次调用方，同时让多行调用方可以显式复用上下文。
+        self.line_order_context()
+            .line(line_range)
+            .order(logical_char_indices)
+    }
+
+    /// 为一次连续布局创建可复用的完整文本双向分析。
+    pub(crate) fn line_order_context(&self) -> BidiLineOrderContext<'_> {
+        BidiLineOrderContext {
+            // 保留自有字符索引与段落表。
+            analysis: self,
+            // 完整文本分析只构造一次，后续每行仅执行 L1/L2 所需工作。
+            info: BidiInfo::new(&self.text, None),
         }
     }
 
@@ -222,6 +188,114 @@ impl BidiAnalysis {
             // 保存恒等视觉顺序。
             visual_to_logical,
             // 保存可用方向级别。
+            levels,
+        }
+    }
+}
+
+// 在同一布局周期内复用完整 BidiInfo，并按视觉行按需执行 L1。
+impl<'a> BidiLineOrderContext<'a> {
+    /// 为指定逻辑字符范围准备一次可供多个对象粒度复用的行级 L1 结果。
+    pub(crate) fn line(&self, line_range: Range<usize>) -> BidiLineOrderLine<'a> {
+        // 将调用方范围限制在真实字符边界内。
+        let bounded_start = line_range.start.min(self.analysis.char_count());
+        // 排他终点不得早于起点。
+        let bounded_end = line_range
+            .end
+            .min(self.analysis.char_count())
+            .max(bounded_start);
+        // 空范围没有需要执行的 L1 级别。
+        if bounded_start == bounded_end {
+            return BidiLineOrderLine {
+                // 保留安全退化所需的共享分析。
+                analysis: self.analysis,
+                // 空范围直接使用恒等顺序。
+                line_levels: None,
+            };
+        }
+        // 查找完整覆盖当前视觉行的原始段落。
+        let paragraph_index = self.analysis.paragraphs.iter().position(|paragraph| {
+            // 行起点与终点必须落在同一段落范围内。
+            bounded_start >= paragraph.char_range.start && bounded_end <= paragraph.char_range.end
+        });
+        // 缺少合法段落时使用段落级解析结果保持安全退化。
+        let Some(paragraph_index) = paragraph_index else {
+            return BidiLineOrderLine {
+                // 保留安全退化所需的共享分析。
+                analysis: self.analysis,
+                // 缺少段落时不读取第三方级别。
+                line_levels: None,
+            };
+        };
+        // 使用与自有段落表相同的顺序取得第三方段落对象。
+        let Some(paragraph) = self.info.paragraphs.get(paragraph_index) else {
+            return BidiLineOrderLine {
+                // 保留安全退化所需的共享分析。
+                analysis: self.analysis,
+                // 第三方结果不一致时退化为逻辑顺序。
+                line_levels: None,
+            };
+        };
+        // 将逻辑字符范围转换为 unicode-bidi 所需的 UTF-8 字节范围。
+        let byte_range =
+            self.analysis.char_bytes[bounded_start]..self.analysis.char_bytes[bounded_end];
+        // 应用 UAX #9 L1；同一行的多个对象粒度共享这份结果。
+        let line_levels = self.info.reordered_levels(paragraph, byte_range);
+        BidiLineOrderLine {
+            // 保存完整分析以支持字符索引映射与退化级别。
+            analysis: self.analysis,
+            // 保存当前行的逐字节 L1 级别。
+            line_levels: Some(line_levels),
+        }
+    }
+}
+
+// 将同一行的 L1 级别映射到字符、run 或 shaping cluster 对象并执行 L2。
+impl<'a> BidiLineOrderLine<'a> {
+    /// 按输入对象的逻辑字符起点返回视觉顺序与行级别。
+    pub(crate) fn order(&self, logical_char_indices: &[usize]) -> BidiLineOrder {
+        // 空对象无需执行第三方算法。
+        if logical_char_indices.is_empty() {
+            // 返回稳定空映射。
+            return BidiLineOrder {
+                // 空输入没有视觉对象。
+                visual_to_logical: Vec::new(),
+                // 空输入没有嵌入级别。
+                levels: Vec::new(),
+            };
+        }
+        // 失去合法行级结果时保持原有安全退化行为。
+        let Some(line_levels) = self.line_levels.as_ref() else {
+            return self.analysis.identity_order(logical_char_indices);
+        };
+        // 为每个布局对象读取其逻辑字符对应的行级别。
+        let object_levels = logical_char_indices
+            // 保持输入逻辑对象顺序。
+            .iter()
+            // 将对象逻辑字符起点映射为行级别。
+            .map(|char_index| {
+                // 防止异常对象索引越过文本尾部。
+                let bounded_index = (*char_index).min(self.analysis.char_count().saturating_sub(1));
+                // 从对象字符首字节读取 L1 后的级别。
+                line_levels[self.analysis.char_bytes[bounded_index]]
+            })
+            // 收集第三方级别供 L2 重排。
+            .collect::<Vec<_>>();
+        // 使用 UAX #9 L2 生成视觉对象到逻辑对象的索引映射。
+        let visual_to_logical = BidiInfo::reorder_visual(&object_levels);
+        // 将第三方级别转换为稳定数值表示。
+        let levels = object_levels
+            // 消费临时级别数组。
+            .into_iter()
+            // 只保留嵌入级别数值。
+            .map(|level| level.number())
+            // 收集为布局层可复用数组。
+            .collect::<Vec<_>>();
+        // 返回同一份行级数据派生的顺序与方向。
+        BidiLineOrder {
+            // 保存视觉到逻辑对象映射。
+            visual_to_logical,
+            // 保存逻辑对象的行级嵌入级别。
             levels,
         }
     }

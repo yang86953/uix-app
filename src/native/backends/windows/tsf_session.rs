@@ -22,10 +22,10 @@ use crate::native::backends::windows::tsf_text_store::{
     TsfEventSink, TsfStoreHandle, TsfTextStore,
 };
 use crate::native::backends::windows::util::windows_diag;
-use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::{
     ImeCompositionState, on_committed_text, on_marked_text, on_unmark_text,
 };
+use crate::platform::windowing::event::UiEvent;
 
 /// 激活参数：共享事件队列由 `WindowsPlatform` 持有并在 `next_event` 排空。
 pub(crate) struct TsfActivateParams {

@@ -17,8 +17,8 @@ use libc::{POLLERR, POLLHUP, POLLIN, POLLNVAL, POLLOUT, poll, pollfd};
 use wayland_client::backend::WaylandError;
 
 use crate::core::{Errc, Error};
-use crate::platform::windowing::event::UiEvent;
 use crate::platform::windowing::KeyMod;
+use crate::platform::windowing::event::UiEvent;
 
 use super::WaylandBackend;
 use super::keycode::keycode_to_char;

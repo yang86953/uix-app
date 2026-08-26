@@ -370,6 +370,8 @@ fn layout_text_content(
         // 只在当前行存在换行时切出后续内容。
         // 使用共享辅助整体消费 CRLF、CR 或 LF。
         let (line, next) = split_once_mandatory(remaining);
+        // 当前逻辑行字符只统计一次，避免反复扫描剩余后缀。
+        let line_char_count = line.chars().count();
         // 计算当前逻辑行在完整富文本源中的字符起点。
         let line_source_offset = source_offset + consumed_chars;
         // 使用原有空白 token 逻辑布局当前行。
@@ -404,8 +406,10 @@ fn layout_text_content(
         flush_line(lines, glyphs, default_line_h.max(seg_line_h), metrics);
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
-        // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
-        consumed_chars += remaining.chars().count() - next.chars().count();
+        // CR、LF 与 CRLF 都是 ASCII，字节长度等于其逻辑字符数量。
+        let separator_char_count = remaining.len() - line.len() - next.len();
+        // 只累加本轮新增的逻辑行与强制换行分隔符。
+        consumed_chars += line_char_count + separator_char_count;
         // 继续处理换行后的剩余内容。
         remaining = next;
     }
@@ -430,25 +434,29 @@ fn layout_text_content_line(
     source_offset: usize,
     metrics: RichTextMetricsVisual,
 ) {
-    // 固化逻辑字符以按字符索引查询 UAX 边界。
-    let chars = content.chars().collect::<Vec<_>>();
+    // 以 UTF-8 字节游标遍历原字符串，保留字符索引而不创建临时 Vec。
+    let mut chars = content.char_indices().peekable();
     // 从首个字符开始消费相邻 UAX 机会之间的原子片段。
     let mut start = 0usize;
     // 逐段消费直到完整逻辑行结束。
-    while start < chars.len() {
+    while let Some((start_byte, _)) = chars.next() {
         // 至少把当前字符纳入片段。
         let mut end = start + 1;
+        // 记录当前片段的排他字节末端，供后续无分配切片迭代。
+        let mut end_byte = chars.peek().map(|(byte, _)| *byte).unwrap_or(content.len());
         // 扩展到下一个标准允许或强制边界。
-        while end < chars.len() && !breaks.allows_at(source_offset + end) {
-            // 继续保留禁止断行的后继字符。
+        while chars.peek().is_some() && !breaks.allows_at(source_offset + end) {
+            // 消费仍属于当前原子片段的后继字符。
+            chars.next();
             end += 1;
+            end_byte = chars.peek().map(|(byte, _)| *byte).unwrap_or(content.len());
         }
         // 计算当前 UAX 原子片段的估算宽度。
-        let token_w = chars[start..end]
+        let token_w = content[start_byte..end_byte]
             // 遍历片段字符。
-            .iter()
+            .chars()
             // 使用共享字符宽度估算。
-            .map(|ch| char_width(fs, *ch, metrics))
+            .map(|ch| char_width(fs, ch, metrics))
             // 聚合完整片段宽度。
             .sum::<f32>();
 
@@ -463,8 +471,8 @@ fn layout_text_content_line(
 
         if *current_x + token_w > max_width {
             let mut word_chars_x = *current_x;
-            for (relative_index, ch) in chars[start..end].iter().enumerate() {
-                let cw = char_width(fs, *ch, metrics);
+            for (relative_index, ch) in content[start_byte..end_byte].chars().enumerate() {
+                let cw = char_width(fs, ch, metrics);
                 // 只有长字母数字词的紧急边界可以绕过标准 UAX 机会。
                 let emergency_break =
                     breaks.emergency_allows_at(source_offset + start + relative_index);
@@ -487,7 +495,7 @@ fn layout_text_content_line(
                     source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
-                    ch: *ch,
+                    ch,
                     x: word_chars_x,
                     width: cw,
                     font_size: fs,
@@ -499,8 +507,8 @@ fn layout_text_content_line(
             }
             *current_x = word_chars_x;
         } else {
-            for (relative_index, ch) in chars[start..end].iter().enumerate() {
-                let cw = char_width(fs, *ch, metrics);
+            for (relative_index, ch) in content[start_byte..end_byte].chars().enumerate() {
+                let cw = char_width(fs, ch, metrics);
                 glyphs.push(LayoutGlyph {
                     // 普通估算字符进入文本绘制路径。
                     kind: super::LayoutGlyphKind::Text,
@@ -511,7 +519,7 @@ fn layout_text_content_line(
                     source_char_len: 1,
                     // 视觉行完成后由共享 UAX #9 分析回填。
                     bidi_level: 0,
-                    ch: *ch,
+                    ch,
                     x: *current_x,
                     width: cw,
                     font_size: fs,
@@ -811,6 +819,8 @@ fn layout_text_content_real(
         // 只在当前剩余内容含换行时切出下一行。
         // 使用共享辅助整体消费 CRLF、CR 或 LF。
         let (line, next) = split_once_mandatory(remaining);
+        // 当前逻辑行字符只统计一次，避免反复扫描剩余后缀。
+        let line_char_count = line.chars().count();
         // 计算当前逻辑行在完整富文本源中的字符起点。
         let line_source_offset = source_offset + consumed_chars;
         // 使用真实字体 advance 布局当前逻辑行。
@@ -847,8 +857,10 @@ fn layout_text_content_real(
         flush_line(lines, glyphs, default_line_h.max(seg_line_h), metrics);
         // 换行后从行首重新开始布局。
         *current_x = 0.0;
-        // 计算本轮逻辑行和强制换行分隔符共同消费的字符数量。
-        consumed_chars += remaining.chars().count() - next.chars().count();
+        // CR、LF 与 CRLF 都是 ASCII，字节长度等于其逻辑字符数量。
+        let separator_char_count = remaining.len() - line.len() - next.len();
+        // 只累加本轮新增的逻辑行与强制换行分隔符。
+        consumed_chars += line_char_count + separator_char_count;
         // 继续处理换行后的剩余内容。
         remaining = next;
     }
@@ -876,18 +888,22 @@ fn layout_text_content_real_line(
     metrics: RichTextMetricsVisual,
 ) {
     let advances = real_char_advances(font_service, font, content, fs, metrics);
-    let chars: Vec<char> = content.chars().collect();
+    // 以 UTF-8 字节游标遍历原字符串，避免为真实 advance 再复制字符数组。
+    let mut chars = content.char_indices().peekable();
 
     let mut start = 0usize;
-    let total = chars.len();
 
-    while start < total {
+    while let Some((start_byte, _)) = chars.next() {
         // 至少把当前字符纳入 UAX 原子片段。
         let mut end = start + 1;
+        // 记录当前片段的排他字节末端，供字符与 advance 无分配配对。
+        let mut end_byte = chars.peek().map(|(byte, _)| *byte).unwrap_or(content.len());
         // 扩展到下一个标准允许或强制断行边界。
-        while end < total && !breaks.allows_at(source_offset + end) {
-            // 继续保留禁止断行的后继字符。
+        while chars.peek().is_some() && !breaks.allows_at(source_offset + end) {
+            // 消费仍属于当前原子片段的后继字符。
+            chars.next();
             end += 1;
+            end_byte = chars.peek().map(|(byte, _)| *byte).unwrap_or(content.len());
         }
 
         let word_advances = &advances[start..end.min(advances.len())];
@@ -904,9 +920,8 @@ fn layout_text_content_real_line(
 
         if *current_x + word_w > max_width {
             let mut word_x = *current_x;
-            for (relative_index, (&ch, &cw)) in chars[start..end]
-                // 遍历片段字符与真实 advance。
-                .iter()
+            for (relative_index, (ch, &cw)) in content[start_byte..end_byte]
+                .chars()
                 // 保持字符和宽度一一对应。
                 .zip(word_advances)
                 // 保留片段内逻辑字符索引。
@@ -944,9 +959,8 @@ fn layout_text_content_real_line(
             }
             *current_x = word_x;
         } else {
-            for (relative_index, (&ch, &cw)) in chars[start..end]
-                // 遍历片段字符与真实 advance。
-                .iter()
+            for (relative_index, (ch, &cw)) in content[start_byte..end_byte]
+                .chars()
                 // 保持字符和宽度一一对应。
                 .zip(word_advances)
                 // 保留片段内逻辑字符索引。

@@ -218,11 +218,7 @@ fn margin_main_start(margin: EdgeInsets, is_row: bool, is_reverse: bool) -> f32 
 }
 
 fn margin_cross_start(margin: EdgeInsets, is_row: bool) -> f32 {
-    if is_row {
-        margin.top
-    } else {
-        margin.left
-    }
+    if is_row { margin.top } else { margin.left }
 }
 
 // 把正剩余空间反复分给尚未触及主轴上限的子项。

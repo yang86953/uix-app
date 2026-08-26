@@ -32,8 +32,8 @@ use self::pixels::{
     full_frame_image_blit, pixel_len,
 };
 use self::source_over::{
-    crop_and_translate_source_over_command, source_over_commands_have_safe_grouping,
-    stroke_batches_can_merge, stroke_visible_bounds, PictureCropTranslation,
+    PictureCropTranslation, crop_and_translate_source_over_command,
+    source_over_commands_have_safe_grouping, stroke_batches_can_merge, stroke_visible_bounds,
 };
 
 /// 恰好一帧的有序命令录制器。

@@ -2,7 +2,7 @@ use super::super::super::*;
 use super::super::WidgetTree;
 use crate::core::Rect;
 
-use super::{frame_constraints, ShrinkOp};
+use super::{ShrinkOp, frame_constraints};
 
 impl WidgetTree {
     /// Phase 2 重排：对已扩展子节点，measure 结果不得低于当前 frame。

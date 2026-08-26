@@ -15,8 +15,8 @@ use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3;
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
 // IME 事务直接借用统一窗口事件队列。
-use crate::platform::windowing::event::UiEvent;
 use crate::platform::windowing::ITextInput;
+use crate::platform::windowing::event::UiEvent;
 // Wayland adapter 使用共享 Component 的无锁 queue-guard 入口。
 use crate::native::windowing::shared::ime_events::{
     // composition 状态继续由共享值类型定义。

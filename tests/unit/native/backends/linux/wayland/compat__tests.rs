@@ -9,7 +9,7 @@ use wayland_client::protocol::wl_surface;
 // 生成不依赖真实 Wayland connection 的测试类型身份。
 use std::any::TypeId;
 // 捕获测试主动制造的 registry mutex poison。
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // 建立一个可独立观察 failure 的 registry fixture。
 fn registry_fixture() -> (CallbackRegistry, PendingFailureSource) {
@@ -95,9 +95,11 @@ fn persistent_callback_reuses_stored_owner_allocation() {
         std::ptr::from_ref(stored.as_ref()).cast::<()>(),
         owner_address
     );
-    assert!(registry
-        .downcast_callback::<wl_surface::WlSurface>(stored)
-        .is_some());
+    assert!(
+        registry
+            .downcast_callback::<wl_surface::WlSurface>(stored)
+            .is_some()
+    );
 }
 
 // registry 锁中毒必须为每个生命周期阶段产生稳定 typed failure。

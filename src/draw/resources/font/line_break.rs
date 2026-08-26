@@ -47,59 +47,55 @@ pub(crate) struct LineBreakMap {
 impl LineBreakMap {
     // 从完整 UTF-8 文本构建字符索引口径的断行表。
     pub(crate) fn new(text: &str) -> Self {
-        // 保存每个 UTF-8 字节边界对应的 Unicode 标量索引。
-        let byte_boundaries = text
-            // 枚举每个 Unicode 标量的字节起点。
+        // 为每个字符边界预留一个断行机会槽位，并保留文本末尾边界。
+        let char_count = text.chars().count();
+        let mut opportunities = vec![None; char_count + 1];
+        // 以单调游标流式消费 UTF-8 边界，避免短命的字节边界 Vec。
+        let mut byte_boundaries = text
             .char_indices()
-            // 将字节起点转换为字符边界对。
-            .enumerate()
-            // 调整元组顺序便于按字节推进。
-            .map(|(char_index, (byte_index, _))| (byte_index, char_index))
-            // 补入文本末尾的排他边界。
-            .chain(std::iter::once((text.len(), text.chars().count())))
-            // 固化边界以供线性游标查询。
-            .collect::<Vec<_>>();
-        // 为每个字符边界预留一个断行机会槽位。
-        let mut opportunities = vec![None; byte_boundaries.len()];
+            .map(|(byte_index, _)| byte_index)
+            .chain(std::iter::once(text.len()));
+        // 当前边界对应的字符索引从文本起点开始。
+        let mut boundary = byte_boundaries.next();
+        let mut char_index = 0usize;
         // 从首个字节边界开始匹配 UAX 输出。
-        let mut boundary_cursor = 0usize;
         // UAX 迭代器返回断行后继字符的 UTF-8 字节索引。
         for (byte_index, opportunity) in linebreaks(text) {
             // 推进到不早于当前 UAX 字节边界的位置。
-            while byte_boundaries
-                // 读取当前候选字节边界。
-                .get(boundary_cursor)
-                // 只跳过严格更早的边界。
-                .is_some_and(|(boundary, _)| *boundary < byte_index)
-            {
+            while boundary.is_some_and(|candidate| candidate < byte_index) {
                 // 单调推进保证整体构建为线性复杂度。
-                boundary_cursor += 1;
+                boundary = byte_boundaries.next();
+                char_index += 1;
             }
             // 只接受真实 Unicode 标量边界。
-            if let Some((boundary, char_index)) = byte_boundaries.get(boundary_cursor) {
-                // 防御性比较避免异常索引污染字符表。
-                if *boundary == byte_index {
-                    // 记录 UAX #14 给出的强制或允许机会。
-                    opportunities[*char_index] = Some(opportunity);
-                }
+            // 防御性比较避免异常索引污染字符表。
+            if boundary == Some(byte_index) && char_index < opportunities.len() {
+                // 记录 UAX #14 给出的强制或允许机会。
+                opportunities[char_index] = Some(opportunity);
             }
         }
-        // 收集字符用于推导受控的超长词紧急断行边界。
-        let chars = text.chars().collect::<Vec<_>>();
         // 默认所有边界都不允许偏离 UAX 的紧急断行。
         let mut emergency = vec![false; opportunities.len()];
-        // 只检查两个相邻 Unicode 标量之间的内部边界。
-        for boundary in 1..chars.len() {
+        // 流式检查相邻 Unicode 标量，避免为推导边界复制字符数组。
+        let mut previous = None;
+        for (boundary, current) in text.chars().enumerate() {
+            // 文本首字符之前没有可供比较的内部边界。
+            let Some(previous_char) = previous else {
+                previous = Some(current);
+                continue;
+            };
             // 已有标准 UAX 机会时不需要额外紧急标记。
             if opportunities[boundary].is_none()
                 // 前一标量必须是字母或数字。
-                && chars[boundary - 1].is_alphanumeric()
+                && previous_char.is_alphanumeric()
                 // 后一标量也必须是字母或数字。
-                && chars[boundary].is_alphanumeric()
+                && current.is_alphanumeric()
             {
                 // 允许超长单词在此边界进行受控兜底断行。
                 emergency[boundary] = true;
             }
+            // 保存当前标量供下一个内部边界比较。
+            previous = Some(current);
         }
         // 返回字符索引口径的共享断行表。
         Self {

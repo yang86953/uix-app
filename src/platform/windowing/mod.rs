@@ -18,8 +18,8 @@ pub(crate) mod window;
 use crate::core::error::Result;
 
 // 保留既有公开唤醒句柄路径；唯一源码定义位于 event 子模块。
-pub use event::EventLoopWaker;
 pub use capability::{WindowCapabilities, WindowCapability};
+pub use event::EventLoopWaker;
 // 聚合层与实现统一消费同一组输入合同。
 pub(crate) use input::{ICursor, IKeyboard, ITextInput};
 

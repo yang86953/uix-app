@@ -66,9 +66,9 @@ use crate::platform::system::console::IConsole;
 use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
-use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 use crate::platform::windowing::window::IWindowManager;
+use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakePlatform — 聚合所有 Fake 子系统

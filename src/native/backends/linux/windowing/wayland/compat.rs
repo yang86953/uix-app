@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::os::fd::BorrowedFd;
 use std::os::raw::c_void;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::backend::ObjectId;

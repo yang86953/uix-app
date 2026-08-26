@@ -16,8 +16,8 @@ use windows::core::{Error as WinError, Result as WinResult};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::shared::ime_events::ImeCompositionState;
+use crate::platform::windowing::event::UiEvent;
 
 #[derive(Clone)]
 pub(crate) struct TsfEventSink {

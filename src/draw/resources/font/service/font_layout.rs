@@ -304,15 +304,29 @@ impl FontService {
             let baseline_offset = primary_ascent - seg_ascent;
             let mut chunk_source_x = 0.0f32;
             let mut chunk_target_x = cx;
-            // 随机访问源字符，兼容 RTL shaping 返回的递减 cluster 顺序。
-            let source_chars = seg_text.chars().collect::<Vec<_>>();
+            // 逻辑 cluster 已按源索引排序，使用单调游标读取代表字符，避免临时 Vec。
+            let mut source_chars = seg_text.chars();
+            let mut source_cursor = 0usize;
+            let mut source_char_index = None;
+            let mut source_char = '\0';
 
             // 后端 layout 的 char_index 是段内相对值。这里按字形推进，保证
             // 同一字体形成的长段也能在 max_width 内折行，而不是只能在字体段之间换行。
             // UAX #14 必须先按逻辑 cluster 顺序决定行边界。
             for mut g in logical_cluster_order(seg_layout.glyphs) {
                 // 按 cluster 逻辑起点读取代表字符，不依赖字形视觉顺序。
-                let source_char = source_chars.get(g.char_index).copied().unwrap_or('\0');
+                if source_char_index != Some(g.char_index) {
+                    if g.char_index < source_cursor {
+                        // 防御异常倒退输入，保留原有随机读取的收敛行为。
+                        source_char = seg_text.chars().nth(g.char_index).unwrap_or('\0');
+                    } else {
+                        while source_cursor <= g.char_index {
+                            source_char = source_chars.next().unwrap_or('\0');
+                            source_cursor += 1;
+                        }
+                    }
+                    source_char_index = Some(g.char_index);
+                }
                 // 将段内 cluster 起点转换为全文逻辑字符起点。
                 let global_char_index = char_idx + g.char_index;
                 // 将段内 cluster 排他终点转换为全文逻辑字符终点。
@@ -467,16 +481,18 @@ impl FontService {
         }
         flush_line(&mut lines, &mut line, cx, cy, line_h, char_idx);
 
+        // 同一布局周期内复用完整文本的 unicode-bidi 分析。
+        let order_context = bidi.line_order_context();
         // 每个已确定逻辑边界的视觉行统一应用 UAX #9 L1/L2。
         for line in &mut lines {
+            // 当前行只执行一次 L1，并把结果交给 cluster 重排。
+            let line_order = order_context.line(line.char_start..line.char_end);
             // 从同一视觉数据重新定位字形并取得实际行宽。
             line.width = reorder_line(
                 // 传入当前行逻辑 cluster 字形。
                 &mut line.glyphs,
-                // 传入当前视觉行逻辑源范围。
-                line.char_start..line.char_end,
-                // 复用完整段落分析。
-                bidi,
+                // 传入当前行已准备好的双向结果。
+                &line_order,
             );
         }
 
@@ -486,8 +502,10 @@ impl FontService {
         } else {
             lines.iter().fold(0.0f32, |m, l| m.max(l.width))
         };
-        // 缓存逻辑字符以判断段落末行和显式换行边界。
-        let text_chars = text.chars().collect::<Vec<_>>();
+        // 按逻辑行终点单调推进字符游标，避免两端对齐判断复制整段文本。
+        let mut text_chars = text.chars();
+        let mut text_char_cursor = 0usize;
+        let mut next_text_char = text_chars.next();
 
         let mut all_glyphs = Vec::new();
         let mut line_infos = Vec::new();
@@ -496,11 +514,18 @@ impl FontService {
             // 两端对齐只扩展自动换行形成的段落非末行。
             if h_align == HAlign::Justify {
                 // 段尾或显式换行字符之前的视觉行保持自然宽度。
-                let paragraph_final = text_chars
-                    // 查询行逻辑终点之后的首字符。
-                    .get(l.char_end)
-                    // 文本结束或强制换行都结束当前段落。
-                    .is_none_or(|ch| matches!(ch, '\r' | '\n'));
+                if l.char_end < text_char_cursor {
+                    // 防御异常行序，重置为源文本起点后再单调推进。
+                    text_chars = text.chars();
+                    text_char_cursor = 0;
+                    next_text_char = text_chars.next();
+                }
+                while text_char_cursor < l.char_end {
+                    text_char_cursor += 1;
+                    next_text_char = text_chars.next();
+                }
+                // 文本结束或强制换行都结束当前段落。
+                let paragraph_final = next_text_char.is_none_or(|ch| matches!(ch, '\r' | '\n'));
                 // 同步更新空白 advance、后续字形坐标与行宽。
                 l.width = justify_line(&mut l.glyphs, l.width, container_w, paragraph_final);
             }

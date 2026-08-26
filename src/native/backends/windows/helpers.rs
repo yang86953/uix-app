@@ -14,9 +14,9 @@ use super::platform::WindowsPlatform;
 use super::util::{to_utf8, to_wide, windows_diag};
 use super::wnd_proc::wnd_proc;
 use crate::core::Point;
-use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::native::{Errc, Error};
 use crate::platform::windowing::event::{UiEvent, UiEventPayload};
+use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 
 const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
 // ════════════════════════════════════════════════════════════════════════════

@@ -34,19 +34,19 @@ use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
-use crate::platform::presentation::*;
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
+use crate::native::{Errc, Error};
 use crate::platform::display::IDisplay;
 use crate::platform::platform::Platform;
+use crate::platform::presentation::IPresenter;
+use crate::platform::presentation::*;
 use crate::platform::system::console::IConsole;
 use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
 use crate::platform::system::{IFileDialog, INotification, ITimer};
-use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
-use crate::native::{Errc, Error};
-use crate::platform::presentation::IPresenter;
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
+use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform
 // ════════════════════════════════════════════════════════════════════════════

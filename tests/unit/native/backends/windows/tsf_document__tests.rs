@@ -1,4 +1,3 @@
-
 use super::TsfEventSink;
 use crate::core::{Errc, WindowId};
 use crate::diagnostics::PendingFailureQueue;

@@ -152,10 +152,10 @@ fn main() {
                     &stable_source
                 });
         }
-        let output = session
-            .check_file_with_overlays(&root, &overlays, CompileTarget::View)
-            .expect("overlay 检查必须持续成功");
-        black_box(output);
+        let diagnostic = session
+            .check_file_with_overlays_auto(&root, &overlays)
+            .err();
+        black_box(diagnostic);
     }
     let elapsed = started.elapsed();
     let allocation_calls = ALLOCATION_CALLS.load(Ordering::Relaxed);

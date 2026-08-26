@@ -18,6 +18,8 @@ struct RichBidiRun {
 pub(super) fn reorder_lines(lines: &mut [LayoutLine], bidi: &BidiAnalysis) -> f32 {
     // 保存全部视觉行中的最大实际宽度。
     let mut max_width = 0.0f32;
+    // 同一富文本布局周期内复用完整文本的 unicode-bidi 分析。
+    let order_context = bidi.line_order_context();
     // 每一行必须独立应用 UAX #9 L1。
     for line in lines {
         // 空行不包含可重排对象。
@@ -47,8 +49,10 @@ pub(super) fn reorder_lines(lines: &mut [LayoutLine], bidi: &BidiAnalysis) -> f3
             .max()
             // 转换为排他终点。
             .map_or(line_start, |index| index + 1);
+        // 当前行只执行一次 L1，字符对象与样式 run 共享结果。
+        let line_order = order_context.line(line_start..line_end);
         // 先取得逐字符行级嵌入级别，以便跨样式安全切 run。
-        let character_order = bidi.line_order(line_start..line_end, &logical_indices);
+        let character_order = line_order.order(&logical_indices);
         // 取出当前行逻辑字形所有权。
         let logical_glyphs = std::mem::take(&mut line.glyphs);
         // 保存按逻辑顺序形成的样式与方向 run。
@@ -104,7 +108,7 @@ pub(super) fn reorder_lines(lines: &mut [LayoutLine], bidi: &BidiAnalysis) -> f3
             // 收集供 UAX #9 L2 重排。
             .collect::<Vec<_>>();
         // 使用同一行范围取得视觉 run 顺序。
-        let run_order = bidi.line_order(line_start..line_end, &run_indices);
+        let run_order = line_order.order(&run_indices);
         // 转为可按视觉映射转移所有权的 run 槽位。
         let mut available = runs.into_iter().map(Some).collect::<Vec<_>>();
         // 从视觉行左缘开始定位 run。

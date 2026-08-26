@@ -24,10 +24,10 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 // 图片编解码 capability 启用时才构造解码与文件错误。
+use crate::core::Rect;
 #[cfg(feature = "image-codecs")]
 // 解码入口继续返回框架统一错误类型。
 use crate::core::error::Error;
-use crate::core::Rect;
 use crate::draw::Canvas2D;
 
 // 图片编解码 capability 启用时才暴露压缩数据解码函数。
