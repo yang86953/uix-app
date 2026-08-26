@@ -5,7 +5,7 @@ use std::ptr::NonNull;
 use std::sync::{Arc, OnceLock};
 
 /// 在 View 构建时捕获、由同一子树节点共享的 Provider 上下文快照。
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub(crate) struct ProviderContext {
     values: Arc<ProviderContextValues>,
 }
@@ -15,6 +15,13 @@ pub(crate) struct ProviderContext {
 struct ProviderContextValues {
     config: WidgetConfig,
     locale: Locale,
+}
+
+impl PartialEq for ProviderContext {
+    fn eq(&self, other: &Self) -> bool {
+        // 同一不可变快照必定未变；仅不同快照继续保留完整值比较语义。
+        Arc::ptr_eq(&self.values, &other.values) || self.values == other.values
+    }
 }
 
 impl Default for ProviderContext {
@@ -117,7 +124,9 @@ pub(crate) fn with_widget_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::theme::TokenPatch;
     use crate::ui::widget_runtime::locale::en_us;
+    use crate::ui::widgets::Button;
 
     #[test]
     fn default_context_reuses_one_immutable_snapshot() {
@@ -129,6 +138,37 @@ mod tests {
             std::mem::size_of::<ProviderContext>(),
             std::mem::size_of::<Arc<ProviderContextValues>>()
         );
+    }
+
+    #[test]
+    fn shared_non_reflexive_snapshot_uses_identity() {
+        let config = WidgetConfig::new().widget_tokens::<Button>(TokenPatch {
+            font_size: Some(f32::NAN),
+            ..TokenPatch::default()
+        });
+        let context = ProviderContext::default().with_config(&config);
+        let shared = context.clone();
+
+        assert!(Arc::ptr_eq(&context.values, &shared.values));
+        assert!(context == shared);
+
+        // 不同快照仍走值比较，NaN 的非反身语义不被身份快返扩大。
+        let independent = ProviderContext::default().with_config(&config);
+        assert!(!Arc::ptr_eq(&context.values, &independent.values));
+        assert!(context != independent);
+    }
+
+    #[test]
+    fn independent_equal_snapshots_keep_value_semantics() {
+        let first = ProviderContext {
+            values: Arc::new(ProviderContextValues::default()),
+        };
+        let second = ProviderContext {
+            values: Arc::new(ProviderContextValues::default()),
+        };
+
+        assert!(!Arc::ptr_eq(&first.values, &second.values));
+        assert!(first == second);
     }
 
     #[test]
