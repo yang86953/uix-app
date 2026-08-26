@@ -107,6 +107,10 @@ macro_rules! widget {
                 // widget! 已知完整方法集合，可精确排除没有浮层槽位的内建组件。
                 false $(|| matches!(stringify!($method), "overlay_entry" | "overlay_entry_for_surface"))*
             }
+            fn may_request_event_layout(&self) -> bool {
+                // widget! 已知完整事件槽位，可排除不会请求布局的组件。
+                false $(|| matches!(stringify!($method), "take_layout_request"))*
+            }
             $(
                 $crate::__widget_build_method!($method; ($($params)*) $(-> $ret)? $body);
             )*

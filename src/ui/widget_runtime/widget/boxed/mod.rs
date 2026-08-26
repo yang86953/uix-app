@@ -153,6 +153,10 @@ impl BoxedWidget {
             if widget.may_produce_overlay() {
                 caps.insert(WidgetCapabilities::MAY_PRODUCE_OVERLAY);
             }
+            // 事件布局请求能力同样缓存到现有位集，不扩张运行时节点。
+            if widget.may_request_event_layout() {
+                caps.insert(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT);
+            }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
@@ -263,6 +267,10 @@ impl BoxedWidget {
             // 组件替换时同步刷新类型级浮层能力缓存。
             if widget.may_produce_overlay() {
                 caps.insert(WidgetCapabilities::MAY_PRODUCE_OVERLAY);
+            }
+            // 实际组件替换时同步刷新事件布局请求能力。
+            if widget.may_request_event_layout() {
+                caps.insert(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT);
             }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
@@ -736,6 +744,13 @@ impl BoxedWidget {
         })
     }
     pub(crate) fn take_layout_request(&mut self) -> bool {
+        // 不具备该能力的组件无需进入 ProviderContext 或事件 trait object。
+        if !self
+            .caps
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+        {
+            return false;
+        }
         self.with_widget_context_mut(|widget| {
             widget
                 .as_event_mut()
