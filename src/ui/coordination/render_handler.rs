@@ -351,21 +351,44 @@ impl RenderHandlerTable {
     // 表格 capability 启用时才查询扩展行 renderer。
     #[cfg(feature = "table")]
     pub(crate) fn contains_table_expand(&self, widget: WidgetId) -> bool {
-        self.table_expand.contains_key(&widget)
+        // 空 sidecar 不可能拥有节点，避免为普通节点计算完整 WidgetId 哈希。
+        !self.table_expand.is_empty() && self.table_expand.contains_key(&widget)
     }
 
     pub(crate) fn contains_virtual_scroll_item(&self, widget: WidgetId) -> bool {
-        self.virtual_scroll_item.contains_key(&widget)
+        // 绝大多数节点没有虚拟滚动 renderer，空表直接返回缺席。
+        !self.virtual_scroll_item.is_empty() && self.virtual_scroll_item.contains_key(&widget)
     }
 
     // 表格 capability 启用时才查询泛型单元格 renderer。
     #[cfg(feature = "table")]
     pub(crate) fn contains_table_cells(&self, widget: WidgetId) -> bool {
-        self.table_cells.contains_key(&widget)
+        // 空 sidecar 不可能拥有节点，避免为普通节点计算完整 WidgetId 哈希。
+        !self.table_cells.is_empty() && self.table_cells.contains_key(&widget)
     }
 
     pub(crate) fn contains_select_options(&self, widget: WidgetId) -> bool {
-        self.select_options.contains_key(&widget)
+        // 绝大多数节点没有自定义选项 renderer，空表直接返回缺席。
+        !self.select_options.is_empty() && self.select_options.contains_key(&widget)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_render_handler_sidecars_report_every_renderer_absent() {
+        let table = RenderHandlerTable::default();
+        let widget = WidgetId::new(7);
+
+        assert!(!table.contains_virtual_scroll_item(widget));
+        assert!(!table.contains_select_options(widget));
+        #[cfg(feature = "table")]
+        {
+            assert!(!table.contains_table_expand(widget));
+            assert!(!table.contains_table_cells(widget));
+        }
     }
 }
 
