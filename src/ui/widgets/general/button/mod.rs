@@ -413,6 +413,11 @@ impl WidgetLayout for Button {
 }
 
 impl EventHandler for Button {
+    fn interaction_enabled(&self) -> Option<bool> {
+        // 与无障碍状态及 on_event 门控共享同一 disabled/loading 语义。
+        Some(!self.disabled && !self.loading)
+    }
+
     fn on_event(&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled || self.loading {
             return EventResult::NotHandled;

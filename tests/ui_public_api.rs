@@ -69,3 +69,61 @@ fn ui_test_harness_drives_the_same_public_semantic_path() {
     assert_eq!(count.get(), 1);
     assert_eq!(app.text("counter.label").as_deref(), Ok("1"));
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn button_interaction_gate_preserves_accessibility_override_precedence() {
+    use uix::ui::test_harness::{AutomationError, TestApp};
+    use uix::ui::{AccessibilityExt, AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
+
+    let count = State::new(0_u32);
+    let root_count = count.clone();
+    let mut app = TestApp::new((320.0, 320.0), move || {
+        let enabled_count = root_count.clone();
+        let disabled_count = root_count.clone();
+        let loading_count = root_count.clone();
+        let state_count = root_count.clone();
+        let replacement_count = root_count.clone();
+        column((
+            button("可用")
+                .on_click(&enabled_count, |state| state.update(|value| *value += 1))
+                .accessible_name("仍可用")
+                .automation_id("button.enabled"),
+            button("组件禁用")
+                .disabled(true)
+                .on_click(&disabled_count, |state| state.update(|value| *value += 10))
+                .automation_id("button.disabled"),
+            button("加载中")
+                .loading(true)
+                .on_click(&loading_count, |state| state.update(|value| *value += 100))
+                .automation_id("button.loading"),
+            button("状态禁用")
+                .on_click(&state_count, |state| state.update(|value| *value += 1_000))
+                .accessibility_state(AccessibilityState::disabled(true))
+                .automation_id("button.state-disabled"),
+            button("快照禁用")
+                .on_click(&replacement_count, |state| {
+                    state.update(|value| *value += 10_000)
+                })
+                .accessibility(
+                    AccessibilitySnapshot::named(AccessibilityRole::Button, "快照禁用")
+                        .with_state(AccessibilityState::disabled(true)),
+                )
+                .automation_id("button.snapshot-disabled"),
+        ))
+    });
+
+    app.click("button.enabled").expect("仅覆盖名称不应禁用按钮");
+    for automation_id in [
+        "button.disabled",
+        "button.loading",
+        "button.state-disabled",
+        "button.snapshot-disabled",
+    ] {
+        assert_eq!(
+            app.click(automation_id),
+            Err(AutomationError::Disabled(automation_id.to_owned()))
+        );
+    }
+    assert_eq!(count.get(), 1);
+}
