@@ -1,17 +1,70 @@
 // 引入当前模块的 WidgetTree 与输入类型。
 use super::*;
+// 构造可计数动态可见性的事件节点。
+use std::any::Any;
 // 使用原子计数器记录当前测试线程收到的警告。
 use std::sync::Arc;
 // 引入无锁计数器及其内存序。
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 // 引入 tracing span 生命周期类型以实现最小订阅器。
 use tracing::span::{Attributes, Id, Record};
 // 引入 callsite 兴趣声明，确保测试订阅器能观察目标日志点。
 use tracing::subscriber::Interest;
 // 引入事件元数据与订阅器契约。
 use tracing::{Event, Metadata, Subscriber};
+// 引入最小组件与事件能力契约。
+use crate::ui::{EventHandler, Widget, WidgetCapabilities};
 // 使用简单节点建立可寻址的 pressed 与 focused 目标。
 use crate::ui::widgets::Label;
+
+// 记录动态可见性查询次数，验证同一事件批次内的可见结果复用。
+struct VisibilityProbe {
+    visible: Arc<AtomicBool>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl Widget for VisibilityProbe {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        let mut caps = WidgetCapabilities::new();
+        caps.insert(WidgetCapabilities::EVENT);
+        caps
+    }
+
+    fn visible(&self) -> bool {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.visible.load(Ordering::Relaxed)
+    }
+
+    fn may_produce_overlay(&self) -> bool {
+        false
+    }
+
+    fn as_event(&self) -> Option<&dyn EventHandler> {
+        Some(self)
+    }
+
+    fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
+        Some(self)
+    }
+}
+
+impl EventHandler for VisibilityProbe {
+    fn interaction_enabled(&self) -> Option<bool> {
+        Some(true)
+    }
+}
 
 // 仅统计当前线程警告事件的最小订阅器。
 struct WarningCounter {
@@ -202,4 +255,49 @@ fn native_move_handoff_cancels_pointer_gesture_without_blurring_keyboard_focus()
     assert_eq!(tree.managers().focus.focused_widget(), Some(target));
     // 结束原生接管手势测试。
 }
-// 结束 WidgetTree 原生接管测试模块。
+
+// 验证 manager 共享目标时只查询一次可见性，隐藏后仍完整清理全部交互状态。
+#[test]
+fn hidden_interaction_reuses_visible_target_and_rechecks_hidden_focus() {
+    let visible = Arc::new(AtomicBool::new(true));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut tree = WidgetTree::new();
+    let target = tree.set_root(Box::new(VisibilityProbe {
+        visible: Arc::clone(&visible),
+        calls: Arc::clone(&calls),
+    }));
+
+    tree.managers_mut()
+        .interaction
+        .set_hovered_widget(Some(target));
+    assert!(
+        tree.managers_mut()
+            .interaction
+            .begin_pressed_pointer(Some(target), MouseButton::Left)
+    );
+    tree.managers_mut().drag.begin_gesture(
+        Some(target),
+        Point::new(4.0, 5.0),
+        MouseButton::Left,
+        KeyMod::NONE,
+    );
+    tree.managers_mut().focus.set_focused_widget(Some(target));
+
+    tree.cancel_hidden_interaction();
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert_eq!(tree.managers().interaction.hovered_widget(), Some(target));
+    assert_eq!(tree.managers().interaction.pressed_widget(), Some(target));
+    assert_eq!(tree.managers().drag.target(), Some(target));
+    assert_eq!(tree.managers().focus.focused_widget(), Some(target));
+
+    visible.store(false, Ordering::Relaxed);
+    calls.store(0, Ordering::Relaxed);
+    tree.cancel_hidden_interaction();
+    // 取消指针回调后焦点必须重新查询，不能复用隐藏前的失败结果。
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(tree.managers().interaction.hovered_widget(), None);
+    assert_eq!(tree.managers().interaction.pressed_widget(), None);
+    assert_eq!(tree.managers().drag.target(), None);
+    assert_eq!(tree.managers().focus.focused_widget(), None);
+}
+// 结束 WidgetTree 指针路由测试模块。
