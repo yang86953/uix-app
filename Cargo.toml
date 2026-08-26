@@ -203,6 +203,12 @@ name = "d3d11_gpu_parity"
 path = "tests/d3d11_gpu_parity.rs"
 required-features = ["d3d11-parity-test"]
 
+[[test]]
+# 以独立全局分配器测量大量真实活跃动画源的稳态帧推进。
+name = "active_animation_frame_allocation_contract"
+path = "tests/active_animation_frame_allocation_contract.rs"
+required-features = ["test-harness"]
+
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"

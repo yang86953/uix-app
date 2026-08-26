@@ -431,11 +431,23 @@ fn unbind_reconcile_site(
 }
 
 fn fire_reconcile_bindings(sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>) {
-    let callbacks: Vec<ReconcileCallback> = sites
-        .lock()
-        .ok()
-        .map(|guard| guard.iter().map(|site| site.callback.clone()).collect())
-        .unwrap_or_default();
+    let callbacks: Vec<ReconcileCallback> = {
+        let Ok(guard) = sites.lock() else {
+            return;
+        };
+        // 常见的单树绑定只需克隆一个共享回调；先释放站点锁再调用，既保留重入语义，
+        // 又避免每次 State 发布都为一个胖指针分配临时 Vec。
+        match guard.as_slice() {
+            [] => return,
+            [site] => {
+                let callback = site.callback.clone();
+                drop(guard);
+                callback();
+                return;
+            }
+            _ => guard.iter().map(|site| site.callback.clone()).collect(),
+        }
+    };
     for callback in callbacks {
         callback();
     }

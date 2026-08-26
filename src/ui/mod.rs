@@ -250,6 +250,47 @@ pub mod __private {
     pub fn reconcile_view_tree_for_test(tree: &mut WidgetTree, view: impl super::view::View) {
         super::adapter::ViewAdapter::reconcile(tree, view);
     }
+    // 复制当前真实动画源登记，供性能测试复现逐窗调度器持有的工作身份。
+    #[cfg(feature = "test-harness")]
+    pub fn animated_source_ids_for_test(tree: &WidgetTree) -> Vec<super::WidgetId> {
+        tree.animated_source_registrations()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+    // 按逐窗调度器提供的身份推进真实动画源，保留生产路径的采样与失效语义。
+    #[cfg(feature = "test-harness")]
+    pub fn update_animated_sources_at_for_test(
+        tree: &mut WidgetTree,
+        ids: &[super::WidgetId],
+        now: std::time::Instant,
+        dt: f64,
+    ) -> Vec<(super::WidgetId, bool)> {
+        tree.update_animation_nodes_at(ids.iter().copied(), now, dt)
+    }
+    // 保留优化前几何扩容策略，供同一测试进程执行交替基线。
+    #[cfg(feature = "test-harness")]
+    pub fn update_animated_sources_geometric_for_test(
+        tree: &mut WidgetTree,
+        ids: &[super::WidgetId],
+        now: std::time::Instant,
+        dt: f64,
+    ) -> Vec<(super::WidgetId, bool)> {
+        let mut updates = Vec::new();
+        tree.update_animation_nodes_at_into(ids.iter().copied(), now, dt, &mut updates);
+        updates
+    }
+    // 复用显式工作区推进相同来源，供同场景比较临时申请与常驻容量。
+    #[cfg(feature = "test-harness")]
+    pub fn update_animated_sources_into_for_test(
+        tree: &mut WidgetTree,
+        ids: &[super::WidgetId],
+        now: std::time::Instant,
+        dt: f64,
+        updates: &mut Vec<(super::WidgetId, bool)>,
+    ) {
+        tree.update_animation_nodes_at_into(ids.iter().copied(), now, dt, updates);
+    }
     // 复制直接子节点身份供集成测试核对 keyed 协调是否保持顺序与复用。
     #[cfg(feature = "test-harness")]
     pub fn view_tree_children_for_test(

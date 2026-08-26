@@ -412,7 +412,30 @@ impl WidgetTree {
             // 返回空更新以保持 fail-stop 语义。
             return Vec::new();
         }
-        let mut updates = Vec::new();
+        // 生产调度传入的切片迭代器提供精确下界，按本帧身份数一次申请结果区。
+        let ids = ids.into_iter();
+        let (lower_bound, _) = ids.size_hint();
+        let mut updates = Vec::with_capacity(lower_bound);
+        self.update_animation_nodes_at_into(ids, now, dt, &mut updates);
+        updates
+    }
+
+    // 把同一推进语义写入调用方给定的结果区，统一临时与测试复用路径。
+    pub(crate) fn update_animation_nodes_at_into<I>(
+        &mut self,
+        ids: I,
+        now: Instant,
+        dt: f64,
+        updates: &mut Vec<(WidgetId, bool)>,
+    ) where
+        I: IntoIterator<Item = WidgetId>,
+    {
+        // 每轮覆盖上一帧结果，但保留调用方已明确持有的容量。
+        updates.clear();
+        // 已停止的树不得通过结果区入口执行动画组件代码。
+        if !self.accepts_external_work() {
+            return;
+        }
         let mut widget_overlays_changed = false;
         let mut completed_removals = Vec::new();
         for id in ids {
@@ -537,7 +560,7 @@ impl WidgetTree {
         // 停止树不再执行真实移除或覆盖层重建等后续协调工作。
         if !self.accepts_external_work() {
             // 保留已完成身份的结果供上层撤销后续调度。
-            return updates;
+            return;
         }
         for id in completed_removals {
             // 销毁下一个完成过渡节点前复核树仍允许外部工作。
@@ -558,13 +581,12 @@ impl WidgetTree {
         // 销毁阶段可能使树停止，因此后续交互清理也必须被阻断。
         if !self.accepts_external_work() {
             // 保留已完成身份的结果供上层撤销后续调度。
-            return updates;
+            return;
         }
         self.cancel_hidden_interaction();
         if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
             self.rebuild_widget_overlays();
         }
-        updates
     }
 
     pub(crate) fn widget_animation_ids(&self) -> impl Iterator<Item = WidgetId> + '_ {

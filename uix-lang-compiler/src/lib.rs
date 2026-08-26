@@ -40,8 +40,8 @@ use uix_import::{
     resolve_items_file, resolve_items_file_with_overlays,
 };
 use uix_lang::{
-    Diagnostic, SourceSpan, generate_document_app, generate_document_items, generate_document_view,
-    parse_document, parse_items_document, with_source_markers,
+    Diagnostic, SourceSpan, generate_document_app, generate_document_items,
+    generate_document_view_owned, parse_document, parse_items_document, with_source_markers,
 };
 
 /// 声明一次编译需要生成的公开入口形状。
@@ -894,7 +894,7 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
             widget_sources,
             record_sources,
             visual_sources,
-            || generate_document_view(&document),
+            || generate_document_view_owned(document),
         ),
         CompileTarget::App => with_source_markers(
             root_source,
