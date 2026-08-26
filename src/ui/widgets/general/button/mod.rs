@@ -361,7 +361,12 @@ pub struct Button {
     pub(crate) visual: &'static ButtonVisual,
 }
 
-impl_widget!(Button; Layout, Render, Event, Animation; tab_index => 1);
+impl_widget!(
+    Button;
+    Layout, Render, Event, Animation;
+    tab_index => 1;
+    may_produce_overlay => false
+);
 
 impl SnapshotSource for Button {
     fn snapshot_fields(&self) -> SnapshotFields {

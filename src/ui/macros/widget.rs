@@ -88,7 +88,7 @@ macro_rules! widget {
                     match stringify!($method) {
                         "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
-                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "paint_after_children" | "overlay_entry" | "draw_margin" =>
+                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "paint_after_children" | "overlay_entry" | "overlay_entry_for_surface" | "draw_margin" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
                         "on_event" | "on_focus_within" | "take_layout_request" | "scroll_delta" | "scroll_delta_for_dirty" | "scroll_composite_viewport" | "viewport_scroll_offset" | "scroll_descendant_by" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" | "hit_test_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::EVENT),
@@ -102,6 +102,10 @@ macro_rules! widget {
                     }
                 )*
                 c
+            }
+            fn may_produce_overlay(&self) -> bool {
+                // widget! 已知完整方法集合，可精确排除没有浮层槽位的内建组件。
+                false $(|| matches!(stringify!($method), "overlay_entry" | "overlay_entry_for_surface"))*
             }
             $(
                 $crate::__widget_build_method!($method; ($($params)*) $(-> $ret)? $body);
@@ -128,7 +132,7 @@ macro_rules! widget {
         $crate::__widget_grouped_impl! {
             WidgetRender,
             $name,
-            [render uses_palette dirty_rect children_clip paint_after_children overlay_entry draw_margin],
+            [render uses_palette dirty_rect children_clip paint_after_children overlay_entry overlay_entry_for_surface draw_margin],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]

@@ -126,6 +126,9 @@ pub struct OverlayEntry {
 pub(crate) struct OverlayRebuildScratch {
     pub(crate) previous_trap_owners: Vec<WidgetId>,
     pub(crate) entries: Vec<OverlayEntry>,
+    // 按树结构版本缓存是否存在可能产生组件浮层的节点。
+    pub(crate) candidate_tree_version: Option<u64>,
+    pub(crate) may_have_widget_overlays: bool,
 }
 
 // 只保留判断浮层拓扑变化所需的复制值。

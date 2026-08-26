@@ -604,6 +604,10 @@ impl BoxedWidget {
             .as_render()
             .and_then(|r| r.overlay_entry(id, frame))
     }
+    /// 判断组件类型是否可能登记浮层；结果只随实际组件类型替换而变化。
+    pub(crate) fn may_produce_overlay(&self) -> bool {
+        self.with_widget_context(Widget::may_produce_overlay)
+    }
     // 使用当前逻辑表面查询组件浮层登记。
     pub fn overlay_entry_for_surface(
         // 借用装箱组件。

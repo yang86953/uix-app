@@ -446,6 +446,23 @@ impl WidgetTree {
 
     pub(crate) fn rebuild_widget_overlays(&mut self) {
         let mut scratch = std::mem::take(&mut self.overlay_rebuild_scratch);
+        // 已有组件浮层必须重建以处理关闭；空栈则可使用结构版本缓存快速排除。
+        let has_widget_overlay = self.overlay_stack.iter().any(|entry| !entry.is_managed());
+        if !has_widget_overlay {
+            if scratch.candidate_tree_version != Some(self.tree_version) {
+                scratch.may_have_widget_overlays = self
+                    .traverse()
+                    .iter()
+                    .copied()
+                    .any(|id| self.get(id).is_some_and(BoxedWidget::may_produce_overlay));
+                scratch.candidate_tree_version = Some(self.tree_version);
+            }
+            if !scratch.may_have_widget_overlays {
+                // 保留缓存和工作区所有权，稳态普通事件无需进入可见性与变换遍历。
+                self.overlay_rebuild_scratch = scratch;
+                return;
+            }
+        }
         scratch.previous_trap_owners.clear();
         scratch.previous_trap_owners.extend(
             self.overlay_stack
