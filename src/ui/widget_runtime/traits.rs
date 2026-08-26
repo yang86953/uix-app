@@ -52,6 +52,8 @@ impl WidgetCapabilities {
     pub(crate) const MAY_PRODUCE_OVERLAY: u16 = 0b100_0000;
     /// 组件类型可能在事件或语义处理后请求布局的内部能力位。
     pub(crate) const MAY_REQUEST_EVENT_LAYOUT: u16 = 0b1000_0000;
+    /// 组件类型需要窗口动作、动态协调、滚动或语义转换收尾的内部能力位。
+    pub(crate) const REQUIRES_EXTENDED_EVENT_FINISH: u16 = 0b1_0000_0000;
 
     /// 创建不包含任何可选能力的标记。
     pub const fn new() -> Self {
@@ -151,6 +153,12 @@ pub trait Widget: 'static {
     #[doc(hidden)]
     fn may_request_event_layout(&self) -> bool {
         // 手写组件默认保守参与检查，避免新增能力声明改变既有语义。
+        true
+    }
+    /// 声明组件处理事件后是否需要布局请求以外的扩展收尾。
+    #[doc(hidden)]
+    fn requires_extended_event_finish(&self) -> bool {
+        // 手写组件默认保守执行完整收尾，保持既有扩展能力兼容。
         true
     }
 

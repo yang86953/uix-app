@@ -28,6 +28,8 @@ macro_rules! impl_widget {
         $(; may_produce_overlay => $may_produce_overlay:expr)?
         // 手写 EventHandler 只有显式声明不会请求布局时才可关闭保守检查。
         $(; may_request_event_layout => $may_request_event_layout:expr)?
+        // 手写 EventHandler 只有显式声明无需扩展收尾时才可进入最短路径。
+        $(; requires_extended_event_finish => $requires_extended_event_finish:expr)?
     ) => {
         impl $crate::ui::__private::traits::Widget for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -59,6 +61,11 @@ macro_rules! impl_widget {
             $(
                 fn may_request_event_layout(&self) -> bool {
                     $may_request_event_layout
+                }
+            )?
+            $(
+                fn requires_extended_event_finish(&self) -> bool {
+                    $requires_extended_event_finish
                 }
             )?
             $(
