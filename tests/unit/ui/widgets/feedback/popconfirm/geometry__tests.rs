@@ -36,9 +36,9 @@ fn popup_cache_does_not_survive_surface_resize() {
         // 保留箭头间距。
         true,
         // 使用组件标准宽度。
-        POPCONFIRM_WIDTH,
+        POPCONFIRM_VISUAL_REF.defaults.popup_width,
         // 使用组件标准高度。
-        POPCONFIRM_HEIGHT,
+        POPCONFIRM_VISUAL_REF.defaults.popup_height,
     )
     // 只取最终确认气泡矩形。
     .popup;
@@ -81,9 +81,9 @@ fn popup_cache_does_not_survive_surface_resize() {
         // 箭头配置保持不变。
         true,
         // 宽度配置保持不变。
-        POPCONFIRM_WIDTH,
+        POPCONFIRM_VISUAL_REF.defaults.popup_width,
         // 高度配置保持不变。
-        POPCONFIRM_HEIGHT,
+        POPCONFIRM_VISUAL_REF.defaults.popup_height,
     )
     // 只比较最终确认气泡矩形。
     .popup;
@@ -176,7 +176,7 @@ fn composite_trigger_keeps_natural_size_click_and_focus_identity() {
     // 读取本轮安排出的实际子 trigger frame。
     let child_frame = tree.get(child).expect("trigger 子树必须可读").frame();
     // 长文本 trigger 宽度不得退回旧固定八十像素。
-    assert!(child_frame.w > FALLBACK_TRIGGER_WIDTH);
+    assert!(child_frame.w > POPCONFIRM_VISUAL_REF.defaults.trigger_width);
     // trigger 高度必须来自按钮自己的自然尺寸。
     assert!(child_frame.h > 0.0);
     // 组合 owner 不得与真实 trigger 重复进入 Tab 顺序。
