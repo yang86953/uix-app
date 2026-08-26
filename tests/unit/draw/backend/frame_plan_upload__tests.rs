@@ -47,6 +47,8 @@ fn index_payload_validates_shape_and_range() {
     }
     // 实际编码内容必须与唯一编码规则完全一致。
     assert_eq!(encoded, expected);
+    // 零分配只读视图必须逐字节保持同一 native-endian 编码。
+    assert_eq!(payload.as_ne_bytes(), expected);
 }
 
 // 顶点载荷必须按声明布局验证完整且有限的顶点。
@@ -58,6 +60,8 @@ fn vertex_payload_rejects_partial_or_non_finite_vertices() {
     assert!(valid.is_valid());
     // 编码长度必须等于六个浮点。
     assert_eq!(valid.size_bytes(), 6 * std::mem::size_of::<f32>());
+    // 零分配字节视图必须与既有逐值编码完全一致。
+    assert_eq!(valid.as_ne_bytes(), valid.encode_ne_bytes());
     // 残缺 float8 顶点必须被拒绝。
     assert!(!FrameVertexPayload::position_uv_color_f32([0.0; 7]).is_valid());
     // 非有限 position 顶点必须在进入 Adapter 前被拒绝。
@@ -143,6 +147,8 @@ fn uniform_payload_layout_owns_exact_encoded_size() {
     assert_eq!(payload.layout(), PipelineUniformLayout::Sampled);
     // 编码长度必须与同一布局大小完全一致。
     assert_eq!(payload.encode_ne_bytes().len(), payload.size_bytes());
+    // 固定 Uniform 的借用字节视图必须与既有编码器逐字节一致。
+    assert_eq!(payload.as_ne_bytes(), payload.encode_ne_bytes());
     // 构造器生成的确定字段必须全部有限。
     assert!(payload.is_valid());
 }

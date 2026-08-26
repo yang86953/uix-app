@@ -317,27 +317,27 @@ where
             }
             // 在唯一执行边界把类型化顶点编码为 Device 原语所需字节。
             FramePlanCommand::UploadVertex { buffer, data } => {
-                // 字节表示不再进入 FramePlan 存储或上层 renderer。
-                let bytes = data.encode_ne_bytes();
+                // 字节视图只借用 FramePlan 已验证的不可变顶点载荷。
+                let bytes = data.as_ne_bytes();
                 // 将资源身份与从零开始的类型化载荷绑定成唯一上传命令。
                 self.device
-                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
+                    .update_buffer(RhiBufferUpload::new(*buffer, bytes))
             }
             // 在唯一执行边界把类型化索引编码为 Device 原语所需字节。
             FramePlanCommand::UploadIndex { buffer, data } => {
-                // 索引载荷只在执行边界编码为 host-order u32 字节。
-                let bytes = data.encode_ne_bytes();
+                // 索引载荷只在执行边界借为 host-order u32 字节。
+                let bytes = data.as_ne_bytes();
                 // 索引更新通过同一上传值对象进入完整替换门禁。
                 self.device
-                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
+                    .update_buffer(RhiBufferUpload::new(*buffer, bytes))
             }
             // 在唯一执行边界把类型化 Uniform 编码为固定 ABI 字节。
             FramePlanCommand::UploadUniform { buffer, data } => {
-                // 每个 Uniform 变体只调用共享值对象拥有的编码器。
-                let bytes = data.encode_ne_bytes();
+                // 每个 Uniform 变体只借用共享值对象拥有的固定 ABI 字段。
+                let bytes = data.as_ne_bytes();
                 // Uniform 更新通过同一上传值对象进入完整替换门禁。
                 self.device
-                    .update_buffer(RhiBufferUpload::new(*buffer, &bytes))
+                    .update_buffer(RhiBufferUpload::new(*buffer, bytes))
             }
             // 执行已经完成高层语义 lowering 的 draw packet。
             FramePlanCommand::Draw(packet) => self.device.draw(*packet),
