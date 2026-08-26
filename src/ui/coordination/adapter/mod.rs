@@ -479,7 +479,9 @@ impl ViewAdapter {
         } else {
             view_children(widget.as_ref())
         };
-        let next_accessibility = widget.snapshot_fields().accessibility();
+        // 先保存新版组件快照，enabled 路径可在 patch 前复用同一份字段。
+        let next_fields = widget.snapshot_fields();
+        let next_accessibility = next_fields.accessibility();
         let next_disabled = accessibility_override
             .as_ref()
             .map(|override_state| override_state.apply(next_accessibility.clone()))
@@ -502,7 +504,9 @@ impl ViewAdapter {
             // 随后的 patch 才写入 disabled，避免 disabled 早退吞掉清理事件。
             tree.set_focus(None);
         }
-        let widget_impact = Self::patch_widget(tree, id, widget);
+        // disabled 路径必须丢弃预计算字段，让 patch 在事件清理后重新观察新版组件。
+        let next_fields_for_patch = (!next_disabled).then_some(&next_fields);
+        let widget_impact = Self::patch_widget(tree, id, widget, next_fields_for_patch);
         // 定位变化需要重排父槽位并重建绘制与命中投影。
         let position_changed = tree.set_node_position(id, position);
         // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
@@ -769,6 +773,7 @@ impl ViewAdapter {
         tree: &mut WidgetTree,
         id: WidgetId,
         widget: Box<dyn Widget>,
+        next_fields: Option<&SnapshotFields>,
     ) -> WidgetPatchImpact {
         let Some(current) = tree.get_mut(id) else {
             // 节点已不存在时没有可上报的 patch 影响。
@@ -779,16 +784,23 @@ impl ViewAdapter {
         let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
         // 在 patch 前只抓取一次当前组件公开快照。
         let current_fields = current.widget().snapshot_fields();
-        // 在 patch 前只抓取一次新版组件公开快照。
-        let next_fields = widget.snapshot_fields();
+        // enabled 路径借用事件清理前的快照；disabled 路径仅在此处拥有回退快照。
+        let owned_next_fields;
+        let next_fields = if let Some(next_fields) = next_fields {
+            next_fields
+        } else {
+            // disabled 路径在事件清理完成后按原时机重新获取新版组件快照。
+            owned_next_fields = widget.snapshot_fields();
+            &owned_next_fields
+        };
         // 排除含运行时字段的特殊快照，再回退到完整快照比较。
-        let config_changed = builtin_widget_config_changed(&current_fields, &next_fields)
-            .unwrap_or_else(|| current_fields != next_fields)
-            || next_fields == SnapshotFields::Unknown
+        let config_changed = builtin_widget_config_changed(&current_fields, next_fields)
+            .unwrap_or_else(|| current_fields != *next_fields)
+            || *next_fields == SnapshotFields::Unknown
             || runtime_changed;
         // 已审计类型按字段分类，其余类型由显式保守分类请求布局。
         let layout_changed = config_changed
-            && builtin_widget_layout_changed(&current_fields, &next_fields).unwrap_or(true);
+            && builtin_widget_layout_changed(&current_fields, next_fields).unwrap_or(true);
         // 只有实际完成原位 patch 或替换后才报告失效影响。
         match patch_builtin_widget(current.widget_mut(), widget) {
             // 原位同步成功时返回精细分类结果。
@@ -965,4 +977,7 @@ impl ViewAdapter {
     }
 }
 
-// 仅在库测试中编译协调失效分类门禁。
+// 仅在库测试中编译协调器快照复用门禁。
+#[cfg(test)]
+#[path = "../../../../tests/unit/ui/coordination/adapter__tests.rs"]
+mod tests;
