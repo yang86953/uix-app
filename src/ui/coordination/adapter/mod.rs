@@ -847,28 +847,50 @@ impl ViewAdapter {
         children: Vec<ViewNode>,
         stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     ) -> bool {
-        // 唯一 keyed 同序声明直接复用现有身份；重复 key、摘要碰撞和替换继续走通用语义。
-        let direct_keyed_reuse = tree.get(parent_id).is_some_and(|parent| {
-            parent.children().len() == children.len()
-                && parent.children().iter().copied().zip(children.iter()).all(
-                    |(child_id, child)| {
-                        let Some(key) = child.key.as_deref() else {
-                            return false;
-                        };
-                        tree.get(child_id).is_some_and(|current| {
-                            current.key() == Some(key) && Self::can_reuse_current(current, child)
-                        })
-                    },
-                )
-        }) && reconcile_keys_are_unique(&children);
-        if direct_keyed_reuse {
+        // 一次父级读取分类 keyed 与 unkeyed 同序复用；混合 key、替换和长度变化回退通用语义。
+        let direct_reuse_kind = tree.get(parent_id).and_then(|parent| {
+            if parent.children().len() != children.len() {
+                return None;
+            }
+            let keyed = children.first().is_some_and(|child| child.key.is_some());
+            let reusable =
+                if keyed {
+                    parent.children().iter().copied().zip(children.iter()).all(
+                        |(child_id, child)| {
+                            let Some(key) = child.key.as_deref() else {
+                                return false;
+                            };
+                            tree.get(child_id).is_some_and(|current| {
+                                current.key() == Some(key)
+                                    && Self::can_reuse_current(current, child)
+                            })
+                        },
+                    )
+                } else {
+                    parent.children().iter().copied().zip(children.iter()).all(
+                        |(child_id, child)| {
+                            child.key.is_none()
+                                && tree.get(child_id).is_some_and(|current| {
+                                    current.key().is_none()
+                                        && Self::can_reuse_current(current, child)
+                                })
+                        },
+                    )
+                };
+            reusable.then_some(keyed)
+        });
+        // keyed 还必须证明声明 key 唯一；unkeyed 的位置身份不需要摘要集合。
+        let direct_keyed_reuse =
+            direct_reuse_kind == Some(true) && reconcile_keys_are_unique(&children);
+        let direct_unkeyed_reuse = direct_reuse_kind == Some(false);
+        if direct_keyed_reuse || direct_unkeyed_reuse {
             for (index, child) in children.into_iter().enumerate() {
-                // 快路预检已经证明同序且可复用，协调期间父级直接子序列保持稳定。
+                // 两类快路都已证明同序且可复用，协调期间父级直接子序列保持稳定。
                 let child_id = tree
                     .get(parent_id)
                     .and_then(|parent| parent.children().get(index))
                     .copied()
-                    .expect("direct keyed reconciliation child must remain present");
+                    .expect("direct sibling reconciliation child must remain present");
                 tree.cancel_pending_removal(child_id);
                 Self::reconcile_existing(tree, child_id, child);
             }

@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
-use uix::prelude::{ViewNode, WidgetId};
+use uix::prelude::{Button, Input, ViewNode, WidgetId};
 use uix::ui::__private::traits::{Widget, WidgetCapabilities};
 use uix::ui::__private::{
     WidgetTree, build_view_tree_for_test, reconcile_view_tree_for_test,
@@ -218,6 +218,55 @@ fn unkeyed_tree() -> (WidgetTree, WidgetId) {
     ));
     let root = tree.root_id().expect("无 key 协调场景必须建立根节点");
     (tree, root)
+}
+
+// 锁定无 key 快路只复用同位置同类型节点，类型变化仍由通用路径精确替换。
+#[test]
+fn unkeyed_stable_positions_reuse_and_type_changes_fall_back() {
+    let mut tree = build_view_tree_for_test(ViewNode::new(
+        ReconcileProbe,
+        vec![
+            ViewNode::leaf(ReconcileProbe),
+            ViewNode::leaf(Input::new("保留输入")),
+            ViewNode::leaf(ReconcileProbe),
+        ],
+    ));
+    let root = tree.root_id().expect("无 key 身份测试必须建立根节点");
+    let initial = view_tree_children_for_test(&tree, root);
+
+    reconcile_view_tree_for_test(
+        &mut tree,
+        ViewNode::new(
+            ReconcileProbe,
+            vec![
+                ViewNode::leaf(ReconcileProbe),
+                ViewNode::leaf(Input::new("更新输入")),
+                ViewNode::leaf(ReconcileProbe),
+            ],
+        ),
+    );
+    assert_eq!(view_tree_children_for_test(&tree, root), initial);
+
+    reconcile_view_tree_for_test(
+        &mut tree,
+        ViewNode::new(
+            ReconcileProbe,
+            vec![
+                ViewNode::leaf(ReconcileProbe),
+                ViewNode::leaf(Button::new("替换按钮")),
+                ViewNode::leaf(ReconcileProbe),
+            ],
+        ),
+    );
+    let replaced = view_tree_children_for_test(&tree, root);
+    assert_eq!(replaced[0], initial[0]);
+    assert_ne!(replaced[1], initial[1]);
+    assert_eq!(replaced[2], initial[2]);
+    assert!(tree.get(initial[1]).is_none());
+    assert!(
+        tree.get(replaced[1])
+            .is_some_and(|node| node.widget().as_any().is::<Button>())
+    );
 }
 
 // 在热段外准备稳定规模声明，排除 ViewNode 与 Widget 自身构造成本。
