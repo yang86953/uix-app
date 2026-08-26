@@ -83,7 +83,17 @@ impl IconFallbackLabel {
 /// 直接通过 `FontService::load_font()` 加载字体数据。
 /// 应在 app 初始化时、FontService 创建之后调用。
 pub fn init_lucide_font(data: &[u8], font_service: &mut FontService) {
-    match font_service.load_font(data) {
+    publish_lucide_font(font_service.load_font(data));
+}
+
+// Application 启动使用的仓库内置 Lucide 数据直接借用二进制只读段。
+pub(crate) fn init_static_lucide_font(data: &'static [u8], font_service: &mut FontService) {
+    publish_lucide_font(font_service.load_static_font(data));
+}
+
+// 统一发布动态与静态加载结果，保持全局图标句柄和诊断语义一致。
+fn publish_lucide_font(result: crate::core::Result<FontHandle>) {
+    match result {
         Ok(fh) => {
             tracing::info!("Lucide font loaded, handle={:?}", fh);
             let _ = LUCIDE_FONT.set(fh);

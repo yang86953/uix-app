@@ -687,6 +687,7 @@ version = "0.0.1"
 dependencies = [
  "ab_glyph",
  "ash",
+ "bytemuck",
  "earcut",
  "glow",
  "image",

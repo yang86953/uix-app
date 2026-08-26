@@ -32,13 +32,14 @@
 ```rust
 use uix::prelude::*;
 
-let fonts = FontBundle::new("Product Sans", include_bytes!("assets/ProductSans.ttf"))
-    .with_fallback("Product CJK", include_bytes!("assets/ProductCJK.otf"));
+let fonts = FontBundle::from_static("Product Sans", include_bytes!("assets/ProductSans.ttf"))
+    .with_static_fallback("Product CJK", include_bytes!("assets/ProductCJK.otf"));
 
 let app = App::new().font_bundle(fonts);
 ```
 
 示例名称不指定具体字体产品；仓库或应用必须另行核验所选字体的再分发许可、字形覆盖和包体预算。
+`include_bytes!` 等进程期静态资产使用 `from_static` / `with_static_fallback`，字体后端可直接借用二进制只读段；运行时读取或临时生成的数据继续使用 `new` / `with_fallback`，由字体包取得共享所有权。
 
 ## 组件：ImageService
 

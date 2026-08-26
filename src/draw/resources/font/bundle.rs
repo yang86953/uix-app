@@ -31,7 +31,24 @@ pub(crate) struct FontAsset {
     // 保存供样式字体族解析使用的稳定名称。
     family: String,
     // 保存跨平台完全相同的字体文件字节。
-    bytes: Arc<[u8]>,
+    bytes: FontAssetBytes,
+}
+
+// 区分需要拥有的动态数据与可随进程存活的静态嵌入数据。
+#[derive(Clone)]
+enum FontAssetBytes {
+    // 动态或临时输入复制到共享分配，保持既有公开构造契约。
+    Shared(Arc<[u8]>),
+    // include_bytes! 等静态资产直接借用二进制只读段，不制造启动期大分配。
+    Static(&'static [u8]),
+}
+
+// 向 FontService 暴露字体来源事实，不泄漏可变所有权。
+pub(crate) enum FontAssetSource<'a> {
+    // 静态资产可以由支持该能力的文本后端直接借用。
+    Static(&'static [u8]),
+    // 动态资产仍以共享所有权交接给文本后端。
+    Shared(&'a Arc<[u8]>),
 }
 
 // 为公开字体包提供无平台依赖的组装入口。
@@ -42,6 +59,19 @@ impl FontBundle {
         Self {
             // 保存主字体的名称与不可变数据。
             primary: FontAsset::new(family, bytes),
+            // 新字体包默认没有额外回退字体。
+            fallbacks: Vec::new(),
+        }
+    }
+
+    /// 使用进程期静态主字体创建零复制确定性字体包。
+    ///
+    /// 该入口适用于 `include_bytes!` 与其他 `&'static [u8]`；动态缓冲区继续使用
+    /// [`Self::new`]，避免把短生命周期借用错误地保留到应用运行期。
+    pub fn from_static(family: impl Into<String>, bytes: &'static [u8]) -> Self {
+        Self {
+            // 静态数据地址在整个进程期稳定，可由字体后端安全建立借用视图。
+            primary: FontAsset::from_static(family, bytes),
             // 新字体包默认没有额外回退字体。
             fallbacks: Vec::new(),
         }
@@ -58,6 +88,21 @@ impl FontBundle {
     ) -> Self {
         // 保留调用方声明的确定性回退顺序。
         self.fallbacks.push(FontAsset::new(family, bytes));
+        // 返回可继续追加 fallback 的同一字体包。
+        self
+    }
+
+    /// 在回退链尾部追加一项进程期静态字体，不复制其文件数据。
+    pub fn with_static_fallback(
+        // 消费当前字体包以保持 builder 链式调用。
+        mut self,
+        // 接收回退字体的注册族名。
+        family: impl Into<String>,
+        // 只接受由类型系统证明覆盖应用运行期的静态数据。
+        bytes: &'static [u8],
+    ) -> Self {
+        // 保留声明顺序并记录静态来源，安装时由文本后端选择零复制能力。
+        self.fallbacks.push(FontAsset::from_static(family, bytes));
         // 返回可继续追加 fallback 的同一字体包。
         self
     }
@@ -113,7 +158,17 @@ impl FontAsset {
             // 保存调用方声明的字体族名称。
             family: family.into(),
             // 保证 App builder 离开后字体数据仍然有效。
-            bytes: Arc::from(bytes.as_ref()),
+            bytes: FontAssetBytes::Shared(Arc::from(bytes.as_ref())),
+        }
+    }
+
+    // 创建一项直接借用进程期静态字体数据的内部资产。
+    fn from_static(family: impl Into<String>, bytes: &'static [u8]) -> Self {
+        Self {
+            // 字体族名称仍由配置值拥有。
+            family: family.into(),
+            // 静态切片不需要额外 Arc 分配或数据复制。
+            bytes: FontAssetBytes::Static(bytes),
         }
     }
 
@@ -125,14 +180,21 @@ impl FontAsset {
 
     // 返回文本后端加载的完整字体文件数据。
     pub(crate) fn bytes(&self) -> &[u8] {
-        // 共享数据只在安装时读取，不允许 Adapter 修改。
-        self.bytes.as_ref()
+        // 两种来源都只向验证和解析阶段开放不可变字节。
+        match &self.bytes {
+            FontAssetBytes::Shared(bytes) => bytes.as_ref(),
+            FontAssetBytes::Static(bytes) => bytes,
+        }
     }
 
-    // 克隆共享所有权以零复制转交支持该契约的文本后端。
-    pub(crate) fn shared_bytes(&self) -> Arc<[u8]> {
-        // Arc 克隆只递增引用计数，不复制大型字体数据。
-        Arc::clone(&self.bytes)
+    // 返回安装阶段需要的来源事实，让后端保持静态借用或共享所有权。
+    pub(crate) fn source(&self) -> FontAssetSource<'_> {
+        match &self.bytes {
+            // Arc 只在实际安装时克隆引用，不复制字体数据。
+            FontAssetBytes::Shared(bytes) => FontAssetSource::Shared(bytes),
+            // 静态切片原样交给支持零复制的文本后端。
+            FontAssetBytes::Static(bytes) => FontAssetSource::Static(bytes),
+        }
     }
 
     // 验证单项字体资产的名称、数据和资源预算。
@@ -151,7 +213,8 @@ impl FontAsset {
             ));
         }
         // 空数据或超出单项预算的数据不能进入字体解析器。
-        if self.bytes.is_empty() || self.bytes.len() > MAX_FONT_ASSET_BYTES {
+        let byte_len = self.bytes().len();
+        if byte_len == 0 || byte_len > MAX_FONT_ASSET_BYTES {
             // 返回显式资源边界错误而不尝试平台 fallback。
             return Err(Error::new(
                 // 字节载荷违反公开参数约束。
