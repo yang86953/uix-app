@@ -674,22 +674,25 @@ impl ViewAdapter {
         id: WidgetId,
         handlers: Vec<HandlerRegistration>,
     ) -> bool {
-        let next_signatures = tree
-            .get(id)
-            .map(|current| {
-                Self::resolve_handler_signatures(current.handler_signatures(), &handlers)
-            })
-            .unwrap_or_else(|| {
-                handlers
-                    .iter()
-                    .map(|handler| handler.authored_signature())
-                    .collect()
-            });
-        let changed = tree.get(id).is_none_or(|current| {
-            !Self::handler_signatures_are_stable(current.handler_signatures(), &next_signatures)
-                || Self::handler_signature_groups(current.handler_signatures())
-                    != Self::handler_signature_groups(&next_signatures)
-        });
+        // 在一次稳定借用中解析旧签名，空到空声明直接跳过分组和 sidecar 更新。
+        let (next_signatures, changed) = if let Some(current) = tree.get(id) {
+            let current_signatures = current.handler_signatures();
+            if handlers.is_empty() && current_signatures.is_empty() {
+                return false;
+            }
+            let next_signatures = Self::resolve_handler_signatures(current_signatures, &handlers);
+            let changed =
+                !Self::handler_signatures_are_stable(current_signatures, &next_signatures)
+                    || Self::handler_signature_groups(current_signatures)
+                        != Self::handler_signature_groups(&next_signatures);
+            (next_signatures, changed)
+        } else {
+            let next_signatures = handlers
+                .iter()
+                .map(|handler| handler.authored_signature())
+                .collect();
+            (next_signatures, true)
+        };
         if !changed {
             return false;
         }
