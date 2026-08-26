@@ -162,6 +162,17 @@ fn keyed_children() -> Vec<ViewNode> {
         .collect()
 }
 
+// 构造固定非空生产宽度文字的真实 Button keyed 同级声明。
+fn keyed_button_children() -> Vec<ViewNode> {
+    (0..SIBLING_COUNT)
+        .map(|index| {
+            ViewNode::leaf(Button::new(format!("生产按钮-{index:04}-固定宽度"))).key(format!(
+                "stable-button-key-{index:04}-with-production-width"
+            ))
+        })
+        .collect()
+}
+
 // 构造实际运行时父节点与首版 keyed 子树。
 fn keyed_tree() -> (WidgetTree, WidgetId) {
     let tree = build_view_tree_for_test(ViewNode::new(ReconcileProbe, keyed_children()));
@@ -169,10 +180,24 @@ fn keyed_tree() -> (WidgetTree, WidgetId) {
     (tree, root)
 }
 
+// 构造真实 Button keyed 父节点与首版子树。
+fn keyed_button_tree() -> (WidgetTree, WidgetId) {
+    let tree = build_view_tree_for_test(ViewNode::new(ReconcileProbe, keyed_button_children()));
+    let root = tree.root_id().expect("Button keyed 协调场景必须建立根节点");
+    (tree, root)
+}
+
 // 在测量前完整构造下一轮声明，排除声明字符串和 ViewNode 自身申请。
 fn prepared_rounds() -> Vec<Vec<ViewNode>> {
     (0..RECONCILES_PER_ROUND)
         .map(|_| keyed_children())
+        .collect()
+}
+
+// 在 Button 热段外完整构造下一轮声明，排除声明自身申请。
+fn prepared_button_rounds() -> Vec<Vec<ViewNode>> {
+    (0..RECONCILES_PER_ROUND)
+        .map(|_| keyed_button_children())
         .collect()
 }
 
@@ -313,4 +338,49 @@ fn stable_keyed_reconcile_profile() {
     assert_eq!(stable_children.len(), SIBLING_COUNT);
     assert_eq!(view_tree_children_for_test(&tree, root), stable_children);
     assert_eq!(retained_layout_roots, 1);
+
+    let (mut button_tree, button_root) = keyed_button_tree();
+    let stable_button_children = view_tree_children_for_test(&button_tree, button_root);
+    // 先完成一次 Button 协调，隔离首次真实组件分派与运行时准备成本。
+    let _ = run_round(&mut button_tree, button_root, vec![keyed_button_children()]);
+
+    let mut button_samples = Vec::with_capacity(TIMING_ROUNDS);
+    for round in 1..=TIMING_ROUNDS {
+        let prepared = prepared_button_rounds();
+        let stats = run_round(&mut button_tree, button_root, prepared);
+        eprintln!(
+            "reconcile-button-profile label={profile_label} round={round} siblings={SIBLING_COUNT} reconciles={RECONCILES_PER_ROUND} ns_per_reconcile={:.2} allocations={} allocated_bytes={} peak_live_bytes={} key_width_allocations={}",
+            stats.elapsed_ns as f64 / RECONCILES_PER_ROUND as f64,
+            stats.allocations,
+            stats.allocated_bytes,
+            stats.peak_live_bytes,
+            stats.key_width_allocations,
+        );
+        button_samples.push(stats);
+    }
+    button_samples.sort_unstable_by_key(|stats| stats.elapsed_ns);
+    let button_median = button_samples[TIMING_ROUNDS / 2];
+    // Button 计时完成后读取最终队列，稳定场景只应保留根 Layout。
+    let button_retained_layout_roots = {
+        let invalidation = button_tree
+            .invalidation()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        invalidation.layout_roots().len()
+    };
+    eprintln!(
+        "PROFILE stable_keyed_button_reconcile label={profile_label} median_ns_per_reconcile={:.2} allocations_per_reconcile={:.2} allocated_bytes_per_reconcile={:.2} peak_live_bytes={} key_width_allocations_per_reconcile={:.2} retained_layout_roots={button_retained_layout_roots}",
+        button_median.elapsed_ns as f64 / RECONCILES_PER_ROUND as f64,
+        button_median.allocations as f64 / RECONCILES_PER_ROUND as f64,
+        button_median.allocated_bytes as f64 / RECONCILES_PER_ROUND as f64,
+        button_median.peak_live_bytes,
+        button_median.key_width_allocations as f64 / RECONCILES_PER_ROUND as f64,
+    );
+
+    assert_eq!(stable_button_children.len(), SIBLING_COUNT);
+    assert_eq!(
+        view_tree_children_for_test(&button_tree, button_root),
+        stable_button_children
+    );
+    assert_eq!(button_retained_layout_roots, 1);
 }
