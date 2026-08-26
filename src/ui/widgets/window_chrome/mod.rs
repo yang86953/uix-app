@@ -168,6 +168,10 @@ impl Widget for WindowInteractionRegion {
         )
     }
 
+    fn may_produce_overlay(&self) -> bool {
+        false
+    }
+
     fn tab_index(&self) -> i32 {
         i32::from(matches!(self.interaction, WindowInteraction::Control(_)))
     }

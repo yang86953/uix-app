@@ -24,6 +24,8 @@ macro_rules! impl_widget {
         $($cap:ident),+ $(,)?
         // 可选 tab 索引采用 Rust 2024 表达式片段语义。
         $(; tab_index => $tab:expr)?
+        // 手写 WidgetRender 只有显式声明无浮层时才可关闭保守重建。
+        $(; may_produce_overlay => $may_produce_overlay:expr)?
     ) => {
         impl $crate::ui::__private::traits::Widget for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -45,6 +47,11 @@ macro_rules! impl_widget {
             $(
                 fn tab_index(&self) -> i32 {
                     $tab
+                }
+            )?
+            $(
+                fn may_produce_overlay(&self) -> bool {
+                    $may_produce_overlay
                 }
             )?
             $(

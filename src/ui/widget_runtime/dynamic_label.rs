@@ -65,6 +65,9 @@ impl Widget for DynamicLabel {
     fn has_dynamic_content(&self) -> bool {
         true
     }
+    fn may_produce_overlay(&self) -> bool {
+        false
+    }
     fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         Some(self)
     }

@@ -445,6 +445,10 @@ impl Widget for Canvas {
         WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
     }
 
+    fn may_produce_overlay(&self) -> bool {
+        false
+    }
+
     fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         Some(self)
     }

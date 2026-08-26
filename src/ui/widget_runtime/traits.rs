@@ -138,6 +138,11 @@ pub trait Widget: 'static {
     fn has_dynamic_content(&self) -> bool {
         false
     }
+    /// 声明组件类型是否可能产生浮层；手写组件默认保守参与重建。
+    #[doc(hidden)]
+    fn may_produce_overlay(&self) -> bool {
+        true
+    }
 
     // ── 可选能力上转型（宏自动生成） ──
     /// 按能力标记上转型为布局契约。
