@@ -277,7 +277,9 @@ impl Default for Locale {
 
 /// 获取当前生效的语言配置。
 pub fn use_locale() -> Locale {
-    crate::ui::widget_runtime::provider_context::current_provider_context().locale
+    crate::ui::widget_runtime::provider_context::current_provider_context()
+        .locale()
+        .clone()
 }
 
 /// 在作用域内使用指定语言配置执行闭包。

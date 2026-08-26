@@ -231,8 +231,13 @@ impl BoxedWidget {
     }
 
     fn with_widget_context_mut<T>(&mut self, f: impl FnOnce(&mut dyn Widget) -> T) -> T {
-        let provider_context = self.provider_context.clone();
-        with_provider_context(&provider_context, || f(&mut *self.widget))
+        // 分离借用上下文与组件，避免只为可变组件回调增加一次共享引用计数。
+        let Self {
+            provider_context,
+            widget,
+            ..
+        } = self;
+        with_provider_context(provider_context, || f(&mut **widget))
     }
 
     /// 通知组件其直接子节点集合已经完成一次结构变更。
@@ -942,7 +947,7 @@ impl BoxedWidget {
         ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
         tree: &WidgetTree,
     ) {
-        let config = &self.provider_context.config;
+        let config = self.provider_context.config();
         let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
         let patch = config.widget_tokens.get(self.widget.as_any().type_id());
         let previous_scope = ctx.replace_token_scope(theme, patch);
