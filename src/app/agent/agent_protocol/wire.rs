@@ -288,6 +288,15 @@ pub(super) fn success_reply(
     request_type: &'static str,
     payload: Value,
 ) -> AgentProtocolReply {
+    success_reply_with_close(request_id, request_type, payload, false)
+}
+
+fn success_reply_with_close(
+    request_id: String,
+    request_type: &'static str,
+    payload: Value,
+    close_connection: bool,
+) -> AgentProtocolReply {
     let mut object = Map::new();
     object.insert(
         "schema".to_owned(),
@@ -299,7 +308,7 @@ pub(super) fn success_reply(
     if let Value::Object(payload) = payload {
         object.extend(payload);
     }
-    AgentProtocolReply::from_value(Value::Object(object), false, "ok")
+    AgentProtocolReply::from_value(Value::Object(object), close_connection, "ok")
 }
 
 pub(super) fn error_reply(
@@ -401,13 +410,15 @@ pub(super) fn wait_success(
     outcome: &'static str,
     window: &AgentWindowInfo,
 ) -> AgentProtocolReply {
-    success_reply(
+    success_reply_with_close(
         request_id,
         "wait",
         json!({
             "outcome": outcome,
             "window": window_info_value(window),
         }),
+        // closed 是该 generation 的终态；写回后主动结束连接，让应用关闭可等待传输排空。
+        outcome == "closed",
     )
 }
 
@@ -537,5 +548,31 @@ const fn hex_nibble(value: u8) -> Option<u8> {
         b'a'..=b'f' => Some(value - b'a' + 10),
         b'A'..=b'F' => Some(value - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(closed: bool) -> AgentWindowInfo {
+        AgentWindowInfo {
+            window_id: WindowId::new(7),
+            generation: 3,
+            title: "fixture".to_owned(),
+            visible: !closed,
+            presentable: !closed,
+            revision: 9,
+            presented_revision: 8,
+            closed,
+        }
+    }
+
+    #[test]
+    fn only_closed_wait_terminal_requests_connection_close() {
+        let changed = wait_success("changed".to_owned(), "changed", &window(false));
+        assert!(!changed.close_connection());
+        let closed = wait_success("closed".to_owned(), "closed", &window(true));
+        assert!(closed.close_connection());
     }
 }

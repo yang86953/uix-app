@@ -105,3 +105,55 @@ fn output_transitions_update_only_the_target_surface() {
     // 健康状态序列不得产生 pending failure。
     assert!(failure_source.take().is_none());
 }
+
+// 验证程序化 resize 同代更新 drawable，并把目标窗口事件交给唯一布局管线。
+#[test]
+fn programmatic_resize_updates_metrics_and_queues_targeted_event() {
+    // 创建可观察 failure source 与逐窗事件队列。
+    let failures = PendingFailureQueue::new();
+    let failure_source = failures.source();
+    let events = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    // 使用 scale=2 证明 logical 与 drawable 尺寸不会混淆。
+    let surface = WaylandWindowScaleState::new(
+        WindowId::new(9),
+        800,
+        600,
+        2,
+        Arc::clone(&events),
+        failure_source.clone(),
+    );
+
+    surface
+        .publish_programmatic_resize(1000, 700)
+        .expect("程序化 resize 必须发布成功");
+
+    // surface metrics 必须以同一 scale 发布新 logical/drawable 尺寸。
+    let snapshot = surface.metrics().snapshot().expect("读取 resize 快照");
+    assert_eq!(
+        (snapshot.logical_width, snapshot.logical_height),
+        (1000, 700)
+    );
+    assert_eq!(
+        (snapshot.drawable_width, snapshot.drawable_height),
+        (2000, 1400)
+    );
+    // 唯一事件必须携带同一目标窗口与 logical 尺寸。
+    let events = events.lock().expect("读取 resize 事件队列");
+    assert_eq!(events.len(), 1);
+    let event = events.front().expect("必须存在 resize 事件");
+    assert_eq!(event.window_id, Some(WindowId::new(9)));
+    assert_eq!(
+        event.type_,
+        crate::platform::windowing::event::UiEventType::WindowResize
+    );
+    assert_eq!(
+        event.payload,
+        crate::platform::windowing::event::UiEventPayload::Resize(
+            crate::platform::windowing::event::ResizeData {
+                width: 1000,
+                height: 700,
+            }
+        )
+    );
+    assert!(failure_source.take().is_none());
+}

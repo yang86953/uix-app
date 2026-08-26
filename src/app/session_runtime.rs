@@ -393,7 +393,8 @@ impl AppRuntime {
             .unwrap_or_else(|error| error.into_inner())
             .take()
         {
-            transport.shutdown();
+            // close_all 已发布窗口终态；有界等待在途 wait 写回后再强制拆除传输。
+            transport.shutdown_after_terminal_reply();
         }
     }
 

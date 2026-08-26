@@ -881,6 +881,9 @@ impl App {
             |_, _, _| {},
         );
 
+        // 主窗口循环一结束就发布精确 generation 的 closed 事实；后续图形与平台清理不得阻塞 wait。
+        app_handle.mark_closed();
+
         // 会话循环结束：卸载主题请求通道并释放主题事实订阅句柄。
         crate::ui::__private::uix_clear_theme_requester();
         // 幂等注销主题事实订阅。
@@ -897,7 +900,6 @@ impl App {
         }
         drain_platform_pending_failures(&mut *platform, &diagnostics);
         self.runtime.shutdown_all();
-        app_handle.mark_closed();
 
         0
     }

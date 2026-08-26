@@ -740,6 +740,8 @@ impl WindowOps for WaylandWindowOps {
         drop(constraints);
         // 新 region 只在整个协议事务成功后替换旧 owner。
         self.input_region = Some(region);
+        // Wayland 没有服务端 set-size 请求；客户端必须先更新布局与 buffer，再随 present commit 新尺寸。
+        self.surface_scale.publish_programmatic_resize(w, h)?;
         Ok(())
     }
 

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -68,6 +69,9 @@ pub(crate) struct AgentTransportHandle {
 }
 
 type ConnectionRegistry = Arc<Mutex<BTreeMap<u64, Arc<dyn AgentStreamCancelIo>>>>;
+
+// 应用已发布 closed 终态后，为在途 wait 回复保留的有界传输排空窗口。
+const TERMINAL_REPLY_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl AgentTransportHandle {
     pub(crate) fn start(bridge: AgentProcessBridge) -> Result<Self, AgentTransportError> {
@@ -159,6 +163,12 @@ impl AgentTransportHandle {
                 tracing::error!("agent listener thread panicked during shutdown");
             }
         }
+    }
+
+    pub(crate) fn shutdown_after_terminal_reply(&mut self) {
+        // close_all 已唤醒 wait；先允许终态帧写回，超时后仍由普通 shutdown 强制回收。
+        let _ = wait_for_connections_to_drain(&self.connections, TERMINAL_REPLY_DRAIN_TIMEOUT);
+        self.shutdown();
     }
 }
 
@@ -268,6 +278,26 @@ fn cancel_connections(connections: &ConnectionRegistry) {
     }
 }
 
+fn wait_for_connections_to_drain(connections: &ConnectionRegistry, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if connections
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_empty()
+        {
+            return true;
+        }
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            return false;
+        };
+        if remaining.is_zero() {
+            return false;
+        }
+        thread::sleep(remaining.min(Duration::from_millis(2)));
+    }
+}
+
 fn serve_connection(
     stream: AgentStream,
     bridge: AgentProcessBridge,
@@ -343,3 +373,25 @@ pub(crate) fn read_bounded_line<R: BufRead>(
 }
 
 // 帧划分纯逻辑专项测试（仅 agent-control 能力下编译，不启动线程与 IO）。
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct NoopCancel;
+
+    impl AgentStreamCancelIo for NoopCancel {
+        fn cancel(&self) {}
+    }
+
+    #[test]
+    fn terminal_reply_drain_is_immediate_when_empty_and_bounded_when_busy() {
+        let connections: ConnectionRegistry = Arc::new(Mutex::new(BTreeMap::new()));
+        assert!(wait_for_connections_to_drain(&connections, Duration::ZERO));
+        connections
+            .lock()
+            .expect("fixture registry must lock")
+            .insert(1, Arc::new(NoopCancel));
+        assert!(!wait_for_connections_to_drain(&connections, Duration::ZERO));
+    }
+}
