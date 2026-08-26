@@ -1,8 +1,6 @@
 //! 混合绘制产物到 RHI 帧计划的纯 CPU 性能取样。
 
-use std::alloc::{GlobalAlloc, Layout, System};
 use std::hint::black_box;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -14,75 +12,12 @@ use crate::platform::presentation::rhi::{
     RhiExtent, RhiScissor, RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle,
     TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
 };
+use crate::test_allocation_probe::allocation_stats;
 
 const GROUP_COUNT: usize = 32;
 const GLYPHS_PER_GROUP: usize = 12;
 const STEADY_FRAMES: usize = 240;
 const TIMING_ROUNDS: usize = 9;
-
-struct CountingAllocator;
-
-static MEASURING: AtomicBool = AtomicBool::new(false);
-static ALLOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
-static ALLOCATED_BYTES: AtomicUsize = AtomicUsize::new(0);
-static LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
-static PEAK_LIVE_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-fn record_allocation(size: usize) {
-    ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
-    ALLOCATED_BYTES.fetch_add(size, Ordering::Relaxed);
-    let live = LIVE_BYTES.fetch_add(size, Ordering::Relaxed) + size;
-    PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
-}
-
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if MEASURING.load(Ordering::Relaxed) {
-            record_allocation(layout.size());
-        }
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        if MEASURING.load(Ordering::Relaxed) {
-            record_allocation(layout.size());
-        }
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if MEASURING.load(Ordering::Relaxed) {
-            LIVE_BYTES.fetch_sub(layout.size(), Ordering::Relaxed);
-        }
-        unsafe { System.dealloc(ptr, layout) }
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if MEASURING.load(Ordering::Relaxed) {
-            ALLOCATION_COUNT.fetch_add(1, Ordering::Relaxed);
-            ALLOCATED_BYTES.fetch_add(new_size, Ordering::Relaxed);
-            if new_size >= layout.size() {
-                let added = new_size - layout.size();
-                let live = LIVE_BYTES.fetch_add(added, Ordering::Relaxed) + added;
-                PEAK_LIVE_BYTES.fetch_max(live, Ordering::Relaxed);
-            } else {
-                LIVE_BYTES.fetch_sub(layout.size() - new_size, Ordering::Relaxed);
-            }
-        }
-        unsafe { System.realloc(ptr, layout, new_size) }
-    }
-}
-
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
-#[derive(Clone, Copy)]
-struct AllocationStats {
-    count: usize,
-    bytes: usize,
-    peak_live: usize,
-    final_live: usize,
-}
 
 struct CpuDevice {
     next_resource: u64,
@@ -282,22 +217,6 @@ fn execute_frame(renderer: &mut RhiRenderer, device: &mut CpuDevice, operations:
             operations,
         )
         .expect("混合帧计划应通过 CPU 编码与共享契约验证");
-}
-
-fn allocation_stats<F: FnOnce()>(action: F) -> AllocationStats {
-    ALLOCATION_COUNT.store(0, Ordering::Relaxed);
-    ALLOCATED_BYTES.store(0, Ordering::Relaxed);
-    LIVE_BYTES.store(0, Ordering::Relaxed);
-    PEAK_LIVE_BYTES.store(0, Ordering::Relaxed);
-    MEASURING.store(true, Ordering::Release);
-    action();
-    MEASURING.store(false, Ordering::Release);
-    AllocationStats {
-        count: ALLOCATION_COUNT.load(Ordering::Relaxed),
-        bytes: ALLOCATED_BYTES.load(Ordering::Relaxed),
-        peak_live: PEAK_LIVE_BYTES.load(Ordering::Relaxed),
-        final_live: LIVE_BYTES.load(Ordering::Relaxed),
-    }
 }
 
 fn median(mut values: [u128; TIMING_ROUNDS]) -> u128 {
