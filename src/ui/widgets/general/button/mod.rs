@@ -367,7 +367,8 @@ impl_widget!(
     tab_index => 1;
     may_produce_overlay => false;
     may_request_event_layout => false;
-    requires_extended_event_finish => false
+    requires_extended_event_finish => false;
+    snapshot_source => direct
 );
 
 impl SnapshotSource for Button {

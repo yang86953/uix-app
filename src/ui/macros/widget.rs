@@ -267,10 +267,26 @@ macro_rules! __widget_struct {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __widget_widget_snapshot_method {
-    (Label) => {};
-    (Input) => {};
-    (Container) => {};
-    (Grid) => {};
+    (Label) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self)
+        }
+    };
+    (Input) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self)
+        }
+    };
+    (Container) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self)
+        }
+    };
+    (Grid) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self)
+        }
+    };
     ($name:ident) => {
         fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
             let typed = $crate::ui::__private::snapshot_fields_from_any(self.as_any());

@@ -30,6 +30,8 @@ macro_rules! impl_widget {
         $(; may_request_event_layout => $may_request_event_layout:expr)?
         // 手写 EventHandler 只有显式声明无需扩展收尾时才可进入最短路径。
         $(; requires_extended_event_finish => $requires_extended_event_finish:expr)?
+        // 已有直接 SnapshotSource 实现的组件可显式接入类型化快照。
+        $(; snapshot_source => $snapshot_source:ident)?
     ) => {
         impl $crate::ui::__private::traits::Widget for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -41,6 +43,7 @@ macro_rules! impl_widget {
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
                 self
             }
+            $crate::impl_widget!(@snapshot_method $T $(, $snapshot_source)?);
             fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
                 let mut caps = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
@@ -71,6 +74,19 @@ macro_rules! impl_widget {
             $(
                 impl_widget!(@upcast $cap);
             )+
+        }
+    };
+    (@snapshot_method $T:ty, $snapshot_source:ident) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            // 标记只负责选择直接端口；具体快照仍由组件自己的 SnapshotSource 拥有。
+            let _ = stringify!($snapshot_source);
+            <$T as $crate::ui::SnapshotSource>::snapshot_fields(self)
+        }
+    };
+    (@snapshot_method $T:ty) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            // 普通手写组件未登记类型化快照，保持 Unknown 语义并跳过全表扫描。
+            $crate::ui::SnapshotFields::Unknown
         }
     };
     (@insert_cap $caps:ident Layout) => {
