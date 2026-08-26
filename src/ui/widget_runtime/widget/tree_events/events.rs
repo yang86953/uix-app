@@ -91,18 +91,21 @@ impl WidgetTree {
         if self.is_pending_removal_subtree(id) {
             return None;
         }
+        // 任意子树入口先完整解析一次视觉祖先链，递归后代改用增量坐标。
+        let layout_pos = self.point_to_node_layout(id, pos)?;
         // 正常事件循环复用树级工作区；极少数重入调用回退到局部容器避免 RefCell panic。
         if let Ok(mut order_scratch) = self.hit_test_order_scratch.try_borrow_mut() {
             order_scratch.clear();
-            return self.hit_test_internal_with_scratch(id, pos, &mut order_scratch);
+            return self.hit_test_internal_with_scratch(id, pos, layout_pos, &mut order_scratch);
         }
-        self.hit_test_internal_with_scratch(id, pos, &mut Vec::new())
+        self.hit_test_internal_with_scratch(id, pos, layout_pos, &mut Vec::new())
     }
 
     fn hit_test_internal_with_scratch(
         &self,
         id: WidgetId,
         pos: Point,
+        layout_pos: Point,
         order_scratch: &mut Vec<(WidgetId, usize)>,
     ) -> Option<WidgetId> {
         let node = self.get(id)?;
@@ -110,9 +113,6 @@ impl WidgetTree {
         if !node.visible() || node.pending_removal() {
             return None;
         }
-
-        // Undo the same transform/scroll chain used by compositor painting.
-        let layout_pos = self.point_to_node_layout(id, pos)?;
 
         // 当前递归帧内组件只读不变，复用一次事件能力查询。
         let hit_test_children = node.hit_test_children();
@@ -202,8 +202,19 @@ impl WidgetTree {
                     // 继续检查下一层视觉兄弟节点。
                     continue;
                 }
-                if let Some(hit) = self.hit_test_internal_with_scratch(child_id, pos, order_scratch)
-                {
+                // 复用父节点已解析的内容坐标，只追加直接子节点的视觉变换。
+                let Some(child_layout_pos) =
+                    self.point_to_child_layout(child_id, child_clip_pos, pos)
+                else {
+                    // 不可逆变换与完整视觉路径语义一致，不产生命中。
+                    continue;
+                };
+                if let Some(hit) = self.hit_test_internal_with_scratch(
+                    child_id,
+                    pos,
+                    child_layout_pos,
+                    order_scratch,
+                ) {
                     child_hit = Some(hit);
                     break;
                 }

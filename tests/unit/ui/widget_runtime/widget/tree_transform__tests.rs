@@ -1,5 +1,5 @@
-// 引入矩形以固定滚动视口与期望可见边界。
-use crate::core::Rect;
+// 引入点和矩形以固定滚动视口、命中坐标与期望可见边界。
+use crate::core::{Point, Rect};
 #[cfg(feature = "feedback")]
 use crate::draw::Transform;
 #[cfg(feature = "feedback")]
@@ -8,6 +8,8 @@ use crate::draw::scene::ScenePaint;
 use crate::ui::adapter::ViewAdapter;
 // 引入实际组件 frame 的测试写入契约。
 use crate::ui::widget_runtime::widget::WidgetCore;
+// 构造需要增量求逆的子节点视觉变换。
+use crate::ui::widget_runtime::view_transform::ViewTransform;
 // 引入滚动容器、固定尺寸叶节点与声明节点。
 #[cfg(feature = "feedback")]
 use crate::ui::{Modal, View};
@@ -44,6 +46,53 @@ fn visual_subtree_bounds_clip_oversized_scroll_content() {
         tree.visual_subtree_bounds(content_id),
         Some(Rect::new(0.0, 0.0, 100.0, 50.0))
     );
+}
+
+// 增量父子坐标必须与从屏幕重新遍历完整视觉路径的结果一致。
+#[test]
+fn incremental_child_point_matches_full_visual_path() {
+    let root = ViewNode::new(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(100.0, 50.0)
+            .show_scrollbar(false)
+            .scroll_to(0.0, 40.0),
+        vec![ViewNode::leaf(Space::new().width(100.0).height(120.0))],
+    );
+    let mut tree = ViewAdapter::build_nodes(root);
+    let root_id = tree.root_id().expect("滚动根节点必须存在");
+    let child_id = tree.get(root_id).expect("滚动根节点必须可读").children()[0];
+    tree.get_mut(root_id)
+        .expect("滚动根节点必须可写")
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+    tree.layout();
+    assert!(tree.set_visual_transform(
+        child_id,
+        ViewTransform {
+            offset: Point::new(8.0, 4.0),
+            scale: 2.0,
+            ..ViewTransform::default()
+        },
+    ));
+
+    let screen_point = Point::new(20.0, 20.0);
+    let root_layout = tree
+        .point_to_node_layout(root_id, screen_point)
+        .expect("根坐标变换必须可逆");
+    let (scroll_x, scroll_y) = tree
+        .get(root_id)
+        .expect("滚动根节点必须存活")
+        .viewport_scroll_offset()
+        .expect("ScrollView 必须公开滚动坐标");
+    let parent_content = Point::new(root_layout.x + scroll_x, root_layout.y + scroll_y);
+    let incremental = tree
+        .point_to_child_layout(child_id, parent_content, screen_point)
+        .expect("增量子坐标变换必须可逆");
+    let full = tree
+        .point_to_node_layout(child_id, screen_point)
+        .expect("完整子坐标变换必须可逆");
+
+    assert!((incremental.x - full.x).abs() <= f32::EPSILON);
+    assert!((incremental.y - full.y).abs() <= f32::EPSILON);
 }
 
 // 窗口级 Modal 位于滚动内容中时仍必须使用视口坐标。
