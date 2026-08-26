@@ -29,25 +29,21 @@ impl BoxedWidget {
 
     // 解析当前布局帧上的完整视觉变换矩阵。
     pub(crate) fn visual_transform_matrix(&self) -> crate::draw::Transform {
-        // 读取可选过渡动画覆盖层。
-        let transition = self
-            // 借用当前过渡播放器。
-            .view_transition
-            // 仅在过渡存在时生成覆盖变换。
-            .as_ref()
-            // 把播放器状态转换为不含额外仿射矩阵的覆盖层。
-            .map(|player| ViewTransform {
-                // 使用过渡播放器的平移。
-                offset: player.offset,
-                // 使用过渡播放器的缩放。
-                scale: player.scale,
-                // 过渡动画仍只覆盖平移与缩放，不注入额外仿射内容。
-                affine: crate::draw::Transform::identity(),
-                // 过渡覆盖层使用默认值，占位但不覆盖基础声明原点。
-                origin: crate::ui::TransformOrigin::default(),
-            })
-            // 无过渡时使用中性覆盖层。
-            .unwrap_or_default();
+        // 绝大多数节点没有过渡覆盖，直接解析基础声明以跳过中性矩阵组合。
+        let Some(player) = self.view_transition.as_ref() else {
+            return self.visual_transform.matrix(self.frame);
+        };
+        // 把过渡播放器状态转换为不含额外仿射矩阵的覆盖层。
+        let transition = ViewTransform {
+            // 使用过渡播放器的平移。
+            offset: player.offset,
+            // 使用过渡播放器的缩放。
+            scale: player.scale,
+            // 过渡动画仍只覆盖平移与缩放，不注入额外仿射内容。
+            affine: crate::draw::Transform::identity(),
+            // 过渡覆盖层使用默认值，占位但不覆盖基础声明原点。
+            origin: crate::ui::TransformOrigin::default(),
+        };
         // 在实际帧上组合基础声明与过渡覆盖层。
         self.visual_transform
             // 保持基础原点并组合过渡平移缩放。
@@ -60,5 +56,53 @@ impl BoxedWidget {
     pub(crate) fn has_effective_visual_transform(&self) -> bool {
         // 统一通过完整矩阵判断，避免遗漏过渡覆盖层。
         !self.visual_transform_matrix().is_identity()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::animation::AnimationConfig;
+    use crate::ui::{Label, Placement};
+
+    // 构造带稳定非默认基础变换和布局帧的实际节点。
+    fn transformed_node() -> BoxedWidget {
+        let mut node = BoxedWidget::new(Box::new(Label::new("transform")));
+        node.frame = Rect::new(12.0, 18.0, 80.0, 40.0);
+        node.set_visual_transform(ViewTransform {
+            offset: Point::new(7.0, -3.0),
+            scale: 1.25,
+            affine: crate::draw::Transform::rotate(0.2),
+            origin: crate::ui::TransformOrigin::default(),
+        });
+        node
+    }
+
+    #[test]
+    fn matrix_without_transition_matches_the_base_transform() {
+        let node = transformed_node();
+        let expected = node.visual_transform.matrix(node.frame);
+        assert_eq!(node.visual_transform_matrix(), expected);
+    }
+
+    #[test]
+    fn matrix_with_transition_preserves_overlay_composition() {
+        let mut node = transformed_node();
+        node.set_enter_animation(Some(AnimationConfig::slide_in(Placement::Left, 1.0)), None);
+        let player = node
+            .view_transition
+            .as_ref()
+            .expect("非零滑入动画必须建立过渡播放器");
+        let transition = ViewTransform {
+            offset: player.offset,
+            scale: player.scale,
+            affine: crate::draw::Transform::identity(),
+            origin: crate::ui::TransformOrigin::default(),
+        };
+        let expected = node
+            .visual_transform
+            .combined(transition)
+            .matrix(node.frame);
+        assert_eq!(node.visual_transform_matrix(), expected);
     }
 }
