@@ -3,7 +3,9 @@ use super::*;
 // 引入 PixelUpload 测试载荷与稳定 surface 快照。
 use crate::core::{PresentDamage, PresentSurface};
 // 引入 CPU recipe 能力、共享生命周期与专用 PixelUpload surface 契约。
-use crate::platform::presentation::{GraphicsContextCaps, GraphicsContextLifecycle, PixelUploadSurface};
+use crate::platform::presentation::{
+    GraphicsContextCaps, GraphicsContextLifecycle, PixelUploadSurface,
+};
 
 // 构造不暴露 GPU recipe 视图的合法 CPU PixelUpload context。
 struct CpuPixelUploadContext;

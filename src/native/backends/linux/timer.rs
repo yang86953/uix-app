@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::diagnostics::PendingFailureSource;
+use crate::native::{Errc, Error, Result};
 use crate::platform::system::ITimer;
 use crate::platform::windowing::event::UiEvent;
-use crate::native::{Errc, Error, Result};
 
 /// 定时器控制指令
 enum Cmd {

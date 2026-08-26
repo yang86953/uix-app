@@ -120,11 +120,12 @@ fn stable_dispatch_reuses_snapshot_and_mutation_invalidates_exact_type() {
 
     // 注销同样立即失效对应类型，避免后续发布命中过期处理器。
     added.unsubscribe();
-    assert!(!bus
-        .registry
-        .borrow()
-        .snapshot_cache
-        .contains_key(&TypeId::of::<FactA>()));
+    assert!(
+        !bus.registry
+            .borrow()
+            .snapshot_cache
+            .contains_key(&TypeId::of::<FactA>())
+    );
 
     // 关闭边界释放所有剩余类型快照。
     ok(bus.close());

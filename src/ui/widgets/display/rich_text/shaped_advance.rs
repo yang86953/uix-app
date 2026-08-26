@@ -107,14 +107,12 @@ pub(super) fn real_char_advances(
     };
     // 执行真实字体 shaping 与多字体回退。
     let layout = font_service.layout_text_shared(font, text, &options);
-    // 固化源字符以构建逐字符 advance 数组。
-    let chars = text.chars().collect::<Vec<_>>();
-    // 为每个源字符预留一个宽度槽位。
-    let mut advances = Vec::with_capacity(chars.len());
+    // 按字符迭代构建逐字符 advance 数组，避免仅为遍历创建临时 Vec。
+    let mut advances = Vec::with_capacity(text.chars().count());
     // 按源字符索引读取 shaping cluster 几何。
-    for (char_index, ch) in chars.iter().enumerate() {
+    for (char_index, ch) in text.chars().enumerate() {
         // 当前字符没有可用字形时使用估算宽度保持布局可收敛。
-        let fallback = char_width(fs, *ch, metrics);
+        let fallback = char_width(fs, ch, metrics);
         // cluster 起点消费完整 advance，后继源字符保持零宽。
         advances.push(measured_advance_for_char(
             // 传入连续 shaping 的字形列表。

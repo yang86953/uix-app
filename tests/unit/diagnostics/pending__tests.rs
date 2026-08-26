@@ -1,4 +1,3 @@
-
 use super::{PENDING_FAILURE_CAPACITY, PendingFailureEnqueue, PendingFailureQueue};
 use crate::core::{Errc, Error};
 use std::sync::{Arc, Barrier};

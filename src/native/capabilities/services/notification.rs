@@ -60,10 +60,7 @@ impl NotificationService {
     }
 
     /// 附加平台通知后端（如 Platform trait 提供）。
-    pub fn with_platform(
-        mut self,
-        notifier: Box<dyn INotification>,
-    ) -> Self {
+    pub fn with_platform(mut self, notifier: Box<dyn INotification>) -> Self {
         self.platform_notifier = Some(notifier);
         self
     }

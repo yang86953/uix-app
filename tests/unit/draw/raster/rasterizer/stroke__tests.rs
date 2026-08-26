@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::draw::geometry::color::Color;
 

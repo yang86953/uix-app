@@ -7,8 +7,8 @@
 #![allow(nonstandard_style)]
 
 use crate::native::backends::windows::util::{to_utf8, to_wide};
-use crate::platform::system::IFileDialog;
 use crate::native::{Errc, Error, Result};
+use crate::platform::system::IFileDialog;
 use std::ptr;
 
 // Windows 文件对话框后端只在 crate 内部平台注册表中构造。

@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, Once};
 
 use crate::core::{Errc, Error, WindowId};
 use crate::diagnostics::PendingFailureSource;
-use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::windowing::shared::{WindowState, push_window_close, push_window_resize};
+use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 
 use super::objc_runtime;
 

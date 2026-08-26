@@ -3,8 +3,8 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
-use crate::platform::presentation::GraphicsContextCandidate;
 use crate::platform::graphics::GpuAdapterInfo;
+use crate::platform::presentation::GraphicsContextCandidate;
 // D3D11 WARP 测试入口返回类型化 GPU context trait object。
 #[cfg(all(test, feature = "d3d11"))]
 use crate::platform::presentation::GpuRecipeContext;

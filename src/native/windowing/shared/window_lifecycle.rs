@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 // 引入 typed failure，使 callback adapter 能把投递失败送入平台 failure queue。
 use crate::core::{Errc, Error, Result, WindowId};
-use crate::platform::windowing::event::UiEvent;
 use crate::native::windowing::shared::WindowState;
+use crate::platform::windowing::event::UiEvent;
 
 // 保留窗口生命周期事件辅助器，供尚未接入的异步平台回调使用。
 #[allow(dead_code)]

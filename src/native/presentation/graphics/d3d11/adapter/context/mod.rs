@@ -20,8 +20,8 @@ pub(crate) use super::swapchain::{D3d11SwapChain, create_swap_chain};
 pub(crate) use super::swapchain::{map_dxgi_device_removed_reason, map_dxgi_resize_result};
 use crate::core::{Errc, Error, Result};
 // 导入 context 实现直接消费的共享生命周期契约。
-use crate::platform::presentation::GraphicsContextLifecycle;
 use crate::native::presentation::graphics::platform::windows as win_surface;
+use crate::platform::presentation::GraphicsContextLifecycle;
 // 引入唯一拥有 D3D11 Surface token、extent 与重建顺序的共享生命周期。
 use crate::platform::presentation::rhi::RhiSurfaceLifecycle;
 use ::windows::Win32::Foundation::HMODULE;

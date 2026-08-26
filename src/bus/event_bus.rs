@@ -4,13 +4,13 @@ use std::any::{Any, TypeId};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 use crate::core::error::{Errc, Error, Result};
 
-use super::subscription::Subscription;
 use super::Fact;
+use super::subscription::Subscription;
 
 /// 嵌套分发深度上限，防止无界递归发布导致栈溢出。
 pub const MAX_DISPATCH_DEPTH: usize = 64;

@@ -81,6 +81,43 @@ impl CpuOffscreenPool {
         Some((surf.pixels().to_vec(), surf.width()))
     }
 
+    /// 将一个离屏表面直接绘制到另一个离屏表面，避免嵌套 Picture 的临时像素拷贝。
+    pub(crate) fn blit_into(
+        &mut self,
+        source: &ImageHandle,
+        destination: &ImageHandle,
+        src_rect: crate::core::Rect,
+        dst_rect: crate::core::Rect,
+    ) -> bool {
+        let source_idx = source.0 as usize;
+        let destination_idx = destination.0 as usize;
+        if source_idx == destination_idx {
+            return false;
+        }
+
+        let (source_slot, destination_slot) = if source_idx < destination_idx {
+            let (before, after) = self.offscreens.split_at_mut(destination_idx);
+            (before.get_mut(source_idx), after.first_mut())
+        } else {
+            let (before, after) = self.offscreens.split_at_mut(source_idx);
+            (after.first_mut(), before.get_mut(destination_idx))
+        };
+        let Some(source_canvas) = source_slot.and_then(|slot| slot.as_ref()) else {
+            return false;
+        };
+        let Some(destination_canvas) = destination_slot.and_then(|slot| slot.as_mut()) else {
+            return false;
+        };
+        let source_surface = source_canvas.surface();
+        destination_canvas.blit_image(
+            source_surface.pixels(),
+            source_surface.width(),
+            src_rect,
+            dst_rect,
+        );
+        true
+    }
+
     pub(crate) fn get(&self, handle: &ImageHandle) -> Option<&CpuCanvas2D> {
         let idx = handle.0 as usize;
         self.offscreens.get(idx)?.as_ref()

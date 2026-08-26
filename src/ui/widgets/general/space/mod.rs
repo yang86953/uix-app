@@ -14,8 +14,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::content_size_from_children;
 use crate::ui::layout::{
-    AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
-    flex::compute_flex_layout_into,
+    AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, flex::compute_flex_layout_into,
 };
 use crate::ui::{View, ViewNode, Widget, WidgetId, WidgetTree};
 

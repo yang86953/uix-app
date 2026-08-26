@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::core::Errc;
 use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;

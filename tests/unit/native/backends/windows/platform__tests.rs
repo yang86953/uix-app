@@ -1,4 +1,3 @@
-
 use super::super::consts::{SIZE_RESTORED, WM_DPICHANGED, WM_SIZE};
 use super::super::text_input::WindowsImeState;
 use super::*;

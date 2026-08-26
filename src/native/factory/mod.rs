@@ -10,9 +10,9 @@ pub(crate) mod registry_windows;
 pub(crate) mod thread_bound;
 
 use crate::core::error::Error;
+use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::platform::system::info::ISystemInfo;
-use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
 pub(crate) use registry::{

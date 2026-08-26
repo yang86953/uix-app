@@ -1,13 +1,11 @@
 //! 保存 FontService 的 UAX #9 字体段切分与视觉 cluster 重排。
 
 // 引入共享段落级 UAX #9 分析。
-use crate::draw::resources::font::bidi::BidiAnalysis;
+use crate::draw::resources::font::bidi::{BidiAnalysis, BidiLineOrderLine};
 // 引入统一定位字形类型。
 use crate::draw::resources::font::text_backend::PositionedGlyph;
 // 引入字体句柄。
 use crate::draw::FontHandle;
-// 引入字符范围以描述视觉行逻辑源区间。
-use std::ops::Range;
 // 引入扩展字素簇边界，避免方向切分拆开组合文本。
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -130,79 +128,73 @@ pub(super) fn split_font_segments(
 
 /// 将后端视觉输出恢复为逻辑 cluster 顺序，供 UAX #14 决定视觉行边界。
 pub(super) fn logical_cluster_order(glyphs: Vec<PositionedGlyph>) -> Vec<PositionedGlyph> {
-    // 相邻同源区间字形共同形成一个不可拆 shaping cluster。
-    let mut clusters: Vec<Vec<PositionedGlyph>> = Vec::new();
-    // 按后端输出顺序扫描视觉字形。
-    for glyph in glyphs {
-        // 查询最后一个 cluster 是否具有相同逻辑源区间。
-        let same_cluster = clusters.last().is_some_and(|cluster| {
-            // 首字形存在时比较完整源区间。
-            cluster.first().is_some_and(|first| {
-                // 起点与排他终点都相同才属于同一 cluster。
-                first.char_index == glyph.char_index && first.char_end == glyph.char_end
-            })
-        });
-        // 相同 cluster 追加到现有组。
-        if same_cluster {
-            // 最后一个 cluster 已由 same_cluster 条件保证存在；缺失说明内部状态被破坏。
-            let Some(last) = clusters.last_mut() else {
-                // 附带当前 cluster 数与源区间，便于定位异常输入。
-                panic!(
-                    "same cluster requires a previous glyph group (clusters={}, char_range={}..{})",
-                    clusters.len(),
-                    glyph.char_index,
-                    glyph.char_end
-                );
-            };
-            // 保留 cluster 内后端视觉字形顺序。
-            last.push(glyph);
-        // 新源区间开始新的 cluster。
-        } else {
-            // 使用当前字形创建 cluster。
-            clusters.push(vec![glyph]);
+    // 稳定按逻辑字符起点排序，保留相同起点字形的原有视觉顺序。
+    let mut glyphs = glyphs;
+    glyphs.sort_by_key(|glyph| glyph.char_index);
+    // 逐个完整源区间扫描 cluster，避免为每个 cluster 创建子 Vec。
+    let mut cluster_start = 0usize;
+    // 从逻辑行首重新建立连续水平坐标。
+    let mut cursor_x = 0.0f32;
+    while cluster_start < glyphs.len() {
+        // 完整起止区间共同决定不可拆分的 shaping cluster。
+        let cluster_char_index = glyphs[cluster_start].char_index;
+        let cluster_char_end = glyphs[cluster_start].char_end;
+        // 找到当前完整源区间的排他位置。
+        let mut cluster_end = cluster_start + 1;
+        while cluster_end < glyphs.len()
+            && glyphs[cluster_end].char_index == cluster_char_index
+            && glyphs[cluster_end].char_end == cluster_char_end
+        {
+            cluster_end += 1;
         }
+        // 聚合 cluster 原始几何，保留 GPOS 相对偏移。
+        let origin = glyphs[cluster_start..cluster_end]
+            .iter()
+            .map(|glyph| glyph.x)
+            .fold(f32::INFINITY, f32::min);
+        let advance = glyphs[cluster_start..cluster_end]
+            .iter()
+            .map(|glyph| glyph.width.max(0.0))
+            .sum::<f32>();
+        // 原地平移，直接复用后端返回的字形缓冲区。
+        for glyph in &mut glyphs[cluster_start..cluster_end] {
+            glyph.x = cursor_x + (glyph.x - origin);
+        }
+        // 推进到下一个逻辑 cluster。
+        cursor_x += advance;
+        cluster_start = cluster_end;
     }
-    // UAX #14 必须按逻辑源顺序观察 cluster 边界。
-    clusters.sort_by_key(|cluster| {
-        // 空 cluster 只可能来自异常内部状态并排序到尾部。
-        cluster
-            // 读取 cluster 首字形。
-            .first()
-            // 使用逻辑字符起点作为稳定排序键。
-            .map(|glyph| glyph.char_index)
-            // 空组使用最大值。
-            .unwrap_or(usize::MAX)
-    });
-    // 重新建立单调逻辑 cluster 坐标供既有换行算法消费。
-    position_clusters(clusters, None)
+    // 返回已按逻辑 cluster 排序并重新定位的扁平字形数组。
+    glyphs
 }
 
 /// 按当前视觉行的 UAX #9 L1/L2 结果重排并定位 cluster。
 pub(super) fn reorder_line(
     // 接收当前行逻辑顺序字形。
     glyphs: &mut Vec<LineGlyph>,
-    // 指定视觉行覆盖的逻辑源范围。
-    line_range: Range<usize>,
-    // 借用完整段落分析。
-    bidi: &BidiAnalysis,
+    // 复用当前布局周期已经准备好的视觉行级双向结果。
+    bidi: &BidiLineOrderLine<'_>,
 ) -> f32 {
     // 将相邻同源区间字形组合为不可拆 cluster。
-    let mut clusters: Vec<Vec<LineGlyph>> = Vec::new();
+    let mut clusters: Vec<Option<Vec<LineGlyph>>> = Vec::new();
     // 当前输入已经按逻辑 cluster 顺序排列。
     for glyph in std::mem::take(glyphs) {
         // 判断当前字形是否延续最后一个 cluster。
-        let same_cluster = clusters.last().is_some_and(|cluster| {
-            // 比较完整逻辑源区间。
-            cluster.first().is_some_and(|first| {
-                // 起止边界相同才属于同一 cluster。
-                first.glyph.char_index == glyph.glyph.char_index
-                    && first.glyph.char_end == glyph.glyph.char_end
-            })
-        });
+        let same_cluster = clusters
+            .last()
+            .and_then(|cluster| cluster.as_ref())
+            .is_some_and(|cluster| {
+                // 比较完整逻辑源区间。
+                cluster.first().is_some_and(|first| {
+                    // 起止边界相同才属于同一 cluster。
+                    first.glyph.char_index == glyph.glyph.char_index
+                        && first.glyph.char_end == glyph.glyph.char_end
+                })
+            });
         // 相同 cluster 保留内部视觉字形顺序。
         if same_cluster {
             // 最后一个 cluster 已由 same_cluster 条件保证存在；缺失说明内部状态被破坏。
-            let Some(last) = clusters.last_mut() else {
+            let Some(Some(last)) = clusters.last_mut() else {
                 // 附带当前 cluster 数与源区间，便于定位异常输入。
                 panic!(
                     "same cluster requires a previous line glyph group (clusters={}, char_range={}..{})",
@@ -216,7 +208,7 @@ pub(super) fn reorder_line(
         // 新源区间开始新的 cluster。
         } else {
             // 使用当前字形创建新组。
-            clusters.push(vec![glyph]);
+            clusters.push(Some(vec![glyph]));
         }
     }
     // 提取每个逻辑 cluster 的源字符起点。
@@ -224,21 +216,31 @@ pub(super) fn reorder_line(
         // 保持逻辑 cluster 顺序。
         .iter()
         // 读取每个 cluster 首字形的逻辑起点。
-        .filter_map(|cluster| cluster.first().map(|glyph| glyph.glyph.char_index))
+        .filter_map(|cluster| {
+            cluster
+                .as_ref()
+                .and_then(|cluster| cluster.first())
+                .map(|glyph| glyph.glyph.char_index)
+        })
         // 收集对象索引供共享 UAX #9 分析重排。
         .collect::<Vec<_>>();
     // 从同一行级数据取得视觉顺序与对象级别。
-    let order = bidi.line_order(line_range, &logical_indices);
-    // 转为可按视觉映射转移所有权的可选 cluster。
-    let mut available = clusters.into_iter().map(Some).collect::<Vec<_>>();
-    // 准备最终视觉顺序 cluster。
-    let mut visual_clusters = Vec::with_capacity(available.len());
+    let order = bidi.order(&logical_indices);
+    // 预留全部行字形数量，避免视觉顺序消费时扩容。
+    let glyph_count = clusters
+        .iter()
+        .map(|cluster| cluster.as_ref().map_or(0, Vec::len))
+        .sum();
+    // 保存最终视觉字形数组。
+    let mut visual_glyphs = Vec::with_capacity(glyph_count);
+    // 按视觉 cluster 顺序重新建立单调 x 坐标。
+    let mut cursor_x = 0.0f32;
     // 按 UAX #9 L2 视觉对象顺序消费 cluster。
     for logical_index in order.visual_to_logical {
         // 读取当前逻辑对象的行级嵌入级别。
         let level = order.levels.get(logical_index).copied().unwrap_or(0);
         // 取得对应 cluster 的唯一所有权。
-        let Some(mut cluster) = available
+        let Some(mut cluster) = clusters
             // 查找逻辑对象槽位。
             .get_mut(logical_index)
             // 从槽位取出 cluster。
@@ -252,17 +254,6 @@ pub(super) fn reorder_line(
             // 保存奇偶级别供选择、命中与光标几何复用。
             glyph.glyph.bidi_level = level;
         }
-        // 按视觉顺序登记当前 cluster。
-        visual_clusters.push(cluster);
-    }
-    // 按视觉 cluster 顺序重新建立单调 x 坐标。
-    let mut cursor_x = 0.0f32;
-    // 预留全部行字形数量。
-    let glyph_count = visual_clusters.iter().map(Vec::len).sum();
-    // 保存最终视觉字形数组。
-    let mut visual_glyphs = Vec::with_capacity(glyph_count);
-    // 逐个视觉 cluster 定位。
-    for mut cluster in visual_clusters {
         // 取得 cluster 原始最小水平坐标。
         let origin = cluster
             // 遍历 cluster 内字形。
@@ -293,60 +284,4 @@ pub(super) fn reorder_line(
     *glyphs = visual_glyphs;
     // 返回同一视觉数据计算出的行宽。
     cursor_x
-}
-
-// 将定位字形 cluster 按指定顺序重新建立连续 x 坐标。
-fn position_clusters(
-    // 接收已排序 cluster。
-    clusters: Vec<Vec<PositionedGlyph>>,
-    // 可选逐 cluster 行级嵌入级别。
-    levels: Option<&[u8]>,
-) -> Vec<PositionedGlyph> {
-    // 预留最终字形数量。
-    let glyph_count = clusters.iter().map(Vec::len).sum();
-    // 保存重新定位后的字形。
-    let mut positioned = Vec::with_capacity(glyph_count);
-    // 从视觉或逻辑行首开始定位。
-    let mut cursor_x = 0.0f32;
-    // 按调用方已确定的 cluster 顺序遍历。
-    for (cluster_index, mut cluster) in clusters.into_iter().enumerate() {
-        // 取得 cluster 原始最小水平坐标。
-        let origin = cluster
-            // 遍历 cluster 字形。
-            .iter()
-            // 提取水平坐标。
-            .map(|glyph| glyph.x)
-            // 聚合最小值。
-            .fold(f32::INFINITY, f32::min);
-        // cluster advance 使用全部非负字形宽度之和。
-        let advance = cluster
-            // 遍历 cluster 字形。
-            .iter()
-            // 提取非负 advance。
-            .map(|glyph| glyph.width.max(0.0))
-            // 汇总 cluster advance。
-            .sum::<f32>();
-        // 取得可选行级嵌入级别。
-        let level = levels
-            // 借用逐 cluster 级别。
-            .and_then(|values| values.get(cluster_index))
-            // 复制数值级别。
-            .copied();
-        // 平移 cluster 内全部字形。
-        for glyph in &mut cluster {
-            // 保留 cluster 内 GPOS 相对位置。
-            glyph.x = cursor_x + (glyph.x - origin);
-            // 调用方提供级别时同步回填几何方向。
-            if let Some(level) = level {
-                // 保存行级嵌入级别。
-                glyph.bidi_level = level;
-            }
-        }
-        // 追加完整 cluster。
-        positioned.extend(cluster);
-        // 推进逻辑或视觉画笔。
-        cursor_x += advance;
-    }
-    // 返回连续定位字形。
-    positioned
 }

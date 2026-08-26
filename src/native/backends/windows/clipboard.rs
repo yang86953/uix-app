@@ -7,8 +7,8 @@ use super::ffi::*;
 
 use crate::native::backends::windows::util::to_utf8;
 use crate::native::backends::windows::util::to_wide;
-use crate::platform::windowing::IClipboard;
 use crate::native::{Errc, Error, Result};
+use crate::platform::windowing::IClipboard;
 use std::ptr;
 
 struct ClipboardSession;

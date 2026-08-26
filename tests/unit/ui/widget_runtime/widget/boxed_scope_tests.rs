@@ -1,5 +1,5 @@
 // 引入生产绘制边界使用的恢复辅助函数与运行时节点类型。
-use super::{run_with_unwind_restore, AccessibilityOverride, BoxedWidget};
+use super::{AccessibilityOverride, BoxedWidget, run_with_unwind_restore};
 // 引入声明节点与协调中间节点，覆盖完整节点流水线的尺寸基线。
 use crate::ui::view::ViewNode;
 use crate::ui::widget_runtime::widget::WidgetNode;
@@ -114,8 +114,10 @@ fn boxed_accessibility_override_preserves_chained_updates() {
     assert_eq!(merged.role, AccessibilityRole::Button);
     assert_eq!(merged.name.as_deref(), Some("新名称"));
     assert!(merged.state.disabled);
-    assert!(merged
-        .attributes
-        .iter()
-        .any(|item| item.name == "aria-description" && item.value == "说明"));
+    assert!(
+        merged
+            .attributes
+            .iter()
+            .any(|item| item.name == "aria-description" && item.value == "说明")
+    );
 }

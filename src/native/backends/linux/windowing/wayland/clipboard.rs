@@ -17,7 +17,6 @@ use wayland_client::protocol::wl_data_source;
 
 // callback typed failure 进入 backend 已有 pending source。
 use crate::diagnostics::PendingFailureSource;
-use crate::platform::windowing::IClipboard;
 use crate::native::windowing::shared::nonblocking_read::{
     NonBlockingReadAccumulator, NonBlockingReadStatus,
 };
@@ -25,6 +24,7 @@ use crate::native::windowing::shared::nonblocking_write::{
     NonBlockingWriteCursor, NonBlockingWriteProgress,
 };
 use crate::native::{Errc, Error, Result};
+use crate::platform::windowing::IClipboard;
 
 // callback disposition 允许 data-source 在 Cancelled 后消费 registry owner。
 use super::WaylandBackend;

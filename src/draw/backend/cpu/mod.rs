@@ -351,19 +351,15 @@ impl RenderBackend for CpuBackend {
                 ));
             }
             let dst_handle = ImageHandle(dst_id);
-            let Some((pixels, pw)) = self.offscreens.copy_pixels(handle) else {
+            if !self
+                .offscreens
+                .blit_into(handle, &dst_handle, src_rect, dst_rect)
+            {
                 return Err(Error::new(
                     crate::core::Errc::InvalidState,
-                    "Picture offscreen pixels disappeared before nested blit",
+                    "Picture offscreen source or target disappeared before nested blit",
                 ));
-            };
-            let Some(dst_canvas) = self.offscreens.canvas_mut(&dst_handle) else {
-                return Err(Error::new(
-                    crate::core::Errc::InvalidState,
-                    "active Picture offscreen target disappeared before blit",
-                ));
-            };
-            dst_canvas.blit_image(&pixels, pw, src_rect, dst_rect);
+            }
             return Ok(());
         }
         self.blit_offscreen_impl(handle, src_rect, dst_rect);

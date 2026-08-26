@@ -57,6 +57,11 @@ impl crate::platform::presentation::GpuRecipeContext for WglContext {
         // 在可变借用前取得当前完整 surface 快照。
         let present_surface = GraphicsContextLifecycle::present_surface(self);
         // 直接借用当前原子 recipe owner，不经过分裂兼容视图。
-        crate::platform::presentation::resize_native_rhi_surface(self, present_surface, width, height)
+        crate::platform::presentation::resize_native_rhi_surface(
+            self,
+            present_surface,
+            width,
+            height,
+        )
     }
 }

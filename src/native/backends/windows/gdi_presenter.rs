@@ -11,9 +11,9 @@
 
 use std::cell::Cell;
 
+use crate::core::{PresentCoherency, PresentDamage, PresentSurface};
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
 use crate::native::backends::windows::util::windows_diag;
-use crate::core::{PresentCoherency, PresentDamage, PresentSurface};
 use crate::native::presentation::graphics::platform::windows::query_client_rect;
 use crate::native::{Errc, Error};
 use crate::platform::presentation::IPresenter;

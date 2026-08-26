@@ -7,7 +7,9 @@ use crate::draw::backend::frame_plan::{
     FramePlan, FramePlanCommand, RenderPassPlan, RenderTargetRef,
 };
 // 引入薄 RHI 的颜色、目标、viewport 和 surface 代际类型。
-use crate::platform::presentation::rhi::{LoadAction, RhiColor, RhiExtent, RhiScissor, TextureHandle};
+use crate::platform::presentation::rhi::{
+    LoadAction, RhiColor, RhiExtent, RhiScissor, TextureHandle,
+};
 // 引入所属 graphics backend Module 的主 surface 清理原语。
 use super::super::GpuSolidRect;
 

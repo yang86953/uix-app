@@ -27,10 +27,7 @@ fn uix_shell_preserves_single_kernel_leaf() {
         .downcast_ref::<Skeleton>()
         .expect("UIX 根必须保留 Skeleton 内核");
     assert!(std::ptr::eq(kernel.visual, SKELETON_VISUAL_REF));
-    assert!(
-        std::mem::size_of::<SkeletonVisual>()
-            > std::mem::size_of::<&'static SkeletonVisual>()
-    );
+    assert!(std::mem::size_of::<SkeletonVisual>() > std::mem::size_of::<&'static SkeletonVisual>());
     // 作者尺寸优先，段落、圆角、流光和主题角色由 UIX 注入。
     assert_eq!(kernel.height_source, SkeletonHeightSource::Authored);
     assert_eq!(kernel.visual.paragraph_line_height, 12.0);

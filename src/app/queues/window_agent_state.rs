@@ -6,21 +6,21 @@
 //! 提供执行实现（`AgentCommandExecutor`），由组合根 `session_runtime` 组装
 //! 期注入。
 
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
 use std::time::Instant;
 
 #[cfg(any(test, feature = "agent-control"))]
 use crate::app::queues::agent_command_queue::AgentWindowAction;
 use crate::app::queues::agent_command_queue::MAX_AGENT_CONFIRM_TTL;
 use crate::app::queues::agent_command_queue::{
-    send_result, AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
-    AgentCommandResult, AgentConfirmationRequest, MAX_AGENT_SETTLE_PASSES,
+    AgentCommandError, AgentCommandQueue, AgentCommandRequest, AgentCommandResponse,
+    AgentCommandResult, AgentConfirmationRequest, MAX_AGENT_SETTLE_PASSES, send_result,
 };
 use crate::app::window_semantics::WindowSemanticState;
+use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
-use crate::ui::WidgetTree;
 
 /// 窗口级 Agent 动作的操作契约：由 window 系统实现，经 UI turn 传入。
 ///
