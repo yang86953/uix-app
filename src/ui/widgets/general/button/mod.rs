@@ -365,7 +365,8 @@ impl_widget!(
     Button;
     Layout, Render, Event, Animation;
     tab_index => 1;
-    may_produce_overlay => false
+    may_produce_overlay => false;
+    may_request_event_layout => false
 );
 
 impl SnapshotSource for Button {

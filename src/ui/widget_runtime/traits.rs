@@ -50,6 +50,8 @@ impl WidgetCapabilities {
     pub const TEXT_INPUT: u16 = 0b10_0000;
     /// 组件类型可能产生浮层的内部能力位。
     pub(crate) const MAY_PRODUCE_OVERLAY: u16 = 0b100_0000;
+    /// 组件类型可能在事件或语义处理后请求布局的内部能力位。
+    pub(crate) const MAY_REQUEST_EVENT_LAYOUT: u16 = 0b1000_0000;
 
     /// 创建不包含任何可选能力的标记。
     pub const fn new() -> Self {
@@ -143,6 +145,12 @@ pub trait Widget: 'static {
     /// 声明组件类型是否可能产生浮层；手写组件默认保守参与重建。
     #[doc(hidden)]
     fn may_produce_overlay(&self) -> bool {
+        true
+    }
+    /// 声明组件是否可能通过 `take_layout_request` 请求布局。
+    #[doc(hidden)]
+    fn may_request_event_layout(&self) -> bool {
+        // 手写组件默认保守参与检查，避免新增能力声明改变既有语义。
         true
     }
 

@@ -39,6 +39,49 @@ impl Widget for OverlayCapabilityWidget {
     }
 }
 
+// 用布尔值模拟手写组件的事件布局请求能力声明。
+struct EventLayoutCapabilityWidget(bool);
+
+impl Widget for EventLayoutCapabilityWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::new()
+    }
+
+    fn may_request_event_layout(&self) -> bool {
+        self.0
+    }
+}
+
+crate::widget! {
+    // 用真实 widget! 展开验证 take_layout_request 槽位会生成精确能力。
+    MacroLayoutRequestWidget {
+        requested: bool,
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
+        _tree: &crate::ui::widget_runtime::widget::WidgetTree
+    ) {}
+
+    take_layout_request => (&mut self) -> bool {
+        std::mem::take(&mut self.requested)
+    }
+}
+
 // 确认组件 panic 不会把临时令牌泄漏给后续兄弟节点。
 #[test]
 // 执行 TokenScope panic 展开回归。
@@ -129,6 +172,45 @@ fn overlay_capability_cache_tracks_widget_replacement() {
 
     node.replace_widget(Box::new(OverlayCapabilityWidget(true)));
     assert!(node.may_produce_overlay());
+}
+
+// 事件布局请求能力必须精确覆盖 widget!，并在手写组件替换时刷新。
+#[test]
+fn event_layout_request_capability_is_cached_without_expanding_nodes() {
+    let mut generated = BoxedWidget::new(Box::new(MacroLayoutRequestWidget { requested: true }));
+    assert!(
+        generated
+            .capabilities()
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+    );
+    assert!(generated.take_layout_request());
+    assert!(!generated.take_layout_request());
+
+    let container = BoxedWidget::new(Box::new(crate::ui::widgets::containers::Container::new()));
+    assert!(
+        !container
+            .capabilities()
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+    );
+
+    let button = BoxedWidget::new(Box::new(crate::ui::widgets::general::Button::new("确认")));
+    assert!(
+        !button
+            .capabilities()
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+    );
+
+    let mut node = BoxedWidget::new(Box::new(EventLayoutCapabilityWidget(false)));
+    assert!(
+        !node
+            .capabilities()
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+    );
+    node.replace_widget(Box::new(EventLayoutCapabilityWidget(true)));
+    assert!(
+        node.capabilities()
+            .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
+    );
 }
 
 // 确认按需装箱没有改变连续覆盖的合并语义。
