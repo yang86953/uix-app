@@ -3,14 +3,13 @@ use super::*;
 use crate::ui::event::SemanticEvent;
 
 impl WidgetTree {
-    fn semantic_path_to_root(&self, target: WidgetId) -> Vec<WidgetId> {
-        let mut path = Vec::new();
+    fn fill_semantic_path_to_root(&self, target: WidgetId, path: &mut Vec<WidgetId>) {
+        path.clear();
         let mut current = Some(target);
         while let Some(id) = current {
             path.push(id);
             current = self.get(id).and_then(|node| node.parent());
         }
-        path
     }
 
     /// 沿目标到根的路径分发可变语义事件，并应用处理器请求。
@@ -23,10 +22,14 @@ impl WidgetTree {
         if self.is_pending_removal_subtree(event.target) {
             return EventResult::NotHandled;
         }
-        let path = self.semantic_path_to_root(event.target);
+        // 暂时取走树级工作区，使用户回调重入时内层分发使用独立空槽。
+        let mut path = std::mem::take(&mut self.semantic_path_scratch);
+        self.fill_semantic_path_to_root(event.target, &mut path);
         let result = self.handler_table.dispatch_path(&path, event);
         self.apply_modal_context_requests(&path);
         self.apply_semantic_layout_requests(&path);
+        // 保留路径容量，消除稳态短路径的重复申请。
+        self.semantic_path_scratch = path;
         result
     }
 

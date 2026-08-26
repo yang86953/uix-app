@@ -101,6 +101,10 @@ pub struct WidgetTree {
     pub(crate) visual_path_scratch: std::cell::RefCell<Vec<WidgetId>>,
     // 复用 Wheel 捕获阶段的根到目标祖先快照；分发期间取出以隔离回调重入。
     pub(crate) wheel_capture_path_scratch: Vec<WidgetId>,
+    // 复用普通事件捕获阶段的根到目标祖先快照；按树独占并在回调期间临时取出。
+    pub(crate) event_capture_path_scratch: Vec<WidgetId>,
+    // 复用语义事件从目标到根的冒泡路径；按值分发完成后保留既有容量。
+    pub(crate) semantic_path_scratch: Vec<WidgetId>,
     /// 焦点切换复用的旧、新包含路径快照；由本树唯一拥有，不跨窗口共享。
     pub(crate) focus_transition_path_scratch: Vec<WidgetId>,
 
@@ -189,6 +193,8 @@ impl Default for WidgetTree {
             hit_test_order_scratch: std::cell::RefCell::new(Vec::new()),
             visual_path_scratch: std::cell::RefCell::new(Vec::new()),
             wheel_capture_path_scratch: Vec::new(),
+            event_capture_path_scratch: Vec::new(),
+            semantic_path_scratch: Vec::new(),
             focus_transition_path_scratch: Vec::new(),
             handler_table: HandlerTable::new(),
             render_handler_table: RenderHandlerTable::default(),

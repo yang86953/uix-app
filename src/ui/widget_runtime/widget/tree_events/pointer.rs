@@ -312,8 +312,10 @@ impl WidgetTree {
     }
 
     pub(super) fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> Option<WidgetId> {
-        // 收集从 root 到 target 的祖先路径（不含 target）
-        let mut path = Vec::new();
+        // 暂时取走树级工作区；回调重入时内层会获得独立空槽，不别名外层路径。
+        let mut path = std::mem::take(&mut self.event_capture_path_scratch);
+        path.clear();
+        // 收集从 root 到 target 的祖先路径（不含 target）。
         let mut current = self.get(target).and_then(|n| n.parent());
         while let Some(id) = current {
             path.push(id);
@@ -321,6 +323,7 @@ impl WidgetTree {
         }
         path.reverse(); // 现在是从 root → ... → target.parent
 
+        let mut captured = None;
         for &id in &path {
             if !self.get(id).is_some_and(|node| node.wants_capture_phase()) {
                 continue;
@@ -343,10 +346,13 @@ impl WidgetTree {
                 if let Some(event) = semantic {
                     let _ = self.dispatch_semantic(event);
                 }
-                return Some(id);
+                captured = Some(id);
+                break;
             }
         }
-        None
+        // 保存已经增长的容量供下一次普通捕获分发复用。
+        self.event_capture_path_scratch = path;
+        captured
     }
 
     /// capture 阶段拦截事件后：标记拦截节点重绘。

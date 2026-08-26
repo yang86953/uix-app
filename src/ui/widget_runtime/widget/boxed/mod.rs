@@ -775,7 +775,24 @@ impl BoxedWidget {
     }
 
     pub(crate) fn is_interaction_enabled(&self) -> bool {
-        !self.accessibility().state.disabled
+        // 显式 ARIA 状态或整体替换必须继续覆盖组件自己的事件门控。
+        if let Some(disabled) = self
+            .accessibility_override
+            .as_deref()
+            .and_then(AccessibilityOverride::disabled_override)
+        {
+            return !disabled;
+        }
+        // 高频内建组件可直接发布门控布尔值；未知组件保持完整快照兼容语义。
+        self.with_widget_context(|widget| {
+            widget
+                .as_event()
+                .and_then(EventHandler::interaction_enabled)
+                .unwrap_or_else(|| {
+                    let fields = widget.snapshot_fields();
+                    !Self::widget_accessibility(widget, &fields).state.disabled
+                })
+        })
     }
 
     pub fn attached(&self) -> bool {

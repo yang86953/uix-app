@@ -369,6 +369,13 @@ pub trait WidgetRender: Widget {
 
 /// 事件行为：输入事件处理、滚动偏移、命中测试。
 pub trait EventHandler: Widget {
+    /// 可选地直接返回当前是否允许交互；`None` 保持从完整无障碍快照派生的兼容路径。
+    ///
+    /// 内建高频控件可实现该窄查询，避免事件门控为读取单个布尔值复制完整快照。
+    #[doc(hidden)]
+    fn interaction_enabled(&self) -> Option<bool> {
+        None
+    }
     /// 处理一个已路由到组件的系统事件。
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled

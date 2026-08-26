@@ -11,6 +11,15 @@ pub(crate) struct AccessibilityOverride {
 }
 
 impl AccessibilityOverride {
+    /// 返回覆盖项最终指定的禁用标志；未覆盖状态时保留基准组件决定权。
+    pub(crate) fn disabled_override(&self) -> Option<bool> {
+        self.state.as_ref().map(|state| state.disabled).or_else(|| {
+            self.replacement
+                .as_ref()
+                .map(|replacement| replacement.state.disabled)
+        })
+    }
+
     /// 整体替换基准无障碍快照（覆盖其余所有字段）。
     pub(crate) fn replace(accessibility: AccessibilitySnapshot) -> Self {
         Self {
