@@ -349,6 +349,45 @@ fn watched_state_reentrant_registration_preserves_snapshot_order() {
     );
 }
 
+// 验证依赖源在多 Effect 与死亡弱引用并存时仍完整交付存活订阅。
+#[test]
+fn multiple_effect_subscribers_preserve_notification_delivery() {
+    let state = State::new(0_u64);
+    let left_executions = Arc::new(AtomicUsize::new(0));
+    let right_executions = Arc::new(AtomicUsize::new(0));
+
+    let left_state = state.clone();
+    let left_sink = Arc::clone(&left_executions);
+    let left = Effect::new(move || {
+        // 读取同一源建立第一份独立弱订阅。
+        black_box(left_state.get());
+        left_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    let right_state = state.clone();
+    let right_sink = Arc::clone(&right_executions);
+    let right = Effect::new(move || {
+        // 读取同一源建立第二份独立弱订阅。
+        black_box(right_state.get());
+        right_sink.fetch_add(1, Ordering::Relaxed);
+    });
+    assert_eq!(left_executions.load(Ordering::Relaxed), 1);
+    assert_eq!(right_executions.load(Ordering::Relaxed), 1);
+
+    // 多订阅快照必须在锁外把同一代失效交付给两个 Effect。
+    state.set(1);
+    assert!(left.tick());
+    assert!(right.tick());
+    assert_eq!(left_executions.load(Ordering::Relaxed), 2);
+    assert_eq!(right_executions.load(Ordering::Relaxed), 2);
+
+    // 第一份 Effect 析构后，死亡弱引用不得妨碍仍存活订阅。
+    drop(left);
+    state.set(2);
+    assert!(right.tick());
+    assert_eq!(left_executions.load(Ordering::Relaxed), 2);
+    assert_eq!(right_executions.load(Ordering::Relaxed), 3);
+}
+
 // 剖析应用层共享状态向大量公开观察者同步广播时的快照成本。
 #[test]
 fn high_fanout_watched_state_profile() {
@@ -450,19 +489,19 @@ fn repeated_effect_dependency_profile() {
         "PROFILE repeated_effect_dependency: rounds={rounds} iterations={iterations} reads={reads_per_tick} tick_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
         allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
     );
-    // 唯一依赖的稳定刷新当前只需七次小申请，重复读取不得使分配随读取数增长。
+    // 单订阅通知使用栈快照后，每轮只保留依赖捕获容器的一次申请。
     assert!(
-        allocations.count <= iterations * 8,
+        allocations.count <= iterations,
         "重复依赖捕获申请次数回退: {allocations:?}"
     );
-    // 为 HashMap、快照和锁外通知保留平台余量，同时拒绝重新装箱每次重复读取。
+    // 单轮依赖捕获容量保持 128 字节，拒绝一元订阅 Vec 或逐次读取装箱回归。
     assert!(
-        allocations.allocated_bytes <= iterations * 640,
+        allocations.allocated_bytes <= iterations * 128,
         "重复依赖捕获申请字节回退: {allocations:?}"
     );
     // 稳态临时对象峰值必须保持常量级，不得再次接近完整重复依赖向量。
     assert!(
-        allocations.peak_live_bytes <= 512,
+        allocations.peak_live_bytes <= 128,
         "重复依赖捕获峰值 live 回退: {allocations:?}"
     );
     // 场景必须覆盖全部预热和测量执行，防止零工作量数据进入比较。
