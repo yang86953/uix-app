@@ -1,5 +1,25 @@
 // 引入被测树级失效实现与私有辅助函数。
 use super::*;
+use crate::core::WidgetId;
+use crate::ui::widgets::{Container, Space};
+
+// 构造带根与直接子节点的最小真实组件树，并清除建树阶段的失效。
+fn tree_with_root_and_child() -> (WidgetTree, WidgetId, WidgetId) {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new()));
+    let child = tree.add_child(root, Box::new(Space::new()));
+    tree.reset_invalidation();
+    (tree, root, child)
+}
+
+// 读取共享队列条目，避免测试在持锁期间继续调用树方法。
+fn invalidation_items(tree: &WidgetTree) -> Vec<Invalidation> {
+    tree.invalidation()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .items
+        .clone()
+}
 
 // 分数滚动无法由整数纹理搬移精确表达时必须回退为重绘。
 #[test]
@@ -36,4 +56,43 @@ fn scroll_chrome_regions_preserve_right_and_bottom_gutters() {
             Rect::new(102.0, 20.0, 8.0, 72.0),
         ]
     );
+}
+
+// 非批次根 Layout 已存在时，子请求不再写入队列但必须返回无需传播。
+#[test]
+fn non_batch_root_layout_suppresses_child_request_and_advances_revision() {
+    let (mut tree, root, child) = tree_with_root_and_child();
+    assert!(tree.push_layout_invalidation(root));
+    let before_revision = tree.invalidation_revision();
+
+    assert!(!tree.push_layout_invalidation(child));
+    assert_eq!(invalidation_items(&tree), vec![Invalidation::Layout(root)]);
+    assert_eq!(
+        tree.invalidation_revision(),
+        before_revision.wrapping_add(1),
+    );
+}
+
+// 批次内即使根 Layout 已存在也必须写入 pending，直到结束才发布共享队列。
+#[test]
+fn batch_root_layout_keeps_child_pending_until_finish() {
+    let (mut tree, root, child) = tree_with_root_and_child();
+    assert!(tree.push_layout_invalidation(root));
+    let published_before_batch = invalidation_items(&tree);
+
+    tree.begin_invalidation_batch();
+    assert!(tree.push_layout_invalidation(child));
+    assert_eq!(invalidation_items(&tree), published_before_batch);
+    assert_eq!(
+        tree.pending_invalidations,
+        vec![Invalidation::Layout(child)],
+    );
+
+    tree.finish_invalidation_batch();
+    assert_eq!(
+        invalidation_items(&tree),
+        vec![Invalidation::Layout(root), Invalidation::Layout(child)],
+    );
+    assert!(tree.pending_invalidations.is_empty());
+    assert_eq!(tree.invalidation_batch_depth, 0);
 }
