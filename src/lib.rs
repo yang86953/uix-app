@@ -273,6 +273,10 @@ pub fn __run_vulkan_shared_device_contract_test() {
 #[doc(hidden)]
 // 每个 feature 的启用与关闭侧都由同一模块中的条件文档测试验证。
 pub mod capability_compile_contract;
+// lib 单元测试的唯一全局分配探针由中立测试支持边界拥有。
+#[cfg(test)]
+#[path = "../tests/unit/test_allocation_probe.rs"]
+pub(crate) mod test_allocation_probe;
 // 真实消费者编译 Gate 仅在测试构建中接入。
 #[cfg(test)]
 // 隔离 uix-lang 核心生成物的公开 API 编译测试。
