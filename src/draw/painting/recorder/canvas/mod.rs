@@ -366,6 +366,86 @@ impl FrameRecordingCanvas {
         Ok(true)
     }
 
+    /// 直接录制共享图片；完整源图沿帧命令保留 `Arc`，裁剪与 Additive 保持旧复制路径。
+    pub(super) fn record_direct_image_blit_shared(
+        &mut self,
+        pixels: std::sync::Arc<Vec<u32>>,
+        source_width: i32,
+        source_rect: Rect,
+        destination_rect: Rect,
+    ) -> Result<bool, Error> {
+        let canvas_opacity = self.scratch.opacity();
+        if !canvas_opacity.is_finite() {
+            return Ok(false);
+        }
+        let opacity = FrameOpacity::from_canvas(canvas_opacity);
+        if opacity.is_transparent() {
+            return Ok(true);
+        }
+        // Additive 仍复用既有几何与错误顺序；本批只消除常见完整 SrcOver 图片复制。
+        if self.blend_mode == BlendMode::Additive {
+            return self.record_direct_image_blit(
+                pixels.as_slice(),
+                source_width,
+                source_rect,
+                destination_rect,
+            );
+        }
+        let Ok(source_stride) = usize::try_from(source_width) else {
+            return Ok(false);
+        };
+        if source_stride == 0 {
+            return Ok(false);
+        }
+        let Ok(source_height) = i32::try_from(pixels.len() / source_stride) else {
+            return Ok(false);
+        };
+        let Some((source, destination)) =
+            self.direct_picture_geometry(source_rect, destination_rect)
+        else {
+            return Ok(false);
+        };
+        if source.width != destination.width
+            || source.height != destination.height
+            || !source.is_within(source_width, source_height)
+        {
+            return Ok(false);
+        }
+
+        let pixel_count = usize::try_from(i64::from(source.width) * i64::from(source.height))
+            .map_err(|_| {
+                Error::new(
+                    Errc::GraphicsOutOfMemory,
+                    "direct image blit crop exceeds addressable memory",
+                )
+            })?;
+        // 只有完整源图能直接共享；裁剪仍必须形成紧密行主序载荷。
+        if source.x != 0
+            || source.y != 0
+            || source.width != source_width
+            || source.height != source_height
+            || pixel_count != pixels.len()
+        {
+            return self.record_direct_image_blit(
+                pixels.as_slice(),
+                source_width,
+                source_rect,
+                destination_rect,
+            );
+        }
+        let image = FrameImage::from_shared(source.width, source.height, pixels)
+            .map_err(frame_encoder_error)?;
+        let retained_source = FrameRect::new(0, 0, source.width, source.height);
+        self.flush_scratch()?;
+        self.encoder_mut()?.blit_picture_integer_with_opacity(
+            image,
+            retained_source,
+            destination,
+            opacity,
+        );
+        Ok(true)
+    }
+
     /// 记录本地绘制区域扩展后的打包边界（并入当前 scratch 批次）。
     pub(super) fn note_scratch_bounds(&mut self, local: Rect, pad: f32) {
         // 先在本地空间扩展线宽、模糊或抗锯齿边界，使缩放和剪切不会截断像素。

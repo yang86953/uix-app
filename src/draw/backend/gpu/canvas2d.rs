@@ -182,6 +182,48 @@ impl Canvas2D for NativeGpuCanvas2D {
         self.mark_soft();
     }
 
+    fn blit_image_shared(
+        &mut self,
+        src: std::sync::Arc<Vec<u32>>,
+        src_w: i32,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) {
+        if !self.opacity.is_finite() || self.opacity <= 0.0 {
+            return;
+        }
+        if !self.soft_has_content {
+            match self.try_queue_direct_image_blit_shared(
+                std::sync::Arc::clone(&src),
+                src_w,
+                src_rect,
+                dst_rect,
+            ) {
+                DirectImageBlit::Ready(blit) => {
+                    self.pending_native
+                        .push(PendingNativeOp::ImageBlit(PendingNativeImage {
+                            blit,
+                            scissor: self.scissor_aabb(),
+                        }));
+                    return;
+                }
+                DirectImageBlit::Culled => return,
+                DirectImageBlit::Unsupported => {}
+            }
+        }
+        if self.gpu_only {
+            self.reject_unsupported("image GPU texture blit");
+            return;
+        }
+        self.sync_fallback_state();
+        let soft_clip = self.clip_rect;
+        self.ensure_soft().push_clip(soft_clip);
+        self.ensure_soft()
+            .blit_image(src.as_slice(), src_w, src_rect, dst_rect);
+        self.ensure_soft().pop_clip();
+        self.mark_soft();
+    }
+
     fn blit_glyph(&mut self, x: i32, y: i32, coverage: &[u8], w: usize, h: usize, color: Color) {
         if w == 0 || h == 0 || coverage.is_empty() {
             return;

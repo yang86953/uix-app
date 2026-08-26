@@ -225,7 +225,7 @@ fn copy_glyph_coverage(glyph: &FrameGlyphBlit) -> Result<Option<Arc<[u8]>>, Erro
 fn copy_image_crop(
     image: &FrameImage,
     source: crate::draw::painting::FrameRect,
-) -> Result<Option<Arc<[u32]>>, Error> {
+) -> Result<Option<Arc<Vec<u32>>>, Error> {
     // 非法 source 不应让 RHI 猜测边界，由调用方返回 typed lowering failure。
     if !source.is_within(image.width(), image.height()) {
         return Ok(None);
@@ -238,6 +238,15 @@ fn copy_image_crop(
                 "FrameEncoder image extent overflows",
             )
         })?;
+    if source.x == 0
+        && source.y == 0
+        && source.width == image.width()
+        && source.height == image.height()
+        && count == image.pixels.len()
+    {
+        // 完整源图已由帧值拥有，lowering 只延续同一共享载荷。
+        return Ok(Some(Arc::clone(&image.pixels)));
+    }
     let mut retained = Vec::new();
     retained.try_reserve_exact(count).map_err(|error| {
         Error::new(
@@ -250,7 +259,7 @@ fn copy_image_crop(
         let start = (source.y as usize + row) * stride + source.x as usize;
         retained.extend_from_slice(&image.pixels()[start..start + source.width as usize]);
     }
-    Ok(Some(Arc::from(retained)))
+    Ok(Some(Arc::new(retained)))
 }
 
 // 追加一条已经验证的 FrameRasterOp，并返回是否可以保持无损 RHI 语义。

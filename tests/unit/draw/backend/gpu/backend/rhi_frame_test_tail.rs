@@ -12,6 +12,24 @@ use crate::draw::Color;
 // 引入测试使用的通用纹理和 viewport 值。
 use crate::platform::presentation::rhi::{RhiColor, RhiExtent, RhiViewport, TextureHandle};
 
+// 完整图片 lowering 必须延续共享所有权，只有真实裁剪才生成紧密载荷。
+#[test]
+fn full_picture_crop_reuses_shared_pixels_and_partial_crop_is_tight() {
+    let pixels = std::sync::Arc::new(vec![1, 2, 3, 4, 5, 6]);
+    let image = FrameImage::from_shared(3, 2, std::sync::Arc::clone(&pixels))
+        .expect("完整测试图片应满足像素数量契约");
+    let full = super::copy_image_crop(&image, FrameRect::new(0, 0, 3, 2))
+        .expect("完整图片 lowering 不应失败")
+        .expect("完整图片必须产生载荷");
+    assert!(std::sync::Arc::ptr_eq(&pixels, &full));
+
+    let crop = super::copy_image_crop(&image, FrameRect::new(1, 0, 2, 2))
+        .expect("合法裁剪 lowering 不应失败")
+        .expect("合法裁剪必须产生载荷");
+    assert!(!std::sync::Arc::ptr_eq(&pixels, &crop));
+    assert_eq!(crop.as_slice(), [2, 3, 5, 6]);
+}
+
 // 页面销毁产生的空 PictureBlit 必须与 CPU 参考执行保持相同的 no-op 语义。
 #[test]
 // 同时锁定录制入口和历史命令流的 retained RHI 兼容边界。

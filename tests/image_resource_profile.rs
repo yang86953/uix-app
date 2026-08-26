@@ -8,8 +8,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use uix::core::Rect;
-use uix::draw::resources::image::{fit_dst_rect, BitmapHandle, ImageService};
+use uix::core::{Rect, Size};
+use uix::draw::resources::image::{blit_handle, BitmapHandle, ImageService};
+use uix::draw::{
+    BlendMode, Canvas2D, Color, FillRule, GradientDirection, Path as DrawPath, Radius,
+    StrokeOptions, Transform,
+};
 
 const SMALL_BYTES: &[u8] = include_bytes!("../assets/images/demo.png");
 const LARGE_BYTES: &[u8] = include_bytes!("../assets/images/acceptance-1461-before.png");
@@ -128,20 +132,85 @@ fn verify_slot(service: &ImageService, handle: BitmapHandle, width: i32, height:
         .expect("有效图片句柄必须保留尺寸与预乘像素")
 }
 
-fn prepare_retained_pixels(service: &ImageService, handle: BitmapHandle) -> usize {
-    service
-        .with_slot(handle, |slot| {
-            let source = Rect::new(0.0, 0.0, slot.width() as f32, slot.height() as f32);
-            let destination = fit_dst_rect(slot.width(), slot.height(), source);
-            let mut retained = Vec::new();
-            retained
-                .try_reserve_exact(slot.pixels().len())
-                .expect("固定测试图片的绘制载荷应可分配");
-            retained.extend_from_slice(slot.pixels());
-            black_box(destination);
-            black_box(retained).len()
-        })
-        .expect("绘制准备必须借到有效图片槽位")
+#[derive(Default)]
+struct RetainingCanvas {
+    retained: Option<std::sync::Arc<Vec<u32>>>,
+    transform: Transform,
+}
+
+impl Canvas2D for RetainingCanvas {
+    fn current_transform(&self) -> Transform {
+        self.transform
+    }
+    fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+    fn fill_rect(&mut self, _: Rect, _: Color, _: Option<Radius>) {}
+    fn fill_circle(&mut self, _: f32, _: f32, _: f32, _: Color) {}
+    fn fill_ellipse(&mut self, _: Rect, _: Color) {}
+    fn fill_sector(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: Color) {}
+    fn fill_path(&mut self, _: &DrawPath, _: Color, _: FillRule) {}
+    fn stroke_rect(&mut self, _: Rect, _: Color, _: f32, _: Option<Radius>) {}
+    fn stroke_circle(&mut self, _: f32, _: f32, _: f32, _: Color, _: f32) {}
+    fn stroke_path(&mut self, _: &DrawPath, _: Color, _: &StrokeOptions) {}
+    fn draw_line(&mut self, _: f32, _: f32, _: f32, _: f32, _: Color, _: f32) {}
+    fn fill_linear_gradient(&mut self, _: Rect, _: Color, _: Color, _: GradientDirection) {}
+    fn fill_radial_gradient(&mut self, _: f32, _: f32, _: f32, _: f32, _: Color, _: Color) {}
+    fn draw_box_shadow(&mut self, _: Rect, _: f32, _: f32, _: f32, _: Color, _: Option<Radius>) {}
+    fn draw_box_shadow_ambient(
+        &mut self,
+        _: Rect,
+        _: f32,
+        _: f32,
+        _: f32,
+        _: Color,
+        _: Option<Radius>,
+    ) {
+    }
+    fn blit_image(&mut self, source: &[u32], _: i32, _: Rect, _: Rect) {
+        self.retained = Some(std::sync::Arc::new(source.to_vec()));
+    }
+    fn blit_image_shared(&mut self, source: std::sync::Arc<Vec<u32>>, _: i32, _: Rect, _: Rect) {
+        self.retained = Some(source);
+    }
+    fn blit_glyph(&mut self, _: i32, _: i32, _: &[u8], _: usize, _: usize, _: Color) {}
+    fn save(&mut self) {}
+    fn restore(&mut self) {}
+    fn push_clip(&mut self, _: Rect) {}
+    fn pop_clip(&mut self) {}
+    fn set_opacity(&mut self, _: f32) {}
+    fn opacity(&self) -> f32 {
+        1.0
+    }
+    fn set_blend_mode(&mut self, _: BlendMode) {}
+    fn push_clip_path(&mut self, _: &DrawPath) {}
+    fn pixels(&self) -> &[u32] {
+        self.retained
+            .as_ref()
+            .map_or(&[], |pixels| pixels.as_slice())
+    }
+    fn surface_size(&self) -> Size {
+        Size::new(1200.0, 800.0)
+    }
+    fn current_clip(&self) -> Rect {
+        Rect::new(0.0, 0.0, 1200.0, 800.0)
+    }
+    fn scroll_region(&mut self, _: Rect, _: f32, _: f32) {}
+}
+
+fn prepare_retained_pixels(
+    service: &ImageService,
+    handle: BitmapHandle,
+    canvas: &mut RetainingCanvas,
+) -> usize {
+    blit_handle(
+        service,
+        canvas,
+        handle,
+        Rect::new(0.0, 0.0, 1200.0, 800.0),
+        false,
+    );
+    black_box(canvas.pixels()).len()
 }
 
 fn premultiply_profile_pixel(pixel: &[u8]) -> u32 {
@@ -240,8 +309,9 @@ fn profile_image_resource_pipeline() {
     });
     let (small, large) = handles.expect("两张固定图片必须完成冷加载");
     let memory_loaded = service.memory_usage();
-    let checksum = verify_slot(&service, small, 1, 1)
-        ^ verify_slot(&service, large, 1200, 800).rotate_left(13);
+    let small_checksum = verify_slot(&service, small, 1, 1);
+    let large_checksum = verify_slot(&service, large, 1200, 800);
+    let checksum = small_checksum ^ large_checksum.rotate_left(13);
     assert_eq!(checksum, 7_293_468_762_605_642_447);
     assert_eq!(service.load_from_path(&small_path).unwrap(), small);
     assert_eq!(service.load_from_path(&large_path).unwrap(), large);
@@ -278,19 +348,20 @@ fn profile_image_resource_pipeline() {
         }
     });
 
+    let mut canvas = RetainingCanvas::default();
     for _ in 0..32 {
-        black_box(prepare_retained_pixels(&service, large));
+        black_box(prepare_retained_pixels(&service, large, &mut canvas));
     }
     let mut draw_samples = [0_u128; TIMING_ROUNDS];
     for sample in &mut draw_samples {
         let start = Instant::now();
         for _ in 0..DRAW_PREPARES {
-            black_box(prepare_retained_pixels(&service, large));
+            black_box(prepare_retained_pixels(&service, large, &mut canvas));
         }
         *sample = start.elapsed().as_nanos() / DRAW_PREPARES as u128;
     }
     let draw_allocations = allocation_stats(|| {
-        black_box(prepare_retained_pixels(&service, large));
+        black_box(prepare_retained_pixels(&service, large, &mut canvas));
     });
 
     let release_stats = allocation_stats(|| {
@@ -301,9 +372,17 @@ fn profile_image_resource_pipeline() {
     assert!(!service.is_valid(small));
     assert!(!service.is_valid(large));
     assert_eq!(memory_after, 2 * std::mem::size_of::<u32>());
+    assert_eq!(canvas.pixels().len(), 1200 * 800);
+    let retained_checksum = canvas.pixels().iter().fold(0_u64, |checksum, pixel| {
+        checksum.rotate_left(5) ^ u64::from(*pixel)
+    });
+    assert_eq!(retained_checksum, large_checksum);
+    let frame_drop_stats = allocation_stats(|| {
+        canvas.retained = None;
+    });
 
     eprintln!(
-        "PROFILE image_resource cold_ns_per_image={} cache_hit_ns={} draw_prepare_ns={} cold_allocs={} cold_bytes={} cold_peak_live={} cold_final_live={} steady_allocs={} steady_bytes={} steady_peak_live={} steady_final_live={} draw_allocs={} draw_bytes={} draw_peak_live={} draw_final_live={} release_peak_live={} release_final_live={} service_memory_before={} service_memory_loaded={} service_memory_after={} checksum={}",
+        "PROFILE image_resource cold_ns_per_image={} cache_hit_ns={} draw_prepare_ns={} cold_allocs={} cold_bytes={} cold_peak_live={} cold_final_live={} steady_allocs={} steady_bytes={} steady_peak_live={} steady_final_live={} draw_allocs={} draw_bytes={} draw_peak_live={} draw_final_live={} release_peak_live={} release_final_live={} frame_drop_final_live={} service_memory_before={} service_memory_loaded={} service_memory_after={} checksum={}",
         median(cold_samples),
         median(hit_samples),
         median(draw_samples),
@@ -321,6 +400,7 @@ fn profile_image_resource_pipeline() {
         draw_allocations.final_live_delta,
         release_stats.peak_live_delta,
         release_stats.final_live_delta,
+        frame_drop_stats.final_live_delta,
         memory_before,
         memory_loaded,
         memory_after,

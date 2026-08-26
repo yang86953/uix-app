@@ -218,7 +218,7 @@ pub(crate) struct GpuImageBlit {
     /// 标记是否使用通道相加合成。
     pub(crate) additive: bool,
     /// 共享紧裁剪的行主序 BGRA 预乘像素。
-    pub(crate) pixels: Arc<[u32]>,
+    pub(crate) pixels: Arc<Vec<u32>>,
     /// 记录像素缓冲区宽度。
     pub(crate) pixel_w: u32,
     /// 记录像素缓冲区高度。

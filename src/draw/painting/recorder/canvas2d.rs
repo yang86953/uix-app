@@ -450,6 +450,36 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.blit_image(src, src_w, src_rect, dst_rect)
         });
     }
+
+    fn blit_image_shared(
+        &mut self,
+        src: std::sync::Arc<Vec<u32>>,
+        src_w: i32,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) {
+        if self.deferred_error.is_some() {
+            return;
+        }
+        match self.record_direct_image_blit_shared(
+            std::sync::Arc::clone(&src),
+            src_w,
+            src_rect,
+            dst_rect,
+        ) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                self.remember_error(error);
+                return;
+            }
+        }
+        // 不能直达时在本次同步调用内借用共享像素，结束后不保留裸切片。
+        self.draw_cpu_source(dst_rect, 1.0, |scratch| {
+            scratch.blit_image(src.as_slice(), src_w, src_rect, dst_rect)
+        });
+    }
+
     /// 录制字形（带 coverage 借用切片）。
     fn blit_glyph(
         &mut self,

@@ -10,6 +10,7 @@ pub(crate) mod decode;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 // 图片编解码 capability 启用时才需要读取文件。
 #[cfg(feature = "image-codecs")]
 // 路径解码入口使用标准文件系统读取压缩数据。
@@ -67,7 +68,7 @@ impl BitmapHandle {
 pub struct ImageSlot {
     width: i32,
     height: i32,
-    pixels: Vec<u32>,
+    pixels: Arc<Vec<u32>>,
     path: Option<String>,
     valid: bool,
     generation: u32,
@@ -78,7 +79,8 @@ impl ImageSlot {
         Self {
             width: w,
             height: h,
-            pixels,
+            // 只把 Vec 头移动进共享所有者，不在冷加载阶段复制整张图片。
+            pixels: Arc::new(pixels),
             path,
             valid: true,
             generation: 0,
@@ -97,7 +99,12 @@ impl ImageSlot {
 
     /// 借用按行紧密排列的预乘 AARRGGBB 像素。
     pub fn pixels(&self) -> &[u32] {
-        &self.pixels
+        self.pixels.as_slice()
+    }
+
+    // 为帧录制交付不可变像素所有权；卸载槽位不会使已录制帧悬垂。
+    fn shared_pixels(&self) -> Arc<Vec<u32>> {
+        Arc::clone(&self.pixels)
     }
 }
 
@@ -734,7 +741,7 @@ pub fn blit_handle(
         } else {
             bounds
         };
-        canvas.blit_image(slot.pixels(), w, src, dst);
+        canvas.blit_image_shared(slot.shared_pixels(), w, src, dst);
     });
 }
 
