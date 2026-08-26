@@ -152,11 +152,15 @@ impl WidgetTree {
         if self.invalidation_batch_depth > 0 || self.pending_invalidations.is_empty() {
             return;
         }
-        let pending = std::mem::take(&mut self.pending_invalidations);
+        // 临时取出批次缓冲，避免持有 self 字段借用时锁定共享队列。
+        let mut pending = std::mem::take(&mut self.pending_invalidations);
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .extend(pending);
+            // 排空逻辑内容，同时保留树实例已经预热的 Vec 容量。
+            .extend(pending.drain(..));
+        // 归还唯一树所有的批次缓冲，后续高频事件直接复用容量。
+        self.pending_invalidations = pending;
     }
 
     fn push_invalidation(&mut self, invalidation: Invalidation) {
