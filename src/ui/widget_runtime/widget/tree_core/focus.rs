@@ -134,8 +134,12 @@ impl WidgetTree {
     }
 
     pub(crate) fn focus_target_available(&self, id: WidgetId) -> bool {
-        self.is_effectively_visible(id)
-            && !self.is_pending_removal_subtree(id)
+        self.is_effectively_visible(id) && self.focus_target_interactive(id)
+    }
+
+    /// 在调用方已经确认有效可见性后，验证焦点目标剩余的交互门控。
+    pub(crate) fn focus_target_interactive(&self, id: WidgetId) -> bool {
+        !self.is_pending_removal_subtree(id)
             && self
                 .get(id)
                 .is_some_and(|node| node.accepts_events() && node.is_interaction_enabled())

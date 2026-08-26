@@ -10,19 +10,26 @@ impl WidgetTree {
             self.managers().drag.target(),
         ];
         let mut cancelled = Vec::new();
+        // manager 目标通常相邻重复，保留最近一次成功结果即可覆盖稳态且不增加扫描成本。
+        let mut last_visible = None;
         for target in targets.into_iter().flatten() {
-            if !cancelled.contains(&target) && !self.is_effectively_visible(target) {
+            if cancelled.contains(&target) || last_visible == Some(target) {
+                continue;
+            }
+            if !self.is_effectively_visible(target) {
                 self.cancel_pointer_state_in_subtree(target);
                 cancelled.push(target);
+                // 取消回调可能修改任意组件状态，后续目标必须重新验证。
+                last_visible = None;
+                continue;
             }
+            last_visible = Some(target);
         }
-        if self
-            .managers()
-            .focus
-            .focused_widget()
-            .is_some_and(|focused| !self.focus_target_available(focused))
-        {
-            self.set_focus(None);
+        if let Some(focused) = self.managers().focus.focused_widget() {
+            let visible = last_visible == Some(focused) || self.is_effectively_visible(focused);
+            if !visible || !self.focus_target_interactive(focused) {
+                self.set_focus(None);
+            }
         }
     }
 
