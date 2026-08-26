@@ -256,17 +256,12 @@ fn list_state_update_profile() {
         "PROFILE list_state_update: rounds={rounds} iterations={iterations} update_ns={elapsed_ns} allocations={} allocated_bytes={} peak_live_bytes={}",
         allocations.count, allocations.allocated_bytes, allocations.peak_live_bytes,
     );
-    // 无 watcher 的组件失效路径只允许保留每轮协调回调快照的一次小申请。
-    assert_eq!(allocations.count, iterations);
-    // 动态回调 Arc 的平台指针宽度决定单元素快照大小。
-    let callback_snapshot_bytes = std::mem::size_of::<Arc<dyn Fn() + Send + Sync>>();
-    // 单次协调回调快照只保存一个 Arc，不得再按业务列表体积申请。
-    assert_eq!(
-        allocations.allocated_bytes,
-        iterations * callback_snapshot_bytes
-    );
-    // 每次回调快照在下一轮前释放，峰值不得随状态体积增长。
-    assert_eq!(allocations.peak_live_bytes, callback_snapshot_bytes);
+    // 单树组件失效直接克隆并调用共享回调，不再建立临时回调向量。
+    assert_eq!(allocations.count, 0);
+    // 稳态状态发布不得按业务列表体积或更新次数申请临时存储。
+    assert_eq!(allocations.allocated_bytes, 0);
+    // 没有热段临时申请时峰值存活同样保持为零。
+    assert_eq!(allocations.peak_live_bytes, 0);
     // 场景必须真实推进全部状态代数，防止零工作量误判为优化。
     assert_eq!(state.generation(), (16 + rounds * iterations) as u64);
 }
