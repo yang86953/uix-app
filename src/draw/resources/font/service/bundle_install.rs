@@ -4,6 +4,7 @@
 use crate::core::{Errc, Error, Result};
 // 引入 graphics/resources 拥有的字体包值。
 use crate::draw::resources::font::FontBundle;
+use crate::draw::resources::font::bundle::FontAssetSource;
 
 // 复用父模块唯一的字体服务 owner。
 use super::FontService;
@@ -29,8 +30,14 @@ impl FontService {
         let mut loaded = Vec::with_capacity(bundle.fallback_count().saturating_add(1));
         // 严格按主字体、fallback 的声明顺序进入同一个文本后端。
         for asset in bundle.assets() {
-            // 后端取得共享只读所有权，字体包配置随后可从 Application 容器释放。
-            match self.text_backend.load_font_shared(asset.shared_bytes()) {
+            // 静态资产保持借用，动态资产克隆 Arc；两条路径都不复制已拥有的数据。
+            let load_result = match asset.source() {
+                FontAssetSource::Static(bytes) => self.text_backend.load_font_static(bytes),
+                FontAssetSource::Shared(bytes) => self
+                    .text_backend
+                    .load_font_shared(std::sync::Arc::clone(bytes)),
+            };
+            match load_result {
                 // 成功句柄在全部资产完成前保持未发布状态。
                 Ok(handle) => loaded.push((handle, asset)),
                 // 任一解析失败都回滚本次已经创建的后端字体资源。

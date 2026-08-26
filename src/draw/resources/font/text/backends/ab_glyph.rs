@@ -28,6 +28,8 @@ pub(crate) enum FontData {
     Mapped(Box<memmap2::Mmap>),
     /// 用户提供或 API 兼容路径拷贝的数据。
     Owned(Arc<[u8]>),
+    /// 随应用二进制存活的静态字体数据，不占用启动期堆分配。
+    Static(&'static [u8]),
 }
 
 // 为 shaping 提供不复制的字体字节视图。
@@ -40,6 +42,8 @@ impl FontData {
             Self::Mapped(data) => data.as_ref(),
             // 共享所有权数据可直接解引用为字节切片。
             Self::Owned(data) => data.as_ref(),
+            // 静态切片自身已经覆盖整个字体槽位生命周期。
+            Self::Static(data) => data,
             // 结束所有权变体匹配。
         }
         // 结束字体字节视图方法。
@@ -185,6 +189,19 @@ impl TextBackend for AbGlyphBackend {
         // 保存共享字节本身，并由槽位封闭两个借用面与 owner 的关系。
         self.fonts
             .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
+        // 返回与追加槽位编号一致的稳定句柄。
+        Ok(FontHandle::new(id))
+    }
+
+    // 直接借用 include_bytes! 等进程期静态资产，避免构造大型 Arc<[u8]>。
+    fn load_font_static(&mut self, data: &'static [u8]) -> Result<FontHandle, Error> {
+        // 新句柄严格对应即将追加的后端槽位。
+        let id = self.fonts.len() as u32;
+        // FontData::Static 以类型系统证明底层字节晚于所有字体面释放。
+        self.fonts.push(FontSlot::parse(
+            FontHandle::new(id),
+            FontData::Static(data),
+        )?);
         // 返回与追加槽位编号一致的稳定句柄。
         Ok(FontHandle::new(id))
     }
@@ -612,6 +629,7 @@ impl TextBackend for AbGlyphBackend {
         Some(match data {
             FontData::Mapped(m) => m.as_ref().to_vec(),
             FontData::Owned(a) => a.to_vec(),
+            FontData::Static(data) => data.to_vec(),
         })
     }
 
@@ -627,6 +645,7 @@ impl TextBackend for AbGlyphBackend {
                     t += match data {
                         FontData::Mapped(m) => m.len(),
                         FontData::Owned(a) => a.len(),
+                        FontData::Static(data) => data.len(),
                     };
                 }
             }

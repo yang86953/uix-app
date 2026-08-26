@@ -22,6 +22,11 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
         // 默认实现保持第三方文本后端兼容，专用后端可覆盖以取得零复制所有权。
         self.load_font(data.as_ref())
     }
+    /// 从进程期静态字节加载字体；默认后端保留借用加载兼容语义。
+    fn load_font_static(&mut self, data: &'static [u8]) -> Result<FontHandle, Error> {
+        // 第三方后端无需理解静态所有权，仍可沿用既有复制实现。
+        self.load_font(data)
+    }
     /// 内存映射字体加载：字体文件按需分页，未触达字形不驻留 working set。
     /// 默认实现退化为拷贝（后端不支持映射时保底正确）。
     fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {

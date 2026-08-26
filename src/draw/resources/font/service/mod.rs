@@ -177,6 +177,14 @@ impl FontService {
         Ok(handle)
     }
 
+    // 加载进程期静态辅助字体，并让支持该能力的后端直接借用二进制只读段。
+    pub(crate) fn load_static_font(&mut self, data: &'static [u8]) -> Result<FontHandle, Error> {
+        let handle = self.text_backend.load_font_static(data)?;
+        self.register_font(handle, self.primary_family.clone(), None);
+        // 辅助字体与 load_font 相同，不得替换正文主字体句柄。
+        Ok(handle)
+    }
+
     /// 从文件路径加载字体，注册时会记录路径信息。
     pub fn load_font_from_path(&mut self, path: &str, _size: f32) -> Option<FontHandle> {
         let data = std::fs::read(path).ok()?;

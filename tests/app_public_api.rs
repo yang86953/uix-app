@@ -89,3 +89,19 @@ fn app_font_bundle_registers_one_consumable_startup_configuration() {
     // 回退字体数量必须保留调用方声明的完整顺序长度。
     assert_eq!(configured.fallback_count(), 1);
 }
+
+// 将静态字体资产的零复制 builder 冻结为公开编译契约。
+#[test]
+fn app_static_font_bundle_registers_primary_and_fallback_configuration() {
+    // 公开入口只接受进程期静态字节，短生命周期借用无法通过类型检查。
+    let bundle = FontBundle::from_static("UIX Static Primary", b"static primary font fixture")
+        // 静态回退保持与拥有型入口相同的声明顺序语义。
+        .with_static_fallback("UIX Static CJK", b"static cjk font fixture");
+    // Application 组合根仍只保存唯一完整字体包配置。
+    let app = App::new().font_bundle(bundle);
+    let configured = app.container().resolve::<FontBundle>();
+    // 静态来源不改变公开配置字段。
+    assert!(configured.is_some_and(|bundle| {
+        bundle.primary_family() == "UIX Static Primary" && bundle.fallback_count() == 1
+    }));
+}

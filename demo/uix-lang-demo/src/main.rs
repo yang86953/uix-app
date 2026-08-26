@@ -158,7 +158,7 @@ fn build_demo_app(
 
 // 将确定性正文资源注入 Application 组合根，不让声明页面接触字体句柄。
 fn with_deterministic_fonts(app: App) -> App {
-    app.font_bundle(uix::draw::FontBundle::new(
+    app.font_bundle(uix::draw::FontBundle::from_static(
         "Noto Sans CJK SC",
         DETERMINISTIC_UI_FONT,
     ))
