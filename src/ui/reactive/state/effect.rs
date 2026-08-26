@@ -1,5 +1,5 @@
 // 引入按槽身份管理订阅租约的映射类型。
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 // 引入并发原子、共享所有权与可恢复读写锁。
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, Weak};
@@ -174,7 +174,7 @@ pub(crate) fn notify_subscribers(subscribers: Vec<Arc<dyn DependencySubscriber>>
 // 以当前依赖差集更新租约与 generation 快照。
 pub(crate) fn refresh_dependency_leases(
     // 接收本轮捕获的原始依赖。
-    deps: Vec<EffectDependency>,
+    mut deps: Vec<EffectDependency>,
     // 接收下游唯一拥有的租约映射。
     leases: &RwLock<HashMap<StateSlotId, EffectLease>>,
     // 接收本轮要发布的 generation 快照存储。
@@ -182,68 +182,48 @@ pub(crate) fn refresh_dependency_leases(
     // 接收订阅时传给每个源的下游失效对象。
     subscriber: Arc<dyn DependencySubscriber>,
 ) {
-    // 按槽去重保留首个观察快照。
-    let mut next = HashMap::with_capacity(deps.len());
-    // 逐项整理本轮依赖。
-    for dependency in deps {
-        // 同槽重复读取只保留一份租约。
-        next.entry(dependency.slot_id).or_insert(dependency);
-    }
-    // 在短锁内移出不再需要的租约并快照已存在槽。
-    let (stale, existing) = {
-        // 从中毒恢复并独占租约映射。
+    // Effect 的 running 租约与 Computed 的 gate 保证同一 owner 只有一轮刷新。
+    // 在短锁内取走已发布容器，后续操作将复用它们的容量。
+    let mut current_leases = {
         let mut held = leases.write().unwrap_or_else(|error| error.into_inner());
-        // 找到当前轮缺失的旧槽。
-        let stale_slots: Vec<_> = held
-            .keys()
-            .copied()
-            .filter(|slot| !next.contains_key(slot))
-            .collect();
-        // 将旧租约移出锁区以便锁外析构。
-        let stale: Vec<_> = stale_slots
-            .into_iter()
-            .filter_map(|slot| held.remove(&slot))
-            .collect();
-        // 快照本轮可复用的租约槽。
-        let existing = held.keys().copied().collect::<HashSet<_>>();
-        // 同时交出锁外析构列表和可复用集合。
-        (stale, existing)
+        std::mem::take(&mut *held)
     };
-    // 确保注销闭包不在租约锁内运行。
-    drop(stale);
-    // 暂存需要安装的新租约。
-    let mut additions = HashMap::new();
-    // 暂存与本轮读取严格对应的快照。
-    let mut next_snapshots = Vec::with_capacity(next.len());
-    // 为每个去重依赖建立或复用租约。
-    for (slot, dependency) in next {
-        // 仅为当前未持有的槽调用源订阅入口。
-        if !existing.contains(&slot) {
-            // 所有订阅与可能的注册后通知均在租约锁外。
+    let mut next_snapshots = {
+        let mut published = snapshots.write().unwrap_or_else(|error| error.into_inner());
+        std::mem::take(&mut *published)
+    };
+    // 在首读顺序下重建快照，向量仅改变长度而不重新分配。
+    next_snapshots.clear();
+    next_snapshots.extend(
+        deps.iter()
+            .map(|dependency| (dependency.source.clone(), dependency.observed_generation)),
+    );
+    // 按稳定槽身份排序，使旧租约差集可以无临时 HashSet 二分查询。
+    deps.sort_unstable_by_key(|dependency| dependency.slot_id.0);
+    // DependencyCollector 已按槽去重；此处仅在调试构建中锁定该上游契约。
+    debug_assert!(
+        deps.windows(2)
+            .all(|pair| pair[0].slot_id != pair[1].slot_id),
+        "依赖捕获必须在刷新前按槽去重"
+    );
+    // 移除本轮缺失的租约；当前未持有租约锁，Drop 可安全取得源注册表。
+    current_leases.retain(|slot, _| {
+        deps.binary_search_by_key(&slot.0, |dependency| dependency.slot_id.0)
+            .is_ok()
+    });
+    // 为本轮新出现的源建立租约，全程不持有 owner 锁。
+    for dependency in deps {
+        if !current_leases.contains_key(&dependency.slot_id) {
             let lease = subscribe(
-                dependency.source.clone(),
+                dependency.source,
                 subscriber.clone(),
                 dependency.observed_generation,
             );
-            // 暂存至短锁插入阶段。
-            additions.insert(slot, lease);
+            current_leases.insert(dependency.slot_id, lease);
         }
-        // 保存读取时 generation 而非延迟读取值。
-        next_snapshots.push((dependency.source, dependency.observed_generation));
     }
-    // 将新租约插入并移出防御性替换值。
-    let replaced = {
-        // 仅短暂获取租约写锁。
-        let mut held = leases.write().unwrap_or_else(|error| error.into_inner());
-        // 不在锁中析构被替换的租约。
-        additions
-            .into_iter()
-            .filter_map(|(slot, lease)| held.insert(slot, lease))
-            .collect::<Vec<_>>()
-    };
-    // 在锁外释放所有意外替换项。
-    drop(replaced);
-    // 发布与本轮订阅集合一致的 generation 快照。
+    // 先发布完整租约集，再交接与本轮读取一致的 generation 快照。
+    *leases.write().unwrap_or_else(|error| error.into_inner()) = current_leases;
     *snapshots.write().unwrap_or_else(|error| error.into_inner()) = next_snapshots;
 }
 

@@ -556,7 +556,7 @@ fn alternating_effect_dependencies_release_stale_branch() {
 // 剖析真实条件绑定在两组业务状态间切换时的动态依赖租约刷新成本。
 #[test]
 fn alternating_effect_dependencies_profile() {
-    let branch_width = std::env::var("UIX_PROFILE_EFFECT_BRANCH_WIDTH")
+    let branch_width: usize = std::env::var("UIX_PROFILE_EFFECT_BRANCH_WIDTH")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(32);
@@ -627,19 +627,21 @@ fn alternating_effect_dependencies_profile() {
     );
     // 保留最终业务校验和观察；合法的单元素左分支可以恰好为零。
     black_box(latest.load(Ordering::Relaxed));
-    // 具体依赖源与租约不得退化回按每个唯一依赖三次闭包装箱。
+    // 稳态差集容器必须由实例复用，剩余申请只允许依赖捕获向量按几何级扩容。
+    let capture_growth_allowance = branch_width.max(1).ilog2() as usize + 4;
     assert!(
-        allocations.count <= iterations * (branch_width / 2 + 12),
+        allocations.count <= iterations * capture_growth_allowance,
         "动态依赖刷新申请次数回退: {allocations:?}"
     );
-    // 哈希差集仍按依赖数保存元数据，但不得重新分配三份闭包对象。
+    // 捕获结果每个唯一源只保留紧凑强引用与 generation，差集元数据不得重复申请。
+    let capture_bytes_allowance = 192 + branch_width * 72;
     assert!(
-        allocations.allocated_bytes <= iterations * (512 + branch_width * 340),
+        allocations.allocated_bytes <= iterations * capture_bytes_allowance,
         "动态依赖刷新申请字节回退: {allocations:?}"
     );
-    // 单轮峰值只保留差集容器与具体租约，不得恢复完整闭包峰值。
+    // 单轮峰值只允许本轮捕获向量，实例复用容器不得重新进入峰值。
     assert!(
-        allocations.peak_live_bytes <= 256 + branch_width * 208,
+        allocations.peak_live_bytes <= capture_bytes_allowance,
         "动态依赖刷新峰值 live 回退: {allocations:?}"
     );
 }
