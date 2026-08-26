@@ -128,22 +128,43 @@ impl WidgetTree {
                 .unwrap_or(layout_pos);
             // 把本层子节点与原始顺序追加到唯一工作区，避免每个递归节点创建 Vec。
             let children_start = order_scratch.len();
-            order_scratch.extend(
-                node.children()
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(original_order, child_id)| (child_id, original_order)),
-            );
+            let children = node.children();
+            let uniform_z = children.len() < 2 || {
+                let first_z = self.get(children[0]).map_or(0, |child| child.z_index());
+                children[1..].iter().all(|child_id| {
+                    self.get(*child_id).map_or(0, |child| child.z_index()) == first_z
+                })
+            };
+            if uniform_z {
+                // 同层级无需比较排序，直接按“后声明优先”写入最终命中顺序。
+                order_scratch.extend(
+                    children
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .rev()
+                        .map(|(original_order, child_id)| (child_id, original_order)),
+                );
+            } else {
+                order_scratch.extend(
+                    children
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .map(|(original_order, child_id)| (child_id, original_order)),
+                );
+            }
             let children_end = order_scratch.len();
-            order_scratch[children_start..children_end].sort_unstable_by(
-                |&(a, original_a), &(b, original_b)| {
-                    let za = self.get(a).map_or(0, |c| c.z_index());
-                    let zb = self.get(b).map_or(0, |c| c.z_index());
-                    // 同 z-index 时，后声明的兄弟绘制在上层，必须优先命中。
-                    zb.cmp(&za).then_with(|| original_b.cmp(&original_a))
-                },
-            );
+            if !uniform_z {
+                order_scratch[children_start..children_end].sort_unstable_by(
+                    |&(a, original_a), &(b, original_b)| {
+                        let za = self.get(a).map_or(0, |c| c.z_index());
+                        let zb = self.get(b).map_or(0, |c| c.z_index());
+                        // 同 z-index 时，后声明的兄弟绘制在上层，必须优先命中。
+                        zb.cmp(&za).then_with(|| original_b.cmp(&original_a))
+                    },
+                );
+            }
             let mut child_hit = None;
             for child_index in children_start..children_end {
                 let child_id = order_scratch[child_index].0;
