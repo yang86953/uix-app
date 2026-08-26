@@ -443,6 +443,8 @@ impl ViewAdapter {
             tree.set_node_visibility(id, false);
         }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
+        // 复用前置已确认类型稳定，只读取一次 incoming 的具体 TypeId。
+        let widget_type_id = widget.as_any().type_id();
         // reconcile_existing 的 can_reuse_current/can_reuse 前置已确认两侧具体 TypeId 相同；
         // apply_style 只修改组件样式，不替换具体类型，因此纯类型 owner 可直接看 incoming。
         // Calendar cells depend on preserved runtime month/selection. Building them from
@@ -450,12 +452,13 @@ impl ViewAdapter {
         // reconcile them after `sync_from` has patched the live Calendar instead.
         // Calendar 是例外：仍需读取 live runtime 的 custom/materialized 状态，但仅在 incoming
         // 确为 Calendar 时进入该 fallback，避免无谓的树查找。
-        let calendar_cells = widget
-            .as_any()
-            .downcast_ref::<Calendar>()
-            .is_some_and(|calendar| {
-                calendar.owns_custom_cell_children() || tree.is_calendar_cell_widget(id)
-            });
+        let calendar_cells = widget_type_id == std::any::TypeId::of::<Calendar>()
+            && widget
+                .as_any()
+                .downcast_ref::<Calendar>()
+                .is_some_and(|calendar| {
+                    calendar.owns_custom_cell_children() || tree.is_calendar_cell_widget(id)
+                });
         // Anchor 容器必须在 live owner 完成原位同步后动态捕获，不能调用新声明组件的工厂。
         // 类型复用前置使 incoming 足够识别原位复用的 live owner。
         let anchor_container = {
@@ -463,7 +466,7 @@ impl ViewAdapter {
             #[cfg(feature = "navigation")]
             {
                 // 新声明与原位复用均需进入 Anchor 专属协调边界。
-                widget.as_any().is::<Anchor>()
+                widget_type_id == std::any::TypeId::of::<Anchor>()
             }
             // 导航 capability 关闭时没有 Anchor owner，保留普通子树协调语义。
             #[cfg(not(feature = "navigation"))]
@@ -474,11 +477,11 @@ impl ViewAdapter {
         };
         // Transfer 条目必须在 live owner 完成原位同步后由所属树动态捕获。
         // 类型复用前置使 incoming 足够识别原位复用的 live owner。
-        let transfer_items = widget.as_any().is::<Transfer>();
+        let transfer_items = widget_type_id == std::any::TypeId::of::<Transfer>();
         // Carousel 自定义箭头必须在 live owner patch 后与 authored slides 一次性协调。
-        let carousel_custom_arrows = widget.as_any().is::<Carousel>();
+        let carousel_custom_arrows = widget_type_id == std::any::TypeId::of::<Carousel>();
         // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
-        let image_children = widget.as_any().is::<Image>();
+        let image_children = widget_type_id == std::any::TypeId::of::<Image>();
         // 专属 owner 的延迟子树不能再由无树 store 的通用 ViewChildren 入口执行。
         let widget_view_children = if calendar_cells || anchor_container || carousel_custom_arrows {
             Vec::new()
