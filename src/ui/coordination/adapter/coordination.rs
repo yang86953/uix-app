@@ -5,9 +5,19 @@ use crate::ui::view::View;
 use crate::ui::view::ViewNode;
 // 引入运行时树以保持事务与发布的唯一所有者。
 use crate::ui::WidgetTree;
+// 引入已装箱节点以复用同一身份判定。
+use crate::ui::widget_runtime::widget::BoxedWidget;
 
 // 根协调入口保持在 ViewAdapter 私有 Module 内，避免泄漏事务状态。
 impl crate::ui::adapter::ViewAdapter {
+    // 在调用方已取得当前节点借用时复用同一判定，避免重复按身份查询。
+    pub(super) fn can_reuse_current(current: &BoxedWidget, node: &ViewNode) -> bool {
+        // 组件具体类型必须保持一致。
+        current.widget().as_any().type_id() == node.widget_type_id()
+            // 根序号与嵌套顺序共同决定实际组件实例身份。
+            && current.uix_widget_scopes() == node.uix_widget_scopes.as_slice()
+    }
+
     // 判断声明节点能否复用既有运行时身份。
     pub(super) fn can_reuse(
         // 接收现有运行时树。
@@ -18,12 +28,8 @@ impl crate::ui::adapter::ViewAdapter {
         node: &ViewNode,
     ) -> bool {
         // 类型相同仍需要求内联组件作用域列表完全一致。
-        tree.get(id).is_some_and(|current| {
-            // 组件具体类型必须保持一致。
-            current.widget().as_any().type_id() == node.widget_type_id()
-                // 根序号与嵌套顺序共同决定实际组件实例身份。
-                && current.uix_widget_scopes() == node.uix_widget_scopes.as_slice()
-        })
+        tree.get(id)
+            .is_some_and(|current| Self::can_reuse_current(current, node))
     }
 
     // 判断当前与下一轮处理器身份是否都已稳定登记 generation。
