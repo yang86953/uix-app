@@ -10,6 +10,22 @@ use crate::platform::presentation::rhi::{
     RhiSectorRasterParams, RhiShadowRasterParams, RhiShapeRasterParams,
 };
 
+// 将已初始化的紧密 f32 切片借为当前 host 的 native-endian 字节视图。
+fn f32_slice_as_ne_bytes(values: &[f32]) -> &[u8] {
+    // SAFETY: f32 没有未初始化填充，u8 对齐为 1，返回切片不超过原借用生命周期。
+    unsafe {
+        std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
+    }
+}
+
+// 将已初始化的紧密 u32 切片借为当前 host 的 native-endian 字节视图。
+fn u32_slice_as_ne_bytes(values: &[u32]) -> &[u8] {
+    // SAFETY: u32 没有未初始化填充，u8 对齐为 1，返回切片不超过原借用生命周期。
+    unsafe {
+        std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values))
+    }
+}
+
 // 保存 FramePlan 允许上传的封闭顶点布局与浮点值。
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum FrameVertexPayload {
@@ -140,6 +156,12 @@ impl FrameVertexPayload {
         self.values().len() * std::mem::size_of::<f32>()
     }
 
+    // 借出与逐值 to_ne_bytes 完全一致的 host-order 紧密字节视图。
+    pub(crate) fn as_ne_bytes(&self) -> &[u8] {
+        // 封闭变体都只持有紧密 f32 序列，可共享同一只读投影。
+        f32_slice_as_ne_bytes(self.values())
+    }
+
     // 在唯一 FramePlan 执行器内编码为当前 host 的紧密字节。
     pub(crate) fn encode_ne_bytes(&self) -> Vec<u8> {
         // 为完整顶点流预留精确容量。
@@ -208,6 +230,12 @@ impl FrameIndexPayload {
     pub(crate) fn size_bytes(&self) -> usize {
         // 每个索引固定占用一个 u32 的 native 字节宽度。
         self.values().len() * std::mem::size_of::<u32>()
+    }
+
+    // 借出与逐值 to_ne_bytes 完全一致的 host-order 紧密字节视图。
+    pub(crate) fn as_ne_bytes(&self) -> &[u8] {
+        // 当前闭集只允许紧密 u32 索引，不含任何结构体填充。
+        u32_slice_as_ne_bytes(self.values())
     }
 
     // 查询 DrawRange 指定非空子范围中的最大索引值。
@@ -314,6 +342,21 @@ impl FrameUniformPayload {
     pub(crate) const fn size_bytes(self) -> usize {
         // 统一从布局契约读取，禁止枚举另存一套大小表。
         self.layout().size_bytes()
+    }
+
+    // 借出固定 Uniform 值对象的 host-order 紧密字节视图。
+    pub(crate) fn as_ne_bytes(&self) -> &[u8] {
+        // 每个共享值对象都以私有 f32 数组唯一拥有 ABI 字段顺序。
+        match self {
+            Self::Mesh(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Sampled(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Gradient(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Shape(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Shadow(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Blur(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Msdf(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+            Self::Sector(value) => f32_slice_as_ne_bytes(value.as_f32s()),
+        }
     }
 
     // 在唯一 FramePlan 执行器内编码为当前 host 的紧密字节。
