@@ -40,7 +40,8 @@ App::new()
     .run();
 ```
 
-当前仓库主演示 `uix-lang-demo` 已接入相同的显式双门禁，可用以下命令启动 Windows 真窗验收载体：
+当前仓库主演示 `uix-lang-demo` 已接入相同的显式双门禁，可用以下命令启动 Windows 或
+Wayland Linux 真窗验收载体：
 
 ```powershell
 cargo run --release --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control
@@ -118,7 +119,7 @@ App::new()
 |---|---|
 | `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、修订号） |
 | `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项，敏感值过滤） |
-| `wait` | 等待语义修订前进或已呈现修订达标（上限 30 秒），空闲无轮询 |
+| `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
 
 ### 语义动作（作用于语义树节点，须命中快照中的稳定目标）
 
@@ -138,8 +139,8 @@ App::new()
 
 | 动作 | 载荷 | 说明 |
 |---|---|---|
-| `press_key` | `key` / `modifiers` | 按键序列（事件未被消费视为失败） |
-| `click_at` / `pointer_move` / `pointer_down` / `pointer_up` | `x` / `y` | 指针输入注入（未命中可交互目标视为失败） |
+| `press_key` | `key` / `modifiers` | 应用内按键序列（事件未被消费视为失败） |
+| `click_at` / `pointer_move` / `pointer_down` / `pointer_up` | `x` / `y` | 应用内指针事件（未命中可交互目标视为失败） |
 | `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
 | `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
 | `maximize_window` / `minimize_window` / `restore_window` | — | 窗口状态切换 |
@@ -173,6 +174,8 @@ App::new()
 - JSON Lines，本机端点（Unix socket / 命名管道），端点路径含进程 id 与会话 nonce。
 - 首请求必须为 `hello`（携带 token）；已认证连接按 `list_windows` → `snapshot` → `perform` / `confirm` → `wait` 循环工作。
 - 动作必须命中当前语义快照中的稳定节点（`automation_id` 或 `node_id`）并经过窗口 owner thread。
+- `wait` 返回同 generation 的 `closed` 后，该连接已到达终态并由服务端关闭；应用 teardown 会先给
+  在途终态回复保留有界写回窗口，再强制回收其他连接。
 - 确认流程时序：
 
 ```txt

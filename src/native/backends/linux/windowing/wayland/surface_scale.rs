@@ -11,7 +11,7 @@ use wayland_client::protocol::wl_surface;
 use wayland_client::Proxy;
 
 // 引入目标窗口身份和 typed 错误分类。
-use crate::core::{Errc, Error, WindowId};
+use crate::core::{Errc, Error, Result, WindowId};
 // callback 失败只写入 runtime-scoped 有界 failure source。
 use crate::diagnostics::PendingFailureSource;
 // graphics 与 windowing 共享同一份逐窗 surface 元数据。
@@ -304,6 +304,25 @@ impl WaylandWindowScaleState {
             // metrics 错误进入 owner-thread failure source。
             let _ = self.pending_failures.enqueue(error);
         }
+    }
+
+    // 程序化 resize 在同一事务内发布新 surface 尺寸并进入窗口事件管线。
+    pub(crate) fn publish_programmatic_resize(&self, width: i32, height: i32) -> Result<()> {
+        // 先取得事件队列所有权，失败时不得提前改写 surface metrics。
+        let mut events = self.events.lock().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "Wayland programmatic resize event queue mutex poisoned",
+            )
+        })?;
+        // logical 与 drawable 尺寸必须使用当前有效整数 scale 同代更新。
+        let updated = self.metrics.update(width, height, self.current_scale())?;
+        // 复用唯一 WindowResize 管线触发布局、presentation 与后续 surface commit。
+        events.push_back(
+            UiEvent::resize(updated.logical_width, updated.logical_height)
+                .for_window(self.window_id),
+        );
+        Ok(())
     }
 
     // surface 进入 output 后更新该 output 的 scale 并返回变化后的 buffer scale。
