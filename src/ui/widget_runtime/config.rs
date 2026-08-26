@@ -193,7 +193,9 @@ pub enum FormLayout {
 
 /// 获取当前生效的组件配置。
 pub fn use_config() -> WidgetConfig {
-    crate::ui::widget_runtime::provider_context::current_provider_context().config
+    crate::ui::widget_runtime::provider_context::current_provider_context()
+        .config()
+        .clone()
 }
 
 /// 在作用域内使用指定配置执行闭包。

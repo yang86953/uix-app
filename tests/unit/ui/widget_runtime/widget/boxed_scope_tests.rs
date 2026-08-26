@@ -193,6 +193,11 @@ fn panic_during_widget_scope_restores_sibling_tokens() {
 #[test]
 // 防止后续把大覆盖对象或带容量字段的只读列表重新内联进节点。
 fn runtime_node_sparse_metadata_stays_compact() {
+    // ProviderContext 只能保存一个共享快照句柄，不能重新内联完整配置与语言表。
+    assert_eq!(
+        std::mem::size_of::<crate::ui::widget_runtime::provider_context::ProviderContext>(),
+        std::mem::size_of::<usize>()
+    );
     // 空覆盖只占一个可空指针，而不是完整覆盖对象。
     assert!(
         std::mem::size_of::<Option<Box<AccessibilityOverride>>>()
@@ -201,12 +206,12 @@ fn runtime_node_sparse_metadata_stays_compact() {
     // Linux 64 位是当前可实测基线；其他平台保留上面的结构契约。
     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     {
-        // 优化前为 4296 字节。
-        assert!(std::mem::size_of::<BoxedWidget>() <= 4000);
-        // 优化前为 4344 字节。
-        assert!(std::mem::size_of::<ViewNode>() <= 4080);
-        // 优化前为 3928 字节。
-        assert!(std::mem::size_of::<WidgetNode>() <= 3664);
+        // 共享 ProviderContext 前为 3984 字节。
+        assert!(std::mem::size_of::<BoxedWidget>() <= 768);
+        // 共享 ProviderContext 前为 4080 字节。
+        assert!(std::mem::size_of::<ViewNode>() <= 864);
+        // 共享 ProviderContext 前为 3664 字节。
+        assert!(std::mem::size_of::<WidgetNode>() <= 448);
     }
 }
 
