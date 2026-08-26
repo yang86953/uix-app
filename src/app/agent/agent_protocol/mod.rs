@@ -62,6 +62,7 @@ const AGENT_WINDOW_ACTIONS: &[&str] = &[
     "maximize_window",
     "minimize_window",
     "restore_window",
+    "close_window",
 ];
 const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
 const AGENT_KEY_CODES: &[(&str, KeyCode)] = &[
@@ -642,13 +643,14 @@ mod capability_tests {
     use super::*;
 
     #[test]
-    fn hello_catalog_advertises_every_parsed_window_lifecycle_action() {
+    fn hello_catalog_advertises_every_parsed_window_action() {
         let actions = [
             json!({ "kind": "resize_window", "width": 800, "height": 600 }),
             json!({ "kind": "move_window", "x": 20, "y": 30 }),
             json!({ "kind": "maximize_window" }),
             json!({ "kind": "minimize_window" }),
             json!({ "kind": "restore_window" }),
+            json!({ "kind": "close_window" }),
         ];
         for action in actions {
             let kind = action["kind"]

@@ -33,6 +33,7 @@ pub(crate) trait AgentWindowOps {
     fn maximize(&mut self) -> Result<(), AgentWindowOpsError>;
     fn minimize(&mut self) -> Result<(), AgentWindowOpsError>;
     fn restore(&mut self) -> Result<(), AgentWindowOpsError>;
+    fn request_close(&mut self) -> Result<(), AgentWindowOpsError>;
 }
 
 /// 窗口管理动作的平台失败载荷。

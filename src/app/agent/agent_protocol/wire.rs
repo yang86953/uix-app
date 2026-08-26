@@ -190,6 +190,9 @@ pub(super) fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError
         "restore_window" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::Restore));
         }
+        "close_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Close));
+        }
         _ => return Err(WireError::invalid("unknown action kind")),
     };
     Ok(ParsedAgentAction::Semantic(semantic))

@@ -53,6 +53,12 @@ impl AgentWindowOps for PlatformWindowAgentOps<'_> {
             .restore()
             .map_err(map_error("restore"))
     }
+
+    fn request_close(&mut self) -> Result<(), AgentWindowOpsError> {
+        self.window
+            .request_close()
+            .map_err(map_error("request_close"))
+    }
 }
 
 fn map_error(operation: &'static str) -> impl FnOnce(crate::core::Error) -> AgentWindowOpsError {

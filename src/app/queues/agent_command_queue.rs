@@ -59,6 +59,8 @@ pub(crate) enum AgentWindowAction {
     Maximize,
     Minimize,
     Restore,
+    /// 只提交平台关闭请求，不声明窗口已经关闭。
+    Close,
 }
 
 /// 命令请求契约：快照或执行语义动作。

@@ -176,6 +176,8 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
             AgentWindowAction::Maximize => window.maximize().map_err(map_window_ops_error)?,
             AgentWindowAction::Minimize => window.minimize().map_err(map_window_ops_error)?,
             AgentWindowAction::Restore => window.restore().map_err(map_window_ops_error)?,
+            // 关闭只提交平台请求；实际关闭由后续窗口生命周期事实证明。
+            AgentWindowAction::Close => window.request_close().map_err(map_window_ops_error)?,
         }
         Ok(())
     }

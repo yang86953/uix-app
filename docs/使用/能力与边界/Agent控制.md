@@ -143,6 +143,7 @@ App::new()
 | `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
 | `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
 | `maximize_window` / `minimize_window` / `restore_window` | — | 窗口状态切换 |
+| `close_window` | — | 提交平台关闭请求；成功不声明窗口已关闭，调用方必须另行等待关闭事实 |
 
 窗口管理动作会由 `hello.capabilities.window_actions` 正式发布，并经平台窗口操作契约执行；平台不支持、
 窗口约束拒绝或原生调用失败均返回 `window_operation_failed`，不得伪造成功或隐式降级。
