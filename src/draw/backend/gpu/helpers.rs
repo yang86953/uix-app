@@ -94,6 +94,41 @@ impl NativeGpuCanvas2D {
         source_rect: Rect,
         destination_rect: Rect,
     ) -> DirectImageBlit {
+        self.try_queue_direct_image_blit_inner(
+            pixels,
+            None,
+            source_width,
+            source_rect,
+            destination_rect,
+        )
+    }
+
+    /// 完整图片可把共享像素直接交给待提交操作；裁剪继续生成紧密载荷。
+    pub(super) fn try_queue_direct_image_blit_shared(
+        &self,
+        pixels: Arc<Vec<u32>>,
+        source_width: i32,
+        source_rect: Rect,
+        destination_rect: Rect,
+    ) -> DirectImageBlit {
+        let retained = Arc::clone(&pixels);
+        self.try_queue_direct_image_blit_inner(
+            pixels.as_slice(),
+            Some(retained),
+            source_width,
+            source_rect,
+            destination_rect,
+        )
+    }
+
+    fn try_queue_direct_image_blit_inner(
+        &self,
+        pixels: &[u32],
+        shared_pixels: Option<Arc<Vec<u32>>>,
+        source_width: i32,
+        source_rect: Rect,
+        destination_rect: Rect,
+    ) -> DirectImageBlit {
         if !self.opacity.is_finite() || self.opacity <= 0.0 {
             return DirectImageBlit::Culled;
         }
@@ -268,15 +303,29 @@ impl NativeGpuCanvas2D {
         else {
             return DirectImageBlit::Unsupported;
         };
-        let mut retained = Vec::new();
-        if retained.try_reserve_exact(pixel_count).is_err() {
-            return DirectImageBlit::Unsupported;
-        }
-        let copy_width = crop.width as usize;
-        for y in crop.y..crop.y + crop.height {
-            let row = y as usize * source_stride + crop.x as usize;
-            retained.extend_from_slice(&pixels[row..row + copy_width]);
-        }
+        let full_source = crop.x == 0
+            && crop.y == 0
+            && crop.width == source_width
+            && crop.height == source_height
+            && pixel_count == pixels.len();
+        let retained =
+            match shared_pixels.filter(|shared| full_source && shared.len() == pixel_count) {
+                // 共享源由 ImageService 或上游帧值持有，待提交操作只增加一次强引用。
+                Some(shared) => shared,
+                // 裁剪或借用入口仍复制为紧密载荷，保持原有边界与失败语义。
+                None => {
+                    let mut retained = Vec::new();
+                    if retained.try_reserve_exact(pixel_count).is_err() {
+                        return DirectImageBlit::Unsupported;
+                    }
+                    let copy_width = crop.width as usize;
+                    for y in crop.y..crop.y + crop.height {
+                        let row = y as usize * source_stride + crop.x as usize;
+                        retained.extend_from_slice(&pixels[row..row + copy_width]);
+                    }
+                    Arc::new(retained)
+                }
+            };
         DirectImageBlit::Ready(GpuImageBlit {
             x: blit_x,
             y: blit_y,
@@ -285,7 +334,7 @@ impl NativeGpuCanvas2D {
             corners: blit_corners,
             opacity: self.opacity.clamp(0.0, 1.0),
             additive: matches!(self.blend_mode, BlendMode::Additive),
-            pixels: Arc::<[u32]>::from(retained),
+            pixels: retained,
             pixel_w: crop.width as u32,
             pixel_h: crop.height as u32,
         })

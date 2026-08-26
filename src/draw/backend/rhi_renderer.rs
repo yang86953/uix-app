@@ -122,7 +122,7 @@ pub(crate) struct RhiTexturedQuad {
     // 保存是否使用 premultiplied additive blend，而不是 SrcOver。
     pub(crate) additive: bool,
     // 保存紧密排列的 BGRA premultiplied 源像素。
-    pub(crate) pixels: Arc<[u32]>,
+    pub(crate) pixels: Arc<Vec<u32>>,
     // 保存源纹理宽度。
     pub(crate) pixel_w: u32,
     // 保存源纹理高度。

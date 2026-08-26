@@ -540,7 +540,7 @@ impl FrameGlyphOutline {
 pub struct FrameImage {
     pub(crate) width: i32,
     pub(crate) height: i32,
-    pub(crate) pixels: Arc<[u32]>,
+    pub(crate) pixels: Arc<Vec<u32>>,
 }
 
 impl FrameImage {
@@ -557,7 +557,28 @@ impl FrameImage {
         Ok(Self {
             width,
             height,
-            pixels: pixels.into(),
+            pixels: Arc::new(pixels),
+        })
+    }
+
+    /// 验证像素数量后接管共享不可变帧图像，不复制像素载荷。
+    pub(crate) fn from_shared(
+        width: i32,
+        height: i32,
+        pixels: Arc<Vec<u32>>,
+    ) -> Result<Self, FrameEncoderError> {
+        let expected = pixel_len(width, height)?;
+        if pixels.len() != expected {
+            return Err(FrameEncoderError::PixelCountMismatch {
+                width,
+                height,
+                actual: pixels.len(),
+            });
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
         })
     }
 
@@ -566,7 +587,7 @@ impl FrameImage {
         Ok(Self {
             width,
             height,
-            pixels: vec![color.premultiplied(); pixel_len(width, height)?].into(),
+            pixels: Arc::new(vec![color.premultiplied(); pixel_len(width, height)?]),
         })
     }
 
@@ -582,6 +603,6 @@ impl FrameImage {
 
     /// 借用预乘 AARRGGBB 像素。
     pub fn pixels(&self) -> &[u32] {
-        &self.pixels
+        self.pixels.as_slice()
     }
 }

@@ -163,6 +163,18 @@ pub trait Canvas2D {
     // ── 图像/字形混合 ──
     /// 将源像素区域复制并缩放到目标矩形。
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect);
+
+    /// 共享不可变图片像素；同步软件后端默认借用，帧录制与 GPU 后端可保留所有权。
+    fn blit_image_shared(
+        &mut self,
+        src: std::sync::Arc<Vec<u32>>,
+        src_w: i32,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) {
+        self.blit_image(src.as_slice(), src_w, src_rect, dst_rect);
+    }
+
     /// 使用覆盖率蒙版绘制一个字形。
     fn blit_glyph(
         &mut self,

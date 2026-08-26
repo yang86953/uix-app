@@ -22,7 +22,7 @@ use super::tile::{SoftFallbackTile, pack_visible_soft_fallback_tile};
 #[derive(Debug, Clone)]
 pub(crate) struct PackedSoftSegment {
     // 保存紧密排列的 premultiplied BGRA 像素。
-    pub(crate) pixels: Arc<[u32]>,
+    pub(crate) pixels: Arc<Vec<u32>>,
     // 保存该紧密载荷在目标中的逻辑位置。
     pub(crate) tile: SoftFallbackTile,
     // 标记该段必须使用 source + destination 的 Additive pipeline。
@@ -194,7 +194,7 @@ impl NativeGpuCanvas2D {
         // 返回带固定 blend 事实的不可变段。
         Some(PackedSoftSegment {
             // 转为共享载荷供 RHI 临时 texture 上传。
-            pixels: Arc::from(pixels),
+            pixels: Arc::new(pixels),
             // 保留紧密 tile 的目标位置。
             tile,
             // 当前段只有归一化 Additive 时才使用加法管线。

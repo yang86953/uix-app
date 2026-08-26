@@ -46,6 +46,30 @@ fn rejects_invalid_native_scroll_geometry() {
     assert_eq!(error.code(), crate::core::Errc::NotImplemented);
 }
 
+// GPU-native 完整图片应把共享像素直接保留到 pending RHI 操作。
+#[test]
+fn shared_full_image_reaches_pending_rhi_without_pixel_copy() {
+    let pixels = std::sync::Arc::new(vec![0xFFFF_0000, 0xFF00_FF00, 0xFF00_00FF, 0x8000_0080]);
+    let pointer = pixels.as_ptr();
+    let mut canvas = NativeGpuCanvas2D::new_gpu_only(2, 2, NativeRasterCaps::default());
+    canvas.blit_image_shared(
+        std::sync::Arc::clone(&pixels),
+        2,
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+        Rect::new(0.0, 0.0, 2.0, 2.0),
+    );
+    let [PendingNativeOp::ImageBlit(image)] = canvas.pending_native.as_slice() else {
+        panic!("完整共享图片必须进入单一 pending RHI image op");
+    };
+    assert_eq!(image.blit.pixels.as_ptr(), pointer);
+    assert_eq!(image.blit.pixel_w, 2);
+    assert_eq!(image.blit.pixel_h, 2);
+    assert_eq!(std::sync::Arc::strong_count(&pixels), 2);
+
+    drop(pixels);
+    assert_eq!(image.blit.pixels[3], 0x8000_0080);
+}
+
 // hybrid canvas 在具备 retained RHI 时应把椭圆保留为 GPU native mesh。
 #[test]
 fn hybrid_ellipse_uses_shared_mesh_lowering() {
