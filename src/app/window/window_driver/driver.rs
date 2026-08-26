@@ -12,6 +12,8 @@ impl WindowDriver {
             started_at: None,
             presented_sequence: 0,
             scheduled_animation_ids_scratch: Vec::new(),
+            animation_updates_scratch: Vec::new(),
+            animation_registrations_scratch: Vec::new(),
             app_timer_deadlines_scratch: Vec::new(),
             app_timer_deadline_revision: None,
             due_work_scratch: Vec::new(),
