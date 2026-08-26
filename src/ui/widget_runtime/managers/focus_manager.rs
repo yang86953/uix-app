@@ -64,14 +64,18 @@ impl FocusManager {
     pub fn register_focusable(&mut self, widget_id: WidgetId, tab_index: i32) {
         if tab_index > 0 {
             self.focusable_widgets.insert(widget_id, tab_index);
-        } else {
+        } else if !self.focusable_widgets.is_empty() {
+            // 空注册表不可能持有当前节点，避免为常见非聚焦节点计算 WidgetId 哈希。
             self.focusable_widgets.remove(&widget_id);
         }
     }
 
     /// 注销组件，并在该组件持有焦点时清除当前焦点。
     pub fn unregister_widget(&mut self, widget_id: WidgetId) {
-        self.focusable_widgets.remove(&widget_id);
+        if !self.focusable_widgets.is_empty() {
+            // 空注册表无需执行带哈希的删除，焦点清理仍独立遵循节点身份。
+            self.focusable_widgets.remove(&widget_id);
+        }
         if self.focused_widget == Some(widget_id) {
             self.focused_widget = None;
         }
@@ -92,5 +96,35 @@ impl FocusManager {
             .collect();
         focusable.sort_by_key(|&(tab_index, id)| (tab_index, id));
         focusable.into_iter().map(|(_, id)| id).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_registry_removal_preserves_focus_and_registration_semantics() {
+        let mut manager = FocusManager::new();
+        let first = WidgetId::new(1);
+        let second = WidgetId::new(2);
+
+        manager.register_focusable(first, 0);
+        assert!(manager.focusable_order().is_empty());
+
+        manager.register_focusable(first, 3);
+        manager.register_focusable(second, 1);
+        assert_eq!(manager.focusable_order(), vec![second, first]);
+
+        manager.register_focusable(first, 0);
+        assert_eq!(manager.focusable_order(), vec![second]);
+
+        manager.set_focused_widget(first.into());
+        manager.unregister_widget(first);
+        assert_eq!(manager.focused_widget(), None);
+
+        manager.unregister_widget(second);
+        manager.unregister_widget(second);
+        assert!(manager.focusable_order().is_empty());
     }
 }
