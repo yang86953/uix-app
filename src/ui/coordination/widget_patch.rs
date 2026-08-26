@@ -431,10 +431,21 @@ pub(crate) fn builtin_widget_runtime_changed(current: &dyn Widget, next: &dyn Wi
     false
 }
 
+std::thread_local! {
+    // 缓存最近一次完整分派后确认的非内建类型；同类自定义同级节点无需重复扫描类型表。
+    static LAST_UNPATCHED_WIDGET_TYPE: std::cell::Cell<Option<std::any::TypeId>> =
+        const { std::cell::Cell::new(None) };
+}
+
 pub(crate) fn patch_builtin_widget(
     current: &mut dyn Widget,
     next: Box<dyn Widget>,
 ) -> std::result::Result<bool, Box<dyn Widget>> {
+    let next_type = next.as_any().type_id();
+    if LAST_UNPATCHED_WIDGET_TYPE.with(|cached| cached.get() == Some(next_type)) {
+        // 类型表在进程生命周期内不可变，已确认的负命中可直接保持既有替换语义。
+        return Err(next);
+    }
     macro_rules! patch_as {
         ($ty:ty) => {
             if current.as_any().is::<$ty>() && next.as_any().is::<$ty>() {
@@ -609,6 +620,7 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Transfer);
     patch_as!(Upload);
 
+    LAST_UNPATCHED_WIDGET_TYPE.with(|cached| cached.set(Some(next_type)));
     Err(next)
 }
 
