@@ -87,6 +87,10 @@ impl WidgetTree {
     }
 
     pub(super) fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
+        // 子树入口先验证完整祖先链；后续递归只需检查当前节点的待移除门控。
+        if self.is_pending_removal_subtree(id) {
+            return None;
+        }
         // 正常事件循环复用树级工作区；极少数重入调用回退到局部容器避免 RefCell panic。
         if let Ok(mut order_scratch) = self.hit_test_order_scratch.try_borrow_mut() {
             order_scratch.clear();
@@ -102,19 +106,22 @@ impl WidgetTree {
         order_scratch: &mut Vec<(WidgetId, usize)>,
     ) -> Option<WidgetId> {
         let node = self.get(id)?;
-        if !node.visible() || self.is_pending_removal_subtree(id) {
+        // 祖先在入口或上一层递归中已经确认，避免每个后代重复回溯父链。
+        if !node.visible() || node.pending_removal() {
             return None;
         }
 
         // Undo the same transform/scroll chain used by compositor painting.
         let layout_pos = self.point_to_node_layout(id, pos)?;
 
-        let can_hit_regular_children = node.hit_test_children()
+        // 当前递归帧内组件只读不变，复用一次事件能力查询。
+        let hit_test_children = node.hit_test_children();
+        let can_hit_regular_children = hit_test_children
             && node
                 .children_clip(node.frame())
                 .is_none_or(|clip| clip.contains(layout_pos));
         // fixed 直接子树即使位于父裁剪外也必须进入命中遍历。
-        if node.hit_test_children() {
+        if hit_test_children {
             // 把父节点视口坐标转换为子内容坐标，供片段裁剪命中复用。
             let child_clip_pos = node
                 // 读取父节点施加在全部子项上的滚动偏移。

@@ -1,5 +1,7 @@
 // 引入被测 WidgetTree 命中排序私有实现。
 use super::*;
+// 使用长离场动画保持节点处于 pending-removal 状态。
+use crate::ui::animation::AnimationConfig;
 // 使用普通文本节点建立可命中的重叠兄弟。
 use crate::ui::widgets::Label;
 
@@ -60,4 +62,28 @@ fn repeated_hit_test_reuses_tree_owned_sort_capacity() {
     let scratch = tree.hit_test_order_scratch.borrow();
     assert!(scratch.is_empty());
     assert_eq!(scratch.capacity(), warmed_capacity);
+}
+
+// 验证任意子树命中入口与递归后代都继承祖先的待移除门控。
+#[test]
+fn pending_removal_ancestor_blocks_public_and_subtree_hit_tests() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Label::new("root")));
+    let parent = tree.add_child(root, Box::new(Label::new("parent")));
+    let leaf = tree.add_child(parent, Box::new(Label::new("leaf")));
+    for id in [root, parent, leaf] {
+        tree.set_frame_dirty(id, Rect::new(0.0, 0.0, 100.0, 100.0));
+    }
+    let point = Point::new(10.0, 10.0);
+    assert_eq!(tree.hit_test(point), Some(leaf));
+
+    tree.get_mut(parent)
+        .expect("待离场父节点必须存在")
+        .set_leave_animation(Some(AnimationConfig::fade_out(10.0)));
+    assert!(tree.start_leave_transition(parent));
+
+    // 公开根命中必须跳过整个离场子树并回落到仍可交互的根节点。
+    assert_eq!(tree.hit_test(point), Some(root));
+    // overlay 等私有调用可从任意后代进入，仍必须检查完整祖先链。
+    assert_eq!(tree.hit_test_internal(leaf, point), None);
 }
