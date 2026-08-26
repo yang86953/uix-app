@@ -13,6 +13,8 @@ use super::super::{
 use crate::core::Rect;
 // 支持按工作身份维护树内唯一动画源绑定。
 use crate::ui::animation::{AnimatedRegistration, AnimatedSource};
+// 使用全序比较同时判定有序游标的跳过、命中与回退。
+use std::cmp::Ordering;
 // 保存所有者到工作身份集合的去重索引。
 use std::collections::{BTreeMap, BTreeSet};
 // 转交动态动画源的共享所有权。
@@ -274,27 +276,26 @@ impl WidgetTree {
             return Vec::new();
         }
         let ids = self.take_animation_node_ids();
-        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
+        let updates = self.update_animation_nodes_at(&ids, now, dt);
         self.animation_ids_scratch = ids;
         updates
     }
 
-    pub(crate) fn update_animations_except_at(
+    // 把发现阶段的新动画追加到逐窗复用结果区，不覆盖已经推进的调度身份。
+    pub(crate) fn append_animations_except_at(
         &mut self,
         excluded_ids: &[WidgetId],
         now: Instant,
         dt: f64,
-    ) -> Vec<(WidgetId, bool)> {
-        // 已停止的树不得通过排除路径绕过动画门禁。
+        updates: &mut Vec<(WidgetId, bool)>,
+    ) {
         if !self.accepts_external_work() {
-            // 返回空更新以保持 fail-stop 语义。
-            return Vec::new();
+            return;
         }
         let mut ids = self.take_animation_node_ids();
         ids.retain(|id| !excluded_ids.contains(id));
-        let updates = self.update_animation_nodes_at(ids.iter().copied(), now, dt);
+        self.append_animation_nodes_at_into(&ids, now, dt, updates);
         self.animation_ids_scratch = ids;
-        updates
     }
 
     pub(crate) fn take_animation_node_ids(&mut self) -> Vec<WidgetId> {
@@ -318,19 +319,29 @@ impl WidgetTree {
     }
 
     pub(crate) fn animated_source_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
+        let mut registrations = Vec::new();
+        self.animated_source_registrations_into(&mut registrations);
+        registrations
+    }
+
+    // 覆盖逐窗 owner 的复用快照，避免稳态帧反复申请同一登记容量。
+    pub(crate) fn animated_source_registrations_into(
+        &self,
+        registrations: &mut Vec<(WidgetId, Option<Instant>)>,
+    ) {
+        registrations.clear();
         // 已停止的树不得登记动画源 deadline。
         if !self.accepts_external_work() {
-            // 返回空集合以清除窗口侧动画工作。
-            return Vec::new();
+            // 保持空快照以清除窗口侧动画工作。
+            return;
         }
-        self.animated_sources
-            .iter()
-            .filter_map(|(&id, source)| match source.source.registration() {
+        registrations.extend(self.animated_sources.iter().filter_map(|(&id, source)| {
+            match source.source.registration() {
                 AnimatedRegistration::Inactive => None,
                 AnimatedRegistration::Open => Some((id, None)),
                 AnimatedRegistration::Deadline(deadline) => Some((id, Some(deadline))),
-            })
-            .collect()
+            }
+        }));
     }
 
     pub(crate) fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
@@ -391,54 +402,111 @@ impl WidgetTree {
     // 测试目标保留动画节点更新便捷入口，供时间推进测试按需调用。
     #[cfg_attr(test, allow(dead_code))]
     #[cfg(test)]
-    pub(crate) fn update_animation_nodes<I>(&mut self, ids: I, dt: f64) -> Vec<(WidgetId, bool)>
-    where
-        I: IntoIterator<Item = WidgetId>,
-    {
+    pub(crate) fn update_animation_nodes(
+        &mut self,
+        ids: &[WidgetId],
+        dt: f64,
+    ) -> Vec<(WidgetId, bool)> {
         self.update_animation_nodes_at(ids, Instant::now(), dt)
     }
 
-    pub(crate) fn update_animation_nodes_at<I>(
+    pub(crate) fn update_animation_nodes_at(
         &mut self,
-        ids: I,
+        ids: &[WidgetId],
         now: Instant,
         dt: f64,
-    ) -> Vec<(WidgetId, bool)>
-    where
-        I: IntoIterator<Item = WidgetId>,
-    {
+    ) -> Vec<(WidgetId, bool)> {
         // 已停止的树不得通过细粒度入口执行动画组件代码。
         if !self.accepts_external_work() {
             // 返回空更新以保持 fail-stop 语义。
             return Vec::new();
         }
-        // 生产调度传入的切片迭代器提供精确下界，按本帧身份数一次申请结果区。
-        let ids = ids.into_iter();
-        let (lower_bound, _) = ids.size_hint();
-        let mut updates = Vec::with_capacity(lower_bound);
+        // 生产调度传入的切片提供精确长度，按本帧身份数一次申请结果区。
+        let mut updates = Vec::with_capacity(ids.len());
         self.update_animation_nodes_at_into(ids, now, dt, &mut updates);
         updates
     }
 
-    // 把同一推进语义写入调用方给定的结果区，统一临时与测试复用路径。
-    pub(crate) fn update_animation_nodes_at_into<I>(
-        &mut self,
-        ids: I,
+    // 逐窗调度器按 WidgetId 递增交付身份；与有序注册表线性合并，避免逐源树查找。
+    fn update_sorted_animated_source_prefix_at_into(
+        &self,
+        ids: &[WidgetId],
         now: Instant,
         dt: f64,
         updates: &mut Vec<(WidgetId, bool)>,
-    ) where
-        I: IntoIterator<Item = WidgetId>,
-    {
+    ) -> usize {
+        let mut sources = self.animated_sources.iter().peekable();
+        let mut processed = 0;
+        for &id in ids {
+            // 每个来源回调前保持与通用路径相同的故障停止门禁。
+            if !self.accepts_external_work() {
+                break;
+            }
+            loop {
+                let Some((source_id, source)) = sources.peek().copied() else {
+                    return processed;
+                };
+                match source_id.cmp(&id) {
+                    Ordering::Less => {
+                        // 跳过本轮未被调度的休眠或有截止时间来源。
+                        sources.next();
+                    }
+                    Ordering::Greater => {
+                        // 首个非来源身份交回通用路径，保留组件动画和陈旧身份语义。
+                        return processed;
+                    }
+                    Ordering::Equal => {
+                        let still_active = source.source.advance(now, dt);
+                        // 来源回调可能触发树故障停止；此时不得发布当前或后续更新。
+                        if !self.accepts_external_work() {
+                            return processed;
+                        }
+                        updates.push((id, still_active));
+                        processed += 1;
+                        sources.next();
+                        break;
+                    }
+                }
+            }
+        }
+        processed
+    }
+
+    // 把同一推进语义写入调用方给定的结果区，统一临时与测试复用路径。
+    pub(crate) fn update_animation_nodes_at_into(
+        &mut self,
+        ids: &[WidgetId],
+        now: Instant,
+        dt: f64,
+        updates: &mut Vec<(WidgetId, bool)>,
+    ) {
         // 每轮覆盖上一帧结果，但保留调用方已明确持有的容量。
         updates.clear();
+        self.append_animation_nodes_at_into(ids, now, dt, updates);
+    }
+
+    // 向既有结果后追加一批身份，供逐窗调度与发现阶段共享同一工作区。
+    fn append_animation_nodes_at_into(
+        &mut self,
+        ids: &[WidgetId],
+        now: Instant,
+        dt: f64,
+        updates: &mut Vec<(WidgetId, bool)>,
+    ) {
         // 已停止的树不得通过结果区入口执行动画组件代码。
+        if !self.accepts_external_work() {
+            return;
+        }
+        let updates_start = updates.len();
+        let processed_source_prefix =
+            self.update_sorted_animated_source_prefix_at_into(ids, now, dt, updates);
+        // 快路中的来源回调使树停止时，不得再进入通用组件动画路径。
         if !self.accepts_external_work() {
             return;
         }
         let mut widget_overlays_changed = false;
         let mut completed_removals = Vec::new();
-        for id in ids {
+        for &id in &ids[processed_source_prefix..] {
             // 处理下一动画身份前复核树仍处于可接受外部工作的阶段。
             if !self.accepts_external_work() {
                 // 前序动画回调停止树时不再推进后续身份。
@@ -584,7 +652,11 @@ impl WidgetTree {
             return;
         }
         self.cancel_hidden_interaction();
-        if widget_overlays_changed || updates.iter().any(|(_, still_active)| !still_active) {
+        if widget_overlays_changed
+            || updates[updates_start..]
+                .iter()
+                .any(|(_, still_active)| !still_active)
+        {
             self.rebuild_widget_overlays();
         }
     }

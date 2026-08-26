@@ -266,7 +266,7 @@ pub mod __private {
         now: std::time::Instant,
         dt: f64,
     ) -> Vec<(super::WidgetId, bool)> {
-        tree.update_animation_nodes_at(ids.iter().copied(), now, dt)
+        tree.update_animation_nodes_at(ids, now, dt)
     }
     // 保留优化前几何扩容策略，供同一测试进程执行交替基线。
     #[cfg(feature = "test-harness")]
@@ -277,7 +277,7 @@ pub mod __private {
         dt: f64,
     ) -> Vec<(super::WidgetId, bool)> {
         let mut updates = Vec::new();
-        tree.update_animation_nodes_at_into(ids.iter().copied(), now, dt, &mut updates);
+        tree.update_animation_nodes_at_into(ids, now, dt, &mut updates);
         updates
     }
     // 复用显式工作区推进相同来源，供同场景比较临时申请与常驻容量。
@@ -289,7 +289,7 @@ pub mod __private {
         dt: f64,
         updates: &mut Vec<(super::WidgetId, bool)>,
     ) {
-        tree.update_animation_nodes_at_into(ids.iter().copied(), now, dt, updates);
+        tree.update_animation_nodes_at_into(ids, now, dt, updates);
     }
     // 复制直接子节点身份供集成测试核对 keyed 协调是否保持顺序与复用。
     #[cfg(feature = "test-harness")]

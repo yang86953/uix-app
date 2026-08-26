@@ -385,12 +385,14 @@ impl WindowDriver {
             .frame_scheduler
             .animation_delta(frame_time, had_scheduled_animation_work)
             .as_secs_f64();
-        let animation_updates = update_scheduled_and_discovered_animations(
+        let mut animation_updates = std::mem::take(&mut self.animation_updates_scratch);
+        update_scheduled_and_discovered_animations(
             tree,
             self.scheduled_animation_ids_scratch.as_slice(),
             frame_time,
             dt,
             discover_animation_work,
+            &mut animation_updates,
         );
         // 动画更新可能在内部捕获发布 panic，必须在推进时钟前停止本帧。
         if let Some(result) = self.finish_if_tree_fail_stopped(
@@ -412,13 +414,21 @@ impl WindowDriver {
             loop_state,
         ) {
             // fail-stop 不得继续处理本帧工作。
+            self.animation_updates_scratch = animation_updates;
             return result;
         }
         // Helper 返回后使用预存事实判断，保持动画时钟推进语义不变。
         if animation_clock_should_advance(had_scheduled_animation_work, &animation_updates) {
             self.frame_scheduler.animation_advanced(frame_time);
         }
-        sync_animation_registrations(active_work, tree, &animation_updates);
+        let had_animation_updates = !animation_updates.is_empty();
+        sync_animation_registrations(
+            active_work,
+            tree,
+            &animation_updates,
+            &mut self.animation_registrations_scratch,
+        );
+        self.animation_updates_scratch = animation_updates;
         // Declarative animation sources publish their sampled value through
         // State. Consume that reconcile request in the same frame so the
         // sampled value is rendered without scheduling an immediate zero-dt
@@ -471,7 +481,17 @@ impl WindowDriver {
             *reconcile_pending = false;
         }
         if reconcile_ran {
-            sync_animation_registrations(active_work, tree, &[]);
+            sync_animation_registrations(
+                active_work,
+                tree,
+                &[],
+                &mut self.animation_registrations_scratch,
+            );
+        }
+        // 没有开放帧动画时立即释放峰值工作区，延迟等待和空闲期不长期保留容量。
+        if active_work.animation_ids().next().is_none() {
+            self.animation_updates_scratch = Vec::new();
+            self.animation_registrations_scratch = Vec::new();
         }
         // 协调内部捕获发布 panic 后不得让同一帧观察半提交结构。
         if let Some(result) = self.finish_if_tree_fail_stopped(
@@ -636,7 +656,7 @@ impl WindowDriver {
                 InvalidationSource::LayoutEvent
             } else if had_due_animation_work
                 || had_scheduled_animation_work
-                || !animation_updates.is_empty()
+                || had_animation_updates
             {
                 InvalidationSource::AnimationPolling
             } else {

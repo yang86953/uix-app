@@ -149,6 +149,10 @@ pub(crate) struct WindowDriver {
     started_at: Option<Instant>,
     presented_sequence: u64,
     scheduled_animation_ids_scratch: Vec<NodeId>,
+    // 逐窗复用动画推进结果，稳态帧不再申请临时输出区。
+    animation_updates_scratch: Vec<(NodeId, bool)>,
+    // 逐窗复用动画登记快照，交付调度器后继续保留容量。
+    animation_registrations_scratch: Vec<(NodeId, Option<Instant>)>,
     app_timer_deadlines_scratch: Vec<(TimerId, Instant)>,
     app_timer_deadline_revision: Option<u64>,
     due_work_scratch: Vec<ActiveWorkKind>,
@@ -172,11 +176,12 @@ pub(crate) fn sync_animation_registrations(
     active_work: &mut ActiveWorkRegistry,
     tree: &WidgetTree,
     animation_updates: &[(NodeId, bool)],
+    managed_registrations: &mut Vec<(NodeId, Option<Instant>)>,
 ) {
     // 汇总树内动画源注册：内建源 + 视图过渡源，再与组件动画同步。
-    let mut managed_registrations = tree.animated_source_registrations();
-    tree.extend_view_transition_registrations(&mut managed_registrations);
-    active_work.sync_animated_sources(managed_registrations);
+    tree.animated_source_registrations_into(managed_registrations);
+    tree.extend_view_transition_registrations(managed_registrations);
+    active_work.sync_animated_sources(managed_registrations.iter().copied());
     active_work.sync_widget_animations(tree.widget_animation_ids());
 
     // 逐条应用调用方报告的动画启停变化，未由注册表管理的才单独登记。

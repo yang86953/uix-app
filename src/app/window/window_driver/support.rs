@@ -56,21 +56,20 @@ pub(super) fn update_scheduled_and_discovered_animations(
     now: Instant,
     dt: f64,
     discover_animation_work: bool,
-) -> Vec<(NodeId, bool)> {
-    let mut updates = if scheduled_animation_ids.is_empty() {
-        Vec::new()
-    } else {
-        tree.update_animation_nodes_at(scheduled_animation_ids.iter().copied(), now, dt)
-    };
+    updates: &mut Vec<(NodeId, bool)>,
+) {
+    updates.clear();
+    if !scheduled_animation_ids.is_empty() {
+        tree.update_animation_nodes_at_into(scheduled_animation_ids, now, dt, updates);
+    }
     // 已调度动画可能使树停止，发现阶段前必须阻止第二轮动画调用。
     if !tree.accepts_external_work() {
         // 保留已完成身份的结果供调用方撤销后续帧工作。
-        return updates;
+        return;
     }
     if discover_animation_work {
-        updates.extend(tree.update_animations_except_at(scheduled_animation_ids, now, dt));
+        tree.append_animations_except_at(scheduled_animation_ids, now, dt, updates);
     }
-    updates
 }
 
 pub(crate) fn animation_clock_should_advance(
