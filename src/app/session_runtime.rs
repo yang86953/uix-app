@@ -250,9 +250,23 @@ impl AppRuntime {
         title: String,
         visible: bool,
         presentable: bool,
+        logical_width: i32,
+        logical_height: i32,
+        maximized: bool,
+        minimized: bool,
+        fullscreen: bool,
     ) -> Option<AgentWindowRegistration> {
-        self.agent_bridge
-            .register_window(window_id, title, visible, presentable)
+        self.agent_bridge.register_window(
+            window_id,
+            title,
+            visible,
+            presentable,
+            logical_width,
+            logical_height,
+            maximized,
+            minimized,
+            fullscreen,
+        )
     }
 
     pub(crate) fn list_agent_windows(&self) -> Result<Vec<AgentWindowInfo>, AgentSubmitError> {

@@ -15,7 +15,19 @@ pub(crate) trait AgentSemanticsPort: std::fmt::Debug {
     fn window_id(&self) -> WindowId;
     fn generation(&self) -> u64;
     fn publish_semantics(&self, snapshot: &WindowSemanticSnapshot);
-    fn publish_availability(&self, visible: bool, presentable: bool);
+    fn publish_window_state(&self, state: AgentWindowState);
+}
+
+/// UI turn 发布给 Agent 目录的跨平台窗口状态；不包含原生句柄或平台枚举。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AgentWindowState {
+    pub(crate) visible: bool,
+    pub(crate) presentable: bool,
+    pub(crate) logical_width: i32,
+    pub(crate) logical_height: i32,
+    pub(crate) maximized: bool,
+    pub(crate) minimized: bool,
+    pub(crate) fullscreen: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,9 +121,9 @@ impl WindowSemanticState {
         true
     }
 
-    pub(crate) fn publish_agent_availability(&self, visible: bool, presentable: bool) {
+    pub(crate) fn publish_agent_window_state(&self, state: AgentWindowState) {
         if let Some(agent_window) = self.agent_window.as_ref() {
-            agent_window.publish_availability(visible, presentable);
+            agent_window.publish_window_state(state);
         }
     }
 

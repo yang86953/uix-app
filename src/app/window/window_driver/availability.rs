@@ -1,7 +1,7 @@
 //! 逐窗可见性、surface 可用性与 Agent 可呈现状态。
 
 use super::WindowDriver;
-use crate::app::window_semantics::WindowSemanticState;
+use crate::app::window_semantics::{AgentWindowState, WindowSemanticState};
 use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 
 impl WindowDriver {
@@ -35,9 +35,15 @@ impl WindowDriver {
         semantic_state: &WindowSemanticState,
         platform_window: &dyn PlatformWindow,
     ) {
-        semantic_state.publish_agent_availability(
-            platform_window.is_visible(),
-            self.agent_surface_presentable(platform_window),
-        );
+        let properties = platform_window.properties();
+        semantic_state.publish_agent_window_state(AgentWindowState {
+            visible: platform_window.is_visible(),
+            presentable: self.agent_surface_presentable(platform_window),
+            logical_width: properties.width(),
+            logical_height: properties.height(),
+            maximized: properties.is_maximized(),
+            minimized: properties.is_minimized(),
+            fullscreen: properties.is_fullscreen(),
+        });
     }
 }

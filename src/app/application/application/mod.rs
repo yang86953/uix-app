@@ -684,11 +684,17 @@ impl App {
         }
         session.set_agent_command_executor(self.runtime.agent_command_executor());
         session.set_agent_confirm_ui(self.runtime.agent_confirm_ui());
+        let properties = platform_window.properties();
         if let Some(registration) = self.runtime.register_agent_window(
             root_window_id,
             self.title.clone(),
             platform_window.is_visible(),
             initially_agent_presentable(platform_window.as_ref()),
+            properties.width(),
+            properties.height(),
+            properties.is_maximized(),
+            properties.is_minimized(),
+            properties.is_fullscreen(),
         ) {
             // bind_agent_window 只返回 bool，无法区分「已绑定」与「窗口已关闭/
             // id 不匹配」等失败原因；改为 Result 会波及全部调用点与签名，

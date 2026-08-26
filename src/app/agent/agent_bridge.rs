@@ -15,7 +15,7 @@ use crate::app::queues::agent_command_queue::{
     AgentCommandRequest, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
 };
 use crate::app::session_runtime::AppRuntime;
-use crate::app::window_semantics::{AgentSemanticsPort, WindowSemanticSnapshot};
+use crate::app::window_semantics::{AgentSemanticsPort, AgentWindowState, WindowSemanticSnapshot};
 use crate::core::WindowId;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
@@ -31,6 +31,11 @@ pub(crate) struct AgentWindowInfo {
     pub(crate) title: String,
     pub(crate) visible: bool,
     pub(crate) presentable: bool,
+    pub(crate) logical_width: i32,
+    pub(crate) logical_height: i32,
+    pub(crate) maximized: bool,
+    pub(crate) minimized: bool,
+    pub(crate) fullscreen: bool,
     pub(crate) revision: u64,
     pub(crate) presented_revision: u64,
     pub(crate) closed: bool,
@@ -128,6 +133,11 @@ impl AgentBridgeDirectory {
         title: String,
         visible: bool,
         presentable: bool,
+        logical_width: i32,
+        logical_height: i32,
+        maximized: bool,
+        minimized: bool,
+        fullscreen: bool,
     ) -> Option<AgentWindowRegistration> {
         let mut state = self.lock_state();
         if !state.enabled || state.app_closed {
@@ -151,6 +161,11 @@ impl AgentBridgeDirectory {
                 title,
                 visible,
                 presentable,
+                logical_width,
+                logical_height,
+                maximized,
+                minimized,
+                fullscreen,
                 revision: 0,
                 presented_revision: 0,
                 closed: false,
@@ -321,13 +336,7 @@ impl AgentBridgeDirectory {
         }
     }
 
-    fn publish_availability(
-        &self,
-        window_id: WindowId,
-        generation: u64,
-        visible: bool,
-        presentable: bool,
-    ) {
+    fn publish_window_state(&self, window_id: WindowId, generation: u64, update: AgentWindowState) {
         let mut state = self.lock_state();
         let Some(window) = state.windows.get_mut(&window_id) else {
             return;
@@ -335,8 +344,13 @@ impl AgentBridgeDirectory {
         if window.generation != generation || window.closed {
             return;
         }
-        window.visible = visible;
-        window.presentable = presentable;
+        window.visible = update.visible;
+        window.presentable = update.presentable;
+        window.logical_width = update.logical_width;
+        window.logical_height = update.logical_height;
+        window.maximized = update.maximized;
+        window.minimized = update.minimized;
+        window.fullscreen = update.fullscreen;
     }
 }
 
@@ -383,9 +397,9 @@ impl AgentSemanticsPort for AgentWindowRegistration {
             .publish_semantics(self.window_id, self.generation, snapshot);
     }
 
-    fn publish_availability(&self, visible: bool, presentable: bool) {
+    fn publish_window_state(&self, state: AgentWindowState) {
         self.directory
-            .publish_availability(self.window_id, self.generation, visible, presentable);
+            .publish_window_state(self.window_id, self.generation, state);
     }
 }
 
@@ -492,3 +506,45 @@ impl AgentProcessBridge {
 }
 
 // 目录核心逻辑专项测试（内存内同步操作，不启动线程与 IO）。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_state_publication_updates_same_generation_without_native_identity() {
+        let directory = AgentBridgeDirectory::default();
+        assert!(directory.enable());
+        let registration = directory
+            .register_window(
+                WindowId::new(7),
+                "fixture".to_owned(),
+                true,
+                true,
+                800,
+                600,
+                false,
+                false,
+                false,
+            )
+            .expect("enabled directory must register a window");
+        registration.publish_window_state(AgentWindowState {
+            visible: true,
+            presentable: true,
+            logical_width: 1000,
+            logical_height: 700,
+            maximized: true,
+            minimized: false,
+            fullscreen: false,
+        });
+
+        let windows = directory
+            .list_windows()
+            .expect("live directory must list windows");
+        assert_eq!(windows.len(), 1);
+        let window = &windows[0];
+        assert_eq!((window.logical_width, window.logical_height), (1000, 700));
+        assert!(window.maximized);
+        assert!(!window.minimized);
+        assert!(!window.fullscreen);
+    }
+}

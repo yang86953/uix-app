@@ -117,7 +117,7 @@ App::new()
 
 | 请求 | 说明 |
 |---|---|
-| `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、修订号） |
+| `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、修订号） |
 | `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项，敏感值过滤） |
 | `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
 
@@ -173,6 +173,7 @@ App::new()
 
 - JSON Lines，本机端点（Unix socket / 命名管道），端点路径含进程 id 与会话 nonce。
 - 首请求必须为 `hello`（携带 token）；已认证连接按 `list_windows` → `snapshot` → `perform` / `confirm` → `wait` 循环工作。
+- `hello.capabilities.window_state_fields` 发布 `list_windows` 可读取的窗口状态字段；客户端必须先协商再消费。字段来自 UIX 跨平台窗口属性，是框架当前观测，不承诺窗口管理器或 compositor 已确认动作终态。
 - 动作必须命中当前语义快照中的稳定节点（`automation_id` 或 `node_id`）并经过窗口 owner thread。
 - `wait` 返回同 generation 的 `closed` 后，该连接已到达终态并由服务端关闭；应用 teardown 会先给
   在途终态回复保留有界写回窗口，再强制回收其他连接。

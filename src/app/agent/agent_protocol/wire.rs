@@ -429,6 +429,11 @@ pub(super) fn window_info_value(window: &AgentWindowInfo) -> Value {
         "title": window.title,
         "visible": window.visible,
         "presentable": window.presentable,
+        "logical_width": window.logical_width,
+        "logical_height": window.logical_height,
+        "maximized": window.maximized,
+        "minimized": window.minimized,
+        "fullscreen": window.fullscreen,
         "revision": window.revision,
         "presented_revision": window.presented_revision,
         "closed": window.closed,
@@ -562,6 +567,11 @@ mod tests {
             title: "fixture".to_owned(),
             visible: !closed,
             presentable: !closed,
+            logical_width: 800,
+            logical_height: 600,
+            maximized: false,
+            minimized: false,
+            fullscreen: false,
             revision: 9,
             presented_revision: 8,
             closed,
@@ -574,5 +584,15 @@ mod tests {
         assert!(!changed.close_connection());
         let closed = wait_success("closed".to_owned(), "closed", &window(true));
         assert!(closed.close_connection());
+    }
+
+    #[test]
+    fn window_wire_value_includes_negotiated_logical_size_and_modes() {
+        let value = window_info_value(&window(false));
+        assert_eq!(value["logical_width"], 800);
+        assert_eq!(value["logical_height"], 600);
+        assert_eq!(value["maximized"], false);
+        assert_eq!(value["minimized"], false);
+        assert_eq!(value["fullscreen"], false);
     }
 }
