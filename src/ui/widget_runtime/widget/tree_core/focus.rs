@@ -60,6 +60,10 @@ impl WidgetTree {
     pub(crate) fn set_focus_handle(&mut self, id: WidgetId, handle: Option<FocusHandle>) {
         // 停止树不得把旧身份重新绑定到外部 AppState。
         assert!(self.accepts_coordination_work());
+        // 全局空 sidecar 不可能持有当前节点，空声明无需执行两次带哈希寻址。
+        if handle.is_none() && self.focus_handles.is_empty() {
+            return;
+        }
         let unchanged = self
             .focus_handles
             .get(&id)
