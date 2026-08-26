@@ -320,12 +320,21 @@ impl RenderHandlerTable {
     pub(crate) fn clear_widget(&mut self, widget: WidgetId) {
         // 表格 capability 启用时才清理扩展行 renderer。
         #[cfg(feature = "table")]
-        self.table_expand.remove(&widget);
+        if !self.table_expand.is_empty() {
+            self.table_expand.remove(&widget);
+        }
         // 表格 capability 启用时才清理泛型单元格 renderer。
         #[cfg(feature = "table")]
-        self.table_cells.remove(&widget);
-        self.select_options.remove(&widget);
-        self.virtual_scroll_item.remove(&widget);
+        if !self.table_cells.is_empty() {
+            self.table_cells.remove(&widget);
+        }
+        // 全局空 sidecar 不可能持有当前节点，避免为空删除重复哈希。
+        if !self.select_options.is_empty() {
+            self.select_options.remove(&widget);
+        }
+        if !self.virtual_scroll_item.is_empty() {
+            self.virtual_scroll_item.remove(&widget);
+        }
     }
 
     pub(crate) fn clear(&mut self) {
