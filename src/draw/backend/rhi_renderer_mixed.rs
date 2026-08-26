@@ -511,7 +511,7 @@ impl RhiRenderer {
             // 本帧结束后释放颜色或 coverage 临时 texture。
             transient_textures.push(texture);
             // 把资源、完整范围与载荷封闭成一次不可拆纹理上传。
-            let upload = RhiTextureUpload::full(texture, extent, &payload);
+            let upload = RhiTextureUpload::full(texture, extent, payload.as_ref());
             // 上传紧密排列的 source payload。
             if let Err(error) = frame.device().update_texture(upload) {
                 // 释放当前帧已经创建的全部临时资源。

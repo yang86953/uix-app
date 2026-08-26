@@ -2,7 +2,8 @@
 //! 本文件只负责把已经完成设备空间几何降级的 solid mesh 编码为
 //! `FramePlan`；它不理解 widget、路径或任何原生 API 对象。
 
-// 引入共享字节载荷和三角 mesh 的所有权类型。
+// 引入同步纹理上传的借用/拥有字节载荷和共享三角 mesh 所有权类型。
+use std::borrow::Cow;
 use std::sync::Arc;
 
 // 引入统一错误类型。
@@ -565,17 +566,27 @@ impl RhiRenderer {
         ])
     }
 
-    // 把 u32 BGRA 像素编码成纹理上传所需的原生字节序列。
-    fn encode_u32s(values: &[u32]) -> Arc<[u8]> {
-        // 预留精确容量，避免上传前再次扩容。
-        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-        // 原生 BGRA8 目标与该共享字节布局一致。
-        for value in values {
-            // 保持每个 packed pixel 的原始字节表示。
-            bytes.extend_from_slice(&value.to_ne_bytes());
+    // 把 AARRGGBB u32 像素投影成固定 B/G/R/A 上传字节；借用只跨同步 Device 调用。
+    fn encode_u32s(values: &[u32]) -> Cow<'_, [u8]> {
+        #[cfg(target_endian = "little")]
+        {
+            // u32 与 u8 都是 Pod；小端内存布局天然是 B/G/R/A，可安全零复制借用。
+            Cow::Borrowed(bytemuck::cast_slice(values))
         }
-        // 转为不可变共享载荷交给资源上传。
-        Arc::from(bytes)
+        #[cfg(target_endian = "big")]
+        {
+            // 大端内存不是 BGRA，必须用明确小端字节序生成可移植后备载荷。
+            Cow::Owned(Self::encode_u32s_big_endian(values))
+        }
+    }
+
+    #[cfg(any(test, target_endian = "big"))]
+    fn encode_u32s_big_endian(values: &[u32]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
     }
 
     // 构造并执行一帧 solid mesh RHI 计划。
@@ -763,7 +774,7 @@ impl RhiRenderer {
                 // 上传范围使用已验证的物理像素尺寸。
                 RhiExtent::new(quad.pixel_w, quad.pixel_h),
                 // 上传规范化后的 premultiplied 像素。
-                &upload,
+                upload.as_ref(),
             )) {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
