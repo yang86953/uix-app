@@ -84,8 +84,9 @@ fn incremental_child_point_matches_full_visual_path() {
         .viewport_scroll_offset()
         .expect("ScrollView 必须公开滚动坐标");
     let parent_content = Point::new(root_layout.x + scroll_x, root_layout.y + scroll_y);
+    let child = tree.get(child_id).expect("滚动子节点必须存活");
     let incremental = tree
-        .point_to_child_layout(child_id, parent_content, screen_point)
+        .point_to_child_layout(child_id, child, parent_content, screen_point)
         .expect("增量子坐标变换必须可逆");
     let full = tree
         .point_to_node_layout(child_id, screen_point)
@@ -127,5 +128,11 @@ fn modal_overlay_does_not_inherit_ancestor_scroll() {
     assert_eq!(
         ScenePaint::node_overlay_transform(&tree, modal_id),
         Transform::identity()
+    );
+    // 类型级浮层能力缓存必须让完整命中坐标链在 Modal 处截断祖先滚动。
+    let screen_point = Point::new(16.0, 12.0);
+    assert_eq!(
+        tree.point_to_node_layout(modal_id, screen_point),
+        Some(screen_point)
     );
 }

@@ -7,10 +7,37 @@ use crate::ui::widget_runtime::widget::WidgetNode;
 use crate::ui::theme::traits::{ISpacingTokens, ITypographyTokens};
 // 引入真实主题作用域与令牌补丁类型。
 use crate::ui::theme::{ScopedThemeTokens, Theme, TokenPatch};
+// 构造只声明类型级浮层能力的最小测试组件。
+use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities};
 // 引入链式无障碍覆盖与基准快照类型。
 use crate::ui::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 // 引入补丁共享所有权类型。
 use std::sync::Arc;
+
+// 用布尔值模拟组件类型级浮层能力声明。
+struct OverlayCapabilityWidget(bool);
+
+impl Widget for OverlayCapabilityWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::new()
+    }
+
+    fn may_produce_overlay(&self) -> bool {
+        self.0
+    }
+}
 
 // 确认组件 panic 不会把临时令牌泄漏给后续兄弟节点。
 #[test]
@@ -89,6 +116,19 @@ fn runtime_node_sparse_metadata_stays_compact() {
         // 优化前为 3928 字节。
         assert!(std::mem::size_of::<WidgetNode>() <= 3664);
     }
+}
+
+// 类型级浮层能力必须复用现有位集，并在实际组件替换时同步刷新。
+#[test]
+fn overlay_capability_cache_tracks_widget_replacement() {
+    let mut node = BoxedWidget::new(Box::new(OverlayCapabilityWidget(true)));
+    assert!(node.may_produce_overlay());
+
+    node.replace_widget(Box::new(OverlayCapabilityWidget(false)));
+    assert!(!node.may_produce_overlay());
+
+    node.replace_widget(Box::new(OverlayCapabilityWidget(true)));
+    assert!(node.may_produce_overlay());
 }
 
 // 确认按需装箱没有改变连续覆盖的合并语义。

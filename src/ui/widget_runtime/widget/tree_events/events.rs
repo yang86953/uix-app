@@ -175,28 +175,27 @@ impl WidgetTree {
             let mut child_hit = None;
             for child_index in children_start..children_end {
                 let child_id = order_scratch[child_index].0;
+                // 单次借用复用 fixed、片段、浮层能力与局部视觉变换元数据。
+                let Some(child) = self.get(child_id) else {
+                    continue;
+                };
                 // fixed 子树脱离当前父级的滚动与裁剪命中门禁。
-                let fixed = self.node_is_fixed(child_id);
+                let fixed = child.position().mode == crate::ui::PositionMode::Fixed;
                 // 普通子树仍要求指针位于父级可命中裁剪内。
                 if !fixed && !can_hit_regular_children {
                     // 继续检查可能提升为 fixed 的其他兄弟。
                     continue;
                 }
                 // 先按父布局为该子树声明的片段集合过滤命中。
-                let inside_parent_regions = fixed
-                    || self
-                        // 读取当前子节点保存的父级片段元数据。
-                        .get(child_id)
-                        .is_none_or(|child| {
-                            // 缺少片段表示普通未裁剪子树；Some(empty) 自然拒绝全部命中。
-                            let mut inside = true;
-                            child.visit_parent_clip_regions(&mut |regions| {
-                                // 不连续片段使用集合命中，不能退化为联合包围盒。
-                                inside =
-                                    regions.iter().any(|region| region.contains(child_clip_pos));
-                            });
-                            inside
-                        });
+                let inside_parent_regions = fixed || {
+                    // 缺少片段表示普通未裁剪子树；Some(empty) 自然拒绝全部命中。
+                    let mut inside = true;
+                    child.visit_parent_clip_regions(&mut |regions| {
+                        // 不连续片段使用集合命中，不能退化为联合包围盒。
+                        inside = regions.iter().any(|region| region.contains(child_clip_pos));
+                    });
+                    inside
+                };
                 // 指针落在片段间隙时跳过整个子树。
                 if !inside_parent_regions {
                     // 继续检查下一层视觉兄弟节点。
@@ -204,7 +203,7 @@ impl WidgetTree {
                 }
                 // 复用父节点已解析的内容坐标，只追加直接子节点的视觉变换。
                 let Some(child_layout_pos) =
-                    self.point_to_child_layout(child_id, child_clip_pos, pos)
+                    self.point_to_child_layout(child_id, child, child_clip_pos, pos)
                 else {
                     // 不可逆变换与完整视觉路径语义一致，不产生命中。
                     continue;
