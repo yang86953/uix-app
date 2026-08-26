@@ -419,10 +419,8 @@ impl ViewAdapter {
             widget_state_receipts: _,
             widget_state_store: _,
         } = node;
-        let context_changed = tree
-            .get(id)
-            .is_none_or(|current| current.provider_context() != &provider_context);
-        if let Some(current) = tree.get_mut(id) {
+        let context_changed = if let Some(current) = tree.get_mut(id) {
+            let context_changed = current.provider_context() != &provider_context;
             current.set_provider_context(provider_context);
             current.set_leave_animation(leave_animation);
             // 原位协调必须同时更新可继承的光标声明。
@@ -431,7 +429,10 @@ impl ViewAdapter {
             current.set_uix_widget_scopes(uix_widget_scopes);
             // 用本轮捕获的 Effect 完整替换此节点的旧声明实例。
             current.replace_captured_effects(captured_effects);
-        }
+            context_changed
+        } else {
+            true
+        };
         // 将本节点本轮结构性 State 绑定到所属树的 reconcile 请求端口。
         // 根绑定由根所有者整体替换，非根节点才持有节点生命周期租约。
         if tree.root_id() != Some(id) {
