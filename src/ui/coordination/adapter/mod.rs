@@ -821,25 +821,20 @@ impl ViewAdapter {
         children: Vec<ViewNode>,
         stagger_enter: Option<(f64, crate::ui::animation::AnimationConfig)>,
     ) -> bool {
-        let old_child_count = tree
-            .get(parent_id)
-            .map(|node| node.children().len())
-            .unwrap_or_default();
         // 唯一 keyed 同序声明直接复用现有身份；重复 key、摘要碰撞和替换继续走通用语义。
-        let direct_keyed_reuse =
-            old_child_count == children.len()
-                && tree.get(parent_id).is_some_and(|parent| {
-                    parent.children().iter().copied().zip(children.iter()).all(
-                        |(child_id, child)| {
-                            let Some(key) = child.key.as_deref() else {
-                                return false;
-                            };
-                            tree.get(child_id).and_then(|node| node.key()) == Some(key)
-                                && Self::can_reuse(tree, child_id, child)
-                        },
-                    )
-                })
-                && reconcile_keys_are_unique(&children);
+        let direct_keyed_reuse = tree.get(parent_id).is_some_and(|parent| {
+            parent.children().len() == children.len()
+                && parent.children().iter().copied().zip(children.iter()).all(
+                    |(child_id, child)| {
+                        let Some(key) = child.key.as_deref() else {
+                            return false;
+                        };
+                        tree.get(child_id).is_some_and(|current| {
+                            current.key() == Some(key) && Self::can_reuse_current(current, child)
+                        })
+                    },
+                )
+        }) && reconcile_keys_are_unique(&children);
         if direct_keyed_reuse {
             for (index, child) in children.into_iter().enumerate() {
                 // 快路预检已经证明同序且可复用，协调期间父级直接子序列保持稳定。
