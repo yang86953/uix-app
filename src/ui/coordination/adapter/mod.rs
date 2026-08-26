@@ -490,13 +490,18 @@ impl ViewAdapter {
         };
         // 先保存新版组件快照，enabled 路径可在 patch 前复用同一份字段。
         let next_fields = widget.snapshot_fields();
-        let next_accessibility = next_fields.accessibility();
         let next_disabled = accessibility_override
             .as_ref()
-            .map(|override_state| override_state.apply(next_accessibility.clone()))
-            .unwrap_or(next_accessibility)
-            .state
-            .disabled;
+            .and_then(|override_state| override_state.disabled_override())
+            .or_else(|| match &next_fields {
+                // Button 的 disabled 无障碍状态只由这两个声明字段决定。
+                SnapshotFields::Button {
+                    disabled, loading, ..
+                } => Some(*disabled || *loading),
+                // 其他组件仍沿用完整无障碍快照的既有语义。
+                _ => None,
+            })
+            .unwrap_or_else(|| next_fields.accessibility().state.disabled);
         if next_disabled {
             // PointerLeave / DragEnd 必须在旧组件仍启用时交付，随后再 patch disabled。
             tree.cancel_pointer_hover_in_subtree(id);
