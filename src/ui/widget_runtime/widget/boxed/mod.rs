@@ -148,7 +148,11 @@ impl BoxedWidget {
         provider_context: ProviderContext,
     ) -> Self {
         let caps = with_provider_context(&provider_context, || {
-            let caps = widget.capabilities();
+            let mut caps = widget.capabilities();
+            // 浮层能力只随实际组件类型替换，复用现有位集避免增加节点尺寸。
+            if widget.may_produce_overlay() {
+                caps.insert(WidgetCapabilities::MAY_PRODUCE_OVERLAY);
+            }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
@@ -255,7 +259,11 @@ impl BoxedWidget {
         }
 
         self.caps = with_provider_context(&self.provider_context, || {
-            let caps = widget.capabilities();
+            let mut caps = widget.capabilities();
+            // 组件替换时同步刷新类型级浮层能力缓存。
+            if widget.may_produce_overlay() {
+                caps.insert(WidgetCapabilities::MAY_PRODUCE_OVERLAY);
+            }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
@@ -606,7 +614,7 @@ impl BoxedWidget {
     }
     /// 判断组件类型是否可能登记浮层；结果只随实际组件类型替换而变化。
     pub(crate) fn may_produce_overlay(&self) -> bool {
-        self.with_widget_context(Widget::may_produce_overlay)
+        self.caps.contains(WidgetCapabilities::MAY_PRODUCE_OVERLAY)
     }
     // 使用当前逻辑表面查询组件浮层登记。
     pub fn overlay_entry_for_surface(

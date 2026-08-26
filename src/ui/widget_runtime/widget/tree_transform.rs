@@ -2,6 +2,8 @@ use super::tree_core::WidgetTree;
 use super::*;
 use crate::draw::Transform;
 use crate::draw::scene::ScenePaint;
+// 直接读取节点定位模式以选择普通子节点坐标快路径。
+use crate::ui::PositionMode;
 use crate::ui::widget_runtime::view_transform::ViewTransform;
 
 // 把视觉边界裁剪契约的验收放在独立文件，避免机制实现与测试相互挤占篇幅。
@@ -10,15 +12,18 @@ use crate::ui::widget_runtime::view_transform::ViewTransform;
 mod tests;
 
 impl WidgetTree {
+    /// 判断已借用节点是否会截断普通视觉父链。
+    fn node_is_visual_root(&self, id: WidgetId, node: &BoxedWidget) -> bool {
+        // fixed 无条件提升；普通组件只在类型可能产出浮层时查询当前登记。
+        node.position().mode == PositionMode::Fixed
+            || (node.may_produce_overlay() && node.overlay_entry(id, node.frame()).is_some())
+    }
+
     /// 判断节点是否为悬浮层节点（overlay 挂载点）。
     fn is_overlay_node(&self, id: WidgetId) -> bool {
-        // fixed 节点与组件浮层都从祖先滚动和裁剪路径中提升。
-        self.node_is_fixed(id)
-            || self
-                // 读取组件自身声明的浮层入口。
-                .get(id)
-                // 存在浮层条目时截断视觉父链。
-                .is_some_and(|node| node.overlay_entry(id, node.frame()).is_some())
+        // 单次节点查询同时读取 fixed 与组件浮层能力。
+        self.get(id)
+            .is_some_and(|node| self.node_is_visual_root(id, node))
     }
 
     /// 把从树根到指定节点的视觉路径写入调用方工作区（遇悬浮层节点截断）。
@@ -138,15 +143,26 @@ impl WidgetTree {
     pub(super) fn point_to_child_layout(
         &self,
         id: WidgetId,
+        node: &BoxedWidget,
         parent_content_point: Point,
         screen_point: Point,
     ) -> Option<Point> {
         // fixed 与组件浮层会截断视觉父链，必须从原始屏幕坐标重新开始。
-        let (transform, point) = if self.is_overlay_node(id) {
+        let (transform, point) = if self.node_is_visual_root(id, node) {
             (self.node_overlay_transform(id), screen_point)
         } else {
             // 普通后代只追加自身变换；父变换与滚动已经反映在内容坐标中。
-            (self.positioned_visual_transform(id), parent_content_point)
+            let transform = match node.position().mode {
+                // static/absolute 不需要再次查询树级定位偏移。
+                PositionMode::Static | PositionMode::Absolute => node.visual_transform_matrix(),
+                // relative/sticky 仍由树级定位算法解析当前动态偏移。
+                PositionMode::Relative | PositionMode::Sticky => {
+                    self.positioned_visual_transform(id)
+                }
+                // fixed 已在视觉根分支处理；失配时保守拒绝命中。
+                PositionMode::Fixed => return None,
+            };
+            (transform, parent_content_point)
         };
         // 常见单位变换无需执行通用矩阵求逆和点乘。
         if transform.is_identity() {

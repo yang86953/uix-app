@@ -48,6 +48,8 @@ impl WidgetCapabilities {
     pub const ANIMATION: u16 = 0b1_0000;
     /// 平台文本输入能力位。
     pub const TEXT_INPUT: u16 = 0b10_0000;
+    /// 组件类型可能产生浮层的内部能力位。
+    pub(crate) const MAY_PRODUCE_OVERLAY: u16 = 0b100_0000;
 
     /// 创建不包含任何可选能力的标记。
     pub const fn new() -> Self {
