@@ -91,7 +91,8 @@ pub trait Widget: 'static {
     }
     /// 返回自动化和语义快照使用的稳定字段。
     fn snapshot_fields(&self) -> crate::ui::widget_snapshot::SnapshotFields {
-        crate::ui::widget_snapshot::snapshot_fields_from_any(self.as_any())
+        // 未登记的自定义组件没有类型化快照，直接返回未知，避免扫描全部内置类型。
+        crate::ui::widget_snapshot::SnapshotFields::Unknown
     }
     /// 返回此 widget 实现了哪些能力。
     fn capabilities(&self) -> WidgetCapabilities;
