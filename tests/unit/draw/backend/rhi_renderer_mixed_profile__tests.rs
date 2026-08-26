@@ -7,11 +7,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::*;
+use crate::core::{Errc, Error};
 use crate::platform::presentation::rhi::{
     BufferDesc, BufferHandle, GraphicsDeviceCapabilities, PipelineBinding, PipelineDesc,
     PipelineHandle, RenderTargetHandle, RhiBufferUpload, RhiBufferUploadPreflight, RhiColor,
-    RhiScissor, RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle, TextureCopy,
-    TextureDesc, TextureHandle, TextureMove,
+    RhiExtent, RhiScissor, RhiTextureUpload, SamplerDesc, SamplerHandle, SubmissionHandle,
+    TextureCopy, TextureDesc, TextureFormat, TextureHandle, TextureMove,
 };
 
 const GROUP_COUNT: usize = 32;
@@ -86,6 +87,8 @@ struct AllocationStats {
 struct CpuDevice {
     next_resource: u64,
     draw_count: usize,
+    last_texture: Option<(TextureHandle, TextureDesc)>,
+    upload_observation: u64,
 }
 
 impl CpuDevice {
@@ -93,6 +96,8 @@ impl CpuDevice {
         Self {
             next_resource: 10,
             draw_count: 0,
+            last_texture: None,
+            upload_observation: 0,
         }
     }
 
@@ -120,8 +125,10 @@ impl GraphicsDevice for CpuDevice {
         Ok(())
     }
 
-    fn create_texture(&mut self, _desc: TextureDesc) -> Result<TextureHandle> {
-        Ok(TextureHandle::from_raw(self.allocate()))
+    fn create_texture(&mut self, desc: TextureDesc) -> Result<TextureHandle> {
+        let texture = TextureHandle::from_raw(self.allocate());
+        self.last_texture = Some((texture, desc));
+        Ok(texture)
     }
 
     fn resolve_render_target(&self, texture: TextureHandle) -> Result<RenderTargetHandle> {
@@ -132,7 +139,24 @@ impl GraphicsDevice for CpuDevice {
         Ok(())
     }
 
-    fn update_texture(&mut self, _upload: RhiTextureUpload<'_>) -> Result<()> {
+    fn update_texture(&mut self, upload: RhiTextureUpload<'_>) -> Result<()> {
+        let Some((texture, desc)) = self.last_texture else {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "CPU profile device texture upload has no created resource",
+            ));
+        };
+        if upload.texture() != texture {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "CPU profile device texture upload targets an unknown resource",
+            ));
+        }
+        let validated = upload.validate(desc)?;
+        let data = validated.data();
+        self.upload_observation = u64::from(validated.row_pitch())
+            ^ u64::from(data.first().copied().unwrap_or_default())
+            ^ u64::from(data.last().copied().unwrap_or_default()).rotate_left(13);
         Ok(())
     }
 
@@ -363,4 +387,204 @@ fn profile_mixed_ui_draw_preparation() {
     assert!(renderer.coverage_atlas_identity_cache.is_empty());
     assert!(renderer.coverage_atlas_cache.is_empty());
     assert!(renderer.coverage_atlas_pages.is_empty());
+}
+
+const IMAGE_WIDTH: u32 = 1200;
+const IMAGE_HEIGHT: u32 = 800;
+const IMAGE_UPDATES: usize = 240;
+
+fn image_operation(pixels: &Arc<Vec<u32>>) -> RhiOp {
+    RhiOp::Textured(RhiTexturedQuad {
+        x: 0.0,
+        y: 0.0,
+        w: IMAGE_WIDTH as f32,
+        h: IMAGE_HEIGHT as f32,
+        corners: rect(0.0, 0.0, IMAGE_WIDTH as f32, IMAGE_HEIGHT as f32),
+        rgba: [1.0; 4],
+        additive: false,
+        pixels: Arc::clone(pixels),
+        pixel_w: IMAGE_WIDTH,
+        pixel_h: IMAGE_HEIGHT,
+        scissor: None,
+    })
+}
+
+#[test]
+fn image_upload_encoding_preserves_bgra_bytes_on_native_and_big_endian_fallback() {
+    let pixels = [0x8040_2010_u32, 0xFFCC_AA55_u32, 0x0000_0000_u32];
+    let expected = [
+        0x10, 0x20, 0x40, 0x80, 0x55, 0xAA, 0xCC, 0xFF, 0x00, 0x00, 0x00, 0x00,
+    ];
+    let native = RhiRenderer::encode_u32s(&pixels);
+    #[cfg(target_endian = "little")]
+    assert!(matches!(native, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(native.as_ref(), expected);
+    assert_eq!(RhiRenderer::encode_u32s_big_endian(&pixels), expected);
+}
+
+#[test]
+#[ignore = "性能取样需独占测试进程，避免全局分配统计受到并行测试干扰"]
+fn profile_full_image_texture_upload() {
+    let pixels = Arc::new(vec![0x8040_2010_u32; (IMAGE_WIDTH * IMAGE_HEIGHT) as usize]);
+    let extent = RhiExtent::new(IMAGE_WIDTH, IMAGE_HEIGHT);
+    let desc = TextureDesc::new(extent, TextureFormat::Bgra8Unorm);
+    let texture = TextureHandle::from_raw(77);
+
+    for _ in 0..32 {
+        black_box(image_operation(&pixels));
+        black_box(RhiRenderer::encode_u32s(pixels.as_slice()));
+    }
+    let encoded = RhiRenderer::encode_u32s(pixels.as_slice());
+    assert_eq!(encoded.len(), pixels.len() * std::mem::size_of::<u32>());
+    assert_eq!(&encoded[..4], &[0x10, 0x20, 0x40, 0x80]);
+    let validated = RhiTextureUpload::full(texture, extent, &encoded)
+        .validate(desc)
+        .expect("完整 BGRA 图片上传必须通过尺寸、容量与 row pitch 验证");
+    assert_eq!(validated.row_pitch(), IMAGE_WIDTH * 4);
+    assert_eq!(validated.data().len(), encoded.len());
+
+    let mut device = CpuDevice::new();
+    let device_texture = device
+        .create_texture(desc)
+        .expect("CPU profile device 必须创建图片纹理");
+    let device_upload = RhiTextureUpload::full(device_texture, extent, &encoded);
+    device
+        .update_texture(device_upload)
+        .expect("CPU profile device 必须同步验证并消费上传借用");
+
+    let operations = [image_operation(&pixels)];
+    let mut renderer = RhiRenderer::default();
+    for _ in 0..32 {
+        renderer
+            .execute_ops(
+                super::super::RhiRendererFrame::offscreen(&mut device, TextureHandle::from_raw(1)),
+                RhiViewport {
+                    width: IMAGE_WIDTH as f32,
+                    height: IMAGE_HEIGHT as f32,
+                },
+                LoadAction::Load,
+                &operations,
+            )
+            .expect("完整图片必须通过 RHI textured upload 同步边界");
+    }
+
+    let mut lowering_samples = [0_u128; TIMING_ROUNDS];
+    let mut encoding_samples = [0_u128; TIMING_ROUNDS];
+    let mut validation_samples = [0_u128; TIMING_ROUNDS];
+    let mut device_samples = [0_u128; TIMING_ROUNDS];
+    let mut frame_samples = [0_u128; TIMING_ROUNDS];
+    for round in 0..TIMING_ROUNDS {
+        let start = Instant::now();
+        for _ in 0..IMAGE_UPDATES {
+            black_box(image_operation(&pixels));
+        }
+        lowering_samples[round] = start.elapsed().as_nanos() / IMAGE_UPDATES as u128;
+
+        let start = Instant::now();
+        for _ in 0..IMAGE_UPDATES {
+            black_box(RhiRenderer::encode_u32s(pixels.as_slice()));
+        }
+        encoding_samples[round] = start.elapsed().as_nanos() / IMAGE_UPDATES as u128;
+
+        let start = Instant::now();
+        for _ in 0..IMAGE_UPDATES {
+            black_box(
+                RhiTextureUpload::full(texture, extent, encoded.as_ref())
+                    .validate(desc)
+                    .expect("重复验证必须保持相同资源契约"),
+            );
+        }
+        validation_samples[round] = start.elapsed().as_nanos() / IMAGE_UPDATES as u128;
+
+        device.last_texture = Some((device_texture, desc));
+        let start = Instant::now();
+        for _ in 0..IMAGE_UPDATES {
+            device
+                .update_texture(device_upload)
+                .expect("同步 Device 重复消费不得改变借用契约");
+        }
+        device_samples[round] = start.elapsed().as_nanos() / IMAGE_UPDATES as u128;
+
+        let start = Instant::now();
+        for _ in 0..IMAGE_UPDATES {
+            renderer
+                .execute_ops(
+                    super::super::RhiRendererFrame::offscreen(
+                        &mut device,
+                        TextureHandle::from_raw(1),
+                    ),
+                    RhiViewport {
+                        width: IMAGE_WIDTH as f32,
+                        height: IMAGE_HEIGHT as f32,
+                    },
+                    LoadAction::Load,
+                    &operations,
+                )
+                .expect("稳态完整图片帧必须成功");
+        }
+        frame_samples[round] = start.elapsed().as_nanos() / IMAGE_UPDATES as u128;
+    }
+
+    let lowering_allocations = allocation_stats(|| {
+        black_box(image_operation(&pixels));
+    });
+    let encoding_allocations = allocation_stats(|| {
+        black_box(RhiRenderer::encode_u32s(pixels.as_slice()));
+    });
+    let validation_allocations = allocation_stats(|| {
+        black_box(
+            RhiTextureUpload::full(texture, extent, encoded.as_ref())
+                .validate(desc)
+                .expect("分配测量期间验证必须成功"),
+        );
+    });
+    device.last_texture = Some((device_texture, desc));
+    let device_allocations = allocation_stats(|| {
+        device
+            .update_texture(device_upload)
+            .expect("分配测量期间 Device 必须成功");
+    });
+    let frame_allocations = allocation_stats(|| {
+        renderer
+            .execute_ops(
+                super::super::RhiRendererFrame::offscreen(&mut device, TextureHandle::from_raw(1)),
+                RhiViewport {
+                    width: IMAGE_WIDTH as f32,
+                    height: IMAGE_HEIGHT as f32,
+                },
+                LoadAction::Load,
+                &operations,
+            )
+            .expect("分配测量期间完整图片帧必须成功");
+    });
+
+    eprintln!(
+        "PROFILE image_upload lowering_ns={} encoding_ns={} validation_ns={} device_ns={} frame_ns={} lowering_allocs={} lowering_bytes={} lowering_peak={} lowering_final={} encoding_allocs={} encoding_bytes={} encoding_peak={} encoding_final={} validation_allocs={} validation_bytes={} validation_peak={} validation_final={} device_allocs={} device_bytes={} device_peak={} device_final={} frame_allocs={} frame_bytes={} frame_peak={} frame_final={} observation={}",
+        median(lowering_samples),
+        median(encoding_samples),
+        median(validation_samples),
+        median(device_samples),
+        median(frame_samples),
+        lowering_allocations.count,
+        lowering_allocations.bytes,
+        lowering_allocations.peak_live,
+        lowering_allocations.final_live,
+        encoding_allocations.count,
+        encoding_allocations.bytes,
+        encoding_allocations.peak_live,
+        encoding_allocations.final_live,
+        validation_allocations.count,
+        validation_allocations.bytes,
+        validation_allocations.peak_live,
+        validation_allocations.final_live,
+        device_allocations.count,
+        device_allocations.bytes,
+        device_allocations.peak_live,
+        device_allocations.final_live,
+        frame_allocations.count,
+        frame_allocations.bytes,
+        frame_allocations.peak_live,
+        frame_allocations.final_live,
+        device.upload_observation,
+    );
 }
