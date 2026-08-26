@@ -504,6 +504,16 @@ impl WidgetTree {
         // 接收该节点本轮声明捕获的 State 源。
         state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
     ) {
+        if state_binds.is_empty() {
+            // 先释放空输入缓冲区，保持它在替换旧租约前释放的原有顺序。
+            drop(state_binds);
+            // 沿用 get_mut 的代际校验与停止树门控，避免触碰无效节点。
+            if let Some(node) = self.get_mut(id) {
+                // 用原替换入口释放旧租约，保持节点租约生命周期语义一致。
+                node.replace_reconcile_state_binds(Vec::new());
+            }
+            return;
+        }
         // 读取所属树的窄 reconcile 请求端口。
         let reconcile = self.reconcile_requester();
         // 读取所属树的稳定订阅去重键。
