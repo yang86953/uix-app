@@ -488,9 +488,9 @@ impl WidgetTree {
 
     // 让树核心关闭路径访问已经停止但仍待释放的真实节点。
     pub(super) fn get_raw(&self, id: WidgetId) -> Option<&BoxedWidget> {
-        // 先验证树作用域、槽位与 generation，再读取物理节点。
-        let slot = self.node_slot_for(id)?;
-        // 返回仅限 tree_core 资源释放使用的节点引用。
+        // 身份验证后只查询一次物理槽位，避免重复检查同一节点占用状态。
+        let slot = self.slot_for(id)?;
+        // 返回仅限 tree_core 资源释放使用的实际节点引用。
         self.nodes.get(slot).and_then(|n| n.as_ref())
     }
     /// 使用树作用域、槽位与 generation 安全查询节点的可变借用。
@@ -506,9 +506,9 @@ impl WidgetTree {
 
     // 让树核心关闭路径可变访问已经停止但仍待执行受控生命周期的节点。
     pub(super) fn get_mut_raw(&mut self, id: WidgetId) -> Option<&mut BoxedWidget> {
-        // 先验证树作用域、槽位与 generation，再读取物理节点。
-        let slot = self.node_slot_for(id)?;
-        // 返回仅限 tree_core 关闭实现使用的可变节点引用。
+        // 身份验证后只查询一次物理槽位，避免重复检查同一节点占用状态。
+        let slot = self.slot_for(id)?;
+        // 返回仅限 tree_core 关闭实现使用的实际节点可变引用。
         self.nodes.get_mut(slot).and_then(|n| n.as_mut())
     }
 
