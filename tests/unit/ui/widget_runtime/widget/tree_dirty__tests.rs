@@ -1,7 +1,9 @@
 // 引入被测树级失效实现与私有辅助函数。
 use super::*;
 use crate::core::WidgetId;
+use crate::ui::reactive::state::{State, StatePaintBind};
 use crate::ui::widgets::{Container, Space};
+use std::sync::Arc;
 
 // 构造带根与直接子节点的最小真实组件树，并清除建树阶段的失效。
 fn tree_with_root_and_child() -> (WidgetTree, WidgetId, WidgetId) {
@@ -95,4 +97,37 @@ fn batch_root_layout_keeps_child_pending_until_finish() {
     );
     assert!(tree.pending_invalidations.is_empty());
     assert_eq!(tree.invalidation_batch_depth, 0);
+}
+
+// 空输入必须释放现有节点租约，并接受带容量但无元素的 Vec。
+#[test]
+fn empty_node_state_binds_unbinds_existing_lease() {
+    let (mut tree, _root, child) = tree_with_root_and_child();
+    let state = State::new(1_u32);
+    let source: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+
+    // 先建立一个真实节点租约，作为空替换的旧状态。
+    tree.replace_node_captured_state_binds(child, vec![source]);
+    assert_eq!(state.reconcile_sites.lock().unwrap().len(), 1);
+
+    // 即使输入 Vec 保留容量，空快路径也必须精确解绑旧租约。
+    tree.replace_node_captured_state_binds(child, Vec::with_capacity(8));
+    assert!(state.reconcile_sites.lock().unwrap().is_empty());
+}
+
+// 已移除节点的空替换必须沿用 get_mut 门控并保持无副作用。
+#[test]
+fn empty_node_state_binds_ignores_removed_node() {
+    let (mut tree, _root, child) = tree_with_root_and_child();
+    let state = State::new(2_u32);
+    let source: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+
+    // 让节点先持有一份租约，再通过正式移除路径释放它。
+    tree.replace_node_captured_state_binds(child, vec![source]);
+    tree.remove(child);
+    assert!(state.reconcile_sites.lock().unwrap().is_empty());
+
+    // stale WidgetId 传入空 Vec 不得重新绑定或触碰其他节点。
+    tree.replace_node_captured_state_binds(child, Vec::with_capacity(8));
+    assert!(state.reconcile_sites.lock().unwrap().is_empty());
 }
