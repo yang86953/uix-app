@@ -64,6 +64,31 @@ impl Widget for EventLayoutCapabilityWidget {
     }
 }
 
+// 用布尔值模拟手写组件的扩展事件收尾能力声明。
+struct ExtendedEventFinishCapabilityWidget(bool);
+
+impl Widget for ExtendedEventFinishCapabilityWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::new()
+    }
+
+    fn requires_extended_event_finish(&self) -> bool {
+        self.0
+    }
+}
+
 crate::widget! {
     // 用真实 widget! 展开验证 take_layout_request 槽位会生成精确能力。
     MacroLayoutRequestWidget {
@@ -79,6 +104,30 @@ crate::widget! {
 
     take_layout_request => (&mut self) -> bool {
         std::mem::take(&mut self.requested)
+    }
+}
+
+crate::widget! {
+    // 用真实 widget! 展开验证语义槽位会保留扩展事件收尾。
+    MacroSemanticFollowupWidget {
+        marker: bool,
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
+        _tree: &crate::ui::widget_runtime::widget::WidgetTree
+    ) {
+        let _ = self.marker;
+    }
+
+    semantic_event => (
+        &self,
+        _id: crate::core::WidgetId,
+        _event: &crate::ui::event::SystemEvent
+    ) -> Option<crate::ui::event::SemanticEvent> {
+        None
     }
 }
 
@@ -185,6 +234,13 @@ fn event_layout_request_capability_is_cached_without_expanding_nodes() {
     );
     assert!(generated.take_layout_request());
     assert!(!generated.take_layout_request());
+    assert!(!generated.requires_extended_event_finish());
+
+    let semantic = BoxedWidget::new(Box::new(MacroSemanticFollowupWidget { marker: true }));
+    assert!(semantic.requires_extended_event_finish());
+
+    let virtual_scroll = BoxedWidget::new(Box::new(crate::ui::VirtualScroll::new()));
+    assert!(virtual_scroll.requires_extended_event_finish());
 
     let container = BoxedWidget::new(Box::new(crate::ui::widgets::containers::Container::new()));
     assert!(
@@ -192,6 +248,7 @@ fn event_layout_request_capability_is_cached_without_expanding_nodes() {
             .capabilities()
             .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
     );
+    assert!(!container.requires_extended_event_finish());
 
     let button = BoxedWidget::new(Box::new(crate::ui::widgets::general::Button::new("确认")));
     assert!(
@@ -199,6 +256,7 @@ fn event_layout_request_capability_is_cached_without_expanding_nodes() {
             .capabilities()
             .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
     );
+    assert!(!button.requires_extended_event_finish());
 
     let mut node = BoxedWidget::new(Box::new(EventLayoutCapabilityWidget(false)));
     assert!(
@@ -211,6 +269,14 @@ fn event_layout_request_capability_is_cached_without_expanding_nodes() {
         node.capabilities()
             .contains(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT)
     );
+
+    let mut followup = BoxedWidget::new(Box::new(ExtendedEventFinishCapabilityWidget(false)));
+    assert!(!followup.requires_extended_event_finish());
+    followup.replace_widget(Box::new(ExtendedEventFinishCapabilityWidget(true)));
+    assert!(followup.requires_extended_event_finish());
+
+    let conservative = BoxedWidget::new(Box::new(OverlayCapabilityWidget(false)));
+    assert!(conservative.requires_extended_event_finish());
 }
 
 // 确认按需装箱没有改变连续覆盖的合并语义。

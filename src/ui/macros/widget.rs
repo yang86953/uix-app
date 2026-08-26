@@ -111,6 +111,19 @@ macro_rules! widget {
                 // widget! 已知完整事件槽位，可排除不会请求布局的组件。
                 false $(|| matches!(stringify!($method), "take_layout_request"))*
             }
+            fn requires_extended_event_finish(&self) -> bool {
+                // 动态 owner 由语义或滚动槽位覆盖；普通事件组件无需完整收尾。
+                false $(|| matches!(
+                    stringify!($method),
+                    "take_window_action"
+                        | "semantic_event"
+                        | "scroll_delta"
+                        | "scroll_delta_for_dirty"
+                        | "scroll_composite_viewport"
+                        | "viewport_scroll_offset"
+                        | "scroll_descendant_by"
+                ))*
+            }
             $(
                 $crate::__widget_build_method!($method; ($($params)*) $(-> $ret)? $body);
             )*

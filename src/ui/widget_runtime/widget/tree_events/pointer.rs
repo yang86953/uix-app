@@ -207,6 +207,15 @@ impl WidgetTree {
         id: WidgetId,
         event: &SystemEvent,
     ) -> EventResult {
+        let requires_extended_finish = self
+            .get(id)
+            .is_none_or(BoxedWidget::requires_extended_event_finish);
+        if !requires_extended_finish {
+            // 普通事件组件只可能请求布局，随后按既有语义标记自身重绘。
+            self.apply_event_layout_request(id);
+            self.invalidate_paint(id);
+            return EventResult::Handled;
+        }
         if let Some(action) = self.get_mut(id).and_then(|node| node.take_window_action()) {
             self.pending_window_actions.push(action);
         }

@@ -157,6 +157,10 @@ impl BoxedWidget {
             if widget.may_request_event_layout() {
                 caps.insert(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT);
             }
+            // 扩展事件收尾能力继续复用现有位集，避免增加节点字段。
+            if widget.requires_extended_event_finish() {
+                caps.insert(WidgetCapabilities::REQUIRES_EXTENDED_EVENT_FINISH);
+            }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
             }
@@ -271,6 +275,10 @@ impl BoxedWidget {
             // 实际组件替换时同步刷新事件布局请求能力。
             if widget.may_request_event_layout() {
                 caps.insert(WidgetCapabilities::MAY_REQUEST_EVENT_LAYOUT);
+            }
+            // 实际组件替换时同步刷新扩展事件收尾能力。
+            if widget.requires_extended_event_finish() {
+                caps.insert(WidgetCapabilities::REQUIRES_EXTENDED_EVENT_FINISH);
             }
             if let Some(lifecycle) = widget.as_lifecycle_mut() {
                 lifecycle.on_init();
@@ -737,6 +745,10 @@ impl BoxedWidget {
         })
     }
     pub(crate) fn take_window_action(&mut self) -> Option<crate::ui::event::WindowAction> {
+        // 最短事件组件不会产生窗口动作，无需进入 ProviderContext。
+        if !self.requires_extended_event_finish() {
+            return None;
+        }
         self.with_widget_context_mut(|widget| {
             widget
                 .as_event_mut()
@@ -762,9 +774,17 @@ impl BoxedWidget {
         id: WidgetId,
         event: &SystemEvent,
     ) -> Option<crate::ui::event::SemanticEvent> {
+        // 无扩展收尾能力的组件也不会把系统事件转换为语义事件。
+        if !self.requires_extended_event_finish() {
+            return None;
+        }
         self.widget()
             .as_event()
             .and_then(|e| e.semantic_event(id, event))
+    }
+    pub(crate) fn requires_extended_event_finish(&self) -> bool {
+        self.caps
+            .contains(WidgetCapabilities::REQUIRES_EXTENDED_EVENT_FINISH)
     }
     pub fn is_focusable(&self) -> bool {
         self.tab_index() > 0
