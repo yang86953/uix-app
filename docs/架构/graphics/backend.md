@@ -155,3 +155,11 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 - 每次 Surface 或 Offscreen 执行只有一个 `RhiRendererFrame` 计划 owner；pass producer 不拥有目标选择、计划追加或底层执行资格。
 - capability 来自实际原语和 probe，不能由平台名、编译 feature 或旧缓存推断。
 - 任一 fallback、恢复或优化都不能改变像素语义、跳过 typed failure、消费失败帧 damage 或建立第二条生命周期。
+
+## 已知设计债务与待跟进
+
+以下为图形后端评审确认的设计债务，暂不影响 0.0.1 图形门禁，但需在对应改动前收敛。
+
+- **soft fallback 使用量不可观测**：`RenderMetrics` 只统计 layout/paint/present/idle，没有 soft 路径（CPU 栅格化段）的使用率统计。`NativeGpuCanvas2D` 在 `!retained_color_target || !native_blend` 等条件下整段落入 CPU 软栅格化，若某平台能力缺失导致常态触发，性能退化无指标暴露。待跟进：为 renderer metrics 增加 soft 像素/软段帧计数，soft 占比超标时可观测告警。
+- **macOS Metal 占位条目的 recipe 声明待修正**：`registry_macos.rs` 中 Metal 条目标注 `RasterMode::Cpu × PresentMode::PixelUpload`，与 Metal 作为 GPU API 的预期形态（应为 `GpuNative × Swapchain`，经 CAMetalLayer）矛盾。当前状态 `Disabled` 无实际影响，但启用 Metal 前必须先修正 recipe 轴，避免误导实现。
+- **PixelUpload 完整实现暂无活跃消费者**：`thread_bound.rs` 的 CPU 像素上传链、contract 与 macOS cocoa 引用均齐备，但当前任何 Active 注册表条目都不使用它（macOS 生产实际走 Vulkan/MoltenVK）。该路径的启用条件（如无 GPU 环境回退或 CI 兜底）未写入设计文档，存在成为死代码的维护成本。待跟进：在架构文档明确其启用条件与验收入口。
