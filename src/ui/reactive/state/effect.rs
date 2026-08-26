@@ -44,6 +44,43 @@ pub(crate) type DependencySubscribers = HashMap<u64, Weak<dyn DependencySubscrib
 // 让值锁与订阅表锁保持完全分离。
 pub(crate) type DependencySubscriberRegistry = RwLock<DependencySubscribers>;
 
+// 保存锁外通知所需的最小存活下游快照。
+pub(crate) enum DependencySubscriberSnapshot {
+    // 没有存活下游时不构造堆容器。
+    Empty,
+    // 常见单下游直接持有强引用，避免一元 Vec 分配。
+    One(Arc<dyn DependencySubscriber>),
+    // 多下游继续使用有序堆快照。
+    Many(Vec<Arc<dyn DependencySubscriber>>),
+}
+
+impl DependencySubscriberSnapshot {
+    // 按当前形状追加一个存活下游。
+    fn push(&mut self, subscriber: Arc<dyn DependencySubscriber>) {
+        match self {
+            // 首个下游只提升枚举形状。
+            Self::Empty => *self = Self::One(subscriber),
+            // 此分支只会用于注册表在快照期间出现防御性增长。
+            Self::One(first) => {
+                let first = Arc::clone(first);
+                *self = Self::Many(vec![first, subscriber]);
+            }
+            // 已有多下游快照按注册表顺序追加。
+            Self::Many(subscribers) => subscribers.push(subscriber),
+        }
+    }
+
+    // 暴露窄计数供私有生命周期回归使用。
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::One(_) => 1,
+            Self::Many(subscribers) => subscribers.len(),
+        }
+    }
+}
+
 // 保存一次订阅的精确注销责任。
 pub(crate) struct EffectLease {
     // 强持有依赖源直到精确注销完成，与 generation 快照保持同一生命周期。
@@ -141,11 +178,15 @@ pub(crate) fn subscribe(
 pub(crate) fn collect_subscribers(
     // 接收需要快照的独立注册表。
     registry: &DependencySubscriberRegistry,
-) -> Vec<Arc<dyn DependencySubscriber>> {
+) -> DependencySubscriberSnapshot {
     // 获取写锁以同时清理死亡弱引用。
     let mut subscribers = registry.write().unwrap_or_else(|error| error.into_inner());
-    // 为所有存活下游预分配快照空间。
-    let mut live = Vec::with_capacity(subscribers.len());
+    // 只有复数登记项时预分配堆快照，单下游保持栈上形状。
+    let mut live = if subscribers.len() > 1 {
+        DependencySubscriberSnapshot::Many(Vec::with_capacity(subscribers.len()))
+    } else {
+        DependencySubscriberSnapshot::Empty
+    };
     // 保留可升级项并收集其强引用。
     subscribers.retain(|_, subscriber| {
         // 升级弱引用以取得锁外可通知的句柄。
@@ -163,11 +204,18 @@ pub(crate) fn collect_subscribers(
 }
 
 // 在所有源锁外广播同步失效。
-pub(crate) fn notify_subscribers(subscribers: Vec<Arc<dyn DependencySubscriber>>) {
-    // 逐项调用无用户闭包的私有通知契约。
-    for subscriber in subscribers {
-        // 让下游负责仅置脏和继续传播。
-        subscriber.notify();
+pub(crate) fn notify_subscribers(subscribers: DependencySubscriberSnapshot) {
+    match subscribers {
+        // 空快照没有需要交付的失效。
+        DependencySubscriberSnapshot::Empty => {}
+        // 单下游直接通知，不经过堆向量。
+        DependencySubscriberSnapshot::One(subscriber) => subscriber.notify(),
+        // 多下游仍按注册表快照顺序同步交付。
+        DependencySubscriberSnapshot::Many(subscribers) => {
+            for subscriber in subscribers {
+                subscriber.notify();
+            }
+        }
     }
 }
 
