@@ -140,11 +140,12 @@ App::new()
 |---|---|---|
 | `press_key` | `key` / `modifiers` | 按键序列（事件未被消费视为失败） |
 | `click_at` / `pointer_move` / `pointer_down` / `pointer_up` | `x` / `y` | 指针输入注入（未命中可交互目标视为失败） |
-| `resize_window` | `width` / `height` | 调整窗口客户区尺寸 |
-| `move_window` | `x` / `y` | 移动窗口位置 |
+| `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
+| `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
 | `maximize_window` / `minimize_window` / `restore_window` | — | 窗口状态切换 |
 
-窗口管理动作经平台窗口操作契约执行，失败返回 `window_operation_failed`。
+窗口管理动作会由 `hello.capabilities.window_actions` 正式发布，并经平台窗口操作契约执行；平台不支持、
+窗口约束拒绝或原生调用失败均返回 `window_operation_failed`，不得伪造成功或隐式降级。
 
 ### 错误码
 

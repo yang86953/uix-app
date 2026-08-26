@@ -57,6 +57,11 @@ const AGENT_WINDOW_ACTIONS: &[&str] = &[
     "pointer_move",
     "pointer_down",
     "pointer_up",
+    "resize_window",
+    "move_window",
+    "maximize_window",
+    "minimize_window",
+    "restore_window",
 ];
 const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
 const AGENT_KEY_CODES: &[(&str, KeyCode)] = &[
@@ -631,5 +636,31 @@ mod wire;
 
 pub(crate) use self::wire::encode_session_token;
 use self::wire::*;
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+
+    #[test]
+    fn hello_catalog_advertises_every_parsed_window_lifecycle_action() {
+        let actions = [
+            json!({ "kind": "resize_window", "width": 800, "height": 600 }),
+            json!({ "kind": "move_window", "x": 20, "y": 30 }),
+            json!({ "kind": "maximize_window" }),
+            json!({ "kind": "minimize_window" }),
+            json!({ "kind": "restore_window" }),
+        ];
+        for action in actions {
+            let kind = action["kind"]
+                .as_str()
+                .unwrap_or_else(|| unreachable!("fixture action kind must be a string"));
+            assert!(AGENT_WINDOW_ACTIONS.contains(&kind));
+            assert!(matches!(
+                parse_action(&action),
+                Ok(ParsedAgentAction::Window(_))
+            ));
+        }
+    }
+}
 
 // 协议线解析与帧往返专项测试（仅 agent-control 能力下编译）。
