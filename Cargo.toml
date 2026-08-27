@@ -12,7 +12,7 @@ license-file = "LICENSE"
 description = "UIX cross-platform native app framework for authorized internal use"
 # 有意省略 documentation/homepage/repository 可选字段（Cargo 警告为受控事实）：
 # 仓库位于内网 SSH 地址，写入 .crate 会泄露内网信息；当前尚未指定获授权的公开主页。
-# 当前按内部候选交付契约接受该受控警告，后续变更由 Gitea 父 Issue #1 跟踪。
+# 当前按内部候选交付契约接受该受控警告；完成度与任务判定见仓库内各文档事实所有者。
 
 [profile.dev]
 debug = "line-tables-only"
