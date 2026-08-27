@@ -51,6 +51,7 @@ impl Select {
             custom_option_views: false,
             materialized_custom_options: RefCell::new(Vec::new()),
             intrinsic_width: Cell::new(None),
+            visible_row_count_cache: RefCell::new(None),
             search_cursor_rect: Cell::new(Rect::zero()),
             control_rect: Cell::new(Rect::new(
                 0.0,
@@ -326,6 +327,11 @@ impl Select {
         if intrinsic_width_changed {
             self.intrinsic_width.set(None);
         }
+        // 行集合相关输入被整体替换时同步作废可见行计数缓存。
+        let visible_rows_inputs_changed = self.options != next.options
+            || self.optgroups != next.optgroups
+            || self.loading != next.loading
+            || self.search != next.search;
         // UIX 视觉引用变化时先更新几何事实并清除依赖旧视觉的缓存。
         if !std::ptr::eq(self.visual, next.visual) {
             self.visual = next.visual;
@@ -359,6 +365,9 @@ impl Select {
         }
         if !self.search {
             self.search_query.clear();
+        }
+        if visible_rows_inputs_changed {
+            *self.visible_row_count_cache.borrow_mut() = None;
         }
         if let Some((selected, selected_multi)) = controlled_selection {
             self.selected = selected;

@@ -47,6 +47,9 @@ widget! {
         // 缓存只由选项文案与静态视觉决定的固有宽度。
         #[snapshot(skip)]
         pub(crate) intrinsic_width: Cell<Option<f32>>,
+        // 缓存按查询快照解析的可见行计数；失效契约见 search.rs。
+        #[snapshot(skip)]
+        pub(crate) visible_row_count_cache: RefCell<Option<super::search::VisibleRowCountEntry>>,
         pub(crate) search_cursor_rect: Cell<Rect>,
         pub(crate) control_rect: Cell<Rect>,
         pub(crate) dropdown_rect: Cell<Rect>,

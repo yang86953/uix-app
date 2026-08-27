@@ -46,3 +46,4 @@
 | [UIX-PERF-023](UIX-PERF-023.md) | 焦点空注册表删除短路 |
 | [UIX-PERF-025](UIX-PERF-025.md) | ProviderContext 共享快照身份快返 |
 | [UIX-PERF-026](UIX-PERF-026.md) | RenderHandler 空 sidecar 查询短路 |
+| [UIX-PERF-028](UIX-PERF-028.md) | 可搜索 Select 稳态行计数快路 |
