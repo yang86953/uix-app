@@ -703,6 +703,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uix-derive",
+ "uix-lang-compiler",
  "unicode-bidi",
  "unicode-linebreak",
  "unicode-segmentation",
@@ -742,6 +743,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "uix-lang-gate-consumer"
+version = "0.0.1"
+dependencies = [
+ "uix-derive",
+ "uix-lang-compiler",
 ]
 
 [[package]]

@@ -1,0 +1,23 @@
+[package]
+name = "uix-lang-gate-consumer"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+# 轻量使用方消费者探针：只挂 uix-derive 过程宏前端，在不引入图形栈的前提下
+# 驱动公开宏入口的门禁失败编译；平时保持可编译空库。
+
+[dependencies]
+# capability 全部默认关闭，由各 gate-broken-* 场景单独驱动失败编译。
+uix-derive = { path = "../uix-derive", version = "0.0.1", default-features = false }
+
+[dev-dependencies]
+# 关闭场景快照与生产门禁共享同一 Compiler System，且默认同样不启用任何 capability。
+uix-lang-compiler = { path = "../uix-lang-compiler", default-features = false }
+
+[features]
+default = []
+# 嵌入同一成员混用属性形式与块级形式的声明：解析层定向拒绝（UIX1000）。
+gate-broken-mixed-member-forms = []
+# 嵌入引用 CascaderValue 的类型化 Widget 状态声明：值类型门禁定向拒绝（UIX2000）。
+gate-broken-cascader-value = []
