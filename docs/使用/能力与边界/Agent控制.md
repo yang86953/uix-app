@@ -117,8 +117,8 @@ App::new()
 
 | 请求 | 说明 |
 |---|---|
-| `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、修订号） |
-| `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项，敏感值过滤） |
+| `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、焦点 `focused`、修订号） |
+| `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项、节点 `focused` 与 `hovered`，敏感值过滤） |
 | `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
 
 ### 语义动作（作用于语义树节点，须命中快照中的稳定目标）
@@ -144,10 +144,13 @@ App::new()
 | `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
 | `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
 | `maximize_window` / `minimize_window` / `restore_window` | — | 窗口状态切换 |
+| `activate_window` | — | 请求合成器激活并聚焦窗口（Wayland 复用 xdg-activation）；成功只表示请求已提交，不保证已获焦点，自动化用 `list_windows` 的 `focused` 复核 |
 | `close_window` | — | 提交平台关闭请求；成功不声明窗口已关闭，调用方必须另行等待关闭事实 |
 
 窗口管理动作会由 `hello.capabilities.window_actions` 正式发布，并经平台窗口操作契约执行；平台不支持、
 窗口约束拒绝或原生调用失败均返回 `window_operation_failed`，不得伪造成功或隐式降级。
+
+指针动作（`click_at` / `pointer_move` / `pointer_down` / `pointer_up`）不要求窗口焦点；`press_key` 与文本类动作要求窗口已聚焦且事件被组件消费，未消费按失败处理。自动化驱动键盘前先执行 `activate_window`；焦点与悬停用 `focused` / `hovered` 事实断言，不依赖截图猜测界面状态。
 
 ### 错误码
 
@@ -191,6 +194,36 @@ AI                        UIX 应用                      用户
 ```
 
 - 空闲无轮询；敏感值不导出（password 与标记敏感的值不进快照、日志或错误回包）。
+
+## 本机自动化操作回路（仓库内置客户端）
+
+**前置条件**：目标应用已按[接入](#接入两步)双门禁启用端点，且客户端与应用属同一操作系统用户。本仓库主演示用以下命令启动：
+
+```bash
+cargo run --release --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control
+```
+
+**执行步骤**：仓库提供 `scripts/agent_client.py`（Python 3；Windows 命名管道依赖 pywin32）。脚本从发现目录读取最新 `uix-*.json`（Linux 为 `$XDG_RUNTIME_DIR/uix-agent-$UID/`），每条命令独立完成 `hello` 握手后执行：
+
+```bash
+python3 scripts/agent_client.py hello           # 握手并发布能力目录
+python3 scripts/agent_client.py list_windows    # window_id、generation、focused 等
+python3 scripts/agent_client.py snapshot        # 默认第一个窗口的语义树
+python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐标
+```
+
+语义动作与窗口动作写入 JSON 后用 `perform` 提交；语义动作的 `target` 在请求级（`automation_id` 或 `node_id` 二选一），窗口动作禁止携带 `target`：
+
+```txt
+{"type": "perform", "window_id": 1, "generation": 0,
+ "target": {"automation_id": "save-button"}, "action": {"kind": "invoke"}}
+```
+
+**预期结果**：每条命令输出一行 JSON 响应；`perform` 成功表示动作已进入 UI 语义路径执行。标准回路是 `list_windows` → `snapshot` → `perform` / `confirm` → `wait`，等待界面稳定后再读下一次快照断言。
+
+**可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。脚本只封装单条命令，确认流程等多次往返会话需按协议自建连接。
+
+**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件。
 
 ## 安全边界
 
