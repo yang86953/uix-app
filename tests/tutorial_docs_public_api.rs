@@ -244,6 +244,10 @@ mod tutorial_step6 {
         let todos = State::new(Vec::<String>::new());
         // 克隆状态供启动回调加载设置。
         let todos_for_load = todos.clone();
+        // 用状态槽承接容器里的设置服务。
+        let services = State::new(None::<SettingsService>);
+        // 克隆服务槽供启动回调写入。
+        let services_for_load = services.clone();
 
         // 构造带设置文件和启动回调的应用。
         App::new()
@@ -257,6 +261,8 @@ mod tutorial_step6 {
             .on_start(move |handle| {
                 // 只在服务存在时读取保存值。
                 if let Some(settings) = handle.resolve::<SettingsService>() {
+                    // 把共享克隆交给界面闭包后续落盘使用。
+                    services_for_load.set(Some(settings.clone()));
                     // 只在键存在时恢复待办列表。
                     if let Some(saved) = settings.get("todo_list") {
                         // 按非空行恢复拥有型字符串列表。
