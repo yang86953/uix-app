@@ -25,6 +25,7 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
+| 2026-08-27 | 工具链 | 完成公开宏文件入口消费者证据补全：新增 `tests/uix_lang_public_api.rs` 消费 `uix!` 递归导入闭包、`uix_app!` 未运行 builder 与 `uix_items!` Visual 静态项并断言单一静态地址（五个此前无引用的 fixture 资产归位）；`uix scaffold visual` 骨架输出锁定单测落地；消费者层 compile-fail 证据基建与 capability 关闭场景验证登记为下一目标 | [语言完善计划](语言完善计划.md) |
 | 2026-08-27 | Widget / 语法 | 新增 `@props` / `@state` / `@computed` / `@actions` 块级成员声明，与字符串属性形式解析等价（双写拒绝、仅在 `<Widget>` 内、不参与 Slot 归位）；成员列表统一允许尾随逗号 | [语法 · Widget 成员](../规范/语法.md#2-widget-成员) |
 | 2026-08-27 | Schema / 能力门禁 | 组件专属状态值类型（`CascaderValue`、`Vec<UploadFile>`）从核心白名单迁入 `UiProjectionSchema` 按拥有组件登记并挂接 capability 门禁；未启用时在生成前定向诊断，check 与 AOT 一致；诊断建议清单改为 schema 生成 | [类型语法](../规范/语法.md#3-类型语法) |
 | 2026-08-27 | 工具链 | `uix scaffold visual <rust文件> <StructName>` 从同模块 Rust 结构体生成可编译的 `<Visual>` 骨架（已知标量类型给占位初值，复合类型输出 TODO 提示），消除 Rust/`.uix` 双侧手写字段搬运 | [编译契约](../规范/编译契约.md#4-编译模式边界) |
