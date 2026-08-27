@@ -10,11 +10,15 @@
 
 | 状态 | 后端/范围 | 当前实现与公开边界 |
 |---|---|---|
-| **已实现** | 共享规范 | Drawing 唯一持有 11 类 `PipelineKind` 的 canonical 语义，三套 Adapter 同时消费同一 `RhiSurfaceLifecycle`；这些是私有实现，不建立项目测试。 |
+| **已实现** | 共享规范 | Drawing 唯一持有 12 类 `PipelineKind` 的 canonical 语义，五套生产 Adapter 同时消费同一 `RhiSurfaceLifecycle`；这些是私有实现，不建立项目测试。 |
 | **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`；公开使用方通过 `GraphicsBackend` 与 `Platform` 门面选择和查询。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
 | **已实现** | OpenGL ES | Linux EGL/OpenGL ES 实现共享 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
 | **已实现** | D3D11 实现边界 | Windows D3D11 已具备生产 draw/submit、Blur 与 Surface 生命周期实现；内部 HWND、readback、RHI 和链接结构不属于公开 API，不建立项目测试。 |
 | **待验收** | D3D11 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D11` 使用路径尚未完成；该状态只描述事实，不构成 `0.0.1` 的发布前提。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
+| **已实现** | D3D12 实现边界 | Windows D3D12 已实现完整 thin RHI Device/Surface、12 类 pipeline、swapchain 与生产 registry；仅在显式启用 `d3d12` feature 时成为优先级 `40` 的 GPU-native 候选，仍低于 Vulkan。 |
+| **待验收** | D3D12 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D12` 使用路径尚未执行；跨目标编译只证明使用方与生产装配可构建，不代替真实设备或 WARP 呈现验收。 |
+| **已实现** | Metal 实现边界 | macOS Metal 已实现完整 thin RHI Device/Surface、12 类 pipeline、CAMetalLayer swapchain 与生产 registry；仅在显式启用 `metal` feature 时成为优先级 `90` 的 GPU-native 候选，仍低于 Vulkan。 |
+| **待验收** | Metal 真实 macOS 公开运行 | 真实 macOS 的公开 `GraphicsBackend::Metal` 使用路径尚未执行；Apple 目标交叉编译只证明绑定、使用方与生产装配可构建，不代替真实设备呈现验收。 |
 
 上述“已实现”只记录仓库当前固定实现；公开 API 测试状态与环境结果由 Gitea 维护，内部图形执行不形成测试矩阵。
 
@@ -94,6 +98,7 @@ WindowSession
 - 同窗一帧只有一条有序计划、至多一次主 surface acquire 和一次最终 present。每次 Surface 或 Offscreen 执行都由唯一 `RhiRendererFrame` 持有并执行自己的 `FramePlan`；producer 只能生成目标无关的 `RhiRendererPass` 命令包，不能直接构造真实 pass、持有计划或调用底层执行器。
 - `RhiRendererFrame` 的封闭角色决定默认目标：Surface 角色只能写入本次 acquire 的 surface，Offscreen 角色默认写入构造时冻结的最终 texture。只有 Offscreen 角色可在计划变化前通过门禁加入显式纹理目标；Surface 角色尝试注入离屏目标必须返回 typed `InvalidArgument`，且不得改变计划。
 - `GraphicsDevice::submit` 返回的 `SubmissionHandle` 是组合 context 的类型化事务身份；最终 `GraphicsSurface::present` 只接受同一 context 最近一次成功提交。身份签发与校验由共享 RHI 状态机定义，Adapter 不得忽略参数或维护另一套计数规则。
+- Surface `acquire` 成功后的执行、提交、代际检查或最终 present 任一步失败，统一调用 `discard_acquired_frame`；Metal 在该回滚点释放未呈现 drawable 与未提交命令，不能让一次失败永久阻塞后续 acquire 或 resize。无需可取消原生所有权的 Adapter 可以保持空操作，必须重建的 API 继续进入既有 Surface/Device 恢复路径。
 - render-pass 生命周期由共享 `RhiPassState` 原子拥有：活动目标、物理 extent、scissor 与 sampled texture/sampler 绑定随 begin/end 共同建立和清除。槽位限制、pass 内外命令位置及 render target 反馈环在这里统一拒绝；Adapter 只保留 framebuffer/RTV 等原生编码对象，不得维护平行 `pass_open` 或绑定镜像。
 - texture copy/move 的格式、非空区域、checked 边界和资源关系由共享传输契约一次验证；普通 copy 只允许不同的同格式可渲染颜色纹理，同资源区域搬移必须走具有 scratch/memmove 语义的 move。两端坐标始终是左上原点，Adapter 不得通过私有翻转或饱和运算改写它。
 - 唯一 `FramePlan` 执行器在任何原生命令前依次调用 `GraphicsDevice::activate` 与 `GraphicsDevice::maintain`。前者只建立 owner-context 可用性，OpenGL 在此恢复 current context；后者只检查设备健康。surface 与 offscreen 路径都不能依赖上层调用顺序或另一个窗口遗留的 current 状态。
@@ -161,5 +166,4 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 以下为图形后端评审确认的设计债务，不作为 `0.0.1` 发布前提，但需在对应改动前收敛。
 
 - **soft fallback 使用量不可观测**：`RenderMetrics` 只统计 layout/paint/present/idle，没有 soft 路径（CPU 栅格化段）的使用率统计。`NativeGpuCanvas2D` 在 `!retained_color_target || !native_blend` 等条件下整段落入 CPU 软栅格化，若某平台能力缺失导致常态触发，性能退化无指标暴露。待跟进：为 renderer metrics 增加 soft 像素/软段帧计数，soft 占比超标时可观测告警。
-- **macOS Metal 占位条目的 recipe 声明待修正**：`registry_macos.rs` 中 Metal 条目标注 `RasterMode::Cpu × PresentMode::PixelUpload`，与 Metal 作为 GPU API 的预期形态（应为 `GpuNative × Swapchain`，经 CAMetalLayer）矛盾。当前状态 `Disabled` 无实际影响，但启用 Metal 前必须先修正 recipe 轴，避免误导实现。
 - **PixelUpload 完整实现暂无活跃消费者**：`thread_bound.rs` 的 CPU 像素上传链、contract 与 macOS cocoa 引用均齐备，但当前任何 Active 注册表条目都不使用它（macOS 生产实际走 Vulkan/MoltenVK）。该路径的启用条件（如无 GPU 环境回退或 CI 兜底）未写入设计文档，存在成为死代码的维护成本。待跟进：在架构文档明确其启用条件与验收入口。

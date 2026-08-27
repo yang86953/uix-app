@@ -1,7 +1,7 @@
 use super::*;
 
 impl GraphicsContextLifecycle for D3d12Context {
-    // 返回 D3D12 测试期 context 的完整 drawable 元数据快照。
+    // 返回 D3D12 生产 context 的完整 drawable 元数据快照。
     fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
         // 物理范围与 generation 必须来自同一个共享 token 快照。
         let token = self.surface_lifecycle.token();
@@ -24,27 +24,22 @@ impl GraphicsContextLifecycle for D3d12Context {
     }
 }
 
-// 为尚未激活的 D3D12 registry row 固化 GPU recipe 类型形状。
+// 为 D3D12 生产 registry row 提供完整 GPU recipe 类型形状。
 impl crate::platform::presentation::GpuRecipeContext for D3d12Context {
-    // D3D12 内部纵向切片完成后仍保持组合入口未激活的明确结果。
+    // 借出同一 owner 已实现的 Device 与 Surface 组合视图。
     fn rhi_context(
         // 借用当前 D3D12 owner。
         &mut self,
     ) -> Result<&mut dyn crate::platform::presentation::rhi::GraphicsContextRhi> {
-        // checked shutdown 后必须先拒绝，不得把未实现门禁伪装成存活能力。
+        // checked shutdown 或设备故障后必须在任何 RHI 操作前拒绝。
         self.ensure_healthy()?;
-        // Planned row 不得把内部实现伪造成 UI 到 Drawing 的生产链贯通。
-        Err(Error::new(
-            // 保持为实现缺口而非设备故障。
-            Errc::NotImplemented,
-            // 保留可诊断的激活门禁说明。
-            "D3D12 thin RHI is not implemented",
-        ))
+        // D3D12Context 同时实现 GraphicsDevice 与 GraphicsSurface，直接形成组合合同。
+        Ok(self)
     }
 
     // 复用 D3D12 已接入共享 Surface 权威的 swapchain resize 事务。
     fn resize_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 在未来激活前保持单一 native resize 路径。
+        // 保持单一 native resize 路径与共享 Surface 生命周期。
         self.resize_result(width, height)
     }
 }

@@ -1,186 +1,285 @@
-//! Metal identity PixelUpload context — CAMetalLayer CPU upload path.
-//!
-//! Native GPU raster via Metal remains planned. This context declares
-//! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] and does not own a Metal
-//! device, command queue, or raster pipeline.
+//! macOS Metal GPU-native swapchain context。
 
 use std::ffi::c_void;
+use std::ptr::NonNull;
+
+use objc2::rc::Retained;
+use objc2::runtime::ProtocolObject;
+use objc2_foundation::NSError;
+use objc2_metal::{MTLCommandQueue, MTLCreateSystemDefaultDevice, MTLDevice, MTLPixelFormat};
+use objc2_quartz_core::CAMetalLayer;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::platform::presentation::rhi::{
-    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceRecreateTransaction,
-    RhiSurfaceResizeTransaction,
-};
-use crate::platform::presentation::{
-    GraphicsContextLifecycle, PixelUploadSurface, PresentDamage, validate_pixel_buffer,
+    RhiExtent, RhiSurfaceLifecycle, RhiSurfaceRecreateReason, RhiSurfaceResizeTransaction,
 };
 
-type LayerId = *mut c_void;
+use super::pipeline;
 
-pub struct MetalPixelUploadContext {
-    layer: LayerId,
-    device_pixel_ratio: f32,
-    // 唯一拥有当前 PixelUpload extent、generation 与 resize 事务状态。
-    surface_lifecycle: RhiSurfaceLifecycle,
-    shutdown: bool,
+#[path = "context/rhi_device.rs"]
+mod rhi_device;
+#[path = "context/rhi_pass.rs"]
+mod rhi_pass;
+#[path = "context/rhi_surface.rs"]
+mod rhi_surface;
+
+// 将 Metal command-buffer NSError 收敛到框架稳定错误分类。
+fn metal_command_buffer_error(
+    operation: &'static str,
+    error: Option<&NSError>,
+    fallback: Errc,
+) -> Error {
+    use objc2_metal::MTLCommandBufferError;
+
+    let code = error.map_or(fallback, |error| match error.code() as usize {
+        value if value == MTLCommandBufferError::OutOfMemory.0 => Errc::GraphicsOutOfMemory,
+        value if value == MTLCommandBufferError::Timeout.0 => Errc::Timeout,
+        value
+            if value == MTLCommandBufferError::PageFault.0
+                || value == MTLCommandBufferError::AccessRevoked.0
+                || value == MTLCommandBufferError::DeviceRemoved.0 =>
+        {
+            Errc::GraphicsDeviceLost
+        }
+        value if value == MTLCommandBufferError::NotPermitted.0 => Errc::PermissionDenied,
+        _ => fallback,
+    });
+    let detail = error.map_or_else(
+        || "unknown command-buffer error".to_owned(),
+        |error| format!("{error:?}"),
+    );
+    Error::new(code, format!("Metal {operation} failed: {detail}"))
 }
 
-impl MetalPixelUploadContext {
+// Device 与 Surface 保持同一 owner，满足共享 thin RHI 的组合生命周期。
+pub struct MetalContext {
+    device: Retained<ProtocolObject<dyn MTLDevice>>,
+    queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+    // CAMetalLayer 由 AppKit window 拥有；context 只在窗口存活期间借用。
+    layer: NonNull<CAMetalLayer>,
+    rhi_device: rhi_device::MetalRhiDevice,
+    surface_lifecycle: RhiSurfaceLifecycle,
+    logical_width: i32,
+    logical_height: i32,
+    device_pixel_ratio: f32,
+    acquired_drawable: Option<Retained<ProtocolObject<dyn objc2_quartz_core::CAMetalDrawable>>>,
+    shutdown: bool,
+    fault: Option<String>,
+}
+
+impl MetalContext {
     pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
-        if native_surface.is_null() {
-            return Err(Error::new(
+        let layer = NonNull::new(native_surface.cast::<CAMetalLayer>()).ok_or_else(|| {
+            Error::new(
                 Errc::PlatformError,
-                "MetalPixelUploadContext: native CAMetalLayer surface is null",
+                "MetalContext: native CAMetalLayer surface is null",
+            )
+        })?;
+        if width <= 0 || height <= 0 {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "MetalContext: initial surface extent must be positive",
             ));
         }
-        // 非正初始尺寸映射为共享 RHI 值对象的无效零值并由唯一 lifecycle 拒绝。
-        let initial_extent = RhiExtent::new(width.max(0) as u32, height.max(0) as u32);
+        let device = MTLCreateSystemDefaultDevice().ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "MetalContext: no Metal-capable device is available",
+            )
+        })?;
+        let queue = device.newCommandQueue().ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "MetalContext: failed to create command queue",
+            )
+        })?;
+        // SAFETY: 原始对象由同一 AppKit window 创建并在 context 生命周期内存活。
+        let native_layer = unsafe { layer.as_ref() };
+        native_layer.setDevice(Some(&device));
+        native_layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
+        native_layer.setFramebufferOnly(false);
+        native_layer.setPresentsWithTransaction(false);
+        let device_pixel_ratio = metal_layer_scale(native_layer)?;
+        let initial_extent = metal_drawable_extent(width, height, device_pixel_ratio)?;
         let mut surface_lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
         let initialize = surface_lifecycle
             .begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)?;
-        // 窗口组合根已创建 CAMetalLayer 并设置 drawableSize；这里只发布同一初始事实。
+        // SAFETY: AppKit layer 指针有效，尺寸已验证为正 i32。
+        unsafe {
+            platform::set_metal_layer_drawable_size(
+                native_surface,
+                initial_extent.width as i32,
+                initial_extent.height as i32,
+            );
+        }
         surface_lifecycle.commit_recreate(initialize, initial_extent)?;
+        let library = pipeline::compile_library(&device)?;
+        let rhi_device = rhi_device::MetalRhiDevice::new(&device, library)?;
         Ok(Self {
-            layer: native_surface,
-            device_pixel_ratio: 1.0,
+            device,
+            queue,
+            layer,
+            rhi_device,
             surface_lifecycle,
+            logical_width: width,
+            logical_height: height,
+            device_pixel_ratio,
+            acquired_drawable: None,
             shutdown: false,
+            fault: None,
         })
     }
 
-    fn shutdown_result(&mut self) -> Result<()> {
-        // CAMetalLayer 由 AppKit window 拥有；本 Adapter 只提交自身关闭事实。
-        self.shutdown = true;
-        Ok(())
+    fn layer(&self) -> &CAMetalLayer {
+        // SAFETY: AppKit window 拥有 layer，且生命周期长于对应图形 context。
+        unsafe { self.layer.as_ref() }
     }
 
-    // 在任何 token 读取或 AppKit helper 前统一拒绝关闭/失效 owner。
-    fn ensure_active(&self, operation: &'static str) -> Result<()> {
+    fn ensure_healthy(&self) -> Result<()> {
         if self.shutdown {
             return Err(Error::new(
-                Errc::InvalidArgument,
-                format!("MetalPixelUploadContext: {operation} after shutdown"),
+                Errc::InvalidState,
+                "MetalContext: operation after shutdown",
+            ));
+        }
+        if let Some(fault) = &self.fault {
+            return Err(Error::new(
+                Errc::GraphicsDeviceLost,
+                format!("MetalContext: device is unavailable: {fault}"),
             ));
         }
         self.surface_lifecycle.ensure_active()
     }
 
-    // 机械消费共享事务并更新 AppKit-owned CAMetalLayer，不拥有提交权。
-    fn resize_surface_native(
-        &mut self,
-        recreate: RhiSurfaceRecreateTransaction,
-    ) -> Result<RhiExtent> {
-        let (width, height) = recreate.native_size_i32();
-        if self.layer.is_null() {
-            return Err(Error::new(
-                Errc::PlatformError,
-                "MetalPixelUploadContext: CAMetalLayer was lost during resize",
-            ));
+    fn record_fault(&mut self, error: &Error) {
+        if matches!(error.code(), Errc::GraphicsDeviceLost) {
+            self.fault = Some(error.short_what().to_owned());
         }
-        // SAFETY: layer 由 AppKit window 持有；共享事务已证明尺寸可进入 Objective-C ABI。
-        unsafe {
-            platform::set_metal_layer_drawable_size(self.layer, width, height);
-        }
-        Ok(recreate.requested())
-    }
-}
-
-impl GraphicsContextLifecycle for MetalPixelUploadContext {
-    fn try_shutdown(&mut self) -> Result<()> {
-        self.shutdown_result()
     }
 
-    // 返回 CAMetalLayer PixelUpload 的完整 drawable 快照。
-    fn present_surface(&self) -> crate::platform::presentation::PresentSurface {
-        // extent 与 generation 必须从共享 lifecycle 的同一个 token 投影。
-        let token = self.surface_lifecycle.token();
-        crate::platform::presentation::PresentSurface::identity(
-            // lifecycle 已验证 extent 属于 i32 正值域。
-            token.extent.width as i32,
-            // 高度与宽度来自同一原子 token。
-            token.extent.height as i32,
-            // 记录构造时确定的设备像素比。
-            self.device_pixel_ratio,
-            // resize 成功后只由共享事务推进 generation。
-            token.generation,
-        )
+    // 回滚尚未提交的单帧原生状态，并释放本帧 drawable。
+    fn discard_acquired_frame_state(&mut self) {
+        self.rhi_device.discard_pending_frame();
+        self.acquired_drawable = None;
     }
-}
 
-// 为 Metal CPU PixelUpload recipe 实现专用 surface 生命周期。
-impl PixelUploadSurface for MetalPixelUploadContext {
-    // 把 CPU retained pixels 上传到 CAMetalLayer 并完成最终提交。
-    fn present_pixels(
-        // 借用当前 Metal PixelUpload owner。
-        &mut self,
-        // 接收 premultiplied BGRA 像素。
-        pixels: &[u32],
-        // 接收物理像素宽度。
-        width: i32,
-        // 接收物理像素高度。
-        height: i32,
-        // 接收最终提交 damage。
-        damage: PresentDamage,
-    ) -> Result<()> {
-        // checked shutdown 或失败 resize 失效必须先于任何 AppKit helper 拒绝。
-        self.ensure_active("present")?;
-        // 提交前验证像素长度与物理 extent 一致。
-        validate_pixel_buffer(pixels, width, height)?;
-        let token = self.surface_lifecycle.token();
-        let (current_width, current_height) = token.extent.native_size_i32().ok_or_else(|| {
-            Error::new(
-                Errc::InvalidState,
-                "MetalPixelUploadContext: active surface token has invalid extent",
-            )
-        })?;
-        if width != current_width || height != current_height {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "MetalPixelUploadContext: present extent {width}x{height} does not match active surface {current_width}x{current_height}"
-                ),
-            ));
+    fn shutdown_result(&mut self) -> Result<()> {
+        if self.shutdown {
+            return Ok(());
         }
-        // SAFETY: layer pointer comes from AppKit-owned CAMetalLayer on the UI thread.
-        unsafe {
-            // 把专用 PixelUpload payload 交给平台 CAMetalLayer helper。
-            platform::present_layer_pixels(self.layer, pixels, width, height, damage)?;
-        }
-        // 只有平台 helper 成功后才报告提交完成。
+        self.acquired_drawable = None;
+        self.rhi_device.shutdown()?;
+        self.shutdown = true;
         Ok(())
     }
 
-    // 通过共享事务更新 CAMetalLayer drawable extent。
-    fn resize_pixel_upload_surface(&mut self, width: i32, height: i32) -> Result<()> {
-        // 关闭或先前失败失效必须在读取 token 和触碰 CAMetalLayer 前拒绝。
-        self.ensure_active("resize")?;
+    fn resize_physical(&mut self, requested: RhiExtent) -> Result<()> {
+        self.ensure_healthy()?;
+        let width = i32::try_from(requested.width).map_err(|_| {
+            Error::new(
+                Errc::InvalidArgument,
+                "MetalContext: drawable width exceeds the native i32 range",
+            )
+        })?;
+        let height = i32::try_from(requested.height).map_err(|_| {
+            Error::new(
+                Errc::InvalidArgument,
+                "MetalContext: drawable height exceeds the native i32 range",
+            )
+        })?;
+        if width <= 0 || height <= 0 {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "MetalContext: resize extent must be positive",
+            ));
+        }
+        if self.acquired_drawable.is_some() || self.rhi_device.has_pending_commands() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "MetalContext: resize requires an idle frame boundary",
+            ));
+        }
         let current = self.surface_lifecycle.token();
-        // 负值映射到无效零值，统一由共享 resize 值域门禁拒绝。
-        let requested = RhiExtent::new(width.max(0) as u32, height.max(0) as u32);
         let resize = RhiSurfaceResizeTransaction::validate(requested, current)?;
-        // 同尺寸不调用 AppKit helper，也不制造新 generation。
         if resize.extent() == current.extent {
             resize.complete(current)?;
             return Ok(());
         }
         let transaction = self
             .surface_lifecycle
-            .begin_recreate(resize.extent(), RhiSurfaceRecreateReason::Resize)?;
-        match self.resize_surface_native(transaction) {
-            // 只有 native layer 更新完成后才发布新 token，并验证精确后置条件。
-            Ok(actual) => {
-                let commit = self
-                    .surface_lifecycle
-                    .commit_recreate(transaction, actual)?;
-                resize.complete(commit.token())?;
-                Ok(())
-            }
-            // 原生失败不预提交 token；共享 lifecycle 保留旧 token 并拒绝继续提交。
-            Err(error) => match self.surface_lifecycle.abort_recreate(transaction) {
-                Ok(()) => Err(error),
-                Err(lifecycle_error) => Err(lifecycle_error.with_source(error)),
-            },
+            .begin_recreate(requested, RhiSurfaceRecreateReason::Resize)?;
+        // SAFETY: layer 仍由 AppKit owner 持有，请求尺寸已验证为正 i32。
+        unsafe {
+            platform::set_metal_layer_drawable_size(
+                self.layer.as_ptr().cast::<c_void>(),
+                width,
+                height,
+            );
+        }
+        let commit = self
+            .surface_lifecycle
+            .commit_recreate(transaction, requested)?;
+        resize.complete(commit.token())?;
+        Ok(())
+    }
+
+    // 在窗口跨屏改变 backing scale 后，于下一次 acquire 前同步物理 drawable。
+    fn sync_layer_scale(&mut self) -> Result<bool> {
+        let device_pixel_ratio = metal_layer_scale(self.layer())?;
+        let requested =
+            metal_drawable_extent(self.logical_width, self.logical_height, device_pixel_ratio)?;
+        let changed = requested != self.surface_lifecycle.token().extent;
+        if changed {
+            self.resize_physical(requested)?;
+        }
+        self.device_pixel_ratio = device_pixel_ratio;
+        Ok(changed)
+    }
+}
+
+// 读取 AppKit 为当前 layer 维护的真实 backing scale。
+fn metal_layer_scale(layer: &CAMetalLayer) -> Result<f32> {
+    let scale = layer.contentsScale() as f32;
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(Error::new(
+            Errc::PlatformError,
+            "MetalContext: CAMetalLayer contentsScale is invalid",
+        ));
+    }
+    Ok(scale)
+}
+
+// 把逻辑窗口尺寸与 backing scale 转换为 CAMetalLayer 物理像素范围。
+fn metal_drawable_extent(width: i32, height: i32, scale: f32) -> Result<RhiExtent> {
+    if width <= 0 || height <= 0 || !scale.is_finite() || scale <= 0.0 {
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "MetalContext: logical drawable extent and scale must be positive",
+        ));
+    }
+    let physical_width = (width as f64 * scale as f64).round();
+    let physical_height = (height as f64 * scale as f64).round();
+    if physical_width < 1.0
+        || physical_height < 1.0
+        || physical_width > i32::MAX as f64
+        || physical_height > i32::MAX as f64
+    {
+        return Err(Error::new(
+            Errc::InvalidArgument,
+            "MetalContext: scaled drawable extent exceeds the native range",
+        ));
+    }
+    Ok(RhiExtent::new(
+        physical_width as u32,
+        physical_height as u32,
+    ))
+}
+
+impl Drop for MetalContext {
+    fn drop(&mut self) {
+        if let Err(error) = self.shutdown_result() {
+            tracing::error!("MetalContext shutdown failed: {}", error.short_what());
         }
     }
 }

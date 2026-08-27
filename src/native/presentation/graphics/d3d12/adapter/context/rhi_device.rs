@@ -556,7 +556,7 @@ impl D3d12RhiDevice {
     }
 }
 
-// 为 context 暴露资源阶段的 GraphicsDevice 形状，但组合入口仍保持未激活。
+// 为生产 context 暴露完整资源与命令阶段的 GraphicsDevice 形状。
 impl GraphicsDevice for D3d12Context {
     fn device_capabilities(&self) -> GraphicsDeviceCapabilities {
         self.rhi_device.capabilities()

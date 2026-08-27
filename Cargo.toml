@@ -104,6 +104,42 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 wayland-protocols-plasma = { version = "0.3.12", features = ["client"] }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
+# 原生 Metal Adapter 只在 macOS 目标和显式 metal feature 下进入解析图。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6.2", default-features = false, features = ["std"], optional = true }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSError", "NSObject", "NSString", "std"], optional = true }
+objc2-metal = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "MTLAllocation",
+    "MTLArgument",
+    "MTLBlitCommandEncoder",
+    "MTLBuffer",
+    "MTLCommandBuffer",
+    "MTLCommandEncoder",
+    "MTLCommandQueue",
+    "MTLDefines",
+    "MTLDevice",
+    "MTLDrawable",
+    "MTLLibrary",
+    "MTLPipeline",
+    "MTLPixelFormat",
+    "MTLRenderCommandEncoder",
+    "MTLRenderPass",
+    "MTLRenderPipeline",
+    "MTLResource",
+    "MTLSampler",
+    "MTLTexture",
+    "MTLTypes",
+    "MTLVertexDescriptor",
+], optional = true }
+objc2-quartz-core = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "CALayer",
+    "CAMetalLayer",
+    "objc2-core-foundation",
+    "objc2-metal",
+], optional = true }
+
 [dev-dependencies]
 # 仅由外部消费者测试编译宿主日志配置，不进入 UIX 运行依赖。
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -139,7 +175,12 @@ opengl-parity-test = ["opengles", "test-harness", "graphics-parity-test"]
 d3d11-parity-test = ["d3d11", "test-harness", "graphics-parity-test"]
 # 三套原生 parity harness 共享的 Drawing 规范开关，不选择任何具体 API。
 graphics-parity-test = []
-metal = []
+metal = [
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-metal",
+    "dep:objc2-quartz-core",
+]
 settings-serde = ["dep:serde", "dep:serde_json"]
 # 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
 image-codecs = ["dep:image", "uix-derive/image-codecs"]

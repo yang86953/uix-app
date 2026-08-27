@@ -186,8 +186,7 @@ pub unsafe fn create_window(
         }
     };
     msg_void_id(window, "setContentView:", content_view);
-    // Vulkan/MoltenVK and Metal identity both consume a CAMetalLayer as the
-    // native surface (VK_EXT_metal_surface / CPU setContents).
+    // Vulkan/MoltenVK 与原生 Metal 都消费 CAMetalLayer 作为唯一窗口 surface。
     msg_void_bool(content_view, "setWantsLayer:", YES);
     let layer = msg_id(class("CAMetalLayer"), "layer");
     if layer.is_null() {
@@ -201,7 +200,7 @@ pub unsafe fn create_window(
         ));
     }
     msg_void_bool(layer, "setNeedsDisplayOnBoundsChange:", YES);
-    // PixelUpload stages via TRANSFER_DST; MoltenVK needs non-framebufferOnly.
+    // MoltenVK 传输与 Metal 离屏合成都要求 layer 纹理不局限于 framebuffer。
     msg_void_bool(layer, "setFramebufferOnly:", NO);
     msg_void_cgsize(
         layer,

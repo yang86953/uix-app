@@ -1,7 +1,7 @@
 //! D3D12 swapchain 到 platform 通用 GraphicsSurface 的机械映射。
 //!
-//! 本模块只声明并执行 Surface 原语；完整 GraphicsDevice 与生产 registry 激活
-//! 仍由后续阶段负责，缺失 Device 签发的提交会被共享 present 门禁前置拒绝。
+//! 本模块只声明并执行 Surface 原语；Device 由同一 D3D12Context 实现，缺失
+//! Device 签发的提交会被共享 present 门禁前置拒绝。
 
 // 引入稳定结果类型。
 use crate::core::Result;
@@ -11,7 +11,7 @@ use crate::platform::presentation::rhi::{
     RhiSurfaceReadback, RhiSurfaceResizeTransaction, SurfaceFrame, SurfaceToken,
 };
 
-// D3D12 context 只机械消费共享 Surface 合同，不取得完整 GraphicsDevice 角色。
+// D3D12 context 在 Surface 角色内只机械消费共享合同，不复制 Device 状态。
 impl GraphicsSurface for super::D3d12Context {
     // 返回与 flip-discard 原生形态及同步回读实现一致的事实快照。
     fn surface_capabilities(&self) -> GraphicsSurfaceCapabilities {

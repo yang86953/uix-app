@@ -1,7 +1,7 @@
 //! Windows Direct3D 12 swapchain context。
 //!
-//! 本模块拥有显式 D3D12 资源与同步生命周期；内部 thin RHI draw 已闭合，
-//! 生产组合入口与 registry 仍保持未激活。
+//! 本模块拥有显式 D3D12 资源与同步生命周期，并通过生产 registry 向共享
+//! thin RHI 交付同一个 Device/Surface owner。
 
 #![allow(nonstandard_style)]
 

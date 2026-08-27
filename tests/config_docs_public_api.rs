@@ -118,15 +118,28 @@ mod graphics_backend {
     // 暴露当前模块对应的文档编译标识。
     pub(super) const COMPILE_ID: &str = "graphics-backend";
 
-    // 编译省略后端的自动策略与显式 D3D11 选择。
+    // 编译省略后端的自动策略与显式后端选择。
     fn compile_example() {
         // 省略 graphics_backend 以保留框架自动选择策略。
         let _automatic = App::new();
 
+        // 默认 feature 集中的 Vulkan 是三平台参考后端。
+        #[cfg(feature = "vulkan")]
+        let _vulkan = App::new().graphics_backend(GraphicsBackend::Vulkan);
+
         // 在默认 feature 集中显式固定 Direct3D 11。
+        #[cfg(feature = "d3d11")]
         let _d3d11 = App::new()
             // 使用编译期存在的公开后端变体。
             .graphics_backend(GraphicsBackend::Direct3D11);
+
+        // D3D12 只在使用方显式启用同名 feature 后进入公开选择面。
+        #[cfg(feature = "d3d12")]
+        let _d3d12 = App::new().graphics_backend(GraphicsBackend::Direct3D12);
+
+        // Metal 只在使用方显式启用同名 feature 后进入公开选择面。
+        #[cfg(feature = "metal")]
+        let _metal = App::new().graphics_backend(GraphicsBackend::Metal);
     }
 }
 

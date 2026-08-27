@@ -8,8 +8,18 @@ use crate::platform::presentation::{
 };
 use std::ffi::c_void;
 
-// Vulkan GPU-native swapchain 是优先生产路径；Metal 暂缓并保留诊断条目。
+// Vulkan GPU-native swapchain 是优先生产路径；Metal 提供原生次级候选。
+#[cfg(feature = "metal")]
+fn create_metal(
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
+) -> Result<GraphicsContextCandidate, Error> {
+    crate::native::presentation::graphics::metal::platform::create(surface, width, height)
+}
 
+#[cfg(not(feature = "metal"))]
 fn create_metal(
     _: *mut c_void,
     _: i32,
@@ -17,8 +27,8 @@ fn create_metal(
     _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
-        Errc::NotImplemented,
-        "graphics backend `metal` has no production implementation on macOS",
+        Errc::PlatformError,
+        "graphics feature `metal` is disabled in this build",
     ))
 }
 
@@ -46,7 +56,11 @@ fn create_vulkan(
     ))
 }
 
-const METAL_STATUS: BackendStatus = BackendStatus::Disabled;
+const METAL_STATUS: BackendStatus = if cfg!(feature = "metal") {
+    BackendStatus::Active
+} else {
+    BackendStatus::Disabled
+};
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
     BackendStatus::Active
 } else {
@@ -56,10 +70,10 @@ const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
         id: GraphicsApi::Metal,
-        priority: 20,
+        priority: 90,
         status: METAL_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
         create: create_metal,
     },
     GraphicsBackendEntry {

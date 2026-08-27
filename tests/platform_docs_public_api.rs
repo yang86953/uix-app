@@ -27,7 +27,8 @@ mod platform_query {
         Box<[GpuAdapterInfo]>,
     );
 
-    // 编译 Platform 创建、查询与 owner-thread 析构边界。
+    // 编译默认 Vulkan 文档中的 Platform 创建、查询与 owner-thread 析构边界。
+    #[cfg(feature = "vulkan")]
     fn query_platform() -> uix::core::Result<PlatformSnapshot> {
         // 在调用线程创建唯一平台 owner。
         let platform = Platform::new()?;
@@ -39,10 +40,25 @@ mod platform_query {
         let memory = platform.memory_info()?;
         // 查询显示器 owned 描述集合。
         let displays = platform.displays()?;
-        // 查询默认 feature 集中的 D3D11 adapter 描述。
-        let adapters = platform.gpu_adapters(GraphicsBackend::Direct3D11)?;
+        // 查询默认 feature 集中的三平台 Vulkan adapter 描述。
+        let adapters = platform.gpu_adapters(GraphicsBackend::Vulkan)?;
         // 返回完整快照并让 Platform 随函数作用域析构。
         Ok((os, cpu, memory, displays, adapters))
+    }
+
+    // 编译全部启用后端的公开同步枚举入口，不在测试中触碰原生驱动。
+    fn query_enabled_backends(platform: &Platform) -> uix::core::Result<()> {
+        #[cfg(feature = "vulkan")]
+        let _ = platform.gpu_adapters(GraphicsBackend::Vulkan)?;
+        #[cfg(feature = "d3d11")]
+        let _ = platform.gpu_adapters(GraphicsBackend::Direct3D11)?;
+        #[cfg(feature = "d3d12")]
+        let _ = platform.gpu_adapters(GraphicsBackend::Direct3D12)?;
+        #[cfg(feature = "metal")]
+        let _ = platform.gpu_adapters(GraphicsBackend::Metal)?;
+        #[cfg(feature = "opengles")]
+        let _ = platform.gpu_adapters(GraphicsBackend::OpenGlEs)?;
+        Ok(())
     }
 }
 

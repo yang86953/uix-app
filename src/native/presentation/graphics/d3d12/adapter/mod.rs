@@ -3,6 +3,9 @@
 use std::ffi::c_void;
 
 use crate::core::{Error, Result};
+use crate::platform::graphics::GpuAdapterInfo;
+#[cfg(all(windows, feature = "d3d12"))]
+use crate::platform::graphics::GraphicsBackend;
 use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
@@ -31,7 +34,7 @@ pub use context::D3d12Context;
 pub(in crate::native::presentation::graphics::d3d12::platform) const D3D12_PRESENT_COHERENCY:
     PresentCoherency = PresentCoherency::FullOnly;
 
-// 组装 D3D12 测试期 adapter 的静态 recipe 能力。
+// 组装 D3D12 生产 adapter 的静态 recipe 能力。
 #[cfg(all(windows, feature = "d3d12"))]
 fn context_caps() -> GraphicsContextCaps {
     // D3D12 当前只承诺完整 swapchain 提交。
@@ -39,11 +42,26 @@ fn context_caps() -> GraphicsContextCaps {
 }
 
 #[cfg(all(windows, feature = "d3d12"))]
+pub(crate) fn enumerate_adapters() -> Result<Box<[GpuAdapterInfo]>> {
+    crate::native::presentation::graphics::dxgi::enumerate_adapters(GraphicsBackend::Direct3D12)
+}
+
+#[cfg(not(all(windows, feature = "d3d12")))]
+pub(crate) fn enumerate_adapters() -> Result<Box<[GpuAdapterInfo]>> {
+    use crate::core::Errc;
+
+    Err(Error::new(
+        Errc::NotImplemented,
+        "Platform::gpu_adapters: Direct3D12 enumeration is unavailable on this target",
+    ))
+}
+
+#[cfg(all(windows, feature = "d3d12"))]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    // 返回尚待未来 registry row 校验的 adapter 候选记录。
+    // 返回尚待当前 registry row 校验的 adapter 候选记录。
 ) -> Result<GraphicsContextCandidate, Error> {
     // 创建具体 D3D12 context 后在静态 adapter 边界组装 capability。
     D3d12Context::new(surface, width, height).map(|context| {
