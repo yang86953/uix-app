@@ -40,7 +40,7 @@ use crate::draw::Renderer;
 use crate::draw::renderer::bootstrap::{
     ProbeReport, assemble_renderer, bootstrap_renderer_with_pending,
 };
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::renderer::test_harness::GraphicsFaultSignal;
 use crate::draw::renderer::{RebuildRequest, RecoveryDriver, RenderTargetRebuilder};
 // 子模块通过父边界复用所有窗口共享的字体服务类型。
@@ -117,7 +117,7 @@ pub struct App {
     settings_path: Option<String>,
     /// 保存公开 builder 已显式选择的内部具体 API 身份。
     pub(crate) graphics_backend: Option<GraphicsApi>,
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
     agent_control_enabled: bool,
@@ -542,7 +542,7 @@ impl App {
             platform_window.center_on_screen(),
         );
         drain_platform_pending_failures(&mut *platform, &diagnostics);
-        #[cfg(feature = "test-harness")]
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         let preferred_engine = create_preferred_engine(
             platform_window.as_mut(),
             w,
@@ -552,7 +552,7 @@ impl App {
             recovery_request.clone(),
             self.graphics_faults.clone(),
         );
-        #[cfg(not(feature = "test-harness"))]
+        #[cfg(not(any(feature = "test-harness", feature = "agent-control")))]
         let preferred_engine = create_preferred_engine(
             platform_window.as_mut(),
             w,
@@ -664,7 +664,7 @@ impl App {
         session.set_app_state(self.app_state.clone());
         session.set_app_timers(self.app_timers.clone());
         session.set_main_thread_queue(self.main_thread_queue.clone());
-        #[cfg(feature = "test-harness")]
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         self.runtime.register_session_with_graphics_faults(
             root_window_id,
             self.app_timers.clone(),
@@ -672,7 +672,7 @@ impl App {
             self.handle_alive.clone(),
             self.graphics_faults.clone(),
         );
-        #[cfg(not(feature = "test-harness"))]
+        #[cfg(not(any(feature = "test-harness", feature = "agent-control")))]
         self.runtime.register_session(
             root_window_id,
             self.app_timers.clone(),

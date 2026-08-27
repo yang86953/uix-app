@@ -69,7 +69,7 @@ use uix::prelude::*;
 
 App::new()
     .enable_agent_control()
-    // 全局只读：AI 只能读快照，不能执行任何动作。
+    // 全局只读：AI 只能读快照与截屏，不能执行任何动作。
     .agent_read_only()
     // 保护指定组件：AI 不能对其执行写动作（如"删除"按钮）。
     .agent_protect("delete-button")
@@ -119,6 +119,7 @@ App::new()
 |---|---|
 | `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、焦点 `focused`、修订号） |
 | `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项、节点 `focused` 与 `hovered`，敏感值过滤） |
+| `screenshot` | 截取目标窗口下一次真实呈现帧：PNG（RGB8、物理像素、左上原点）以 base64 返回；要求 backend-managed GPU 呈现，载荷上限见 `hello.limits.max_screenshot_bytes` |
 | `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
 
 ### 语义动作（作用于语义树节点，须命中快照中的稳定目标）
@@ -152,6 +153,8 @@ App::new()
 
 指针动作（`click_at` / `pointer_move` / `pointer_down` / `pointer_up`）不要求窗口焦点；`press_key` 与文本类动作要求窗口已聚焦且事件被组件消费，未消费按失败处理。自动化驱动键盘前先执行 `activate_window`；焦点与悬停用 `focused` / `hovered` 事实断言，不依赖截图猜测界面状态。
 
+`screenshot` 属于读取类请求：只读策略下与快照一样可用，且不携带 `target`。请求会使空闲窗口强制出帧并等待下一次真实 present 完成，返回 `window_id`、`width`、`height`、`format` 与 base64 PNG 载荷。像素为物理分辨率（含设备缩放），载荷上限 32 MiB（`hello.limits.max_screenshot_bytes`，超限返回 `payload_too_large`）；仅 backend-managed GPU 呈现支持截屏，软件回退路径以 `unsupported_action` 明确失败；同一窗口上一个截屏未完成前，新请求按 `window_operation_failed` 拒绝。
+
 ### 错误码
 
 | 错误码 | 含义 |
@@ -168,6 +171,7 @@ App::new()
 | `not_interactable` / `blocked` | 目标不可交互 / 被模态浮层阻挡 |
 | `did_not_settle` / `not_presentable` | UI 未在限定轮数内稳定 / 窗口不可呈现 |
 | `window_operation_failed` | 窗口管理动作的平台调用失败 |
+| `payload_too_large` | 截屏 PNG 编码结果超出协议载荷上限 |
 | `timeout` / `app_closed` / `internal` | 等待超时 / 应用关闭 / 内部错误 |
 
 协议等待超时时会原子取消尚未进入 UI turn 的命令，此时返回 `timeout`；若动作已经开始，则返回 `outcome_unknown`，明确表示结果未知。两者的重试语义不同。
@@ -209,6 +213,7 @@ cargo run --release --manifest-path demo/Cargo.toml --features agent-control --b
 python3 scripts/agent_client.py hello           # 握手并发布能力目录
 python3 scripts/agent_client.py list_windows    # window_id、generation、focused 等
 python3 scripts/agent_client.py snapshot        # 默认第一个窗口的语义树
+python3 scripts/agent_client.py screenshot out.png   # 像素级截屏（默认第一个窗口）
 python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐标
 ```
 
@@ -223,7 +228,7 @@ python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐
 
 **可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。脚本只封装单条命令，确认流程等多次往返会话需按协议自建连接。
 
-**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件。
+**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件；截屏仅 backend-managed GPU 呈现可用。
 
 ## 安全边界
 
@@ -231,6 +236,7 @@ python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐
 - 只接受同用户本机连接；发现信息与控制通道分离。
 - 动作必须命中当前语义快照中的稳定节点并经过窗口 owner thread。
 - 密码、令牌和标记为敏感的 value 不进入快照、日志或错误回包。
+- 截屏按呈现帧原样交付像素：屏幕上可见的一切内容（包括明文展示的敏感值）都会进入图片，掩码显示的字段只以掩码形态出现。应用应在敏感界面考虑遮挡或限制，AI 操作方不得把截屏当作读取敏感值的手段。
 - 组件卸载、窗口关闭或快照代际变化后，旧动作返回可识别失败，不重定向到相似节点。
 - 动作策略与确认流程在 UI turn 入口把关，命中策略的动作不进入 UI 语义路径。
 - 远程/外部控制不在范围内。

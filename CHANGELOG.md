@@ -69,6 +69,7 @@
 
 - 窗口动作补齐与语义修正：`pointer_move` 不再把「无组件继续消费移动」误报为 `not_interactable`（悬停事实更新即是动作效果）；新增 `activate_window` 动作（Wayland 复用既有 xdg-activation 激活契约）。
 - 语义快照节点新增 `hovered` 事实，`list_windows` 与 `snapshot` 新增窗口 `focused` 状态字段，自动化可直接断言悬停目标与窗口焦点，不再依赖截图猜测界面状态。
+- Agent 端点新增 `screenshot` 请求：命令在窗口 UI turn 强制出帧，由 owner-thread 回读边界截取下一次真实呈现帧，以 base64 PNG（物理分辨率）返回，载荷上限 32 MiB；`hello.capabilities.screenshot` 与 `limits.max_screenshot_bytes` 随握手发布，软件回退路径按 `unsupported_action` 明确失败。仓库客户端 `scripts/agent_client.py` 新增 `screenshot` 命令，AI 操作的像素级验证不再依赖系统截屏工具。
 
 ### 修复与平台完善
 

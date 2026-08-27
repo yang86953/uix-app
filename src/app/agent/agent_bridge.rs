@@ -17,6 +17,8 @@ use crate::app::queues::agent_command_queue::{
 use crate::app::session_runtime::AppRuntime;
 use crate::app::window_semantics::{AgentSemanticsPort, AgentWindowState, WindowSemanticSnapshot};
 use crate::core::WindowId;
+#[cfg(feature = "agent-control")]
+use crate::draw::SurfaceReadbackTicket;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
 
@@ -408,6 +410,16 @@ impl AgentSemanticsPort for AgentWindowRegistration {
     }
 }
 
+/// 一次 Agent 截屏的成对票据：强制出帧命令 + surface 回读结果。
+///
+/// 协议层先等命令结算，再等回读像素；任何失败路径都应通过
+/// `cancel_surface_readback` 释放回读单槽。
+#[cfg(feature = "agent-control")]
+pub(crate) struct AgentScreenshotSession {
+    pub(crate) command: AgentCommandTicket,
+    pub(crate) readback: SurfaceReadbackTicket,
+}
+
 /// 供已认证的 transport worker 消费的进程适配器。
 /// Snapshot/perform 返回的 ticket 由目标 UI turn 完成；wait 只阻塞调用它的
 /// transport worker 等待目录通知。
@@ -481,6 +493,49 @@ impl AgentProcessBridge {
         confirm_id: u64,
     ) -> Result<AgentCommandTicket, AgentSubmitError> {
         self.submit_for_live_window(window_id, AgentCommandRequest::Confirm { confirm_id })
+    }
+
+    /// Agent 截屏：先占用回读单槽，再入队强制出帧命令。
+    ///
+    /// 命令在窗口 UI turn 强制整树重绘；settle 内的下一次真实 present 完成
+    /// 回读票据。命令失败时必须调用 [`Self::cancel_surface_readback`]
+    /// 释放单槽，否则同一窗口的后续截屏会被拒绝。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn screenshot(
+        &self,
+        window_id: WindowId,
+    ) -> Result<AgentScreenshotSession, AgentSubmitError> {
+        if !self.runtime.contains_live_agent_window(window_id) {
+            return Err(if self.runtime.is_shutting_down() {
+                AgentSubmitError::AppClosed
+            } else {
+                AgentSubmitError::WindowNotFound
+            });
+        }
+        let readback = self.runtime.request_surface_readback(window_id).map_err(|error| {
+            AgentSubmitError::ReadbackUnavailable {
+                message: format!("{}", error.what()),
+            }
+        })?;
+        let command = match self.submit_for_live_window(window_id, AgentCommandRequest::Screenshot)
+        {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                // 入队失败必须释放回读单槽，避免永久阻塞该窗口的后续截屏。
+                self.runtime.cancel_surface_readback(window_id);
+                return Err(error);
+            }
+        };
+        Ok(AgentScreenshotSession {
+            command,
+            readback,
+        })
+    }
+
+    /// 释放目标窗口仍在排队的回读请求；已被 owner thread 取走的请求无法撤回。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn cancel_surface_readback(&self, window_id: WindowId) {
+        self.runtime.cancel_surface_readback(window_id);
     }
 
     pub(crate) fn wait(

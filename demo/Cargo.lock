@@ -694,6 +694,7 @@ dependencies = [
  "khronos-egl",
  "libc",
  "memmap2",
+ "png",
  "qrcode",
  "regex",
  "rustybuzz",

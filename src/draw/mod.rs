@@ -63,8 +63,8 @@ pub mod target;
 
 pub use crate::core::{DamageRegion, DirtyRegion};
 pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
-// test-harness 公开统一像素快照，不导出原生 RHI 类型。
-#[cfg(feature = "test-harness")]
+// test-harness 与 Agent 截屏公开统一像素快照，不导出原生 RHI 类型。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 pub use backend::SurfaceReadback;
 pub use geometry::color::{Color, colors};
 pub use geometry::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
@@ -81,8 +81,8 @@ pub use geometry::types::{
 pub use geometry::{color, flattener, path, stroker, tessellator, types};
 pub use painting::Canvas2D;
 pub use renderer::Renderer;
-// test-harness 公开有界等待票据，与规范像素快照组成完整测试端口。
-#[cfg(feature = "test-harness")]
+// test-harness 与 Agent 截屏公开有界等待票据，与规范像素快照组成完整端口。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 pub use renderer::SurfaceReadbackTicket;
 pub use renderer::{
     AnimationRegistry, Invalidation, InvalidationQueue, InvalidationSource, RenderMetrics,

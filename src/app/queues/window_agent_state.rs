@@ -73,6 +73,17 @@ pub(crate) trait AgentCommandExecutor: Send + Sync {
         window: &mut dyn AgentWindowOps,
         action: AgentWindowAction,
     ) -> Result<(), AgentCommandError>;
+
+    /// 在窗口 UI turn 内为一次截屏强制整树重绘（agent-control 截屏路径）。
+    ///
+    /// 截屏是读取类能力：只读策略放行，与语义快照同级；像素由下一次真实
+    /// present 的回读票据交付，本方法只负责校验可呈现性并制造出帧事实。
+    #[cfg(any(test, feature = "agent-control"))]
+    fn screenshot(
+        &self,
+        tree: &mut WidgetTree,
+        presentable: bool,
+    ) -> Result<(), AgentCommandError>;
 }
 
 struct PendingAgentResponse {
@@ -279,6 +290,18 @@ impl WindowAgentState {
                     }
                     Err(error) => send_result(envelope.response, Err(error)),
                 },
+                #[cfg(any(test, feature = "agent-control"))]
+                AgentCommandRequest::Screenshot => {
+                    // 截屏不进入批量动作延迟：响应与像素都由同一次 settle 交付。
+                    match self.screenshot_command(tree, presentable) {
+                        Ok(()) => {
+                            self.in_flight.push(PendingAgentResponse {
+                                response: envelope.response,
+                            });
+                        }
+                        Err(error) => send_result(envelope.response, Err(error)),
+                    }
+                }
                 AgentCommandRequest::Confirm { confirm_id } => {
                     self.handle_confirm_request(envelope.response, confirm_id);
                 }
@@ -346,6 +369,18 @@ impl WindowAgentState {
                 window,
                 action,
             ),
+            None => Err(AgentCommandError::Internal),
+        }
+    }
+
+    #[cfg(any(test, feature = "agent-control"))]
+    fn screenshot_command(
+        &self,
+        tree: &mut WidgetTree,
+        presentable: bool,
+    ) -> Result<(), AgentCommandError> {
+        match self.executor.as_deref() {
+            Some(executor) => executor.screenshot(tree, presentable),
             None => Err(AgentCommandError::Internal),
         }
     }

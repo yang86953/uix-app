@@ -36,8 +36,8 @@ use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker, PresentSurface};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
-// test-harness 在 backend 内暂存最终合成后的规范像素结果。
-#[cfg(feature = "test-harness")]
+// test-harness 与 Agent 截屏在 backend 内暂存最终合成后的规范像素结果。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::SurfaceReadback;
 use crate::platform::presentation::rhi::GpuRecipeOwner;
 // 引入迁移期 RHI 的离屏纹理句柄。
@@ -81,13 +81,13 @@ pub struct GpuBackend {
     /// 标记 FrameEncoder 已写入 retained texture、等待最终合成 present。
     pub(crate) rhi_surface_frame_pending_present: bool,
     // 标记下一次最终合成需要在 present 前读取真实 surface。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) surface_readback_requested: bool,
     // 保存同一最终呈现事务产生的规范像素或 typed failure。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) surface_readback_result: Option<Result<SurfaceReadback, Error>>,
     // 记录当前帧由共享 FramePlan 成功执行的主表面 TextureMove 数量。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) executed_texture_moves_in_frame: usize,
     /// 保存 overlay 干净背景的通用 RHI 纹理。
     pub(crate) rhi_overlay_backdrop_texture: Option<TextureHandle>,

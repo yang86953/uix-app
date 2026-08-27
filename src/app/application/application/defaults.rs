@@ -79,7 +79,7 @@ impl Default for App {
             container,
             settings_path: None,
             graphics_backend: None,
-            #[cfg(feature = "test-harness")]
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             graphics_faults: GraphicsFaultSignal::default(),
             #[cfg(feature = "agent-control")]
             agent_control_enabled: false,

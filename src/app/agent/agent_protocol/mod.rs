@@ -13,6 +13,9 @@ use crate::app::agent::agent_bridge::{
     AgentProcessBridge, AgentWaitCondition, AgentWaitError, AgentWaitOutcome, AgentWindowInfo,
     MAX_AGENT_WAIT_TIMEOUT,
 };
+use crate::app::agent::agent_screenshot::{
+    MAX_SCREENSHOT_PNG_BYTES, ScreenshotEncodeError, base64_encode, encode_png_bounded,
+};
 use crate::app::queues::agent_command_queue::{
     AgentCommandError, AgentCommandResponse, AgentCommandTicket, AgentErrorCode, AgentSubmitError,
     AgentWindowAction, DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY, MAX_AGENT_SETTLE_PASSES,
@@ -35,6 +38,7 @@ const AGENT_REQUEST_TYPES: &[&str] = &[
     "hello",
     "list_windows",
     "snapshot",
+    "screenshot",
     "perform",
     "confirm",
     "wait",
@@ -278,6 +282,7 @@ impl AgentProtocolSession {
             ),
             "list_windows" => self.handle_list_windows(request_id),
             "snapshot" => self.handle_snapshot(object, request_id),
+            "screenshot" => self.handle_screenshot(object, request_id),
             "perform" => self.handle_perform(object, request_id),
             "confirm" => self.handle_confirm(object, request_id),
             "wait" => self.handle_wait(object, request_id),
@@ -327,6 +332,7 @@ impl AgentProtocolSession {
                     "semantic_actions": AGENT_SEMANTIC_ACTIONS,
                     "window_actions": AGENT_WINDOW_ACTIONS,
                     "window_state_fields": AGENT_WINDOW_STATE_FIELDS,
+                    "screenshot": true,
                     "key_names": AGENT_KEY_CODES
                         .iter()
                         .map(|(name, _)| *name)
@@ -340,6 +346,7 @@ impl AgentProtocolSession {
                     "window_queue_capacity": DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY,
                     "max_settle_passes": MAX_AGENT_SETTLE_PASSES,
                     "max_wait_ms": MAX_AGENT_WAIT_TIMEOUT.as_millis() as u64,
+                    "max_screenshot_bytes": MAX_SCREENSHOT_PNG_BYTES,
                 },
             }),
         )
@@ -398,6 +405,117 @@ impl AgentProtocolSession {
                 Some(request_id),
                 AgentErrorCode::AppClosed,
                 "application closed before responding",
+                false,
+            ),
+        }
+    }
+
+    /// Agent 截屏：强制出帧命令结算后，等待同一次 settle 的回读像素并编码 PNG。
+    ///
+    /// 失败路径一律释放回读单槽，避免同一窗口的后续截屏被未完成请求阻塞。
+    fn handle_screenshot(
+        &self,
+        object: &Map<String, Value>,
+        request_id: String,
+    ) -> AgentProtocolReply {
+        let window_id = match parse_window_id(object) {
+            Ok(window_id) => window_id,
+            Err(error) => return error.into_reply(Some(request_id), false),
+        };
+        let session = match self.bridge.screenshot(window_id) {
+            Ok(session) => session,
+            Err(error) => return submit_error_reply(request_id, error),
+        };
+        // 先等强制出帧命令结算；超时语义与 perform 一致（未开始可取消重试）。
+        match session.command.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+            Ok(Ok(AgentCommandResponse::Performed { .. })) => {}
+            Ok(Ok(AgentCommandResponse::Snapshot(_))) => {
+                self.bridge.cancel_surface_readback(window_id);
+                return error_reply(
+                    Some(request_id),
+                    AgentErrorCode::Internal,
+                    "unexpected command response",
+                    false,
+                );
+            }
+            Ok(Err(error)) => {
+                self.bridge.cancel_surface_readback(window_id);
+                return command_error_reply(request_id, error);
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                let cancelled = session.command.cancel_pending();
+                self.bridge.cancel_surface_readback(window_id);
+                return error_reply(
+                    Some(request_id),
+                    AgentErrorCode::Timeout,
+                    if cancelled {
+                        "UI screenshot timed out before execution and was cancelled"
+                    } else {
+                        "UI screenshot timed out"
+                    },
+                    false,
+                );
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                self.bridge.cancel_surface_readback(window_id);
+                return error_reply(
+                    Some(request_id),
+                    AgentErrorCode::AppClosed,
+                    "application closed before responding",
+                    false,
+                );
+            }
+        }
+        // 命令已结算：等待同一次 settle 内真实 present 完成的规范像素。
+        // 票据把超时与通道关闭映射为 typed Error，这里按错误类别转协议码。
+        let readback = match session.readback.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+            Ok(readback) => readback,
+            Err(error) => {
+                self.bridge.cancel_surface_readback(window_id);
+                if error.code() == crate::core::Errc::Timeout {
+                    return error_reply(
+                        Some(request_id),
+                        AgentErrorCode::Timeout,
+                        "surface readback did not complete before the timeout",
+                        false,
+                    );
+                }
+                // 软件回退等不支持场景映射为 unsupported_action，其余按平台失败处理。
+                let code = if error.code() == crate::core::Errc::NotImplemented {
+                    AgentErrorCode::UnsupportedAction
+                } else {
+                    AgentErrorCode::WindowOperationFailed
+                };
+                return error_reply(
+                    Some(request_id),
+                    code,
+                    "surface readback could not capture the window",
+                    false,
+                );
+            }
+        };
+        match encode_png_bounded(&readback) {
+            Ok(png) => success_reply(
+                request_id,
+                "screenshot",
+                json!({
+                    "window_id": window_id.raw(),
+                    "width": readback.width,
+                    "height": readback.height,
+                    "format": "png",
+                    "data_base64": base64_encode(&png),
+                }),
+            ),
+            Err(ScreenshotEncodeError::PayloadTooLarge) => error_reply(
+                Some(request_id),
+                AgentErrorCode::PayloadTooLarge,
+                "screenshot payload exceeds the protocol limit",
+                false,
+            ),
+            Err(_) => error_reply(
+                Some(request_id),
+                AgentErrorCode::Internal,
+                "screenshot encoding failed",
                 false,
             ),
         }
@@ -685,6 +803,23 @@ mod capability_tests {
                 "maximized",
                 "minimized",
                 "fullscreen",
+                "focused",
+            ]
+        );
+    }
+
+    #[test]
+    fn hello_catalog_freezes_request_types_and_screenshot_capability() {
+        assert_eq!(
+            AGENT_REQUEST_TYPES,
+            [
+                "hello",
+                "list_windows",
+                "snapshot",
+                "screenshot",
+                "perform",
+                "confirm",
+                "wait",
             ]
         );
     }
