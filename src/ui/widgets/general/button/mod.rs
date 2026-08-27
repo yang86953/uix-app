@@ -671,6 +671,23 @@ impl Button {
         self.text = text.into();
     }
 
+    // 返回协调阶段采用的作者禁用语义，避免为了读取两个布尔字段构造拥有型快照。
+    pub(crate) fn reconcile_disabled(&self) -> bool {
+        self.disabled || self.loading
+    }
+
+    // 比较协调器关心的作者配置；字段集合严格镜像 SnapshotFields::Button。
+    pub(crate) fn has_same_reconcile_config(&self, next: &Self) -> bool {
+        self.text == next.text
+            && self.disabled == next.disabled
+            && self.block == next.block
+            && self.loading == next.loading
+            && self.icon == next.icon
+            && self.group_position == next.group_position
+            && self.style_set == next.style_set
+            && self.style == next.style
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.text = next.text;
         self.button_size = next.button_size;
