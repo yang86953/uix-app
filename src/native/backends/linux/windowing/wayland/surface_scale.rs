@@ -315,8 +315,16 @@ impl WaylandWindowScaleState {
                 "Wayland programmatic resize event queue mutex poisoned",
             )
         })?;
+        // 记录发布前的事实代次，用于识别同尺寸重复通知。
+        let previous_revision = self.metrics.snapshot()?.revision;
         // logical 与 drawable 尺寸必须使用当前有效整数 scale 同代更新。
         let updated = self.metrics.update(width, height, self.current_scale())?;
+        // resize_notify 与程序化 set_size 复用同一入口；尺寸与 scale 均未变化时
+        // 不得回发 resize，否则 driver 的 resize_notify 会再次进入本入口形成
+        // 每帧自激循环，持续重置动画时钟与 surface 代次。
+        if updated.revision == previous_revision {
+            return Ok(());
+        }
         // 复用唯一 WindowResize 管线触发布局、presentation 与后续 surface commit。
         events.push_back(
             UiEvent::resize(updated.logical_width, updated.logical_height)
