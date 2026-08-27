@@ -74,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_internal_relea
 | core | `uix::core::*` | typed 错误与基础几何 |
 | platform | `uix::platform::*` | 线程亲和的平台、硬件、GPU 描述与独立系统服务 |
 | diagnostics | `uix::diagnostics::*` | 恢复登记、最终错误报告与快照 |
-| graphics | `uix::draw::*` | 统一 GPU backend（D3D11/OpenGL ES）、Software、颜色、字体 |
+| graphics | `uix::draw::*` | 统一 GPU backend（Vulkan 首选，D3D11 / OpenGL ES 兼容回退）、Software、颜色、字体 |
 | ui | `uix::ui::*` | 组件、布局、主题、动画 |
 | app | `uix::app::*` | App、Window、CLI、多窗、Agent Bridge |
 | data | `uix::data::*` | SettingsService（opt-in KV） |
