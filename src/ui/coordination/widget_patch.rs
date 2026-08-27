@@ -47,6 +47,17 @@ use crate::ui::widgets::{Tree, TreeSelect};
 // 导入区分布局字段与纯绘制字段所需的统一样式快照。
 use crate::ui::theme::style::Style;
 
+// 在已知具体类型时比较无需拥有型快照的内建组件作者配置。
+pub(crate) fn builtin_widget_config_changed_without_snapshot(
+    current: &dyn Widget,
+    next: &dyn Widget,
+) -> Option<bool> {
+    // 该窄端口只由已确认的 Button 协调分支调用。
+    let current = current.as_any().downcast_ref::<Button>()?;
+    let next = next.as_any().downcast_ref::<Button>()?;
+    Some(!current.has_same_reconcile_config(next))
+}
+
 /// Compare authored configuration for widgets whose public snapshot also
 /// contains runtime state. `None` falls back to ordinary snapshot equality.
 pub(crate) fn builtin_widget_config_changed(

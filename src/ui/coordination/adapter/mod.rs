@@ -21,15 +21,15 @@ use crate::ui::render_handler::RenderHandlerRegistration;
 use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widget_patch::{
-    builtin_widget_config_changed, builtin_widget_layout_changed, builtin_widget_runtime_changed,
-    patch_builtin_widget,
+    builtin_widget_config_changed, builtin_widget_config_changed_without_snapshot,
+    builtin_widget_layout_changed, builtin_widget_runtime_changed, patch_builtin_widget,
 };
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
 use crate::ui::widget_runtime::traits::Widget;
 use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
 use crate::ui::widget_snapshot::SnapshotFields;
-// 引入动态子树组件以识别各自的私有协调边界。
-use crate::ui::widgets::{Calendar, Carousel, Image, Transfer};
+// 引入动态子树组件及 Button 的无快照协调窄端口。
+use crate::ui::widgets::{Button, Calendar, Carousel, Image, Transfer};
 // 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
 #[cfg(feature = "navigation")]
 use crate::ui::widgets::navigation::Anchor;
@@ -383,7 +383,24 @@ impl ViewAdapter {
         }
     }
 
+    #[inline]
     fn reconcile_existing(tree: &mut WidgetTree, id: WidgetId, node: ViewNode) {
+        // 调度包装器只读取一次具体类型，把 Button 与非 Button 隔离到独立实例。
+        let widget_type_id = node.widget.as_any().type_id();
+        if widget_type_id == std::any::TypeId::of::<Button>() {
+            Self::reconcile_existing_mode::<true>(tree, id, node, widget_type_id);
+        } else {
+            Self::reconcile_existing_mode::<false>(tree, id, node, widget_type_id);
+        }
+    }
+
+    #[inline(never)]
+    fn reconcile_existing_mode<const BUTTON: bool>(
+        tree: &mut WidgetTree,
+        id: WidgetId,
+        node: ViewNode,
+        widget_type_id: std::any::TypeId,
+    ) {
         let ViewNode {
             widget,
             children,
@@ -443,8 +460,7 @@ impl ViewAdapter {
             tree.set_node_visibility(id, false);
         }
         let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
-        // 复用前置已确认类型稳定，只读取一次 incoming 的具体 TypeId。
-        let widget_type_id = widget.as_any().type_id();
+        // 外层包装器已读取一次 incoming TypeId；const 模式直接复用该值。
         // reconcile_existing 的 can_reuse_current/can_reuse 前置已确认两侧具体 TypeId 相同；
         // apply_style 只修改组件样式，不替换具体类型，因此纯类型 owner 可直接看 incoming。
         // Calendar cells depend on preserved runtime month/selection. Building them from
@@ -488,20 +504,35 @@ impl ViewAdapter {
         } else {
             view_children(widget.as_ref())
         };
-        // 先保存新版组件快照，enabled 路径可在 patch 前复用同一份字段。
-        let next_fields = widget.snapshot_fields();
-        let next_disabled = accessibility_override
-            .as_ref()
-            .and_then(|override_state| override_state.disabled_override())
-            .or_else(|| match &next_fields {
-                // Button 的 disabled 无障碍状态只由这两个声明字段决定。
-                SnapshotFields::Button {
-                    disabled, loading, ..
-                } => Some(*disabled || *loading),
-                // 其他组件仍沿用完整无障碍快照的既有语义。
-                _ => None,
-            })
-            .unwrap_or_else(|| next_fields.accessibility().state.disabled);
+        // Button 通过窄端口直接读取作者禁用语义，不再构造包含字符串的快照。
+        let (next_fields, next_disabled) = if BUTTON {
+            let button_disabled = widget
+                .as_any()
+                .downcast_ref::<Button>()
+                .expect("Button reconciliation must preserve the incoming concrete type")
+                .reconcile_disabled();
+            let next_disabled = accessibility_override
+                .as_ref()
+                .and_then(|override_state| override_state.disabled_override())
+                .unwrap_or(button_disabled);
+            (None, next_disabled)
+        } else {
+            // 非 Button 恢复原有快照观察时机，enabled 路径可在 patch 前复用字段。
+            let next_fields = widget.snapshot_fields();
+            let next_disabled = accessibility_override
+                .as_ref()
+                .and_then(|override_state| override_state.disabled_override())
+                // 自定义组件若公开 Button 快照，保留原有的无名称副本门禁。
+                .or_else(|| match &next_fields {
+                    SnapshotFields::Button {
+                        disabled, loading, ..
+                    } => Some(*disabled || *loading),
+                    _ => None,
+                })
+                // 其余非 Button 组件沿用完整无障碍快照的既有语义。
+                .unwrap_or_else(|| next_fields.accessibility().state.disabled);
+            (Some(next_fields), next_disabled)
+        };
         if next_disabled {
             // PointerLeave / DragEnd 必须在旧组件仍启用时交付，随后再 patch disabled。
             tree.cancel_pointer_hover_in_subtree(id);
@@ -518,9 +549,18 @@ impl ViewAdapter {
             // 随后的 patch 才写入 disabled，避免 disabled 早退吞掉清理事件。
             tree.set_focus(None);
         }
-        // disabled 路径必须丢弃预计算字段，让 patch 在事件清理后重新观察新版组件。
-        let next_fields_for_patch = (!next_disabled).then_some(&next_fields);
-        let widget_impact = Self::patch_widget(tree, id, widget, next_fields_for_patch);
+        let widget_impact = if BUTTON {
+            // Button 已走无快照专用 patch，避免非 Button 共用热路的增量分支。
+            Self::patch_button_without_snapshot(tree, id, widget)
+        } else {
+            // 非 Button disabled 路径必须丢弃预计算字段，让 patch 在清理后重新观察新版组件。
+            let next_fields_for_patch = if next_disabled {
+                None
+            } else {
+                next_fields.as_ref()
+            };
+            Self::patch_widget(tree, id, widget, next_fields_for_patch)
+        };
         // 定位变化需要重排父槽位并重建绘制与命中投影。
         let position_changed = tree.set_node_position(id, position);
         // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
@@ -783,6 +823,45 @@ impl ViewAdapter {
         groups
     }
 
+    fn patch_button_without_snapshot(
+        tree: &mut WidgetTree,
+        id: WidgetId,
+        widget: Box<dyn Widget>,
+    ) -> WidgetPatchImpact {
+        let Some(current) = tree.get_mut(id) else {
+            // 节点已不存在时没有可上报的 patch 影响。
+            return WidgetPatchImpact::default();
+        };
+
+        // 已由 reconcile_existing 的类型前置确认 Button，直接比较窄配置与运行态。
+        let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
+        let authored_changed =
+            builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
+                .expect("Button reconciliation must preserve both Button widget types");
+        // Button 作者配置变化始终保守归入 Layout，与通用 patch 语义一致。
+        let config_changed = authored_changed || runtime_changed;
+        let layout_changed = config_changed;
+
+        // 只有实际完成原位 patch 或替换后才报告失效影响。
+        match patch_builtin_widget(current.widget_mut(), widget) {
+            // 原位同步成功时返回 Button 的保守布局分类。
+            Ok(true) => WidgetPatchImpact {
+                paint_changed: config_changed,
+                layout_changed,
+            },
+            // 无类型化 patch 时替换同型组件并沿用相同分类。
+            Err(widget) => {
+                current.replace_widget(widget);
+                WidgetPatchImpact {
+                    paint_changed: config_changed,
+                    layout_changed,
+                }
+            }
+            // 类型分派未完成同步时不产生额外失效。
+            Ok(false) => WidgetPatchImpact::default(),
+        }
+    }
+
     fn patch_widget(
         tree: &mut WidgetTree,
         id: WidgetId,
@@ -798,12 +877,12 @@ impl ViewAdapter {
         let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
         // 在 patch 前只抓取一次当前组件公开快照。
         let current_fields = current.widget().snapshot_fields();
-        // enabled 路径借用事件清理前的快照；disabled 路径仅在此处拥有回退快照。
+        // enabled 路径借用预计算快照；disabled 路径在清理后拥有回退快照。
         let owned_next_fields;
         let next_fields = if let Some(next_fields) = next_fields {
             next_fields
         } else {
-            // disabled 路径在事件清理完成后按原时机重新获取新版组件快照。
+            // 保持非 Button disabled 路径在事件清理后的快照观察时机。
             owned_next_fields = widget.snapshot_fields();
             &owned_next_fields
         };

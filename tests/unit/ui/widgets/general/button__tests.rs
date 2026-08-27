@@ -1,8 +1,8 @@
-// 引入 Button 与 UIX 生成的唯一视觉引用。
-use super::{BUTTON_VISUAL_REF, Button};
+// 引入 Button、连体位置与 UIX 生成的唯一视觉引用。
+use super::{BUTTON_VISUAL_REF, Button, ButtonGroupPosition};
 use crate::core::{Constraints, EdgeInsets};
 use crate::ui::theme::style::{Style, StyleSet, TypographyToken};
-use crate::ui::widget_runtime::traits::WidgetLayout;
+use crate::ui::widget_runtime::traits::{Widget, WidgetLayout};
 
 // 验证直接构造与 View 构建共享同目录 UIX 的静态视觉地址。
 #[test]
@@ -55,4 +55,51 @@ fn intrinsic_size_resolves_only_sizing_fields_with_style_precedence() {
     assert!((overridden_size.w - 94.0).abs() < 0.0001);
     // 未覆盖高度继续继承基础样式。
     assert_eq!(overridden_size.h, 44.0);
+}
+
+// 验证无快照协调端口保持 Button 自有的禁用与加载语义。
+#[test]
+fn reconcile_disabled_matches_button_authored_state() {
+    assert!(!Button::new("可用").reconcile_disabled());
+    assert!(Button::new("禁用").disabled(true).reconcile_disabled());
+    assert!(Button::new("加载").loading(true).reconcile_disabled());
+}
+
+// 比较窄端口与现有拥有型快照，确保所有作者配置字段保持同一相等契约。
+#[test]
+fn reconcile_config_comparison_matches_snapshot_fields() {
+    let cases = [
+        (Button::new("相同"), Button::new("相同")),
+        (Button::new("原文"), Button::new("新文")),
+        (Button::new("按钮"), Button::new("按钮").disabled(true)),
+        (Button::new("按钮"), Button::new("按钮").block(true)),
+        (Button::new("按钮"), Button::new("按钮").loading(true)),
+        (Button::icon("circle"), Button::icon("square")),
+        (
+            Button::new("按钮").group_position(ButtonGroupPosition::Left),
+            Button::new("按钮").group_position(ButtonGroupPosition::Right),
+        ),
+        (Button::new("按钮"), Button::new("按钮").primary()),
+        (
+            Button::new("按钮"),
+            Button::new("按钮").style(Style {
+                padding: EdgeInsets::uniform(19.0),
+                ..Style::default()
+            }),
+        ),
+        (
+            Button::new("按钮"),
+            Button::new("按钮").style_set(StyleSet::new(Style {
+                margin: EdgeInsets::uniform(7.0),
+                ..Style::default()
+            })),
+        ),
+    ];
+
+    for (current, next) in cases {
+        assert_eq!(
+            current.has_same_reconcile_config(&next),
+            current.snapshot_fields() == next.snapshot_fields(),
+        );
+    }
 }
