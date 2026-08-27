@@ -9,9 +9,7 @@ use quote::quote;
 // 引入核心 View 生成器拥有的公共属性与子树映射。
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 // 引入 Affix 专有属性所需的共享 AST、表达式与诊断契约。
-use super::{
-    AttributeValue, Diagnostic, Element, Node, generate_expression, numeric_value,
-};
+use super::{AttributeValue, Diagnostic, Element, Node, generate_expression, numeric_value};
 
 // 生成复用公开运行时组件的 Affix 固钉容器。
 pub(crate) fn generate_affix(element: &Element) -> Result<TokenStream, Diagnostic> {

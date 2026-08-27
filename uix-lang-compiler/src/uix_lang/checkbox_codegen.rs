@@ -10,8 +10,7 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Checkbox 属性、表达式、值转换与诊断契约。
 use super::{
-    AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    string_value,
+    AttributeValue, Diagnostic, Element, boolean_value, generate_expression, string_value,
 };
 
 // 生成保持 State<bool> 双向绑定的复选框节点。

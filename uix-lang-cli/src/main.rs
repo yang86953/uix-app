@@ -44,10 +44,7 @@ fn scaffold(args: &[String]) -> Result<u8, String> {
     // 输出骨架到 stdout，供重定向到目标 .uix 文件。
     print!(
         "{}",
-        scaffold::generate_visual_scaffold(
-            std::path::Path::new(&args[1]),
-            args[2].as_str()
-        )?
+        scaffold::generate_visual_scaffold(std::path::Path::new(&args[1]), args[2].as_str())?
     );
     Ok(0)
 }

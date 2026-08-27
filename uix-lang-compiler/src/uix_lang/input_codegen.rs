@@ -10,8 +10,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Input 属性、表达式、值映射与诊断契约。
 use super::{
-    AttributeValue, Diagnostic, Element, boolean_value,
-    generate_event_handler_expression, generate_expression, literal_string, string_value,
+    AttributeValue, Diagnostic, Element, boolean_value, generate_event_handler_expression,
+    generate_expression, literal_string, string_value,
 };
 
 // 生成保持 State<String> 双向绑定的文本输入节点。

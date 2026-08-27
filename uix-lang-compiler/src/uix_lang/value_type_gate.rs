@@ -32,7 +32,13 @@ pub(crate) fn validate_value_type_capabilities(
                     // 只有类型化初始值带登记类型。
                     if let WidgetStateInitial::TypedExpression(value_type, _) = &state.initial {
                         // 校验单个类型的 capability 门禁。
-                        ensure_value_type_enabled(value_type, "state", &state.name, state.span, &enabled)?;
+                        ensure_value_type_enabled(
+                            value_type,
+                            "state",
+                            &state.name,
+                            state.span,
+                            &enabled,
+                        )?;
                     }
                 }
             }
@@ -42,7 +48,11 @@ pub(crate) fn validate_value_type_capabilities(
                 for field in &record.fields {
                     // 校验字段类型的 capability 门禁。
                     ensure_value_type_enabled(
-                        &field.kind, "record 字段", &field.name, field.span, &enabled,
+                        &field.kind,
+                        "record 字段",
+                        &field.name,
+                        field.span,
+                        &enabled,
                     )?;
                 }
             }
@@ -63,8 +73,8 @@ fn ensure_value_type_enabled(
     enabled: &impl Fn(&str) -> bool,
 ) -> Result<(), Diagnostic> {
     // 查询登记的 capability 并核对启用状态。
-    if let Some(capability) = value_type_capability(value_type)
-        .filter(|capability| !enabled(capability))
+    if let Some(capability) =
+        value_type_capability(value_type).filter(|capability| !enabled(capability))
     {
         // 返回定向能力门禁诊断。
         return Err(Diagnostic::new(
@@ -73,9 +83,7 @@ fn ensure_value_type_enabled(
                 "{subject_kind} {subject_name} 的类型 {} 需要 capability {capability}",
                 schema_name_of(value_type)
             ),
-            format!(
-                "在 uix 依赖上启用 Cargo feature {capability}，或改用核心通用类型"
-            ),
+            format!("在 uix 依赖上启用 Cargo feature {capability}，或改用核心通用类型"),
         ));
     }
     // 类型已启用或无需门禁。
@@ -112,7 +120,7 @@ fn schema_name_of(value_type: &WidgetValueType) -> &'static str {
 mod tests {
     use super::{validate_value_type_capabilities, value_type_capability};
     use crate::uix_lang::widget_parser::registered_value_type;
-    use crate::uix_lang::{parse_document, Document, WidgetValueType};
+    use crate::uix_lang::{Document, WidgetValueType, parse_document};
 
     // 构造仅包含单个 Widget 的最小文档并取回解析结果。
     fn widget_document(state_source: &str) -> Document {
@@ -127,7 +135,10 @@ mod tests {
     fn core_value_types_never_require_capability() {
         assert_eq!(value_type_capability(&WidgetValueType::String), None);
         assert_eq!(value_type_capability(&WidgetValueType::VecOfString), None);
-        assert_eq!(value_type_capability(&WidgetValueType::OptionalString), None);
+        assert_eq!(
+            value_type_capability(&WidgetValueType::OptionalString),
+            None
+        );
     }
 
     // 组件专属类型映射到拥有它的组件 capability。
@@ -147,8 +158,8 @@ mod tests {
     #[test]
     fn disabled_payload_type_is_rejected_with_directed_diagnostic() {
         let document = widget_document("path: CascaderValue = []");
-        let error = validate_value_type_capabilities(&document, |_| false)
-            .expect_err("未启用门禁必须失败");
+        let error =
+            validate_value_type_capabilities(&document, |_| false).expect_err("未启用门禁必须失败");
         assert!(error.message.contains("CascaderValue"));
         assert!(error.message.contains("tree-widgets"));
     }

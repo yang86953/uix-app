@@ -22,9 +22,7 @@ struct MemberBlockSources {
 }
 
 // 把模板子节点分拆为成员声明源码与真实视图体；重复同类块在此拒绝。
-fn split_member_blocks(
-    children: Vec<Node>,
-) -> Result<(MemberBlockSources, Vec<Node>), Diagnostic> {
+fn split_member_blocks(children: Vec<Node>) -> Result<(MemberBlockSources, Vec<Node>), Diagnostic> {
     // 保存按类别的成员块源码。
     let mut sources = MemberBlockSources {
         props: None,
@@ -90,9 +88,7 @@ fn merge_member_form(
             // 说明同类别双写。
             format!("组件成员 {kind} 同时使用了属性形式与块级形式"),
             // 给出二选一修复动作。
-            format!(
-                "删除 {kind}=\"{attribute_value}\" 或删除 @{kind} {{ ... }} 声明块"
-            ),
+            format!("删除 {kind}=\"{attribute_value}\" 或删除 @{kind} {{ ... }} 声明块"),
         ));
     }
     // 任一存在即生效。

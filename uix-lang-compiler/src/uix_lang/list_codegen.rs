@@ -344,10 +344,5 @@ fn list_size(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
 // 查找 List 的必需属性。
 fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
     // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
-    super::required_attribute(
-        element,
-        name,
-        "List",
-        "使用 <List data={list_items} />",
-    )
+    super::required_attribute(element, name, "List", "使用 <List data={list_items} />")
 }
