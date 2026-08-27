@@ -1,4 +1,7 @@
 // 引入 usize 字面量与过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::{Literal, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -351,10 +354,3 @@ fn usize_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已经保证同名属性唯一。
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name == name)
-}

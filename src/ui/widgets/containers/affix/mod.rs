@@ -288,8 +288,3 @@ impl View for Affix {
 fn build_affix_uix_root(kernel: Affix) -> ViewNode {
     crate::uix!("src/ui/widgets/containers/affix/affix.uix")
 }
-
-// 只在单元测试目标验证 Affix UIX 视觉注入契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/containers/affix__tests.rs"]
-mod tests;

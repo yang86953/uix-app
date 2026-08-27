@@ -1,4 +1,6 @@
 // 引入 f32 字面量与过程宏令牌流。
+// 复用共享属性查找实现。
+
 use proc_macro2::{Literal, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -405,32 +407,17 @@ pub(super) fn f32_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic
     }
 }
 
-// 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已经保证同名属性唯一。
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name == name)
-}
-
 // 查找基础图表必需属性。
 pub(super) fn required_attribute<'a>(
-    // 接收需要查询的图表元素。
     element: &'a Element,
-    // 接收必需属性名。
     name: &str,
 ) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失数据时返回确定诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 点名当前图表与缺失属性。
-        Diagnostic::new(
-            // 指向完整元素。
-            element.span,
-            // 说明必需属性。
-            format!("<{}> 缺少必需的 {name} 属性", element.name),
-            // 给出最小合法写法。
-            format!("使用 <{} data={{items}} />", element.name),
-        )
-    })
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        // 诊断标签跟随实际元素名。
+        &element.name,
+        &format!("使用 <{} data={{items}} />", element.name),
+    )
 }

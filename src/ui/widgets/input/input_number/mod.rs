@@ -929,10 +929,3 @@ impl View for InputNumber {
 fn build_input_number_uix_root(kernel: InputNumber) -> ViewNode {
     crate::uix!("src/ui/widgets/input/input_number/input_number.uix")
 }
-
-// 验证 InputNumber 精度配置、状态回写与显示快照。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/input_number__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

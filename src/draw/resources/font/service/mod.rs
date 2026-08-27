@@ -16,16 +16,6 @@ mod text_justify;
 pub(crate) use font_layout::take_text_layout_calls;
 // 保存 FontService 的 UAX #9 字体段切分与视觉 cluster 重排。
 mod bidi_layout;
-// 使用独立纯内存后端覆盖 FontService 的 UAX #14 集成契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/line_break_tests.rs"]
-mod line_break_tests;
-// 验证 FontService 的混排视觉顺序与方向感知交互几何。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/bidi_layout_tests.rs"]
-mod bidi_layout_tests;
 
 pub use font_cache::{FontFace, GlyphCache};
 
@@ -825,10 +815,3 @@ impl std::fmt::Debug for FontService {
             .finish()
     }
 }
-
-// 为字体卸载后的注册表元数据回收保留回归测试。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/mod__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

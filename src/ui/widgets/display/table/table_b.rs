@@ -739,11 +739,3 @@ impl Table {
         self.materialized_cell_range.set(Some(range));
     }
 }
-
-// 仅在单元测试中编译表格列宽句柄契约。
-#[cfg(test)]
-// 将固定列重叠句柄回归收拢在交互几何模块。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/table/table_b__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

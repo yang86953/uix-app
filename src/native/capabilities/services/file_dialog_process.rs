@@ -158,10 +158,3 @@ fn external_dialog_failure(provider: &str, exit_code: Option<i32>, stderr: &[u8]
         format!("LinuxFileDialog: {provider} failed with {status}{stderr_detail}"),
     )
 }
-
-// 纯逻辑测试不启动真实桌面进程。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/capabilities/services/file_dialog_process__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

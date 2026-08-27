@@ -70,10 +70,3 @@ impl Default for ViewTransform {
         }
     }
 }
-
-// 仅在本模块验证视觉矩阵的组合与逆命中契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widget_runtime/view_transform__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

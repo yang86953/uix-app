@@ -84,7 +84,7 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 | 角色 | 文档 |
 |---|---|
-| 长期设计 | [语言边界](设计/语言边界.md)、[编译器架构](设计/编译器架构.md) |
+| 长期设计 | [语言边界](设计/语言边界.md)、[编译器架构](设计/编译器架构.md)、[边界成本度量](设计/边界成本度量.md) |
 | 当前指南 | [快速开始](指南/快速开始.md)、[教程](指南/教程.md) |
 | 演进治理 | [语言完善计划](变更/语言完善计划.md)、[版本策略](变更/版本策略.md)、[变更日志](变更/CHANGELOG.md) |
 | 历史依据 | [组合与表达式历史设计](变更/目标设计.md) |
@@ -93,7 +93,7 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ### 当前基线
 
-当前发布基线包含：界面声明、自定义 Widget、props、私有与外部 `State<T>`、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。同步 action 只组合局部 UI 更新和转发 Rust 回调；异步、服务、持久化、业务校验、领域状态转换及跨页面流程不进入 UIX Lang。
+当前发布基线包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。同步 action 只组合局部 UI 更新和转发 Rust 回调；异步、服务、持久化、业务校验、领域状态转换及跨页面流程不进入 UIX Lang。组件专属状态值类型由 schema 登记 capability 门禁。
 
 公开 `uix!` 支持内嵌源码与 `.uix` 文件并生成 `ViewNode`；`uix_app!` 读取 `<App>` 根并返回尚未运行的现有 `App` builder；`uix_items!` 生成模块级 Record 结构体与 Visual 静态项。文件入口支持递归 `@import`、显式 `@export` 和依赖追踪。
 
@@ -101,6 +101,6 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ## 与 Rust 的映射
 
-共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`lsp`，三个公开宏均有真实 consumer 验证。
+共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`scaffold visual`、`lsp`，三个公开宏均有真实 consumer 验证。
 
 UIX Lang 是 UIX Rust API 的编译期文本投影。公开宏与 `uix` CLI 均通过共享 `uix-lang-compiler` Compiler System；三个宏已有真实 consumer 验证。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部边界以[编译器架构](设计/编译器架构.md)为准。

@@ -260,29 +260,41 @@ fn parse_prop_type(source: &str, span: SourceSpan) -> Result<WidgetPropType, Dia
     Err(invalid_prop_type(source, span))
 }
 
-// 解析三个基础类型关键字。
+// 解析 props 与回调参数允许的基础值类型。
 fn parse_value_type(source: &str) -> Option<WidgetValueType> {
-    // 按精确关键字映射。
-    match source {
-        // 映射 String。
-        "String" => Some(WidgetValueType::String),
-        // 映射 number。
-        "number" => Some(WidgetValueType::Number),
-        // 映射 bool。
-        "bool" => Some(WidgetValueType::Bool),
-        // 映射公开日期语义值。
-        "Date" => Some(WidgetValueType::Date),
-        // 映射公开时间语义值。
-        "Time" => Some(WidgetValueType::Time),
-        // 映射公开颜色语义值。
-        "Color" => Some(WidgetValueType::Color),
-        // 映射公开坐标语义值。
-        "Point" => Some(WidgetValueType::Point),
-        // 映射可空字符串选择。
-        "Option<String>" => Some(WidgetValueType::OptionalString),
-        // 其他名称不在白名单。
-        _ => None,
-    }
+    // 登记事实由 UiProjectionSchema 持有；props 子集按登记位过滤。
+    let spec = super::super::projection_schema::UI_PROJECTION_SCHEMA
+        .value_type(source)
+        .filter(|spec| spec.allowed_in_props)?;
+    // 返回登记名到 lowering 变体的确定映射。
+    registered_value_type(spec.name)
+}
+
+// 把 schema 登记的类型名映射为 lowering 变体；全部合法名称必须在此闭合。
+pub(crate) fn registered_value_type(name: &str) -> Option<WidgetValueType> {
+    let value = match name {
+        "String" => WidgetValueType::String,
+        "number" => WidgetValueType::Number,
+        "bool" => WidgetValueType::Bool,
+        "u32" => WidgetValueType::U32,
+        "usize" => WidgetValueType::USize,
+        "f32" => WidgetValueType::F32,
+        "i32" => WidgetValueType::I32,
+        "Date" => WidgetValueType::Date,
+        "Time" => WidgetValueType::Time,
+        "Color" => WidgetValueType::Color,
+        "Point" => WidgetValueType::Point,
+        "HashSet<String>" => WidgetValueType::HashSetOfString,
+        "Vec<String>" => WidgetValueType::VecOfString,
+        "Vec<number>" => WidgetValueType::VecOfNumber,
+        "Option<String>" => WidgetValueType::OptionalString,
+        // 组件拥有的载荷类型仍映射专用变体，capability 在文档级门禁。
+        "CascaderValue" => WidgetValueType::CascaderValue,
+        "Vec<UploadFile>" => WidgetValueType::VecOfUploadFile,
+        // 其他名称不属于 lowering 闭集。
+        _ => return None,
+    };
+    Some(value)
 }
 
 // 识别 state 声明中可选的 `Type = initial` 类型注解前缀。
@@ -330,25 +342,34 @@ fn split_typed_state_initial(
         // 返回未识别注解。
         return Ok(None);
     }
-    // 按 state 专用白名单映射类型关键字，未知 PascalCase 名称暂存为 record 引用。
+    // 按 state 专用登记面映射类型关键字，未知 PascalCase 名称暂存为 record 引用。
     let value_type = parse_typed_value(type_source).ok_or_else(|| {
-        // 构造未知 state 类型诊断。
+        // 构造未知 state 类型诊断；允许清单由 schema 登记表生成。
         Diagnostic::new(
             // 指向 state 声明。
             span,
-            // 说明类型不在白名单。
+            // 说明类型不在登记白名单。
             format!("不支持 state 类型 {type_source:?}"),
-            // 给出完整允许集合。
-            "使用 String、number、bool、u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet<String>、Vec<String>、Vec<UploadFile>、Option<String> 或文档内声明的 record 名",
+            // 给出 schema 生成的完整允许集合。
+            format!(
+                "使用{}",
+                super::super::projection_schema::UI_PROJECTION_SCHEMA
+                    .supported_value_type_hint()
+            ),
         )
     })?;
     // 返回类型与等号右侧的初始值源码。
     Ok(Some((value_type, source[separator + 1..].trim())))
 }
 
-// 解析 state 注解与 record 字段的类型白名单；未知 PascalCase 名暂存为 record 引用。
+// 解析 state 注解与 record 字段的类型白名单；登记事实由 UiProjectionSchema 持有。
 pub(crate) fn parse_typed_value(source: &str) -> Option<WidgetValueType> {
-    // Vec<T> 允许字符串、数值、上传文件或文档内 record 元素。
+    // 完整书写名优先命中登记表（含 Vec<String>、HashSet<String>、Vec<UploadFile> 等拼写）。
+    if let Some(spec) = super::super::projection_schema::UI_PROJECTION_SCHEMA.value_type(source) {
+        // 返回登记名到 lowering 变体的确定映射。
+        return registered_value_type(spec.name);
+    }
+    // 未整体登记的 Vec<T> 元素可能是文档内 record 引用。
     if let Some(inner) = source
         // 去除 Vec< 前缀。
         .strip_prefix("Vec<")
@@ -357,60 +378,22 @@ pub(crate) fn parse_typed_value(source: &str) -> Option<WidgetValueType> {
     {
         // 清理泛型元素类型空白。
         let inner = inner.trim();
-        // 按元素类型映射向量变体。
-        return match inner {
-            // 字符串向量。
-            "String" => Some(WidgetValueType::VecOfString),
-            // 数值向量。
-            "number" => Some(WidgetValueType::VecOfNumber),
-            // 上传队列向量。
-            "UploadFile" => Some(WidgetValueType::VecOfUploadFile),
-            // PascalCase 元素暂存为 record 引用。
-            _ if is_pascal_identifier(inner) => {
-                // 保存 record 元素类型名。
-                Some(WidgetValueType::VecOfRecord(inner.to_string()))
-            }
-            // 其他元素类型不在白名单。
-            _ => None,
+        // PascalCase 元素暂存为 record 引用，由文档级校验兑底。
+        return if is_pascal_identifier(inner) {
+            // 保存 record 元素类型名。
+            Some(WidgetValueType::VecOfRecord(inner.to_string()))
+            // 其他元素类型不在登记面。
+        } else {
+            None
         };
     }
-    // 按精确关键字映射基础与语义类型。
-    let value = match source {
-        // 映射拥有所有权的字符串。
-        "String" => WidgetValueType::String,
-        // 映射 f64 数值。
-        "number" => WidgetValueType::Number,
-        // 映射布尔值。
-        "bool" => WidgetValueType::Bool,
-        // 映射无符号计数。
-        "u32" => WidgetValueType::U32,
-        // 映射索引。
-        "usize" => WidgetValueType::USize,
-        // 映射单精度浮点。
-        "f32" => WidgetValueType::F32,
-        // 映射有符号整数。
-        "i32" => WidgetValueType::I32,
-        // 映射公开日期类型。
-        "Date" => WidgetValueType::Date,
-        // 映射公开时间类型。
-        "Time" => WidgetValueType::Time,
-        // 映射公开颜色类型。
-        "Color" => WidgetValueType::Color,
-        // 映射公开坐标类型。
-        "Point" => WidgetValueType::Point,
-        // 映射级联路径类型。
-        "CascaderValue" => WidgetValueType::CascaderValue,
-        // 映射多选集合。
-        "HashSet<String>" => WidgetValueType::HashSetOfString,
-        // 映射可空字符串单选。
-        "Option<String>" => WidgetValueType::OptionalString,
-        // 未知 PascalCase 标识符暂存为 record 引用，由文档级校验兑底。
-        _ if is_pascal_identifier(source) => WidgetValueType::Record(source.to_string()),
-        // 其余名称不在白名单。
-        _ => return None,
-    };
-    // 返回映射结果。
-    Some(value)
+    // 未知 PascalCase 标识符暂存为 record 引用，由文档级校验兑底。
+    if is_pascal_identifier(source) {
+        // 保存 record 类型引用。
+        return Some(WidgetValueType::Record(source.to_string()));
+    }
+    // 其余名称不在登记白名单。
+    None
 }
 
 // 判断名称是否符合 PascalCase 类型名形状。
@@ -709,20 +692,11 @@ fn split_top_level(
     }
     // 保存最后一个字段。
     let tail = source[start..].trim();
-    // 尾随逗号产生空字段。
-    if tail.is_empty() {
-        // 返回空尾字段诊断。
-        return Err(Diagnostic::new(
-            // 指向完整属性。
-            span,
-            // 说明尾随逗号。
-            "组件字段列表不能以逗号结尾",
-            // 给出修复动作。
-            "删除末尾逗号",
-        ));
+    // 尾随逗号是成员块的多行书写惯用法；空尾字段直接忽略。
+    if !tail.is_empty() {
+        // 保存尾字段。
+        entries.push(tail);
     }
-    // 保存尾字段。
-    entries.push(tail);
     // 返回有序字段列表。
     Ok(entries)
 }

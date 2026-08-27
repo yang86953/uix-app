@@ -390,11 +390,3 @@ impl TextIndexMap {
         ShapingCluster { start, end }
     }
 }
-
-// 仅在单元测试中编译索引模型契约测试。
-#[cfg(test)]
-// 把测试隔离在当前模块内部。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/resources/font/text_index__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

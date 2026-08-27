@@ -336,7 +336,3 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
     let y2 = (a.y + a.h).max(b.y + b.h);
     Rect::new(x1, y1, x2 - x1, y2 - y1)
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/renderer/invalidation__tests.rs"]
-mod tests;

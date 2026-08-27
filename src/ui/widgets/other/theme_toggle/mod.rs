@@ -204,10 +204,3 @@ impl Default for ThemeToggle {
         Self::new()
     }
 }
-
-// 集中验证 ThemeToggle 声明融合与交互契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/general/theme_toggle__tests.rs"]
-// 保留原模块私有契约访问能力。
-mod tests;

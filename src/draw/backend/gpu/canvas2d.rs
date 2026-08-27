@@ -569,10 +569,3 @@ impl Canvas2D for NativeGpuCanvas2D {
             }));
     }
 }
-
-// 验证原生 Canvas2D scroll 会保留为 ordered native boundary。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/canvas2d__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

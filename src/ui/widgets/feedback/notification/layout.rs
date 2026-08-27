@@ -471,11 +471,3 @@ pub(super) fn fade_color(color: Color, opacity: f32) -> Color {
 pub(super) fn finite_or_zero(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
 }
-
-// 仅在单元测试构建中编译通知几何契约。
-#[cfg(test)]
-// 将窄窗口回归测试收拢在布局实现旁。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/feedback/notification/layout__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

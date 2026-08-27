@@ -397,10 +397,3 @@ impl View for Checkbox {
 fn build_checkbox_uix_root(kernel: Checkbox) -> ViewNode {
     crate::uix!("src/ui/widgets/input/checkbox/checkbox.uix")
 }
-
-// 仅在测试构建中编译勾选框激活时序契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/checkbox__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

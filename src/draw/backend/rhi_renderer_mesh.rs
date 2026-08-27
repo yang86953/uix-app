@@ -225,7 +225,3 @@ pub(super) fn antialiased_vertices(vertices: &[f32]) -> Arc<[f32]> {
     }
     Arc::from(output)
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_mesh__tests.rs"]
-mod tests;

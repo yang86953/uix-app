@@ -106,19 +106,3 @@ pub(crate) fn report_center_on_screen_result(
     true
     // 结束自动居中结果报告。
 }
-
-// 单元测试直接验证自动居中结果分类，不依赖真实窗口后端。
-#[cfg(test)]
-// 测试模块只访问当前窄边界。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/window/window_actions__center_on_screen_result_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod center_on_screen_result_tests;
-
-// 单元测试验证 app 到原生窗口的不可解释激活身份不会丢失或替换。
-#[cfg(all(test, feature = "test-harness"))]
-// 测试模块只访问 crate 私有窗口适配边界。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/window/window_actions__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

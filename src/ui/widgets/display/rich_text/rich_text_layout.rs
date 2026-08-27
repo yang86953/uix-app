@@ -100,12 +100,6 @@ fn italic_transform_with_shear(pivot_y: f32, shear: f32) -> Transform {
         .concat(Transform::translate(0.0, -pivot_y))
 }
 
-// 把布局内部回归测试放入独立文件，维持生产组件规模上限。
-#[cfg(test)]
-// 指向布局模块的私有测试实现。
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/rich_text_layout_tests.rs"]
-mod tests;
-
 // 估算布局（不依赖 FontService）。
 // 兼容内部测试与无视觉调用方，复用 UIX 唯一视觉表。
 pub(crate) fn layout_rich_text_with_images(

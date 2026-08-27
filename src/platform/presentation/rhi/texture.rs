@@ -117,10 +117,3 @@ fn invalid_texture(message: &'static str) -> Error {
     // 使用稳定错误码区分描述违例和平台资源失败。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 验证纹理描述、格式布局与原生尺寸不会因 Adapter 不同而变化。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/texture__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

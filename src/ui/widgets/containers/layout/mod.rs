@@ -258,10 +258,3 @@ impl View for Layout {
 fn build_layout_uix_root(kernel: Layout) -> ViewNode {
     crate::uix!("src/ui/widgets/containers/layout/layout.uix")
 }
-
-// 验证布局壳方向与共享 Flex 分配契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/containers/layout__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -151,10 +151,3 @@ impl OpenGlRhiDevice {
         Ok(())
     }
 }
-
-// 验证 OpenGL Adapter 独占的 CPU 上传通道规范化。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/presentation/graphics/opengl/raster/rhi_device_upload__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

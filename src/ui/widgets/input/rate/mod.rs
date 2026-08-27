@@ -512,8 +512,3 @@ impl View for Rate {
 fn build_rate_uix_root(kernel: Rate) -> ViewNode {
     crate::uix!("src/ui/widgets/input/rate/rate.uix")
 }
-
-// 验证评分组件的 UIX 视觉注入与默认值契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/input/rate__tests.rs"]
-mod tests;

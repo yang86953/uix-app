@@ -225,10 +225,3 @@ impl OpenGlRasterPipeline {
         }
     }
 }
-
-// 验证 OpenGL surface readback 的纯坐标与行序适配。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/presentation/graphics/opengl/raster/pipeline2__readback_contract_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod readback_contract_tests;

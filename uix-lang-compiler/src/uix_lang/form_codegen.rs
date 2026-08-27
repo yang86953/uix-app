@@ -1,4 +1,7 @@
 // 引入卫生标识符与过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -837,27 +840,15 @@ fn form_shape_diagnostic(element: &Element) -> Diagnostic {
 }
 
 // 查找具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name == name)
-}
 
 // 查找必需属性。
-fn required_attribute<'a>(
-    // 接收完整元素。
-    element: &'a Element,
-    // 接收属性名。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失时返回组件级诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        Diagnostic::new(
-            element.span,
-            format!("<{}> 缺少必需的 {name} 属性", element.name),
-            "按 Form 类型化映射文档补齐必需属性",
-        )
-    })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        // 诊断标签跟随实际元素名。
+        &element.name,
+        "按 Form 类型化映射文档补齐必需属性",
+    )
 }

@@ -8,12 +8,6 @@ pub(crate) mod impl_main;
 pub(crate) mod render_backend;
 // 叠加层 backdrop 快照独立管理，保持 RenderBackend 文件处于行数上限内。
 pub(crate) mod render_backend_backdrop;
-// 叠加层 backdrop 的薄 RHI 资源与命令契约由独立测试覆盖。
-#[cfg(test)]
-// 测试模块只编译 recording context，不进入生产依赖图。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_backdrop_tests.rs"]
-mod rhi_backdrop_tests;
 // 主 surface 的最终 present 状态机独立管理，保持 RenderBackend 文件可维护。
 pub(crate) mod render_present;
 pub(crate) mod rhi_frame;

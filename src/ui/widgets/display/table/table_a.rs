@@ -603,11 +603,3 @@ impl Table {
         self
     }
 }
-
-// 仅在单元测试中编译表格选择列重叠交互契约。
-#[cfg(test)]
-// 将选择列与右固定列重叠回归收拢在动作解析模块。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/table/table_a__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

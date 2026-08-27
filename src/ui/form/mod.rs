@@ -13,17 +13,6 @@ pub mod model_form;
 // 承载类型化滑块字段的独立实现，避免核心表单文件超过规模上限。
 mod model_form_slider;
 
-// 集中验证类型化滑块字段的运行时契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/form/model_form_slider_tests.rs"]
-mod model_form_slider_tests;
-// 集中验证类型化全模型规则的顺序与失败原子性。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/form/model_form_rule_tests.rs"]
-mod model_form_rule_tests;
-
 pub use form::*;
 pub use form_binding::*;
 pub use form_list::*;

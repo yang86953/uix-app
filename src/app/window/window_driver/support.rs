@@ -673,10 +673,3 @@ pub(super) fn accumulate_frame_diagnostics(
         ..Default::default()
     };
 }
-
-// 卡顿自动记录状态机的单元测试。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/app/window/window_driver/support__slow_frame_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod slow_frame_tests;

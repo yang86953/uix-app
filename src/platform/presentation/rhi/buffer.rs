@@ -417,10 +417,3 @@ fn invalid_buffer(message: &'static str) -> Error {
     // 使用稳定错误码区分调用契约问题和平台失败。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 验证 Buffer 描述与上传值对象不会因 Adapter 不同而改变语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/buffer__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

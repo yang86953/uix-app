@@ -157,6 +157,39 @@ pub struct AttributeCapabilitySpec {
     pub capability: &'static str,
 }
 
+/// 区分已登记状态值类型的形状类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueTypeShape {
+    /// 基础标量类型。
+    Scalar,
+    /// 公开语义构造类型。
+    Semantic,
+    /// 容器集合类型。
+    Collection,
+    /// 可空包装类型。
+    Optional,
+    /// 组件拥有的专用载荷类型。
+    ComponentPayload,
+}
+
+/// 描述 props、state 注解与 record 字段可登记的一个值类型。
+///
+/// 核心语言只登记通用标量、语义、集合与可空形状；组件专属载荷
+/// 类型由拥有它的组件类别登记，并按需挂接 capability 门禁，
+/// 保证组件数据面不会泄漏进核心语言清单。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ValueTypeSpec {
+    pub id: &'static str,
+    /// 语言面书写名称，容器类型保留完整泛型拼写。
+    pub name: &'static str,
+    pub shape: ValueTypeShape,
+    /// 是否允许作为 props 与回调参数的基础值类型。
+    pub allowed_in_props: bool,
+    /// 拥有该类型的参考文档类别；`None` 表示核心语言通用类型。
+    pub owner_category: Option<ComponentCategory>,
+    pub capability: Option<&'static str>,
+}
+
 /// 提供 Compiler System 唯一拥有的只读 UI 投影 schema。
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UiProjectionSchema;
@@ -293,6 +326,29 @@ impl UiProjectionSchema {
         ATTRIBUTE_CAPABILITIES
             .iter()
             .find(|entry| entry.component == component && entry.attribute == attribute)
+    }
+
+    /// 返回完整状态值类型登记表。
+    pub const fn value_types(self) -> &'static [ValueTypeSpec] {
+        VALUE_TYPES
+    }
+
+    /// 按语言面书写名称（含容器泛型拼写）查询值类型登记。
+    pub fn value_type(self, name: &str) -> Option<&'static ValueTypeSpec> {
+        VALUE_TYPES.iter().find(|entry| entry.name == name)
+    }
+
+    /// 生成 state 注解与 record 字段当前登记类型的确定性诊断清单。
+    pub fn supported_value_type_hint(self) -> String {
+        let mut names = self
+            .value_types()
+            .iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>()
+            .join("、");
+        // record 引用是解析器按声明动态识别的补充类别。
+        names.push_str("，或文档内声明的 record 名");
+        names
     }
 }
 
@@ -934,6 +990,22 @@ macro_rules! data_constructor {
     };
 }
 
+macro_rules! value_type {
+    ($name:literal, $shape:ident, $in_props:expr, $owner:expr) => {
+        value_type!($name, $shape, $in_props, $owner, None)
+    };
+    ($name:literal, $shape:ident, $in_props:expr, $owner:expr, $capability:expr) => {
+        ValueTypeSpec {
+            id: concat!("valueType.", $name),
+            name: $name,
+            shape: ValueTypeShape::$shape,
+            allowed_in_props: $in_props,
+            owner_category: $owner,
+            capability: $capability,
+        }
+    };
+}
+
 const DATA_CONSTRUCTORS: &[DataConstructorSpec] = &[
     data_constructor!("SelectOption", "::uix::prelude::SelectOption"),
     data_constructor!(
@@ -1100,6 +1172,39 @@ const DATA_CONSTRUCTORS: &[DataConstructorSpec] = &[
     data_constructor!("Point", "::uix::prelude::Point", "new", true, None),
 ];
 
+// 核心通用类型在前，组件拥有的类型紧随其后；顺序保持诊断清单稳定。
+const VALUE_TYPES: &[ValueTypeSpec] = &[
+    value_type!("String", Scalar, true, None),
+    value_type!("number", Scalar, true, None),
+    value_type!("bool", Scalar, true, None),
+    value_type!("u32", Scalar, false, None),
+    value_type!("usize", Scalar, false, None),
+    value_type!("f32", Scalar, false, None),
+    value_type!("i32", Scalar, false, None),
+    value_type!("Date", Semantic, true, None),
+    value_type!("Time", Semantic, true, None),
+    value_type!("Color", Semantic, true, None),
+    value_type!("Point", Semantic, true, None),
+    value_type!("HashSet<String>", Collection, false, None),
+    value_type!("Vec<String>", Collection, false, None),
+    value_type!("Vec<number>", Collection, false, None),
+    value_type!("Option<String>", Optional, true, None),
+    value_type!(
+        "CascaderValue",
+        ComponentPayload,
+        false,
+        Some(ComponentCategory::Input),
+        Some("tree-widgets")
+    ),
+    value_type!(
+        "Vec<UploadFile>",
+        Collection,
+        false,
+        Some(ComponentCategory::Input),
+        Some("form-pattern")
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -1130,6 +1235,16 @@ mod tests {
         assert_eq!(
             data_ids.len(),
             UI_PROJECTION_SCHEMA.data_constructors().len()
+        );
+
+        let value_type_ids = UI_PROJECTION_SCHEMA
+            .value_types()
+            .iter()
+            .map(|entry| entry.id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            value_type_ids.len(),
+            UI_PROJECTION_SCHEMA.value_types().len()
         );
 
         for entries in [
@@ -1192,6 +1307,7 @@ mod tests {
         assert_eq!(UI_PROJECTION_SCHEMA.slots().len(), 5);
         assert_eq!(UI_PROJECTION_SCHEMA.capabilities().len(), 9);
         assert_eq!(UI_PROJECTION_SCHEMA.attribute_capabilities().len(), 1);
+        assert_eq!(UI_PROJECTION_SCHEMA.value_types().len(), 17);
         assert_eq!(
             UI_PROJECTION_SCHEMA.component("App").unwrap().status,
             RegistrationStatus::Available

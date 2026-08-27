@@ -5,9 +5,10 @@ use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
-// 复用滑块组件族唯一的数值与范围校验规则。
+// 复用滑块组件族唯一的数值与范围校验规则，并引入共享元素属性查找。
+use super::find_attribute;
 use super::slider_codegen::{
-    f64_value, find_attribute, range_endpoint, validate_literal_range, validate_literal_step,
+    f64_value, range_endpoint, validate_literal_range, validate_literal_step,
 };
 // 引入 RangeSlider 属性、结构表达式与诊断契约。
 use super::{AttributeValue, Diagnostic, Element, ExpressionKind, generate_expression};

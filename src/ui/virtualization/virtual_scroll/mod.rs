@@ -995,17 +995,3 @@ impl From<VirtualScrollBuilder> for crate::ui::view::ViewNode {
         crate::ui::view::View::build(builder)
     }
 }
-
-// 仅在测试构建中加载虚拟滚动动态子树契约。
-#[cfg(test)]
-// 显式指向 virtualization 目录中的同级测试文件。
-#[path = "../../../../tests/unit/ui/virtualization/tests.rs"]
-// 将回归测试隔离到独立文件，保持实现文件聚焦。
-mod tests;
-
-// 仅在库测试中编译 VirtualScroll 动态私有状态与完整捕获交接门禁。
-#[cfg(test)]
-// 显式指向 virtualization 目录中的同级动态测试文件。
-#[path = "../../../../tests/unit/ui/virtualization/dynamic_capture_tests.rs"]
-// 挂载生产 renderer 接线的行为测试模块。
-mod dynamic_capture_tests;

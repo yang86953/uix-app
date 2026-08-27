@@ -3,9 +3,10 @@ use proc_macro2::{Ident, Span, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
 
-// 复用 Slider 组件族唯一的有限数值与范围校验规则。
+// 复用 Slider 组件族唯一的有限数值与范围校验规则，并引入共享元素属性查找。
+use super::find_attribute;
 use super::slider_codegen::{
-    f64_value, find_attribute, range_endpoint, validate_literal_range, validate_literal_step,
+    f64_value, range_endpoint, validate_literal_range, validate_literal_step,
 };
 // 引入表单字段语法树、诊断与静态成员映射契约。
 use super::{Attribute, Diagnostic, Element, Node, literal_string, rust_identifier};
@@ -120,22 +121,13 @@ pub(crate) fn generate_orphan_form_slider_item(
 }
 
 // 查找必需属性。
-fn required_attribute<'a>(
-    // 接收完整元素。
-    element: &'a Element,
-    // 接收属性名。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失时返回组件级诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 构造包含恢复建议的稳定错误。
-        Diagnostic::new(
-            // 指向完整字段元素。
-            element.span,
-            // 点名缺失属性。
-            format!("<{}> 缺少必需的 {name} 属性", element.name),
-            // 指向类型化表单字段文档。
-            "按 Form 类型化映射文档补齐必需属性",
-        )
-    })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        // 诊断标签跟随实际元素名。
+        &element.name,
+        "按 Form 类型化映射文档补齐必需属性",
+    )
 }

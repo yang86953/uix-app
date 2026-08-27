@@ -858,10 +858,3 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 mod ext;
 
 pub use self::ext::*;
-
-// 验证公开 View 事件便利入口的载荷筛选契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/view/mod__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

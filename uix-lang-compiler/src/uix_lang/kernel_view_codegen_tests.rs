@@ -1,5 +1,5 @@
 // 引入解析与核心生成入口。
-use super::{generate_view, parse_document, Diagnostic};
+use super::{Diagnostic, generate_view, parse_document};
 
 // 生成测试源码的稳定令牌快照。
 fn generate(source: &str) -> Result<String, Diagnostic> {

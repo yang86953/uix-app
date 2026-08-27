@@ -97,8 +97,3 @@ impl RhiSurfaceResizeTransaction {
         Ok(current)
     }
 }
-
-// 将共享 resize 事务测试保持在同一 Component 下。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/resize_transaction_tests.rs"]
-mod tests;

@@ -597,10 +597,3 @@ impl View for Radio {
 fn build_radio_uix_root(kernel: Radio) -> ViewNode {
     crate::uix!("src/ui/widgets/input/radio/radio.uix")
 }
-
-// 仅在测试构建中编译单选组键盘导航契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/radio__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

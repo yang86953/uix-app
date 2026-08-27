@@ -61,10 +61,3 @@ fn apply_cursor_port(
         ),
     }
 }
-
-// 验证平台调用只在首次请求与光标变化时发生。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/event_loop/pointer_cursor__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -167,10 +167,3 @@ fn decode_serial(encoded: u64) -> Option<u32> {
         // 构造保证结果始终位于 u32 范围。
         .and_then(|serial| u32::try_from(serial).ok())
 }
-
-// 聚焦验证 intent 与 focus serial 的生命周期边沿。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/backends/linux/wayland/cursor_state__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

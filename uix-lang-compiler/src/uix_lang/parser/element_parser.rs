@@ -1,8 +1,9 @@
 // 拆分自 parser.rs：元素、属性与文本解析（含表达式节点构造）。
 // 引入元素解析所需的 AST、词法游标和诊断。
 use super::super::{
-    Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Element, ExpressionNode, Node,
-    SourceSpan, TextNode, parse_expression, parse_style_properties,
+    Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Element, ExpressionNode,
+    Node, SourceSpan, TextNode, WidgetMemberBlock, WidgetMemberKind, parse_expression,
+    parse_style_properties,
 };
 // 引入拆分后的控制绑定解析入口。
 use super::control_binding::{parse_control_binding, require_control_binding};
@@ -337,6 +338,18 @@ pub(super) fn parse_element(
                 for_iteration_setup: Vec::new(),
             });
         }
+        // Widget 模板允许 @props/@state/@computed/@actions 成员声明块。
+        if name == "Widget" {
+            // 尝试解析成员块；前瞻未命中时保持普通文本语义。
+            let member_block = try_parse_widget_member_block(cursor)?;
+            // 命中成员块时保存节点。
+            if let Some(block) = member_block {
+                // 保存成员声明块节点。
+                children.push(Node::WidgetMember(block));
+                // 继续解析下一节点。
+                continue;
+            }
+        }
         // 小于号开始嵌套元素。
         if cursor.starts_with("<") {
             // 递归解析并保存元素。
@@ -356,6 +369,83 @@ pub(super) fn parse_element(
         // 其余内容按文本节点解析。
         children.push(Node::Text(parse_text(cursor)?));
     }
+}
+
+// 尝试把 @名称 { ... } 形状解析为 Widget 成员声明块。
+// 先做无副作用的前瞻（允许前置空白），命中已登记成员且随后为花括号块
+// 时才消费输入；其余情况返回 None 并保持普通文本语义，避免破坏模板文本。
+fn try_parse_widget_member_block(
+    cursor: &mut Cursor<'_>,
+) -> Result<Option<WidgetMemberBlock>, Diagnostic> {
+    // 读取当前源码余量做只读前瞻。
+    let remaining = &cursor.source()[cursor.offset()..];
+    // 去除成员块前的缩进与换行。
+    let trimmed = remaining.trim_start();
+    // 快速排除非 @ 形状。
+    let Some(after_at) = trimmed.strip_prefix('@') else {
+        // 回退到普通文本路径。
+        return Ok(None);
+    };
+    // 提取连续标识符字符作为候选成员名。
+    let name_end = after_at
+        // 寻找首个非标识符字符位置。
+        .find(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        // 全部剩余都是标识符时取整体长度。
+        .unwrap_or(after_at.len());
+    // 截取候选名称。
+    let candidate = &after_at[..name_end];
+    // 名称必须是已登记成员，防止把普通文本中的 @ 提及误判为声明。
+    let member = match candidate {
+        // props 声明块。
+        "props" => WidgetMemberKind::Props,
+        // state 声明块。
+        "state" => WidgetMemberKind::State,
+        // computed 声明块。
+        "computed" => WidgetMemberKind::Computed,
+        // actions 声明块。
+        "actions" => WidgetMemberKind::Actions,
+        // 其他名称保持普通文本语义。
+        _ => return Ok(None),
+    };
+    // 名称之后必须存在花括号块起点；否则可能是行内提及文本。
+    if !after_at[name_end..].trim_start().starts_with('{') {
+        // 回退到普通文本路径。
+        return Ok(None);
+    }
+    // 前瞻命中；保存 @ 起点。
+    let start = cursor.offset();
+    // 真正消费前置空白并读取规范名与跨度。
+    cursor.skip_trivia()?;
+    // 消费事件样式前缀。
+    cursor.consume("@");
+    // 读取成员名；词法形状已由前瞻保证，跨度仅作占位。
+    let _ = cursor
+        .identifier()
+        // 前瞻已保证可读；此处仅防御词法边界变化。
+        .ok_or_else(|| {
+            // 返回非法成员名诊断。
+            Diagnostic::new(
+                // 指向 @ 后位置。
+                cursor.point_span(),
+                // 说明成员名不可读。
+                "成员块缺少合法名称",
+                // 给出允许集合。
+                "只使用 @props、@state、@computed 或 @actions",
+            )
+        })?;
+    // 跳过名称与花括号之间的空白。
+    cursor.skip_trivia()?;
+    // 读取容错花括号体。
+    let (body, _) = cursor.braced_member_block()?;
+    // 返回成员块节点并保留 @ 起点的完整跨度。
+    Ok(Some(WidgetMemberBlock {
+        // 保存成员类别。
+        member,
+        // 保存规范化声明体。
+        body,
+        // 保存从 @ 开始的完整跨度。
+        span: cursor.span_from(start),
+    }))
 }
 
 // 解析一个具名属性。

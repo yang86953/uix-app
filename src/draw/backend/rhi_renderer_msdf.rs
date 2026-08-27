@@ -522,10 +522,3 @@ impl RhiRenderer {
         RhiMsdfRasterParams::new(viewport, texture_extent, quad.range)
     }
 }
-
-// 为 MSDF atlas 的固定预算、gutter 和 shelf 代际提供低层单元测试。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_msdf__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

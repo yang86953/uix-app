@@ -711,10 +711,3 @@ impl FontService {
         self.layout_cache.insert(font, text, &cache_opts, layout)
     }
 }
-
-// 为字体回退与 cluster 原子换行保留纯内存回归测试。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/font_layout__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

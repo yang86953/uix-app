@@ -518,6 +518,17 @@ fn typed_nodes(
                 source_id,
                 expression.span,
             ))),
+            // 成员块在声明解析阶段剥离；出现即代表内部装配错误。
+            Node::WidgetMember(_) => Err(Diagnostic::new(
+                SourceSpan {
+                    start: 0,
+                    end: 0,
+                    line: 1,
+                    column: 1,
+                },
+                "成员声明块不是可投影节点",
+                "成员块只能作为 <Widget> 直接声明，由声明解析器剥离",
+            )),
         })
         .collect()
 }

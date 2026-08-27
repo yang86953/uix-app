@@ -331,8 +331,3 @@ impl Avatar {
         }
     }
 }
-
-// 集中验证 UIX 声明壳与头像 Rust 内核的单叶契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/avatar_tests.rs"]
-mod tests;

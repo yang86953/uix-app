@@ -1,4 +1,7 @@
 // 引入卫生事件变量所需的标识符与跨度。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -114,34 +117,14 @@ pub(crate) fn generate_collapse(element: &Element) -> Result<TokenStream, Diagno
 }
 
 // 查找 Collapse 的必需属性。
-fn required_attribute<'a>(
-    // 接收完整元素。
-    element: &'a Element,
-    // 接收必需属性名称。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 在解析器保证唯一的属性列表中查找名称。
-    find_attribute(element, name).ok_or_else(|| {
-        // 返回必需属性诊断。
-        Diagnostic::new(
-            // 指向完整 Collapse 元素。
-            element.span,
-            // 明确缺失的属性名称。
-            format!("<Collapse> 缺少必需的 {name} 属性"),
-            // 给出最小规范写法。
-            "使用 <Collapse panels={collapse_panels} />",
-        )
-    })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "Collapse",
+        "使用 <Collapse panels={collapse_panels} />",
+    )
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性集合。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

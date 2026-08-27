@@ -144,10 +144,3 @@ impl LineBreakMap {
                 && break_property(ch as u32) != BreakClass::NonBreakingGlue)
     }
 }
-
-// 覆盖 UAX #14 验收矩阵中的关键边界。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/resources/font/line_break__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

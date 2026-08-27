@@ -7,6 +7,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Slider 属性、表达式与诊断契约。
 use super::{Attribute, AttributeValue, Diagnostic, Element, generate_expression};
+// 引入共享元素属性查找，替代模块内副本。
+use super::find_attribute;
 
 // 生成保持 State<f64> 双向绑定的单值滑块节点。
 pub(crate) fn generate_slider(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -257,13 +259,3 @@ pub(super) fn validate_literal_step(
 }
 
 // 查找元素上的具名属性。
-pub(super) fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

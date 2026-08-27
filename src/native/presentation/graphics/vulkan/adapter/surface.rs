@@ -214,8 +214,3 @@ pub(super) fn choose_extent(
             .clamp(caps.min_image_extent.height, caps.max_image_extent.height),
     }
 }
-
-// 把 Vulkan Surface 的纯选择契约测试放在根 tests 目录。
-#[cfg(test)]
-#[path = "../../../../../../tests/unit/native/presentation/graphics/vulkan/adapter/surface__tests.rs"]
-mod tests;

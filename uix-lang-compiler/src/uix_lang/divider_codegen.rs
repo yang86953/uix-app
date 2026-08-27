@@ -6,7 +6,7 @@ use quote::quote;
 // 引入共享公共属性生成器与可见节点判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Divider 所需的语法树、属性值生成器与诊断。
-use super::{boolean_value, literal_string, string_value, Diagnostic, Element};
+use super::{Diagnostic, Element, boolean_value, literal_string, string_value};
 
 // 生成文档化 Divider 标签对应的公开 Rust View。
 pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnostic> {

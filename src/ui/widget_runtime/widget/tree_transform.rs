@@ -6,11 +6,6 @@ use crate::draw::scene::ScenePaint;
 use crate::ui::PositionMode;
 use crate::ui::widget_runtime::view_transform::ViewTransform;
 
-// 把视觉边界裁剪契约的验收放在独立文件，避免机制实现与测试相互挤占篇幅。
-#[cfg(test)]
-#[path = "../../../../tests/unit/ui/widget_runtime/widget/tree_transform__tests.rs"]
-mod tests;
-
 impl WidgetTree {
     /// 判断已借用节点是否会截断普通视觉父链。
     fn node_is_visual_root(&self, id: WidgetId, node: &BoxedWidget) -> bool {

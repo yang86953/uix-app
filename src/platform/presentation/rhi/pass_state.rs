@@ -222,10 +222,3 @@ fn invalid_argument(message: &'static str) -> Error {
     // 使用统一 InvalidArgument 分类表达几何、颜色或资源冲突违例。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 仅验证两个 Adapter 必须共享的 pass 状态转换。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/pass_state__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

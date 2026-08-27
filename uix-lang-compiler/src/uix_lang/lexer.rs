@@ -686,6 +686,84 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    // 读取成员声明块的花括号体；允许空体并保留多行源码。
+    pub(crate) fn braced_member_block(&mut self) -> Result<(String, SourceSpan), Diagnostic> {
+        // 保存块起点。
+        let start = self.offset;
+        // 消费起始花括号。
+        self.consume("{");
+        // 保存内容起点。
+        let content_start = self.offset;
+        // 跟踪单引号字符串状态。
+        let mut quoted = false;
+        // 跟踪字符串内转义状态。
+        let mut escaped = false;
+        // 跟踪嵌套花括号深度（如 record 对象初始值）。
+        let mut nested_depth = 0usize;
+        // 扫描到与起始花括号配对的结束花括号。
+        loop {
+            // 读取下一字符或报告未闭合。
+            let Some(next) = self.bump() else {
+                // 返回完整未闭合跨度。
+                return Err(Diagnostic::new(
+                    // 覆盖块起点到文件末尾。
+                    self.span_from(start),
+                    // 陈述失败原因。
+                    "成员声明块缺少结束花括号",
+                    // 给出确定修复动作。
+                    "在成员声明块末尾添加 }",
+                ));
+            };
+            // 字符串内的转义只影响下一字符。
+            if escaped {
+                // 清除转义状态。
+                escaped = false;
+                // 继续扫描。
+                continue;
+            }
+            // 字符串内反斜杠开启转义。
+            if quoted && next == '\\' {
+                // 标记下一字符被转义。
+                escaped = true;
+                // 继续扫描。
+                continue;
+            }
+            // 单引号切换字符串状态。
+            if next == '\'' {
+                // 翻转字符串状态。
+                quoted = !quoted;
+                // 继续扫描。
+                continue;
+            }
+            // 字面量内的左花括号进入嵌套深度。
+            if !quoted && next == '{' {
+                // 增加嵌套深度。
+                nested_depth += 1;
+                // 继续扫描。
+                continue;
+            }
+            // 嵌套右花括号只退出一层。
+            if !quoted && next == '}' && nested_depth > 0 {
+                // 减少嵌套深度。
+                nested_depth -= 1;
+                // 继续寻找外层闭合花括号。
+                continue;
+            }
+            // 外层闭合花括号结束成员块。
+            if !quoted && next == '}' {
+                // 结束偏移排除闭合花括号。
+                let content_end = self.offset - next.len_utf8();
+                // 返回去除外围空白的内容与完整块跨度；空体合法。
+                return Ok((
+                    // 返回规范化后的声明体源码。
+                    self.source[content_start..content_end].trim().to_string(),
+                    // 返回包含 @ 名称起点的完整跨度由调用方计算。
+                    self.span_from(start),
+                ));
+            }
+        }
+    }
+
     // 计算给定 UTF-8 字节偏移的一基行列。
     fn line_column(&self, offset: usize) -> (usize, usize) {
         let cached = self.line_column_cache.get();

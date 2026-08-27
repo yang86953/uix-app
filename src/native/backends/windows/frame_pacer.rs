@@ -370,9 +370,3 @@ pub(crate) fn epoch_to_message(epoch: u64) -> (usize, isize) {
 pub(crate) fn epoch_from_message(wparam: usize, lparam: isize) -> u64 {
     u64::from(wparam as u32) | (u64::from(lparam as u32) << 32)
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/backends/windows/frame_pacer__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

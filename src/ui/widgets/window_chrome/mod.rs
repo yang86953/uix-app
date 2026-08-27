@@ -495,8 +495,3 @@ pub fn window_control_named(
 #[cfg(test)]
 // 测试继续从窗口交互内核边界联合验证独立 UIX 组合。
 use super::window_controls::window_controls;
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/window_chrome__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

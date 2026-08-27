@@ -109,6 +109,18 @@ pub(crate) fn generate_float_button_group(
                     "直接列出源码顺序稳定的 <FloatButton> 子元素",
                 ));
             }
+            // 成员块是声明载体，不构成浮动按钮子项。
+            Node::WidgetMember(block) => {
+                // 返回块形状诊断。
+                return Err(Diagnostic::new(
+                    // 指向成员块。
+                    block.span,
+                    // 说明静态根类型要求。
+                    "<FloatButtonGroup> 不接受成员声明块子节点",
+                    // 给出正确归属提醒。
+                    "把 @props/@state/@computed/@actions 移入 <Widget> 模板声明区",
+                ));
+            }
         }
     }
 

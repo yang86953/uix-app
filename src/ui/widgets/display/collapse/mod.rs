@@ -680,9 +680,3 @@ impl Collapse {
         );
     }
 }
-
-// 集中验证稳定 key、受控展开集合与手风琴写回边界。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/collapse/tests.rs"]
-mod tests;

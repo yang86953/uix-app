@@ -460,14 +460,10 @@ fn split_action_entries(source: &str, span: SourceSpan) -> Result<Vec<(usize, us
         ));
     }
     let range = trim_range(source, start, source.len());
-    if range.0 == range.1 {
-        return Err(Diagnostic::new(
-            subspan(span, source, start, source.len()),
-            "actions 不能以逗号结尾",
-            "删除末尾逗号",
-        ));
+    // 尾随逗号是成员块的多行书写惯用法；空尾段直接忽略。
+    if range.0 != range.1 {
+        entries.push(range);
     }
-    entries.push(range);
     Ok(entries)
 }
 

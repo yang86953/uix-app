@@ -291,9 +291,3 @@ impl TsfDocumentLock {
         self.granted == Some(TsfLockKind::ReadWrite)
     }
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/backends/windows/tsf_document__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

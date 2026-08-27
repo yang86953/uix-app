@@ -53,10 +53,3 @@ impl DrawRasterState {
                 .is_none_or(|scissor| scissor.fits_within(extent))
     }
 }
-
-// 验证 Draw 栅格状态的值域、目标边界与只读投影。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/draw_raster__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

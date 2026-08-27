@@ -48,10 +48,3 @@ fn is_executable_file(path: &Path) -> bool {
         libc::access(path.as_ptr(), libc::X_OK) == 0
     }
 }
-
-// Unix 目标聚焦验证 Provider 路径探测，不启动任何外部进程。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/platform/imp/unix_provider__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

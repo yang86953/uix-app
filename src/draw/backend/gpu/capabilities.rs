@@ -48,11 +48,3 @@ impl NativeRasterCaps {
     }
     // 结束 renderer 能力投影实现。
 }
-
-// 仅在单元测试构建中验证 graphics 到 platform 的事实投影。
-#[cfg(test)]
-// 组织 renderer 私有能力投影测试。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/capabilities__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

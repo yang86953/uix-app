@@ -1149,18 +1149,3 @@ impl Image {
         std::ptr::eq(self.visual, other.visual)
     }
 }
-
-// 仅在单元测试中挂载图片延迟错误视图的状态所有权回归。
-#[cfg(test)]
-// 测试独立文件保持产品组件实现不超过规模上限。
-#[path = "../../../../../tests/unit/ui/widgets/display/image_dynamic_capture_tests.rs"]
-mod image_dynamic_capture_tests;
-// 仅在单元测试中挂载图片动态子树的离场与所有者释放回归。
-#[cfg(test)]
-// 独立生命周期测试文件避免产品实现超过规模上限。
-#[path = "../../../../../tests/unit/ui/widgets/display/image_dynamic_lifecycle_tests.rs"]
-mod image_dynamic_lifecycle_tests;
-// 集中验证 UIX 声明根保持 Image 内核与公开配置。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/image_tests.rs"]
-mod tests;

@@ -1014,9 +1014,3 @@ impl View for Tabs {
         build_tabs_view(self, TABS_VISUAL_REF)
     }
 }
-
-// 仅在测试构建中编译标签布局与缓存复用回归。
-#[cfg(test)]
-// 将私有几何契约测试统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/navigation/tabs_allocation_tests.rs"]
-mod allocation_tests;

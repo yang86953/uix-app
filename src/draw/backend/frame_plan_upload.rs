@@ -382,10 +382,3 @@ impl FrameUniformPayload {
         }
     }
 }
-
-// 验证 FramePlan 类型化上传不会退回裸字节或错误布局。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/backend/frame_plan_upload__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

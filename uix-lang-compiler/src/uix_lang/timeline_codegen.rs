@@ -1,4 +1,3 @@
-// 引入过程宏令牌流。
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -6,7 +5,10 @@ use quote::quote;
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Timeline 属性、表达式与诊断契约。
-use super::{Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression};
+use super::{
+    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
+    optional_boolean,
+};
 
 // 生成绑定类型化时间轴项集合的 Timeline 叶节点。
 pub(crate) fn generate_timeline(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -73,45 +75,16 @@ pub(crate) fn generate_timeline(element: &Element) -> Result<TokenStream, Diagno
 }
 
 // 生成可选布尔属性，并显式保留 false 默认值。
-fn optional_boolean(element: &Element, name: &str) -> Result<TokenStream, Diagnostic> {
-    // 显式属性复用统一布尔诊断与动态表达式生成。
-    find_attribute(element, name)
-        // 把可选属性转换为可选生成结果。
-        .map(boolean_value)
-        // 把 Option<Result> 转换为 Result<Option>。
-        .transpose()
-        // 缺省时生成类型明确的布尔字面量。
-        .map(|value| value.unwrap_or_else(|| quote! { false }))
-    // 结束可选布尔属性生成函数。
-}
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-    // 结束属性查找函数。
-}
 
 // 查找 Timeline 的必需属性。
 fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失属性时构造确定诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 返回完整必需属性错误。
-        Diagnostic::new(
-            // 指向完整 Timeline 元素。
-            element.span,
-            // 点名缺失属性。
-            format!("<Timeline> 缺少必需的 {name} 属性"),
-            // 给出最小合法写法。
-            "使用 <Timeline items={timeline_items} />",
-        )
-        // 结束缺失属性诊断闭包。
-    })
-    // 结束必需属性查找函数。
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "Timeline",
+        "使用 <Timeline items={timeline_items} />",
+    )
 }

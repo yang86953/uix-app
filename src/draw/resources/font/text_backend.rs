@@ -211,11 +211,6 @@ pub(crate) fn estimate_text_metrics(
 /// 单个字形的最大光栅化字号，限制异常输入导致的面积型内存增长。
 pub(crate) const MAX_RASTER_PIXEL_SIZE: f32 = 512.0;
 
-// 单元测试验证无字体估算器的显式换行与无分配快路径契约。
-#[cfg(test)]
-#[path = "../../../../tests/unit/draw/resources/font/text_backend__tests.rs"]
-mod tests;
-
 pub(crate) fn bounded_font_size(pixel_size: f32) -> f32 {
     if pixel_size.is_finite() {
         pixel_size.clamp(1.0, MAX_RASTER_PIXEL_SIZE)

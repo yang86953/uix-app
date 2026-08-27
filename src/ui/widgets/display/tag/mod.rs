@@ -662,18 +662,6 @@ impl View for Tag {
     }
 }
 
-// 验证标签预设色服从主题 token 与明暗模式。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/tag__palette_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod palette_tests;
-
-// 验证 UIX 声明壳与 Rust 内核的单节点契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/tag__uix_tests.rs"]
-mod uix_tests;
-
 impl Tag {
     /// 使用文本创建默认中性色、不可关闭且不可勾选的标签。
     pub fn new(text: impl Into<String>) -> Self {

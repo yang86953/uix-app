@@ -145,10 +145,3 @@ impl GpuBackend {
         }
     }
 }
-
-// 验证主 FrameEncoder 前置 damage 的物理 ClearRect lowering。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_surface_clear__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

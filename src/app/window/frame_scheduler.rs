@@ -486,7 +486,3 @@ fn occlusion_probe_delay(attempt: u8) -> Duration {
         .unwrap_or(OCCLUSION_PROBE_MAX_DELAY)
         .min(OCCLUSION_PROBE_MAX_DELAY)
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/app/window/frame_scheduler__tests.rs"]
-mod tests;

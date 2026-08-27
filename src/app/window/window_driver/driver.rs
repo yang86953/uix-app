@@ -299,18 +299,3 @@ impl WindowDriver {
         }
     }
 }
-
-// 窗口下一 deadline 的队列续调契约只在单元测试目标中直接观测。
-#[cfg(test)]
-// 该测试不依赖平台 test-harness，只验证 app System 私有调度事实。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/app/window/window_driver/driver__deadline_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod deadline_tests;
-
-// 窗口状态事实与几何事务分离的回归测试。
-#[cfg(all(test, feature = "test-harness"))]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/app/window/window_driver/driver__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

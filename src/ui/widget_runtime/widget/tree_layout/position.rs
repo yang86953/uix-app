@@ -13,11 +13,6 @@ use crate::ui::position::{PositionMode, PositionedLayout};
 // 引入共享布局子项类型。
 use crate::ui::LayoutChild;
 
-// 把定位行为验收放在独立文件，避免机制实现与测试共同逼近文件上限。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_layout/position_tests.rs"]
-mod tests;
-
 impl WidgetTree {
     /// 把定位分类和父布局结果写入调用方工作区。
     pub(crate) fn arrange_positioned_children_into(

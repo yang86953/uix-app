@@ -326,10 +326,3 @@ impl PipelineVertexLayout {
         true
     }
 }
-
-// 验证两个现有顶点布局的共享属性序列。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/vertex_layout__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

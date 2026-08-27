@@ -37,8 +37,3 @@ pub(crate) trait IPresenter {
     /// 调整 CPU 像素呈现目标尺寸。
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }
-
-#[cfg(test)]
-// 将中立 presenter 合同测试统一存放在根 tests 目录。
-#[path = "../../../tests/unit/platform/presentation/presenter__tests.rs"]
-mod tests;

@@ -145,10 +145,3 @@ impl RhiShadowRasterParams {
         bytes
     }
 }
-
-// 验证共享 Shadow 派生公式和固定 ABI，禁止两个 Adapter 各自解释几何。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/shadow__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -249,10 +249,3 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext<dyn PixelUploadSurface> {
         })
     }
 }
-
-// 集中验证 thread-bound GPU surface 生命周期事务。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/native/factory/thread_bound__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

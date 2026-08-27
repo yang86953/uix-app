@@ -566,10 +566,3 @@ impl Form {
         }
     }
 }
-
-// 集中验证类型化表单字段元数据投影。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/form/model_form__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

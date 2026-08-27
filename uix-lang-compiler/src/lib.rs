@@ -884,6 +884,14 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
         });
     }
     let document = ir.emission_document();
+    // 组件专属值类型在任何生成目标前统一执行 capability 门禁；check 与 AOT 共享同一诊断。
+    crate::uix_lang::validate_value_type_capabilities(&document, capability_enabled).map_err(
+        |diagnostic| LoweringDiagnostic {
+            code: "UIX2000",
+            source_id: diagnostic.source_id.unwrap_or(ir.root().span.source_id),
+            diagnostic,
+        },
+    )?;
     let root_source = ir.root().span.source_id;
     let widget_sources = ir.widget_source_ids();
     let record_sources = ir.record_source_ids();

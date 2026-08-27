@@ -9,7 +9,7 @@
 | **已实现** | 上层单一源码 | `src/app`、`src/ui`、`src/draw` 对 `crate::native` / `native::` 的生产引用为 0；UI 与 app 不直连 RHI，Drawing 只消费 platform 通用 RHI/Surface 合同。 |
 | **已实现** | platform 组合边界 | `src/platform/composition_root.rs` 是 `src/platform` 中唯一允许依赖 concrete native backend 的文件；中立合同、该组合根与 `src/native` concrete adapter 共同构成 platform 层。 |
 | **已实现** | 源码边界 | 上层 OS/API 中立性、唯一 concrete 组合根、11 类 pipeline 的单一规范，以及 Vulkan、D3D11、OpenGL 对共享 Surface 生命周期的消费均已落地；这些物理结构只由架构审查维护，不建立项目测试。 |
-| **待验收** | Windows D3D11 公开运行 | 真实 Windows D3D11 公开入口尚未执行；该项是 `0.0.1` 发布门禁，不能由交叉链接或内部门禁替代。实现边界与执行条件见 [backend 状态矩阵](backend.md#当前实现状态)，实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
+| **待验收** | Windows D3D11 公开运行 | 真实 Windows D3D11 公开入口尚未执行；该状态只描述事实，不构成 `0.0.1` 的发布前提。实现边界与验证方式见 [backend 状态矩阵](backend.md#当前实现状态)，实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
 
 当前生产依赖顺序只有一条：
 

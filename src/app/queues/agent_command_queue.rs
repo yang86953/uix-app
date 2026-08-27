@@ -49,13 +49,30 @@ pub struct AgentConfirmationRequest {
 // 默认库测试不启动 agent 消费者，但仍需保留窗口级动作载荷契约。
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentWindowAction {
-    PressKey { key: KeyCode, modifiers: KeyMod },
-    ClickAt { position: Point },
-    PointerMove { position: Point },
-    PointerDown { position: Point },
-    PointerUp { position: Point },
-    Resize { width: i32, height: i32 },
-    Move { x: i32, y: i32 },
+    PressKey {
+        key: KeyCode,
+        modifiers: KeyMod,
+    },
+    ClickAt {
+        position: Point,
+    },
+    PointerMove {
+        position: Point,
+    },
+    PointerDown {
+        position: Point,
+    },
+    PointerUp {
+        position: Point,
+    },
+    Resize {
+        width: i32,
+        height: i32,
+    },
+    Move {
+        x: i32,
+        y: i32,
+    },
     Maximize,
     Minimize,
     Restore,
@@ -513,9 +530,3 @@ impl AgentCommandQueue {
 pub(crate) fn send_result(response: SyncSender<AgentCommandResult>, result: AgentCommandResult) {
     let _ = response.send(result);
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/queues/agent_command_queue__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

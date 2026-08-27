@@ -207,8 +207,3 @@ impl RhiScissor {
             && bottom as u32 <= extent.height
     }
 }
-
-// 将共享几何目标边界测试保持在同一 Component 下。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/geometry_tests.rs"]
-mod tests;

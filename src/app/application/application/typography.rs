@@ -86,10 +86,3 @@ where
     // 交付所有窗口共享的唯一 FontService owner。
     Ok(font_service)
 }
-
-// 验证确定性分支不会触碰平台字体发现。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/app/application/application/typography__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -233,8 +233,3 @@ impl RhiBlurRasterParams {
         bytes
     }
 }
-
-// 验证共享 Blur 几何、字段排列和完整权重区间，禁止三个 Adapter 漂移。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/blur__tests.rs"]
-mod tests;

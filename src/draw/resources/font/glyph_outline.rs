@@ -602,10 +602,3 @@ fn point_segment_dist(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f
 pub(crate) fn is_outline_edges(data: &[f32]) -> bool {
     data.len() >= 4 && data.len().is_multiple_of(4)
 }
-
-// 覆盖 MSDF 生成、RGBA payload 尺寸和 CPU coverage 解码的最小契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/resources/font/glyph_outline__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

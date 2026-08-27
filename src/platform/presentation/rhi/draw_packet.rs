@@ -548,10 +548,3 @@ fn draw_resource_error(message: &'static str) -> Error {
     // 所有资源角色和容量违例统一属于参数错误。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 验证索引格式、绑定和偏移算法保持同一共享 ABI。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/draw_packet__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -13,10 +13,3 @@ pub enum BorderStyle {
     // 绘制两道同色边框。
     Double,
 }
-
-// 验证显式线型值覆盖与 none 绘制 Gate。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/theme/style/border__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

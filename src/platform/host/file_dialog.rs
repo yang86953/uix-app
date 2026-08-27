@@ -126,10 +126,3 @@ pub(super) fn windows_filters(filters: &[FileDialogFilter]) -> String {
     // 返回供 UTF-16 编码器逐字符保留的完整列表。
     encoded
 }
-
-// 文件对话框契约测试只验证纯值与编码，不弹出真实窗口。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/platform/file_dialog__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

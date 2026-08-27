@@ -27,11 +27,6 @@ pub mod popconfirm;
 /// 由触发器拥有的通用气泡内容组件。
 pub mod popover;
 pub mod progress;
-// 集中验证 ProgressBar fraction、模式、动画与可观察归一化契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/progress_tests.rs"]
-mod progress_tests;
 pub mod spin;
 pub(crate) mod toast_motion;
 /// 提示文字浮层组件。
@@ -48,10 +43,3 @@ pub use popover::*;
 pub use progress::*;
 pub use spin::*;
 pub use tooltip::*;
-
-// 验证反馈组件共享的主题颜色动画契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/mod__color_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod color_tests;

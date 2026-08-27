@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -75,6 +78,18 @@ pub(crate) fn generate_popconfirm(element: &Element) -> Result<TokenStream, Diag
                 "<Popconfirm> 不接受插值作为直接 trigger",
                 // 给出显式静态 View 修复路径。
                 "把插值放入唯一静态 Label 或 Container",
+            ));
+        }
+        // 成员块是声明载体，不能承担 trigger 身份。
+        Node::WidgetMember(_) => {
+            // 返回成员块 trigger 诊断。
+            return Err(Diagnostic::new(
+                // 指向完整 Popconfirm 元素。
+                element.span,
+                // 说明成员块不满足组合生命周期契约。
+                "<Popconfirm> 不接受成员声明块作为直接 trigger",
+                // 给出显式静态 View 修复路径。
+                "把 @props/@state/@computed/@actions 移入 <Widget> 模板声明区",
             ));
         }
     };
@@ -210,29 +225,14 @@ fn handler_expression(attribute: &Attribute, name: &str) -> Result<TokenStream, 
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已经保证同名属性唯一。
-    element
-        // 借用有序属性集合。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}
 
 // 查找 Popconfirm 的必需属性。
 fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失属性时构造确定诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 返回完整必需属性错误。
-        Diagnostic::new(
-            // 指向完整 Popconfirm 元素。
-            element.span,
-            // 点名缺失属性。
-            format!("<Popconfirm> 缺少必需的 {name} 属性"),
-            // 给出最小合法组合写法。
-            "使用 <Popconfirm title=\"确定删除？\"><Button>删除</Button></Popconfirm>",
-        )
-    })
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "Popconfirm",
+        "使用 <Popconfirm title=\"确定删除？\"><Button>删除</Button></Popconfirm>",
+    )
 }

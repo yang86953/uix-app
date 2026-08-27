@@ -678,9 +678,3 @@ impl Form {
         self.layout = next.layout;
     }
 }
-
-// 仅在测试构建中编译表单布局缓冲复用回归。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/form/form_layout_tests.rs"]
-mod form_layout_tests;

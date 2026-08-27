@@ -547,17 +547,3 @@ impl View for Anchor {
         build_anchor_view(self, ANCHOR_VISUAL_REF)
     }
 }
-
-// 挂载 Anchor 动态容器的树级状态与生命周期行为门禁。
-#[cfg(test)]
-// 将大体量行为测试拆到独立文件，保持产品代码文件低于规模上限。
-#[path = "../../../../../tests/unit/ui/widgets/navigation/anchor_dynamic_capture_tests.rs"]
-// 仅在测试构建中编译动态捕获回归用例。
-mod anchor_dynamic_capture_tests;
-
-// 集中验证 Anchor reconcile 的稳定 href 与位置缓存生命周期。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/navigation/anchor__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

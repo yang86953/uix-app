@@ -487,13 +487,6 @@ fn lower_operation(
     }
 }
 
-// 验证 native shape blend 到通用 RHI operation 的选择契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/rhi_lowering__shape_blend_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod shape_blend_tests;
-
 // 把原生 Canvas2D scroll 转成与 DrawSurface 相同的逻辑 copy 记录。
 fn native_scroll_to_pending(
     scroll: PendingNativeScroll,

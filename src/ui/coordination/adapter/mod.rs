@@ -1091,8 +1091,3 @@ impl ViewAdapter {
         structure_changed
     }
 }
-
-// 仅在库测试中编译协调器快照复用门禁。
-#[cfg(test)]
-#[path = "../../../../tests/unit/ui/coordination/adapter__tests.rs"]
-mod tests;

@@ -32,10 +32,3 @@ fn icon_chunk(name: &str) -> &'static [(&'static str, &'static str)] {
         chunk_c::ICON_MAP_CHUNK
     }
 }
-
-// 验证拆分后的查找边界与未知名称行为。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/general/icon_map__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

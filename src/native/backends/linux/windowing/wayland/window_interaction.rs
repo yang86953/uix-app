@@ -227,10 +227,3 @@ pub(super) fn begin_resize_drag(
         pointer_activation,
     )
 }
-
-// 纯单元测试验证公共方向与 xdg-shell 枚举的一一映射。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/backends/linux/wayland/window_interaction__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

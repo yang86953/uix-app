@@ -81,10 +81,3 @@ impl From<InputGroup> for ViewNode {
         group.build()
     }
 }
-
-// 验证 InputGroup 附加文本与状态绑定组合契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/input_group__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

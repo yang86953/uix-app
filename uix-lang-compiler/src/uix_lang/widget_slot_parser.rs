@@ -129,12 +129,15 @@ fn collect_slots(
 }
 
 // 判断节点是否包含实际可投影内容。
-fn is_renderable_node(node: &Node) -> bool {
+// 默认与具名槽位共用的实际内容判定；元素、插值可渲染，空白文本与成员块不可。
+pub(super) fn is_renderable_node(node: &Node) -> bool {
     // 元素与插值始终可渲染。
     match node {
         // 任意元素属于实际内容。
         Node::Element(_) | Node::Interpolation(_) => true,
         // 纯格式化空白文本不属于实际内容。
         Node::Text(text) => !text.value.trim().is_empty(),
+        // 成员块是声明载体，不构成插槽内容。
+        Node::WidgetMember(_) => false,
     }
 }

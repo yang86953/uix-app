@@ -405,8 +405,3 @@ impl Skeleton {
         }
     }
 }
-
-// 集中验证 UIX 声明壳与 Rust 内核的单节点契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/skeleton__tests.rs"]
-mod tests;

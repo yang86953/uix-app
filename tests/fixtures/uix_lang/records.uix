@@ -1,4 +1,0 @@
-// 声明供 Rust 业务层共同消费的静态数据形状。
-<Record name="Profile" fields="name: String, active: bool" />
-// 文件根只用于独立检查；uix_items! 仅生成模块级 Record。
-<Text>Profile records</Text>

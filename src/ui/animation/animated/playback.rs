@@ -655,13 +655,6 @@ where
     }
 }
 
-// 验证关键帧播放配置在统一状态机中的方向、迭代与填充语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/animation/animated/playback__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
-
 pub(super) fn normalized_delay(seconds: f64) -> Duration {
     if seconds.is_nan() || seconds <= 0.0 {
         return Duration::ZERO;

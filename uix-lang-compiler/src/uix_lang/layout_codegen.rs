@@ -1,4 +1,7 @@
 // 引入过程宏令牌类型。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入确定性令牌拼接宏。
 use quote::quote;
@@ -669,16 +672,6 @@ fn constant_source<'a>(
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 保持解析器已经验证的唯一属性约束。
-    element
-        // 借用属性列表。
-        .attributes
-        // 遍历源码顺序属性。
-        .iter()
-        // 返回名称匹配项。
-        .find(|attribute| attribute.name == name)
-}
 
 // 返回任意直接子节点的来源跨度。
 fn node_span(node: &Node) -> SourceSpan {
@@ -690,5 +683,7 @@ fn node_span(node: &Node) -> SourceSpan {
         Node::Text(text) => text.span,
         // 插值使用花括号表达式跨度。
         Node::Interpolation(expression) => expression.span,
+        // 成员块保留完整声明跨度。
+        Node::WidgetMember(block) => block.span,
     }
 }

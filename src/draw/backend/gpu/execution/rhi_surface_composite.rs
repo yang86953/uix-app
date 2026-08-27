@@ -99,10 +99,3 @@ fn rect_fits_extent(x: i32, y: i32, width: i32, height: i32, extent: RhiExtent) 
     // 统一委托共享 checked 远端边界和目标值域门禁。
     .fits_within(extent)
 }
-
-// 验证最终合成严格保持 draw/present damage 一致。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_surface_composite__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

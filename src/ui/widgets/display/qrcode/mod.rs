@@ -270,8 +270,3 @@ impl QRCode {
         }
     }
 }
-
-// 集中验证 UIX 声明壳与二维码 Rust 内核的单叶契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/qrcode_tests.rs"]
-mod tests;

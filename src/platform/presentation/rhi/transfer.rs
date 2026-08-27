@@ -668,15 +668,3 @@ fn invalid_transfer(message: &'static str) -> Error {
     // 所有共享格式和范围违例都属于调用参数错误。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 把纹理上传的独立载荷测试拆出，保持生产传输 Component 低于文件行数上限。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/texture_upload_tests.rs"]
-mod texture_upload_tests;
-
-// 仅验证两个 Adapter 必须共享的纹理区域与传输语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/transfer__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

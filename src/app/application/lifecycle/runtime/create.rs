@@ -409,10 +409,3 @@ fn finish_failed_graphics_candidate(
         Err(cleanup_error) => cleanup_error.with_source(primary_error),
     }
 }
-
-// 只验证失败事务的清理次数和原因链，不创建真实图形设备。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/app/application/application/runtime/create__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

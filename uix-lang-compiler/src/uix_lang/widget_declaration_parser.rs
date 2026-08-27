@@ -2,10 +2,102 @@
 use super::widget_parser::{parse_computed, parse_props, parse_states, validate_widget_name};
 // 引入组件模板插槽声明验证器。
 use super::widget_slot_parser::parse_widget_slots;
-// 引入组件声明 AST、通用元素与诊断。
-use super::{AttributeValue, Diagnostic, Element, SourceSpan, WidgetDeclaration};
+// 引入组件声明 AST、通用元素、节点联合与诊断。
+use super::{
+    AttributeValue, Diagnostic, Element, Node, SourceSpan, WidgetDeclaration, WidgetMemberKind,
+};
 // 引入名称去重集合。
 use std::collections::HashSet;
+
+// 表示从模板分拆出的四类成员块源码。
+struct MemberBlockSources {
+    // props 块。
+    props: Option<(String, SourceSpan)>,
+    // state 块。
+    state: Option<(String, SourceSpan)>,
+    // computed 块。
+    computed: Option<(String, SourceSpan)>,
+    // actions 块。
+    actions: Option<(String, SourceSpan)>,
+}
+
+// 把模板子节点分拆为成员声明源码与真实视图体；重复同类块在此拒绝。
+fn split_member_blocks(
+    children: Vec<Node>,
+) -> Result<(MemberBlockSources, Vec<Node>), Diagnostic> {
+    // 保存按类别的成员块源码。
+    let mut sources = MemberBlockSources {
+        props: None,
+        state: None,
+        computed: None,
+        actions: None,
+    };
+    // 保存剔除成员块后的视图体。
+    let mut template = Vec::new();
+    // 逐节点分派。
+    for node in children {
+        // 只拦截成员块节点。
+        if let Node::WidgetMember(block) = &node {
+            // 复制类别与内容后检查重复。
+            let slot = match block.member {
+                // props 类别。
+                WidgetMemberKind::Props => &mut sources.props,
+                // state 类别。
+                WidgetMemberKind::State => &mut sources.state,
+                // computed 类别。
+                WidgetMemberKind::Computed => &mut sources.computed,
+                // actions 类别。
+                WidgetMemberKind::Actions => &mut sources.actions,
+            };
+            // 同一成员只允许一个声明块。
+            if slot.is_some() {
+                // 返回重复成员块诊断。
+                return Err(Diagnostic::new(
+                    // 指向重复块。
+                    block.span,
+                    // 说明重复类别。
+                    format!("组件成员 {} 重复声明块", block.member.as_str()),
+                    // 给出合并建议。
+                    "把声明合并进同一个 @props/@state/@computed/@actions 块",
+                ));
+            }
+            // 保存源码与跨度。
+            *slot = Some((block.body.clone(), block.span));
+            // 成员块不进入组件模板体。
+            continue;
+        }
+        // 成员块之外保留原顺序。
+        template.push(node);
+    }
+    // 返回分拆结果。
+    Ok((sources, template))
+}
+
+// 合流同一成员的字符串属性形式与块级形式；双写返回定向诊断。
+fn merge_member_form(
+    kind: &str,
+    attribute_form: Option<(String, SourceSpan)>,
+    block_form: Option<(String, SourceSpan)>,
+) -> Result<Option<(String, SourceSpan)>, Diagnostic> {
+    // 双写冲突需要显式裁决。
+    if let (Some((attribute_value, attribute_span)), Some(_)) =
+        (attribute_form.as_ref(), block_form.as_ref())
+    {
+        // 返回形式冲突诊断；跨度字段是 Copy 值。
+        return Err(Diagnostic::new(
+            // 指向属性形式。
+            *attribute_span,
+            // 说明同类别双写。
+            format!("组件成员 {kind} 同时使用了属性形式与块级形式"),
+            // 给出二选一修复动作。
+            format!(
+                "删除 {kind}=\"{attribute_value}\" 或删除 @{kind} {{ ... }} 声明块"
+            ),
+        ));
+    }
+    // 任一存在即生效。
+    Ok(attribute_form.or(block_form))
+}
 
 // 把通用顶层 Widget 元素验证为结构化组件声明。
 pub(crate) fn parse_widget_declaration(
@@ -69,15 +161,15 @@ pub(crate) fn parse_widget_declaration(
             // 保存组件名。
             "name" => name = Some((value.clone(), attribute.span)),
             // 保存 props 声明。
-            "props" => props_source = Some((value.as_str(), attribute.span)),
+            "props" => props_source = Some((value.clone(), attribute.span)),
             // 保存 state 声明。
-            "state" => state_source = Some((value.as_str(), attribute.span)),
+            "state" => state_source = Some((value.clone(), attribute.span)),
             // 保存 computed 声明。
-            "computed" => computed_source = Some((value.as_str(), attribute.span)),
+            "computed" => computed_source = Some((value.clone(), attribute.span)),
             // 保存同步 action 声明。
-            "actions" => actions_source = Some((value.as_str(), attribute.span)),
-            // 保存 external 声明。
-            "external" => external_source = Some((value.as_str(), attribute.span)),
+            "actions" => actions_source = Some((value.clone(), attribute.span)),
+            // 保存 external 声明；external 保持字符串属性形式。
+            "external" => external_source = Some((value.clone(), attribute.span)),
             // 其他属性不属于 Widget 元数据。
             _ => {
                 // 返回未知属性诊断。
@@ -106,43 +198,53 @@ pub(crate) fn parse_widget_declaration(
     };
     // 组件名必须可映射为 PascalCase Rust 标识符。
     validate_widget_name(&name, name_span)?;
-    // 解析可选 props 字符串。
+    // 把模板子节点分拆为成员声明块与真实视图体。
+    let (block_sources, children) = split_member_blocks(element.children)?;
+    // 合流字符串属性形式与块级形式的成员源码；同类别双写在此拒绝。
+    let props_source = merge_member_form("props", props_source, block_sources.props)?;
+    // 合流 state 成员。
+    let state_source = merge_member_form("state", state_source, block_sources.state)?;
+    // 合流 computed 成员。
+    let computed_source = merge_member_form("computed", computed_source, block_sources.computed)?;
+    // 合流 actions 成员。
+    let actions_source = merge_member_form("actions", actions_source, block_sources.actions)?;
+    // 解析合并后的 props 源码。
     let props = match props_source {
         // 解析存在的 props。
-        Some((source, span)) => parse_props(source, span)?,
+        Some((source, span)) => parse_props(&source, span)?,
         // 未声明 props 时使用空列表。
         None => Vec::new(),
     };
-    // 解析可选私有 state 字符串。
+    // 解析合并后的私有 state 源码。
     let states = match state_source {
         // 解析存在的 state。
-        Some((source, span)) => parse_states(source, span)?,
+        Some((source, span)) => parse_states(&source, span)?,
         // 未声明 state 时使用空列表。
         None => Vec::new(),
     };
-    // 解析可选有序派生表达式。
+    // 解析合并后的有序派生表达式。
     let computed = match computed_source {
         // 解析存在的 computed。
-        Some((source, span)) => parse_computed(source, span)?,
+        Some((source, span)) => parse_computed(&source, span)?,
         // 未声明 computed 时使用空列表。
         None => Vec::new(),
     };
-    // 解析可选同步业务 action。
+    // 解析合并后的同步 action。
     let mut actions = match actions_source {
         // 解析存在的 actions。
-        Some((source, span)) => super::action_parser::parse_actions(source, span)?,
+        Some((source, span)) => super::action_parser::parse_actions(&source, span)?,
         // 未声明 actions 时使用空列表。
         None => Vec::new(),
     };
-    // 解析可选外部符号白名单。
+    // 解析可选外部符号白名单；external 只保留字符串属性形式。
     let external = match external_source {
         // 解析存在的 external。
-        Some((source, span)) => parse_external(source, span)?,
+        Some((source, span)) => parse_external(&source, span)?,
         // 未声明 external 时使用空列表。
         None => Vec::new(),
     };
     // 递归收集并验证组件模板中的默认与具名插槽。
-    let slots = parse_widget_slots(&element.children)?;
+    let slots = parse_widget_slots(&children)?;
     // props 与 state 共享组件体标识符命名空间。
     for state in &states {
         // 查找同名 prop。
@@ -244,8 +346,8 @@ pub(crate) fn parse_widget_declaration(
         slots,
         // 保存外部符号白名单。
         external,
-        // 转移有序组件体。
-        children: element.children,
+        // 转移剔除成员块后的有序组件体。
+        children,
         // 保存完整声明跨度。
         span: element.span,
     })

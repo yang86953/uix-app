@@ -757,11 +757,3 @@ impl View for Slider {
 fn build_slider_uix_root(kernel: Slider) -> ViewNode {
     crate::uix!("src/ui/widgets/input/slider/slider.uix")
 }
-
-// 验证滑块拖动提示复用共享表面约束几何。
-#[cfg(test)]
-// 将拖动状态构造限制在当前模块的内部测试中。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/slider__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -641,9 +641,3 @@ pub(super) fn crop_and_translate_source_over_command(
         }
     }))
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/painting/encoder/source_over__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

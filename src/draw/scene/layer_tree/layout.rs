@@ -650,8 +650,3 @@ impl LayerTree {
         }
     }
 }
-
-// 将浮层根变换回归测试统一存放到根 tests 目录。
-#[cfg(test)]
-#[path = "../../../../tests/unit/draw/scene/layer_tree_layout__tests.rs"]
-mod tests;

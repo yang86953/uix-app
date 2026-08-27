@@ -15,7 +15,8 @@ use super::{
     ExpressionKind, ExpressionNode, KeyframesDeclaration, Node, RecordDeclaration,
     StyleClassResolver, WidgetDeclaration, WidgetScopeMarker, with_widget_source_marker,
 };
-// 引入既有核心 View 生成入口。
+// 引入核心 View 生成的可渲染节点判定。
+use super::codegen::is_renderable_node;
 use super::generate_view;
 // 引入组件动态样式使用检测。
 use super::dynamic_style_lower::nodes_use_set_style;
@@ -631,6 +632,23 @@ impl WidgetExpander {
                     // 保存改写后的插值。
                     expanded.push(Node::Interpolation(expression));
                 }
+                // 成员块已在声明解析阶段剥离；出现即代表内部装配错误。
+                Node::WidgetMember(_) => {
+                    // 返回内部装配诊断而不是静默展开声明文本。
+                    return Err(Diagnostic::new(
+                        // 使用零跨度防御定位。
+                        super::SourceSpan {
+                            start: 0,
+                            end: 0,
+                            line: 1,
+                            column: 1,
+                        },
+                        // 说明成员块不可展开。
+                        "成员声明块不能参与组件体展开",
+                        // 给出正确归属提醒。
+                        "成员块必须由 <Widget> 声明解析器剥离",
+                    ));
+                }
             }
         }
         // 返回保持源码顺序的节点列表。
@@ -936,10 +954,6 @@ impl WidgetExpander {
 }
 
 // 判断节点是否会生成可见或结构 View。
-fn is_renderable_node(node: &Node) -> bool {
-    // 空白文本只承担源码排版作用。
-    !matches!(node, Node::Text(text) if text.value.trim().is_empty())
-}
 
 // 判断某个元素的属性是否要求 State<T> 句柄表达式。
 // 句柄位属性在组件体内引用同名 state 或 State<T> prop 时改写为句柄本身，

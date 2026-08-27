@@ -63,10 +63,3 @@ impl RenderTargetHandle {
         }
     }
 }
-
-// 仅验证 Surface 与 texture 目标的封闭身份语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/render_target__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

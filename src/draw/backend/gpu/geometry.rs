@@ -197,13 +197,6 @@ pub(super) fn solid_mesh_from_affine_rect(
     }
 }
 
-// 为圆角路径 helper 提供几何闭合和边界回归测试。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/geometry__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
-
 /// 逻辑矩形四角经仿射变换到设备坐标（TL/TR/BR/BL）。
 pub(super) fn glyph_device_corners(
     rect: Rect,

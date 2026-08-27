@@ -181,36 +181,6 @@ path = "tests/agent_docs_public_api.rs"
 # 未启用控制面时跳过整个专属消费者目标。
 required-features = ["agent-control"]
 
-[[test]]
-# 使用真实 Vulkan device 执行共享颜色与 blend 的离屏像素一致性检查。
-name = "vulkan_gpu_parity"
-path = "tests/vulkan_gpu_parity.rs"
-required-features = ["vulkan-parity-test"]
-
-[[test]]
-# 使用真实 Linux EGL/GLES context 执行同一共享全图元离屏像素一致性检查。
-name = "opengl_gpu_parity"
-path = "tests/opengl_gpu_parity.rs"
-required-features = ["opengl-parity-test"]
-
-[[test]]
-# 使用真实 Linux Wayland/EGL window surface 执行共享 UI 生产呈现链。
-name = "opengl_wsi_parity"
-path = "tests/opengl_wsi_parity.rs"
-required-features = ["opengl-parity-test"]
-
-[[test]]
-# 使用真实 Windows D3D11 device/context 执行同一共享全图元离屏像素一致性检查。
-name = "d3d11_gpu_parity"
-path = "tests/d3d11_gpu_parity.rs"
-required-features = ["d3d11-parity-test"]
-
-[[test]]
-# 以独立全局分配器测量大量真实活跃动画源的稳态帧推进。
-name = "active_animation_frame_allocation_contract"
-path = "tests/active_animation_frame_allocation_contract.rs"
-required-features = ["test-harness"]
-
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"

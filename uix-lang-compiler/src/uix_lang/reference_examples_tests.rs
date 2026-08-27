@@ -358,8 +358,10 @@ fn specification_examples_generate_as_documents() {
             });
         }
     }
-    // 当前规范应有三十个明确标记为可执行的示例进入完整生成路径。
-    assert_eq!(total_examples, 30, "UIX 规范示例数量发生未审查变化");
+    // 当前规范应有三十一个明确标记为可执行的示例进入完整生成路径。
+    // 2026-08-27 审查：语法 · Widget 成员由单一属性形式拆为块级与属性两个
+    // 等价围栏（净 +1）；两种形式的解析等价性由 widget_member_block_tests 锁定。
+    assert_eq!(total_examples, 31, "UIX 规范示例数量发生未审查变化");
 }
 
 // 验证已宣告完整实现的目标设计示例持续通过当前完整生成路径。

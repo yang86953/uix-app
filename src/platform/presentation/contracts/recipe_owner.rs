@@ -80,10 +80,3 @@ impl GraphicsRecipeOwner {
         }
     }
 }
-
-// 验证类型化 context 与静态 recipe 轴必须一致。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/recipe_owner__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -202,6 +202,8 @@ fn invalid_chain_start(children: &[Node], start: usize) -> Diagnostic {
             Node::Text(text) => text.span,
             // 插值使用表达式节点跨度。
             Node::Interpolation(expression) => expression.span,
+            // 成员块保留完整声明跨度。
+            Node::WidgetMember(block) => block.span,
         })
         // 越界只可能来自内部调用错误，使用文件起点作防御性定位。
         .unwrap_or(SourceSpan {

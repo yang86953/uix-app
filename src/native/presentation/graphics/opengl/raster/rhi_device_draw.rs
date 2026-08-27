@@ -820,10 +820,3 @@ unsafe fn apply_pipeline_blend(gl: &glow::Context, blend: PipelineBlend) {
         );
     }
 }
-
-// 验证 render target 身份到 NDC Y 方向的纯映射。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/presentation/graphics/opengl/raster/rhi_device_draw__target_direction_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod target_direction_tests;

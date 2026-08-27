@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 // 引入组件展开器与字段绑定。
 use super::widget_codegen::{Bindings, WidgetExpander};
 // 引入组件声明、元素、属性值、节点与诊断 AST。
+// 引入槽位归位共享的实际内容判定。
+use super::widget_slot_parser::is_renderable_node;
 use super::{AttributeValue, Diagnostic, Element, Node, WidgetDeclaration};
 
 // 实现调用方插槽分组与模板占位内联。
@@ -41,6 +43,8 @@ impl WidgetExpander {
                 Node::Element(element) => take_slot_attribute(element)?,
                 // 文本和插值只能进入默认插槽。
                 Node::Text(_) | Node::Interpolation(_) => String::new(),
+                // 成员块已在声明解析阶段剥离；防御性归入默认插槽键。
+                Node::WidgetMember(_) => String::new(),
             };
             // 未声明目标插槽时拒绝静默丢弃子节点。
             if !projections.contains_key(&key) {
@@ -183,15 +187,6 @@ fn take_slot_attribute(element: &mut Element) -> Result<String, Diagnostic> {
 }
 
 // 判断调用方节点是否包含实际可投影内容。
-fn is_renderable_node(node: &Node) -> bool {
-    // 元素与插值始终可渲染。
-    match node {
-        // 任意元素属于实际内容。
-        Node::Element(_) | Node::Interpolation(_) => true,
-        // 纯格式化空白文本不参与默认插槽归位。
-        Node::Text(text) => !text.value.trim().is_empty(),
-    }
-}
 
 // 取得任意调用方子节点的诊断跨度。
 fn node_span(node: &Node) -> super::SourceSpan {
@@ -203,5 +198,7 @@ fn node_span(node: &Node) -> super::SourceSpan {
         Node::Text(text) => text.span,
         // 插值使用完整花括号跨度。
         Node::Interpolation(expression) => expression.span,
+        // 成员块保留完整声明跨度。
+        Node::WidgetMember(block) => block.span,
     }
 }

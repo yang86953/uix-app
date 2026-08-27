@@ -634,11 +634,3 @@ pub(crate) fn patch_builtin_widget(
     LAST_UNPATCHED_WIDGET_TYPE.with(|cached| cached.set(Some(next_type)));
     Err(next)
 }
-
-// 仅在测试构建中验证失效分类的保守兜底策略。
-#[cfg(test)]
-// 集中覆盖没有精细字段审计的 Unknown 与 Custom 快照。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widget_patch__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

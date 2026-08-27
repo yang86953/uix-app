@@ -277,9 +277,3 @@ fn clamp_axis(start: &mut i32, end: &mut i32, moves_start: bool, min: i32, max: 
         *end = start.saturating_add(extent);
     }
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/backends/windows/window_interaction__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

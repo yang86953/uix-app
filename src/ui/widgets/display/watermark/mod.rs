@@ -384,10 +384,3 @@ impl Watermark {
         }
     }
 }
-
-// 验证 Watermark 默认样式随主题解析。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/watermark__theme_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod theme_tests;

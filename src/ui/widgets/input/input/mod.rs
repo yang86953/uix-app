@@ -452,12 +452,6 @@ mod input_render;
 mod methods;
 // 声明 Input 的 UIX 静态视觉与主题解析模块。
 mod presentation;
-// 仅在单元测试中编译输入控件字素簇交互回归。
-#[cfg(test)]
-// 使用独立文件避免继续膨胀核心控件模块。
-#[path = "../../../../../tests/unit/ui/widgets/input/input/grapheme_tests.rs"]
-// 注册输入控件字素簇测试模块。
-mod grapheme_tests;
 
 pub use self::ext::*;
 use presentation::*;

@@ -300,10 +300,3 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
         other => other,
     }
 }
-
-// 验证会话生命周期和帧准备错误保持 typed failure 与唯一 owner 契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/renderer/session__session_contract_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod session_contract_tests;

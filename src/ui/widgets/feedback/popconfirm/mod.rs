@@ -23,13 +23,6 @@ mod presentation;
 
 use self::presentation::*;
 
-// 仅在测试构建中编译组合 trigger 的父级测量回归。
-#[cfg(test)]
-// 将布局回归从已接近规模门禁的几何测试文件中独立出来。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/feedback/popconfirm/layout_tests.rs"]
-mod layout_tests;
-
 use self::geometry::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

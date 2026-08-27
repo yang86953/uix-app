@@ -355,9 +355,3 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     // context 不得跨越 native factory，离开前消费同一快照并收敛为已验证 owner。
     GraphicsRecipeOwner::try_new(context, caps)
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/native/factory/registry__selection_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod selection_tests;

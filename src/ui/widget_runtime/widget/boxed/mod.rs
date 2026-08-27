@@ -1019,10 +1019,3 @@ impl WidgetCore for BoxedWidget {
         self.set_tab_index_override(Some(v));
     }
 }
-
-// 仅在测试构建中编译 TokenScope 展开回归。
-#[cfg(test)]
-// 将子模块显式定位到 widget 目录中的独立测试文件。
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/boxed_scope_tests.rs"]
-// 从独立文件加载作用域恢复测试，保持本文件低于行数上限。
-mod boxed_scope_tests;

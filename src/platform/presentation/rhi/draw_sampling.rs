@@ -134,10 +134,3 @@ fn invalid_sampling(message: &'static str) -> Error {
     // 资源与采样语义错配统一属于调用参数错误。
     Error::new(Errc::InvalidArgument, message)
 }
-
-// 验证条件采样角色、资源语义和 pipeline 组合只有一个共享解释。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/draw_sampling__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

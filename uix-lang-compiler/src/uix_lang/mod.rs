@@ -36,6 +36,10 @@ mod pseudo_style_codegen;
 mod for_identity_codegen;
 // 定义最终 ViewNode 的组件状态装饰应用。
 mod view_decoration_codegen;
+// 定义元素属性查找的共享生成辅助。
+mod attribute_lookup_codegen;
+pub(super) use attribute_lookup_codegen::find_attribute;
+pub(crate) use attribute_lookup_codegen::required_attribute;
 // 定义 record 声明到模块级结构体的生成与语言类型映射。
 mod record_codegen;
 // 定义 UIX 单源静态视觉记录到模块级 Rust 常量的生成。
@@ -134,6 +138,8 @@ mod dynamic_style_lower;
 mod pseudo_style_lower;
 // 定义 Widget 声明级语法与类型白名单解析。
 mod widget_parser;
+// 定义组件专属值类型的 capability 门禁与 schema 反向映射。
+pub(crate) mod value_type_gate;
 // 定义顶层 Visual 具名静态字段解析与 Rust 字段映射。
 mod visual_parser;
 // 定义 Widget prop 类型后缀与受限默认表达式解析。
@@ -143,6 +149,9 @@ mod widget_call_validator;
 // 集中验证 Widget props、state 与名称诊断。
 #[cfg(test)]
 mod widget_tests;
+// 集中验证 Widget 成员声明块解析、双写拒绝与等价展开。
+#[cfg(test)]
+mod widget_member_block_tests;
 // 集中验证同步 action 声明、静态展开与拒绝路径。
 #[cfg(test)]
 mod widget_action_tests;
@@ -672,6 +681,8 @@ pub(crate) use diagnostic::*;
 pub(crate) use widget_declaration_parser::parse_widget_declaration;
 // 向文档解析器暴露 Record 声明验证入口。
 pub(crate) use widget_parser::parse_record_declaration;
+// 暴露组件专属值类型的能力门禁入口。
+pub(crate) use value_type_gate::validate_value_type_capabilities;
 // 向文档解析器暴露 Visual 声明验证入口。
 pub(crate) use visual_parser::parse_visual_declaration;
 // 向 uix_items! 暴露 Record 与 Visual 的统一模块级生成入口。
@@ -878,7 +889,7 @@ pub(crate) use style_value_codegen::parse_color;
 // 向 View 生成器暴露属性值共享映射入口。
 pub(crate) use value_codegen::{
     align_value, boolean_value, deferred_style_diagnostic, justify_value, literal_string,
-    numeric_value, rust_identifier, string_value, typography_value,
+    numeric_value, optional_boolean, rust_identifier, string_value, typography_value,
 };
 
 // 为需要控制流身份的测试提供与公开 uix! 一致的完整文档入口。

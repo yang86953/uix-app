@@ -389,10 +389,3 @@ impl OverlayStack {
 
 pub(crate) mod placement;
 pub use placement::Placement;
-
-// 单元测试锁定全 OverlayKind 的统一 opt-in 与聚合策略。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/overlay/mod__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

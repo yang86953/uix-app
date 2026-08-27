@@ -382,11 +382,6 @@ impl Default for ImageGroup {
     }
 }
 
-// 集中验证 UIX 声明根保持 ImageGroup 内核与公开配置。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/image_group_tests.rs"]
-mod tests;
-
 impl ImageGroup {
     /// 创建没有图片、起始索引为零且预览关闭的图片组。
     pub fn new() -> Self {

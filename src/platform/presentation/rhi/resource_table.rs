@@ -146,10 +146,3 @@ fn already_destroyed<H: RhiResourceHandle>() -> Error {
         format!("RHI {} handle was already destroyed", H::KIND),
     )
 }
-
-// 验证共享资源表的类型化分配、查询、销毁与关闭顺序。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/resource_table__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

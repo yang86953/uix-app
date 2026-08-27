@@ -159,9 +159,3 @@ pub(crate) fn stroke_rect(
         }
     }
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/raster/rasterizer/stroke__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

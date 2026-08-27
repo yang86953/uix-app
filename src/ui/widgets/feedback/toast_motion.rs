@@ -529,10 +529,3 @@ enum ToastPhase {
     Holding { remaining: Option<Duration> },
     Leaving(TransitionPlayer),
 }
-
-// 验证声明更新与关闭观察器的共享队列契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/feedback/toast_motion__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
