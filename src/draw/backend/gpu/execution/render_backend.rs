@@ -9,8 +9,8 @@ use crate::draw::Canvas2D;
 use crate::draw::backend::contract::{
     BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
 };
-// test-harness 实现只暴露 API 无关的规范 surface 快照。
-#[cfg(feature = "test-harness")]
+// test-harness 与 Agent 截屏只暴露 API 无关的规范 surface 快照。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::contract::SurfaceReadback;
 use crate::draw::geometry::types::{BlendMode, ImageHandle};
 use crate::draw::painting::{
@@ -797,7 +797,7 @@ impl RenderBackend for GpuBackend {
     }
 
     // 安排下一次最终 composite 在 submit 与 present 之间读取真实 surface。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     fn request_surface_readback_for_test(&mut self) -> Result<(), Error> {
         // 同一 backend 同时只允许一个请求，禁止覆盖尚未消费的结果。
         if self.surface_readback_requested || self.surface_readback_result.is_some() {
@@ -816,7 +816,7 @@ impl RenderBackend for GpuBackend {
     }
 
     // 消费最终 present 事务产生的回读结果，并始终清理请求状态。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     fn take_surface_readback_for_test(&mut self) -> Result<SurfaceReadback, Error> {
         // 无论 present 是否到达 composite，都允许下一次请求重新开始。
         self.surface_readback_requested = false;

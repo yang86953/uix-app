@@ -14,8 +14,8 @@ use crate::draw::geometry::types::ImageHandle;
 use crate::draw::painting::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::renderer::RenderSession;
 use crate::draw::renderer::{GraphicsFailure, RenderOutcome};
-// test-harness 使用共享信号安排 owner-thread 帧回读。
-#[cfg(feature = "test-harness")]
+// test-harness 与 Agent 截屏使用共享信号安排 owner-thread 帧回读。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackRequest};
 use crate::draw::{Canvas2D, GraphicsCapabilities, RasterPipeline, RenderTarget, UpdateStrategy};
 // 引入 factory 已验证的正交 recipe owner。
@@ -111,8 +111,8 @@ pub struct Renderer {
     /// 脏区清除时使用的背景色；仅 CPU 光栅后端消费。
     pub clear_color: Color,
     shutdown: bool,
-    // 仅在显式测试 feature 下保存应用与当前 Renderer 共用的回读信号。
-    #[cfg(feature = "test-harness")]
+    // 仅在显式 feature 下保存应用与当前 Renderer 共用的回读信号。
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     test_graphics: Option<GraphicsFaultSignal>,
 }
 
@@ -192,14 +192,14 @@ impl Renderer {
             presentation,
             clear_color: Color::from_rgba(0, 0, 0, 0),
             shutdown: false,
-            // 普通构造不隐式开放测试控制面，由应用组合根显式注入。
-            #[cfg(feature = "test-harness")]
+            // 普通构造不隐式开放回读控制面，由应用组合根显式注入。
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             test_graphics: None,
         }
     }
 
-    // 将应用级测试信号绑定到当前 Renderer 帧边界。
-    #[cfg(feature = "test-harness")]
+    // 将应用级信号绑定到当前 Renderer 帧边界。
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn with_test_graphics_signal(mut self, signal: GraphicsFaultSignal) -> Self {
         // 先声明已有消费者，随后应用请求才能获得票据。
         signal.attach_surface_readback();
@@ -210,7 +210,7 @@ impl Renderer {
     }
 
     // 在最终 present 前把一次应用回读请求下沉到当前 backend 事务。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     fn arm_surface_readback_for_test(
         // 借用当前唯一 Renderer owner。
         &mut self,
@@ -376,8 +376,8 @@ impl RenderTarget for Renderer {
         if !matches!(outcome, RenderOutcome::Present(_)) {
             return outcome;
         }
-        // test-harness 在 present 前安排由最终 composite 精确消费的回读请求。
-        #[cfg(feature = "test-harness")]
+        // test-harness / Agent 截屏在 present 前安排由最终 composite 精确消费的回读请求。
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         let pending_readback = self.arm_surface_readback_for_test();
         // 保存最终呈现结果，回读票据只接受同一帧的最终状态。
         let final_outcome = match self.presentation.kind() {
@@ -397,8 +397,8 @@ impl RenderTarget for Renderer {
                 Err(error) => RenderOutcome::Failed(GraphicsFailure::from_error(error)),
             },
         };
-        // test-harness 在最终呈现结果确定后完成一次性票据。
-        #[cfg(feature = "test-harness")]
+        // test-harness / Agent 截屏在最终呈现结果确定后完成一次性票据。
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         if let Some((request, armed)) = pending_readback {
             // 安排成功时按最终呈现状态消费或清理 backend 事务。
             let completion = match (armed, &final_outcome) {

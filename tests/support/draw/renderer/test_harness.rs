@@ -2,6 +2,11 @@
 //!
 //! 信号只在显式 feature 下编译；故障仍由窗口现有图形 FSM 执行，像素回读
 //! 则由 Renderer 在已执行绘制、尚未 present 的 owner-thread 边界完成。
+//! `agent-control` 复用同一回读信号实现协议截屏；故障注入入口在该构建下
+//! 保持未接线，按 dead code 静默。
+
+// agent-control-only 构建不接线故障注入，避免死代码告警淹没真实问题。
+#![cfg_attr(not(feature = "test-harness"), allow(dead_code))]
 
 // 引入一次性结果通道与共享信号同步原语。
 use std::sync::{
@@ -219,5 +224,30 @@ impl GraphicsFaultSignal {
         );
         // 返回唯一请求所有权或明确空值。
         request
+    }
+
+    // 失败路径取消仍在排队的请求；已被 owner thread 取走的请求无法撤回，
+    // 会在下一帧完成时静默丢弃（接收端已释放）。
+    pub(crate) fn cancel_surface_readback(&self) {
+        let Some(request) = self
+            .inner
+            // 借用共享请求槽位。
+            .readback_pending
+            // 等待当前短临界区。
+            .lock()
+            // poison 时槽位内容仍然可以安全清理。
+            .unwrap_or_else(|error| error.into_inner())
+            // 取出唯一待处理请求；槽位为空说明请求已被 owner thread 取走。
+            .take()
+        else {
+            return;
+        };
+        // 以稳定的取消错误完成票据，调用方按未捕获结果处理。
+        request.complete(Err(Error::new(
+            // 取消属于调用方主动放弃，不是图形失败。
+            Errc::InvalidState,
+            // 诊断固定在取消边界。
+            "surface readback request was cancelled",
+        )));
     }
 }

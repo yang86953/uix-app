@@ -5,9 +5,11 @@
   python agent_client.py hello
   python agent_client.py list_windows
   python agent_client.py snapshot [window_id]
+  python agent_client.py screenshot [window_id] [output.png]
   python agent_client.py perform <json-file>   # perform 请求体从 JSON 文件读取
   python agent_client.py click <x> <y> [window_id]
 """
+import base64
 import json
 import os
 import socket
@@ -166,6 +168,35 @@ def main():
                 "generation": generation,
                 "action": {"kind": "click_at", "x": x, "y": y},
             }), ensure_ascii=False))
+        elif command == "screenshot":
+            # 用法: screenshot [window_id] [output.png]；第二参数为纯数字时按
+            # window_id 解析，否则视为输出路径；第三个参数始终是输出路径。
+            window_id = None
+            out_path = "uix-screenshot.png"
+            if len(args) > 1:
+                if args[1].isdigit():
+                    window_id = int(args[1])
+                else:
+                    out_path = args[1]
+            if len(args) > 2:
+                out_path = args[2]
+            if window_id is None:
+                window_id, _ = resolve_window(session)
+            reply = session.send({"type": "screenshot", "window_id": window_id})
+            if not reply.get("ok"):
+                print(json.dumps(reply, ensure_ascii=False))
+                sys.exit(1)
+            data = base64.b64decode(reply["data_base64"])
+            with open(out_path, "wb") as fh:
+                fh.write(data)
+            print(json.dumps({
+                "window_id": reply.get("window_id"),
+                "width": reply.get("width"),
+                "height": reply.get("height"),
+                "format": reply.get("format"),
+                "bytes": len(data),
+                "path": out_path,
+            }, ensure_ascii=False))
         elif command == "perform":
             with open(args[1], encoding="utf-8") as fh:
                 request = json.load(fh)

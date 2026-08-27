@@ -38,10 +38,10 @@ pub struct BackendCapabilities {
     pub scroll_memmove: bool,
 }
 
-/// `test-harness` 可观察的规范 surface 像素快照。
+/// `test-harness` 与 Agent 截屏可观察的规范 surface 像素快照。
 ///
 /// 像素按左上原点、从上到下逐行紧密排列，每个值使用 `0xAARRGGBB`。
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceReadback {
     /// 快照的物理像素宽度。
@@ -55,7 +55,7 @@ pub struct SurfaceReadback {
 }
 
 // 只允许 Drawing backend 从已经验证的规范载荷构造快照。
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 impl SurfaceReadback {
     // 保存 owner-thread backend 已验证的完整 surface 结果。
     pub(crate) fn from_argb(width: i32, height: i32, pixels: Vec<u32>) -> Self {
@@ -461,7 +461,7 @@ pub trait RenderBackend {
     }
 
     /// 安排在本次最终 surface composite 提交后、present 前执行一次回读。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     fn request_surface_readback_for_test(&mut self) -> Result<(), Error> {
         // 未接入可选能力的 backend 必须明确失败，不能保留悬挂请求。
         Err(Error::new(
@@ -473,7 +473,7 @@ pub trait RenderBackend {
     }
 
     /// 在最终 present 返回后消费同一事务产生的规范回读结果。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     fn take_surface_readback_for_test(&mut self) -> Result<SurfaceReadback, Error> {
         // 未接入可选能力的 backend 不得伪造空快照。
         Err(Error::new(

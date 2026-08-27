@@ -51,6 +51,8 @@ earcut = "0.4.10"
 glow = { version = "0.18.0", optional = true }
 # 图片文件编解码依赖仅随对应 capability 进入使用方解析图。
 image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"], optional = true }
+# Agent 截屏的 PNG 编码依赖仅随 agent-control 进入使用方解析图。
+png = { version = "0.18", default-features = false, optional = true }
 # 二维码编码依赖仅随对应组件 capability 进入使用方解析图。
 qrcode = { version = "0.14.1", default-features = false, optional = true }
 # 表单正则 pattern 规则仅随对应 capability 进入使用方解析图。
@@ -203,6 +205,7 @@ feedback = ["uix-derive/feedback"]
 tree-widgets = ["uix-derive/tree-widgets"]
 agent-control = [
     "dep:serde_json",
+    "dep:png",
     "windows/Win32_Security",
     "windows/Win32_Security_Authorization",
     "windows/Win32_Security_Cryptography",

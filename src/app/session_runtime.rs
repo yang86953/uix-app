@@ -28,7 +28,7 @@ use crate::app::window::window_config::WindowConfig;
 use crate::app::window::window_session::TextInputCoordinator;
 use crate::core::WindowId;
 use crate::diagnostics::{Diagnostics, DiagnosticsConfig};
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::renderer::test_harness::{GraphicsFaultSignal, SurfaceReadbackTicket};
 use crate::platform::windowing::event::EventLoopWaker;
 use crate::ui::Theme;
@@ -58,7 +58,7 @@ pub(crate) struct SessionRuntime {
     main_thread_queue: MainThreadQueue,
     agent_commands: AgentCommandQueue,
     alive: Arc<AtomicBool>,
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     graphics_faults: GraphicsFaultSignal,
 }
 
@@ -130,12 +130,12 @@ impl AppRuntime {
             app_timers,
             main_thread_queue,
             alive,
-            #[cfg(feature = "test-harness")]
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             GraphicsFaultSignal::default(),
         );
     }
 
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn register_session_with_graphics_faults(
         &self,
         window_id: WindowId,
@@ -159,7 +159,7 @@ impl AppRuntime {
         app_timers: AppTimerQueue,
         main_thread_queue: MainThreadQueue,
         alive: Arc<AtomicBool>,
-        #[cfg(feature = "test-harness")] graphics_faults: GraphicsFaultSignal,
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_faults: GraphicsFaultSignal,
     ) {
         self.reserve_after(window_id);
         let agent_commands = AgentCommandQueue::new();
@@ -189,7 +189,7 @@ impl AppRuntime {
                 main_thread_queue,
                 agent_commands,
                 alive,
-                #[cfg(feature = "test-harness")]
+                #[cfg(any(feature = "test-harness", feature = "agent-control"))]
                 graphics_faults,
             },
         );
@@ -486,7 +486,7 @@ impl AppRuntime {
             .map(|session| session.agent_commands)
     }
 
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn graphics_fault_signal(&self, window_id: WindowId) -> Option<GraphicsFaultSignal> {
         self.session(window_id)
             .map(|session| session.graphics_faults)
@@ -529,7 +529,7 @@ impl AppRuntime {
     }
 
     // 为目标窗口安排下一次成功 GPU 帧的规范 surface 回读。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn request_surface_readback_for_test(
         // 借用应用运行时控制面。
         &self,
@@ -553,6 +553,34 @@ impl AppRuntime {
         self.wake_event_loop();
         // 把接收端交给调用方，发送端继续由 Renderer 持有。
         Ok(ticket)
+    }
+
+    // 为 Agent 截屏安排目标窗口下一次成功帧的规范 surface 回读。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn request_surface_readback(
+        &self,
+        window_id: WindowId,
+    ) -> crate::core::Result<SurfaceReadbackTicket> {
+        // 关闭窗口后不得向已经释放的 Renderer 投递请求。
+        let session = self.session(window_id).ok_or_else(|| {
+            crate::core::Error::new(
+                crate::core::Errc::NotFound,
+                "cannot read back a closed window session",
+            )
+        })?;
+        // 在共享信号上保留唯一待处理请求；实际回读仍在图形 owner thread 执行。
+        let ticket = session.graphics_faults.request_surface_readback()?;
+        // 唤醒事件循环，让截屏命令强制出的帧及时进入 owner-thread 绘制边界。
+        self.wake_event_loop();
+        Ok(ticket)
+    }
+
+    // Agent 截屏失败路径取消仍在排队的回读请求，释放单槽避免阻塞后续截屏。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn cancel_surface_readback(&self, window_id: WindowId) {
+        if let Some(session) = self.session(window_id) {
+            session.graphics_faults.cancel_surface_readback();
+        }
     }
 
     fn session(&self, window_id: WindowId) -> Option<SessionRuntime> {

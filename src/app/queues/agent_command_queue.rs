@@ -101,6 +101,10 @@ pub(crate) enum AgentCommandRequest {
         expected_revision: Option<u64>,
         action: AgentWindowAction,
     },
+    /// Agent 截屏：UI turn 内强制整树重绘，由下一次真实 present 完成回读票据。
+    /// 截屏是读取类能力，与快照同级：不校验代际、只读策略放行。
+    #[cfg(any(test, feature = "agent-control"))]
+    Screenshot,
     /// 用户确认流程：AI 确认执行先前命中 `requires_confirmation` 的动作。
     Confirm {
         confirm_id: u64,
@@ -172,6 +176,9 @@ pub(crate) enum AgentErrorCode {
     /// 窗口管理动作调用平台窗口失败。
     #[cfg(any(test, feature = "agent-control"))]
     WindowOperationFailed,
+    /// 截屏 PNG 编码结果超出协议载荷上限。
+    #[cfg(any(test, feature = "agent-control"))]
+    PayloadTooLarge,
     Timeout,
     AppClosed,
     #[cfg(any(test, feature = "agent-control"))]
@@ -207,6 +214,7 @@ impl AgentErrorCode {
             Self::DidNotSettle => "did_not_settle",
             Self::NotPresentable => "not_presentable",
             Self::WindowOperationFailed => "window_operation_failed",
+            Self::PayloadTooLarge => "payload_too_large",
             Self::Timeout => "timeout",
             Self::AppClosed => "app_closed",
             Self::Internal => "internal",
@@ -306,23 +314,27 @@ impl AgentCommandError {
 
 pub(crate) type AgentCommandResult = Result<AgentCommandResponse, AgentCommandError>;
 
-/// 提交命令的失败语义（队列满 / 已关闭 / 窗口不存在）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 提交命令的失败语义（队列满 / 已关闭 / 窗口不存在 / 回读不可用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
 // 默认库测试不启动 agent 提交方，但仍需保留提交失败契约。
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) enum AgentSubmitError {
     WindowNotFound,
     QueueFull,
     AppClosed,
+    /// 截屏回读无法安排（无活跃 renderer / 上一请求尚未完成等图形侧原因）。
+    #[cfg(any(test, feature = "agent-control"))]
+    ReadbackUnavailable { message: String },
 }
 
 impl AgentSubmitError {
     #[cfg(feature = "agent-control")]
-    pub(crate) const fn code(self) -> AgentErrorCode {
+    pub(crate) fn code(self) -> AgentErrorCode {
         match self {
             Self::WindowNotFound => AgentErrorCode::WindowNotFound,
             Self::QueueFull => AgentErrorCode::Internal,
             Self::AppClosed => AgentErrorCode::AppClosed,
+            Self::ReadbackUnavailable { .. } => AgentErrorCode::WindowOperationFailed,
         }
     }
 }

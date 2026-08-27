@@ -13,4 +13,6 @@ pub(crate) mod agent_policy;
 #[cfg(feature = "agent-control")]
 pub(crate) mod agent_protocol;
 #[cfg(feature = "agent-control")]
+pub(crate) mod agent_screenshot;
+#[cfg(feature = "agent-control")]
 pub(crate) mod agent_transport;

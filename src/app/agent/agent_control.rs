@@ -183,6 +183,24 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         }
         Ok(())
     }
+
+    #[cfg(any(test, feature = "agent-control"))]
+    fn screenshot(
+        &self,
+        tree: &mut WidgetTree,
+        presentable: bool,
+    ) -> Result<(), AgentCommandError> {
+        // 截屏是读取类能力：只读与目标动作策略不适用于它，与语义快照同级。
+        if !presentable {
+            return Err(AgentCommandError::NotPresentable);
+        }
+        // 强制整树重绘：settle 内的下一次真实 present 才会完成回读票据；
+        // 空闲窗口没有失效就没有呈现帧，截屏会退化为纯等待。
+        if let Some(root) = tree.root_id() {
+            tree.invalidate_paint_subtree(root);
+        }
+        Ok(())
+    }
 }
 
 fn map_window_ops_error(error: AgentWindowOpsError) -> AgentCommandError {

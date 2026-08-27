@@ -13,14 +13,14 @@ use super::logical_metadata_from_surface;
 use super::surface::NativeGpuDrawSurface;
 use crate::core::{Errc, Error, PresentDamageTracker};
 use crate::draw::backend::contract::RenderBackend;
-// 测试读回只返回 Drawing 层的 API 无关快照。
-#[cfg(feature = "test-harness")]
+// 测试读回与 Agent 截屏只返回 Drawing 层的 API 无关快照。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::contract::SurfaceReadback;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::platform::presentation::rhi::GraphicsDevice;
-// 测试读回能力启用时才引入窄 Surface 角色与统一区域描述。
-#[cfg(feature = "test-harness")]
+// 读回能力启用时才引入窄 Surface 角色与统一区域描述。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::platform::presentation::rhi::{GraphicsSurface, RhiScissor};
 // 引入 platform 构造期验证的 context recipe owner。
 use crate::platform::presentation::rhi::GpuRecipeOwner;
@@ -157,13 +157,13 @@ impl GpuBackend {
             // 首帧还没有 FrameEncoder 写入 retained target。
             rhi_surface_frame_pending_present: false,
             // 默认不执行任何 surface 回读。
-            #[cfg(feature = "test-harness")]
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             surface_readback_requested: false,
             // 默认不存在上一帧测试结果。
-            #[cfg(feature = "test-harness")]
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             surface_readback_result: None,
             // 首帧尚未通过共享 FramePlan 执行主表面纹理移动。
-            #[cfg(feature = "test-harness")]
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             executed_texture_moves_in_frame: 0,
             // 启动时尚未捕获 overlay 干净背景。
             rhi_overlay_backdrop_texture: None,
@@ -184,7 +184,7 @@ impl GpuBackend {
     }
 
     // 在最终 FramePlan 已 submit、尚未 present 的窄 Surface 上读取真实像素。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(super) fn try_readback(
         // 借用正在执行唯一最终呈现事务的 Surface 角色。
         surface: &mut dyn GraphicsSurface,

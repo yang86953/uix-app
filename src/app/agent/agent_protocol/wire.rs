@@ -339,10 +339,13 @@ pub(super) fn submit_error_reply(
     request_id: String,
     error: AgentSubmitError,
 ) -> AgentProtocolReply {
-    let message = match error {
+    let message = match &error {
         AgentSubmitError::WindowNotFound => "window was not found",
         AgentSubmitError::QueueFull => "window command queue is full",
         AgentSubmitError::AppClosed => "application is closed",
+        AgentSubmitError::ReadbackUnavailable { .. } => {
+            "surface readback could not be scheduled for this window"
+        }
     };
     error_reply(Some(request_id), error.code(), message, false)
 }
@@ -572,6 +575,7 @@ mod tests {
             title: "fixture".to_owned(),
             visible: !closed,
             presentable: !closed,
+            focused: false,
             logical_width: 800,
             logical_height: 600,
             maximized: false,

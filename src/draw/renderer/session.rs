@@ -5,8 +5,8 @@ use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
     BackendCapabilities, BackendKind, CpuBackend, RenderBackend, create_backend,
 };
-// 测试读回只通过 Drawing 层规范快照跨越会话边界。
-#[cfg(feature = "test-harness")]
+// 测试读回与 Agent 截屏只通过 Drawing 层规范快照跨越会话边界。
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::SurfaceReadback;
 use crate::draw::outcome::RenderOutcome;
 use crate::draw::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
@@ -249,7 +249,7 @@ impl RenderSession {
     }
 
     // 在图形 owner thread 上安排最终 composite 与 present 之间的回读。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn request_surface_readback_for_test(&mut self) -> Result<(), Error> {
         // 与其它原生生命周期入口共用线程亲和性门禁。
         self.require_owner("request_surface_readback_for_test")?;
@@ -258,7 +258,7 @@ impl RenderSession {
     }
 
     // 在最终 present 返回后消费同一事务的规范 surface 回读。
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     pub(crate) fn take_surface_readback_for_test(&mut self) -> Result<SurfaceReadback, Error> {
         // 结果消费同样只能发生在图形 owner thread。
         self.require_owner("take_surface_readback_for_test")?;

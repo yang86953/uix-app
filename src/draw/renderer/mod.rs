@@ -10,7 +10,7 @@ pub mod recovery_driver;
 mod runtime;
 pub mod scene_pipeline;
 pub mod session;
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 // 将测试支撑实现统一存放在根 tests 目录。
 #[path = "../../../tests/support/draw/renderer/test_harness.rs"]
 pub(crate) mod test_harness;
@@ -33,5 +33,5 @@ pub use runtime::Renderer;
 // 公开一次性票据类型，应用测试无需访问 renderer 私有控制信号。
 pub use scene_pipeline::{FrameRenderInput, FrameRenderOutput, ScenePipeline};
 pub use session::RenderSession;
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", feature = "agent-control"))]
 pub use test_harness::SurfaceReadbackTicket;

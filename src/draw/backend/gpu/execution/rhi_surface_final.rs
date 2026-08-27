@@ -76,14 +76,14 @@ impl GpuBackend {
         };
         // 用同一份验证结果生成逐矩形绘制与最终 present damage。
         let composite = plan_surface_composite(damage, extent, quad);
-        // test-harness 只在本次唯一最终 composite 消费一个回读请求。
-        #[cfg(feature = "test-harness")]
+        // test-harness / Agent 截屏只在本次唯一最终 composite 消费一个回读请求。
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         let readback_requested = std::mem::take(&mut self.surface_readback_requested);
         // 冻结当前内容帧已经成功执行的 API 无关纹理移动证据。
-        #[cfg(feature = "test-harness")]
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         let executed_texture_moves = self.executed_texture_moves_in_frame;
         // 保存 submit/present 间隙由 Adapter 产生的规范结果。
-        #[cfg(feature = "test-harness")]
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         let mut readback_result = None;
         // 只在 owner-thread 借用范围内执行最终 swapchain pass。
         let result = {
@@ -100,8 +100,8 @@ impl GpuBackend {
             // 只有组合 RHI context 能执行 surface acquire/submit/present。
             // 已验证 owner 丢失时保留 typed state error，禁止绕过 RHI 合成。
             let context = gpu_ctx.rhi_context()?;
-            // test-harness 在同一 FramePlan submit 与 present 之间读取最终 composite。
-            #[cfg(feature = "test-harness")]
+            // test-harness / Agent 截屏在同一 FramePlan submit 与 present 之间读取最终 composite。
+            #[cfg(any(feature = "test-harness", feature = "agent-control"))]
             {
                 // 构造只观察当前 Surface 的一次性钩子。
                 let mut before_present =
@@ -143,7 +143,7 @@ impl GpuBackend {
                 )
             }
             // 普通构建保持唯一 acquire/submit/present 路径且没有回读开销。
-            #[cfg(not(feature = "test-harness"))]
+            #[cfg(not(any(feature = "test-harness", feature = "agent-control")))]
             {
                 // 用一次 acquire/submit/present 执行全部 damage rect 的 sampled draw。
                 renderer.execute_sampled_quads(
@@ -160,8 +160,8 @@ impl GpuBackend {
                 )
             }
         };
-        // test-harness 把本次观察结果交给 Renderer 在 present 返回后消费。
-        #[cfg(feature = "test-harness")]
+        // test-harness / Agent 截屏把本次观察结果交给 Renderer 在 present 返回后消费。
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         if readback_requested {
             // 钩子未执行时保持 None，Renderer 将优先报告最终 present 失败。
             self.surface_readback_result = readback_result;
