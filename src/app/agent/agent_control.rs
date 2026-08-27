@@ -137,14 +137,13 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                 )?;
             }
             AgentWindowAction::PointerMove { position } => {
-                // 指针移动无组件接收同样视为动作未生效，避免假成功。
-                dispatch_window_event(
-                    tree,
-                    &SystemEvent::PointerMove {
-                        pos: position,
-                        mods: KeyMod::NONE,
-                    },
-                )?;
+                // 指针移动的动作效果是悬停事实更新（enter/leave 与悬停目标切换），
+                // 由树在分发过程中同步完成；是否仍有组件继续消费 move 不改变该事实，
+                // 因此不以 `Handled` 判定成败，避免悬停生效却被报告为失败。
+                let _ = tree.dispatch_event(&SystemEvent::PointerMove {
+                    pos: position,
+                    mods: KeyMod::NONE,
+                });
             }
             AgentWindowAction::PointerDown { position } => {
                 dispatch_window_event(
@@ -176,6 +175,9 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
             AgentWindowAction::Maximize => window.maximize().map_err(map_window_ops_error)?,
             AgentWindowAction::Minimize => window.minimize().map_err(map_window_ops_error)?,
             AgentWindowAction::Restore => window.restore().map_err(map_window_ops_error)?,
+            // 激活请求经平台 raise 契约提交（Wayland 走 xdg-activation）；
+            // 成功只表示请求已建立，未聚焦窗口的输入门禁随真实聚焦解除。
+            AgentWindowAction::Activate => window.raise().map_err(map_window_ops_error)?,
             // 关闭只提交平台请求；实际关闭由后续窗口生命周期事实证明。
             AgentWindowAction::Close => window.request_close().map_err(map_window_ops_error)?,
         }

@@ -54,6 +54,10 @@ impl AgentWindowOps for PlatformWindowAgentOps<'_> {
             .map_err(map_error("restore"))
     }
 
+    fn raise(&mut self) -> Result<(), AgentWindowOpsError> {
+        self.window.raise().map_err(map_error("activate"))
+    }
+
     fn request_close(&mut self) -> Result<(), AgentWindowOpsError> {
         self.window
             .request_close()

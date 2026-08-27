@@ -31,6 +31,8 @@ pub(crate) struct AgentWindowInfo {
     pub(crate) title: String,
     pub(crate) visible: bool,
     pub(crate) presentable: bool,
+    /// 窗口是否持有输入焦点；未聚焦窗口忽略指针与键盘输入。
+    pub(crate) focused: bool,
     pub(crate) logical_width: i32,
     pub(crate) logical_height: i32,
     pub(crate) maximized: bool,
@@ -133,6 +135,7 @@ impl AgentBridgeDirectory {
         title: String,
         visible: bool,
         presentable: bool,
+        focused: bool,
         logical_width: i32,
         logical_height: i32,
         maximized: bool,
@@ -161,6 +164,7 @@ impl AgentBridgeDirectory {
                 title,
                 visible,
                 presentable,
+                focused,
                 logical_width,
                 logical_height,
                 maximized,
@@ -346,6 +350,7 @@ impl AgentBridgeDirectory {
         }
         window.visible = update.visible;
         window.presentable = update.presentable;
+        window.focused = update.focused;
         window.logical_width = update.logical_width;
         window.logical_height = update.logical_height;
         window.maximized = update.maximized;
@@ -520,6 +525,7 @@ mod tests {
                 "fixture".to_owned(),
                 true,
                 true,
+                false,
                 800,
                 600,
                 false,
@@ -530,6 +536,7 @@ mod tests {
         registration.publish_window_state(AgentWindowState {
             visible: true,
             presentable: true,
+            focused: true,
             logical_width: 1000,
             logical_height: 700,
             maximized: true,

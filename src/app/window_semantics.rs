@@ -23,6 +23,8 @@ pub(crate) trait AgentSemanticsPort: std::fmt::Debug {
 pub(crate) struct AgentWindowState {
     pub(crate) visible: bool,
     pub(crate) presentable: bool,
+    /// 窗口是否持有输入焦点；未聚焦窗口按契约忽略指针与键盘输入。
+    pub(crate) focused: bool,
     pub(crate) logical_width: i32,
     pub(crate) logical_height: i32,
     pub(crate) maximized: bool,

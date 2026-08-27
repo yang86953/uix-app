@@ -76,6 +76,9 @@ pub(crate) enum AgentWindowAction {
     Maximize,
     Minimize,
     Restore,
+    /// 请求合成器激活并聚焦窗口；未聚焦窗口的指针动作会被输入门禁忽略，
+    /// 自动化必须先激活目标窗口才能可靠驱动指针与键盘。
+    Activate,
     /// 只提交平台关闭请求，不声明窗口已经关闭。
     Close,
 }

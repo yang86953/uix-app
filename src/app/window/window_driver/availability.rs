@@ -39,6 +39,7 @@ impl WindowDriver {
         semantic_state.publish_agent_window_state(AgentWindowState {
             visible: platform_window.is_visible(),
             presentable: self.agent_surface_presentable(platform_window),
+            focused: self.window_focused,
             logical_width: properties.width(),
             logical_height: properties.height(),
             maximized: properties.is_maximized(),

@@ -190,6 +190,9 @@ pub(super) fn parse_action(value: &Value) -> Result<ParsedAgentAction, WireError
         "restore_window" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::Restore));
         }
+        "activate_window" => {
+            return Ok(ParsedAgentAction::Window(AgentWindowAction::Activate));
+        }
         "close_window" => {
             return Ok(ParsedAgentAction::Window(AgentWindowAction::Close));
         }
@@ -429,6 +432,7 @@ pub(super) fn window_info_value(window: &AgentWindowInfo) -> Value {
         "title": window.title,
         "visible": window.visible,
         "presentable": window.presentable,
+        "focused": window.focused,
         "logical_width": window.logical_width,
         "logical_height": window.logical_height,
         "maximized": window.maximized,
@@ -460,6 +464,7 @@ pub(super) fn semantic_node_value(node: &SemanticNode) -> Value {
         "frame": rect_value(node.frame),
         "visible_bounds": node.visible_bounds.map(rect_value),
         "focused": node.focused,
+        "hovered": node.hovered,
         "role": node.accessibility.role.automation_name(),
         "name": node.accessibility.name,
         "state": accessibility_state_value(state),
