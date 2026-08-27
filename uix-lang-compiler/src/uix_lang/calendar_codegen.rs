@@ -10,8 +10,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Calendar 属性、表达式、事件与诊断契约。
 use super::{
-    AttributeValue, Diagnostic, Element, boolean_value,
-    generate_event_handler_expression, generate_expression, numeric_value,
+    AttributeValue, Diagnostic, Element, boolean_value, generate_event_handler_expression,
+    generate_expression, numeric_value,
 };
 
 // 生成使用运行时默认交互契约的 Calendar 叶节点。

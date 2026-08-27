@@ -353,8 +353,7 @@ fn split_typed_state_initial(
             // 给出 schema 生成的完整允许集合。
             format!(
                 "使用{}",
-                super::super::projection_schema::UI_PROJECTION_SCHEMA
-                    .supported_value_type_hint()
+                super::super::projection_schema::UI_PROJECTION_SCHEMA.supported_value_type_hint()
             ),
         )
     })?;

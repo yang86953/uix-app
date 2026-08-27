@@ -6,8 +6,7 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Tree 属性、表达式与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    optional_boolean,
+    Attribute, AttributeValue, Diagnostic, Element, generate_expression, optional_boolean,
 };
 
 // 生成绑定类型化节点集合与初始交互配置的 Tree 叶节点。
@@ -77,10 +76,5 @@ pub(crate) fn generate_tree(element: &Element) -> Result<TokenStream, Diagnostic
 // 查找 Tree 的必需属性。
 fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
     // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
-    super::required_attribute(
-        element,
-        name,
-        "Tree",
-        "使用 <Tree data={tree_nodes} />",
-    )
+    super::required_attribute(element, name, "Tree", "使用 <Tree data={tree_nodes} />")
 }

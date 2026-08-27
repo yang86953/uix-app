@@ -106,10 +106,12 @@ fn slot_scanning_ignores_member_blocks() {
     assert_eq!(widget.slots.len(), 1);
     assert!(widget.slots[0].name.is_none());
     // 子节点中不存在任何成员块节点。
-    assert!(!widget
-        .children
-        .iter()
-        .any(|node| matches!(node, Node::WidgetMember(_))));
+    assert!(
+        !widget
+            .children
+            .iter()
+            .any(|node| matches!(node, Node::WidgetMember(_)))
+    );
 }
 
 // 四类成员的类别标签与属性名一致。

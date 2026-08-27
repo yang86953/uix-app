@@ -5,13 +5,7 @@ use quote::quote;
 // 引入公共属性与叶节点形状判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 RichText 属性、诊断与共享值生成契约。
-use super::{
-    Attribute,
-    Diagnostic,
-    Element,
-    optional_boolean,
-    string_value,
-};
+use super::{Attribute, Diagnostic, Element, optional_boolean, string_value};
 
 // 生成只投影 Markdown 内容与选择配置的 RichText 叶节点。
 pub(crate) fn generate_rich_text(element: &Element) -> Result<TokenStream, Diagnostic> {

@@ -5,8 +5,8 @@ use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
 // 引入共享元素属性查找。
-use super::find_attribute;
 use super::codegen::{apply_common_attributes, is_renderable_node};
+use super::find_attribute;
 // 引入 Empty 诊断与共享字符串生成契约。
 use super::{Diagnostic, Element, string_value};
 

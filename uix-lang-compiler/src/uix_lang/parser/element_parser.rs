@@ -1,8 +1,8 @@
 // 拆分自 parser.rs：元素、属性与文本解析（含表达式节点构造）。
 // 引入元素解析所需的 AST、词法游标和诊断。
 use super::super::{
-    Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Element, ExpressionNode,
-    Node, SourceSpan, TextNode, WidgetMemberBlock, WidgetMemberKind, parse_expression,
+    Attribute, AttributeValue, ControlBinding, Cursor, Diagnostic, Element, ExpressionNode, Node,
+    SourceSpan, TextNode, WidgetMemberBlock, WidgetMemberKind, parse_expression,
     parse_style_properties,
 };
 // 引入拆分后的控制绑定解析入口。

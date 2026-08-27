@@ -6,8 +6,7 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Timeline 属性、表达式与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, generate_expression,
-    optional_boolean,
+    Attribute, AttributeValue, Diagnostic, Element, generate_expression, optional_boolean,
 };
 
 // 生成绑定类型化时间轴项集合的 Timeline 叶节点。
