@@ -20,7 +20,9 @@ const SHADOW_MAX_ALPHA: f32 = 0.28;
 // 持有协议对象和八块 SHM buffer，确保 compositor 使用期间资源不失效。
 pub(crate) struct WaylandClientShadow {
     manager: Main<OrgKdeKwinShadowManager>,
-    shadow: Main<OrgKdeKwinShadow>,
+    // compositor 只在 wl_surface commit 应用 shadow 状态并通知渲染端，
+    // 因此 shadow 对象在每次启用时重建，禁用后不保留。
+    shadow: Option<Main<OrgKdeKwinShadow>>,
     buffers: Vec<ShmBuffer>,
     surface: Main<wl_surface::WlSurface>,
     enabled: bool,
@@ -40,7 +42,6 @@ impl WaylandClientShadow {
             .bind::<OrgKdeKwinShadowManager, _, _>(queue_handle, 1..=2, ())
             .ok()
             .map(|proxy| Main::new(proxy, context))?;
-        let shadow = manager.create_shadow(surface);
         let specs = [
             ("left", SHADOW_SIZE, 1),
             ("top-left", SHADOW_SIZE, SHADOW_SIZE),
@@ -66,7 +67,7 @@ impl WaylandClientShadow {
         }
         Some(Self {
             manager,
-            shadow,
+            shadow: None,
             buffers,
             surface: surface.clone(),
             enabled: false,
@@ -79,23 +80,30 @@ impl WaylandClientShadow {
             return;
         }
         if enabled {
-            self.shadow.attach_left(&self.buffers[0].buffer);
-            self.shadow.attach_top_left(&self.buffers[1].buffer);
-            self.shadow.attach_top(&self.buffers[2].buffer);
-            self.shadow.attach_top_right(&self.buffers[3].buffer);
-            self.shadow.attach_right(&self.buffers[4].buffer);
-            self.shadow.attach_bottom_right(&self.buffers[5].buffer);
-            self.shadow.attach_bottom(&self.buffers[6].buffer);
-            self.shadow.attach_bottom_left(&self.buffers[7].buffer);
+            // 每次启用都重建 shadow 对象：服务端只在 wl_surface commit
+            // 应用 pending shadow 并广播 shadowChanged，复用旧对象时
+            // 协议级 commit 不触发渲染端刷新，阴影会停留在空状态。
+            let shadow = self.manager.create_shadow(&self.surface);
+            shadow.attach_left(&self.buffers[0].buffer);
+            shadow.attach_top_left(&self.buffers[1].buffer);
+            shadow.attach_top(&self.buffers[2].buffer);
+            shadow.attach_top_right(&self.buffers[3].buffer);
+            shadow.attach_right(&self.buffers[4].buffer);
+            shadow.attach_bottom_right(&self.buffers[5].buffer);
+            shadow.attach_bottom(&self.buffers[6].buffer);
+            shadow.attach_bottom_left(&self.buffers[7].buffer);
             let offset = SHADOW_SIZE as f64;
-            self.shadow.set_left_offset(offset);
-            self.shadow.set_top_offset(offset);
-            self.shadow.set_right_offset(offset);
-            self.shadow.set_bottom_offset(offset);
-            self.shadow.commit();
+            shadow.set_left_offset(offset);
+            shadow.set_top_offset(offset);
+            shadow.set_right_offset(offset);
+            shadow.set_bottom_offset(offset);
+            shadow.commit();
+            self.surface.commit();
+            self.shadow = Some(shadow);
         } else {
             self.manager.unset(&self.surface);
             self.surface.commit();
+            self.shadow = None;
         }
         self.enabled = enabled;
     }

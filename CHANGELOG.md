@@ -61,6 +61,7 @@
 
 ### 2026-08-27 缺陷修复
 
+- Linux/Wayland 客户端窗口阴影从不显示：KWin 只在 `wl_surface.commit` 应用 pending 的 `org_kde_kwin_shadow` 状态并向渲染端广播 `shadowChanged`，shadow 协议自身的 commit 只更新纹理与偏移；原实现在首次 surface commit 映射窗口时阴影对象仍为空、之后才附加纹理做协议级 commit，`shadowChanged` 早已在空状态下消费，渲染端永远拿不到有效阴影。现改为每次启用阴影时重建 shadow 对象，在同一次 `wl_surface.commit` 前完成八块纹理、偏移与协议 commit，关闭阴影保持 `unset` + commit；KWin（Plasma 6）真窗验收阴影正常呈现。
 - Linux/Wayland 动画不生效：程序化 `set_size` 与 `resize_notify` 复用同一入口并无条件回发 `WindowResize`，driver 消费后又调用 `resize_notify` 再次进入该入口，形成每帧同尺寸 resize 自激循环；每圈都把 surface 标记为代次变化并重置动画时钟基准，导致动画 `dt` 恒为 0（画面停在关键帧起点）、native frame callback 因代次失配永不被接受、每帧全帧重绘。现按 surface 事实代次去重，尺寸与 scale 均未变化时不再发布 resize（与 configure/scale 路径既有去重约定一致）；Windows 系统驱动 resize 无此回发因此不受影响，两平台动画调度语义恢复一致。
 - 声明式透明度动画在文本内容上不生效：View 统一样式与动画绑定写入的 `style.opacity` 只被各组件在背景/边框绘制路径自行消费，文本等其余内容完全丢失衰减。现把节点声明透明度沿声明树进入运行时节点，并在 scene 节点合成通道与 enter/leave 过渡透明度统一叠乘（LayerTree 已有画布级联语义），组件内部不再重复应用；颜色类关键帧/过渡动画由此在同一 Drawing 语义下跨 Windows 与 Linux 表现一致。
 - 未聚焦窗口忽略全部指针输入导致悬停与点击类界面反馈不生效：后台或被窗口管理器延迟聚焦启动的窗口上，指针移动、悬停与点击在树层被整体丢弃，表现为按钮悬停变色、按压反馈等动画「不出来」。现按主流桌面语义修正为指针输入（移动/悬停/点击/滚轮）不要求窗口焦点（Wayland 指针输入本就独立于键盘焦点），键盘、IME、剪贴板与文件拖放仍保留焦点要求。
