@@ -91,6 +91,8 @@ pub struct BoxedWidget {
     view_transition: Option<crate::ui::animation::TransitionPlayer>,
     view_transition_deadline: Option<std::time::Instant>,
     leave_animation: Option<crate::ui::animation::AnimationConfig>,
+    // 保存声明节点自身的视觉透明度；过渡透明度在该值之上继续叠乘。
+    declared_opacity: f32,
     pending_removal: bool,
     attached: bool,
     mounted: bool,
@@ -192,6 +194,7 @@ impl BoxedWidget {
             view_transition: None,
             view_transition_deadline: None,
             leave_animation: None,
+            declared_opacity: 1.0,
             pending_removal: false,
             attached: false,
             mounted: false,

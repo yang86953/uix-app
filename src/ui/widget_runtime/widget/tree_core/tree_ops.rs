@@ -261,6 +261,7 @@ impl WidgetTree {
             enter_animation,
             enter_deadline,
             leave_animation,
+            declared_opacity,
             z_index,
             key,
             automation_id,
@@ -300,6 +301,8 @@ impl WidgetTree {
             node.set_cursor(cursor);
             node.set_enter_animation(enter_animation, enter_deadline);
             node.set_leave_animation(leave_animation);
+            // 声明透明度与过渡覆盖层在合成边界叠乘，进入统一节点合成通道。
+            node.set_declared_opacity(declared_opacity);
             node.set_key(key);
             node.set_automation_id(automation_id);
             node.set_z_index(z_index);

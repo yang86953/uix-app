@@ -72,7 +72,13 @@ impl ScenePaint for WidgetTree {
 
     fn node_opacity(&self, id: NodeId) -> f32 {
         self.get(id)
-            .map(|node| node.view_transition_opacity())
+            .map(|node| {
+                // 声明透明度与过渡透明度在唯一节点合成边界叠乘；
+                // 由 layer 合成器统一应用于整节点绘制与命中共享输出。
+                let declared = node.declared_opacity();
+                let transition = node.view_transition_opacity();
+                (declared * transition).clamp(0.0, 1.0)
+            })
             .unwrap_or(1.0)
     }
 

@@ -127,9 +127,7 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
             }
         }
     };
-    if style.opacity < 1.0 {
-        ctx.with_opacity(style.opacity, paint_surface);
-    } else {
-        paint_surface(ctx.as_draw_mut());
-    }
+    // 视觉透明度由 widget 树声明 opacity 经 scene 节点合成通道统一应用，
+    // 组件内部不得再按属性重复折叠，避免文本与背景衰减系数不一致。
+    paint_surface(ctx.as_draw_mut());
 }

@@ -192,6 +192,8 @@ impl ViewAdapter {
             enter_animation: Option<crate::ui::animation::AnimationConfig>,
             enter_deadline: Option<std::time::Instant>,
             leave_animation: Option<crate::ui::animation::AnimationConfig>,
+            // 保存声明节点的视觉透明度，供运行时树统一合成。
+            declared_opacity: f32,
             flex_grow_override: Option<f32>,
             flex_shrink_override: Option<f32>,
             provider_context: crate::ui::widget_runtime::provider_context::ProviderContext,
@@ -252,6 +254,7 @@ impl ViewAdapter {
                 ViewAdapter::configure_staggered_child(child, stagger_enter, anchor, rank);
             }
             let visible = style.visible;
+            let declared_opacity = style.opacity;
             Frame {
                 widget,
                 style,
@@ -268,6 +271,7 @@ impl ViewAdapter {
                 enter_animation,
                 enter_deadline,
                 leave_animation,
+                declared_opacity,
                 flex_grow_override,
                 flex_shrink_override,
                 provider_context,
@@ -339,6 +343,9 @@ impl ViewAdapter {
             }
             if let Some(animation) = frame.leave_animation {
                 wnode = wnode.with_leave_animation(animation);
+            }
+            if frame.declared_opacity != 1.0 {
+                wnode = wnode.with_declared_opacity(frame.declared_opacity);
             }
             if !frame.handlers.is_empty() {
                 wnode = wnode.with_handlers(frame.handlers);
@@ -591,6 +598,14 @@ impl ViewAdapter {
             }
             if current.z_index() != z_index {
                 current.set_z_index(z_index);
+                paint_changed = true;
+            }
+            // 声明透明度变化直接改变合成输出，必须触发对应节点的 Paint 失效。
+            // 双侧都按存储归一规则比较，避免非法声明值造成每轮恒定脏标记。
+            let next_declared_opacity =
+                crate::ui::widget_runtime::widget::normalize_declared_opacity(style.opacity);
+            if current.declared_opacity() != next_declared_opacity {
+                current.set_declared_opacity(style.opacity);
                 paint_changed = true;
             }
         }
