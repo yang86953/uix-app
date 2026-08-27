@@ -95,6 +95,50 @@
 // 结束首页组件。
 </Widget>
 
+// 声明脚本化计数组件：使用块级成员声明与多语句 action 的等价新语法。
+<Widget name="ScriptedCounter">
+  // 块级 props：递进步长带默认值。
+  @props {
+    step: number = 1,
+  }
+  // 块级 state：计数值与上限。
+  @state {
+    value: 0,
+    limit: 5,
+  }
+  // 块级 computed：按声明顺序派生剩余余量。
+  @computed {
+    remaining: limit - value,
+  }
+  // 块级 actions：单表达式与 do 多语句主体并存。
+  @actions {
+    reset: setState(value: 0),
+    stepUp: do {
+      let next = value + step;
+      if next > limit {
+        setState(value: limit);
+        return;
+      }
+      setState(value: next);
+    },
+  }
+  // 组织脚本化计数内容。
+  <Column gap="8px">
+    // 显示当前值、上限与 computed 余量。
+    <Text automationId="script-counter-status">步进值 {value} / 上限 {limit} · 剩余 {remaining}</Text>
+    // 排列脚本操作按钮。
+    <Container direction="row" gap="8px">
+      // 触发 do 块 action：局部计算、上限短路返回与状态提交。
+      <Button type="primary" automationId="script-counter-step-up" @click="stepUp()">do 块步进 {step}</Button>
+      // 触发单表达式 action 重置。
+      <Button automationId="script-counter-reset" @click="reset()">重置</Button>
+    // 结束脚本操作行。
+    </Container>
+  // 结束脚本化计数内容。
+  </Column>
+// 结束脚本化计数组件。
+</Widget>
+
 // 声明语言能力组件：全部状态、操作与主题切换都由 uix-lang 表达。
 <Widget name="RuntimePage" state="count: 0">
   // 组织语言能力内容。
@@ -175,6 +219,20 @@
         <Text automationId="runtime-language-status">Action 已执行 {count} 次</Text>
         // 说明语言只拥有局部界面交互。
         <Text fontSize="small">setState 只更新当前组件的界面状态，不取得服务、窗口或平台资源。</Text>
+        // 实例化块级成员与 do 多语句 action 演示组件。
+        <ScriptedCounter />
+        // 说明块级成员与 do 块能力均由编译期转换器静态内联。
+        <Text fontSize="small">@props/@state/@computed/@actions 块级声明与字符串属性形式解析等价；do 块支持 let、赋值、条件与 return，事件位置仍为纯 AOT 内联。</Text>
+        // 展示正负 spread 与多段阴影的内联样式。
+        <Container direction="row" gap="16px" align="center">
+          // 正向 spread 向外扩张的柔和投影。
+          <Container width="72px" height="40px" backgroundColor="#FFFFFF" style="boxShadow: 2px 2px 6px 1px rgba(0,0,0,0.15);" />
+          // 负向 spread 与负偏移组合的细边环效果。
+          <Container width="72px" height="40px" backgroundColor="#FFFFFF" style="boxShadow: -4px 4px 8px -1px rgba(22,119,255,0.35);" />
+          // 说明阴影语法扩展范围。
+          <Text fontSize="small">boxShadow 支持可选第五段 spread：正值向外扩张、负值向内收缩，可多段叠加。</Text>
+        // 结束阴影演示行。
+        </Container>
       // 结束同步 action 内容。
       </Column>
     // 结束同步 action 卡片。
