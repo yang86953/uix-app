@@ -51,7 +51,9 @@ pub(crate) fn generate_visual_scaffold(
                 // 无名（元组/单元）字段直接拒绝。
                 let Some(name) = field.ident.as_ref() else {
                     // 返回形状诊断。
-                    return Err(format!("结构体 {struct_name} 含无名字段，不符合 Visual 形状"));
+                    return Err(format!(
+                        "结构体 {struct_name} 含无名字段，不符合 Visual 形状"
+                    ));
                 };
                 // 保存 snake_case 名与类型文本。
                 fields.push((name.to_string(), quote_type(&field.ty)));
@@ -75,12 +77,7 @@ pub(crate) fn generate_visual_scaffold(
         .map(|(field, field_type)| field_template(field, field_type))
         .collect::<Vec<_>>();
     // 组装骨架文本。
-    Ok(render(
-        &default_visual,
-        struct_name,
-        &fields,
-        &templates,
-    ))
+    Ok(render(&default_visual, struct_name, &fields, &templates))
 }
 
 /// 把 snake_case 字段名转换为 Visual 属性使用的 camelCase。
@@ -218,4 +215,116 @@ fn derive_visual_name(struct_name: &str) -> String {
     }
     // 返回常量名。
     output
+}
+
+// 用纯函数级测试锁定骨架输出：占位初值、TODO 提示与形状诊断不回退。
+#[cfg(test)]
+mod tests {
+    use super::{camel_case, derive_visual_name, generate_visual_scaffold};
+    use std::path::PathBuf;
+
+    // 把结构体源码写入按名称隔离的临时文件并返回路径，避免并行测试互踩。
+    fn write_struct_source(struct_name: &str, definition: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("uix-scaffold-{struct_name}.rs"));
+        std::fs::write(&path, format!("// 临时测试源。\n{definition}\n"))
+            .expect("临时 Rust 源必须可写");
+        path
+    }
+
+    #[test]
+    fn known_scalar_fields_get_literal_placeholders() {
+        let definition = r#"
+pub struct IconVisual {
+    default_size: f32,
+    glyph_scale: f64,
+    glyph_count: u32,
+    visible: bool,
+    label: String,
+}
+"#;
+        let path = write_struct_source("IconVisualKnown", definition);
+        let scaffold = generate_visual_scaffold(&path, "IconVisual").expect("已知标量结构必须成功");
+        std::fs::remove_file(&path).ok();
+
+        assert!(
+            scaffold.contains("name=\"ICON_VISUAL\""),
+            "常量名推导错误：{scaffold}"
+        );
+        assert!(scaffold.contains("type=\"IconVisual\""));
+        assert!(
+            scaffold.contains("defaultSize={0.0}"),
+            "浮点占位缺失：{scaffold}"
+        );
+        assert!(scaffold.contains("glyphScale={0.0}"));
+        assert!(scaffold.contains("glyphCount={0}"));
+        assert!(scaffold.contains("visible={false}"));
+        assert!(scaffold.contains("label=\"标签\""));
+        assert!(
+            !scaffold.contains("TODO"),
+            "全部字段可给初值时不得出现补齐提示：{scaffold}"
+        );
+    }
+
+    #[test]
+    fn unknown_fields_land_in_todo_comment() {
+        let definition = r#"
+pub struct MixedVisual {
+    ratio: f64,
+    color: ColorValue,
+}
+"#;
+        let path = write_struct_source("MixedVisualUnknown", definition);
+        let scaffold = generate_visual_scaffold(&path, "MixedVisual").expect("混合结构必须成功");
+        std::fs::remove_file(&path).ok();
+
+        // 已知类型保持可直接编译的属性行，未识别类型只进入注释提示。
+        assert!(scaffold.contains("ratio={0.0}"));
+        assert!(
+            !scaffold.contains("\n  color="),
+            "未识别类型不得出现在属性行：{scaffold}"
+        );
+        assert!(
+            scaffold.contains("TODO: 以下字段类型无法自动给初值"),
+            "{scaffold}"
+        );
+        assert!(
+            scaffold.contains("//   color: ColorValue → color="),
+            "{scaffold}"
+        );
+    }
+
+    #[test]
+    fn missing_struct_reports_targeted_error() {
+        let definition = r#"
+pub struct Unrelated {
+    value: f32,
+}
+"#;
+        let path = write_struct_source("MissingStructProbe", definition);
+        let error = generate_visual_scaffold(&path, "AbsentVisual")
+            .expect_err("缺失目标结构体必须定向失败");
+        std::fs::remove_file(&path).ok();
+
+        assert!(error.contains("未找到结构体 AbsentVisual"), "{error}");
+    }
+
+    #[test]
+    fn tuple_struct_is_rejected() {
+        let definition = "pub struct Pair(u32, f32);\n";
+        let path = write_struct_source("TupleStructProbe", definition);
+        let error =
+            generate_visual_scaffold(&path, "Pair").expect_err("元组结构体不符合 Visual 形状");
+        std::fs::remove_file(&path).ok();
+
+        assert!(error.contains("不是命名字段结构体"), "{error}");
+    }
+
+    #[test]
+    fn helper_naming_conversions_stay_stable() {
+        assert_eq!(camel_case("default_size"), "defaultSize");
+        assert_eq!(camel_case("label"), "label");
+        assert_eq!(derive_visual_name("IconVisual"), "ICON_VISUAL");
+        assert_eq!(derive_visual_name("ProfileCard"), "PROFILE_CARD");
+    }
 }
