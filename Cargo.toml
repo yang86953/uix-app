@@ -1,6 +1,6 @@
 [workspace]
 # 过程宏 crate 作为工作区成员，与库共享同一锁文件与解析图。
-members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli"]
+members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-gate-consumer"]
 
 [package]
 name = "uix"
@@ -107,6 +107,8 @@ khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional 
 [dev-dependencies]
 # 仅由外部消费者测试编译宿主日志配置，不进入 UIX 运行依赖。
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# 门禁快照测试直接消费 Compiler System 的公开 check 入口；与生产为同一工作区实现。
+uix-lang-compiler = { path = "uix-lang-compiler" }
 
 [features]
 # 默认启用首发平台图形矩阵与九项使用方能力：
