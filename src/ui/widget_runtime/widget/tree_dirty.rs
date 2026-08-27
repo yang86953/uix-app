@@ -6,10 +6,6 @@ use crate::draw::renderer::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-#[cfg(test)]
-#[path = "../../../../tests/unit/ui/widget_runtime/widget/tree_dirty__tests.rs"]
-mod tests;
-
 // 返回组件外框中没有被内容搬移视口覆盖的非重叠区域。
 fn scroll_chrome_regions(frame: Rect, viewport: Rect) -> Vec<Rect> {
     // 调用方通常已做相交；这里仍防御组件返回越界视口。

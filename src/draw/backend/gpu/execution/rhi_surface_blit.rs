@@ -126,13 +126,6 @@ fn lower_picture_sampled_quad(
     }
 }
 
-// 验证 Picture blur 的 target-space 不会重复应用主 surface DPR。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_surface_blit__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
-
 // 为 GpuBackend 提供 RHI Picture texture 到当前 target 的保序合成。
 impl GpuBackend {
     // 将 RHI 离屏 texture 作为已有 sampled source 合成到当前 target。

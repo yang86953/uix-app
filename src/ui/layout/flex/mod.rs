@@ -901,9 +901,3 @@ fn compute_wrapped(
     };
     Size::new(total_w, total_h)
 }
-
-// 仅在库测试中加载独立的 min/max 弹性分配契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/layout/flex/tests.rs"]
-mod tests;

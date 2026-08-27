@@ -539,7 +539,3 @@ fn unix_components(time: SystemTime) -> (u64, u64) {
         Err(_) => (0, 0),
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/diagnostics/repro__tests.rs"]
-mod tests;

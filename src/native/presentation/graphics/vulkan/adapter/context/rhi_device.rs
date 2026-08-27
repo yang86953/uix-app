@@ -915,11 +915,6 @@ fn buffer_shadow_oom() -> Error {
     )
 }
 
-// 使用真实 Vulkan 离屏目标验证共享颜色与 blend 语义的确定性像素结果。
-#[cfg(any(test, feature = "vulkan-parity-test"))]
-#[path = "../../../../../../../tests/unit/native/presentation/graphics/vulkan/adapter/context/rhi_device__gpu_parity_tests.rs"]
-mod gpu_parity_tests;
-
 // 把真实 GPU 测试入口限制在显式 feature 内，并保持实现为当前模块私有子组件。
 #[cfg(feature = "vulkan-parity-test")]
 pub(super) fn run_gpu_parity_test() {
@@ -934,3 +929,8 @@ pub(super) fn readback_production_texture(
 ) -> Vec<u8> {
     gpu_parity_tests::readback_production_texture(context, texture)
 }
+
+// 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
+#[cfg(feature = "vulkan-parity-test")]
+#[path = "../../../../../../../tests/support/native/gpu_parity/vulkan_rhi_device.rs"]
+mod gpu_parity_tests;

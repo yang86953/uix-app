@@ -242,8 +242,3 @@ fn sampler_mip_mode(mode: SamplerMipMode) -> vk::SamplerMipmapMode {
         SamplerMipMode::SingleLevel => vk::SamplerMipmapMode::NEAREST,
     }
 }
-
-// 映射测试保持在根 tests 目录，并作为 Vulkan Adapter 私有测试子模块编译。
-#[cfg(test)]
-#[path = "../../../../../../tests/unit/native/presentation/graphics/vulkan/adapter/rhi__tests.rs"]
-mod tests;

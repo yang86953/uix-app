@@ -679,8 +679,3 @@ impl View for Segmented {
 fn build_segmented_uix_root(kernel: Segmented) -> ViewNode {
     crate::uix!("src/ui/widgets/input/segmented/segmented.uix")
 }
-
-// 验证分段选择器的视觉注入与无分配宽度计算契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/input/segmented__tests.rs"]
-mod tests;

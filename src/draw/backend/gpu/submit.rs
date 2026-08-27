@@ -46,13 +46,6 @@ pub(crate) fn rhi_physical_geometry(
     )
 }
 
-// 只在本模块验证统一物理几何换算，不接触任何原生 Surface。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/submit__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
-
 // 把逻辑 scissor 转成已经裁到 surface 范围内的物理 scissor。
 fn rhi_physical_scissor(
     // 接收 Drawing 已经计算的逻辑裁剪。

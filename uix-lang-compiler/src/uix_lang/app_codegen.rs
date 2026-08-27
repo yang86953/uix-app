@@ -499,6 +499,8 @@ fn validate_node_theme_requests(
             // 验证插值表达式。
             validate_expression_theme_requests(&expression.expression, themes)
         }
+        // 成员块已在声明解析阶段剥离，不会出现在文档树中。
+        Node::WidgetMember(_) => Ok(()),
     }
 }
 

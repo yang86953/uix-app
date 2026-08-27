@@ -813,10 +813,3 @@ impl D3d12Context {
         Ok(())
     }
 }
-
-// 仅验证 D3D12 fence event owner 的关闭事务，不依赖真实 GPU 或 Win32 event。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../../tests/unit/native/presentation/graphics/d3d12/platform/context/methods__fence_event_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod fence_event_tests;

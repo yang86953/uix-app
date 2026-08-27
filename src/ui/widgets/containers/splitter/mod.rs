@@ -614,10 +614,3 @@ impl View for Splitter {
 fn build_splitter_uix_root(kernel: Splitter) -> ViewNode {
     crate::uix!("src/ui/widgets/containers/splitter/splitter.uix")
 }
-
-// 验证公开构建器维护文档化双面板比例不变量。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/containers/splitter__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

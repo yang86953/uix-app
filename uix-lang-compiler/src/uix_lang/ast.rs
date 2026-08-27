@@ -313,6 +313,50 @@ pub(crate) enum Node {
     Text(TextNode),
     // 保存文本插值表达式。
     Interpolation(ExpressionNode),
+    // 保存 Widget 模板内的具名成员声明块。
+    WidgetMember(WidgetMemberBlock),
+}
+
+// 表示 <Widget> 模板内部的 @props / @state / @computed / @actions 声明块。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WidgetMemberBlock {
+    // 保存成员类别。
+    pub(crate) member: WidgetMemberKind,
+    // 保存去除外围空白后的声明体源码，语法与字符串属性形式一致。
+    pub(crate) body: String,
+    // 保存包含 @ 名称与花括号的完整跨度。
+    pub(crate) span: SourceSpan,
+}
+
+// 区分 Widget 模板允许的成员声明块类别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WidgetMemberKind {
+    // 对应 props 属性形式。
+    Props,
+    // 对应 state 属性形式。
+    State,
+    // 对应 computed 属性形式。
+    Computed,
+    // 对应 actions 属性形式。
+    Actions,
+}
+
+// 实现成员类别的规范名称映射。
+impl WidgetMemberKind {
+    // 返回与属性形式一致的成员名称。
+    pub(crate) const fn as_str(self) -> &'static str {
+        // 按闭合集合返回名称。
+        match self {
+            // 返回 props 名称。
+            Self::Props => "props",
+            // 返回 state 名称。
+            Self::State => "state",
+            // 返回 computed 名称。
+            Self::Computed => "computed",
+            // 返回 actions 名称。
+            Self::Actions => "actions",
+        }
+    }
 }
 
 // 表示已经处理转义花括号的文本节点。

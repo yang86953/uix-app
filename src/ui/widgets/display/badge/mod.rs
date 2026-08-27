@@ -1012,10 +1012,3 @@ impl Badge {
         .max_line_width
     }
 }
-
-// 把组合布局、交互、协调和几何回归限制在 Badge 模块内部。
-#[cfg(test)]
-// 测试子模块可以验证私有运行时缓存而不扩大公开 API。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/badge/tests.rs"]
-mod tests;

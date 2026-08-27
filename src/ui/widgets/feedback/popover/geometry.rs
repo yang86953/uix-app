@@ -611,11 +611,3 @@ pub(super) fn arrow_anchor(
         desired.clamp(start + inset, start + length - inset)
     }
 }
-
-// 仅在测试构建中编译气泡卡片契约。
-#[cfg(test)]
-// 将测试放在同模块内以核验私有缓存状态。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/feedback/popover/geometry__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

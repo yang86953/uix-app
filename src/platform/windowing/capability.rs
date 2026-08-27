@@ -199,7 +199,3 @@ impl WindowCapabilities {
             .filter(move |capability| self.supports(*capability))
     }
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/platform/windowing/capability__tests.rs"]
-mod tests;

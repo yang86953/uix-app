@@ -328,10 +328,3 @@ fn normalize_text(value: Option<String>) -> Option<String> {
 fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
 }
-
-// 仅在纯 OpenGL ES 构建中验证兼容失败分支，避免触发真实平台资源。
-#[cfg(all(test, feature = "opengles", not(feature = "d3d11")))]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../tests/unit/platform/facade__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

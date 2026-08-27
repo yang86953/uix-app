@@ -4,8 +4,9 @@ use proc_macro2::{Ident, Literal, TokenStream};
 use quote::quote;
 
 // 引入属性语法树、结构化诊断与源码跨度。
-use super::{Attribute, AttributeValue, Diagnostic, SourceSpan};
-// 引入受限表达式生成入口。
+use super::{Attribute, AttributeValue, Diagnostic, Element, SourceSpan};
+// 引入受限表达式生成入口与共享元素属性查找。
+use super::find_attribute;
 use super::generate_expression;
 
 // 生成字符串或表达式属性值。
@@ -82,6 +83,23 @@ pub(crate) fn boolean_value(attribute: &Attribute) -> Result<TokenStream, Diagno
             "改用布尔字面量或表达式",
         )),
     }
+}
+
+// 生成可选布尔属性；未声明时缺省为 false。
+pub(crate) fn optional_boolean(
+    // 接收完整元素。
+    element: &Element,
+    // 接收布尔属性名。
+    name: &str,
+) -> Result<TokenStream, Diagnostic> {
+    // 显式属性复用统一布尔诊断与动态表达式生成。
+    find_attribute(element, name)
+        // 把可选属性转换为可选生成结果。
+        .map(boolean_value)
+        // 把 Option<Result> 转换为 Result<Option>。
+        .transpose()
+        // 缺省时生成类型明确的布尔字面量。
+        .map(|value| value.unwrap_or_else(|| quote! { false }))
 }
 
 // 生成像素字面量或数值表达式。

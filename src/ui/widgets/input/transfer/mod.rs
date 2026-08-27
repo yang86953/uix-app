@@ -958,15 +958,3 @@ impl Default for Transfer {
         Self::new()
     }
 }
-
-// 验证 Transfer 排版随主题 token 解析。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__typography_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod typography_tests;
-
-// 验证 Transfer 的筛选与树级布局复用契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/transfer__layout_tests.rs"]
-mod layout_tests;

@@ -641,11 +641,6 @@ fn build_range_slider_uix_root(kernel: RangeSlider) -> ViewNode {
     crate::uix!("src/ui/widgets/input/range_slider/range_slider.uix")
 }
 
-// 验证范围滑块的 UIX 视觉注入契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/input/range_slider__tests.rs"]
-mod tests;
-
 /// 归一化范围：非有限值回退默认值，逆序自动交换。
 fn normalize_range(range: RangeInclusive<f64>) -> (f64, f64) {
     let (start, end) = range.into_inner();

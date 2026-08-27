@@ -4,7 +4,7 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 
 // 引入受限表达式、元素形状与诊断契约。
-use super::{generate_expression, AttributeValue, Diagnostic, Element, Node, SOURCE_ID_ATTRIBUTE};
+use super::{AttributeValue, Diagnostic, Element, Node, SOURCE_ID_ATTRIBUTE, generate_expression};
 // 引入公共 View 属性、子树生成与可见子节点判定。
 use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
 

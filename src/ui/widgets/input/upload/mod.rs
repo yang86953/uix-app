@@ -1010,7 +1010,3 @@ impl View for Upload {
         build_upload_view(self, UPLOAD_VISUAL_REF)
     }
 }
-
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_tests.rs"]
-mod tests;

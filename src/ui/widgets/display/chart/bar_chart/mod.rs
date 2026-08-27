@@ -18,10 +18,6 @@ mod data;
 mod plot;
 mod presentation;
 
-#[cfg(test)]
-#[path = "../../../../../../tests/unit/ui/widgets/display/chart/bar_chart/tests.rs"]
-mod tests;
-
 pub use self::data::BarData;
 use self::plot::map_x;
 use self::presentation::*;

@@ -56,6 +56,18 @@ pub(crate) fn generate_button_group(element: &Element) -> Result<TokenStream, Di
                     "ButtonGroup 只放置直接 <Button> 子元素；动态内容请改用 Row",
                 ));
             }
+            // 成员块是声明载体，不构成连体按钮子项。
+            Node::WidgetMember(block) => {
+                // 返回带块跨度的结构化诊断。
+                return Err(Diagnostic::new(
+                    // 指向成员块。
+                    block.span,
+                    // 说明静态组件形状要求。
+                    "<ButtonGroup> 不接受成员声明块子节点",
+                    // 给出正确归属提醒。
+                    "把 @props/@state/@computed/@actions 移入 <Widget> 模板声明区",
+                ));
+            }
         }
     }
     // 保存静态按钮总数以确定每项连体位置。

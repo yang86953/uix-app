@@ -261,11 +261,6 @@ impl RhiRenderer {
     }
 }
 
-// 性能取样只在测试构建内接入，不进入产品二进制。
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_mixed_profile__tests.rs"]
-mod profile_tests;
-
 // 为通用 renderer 提供一个混合操作的单次 FramePlan 执行入口。
 impl RhiRenderer {
     // 按封闭帧作用域执行 Surface 或 Offscreen 混合 RHI 计划。

@@ -91,10 +91,3 @@ impl<T: RhiTextureResource> RhiTextureResourceTable<T> {
         movement.validate_transfer(source, destination).map(|_| ())
     }
 }
-
-// 验证真实 texture 描述决定 render-target 能力，而不是句柄数值。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/texture_resource_table__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

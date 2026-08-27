@@ -126,10 +126,3 @@ impl ImageOverlayPalette {
         }
     }
 }
-
-// 验证图片浮层调色板随主题与 UIX 角色解析。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/image_presentation__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

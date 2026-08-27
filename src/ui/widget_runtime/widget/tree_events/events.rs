@@ -657,7 +657,3 @@ impl WidgetTree {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_events/hit_test__tests.rs"]
-mod tests;

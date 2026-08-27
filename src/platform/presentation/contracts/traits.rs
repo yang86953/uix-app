@@ -128,10 +128,3 @@ pub(crate) fn resize_native_rhi_surface(
     // 只报告 RHI surface 重建成功，不在此处触碰最终 present。
     Ok(())
 }
-
-// 验证逻辑尺寸到物理 RHI extent 的纯转换契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/traits__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

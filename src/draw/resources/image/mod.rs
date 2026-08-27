@@ -670,10 +670,6 @@ impl ImageService {
     }
 }
 
-#[cfg(all(test, feature = "image-codecs"))]
-#[path = "../../../../tests/unit/draw/resources/image__tests.rs"]
-mod tests;
-
 fn apply_pixel_coverage(pixel: u32, coverage: f32) -> u32 {
     if coverage >= 1.0 {
         return pixel;

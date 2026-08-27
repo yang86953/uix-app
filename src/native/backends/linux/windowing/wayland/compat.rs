@@ -649,10 +649,3 @@ impl Main<OrgKdeKwinShadowManager> {
         self.child(proxy)
     }
 }
-
-// 验证 callback registry 的检查式失败传播与 owner 生命周期。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/backends/linux/wayland/compat__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

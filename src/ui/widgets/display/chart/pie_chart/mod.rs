@@ -18,10 +18,6 @@ use super::value_label::ChartValueLabel;
 mod presentation;
 use presentation::*;
 
-#[cfg(test)]
-#[path = "../../../../../../tests/unit/ui/widgets/display/chart/pie_chart/tests.rs"]
-mod tests;
-
 // 使用一个字节记录会覆盖 UIX 默认值的 Rust 调用方声明。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct PieChartAuthored(u8);

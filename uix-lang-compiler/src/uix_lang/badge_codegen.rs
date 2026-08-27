@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -104,6 +107,18 @@ pub(crate) fn generate_badge(element: &Element) -> Result<TokenStream, Diagnosti
                     "把插值放入唯一静态 Label、Container 或 Row",
                 ));
             }
+            // 成员块是声明载体，不会出现在调用内容里。
+            Node::WidgetMember(_) => {
+                // 返回成员块子节点诊断。
+                return Err(Diagnostic::new(
+                    // 指向完整 Badge 元素。
+                    element.span,
+                    // 说明成员块不满足直接子树契约。
+                    "<Badge> 不接受成员声明块作为直接子节点",
+                    // 给出显式静态 View 修复路径。
+                    "把 @props/@state/@computed/@actions 移入 <Widget> 模板声明区",
+                ));
+            }
         };
         // 把完整真实子 ViewNode 交给运行时 owner。
         widget = quote! { (#widget).child(#child) };
@@ -163,13 +178,3 @@ fn i32_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历全部属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

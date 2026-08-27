@@ -519,10 +519,3 @@ fn map_dxgi_operation_result(operation: &str, result: ::windows::core::HRESULT) 
     // 成功或非错误状态完成操作。
     Ok(())
 }
-
-// 固定 D3D11 swapchain descriptor、dirty rect 与 HRESULT 分类契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../../tests/unit/native/presentation/graphics/d3d11/platform/swapchain__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

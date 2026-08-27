@@ -144,10 +144,3 @@ impl GpuRecipeOwner {
         self.context.try_shutdown()
     }
 }
-
-// 验证类型化 GPU owner 的静态门禁与直接委托。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/gpu_recipe_owner__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

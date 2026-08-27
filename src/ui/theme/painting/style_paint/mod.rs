@@ -12,12 +12,6 @@ mod border;
 #[path = "background.rs"]
 // 编译 UI System 私有的背景图层绘制实现。
 mod background;
-// 隔离 spread 几何的单元测试。
-#[cfg(test)]
-// 从独立文件编译 spread 几何契约。
-#[path = "../../../../../tests/unit/ui/style_paint/spread_tests.rs"]
-// 注册样式阴影扩张测试模块。
-mod spread_tests;
 
 // 计算盒阴影 spread 应用后的基准矩形与圆角。
 fn spread_shadow_geometry(

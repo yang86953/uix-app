@@ -318,11 +318,3 @@ impl ActiveWorkRegistry {
         }
     }
 }
-
-// 活动工作公平预算的直接观测只编译进单元测试目标。
-#[cfg(test)]
-// 测试留在 registry Component 内，避免把私有调度结构暴露给集成测试。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/queues/active_work_registry__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

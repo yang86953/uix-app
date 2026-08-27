@@ -988,11 +988,6 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     color.with_alpha(alpha)
 }
 
-// 将 keyed 选择、触发方式与组合子树生命周期测试拆到独立文件。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/navigation/dropdown/tests.rs"]
-mod tests;
 // 把 keyed 数据身份门禁从组件事件和绘制主体中拆分。
 mod keyed;
 

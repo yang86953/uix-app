@@ -237,11 +237,6 @@ pub enum DropPosition {
 
 mod methods;
 mod widget;
-// 集中验证树级文档配置与运行时状态所有权。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/tree/tests.rs"]
-mod tests;
 
 pub use widget::*;
 

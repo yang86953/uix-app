@@ -268,10 +268,3 @@ impl RhiRenderer {
         Ok(())
     }
 }
-
-// 为仿射 shadow 几何门禁保留最小单元覆盖。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_shadow__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -14,13 +14,13 @@
 | **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`；公开使用方通过 `GraphicsBackend` 与 `Platform` 门面选择和查询。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
 | **已实现** | OpenGL ES | Linux EGL/OpenGL ES 实现共享 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
 | **已实现** | D3D11 实现边界 | Windows D3D11 已具备生产 draw/submit、Blur 与 Surface 生命周期实现；内部 HWND、readback、RHI 和链接结构不属于公开 API，不建立项目测试。 |
-| **待验收** | D3D11 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D11` 使用路径尚未完成；该项是 `0.0.1` 发布门禁，不能由交叉链接或内部门禁替代。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
+| **待验收** | D3D11 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D11` 使用路径尚未完成；该状态只描述事实，不构成 `0.0.1` 的发布前提。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
 
 上述“已实现”只记录仓库当前固定实现；公开 API 测试状态与环境结果由 Gitea 维护，内部图形执行不形成测试矩阵。
 
-### Windows 公开 API 验收条件
+### Windows 公开 API 验证方式
 
-当前发布门禁必须由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得启用 parity/test-harness feature，不得访问 HWND、RHI、FramePlan、readback、故障注入或其他私有入口。在公开入口实际执行并记录环境前继续保持 **待验收**。
+验证公开 `Direct3D11` 路径时，由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得启用 parity/test-harness feature，不得访问 HWND、RHI、FramePlan、readback、故障注入或其他私有入口。在公开入口实际执行并记录环境前继续保持 **待验收**；是否以当前状态发布由仓库所有者自行判断，不设发布条件。
 
 ## 责任边界
 
@@ -158,7 +158,7 @@ GPU baseline 操作不能依赖常态 CPU fallback。无法保持语义、资源
 
 ## 已知设计债务与待跟进
 
-以下为图形后端评审确认的设计债务，暂不影响 0.0.1 图形门禁，但需在对应改动前收敛。
+以下为图形后端评审确认的设计债务，不作为 `0.0.1` 发布前提，但需在对应改动前收敛。
 
 - **soft fallback 使用量不可观测**：`RenderMetrics` 只统计 layout/paint/present/idle，没有 soft 路径（CPU 栅格化段）的使用率统计。`NativeGpuCanvas2D` 在 `!retained_color_target || !native_blend` 等条件下整段落入 CPU 软栅格化，若某平台能力缺失导致常态触发，性能退化无指标暴露。待跟进：为 renderer metrics 增加 soft 像素/软段帧计数，soft 占比超标时可观测告警。
 - **macOS Metal 占位条目的 recipe 声明待修正**：`registry_macos.rs` 中 Metal 条目标注 `RasterMode::Cpu × PresentMode::PixelUpload`，与 Metal 作为 GPU API 的预期形态（应为 `GpuNative × Swapchain`，经 CAMetalLayer）矛盾。当前状态 `Disabled` 无实际影响，但启用 Metal 前必须先修正 recipe 轴，避免误导实现。

@@ -31,6 +31,8 @@ fn node_uses_set_style(node: &Node) -> bool {
         Node::Text(_) => false,
         // 插值表达式按表达式树检查。
         Node::Interpolation(node) => expression_uses_set_style(&node.expression),
+        // 成员块由声明解析器剥离；其内部语句不经过节点树。
+        Node::WidgetMember(_) => false,
     }
 }
 

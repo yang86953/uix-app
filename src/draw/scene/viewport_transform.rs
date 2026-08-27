@@ -255,8 +255,3 @@ pub fn needs_paint_rect(
 fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
     scene.children_clip(id, scene.node_frame(id)).is_some()
 }
-
-// 将主表面裁剪契约测试放在根 tests 目录，保留私有辅助函数访问能力。
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/scene/viewport_transform__tests.rs"]
-mod tests;

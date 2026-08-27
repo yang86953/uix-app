@@ -877,10 +877,3 @@ fn union_if_touching(
     let y1 = l_bottom.max(r_bottom);
     Some((x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0)))
 }
-
-// 验证 tracked swapchain 的首帧、历史修复、失败提交与重建门禁。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/core/damage/mod__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

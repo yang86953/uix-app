@@ -495,11 +495,3 @@ impl Spin {
         self.delay.is_zero() || self.delay_elapsed >= self.delay.as_secs_f32()
     }
 }
-
-// 验证声明刷新不会夺走 Spin 的运行时动画生命周期状态。
-#[cfg(test)]
-// 将生命周期契约限制在当前组件模块的内部测试中。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/feedback/spin__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

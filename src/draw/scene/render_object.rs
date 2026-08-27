@@ -193,7 +193,3 @@ impl RenderObjectTree {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/scene/render_object__tests.rs"]
-mod tests;

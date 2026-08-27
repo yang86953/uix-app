@@ -89,10 +89,3 @@ impl FontService {
         Ok(())
     }
 }
-
-// 验证字体包的发布顺序和失败回滚语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/bundle_install__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

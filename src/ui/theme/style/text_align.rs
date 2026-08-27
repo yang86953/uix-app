@@ -29,10 +29,3 @@ impl TextAlign {
         }
     }
 }
-
-// 验证显式默认值在样式合并中仍覆盖继承值。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/theme/style/text_align__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

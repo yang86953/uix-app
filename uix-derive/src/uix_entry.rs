@@ -296,12 +296,14 @@ mod tests {
 
     #[test]
     fn file_entry_tracks_source_without_runtime_parser() {
-        let input = LitStr::new(
-            "tests/fixtures/uix_lang/public_entry.uix",
-            Span::call_site(),
-        );
-        let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let tokens = expand_file_at(&input, &repository_root).to_string();
+        // 测试面只保留公开 API：在临时目录落盘最小 View 源，以绝对路径走真实文件入口。
+        let mut source_path = std::env::temp_dir();
+        source_path.push(format!("uix_entry_file_track_{}.uix", std::process::id()));
+        std::fs::write(&source_path, "<Text>Hello</Text>").unwrap();
+        let input = LitStr::new(&source_path.to_string_lossy(), Span::call_site());
+        // 绝对路径不消费清单目录，占位值同时验证这一契约。
+        let tokens = expand_file_at(&input, Path::new("missing_manifest_root")).to_string();
+        let _ = std::fs::remove_file(&source_path);
         assert!(tokens.contains("include !"));
         assert!(!tokens.contains("parse_document"));
     }

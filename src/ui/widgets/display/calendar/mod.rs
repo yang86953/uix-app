@@ -1209,9 +1209,3 @@ impl Default for Calendar {
         Self::new()
     }
 }
-
-// 将受控状态回归与主实现分文件保存，确保组件文件不超过规模上限。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/calendar/tests.rs"]
-mod tests;

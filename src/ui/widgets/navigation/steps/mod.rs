@@ -596,14 +596,6 @@ impl Steps {
     }
 }
 
-// 受控 current 的运行时所有权与 reconcile 回归。
-#[cfg(test)]
-// 声明 Steps 私有测试模块。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/navigation/steps__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;
-
 impl Step {
     /// 使用标题创建由 Steps.current 自动决定状态且无描述和图标的步骤。
     pub fn new(title: &str) -> Self {

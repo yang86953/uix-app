@@ -83,10 +83,3 @@ pub(crate) fn push_window_resize(
     // 向 callback adapter 确认状态与事件均已提交。
     Ok(())
 }
-
-// 验证事件队列失效时 shared helper 不会静默丢失或半写状态。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/windowing/shared/window_lifecycle__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

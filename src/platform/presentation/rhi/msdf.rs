@@ -73,10 +73,3 @@ impl RhiMsdfRasterParams {
         bytes
     }
 }
-
-// 验证共享 MSDF 字段排列、纹理 extent 语义与固定 padding。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/msdf__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

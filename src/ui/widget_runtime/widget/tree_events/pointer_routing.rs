@@ -289,11 +289,3 @@ impl WidgetTree {
         None
     }
 }
-
-// 单元测试验证原生窗口接管只清理指针手势而保留键盘焦点。
-#[cfg(test)]
-// 测试模块直接观察 WidgetTree manager 状态，不依赖真实窗口。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_events/pointer_routing__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

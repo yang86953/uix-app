@@ -4,6 +4,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 // 引入公共属性与叶节点形状判定。
+// 引入共享元素属性查找。
+use super::find_attribute;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Empty 诊断与共享字符串生成契约。
 use super::{Diagnostic, Element, string_value};
@@ -54,13 +56,3 @@ pub(crate) fn generate_empty(element: &Element) -> Result<TokenStream, Diagnosti
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a super::Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

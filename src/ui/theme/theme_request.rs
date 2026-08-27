@@ -48,10 +48,3 @@ pub fn uix_set_theme(name: &str) {
         }
     });
 }
-
-// 集中验证主题请求通道的安装、提交与卸载语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/theme_request__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

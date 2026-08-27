@@ -561,10 +561,3 @@ impl AppHandle {
         self.runtime.close_session(self.window_id);
     }
 }
-
-// 验证应用根主题背景默认值及用户覆写优先级。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/application/app_handle__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

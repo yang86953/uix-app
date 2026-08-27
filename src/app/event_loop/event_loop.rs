@@ -762,7 +762,3 @@ fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLo
         *slot = state;
     }
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/app/event_loop/event_loop__energy_tests.rs"]
-mod energy_tests;

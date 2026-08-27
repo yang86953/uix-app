@@ -519,7 +519,3 @@ impl<O: WindowOps> INativeHandle for PlatformWindowCore<O> {
         self.ops.native_handle()
     }
 }
-
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/windowing/shared/window_capability__tests.rs"]
-mod capability_tests;

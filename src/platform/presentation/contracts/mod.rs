@@ -222,12 +222,6 @@ impl FromStr for GraphicsSelection {
     }
 }
 
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/mod__graphics_selection_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod graphics_selection_tests;
-
 /// Opaque, thread-affine native surface handle used for graphics assembly.
 ///
 /// Platform windows create the underlying pointer. Crossing that pointer into

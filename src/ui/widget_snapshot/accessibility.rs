@@ -348,13 +348,6 @@ pub(super) fn rich_text_accessibility(
     })
 }
 
-// RichText 主题分隔线语义快照专项测试。
-#[cfg(all(test, feature = "rich-text"))]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widget_snapshot/accessibility__rich_text_thematic_break_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod rich_text_thematic_break_tests;
-
 pub(super) fn typography_accessibility(
     content: &str,
     type_: TypographyType,

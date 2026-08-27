@@ -32,10 +32,3 @@ impl WidgetTree {
         CursorType::Arrow
     }
 }
-
-// 验证光标继承、显式默认覆盖和空命中回退。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_events/cursor__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

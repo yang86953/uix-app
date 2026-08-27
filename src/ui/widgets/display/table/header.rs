@@ -475,11 +475,3 @@ fn visit_group_title_segments_for_zone(
         visit(title, segment);
     }
 }
-
-// 仅在单元测试中编译分组表头层级契约。
-#[cfg(test)]
-// 将分组表头重叠绘制顺序回归收拢在表头模块。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/table/header__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

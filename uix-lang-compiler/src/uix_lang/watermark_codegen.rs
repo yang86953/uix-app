@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -96,34 +99,14 @@ fn watermark_opacity_value(attribute: &Attribute) -> Result<TokenStream, Diagnos
 }
 
 // 查找 Watermark 的必需属性。
-fn required_attribute<'a>(
-    // 借用待检查元素。
-    element: &'a Element,
-    // 指定必需属性名。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 返回现有属性或构造缺失诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 创建指向完整元素的诊断。
-        Diagnostic::new(
-            // 指向完整 Watermark 元素。
-            element.span,
-            // 说明具体缺失属性。
-            format!("<Watermark> 缺少必需的 {name} 属性"),
-            // 给出最小合法写法。
-            "使用 <Watermark text=\"CONFIDENTIAL\" />",
-        )
-    })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "Watermark",
+        "使用 <Watermark text=\"CONFIDENTIAL\" />",
+    )
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

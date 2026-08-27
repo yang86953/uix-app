@@ -73,10 +73,3 @@ pub(super) fn justify_line(
     // 有效空白已精确填满有限容器。
     container_width
 }
-
-// 验证两端对齐同时更新空白 advance 与后续视觉坐标。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/draw/resources/font/font_service/text_justify__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

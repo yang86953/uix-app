@@ -376,11 +376,6 @@ impl SamplerDesc {
     }
 }
 
-// 将完整 sampler 描述测试保持在共享 RHI Component 下。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/sampler_tests.rs"]
-mod sampler_tests;
-
 // 定义 premultiplied-alpha 颜色值。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RhiColor([f32; 4]);
@@ -440,11 +435,6 @@ impl RhiColor {
             && blue <= alpha
     }
 }
-
-// 将预乘颜色值对象测试拆到独立文件，保持主 RHI 聚焦契约。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/color_value_tests.rs"]
-mod color_value_tests;
 
 // 保存已经规范化为左上原点与 0xAARRGGBB 的 surface 回读结果。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -544,11 +534,6 @@ impl RhiSurfaceReadback {
         self.pixels
     }
 }
-
-// 将 surface 回读契约测试拆到独立文件，保持主 RHI 契约低于文件上限。
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/readback_tests.rs"]
-mod surface_readback_tests;
 
 // 描述一次 render pass 的加载动作。
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -6,8 +6,8 @@ use quote::quote;
 use crate::source_graph::SourceId;
 // 引入解析后的核心语法树与诊断类型。
 use super::{
-    mark_source_tokens, with_source_marker_id, Attribute, ControlBinding, Diagnostic, Element,
-    ExpressionNode, Node, SourceSpan, WidgetScopeMarker, SOURCE_ID_ATTRIBUTE,
+    Attribute, ControlBinding, Diagnostic, Element, ExpressionNode, Node, SOURCE_ID_ATTRIBUTE,
+    SourceSpan, WidgetScopeMarker, mark_source_tokens, with_source_marker_id,
 };
 // 引入独立元素分派入口。
 use super::element_codegen::generate_element;
@@ -584,6 +584,20 @@ pub(super) fn generate_node_view(node: &Node) -> Result<TokenStream, Diagnostic>
                 ::uix::prelude::label(::std::string::ToString::to_string(&(#value)))
             })
         }
+        // 成员声明块是纯语法载体，声明解析阶段已经从模板中剥离。
+        Node::WidgetMember(_) => Err(Diagnostic::new(
+            // 使用零跨度定位内部装配错误。
+            SourceSpan {
+                start: 0,
+                end: 0,
+                line: 1,
+                column: 1,
+            },
+            // 说明成员块不是可渲染节点。
+            "成员声明块不是可渲染节点",
+            // 给出正确归属提醒。
+            "成员块只能出现在 <Widget> 模板顶部，由声明解析器剥离",
+        )),
     }
 }
 
@@ -926,6 +940,8 @@ pub(super) fn generate_text_content(
             }
             // 元素已在函数开头拒绝。
             Node::Element(_) => {}
+            // 成员块已在声明解析阶段剥离；防御性跳过保持零输出。
+            Node::WidgetMember(_) => {}
         }
     }
     // 返回构建动态文本的 Rust 块。

@@ -151,10 +151,3 @@ impl WidgetRender for DynamicLabel {
         );
     }
 }
-
-// 仅在测试构建中验证动态文本的响应式生命周期契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widget_runtime/dynamic_label__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

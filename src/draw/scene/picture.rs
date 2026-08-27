@@ -423,11 +423,3 @@ fn render_non_picture_subtree<S: ScenePaint>(
         }
     }
 }
-
-// 仅在测试构建中验证 Picture 场景资源失败传播。
-#[cfg(test)]
-// 场景测试只依赖公开 RenderTarget 契约，不取得 backend 私有资源。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/scene/picture__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

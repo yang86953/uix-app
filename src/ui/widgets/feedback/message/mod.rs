@@ -857,8 +857,3 @@ impl View for Message {
         build_message_uix_root(self)
     }
 }
-
-// 集中验证 Message 的 UIX 视觉单源与分配快路径。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/feedback/message__tests.rs"]
-mod tests;

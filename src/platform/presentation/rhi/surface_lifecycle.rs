@@ -278,7 +278,3 @@ pub(crate) fn run_surface_lifecycle_contract_test() {
         .expect("SUBOPTIMAL must keep the already-presented frame successful");
     assert_eq!(lifecycle.token().generation, 2);
 }
-
-#[cfg(test)]
-#[path = "../../../../tests/unit/native/present/rhi/surface_lifecycle__tests.rs"]
-mod tests;

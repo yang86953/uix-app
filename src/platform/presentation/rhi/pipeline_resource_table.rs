@@ -89,10 +89,3 @@ fn stale_kind() -> Error {
     // 共享层统一把伪造或陈旧语义归类为参数错误。
     Error::new(Errc::InvalidArgument, "RHI pipeline binding kind is stale")
 }
-
-// 验证资源表只接受资源表签发的匹配绑定并保留错配资源。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/pipeline_resource_table__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

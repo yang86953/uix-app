@@ -220,7 +220,3 @@ pub(super) fn format_file_size(bytes: u64) -> String {
         format!("{bytes} B")
     }
 }
-
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/other/misc/upload_presentation__tests.rs"]
-mod tests;

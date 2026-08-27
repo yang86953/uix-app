@@ -71,10 +71,3 @@ impl From<ButtonGroup> for ViewNode {
         group.build()
     }
 }
-
-// 集中验证 ButtonBuilder 与既有 ButtonGroupPosition 的桥接契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/general/button_group__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

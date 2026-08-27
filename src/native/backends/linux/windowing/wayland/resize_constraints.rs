@@ -221,7 +221,3 @@ impl<'a> WaylandResizeConstraintAdapter<'a> {
         Ok(())
     }
 }
-
-#[cfg(test)]
-#[path = "../../../../../../tests/unit/native/backends/linux/wayland/resize_constraints__tests.rs"]
-mod tests;

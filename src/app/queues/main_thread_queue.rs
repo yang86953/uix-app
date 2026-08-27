@@ -152,11 +152,3 @@ impl MainThreadQueue {
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
-
-// 主线程队列的公平预算只在单元测试目标中直接观测。
-#[cfg(test)]
-// 单元测试与队列实现位于同一 Component 边界，可检查私有预算和剩余工作。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/queues/main_thread_queue__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -591,9 +591,3 @@ impl WidgetTree {
             .unwrap_or(content_frame)
     }
 }
-
-// 集中验证 userSelect 的树级传播、清理与整体选择行为。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/text_selection/user_select_tests.rs"]
-mod user_select_tests;

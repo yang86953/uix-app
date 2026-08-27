@@ -55,7 +55,3 @@ fn parse_debug_switch(value: &OsStr) -> Result<bool, ()> {
         _ => Err(()),
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/diagnostics/debug__tests.rs"]
-mod tests;

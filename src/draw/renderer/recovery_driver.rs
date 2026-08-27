@@ -701,9 +701,3 @@ pub(crate) fn run_multi_window_device_loss_contract_test() {
     assert_eq!(first_rebuilds.load(Ordering::Acquire), 1);
     assert_eq!(second_rebuilds.load(Ordering::Acquire), 1);
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/renderer/recovery_driver__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

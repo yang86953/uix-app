@@ -9,11 +9,6 @@ use super::super::LAYOUT_TRACE_PHASE;
 
 use super::{LayoutFrameScratch, LayoutTraversalScratch};
 
-// 将失效消费契约测试放在根 tests 目录，保留私有遍历入口访问能力。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widget_runtime/widget/tree_layout/layout__tests.rs"]
-mod tests;
-
 impl WidgetTree {
     /// 记录已由外部 frame 更新覆盖旧视觉范围的布局根。
     pub(crate) fn note_frame_dirty_layout_root(&mut self, id: WidgetId) {

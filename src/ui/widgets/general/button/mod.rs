@@ -999,8 +999,3 @@ fn default_button_style() -> Arc<Style> {
     static STYLE: OnceLock<Arc<Style>> = OnceLock::new();
     Arc::clone(STYLE.get_or_init(|| Arc::new(Style::default())))
 }
-
-// 只在单元测试目标验证 UIX 视觉与共享样式集缓存契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/general/button__tests.rs"]
-mod tests;

@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -6,7 +9,7 @@ use quote::quote;
 // 引入公共属性、有序子树生成与可见节点判定入口。
 use super::codegen::{apply_common_attributes, generate_children, is_renderable_node};
 // 引入 Spin 属性、值映射、语法树与诊断契约。
-use super::{Attribute, Diagnostic, Element, boolean_value, string_value};
+use super::{Diagnostic, Element, boolean_value, string_value};
 
 // 生成保留运行时动画所有权与可选遮罩子树的 Spin 加载指示器。
 pub(crate) fn generate_spin(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -43,14 +46,3 @@ pub(crate) fn generate_spin(element: &Element) -> Result<TokenStream, Diagnostic
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-    // 结束属性查找函数。
-}

@@ -6,6 +6,9 @@ use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem, Query
 
 mod lsp;
 
+// 结构体驱动的 Visual 骨架生成。
+mod scaffold;
+
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
         Ok(code) => ExitCode::from(code),
@@ -25,9 +28,28 @@ fn run(args: Vec<String>) -> Result<u8, String> {
         "fmt" => format_files(&args[1..]),
         "compile" => compile(&args[1..]),
         "query" => query(&args[1..]),
+        "scaffold" => scaffold(&args[1..]),
         "lsp" => lsp::run_stdio(),
         _ => Err(usage()),
     }
+}
+
+// 生成 <Visual> 声明骨架：uix scaffold visual <rust文件> <StructName>
+fn scaffold(args: &[String]) -> Result<u8, String> {
+    // 校验类别与两个必填参数。
+    if args.first().map(String::as_str) != Some("visual") || args.len() != 3 {
+        // 返回规范用法。
+        return Err("用法: uix scaffold visual <rust文件> <StructName>".into());
+    }
+    // 输出骨架到 stdout，供重定向到目标 .uix 文件。
+    print!(
+        "{}",
+        scaffold::generate_visual_scaffold(
+            std::path::Path::new(&args[1]),
+            args[2].as_str()
+        )?
+    );
+    Ok(0)
 }
 
 fn check(args: &[String]) -> Result<u8, String> {
@@ -244,5 +266,5 @@ fn diagnostic_text(error: &CompilerDiagnostic) -> String {
     )
 }
 fn usage() -> String {
-    "用法: uix check|fmt|compile|query ...".into()
+    "用法: uix check|fmt|compile|query|scaffold visual <rust文件> <StructName>|lsp ...".into()
 }

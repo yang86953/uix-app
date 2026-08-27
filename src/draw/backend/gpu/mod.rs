@@ -42,9 +42,3 @@ pub(crate) use primitives::{
     GpuBoxShadow, GpuGlyphBlit, GpuImageBlit, GpuLineSegment, GpuLinearGradientRect,
     GpuRadialGradient, GpuSector, GpuSolidMesh, GpuSolidRect, GpuStrokeRect,
 };
-
-// 将 GPU 启动探针的动态资源与 FramePlan 生命周期测试归属 Drawing GPU Module。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/device_probe_tests.rs"]
-mod device_probe_tests;

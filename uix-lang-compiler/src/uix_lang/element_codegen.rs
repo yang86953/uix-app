@@ -5,17 +5,17 @@ use proc_macro2::TokenStream;
 use super::codegen::{generate_button, generate_icon, generate_text};
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
-    generate_affix, generate_alert, generate_anchor, generate_app_layout, generate_autocomplete,
-    generate_avatar, generate_back_top, generate_badge, generate_basic_chart, generate_breadcrumb,
-    generate_button_group, generate_calendar, generate_card, generate_carousel, generate_cascader,
-    generate_checkbox, generate_color_picker, generate_column, generate_container,
-    generate_date_picker, generate_date_range_picker, generate_descriptions, generate_divider,
-    generate_drawer, generate_dropdown, generate_empty, generate_float_button,
-    generate_float_button_group, generate_focus_trap, generate_form, generate_grid,
-    generate_hierarchy_gauge_chart, generate_input, generate_input_group, generate_input_number,
-    generate_kernel_host, generate_kernel_view, generate_list, generate_matrix_delta_chart,
-    generate_mentions, generate_menu, generate_message_declaration, generate_modal,
-    generate_navigation, generate_notification_declaration, generate_orphan_col,
+    Diagnostic, Element, generate_affix, generate_alert, generate_anchor, generate_app_layout,
+    generate_autocomplete, generate_avatar, generate_back_top, generate_badge,
+    generate_basic_chart, generate_breadcrumb, generate_button_group, generate_calendar,
+    generate_card, generate_carousel, generate_cascader, generate_checkbox, generate_color_picker,
+    generate_column, generate_container, generate_date_picker, generate_date_range_picker,
+    generate_descriptions, generate_divider, generate_drawer, generate_dropdown, generate_empty,
+    generate_float_button, generate_float_button_group, generate_focus_trap, generate_form,
+    generate_grid, generate_hierarchy_gauge_chart, generate_input, generate_input_group,
+    generate_input_number, generate_kernel_host, generate_kernel_view, generate_list,
+    generate_matrix_delta_chart, generate_mentions, generate_menu, generate_message_declaration,
+    generate_modal, generate_navigation, generate_notification_declaration, generate_orphan_col,
     generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_pagination,
@@ -27,8 +27,7 @@ use super::{
     generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
     generate_tree, generate_tree_select, generate_typography, generate_upload,
     generate_virtual_scroll, generate_watermark, generate_window_control,
-    generate_window_drag_region, planned_builtin_diagnostic, supported_builtin_hint, Diagnostic,
-    Element,
+    generate_window_drag_region, planned_builtin_diagnostic, supported_builtin_hint,
 };
 // 引入 SelectableList 独立生成入口。
 use super::generate_selectable_list;

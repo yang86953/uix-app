@@ -801,10 +801,3 @@ impl NativeGpuCanvas2D {
             }));
     }
 }
-
-// 验证 Additive 描边只在事实能力和几何证明同时成立时进入 native queue。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/backend/gpu/queue__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

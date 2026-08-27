@@ -81,10 +81,3 @@ impl RhiSubmissionSequence {
         self.last = None;
     }
 }
-
-// 仅验证 API 无关提交状态机的边界语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/submission__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

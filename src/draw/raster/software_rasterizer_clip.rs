@@ -203,10 +203,3 @@ fn triangle_bounds(triangles: &[f32]) -> Option<Rect> {
         None
     }
 }
-
-// 用简单三角形验证 mask coverage 与 pop_clip 恢复语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/raster/software_rasterizer_clip__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

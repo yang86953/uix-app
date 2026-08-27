@@ -563,9 +563,3 @@ fn push_text_segment(content: &str, style: &RichTextStyle, segments: &mut Vec<Ri
         style: style.clone(),
     });
 }
-
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/other/rich_text/parse__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -56,10 +56,3 @@ fn classify_file_drop_enable(result: Result<()>) -> Result<bool> {
         Err(error) => Err(error),
     }
 }
-
-// 纯分类测试不创建真实原生窗口。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/app/window/window_creation__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

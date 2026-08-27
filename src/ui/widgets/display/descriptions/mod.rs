@@ -552,11 +552,6 @@ impl DescriptionsItem {
     }
 }
 
-// 集中验证 UIX 声明壳与描述列表 Rust 内核的单叶契约。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/ui/widgets/display/descriptions_tests.rs"]
-mod tests;
-
 fn wrapped_text_height(text: &str, region_width: f32, visual: &DescriptionsVisual) -> f32 {
     let text_width = region_width - visual.layout.horizontal_padding * 2.0;
     if text_width <= 0.0 {

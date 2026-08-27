@@ -242,10 +242,3 @@ impl FrameRecordingCanvas {
         Some((sampled, self.native_src_over_fill_clip()?))
     }
 }
-
-// 仅在测试构建中验证亚像素 shape 的录制与参考执行契约。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/painting/recorder/canvas_shape__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

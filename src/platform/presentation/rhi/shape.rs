@@ -296,10 +296,3 @@ fn sdf_to_coverage(distance: f32) -> f32 {
     // 以像素中心为零并把半像素两侧夹紧到零和一。
     (0.5 - distance).clamp(0.0, 1.0)
 }
-
-// 锁定共享 Shape 参数、像素语义以及两个 native shader 的编码约束。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/shape__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

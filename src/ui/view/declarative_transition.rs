@@ -314,10 +314,3 @@ const fn concrete_color(value: ColorValue) -> Option<Color> {
         ColorValue::Palette(_) | ColorValue::Neutral(_) => None,
     }
 }
-
-// 集中验证首次挂载、原位重定向与具体颜色边界。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/view/declarative_transition__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

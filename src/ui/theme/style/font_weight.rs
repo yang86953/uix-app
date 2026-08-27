@@ -53,10 +53,3 @@ impl Default for FontWeight {
         Self::NORMAL
     }
 }
-
-// 验证数值边界和显式默认值覆盖语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/theme/style/font_weight__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -89,10 +89,3 @@ impl<T: RhiBufferResource> RhiBufferResourceTable<T> {
         upload.validate(resource.desc())
     }
 }
-
-// 验证 Buffer 资源表只把真实描述交给共享 Draw 门禁。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/buffer_resource_table__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

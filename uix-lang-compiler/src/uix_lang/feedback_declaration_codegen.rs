@@ -1,4 +1,7 @@
 // 引入卫生事件变量所需标识符和令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -190,31 +193,17 @@ fn reject_children(element: &Element, tag: &str) -> Result<(), Diagnostic> {
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用有序属性集合。
-        .attributes
-        // 遍历全部属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}
 
 // 查找声明组件的必需属性。
 fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
-    // 缺失时返回确定诊断。
-    find_attribute(element, name).ok_or_else(|| {
-        // 构造来源位置诊断。
-        Diagnostic::new(
-            // 指向完整元素。
-            element.span,
-            // 点名缺失属性。
-            format!("<{}> 缺少必需的 {name} 属性", element.name),
-            // 给出最小修复原则。
-            format!("为 <{}> 提供非空 {name}", element.name),
-        )
-    })
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        // 诊断标签跟随实际元素名。
+        &element.name,
+        &format!("为 <{}> 提供非空 {name}", element.name),
+    )
 }
 
 // 拒绝静态空 key。

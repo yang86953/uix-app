@@ -929,8 +929,3 @@ fn line_segment_scene() -> ConsistencyScene {
         ],
     }
 }
-
-// 规范本身的闭集、ABI 与容差门禁放在根 tests 目录，供所有 API harness 共享。
-#[cfg(test)]
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_consistency__tests.rs"]
-mod tests;

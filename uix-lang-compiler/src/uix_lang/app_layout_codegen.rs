@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -6,7 +9,7 @@ use quote::quote;
 // 引入有序子树与公共属性生成入口。
 use super::codegen::{apply_common_attributes, generate_children};
 // 引入布局壳属性解析与诊断契约。
-use super::{Attribute, Diagnostic, Element, boolean_value, literal_string};
+use super::{Diagnostic, Element, boolean_value, literal_string};
 
 // 生成 Layout / Sider / Header / Content / Footer 应用布局壳。
 pub(crate) fn generate_app_layout(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -90,13 +93,3 @@ fn generate_sider(element: &Element) -> Result<TokenStream, Diagnostic> {
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        // 借用属性列表。
-        .attributes
-        // 遍历属性。
-        .iter()
-        // 返回名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

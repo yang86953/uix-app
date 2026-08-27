@@ -35,11 +35,6 @@ mod glyph;
 // 引入字形轮廓批次 lowering 入口。
 use glyph::append_glyph_outlines;
 
-// 将 FrameEncoder RHI lowering 单元测试拆到尾部文件，保持实现文件不超过行数边界。
-#[cfg(test)]
-#[path = "../../../../../tests/unit/draw/backend/gpu/backend/rhi_frame_test_tail.rs"]
-mod tests;
-
 // 保存一条已经完成物理坐标 lowering 的 FrameEncoder 计划。
 struct LoweredFrame {
     // 保存严格保持原始 painter order 的分段操作和纹理搬移。

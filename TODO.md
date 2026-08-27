@@ -4,7 +4,7 @@
 
 需要定位当前待办时的常用入口：
 
-- 0.0.1 发布范围、平台矩阵与发布门禁：父 Issue #1 及其子 Issue（如 Windows D3D11 公开 API 验收由 [Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有）。
+- 0.0.1 任务、平台矩阵与环境证据：父 Issue #1 及其子 Issue（如 Windows D3D11 公开 API 验收由 [Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有）。
 - 版本、交付物与候选包契约：[交付与许可](docs/产品/交付与许可.md)。
 - 图形后端"已实现 / 待验收"边界：[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)。
 - 用户可观察的版本变化：[变更记录](CHANGELOG.md)。

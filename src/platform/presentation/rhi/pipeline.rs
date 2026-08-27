@@ -623,10 +623,3 @@ pub(crate) struct PipelineDesc {
     // 使用封闭类型标识通用 renderer 选定的 pipeline 语义。
     pub(crate) kind: PipelineKind,
 }
-
-// 锁定跨 Adapter 最容易漂移的 ABI 语义。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/pipeline__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

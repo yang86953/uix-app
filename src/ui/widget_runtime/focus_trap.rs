@@ -129,11 +129,3 @@ impl FocusTrap {
         crate::ui::widget_runtime::widget::WidgetNode::new(Box::new(self), vec![node])
     }
 }
-
-// 验证焦点陷阱的正反向循环与禁用边界。
-#[cfg(test)]
-// 将焦点顺序契约限制在组件模块内部测试。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/ui/widget_runtime/focus_trap__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

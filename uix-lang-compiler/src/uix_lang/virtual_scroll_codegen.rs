@@ -283,32 +283,14 @@ fn validate_virtual_key_expression(
 }
 
 // 查找必需结构属性并生成定位诊断。
-fn required_attribute<'a>(
-    // 接收 VirtualScroll 元素。
-    element: &'a Element,
-    // 接收必需属性名称。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 在源顺序属性中查找目标名称。
-    element
-        // 借用属性列表。
-        .attributes
-        // 逐项遍历。
-        .iter()
-        // 匹配精确属性名。
-        .find(|attribute| attribute.name == name)
-        // 缺失时构造完整元素诊断。
-        .ok_or_else(|| {
-            // 返回必需属性诊断。
-            Diagnostic::new(
-                // 指向完整 VirtualScroll。
-                element.span,
-                // 说明缺失的具体属性。
-                format!("<VirtualScroll> 缺少必需的 {name} 属性"),
-                // 给出文档规范的最小结构。
-                "使用 <VirtualScroll data={items} rowHeight=\"32px\"><For {item} in {items}>...</For></VirtualScroll>",
-            )
-        })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "VirtualScroll",
+        "使用 <VirtualScroll data={items} rowHeight=\"32px\"><For {item} in {items}>...</For></VirtualScroll>",
+    )
 }
 
 // 提取必须使用花括号声明的表达式属性。

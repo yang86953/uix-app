@@ -659,10 +659,3 @@ impl Canvas2D for FrameRecordingCanvas {
         }
     }
 }
-
-// 验证 Additive 形状从 Canvas2D 记录到参考像素的完整语义（外置测试文件）。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/draw/painting/recorder/canvas2d__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

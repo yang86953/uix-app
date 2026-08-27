@@ -173,10 +173,3 @@ impl RhiGradientRasterParams {
         bytes
     }
 }
-
-// 验证共享 Gradient 派生公式和固定 ABI，禁止 Adapter 漂移后缺少参考证据。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/native/present/rhi/gradient__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

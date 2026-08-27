@@ -1,4 +1,7 @@
 // 引入卫生事件变量所需的标识符、跨度与令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::{Ident, Span, TokenStream};
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -173,13 +176,3 @@ fn mode_diagnostic(attribute: &Attribute) -> Diagnostic {
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已经保证同名属性唯一。
-    element
-        // 借用有序属性集合。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回首个名称匹配项。
-        .find(|attribute| attribute.name == name)
-}

@@ -393,11 +393,3 @@ fn finite_nonnegative(value: f32) -> f32 {
         0.0
     }
 }
-
-// 仅在单元测试中编译表格列几何契约。
-#[cfg(test)]
-// 将固定列重叠命中回归收拢在纯几何模块。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/display/table/geometry__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

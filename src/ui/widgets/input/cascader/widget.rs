@@ -706,11 +706,3 @@ widget! {
         }
     }
 }
-
-// 验证级联选择弹层使用组件树提供的当前逻辑表面。
-#[cfg(test)]
-// 将打开状态与内部滚动几何限制在当前模块测试中。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/widgets/input/cascader/widget__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

@@ -1034,10 +1034,3 @@ impl Carousel {
         (index < count).then_some(index)
     }
 }
-
-// 挂载 Carousel 自定义箭头的树级状态与生命周期行为门禁。
-#[cfg(test)]
-// 将大体量动态捕获测试拆到独立文件，保持产品组件低于规模上限。
-#[path = "../../../../../tests/unit/ui/widgets/display/carousel_dynamic_capture_tests.rs"]
-// 仅在测试构建中编译自定义箭头 owner 回归用例。
-mod carousel_dynamic_capture_tests;

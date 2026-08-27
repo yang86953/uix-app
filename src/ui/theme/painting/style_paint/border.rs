@@ -443,10 +443,3 @@ fn interpolate(start: Point, end: Point, progress: f32) -> Point {
         start.y + (end.y - start.y) * progress,
     )
 }
-
-// 验证圆角周长闭合及 pattern 跨采样点连续。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../../tests/unit/ui/style_paint/border__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

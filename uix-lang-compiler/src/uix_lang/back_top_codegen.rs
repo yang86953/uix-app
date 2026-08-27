@@ -1,4 +1,7 @@
 // 引入过程宏令牌流。
+// 复用共享属性查找实现。
+use super::find_attribute;
+
 use proc_macro2::TokenStream;
 // 引入结构化 Rust 令牌生成器。
 use quote::quote;
@@ -6,7 +9,7 @@ use quote::quote;
 // 引入公共属性与可见子节点判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入属性解析、表达式生成与诊断契约。
-use super::{generate_expression, numeric_value, Attribute, AttributeValue, Diagnostic, Element};
+use super::{AttributeValue, Diagnostic, Element, generate_expression, numeric_value};
 
 // 生成带状态回写能力的 BackTop 叶组件。
 pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -81,10 +84,3 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
 }
 
 // 查找元素上的具名属性。
-fn find_attribute<'a>(element: &'a Element, name: &str) -> Option<&'a Attribute> {
-    // 解析器已保证同名属性唯一。
-    element
-        .attributes
-        .iter()
-        .find(|attribute| attribute.name == name)
-}

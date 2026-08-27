@@ -530,11 +530,3 @@ fn draw_arrow(
     path.close();
     ctx.fill_path(&path.build(), color, FillRule::NonZero);
 }
-
-// 仅在测试构建中编译共享提示气泡几何契约。
-#[cfg(test)]
-// 将契约放在原语模块内以直接覆盖私有尺寸计算。
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../../tests/unit/ui/widgets/tooltip_primitives__tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod tests;

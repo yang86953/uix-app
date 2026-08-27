@@ -75,30 +75,12 @@ pub(crate) fn generate_cascader(element: &Element) -> Result<TokenStream, Diagno
 }
 
 // 查找 Cascader 的必需属性。
-fn required_attribute<'a>(
-    // 接收完整元素。
-    element: &'a Element,
-    // 接收必需属性名称。
-    name: &str,
-) -> Result<&'a Attribute, Diagnostic> {
-    // 在解析器保证唯一的属性列表中查找名称。
-    element
-        // 借用有序属性列表。
-        .attributes
-        // 遍历每个属性。
-        .iter()
-        // 返回名称匹配项。
-        .find(|attribute| attribute.name == name)
-        // 缺失时生成组件级诊断。
-        .ok_or_else(|| {
-            // 返回必需属性诊断。
-            Diagnostic::new(
-                // 指向完整 Cascader 元素。
-                element.span,
-                // 明确缺失的属性名称。
-                format!("<Cascader> 缺少必需的 {name} 属性"),
-                // 给出完整规范写法。
-                "使用 <Cascader value={region} options={region_options} />",
-            )
-        })
+fn required_attribute<'a>(element: &'a Element, name: &str) -> Result<&'a Attribute, Diagnostic> {
+    // 复用共享必需属性查找，仅绑定本组件的缺失诊断与修复建议。
+    super::required_attribute(
+        element,
+        name,
+        "Cascader",
+        "使用 <Cascader value={region} options={region_options} />",
+    )
 }

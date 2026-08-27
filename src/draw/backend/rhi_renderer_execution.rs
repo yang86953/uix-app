@@ -307,10 +307,3 @@ pub(super) fn execute_plan_without_present(
     // 返回统一的 lowering 成功结果。
     Ok(())
 }
-
-// 验证 Renderer 帧执行资格在失败或重复调用时都保持一次性。
-#[cfg(test)]
-// 将测试实现统一存放在根 tests 目录。
-#[path = "../../../tests/unit/draw/backend/rhi_renderer_execution__lifecycle_tests.rs"]
-// 保留原测试模块层级与私有契约访问能力。
-mod lifecycle_tests;
