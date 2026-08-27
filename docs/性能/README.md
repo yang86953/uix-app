@@ -48,3 +48,4 @@
 | [UIX-PERF-026](UIX-PERF-026.md) | RenderHandler 空 sidecar 查询短路 |
 | [UIX-PERF-027](UIX-PERF-027.md) | Layout 根条目提示跳过重复哈希 |
 | [UIX-PERF-028](UIX-PERF-028.md) | 可搜索 Select 稳态行计数快路 |
+| [UIX-PERF-029](UIX-PERF-029.md) | 布局有效可见性门控评估与测量校准（不实施） |
