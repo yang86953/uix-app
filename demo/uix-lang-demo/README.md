@@ -27,7 +27,7 @@ Windows 与 Linux 默认首选 Vulkan；Windows 保留 D3D11、Linux/Wayland 保
 ## 声明范围
 
 - `main.uix`：主题、样式类、自定义 Widget、应用壳、标题栏、侧栏和页面切换状态。
-- `pages/start.uix`：首页与 uix-lang 状态、主题、action、条件链能力。
+- `pages/start.uix`：首页与 uix-lang 状态、主题、action、条件链能力；`ScriptedCounter` 演示 `@props/@state/@computed/@actions` 块级成员与 do 多语句 action，内联样式覆盖 boxShadow 正负 spread 叠加。
 - `pages/core.uix`：通用、布局、导航组件和语言面虚拟列表数据。
 - `pages/extended.uix`：输入、数据展示、反馈、十二类图表及其他组件。
 - `pages/reference.uix`：框架能力和覆盖清单。
