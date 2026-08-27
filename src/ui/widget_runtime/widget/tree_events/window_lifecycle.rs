@@ -27,17 +27,16 @@ impl WidgetTree {
     }
 
     /// 窗口未聚焦时，这些交互类事件是否应被忽略。
+    ///
+    /// 指针事件与全部主流桌面语义保持一致：未聚焦窗口照常接收悬停与点击
+    /// （Wayland 指针输入独立于键盘焦点，Windows/macOS 对非激活窗口同样
+    /// 投递 hover），悬停与点击不要求窗口先获得焦点。键盘、IME、剪贴板与
+    /// 文件拖放本质上依赖键盘焦点，未聚焦时仍被忽略。
     pub(super) fn ignores_input_while_window_unfocused(&self, event: &SystemEvent) -> bool {
-        // 未聚焦时屏蔽一切指针、键盘、IME、剪贴板与文件拖放事件。
         !self.window_focused
             && matches!(
                 event,
-                SystemEvent::PointerDown { .. }
-                    | SystemEvent::PointerDoubleClick { .. }
-                    | SystemEvent::PointerUp { .. }
-                    | SystemEvent::PointerMove { .. }
-                    | SystemEvent::Wheel { .. }
-                    | SystemEvent::KeyDown { .. }
+                SystemEvent::KeyDown { .. }
                     | SystemEvent::KeyUp { .. }
                     | SystemEvent::TextInput { .. }
                     | SystemEvent::ImeCompositionStart

@@ -46,6 +46,7 @@ const AGENT_WINDOW_STATE_FIELDS: &[&str] = &[
     "maximized",
     "minimized",
     "fullscreen",
+    "focused",
 ];
 const AGENT_SEMANTIC_ACTIONS: &[&str] = &[
     "invoke",
@@ -65,6 +66,7 @@ const AGENT_WINDOW_ACTIONS: &[&str] = &[
     "pointer_move",
     "pointer_down",
     "pointer_up",
+    "activate_window",
     "resize_window",
     "move_window",
     "maximize_window",

@@ -690,6 +690,8 @@ impl App {
             self.title.clone(),
             platform_window.is_visible(),
             initially_agent_presentable(platform_window.as_ref()),
+            // 焦点事实只随 WindowFocus/WindowBlur 事件更新，注册时按未聚焦处理。
+            false,
             properties.width(),
             properties.height(),
             properties.is_maximized(),

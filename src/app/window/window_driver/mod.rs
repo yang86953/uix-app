@@ -146,6 +146,8 @@ pub(crate) struct WindowDriver {
     frame_scheduler: FrameScheduler,
     last_frame: Option<Instant>,
     deferred_show: bool,
+    // 最近一次 WindowFocus/WindowBlur 事实；未聚焦窗口忽略全部输入。
+    window_focused: bool,
     started_at: Option<Instant>,
     presented_sequence: u64,
     scheduled_animation_ids_scratch: Vec<NodeId>,

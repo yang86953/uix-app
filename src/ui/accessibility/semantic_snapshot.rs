@@ -52,6 +52,8 @@ pub struct SemanticNode {
     pub frame: Rect,
     pub visible_bounds: Option<Rect>,
     pub focused: bool,
+    /// 该节点当前是否为指针悬停目标；供自动化读取悬停事实。
+    pub hovered: bool,
     pub accessibility: AccessibilitySnapshot,
     pub selection: Option<SelectionSnapshot>,
     pub actions: Vec<SemanticActionKind>,
@@ -124,6 +126,7 @@ impl WidgetTree {
             return SemanticSnapshotBody::default();
         }
         let focused = self.managers().focus.focused_widget();
+        let hovered = self.managers().interaction.hovered_widget();
         let nodes = self
             .traverse()
             .iter()
@@ -151,6 +154,7 @@ impl WidgetTree {
                         .unwrap_or_else(|| node.frame()),
                     visible_bounds: self.visible_rect_for(id),
                     focused: focused == Some(id),
+                    hovered: hovered == Some(id),
                     accessibility,
                     selection,
                     actions,

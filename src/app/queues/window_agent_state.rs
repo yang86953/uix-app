@@ -33,6 +33,8 @@ pub(crate) trait AgentWindowOps {
     fn maximize(&mut self) -> Result<(), AgentWindowOpsError>;
     fn minimize(&mut self) -> Result<(), AgentWindowOpsError>;
     fn restore(&mut self) -> Result<(), AgentWindowOpsError>;
+    /// 请求合成器激活并聚焦窗口；成功只表示请求已提交，不保证已获焦点。
+    fn raise(&mut self) -> Result<(), AgentWindowOpsError>;
     fn request_close(&mut self) -> Result<(), AgentWindowOpsError>;
 }
 

@@ -9,6 +9,8 @@ impl WindowDriver {
             frame_scheduler: FrameScheduler::new(width > 0 && height > 0),
             last_frame: None,
             deferred_show,
+            // 窗口在收到首个 WindowFocus 事件前按未聚焦处理。
+            window_focused: false,
             started_at: None,
             presented_sequence: 0,
             scheduled_animation_ids_scratch: Vec::new(),
@@ -145,10 +147,14 @@ impl WindowDriver {
             UiEventType::WindowOcclusionChanged => false,
             UiEventType::WindowFocus => {
                 text_input.window_focused = true;
+                // 焦点事实同步到逐窗驱动状态，供 Agent 目录发布可观测的
+                // focused 字段；未聚焦窗口的指针与键盘输入会被树层门禁忽略。
+                self.window_focused = true;
                 false
             }
             UiEventType::WindowBlur => {
                 text_input.window_focused = false;
+                self.window_focused = false;
                 false
             }
             _ => false,
