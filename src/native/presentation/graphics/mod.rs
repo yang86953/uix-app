@@ -1,17 +1,19 @@
 //! GPU graphics contexts.
 //!
-//! Vulkan 是三平台优先生产 API；D3D11 与 OpenGL ES 作为兼容候选，继续
-//! 复用 `platform::presentation` 的同一套图形契约。D3D12 仅显式 feature 编译且
-//! 尚未注册为生产候选，Metal 暂缓。
+//! Vulkan 是三平台优先生产 API；D3D11、显式启用的 D3D12 与 OpenGL ES 作为
+//! 次级候选，继续复用 `platform::presentation` 的同一套图形契约；macOS 可显式启用 Metal。
 
-// D3D11 与 D3D12 只在 Windows 原生层共享同一份 HLSL 源，不形成 feature 依赖。
 #[cfg(feature = "d3d11")]
 pub(crate) mod d3d11;
 #[cfg(feature = "d3d12")]
 pub(crate) mod d3d12;
+// D3D11 与 D3D12 只在 Windows 原生层共享同一份 HLSL 源，不形成 feature 依赖。
 #[cfg(all(windows, any(feature = "d3d11", feature = "d3d12")))]
 mod d3d_shader_source;
-#[cfg(all(test, feature = "metal"))]
+// D3D11 与 D3D12 共用同一个 native DXGI adapter 枚举组件。
+#[cfg(all(windows, any(feature = "d3d11", feature = "d3d12")))]
+mod dxgi;
+#[cfg(all(target_os = "macos", feature = "metal"))]
 pub(crate) mod metal;
 #[cfg(feature = "opengles")]
 pub(crate) mod opengl;

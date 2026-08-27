@@ -29,6 +29,27 @@ fn create_d3d11(
     Err(feature_disabled("d3d11"))
 }
 
+// 显式启用的 D3D12 后端复用统一 GPU-native recipe 与 thin RHI。
+#[cfg(feature = "d3d12")]
+fn create_d3d12(
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+    _pending: PendingFailureQueue,
+) -> Result<GraphicsContextCandidate, Error> {
+    crate::native::presentation::graphics::d3d12::create(surface, width, height)
+}
+
+#[cfg(not(feature = "d3d12"))]
+fn create_d3d12(
+    _: *mut c_void,
+    _: i32,
+    _: i32,
+    _: PendingFailureQueue,
+) -> Result<GraphicsContextCandidate, Error> {
+    Err(feature_disabled("d3d12"))
+}
+
 #[cfg(feature = "vulkan")]
 fn create_vulkan(
     surface: *mut c_void,
@@ -85,6 +106,12 @@ const D3D11_STATUS: BackendStatus = if cfg!(feature = "d3d11") {
     BackendStatus::Disabled
 };
 
+const D3D12_STATUS: BackendStatus = if cfg!(feature = "d3d12") {
+    BackendStatus::Active
+} else {
+    BackendStatus::Disabled
+};
+
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
     BackendStatus::Active
 } else {
@@ -105,6 +132,14 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         raster: RasterMode::GpuNative,
         present: PresentMode::Swapchain,
         create: create_d3d11,
+    },
+    GraphicsBackendEntry {
+        id: GraphicsApi::D3d12,
+        priority: 40,
+        status: D3D12_STATUS,
+        raster: RasterMode::GpuNative,
+        present: PresentMode::Swapchain,
+        create: create_d3d12,
     },
     GraphicsBackendEntry {
         id: GraphicsApi::Vulkan,

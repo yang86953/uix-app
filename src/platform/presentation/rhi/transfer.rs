@@ -432,7 +432,7 @@ impl RhiTextureTransfer {
     }
 
     // 验证格式、非空范围和两端边界。
-    fn validate(
+    pub(crate) fn validate(
         // 只读消费不可变传输几何。
         self,
         // 接收源纹理的共享资源事实。

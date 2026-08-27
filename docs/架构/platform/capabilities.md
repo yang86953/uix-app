@@ -41,6 +41,6 @@ Windows 未配置 AUMID 时，发送返回 typed `NotImplemented` 并给出配�
 
 Linux 与 macOS Adapter 通过私有 Unix Provider 探测组件只读检查 `PATH` 中的 `notify-send` 与 `osascript`：仅普通可执行文件可形成 `Available`，缺失或不可执行时形成 `Unsupported`。探测不启动外部进程，发送阶段继续独立承担权限、桌面会话与退出状态的 typed failure。
 
-同步 adapter 枚举按公开 backend 精确分派：只有 Windows D3D11 返回 DXGI owned values，其他已启用 backend 返回 typed `NotImplemented`，不保留空成功或不可达的幽灵成功路径。
+同步 adapter 枚举按公开 backend 精确分派：D3D11/D3D12 返回 DXGI owned values，Vulkan 与 macOS Metal 返回各自原生设备描述；OpenGL ES 因没有无上下文的可移植枚举协议而返回 typed `NotImplemented`，不以空集合伪装不支持。
 
 当所有图形 backend feature 都关闭时，`GraphicsBackend` 没有可构造变体，facade 以穷尽空分派表达这一编译期事实；它不会伪造运行期 backend、成功值或失败值。

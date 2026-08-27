@@ -1,4 +1,4 @@
-//! Platform selection for the Metal identity PixelUpload context.
+//! macOS Metal GPU-native swapchain Adapter。
 
 use std::ffi::c_void;
 
@@ -7,15 +7,24 @@ use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, Graph
 
 #[cfg(target_os = "macos")]
 pub(crate) mod context;
+#[cfg(target_os = "macos")]
+mod enumeration;
+#[cfg(target_os = "macos")]
+mod pipeline;
 
 #[cfg(target_os = "macos")]
-pub use context::MetalPixelUploadContext;
+pub use context::MetalContext;
 
-// 组装 Metal identity PixelUpload adapter 的静态 recipe 能力。
+#[cfg(target_os = "macos")]
+pub(crate) use enumeration::enumerate_adapters;
+
+// 组装 Metal GPU-native swapchain Adapter 的静态 recipe 能力。
 #[cfg(target_os = "macos")]
 fn context_caps() -> GraphicsContextCaps {
-    // Metal 当前作为 CPU retained pixels 的专用上传提交后端。
-    GraphicsContextCaps::cpu_pixel_upload(GraphicsApi::Metal)
+    GraphicsContextCaps::gpu_native_swapchain(
+        GraphicsApi::Metal,
+        crate::core::PresentCoherency::FullOnly,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -25,12 +34,12 @@ pub(crate) fn create(
     height: i32,
     // 返回尚待 registry row 校验的 Metal candidate。
 ) -> Result<GraphicsContextCandidate, Error> {
-    // 创建具体 Metal context 后在静态 adapter 边界组装 capability。
-    MetalPixelUploadContext::new(surface, width, height).map(|ctx| {
+    // 创建具体 Metal context 后在静态 Adapter 边界组装 capability。
+    MetalContext::new(surface, width, height).map(|ctx| {
         // 从 adapter 创建模块的唯一事实函数组装静态 capability。
         let caps = context_caps();
         // 把 context 与同源快照封装为 registry candidate。
-        GraphicsContextCandidate::pixel_upload(Box::new(ctx), caps)
+        GraphicsContextCandidate::gpu(Box::new(ctx), caps)
     })
 }
 

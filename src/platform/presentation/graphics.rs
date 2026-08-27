@@ -51,8 +51,12 @@ pub struct GpuAdapterInfo {
 }
 
 impl GpuAdapterInfo {
-    // 目前只有 Windows D3D11 的 DXGI 枚举器构造 adapter 快照。
-    #[cfg(all(windows, feature = "d3d11"))]
+    // 各原生枚举器只经此入口构造不持有平台资源的 adapter 快照。
+    #[cfg(any(
+        all(windows, any(feature = "d3d11", feature = "d3d12")),
+        all(any(unix, windows), feature = "vulkan"),
+        all(target_os = "macos", feature = "metal")
+    ))]
     pub(crate) fn new(
         backend: GraphicsBackend,
         device_type: GpuDeviceType,

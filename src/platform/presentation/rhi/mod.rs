@@ -711,6 +711,12 @@ pub(crate) trait GraphicsSurface {
     // 获取当前可呈现 image，不提交任何命令。
     fn acquire(&mut self) -> Result<SurfaceFrame>;
 
+    // 帧在最终 present 前失败时，释放 acquire 产生的原生所有权。
+    fn discard_acquired_frame(&mut self, _frame: SurfaceFrame) -> Result<()> {
+        // 不显式持有 image 的 adapter 无需执行原生回滚。
+        Ok(())
+    }
+
     // 重建 surface 并推进代际。
     fn resize(&mut self, extent: RhiExtent) -> Result<SurfaceToken>;
 

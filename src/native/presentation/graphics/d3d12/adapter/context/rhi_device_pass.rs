@@ -1,7 +1,7 @@
 //! D3D12 薄 RHI 的 render-target、pass、clear 与提交事务。
 //!
 //! 本模块只把 platform 唯一 pass/submission 合同机械编码为 D3D12 命令；
-//! draw 由同级专用模块消费活动目标事实，组合入口继续保持未激活。
+//! draw 由同级专用模块消费活动目标事实，组合入口由同一 context 交付。
 
 use super::*;
 

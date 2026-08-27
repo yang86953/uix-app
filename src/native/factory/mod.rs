@@ -9,6 +9,7 @@ pub(crate) mod registry_macos;
 pub(crate) mod registry_windows;
 pub(crate) mod thread_bound;
 
+#[cfg(any(feature = "opengles", all(feature = "metal", not(target_os = "macos"))))]
 use crate::core::error::Error;
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
 #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
@@ -36,13 +37,20 @@ pub(crate) fn enumerate_gpu_adapters(
         GraphicsBackend::Direct3D11 => {
             crate::native::presentation::graphics::d3d11::enumerate_adapters()
         }
-        // 其余已启用 API 尚未提供同步枚举实现。
-        #[cfg(any(
-            feature = "vulkan",
-            feature = "d3d12",
-            feature = "metal",
-            feature = "opengles"
-        ))]
+        #[cfg(feature = "d3d12")]
+        GraphicsBackend::Direct3D12 => {
+            crate::native::presentation::graphics::d3d12::enumerate_adapters()
+        }
+        #[cfg(feature = "vulkan")]
+        GraphicsBackend::Vulkan => {
+            crate::native::presentation::graphics::vulkan::enumerate_adapters()
+        }
+        #[cfg(all(target_os = "macos", feature = "metal"))]
+        GraphicsBackend::Metal => {
+            crate::native::presentation::graphics::metal::enumerate_adapters()
+        }
+        // 当前平台未实现的已启用 API 保持明确诊断。
+        #[cfg(any(feature = "opengles", all(feature = "metal", not(target_os = "macos"))))]
         _ => Err(Error::new(
             crate::core::Errc::NotImplemented,
             format!(

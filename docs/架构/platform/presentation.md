@@ -4,7 +4,7 @@
 
 > **接口**：声明 platform System 的原生 surface、图形 recipe、thin RHI、presenter 与提交能力。基础依赖：core；[windowing](windowing.md)产生的窗口 owner 由 platform System 编排交付，Module 间不直接持有实例。导出：供 graphics [backend](../graphics/backend.md) bootstrap 和执行使用的平台图形边界。
 >
-> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan GPU-native swapchain 是三平台唯一最高优先参考路径；OpenGL ES 与 D3D11 已实现同一 RHI/Surface 生命周期，精确运行状态与暂缓项见 [graphics/backend 状态矩阵](../graphics/backend.md#当前实现状态)。路径只用于定位实现，不构成公开 API；后续新增环境矩阵由 Gitea 持有。
+> **当前实现线索**：API 无关 thin RHI 与共用机制位于 `src/platform/presentation/rhi/`；类型化 candidate/owner、registry、线程绑定及原生 Adapter 位于 platform System 的私有实现 `src/native/`。Vulkan GPU-native swapchain 是三平台唯一最高优先参考路径；OpenGL ES、D3D11、D3D12 与 Metal 已实现同一 RHI/Surface 生命周期，精确运行状态与暂缓项见 [graphics/backend 状态矩阵](../graphics/backend.md#当前实现状态)。路径只用于定位实现，不构成公开 API；后续新增环境矩阵由 Gitea 持有。
 
 ## 责任边界
 
@@ -67,7 +67,7 @@ registry 只陈述可构造候选；graphics System 决定使用、恢复和 fal
 
 `GraphicsSurface` 独立持有窗口 surface、swapchain、物理 extent、generation、当前 present image 和不提交帧数据的可呈现探测。device 与 surface 可以在同一 Adapter owner 中组合，但资源寿命、错误分类和重建范围必须可区分；首版不要求跨窗口共享 device。
 
-组合 owner 通过共享 `RhiSubmissionSequence` 关联两个角色：Device 只从该状态机签发非零 `SubmissionHandle`，Surface 在触碰原生 Present 前只接受同一 owner 最近一次成功提交。OpenGL、D3D11 及后续 Adapter 只调用该共享规则，不得各自维护或跳过提交身份语义。
+组合 owner 通过共享 `RhiSubmissionSequence` 关联两个角色：Device 只从该状态机签发非零 `SubmissionHandle`，Surface 在触碰原生 Present 前只接受同一 owner 最近一次成功提交。OpenGL、D3D11、D3D12、Vulkan 与 Metal Adapter 只调用该共享规则，不得各自维护或跳过提交身份语义。
 
 Device 内部通过共享 `RhiPassState` 管理 API 无关的 render-pass 生命周期。活动目标身份、物理 extent、scissor 和采样绑定必须原子建立与清除；pass 外绑定、非零槽位、目标自采样反馈环和未结束 pass 的 submit 必须在共享层得到同一拒绝结果。Adapter 只保存当前 framebuffer、RTV 等原生对象，并在 end 时显式解除输入与输出绑定，不依赖驱动替调用方解决资源冲突。
 

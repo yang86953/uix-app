@@ -9,6 +9,12 @@ use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, Graph
 pub(crate) mod adapter;
 
 #[cfg(any(unix, windows))]
+mod enumeration;
+
+#[cfg(any(unix, windows))]
+pub(crate) use enumeration::enumerate_adapters;
+
+#[cfg(any(unix, windows))]
 pub(crate) mod context;
 
 // Vulkan GPU-native 路径只在 Adapter 内机械映射 platform RHI 契约。

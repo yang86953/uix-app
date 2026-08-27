@@ -108,7 +108,8 @@ impl GraphicsContextCaps {
         feature = "test-harness",
         all(windows, any(feature = "d3d11", feature = "d3d12")),
         feature = "vulkan",
-        feature = "opengles"
+        feature = "opengles",
+        all(target_os = "macos", feature = "metal")
     ))]
     pub(crate) fn gpu_native_swapchain(
         backend: GraphicsApi,
@@ -123,8 +124,8 @@ impl GraphicsContextCaps {
     }
 
     /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
-    // 仅 Vulkan、Metal 与内部测试需要构造 CPU PixelUpload recipe 能力。
-    #[cfg(any(test, feature = "vulkan", feature = "metal"))]
+    // CPU PixelUpload recipe 目前没有生产 registry 消费者，只保留内部测试构造入口。
+    #[cfg(test)]
     pub(crate) fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
         Self {
             backend,
