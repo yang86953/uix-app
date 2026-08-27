@@ -51,6 +51,8 @@ mod node;
 
 pub(crate) use self::boxed::BoxedWidget;
 pub use self::node::WidgetNode;
+// 声明透明度归一规则同时服务声明节点与运行时节点两个写入点。
+pub(crate) use self::node::normalize_declared_opacity;
 
 pub(crate) mod tree_core;
 pub(crate) mod tree_dirty;

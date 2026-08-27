@@ -18,6 +18,8 @@ pub struct WidgetNode {
     pub(crate) enter_animation: Option<crate::ui::animation::AnimationConfig>,
     pub(crate) enter_deadline: Option<std::time::Instant>,
     pub(crate) leave_animation: Option<crate::ui::animation::AnimationConfig>,
+    // 保存声明节点自身的视觉透明度；默认 1.0 表示不额外衰减。
+    pub(crate) declared_opacity: f32,
     /// 此节点在同级绘制和命中顺序中的层级值。
     pub z_index: i32,
     /// 用于协调同级声明节点身份的稳定 key。
@@ -63,6 +65,7 @@ impl WidgetNode {
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
+            declared_opacity: 1.0,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -109,6 +112,7 @@ impl WidgetNode {
             enter_animation: None,
             enter_deadline: None,
             leave_animation: None,
+            declared_opacity: 1.0,
             z_index: 0,
             key: None,
             automation_id: None,
@@ -176,6 +180,11 @@ impl WidgetNode {
         animation: crate::ui::animation::AnimationConfig,
     ) -> Self {
         self.leave_animation = Some(animation);
+        self
+    }
+    // 设置待挂载节点声明的视觉透明度；调用方传入非法值时按无效果归一。
+    pub(crate) fn with_declared_opacity(mut self, opacity: f32) -> Self {
+        self.declared_opacity = normalize_declared_opacity(opacity);
         self
     }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
@@ -301,5 +310,14 @@ impl WidgetNode {
     pub(crate) fn with_provider_context(mut self, context: ProviderContext) -> Self {
         self.provider_context = context;
         self
+    }
+}
+
+// 把声明透明度归一为可绘制值；非有限输入按无衰减处理。
+pub(crate) fn normalize_declared_opacity(opacity: f32) -> f32 {
+    if opacity.is_finite() {
+        opacity.clamp(0.0, 1.0)
+    } else {
+        1.0
     }
 }

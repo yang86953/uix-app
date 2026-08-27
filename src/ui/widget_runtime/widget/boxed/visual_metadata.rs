@@ -27,6 +27,17 @@ impl BoxedWidget {
         self.cursor = cursor;
     }
 
+    // 返回节点声明的视觉透明度。
+    pub(crate) fn declared_opacity(&self) -> f32 {
+        // 复制小型值类型，避免暴露内部可变状态。
+        self.declared_opacity
+    }
+
+    // 替换节点声明的视觉透明度；非法值按无衰减归一。
+    pub(crate) fn set_declared_opacity(&mut self, opacity: f32) {
+        self.declared_opacity = normalize_declared_opacity(opacity);
+    }
+
     // 解析当前布局帧上的完整视觉变换矩阵。
     pub(crate) fn visual_transform_matrix(&self) -> crate::draw::Transform {
         // 绝大多数节点没有过渡覆盖，直接解析基础声明以跳过中性矩阵组合。
