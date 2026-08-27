@@ -50,6 +50,8 @@ pub enum Invalidation {
 pub struct InvalidationQueue {
     pub(crate) items: Vec<Invalidation>,
     layout_ids: HashSet<NodeId>,
+    // 以一为基的 Layout 根条目下标；零表示尚未建立命中提示，超出 u32 时安全退回哈希查询。
+    layout_root_hint: u32,
     paint_indices: HashMap<NodeId, usize>,
     /// 队列中是否存在任意 Paint、Composite 或 FullComposite 工作。
     has_paint_or_composite: bool,
@@ -115,8 +117,39 @@ impl InvalidationQueue {
     pub(crate) fn push_layout_until_root(&mut self, root_id: NodeId, id: NodeId) -> bool {
         // 每次调用都推进修订号，保持与通用 push 相同的重复上报语义。
         self.revision = self.revision.wrapping_add(1);
+        // 根条目一旦定位，后续同根请求只比较稳定 Vec 槽位，避免重复计算 WidgetId 哈希。
+        if self
+            .layout_root_hint
+            .checked_sub(1)
+            .and_then(|index| self.items.get(index as usize))
+            .is_some_and(|item| item == &Invalidation::Layout(root_id))
+        {
+            return false;
+        }
+        // 当前请求本身就是根时，以一次插入同时完成存在性判断并记录稳定槽位。
+        if root_id == id {
+            if !self.layout_ids.insert(id) {
+                self.layout_root_hint = self
+                    .items
+                    .iter()
+                    .position(|item| item == &Invalidation::Layout(root_id))
+                    .and_then(|index| u32::try_from(index + 1).ok())
+                    .unwrap_or(0);
+                return false;
+            }
+            self.items.push(Invalidation::Layout(id));
+            self.layout_root_hint = u32::try_from(self.items.len()).unwrap_or(0);
+            return true;
+        }
         // 根级 Layout 已在队列中时，调用方无需再次扫描或插入任何条目。
         if self.layout_ids.contains(&root_id) {
+            // 通用 push 也可能先写入根；只在线索失效时扫描一次并建立后续快返。
+            self.layout_root_hint = self
+                .items
+                .iter()
+                .position(|item| item == &Invalidation::Layout(root_id))
+                .and_then(|index| u32::try_from(index + 1).ok())
+                .unwrap_or(0);
             return false;
         }
         // 按既有 Layout 去重规则插入当前节点，重复节点不新增 item。
@@ -242,6 +275,7 @@ impl InvalidationQueue {
         self.revision = self.revision.wrapping_add(1);
         self.items.clear();
         self.layout_ids.clear();
+        self.layout_root_hint = 0;
         self.paint_indices.clear();
         self.has_paint_or_composite = false;
         self.has_full_composite = false;
@@ -267,6 +301,7 @@ impl InvalidationQueue {
             self.revision = self.revision.wrapping_add(1);
         }
         self.layout_ids.clear();
+        self.layout_root_hint = 0;
         self.rebuild_paint_indices();
     }
 

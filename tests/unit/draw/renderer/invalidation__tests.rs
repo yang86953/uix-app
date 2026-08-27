@@ -84,6 +84,79 @@ fn layout_until_root_suppresses_child_when_root_is_queued() {
     assert_eq!(queue.revision(), before_revision.wrapping_add(1));
 }
 
+// 根请求应以一次集合插入建立快返提示，后续子请求仍只保留根条目。
+#[test]
+fn layout_until_root_caches_direct_root_request() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+
+    assert!(queue.push_layout_until_root(root, root));
+    let before_revision = queue.revision();
+    assert!(!queue.push_layout_until_root(root, root));
+    assert_eq!(queue.revision(), before_revision.wrapping_add(1));
+    assert!(!queue.push_layout_until_root(root, child));
+    assert_eq!(queue.items, vec![Invalidation::Layout(root)]);
+}
+
+// Paint 先入队时根条目不在零号槽位，一基提示仍必须命中真实 Layout 槽位。
+#[test]
+fn layout_root_hint_tracks_root_after_paint_item() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+    queue.push(Invalidation::Paint {
+        id: child,
+        rect: None,
+    });
+
+    assert!(queue.push_layout_until_root(root, root));
+    assert!(!queue.push_layout_until_root(root, child));
+    assert_eq!(queue.items[1], Invalidation::Layout(root));
+}
+
+// 消费 Layout 必须同时清除根快返提示，不能压掉下一轮的子节点请求。
+#[test]
+fn layout_root_hint_is_cleared_with_layout_items() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+
+    assert!(queue.push_layout_until_root(root, root));
+    queue.clear_layout();
+    assert!(queue.push_layout_until_root(root, child));
+    assert_eq!(queue.items, vec![Invalidation::Layout(child)]);
+}
+
+// 修订号匹配的完整清理也必须复位根提示，下一轮不得沿用旧队列事实。
+#[test]
+fn layout_root_hint_is_cleared_with_matching_revision() {
+    let mut queue = InvalidationQueue::new();
+    let root = NodeId::new(1);
+    let child = NodeId::new(2);
+
+    assert!(queue.push_layout_until_root(root, root));
+    assert!(queue.clear_if_revision(queue.revision()));
+    assert!(queue.push_layout_until_root(root, child));
+    assert_eq!(queue.items, vec![Invalidation::Layout(child)]);
+}
+
+// 同一队列切换到不同根身份时，旧提示不得抑制新树的布局请求。
+#[test]
+fn layout_root_hint_validates_root_identity() {
+    let mut queue = InvalidationQueue::new();
+    let old_root = NodeId::from_parts(1, 7);
+    let new_root = NodeId::from_parts(1, 8);
+    let child = NodeId::new(3);
+
+    assert!(queue.push_layout_until_root(old_root, old_root));
+    assert!(queue.push_layout_until_root(new_root, child));
+    assert_eq!(
+        queue.items,
+        vec![Invalidation::Layout(old_root), Invalidation::Layout(child)]
+    );
+}
+
 // 根 Layout 尚未存在时，首次与重复子请求都继续传播且只保留一个子条目。
 #[test]
 fn layout_until_root_retries_child_when_root_is_missing() {

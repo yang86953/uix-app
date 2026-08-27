@@ -75,6 +75,20 @@ fn non_batch_root_layout_suppresses_child_request_and_advances_revision() {
     );
 }
 
+// 首个子请求传播到根后，下一请求应从队列建立的根提示快返且不重复条目。
+#[test]
+fn propagated_root_layout_suppresses_followup_request() {
+    let (mut tree, root, child) = tree_with_root_and_child();
+
+    assert!(tree.push_layout_invalidation(child));
+    tree.propagate_layout_invalidation(child);
+    assert!(!tree.push_layout_invalidation(child));
+    assert_eq!(
+        invalidation_items(&tree),
+        vec![Invalidation::Layout(child), Invalidation::Layout(root)]
+    );
+}
+
 // 批次内即使根 Layout 已存在也必须写入 pending，直到结束才发布共享队列。
 #[test]
 fn batch_root_layout_keeps_child_pending_until_finish() {
