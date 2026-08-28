@@ -332,7 +332,9 @@ impl WindowDriver {
         if had_due_animation_work {
             self.frame_scheduler.request_immediate(now);
         }
-        self.arm_visual_request(now, tree, pending_root, *reconcile_pending);
+        // 帧入口的续帧服务于本次外部唤醒（输入、定时器等）：允许收紧已武装
+        // 的 cadence 请求，让输入在同一轮渲染，保证响应延迟不受动画节奏约束。
+        self.arm_visual_request(now, tree, pending_root, *reconcile_pending, false, true);
         let Some(opportunity) = self.frame_scheduler.take_due_opportunity(now) else {
             observe_agent_settle(
                 agent_commands,
@@ -893,7 +895,19 @@ impl WindowDriver {
             tree.mark_full_frame_dirty();
         }
 
-        self.arm_visual_request(frame_time, tree, pending_root, *reconcile_pending);
+        // 帧尾续帧：仍有已注册动画时必须按 cadence 门控续帧。本帧动画 tick
+        // 留下的 paint 失效若走 immediate，会在每帧结尾把已武装的动画帧
+        // 收紧为「立即」，形成全速重绘链；输入等外部唤醒仍由帧入口的
+        // arm_visual_request 以 immediate 渲染，不受此处影响。
+        let animation_continue = active_work.animation_ids().next().is_some();
+        self.arm_visual_request(
+            frame_time,
+            tree,
+            pending_root,
+            *reconcile_pending,
+            animation_continue,
+            false,
+        );
 
         if !self.frame_scheduler.is_renderable() {
             active_work.park_animated_deadlines();

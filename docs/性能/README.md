@@ -49,3 +49,4 @@
 | [UIX-PERF-027](UIX-PERF-027.md) | Layout 根条目提示跳过重复哈希 |
 | [UIX-PERF-028](UIX-PERF-028.md) | 可搜索 Select 稳态行计数快路 |
 | [UIX-PERF-029](UIX-PERF-029.md) | 布局有效可见性门控评估与测量校准（不实施） |
+| [UIX-PERF-030](UIX-PERF-030.md) | 动画延续帧 cadence 门控（页面切换卡顿修复） |
