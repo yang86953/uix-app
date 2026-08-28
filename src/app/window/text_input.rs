@@ -1,7 +1,7 @@
 use crate::app::queues::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window::window_session::WindowTextInputState;
 use crate::core::WindowId;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::ui::WidgetTree;
 
 /// Synchronize one window's declarative focus state with the process native IME.
@@ -14,7 +14,7 @@ pub(crate) fn sync_window_text_input(
     state: &mut WindowTextInputState,
     window_id: WindowId,
     native_window: *mut std::ffi::c_void,
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
 ) {
     let requested = state.window_focused.then(|| {
         let target = tree.managers().focus.focused_widget()?;
@@ -72,7 +72,7 @@ pub(crate) fn sync_window_text_input(
 }
 
 fn select_target(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     window_id: WindowId,
     native_window: *mut std::ffi::c_void,
 ) -> bool {

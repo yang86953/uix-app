@@ -14,7 +14,7 @@ use crate::core::Error;
 use crate::diagnostics::PendingFailureQueue;
 use crate::native::windowing::shared::{OsEventSource, WindowState};
 use crate::platform::display::IDisplay;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::system::console::IConsole;
 use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
@@ -125,7 +125,7 @@ impl OsEventSource for LinuxPlatform {
 // 而非委托给 WaylandBackend。
 // ════════════════════════════════════════════════════════════════════════════
 
-impl Platform for LinuxPlatform {
+impl PlatformSystem for LinuxPlatform {
     fn take_pending_failure(&mut self) -> Option<Error> {
         self.backend.take_pending_failure()
     }

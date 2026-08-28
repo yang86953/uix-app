@@ -1,4 +1,4 @@
-//! 可由独立 [`super::Platform`] 同步完成的平台服务值。
+//! 可由独立 [`crate::platform::Platform`] 同步完成的平台服务值。
 
 // 引入集合以按首次声明顺序去除重复扩展名。
 use std::collections::HashSet;

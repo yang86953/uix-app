@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use crate::core::{Errc, Error, Result};
 use crate::platform::hardware::{DisplayInfo, MemoryInfo, OsInfo};
-use crate::platform::platform::Platform as NativePlatform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 // 引入跨平台通知身份与能力状态契约。
 use crate::platform::services::{
@@ -76,7 +76,7 @@ pub(crate) fn memory_info() -> Result<MemoryInfo> {
 
 pub(crate) fn displays() -> Result<Box<[DisplayInfo]>> {
     let pending_native = PendingNativeOptions::new(crate::diagnostics::PendingFailureQueue::new());
-    let platform: Box<dyn NativePlatform> =
+    let platform: Box<dyn PlatformSystem> =
         create_platform_with_pending(pending_native).map_err(|error| {
             Error::new(
                 error.code(),

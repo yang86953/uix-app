@@ -178,7 +178,7 @@ impl WsiEventObservation {
 
 // 复用生产 Platform owner 的 timeout dispatch，等待条件成立或总 deadline 到期。
 fn dispatch_wsi_events_until(
-    platform: &mut dyn crate::platform::platform::Platform,
+    platform: &mut dyn crate::platform::platform::PlatformSystem,
     observation: &WsiEventObservation,
     deadline: Instant,
     context: &str,

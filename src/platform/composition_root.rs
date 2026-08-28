@@ -6,7 +6,7 @@ use crate::core::Result;
 #[cfg(not(any(windows, unix)))]
 use crate::core::{Errc, Error};
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::GraphicsApi;
 
 use super::composition::PendingNativeOptions;
@@ -119,7 +119,7 @@ pub(super) fn choose_native_folder(title: &str) -> Result<Option<String>> {
 #[cfg(windows)]
 pub(crate) fn create_platform_with_pending(
     options: PendingNativeOptions,
-) -> Result<Box<dyn Platform>> {
+) -> Result<Box<dyn PlatformSystem>> {
     let pending_failures = options.into_pending_failures();
     Ok(Box::new(
         crate::native::backends::windows::platform::WindowsPlatform::new_with_pending(
@@ -132,7 +132,7 @@ pub(crate) fn create_platform_with_pending(
 #[cfg(all(unix, not(target_os = "macos")))]
 pub(crate) fn create_platform_with_pending(
     options: PendingNativeOptions,
-) -> Result<Box<dyn Platform>> {
+) -> Result<Box<dyn PlatformSystem>> {
     let pending_failures = options.into_pending_failures();
     let platform = crate::native::backends::linux::platform::LinuxPlatform::new(pending_failures)?;
     Ok(Box::new(platform))
@@ -142,7 +142,7 @@ pub(crate) fn create_platform_with_pending(
 #[cfg(target_os = "macos")]
 pub(crate) fn create_platform_with_pending(
     options: PendingNativeOptions,
-) -> Result<Box<dyn Platform>> {
+) -> Result<Box<dyn PlatformSystem>> {
     let pending_failures = options.into_pending_failures();
     Ok(Box::new(
         crate::native::backends::macos::platform::MacosPlatform::new(pending_failures),
@@ -153,7 +153,7 @@ pub(crate) fn create_platform_with_pending(
 #[cfg(not(any(windows, unix)))]
 pub(crate) fn create_platform_with_pending(
     options: PendingNativeOptions,
-) -> Result<Box<dyn Platform>> {
+) -> Result<Box<dyn PlatformSystem>> {
     let _pending_failures = options.into_pending_failures();
     Err(Error::new(
         Errc::PlatformError,

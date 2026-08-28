@@ -16,7 +16,7 @@ impl SecondaryWindowSession {
         self.session.window_id()
     }
 
-    pub(super) fn handle_event(&mut self, platform: &mut dyn Platform, event: &UiEvent) -> bool {
+    pub(super) fn handle_event(&mut self, platform: &mut dyn PlatformSystem, event: &UiEvent) -> bool {
         let window_id = self.window_id();
         let native_window = self._window.native_handle().native_window();
         if event.type_ == UiEventType::WindowClose {
@@ -97,7 +97,7 @@ impl SecondaryWindowSession {
         debug_mode: &crate::diagnostics::Diagnostics,
         cursor_pos: &Cell<Point>,
         clock: &dyn AppClock,
-        platform: Option<&mut dyn Platform>,
+        platform: Option<&mut dyn PlatformSystem>,
     ) -> bool {
         let now = clock.now();
         let Self {
@@ -108,10 +108,10 @@ impl SecondaryWindowSession {
             ..
         } = self;
         let parts = session.parts_mut();
-        let mut no_runtime_tasks = |_platform: &mut dyn Platform, _tree: &mut WidgetTree| {};
+        let mut no_runtime_tasks = |_platform: &mut dyn PlatformSystem, _tree: &mut WidgetTree| {};
         let no_frame = |_tree: &mut WidgetTree,
                         _engine: &mut dyn RenderTarget,
-                        _platform: &mut dyn Platform| {};
+                        _platform: &mut dyn PlatformSystem| {};
         let result = driver.drive_frame(WindowFrameContext {
             tree: parts.tree,
             engine: parts.engine,
