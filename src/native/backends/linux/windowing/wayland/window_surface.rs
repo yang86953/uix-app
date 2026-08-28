@@ -26,6 +26,16 @@ impl WaylandWindowOps {
         }
     }
 
+    // 将客户端阴影环启用事实映射为统一外观通道使用的逻辑外扩距离。
+    pub(super) fn client_shadow_size(enabled: bool) -> i32 {
+        // 启用时与阴影环 tile 使用同一外扩距离，保证缺口补画与外圈连续。
+        if enabled {
+            super::shadow::SHADOW_SIZE
+        } else {
+            0
+        }
+    }
+
     // 同一 Wayland 窗口父模块下的私有 Components 共享稳定缺失代理诊断。
     pub(super) fn missing_proxy(operation: &str, proxy: &str) -> Error {
         // 缺失活动协议 owner 是稳定窗口生命周期错误。

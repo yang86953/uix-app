@@ -72,6 +72,10 @@
 - 语义快照节点新增 `hovered` 事实，`list_windows` 与 `snapshot` 新增窗口 `focused` 状态字段，自动化可直接断言悬停目标与窗口焦点，不再依赖截图猜测界面状态。
 - Agent 端点新增 `screenshot` 请求：命令在窗口 UI turn 强制出帧，由 owner-thread 回读边界截取下一次真实呈现帧，以 base64 PNG（物理分辨率）返回，载荷上限 32 MiB；`hello.capabilities.screenshot` 与 `limits.max_screenshot_bytes` 随握手发布，软件回退路径按 `unsupported_action` 明确失败。仓库客户端 `scripts/agent_client.py` 新增 `screenshot` 命令，AI 操作的像素级验证不再依赖系统截屏工具。
 
+### 2026-08-28 缺陷修复
+
+- Linux/Wayland 客户端装饰窗口圆角缺口透出桌面背景：`org_kde_kwin_shadow` 阴影环只覆盖窗口矩形之外，而最终合成着色器按 10 逻辑像素圆角把窗口四角内容挖成透明，缺口处（圆角之外、窗口矩形之内）KWin 不会补画阴影，浅色背景下四个角呈现白色「缺口」。现把客户端阴影环事实（峰值不透明度与外扩距离，随 `WaylandSurfaceMetrics` 与窗口装饰启停同步发布）传入最终 sampled 合成 ABI，着色器在圆角缺口内按同一二次衰减把外圈阴影连续延伸为预乘黑色补画；合成 damage 规划在补画参数生效且脏矩形触及任一角点缺口方块时升级为完整合成，避免局部 `Load` + SrcOver 让补画 alpha 逐帧累积。Vulkan / OpenGL ES / D3D / Metal 四后端 sampled 着色器源与 SPIR-V 同步更新；KWin（Plasma 6）真窗验收四角阴影连续、`screenshot` 回读角点 alpha 与理论衰减一致、局部脏区多次呈现后不累积、最大化自动恢复方形。
+
 ### 修复与平台完善
 
 - OpenGL ES 后端按渲染目标修正纵向行序：`opengles` feature 下 Wayland EGL 界面不再上下颠倒、Windows WGL 回读行序规范化，并完成 Linux EGL GUI 路径首次构建验证。
