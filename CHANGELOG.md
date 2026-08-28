@@ -43,6 +43,8 @@
 - GDI 呈现器像素缓冲校验对齐：短缓冲从静默截断改为与其他 CPU presenter 一致的 typed `InvalidArgument` 错误。
 - CPU 参考执行光栅收敛：矩形描边与直角填充统一走 `SoftwareRasterizer`，SrcOver 与 Additive 两种混合模式的抗锯齿语义强一致；微工具群（`fade_token_color`、`paint_elided_text`、`byte_index_for_char`、`expand_rect`、`union_frame_rect`）各自归一为单一实现。
 - 主/副窗装配收口：DI 回退解析、应用根工厂包装与会话资源接线收敛为 `window_assembly` 唯一原语；副窗聚焦初值同步树内投影，`next_deadline` 改用注入时钟；调度队列释放收敛为 `queues::release_window_scheduling_resources` 单一序列。
+- 浮层几何归一：tooltip / popover / popconfirm 三套 placement 机制与 10 处输入类弹层矩形解析收敛到 `widgets::overlay` 共享模块（`OverlayPlacement` trait + resolve 骨架 + 下拉五件套原语），公开 placement 枚举与各组件 resolve 入口签名不变。
+- 双向绑定样板收敛：25 个受控组件的依赖捕获与「相等则不写」写回统一到 `widgets::binding` 原语；各组件的越界 clamp / 取整规则保持原地组件语义。
 
 ### 2026-08-15 工程与验证范围
 
