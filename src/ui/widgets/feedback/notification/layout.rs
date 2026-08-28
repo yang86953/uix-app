@@ -1,9 +1,7 @@
 //! 通知布局与绘制辅助。
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::Color;
 use crate::ui::SnapshotFields;
-use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use super::{Notification, NotificationItem};
 use crate::ui::widgets::feedback::toast_motion::{ToastKey, ToastMotionEntry};
@@ -374,45 +372,6 @@ impl Notification {
             (frame.h - inset_y * 2.0).max(0.0),
         )
     }
-
-    pub(super) fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        let y = ctx.visual_center_y(frame, font_size);
-        ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
-        ctx.pop_clip();
-    }
-
-    pub(super) fn paint_centered_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        ctx.text_center(&value, frame, color, font_size);
-        ctx.pop_clip();
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -440,6 +399,8 @@ fn translated_rect(rect: Rect, offset: Point) -> Rect {
     Rect::new(rect.x + offset.x, rect.y + offset.y, rect.w, rect.h)
 }
 
+// 通知阴影外扩：与共享 expand_rect 的差别是不做退化矩形守卫，
+// 退化输入仍会得到外扩后的矩形（历史行为，勿并入共享版）。
 fn expand_rect(rect: Rect, margin: f32) -> Rect {
     Rect::new(
         rect.x - margin,
@@ -459,13 +420,6 @@ pub(super) fn union_nonempty(first: Rect, second: Rect) -> Rect {
         (false, true) => second,
         (false, false) => Rect::zero(),
     }
-}
-
-pub(super) fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 pub(super) fn finite_or_zero(value: f32) -> f32 {

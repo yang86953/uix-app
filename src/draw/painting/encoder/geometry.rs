@@ -74,6 +74,20 @@ impl FrameRect {
     }
 }
 
+/// 两个整数矩形的并集（作为打包边界用）；与 `intersection` 同样以 i64 求边界避免溢出。
+pub(crate) fn union_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
+    let left = a.x.min(b.x);
+    let top = a.y.min(b.y);
+    let right = (i64::from(a.x) + i64::from(a.width)).max(i64::from(b.x) + i64::from(b.width));
+    let bottom = (i64::from(a.y) + i64::from(a.height)).max(i64::from(b.y) + i64::from(b.height));
+    FrameRect::new(
+        left,
+        top,
+        (right - i64::from(left)) as i32,
+        (bottom - i64::from(top)) as i32,
+    )
+}
+
 /// 采样目标矩形：允许亚像素落点与非 1:1 缩放，用 `f32` bits 保持命令模型 `Eq`。
 ///
 /// 整数源 crop 仍用 [`FrameRect`]；仅 destination 进入本类型，供 GPU 纹理四边形采样。

@@ -1,10 +1,10 @@
 // 复用选择弹层的共享表面解析与绝对坐标转换。
-use super::{
-    ResolvedSelectVisual, Select, VisibleRow, fade_color, normalize_select_rect, select_popup_rect,
-};
+use super::{ResolvedSelectVisual, Select, VisibleRow, normalize_select_rect, select_popup_rect};
+// 复用反馈层共享的颜色衰减辅助。
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::feedback::fade_token_color;
 
 impl Select {
     pub(super) fn render_select(&self, frame: Rect, ctx: &mut PaintContext) {
@@ -307,14 +307,14 @@ impl Select {
 
         // 读取当前过渡透明度。
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let background = fade_color(visual.background_elevated, opacity);
-        let border = fade_color(visual.border, opacity);
-        let text = fade_color(visual.text, opacity);
-        let primary = fade_color(visual.primary, opacity);
-        let primary_bg = fade_color(visual.primary_background, opacity);
-        let hover = fade_color(visual.fill_tertiary, opacity);
-        let text_secondary = fade_color(visual.text_secondary, opacity);
-        let group_background = fade_color(visual.fill_quaternary, opacity);
+        let background = fade_token_color(visual.background_elevated, opacity);
+        let border = fade_token_color(visual.border, opacity);
+        let text = fade_token_color(visual.text, opacity);
+        let primary = fade_token_color(visual.primary, opacity);
+        let primary_bg = fade_token_color(visual.primary_background, opacity);
+        let hover = fade_token_color(visual.fill_tertiary, opacity);
+        let text_secondary = fade_token_color(visual.text_secondary, opacity);
+        let group_background = fade_token_color(visual.fill_quaternary, opacity);
         let shadow = visual.shadow;
         let radius = Some(Radius::uniform(visual.radius));
         ctx.draw_box_shadow(

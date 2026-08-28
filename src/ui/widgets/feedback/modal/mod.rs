@@ -9,6 +9,8 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 use crate::widget;
+// 复用反馈组件共享的省略文本绘制辅助。
+use super::paint_elided_text;
 use std::rc::Rc;
 
 mod presentation;
@@ -379,12 +381,13 @@ widget! {
             (dialog.x + dialog.w - close_w - title_x).max(0.0),
             title_h,
         );
-        Self::paint_elided_text(
+        paint_elided_text(
             ctx,
             &self.title,
             title_content,
             resolved.text,
             resolved.title_font_size,
+            false,
         );
         if title_h < dialog.h {
             ctx.fill_rect(

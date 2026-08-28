@@ -19,6 +19,9 @@ pub use crate::ui::widgets::overlay_types::{TooltipPlacement, TriggerMode};
 mod presentation;
 use presentation::*;
 
+// 复用反馈组件共享的颜色衰减辅助。
+use super::fade_token_color;
+
 // 记录会覆盖 UIX 默认值的 Rust 调用方声明。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct TooltipAuthored(u8);
@@ -252,12 +255,12 @@ widget! {
         // 每帧只解析一次 UIX 声明的主题颜色。
         let resolved = self.visual.resolve(ctx.tokens());
         // 调用方显式颜色保持高于 UIX 主题角色的优先级。
-        let bg = fade_color(
+        let bg = fade_token_color(
             self.bg_color
                 .unwrap_or(resolved.background),
             opacity,
         );
-        let txt_color = fade_color(
+        let txt_color = fade_token_color(
             self.text_color
                 .unwrap_or(resolved.text),
             opacity,
@@ -358,13 +361,6 @@ widget! {
             Rect::zero()
         }
     }
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 // 把内容/交互状态与 UIX 静态视觉融合为单一 Tooltip 根节点。

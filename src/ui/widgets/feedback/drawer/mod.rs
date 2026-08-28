@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
@@ -9,6 +9,8 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::widget;
+// 复用反馈组件共享的省略文本绘制辅助。
+use super::paint_elided_text;
 // 引入受控状态句柄与 Drawer 既有事件、树契约。
 use crate::ui::{EventResult, MouseButton, State, SystemEvent, WidgetTree};
 
@@ -370,7 +372,7 @@ widget! {
             (drawer_x + drawer_w - close_w - extra_w - title_x).max(0.0),
             header_rect.h,
         );
-        Self::paint_elided_text(ctx, &self.title, title_rect, text, resolved.title_font_size);
+        paint_elided_text(ctx, &self.title, title_rect, text, resolved.title_font_size, false);
 
         if !self.extra.is_empty() {
             let extra_rect = Rect::new(
@@ -379,7 +381,14 @@ widget! {
                 extra_w,
                 header_rect.h,
             );
-            Self::paint_elided_text(ctx, &self.extra, extra_rect, text_sec, resolved.extra_font_size);
+            paint_elided_text(
+                ctx,
+                &self.extra,
+                extra_rect,
+                text_sec,
+                resolved.extra_font_size,
+                false,
+            );
         }
         if self.closable {
             let close_rect = Rect::new(

@@ -3,7 +3,6 @@
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Color;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -16,6 +15,10 @@ use crate::ui::{
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+
+// 复用 input 层共享的字符索引与反馈层的颜色衰减辅助。
+use super::byte_index_for_char;
+use crate::ui::widgets::feedback::fade_token_color;
 
 // 将表面约束与坐标转换隔离到私有几何模块。
 mod geometry;
@@ -374,11 +377,11 @@ widget! {
                 return;
             }
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let fill = fade_color(visual.option_hover, opacity);
-            let bg_elev = fade_color(visual.popup_background, opacity);
-            let popup_border = fade_color(visual.border, opacity);
-            let text = fade_color(visual.text, opacity);
-            let text_secondary = fade_color(visual.secondary_text, opacity);
+            let fill = fade_token_color(visual.option_hover, opacity);
+            let bg_elev = fade_token_color(visual.popup_background, opacity);
+            let popup_border = fade_token_color(visual.border, opacity);
+            let text = fade_token_color(visual.text, opacity);
+            let text_secondary = fade_token_color(visual.secondary_text, opacity);
             let panel_radius = Some(crate::draw::Radius::uniform(visual.radius));
             // 将整个自动完成弹层裁剪到当前逻辑表面。
             ctx.push_clip(surface);
@@ -903,23 +906,8 @@ impl Default for AutoComplete {
     }
 }
 
-fn byte_index_for_char(value: &str, char_index: usize) -> usize {
-    value
-        .char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(value.len())
-}
-
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 // 把 AutoComplete Rust 交互内核与 UIX 静态视觉组合为单一组件节点。

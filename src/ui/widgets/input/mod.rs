@@ -49,3 +49,13 @@ pub use time_picker::*;
 #[cfg(feature = "tree-widgets")]
 // 启用后保持 TreeSelect 的既有扁平重导出。
 pub use tree_select::*;
+
+// 把字符索引转换为字节偏移；索引越界时收敛到文本末尾。
+// 输入族组件共享的光标/选区换算辅助。
+pub(crate) fn byte_index_for_char(value: &str, char_index: usize) -> usize {
+    value
+        .char_indices()
+        .nth(char_index)
+        .map(|(index, _)| index)
+        .unwrap_or(value.len())
+}

@@ -5,11 +5,9 @@ use super::{
 use std::cell::{Cell, RefCell};
 
 use crate::core::{Point, Rect, Size};
-use crate::draw::Color;
 use crate::platform::windowing::ControlSize;
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
-use crate::ui::widget_runtime::paint_context::PaintContext;
 
 use std::rc::Rc;
 
@@ -708,26 +706,6 @@ impl Modal {
             (frame.w - inset_x * 2.0).max(0.0),
             (frame.h - inset_y * 2.0).max(0.0),
         )
-    }
-
-    pub(crate) fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        let y = ctx.visual_center_y(frame, font_size);
-        ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
-        ctx.pop_clip();
     }
 
     pub(crate) fn is_present(&self) -> bool {

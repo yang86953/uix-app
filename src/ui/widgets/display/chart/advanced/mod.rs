@@ -724,16 +724,6 @@ pub(super) fn catmull_rom_points_into(
     }
 }
 
-fn lerp_color(start: Color, end: Color, t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    Color::from_rgba(
-        (start.r as f32 + (end.r as f32 - start.r as f32) * t).round() as u8,
-        (start.g as f32 + (end.g as f32 - start.g as f32) * t).round() as u8,
-        (start.b as f32 + (end.b as f32 - start.b as f32) * t).round() as u8,
-        (start.a as f32 + (end.a as f32 - start.a as f32) * t).round() as u8,
-    )
-}
-
 fn format_number(value: f32) -> String {
     if !value.is_finite() {
         return "0".to_owned();

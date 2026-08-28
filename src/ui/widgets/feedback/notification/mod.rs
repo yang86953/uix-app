@@ -17,6 +17,8 @@ use crate::widget;
 // 引入关闭原因以区分用户关闭与到期关闭。
 use super::declaration::FeedbackCloseReason;
 use super::toast_motion::{ToastMotion, ToastQueue};
+// 复用反馈组件共享的颜色衰减与省略文本绘制辅助。
+use super::{fade_token_color, paint_elided_text};
 
 mod item;
 mod layout;
@@ -25,7 +27,7 @@ mod presentation;
 use self::presentation::*;
 
 pub use self::item::{NotificationHandle, NotificationItem};
-use self::layout::{fade_color, finite_or_zero, transitioned_rect, union_nonempty};
+use self::layout::{finite_or_zero, transitioned_rect, union_nonempty};
 
 widget! {
     /// 拥有窗口内通知队列、过渡动画与放置方向的浮层宿主组件。
@@ -169,20 +171,20 @@ widget! {
                 continue;
             }
             let item = entry.item();
-            let bg = fade_color(resolved.background, opacity);
-            let border = fade_color(resolved.border, opacity);
-            let text = fade_color(resolved.text, opacity);
-            let text_secondary = fade_color(resolved.text_secondary, opacity);
+            let bg = fade_token_color(resolved.background, opacity);
+            let border = fade_token_color(resolved.border, opacity);
+            let text = fade_token_color(resolved.text, opacity);
+            let text_secondary = fade_token_color(resolved.text_secondary, opacity);
             let (default_icon, accent) = visual.status_visual(&resolved, item.type_);
             let icon = self.icon_name.as_deref().unwrap_or(default_icon);
-            let accent = fade_color(accent, opacity);
+            let accent = fade_token_color(accent, opacity);
             if shadow.layer_1.2 > 0.0 {
                 ctx.draw_box_shadow(
                     notif_rect,
                     shadow.layer_1.2,
                     shadow.layer_1.0,
                     shadow.layer_1.1,
-                    fade_color(shadow.layer_1.3, opacity),
+                    fade_token_color(shadow.layer_1.3, opacity),
                     radius,
                 );
             }
@@ -211,20 +213,22 @@ widget! {
                 accent,
                 visual.typography.status_icon,
             );
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 &item.title,
                 geometry.title,
                 text,
                 resolved.title_font_size,
+                false,
             );
             if !item.description.is_empty() {
-                Self::paint_elided_text(
+                paint_elided_text(
                     ctx,
                     &item.description,
                     geometry.description,
                     text_secondary,
                     visual.typography.description,
+                    false,
                 );
             }
             if let (Some(action), Some(action_rect)) =
@@ -234,16 +238,17 @@ widget! {
                 if self.pressed_action.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         action_button,
-                        fade_color(resolved.fill_secondary, opacity),
+                        fade_token_color(resolved.fill_secondary, opacity),
                         Some(Radius::uniform(resolved.control_radius)),
                     );
                 }
-                Self::paint_centered_elided_text(
+                paint_elided_text(
                     ctx,
                     action,
                     action_button,
                     text,
                     visual.typography.action,
+                    true,
                 );
             }
             if item.closable {
@@ -251,30 +256,31 @@ widget! {
                 if self.pressed_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(resolved.fill_secondary, opacity),
+                        fade_token_color(resolved.fill_secondary, opacity),
                         Some(Radius::uniform(resolved.control_radius)),
                     );
                 } else if self.hovered_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(resolved.fill_tertiary, opacity),
+                        fade_token_color(resolved.fill_tertiary, opacity),
                         Some(Radius::uniform(resolved.control_radius)),
                     );
                 }
                 if let Some(label) = self.close_label.as_deref() {
-                    Self::paint_centered_elided_text(
+                    paint_elided_text(
                         ctx,
                         label,
                         close_button,
-                        fade_color(resolved.text_quaternary, opacity),
+                        fade_token_color(resolved.text_quaternary, opacity),
                         visual.typography.close_label,
+                        true,
                     );
                 } else {
                     crate::ui::widgets::icon::Icon::paint_in_frame(
                         ctx,
                         visual.icons.close,
                         close_button,
-                        fade_color(resolved.text_quaternary, opacity),
+                        fade_token_color(resolved.text_quaternary, opacity),
                         visual.typography.close_icon,
                     );
                 }

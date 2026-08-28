@@ -6,6 +6,9 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use std::collections::HashSet;
 
+// 复用 input 层共享的字符索引辅助（子模块经此绑定引用）。
+use super::byte_index_for_char;
+
 #[derive(Debug, Clone, PartialEq)]
 /// 级联选择器中的一个树形选项。
 pub struct CascaderOption {
@@ -101,13 +104,6 @@ fn collect_search_results(
         path.labels.pop();
         path.values.pop();
     }
-}
-
-fn byte_index_for_char(text: &str, char_index: usize) -> usize {
-    text.char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(text.len())
 }
 
 fn paint_loading_spinner(ctx: &mut PaintContext, row: Rect, phase: f32, color: Color) {
@@ -354,13 +350,6 @@ fn finite_nonnegative(value: f32) -> f32 {
 
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 // 把 Cascader Rust 交互内核与 UIX 静态视觉组合为单一组件节点。

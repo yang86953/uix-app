@@ -35,8 +35,8 @@ use geometry::{
     // 合并触发器、弹层与当前表面。
     mentions_surface_rect,
 };
-// 文本编辑模块提供字符索引换算，供建议过滤与候选替换共用。
-use text_editing::byte_index_for_char;
+// 字符索引换算复用 input 层共享辅助，供建议过滤与候选替换共用。
+use super::byte_index_for_char;
 
 widget! {
     /// Mentions——`@` 提及输入框。

@@ -492,28 +492,6 @@ impl Drawer {
         }
     }
 
-    pub(super) fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        if value.is_empty() || frame.w <= 0.0 || frame.h <= 0.0 {
-            return;
-        }
-        // 复用共享算法，并在极窄宽度连省略号也放不下时停止绘制。
-        let Some(visible) = ctx.elide_single_line(value, font_size, frame.w) else {
-            // 保持组件原有的无可见文本早退策略。
-            return;
-            // 结束极窄宽度分支。
-        };
-        ctx.push_clip(frame);
-        let y = ctx.visual_center_y(frame, font_size);
-        ctx.draw_text(&visible, Point::new(frame.x, y), color, font_size);
-        ctx.pop_clip();
-    }
-
     fn animation_placement_for(placement: DrawerPlacement) -> crate::ui::Placement {
         match placement {
             DrawerPlacement::Right => crate::ui::Placement::Right,

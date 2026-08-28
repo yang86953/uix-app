@@ -1,6 +1,8 @@
 // 拆分自 mentions.rs：文本编辑、光标定位与候选替换。
 // 引入被扩展的提及组件。
 use super::Mentions;
+// 复用 input 层共享的字符索引换算辅助。
+use crate::ui::widgets::input::byte_index_for_char;
 
 // 为 Mentions 提供文本编辑与候选替换方法。
 impl Mentions {
@@ -99,13 +101,4 @@ impl Mentions {
         self.stop_suggesting();
         true
     }
-}
-
-// 把 Unicode 字符索引换算为字符串字节索引（供建议刷新与候选替换共用）。
-pub(super) fn byte_index_for_char(value: &str, char_index: usize) -> usize {
-    value
-        .char_indices()
-        .nth(char_index)
-        .map(|(index, _)| index)
-        .unwrap_or(value.len())
 }

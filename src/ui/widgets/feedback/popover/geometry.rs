@@ -263,7 +263,7 @@ impl Popover {
 
     pub(super) fn transition_dirty_rect(&self, frame: Rect) -> Rect {
         let frame = Self::normalize_frame(frame);
-        let popup = expand_popover_rect(
+        let popup = expand_rect(
             self.absolute_popup_rect(frame),
             self.visual.layout.shadow_expand,
         );
@@ -342,31 +342,6 @@ impl Popover {
                 0.0
             },
         )
-    }
-
-    pub(super) fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-        centered: bool,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        if centered {
-            ctx.text_center(value.as_ref(), frame, color, font_size);
-        } else {
-            let y = ctx.visual_center_y(frame, font_size);
-            ctx.draw_text(value.as_ref(), Point::new(frame.x, y), color, font_size);
-        }
-        ctx.pop_clip();
     }
 }
 
@@ -489,26 +464,6 @@ pub(super) fn popover_position(
 
 pub(super) fn translated_rect(rect: Rect, offset: Point) -> Rect {
     Rect::new(rect.x + offset.x, rect.y + offset.y, rect.w, rect.h)
-}
-
-pub(super) fn expand_popover_rect(rect: Rect, amount: f32) -> Rect {
-    if rect.w <= 0.0 || rect.h <= 0.0 {
-        Rect::zero()
-    } else {
-        Rect::new(
-            rect.x - amount,
-            rect.y - amount,
-            rect.w + amount * 2.0,
-            rect.h + amount * 2.0,
-        )
-    }
-}
-
-pub(super) fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 pub(super) fn draw_popover_arrow(
