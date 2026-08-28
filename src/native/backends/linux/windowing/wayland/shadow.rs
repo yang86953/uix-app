@@ -128,10 +128,15 @@ fn shadow_pixels(label: &str, width: i32, height: i32) -> Vec<u32> {
                 _ => SHADOW_SIZE as f32,
             };
             let distance = if width > 1 && height > 1 {
-                horizontal
-                    .min(SHADOW_SIZE as f32)
-                    .hypot(vertical.min(SHADOW_SIZE as f32))
-                    / 2.0_f32.sqrt()
+                // 角部 tile 与相邻边带必须共用同一衰减场：alpha 只依赖到窗口
+                // 轮廓的欧氏距离，边带（1px 维度 tile）取垂直距离，角部取到
+                // 窗口角点的距离，二者在接缝行/列上取值一致。旧实现以外角为
+                // 圆心 hypot/√2，同一接缝上角部可比边带强至 √2 倍，呈现为
+                // 围绕四角的矩形色块台阶。
+                (SHADOW_SIZE as f32 + 0.5
+                    - (SHADOW_SIZE as f32 - horizontal)
+                        .hypot(SHADOW_SIZE as f32 - vertical))
+                    .clamp(0.0, SHADOW_SIZE as f32)
             } else {
                 horizontal.min(vertical)
             };
