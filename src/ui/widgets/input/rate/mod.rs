@@ -9,6 +9,7 @@ use crate::ui::reactive::state::State;
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
     WidgetTree,
@@ -316,18 +317,11 @@ impl Rate {
     }
 
     fn capture_bound_value_dependency(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.value_binding.as_ref());
     }
 
     fn write_bound_value(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let value = self.state_value();
-            if state.get() != value {
-                state.set(value);
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), self.state_value());
     }
 
     /// 创建默认五级、整级、可交互且不可清空的评分组件。

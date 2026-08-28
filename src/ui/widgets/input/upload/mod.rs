@@ -2,6 +2,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::capture_dependency;
 use crate::widget;
 // 引入调用方拥有的上传队列状态句柄。
 use crate::ui::reactive::state::State;
@@ -926,10 +927,7 @@ impl Upload {
     // 在声明视图构建期间登记受控队列依赖。
     fn capture_bound_files_dependency(&self) {
         // 只有受控组件需要捕获外部状态。
-        if let Some(state) = self.files_binding.as_ref() {
-            // 读取当前快照即可登记依赖。
-            let _ = state.get();
-        }
+        capture_dependency(self.files_binding.as_ref());
     }
 
     fn display_name(path: &str) -> &str {

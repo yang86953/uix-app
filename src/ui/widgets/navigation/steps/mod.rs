@@ -6,6 +6,7 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::widget;
 // 引入受控 current 的响应式状态句柄。
 use crate::ui::State;
@@ -537,24 +538,13 @@ impl Steps {
     // 捕获声明端 current 的响应式依赖。
     fn capture_bound_value_dependency(&self) {
         // 仅受控组件需要登记 State 依赖。
-        if let Some(state) = self.current_binding.as_ref() {
-            // 读取值以接入当前追踪上下文。
-            let _ = state.get();
-        }
+        capture_dependency(self.current_binding.as_ref());
     }
 
     // 把组件 current 写回受控 State。
     fn write_bound_value(&self, current: usize) {
-        // 非受控模式没有外部写回目标。
-        let Some(state) = self.current_binding.as_ref() else {
-            // 直接返回，保持原有非受控语义。
-            return;
-        };
-        // 避免相同值产生多余 generation 与 reconcile。
-        if state.get() != current {
-            // 提交新的受控 current。
-            state.set(current);
-        }
+        // 避免相同值产生多余 generation 与 reconcile；非受控模式无外部写回目标。
+        write_if_changed(self.current_binding.as_ref(), current);
     }
 
     fn move_current(&self, forward: bool) {

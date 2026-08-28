@@ -3,6 +3,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 // 引入公开双向状态句柄。
 use crate::ui::reactive::state::State;
+use crate::ui::widgets::binding::write_if_changed;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
@@ -173,16 +174,9 @@ impl Cascader {
 
     // 将当前完整路径提交给声明式外部状态。
     fn publish_bound_value(&self) {
-        // 非受控模式不产生额外副作用。
-        let Some(state) = self.value_binding.as_ref() else {
-            // 直接返回并保留内部选择行为。
-            return;
-        };
-        // 避免相同路径触发无意义状态版本更新。
-        if state.get() != self.selected {
-            // 克隆拥有所有权的标签和值路径写入状态。
-            state.set(self.selected.clone());
-        }
+        // 非受控模式不产生额外副作用；避免相同路径触发无意义状态版本更新。
+        // 克隆拥有所有权的标签和值路径写入状态。
+        write_if_changed(self.value_binding.as_ref(), self.selected.clone());
     }
 
     /// 设置尚未选中路径时显示的占位文本。

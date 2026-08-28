@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
     WidgetId, WidgetTree,
@@ -95,9 +96,8 @@ where
         let Some(value) = self.values.get(index) else {
             return;
         };
-        if self.state.get() != *value {
-            self.state.set(value.clone());
-        }
+        // 相同值不产生多余 generation 与 reconcile。
+        write_if_changed(Some(&self.state), value.clone());
     }
 }
 

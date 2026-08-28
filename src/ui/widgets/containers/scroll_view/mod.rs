@@ -19,6 +19,7 @@ use crate::widget;
 use crate::ui::layout::LayoutChild;
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero, normalize_margin};
 use crate::ui::reactive::state::State;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SnapshotFields, SystemEvent, View, ViewNode, Widget,
     WidgetId, WidgetTree,
@@ -972,19 +973,12 @@ impl ScrollView {
     }
 
     fn write_bound_offset(&self) {
-        let Some(state) = self.scroll_binding.as_ref() else {
-            return;
-        };
         let offset = Point::new(self.effective_scroll_x(), self.effective_scroll_y());
-        if state.get() != offset {
-            state.set(offset);
-        }
+        write_if_changed(self.scroll_binding.as_ref(), offset);
     }
 
     fn capture_bound_offset_dependency(&self) {
-        if let Some(state) = self.scroll_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.scroll_binding.as_ref());
     }
 
     fn clamp_bound_axis(&self, value: f32, horizontal: bool) -> f32 {

@@ -9,6 +9,7 @@ use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
@@ -579,11 +580,7 @@ impl ColorPicker {
             return;
         }
         self.value.set(value);
-        if let Some(state) = self.value_binding.as_ref() {
-            if state.get() != value {
-                state.set(value);
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), value);
         self.pending_change.set(Some(value));
     }
 

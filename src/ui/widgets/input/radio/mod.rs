@@ -9,6 +9,7 @@ use crate::ui::reactive::state::State;
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
     WidgetTree,
@@ -294,21 +295,14 @@ impl Radio {
     }
 
     fn capture_bound_value_dependency(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.value_binding.as_ref());
     }
 
     fn write_bound_value(&self) {
-        let Some(state) = self.value_binding.as_ref() else {
-            return;
-        };
         let Some(value) = self.options.get(self.selected) else {
             return;
         };
-        if state.get() != *value {
-            state.set(value.clone());
-        }
+        write_if_changed(self.value_binding.as_ref(), value.clone());
     }
 
     fn intrinsic_size(&self) -> Size {

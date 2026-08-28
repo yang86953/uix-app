@@ -9,6 +9,7 @@ use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::widgets::input::date_picker::{Date, days_in_month, first_weekday};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, State, SystemEvent, WidgetId, WidgetTree,
@@ -1130,14 +1131,9 @@ impl Calendar {
         }
         if self.selected_date.get() != Some(date) {
             self.selected_date.set(Some(date));
-            // 受控模式先提交唯一外部状态，再允许观察者读取 Change。
-            if let Some(state) = self.value_binding.as_ref() {
-                // 避免向相同日期产生冗余状态版本。
-                if state.get() != date {
-                    // 回写已归一化且确定的用户选择。
-                    state.set(date);
-                }
-            }
+            // 受控模式先提交唯一外部状态，再允许观察者读取 Change；
+            // 避免向相同日期产生冗余状态版本。
+            write_if_changed(self.value_binding.as_ref(), date);
             self.pending_change.set(Some(date));
             if self.custom_cell {
                 self.layout_requested.set(true);

@@ -5,6 +5,7 @@
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::widget;
 // 引入 current 与 pageSize 的声明式状态句柄。
 use crate::ui::State;
@@ -813,43 +814,21 @@ impl Pagination {
     // 捕获声明端双状态的响应式依赖。
     fn capture_bound_value_dependencies(&self) {
         // pageSize 受控时登记其 State 依赖。
-        if let Some(state) = self.page_size_binding.as_ref() {
-            // 读取值以接入当前追踪上下文。
-            let _ = state.get();
-        }
+        capture_dependency(self.page_size_binding.as_ref());
         // current 受控时登记其 State 依赖。
-        if let Some(state) = self.current_binding.as_ref() {
-            // 读取值以接入当前追踪上下文。
-            let _ = state.get();
-        }
+        capture_dependency(self.current_binding.as_ref());
     }
 
     // 把 current 写回受控 State。
     fn write_current_bound(&self, current: usize) {
-        // 非受控模式没有外部写回目标。
-        let Some(state) = self.current_binding.as_ref() else {
-            // 直接返回，保留组件自身状态。
-            return;
-        };
-        // 相同值不产生多余 generation 与 reconcile。
-        if state.get() != current {
-            // 提交新页码。
-            state.set(current);
-        }
+        // 相同值不产生多余 generation 与 reconcile；非受控模式无外部写回目标。
+        write_if_changed(self.current_binding.as_ref(), current);
     }
 
     // 把 pageSize 写回受控 State。
     fn write_page_size_bound(&self, page_size: usize) {
-        // 非受控模式没有外部写回目标。
-        let Some(state) = self.page_size_binding.as_ref() else {
-            // 直接返回，保留组件自身状态。
-            return;
-        };
-        // 相同值不产生多余 generation 与 reconcile。
-        if state.get() != page_size {
-            // 提交新的每页条数。
-            state.set(page_size);
-        }
+        // 相同值不产生多余 generation 与 reconcile；非受控模式无外部写回目标。
+        write_if_changed(self.page_size_binding.as_ref(), page_size);
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
