@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::compat::Main;
@@ -137,6 +138,8 @@ pub(crate) struct WaylandWindowOps {
     // 单一 Component 同时拥有 active request 与在途 wl_callback handle。
     pub(super) frame_callback: FrameCallbackOwner,
     configured_modes: Arc<Mutex<NativeWindowModeState>>,
+    // Wayland 不通知 unminimize；记下主动最小化，等下一次 configure 归位。
+    minimized_pending: Arc<AtomicBool>,
     // 单窗口 resize 约束状态由同步入口与 compositor configure 共享。
     resize_constraints: Rc<RefCell<WaylandResizeConstraintState>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
@@ -203,6 +206,7 @@ impl WaylandWindowOps {
             // 新窗口尚未登记原生 frame request 或协议 callback。
             frame_callback: FrameCallbackOwner::new(),
             configured_modes: Arc::new(Mutex::new(NativeWindowModeState::default())),
+            minimized_pending: Arc::new(AtomicBool::new(false)),
             // 只有正的初始 logical 客户区尺寸能成为后续锁定依据。
             resize_constraints: Rc::new(RefCell::new(WaylandResizeConstraintState::new(
                 width, height,
@@ -251,6 +255,8 @@ impl WaylandWindowOps {
 
         let tl_events = events.clone();
         let configured_modes = Arc::clone(&self.configured_modes);
+        // unminimize 记账与 configure 闭包共享同一原子事实。
+        let minimized_pending = Arc::clone(&self.minimized_pending);
         // configure 与同步 WindowOps 共享单窗口 resize 约束权威。
         let resize_constraints = Rc::clone(&self.resize_constraints);
         // configure 回调先发布 logical extent，再排队同一 resize 事实。
@@ -374,6 +380,8 @@ impl WaylandWindowOps {
                 // 保持既有最大化/恢复边沿事件语义。
                 match transition {
                     NativeMaximizeTransition::Maximized => {
+                        // 最小化转最大化的 configure 已由本事件驱动渲染。
+                        let _ = minimized_pending.swap(false, Ordering::AcqRel);
                         queued.push_back(UiEvent {
                             window_id: Some(window_id),
                             type_: UiEventType::WindowMaximize,
@@ -381,13 +389,29 @@ impl WaylandWindowOps {
                         });
                     }
                     NativeMaximizeTransition::Restored => {
+                        // 最小化转还原的 configure 已由本事件驱动渲染。
+                        let _ = minimized_pending.swap(false, Ordering::AcqRel);
                         queued.push_back(UiEvent {
                             window_id: Some(window_id),
                             type_: UiEventType::WindowRestore,
                             payload: UiEventPayload::None,
                         });
                     }
-                    NativeMaximizeTransition::Unchanged => {}
+                    NativeMaximizeTransition::Unchanged => {
+                        // xdg_shell 不通知 unminimize：主动最小化后的第一个
+                        // configure 必然意味着窗口重新参与布局（任务栏恢复、
+                        // activation 或还原请求），必须以恢复事件驱动一次
+                        // 完整重呈现，否则窗口停留在最小化前的最后 buffer。
+                        if minimized_pending.swap(false, Ordering::AcqRel) {
+                            // 共享窗口记账由本协议事实同步归位。
+                            state.minimized = false;
+                            queued.push_back(UiEvent {
+                                window_id: Some(window_id),
+                                type_: UiEventType::WindowRestore,
+                                payload: UiEventPayload::None,
+                            });
+                        }
+                    }
                 }
             }
             _ => {}
@@ -895,6 +919,8 @@ impl WindowOps for WaylandWindowOps {
             .as_ref()
             .ok_or_else(|| Self::missing_proxy("os_minimize", "xdg_toplevel"))?;
         toplevel.set_minimized();
+        // 协议不会回报 unminimize；下一个 configure 即恢复事实的载体。
+        self.minimized_pending.store(true, Ordering::Release);
         Ok(())
     }
 
