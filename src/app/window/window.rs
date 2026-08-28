@@ -21,14 +21,14 @@ use crate::app::window::window_actions::report_center_on_screen_result;
 use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
 use crate::diagnostics::Diagnostics;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::windowing::window::PlatformWindow;
 /// Event-driven application window.
 ///
 /// 只负责窗口生命周期和平台句柄管理。
 /// 渲染与 present 由 app 主循环和 ScenePipeline 处理。
 pub struct Window {
-    platform: Box<dyn Platform>,
+    platform: Box<dyn PlatformSystem>,
     window: Option<Box<dyn PlatformWindow>>,
     running: bool,
     exit_code: i32,
@@ -42,7 +42,7 @@ pub struct Window {
 
 impl Window {
     /// 创建拥有指定平台实现、尚未建立平台窗口的应用窗口控制器。
-    pub fn new(platform: Box<dyn Platform>) -> Self {
+    pub fn new(platform: Box<dyn PlatformSystem>) -> Self {
         let diagnostics = Diagnostics::default();
         match crate::diagnostics::debug_mode_from_env() {
             Some(Ok(enabled)) => diagnostics.set_debug_mode(enabled),
@@ -65,12 +65,12 @@ impl Window {
     }
 
     /// 返回窗口控制器拥有的平台实现共享借用。
-    pub fn platform(&self) -> &dyn Platform {
+    pub fn platform(&self) -> &dyn PlatformSystem {
         self.platform.as_ref()
     }
 
     /// 返回窗口控制器拥有的平台实现可变借用。
-    pub fn platform_mut(&mut self) -> &mut dyn Platform {
+    pub fn platform_mut(&mut self) -> &mut dyn PlatformSystem {
         self.platform.as_mut()
     }
 
@@ -171,7 +171,7 @@ impl Window {
     /// 简单事件循环（无渲染），由上层自行驱动。
     pub fn run<F>(&mut self, mut frame_fn: F) -> i32
     where
-        F: FnMut(&mut dyn Platform) -> bool,
+        F: FnMut(&mut dyn PlatformSystem) -> bool,
     {
         self.running = true;
         if let Some(ref w) = self.window {

@@ -10,7 +10,7 @@ pub(crate) struct WindowFrameResult {
 }
 
 pub(super) fn with_platform_clipboard<R>(
-    platform: &mut Option<&mut dyn Platform>,
+    platform: &mut Option<&mut dyn PlatformSystem>,
     operation: impl FnOnce() -> R,
 ) -> R {
     match platform.as_deref_mut() {

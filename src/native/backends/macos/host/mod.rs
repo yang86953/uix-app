@@ -10,7 +10,7 @@ use crate::core::{Errc, Error, PresentDamage, Rect, Result, WindowId};
 use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
 use crate::platform::display::IDisplay;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::IPresenter;
 use crate::platform::presentation::validate_pixel_buffer;
 use crate::platform::system::filesystem::IFileSystem;
@@ -267,7 +267,7 @@ impl IWindowManager for MacosPlatform {
     }
 }
 
-impl Platform for MacosPlatform {
+impl PlatformSystem for MacosPlatform {
     fn take_pending_failure(&mut self) -> Option<Error> {
         self.pending_failures.take()
     }

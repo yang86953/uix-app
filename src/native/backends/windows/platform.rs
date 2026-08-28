@@ -37,7 +37,7 @@ use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
 use crate::native::windowing::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::native::{Errc, Error};
 use crate::platform::display::IDisplay;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::IPresenter;
 use crate::platform::presentation::*;
 use crate::platform::system::console::IConsole;
@@ -369,7 +369,7 @@ impl IWindowManager for WindowsPlatform {
 // Platform 访问器
 // ════════════════════════════════════════════════════════════════════════════
 
-impl Platform for WindowsPlatform {
+impl PlatformSystem for WindowsPlatform {
     fn take_pending_failure(&mut self) -> Option<Error> {
         Self::take_pending_failure(self)
     }

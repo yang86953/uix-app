@@ -14,7 +14,7 @@ use crate::draw::renderer::RenderMetrics;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::PlatformWindow;
 use crate::ui::theme::{DynTokens, Theme};
@@ -42,7 +42,7 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
 #[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_widget_loop<M, X, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn RenderTarget,
     tree: &mut WidgetTree,
@@ -59,7 +59,7 @@ pub(crate) fn run_widget_loop<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     let mut active_work = ActiveWorkRegistry::new();
     let mut pending_root = None;
@@ -104,7 +104,7 @@ where
 #[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop<M, X, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
     font_service: &FontService,
@@ -120,7 +120,7 @@ pub(crate) fn run_window_session_loop<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     run_window_session_loop_with_system_theme(
         platform,
@@ -144,7 +144,7 @@ where
 #[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
     font_service: &FontService,
@@ -161,7 +161,7 @@ pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     run_window_session_loop_with_system_theme_and_tasks(
         platform,
@@ -185,7 +185,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
     font_service: &FontService,
@@ -205,10 +205,10 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D,
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform, &mut WidgetTree),
-    R: FnMut(&UiEvent, &mut dyn Platform),
+    T: FnMut(&mut dyn PlatformSystem, &mut WidgetTree),
+    R: FnMut(&UiEvent, &mut dyn PlatformSystem),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     run_window_session_loop_with_system_theme_and_clock(
         platform,
@@ -236,7 +236,7 @@ where
 #[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
     font_service: &FontService,
@@ -253,7 +253,7 @@ pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     run_window_session_loop_with_system_theme_and_clock(
         platform,
@@ -278,7 +278,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
     font_service: &FontService,
@@ -299,10 +299,10 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform, &mut WidgetTree),
-    R: FnMut(&UiEvent, &mut dyn Platform),
+    T: FnMut(&mut dyn PlatformSystem, &mut WidgetTree),
+    R: FnMut(&UiEvent, &mut dyn PlatformSystem),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     let parts = session.parts_mut();
     run_widget_loop_with_active_work(
@@ -339,7 +339,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn RenderTarget,
     tree: &mut WidgetTree,
@@ -371,13 +371,13 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform, &mut WidgetTree),
-    R: FnMut(&UiEvent, &mut dyn Platform),
+    T: FnMut(&mut dyn PlatformSystem, &mut WidgetTree),
+    R: FnMut(&UiEvent, &mut dyn PlatformSystem),
     D: FnMut() -> Option<Instant>,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
-    let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
-    // SAFETY: `bus_ptr` 由函数参数 `platform`（`&mut dyn Platform`，本函数作用域内
+    let bus_ptr: *mut dyn PlatformSystem = platform as *mut dyn PlatformSystem;
+    // SAFETY: `bus_ptr` 由函数参数 `platform`（`&mut dyn PlatformSystem`，本函数作用域内
     // 存活）直接转换而来，event loop 运行期间指针始终有效。两处解引用均发生在
     // event loop 主线程，且解引用时不存在对 `platform` 的其他活跃可变借用
     // （`clipboard::with_clipboard` / `sync_window_text_input` 等借用点均已结束）；
@@ -717,7 +717,7 @@ where
 }
 
 fn wait_for_event_or_registered_work(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     active_work: &ActiveWorkRegistry,
     external_deadline: Option<Instant>,
     clock: &dyn AppClock,

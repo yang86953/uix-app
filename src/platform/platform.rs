@@ -11,7 +11,7 @@ use crate::platform::windowing::window::IWindowManager;
 use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
 
 /// 平台根接口——持有并暴露所有 OS 中立的功能域合同。
-pub trait Platform {
+pub trait PlatformSystem {
     /// 在 owner thread 边界取出一个原生回调失败。
     ///
     /// 回调只能入队类型化失败；应用在取出后决定恢复、返回或报告。

@@ -49,7 +49,7 @@ use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
 // Application 只把运行时故障队列交给平台中立入口，不选择具体原生后端。
 use crate::platform::graphics::GraphicsBackend;
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::{
     GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,
     graphics_runtime_platform, try_create_gpu_recipe_with_queue,

@@ -3,7 +3,7 @@
 use super::*;
 
 pub(super) fn create_secondary_window(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,

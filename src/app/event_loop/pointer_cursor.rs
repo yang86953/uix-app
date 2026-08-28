@@ -1,7 +1,7 @@
 // capability absence 使用稳定错误码与可重试运行失败区分。
 use crate::core::Errc;
 // 引入平台能力根契约。
-use crate::platform::platform::Platform;
+use crate::platform::platform::PlatformSystem;
 // 引入 App System 实际调用的窄光标能力端口。
 use crate::platform::windowing::ICursor;
 // 引入平台无关的指针光标枚举。
@@ -12,7 +12,7 @@ use std::cell::Cell;
 // 仅在请求光标变化时调用平台能力。
 pub(super) fn apply_pointer_cursor(
     // 接收 App System 注入的平台能力根。
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     // 接收 UI System 解析出的有效光标。
     requested: CursorType,
     // 保存本窗口循环最后一次成功或已确认不支持的光标请求。

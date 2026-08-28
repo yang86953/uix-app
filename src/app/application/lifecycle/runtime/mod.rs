@@ -10,7 +10,7 @@ use crate::draw::renderer::{GraphicsRecoveryAction, RebuildRequest};
 /// 执行上报或未来的领域恢复动作。已注册的恢复处理器先在此安全点运行，只有
 /// 仍未处理的错误才进入最终上报，符合「报告不能恢复的」运行时保证。
 pub(crate) fn drain_platform_pending_failures(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     diagnostics: &Diagnostics,
 ) -> usize {
     let mut drained = 0;
@@ -89,7 +89,7 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsSe
 #[cfg_attr(test, allow(dead_code))]
 #[cfg(test)]
 pub(crate) fn drain_pending_open_windows(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
@@ -109,7 +109,7 @@ pub(crate) fn drain_pending_open_windows(
 }
 
 pub(crate) fn drain_pending_open_windows_with_backend(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
@@ -171,7 +171,7 @@ pub(crate) fn drain_secondary_window_frames(
     reason = "secondary window draining mirrors the application service boundary"
 )]
 pub(super) fn drain_secondary_window_frames_with_platform(
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     secondary_windows: &mut [SecondaryWindowSession],
     font_service: &FontService,
     image_service: &ImageService,
@@ -197,7 +197,7 @@ pub(super) fn drain_secondary_window_frames_with_platform(
     reason = "secondary window draining mirrors the application service boundary"
 )]
 fn drain_secondary_window_frames_impl(
-    platform: Option<&mut dyn Platform>,
+    platform: Option<&mut dyn PlatformSystem>,
     secondary_windows: &mut [SecondaryWindowSession],
     font_service: &FontService,
     image_service: &ImageService,
@@ -256,7 +256,7 @@ pub(crate) fn secondary_windows_next_deadline(
 
 pub(crate) fn dispatch_secondary_window_event(
     secondary_windows: &mut Vec<SecondaryWindowSession>,
-    platform: &mut dyn Platform,
+    platform: &mut dyn PlatformSystem,
     event: &UiEvent,
 ) -> bool {
     // 事件未标注窗口或目标窗口已不在会话列表时直接放弃。
