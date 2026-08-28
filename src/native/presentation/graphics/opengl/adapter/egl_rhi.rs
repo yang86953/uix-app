@@ -124,6 +124,15 @@ impl OpenGlRhiHost for EglContext {
             .map_or(0.0, |snapshot| snapshot.corner_radius as f32)
     }
 
+    // Wayland windowing 与 EGL 共享同一份客户端阴影环外观事实。
+    fn rhi_surface_shadow_fill(&self) -> (f32, f32) {
+        self.metrics
+            .snapshot()
+            .map_or((0.0, 0.0), |snapshot| {
+                (snapshot.shadow_alpha, snapshot.shadow_size as f32)
+            })
+    }
+
     // 判断 EGL drawable、逻辑尺寸与 DPR 是否已满足 resize 请求。
     fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool> {
         // 读取共享 resize 事务冻结的请求 extent。

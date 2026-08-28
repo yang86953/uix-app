@@ -706,6 +706,7 @@ impl RhiRenderer {
                         data: FrameUniformPayload::Sampled(RhiRenderer::surface_sampled_uniform(
                             viewport,
                             quad.surface_corner_radius,
+                            quad.surface_shadow_fill,
                         )),
                     });
                     // 原子绑定已经存在的 Picture texture 与共享 sampler。

@@ -56,12 +56,16 @@ precision highp float;
 uniform sampler2D u_tex;
 uniform vec2 u_viewport;
 uniform float u_corner_radius;
+// 客户端阴影环外观事实：峰值不透明度与物理外扩距离。
+uniform float u_shadow_alpha;
+uniform float u_shadow_range;
 in vec2 v_uv;
 in vec4 v_color;
 out vec4 fragColor;
 void main() {
     vec4 sample_color = texture(u_tex, v_uv);
     float coverage = 1.0;
+    float fill_alpha = 0.0;
     if (u_corner_radius > 0.0) {
         vec2 half_size = u_viewport * 0.5;
         vec2 centered = abs(gl_FragCoord.xy - half_size);
@@ -69,9 +73,15 @@ void main() {
         float signed_distance = length(max(distance, vec2(0.0)))
             + min(max(distance.x, distance.y), 0.0) - u_corner_radius;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
+        if (u_shadow_alpha > 0.0 && u_shadow_range > 0.0) {
+            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影。
+            float falloff = clamp(1.0 - signed_distance / u_shadow_range, 0.0, 1.0);
+            fill_alpha = u_shadow_alpha * falloff * falloff;
+        }
     }
     vec4 color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a);
-    fragColor = color * coverage;
+    // 缺口阴影是预乘黑色，只向输出 alpha 贡献补画事实。
+    fragColor = vec4(color.rgb * coverage, color.a * coverage + fill_alpha * (1.0 - coverage));
 }
 "#;
 

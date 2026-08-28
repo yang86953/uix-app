@@ -77,8 +77,8 @@ use super::resize_constraints::{
 };
 // 引入跨注册表原子登记与注销 Component，窗口 owner 只编排协议生命周期。
 use super::surface_registration::register_window_surface;
-// 可选平台阴影协议由独立逐窗 Component 托管。
-use super::shadow::WaylandClientShadow;
+// 可选平台阴影协议由独立逐窗 Component 托管；峰值不透明度同步驱动合成端补画。
+use super::shadow::{self, WaylandClientShadow};
 // Wayland HiDPI Component 独占 output 订阅、buffer scale 与共享 surface metrics。
 use super::surface_scale::{
     WaylandOutputScaleRegistry, WaylandWindowScaleState, bind_surface_scale_events,
@@ -573,6 +573,8 @@ impl WindowOps for WaylandWindowOps {
         if let Some(shadow) = self.client_shadow.as_mut() {
             shadow.set_enabled(false);
         }
+        // 同步撤销合成端的缺口阴影补画事实。
+        let _ = self.surface_scale.metrics().set_client_shadow(0, 0.0);
         self.client_shadow = None;
         // 先注销 xdg-shell callbacks，再释放两个逐窗协议 handles。
         self.shutdown_window_callbacks();
@@ -650,6 +652,10 @@ impl WindowOps for WaylandWindowOps {
             if let Some(shadow) = self.client_shadow.as_mut() {
                 shadow.set_enabled(!visible);
             }
+            // 合成端缺口阴影补画与阴影环共用同一外观事实。
+            self.surface_scale
+                .metrics()
+                .set_client_shadow(Self::client_shadow_size(!visible), shadow::SHADOW_MAX_ALPHA)?;
             // 记录请求方向，便于 Linux 真窗验收定位 compositor 行为。
             tracing::info!(visible, "[Wayland] xdg-decoration mode requested");
             // 已成功把请求交付给 Wayland 协议对象。
@@ -662,6 +668,10 @@ impl WindowOps for WaylandWindowOps {
             if let Some(shadow) = self.client_shadow.as_mut() {
                 shadow.set_enabled(true);
             }
+            // 合成端缺口阴影补画与阴影环共用同一外观事实。
+            self.surface_scale
+                .metrics()
+                .set_client_shadow(Self::client_shadow_size(true), shadow::SHADOW_MAX_ALPHA)?;
             // 记录无扩展协议时采用的客户端装饰语义。
             tracing::info!("[Wayland] using client-side decorations without xdg-decoration");
             // UIX 可以继续显示自己的标题栏。

@@ -11,7 +11,7 @@ use std::sync::{Arc, RwLock};
 use crate::core::{Errc, Error, Result};
 
 // Wayland logical extent、整数缩放与 drawable extent 的一致快照。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct WaylandSurfaceSnapshot {
     // 窗口协议与 UI 使用的逻辑宽度。
     pub(crate) logical_width: i32,
@@ -27,6 +27,10 @@ pub(crate) struct WaylandSurfaceSnapshot {
     pub(crate) revision: u64,
     // 客户端窗口在当前模式下需要的物理圆角半径。
     pub(crate) corner_radius: i32,
+    // 客户端阴影环启用时的物理外扩距离；0 表示合成端无需补画缺口阴影。
+    pub(crate) shadow_size: i32,
+    // 客户端阴影环的峰值不透明度，与窗口外圈阴影保持同一外观事实。
+    pub(crate) shadow_alpha: f32,
 }
 
 // 锁内只保存不能被拆分发布的 logical extent、scale 与 revision。
@@ -44,6 +48,10 @@ struct WaylandSurfaceMetricsState {
     client_decorated: bool,
     // 最大化和全屏窗口必须保持方形贴合工作区。
     maximized: bool,
+    // 客户端阴影环的逻辑外扩距离；0 表示阴影环未启用。
+    client_shadow_size: i32,
+    // 客户端阴影环的峰值不透明度。
+    client_shadow_alpha: f32,
 }
 
 // presentation 与 Wayland windowing 共享的窄 surface 元数据 owner。
@@ -78,6 +86,10 @@ impl WaylandSurfaceMetrics {
                 client_decorated: false,
                 // 初始窗口处于还原态。
                 maximized: false,
+                // 初始没有客户端阴影环事实。
+                client_shadow_size: 0,
+                // 未启用时峰值不透明度同样归零。
+                client_shadow_alpha: 0.0,
             }),
         }
     }
@@ -107,6 +119,26 @@ impl WaylandSurfaceMetrics {
         })?;
         if state.maximized != maximized {
             state.maximized = maximized;
+            state.revision = state.revision.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    // 发布客户端阴影环事实，使合成端按同一外观参数补画圆角缺口阴影。
+    pub(crate) fn set_client_shadow(&self, shadow_size: i32, shadow_alpha: f32) -> Result<()> {
+        // 非正外扩距离统一归零，禁止半启用事实进入图形端。
+        let shadow_size = if shadow_size > 0 { shadow_size } else { 0 };
+        // 阴影关闭时峰值必须同时归零，避免留下只有参数没有环的中间态。
+        let shadow_alpha = if shadow_size > 0 { shadow_alpha } else { 0.0 };
+        let mut state = self.state.write().map_err(|_| {
+            Error::new(
+                Errc::InvalidState,
+                "Wayland surface appearance write lock poisoned",
+            )
+        })?;
+        if state.client_shadow_size != shadow_size || state.client_shadow_alpha != shadow_alpha {
+            state.client_shadow_size = shadow_size;
+            state.client_shadow_alpha = shadow_alpha;
             state.revision = state.revision.saturating_add(1);
         }
         Ok(())
@@ -218,27 +250,31 @@ fn snapshot_from_state(state: &WaylandSurfaceMetricsState) -> Result<WaylandSurf
                 ),
             )
         })?;
-    // 返回不可拆分的完整 surface 事实。
-    Ok(WaylandSurfaceSnapshot {
-        // 复制逻辑宽度。
-        logical_width: state.logical_width,
-        // 复制逻辑高度。
-        logical_height: state.logical_height,
-        // 保存受检物理宽度。
-        drawable_width,
-        // 保存受检物理高度。
-        drawable_height,
-        // 保存同代整数缩放。
-        scale: state.scale,
-        // 保存同代修订号。
-        revision: state.revision,
-        // 统一使用十个逻辑像素，与原生窗口常见圆角尺度一致。
-        corner_radius: if state.client_decorated && !state.maximized {
-            10_i32.saturating_mul(state.scale)
-        } else {
-            0
-        },
-    })
+        // 返回不可拆分的完整 surface 事实。
+        Ok(WaylandSurfaceSnapshot {
+            // 复制逻辑宽度。
+            logical_width: state.logical_width,
+            // 复制逻辑高度。
+            logical_height: state.logical_height,
+            // 保存受检物理宽度。
+            drawable_width,
+            // 保存受检物理高度。
+            drawable_height,
+            // 保存同代整数缩放。
+            scale: state.scale,
+            // 保存同代修订号。
+            revision: state.revision,
+            // 统一使用十个逻辑像素，与原生窗口常见圆角尺度一致。
+            corner_radius: if state.client_decorated && !state.maximized {
+                10_i32.saturating_mul(state.scale)
+            } else {
+                0
+            },
+            // 阴影外扩距离与圆角同尺度换算为物理像素。
+            shadow_size: state.client_shadow_size.saturating_mul(state.scale),
+            // 峰值不透明度是与尺度无关的外观事实，直接发布。
+            shadow_alpha: state.client_shadow_alpha,
+        })
 }
 
 #[derive(Clone, Debug)]

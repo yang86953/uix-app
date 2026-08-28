@@ -26,6 +26,11 @@ pub(super) fn plan_surface_composite(
     extent: RhiExtent,
     full_quad: RhiSampledQuad,
 ) -> SurfaceCompositePlan {
+    // 缺口阴影补画只能整体重写缺口像素；局部 Load + SrcOver 会让补画 alpha
+    // 逐帧叠加到不透明，因此触及圆角缺口的 partial 集合必须升级为完整合成。
+    let shadow_fill_active = full_quad.surface_shadow_fill[0] > 0.0
+        && full_quad.surface_shadow_fill[1] > 0.0
+        && full_quad.surface_corner_radius > 0.0;
     // 只有完全位于 drawable 内的受控 partial 集合可以窄绘制。
     if let PresentDamage::Partial(rects) = &damage
         && !rects.is_empty()
@@ -34,6 +39,10 @@ pub(super) fn plan_surface_composite(
             .iter()
             // 每个矩形必须能无溢出地落在当前物理 extent 内。
             .all(|&(x, y, width, height)| rect_fits_extent(x, y, width, height, extent))
+        && !(shadow_fill_active
+            && rects
+                .iter()
+                .any(|&rect| rect_touches_corner_notch(rect, extent, &full_quad)))
     {
         // 为每个 disjoint 或相邻 damage rect 生成一次同纹理 sampled draw。
         let quads = rects
@@ -85,17 +94,44 @@ pub(super) fn plan_surface_composite(
 
 // 验证一个物理矩形可以完整落在当前 drawable 内。
 fn rect_fits_extent(x: i32, y: i32, width: i32, height: i32, extent: RhiExtent) -> bool {
-    // 把 damage 矩形封闭为共享左上原点 scissor 值对象。
+    // 把尺寸矩形封闭为共享左上原点 scissor 值对象。
     RhiScissor {
         // 保留调用方水平起点。
         x,
         // 保留调用方垂直起点。
         y,
-        // 保留调用方宽度。
+        // 保留物理宽度。
         width,
-        // 保留调用方高度。
+        // 保留物理高度。
         height,
     }
     // 统一委托共享 checked 远端边界和目标值域门禁。
     .fits_within(extent)
+}
+
+// 判断一个物理 damage rect 是否触及任意圆角缺口方块。
+fn rect_touches_corner_notch(
+    (x, y, width, height): (i32, i32, i32, i32),
+    extent: RhiExtent,
+    quad: &RhiSampledQuad,
+) -> bool {
+    // 缺口方块边长与窗口圆角半径一致，圆角出现在四个物理角点。
+    let radius = quad.surface_corner_radius as i32;
+    // 半径无效时不存在需要整体重写的缺口区域。
+    if radius <= 0 {
+        return false;
+    }
+    // 逐角生成缺口方块并与 damage rect 做闭区间相交测试。
+    let right = extent.width as i32 - radius;
+    let bottom = extent.height as i32 - radius;
+    // 四个角点方块共享同一边长，只需要枚举原点。
+    [(0, 0), (right, 0), (0, bottom), (right, bottom)]
+        .into_iter()
+        // 闭区间相交：分离当且仅当一方完全位于另一方的远端之外。
+        .any(|(notch_x, notch_y)| {
+            x < notch_x + radius
+                && notch_x < x + width
+                && y < notch_y + radius
+                && notch_y < y + height
+        })
 }

@@ -58,6 +58,7 @@ fragment float4 textured_fs(
     sampler image_sampler [[sampler(0)]]) {
     float4 sampled = image.sample(image_sampler, input.uv);
     float coverage = 1.0;
+    float fill_alpha = 0.0;
     float radius = c[1].x;
     if (radius > 0.0) {
         float2 half_size = c[0].xy * 0.5;
@@ -65,8 +66,16 @@ fragment float4 textured_fs(
         float signed_distance = length(max(distance, 0.0))
             + min(max(distance.x, distance.y), 0.0) - radius;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
+        // c[1].y/z 保存客户端阴影环峰值不透明度与物理外扩距离。
+        if (c[1].y > 0.0 && c[1].z > 0.0) {
+            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影。
+            float falloff = clamp(1.0 - signed_distance / c[1].z, 0.0, 1.0);
+            fill_alpha = c[1].y * falloff * falloff;
+        }
     }
-    return float4(sampled.rgb * input.color.rgb, sampled.a * input.color.a) * coverage;
+    // 缺口阴影是预乘黑色，只向输出 alpha 贡献补画事实。
+    return float4(sampled.rgb * input.color.rgb * coverage,
+                  sampled.a * input.color.a * coverage + fill_alpha * (1.0 - coverage));
 }
 
 fragment float4 coverage_fs(

@@ -19,6 +19,7 @@ void main() {
 layout(set = 0, binding = 0, std140) uniform SampledUniforms {
     vec2 viewport;
     vec2 _pad0;
+    // x 保存物理圆角半径；y/z 保存缺口阴影峰值不透明度与物理外扩距离。
     vec4 surface_clip;
 } u;
 layout(set = 0, binding = 1) uniform sampler2D u_texture;
@@ -28,6 +29,7 @@ layout(location = 1) in vec4 v_color;
 void main() {
     vec4 sample_color = texture(u_texture, v_uv);
     float coverage = 1.0;
+    float fill_alpha = 0.0;
     if (u.surface_clip.x > 0.0) {
         vec2 half_size = u.viewport * 0.5;
         vec2 centered = abs(gl_FragCoord.xy - half_size);
@@ -35,8 +37,16 @@ void main() {
         float signed_distance = length(max(distance, vec2(0.0)))
             + min(max(distance.x, distance.y), 0.0) - u.surface_clip.x;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
+        if (u.surface_clip.y > 0.0 && u.surface_clip.z > 0.0) {
+            // 圆角缺口位于窗口矩形内但内容没有覆盖，用与客户端阴影环一致
+            // 的二次衰减把外圈阴影延伸进来，避免缺口透出桌面背景。
+            float falloff = clamp(1.0 - signed_distance / u.surface_clip.z, 0.0, 1.0);
+            fill_alpha = u.surface_clip.y * falloff * falloff;
+        }
     }
-    out_color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a) * coverage;
+    // 缺口阴影是预乘黑色，只向输出贡献 alpha；内容侧保持原预乘采样结果。
+    out_color = vec4(sample_color.rgb * v_color.rgb * coverage,
+                     sample_color.a * v_color.a * coverage + fill_alpha * (1.0 - coverage));
 }
 
 #elif defined(UIX_COVERAGE)

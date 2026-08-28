@@ -160,6 +160,8 @@ pub(crate) struct RhiSampledQuad {
     pub(crate) v1: f32,
     // 仅最终 surface 合成使用的物理圆角半径，普通纹理固定为零。
     pub(crate) surface_corner_radius: f32,
+    // 仅最终 surface 合成使用的缺口阴影 (峰值不透明度, 物理外扩距离)，普通纹理固定为零。
+    pub(crate) surface_shadow_fill: [f32; 2],
     // 保存当前 quad 的物理裁剪矩形。
     pub(crate) scissor: Option<RhiScissor>,
 }

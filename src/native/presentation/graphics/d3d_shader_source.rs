@@ -162,7 +162,10 @@ cbuffer SampledCB : register(b0)
     float2 u_viewport;
     float2 _pad0;
     float u_corner_radius;
-    float3 _pad1;
+    // 客户端阴影环外观事实：峰值不透明度与物理外扩距离。
+    float u_shadow_alpha;
+    float u_shadow_range;
+    float _pad1;
 };
 
 Texture2D u_tex : register(t0);
@@ -180,6 +183,7 @@ float4 PSMain(VSOut input) : SV_Target
     // FramePlan 已验证顶点颜色属于单位域，D3D11 不再私自饱和输入。
     float4 tint = input.color;
     float coverage = 1.0;
+    float fill_alpha = 0.0;
     if (u_corner_radius > 0.0)
     {
         float2 half_size = u_viewport * 0.5;
@@ -188,8 +192,16 @@ float4 PSMain(VSOut input) : SV_Target
         float signed_distance = length(max(distance, 0.0))
             + min(max(distance.x, distance.y), 0.0) - u_corner_radius;
         coverage = saturate(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001));
+        if (u_shadow_alpha > 0.0 && u_shadow_range > 0.0)
+        {
+            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影。
+            float falloff = saturate(1.0 - signed_distance / u_shadow_range);
+            fill_alpha = u_shadow_alpha * falloff * falloff;
+        }
     }
-    return float4(sample.rgb * tint.rgb, sample.a * tint.a) * coverage;
+    float4 color = float4(sample.rgb * tint.rgb, sample.a * tint.a);
+    // 缺口阴影是预乘黑色，只向输出 alpha 贡献补画事实。
+    return float4(color.rgb * coverage, color.a * coverage + fill_alpha * (1.0 - coverage));
 }
 "#;
 

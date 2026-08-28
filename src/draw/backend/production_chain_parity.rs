@@ -113,6 +113,7 @@ pub(crate) fn execute_ui_production_surface_chain_with_present_hook(
         u1: 1.0,
         v1: 1.0,
         surface_corner_radius: 0.0,
+        surface_shadow_fill: [0.0; 2],
         scissor: None,
     };
     // 统一 Renderer 负责唯一 acquire、Device submit 与最终 Surface present。

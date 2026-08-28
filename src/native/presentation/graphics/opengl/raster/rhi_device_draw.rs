@@ -18,7 +18,8 @@ use crate::platform::presentation::rhi::{
     PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
     PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace, PipelineKind,
     PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
-    SAMPLED_CORNER_RADIUS_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
+    SAMPLED_CORNER_RADIUS_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET,
+    SAMPLED_SHADOW_RANGE_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
     SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
     SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
     SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
@@ -241,6 +242,19 @@ impl OpenGlRhiDevice {
                         program,
                         "u_corner_radius",
                         read_f32(&uniform, SAMPLED_CORNER_RADIUS_FLOAT_OFFSET)?,
+                    );
+                    // 按共享字段索引映射客户端阴影环缺口补画参数。
+                    set_f32(
+                        gl,
+                        program,
+                        "u_shadow_alpha",
+                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET)?,
+                    );
+                    set_f32(
+                        gl,
+                        program,
+                        "u_shadow_range",
+                        read_f32(&uniform, SAMPLED_SHADOW_RANGE_FLOAT_OFFSET)?,
                     );
                     // 在 sampled 原生绑定前校验当前 pipeline 语义。
                     bind_sampled(gl, self, program, packet.sampling())?;

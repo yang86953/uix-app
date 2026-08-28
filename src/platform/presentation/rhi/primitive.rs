@@ -18,6 +18,10 @@ pub(crate) const MESH_COLOR_FLOAT_OFFSET: usize = 4;
 pub(crate) const SAMPLED_VIEWPORT_FLOAT_OFFSET: usize = 0;
 // 最终 surface 合成圆角半径在 sampled ABI 中的起始 float 索引。
 pub(crate) const SAMPLED_CORNER_RADIUS_FLOAT_OFFSET: usize = 4;
+// 圆角缺口阴影峰值不透明度在 sampled ABI 中的起始 float 索引。
+pub(crate) const SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET: usize = 5;
+// 圆角缺口阴影物理外扩距离在 sampled ABI 中的起始 float 索引。
+pub(crate) const SAMPLED_SHADOW_RANGE_FLOAT_OFFSET: usize = 6;
 // viewport 宽高在 Sector ABI 中的起始 float 索引。
 pub(crate) const SECTOR_VIEWPORT_FLOAT_OFFSET: usize = 0;
 // 扇形外接矩形在 Sector ABI 中的起始 float 索引。
@@ -125,9 +129,32 @@ impl RhiSampledRasterParams {
 
     // 构造只用于 retained texture 最终合成的圆角 surface 常量。
     pub(crate) fn with_surface_corner_radius(viewport: RhiViewport, radius: f32) -> Self {
+        // 缺口阴影未提供时按关闭事实折叠到同一排列。
+        Self::with_surface_corner_fill(viewport, radius, 0.0, 0.0)
+    }
+
+    // 构造带圆角与缺口阴影补画参数的最终合成常量。
+    pub(crate) fn with_surface_corner_fill(
+        viewport: RhiViewport,
+        radius: f32,
+        shadow_alpha: f32,
+        shadow_range: f32,
+    ) -> Self {
         let mut params = Self::new(viewport);
         // 半径已经由平台 appearance 契约规范化为物理像素。
         params.values[SAMPLED_CORNER_RADIUS_FLOAT_OFFSET] = radius.max(0.0);
+        // 只有圆角与阴影范围同时有效时缺口补画才生效。
+        let shadow_enabled = radius > 0.0 && shadow_range > 0.0;
+        params.values[SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET] = if shadow_enabled {
+            shadow_alpha.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        params.values[SAMPLED_SHADOW_RANGE_FLOAT_OFFSET] = if shadow_enabled {
+            shadow_range.max(0.0)
+        } else {
+            0.0
+        };
         params
     }
 
