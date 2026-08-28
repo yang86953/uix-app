@@ -86,69 +86,8 @@ impl ISystemInfo for WindowsSystemInfo {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn get_os_info() -> Result<OsInfo> {
-    // Use RtlGetVersion to get accurate OS version (not affected by manifest compat)
-    // SAFETY: ver 为完整初始化的版本结构（dwOSVersionInfoSize 已设置），RtlGetVersion 只写入它；system_info 为栈上默认初始化结构。
-    unsafe {
-        let mut ver = RTL_OSVERSIONINFOW {
-            dwOSVersionInfoSize: std::mem::size_of::<RTL_OSVERSIONINFOW>() as u32,
-            dwMajorVersion: 0,
-            dwMinorVersion: 0,
-            dwBuildNumber: 0,
-            dwPlatformId: 0,
-            szCSDVersion: [0u16; 128],
-        };
-
-        let status = RtlGetVersion(&mut ver);
-        if status != 0 {
-            return Err(system_info_error("RtlGetVersion"));
-        }
-        let mut is_64bit = false;
-        let mut system_info = SYSTEM_INFO::default();
-        GetNativeSystemInfo(&mut system_info);
-        match system_info.wProcessorArchitecture {
-            0 => { /* x86 */ }
-            9 => {
-                is_64bit = true;
-            } // AMD64
-            12 => {
-                is_64bit = true;
-            } // ARM64
-            6 => {
-                /* IA64 */
-                is_64bit = true;
-            }
-            _ => {}
-        }
-
-        let version_str = format!("{}.{}", ver.dwMajorVersion, ver.dwMinorVersion);
-        let build_str = format!("{}", ver.dwBuildNumber);
-
-        // Determine OS name
-        let name = match (ver.dwMajorVersion, ver.dwMinorVersion) {
-            (10, 0) => {
-                if ver.dwBuildNumber >= 22000 {
-                    "Windows 11"
-                } else {
-                    "Windows 10"
-                }
-            }
-            (6, 3) => "Windows 8.1",
-            (6, 2) => "Windows 8",
-            (6, 1) => "Windows 7",
-            (6, 0) => "Windows Vista",
-            (5, 2) => "Windows Server 2003 / XP x64",
-            (5, 1) => "Windows XP",
-            (5, 0) => "Windows 2000",
-            _ => "Windows (Unknown)",
-        };
-
-        Ok(OsInfo {
-            name: name.to_string(),
-            version: version_str,
-            build: build_str,
-            is_64bit,
-        })
-    }
+    // OS 采集唯一事实源是公开硬件 Provider（RtlGetVersion）；本端口只做内部值映射。
+    crate::platform::capabilities::providers::os_info().map(OsInfo::from_hardware)
 }
 
 fn get_cpu_count() -> Result<u32> {
@@ -166,30 +105,8 @@ fn get_cpu_count() -> Result<u32> {
 }
 
 fn get_memory_info() -> Result<MemoryInfo> {
-    // SAFETY: mem 为完整初始化的结构（dwLength 已设置），GlobalMemoryStatusEx 只写入该结构。
-    unsafe {
-        let mut mem = MEMORYSTATUSEX {
-            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
-            dwMemoryLoad: 0,
-            ullTotalPhys: 0,
-            ullAvailPhys: 0,
-            ullTotalPageFile: 0,
-            ullAvailPageFile: 0,
-            ullTotalVirtual: 0,
-            ullAvailVirtual: 0,
-            ullAvailExtendedVirtual: 0,
-        };
-        let ok = GlobalMemoryStatusEx(&mut mem);
-        if ok == 0 || mem.ullTotalPhys == 0 {
-            return Err(system_info_error("GlobalMemoryStatusEx"));
-        }
-        Ok(MemoryInfo {
-            total_bytes: mem.ullTotalPhys,
-            available_bytes: mem.ullAvailPhys,
-            process_working_set: 0,
-            process_private_bytes: 0,
-        })
-    }
+    // 内存采集唯一事实源是公开硬件 Provider（GlobalMemoryStatusEx）。
+    crate::platform::capabilities::providers::memory_info().map(MemoryInfo::from_hardware)
 }
 
 fn get_hostname() -> Result<String> {
@@ -237,16 +154,6 @@ fn system_info_error(operation: &str) -> Error {
 // ════════════════════════════════════════════════════════════════════════════
 
 #[repr(C)]
-struct RTL_OSVERSIONINFOW {
-    dwOSVersionInfoSize: u32,
-    dwMajorVersion: u32,
-    dwMinorVersion: u32,
-    dwBuildNumber: u32,
-    dwPlatformId: u32,
-    szCSDVersion: [u16; 128],
-}
-
-#[repr(C)]
 #[derive(Default)]
 struct SYSTEM_INFO {
     // Anonymous union: first member is a struct with wProcessorArchitecture
@@ -278,19 +185,6 @@ struct PROCESS_MEMORY_COUNTERS {
     PrivateUsage: usize,
 }
 
-#[repr(C)]
-struct MEMORYSTATUSEX {
-    dwLength: u32,
-    dwMemoryLoad: u32,
-    ullTotalPhys: u64,
-    ullAvailPhys: u64,
-    ullTotalPageFile: u64,
-    ullAvailPageFile: u64,
-    ullTotalVirtual: u64,
-    ullAvailVirtual: u64,
-    ullAvailExtendedVirtual: u64,
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Constants
 // ════════════════════════════════════════════════════════════════════════════
@@ -302,17 +196,10 @@ const UNLEN: usize = 256;
 // Raw FFI
 // ════════════════════════════════════════════════════════════════════════════
 
-#[link(name = "ntdll")]
-// SAFETY: RtlGetVersion 声明对应 ntdll ABI，调用方提供尺寸字段正确的可写版本结构。
-unsafe extern "system" {
-    fn RtlGetVersion(lpVersionInformation: *mut RTL_OSVERSIONINFOW) -> i32;
-}
-
 #[link(name = "kernel32")]
 // SAFETY: 本块声明对应 kernel32 ABI，调用方保证结构尺寸、缓冲区容量与输出指针有效。
 unsafe extern "system" {
     fn GetNativeSystemInfo(lpSystemInfo: *mut SYSTEM_INFO);
-    fn GlobalMemoryStatusEx(lpBuffer: *mut MEMORYSTATUSEX) -> i32;
     fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
     fn GetTickCount64() -> u64;
 }

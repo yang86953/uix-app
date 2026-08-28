@@ -121,71 +121,31 @@ pub(super) fn create_secondary_window(
 
     // 副窗从 Application 容器取得同一个反馈 owner。
     let feedback = container.resolve_clone::<AppFeedbackState>();
-    // DI 未注册 Locale 时回退默认值并记录缺失，避免静默降级（保持回退行为）。
-    let locale = match container.resolve_clone::<Locale>() {
-        Some(locale) => locale,
-        None => {
-            tracing::warn!(
-                ty = %std::any::type_name::<Locale>(),
-                "DI resolve failed, falling back to default"
-            );
-            Locale::default()
-        }
-    };
-    // DI 未注册 WidgetConfig 时回退默认配置并记录缺失（保持回退行为）。
-    let widget_config = match container.resolve_clone::<WidgetConfig>() {
-        Some(widget_config) => widget_config,
-        None => {
-            tracing::warn!(
-                ty = %std::any::type_name::<WidgetConfig>(),
-                "DI resolve failed, falling back to default"
-            );
-            WidgetConfig::default()
-        }
-    };
-    let wrapped_root = move || {
-        with_config(&widget_config, || {
-            with_locale(&locale, || {
-                let root_node = root();
-                // 副窗与主窗复用同一应用根默认值和逐窗反馈浮层组装入口。
-                prepare_app_root(root_node, feedback.clone(), window_id)
-            })
-        })
-    };
+    let locale = window_assembly::resolve_or_default::<Locale>(container);
+    let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(container);
+    // 根包装顺序（WidgetConfig → Locale → prepare_app_root）与主窗共用同一原语。
+    let wrapped_root = window_assembly::wrap_app_root(
+        &widget_config,
+        &locale,
+        window_id,
+        feedback,
+        root,
+    );
     let mut session =
         WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);
-    session.set_text_input_coordinator(runtime.text_input_coordinator());
-    // 新建副窗在收到自身原生焦点事件前保持未聚焦。
+    // 新建副窗在收到自身原生焦点事件前保持未聚焦（同步 IME 门控与树内投影）。
     session.set_window_focused(false);
-    session.set_app_state(app_state.clone());
-    session.set_app_timers(app_timers);
-    session.set_main_thread_queue(main_thread_queue);
-    if let Some(queue) = runtime.agent_command_queue(window_id) {
-        session.set_agent_command_queue(queue);
-    }
-    session.set_agent_command_executor(runtime.agent_command_executor());
-    session.set_agent_confirm_ui(runtime.agent_confirm_ui());
-    let properties = platform_window.properties();
-    if let Some(registration) = runtime.register_agent_window(
+    // 会话资源接线与 Agent 注册经共享装配原语执行（与主窗同序）。
+    window_assembly::assemble_session_resources(
+        &mut session,
+        runtime,
+        app_state,
+        app_timers,
+        main_thread_queue,
         window_id,
-        title,
-        platform_window.is_visible(),
-        initially_agent_presentable(platform_window.as_ref()),
-        // 焦点事实只随 WindowFocus/WindowBlur 事件更新，注册时按未聚焦处理。
-        false,
-        properties.width(),
-        properties.height(),
-        properties.is_maximized(),
-        properties.is_minimized(),
-        properties.is_fullscreen(),
-    ) {
-        // bind_agent_window 只返回 bool，无法区分「已绑定」与「窗口已关闭/
-        // id 不匹配」等失败原因；改为 Result 会波及全部调用点与签名，
-        // 本次仅记录日志，保留弱返回值契约。
-        if !session.bind_agent_window(registration) {
-            tracing::warn!(window_id = ?window_id, "agent window binding failed");
-        }
-    }
+        &title,
+        platform_window.as_ref(),
+    );
     let handle = AppHandle::new(
         window_id,
         app_state.clone(),

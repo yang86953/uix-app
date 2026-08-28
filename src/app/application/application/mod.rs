@@ -616,54 +616,27 @@ impl App {
         let feedback = AppFeedbackState::new();
         // 通过 DI 共享同一个 owner，不向组件暴露全局注册表。
         self.container.singleton(feedback.clone());
-        // DI 未注册 Locale 时回退默认值并记录缺失，避免静默降级（保持回退行为）。
-        let locale = match self.container.resolve_clone::<Locale>() {
-            Some(locale) => locale,
-            None => {
-                tracing::warn!(
-                    ty = %std::any::type_name::<Locale>(),
-                    "DI resolve failed, falling back to default"
-                );
-                Locale::default()
-            }
-        };
-        // DI 未注册 WidgetConfig 时回退默认配置并记录缺失（保持回退行为）。
-        let widget_config = match self.container.resolve_clone::<WidgetConfig>() {
-            Some(widget_config) => widget_config,
-            None => {
-                tracing::warn!(
-                    ty = %std::any::type_name::<WidgetConfig>(),
-                    "DI resolve failed, falling back to default"
-                );
-                WidgetConfig::default()
-            }
-        };
+        let locale = window_assembly::resolve_or_default::<Locale>(&self.container);
+        let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(&self.container);
 
         let root_window_id = platform_window.window_id();
-        // 根窗口工厂捕获 owner，而不是捕获某个临时 Host 实例。
+        // 根窗口工厂捕获 owner，而不是捕获某个临时 Host 实例；包装顺序
+        // （WidgetConfig → Locale → prepare_app_root）与副窗共用同一原语。
         let root_feedback = feedback.clone();
+        let wrapped_root = window_assembly::wrap_app_root(
+            &widget_config,
+            &locale,
+            root_window_id,
+            Some(root_feedback),
+            move || root_factory(),
+        );
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
-            move || {
-                with_config(&widget_config, || {
-                    with_locale(&locale, || {
-                        // 初始主窗通过统一入口应用根背景默认值并组装逐窗反馈浮层。
-                        prepare_app_root(
-                            root_factory(),
-                            Some(root_feedback.clone()),
-                            root_window_id,
-                        )
-                    })
-                })
-            },
+            wrapped_root,
             engine,
             w,
             h,
         );
-        session.set_text_input_coordinator(self.runtime.text_input_coordinator());
-        session.set_app_state(self.app_state.clone());
-        session.set_app_timers(self.app_timers.clone());
-        session.set_main_thread_queue(self.main_thread_queue.clone());
         #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         self.runtime.register_session_with_graphics_faults(
             root_window_id,
@@ -679,32 +652,17 @@ impl App {
             self.main_thread_queue.clone(),
             self.handle_alive.clone(),
         );
-        if let Some(queue) = self.runtime.agent_command_queue(root_window_id) {
-            session.set_agent_command_queue(queue);
-        }
-        session.set_agent_command_executor(self.runtime.agent_command_executor());
-        session.set_agent_confirm_ui(self.runtime.agent_confirm_ui());
-        let properties = platform_window.properties();
-        if let Some(registration) = self.runtime.register_agent_window(
+        // 会话资源接线与 Agent 注册经共享装配原语执行（副窗同序）。
+        window_assembly::assemble_session_resources(
+            &mut session,
+            &self.runtime,
+            &self.app_state,
+            self.app_timers.clone(),
+            self.main_thread_queue.clone(),
             root_window_id,
-            self.title.clone(),
-            platform_window.is_visible(),
-            initially_agent_presentable(platform_window.as_ref()),
-            // 焦点事实只随 WindowFocus/WindowBlur 事件更新，注册时按未聚焦处理。
-            false,
-            properties.width(),
-            properties.height(),
-            properties.is_maximized(),
-            properties.is_minimized(),
-            properties.is_fullscreen(),
-        ) {
-            // bind_agent_window 只返回 bool，无法区分「已绑定」与「窗口已关闭/
-            // id 不匹配」等失败原因；改为 Result 会波及全部调用点与签名，
-            // 本次仅记录日志，保留弱返回值契约。
-            if !session.bind_agent_window(registration) {
-                tracing::warn!(window_id = ?root_window_id, "agent window binding failed");
-            }
-        }
+            &self.title,
+            platform_window.as_ref(),
+        );
         #[cfg(feature = "agent-control")]
         if self.agent_control_enabled {
             if let Err(error) = self.runtime.start_agent_transport() {
@@ -886,7 +844,10 @@ impl App {
                     );
                 }
             },
-            || secondary_windows_next_deadline(&mut secondary_windows.borrow_mut()),
+            || {
+                let now = secondary_clock.now();
+                secondary_windows_next_deadline(&mut secondary_windows.borrow_mut(), now)
+            },
             |_, _, _| {},
         );
 
@@ -916,6 +877,9 @@ impl App {
 
 // 次要窗口会话模型由运行时节拍直接消费（经本模块 re-export 给子模块）。
 mod secondary;
+
+// 主窗/副窗共用的窗口装配原语（DI 回退、根工厂包装、会话接线）。
+mod window_assembly;
 
 use self::secondary::SecondaryWindowSession;
 

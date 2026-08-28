@@ -18,7 +18,6 @@ pub(crate) use fonts::*;
 use crate::native::{Errc, Error, Result};
 use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
 
-use std::fs;
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxSystemInfo
@@ -90,36 +89,8 @@ impl ISystemInfo for LinuxSystemInfo {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn probe_os_info() -> Result<OsInfo> {
-    // 安全替代：读取 /proc/sys/kernel/ 下的文本文件
-    let sysname = read_proc_text("/proc/sys/kernel/ostype")?;
-    let release = read_proc_text("/proc/sys/kernel/osrelease")?;
-    let version = read_proc_text("/proc/sys/kernel/version")?;
-    let machine = std::process::Command::new("uname")
-        .arg("-m")
-        .output()
-        .map_err(|err| {
-            Error::new(
-                Errc::IoError,
-                format!("LinuxSystemInfo: uname -m failed: {err}"),
-            )
-        })?
-        .stdout;
-    let machine = String::from_utf8_lossy(&machine).trim().to_string();
-
-    let os_name = if sysname == "Linux" {
-        detect_distro().unwrap_or_else(|| "Linux".to_string())
-    } else {
-        sysname
-    };
-
-    let is_64bit = machine == "x86_64" || machine == "aarch64";
-
-    Ok(OsInfo {
-        name: os_name,
-        version: release,
-        build: version,
-        is_64bit,
-    })
+    // OS 采集唯一事实源是公开硬件 Provider；本端口只做内部值映射。
+    crate::platform::capabilities::providers::os_info().map(OsInfo::from_hardware)
 }
 
 fn read_proc_text(path: &str) -> Result<String> {
@@ -131,29 +102,6 @@ fn read_proc_text(path: &str) -> Result<String> {
                 format!("LinuxSystemInfo: cannot read {path}: {err}"),
             )
         })
-}
-
-fn detect_distro() -> Option<String> {
-    let content = fs::read_to_string("/etc/os-release").ok()?;
-    for line in content.lines() {
-        if let Some(name) = line.strip_prefix("PRETTY_NAME=\"") {
-            if let Some(end) = name.rfind('"') {
-                return Some(name[..end].to_string());
-            }
-        }
-        if let Some(name) = line.strip_prefix("PRETTY_NAME=") {
-            return Some(name.to_string());
-        }
-        if let Some(name) = line.strip_prefix("NAME=\"") {
-            if let Some(end) = name.rfind('"') {
-                return Some(name[..end].to_string());
-            }
-        }
-        if let Some(name) = line.strip_prefix("NAME=") {
-            return Some(name.to_string());
-        }
-    }
-    None
 }
 
 fn probe_cpu_count() -> Result<u32> {
@@ -169,43 +117,8 @@ fn probe_cpu_count() -> Result<u32> {
 }
 
 fn probe_memory_info() -> Result<MemoryInfo> {
-    let content = read_proc_text("/proc/meminfo")?;
-    let mut total = 0u64;
-    let mut available = 0u64;
-
-    for line in content.lines() {
-        if let Some(val) = parse_meminfo_line(line, "MemTotal:") {
-            total = val;
-        } else if let Some(val) = parse_meminfo_line(line, "MemAvailable:") {
-            available = val;
-        }
-    }
-
-    if total == 0 {
-        return Err(Error::new(
-            Errc::PlatformError,
-            "LinuxSystemInfo: /proc/meminfo missing MemTotal",
-        ));
-    }
-
-    Ok(MemoryInfo {
-        total_bytes: total * 1024, // /proc/meminfo reports in kB
-        available_bytes: available * 1024,
-        process_working_set: 0,
-        process_private_bytes: 0,
-    })
-}
-
-fn parse_meminfo_line(line: &str, key: &str) -> Option<u64> {
-    let line = line.trim();
-    if let Some(rest) = line.strip_prefix(key) {
-        let rest = rest.trim();
-        // Split on whitespace, first part is the number
-        if let Some(num_str) = rest.split_whitespace().next() {
-            return num_str.parse::<u64>().ok();
-        }
-    }
-    None
+    // 内存采集唯一事实源是公开硬件 Provider；本端口只做内部值映射。
+    crate::platform::capabilities::providers::memory_info().map(MemoryInfo::from_hardware)
 }
 
 fn probe_hostname() -> Result<String> {

@@ -223,8 +223,15 @@ impl WindowSession {
         self.text_input.coordinator = coordinator;
     }
 
+    /// 写入窗口聚焦事实的单一入口：同步 IME 门控与树内聚焦投影两个副本。
+    ///
+    /// 副窗创建、主窗事件路径都必须经此写入，禁止单独改写
+    /// `text_input.window_focused` 或 `tree.window_focused` 造成事实漂移；
+    /// 树内的最终事实仍以 SystemEvent::WindowFocus/Blur 分发为准，本入口
+    /// 只负责创建初期与窗口会话层的同步初值。
     pub(crate) fn set_window_focused(&mut self, focused: bool) {
         self.text_input.window_focused = focused;
+        self.tree.window_focused = focused;
     }
 
     pub(crate) fn set_app_timers(&mut self, app_timers: AppTimerQueue) {

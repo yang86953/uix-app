@@ -377,6 +377,5 @@ impl PlatformSystem for WindowsPlatform {
 impl Drop for WindowsPlatform {
     fn drop(&mut self) {
         self.pending_failures.close();
-        self.notification_subsys.remove_icon();
     }
 }
