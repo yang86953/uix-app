@@ -242,7 +242,7 @@ impl WindowDriver {
             *reconcile_pending = true;
         }
 
-        self.arm_visual_request(now, tree, pending_root, *reconcile_pending);
+        self.arm_visual_request(now, tree, pending_root, *reconcile_pending, false, false);
 
         let due_registered_work = active_work
             .next_deadline()
@@ -272,9 +272,9 @@ impl WindowDriver {
     ) -> Option<Instant> {
         self.sync_app_timers(active_work, app_timers);
         if tree.take_reconcile_requested() {
-            self.arm_visual_request(now, tree, pending_root, true);
+            self.arm_visual_request(now, tree, pending_root, true, false, false);
         } else {
-            self.arm_visual_request(now, tree, pending_root, reconcile_pending);
+            self.arm_visual_request(now, tree, pending_root, reconcile_pending, false, false);
         }
         earliest_deadline(
             // 队列剩余任务与 Agent 工作都要求下一窗口轮次立即运行。
@@ -292,6 +292,8 @@ impl WindowDriver {
         tree: &WidgetTree,
         pending_root: &Option<crate::ui::view::ViewNode>,
         reconcile_pending: bool,
+        animation_continue: bool,
+        allow_tighten: bool,
     ) {
         if !self.frame_scheduler.is_renderable() {
             return;
@@ -301,7 +303,16 @@ impl WindowDriver {
             || reconcile_pending
             || has_invalidation_work(tree)
         {
-            self.frame_scheduler.request_immediate(now);
+            // 动画延续帧按 fallback cadence 武装（request_frame 只接受更早
+            // deadline，因此不会收紧已武装的 cadence 请求）。
+            if animation_continue {
+                self.frame_scheduler.request_animation_frame(now);
+            } else if allow_tighten || !self.frame_scheduler.has_outstanding_request() {
+                // 收紧现有请求只允许发生在帧入口的外部唤醒路径；空闲探测与
+                // 帧尾续帧在已有请求（尤其 cadence 请求）时不得改为立即，
+                // 否则动画 tick 的残留失效会把每个动画帧收紧成全速帧链。
+                self.frame_scheduler.request_immediate(now);
+            }
         }
     }
 }
