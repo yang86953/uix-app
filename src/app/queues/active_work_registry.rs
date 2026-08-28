@@ -34,6 +34,15 @@ pub(crate) struct ActiveWorkRegistry {
 }
 
 impl ActiveWorkRegistry {
+    // ── sync_* 标记-清扫模板（共享契约）─────────────────────────
+    // 四个 sync_* 共用同一模板：翻转私有 marker → 按来源重建登记 →
+    // retain 清扫未见项 → 必要时失效 deadline 缓存。模板机械结构一致，
+    // 但各方法的登记策略是刻意不同的领域语义，改动前必须先确认：
+    // - `sync_animated_sources`：来源 deadline 覆盖写入；开放动画保持无 deadline。
+    // - `sync_widget_animations`：开放集合覆盖写入；deadline 取自动画源登记，缺失即摘除。
+    // - `sync_timers`：首见 deadline 保留（Entry::Vacant），同 ID 重登不重置时长。
+    // - `sync_app_timers`：deadline 覆盖写入（App timer 由 App 拥有绝对到期时刻）。
+
     pub(crate) fn new() -> Self {
         Self::default()
     }

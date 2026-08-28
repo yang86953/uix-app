@@ -234,6 +234,52 @@ pub(crate) struct RhiShapeRect {
     pub(crate) scissor: Option<RhiScissor>,
 }
 
+// 标记 RhiShapeRect 校验失败的违反项类别；调用方按各自管线组装诊断文案。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RhiShapeRectInvalid {
+    // 矩形几何不是有限正值。
+    Geometry,
+    // 颜色、圆角或描边常量不是有限非负值。
+    Constants,
+    // 显式 scissor 未完成物理坐标 lowering。
+    Scissor,
+}
+
+impl RhiShapeRect {
+    /// 校验矩形几何与固定 shader 常量；返回首个违反项类别。
+    ///
+    /// 这是 shape 与 mixed 两条提交路径共用的唯一校验权威，新增常量
+    /// 约束时在此扩展，禁止在调用点复制谓词。
+    pub(crate) fn validate(&self) -> Result<(), RhiShapeRectInvalid> {
+        // 矩形几何必须是有限正值。
+        if !self.x.is_finite()
+            || !self.y.is_finite()
+            || !self.w.is_finite()
+            || !self.h.is_finite()
+            || self.w <= 0.0
+            || self.h <= 0.0
+        {
+            return Err(RhiShapeRectInvalid::Geometry);
+        }
+        // 颜色、圆角和描边常量必须有限非负；不把负半径或负描边交给 shader。
+        if self
+            .rgba
+            .iter()
+            .chain(self.radius.iter())
+            .any(|value| !value.is_finite() || *value < 0.0)
+            || !self.half_stroke.is_finite()
+            || self.half_stroke < 0.0
+        {
+            return Err(RhiShapeRectInvalid::Constants);
+        }
+        // 显式 scissor 必须已经完成物理坐标 lowering。
+        if self.scissor.is_some_and(|scissor| !scissor.is_valid()) {
+            return Err(RhiShapeRectInvalid::Scissor);
+        }
+        Ok(())
+    }
+}
+
 // 持有通用 RHI lowering 需要的可复用资源句柄。
 #[derive(Debug, Default)]
 pub(crate) struct RhiRenderer {

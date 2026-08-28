@@ -178,6 +178,16 @@ impl Rect {
         p.x >= self.x && p.x <= self.x + self.w && p.y >= self.y && p.y <= self.y + self.h
     }
 
+    /// 判断 `self` 是否完整覆盖 `other`（边界相切视为覆盖）。
+    ///
+    /// 这是 damage 收敛与脏区校验共用的唯一覆盖谓词；调用方不得自建副本。
+    pub fn covers(&self, other: &Self) -> bool {
+        self.x <= other.x
+            && self.y <= other.y
+            && self.x + self.w >= other.x + other.w
+            && self.y + self.h >= other.y + other.h
+    }
+
     /// 计算两个矩形的正面积交集。
     pub fn intersect(&self, other: &Self) -> Option<Self> {
         let x = self.x.max(other.x);

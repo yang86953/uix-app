@@ -148,6 +148,8 @@ pub(crate) fn put_pixel(
     pixels[idx] = out;
 }
 
+// 仅剩 cfg(test) 的参考填充实现（rasterizer::fill）消费；生产路径统一走 SoftwareRasterizer。
+#[cfg(test)]
 #[inline]
 pub(crate) fn put_pixel_aa(
     pixels: &mut [u32],
@@ -246,6 +248,7 @@ pub(crate) fn fill_span(
     }
 }
 
+#[cfg(test)]
 #[inline]
 pub(crate) fn fill_rect_raw(
     pixels: &mut [u32],

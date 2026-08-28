@@ -175,10 +175,12 @@ impl AppRuntime {
         }));
         let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         if self.shutting_down.load(Ordering::Acquire) {
-            alive.store(false, Ordering::Release);
-            app_timers.cancel_all();
-            main_thread_queue.clear();
-            agent_commands.close();
+            crate::app::queues::release_window_scheduling_resources(
+                &alive,
+                &app_timers,
+                &main_thread_queue,
+                &agent_commands,
+            );
             return;
         }
         alive.store(true, Ordering::Release);
@@ -369,10 +371,12 @@ impl AppRuntime {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&window_id);
         if let Some(session) = session {
-            session.alive.store(false, Ordering::Release);
-            session.app_timers.cancel_all();
-            session.main_thread_queue.clear();
-            session.agent_commands.close();
+            crate::app::queues::release_window_scheduling_resources(
+                &session.alive,
+                &session.app_timers,
+                &session.main_thread_queue,
+                &session.agent_commands,
+            );
         }
         self.agent_bridge.close_window(window_id);
         self.pending_open_windows
@@ -388,10 +392,12 @@ impl AppRuntime {
         let sessions =
             std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for session in sessions.into_values() {
-            session.alive.store(false, Ordering::Release);
-            session.app_timers.cancel_all();
-            session.main_thread_queue.clear();
-            session.agent_commands.close();
+            crate::app::queues::release_window_scheduling_resources(
+                &session.alive,
+                &session.app_timers,
+                &session.main_thread_queue,
+                &session.agent_commands,
+            );
         }
         self.pending_open_windows
             .lock()
