@@ -247,10 +247,11 @@ fn drain_secondary_window_frames_impl(
 
 pub(crate) fn secondary_windows_next_deadline(
     secondary_windows: &mut [SecondaryWindowSession],
+    now: Instant,
 ) -> Option<Instant> {
     secondary_windows
         .iter_mut()
-        .filter_map(SecondaryWindowSession::next_deadline)
+        .filter_map(|session| session.next_deadline(now))
         .min()
 }
 

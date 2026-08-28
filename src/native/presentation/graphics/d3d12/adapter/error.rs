@@ -1,26 +1,13 @@
 //! D3D12/DXGI 错误到框架 typed error 的统一映射。
 
 use crate::core::{Errc, Error};
-use ::windows::Win32::Foundation::E_OUTOFMEMORY;
-use ::windows::Win32::Graphics::Dxgi::{
-    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
-};
-
-pub(crate) fn d3d12_hresult_code(result: ::windows::core::HRESULT) -> Errc {
-    match result {
-        DXGI_ERROR_DEVICE_HUNG
-        | DXGI_ERROR_DEVICE_REMOVED
-        | DXGI_ERROR_DEVICE_RESET
-        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
-        E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
-        _ => Errc::PlatformError,
-    }
-}
+// HRESULT 分类归 D3D11/D3D12 共享的 DXGI 组件唯一持有；D3D12 由此恢复
+// 遮挡、桌面访问丢失与显示模式切换的 Surface 级恢复语义。
+use crate::native::presentation::graphics::dxgi::d3d_hresult_code;
 
 pub(super) fn d3d12_error(operation: &str, error: ::windows::core::Error) -> Error {
     Error::new(
-        d3d12_hresult_code(error.code()),
+        d3d_hresult_code(error.code()),
         format!("D3d12Context: {operation} failed: {error}"),
     )
 }

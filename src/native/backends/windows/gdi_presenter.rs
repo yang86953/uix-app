@@ -17,6 +17,8 @@ use crate::native::backends::windows::util::windows_diag;
 use crate::native::presentation::graphics::platform::windows::query_client_rect;
 use crate::native::{Errc, Error};
 use crate::platform::presentation::IPresenter;
+// 与 Wayland/macOS presenter 共用同一像素缓冲校验强度。
+use crate::platform::presentation::validate_pixel_buffer;
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
 #[link(name = "gdi32")]
@@ -482,6 +484,8 @@ impl IPresenter for GdiPresenter {
         if width != self.width || height != self.height {
             self.resize(width, height)?;
         }
+        // 短缓冲与其他 CPU presenter 一致返回 typed error，不做静默截断。
+        validate_pixel_buffer(pixels, width, height)?;
         // SAFETY: resize 后 width/height 与 DIB extent 匹配；pixels 长度已按 width×height 校验，拷贝不越界。
         unsafe {
             if self.dib.bits.is_null() {
@@ -503,6 +507,7 @@ impl IPresenter for GdiPresenter {
                 }
                 PresentDamage::Full | PresentDamage::Partial(_) => {}
             }
+            // 校验已保证 pixels 覆盖整个 DIB extent，无需截断。
             let len = (self.width as usize)
                 .checked_mul(self.height as usize)
                 .map_or(0, |n| n.min(pixels.len()));

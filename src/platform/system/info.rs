@@ -11,6 +11,19 @@ pub(crate) struct MemoryInfo {
     pub(crate) process_private_bytes: usize,
 }
 
+impl MemoryInfo {
+    /// 以公开硬件 Provider 的采集结果为唯一事实源构造系统内存事实；
+    /// 进程级字段由后端经独立端口补齐。
+    pub(crate) fn from_hardware(value: crate::platform::hardware::MemoryInfo) -> Self {
+        Self {
+            total_bytes: value.total_bytes(),
+            available_bytes: value.available_bytes(),
+            process_working_set: 0,
+            process_private_bytes: 0,
+        }
+    }
+}
+
 /// 操作系统身份与位数事实。
 #[derive(Debug, Clone)]
 pub(crate) struct OsInfo {
@@ -18,6 +31,21 @@ pub(crate) struct OsInfo {
     pub(crate) version: String,
     pub(crate) build: String,
     pub(crate) is_64bit: bool,
+}
+
+impl OsInfo {
+    /// 以公开硬件 Provider 的采集结果为唯一事实源构造内部系统身份。
+    ///
+    /// OS 采集（版本探测、发行版识别）只允许存在于 Provider 一处；
+    /// 进程位数由编译目标宽度决定，与宿主内核架构解耦。
+    pub(crate) fn from_hardware(value: crate::platform::hardware::OsInfo) -> Self {
+        Self {
+            name: value.name().to_string(),
+            version: value.version().unwrap_or_default().to_string(),
+            build: value.build().unwrap_or_default().to_string(),
+            is_64bit: cfg!(target_pointer_width = "64"),
+        }
+    }
 }
 
 /// Platform 根持有的系统信息与原生字体发现端口。

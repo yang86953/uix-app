@@ -1,4 +1,12 @@
 //! 次要窗口会话。
+//!
+//! 与主窗事件路径（event_loop）的有意差异，改动前先确认是否漂移：
+//! - 主题富化：副窗的 `ThemeChanged` 只经主循环 foreign 路径
+//!   （`dispatch_secondary_system_theme_changed` + `publish_theme_applied`）
+//!   处理一次，本分发器不重复富化；
+//! - debug 输入关联、指针光标同步与 Ctrl+Shift+D 热键仅主窗携带；
+//! - 动作失败语义：副窗摘除自身窗口（返回 `false`），主窗终止应用循环；
+//! - 装配段与聚焦写入经 `window_assembly` / `set_window_focused` 共享。
 
 use super::*;
 
@@ -22,7 +30,9 @@ impl SecondaryWindowSession {
         if event.type_ == UiEventType::WindowClose {
             self.handle.mark_closed();
             let parts = self.session.parts_mut();
+            // 关闭前同步 IME 门控与树内聚焦投影两个副本，禁止单侧漂移。
             parts.text_input.window_focused = false;
+            parts.tree.window_focused = false;
             sync_window_text_input(
                 parts.tree,
                 parts.active_work,
@@ -166,10 +176,11 @@ impl SecondaryWindowSession {
         result.did_work
     }
 
-    pub(super) fn next_deadline(&mut self) -> Option<Instant> {
+    pub(super) fn next_deadline(&mut self, now: Instant) -> Option<Instant> {
         let parts = self.session.parts_mut();
         self.driver.next_deadline(
-            Instant::now(),
+            // 与 drain_frame 的注入 clock 保持同一时刻来源，虚拟时钟下不漂移。
+            now,
             parts.tree,
             parts.active_work,
             &parts.app_timers,

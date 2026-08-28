@@ -7,12 +7,8 @@ pub(super) struct MacosSystemInfo;
 
 impl ISystemInfo for MacosSystemInfo {
     fn os_info(&self) -> Result<OsInfo> {
-        Ok(OsInfo {
-            name: "macOS".to_string(),
-            version: String::new(),
-            build: String::new(),
-            is_64bit: cfg!(target_pointer_width = "64"),
-        })
+        // OS 采集唯一事实源是公开硬件 Provider（sysctl）；本端口只做内部值映射。
+        crate::platform::capabilities::providers::os_info().map(OsInfo::from_hardware)
     }
 
     fn cpu_count(&self) -> Result<u32> {
@@ -27,12 +23,8 @@ impl ISystemInfo for MacosSystemInfo {
     }
 
     fn memory_info(&self) -> Result<MemoryInfo> {
-        Ok(MemoryInfo {
-            total_bytes: 512 * 1024 * 1024,
-            available_bytes: 512 * 1024 * 1024,
-            process_working_set: 0,
-            process_private_bytes: 0,
-        })
+        // 内存采集唯一事实源是公开硬件 Provider（sysctl hw.memsize）。
+        crate::platform::capabilities::providers::memory_info().map(MemoryInfo::from_hardware)
     }
 
     fn hostname(&self) -> Result<String> {

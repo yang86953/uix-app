@@ -18,8 +18,8 @@ pub(crate) enum PresentTestResult {
 /// Validates a CPU pixel payload before it crosses a native presentation
 /// boundary.  A short slice must be a typed error: native image constructors
 /// cannot infer the intended row layout safely from missing pixels.
-// 该校验只被 Unix 像素上传 presenter 使用，Windows GPU 路径不编译此入口。
-#[cfg(unix)]
+// 所有 CPU 像素上传 presenter（Wayland SHM / macOS CALayer / Windows GDI）
+// 共用同一校验强度；短缓冲一律 typed error，禁止静默截断。
 pub(crate) fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
     if width <= 0 || height <= 0 {
         return Err(Error::new(
