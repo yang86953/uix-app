@@ -25,6 +25,9 @@ use self::presentation::*;
 
 use self::geometry::*;
 
+// 复用反馈组件共享的颜色衰减、省略文本绘制与阴影外扩辅助。
+use super::{expand_rect, fade_token_color, paint_elided_text};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PopconfirmTarget {
     Trigger,
@@ -411,7 +414,7 @@ widget! {
         }
         if !self.custom_trigger {
             // 兼容零子节点 Rust 构造继续绘制旧删除触发器。
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 loc.delete_text,
                 frame,
@@ -426,11 +429,11 @@ widget! {
 
         if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let popup_bg = fade_color(resolved.popup_background, opacity);
-            let popup_border = fade_color(resolved.border, opacity);
-            let popup_text = fade_color(resolved.text, opacity);
-            let popup_primary = fade_color(resolved.primary, opacity);
-            let popup_warning = fade_color(resolved.warning, opacity);
+            let popup_bg = fade_token_color(resolved.popup_background, opacity);
+            let popup_border = fade_token_color(resolved.border, opacity);
+            let popup_text = fade_token_color(resolved.text, opacity);
+            let popup_primary = fade_token_color(resolved.primary, opacity);
+            let popup_warning = fade_token_color(resolved.warning, opacity);
             let pop_rect = popup_geometry.popup;
             let shadow = resolved.shadow;
             ctx.draw_box_shadow(
@@ -438,7 +441,7 @@ widget! {
                 shadow.layer_1.2,
                 shadow.layer_1.0,
                 shadow.layer_1.1,
-                fade_color(shadow.layer_1.3, opacity),
+                fade_token_color(shadow.layer_1.3, opacity),
                 r,
             );
             ctx.fill_rect(pop_rect, popup_bg, r);
@@ -491,7 +494,7 @@ widget! {
                 (pop_rect.w - inset * 2.0 - icon_width).max(0.0),
                 (title_bottom - pop_rect.y - layout.title_top_inset).max(0.0),
             );
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 title,
                 title_rect,
@@ -507,9 +510,9 @@ widget! {
                 ctx.fill_rect(
                     confirm_rect,
                     if self.pressed_target == Some(PopconfirmTarget::Confirm) {
-                        fade_color(resolved.primary_active, opacity)
+                        fade_token_color(resolved.primary_active, opacity)
                     } else {
-                        fade_color(resolved.primary_hover, opacity)
+                        fade_token_color(resolved.primary_hover, opacity)
                     },
                     btn_r,
                 );
@@ -521,12 +524,12 @@ widget! {
             } else {
                 &self.confirm_text
             };
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 confirm,
                 confirm_rect,
                 // 确认按钮文字：白色 token 随透明度淡入淡出。
-                fade_color(resolved.white, opacity),
+                fade_token_color(resolved.white, opacity),
                 resolved.confirm_font_size,
                 true,
             );
@@ -537,9 +540,9 @@ widget! {
                 ctx.fill_rect(
                     cancel_rect,
                     if self.pressed_target == Some(PopconfirmTarget::Cancel) {
-                        fade_color(resolved.fill_secondary, opacity)
+                        fade_token_color(resolved.fill_secondary, opacity)
                     } else {
-                        fade_color(resolved.fill_tertiary, opacity)
+                        fade_token_color(resolved.fill_tertiary, opacity)
                     },
                     btn_r,
                 );
@@ -555,7 +558,7 @@ widget! {
             } else {
                 &self.cancel_text
             };
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 cancel,
                 cancel_rect,
@@ -565,7 +568,7 @@ widget! {
             );
             if self.focused && tree.keyboard_focus_visible() && self.visible {
                 let (focus_rect, focus_color) = if self.focused_action == 0 {
-                    (confirm_rect, fade_color(resolved.white, opacity))
+                    (confirm_rect, fade_token_color(resolved.white, opacity))
                 } else {
                     (cancel_rect, popup_primary)
                 };
@@ -582,7 +585,7 @@ widget! {
 
         let frame = Self::normalize_frame(frame);
         // 浮层命中范围同时保留气泡与真实 trigger，允许打开态 trigger 继续收到 Click。
-        let popup = expand_popconfirm_rect(
+        let popup = expand_rect(
             self.absolute_popup_rect(frame),
             self.visual.layout.shadow_expand,
         )

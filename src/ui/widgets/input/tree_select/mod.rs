@@ -1,5 +1,5 @@
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -13,6 +13,9 @@ use crate::ui::{
     SystemEvent, WidgetId, WidgetTree,
 };
 use std::cell::{Cell, RefCell};
+
+// 复用反馈层共享的颜色衰减辅助。
+use crate::ui::widgets::feedback::fade_token_color;
 
 // 将表面约束与坐标转换隔离到私有几何模块。
 mod geometry;
@@ -345,13 +348,13 @@ widget! {
         }
 
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(visual.background, opacity);
-        let border = fade_color(visual.border, opacity);
-        let primary = fade_color(visual.primary, opacity);
-        let text = fade_color(visual.text, opacity);
-        let fill = fade_color(visual.fill_tertiary, opacity);
-        let primary_bg = fade_color(visual.primary_background, opacity);
-        let text_tertiary = fade_color(visual.text_quaternary, opacity);
+        let bg = fade_token_color(visual.background, opacity);
+        let border = fade_token_color(visual.border, opacity);
+        let primary = fade_token_color(visual.primary, opacity);
+        let text = fade_token_color(visual.text, opacity);
+        let fill = fade_token_color(visual.fill_tertiary, opacity);
+        let primary_bg = fade_token_color(visual.primary_background, opacity);
+        let text_tertiary = fade_token_color(visual.text_quaternary, opacity);
         let display_row_count = flat.len().max(1);
         let panel_radius = Some(Radius::uniform(visual.radius));
         // 将整个树选择弹层裁剪到当前逻辑表面。
@@ -906,13 +909,6 @@ impl TreeSelect {
 
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {
     point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 // 把 TreeSelect 的 Rust 树状态内核与 UIX 静态视觉组合为单一组件节点。

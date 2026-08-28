@@ -1,4 +1,6 @@
 use super::*;
+// 光标字符索引到字节偏移的换算复用 input 层共享辅助。
+use crate::ui::widgets::input::byte_index_for_char;
 
 impl Input {
     pub(super) fn intrinsic_size(&self) -> Size {
@@ -298,12 +300,7 @@ impl Input {
         if self.composition.is_empty() {
             return Cow::Borrowed(&self.value);
         }
-        let byte_pos = self
-            .value
-            .char_indices()
-            .nth(self.cursor_char)
-            .map(|(index, _)| index)
-            .unwrap_or(self.value.len());
+        let byte_pos = byte_index_for_char(&self.value, self.cursor_char);
         let mut value = String::with_capacity(self.value.len() + self.composition.len());
         value.push_str(&self.value[..byte_pos]);
         value.push_str(&self.composition);
@@ -324,12 +321,7 @@ impl Input {
             return self.value_with_composition();
         }
 
-        let byte_pos = self
-            .value
-            .char_indices()
-            .nth(self.cursor_char)
-            .map(|(index, _)| index)
-            .unwrap_or(self.value.len());
+        let byte_pos = byte_index_for_char(&self.value, self.cursor_char);
         let masked = |text: &str| {
             text.chars()
                 .map(|ch| if ch == '\n' { '\n' } else { '\u{2022}' })
@@ -343,12 +335,7 @@ impl Input {
     }
 
     pub(super) fn visual_text_before_cursor(&self) -> Cow<'_, str> {
-        let byte_pos = self
-            .value
-            .char_indices()
-            .nth(self.cursor_char)
-            .map(|(index, _)| index)
-            .unwrap_or(self.value.len());
+        let byte_pos = byte_index_for_char(&self.value, self.cursor_char);
         let before = &self.value[..byte_pos];
         if !self.password || self.password_visible {
             Cow::Borrowed(before)

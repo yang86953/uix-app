@@ -12,9 +12,9 @@ use crate::draw::raster::pixel_surface::PixelSurface;
 use crate::draw::raster::shared_rasterizer::SharedRasterizer;
 use crate::draw::{Canvas2D, Color};
 
-use super::geometry::{
-    frame_encoder_error, pack_visible_scratch_tile, surface_pack_bounds, union_frame_rect,
-};
+use super::geometry::{frame_encoder_error, pack_visible_scratch_tile, surface_pack_bounds};
+// 矩形并集与 FrameRect 同源共享（encoder 几何值类型模块）。
+use crate::draw::painting::encoder::geometry::union_frame_rect;
 
 // 保真下放准入与 picture 几何换算拆分到独立模块。
 mod geometry_ops;

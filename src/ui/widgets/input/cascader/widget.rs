@@ -15,9 +15,11 @@ use std::collections::HashSet;
 
 use super::{
     CascaderOption, CascaderSearchResult, CascaderValue, CascaderVisual,
-    absolute_cascader_popup_rect, cascader_dirty_rect, fade_color, paint_loading_spinner,
+    absolute_cascader_popup_rect, cascader_dirty_rect, paint_loading_spinner,
     point_in_half_open_rect,
 };
+// 复用反馈层共享的颜色衰减辅助。
+use crate::ui::widgets::feedback::fade_token_color;
 
 widget! {
     /// 按层级浏览并以完整稳定路径提交叶节点选择的级联组件。
@@ -452,12 +454,12 @@ widget! {
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         // 所有列绘制使用表面约束后的实际列宽。
         let column_width = geometry.column_width;
-        let bg_elevated = fade_color(visual.popup_background, opacity);
-        let border_color = fade_color(visual.border, opacity);
-        let text_color = fade_color(visual.text, opacity);
-        let text_secondary = fade_color(visual.secondary_text, opacity);
-        let text_tertiary = fade_color(visual.tertiary_text, opacity);
-        let primary_bg = fade_color(visual.primary_background, opacity);
+        let bg_elevated = fade_token_color(visual.popup_background, opacity);
+        let border_color = fade_token_color(visual.border, opacity);
+        let text_color = fade_token_color(visual.text, opacity);
+        let text_secondary = fade_token_color(visual.secondary_text, opacity);
+        let text_tertiary = fade_token_color(visual.tertiary_text, opacity);
+        let primary_bg = fade_token_color(visual.primary_background, opacity);
         let panel_radius = Some(Radius::uniform(visual.radius));
 
         // 将整个级联弹层裁剪到当前逻辑表面。

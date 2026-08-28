@@ -14,7 +14,6 @@ use self::presentation::*;
 use std::rc::Rc;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::Color;
 use crate::platform::capabilities::StatusLevel;
 use crate::ui::animation::AnimationConfig;
 use crate::ui::view::{View, ViewNode};
@@ -26,6 +25,8 @@ use crate::widget;
 // 引入关闭原因以区分用户关闭与到期关闭。
 use super::declaration::FeedbackCloseReason;
 use super::toast_motion::{ToastMotion, ToastMotionEntry, ToastQueue};
+// 复用反馈组件共享的阴影外扩、颜色衰减与省略文本绘制辅助。
+use super::{expand_rect, fade_token_color, paint_elided_text};
 
 widget! {
     /// 全局浮动提示容器。
@@ -171,18 +172,18 @@ widget! {
                 continue;
             }
             let item = entry.item();
-            let bg = fade_color(resolved.background, opacity);
-            let text_c = fade_color(resolved.text, opacity);
+            let bg = fade_token_color(resolved.background, opacity);
+            let text_c = fade_token_color(resolved.text, opacity);
             let (default_icon, accent) = self.visual.status_visual(&resolved, item.type_);
             let icon = self.icon_name.as_deref().unwrap_or(default_icon);
-            let accent = fade_color(accent, opacity);
+            let accent = fade_token_color(accent, opacity);
             if shadow.layer_1.2 > 0.0 {
                 ctx.draw_box_shadow(
                     msg_rect,
                     shadow.layer_1.2,
                     shadow.layer_1.0,
                     shadow.layer_1.1,
-                    fade_color(shadow.layer_1.3, opacity),
+                    fade_token_color(shadow.layer_1.3, opacity),
                     radius,
                 );
             }
@@ -205,12 +206,13 @@ widget! {
                 accent,
                 typography.status_icon,
             );
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 &item.content,
                 geometry.content,
                 text_c,
                 typography.body,
+                false,
             );
             if let (Some(action), Some(action_rect)) =
                 (self.action_label.as_deref(), geometry.action)
@@ -219,16 +221,17 @@ widget! {
                 if self.pressed_action.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         action_button,
-                        fade_color(resolved.fill_secondary, opacity),
+                        fade_token_color(resolved.fill_secondary, opacity),
                         control_radius,
                     );
                 }
-                Self::paint_centered_elided_text(
+                paint_elided_text(
                     ctx,
                     action,
                     action_button,
                     text_c,
                     typography.action,
+                    true,
                 );
             }
             if item.closable {
@@ -236,13 +239,13 @@ widget! {
                 if self.pressed_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(resolved.fill_secondary, opacity),
+                        fade_token_color(resolved.fill_secondary, opacity),
                         control_radius,
                     );
                 } else if self.hovered_close.get() == Some(entry.key()) {
                     ctx.fill_rect(
                         close_button,
-                        fade_color(resolved.fill_tertiary, opacity),
+                        fade_token_color(resolved.fill_tertiary, opacity),
                         control_radius,
                     );
                 }
@@ -250,7 +253,7 @@ widget! {
                     ctx,
                     self.visual.icons.close,
                     close_button,
-                    fade_color(resolved.text_quaternary, opacity),
+                    fade_token_color(resolved.text_quaternary, opacity),
                     typography.close_icon,
                 );
             }
@@ -799,45 +802,6 @@ impl Message {
             (frame.w - inset_x * 2.0).max(0.0),
             (frame.h - inset_y * 2.0).max(0.0),
         )
-    }
-
-    fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        let y = ctx.visual_center_y(frame, font_size);
-        ctx.draw_text(&value, Point::new(frame.x, y), color, font_size);
-        ctx.pop_clip();
-    }
-
-    fn paint_centered_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        ctx.text_center(&value, frame, color, font_size);
-        ctx.pop_clip();
     }
 }
 

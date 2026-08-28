@@ -8,6 +8,7 @@ use std::sync::Arc;
 use super::commands::{FrameCommand, FrameRasterOp};
 use super::geometry::{
     FrameGlyphBlit, FrameImage, FrameRadius, FrameRect, FrameSampledRect, FrameStrokeRect,
+    union_frame_rect,
 };
 
 struct SourceOverWrite {
@@ -48,9 +49,7 @@ pub(super) fn stroke_batch_bounds(
         };
         covered_area = covered_area
             .saturating_add(i64::from(bounds.width).saturating_mul(i64::from(bounds.height)));
-        union = Some(union.map_or(bounds, |previous| {
-            union_nonempty_frame_rect(previous, bounds)
-        }));
+        union = Some(union.map_or(bounds, |previous| union_frame_rect(previous, bounds)));
     }
     union.map(|bounds| (bounds, covered_area))
 }
@@ -89,24 +88,11 @@ pub(super) fn stroke_batches_can_merge(
             }
         }
     }
-    let union = union_nonempty_frame_rect(previous_bounds, next_bounds);
+    let union = union_frame_rect(previous_bounds, next_bounds);
     let union_area = i64::from(union.width).saturating_mul(i64::from(union.height));
     let covered_area = previous_area.saturating_add(next_area);
     union_area <= MAX_CLUSTER_PIXELS
         && union_area <= covered_area.saturating_mul(MAX_UNION_INFLATION)
-}
-
-fn union_nonempty_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
-    let left = a.x.min(b.x);
-    let top = a.y.min(b.y);
-    let right = (i64::from(a.x) + i64::from(a.width)).max(i64::from(b.x) + i64::from(b.width));
-    let bottom = (i64::from(a.y) + i64::from(a.height)).max(i64::from(b.y) + i64::from(b.height));
-    FrameRect::new(
-        left,
-        top,
-        (right - i64::from(left)) as i32,
-        (bottom - i64::from(top)) as i32,
-    )
 }
 
 pub(super) fn source_over_commands_have_safe_grouping(

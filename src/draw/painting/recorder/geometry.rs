@@ -101,15 +101,6 @@ pub(super) fn surface_pack_bounds(
     Some(FrameRect::new(left, top, right - left, bottom - top))
 }
 
-/// 两个整数矩形的并集（作为打包边界用）。
-pub(super) fn union_frame_rect(a: FrameRect, b: FrameRect) -> FrameRect {
-    let left = a.x.min(b.x);
-    let top = a.y.min(b.y);
-    let right = (a.x + a.width).max(b.x + b.width);
-    let bottom = (a.y + a.height).max(b.y + b.height);
-    FrameRect::new(left, top, right - left, bottom - top)
-}
-
 /// 把整像素 `Rect` 转为 `FrameRect`；非有限或分数坐标返回参数错误。
 pub(super) fn rect_to_frame(rect: Rect) -> Result<FrameRect, Error> {
     if !rect.x.is_finite()

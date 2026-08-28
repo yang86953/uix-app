@@ -1,5 +1,4 @@
 use crate::core::Rect;
-use crate::draw::Color;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
 use std::collections::HashSet;
@@ -417,11 +416,4 @@ fn finite_nonnegative(value: f32) -> f32 {
         // 非有限值回退为零。
         0.0
     }
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }

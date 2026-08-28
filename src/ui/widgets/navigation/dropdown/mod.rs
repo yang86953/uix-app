@@ -1,7 +1,7 @@
 //! Dropdown widget.
 
 use crate::core::{Constraints, Rect, Size};
-use crate::draw::{Color, Radius};
+use crate::draw::Radius;
 use crate::ui::animation::{TransitionPlayer, presets};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
@@ -19,6 +19,8 @@ use std::rc::Rc;
 
 // 下拉菜单使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::widgets::TriggerMode;
+// 弹层动画颜色衰减复用反馈层共享的 token 衰减辅助。
+use crate::ui::widgets::feedback::fade_token_color;
 
 mod presentation;
 use presentation::*;
@@ -387,11 +389,11 @@ widget! {
             return;
         }
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-        let bg = fade_color(visual.elevated_background, opacity);
-        let border = fade_color(visual.border, opacity);
-        let text_color = fade_color(visual.text, opacity);
-        let disabled_color = fade_color(visual.text_quaternary, opacity);
-        let highlight = fade_color(visual.fill_tertiary, opacity);
+        let bg = fade_token_color(visual.elevated_background, opacity);
+        let border = fade_token_color(visual.border, opacity);
+        let text_color = fade_token_color(visual.text, opacity);
+        let disabled_color = fade_token_color(visual.text_quaternary, opacity);
+        let highlight = fade_token_color(visual.fill_tertiary, opacity);
 
         let menu_y = frame.y + layout.trigger_height;
         let menu_h = self.visible_menu_height();
@@ -979,13 +981,6 @@ fn dropdown_dirty_rect(frame: Rect, menu_h: f32, visual: &DropdownVisual) -> Rec
         expanded.w + expand * 2.0,
         expanded.h + expand * 2.0,
     )
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 // 把 keyed 数据身份门禁从组件事件和绘制主体中拆分。

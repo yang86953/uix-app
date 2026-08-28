@@ -13,6 +13,9 @@ use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::{EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, WidgetId};
 use crate::widget;
 
+// 复用反馈组件共享的省略文本绘制辅助。
+use super::paint_elided_text;
+
 mod presentation;
 use presentation::*;
 
@@ -259,20 +262,22 @@ widget! {
                 typography.status_icon,
             );
         }
-        Self::paint_elided_text(
+        paint_elided_text(
             ctx,
             &self.message,
             layout.message,
             resolved.text,
             typography.message,
+            false,
         );
         if !self.description.is_empty() {
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 &self.description,
                 layout.description,
                 resolved.text_secondary,
                 typography.description,
+                false,
             );
         }
         let pressed = self.pressed.get();
@@ -296,12 +301,13 @@ widget! {
                     Some(Radius::uniform(resolved.interaction_radius)),
                 );
             }
-            Self::paint_elided_text(
+            paint_elided_text(
                 ctx,
                 &self.action_label,
                 layout.action,
                 resolved.status,
                 typography.action,
+                false,
             );
         }
         if self.closable && layout.close.w > 0.0 && layout.close.h > 0.0 {
@@ -662,31 +668,6 @@ impl Alert {
             (frame.w - inset_x * 2.0).max(0.0),
             (frame.h - inset_y * 2.0).max(0.0),
         )
-    }
-
-    fn paint_elided_text(
-        ctx: &mut PaintContext,
-        value: &str,
-        frame: Rect,
-        color: crate::draw::Color,
-        font_size: f32,
-    ) {
-        // 复用 UI 绘制上下文拥有的保守单行省略算法。
-        let Some(value) = ctx.elide_single_line_cow(value, font_size, frame.w) else {
-            return;
-        };
-        if frame.h <= 0.0 {
-            return;
-        }
-        ctx.push_clip(frame);
-        let text_y = ctx.visual_center_y(frame, font_size);
-        ctx.draw_text(
-            value.as_ref(),
-            crate::core::Point::new(frame.x, text_y),
-            color,
-            font_size,
-        );
-        ctx.pop_clip();
     }
 
     fn intrinsic_size(&self) -> Size {

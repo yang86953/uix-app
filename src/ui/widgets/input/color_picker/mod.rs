@@ -16,6 +16,9 @@ use crate::ui::{
 use crate::widget;
 use std::cell::Cell;
 
+// 复用反馈层共享的颜色衰减辅助。
+use crate::ui::widgets::feedback::fade_token_color;
+
 // 声明颜色面板的私有表面几何模块。
 mod geometry;
 // 声明颜色选择器的私有弹层缓存方法模块。
@@ -301,8 +304,8 @@ widget! {
                 // 使用实际颜色面板和当前预设数量。
                 ColorPanelGeometry::new(panel_rect, self.preset_colors.len());
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let bg = fade_color(visual.popup_background, opacity);
-            let border = fade_color(visual.border, opacity);
+            let bg = fade_token_color(visual.popup_background, opacity);
+            let border = fade_token_color(visual.border, opacity);
             let panel_radius = Some(Radius::uniform(visual.panel_radius));
             // 将整个弹层绘制限制在当前逻辑表面内。
             ctx.push_clip(surface);
@@ -325,7 +328,7 @@ widget! {
                 let visual_scale = panel_geometry.visual_scale();
                 // 构造与实际色块尺寸一致的圆角。
                 let cell_radius = Some(Radius::uniform(layout.cell_radius * visual_scale));
-                ctx.fill_rect(cell_rect, fade_color(*c, opacity), cell_radius);
+                ctx.fill_rect(cell_rect, fade_token_color(*c, opacity), cell_radius);
                 if self.highlighted_idx == Some(i) {
                     // 高亮描边：按色块亮度取黑白 token 对比色。
                     let highlight_color = if c.is_light() {
@@ -335,7 +338,7 @@ widget! {
                     };
                     ctx.stroke_rect(
                         cell_rect,
-                        fade_color(highlight_color, opacity),
+                        fade_token_color(highlight_color, opacity),
                         // 缩放描边以避免窄色块被边框完全覆盖。
                         layout.highlight_border_width * visual_scale,
                         // 复用当前色块圆角。
@@ -353,7 +356,7 @@ widget! {
                         ctx,
                         self.visual.icons.selected,
                         cell_rect,
-                        fade_color(icon_color, opacity),
+                        fade_token_color(icon_color, opacity),
                         // 缩放选中图标以保持在实际色块内。
                         layout.selected_icon_size * visual_scale,
                     );
@@ -626,13 +629,6 @@ impl Default for ColorPicker {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn fade_color(color: Color, opacity: f32) -> Color {
-    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
-        .round()
-        .clamp(0.0, 255.0) as u8;
-    color.with_alpha(alpha)
 }
 
 fn paint_transparency_checkerboard(
