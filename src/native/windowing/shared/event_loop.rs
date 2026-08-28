@@ -74,8 +74,21 @@ impl<T: OsEventSource> IEventLoop for T {
     }
 
     fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        if !self.poll_event(callback) {
+        if !self.dispatch_pending() {
             return false;
+        }
+        // 主线程 UI turn 内入队的事件（如程序化 resize）没有伴随原生唤醒；
+        // 排干时取到任何事件都必须立即返回处理，否则会滞留到下一个外部
+        // 唤醒，期间窗口声明的新几何与实际呈现 buffer 不一致。
+        let mut received = false;
+        while let Some(event) = self.next_event() {
+            received = true;
+            if !callback(&event) {
+                return false;
+            }
+        }
+        if received {
+            return true;
         }
         if !self.dispatch_blocking() {
             return false;
@@ -89,6 +102,20 @@ impl<T: OsEventSource> IEventLoop for T {
     }
 
     fn wait_timeout(&mut self, timeout: Duration, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
+        if !self.dispatch_pending() {
+            return false;
+        }
+        // 与 wait_event 相同：已入队事件先于 deadline 阻塞被处理。
+        let mut received = false;
+        while let Some(event) = self.next_event() {
+            received = true;
+            if !callback(&event) {
+                return false;
+            }
+        }
+        if received {
+            return true;
+        }
         if !self.dispatch_timeout(timeout) {
             return false;
         }
