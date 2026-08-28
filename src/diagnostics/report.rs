@@ -197,6 +197,14 @@ impl ErrorReport {
     pub fn event_emitted(&self) -> bool {
         self.event_emitted
     }
+
+    /// 返回按回溯策略在最终上报边界捕获的有界回溯文本。
+    ///
+    /// 策略禁止捕获（如 `Disabled`）或严重级别低于策略门槛（如
+    /// `FatalOnly` 下的非致命错误）时返回 `None`。
+    pub fn backtrace(&self) -> Option<&str> {
+        self.backtrace.as_deref()
+    }
 }
 
 /// Immutable point-in-time view of one runtime's retained reports.

@@ -69,6 +69,7 @@ System 只通过 `ReportingModule::{report,snapshot}`、`RecoveryModule::{regist
 | `on_error` | `on_error(&self, code: Errc, handler: F) -> RecoverySubscription` | 按精确 Errc 登记恢复 handler；RAII 句柄释放即注销 |
 | `attempt_recovery` | `attempt_recovery(&self, error: Error) -> RecoveryOutcome` | 在调用方选定的安全 owner thread 同步尝试；未处理结果保留原 Error |
 | `debug_mode` / `set_debug_mode` | 查询或动态切换 runtime-scoped 开关 | 全窗口共享；关闭时不采集帧与组件树调试事实 |
+| `rebuild_tracing_interest_cache` | `(&self)` | 重新评估 tracing 进程级 callsite interest 缓存；subscriber 晚于首次报告安装导致事件不可见时，调用即可恢复诊断事件可见性 |
 | `write_debug_repro_manifest` | `(&self, directory) -> Result<PathBuf, Error>` | 原子写出不含用户文本、上限 32 KiB 的固定 schema 复现清单 |
 
 crate 内编排入口（不属公开 API，由 app 组装层调用）：
@@ -88,7 +89,7 @@ App 的 owner-thread 安全点（`drain_platform_pending_failures`）先对每�
 
 ## 组件：ErrorReport
 
-报告限制总字节、分段、cause 数和 metadata，清理控制字符并按策略捕获 backtrace；达到容量淘汰旧报告，错误风暴不能无限增长内存。
+报告限制总字节、分段、cause 数和 metadata，清理控制字符并按策略捕获 backtrace，是否捕获可经 `ErrorReport::backtrace` 观察；回溯策略默认 `FatalOnly`（仅为致命报告捕获），`ErrorsAndFatal` 覆盖错误与致命报告，`Disabled` 全部禁止。达到容量淘汰旧报告，错误风暴不能无限增长内存。
 
 ## 组件：CrashReport 与 panic hook
 
