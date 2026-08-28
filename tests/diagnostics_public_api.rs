@@ -384,3 +384,92 @@ fn ordinary_tracing_error_does_not_create_an_error_report() {
     tracing::error!(target: "application", "ordinary log");
     assert_eq!(diagnostics.snapshot().total_reports(), 0);
 }
+
+#[test]
+fn report_only_observes_and_recovery_only_recovers() {
+    install_global_default_subscriber();
+    let diagnostics = Diagnostics::default();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let handler_calls = Arc::clone(&calls);
+    let _subscription = diagnostics.on_error(Errc::GraphicsDeviceLost, move |_| {
+        handler_calls.fetch_add(1, Ordering::Relaxed);
+        RecoveryAction::Recovered
+    });
+
+    // report 只建立观察事实，不得隐式执行已登记的恢复 handler。
+    let id = diagnostics.report(Error::new(Errc::GraphicsDeviceLost, "observed only"));
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    let snapshot = diagnostics.snapshot();
+    assert_eq!(snapshot.total_reports(), 1);
+    assert_eq!(snapshot.reports()[0].id(), id);
+
+    // attempt_recovery 只尝试恢复，不得隐式产生新的错误报告。
+    assert!(matches!(
+        diagnostics.attempt_recovery(Error::new(Errc::GraphicsDeviceLost, "recover")),
+        RecoveryOutcome::Recovered
+    ));
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert_eq!(diagnostics.snapshot().total_reports(), 1);
+}
+
+#[test]
+fn backtrace_policy_controls_capture_at_the_report_boundary() {
+    install_global_default_subscriber();
+    let fatal_only = Diagnostics::new(DiagnosticsConfig::default().backtrace(BacktracePolicy::FatalOnly));
+    fatal_only.report(Error::fatal(Errc::InvalidState, "fatal captures"));
+    fatal_only.report(Error::new(Errc::IoError, "non-fatal does not capture"));
+
+    let errors_and_fatal =
+        Diagnostics::new(DiagnosticsConfig::default().backtrace(BacktracePolicy::ErrorsAndFatal));
+    errors_and_fatal.report(Error::new(Errc::IoError, "error captures"));
+
+    let disabled =
+        Diagnostics::new(DiagnosticsConfig::default().backtrace(BacktracePolicy::Disabled));
+    disabled.report(Error::fatal(Errc::InvalidState, "disabled never captures"));
+
+    let fatal_only_snapshot = fatal_only.snapshot();
+    assert!(fatal_only_snapshot.reports()[0].backtrace().is_some());
+    assert!(fatal_only_snapshot.reports()[1].backtrace().is_none());
+    assert!(errors_and_fatal.snapshot().reports()[0].backtrace().is_some());
+    assert!(disabled.snapshot().reports()[0].backtrace().is_none());
+}
+
+const REBUILD_TEST_TARGET: &str = "uix::diagnostics-rebuild-test";
+
+#[test]
+fn rebuild_tracing_interest_cache_keeps_callsites_delivering() {
+    install_global_default_subscriber();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = CaptureSubscriber {
+        events: Arc::clone(&events),
+    };
+    let diagnostics = Diagnostics::default();
+
+    tracing::subscriber::with_default(subscriber, || {
+        // 重建前事件正常送达。
+        tracing::event!(target: REBUILD_TEST_TARGET, tracing::Level::INFO, "before rebuild");
+        assert_eq!(
+            events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|event| event.target == REBUILD_TEST_TARGET)
+                .count(),
+            1
+        );
+
+        // 重建 interest 缓存后，同一 callsite 对当前 dispatch 保持可见。
+        diagnostics.rebuild_tracing_interest_cache();
+        tracing::event!(target: REBUILD_TEST_TARGET, tracing::Level::INFO, "after rebuild");
+        assert_eq!(
+            events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .filter(|event| event.target == REBUILD_TEST_TARGET)
+                .count(),
+            2,
+            "rebuild must keep already-registered callsites delivering"
+        );
+    });
+}
