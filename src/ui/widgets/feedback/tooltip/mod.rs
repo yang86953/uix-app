@@ -6,6 +6,7 @@ use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 反馈组件复用基础层提示气泡原语。
 use crate::ui::SnapshotFields;
+use crate::ui::widgets::overlay::normalize_rect;
 use crate::ui::widgets::tooltip_primitives::{
     paint_tooltip_bubble_with_visual_and_size, tooltip_bubble_rect_with_visual_and_size,
     tooltip_bubble_size_with_visual, tooltip_dirty_rect_with_visual_and_size,
@@ -553,20 +554,8 @@ impl Tooltip {
     }
 
     fn normalize_frame(frame: Rect) -> Rect {
-        Rect::new(
-            if frame.x.is_finite() { frame.x } else { 0.0 },
-            if frame.y.is_finite() { frame.y } else { 0.0 },
-            if frame.w.is_finite() {
-                frame.w.max(0.0)
-            } else {
-                0.0
-            },
-            if frame.h.is_finite() {
-                frame.h.max(0.0)
-            } else {
-                0.0
-            },
-        )
+        // 复用浮层共享归一化：非有限坐标回退原点、尺寸收敛为有限非负。
+        normalize_rect(frame)
     }
 
     // 返回布局或绘制记录的当前表面，尚未记录时使用有限回退。

@@ -1,6 +1,7 @@
 use crate::core::{Point, Rect};
 
-use super::types::{Fixed, TableColumn};
+// 复用表模块唯一位宽敏感收敛实现的有限非负纯函数。
+use super::types::{Fixed, TableColumn, finite_nonnegative};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ColumnZone {
@@ -384,12 +385,4 @@ fn zone_width(columns: &[TableColumn], fixed: Option<Fixed>) -> f32 {
         .filter(|column| column.fixed == fixed)
         .map(|column| finite_nonnegative(column.width))
         .sum()
-}
-
-fn finite_nonnegative(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
-    } else {
-        0.0
-    }
 }

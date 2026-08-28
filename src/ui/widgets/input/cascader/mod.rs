@@ -8,6 +8,11 @@ use std::collections::HashSet;
 
 // 复用 input 层共享的字符索引辅助（子模块经此绑定引用）。
 use super::byte_index_for_char;
+// 复用浮层共享几何纯函数：归一化、有限收敛、相对/绝对互换与翻转决策。
+use crate::ui::widgets::overlay::{
+    absolute_rect, finite_nonnegative, local_rect, normalize_rect, resolve_vertical_dropdown_rect,
+    vertical_fallback_surface,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 /// 级联选择器中的一个树形选项。
@@ -182,61 +187,21 @@ fn resolve_cascader_popup_geometry(
     let natural_column_width = frame.w.max(layout.popup_column_min_width);
     // 计算所有可见列的自然总宽度。
     let natural_width = finite_nonnegative(natural_column_width * level_count as f32);
-    // 将总宽限制在当前表面内。
-    let width = natural_width.min(surface.w).max(0.0);
-    // 无可用表面时返回稳定空几何。
-    if width <= 0.0 || surface.h <= 0.0 {
-        // 返回零矩形与零列宽。
-        return CascaderPopupGeometry {
-            // 空弹层不参与绘制和命中。
-            rect: Rect::zero(),
-            // 空弹层没有可用列宽。
-            column_width: 0.0,
-        };
-    }
-
-    // 计算横向起点允许的最大绝对值。
-    let max_x = surface.x + surface.w - width;
-    // 将触发器锚点横向收敛到当前表面。
-    let x = frame.x.clamp(surface.x, max_x);
-    // 计算带间距的控件下方可用高度。
-    let available_below = (surface.y + surface.h - frame.y - frame.h - layout.popup_gap).max(0.0);
-    // 计算带间距的控件上方可用高度。
-    let available_above = (frame.y - layout.popup_gap - surface.y).max(0.0);
-    // 优先完整向下；否则完整向上；两侧都不足时选择更大空间。
-    let place_below = if layout.popup_height <= available_below {
-        // 下方完整容纳固定自然高度时保持默认方向。
-        true
-    } else if layout.popup_height <= available_above {
-        // 只有上方完整容纳时翻转。
-        false
-    } else {
-        // 两侧都不足时选择空间更大的一侧，平局保持向下。
-        available_below >= available_above
-    };
-    // 读取最终方向的实际可用高度。
-    let available_height = if place_below {
-        // 使用触发器下方空间。
-        available_below
-    } else {
-        // 使用触发器上方空间。
-        available_above
-    };
-    // 将自然高度限制在最终方向的可用空间内。
-    let height = layout.popup_height.min(available_height).max(0.0);
-    // 计算最终绝对纵坐标。
-    let y = if place_below {
-        // 向下弹层保留既有二像素间距。
-        frame.y + frame.h + layout.popup_gap
-    } else {
-        // 向上弹层用实际高度紧贴触发器上方间距。
-        frame.y - layout.popup_gap - height
-    };
-
+    // 复用共享垂直下拉解析：保留既有二像素间距、优先向下、放不下翻向上并钳制表面。
+    let rect = resolve_vertical_dropdown_rect(
+        frame,
+        surface,
+        natural_width,
+        layout.popup_height,
+        frame.y + frame.h,
+        layout.popup_gap,
+    );
+    // 空列宽即空弹层，按共享解析返回的零矩形返回零列宽。
+    let width = rect.w;
     // 返回所有消费者共享的最终几何。
     CascaderPopupGeometry {
         // 保存受表面约束的绝对弹层矩形。
-        rect: Rect::new(x, y, width, height),
+        rect,
         // 多列在最终总宽内等分，避免任一列越出弹层。
         column_width: width / level_count as f32,
     }
@@ -250,21 +215,10 @@ fn local_cascader_popup_geometry(
     geometry: CascaderPopupGeometry,
     // 返回可供组件本地事件复用的几何。
 ) -> CascaderPopupGeometry {
-    // 归一化触发器以保证偏移有限。
-    let frame = normalize_cascader_rect(frame);
-    // 返回相对矩形并保留实际列宽。
+    // 复用共享相对转换并保留实际列宽。
     CascaderPopupGeometry {
         // 从绝对弹层坐标扣除触发器原点。
-        rect: Rect::new(
-            // 保存横向相对偏移。
-            geometry.rect.x - frame.x,
-            // 保存纵向相对偏移。
-            geometry.rect.y - frame.y,
-            // 保留最终总宽。
-            geometry.rect.w,
-            // 保留最终高度。
-            geometry.rect.h,
-        ),
+        rect: local_rect(frame, geometry.rect),
         // 保留最终列宽。
         column_width: geometry.column_width,
     }
@@ -272,8 +226,8 @@ fn local_cascader_popup_geometry(
 
 // 将相对触发器的弹层矩形转换为窗口绝对坐标。
 fn absolute_cascader_popup_rect(frame: Rect, popup: Rect) -> Rect {
-    // 叠加触发器原点并保留最终尺寸。
-    Rect::new(frame.x + popup.x, frame.y + popup.y, popup.w, popup.h)
+    // 复用共享绝对转换。
+    absolute_rect(frame, popup)
 }
 
 // 计算触发器、实际弹层与保守弹层共同占用的表面内脏区。
@@ -297,8 +251,6 @@ fn cascader_dirty_rect(frame: Rect, popup: Rect, surface: Rect) -> Rect {
 // 构造尚未取得真实窗口表面时的有限回退表面。
 fn cascader_fallback_surface(frame: Rect, level_count: usize) -> Rect {
     let layout = CASCADER_VISUAL_REF.layout;
-    // 归一化触发器矩形。
-    let frame = normalize_cascader_rect(frame);
     // 空列集合仍按单列自然宽处理。
     let level_count = level_count.max(1);
     // 计算所有列完整展示所需的自然宽度。
@@ -306,46 +258,20 @@ fn cascader_fallback_surface(frame: Rect, level_count: usize) -> Rect {
         // 使用既有最小列宽规格。
         frame.w.max(layout.popup_column_min_width) * level_count as f32,
     );
-    // 在触发器上下各预留一份自然弹层空间。
-    Rect::new(
-        // 横向从触发器左边开始。
-        frame.x,
-        // 纵向向上预留间距与完整弹层高度。
-        frame.y - layout.popup_gap - layout.popup_height,
-        // 保留所有自然列宽。
+    // 复用共享回退表面：在触发器上下各预留间距与完整弹层空间。
+    vertical_fallback_surface(
+        frame,
         width,
-        // 覆盖上下两份弹层、两份间距和触发器。
-        layout.popup_height * layout.fallback_popup_sides
-            + layout.popup_gap * layout.fallback_popup_sides
-            + frame.h,
+        layout.popup_height,
+        layout.popup_gap,
+        layout.fallback_popup_sides,
     )
 }
 
 // 归一化级联选择相关矩形。
 fn normalize_cascader_rect(rect: Rect) -> Rect {
-    // 替换非有限坐标并收敛负尺寸。
-    Rect::new(
-        // 非有限横坐标回退到原点。
-        if rect.x.is_finite() { rect.x } else { 0.0 },
-        // 非有限纵坐标回退到原点。
-        if rect.y.is_finite() { rect.y } else { 0.0 },
-        // 归一化宽度。
-        finite_nonnegative(rect.w),
-        // 归一化高度。
-        finite_nonnegative(rect.h),
-    )
-}
-
-// 将任意浮点尺寸收敛为有限非负值。
-fn finite_nonnegative(value: f32) -> f32 {
-    // 只保留有限输入。
-    if value.is_finite() {
-        // 负值收敛为零。
-        value.max(0.0)
-    } else {
-        // 非有限值回退为零。
-        0.0
-    }
+    // 复用浮层共享归一化：非有限坐标回退原点、尺寸收敛为有限非负。
+    normalize_rect(rect)
 }
 
 fn point_in_half_open_rect(rect: Rect, point: Point) -> bool {

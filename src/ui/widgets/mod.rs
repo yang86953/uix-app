@@ -21,6 +21,8 @@ pub mod navigation;
 pub mod other;
 // 触发方式与提示方位由输入、通用和导航组件共同使用，归基础交互层所有。
 mod overlay_types;
+// 浮层定位几何（气泡 placement 与垂直下拉）的共享实现。
+pub(crate) mod overlay;
 // 输入与反馈组件共享提示气泡几何及绘制原语。
 pub(crate) mod tooltip_primitives;
 pub(crate) mod window_chrome;

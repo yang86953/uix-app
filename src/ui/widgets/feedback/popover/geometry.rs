@@ -2,6 +2,12 @@
 
 use super::*;
 
+// 复用浮层共享定位机制：方向候选、翻转、溢出评分与表面钳制的单一实现。
+use crate::ui::widgets::overlay::{
+    OverlayArrowVisual, OverlayBubbleGeometry, OverlayPlacement, draw_overlay_arrow,
+    normalize_rect, resolve_overlay_bubble,
+};
+
 impl Popover {
     /// 创建默认置于上方、点击触发且初始隐藏的气泡卡片。
     pub fn new(content: impl Into<String>) -> Self {
@@ -305,8 +311,8 @@ impl Popover {
             // 使用 UIX 声明的完整视觉表。
             self.visual,
         )
-        // 返回同一解析器生成的最终矩形。
-        .popup
+        // 返回同一解析器生成的最终气泡矩形。
+        .bubble
     }
 
     pub(super) fn surface_or_fallback(&self, frame: Rect) -> Rect {
@@ -328,28 +334,14 @@ impl Popover {
     }
 
     pub(super) fn normalize_frame(frame: Rect) -> Rect {
-        Rect::new(
-            if frame.x.is_finite() { frame.x } else { 0.0 },
-            if frame.y.is_finite() { frame.y } else { 0.0 },
-            if frame.w.is_finite() {
-                frame.w.max(0.0)
-            } else {
-                0.0
-            },
-            if frame.h.is_finite() {
-                frame.h.max(0.0)
-            } else {
-                0.0
-            },
-        )
+        // 复用浮层共享归一化：非有限坐标回退原点、尺寸收敛为有限非负。
+        normalize_rect(frame)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct PopoverGeometry {
-    pub(crate) popup: Rect,
-    pub(crate) placement: PopoverPlacement,
-}
+// 保存气泡卡片经过翻转与表面约束后的最终几何。
+// 复用共享气泡几何：最终矩形与实际方向绑定。
+pub(crate) type PopoverGeometry = OverlayBubbleGeometry<PopoverPlacement>;
 
 pub(super) fn resolve_popover_geometry(
     trigger: Rect,
@@ -358,108 +350,22 @@ pub(super) fn resolve_popover_geometry(
     arrow: bool,
     visual: &PopoverVisual,
 ) -> PopoverGeometry {
-    let width = visual.defaults.popup_width.min(surface.w).max(0.0);
-    let height = visual.defaults.popup_height.min(surface.h).max(0.0);
-    if width <= 0.0 || height <= 0.0 {
-        return PopoverGeometry {
-            popup: Rect::zero(),
-            placement,
-        };
-    }
-
-    let flipped = flip_popover_placement(placement);
-    let authored =
-        rect_for_popover_placement(trigger, placement, arrow, width, height, &visual.layout);
-    let alternate =
-        rect_for_popover_placement(trigger, flipped, arrow, width, height, &visual.layout);
-    let (candidate, resolved) =
-        if overflow_score(alternate, surface) < overflow_score(authored, surface) {
-            (alternate, flipped)
-        } else {
-            (authored, placement)
-        };
-    let max_x = surface.x + surface.w - width;
-    let max_y = surface.y + surface.h - height;
-    PopoverGeometry {
-        popup: Rect::new(
-            candidate.x.clamp(surface.x, max_x),
-            candidate.y.clamp(surface.y, max_y),
-            width,
-            height,
-        ),
-        placement: resolved,
-    }
-}
-
-pub(super) fn rect_for_popover_placement(
-    frame: Rect,
-    placement: PopoverPlacement,
-    arrow: bool,
-    width: f32,
-    height: f32,
-    visual: &PopoverLayoutVisual,
-) -> Rect {
-    let (x, y) = popover_position(frame, placement, arrow, width, height, visual);
-    Rect::new(x, y, width, height)
-}
-
-pub(super) fn overflow_score(rect: Rect, surface: Rect) -> f32 {
-    (surface.x - rect.x).max(0.0)
-        + (surface.y - rect.y).max(0.0)
-        + (rect.x + rect.w - surface.x - surface.w).max(0.0)
-        + (rect.y + rect.h - surface.y - surface.h).max(0.0)
-}
-
-pub(super) fn flip_popover_placement(placement: PopoverPlacement) -> PopoverPlacement {
-    match placement {
-        PopoverPlacement::Top => PopoverPlacement::Bottom,
-        PopoverPlacement::TopLeft => PopoverPlacement::BottomLeft,
-        PopoverPlacement::TopRight => PopoverPlacement::BottomRight,
-        PopoverPlacement::Bottom => PopoverPlacement::Top,
-        PopoverPlacement::BottomLeft => PopoverPlacement::TopLeft,
-        PopoverPlacement::BottomRight => PopoverPlacement::TopRight,
-        PopoverPlacement::Left => PopoverPlacement::Right,
-        PopoverPlacement::LeftTop => PopoverPlacement::RightTop,
-        PopoverPlacement::LeftBottom => PopoverPlacement::RightBottom,
-        PopoverPlacement::Right => PopoverPlacement::Left,
-        PopoverPlacement::RightTop => PopoverPlacement::LeftTop,
-        PopoverPlacement::RightBottom => PopoverPlacement::LeftBottom,
-    }
-}
-
-pub(super) fn popover_position(
-    frame: Rect,
-    placement: PopoverPlacement,
-    arrow: bool,
-    pw: f32,
-    ph: f32,
-    visual: &PopoverLayoutVisual,
-) -> (f32, f32) {
+    // 箭头开启时使用箭头间距，否则使用无箭头间距。
     let gap = if arrow {
-        visual.arrow_gap
+        visual.layout.arrow_gap
     } else {
-        visual.plain_gap
+        visual.layout.plain_gap
     };
-    match placement {
-        PopoverPlacement::Top | PopoverPlacement::TopLeft => (frame.x, frame.y - ph - gap),
-        PopoverPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
-        PopoverPlacement::Bottom | PopoverPlacement::BottomLeft => {
-            (frame.x, frame.y + frame.h + gap)
-        }
-        PopoverPlacement::BottomRight => (frame.x + frame.w - pw, frame.y + frame.h + gap),
-        PopoverPlacement::Left => (
-            frame.x - pw - gap,
-            frame.y + frame.h * visual.center_ratio - ph * visual.center_ratio,
-        ),
-        PopoverPlacement::LeftTop => (frame.x - pw - gap, frame.y),
-        PopoverPlacement::LeftBottom => (frame.x - pw - gap, frame.y + frame.h - ph),
-        PopoverPlacement::Right => (
-            frame.x + frame.w + gap,
-            frame.y + frame.h * visual.center_ratio - ph * visual.center_ratio,
-        ),
-        PopoverPlacement::RightTop => (frame.x + frame.w + gap, frame.y),
-        PopoverPlacement::RightBottom => (frame.x + frame.w + gap, frame.y + frame.h - ph),
-    }
+    // 复用共享气泡定位解析：尺寸收敛、翻转与钳制在单一实现内完成。
+    resolve_overlay_bubble(
+        placement,
+        trigger,
+        surface,
+        visual.defaults.popup_width,
+        visual.defaults.popup_height,
+        gap,
+        visual.layout.center_ratio,
+    )
 }
 
 pub(super) fn translated_rect(rect: Rect, offset: Point) -> Rect {
@@ -474,95 +380,18 @@ pub(super) fn draw_popover_arrow(
     color: Color,
     visual: &PopoverLayoutVisual,
 ) {
-    let arrow_sz = visual.arrow_size;
-    let (x1, y1, x2, y2, x3, y3) = match placement {
-        PopoverPlacement::Top | PopoverPlacement::TopLeft | PopoverPlacement::TopRight => {
-            let cx = arrow_anchor(
-                trigger.x + trigger.w * visual.center_ratio,
-                popup.x,
-                popup.w,
-                arrow_sz,
-                visual.center_ratio,
-            );
-            (
-                cx - arrow_sz,
-                popup.y + popup.h,
-                cx + arrow_sz,
-                popup.y + popup.h,
-                cx,
-                popup.y + popup.h + arrow_sz,
-            )
-        }
-        PopoverPlacement::Bottom | PopoverPlacement::BottomLeft | PopoverPlacement::BottomRight => {
-            let cx = arrow_anchor(
-                trigger.x + trigger.w * visual.center_ratio,
-                popup.x,
-                popup.w,
-                arrow_sz,
-                visual.center_ratio,
-            );
-            (
-                cx - arrow_sz,
-                popup.y,
-                cx + arrow_sz,
-                popup.y,
-                cx,
-                popup.y - arrow_sz,
-            )
-        }
-        PopoverPlacement::Left | PopoverPlacement::LeftTop | PopoverPlacement::LeftBottom => {
-            let cy = arrow_anchor(
-                trigger.y + trigger.h * visual.center_ratio,
-                popup.y,
-                popup.h,
-                arrow_sz,
-                visual.center_ratio,
-            );
-            (
-                popup.x + popup.w,
-                cy - arrow_sz,
-                popup.x + popup.w,
-                cy + arrow_sz,
-                popup.x + popup.w + arrow_sz,
-                cy,
-            )
-        }
-        PopoverPlacement::Right | PopoverPlacement::RightTop | PopoverPlacement::RightBottom => {
-            let cy = arrow_anchor(
-                trigger.y + trigger.h * visual.center_ratio,
-                popup.y,
-                popup.h,
-                arrow_sz,
-                visual.center_ratio,
-            );
-            (
-                popup.x,
-                cy - arrow_sz,
-                popup.x,
-                cy + arrow_sz,
-                popup.x - arrow_sz,
-                cy,
-            )
-        }
-    };
-    let mut pb = PathBuilder::new();
-    pb.move_to(x1, y1);
-    pb.line_to(x2, y2);
-    pb.line_to(x3, y3);
-    pb.close();
-    ctx.fill_path(&pb.build(), color, FillRule::NonZero);
-}
-
-pub(super) fn arrow_anchor(
-    desired: f32,
-    start: f32,
-    length: f32,
-    inset: f32,
-    center_ratio: f32,
-) -> f32 {
-    if length <= inset * 2.0 {
-        start + length * center_ratio
-    } else {
-        desired.clamp(start + inset, start + length - inset)
-    }
+    // 复用共享箭头绘制：popover 箭头不嵌入气泡边缘、尖端恒居中。
+    draw_overlay_arrow(
+        ctx,
+        trigger,
+        popup,
+        placement.decompose().0,
+        color,
+        OverlayArrowVisual {
+            size: visual.arrow_size,
+            edge_overlap: 0.0,
+            tip_ratio: 0.5,
+            center_ratio: visual.center_ratio,
+        },
+    );
 }

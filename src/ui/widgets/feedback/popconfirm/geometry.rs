@@ -2,6 +2,12 @@
 
 use super::*;
 
+// 复用浮层共享定位机制：方向候选、翻转、溢出评分与表面钳制的单一实现。
+use crate::ui::widgets::overlay::{
+    OverlayArrowVisual, OverlayBubbleGeometry, OverlayPlacement, draw_overlay_arrow,
+    normalize_rect, resolve_overlay_bubble,
+};
+
 // 构造、声明式配置和可见性生命周期保持在同一私有实现边界内。
 mod builder;
 
@@ -172,8 +178,8 @@ impl Popconfirm {
             // 使用标准确认气泡高度。
             self.visual.defaults.popup_height,
         )
-        // 返回同一解析器生成的最终矩形。
-        .popup
+        // 返回同一解析器生成的最终气泡矩形。
+        .bubble
     }
 
     pub(super) fn surface_or_fallback(&self, frame: Rect) -> Rect {
@@ -204,28 +210,14 @@ impl Popconfirm {
     }
 
     pub(super) fn normalize_frame(frame: Rect) -> Rect {
-        Rect::new(
-            if frame.x.is_finite() { frame.x } else { 0.0 },
-            if frame.y.is_finite() { frame.y } else { 0.0 },
-            if frame.w.is_finite() {
-                frame.w.max(0.0)
-            } else {
-                0.0
-            },
-            if frame.h.is_finite() {
-                frame.h.max(0.0)
-            } else {
-                0.0
-            },
-        )
+        // 复用浮层共享归一化：非有限坐标回退原点、尺寸收敛为有限非负。
+        normalize_rect(frame)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct PopconfirmGeometry {
-    pub(crate) popup: Rect,
-    pub(crate) placement: PopconfirmPlacement,
-}
+// 保存确认气泡经过翻转与表面约束后的最终几何。
+// 复用共享气泡几何：最终矩形与实际方向绑定。
+pub(crate) type PopconfirmGeometry = OverlayBubbleGeometry<PopconfirmPlacement>;
 
 pub(super) fn resolve_popconfirm_geometry(
     trigger: Rect,
@@ -235,60 +227,24 @@ pub(super) fn resolve_popconfirm_geometry(
     preferred_width: f32,
     preferred_height: f32,
 ) -> PopconfirmGeometry {
-    let width = preferred_width.min(surface.w).max(0.0);
-    let height = preferred_height.min(surface.h).max(0.0);
-    if width <= 0.0 || height <= 0.0 {
-        return PopconfirmGeometry {
-            popup: Rect::zero(),
-            placement,
-        };
-    }
-    let flipped = match placement {
-        PopconfirmPlacement::Top => PopconfirmPlacement::Bottom,
-        PopconfirmPlacement::TopLeft => PopconfirmPlacement::BottomLeft,
-        PopconfirmPlacement::TopRight => PopconfirmPlacement::BottomRight,
-        PopconfirmPlacement::Bottom => PopconfirmPlacement::Top,
-        PopconfirmPlacement::BottomLeft => PopconfirmPlacement::TopLeft,
-        PopconfirmPlacement::BottomRight => PopconfirmPlacement::TopRight,
-    };
-    let authored = rect_for_popconfirm_placement(trigger, placement, arrow, width, height);
-    let alternate = rect_for_popconfirm_placement(trigger, flipped, arrow, width, height);
-    let (candidate, resolved) = if popconfirm_overflow_score(alternate, surface)
-        < popconfirm_overflow_score(authored, surface)
-    {
-        (alternate, flipped)
+    let layout = &POPCONFIRM_VISUAL_REF.layout;
+    // 箭头开启时使用箭头间距，否则使用无箭头间距。
+    let gap = if arrow {
+        layout.arrow_gap
     } else {
-        (authored, placement)
+        layout.plain_gap
     };
-    let max_x = surface.x + surface.w - width;
-    let max_y = surface.y + surface.h - height;
-    PopconfirmGeometry {
-        popup: Rect::new(
-            candidate.x.clamp(surface.x, max_x),
-            candidate.y.clamp(surface.y, max_y),
-            width,
-            height,
-        ),
-        placement: resolved,
-    }
-}
-
-pub(super) fn rect_for_popconfirm_placement(
-    frame: Rect,
-    placement: PopconfirmPlacement,
-    arrow: bool,
-    width: f32,
-    height: f32,
-) -> Rect {
-    let (x, y) = popconfirm_position(frame, placement, arrow, width, height);
-    Rect::new(x, y, width, height)
-}
-
-pub(super) fn popconfirm_overflow_score(rect: Rect, surface: Rect) -> f32 {
-    (surface.x - rect.x).max(0.0)
-        + (surface.y - rect.y).max(0.0)
-        + (rect.x + rect.w - surface.x - surface.w).max(0.0)
-        + (rect.y + rect.h - surface.y - surface.h).max(0.0)
+    // 复用共享气泡定位解析：尺寸收敛、翻转与钳制在单一实现内完成。
+    // 确认气泡只声明垂直变体，中心比率不参与其正交对齐。
+    resolve_overlay_bubble(
+        placement,
+        trigger,
+        surface,
+        preferred_width,
+        preferred_height,
+        gap,
+        0.5,
+    )
 }
 
 pub(super) fn button_rects_for_popup(popup: Rect) -> (Rect, Rect) {
@@ -312,29 +268,6 @@ pub(super) fn button_rects_for_popup(popup: Rect) -> (Rect, Rect) {
     )
 }
 
-pub(super) fn popconfirm_position(
-    frame: Rect,
-    placement: PopconfirmPlacement,
-    arrow: bool,
-    pw: f32,
-    ph: f32,
-) -> (f32, f32) {
-    let layout = &POPCONFIRM_VISUAL_REF.layout;
-    let gap = if arrow {
-        layout.arrow_gap
-    } else {
-        layout.plain_gap
-    };
-    match placement {
-        PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft => (frame.x, frame.y - ph - gap),
-        PopconfirmPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
-        PopconfirmPlacement::Bottom | PopconfirmPlacement::BottomLeft => {
-            (frame.x, frame.y + frame.h + gap)
-        }
-        PopconfirmPlacement::BottomRight => (frame.x + frame.w - pw, frame.y + frame.h + gap),
-    }
-}
-
 pub(super) fn draw_popconfirm_arrow(
     ctx: &mut PaintContext,
     trigger: Rect,
@@ -342,47 +275,19 @@ pub(super) fn draw_popconfirm_arrow(
     placement: PopconfirmPlacement,
     color: Color,
 ) {
-    let arrow_sz = POPCONFIRM_VISUAL_REF.layout.arrow_size;
-    let (x1, y1, x2, y2, x3, y3) = match placement {
-        PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => {
-            let cx =
-                popconfirm_arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
-            (
-                cx - arrow_sz,
-                popup.y + popup.h,
-                cx + arrow_sz,
-                popup.y + popup.h,
-                cx,
-                popup.y + popup.h + arrow_sz,
-            )
-        }
-        PopconfirmPlacement::Bottom
-        | PopconfirmPlacement::BottomLeft
-        | PopconfirmPlacement::BottomRight => {
-            let cx =
-                popconfirm_arrow_anchor(trigger.x + trigger.w * 0.5, popup.x, popup.w, arrow_sz);
-            (
-                cx - arrow_sz,
-                popup.y,
-                cx + arrow_sz,
-                popup.y,
-                cx,
-                popup.y - arrow_sz,
-            )
-        }
-    };
-    let mut pb = PathBuilder::new();
-    pb.move_to(x1, y1);
-    pb.line_to(x2, y2);
-    pb.line_to(x3, y3);
-    pb.close();
-    ctx.fill_path(&pb.build(), color, FillRule::NonZero);
-}
-
-pub(super) fn popconfirm_arrow_anchor(desired: f32, start: f32, length: f32, inset: f32) -> f32 {
-    if length <= inset * 2.0 {
-        start + length * 0.5
-    } else {
-        desired.clamp(start + inset, start + length - inset)
-    }
+    let layout = POPCONFIRM_VISUAL_REF.layout;
+    // 复用共享箭头绘制：确认气泡箭头不嵌入气泡边缘、尖端恒居中。
+    draw_overlay_arrow(
+        ctx,
+        trigger,
+        popup,
+        placement.decompose().0,
+        color,
+        OverlayArrowVisual {
+            size: layout.arrow_size,
+            edge_overlap: 0.0,
+            tip_ratio: 0.5,
+            center_ratio: 0.5,
+        },
+    );
 }

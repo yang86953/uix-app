@@ -2,9 +2,13 @@
 
 use crate::core::{Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
-use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widgets::TooltipPlacement;
+use crate::ui::widgets::overlay::{
+    OverlayArrowVisual, OverlayBubbleGeometry, OverlayPlacement, draw_overlay_arrow,
+    normalize_rect, resolve_overlay_bubble,
+};
 
 // 保存共享提示气泡的静态几何与排版；数值唯一由同目录 UIX 声明。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,43 +29,8 @@ pub(crate) struct TooltipBubbleVisual {
 crate::uix_items!("src/ui/widgets/tooltip_primitives/tooltip_primitives.uix");
 
 // 保存提示气泡经过翻转与表面约束后的最终几何。
-#[derive(Debug, Clone, Copy, PartialEq)]
-// 将气泡矩形与实际使用方向绑定，供绘制箭头复用。
-pub(crate) struct TooltipGeometry {
-    // 记录最终可见气泡矩形。
-    pub(crate) bubble: Rect,
-    // 记录溢出比较后实际采用的方向。
-    pub(crate) placement: TooltipPlacement,
-}
-
-// 计算提示气泡在目标节点四个方向上的左上角。
-fn tooltip_origin(
-    frame: Rect,
-    placement: TooltipPlacement,
-    text_w: f32,
-    text_h: f32,
-    gap: f32,
-    center_ratio: f32,
-) -> (f32, f32) {
-    match placement {
-        TooltipPlacement::Top => (
-            frame.x + frame.w * center_ratio - text_w * center_ratio,
-            frame.y - text_h - gap,
-        ),
-        TooltipPlacement::Bottom => (
-            frame.x + frame.w * center_ratio - text_w * center_ratio,
-            frame.y + frame.h + gap,
-        ),
-        TooltipPlacement::Left => (
-            frame.x - text_w - gap,
-            frame.y + frame.h * center_ratio - text_h * center_ratio,
-        ),
-        TooltipPlacement::Right => (
-            frame.x + frame.w + gap,
-            frame.y + frame.h * center_ratio - text_h * center_ratio,
-        ),
-    }
-}
+// 复用共享气泡几何：最终矩形与溢出比较后的实际方向绑定。
+pub(crate) type TooltipGeometry = OverlayBubbleGeometry<TooltipPlacement>;
 
 // 使用当前逻辑表面解析提示气泡的最终位置与尺寸。
 pub(crate) fn resolve_tooltip_geometry(
@@ -97,138 +66,18 @@ pub(crate) fn resolve_tooltip_geometry_with_visual_and_size(
     visual: TooltipBubbleVisual,
 ) -> TooltipGeometry {
     // 归一化目标矩形以阻断非有限布局值。
-    let frame = normalize_tooltip_rect(frame);
+    let frame = normalize_rect(frame);
     // 归一化表面矩形并把负尺寸收敛为零。
-    let surface = normalize_tooltip_rect(surface);
-    // 将气泡宽度限制在当前表面内。
-    let width = natural.w.min(surface.w).max(0.0);
-    // 将气泡高度限制在当前表面内。
-    let height = natural.h.min(surface.h).max(0.0);
-    // 空表面不生成可见气泡。
-    if width <= 0.0 || height <= 0.0 {
-        // 返回保留作者方向的空几何。
-        return TooltipGeometry {
-            // 空矩形不会参与绘制或命中。
-            bubble: Rect::zero(),
-            // 保留方向便于调用方稳定处理。
-            placement,
-        };
-    }
-
-    // 计算与作者方向相反的候选方向。
-    let flipped = flip_tooltip_placement(placement);
-    // 计算作者方向的未约束候选矩形。
-    let authored = tooltip_rect_for_placement(frame, placement, arrow, width, height, visual);
-    // 计算反向候选的未约束矩形。
-    let alternate = tooltip_rect_for_placement(frame, flipped, arrow, width, height, visual);
-    // 选择总越界量更小的方向，平局时保持作者配置。
-    let (candidate, resolved) =
-        // 仅当反向候选严格更优时翻转。
-        if tooltip_overflow_score(alternate, surface) < tooltip_overflow_score(authored, surface) {
-            // 使用反向候选及其方向。
-            (alternate, flipped)
-        } else {
-            // 保留作者候选及其方向。
-            (authored, placement)
-        };
-    // 计算气泡横向可用的最大起点。
-    let max_x = surface.x + surface.w - width;
-    // 计算气泡纵向可用的最大起点。
-    let max_y = surface.y + surface.h - height;
-
-    // 返回约束到表面内部的最终几何。
-    TooltipGeometry {
-        // 同时约束两个轴，处理交叉轴溢出与超长文字。
-        bubble: Rect::new(
-            // 约束横坐标到表面范围。
-            candidate.x.clamp(surface.x, max_x),
-            // 约束纵坐标到表面范围。
-            candidate.y.clamp(surface.y, max_y),
-            // 使用已受限宽度。
-            width,
-            // 使用已受限高度。
-            height,
-        ),
-        // 暴露实际方向供箭头朝向复用。
-        placement: resolved,
-    }
-}
-
-// 计算指定方向下尚未约束的气泡矩形。
-fn tooltip_rect_for_placement(
-    // 接收目标矩形。
-    frame: Rect,
-    // 接收候选方向。
-    placement: TooltipPlacement,
-    // 接收箭头开关。
-    arrow: bool,
-    // 接收已受限宽度。
-    width: f32,
-    // 接收已受限高度。
-    height: f32,
-    // 接收调用方声明的共享视觉表。
-    visual: TooltipBubbleVisual,
-    // 返回候选矩形。
-) -> Rect {
-    // 根据箭头状态计算目标间距。
-    let gap = tooltip_gap(arrow, visual);
-    // 根据方向计算候选左上角。
-    let (x, y) = tooltip_origin(frame, placement, width, height, gap, visual.center_ratio);
-    // 组装候选矩形。
-    Rect::new(x, y, width, height)
-}
-
-// 计算候选矩形越出逻辑表面的总距离。
-fn tooltip_overflow_score(rect: Rect, surface: Rect) -> f32 {
-    // 累加左、上、右、下四个方向的正越界量。
-    (surface.x - rect.x).max(0.0)
-        // 累加上边界越界量。
-        + (surface.y - rect.y).max(0.0)
-        // 累加右边界越界量。
-        + (rect.x + rect.w - surface.x - surface.w).max(0.0)
-        // 累加下边界越界量。
-        + (rect.y + rect.h - surface.y - surface.h).max(0.0)
-}
-
-// 返回提示方向的主轴反向候选。
-fn flip_tooltip_placement(placement: TooltipPlacement) -> TooltipPlacement {
-    // 按上下或左右成对翻转。
-    match placement {
-        // 顶部空间不足时尝试底部。
-        TooltipPlacement::Top => TooltipPlacement::Bottom,
-        // 底部空间不足时尝试顶部。
-        TooltipPlacement::Bottom => TooltipPlacement::Top,
-        // 左侧空间不足时尝试右侧。
-        TooltipPlacement::Left => TooltipPlacement::Right,
-        // 右侧空间不足时尝试左侧。
-        TooltipPlacement::Right => TooltipPlacement::Left,
-    }
-}
-
-// 归一化提示目标或逻辑表面矩形。
-fn normalize_tooltip_rect(rect: Rect) -> Rect {
-    // 替换非有限坐标并收敛负尺寸。
-    Rect::new(
-        // 非有限横坐标回退到原点。
-        if rect.x.is_finite() { rect.x } else { 0.0 },
-        // 非有限纵坐标回退到原点。
-        if rect.y.is_finite() { rect.y } else { 0.0 },
-        // 非有限或负宽度收敛为零。
-        if rect.w.is_finite() {
-            // 保留有限非负宽度。
-            rect.w.max(0.0)
-        } else {
-            // 非有限宽度回退为零。
-            0.0
-        },
-        // 非有限或负高度收敛为零。
-        if rect.h.is_finite() {
-            // 保留有限非负高度。
-            rect.h.max(0.0)
-        } else {
-            // 非有限高度回退为零。
-            0.0
-        },
+    let surface = normalize_rect(surface);
+    // 复用共享气泡定位解析：箭头开启时间距含箭头自身尺寸。
+    resolve_overlay_bubble(
+        placement,
+        frame,
+        surface,
+        natural.w,
+        natural.h,
+        tooltip_gap(arrow, visual),
+        visual.center_ratio,
     )
 }
 
@@ -262,7 +111,7 @@ pub(crate) fn tooltip_dirty_rect_with_visual_and_size(
     visual: TooltipBubbleVisual,
 ) -> Rect {
     // 归一化目标矩形以避免非有限值扩散到脏区。
-    let frame = normalize_tooltip_rect(frame);
+    let frame = normalize_rect(frame);
     // 合并目标与当前表面内的最终气泡矩形。
     frame.union(&tooltip_bubble_rect_with_visual_and_size(
         arrow, placement, frame, surface, natural, visual,
@@ -338,7 +187,7 @@ pub(crate) fn paint_tooltip_bubble_with_visual_and_size(
     visual: TooltipBubbleVisual,
 ) -> Rect {
     // 归一化目标矩形，使箭头锚点与解析器使用同一输入。
-    let frame = normalize_tooltip_rect(frame);
+    let frame = normalize_rect(frame);
     // 从绘制上下文读取当前逻辑表面尺寸。
     let surface_size = ctx.logical_surface_size();
     // 将逻辑表面归一到窗口坐标原点。
@@ -361,73 +210,23 @@ pub(crate) fn paint_tooltip_bubble_with_visual_and_size(
 
     // 仅在启用箭头时绘制方向指示。
     if arrow {
-        // 使用共享箭头尺寸。
-        let arrow_sz = visual.arrow_size;
-        // 按最终方向计算箭头包围盒。
-        let (ax, ay, aw, ah) = match geometry.placement {
-            // 顶部气泡的箭头从下边缘指向目标。
-            TooltipPlacement::Top => (
-                tooltip_arrow_anchor(
-                    frame.x + frame.w * visual.center_ratio,
-                    tip_frame.x,
-                    tip_frame.w,
-                    arrow_sz,
-                    visual.center_ratio,
-                ) - arrow_sz,
-                tip_frame.y + tip_frame.h - visual.edge_overlap,
-                arrow_sz * 2.0,
-                arrow_sz,
-            ),
-            // 底部气泡的箭头从上边缘指向目标。
-            TooltipPlacement::Bottom => (
-                tooltip_arrow_anchor(
-                    frame.x + frame.w * visual.center_ratio,
-                    tip_frame.x,
-                    tip_frame.w,
-                    arrow_sz,
-                    visual.center_ratio,
-                ) - arrow_sz,
-                tip_frame.y - arrow_sz + visual.edge_overlap,
-                arrow_sz * 2.0,
-                arrow_sz,
-            ),
-            // 左侧气泡的箭头从右边缘指向目标。
-            TooltipPlacement::Left => (
-                tip_frame.x + tip_frame.w - visual.edge_overlap,
-                tooltip_arrow_anchor(
-                    frame.y + frame.h * visual.center_ratio,
-                    tip_frame.y,
-                    tip_frame.h,
-                    arrow_sz,
-                    visual.center_ratio,
-                ) - arrow_sz,
-                arrow_sz,
-                arrow_sz * 2.0,
-            ),
-            // 右侧气泡的箭头从左边缘指向目标。
-            TooltipPlacement::Right => (
-                tip_frame.x - arrow_sz + visual.edge_overlap,
-                tooltip_arrow_anchor(
-                    frame.y + frame.h * visual.center_ratio,
-                    tip_frame.y,
-                    tip_frame.h,
-                    arrow_sz,
-                    visual.center_ratio,
-                ) - arrow_sz,
-                arrow_sz,
-                arrow_sz * 2.0,
-            ),
-        };
-        // 使用最终方向绘制箭头。
-        draw_arrow(
+        // 复用共享箭头绘制：嵌入量与尖端比率由 tooltip 视觉表声明。
+        draw_overlay_arrow(
             ctx,
-            ax,
-            ay,
-            aw,
-            ah,
-            geometry.placement,
+            frame,
+            tip_frame,
+            geometry.placement.decompose().0,
             bg,
-            visual.center_ratio,
+            OverlayArrowVisual {
+                // 使用共享箭头尺寸。
+                size: visual.arrow_size,
+                // 箭头底边嵌入气泡边缘，消除抗锯齿缝隙。
+                edge_overlap: visual.edge_overlap,
+                // 尖端按中心比例落在底边包围盒上。
+                tip_ratio: visual.center_ratio,
+                // 锚点跟随目标中心的比例。
+                center_ratio: visual.center_ratio,
+            },
         );
     }
 
@@ -465,7 +264,7 @@ pub(crate) fn tooltip_fallback_surface_with_visual_and_size(
     visual: TooltipBubbleVisual,
 ) -> Rect {
     // 归一化目标矩形以保持回退表面有限。
-    let frame = normalize_tooltip_rect(frame);
+    let frame = normalize_rect(frame);
     // 在目标四周预留足以容纳两个方向候选的空间。
     frame.union(&Rect::new(
         // 从目标左侧两个气泡宽度开始。
@@ -486,47 +285,4 @@ fn tooltip_gap(arrow: bool, visual: TooltipBubbleVisual) -> f32 {
     } else {
         visual.plain_gap
     }
-}
-
-// 将箭头锚点限制在气泡边缘的安全范围内。
-fn tooltip_arrow_anchor(
-    desired: f32,
-    start: f32,
-    length: f32,
-    inset: f32,
-    center_ratio: f32,
-) -> f32 {
-    // 极窄气泡无法保留两侧 inset 时使用边缘中心。
-    if length <= inset * 2.0 {
-        // 返回当前边缘中心。
-        start + length * center_ratio
-    } else {
-        // 将目标中心限制在安全边缘范围。
-        desired.clamp(start + inset, start + length - inset)
-    }
-}
-
-// 绘制指向目标节点的三角箭头。
-fn draw_arrow(
-    ctx: &mut PaintContext,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    dir: TooltipPlacement,
-    color: Color,
-    center_ratio: f32,
-) {
-    let (x1, y1, x2, y2, x3, y3) = match dir {
-        TooltipPlacement::Top => (x, y, x + w, y, x + w * center_ratio, y + h),
-        TooltipPlacement::Bottom => (x, y + h, x + w, y + h, x + w * center_ratio, y),
-        TooltipPlacement::Left => (x, y, x, y + h, x + w, y + h * center_ratio),
-        TooltipPlacement::Right => (x + w, y, x + w, y + h, x, y + h * center_ratio),
-    };
-    let mut path = PathBuilder::new();
-    path.move_to(x1, y1);
-    path.line_to(x2, y2);
-    path.line_to(x3, y3);
-    path.close();
-    ctx.fill_path(&path.build(), color, FillRule::NonZero);
 }

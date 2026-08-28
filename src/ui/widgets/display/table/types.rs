@@ -9,12 +9,9 @@ use std::rc::Rc;
 
 use super::Table;
 
+// 表模块唯一位宽敏感收敛实现；委托浮层共享纯函数保持单一事实源。
 pub(crate) fn finite_nonnegative(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
-    } else {
-        0.0
-    }
+    crate::ui::widgets::overlay::finite_nonnegative(value)
 }
 
 /// 排序方向。

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::widget;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::view::{View, ViewNode};
@@ -278,10 +278,10 @@ widget! {
             self.visual,
         );
         self.popup_rect.set(Rect::new(
-            popup_geometry.popup.x - frame.x,
-            popup_geometry.popup.y - frame.y,
-            popup_geometry.popup.w,
-            popup_geometry.popup.h,
+            popup_geometry.bubble.x - frame.x,
+            popup_geometry.bubble.y - frame.y,
+            popup_geometry.bubble.w,
+            popup_geometry.bubble.h,
         ));
 
         // 同帧全部颜色、字体、圆角与阴影只解析一次主题令牌。
@@ -327,13 +327,13 @@ widget! {
             );
         }
 
-        if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
+        if self.is_present() && popup_geometry.bubble.w > 0.0 && popup_geometry.bubble.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let popup_bg = fade_token_color(bg, opacity);
             let popup_border = fade_token_color(resolved.border, opacity);
             let popup_text = fade_token_color(resolved.text, opacity);
             let popup_secondary = fade_token_color(resolved.text_secondary, opacity);
-            let pop_rect = self.transitioned_rect(popup_geometry.popup);
+            let pop_rect = self.transitioned_rect(popup_geometry.bubble);
             let shadow = resolved.shadow;
             ctx.draw_box_shadow(
                 pop_rect,

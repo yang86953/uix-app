@@ -4,7 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -385,10 +385,10 @@ widget! {
             self.visual.defaults.popup_height,
         );
         self.popup_rect.set(Rect::new(
-            popup_geometry.popup.x - frame.x,
-            popup_geometry.popup.y - frame.y,
-            popup_geometry.popup.w,
-            popup_geometry.popup.h,
+            popup_geometry.bubble.x - frame.x,
+            popup_geometry.bubble.y - frame.y,
+            popup_geometry.bubble.w,
+            popup_geometry.bubble.h,
         ));
 
         // 关闭态与打开态共享一次按可见分支解析的主题值。
@@ -427,14 +427,14 @@ widget! {
             ctx.stroke_rect(frame, resolved.primary, visual.chrome.focus_stroke, r);
         }
 
-        if self.is_present() && popup_geometry.popup.w > 0.0 && popup_geometry.popup.h > 0.0 {
+        if self.is_present() && popup_geometry.bubble.w > 0.0 && popup_geometry.bubble.h > 0.0 {
             let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let popup_bg = fade_token_color(resolved.popup_background, opacity);
             let popup_border = fade_token_color(resolved.border, opacity);
             let popup_text = fade_token_color(resolved.text, opacity);
             let popup_primary = fade_token_color(resolved.primary, opacity);
             let popup_warning = fade_token_color(resolved.warning, opacity);
-            let pop_rect = popup_geometry.popup;
+            let pop_rect = popup_geometry.bubble;
             let shadow = resolved.shadow;
             ctx.draw_box_shadow(
                 pop_rect,
