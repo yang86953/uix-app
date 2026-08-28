@@ -72,15 +72,6 @@ impl ToastEntry {
     }
 }
 
-/// UI 同步通知所需的窄服务协议。
-pub trait NotificationSource {
-    /// 推进过期状态并返回当前条目。
-    fn update_notifications(&mut self) -> Vec<ToastEntry>;
-
-    /// 将非致命错误加入通知源。
-    fn notify_error(&mut self, error: &Error) -> Option<u64>;
-}
-
 /// 文件对话框中的一个命名过滤器。
 ///
 /// 扩展名会去除可选的 `.` 或 `*.` 前缀、统一为 ASCII 小写并稳定去重。

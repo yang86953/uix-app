@@ -15,21 +15,15 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::bindings::*;
 use super::clipboard::WindowsClipboard;
-use super::console::WindowsConsole;
 use super::consts::*;
 use super::cursor::WindowsCursor;
 use super::display::WindowsDisplay;
 use super::dpi::{PerMonitorV2Scope, dpi_for_system, outer_size_for_logical_client};
 use super::ffi::*;
-use super::file_dialog::WindowsFileDialog;
-use super::filesystem::WindowsFileSystem;
 use super::frame_pacer::{SharedWindowsFramePacerState, shared_frame_pacer_state};
 use super::gdi_presenter::GdiPresenter;
-use super::keyboard::WindowsKeyboard;
-use super::notification::WindowsNotification;
 use super::system_info::WindowsSystemInfo;
 use super::text_input::{WindowsImeState, WindowsTextInput};
-use super::timer::WindowsTimer;
 use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
@@ -40,13 +34,10 @@ use crate::platform::display::IDisplay;
 use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::IPresenter;
 use crate::platform::presentation::*;
-use crate::platform::system::console::IConsole;
-use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
-use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
-use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
+use crate::platform::windowing::{IClipboard, ICursor, ITextInput};
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform
 // ════════════════════════════════════════════════════════════════════════════
@@ -70,13 +61,7 @@ pub(crate) struct WindowsPlatform {
     pub(crate) clipboard_subsys: WindowsClipboard,
     pub(crate) cursor_subsys: WindowsCursor,
     pub(crate) display_subsys: WindowsDisplay,
-    pub(crate) file_dialog_subsys: WindowsFileDialog,
-    pub(crate) file_system_subsys: WindowsFileSystem,
-    pub(crate) keyboard_subsys: WindowsKeyboard,
     pub(crate) text_input_subsys: WindowsTextInput,
-    pub(crate) timer_subsys: WindowsTimer,
-    pub(crate) notification_subsys: WindowsNotification,
-    pub(crate) console_subsys: WindowsConsole,
     pub(crate) system_info_subsys: WindowsSystemInfo,
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
     pending_failures: PendingFailureSource,
@@ -98,8 +83,6 @@ impl WindowsPlatform {
     }
 
     pub(crate) fn new_with_pending(pending_failures: PendingFailureQueue) -> Self {
-        let timer_subsys = WindowsTimer::new();
-        let single_shot = timer_subsys.non_repeating_set();
         let event_queue = Arc::new(Mutex::new(VecDeque::new()));
         let pending_source = pending_failures.source();
         let display_subsys = WindowsDisplay::new();
@@ -109,19 +92,13 @@ impl WindowsPlatform {
             hwnd: std::ptr::null_mut(),
             hinstance: std::ptr::null_mut(),
             class_atom: 0,
-            single_shot_timers: single_shot,
+            single_shot_timers: Arc::new(Mutex::new(HashSet::new())),
             next_window_id: 1,
             clipboard_subsys: WindowsClipboard::new(),
             cursor_subsys: WindowsCursor::new(),
             display_subsys,
-            file_dialog_subsys: WindowsFileDialog::new(),
-            file_system_subsys: WindowsFileSystem::new(),
-            keyboard_subsys: WindowsKeyboard::new(),
             text_input_subsys: WindowsTextInput::new(event_queue, pending_source.clone()),
-            timer_subsys,
-            notification_subsys: WindowsNotification::new(),
             event_bus: EventBus::new(),
-            console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
             pending_failures: pending_source,
             system_dark_mode,
@@ -160,9 +137,6 @@ impl WindowsPlatform {
         self.display_subsys.set_hwnd(hwnd);
         self.clipboard_subsys.set_hwnd(hwnd);
         self.cursor_subsys.set_hwnd(hwnd);
-        self.file_dialog_subsys.set_hwnd(hwnd);
-        self.timer_subsys.set_hwnd(hwnd);
-        self.notification_subsys.set_hwnd(hwnd);
     }
 
     pub(crate) fn forget_window(&mut self, window_id: WindowId) {
@@ -392,26 +366,8 @@ impl PlatformSystem for WindowsPlatform {
     fn display(&self) -> &dyn IDisplay {
         &self.display_subsys
     }
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog {
-        &mut self.file_dialog_subsys
-    }
-    fn keyboard(&self) -> &dyn IKeyboard {
-        &self.keyboard_subsys
-    }
     fn text_input(&mut self) -> &mut dyn ITextInput {
         &mut self.text_input_subsys
-    }
-    fn timer(&mut self) -> &mut dyn ITimer {
-        &mut self.timer_subsys
-    }
-    fn notification(&mut self) -> &mut dyn INotification {
-        &mut self.notification_subsys
-    }
-    fn console(&mut self) -> &mut dyn IConsole {
-        &mut self.console_subsys
-    }
-    fn file_system(&self) -> &dyn IFileSystem {
-        &self.file_system_subsys
     }
     fn system_info(&self) -> &dyn ISystemInfo {
         &self.system_info_subsys

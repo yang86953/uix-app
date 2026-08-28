@@ -1,7 +1,5 @@
 // 导入 macOS Platform System 根模块统一拥有的契约与辅助类型。
 use super::*;
-use crate::platform::system::ITimer;
-use crate::platform::system::filesystem::{FileSystemCore, SpecialDir, SpecialDirProvider};
 
 // 剪贴板组件仅对 macOS Platform System 内部可见。
 pub(super) struct MacosClipboard;
@@ -118,87 +116,5 @@ impl crate::platform::display::IDisplay for MacosDisplay {
     }
 }
 
-// 文件系统适配器仅对 macOS Platform System 内部可见。
-pub(super) type MacosFileSystem = FileSystemCore<MacosSpecialDirs>;
-
-#[derive(Debug, Clone, Default)]
-// 特殊目录策略随文件系统适配器在 macOS Platform System 内部共享。
-pub(super) struct MacosSpecialDirs;
-
-impl SpecialDirProvider for MacosSpecialDirs {
-    fn special_dir(&self, dir: SpecialDir) -> Result<String> {
-        match dir {
-            SpecialDir::Home => home_dir()
-                .ok_or_else(|| Error::new(Errc::NotFound, "MacosSpecialDirs: HOME is not set")),
-            SpecialDir::Temp => Ok(std::env::temp_dir().to_string_lossy().to_string()),
-            SpecialDir::AppData | SpecialDir::LocalAppData => {
-                home_child("Library/Application Support")
-            }
-            SpecialDir::Documents => home_child("Documents"),
-            SpecialDir::Desktop => home_child("Desktop"),
-            SpecialDir::Downloads => home_child("Downloads"),
-            SpecialDir::Current | SpecialDir::Executable => Err(Error::new(
-                Errc::NotImplemented,
-                "MacosSpecialDirs: Current/Executable are handled by FileSystemCore",
-            )),
-        }
-    }
-}
-
-// 键盘组件仅对 macOS Platform System 内部可见。
-pub(super) struct MacosKeyboard {
-    // 平台事件循环维护当前按下键集合，查询能力只读该状态。
-    pub(super) keys_down: HashSet<KeyCode>,
-}
-
-impl MacosKeyboard {
-    // 由平台根对象构造键盘组件。
-    pub(super) fn new() -> Self {
-        Self {
-            keys_down: HashSet::new(),
-        }
-    }
-}
-
-impl crate::platform::windowing::IKeyboard for MacosKeyboard {
-    fn is_down(&self, key: KeyCode) -> bool {
-        self.keys_down.contains(&key)
-    }
-
-    fn idle_ms(&self) -> u32 {
-        0
-    }
-
-    fn double_click_ms(&self) -> u32 {
-        500
-    }
-}
-
-// 定时器组件仅对 macOS Platform System 内部可见。
-pub(super) struct MacosTimer;
-
-impl MacosTimer {
-    // 由平台根对象构造定时器组件。
-    pub(super) fn new() -> Self {
-        Self
-    }
-}
-
-impl ITimer for MacosTimer {
-    fn set(&mut self, _interval_ms: u32, _repeating: bool) -> Result<u32> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MacosTimer::set: not implemented",
-        ))
-    }
-
-    fn clear(&mut self, _id: u32) -> Result<()> {
-        Err(Error::new(
-            Errc::NotImplemented,
-            "MacosTimer::clear: not implemented",
-        ))
-    }
-}
-
-// 通知组件在 services2 中实现契约，并由平台根对象持有。
-pub(super) struct MacosNotification;
+// 文件系统、键盘、定时器与通知等未文档化旧端口已随 PlatformSystem 死访问器一并移除；
+// 系统信息组件见 services2。

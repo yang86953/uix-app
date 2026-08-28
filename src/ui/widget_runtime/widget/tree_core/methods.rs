@@ -604,7 +604,6 @@ impl WidgetTree {
                         let _ = self.take_focus_trap_restore(id);
                     }
                 }
-                self.managers.remove_overrides(id);
                 self.managers.focus.unregister_widget(id);
                 self.managers.interaction.unregister_widget(id);
                 self.managers.drag.unregister_widget(id);

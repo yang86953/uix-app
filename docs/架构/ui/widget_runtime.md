@@ -22,7 +22,7 @@
 | `Widget` | trait | 组件基础身份、类型和生命周期契约 |
 | `WidgetStateStore` | internal state store | 按窗口、静态声明和实际实例路径拥有 UIX widget 私有状态槽 |
 | phase extension slots | internal registry | 允许 layout、event、painting 等模块挂接各自的小型能力 |
-| `WidgetManagers` | internal struct | 聚合焦点、交互、文本、拖拽等树级运行态 |
+| `WidgetManagers` | internal struct | 聚合焦点、交互、拖拽等树级运行态 |
 | `WidgetHandle` / `FocusHandle` | handles | 跨作用域引用组件并向所属窗口投递受控操作 |
 
 ## 组件：WidgetTree
@@ -43,7 +43,7 @@ fail-stop 树拒绝 reconcile、动态 renderer、event、timer、Effect、anima
 
 ## 组件：WidgetManagers
 
-焦点、hover/pressed、拖拽、文本覆写等都是树级横切状态，不形成独立业务模块。节点隐藏、移除或 generation 失效时，相关 capture、focus、IME、overlay、handler、timer 和 manager 覆写必须一起清理。
+焦点、hover/pressed、拖拽等都是树级横切状态，不形成独立业务模块。节点隐藏、移除或 generation 失效时，相关 capture、focus、IME、overlay、handler 和 timer 必须一起清理。
 
 ## 组件：WidgetHandle / FocusHandle
 

@@ -27,7 +27,6 @@ pub(crate) mod frame_callback;
 pub(crate) mod input_proxy_lifecycle;
 // 输入代理 owner Component 检查式读取与提交 pointer/keyboard 槽。
 pub(crate) mod input_proxy_owner;
-pub(crate) mod keyboard;
 // 键盘焦点 Component 事务化提交 Enter/Leave 与输入状态清理。
 pub(crate) mod keyboard_focus_owner;
 // 键盘按键 Component 事务化提交事件、serial 与重复状态。
