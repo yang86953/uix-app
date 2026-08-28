@@ -7,6 +7,7 @@ use crate::widget;
 // 引入稳定节点 key 的受控状态句柄。
 use crate::ui::reactive::state::State;
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SnapshotTreeNode,
@@ -624,16 +625,10 @@ impl TreeSelect {
             .unwrap_or_default();
     }
 
-    // 将用户选择发布回外部稳定 key 状态。
+    // 将用户选择发布回外部稳定 key 状态，避免向状态系统重复发布相同值。
     fn write_bound_value(&self, key: &str) {
         // 非受控模式不产生外部写入。
-        let Some(state) = self.value_binding.as_ref() else {
-            return;
-        };
-        // 避免向状态系统重复发布相同值。
-        if state.get() != key {
-            state.set(key.to_owned());
-        }
+        write_if_changed(self.value_binding.as_ref(), key.to_owned());
     }
 
     /// 创建一个使用默认占位文本、空节点树且未展开的树选择器。

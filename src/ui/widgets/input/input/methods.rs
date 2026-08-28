@@ -1,6 +1,8 @@
 use super::*;
 // 光标字符索引到字节偏移的换算复用 input 层共享辅助。
 use crate::ui::widgets::input::byte_index_for_char;
+// 受控文本绑定的依赖捕获与「相等则不写」写回复用组件层共享原语。
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 
 impl Input {
     pub(super) fn intrinsic_size(&self) -> Size {
@@ -177,16 +179,10 @@ impl Input {
         }
     }
     pub(super) fn capture_bound_value_dependency(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.value_binding.as_ref());
     }
     pub(super) fn write_bound_value(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            if state.get() != self.value {
-                state.set(self.value.clone());
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), self.value.clone());
     }
     pub(super) fn publish_change(&self) {
         self.write_bound_value();

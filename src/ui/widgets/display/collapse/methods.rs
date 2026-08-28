@@ -1,6 +1,8 @@
 //! 折叠面板行为实现。
 
 use super::*;
+// 受控展开集合的依赖捕获与「相等则不写」写回复用组件层共享原语。
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use std::borrow::Cow;
 
 impl Collapse {
@@ -208,26 +210,16 @@ impl Collapse {
 
     // 把用户产生的展开集合原子写回外部状态。
     fn write_bound_active_keys(&self) {
-        // 非受控模式不产生外部写入。
-        let Some(state) = self.active_keys_binding.as_ref() else {
-            return;
-        };
         // 运行时已按手风琴与稳定 key 规则归一化实际状态。
         let active_keys = self.expanded_keys();
-        // 避免重复发布相同集合。
-        if state.get() != active_keys {
-            // 状态写回发生在 Change 事件登记之前。
-            state.set(active_keys);
-        }
+        // 非受控模式不产生外部写入；避免重复发布相同集合。
+        write_if_changed(self.active_keys_binding.as_ref(), active_keys);
     }
 
     // 在绘制期登记受控展开集合的响应式依赖。
     pub(super) fn capture_bound_active_keys_dependency(&self) {
         // 只有受控模式需要触发声明视图重建。
-        if let Some(state) = self.active_keys_binding.as_ref() {
-            // 读取值即可由状态系统捕获当前组件依赖。
-            let _ = state.get();
-        }
+        capture_dependency(self.active_keys_binding.as_ref());
     }
 
     pub(super) fn normalized_frame(frame: Rect) -> Rect {

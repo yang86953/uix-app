@@ -14,6 +14,7 @@ use crate::core::{Constraints, Rect, Size, WidgetId};
 use crate::draw::Radius;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, View, ViewNode,
     WidgetTree,
@@ -660,9 +661,7 @@ where
             let state = state.clone();
             let key = key.clone();
             item.value_binding = Some(Rc::new(move || {
-                if state.get() != key {
-                    state.set(key.clone());
-                }
+                write_if_changed(Some(&state), key.clone());
             }));
         }
     }

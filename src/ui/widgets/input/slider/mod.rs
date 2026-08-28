@@ -14,6 +14,7 @@ use crate::widget;
 // Slider 只依赖基础层提示气泡原语，不依赖反馈组件实现。
 use crate::ui::SnapshotFields;
 use crate::ui::widgets::TooltipPlacement;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::widgets::tooltip_primitives::{
     paint_tooltip_bubble, tooltip_bubble_rect, tooltip_fallback_surface,
 };
@@ -509,17 +510,11 @@ impl Slider {
     }
 
     fn capture_bound_value_dependency(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.value_binding.as_ref());
     }
 
     fn write_bound_value(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            if state.get() != self.value {
-                state.set(self.value);
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), self.value);
     }
 
     fn control_height(&self) -> f32 {

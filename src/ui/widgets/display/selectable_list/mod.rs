@@ -7,6 +7,7 @@ use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::widget;
 // 引入稳定条目 id 的受控状态句柄。
 use crate::ui::reactive::state::State;
@@ -313,15 +314,9 @@ impl SelectableList {
         let changed = index != self.active_index;
         self.active_index = index;
         // 用户选择先写回外部唯一事实源，再登记语义变化事件。
-        if let Some(state) = self.active_binding.as_ref() {
-            // 只发布当前集合中确实存在的稳定条目 id。
-            let selected = Some(self.items[index].id.clone());
-            // 避免向响应式状态重复写入相同值。
-            if state.get() != selected {
-                // 受控状态必须在 Change 事件被消费前完成更新。
-                state.set(selected);
-            }
-        }
+        // 只发布当前集合中确实存在的稳定条目 id，避免向响应式状态重复写入相同值。
+        let selected = Some(self.items[index].id.clone());
+        write_if_changed(self.active_binding.as_ref(), selected);
         if changed || activate_unchanged {
             self.pending_action
                 .set(Some(SelectableListAction::Row(index)));
@@ -448,10 +443,7 @@ impl SelectableList {
     // 在绘制期登记外部活动状态的响应式读取依赖。
     fn capture_bound_active_dependency(&self) {
         // 仅受控模式需要触发声明视图重建。
-        if let Some(state) = self.active_binding.as_ref() {
-            // 读取值即可由状态系统捕获当前组件依赖。
-            let _ = state.get();
-        }
+        capture_dependency(self.active_binding.as_ref());
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {

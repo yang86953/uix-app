@@ -13,6 +13,7 @@ use crate::draw::Radius;
 use crate::ui::SnapshotFields;
 use crate::ui::reactive::state::State;
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
     WidgetTree,
@@ -754,11 +755,10 @@ impl Menu {
             // 先把选择写回 typed State<Option<K>>。
             binding.select_key(&self.active_key);
         }
-        if let Some(state) = self.selected_keys_binding.as_ref() {
-            if state.get() != self.selected_keys {
-                state.set(self.selected_keys.clone());
-            }
-        }
+        write_if_changed(
+            self.selected_keys_binding.as_ref(),
+            self.selected_keys.clone(),
+        );
     }
 
     fn write_open_keys(&self) {
@@ -766,11 +766,7 @@ impl Menu {
             // 把展开集合恢复成 typed key 并写回外部状态。
             binding.set_open_keys(&self.open_keys);
         }
-        if let Some(state) = self.open_keys_binding.as_ref() {
-            if state.get() != self.open_keys {
-                state.set(self.open_keys.clone());
-            }
-        }
+        write_if_changed(self.open_keys_binding.as_ref(), self.open_keys.clone());
     }
 }
 

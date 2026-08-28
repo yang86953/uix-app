@@ -9,6 +9,7 @@ use crate::ui::reactive::state::State;
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
     WidgetTree,
@@ -306,18 +307,12 @@ impl Checkbox {
     }
 
     fn capture_bound_checked_dependency(&self) {
-        if let Some(state) = self.checked_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.checked_binding.as_ref());
     }
 
     fn toggle_checked(&mut self) {
         self.checked = !self.checked;
-        if let Some(state) = self.checked_binding.as_ref() {
-            if state.get() != self.checked {
-                state.set(self.checked);
-            }
-        }
+        write_if_changed(self.checked_binding.as_ref(), self.checked);
         self.pending_change.set(Some(self.checked));
     }
 

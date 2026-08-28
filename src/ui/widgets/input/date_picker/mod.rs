@@ -11,6 +11,7 @@ use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::widgets::input::date_calendar::{
     CalendarPanelState, MonthNavigation, draw_calendar_panel_in_rect_with_visual,
     hit_calendar_date_in_rect_with_visual, hit_month_navigation_in_rect_with_visual,
@@ -711,11 +712,7 @@ impl DatePicker {
             return;
         }
         self.value.set(value);
-        if let Some(state) = self.value_binding.as_ref() {
-            if state.get() != value {
-                state.set(value);
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), value);
         self.pending_change.set(Some(value));
     }
 

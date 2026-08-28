@@ -3,6 +3,7 @@
 use super::*;
 
 // 复用浮层共享定位机制：方向候选、翻转、溢出评分与表面钳制的单一实现。
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::widgets::overlay::{
     OverlayArrowVisual, OverlayBubbleGeometry, OverlayPlacement, draw_overlay_arrow,
     normalize_rect, resolve_overlay_bubble,
@@ -222,11 +223,7 @@ impl Popover {
     }
 
     fn write_bound_open(&self, open: bool) {
-        if let Some(state) = self.open_binding.as_ref() {
-            if state.get() != open {
-                state.set(open);
-            }
-        }
+        write_if_changed(self.open_binding.as_ref(), open);
     }
 
     pub(super) fn cancel_pending_activation(&mut self) {

@@ -11,6 +11,7 @@ use crate::ui::reactive::state::State;
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::style::{ColorValue, PaletteColor};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SystemEvent, View, ViewNode, WidgetId,
     WidgetTree,
@@ -422,11 +423,7 @@ impl RangeSlider {
                     false
                 } else {
                     self.start_value = value;
-                    if let Some(state) = self.start_binding.as_ref() {
-                        if state.get() != value {
-                            state.set(value);
-                        }
-                    }
+                    write_if_changed(self.start_binding.as_ref(), value);
                     true
                 }
             }
@@ -437,11 +434,7 @@ impl RangeSlider {
                     false
                 } else {
                     self.end_value = value;
-                    if let Some(state) = self.end_binding.as_ref() {
-                        if state.get() != value {
-                            state.set(value);
-                        }
-                    }
+                    write_if_changed(self.end_binding.as_ref(), value);
                     true
                 }
             }
@@ -466,12 +459,8 @@ impl RangeSlider {
 
     /// 读取绑定值以登记响应式依赖（渲染期调用）。
     fn capture_bound_value_dependencies(&self) {
-        if let Some(state) = self.start_binding.as_ref() {
-            let _ = state.get();
-        }
-        if let Some(state) = self.end_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.start_binding.as_ref());
+        capture_dependency(self.end_binding.as_ref());
     }
 
     /// 夹紧并保证起止值不交叉。

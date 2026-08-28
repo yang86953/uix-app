@@ -8,6 +8,7 @@ use crate::widget;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::virtualization::virtual_scroll::VirtualListScroll;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
@@ -707,14 +708,9 @@ impl Mentions {
     }
 
     fn publish_change(&self) {
-        // 受控模式先把本地编辑或候选提交写回外部状态。
-        if let Some(state) = self.value_binding.as_ref() {
-            // 避免对相同文本重复发布响应式更新。
-            if state.get() != self.value {
-                // 提交当前完整文本而不是仅提交活动查询。
-                state.set(self.value.clone());
-            }
-        }
+        // 受控模式先把本地编辑或候选提交写回外部状态，避免对相同文本重复发布。
+        // 提交当前完整文本而不是仅提交活动查询。
+        write_if_changed(self.value_binding.as_ref(), self.value.clone());
         // 保留既有语义 Change 事件的完整文本负载。
         self.pending_change.replace(Some(self.value.clone()));
     }

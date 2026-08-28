@@ -10,6 +10,7 @@ use crate::platform::windowing::ControlSize;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 use crate::ui::{
     EventResult, KeyCode, MouseButton, SemanticEvent, SnapshotFields, SystemEvent, WidgetId,
     WidgetTree,
@@ -638,9 +639,7 @@ impl TimePicker {
     }
 
     fn capture_bound_value_dependency(&self) {
-        if let Some(state) = self.value_binding.as_ref() {
-            let _ = state.get();
-        }
+        capture_dependency(self.value_binding.as_ref());
     }
 
     fn commit_value(&self, value: Time) {
@@ -649,11 +648,7 @@ impl TimePicker {
         }
         self.value.set(value);
         self.value_configured.set(true);
-        if let Some(state) = self.value_binding.as_ref() {
-            if state.get() != value {
-                state.set(value);
-            }
-        }
+        write_if_changed(self.value_binding.as_ref(), value);
         self.pending_change.set(Some(value));
     }
 

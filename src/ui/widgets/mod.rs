@@ -7,6 +7,8 @@
 //! widgets Module 拥有具体组件实现与声明式组合子（`combinators`，原
 //! `view::combinators`：组合子构建具体组件，归组件侧避免 view → widgets 环）。
 
+// 输入与导航组件共享的双向绑定原语：依赖捕获与「相等则不写」受控写回。
+pub(crate) mod binding;
 pub(crate) mod combinators;
 pub mod containers;
 pub mod display;

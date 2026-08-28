@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::ui::animation::{AnimationConfig, TransitionPlayer};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
+use crate::ui::widgets::binding::write_if_changed;
 use crate::widget;
 // 引入自动完成文本的受控状态句柄。
 use crate::ui::reactive::state::State;
@@ -888,13 +889,8 @@ impl AutoComplete {
     }
 
     fn publish_change(&self) {
-        // 受控模式先把本地编辑结果写回外部状态。
-        if let Some(state) = self.value_binding.as_ref() {
-            // 避免重复发布相同文本。
-            if state.get() != self.value {
-                state.set(self.value.clone());
-            }
-        }
+        // 受控模式先把本地编辑结果写回外部状态，避免重复发布相同文本。
+        write_if_changed(self.value_binding.as_ref(), self.value.clone());
         // 再保留既有语义 Change 事件负载。
         self.pending_change.replace(Some(self.value.clone()));
     }
