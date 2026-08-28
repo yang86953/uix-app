@@ -1,6 +1,10 @@
 use crate::core::Rect;
 use crate::ui::reactive::state::State;
 use crate::ui::view::{View, ViewNode};
+// 复用浮层共享几何纯函数：归一化、有限收敛与垂直下拉翻转决策。
+use crate::ui::widgets::overlay::{
+    finite_nonnegative, normalize_rect, resolve_vertical_dropdown_rect, vertical_fallback_surface,
+};
 use std::collections::HashSet;
 
 mod presentation;
@@ -311,109 +315,39 @@ fn resolve_select_popup_rect(
     let control_height = finite_nonnegative(control_height).min(frame.h);
     // 将自然弹层高度收敛为有限非负值。
     let popup_height = finite_nonnegative(popup_height);
-    // 将弹层宽度限制在当前表面内。
-    let width = frame.w.min(surface.w).max(0.0);
-    // 空表面或空控件宽度不生成可见弹层。
-    if width <= 0.0 || popup_height <= 0.0 || surface.h <= 0.0 {
-        // 返回稳定的空相对矩形。
-        return Rect::zero();
-    }
-
-    // 计算弹层横向绝对起点允许的最大值。
-    let max_x = surface.x + surface.w - width;
-    // 将作者锚点横向收敛到当前表面。
-    let absolute_x = frame.x.clamp(surface.x, max_x);
-    // 计算控件实际下边缘。
-    let control_bottom = frame.y + control_height;
-    // 计算控件下方的可用高度。
-    let available_below = (surface.y + surface.h - control_bottom).max(0.0);
-    // 计算控件上方的可用高度。
-    let available_above = (frame.y - surface.y).max(0.0);
-    // 优先保持向下；下方放不下而上方可容纳或更宽裕时翻转。
-    let place_below = if popup_height <= available_below {
-        // 下方完整容纳时保持默认方向。
-        true
-    } else if popup_height <= available_above {
-        // 只有上方完整容纳时翻转。
-        false
-    } else {
-        // 两侧都不足时选择可用高度更大的一侧，平局保持向下。
-        available_below >= available_above
-    };
-    // 读取最终方向的可用高度。
-    let available_height = if place_below {
-        // 使用控件下方空间。
-        available_below
-    } else {
-        // 使用控件上方空间。
-        available_above
-    };
-    // 把弹层高度限制在选定方向的可用空间内。
-    let height = popup_height.min(available_height).max(0.0);
-    // 计算最终绝对纵坐标。
-    let absolute_y = if place_below {
-        // 向下弹层紧贴控件底边。
-        control_bottom
-    } else {
-        // 向上弹层用受限高度紧贴控件顶边。
-        frame.y - height
-    };
-
-    // 返回相对控件原点的受约束矩形。
+    // 复用共享垂直下拉解析：优先向下、放不下翻向上、两侧不足取大侧并钳制表面。
+    // 弹层锚定控件实际底边，宽度直接沿用控件宽度。
+    let absolute = resolve_vertical_dropdown_rect(
+        frame,
+        surface,
+        frame.w,
+        popup_height,
+        frame.y + control_height,
+        0.0,
+    );
+    // 将受约束的绝对矩形转换回相对控件原点。
     Rect::new(
         // 保存横向钳制产生的相对偏移。
-        absolute_x - frame.x,
+        absolute.x - frame.x,
         // 保存上下方向与缩高产生的相对偏移。
-        absolute_y - frame.y,
+        absolute.y - frame.y,
         // 使用受表面限制的宽度。
-        width,
+        absolute.w,
         // 使用受可用空间限制的高度。
-        height,
+        absolute.h,
     )
 }
 
 // 构造尚未取得真实窗口表面时的有限回退表面。
 fn select_fallback_surface(frame: Rect, popup_height: f32) -> Rect {
-    // 归一化控件矩形。
-    let frame = normalize_select_rect(frame);
     // 归一化自然弹层高度。
     let popup_height = finite_nonnegative(popup_height);
-    // 在控件上下各预留一份自然弹层空间。
-    Rect::new(
-        // 横向从控件左边开始。
-        frame.x,
-        // 纵向向上预留完整弹层高度。
-        frame.y - popup_height,
-        // 保持控件宽度作为回退表面宽度。
-        frame.w,
-        // 覆盖上方弹层、控件和下方弹层。
-        popup_height * 2.0 + frame.h,
-    )
+    // 复用共享回退表面：在控件上下各预留一份自然弹层空间（既有两侧份量固定为 2）。
+    vertical_fallback_surface(frame, frame.w, popup_height, 0.0, 2.0)
 }
 
 // 归一化选择控件、弹层或逻辑表面矩形。
 fn normalize_select_rect(rect: Rect) -> Rect {
-    // 替换非有限坐标并收敛负尺寸。
-    Rect::new(
-        // 非有限横坐标回退到原点。
-        if rect.x.is_finite() { rect.x } else { 0.0 },
-        // 非有限纵坐标回退到原点。
-        if rect.y.is_finite() { rect.y } else { 0.0 },
-        // 归一化宽度。
-        finite_nonnegative(rect.w),
-        // 归一化高度。
-        finite_nonnegative(rect.h),
-    )
-}
-
-// 将任意浮点尺寸收敛为有限非负值。
-fn finite_nonnegative(value: f32) -> f32 {
-    // 只保留有限输入。
-    if value.is_finite() {
-        // 负值收敛为零。
-        value.max(0.0)
-    } else {
-        // 非有限值回退为零。
-        0.0
-    }
+    // 复用浮层共享归一化：非有限坐标回退原点、尺寸收敛为有限非负。
+    normalize_rect(rect)
 }
