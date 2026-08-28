@@ -69,6 +69,9 @@ impl WindowDriver {
     ) -> WindowFrameResult {
         // 清空动画、定时器和图形维护等已登记的后续工作。
         active_work.clear();
+        // 以下释放序列与 queues::release_window_scheduling_resources（会话关闭 /
+        // shutdown 路径）收敛同一组调度队列；此处 Agent 端经 WindowAgentState::close
+        // 额外向在途请求回执 AppClosed，并附带帧调度器终态，因此不能直接复用。
         // 取消应用级定时器，避免 teardown 前再次唤醒窗口循环。
         app_timers.cancel_all();
         // 丢弃尚未进入树协调的主线程任务。

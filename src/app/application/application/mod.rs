@@ -734,6 +734,21 @@ impl App {
         let theme_bus = Rc::new(RefCell::new(EventBus::new()));
         // 主题应用序次（单调递增，供 ThemeApplied 负载区分重复应用）。
         let theme_revision = Cell::new(0u64);
+        // 事实建立点统一收口：主题替换完成后发布 ThemeApplied（SystemEvent）；
+        // 失败或回滚时不得调用。App 主题与系统主题两个来源共用同一发布管线。
+        let publish_theme_applied = {
+            let theme_bus = &theme_bus;
+            let theme_revision = &theme_revision;
+            move |is_dark: bool| {
+                theme_revision.set(theme_revision.get() + 1);
+                if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
+                    is_dark,
+                    revision: theme_revision.get(),
+                }) {
+                    tracing::error!("theme applied publish failed: {}", error.short_what());
+                }
+            }
+        };
         // 感知方：主题变更诊断遥测（tracing 发射，可观测性订阅）。
         let theme_events_subscription =
             match theme_bus.borrow_mut().subscribe(|fact: &ThemeApplied| {
@@ -827,15 +842,7 @@ impl App {
                         &mut secondary_windows.borrow_mut(),
                         next_theme,
                     );
-                    // 事实建立点：主题替换完成后发布 ThemeApplied
-                    // （SystemEvent(SMC)）；失败或回滚时不得发布。
-                    theme_revision.set(theme_revision.get() + 1);
-                    if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
-                        is_dark: theme.borrow().is_dark(),
-                        revision: theme_revision.get(),
-                    }) {
-                        tracing::error!("theme applied publish failed: {}", error.short_what());
-                    }
+                    publish_theme_applied(theme.borrow().is_dark());
                 }
                 drain_pending_open_windows_with_backend(
                     platform,
@@ -866,16 +873,10 @@ impl App {
                             data.is_dark,
                         );
                         // 事实建立点：系统主题已生效并分发给全部窗口 UI 树后
-                        // 发布 ThemeApplied（SystemEvent(SMC)）；本闭包只由主窗口
+                        // 发布 ThemeApplied；本闭包只由主窗口
                         // 循环转发调用，window_id=None 事件不进 foreign_events
                         // 队列，同一事实仅发布一次。
-                        theme_revision.set(theme_revision.get() + 1);
-                        if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
-                            is_dark: data.is_dark,
-                            revision: theme_revision.get(),
-                        }) {
-                            tracing::error!("theme applied publish failed: {}", error.short_what());
-                        }
+                        publish_theme_applied(data.is_dark);
                     }
                 } else {
                     dispatch_secondary_window_event(

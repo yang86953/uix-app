@@ -22,6 +22,24 @@ use crate::ui::WidgetTree;
 use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
 
+/// 把当前语义快照映射为「已执行」命令应答；无快照视为内部错误。
+fn settled_performed_result(
+    semantic_state: &WindowSemanticState,
+) -> AgentCommandResult {
+    semantic_state.snapshot().map_or_else(
+        || Err(AgentCommandError::Internal),
+        |snapshot| {
+            Ok(AgentCommandResponse::Performed {
+                window_id: snapshot.window_id,
+                generation: snapshot.generation,
+                revision: snapshot.revision,
+                presented_revision: snapshot.presented_revision,
+                settled: true,
+            })
+        },
+    )
+}
+
 /// 窗口级 Agent 动作的操作契约：由 window 系统实现，经 UI turn 传入。
 ///
 /// 窗口动作（缩放 / 移动 / 最大化等）必须通过平台窗口执行；执行器不持有
@@ -404,18 +422,7 @@ impl WindowAgentState {
             return true;
         }
 
-        let result = semantic_state.snapshot().map_or_else(
-            || Err(AgentCommandError::Internal),
-            |snapshot| {
-                Ok(AgentCommandResponse::Performed {
-                    window_id: snapshot.window_id,
-                    generation: snapshot.generation,
-                    revision: snapshot.revision,
-                    presented_revision: snapshot.presented_revision,
-                    settled: true,
-                })
-            },
-        );
+        let result = settled_performed_result(semantic_state);
         self.finish_all(result);
         true
     }
@@ -516,18 +523,7 @@ impl WindowAgentState {
                     Err(AgentCommandError::ConfirmationRejected { confirm_id }),
                 );
             }
-            let result = semantic_state.snapshot().map_or_else(
-                || Err(AgentCommandError::Internal),
-                |snapshot| {
-                    Ok(AgentCommandResponse::Performed {
-                        window_id: snapshot.window_id,
-                        generation: snapshot.generation,
-                        revision: snapshot.revision,
-                        presented_revision: snapshot.presented_revision,
-                        settled: true,
-                    })
-                },
-            );
+            let result = settled_performed_result(semantic_state);
             send_result(response, result);
             return;
         }

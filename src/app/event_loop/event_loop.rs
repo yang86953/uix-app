@@ -1,7 +1,7 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw ScenePipeline。
 
 use crate::app::queues::active_work_registry::ActiveWorkRegistry;
-use crate::app::queues::clock::{AppClock, system_clock};
+use crate::app::queues::clock::{AppClock, earliest_deadline, system_clock};
 use crate::app::queues::window_agent_state::WindowAgentState;
 use crate::app::window::text_input::sync_window_text_input;
 use crate::app::window::window_actions::apply_pending_window_actions;
@@ -735,14 +735,6 @@ fn wait_for_event_or_registered_work(
             }
         }
         None => platform.event_loop().wait_event(callback),
-    }
-}
-
-pub(crate) fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-        (None, None) => None,
     }
 }
 

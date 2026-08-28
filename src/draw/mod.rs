@@ -37,7 +37,7 @@
 //!
 //! ```compile_fail
 //! // CPU 光栅化器已上移 System 边界，不得经 backend 路径访问。
-//! use uix::draw::backend::cpu::rasterizer::fill::fill_scanline;
+//! use uix::draw::backend::cpu::rasterizer::SoftwareRasterizer;
 //! ```
 //!
 //! ```compile_fail

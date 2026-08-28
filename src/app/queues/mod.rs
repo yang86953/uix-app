@@ -24,3 +24,29 @@ pub(crate) mod app_timer;
 pub(crate) mod clock;
 pub(crate) mod main_thread_queue;
 pub(crate) mod window_agent_state;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::app::queues::agent_command_queue::AgentCommandQueue;
+use crate::app::queues::app_timer::AppTimerQueue;
+use crate::app::queues::main_thread_queue::MainThreadQueue;
+
+/// 收敛一个窗口会话的全部调度资源：置活位为假、取消应用级定时器、
+/// 清空未执行主线程任务并关闭 Agent 命令端口。
+///
+/// 会话关闭、终态 shutdown 与注册竞态共用本原语；新增会话级队列时在
+/// 此扩展释放序列，禁止在各调用点复制释放步骤。
+pub(crate) fn release_window_scheduling_resources(
+    alive: &AtomicBool,
+    app_timers: &AppTimerQueue,
+    main_thread_queue: &MainThreadQueue,
+    agent_commands: &AgentCommandQueue,
+) {
+    alive.store(false, Ordering::Release);
+    // 取消应用级定时器，避免 teardown 前再次唤醒窗口循环。
+    app_timers.cancel_all();
+    // 丢弃尚未进入树协调的主线程任务。
+    main_thread_queue.clear();
+    // 关闭自动化命令端口并向在途请求返回窗口已关闭。
+    agent_commands.close();
+}

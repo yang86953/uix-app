@@ -139,37 +139,24 @@ impl RhiRenderer {
             // 返回稳定的参数错误。
             return Err(super::rhi_invalid("RhiRenderer shape viewport is invalid"));
         }
-        // 在创建资源前验证所有矩形的固定 shader 常量。
+        // 在创建资源前验证所有矩形的固定 shader 常量（唯一校验权威见 RhiShapeRect::validate）。
         for rect in rects {
-            // 矩形几何必须是有限正值。
-            if !rect.x.is_finite()
-                || !rect.y.is_finite()
-                || !rect.w.is_finite()
-                || !rect.h.is_finite()
-                || rect.w <= 0.0
-                || rect.h <= 0.0
-            {
-                // 返回稳定的参数错误。
-                return Err(super::rhi_invalid("RhiRenderer shape geometry is invalid"));
-            }
-            // 颜色、圆角和描边常量必须有限。
-            if rect
-                .rgba
-                .iter()
-                .chain(rect.radius.iter())
-                .any(|value| !value.is_finite() || *value < 0.0)
-                || !rect.half_stroke.is_finite()
-                || rect.half_stroke < 0.0
-            {
-                // 不把负半径或负描边交给 shader。
-                return Err(super::rhi_invalid(
-                    "RhiRenderer shape constants are invalid",
-                ));
-            }
-            // 显式 scissor 必须已经完成物理坐标 lowering。
-            if rect.scissor.is_some_and(|scissor| !scissor.is_valid()) {
-                // 返回稳定的参数错误。
-                return Err(super::rhi_invalid("RhiRenderer shape scissor is invalid"));
+            match rect.validate() {
+                Ok(()) => {}
+                Err(super::RhiShapeRectInvalid::Geometry) => {
+                    // 返回稳定的参数错误。
+                    return Err(super::rhi_invalid("RhiRenderer shape geometry is invalid"));
+                }
+                Err(super::RhiShapeRectInvalid::Constants) => {
+                    // 不把负半径或负描边交给 shader。
+                    return Err(super::rhi_invalid(
+                        "RhiRenderer shape constants are invalid",
+                    ));
+                }
+                Err(super::RhiShapeRectInvalid::Scissor) => {
+                    // 返回稳定的参数错误。
+                    return Err(super::rhi_invalid("RhiRenderer shape scissor is invalid"));
+                }
             }
         }
         // 准备 shape pipeline、单位 quad 和常量 buffer。

@@ -21,6 +21,5 @@ pub(crate) mod core;
 pub mod fill;
 pub(crate) mod glyph;
 pub(crate) mod polygon;
-pub(crate) mod stroke;
 
 pub(crate) use core::*;

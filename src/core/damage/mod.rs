@@ -85,16 +85,11 @@ impl DirtyRegion {
             return;
         }
         // 已有矩形覆盖新区域时无需增加几何。
-        if self
-            .rects
-            .iter()
-            .any(|existing| rect_contains(*existing, rect))
-        {
+        if self.rects.iter().any(|existing| existing.covers(&rect)) {
             return;
         }
         // 新矩形完整覆盖的旧区域可原地移除；滚动 viewport 因而复用 exposed strip 槽位。
-        self.rects
-            .retain(|existing| !rect_contains(rect, *existing));
+        self.rects.retain(|existing| !rect.covers(existing));
         self.clear_required = true;
         if self.rects.len() >= DIRTY_MERGE_THRESHOLD - 1 {
             let bounds = self.bounds().union(&rect);
@@ -176,13 +171,6 @@ impl DirtyRegion {
             full_frame: false,
         }
     }
-}
-
-fn rect_contains(outer: Rect, inner: Rect) -> bool {
-    outer.x <= inner.x
-        && outer.y <= inner.y
-        && outer.x + outer.w >= inner.x + inner.w
-        && outer.y + outer.h >= inner.y + inner.h
 }
 
 impl Default for DirtyRegion {

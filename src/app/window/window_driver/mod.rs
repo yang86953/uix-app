@@ -46,13 +46,15 @@ pub(crate) use support::{
     sync_root_frame_to_engine,
 };
 use support::{
-    accumulate_frame_diagnostics, animation_diag, dispatch_due_active_work, earliest_deadline,
+    accumulate_frame_diagnostics, animation_diag, dispatch_due_active_work,
     frame_diagnostics_enabled, has_layout_work, invalidation_diag, next_loop_state,
     observe_agent_settle, protocol_failure, record_idle, record_layout, record_paint,
     record_present, report_graphics_frame_failure, report_graphics_resize_error,
     report_window_operation_error, update_scheduled_and_discovered_animations,
     with_platform_clipboard,
 };
+// 截止时间合并是 event-loop 与窗口驱动共用的调度基础设施，权威定义在 queues。
+use crate::app::queues::clock::earliest_deadline;
 pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) tree: &'a mut WidgetTree,
     pub(crate) engine: &'a mut dyn RenderTarget,

@@ -204,7 +204,7 @@ pub(super) fn resolve_frame_region(
     }
     // backend 返回的 Vec 继续成为绘制区 owner，避免逐项重建第二份分配。
     let actual_region = DirtyRegion::from_valid_rects(actual.rects);
-    if actual_region.is_empty() || !rect_covers(actual_region.bounds(), requested_bounds) {
+    if actual_region.is_empty() || !actual_region.bounds().covers(&requested_bounds) {
         return Err(Error::new(
             Errc::InvalidState,
             "begin_frame damage does not cover the requested paint region",
@@ -220,13 +220,6 @@ pub(super) fn valid_frame_rect(rect: Rect) -> bool {
         && rect.h.is_finite()
         && rect.w > 0.0
         && rect.h > 0.0
-}
-
-pub(super) fn rect_covers(outer: Rect, inner: Rect) -> bool {
-    outer.x <= inner.x
-        && outer.y <= inner.y
-        && outer.x + outer.w >= inner.x + inner.w
-        && outer.y + outer.h >= inner.y + inner.h
 }
 
 pub(super) fn pad_damage_rect(r: &Rect) -> Rect {

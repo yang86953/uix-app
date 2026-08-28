@@ -142,14 +142,6 @@ pub(super) fn next_loop_state(
     }
 }
 
-pub(super) fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
-    match (a, b) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-        (None, None) => None,
-    }
-}
-
 pub(super) fn protocol_failure(message: &str) -> GraphicsFailure {
     GraphicsFailure::Other(Error::new(Errc::InvalidState, message))
 }

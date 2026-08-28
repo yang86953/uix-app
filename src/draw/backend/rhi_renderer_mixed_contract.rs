@@ -266,34 +266,24 @@ pub(super) fn check_op(operation: &RhiOp) -> Result<()> {
                 ));
             }
         }
-        // 校验圆角/描边矩形常量。
+        // 校验圆角/描边矩形常量（唯一校验权威见 RhiShapeRect::validate）。
         RhiOp::Shape(rect) | RhiOp::AdditiveShape(rect) => {
-            // 矩形几何必须是有限正值。
-            if !rect.x.is_finite()
-                || !rect.y.is_finite()
-                || !rect.w.is_finite()
-                || !rect.h.is_finite()
-                || rect.w <= 0.0
-                || rect.h <= 0.0
-                || rect
-                    .rgba
-                    .iter()
-                    .chain(rect.radius.iter())
-                    .any(|value| !value.is_finite() || *value < 0.0)
-                || !rect.half_stroke.is_finite()
-                || rect.half_stroke < 0.0
-            {
-                // 返回稳定的参数错误。
-                return Err(super::super::rhi_invalid(
-                    "RhiRenderer mixed shape constants are invalid",
-                ));
-            }
-            // 校验显式裁剪。
-            if rect.scissor.is_some_and(|scissor| !scissor.is_valid()) {
-                // 返回稳定的参数错误。
-                return Err(super::super::rhi_invalid(
-                    "RhiRenderer mixed shape scissor is invalid",
-                ));
+            match rect.validate() {
+                Ok(()) => {}
+                // 几何与常量违反在 mixed 提交路径共享同一稳定文案。
+                Err(super::super::RhiShapeRectInvalid::Geometry)
+                | Err(super::super::RhiShapeRectInvalid::Constants) => {
+                    // 返回稳定的参数错误。
+                    return Err(super::super::rhi_invalid(
+                        "RhiRenderer mixed shape constants are invalid",
+                    ));
+                }
+                Err(super::super::RhiShapeRectInvalid::Scissor) => {
+                    // 返回稳定的参数错误。
+                    return Err(super::super::rhi_invalid(
+                        "RhiRenderer mixed shape scissor is invalid",
+                    ));
+                }
             }
         }
         // 校验原生扇形常量。

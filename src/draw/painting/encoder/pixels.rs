@@ -44,49 +44,25 @@ pub(super) fn apply_stroke_rect_pixels(
     if stroke.rect.is_empty() {
         return;
     }
-    // Additive 必须直接读写已有目标像素，复用 SoftwareRasterizer 的真实 blend 规则。
+    // 两种混合模式共用 SoftwareRasterizer 的同一描边实现与真实 blend 规则，
+    // 保证 SrcOver 与 Additive 的 AA 语义不漂移。
+    let mut renderer = SoftwareRasterizer::new(width, height);
     if additive {
-        // 为当前目标构造无变换的参考 rasterizer。
-        let mut renderer = SoftwareRasterizer::new(width, height);
         // 选择逐通道饱和加法混合。
         renderer.set_blend_mode(BlendMode::Additive);
-        // FrameRasterOp 的 clip 已经位于 surface 空间。
-        renderer.push_clip_surface(Rect::new(
-            clip.x as f32,
-            clip.y as f32,
-            clip.width as f32,
-            clip.height as f32,
-        ));
-        // 直接在累计目标上执行与 Canvas2D 一致的描边。
-        renderer.stroke_rect(
-            pixels,
-            width,
-            height,
-            Rect::new(
-                stroke.rect.x as f32,
-                stroke.rect.y as f32,
-                stroke.rect.width as f32,
-                stroke.rect.height as f32,
-            ),
-            stroke.color,
-            stroke.line_width.value(),
-            Some(stroke.radius.to_radius()),
-        );
-        // Additive 已经完成，禁止继续执行 SrcOver 低层路径。
-        return;
     }
-    // 普通描边继续复用既有低层 SrcOver 光栅函数。
-    crate::draw::raster::rasterizer::stroke::stroke_rect(
+    // FrameRasterOp 的 clip 已经位于 surface 空间。
+    renderer.push_clip_surface(Rect::new(
+        clip.x as f32,
+        clip.y as f32,
+        clip.width as f32,
+        clip.height as f32,
+    ));
+    // 直接在累计目标上执行与 Canvas2D 一致的描边。
+    renderer.stroke_rect(
         pixels,
         width,
         height,
-        Rect::new(
-            clip.x as f32,
-            clip.y as f32,
-            clip.width as f32,
-            clip.height as f32,
-        ),
-        1.0,
         Rect::new(
             stroke.rect.x as f32,
             stroke.rect.y as f32,
@@ -338,32 +314,21 @@ fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect
     if rect.is_empty() {
         return;
     }
-    let x0 = rect.x.max(0);
-    let y0 = rect.y.max(0);
-    let x1 = rect.x.saturating_add(rect.width).min(width);
-    let y1 = rect.y.saturating_add(rect.height).min(height);
-    if x0 >= x1 || y0 >= y1 {
-        return;
-    }
-    let source = color.premultiplied();
-    let source_a = source >> 24;
-    if source_a == 0 {
-        return;
-    }
-    if source_a == 0xff {
-        let row_width = width as usize;
-        for y in y0..y1 {
-            let start = y as usize * row_width + x0 as usize;
-            pixels[start..start + (x1 - x0) as usize].fill(source);
-        }
-        return;
-    }
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let index = y as usize * width as usize + x as usize;
-            pixels[index] = blend_pixel_src_over(source, pixels[index]);
-        }
-    }
+    // 与其余 fill 系列一致，直角填充复用 SoftwareRasterizer 的唯一光栅实现。
+    let renderer = SoftwareRasterizer::new(width, height);
+    renderer.fill_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        ),
+        color,
+        None,
+    );
 }
 
 fn fill_rect_additive_pixels(
@@ -374,29 +339,34 @@ fn fill_rect_additive_pixels(
     color: Color,
     clip: FrameRect,
 ) {
-    // 同时裁到命令 clip 与真实 surface，避免任何越界写入。
-    let Some(visible) = rect
-        .intersection(clip)
-        .and_then(|visible| visible.intersection(FrameRect::new(0, 0, width, height)))
-    else {
-        // 完全不可见时保持累计目标不变。
+    // 空几何或空裁剪都不产生覆盖。
+    if rect.is_empty() || clip.is_empty() {
+        // 保持累计目标不变。
         return;
-    };
-    // 可见交集已经是 surface 内的安全半开区间。
-    let x0 = visible.x;
-    // 保存可见区顶部。
-    let y0 = visible.y;
-    // 计算可见区右边界。
-    let x1 = visible.x + visible.width;
-    // 计算可见区底边界。
-    let y1 = visible.y + visible.height;
-    let source = color.premultiplied();
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let index = y as usize * width as usize + x as usize;
-            pixels[index] = blend_pixel_additive(source, pixels[index]);
-        }
     }
+    // 与 fill_rounded_rect_additive_pixels 同构：软件光栅状态注入整数 clip，
+    // 选择目标相关饱和加法语义，复用唯一光栅实现。
+    let mut renderer = SoftwareRasterizer::new(width, height);
+    renderer.push_clip_surface(Rect::new(
+        clip.x as f32,
+        clip.y as f32,
+        clip.width as f32,
+        clip.height as f32,
+    ));
+    renderer.set_blend_mode(BlendMode::Additive);
+    renderer.fill_rect(
+        pixels,
+        width,
+        height,
+        Rect::new(
+            rect.x as f32,
+            rect.y as f32,
+            rect.width as f32,
+            rect.height as f32,
+        ),
+        color,
+        None,
+    );
 }
 
 fn fill_rounded_rect_additive_pixels(
