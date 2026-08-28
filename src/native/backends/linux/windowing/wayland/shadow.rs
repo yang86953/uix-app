@@ -15,8 +15,10 @@ use super::compat::{Main, ProxyContext, WaylandDispatchState};
 use super::shm_buffer::{ShmBuffer, create_argb_buffer};
 
 // 阴影外扩距离与峰值不透明度同时驱动合成端圆角缺口补画，保持同一外观事实。
-pub(super) const SHADOW_SIZE: i32 = 24;
-pub(super) const SHADOW_MAX_ALPHA: f32 = 0.28;
+// 参数按 GTK/Firefox 客户端装饰阴影剖面校准：峰值约 0.33，半衰减约 8px，
+// 尾部平滑延伸到 32px 之外，避免出现紧贴窗口的硬黑边。
+pub(super) const SHADOW_SIZE: i32 = 32;
+pub(super) const SHADOW_MAX_ALPHA: f32 = 0.33;
 
 // 持有协议对象和八块 SHM buffer，确保 compositor 使用期间资源不失效。
 pub(crate) struct WaylandClientShadow {
