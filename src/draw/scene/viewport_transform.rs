@@ -208,13 +208,20 @@ pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &Dirt
     if scene.node_dirty(node_id) {
         return true;
     }
+    // 阴影、徽标等覆盖视觉可能超出布局 frame；脏区重绘会用不透明背景覆盖区域内
+    // 全部像素，节点只要绘制范围与脏区相交就必须复绘，否则溢出部分被擦除后
+    // 无人恢复。因此相交判定与脏节点一致使用完整 dirty_rect，而非 frame。
+    // dirty_rect 为空的实现按 frame 兜底，保持既有非脏节点参与重绘的行为。
+    let frame = scene.node_frame(node_id);
+    let dirty = scene.dirty_rect(node_id, frame);
+    let paint_rect = if dirty.w > 0.0 && dirty.h > 0.0 { dirty } else { frame };
     // 使用同时累计祖先视口与父级片段的真实可见包围盒。
-    let Some(frame) = visible_viewport_rect(scene, node_id) else {
+    let Some(visible) = visible_viewport_rect_for(scene, node_id, paint_rect) else {
         // 完全落在片段外或视口外的节点无需绘制。
         return false;
     };
     // 只在真实可见包围盒与脏区域相交时提交节点。
-    dirty_region.intersects(frame)
+    dirty_region.intersects(visible)
 }
 
 /// 主表面节点是否需绘制：脏节点也必须至少有实际绘制范围落在可见区域内。
@@ -227,12 +234,12 @@ pub(crate) fn needs_paint_in_viewport(
 ) -> bool {
     let node_dirty = scene.node_dirty(node_id);
     let frame = scene.node_frame(node_id);
-    // 脏节点可能通过阴影、徽标等视觉超出布局 frame，必须使用完整 dirty_rect。
-    let paint_rect = if node_dirty {
-        scene.dirty_rect(node_id, frame)
-    } else {
-        frame
-    };
+    // 脏区重绘会用不透明背景覆盖区域内全部像素，而任意节点（无论是否脏）的
+    // 阴影、徽标等覆盖视觉都可能超出布局 frame；跳过判定必须与脏节点一致
+    // 使用完整 dirty_rect，否则溢出像素被区域内其它层覆盖后无法恢复。
+    // dirty_rect 为空的实现按 frame 兜底，保持既有非脏节点参与重绘的行为。
+    let dirty = scene.dirty_rect(node_id, frame);
+    let paint_rect = if dirty.w > 0.0 && dirty.h > 0.0 { dirty } else { frame };
     let Some(visible_rect) = visible_viewport_rect_for(scene, node_id, paint_rect) else {
         return false;
     };
