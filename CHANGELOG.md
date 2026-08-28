@@ -35,6 +35,15 @@
 
 - RichText 主题分隔线与内联图片能力统一进入 uix-lang 全组件主演示，不再维护独立真窗 demo。
 
+### 2026-08-28 工程收敛（重复机制治理）
+
+- 删除未文档化遗留机制：`uix::ui` 不再重导出 legacy `StateManager` / `TextManager`（状态与样式请使用响应式 `state` 与 `theme::style`，编译器生成的 `WidgetStateStore` 契约不变）；通知组件不再提供 `replace_from_service` / `notify_error_from_service` / `notify_result_error_from_service` 与 `NotificationSource` 协议（文档化的 `AppHandle::notify_error` 与 `replace_from_toasts` 保留）；`PlatformSystem` 端口收窄，移除 `file_dialog` / `keyboard` / `timer` / `notification` / `console` / `file_system` 访问器（功能由 `Platform` 门面提供；文件对话框、系统通知、剪贴板、显示器的公开门面契约不变）。
+- 系统信息单一事实源：`ISystemInfo` 的 OS 与内存采集改为委托公开硬件 Provider；macOS 经内部系统信息路径此前返回空版本号与硬编码内存占位值，现返回真实 sysctl 数据。
+- Windows 图形错误分类归一：D3D12 复用与 D3D11 共享的 HRESULT 分类，遮挡、桌面访问丢失与显示模式切换恢复为 typed `GraphicsOccluded` / `GraphicsSurfaceLost`（此前落入通用 `PlatformError`，恢复语义丢失）。
+- GDI 呈现器像素缓冲校验对齐：短缓冲从静默截断改为与其他 CPU presenter 一致的 typed `InvalidArgument` 错误。
+- CPU 参考执行光栅收敛：矩形描边与直角填充统一走 `SoftwareRasterizer`，SrcOver 与 Additive 两种混合模式的抗锯齿语义强一致；微工具群（`fade_token_color`、`paint_elided_text`、`byte_index_for_char`、`expand_rect`、`union_frame_rect`）各自归一为单一实现。
+- 主/副窗装配收口：DI 回退解析、应用根工厂包装与会话资源接线收敛为 `window_assembly` 唯一原语；副窗聚焦初值同步树内投影，`next_deadline` 改用注入时钟；调度队列释放收敛为 `queues::release_window_scheduling_resources` 单一序列。
+
 ### 2026-08-15 工程与验证范围
 
 - `cargo test` 只编译运行公开 API 契约测试（`app/core/data/diagnostics/draw/native/ui` 的 `tests/*_public_api.rs`）：移除 38 个非 API 集成测试（`flex_overflow_*`、`uix_lang_*_windows`、`usage_*`、`semantic_actions`、`layout_invariants`、`tessellator_contract` 等）与未被引用的 `tests/unit` 死代码，同步清理 `platform_notification_runtime` 的 `[test]` 表声明；设备丢失/表面丢失真窗注入验收由 demo 的 `--test-graphics-recovery` 页面承担，真窗视觉与通知运行时验收随精简移除。
