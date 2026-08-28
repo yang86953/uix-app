@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashSet, VecDeque};
 use std::ffi::{CStr, CString, c_char, c_void};
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
@@ -13,14 +12,12 @@ use crate::platform::display::IDisplay;
 use crate::platform::platform::PlatformSystem;
 use crate::platform::presentation::IPresenter;
 use crate::platform::presentation::validate_pixel_buffer;
-use crate::platform::system::filesystem::IFileSystem;
-use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, FrameRequestToken, UiEvent};
 use crate::platform::windowing::window::{
     IWindowManager, NativeFrameRequest, PlatformWindow, WindowOcclusionState,
 };
 use crate::platform::windowing::{
-    CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
+    CursorType, IClipboard, ICursor, ITextInput, KeyMod, MouseButton,
 };
 
 use super::display_link::MacosFramePacer;
@@ -32,7 +29,7 @@ use app_event::MacosAppEvent;
 // 将 Cocoa 像素提交端口暴露给同级 presenter 组件。
 use cocoa::present_layer_pixels;
 // 将 AppKit 文件对话框组件暴露给 macOS Platform System 根模块。
-use file_dialog::MacosFileDialog;
+// 文件对话框自由函数经 composition_root 提供门面服务，端口对象已移除。
 // 将呈现器组件实现暴露给 macOS 窗口工厂。
 use presenter::MacosPresenter;
 // 将基础平台服务组件暴露给 macOS Platform System 根模块。
@@ -43,17 +40,9 @@ use services::{
     MacosCursor,
     // 显示服务由平台根对象统一持有。
     MacosDisplay,
-    // 文件系统适配器由平台根对象统一持有。
-    MacosFileSystem,
-    // 键盘服务由平台根对象统一持有。
-    MacosKeyboard,
-    // 通知服务由 services2 组件实现并由平台根对象持有。
-    MacosNotification,
-    // 定时器服务由平台根对象统一持有。
-    MacosTimer,
 };
 // 将剩余系统服务组件暴露给 macOS Platform System 根模块。
-use services2::{MacosConsole, MacosSystemInfo};
+use services2::MacosSystemInfo;
 // 将原生窗口操作组件暴露给 macOS 窗口工厂。
 use window_ops::MacosWindowOps;
 
@@ -64,13 +53,7 @@ pub struct MacosPlatform {
     clipboard: MacosClipboard,
     cursor: MacosCursor,
     display: MacosDisplay,
-    file_dialog: MacosFileDialog,
-    file_system: MacosFileSystem,
-    keyboard: MacosKeyboard,
     text_input: MacosTextInput,
-    timer: MacosTimer,
-    notification: MacosNotification,
-    console: MacosConsole,
     system_info: MacosSystemInfo,
     next_window_id: u64,
 }
@@ -85,13 +68,7 @@ impl MacosPlatform {
             clipboard: MacosClipboard::new(),
             cursor: MacosCursor::new(),
             display: MacosDisplay,
-            file_dialog: MacosFileDialog,
-            file_system: MacosFileSystem::new(),
-            keyboard: MacosKeyboard::new(),
             text_input: MacosTextInput::new(),
-            timer: MacosTimer::new(),
-            notification: MacosNotification,
-            console: MacosConsole,
             system_info: MacosSystemInfo,
             next_window_id: 1,
         }
@@ -138,21 +115,10 @@ impl OsEventSource for MacosPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        let event = self
-            .events
+        self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .pop_front();
-        if event.as_ref().is_some_and(|event| {
-            matches!(
-                event.type_,
-                crate::platform::windowing::event::UiEventType::WindowBlur
-                    | crate::platform::windowing::event::UiEventType::WindowClose
-            )
-        }) {
-            self.keyboard.keys_down.clear();
-        }
-        event
+            .pop_front()
     }
 
     fn waker(&self) -> EventLoopWaker {
@@ -178,23 +144,6 @@ impl MacosPlatform {
         };
         let suppress_keydown_text = self.text_input.suppress_keydown_text(event.window_id);
         for ui_event in event.into_ui_events(suppress_keydown_text) {
-            match ui_event.type_ {
-                crate::platform::windowing::event::UiEventType::KeyDown => {
-                    if let crate::platform::windowing::event::UiEventPayload::Key(data) =
-                        &ui_event.payload
-                    {
-                        self.keyboard.keys_down.insert(data.key);
-                    }
-                }
-                crate::platform::windowing::event::UiEventType::KeyUp => {
-                    if let crate::platform::windowing::event::UiEventPayload::Key(data) =
-                        &ui_event.payload
-                    {
-                        self.keyboard.keys_down.remove(&data.key);
-                    }
-                }
-                _ => {}
-            }
             self.events
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -296,50 +245,13 @@ impl PlatformSystem for MacosPlatform {
         &self.display
     }
 
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog {
-        &mut self.file_dialog
-    }
-
-    fn keyboard(&self) -> &dyn IKeyboard {
-        &self.keyboard
-    }
-
     fn text_input(&mut self) -> &mut dyn ITextInput {
         &mut self.text_input
-    }
-
-    fn timer(&mut self) -> &mut dyn ITimer {
-        &mut self.timer
-    }
-
-    fn notification(&mut self) -> &mut dyn INotification {
-        &mut self.notification
-    }
-
-    fn console(&mut self) -> &mut dyn crate::platform::system::console::IConsole {
-        &mut self.console
-    }
-
-    fn file_system(&self) -> &dyn IFileSystem {
-        &self.file_system
     }
 
     fn system_info(&self) -> &dyn crate::platform::system::info::ISystemInfo {
         &self.system_info
     }
-}
-
-fn home_dir() -> Option<String> {
-    std::env::var("HOME").ok()
-}
-
-fn home_child(child: &str) -> Result<String> {
-    let home = home_dir()
-        .ok_or_else(|| Error::new(Errc::NotFound, "MacosSpecialDirs: HOME is not set"))?;
-    Ok(PathBuf::from(home)
-        .join(child)
-        .to_string_lossy()
-        .to_string())
 }
 
 fn find_existing_path(paths: &[&str]) -> Option<String> {

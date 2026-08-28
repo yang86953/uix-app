@@ -90,8 +90,8 @@ widget! {
                 EventResult::Handled
             }
             // 完成键盘激活。设计意图：Upload 的激活语义是「请求浏览文件」；
-            // 当前 UI 层没有文件对话框能力（IFileDialog 属 native 私有边界，
-            // platform 门面未公开），文件来源依赖系统 FileDrop 事件，指针路径
+            // 当前 UI 层没有文件对话框入口（原生对话框由 Platform 门面按需
+            // 显式调用），文件来源依赖系统 FileDrop 事件，指针路径
             // 也只有列表行删除而无浏览入口，因此本分支保持与指针一致的
             // 「激活入口存在但文件选择待平台能力接入」约定，仅消费手势。
             SystemEvent::KeyUp { key, .. }

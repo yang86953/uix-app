@@ -2,7 +2,6 @@
 use super::*;
 // 导入纯逻辑过滤器解析端口。
 use super::file_dialog_filters::parse_allowed_file_types;
-use crate::platform::system::IFileDialog;
 
 // AppKit 确认按钮返回的模态响应码。
 const NS_MODAL_RESPONSE_OK: isize = 1;
@@ -14,36 +13,6 @@ type Bool = i8;
 const YES: Bool = 1;
 // Objective-C 假值常量。
 const NO: Bool = 0;
-
-// 文件对话框组件不持有跨调用状态。
-pub(super) struct MacosFileDialog;
-
-// 提供 AppKit 文件对话框契约实现。
-impl IFileDialog for MacosFileDialog {
-    // 打开允许多选的文件选择面板。
-    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>> {
-        // AppKit 面板只能在主线程同步运行。
-        ensure_appkit_thread("MacosFileDialog::open")?;
-        // SAFETY: 主线程门禁已通过；面板和其返回对象都由 AppKit 在同步 runModal 生命周期内持有。
-        unsafe { open_files(title, filters) }
-    }
-
-    // 打开单路径保存面板。
-    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>> {
-        // AppKit 面板只能在主线程同步运行。
-        ensure_appkit_thread("MacosFileDialog::save")?;
-        // SAFETY: 主线程门禁已通过；面板和其返回 URL 在同步 runModal 返回后仍由 AppKit 持有。
-        unsafe { save_file(title, filters) }
-    }
-
-    // 打开只允许单选目录的面板。
-    fn open_folder(&mut self, title: &str) -> Result<Option<String>> {
-        // AppKit 面板只能在主线程同步运行。
-        ensure_appkit_thread("MacosFileDialog::open_folder")?;
-        // SAFETY: 主线程门禁已通过；面板配置只允许返回目录 URL。
-        unsafe { open_directory(title) }
-    }
-}
 
 // 通过公开 Platform System 的窄 Adapter 打开多选文件面板。
 pub(crate) fn choose_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {

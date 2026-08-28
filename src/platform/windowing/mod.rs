@@ -21,7 +21,7 @@ use crate::core::error::Result;
 pub use capability::{WindowCapabilities, WindowCapability};
 pub use event::EventLoopWaker;
 // 聚合层与实现统一消费同一组输入合同。
-pub(crate) use input::{ICursor, IKeyboard, ITextInput};
+pub(crate) use input::{ICursor, ITextInput};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 鼠标按钮 — 跨层共享

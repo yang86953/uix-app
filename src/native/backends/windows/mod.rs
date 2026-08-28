@@ -16,8 +16,6 @@
 pub(crate) mod bindings;
 // 剪贴板后端只供 crate 内部平台组合使用。
 pub(crate) mod clipboard;
-// 控制台后端只供 crate 内部平台组合使用。
-pub(crate) mod console;
 // Windows 常量只在 crate 内部实现间共享。
 pub(crate) mod consts;
 // 光标后端只供 crate 内部平台组合使用。
@@ -29,8 +27,6 @@ pub(crate) mod dpi;
 pub(crate) mod ffi;
 // 文件对话框后端只供 crate 内部平台组合使用。
 pub(crate) mod file_dialog;
-// 文件系统后端只供 crate 内部平台组合使用。
-pub(crate) mod filesystem;
 pub(crate) mod frame_pacer;
 // GDI 呈现器只供 crate 内部图形组合使用。
 pub(crate) mod gdi_presenter;
@@ -38,10 +34,6 @@ pub(crate) mod gdi_presenter;
 pub(crate) mod helpers;
 // 输入法派发只供 crate 内部窗口系统使用。
 pub(crate) mod ime_dispatch;
-// 键盘后端只供 crate 内部平台组合使用。
-pub(crate) mod keyboard;
-// 通知后端只供 crate 内部平台组合使用。
-pub(crate) mod notification;
 // Windows 平台实现只由 crate 内部工厂构造。
 pub(crate) mod platform;
 // 系统信息后端只供 crate 内部服务使用。
@@ -49,8 +41,6 @@ pub(crate) mod platform;
 pub(crate) mod system_info;
 // 文本输入后端只供 crate 内部窗口系统使用。
 pub(crate) mod text_input;
-// 定时器后端只供 crate 内部平台组合使用。
-pub(crate) mod timer;
 mod tsf_document;
 // TSF 会话只供 crate 内部文本输入组合使用。
 pub(crate) mod tsf_session;

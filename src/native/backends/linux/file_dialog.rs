@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/linux/file_dialog.rs — Linux file dialog (IFileDialog)
+// platform/linux/file_dialog.rs — Linux 原生文件对话框 adapter
 // ============================================================================
 //
 // Uses `zenity` (GNOME) or `kdialog` (KDE) for native file dialogs.
@@ -7,58 +7,12 @@
 // Falls back to zenity if neither is detected or available.
 // ============================================================================
 
-use crate::platform::system::IFileDialog;
 // 引入 platform capabilities Module 统一拥有的外部对话框退出分类。
 use crate::native::capabilities::services::file_dialog_process::{
     ExternalDialogOutcome, classify_external_dialog_exit, parse_confirmed_dialog_path,
     parse_confirmed_dialog_paths,
 };
 use crate::native::{Errc, Error, Result};
-
-// ════════════════════════════════════════════════════════════════════════════
-// LinuxFileDialog
-// ════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug)]
-pub(crate) struct LinuxFileDialog;
-
-impl LinuxFileDialog {
-    pub(crate) fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for LinuxFileDialog {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl IFileDialog for LinuxFileDialog {
-    fn open(&mut self, title: &str, filters: &str) -> Result<Option<Vec<String>>> {
-        if use_kde() {
-            kde_open_file(title, filters)
-        } else {
-            zenity_open_file(title, filters)
-        }
-    }
-
-    fn save(&mut self, title: &str, filters: &str) -> Result<Option<String>> {
-        if use_kde() {
-            kde_save_file(title, filters)
-        } else {
-            zenity_save_file(title, filters)
-        }
-    }
-
-    fn open_folder(&mut self, title: &str) -> Result<Option<String>> {
-        if use_kde() {
-            kde_open_folder(title)
-        } else {
-            zenity_open_folder(title)
-        }
-    }
-}
 
 // 通过 Platform System 窄 Adapter 打开多选文件面板。
 pub(crate) fn choose_files(
@@ -100,10 +54,12 @@ pub(crate) fn choose_save_file(
 
 // 通过 Platform System 窄 Adapter 打开目录面板。
 pub(crate) fn choose_folder(title: &str) -> Result<Option<String>> {
-    // 每次同步调用创建无状态 Linux 对话框组件。
-    let mut dialog = LinuxFileDialog::new();
-    // 复用既有桌面环境探测与取消语义。
-    dialog.open_folder(title)
+    // 复用与打开/保存入口相同的桌面 Provider 选择规则。
+    if use_kde() {
+        kde_open_folder(title)
+    } else {
+        zenity_open_folder(title)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

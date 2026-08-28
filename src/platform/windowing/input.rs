@@ -1,11 +1,12 @@
 //! 平台中立输入协议。
 //!
-//! 本叶模块只定义 app、平台聚合与原生后端共享的输入合同；具体光标、
-//! 键盘与 IME 实现及其原生资源生命周期继续由原生私有层持有。
+//! 本叶模块只定义 app、平台聚合与原生后端共享的输入合同；具体光标
+//! 与 IME 实现及其原生资源生命周期继续由原生私有层持有。
+//! 键盘即时状态经事件流（UiEvent）消费，不设轮询端口。
 
 use crate::core::{Error, Point, Rect, WindowId};
 
-use super::{CursorType, KeyCode};
+use super::CursorType;
 
 /// 平台光标控制合同。
 pub(crate) trait ICursor {
@@ -42,14 +43,4 @@ pub(crate) trait ITextInput {
     fn stop(&mut self) -> Result<(), Error>;
     /// 更新输入法候选窗口对应的光标矩形。
     fn set_cursor_rect(&mut self, rect: Rect) -> Result<(), Error>;
-}
-
-/// 平台键盘即时状态合同。
-pub(crate) trait IKeyboard {
-    /// 判断指定按键当前是否按下。
-    fn is_down(&self, key: KeyCode) -> bool;
-    /// 返回距最近输入的空闲毫秒数。
-    fn idle_ms(&self) -> u32;
-    /// 返回系统双击间隔毫秒数。
-    fn double_click_ms(&self) -> u32;
 }

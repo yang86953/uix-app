@@ -218,7 +218,7 @@ pub use widget_runtime::config;
 pub use widget_runtime::focus_trap;
 pub use widget_runtime::locale;
 pub use widget_runtime::managers::{
-    DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
+    DragManager, FocusManager, InteractionManager, WidgetManagers,
 };
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]

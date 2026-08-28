@@ -3,11 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::core::error::{Error, Result as CoreResult};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::Radius;
 use crate::platform::capabilities::StatusLevel;
-use crate::platform::services::{NotificationSource, ToastEntry};
+use crate::platform::services::ToastEntry;
 use crate::ui::animation::AnimationConfig;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -501,41 +500,6 @@ impl Notification {
         I: IntoIterator<Item = &'a ToastEntry>,
     {
         self.handle().replace_from_toasts(toasts);
-    }
-
-    /// 更新服务的过期状态，并将其当前可见 Toast 同步到容器。
-    pub fn replace_from_service(&self, service: &mut (impl NotificationSource + ?Sized)) {
-        let toasts = service.update_notifications();
-        self.replace_from_toasts(&toasts);
-    }
-
-    /// 将非致命框架错误交给服务转换为通知并同步容器。
-    ///
-    /// 致命错误或无需展示的错误返回 `None`。
-    pub fn notify_error_from_service(
-        &self,
-        service: &mut (impl NotificationSource + ?Sized),
-        error: &Error,
-    ) -> Option<u64> {
-        let id = service.notify_error(error);
-        self.replace_from_service(service);
-        id
-    }
-
-    /// 当结果为错误时将其交给服务转换为通知并同步容器。
-    ///
-    /// 成功结果保持静默并返回 `None`。
-    pub fn notify_result_error_from_service<T>(
-        &self,
-        service: &mut (impl NotificationSource + ?Sized),
-        result: &CoreResult<T>,
-    ) -> Option<u64> {
-        let id = result
-            .as_ref()
-            .err()
-            .and_then(|error| service.notify_error(error));
-        self.replace_from_service(service);
-        id
     }
 
     fn resolved_enter_animation(&self) -> AnimationConfig {

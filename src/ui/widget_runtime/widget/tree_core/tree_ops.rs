@@ -45,7 +45,6 @@ impl WidgetTree {
         self.render_handler_table.clear();
         self.overlay_stack.clear();
         self.active_widget_animations.clear();
-        self.managers.clear_overrides();
         self.focus_handles.clear();
         self.reset_interaction_state();
         self.tree_version += 1;

@@ -15,20 +15,12 @@ use crate::diagnostics::PendingFailureQueue;
 use crate::native::windowing::shared::{OsEventSource, WindowState};
 use crate::platform::display::IDisplay;
 use crate::platform::platform::PlatformSystem;
-use crate::platform::system::console::IConsole;
-use crate::platform::system::filesystem::IFileSystem;
 use crate::platform::system::info::ISystemInfo;
-use crate::platform::system::{IFileDialog, INotification, ITimer};
 use crate::platform::windowing::event::{EventBus, EventLoopWaker, IEventLoop, UiEvent};
 use crate::platform::windowing::window::IWindowManager;
-use crate::platform::windowing::{IClipboard, ICursor, IKeyboard, ITextInput};
+use crate::platform::windowing::{IClipboard, ICursor, ITextInput};
 
-use crate::native::backends::linux::console::LinuxConsole;
-use crate::native::backends::linux::file_dialog::LinuxFileDialog;
-use crate::native::backends::linux::filesystem::LinuxFileSystem;
-use crate::native::backends::linux::notification::LinuxNotification;
 use crate::native::backends::linux::system_info::LinuxSystemInfo;
-use crate::native::backends::linux::timer::LinuxTimer;
 use crate::native::backends::linux::wayland::WaylandBackend;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -46,12 +38,7 @@ pub(crate) struct LinuxPlatform {
     event_bus: EventBus,
 
     // ── 独立子系统 ──────────────────────────────────────────
-    console_subsys: LinuxConsole,
-    file_dialog_subsys: LinuxFileDialog,
-    file_system_subsys: LinuxFileSystem,
-    notification_subsys: LinuxNotification,
     system_info_subsys: LinuxSystemInfo,
-    timer_subsys: LinuxTimer,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -74,18 +61,11 @@ impl LinuxPlatform {
             }
         };
 
-        let timer_eq = backend.event_queue_handle();
-
         Ok(Self {
             window: Rc::new(RefCell::new(WindowState::default())),
             backend,
-            console_subsys: LinuxConsole::new(),
-            file_dialog_subsys: LinuxFileDialog::new(),
-            file_system_subsys: LinuxFileSystem::new(),
-            notification_subsys: LinuxNotification::new(),
             system_info_subsys: LinuxSystemInfo::new(),
             event_bus: EventBus::new(),
-            timer_subsys: LinuxTimer::new(timer_eq, pending_source),
         })
     }
 }
@@ -152,26 +132,8 @@ impl PlatformSystem for LinuxPlatform {
     fn display(&self) -> &dyn IDisplay {
         &self.backend
     }
-    fn keyboard(&self) -> &dyn IKeyboard {
-        &self.backend
-    }
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog {
-        &mut self.file_dialog_subsys
-    }
     fn text_input(&mut self) -> &mut dyn ITextInput {
         &mut self.backend
-    }
-    fn timer(&mut self) -> &mut dyn ITimer {
-        &mut self.timer_subsys
-    }
-    fn notification(&mut self) -> &mut dyn INotification {
-        &mut self.notification_subsys
-    }
-    fn console(&mut self) -> &mut dyn IConsole {
-        &mut self.console_subsys
-    }
-    fn file_system(&self) -> &dyn IFileSystem {
-        &self.file_system_subsys
     }
     fn system_info(&self) -> &dyn ISystemInfo {
         &self.system_info_subsys
