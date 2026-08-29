@@ -28,7 +28,14 @@ use crate::ui::widget_snapshot::AccessibilityState;
 use crate::ui::{KeyCode, KeyMod};
 
 pub(crate) const AGENT_PROTOCOL_SCHEMA: &str = "uix.agent.v1";
-pub(crate) const MAX_AGENT_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
+/// 单条 JSON Lines 请求正文上限（不含结尾换行）。
+pub(crate) const MAX_AGENT_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+/// 32 MiB PNG 经 base64 后的最大长度，再预留有界 JSON 信封空间。
+const MAX_SCREENSHOT_BASE64_BYTES: usize = ((MAX_SCREENSHOT_PNG_BYTES + 2) / 3) * 4;
+const MAX_AGENT_RESPONSE_ENVELOPE_BYTES: usize = 4 * 1024;
+/// 单条 JSON Lines 响应上限（包含结尾换行）。
+pub(crate) const MAX_AGENT_RESPONSE_BYTES: usize =
+    MAX_SCREENSHOT_BASE64_BYTES + MAX_AGENT_RESPONSE_ENVELOPE_BYTES;
 pub(crate) const MAX_AGENT_TEXT_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_AGENT_CONNECTIONS: usize = 8;
 const MAX_REQUEST_ID_BYTES: usize = 128;
@@ -170,9 +177,25 @@ impl AgentProtocolReply {
     }
 
     fn from_value(value: Value, close_connection: bool, result_code: &'static str) -> Self {
-        let mut bytes = match serde_json::to_vec(&value) {
-            Ok(bytes) if bytes.len() < MAX_AGENT_MESSAGE_BYTES => bytes,
-            Ok(_) | Err(_) => br#"{"schema":"uix.agent.v1","request_id":null,"ok":false,"error":{"code":"internal","message":"response exceeds the protocol limit"}}"#.to_vec(),
+        // 即使业务响应超限，也保留原 request_id，避免客户端失去关联后误重试动作。
+        let request_id = value.get("request_id").cloned().unwrap_or(Value::Null);
+        let (mut bytes, result_code) = match serde_json::to_vec(&value) {
+            Ok(bytes) if bytes.len().saturating_add(1) <= MAX_AGENT_RESPONSE_BYTES => {
+                (bytes, result_code)
+            }
+            Ok(_) | Err(_) => (
+                serde_json::to_vec(&json!({
+                    "schema": AGENT_PROTOCOL_SCHEMA,
+                    "request_id": request_id,
+                    "ok": false,
+                    "error": {
+                        "code": "internal",
+                        "message": "response exceeds the protocol limit",
+                    }
+                }))
+                .unwrap_or_else(|_| br#"{"schema":"uix.agent.v1","request_id":null,"ok":false,"error":{"code":"internal","message":"response serialization failed"}}"#.to_vec()),
+                "internal",
+            ),
         };
         bytes.push(b'\n');
         Self {
@@ -215,7 +238,7 @@ impl AgentProtocolSession {
 
     fn handle_line_inner(&mut self, line: &[u8]) -> AgentProtocolReply {
         // 帧长度上限：超出即拒绝，防止内存被无界输入撑爆。
-        if line.len() > MAX_AGENT_MESSAGE_BYTES {
+        if line.len() > MAX_AGENT_REQUEST_BYTES {
             return error_reply(
                 None,
                 AgentErrorCode::InvalidRequest,
@@ -340,7 +363,10 @@ impl AgentProtocolSession {
                     "key_modifiers": AGENT_KEY_MODIFIERS,
                 },
                 "limits": {
-                    "max_message_bytes": MAX_AGENT_MESSAGE_BYTES,
+                    // max_message_bytes 是 v1 旧客户端使用的请求上限别名。
+                    "max_message_bytes": MAX_AGENT_REQUEST_BYTES,
+                    "max_request_bytes": MAX_AGENT_REQUEST_BYTES,
+                    "max_response_bytes": MAX_AGENT_RESPONSE_BYTES,
                     "max_text_bytes": MAX_AGENT_TEXT_BYTES,
                     "max_connections": MAX_AGENT_CONNECTIONS,
                     "window_queue_capacity": DEFAULT_AGENT_COMMAND_QUEUE_CAPACITY,
@@ -468,7 +494,10 @@ impl AgentProtocolSession {
         }
         // 命令已结算：等待同一次 settle 内真实 present 完成的规范像素。
         // 票据把超时与通道关闭映射为 typed Error，这里按错误类别转协议码。
-        let readback = match session.readback.recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT) {
+        let readback = match session
+            .readback
+            .recv_timeout(AGENT_COMMAND_RESPONSE_TIMEOUT)
+        {
             Ok(readback) => readback,
             Err(error) => {
                 self.bridge.cancel_surface_readback(window_id);

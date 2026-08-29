@@ -14,7 +14,7 @@ use serde_json::json;
 use crate::app::agent::agent_bridge::AgentProcessBridge;
 use crate::app::agent::agent_protocol::{
     AGENT_PROTOCOL_SCHEMA, AgentProtocolReply, AgentProtocolSession, MAX_AGENT_CONNECTIONS,
-    MAX_AGENT_MESSAGE_BYTES, encode_session_token, framing_error_reply,
+    MAX_AGENT_REQUEST_BYTES, encode_session_token, framing_error_reply,
 };
 use crate::platform::adapters::transport::{
     AcceptedAgentStream, AgentEndpoint, AgentEndpointWake, AgentStream, AgentStreamCancelIo,
@@ -359,7 +359,7 @@ pub(crate) fn read_bounded_line<R: BufRead>(
             let newline = available.iter().position(|byte| *byte == b'\n');
             let copied = newline.unwrap_or(available.len());
             // 累计长度超过协议上限即判定超限，不再继续累积。
-            if line.len().saturating_add(copied) > MAX_AGENT_MESSAGE_BYTES {
+            if line.len().saturating_add(copied) > MAX_AGENT_REQUEST_BYTES {
                 return Ok(BoundedLine::TooLarge);
             }
             line.extend_from_slice(&available[..copied]);
