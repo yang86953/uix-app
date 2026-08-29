@@ -274,6 +274,24 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         super::release_paint_site(&self.inner.paint_sites, widget_id, queue);
     }
 
+    // 增加一份由实际节点拥有的派生布局订阅。
+    pub(super) fn bind_layout_site_invalidation(
+        &self,
+        widget_id: WidgetId,
+        queue: InvalidationQueueHandle,
+    ) {
+        super::retain_layout_site(&self.inner.paint_sites, widget_id, queue);
+    }
+
+    // 释放一份实际节点拥有的派生布局订阅。
+    pub(super) fn unbind_layout_site_invalidation(
+        &self,
+        widget_id: WidgetId,
+        queue: &InvalidationQueueHandle,
+    ) {
+        super::release_layout_site(&self.inner.paint_sites, widget_id, queue);
+    }
+
     /// 返回对外稳定的派生槽身份。
     pub fn slot_id(&self) -> StateSlotId {
         // 槽身份在整个 Arc 生命周期内保持不变。

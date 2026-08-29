@@ -111,6 +111,8 @@ pub struct BoxedWidget {
     reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
     // 保存该实际节点持有且可在只读绘制后替换的 Paint 订阅租约。
     paint_state_binds: std::cell::RefCell<Vec<crate::ui::reactive::state::PaintBindLease>>,
+    // 保存测量依赖持有的 Layout 订阅租约，避免实际绘制覆盖尺寸依赖。
+    layout_state_binds: std::cell::RefCell<Vec<crate::ui::reactive::state::PaintBindLease>>,
     // 由此实际节点拥有并随真实移除释放的捕获 Effect。
     effects: Box<[crate::ui::reactive::state::Effect]>,
     // 保存实际挂载节点承载的全部内联组件状态作用域。
@@ -209,6 +211,8 @@ impl BoxedWidget {
             reconcile_state_binds: Vec::new(),
             // 新节点在首次布局或绘制捕获前没有 Paint 租约。
             paint_state_binds: std::cell::RefCell::new(Vec::new()),
+            // 新节点尚未探测任何动态固有尺寸依赖。
+            layout_state_binds: std::cell::RefCell::new(Vec::new()),
             // 新节点在接收 View 捕获输出前不拥有 Effect。
             effects: Box::default(),
             uix_widget_scopes: Box::default(),

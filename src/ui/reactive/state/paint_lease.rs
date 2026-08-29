@@ -6,6 +6,8 @@ pub(crate) struct PaintBindLease {
     widget_id: crate::core::WidgetId,
     // 保存用于精确区分窗口端点的失效队列。
     queue: crate::draw::renderer::InvalidationQueueHandle,
+    // 标记状态变化是否需要重新测量，而不是只重绘旧 frame。
+    layout: bool,
 }
 
 // 为绘制租约提供创建与自动解绑契约。
@@ -31,6 +33,23 @@ impl PaintBindLease {
             widget_id,
             // 保存同一窗口队列身份。
             queue,
+            // 默认保留既有精确绘制订阅。
+            layout: false,
+        }
+    }
+
+    // 为固有尺寸依赖建立节点级布局订阅。
+    pub(super) fn bind_layout(
+        source: std::sync::Arc<dyn super::StatePaintBind>,
+        widget_id: crate::core::WidgetId,
+        queue: crate::draw::renderer::InvalidationQueueHandle,
+    ) -> Self {
+        source.bind_layout_site(widget_id, queue.clone());
+        Self {
+            source,
+            widget_id,
+            queue,
+            layout: true,
         }
     }
 }
@@ -39,8 +58,12 @@ impl PaintBindLease {
 impl Drop for PaintBindLease {
     // 在生命周期所有者丢弃时撤销一份端点持有计数。
     fn drop(&mut self) {
-        // 最后一份租约离开时由源端移除站点和队列强引用。
-        self.source.unbind_paint_site(self.widget_id, &self.queue);
+        // 最后一份租约离开时由源端移除对应站点和队列强引用。
+        if self.layout {
+            self.source.unbind_layout_site(self.widget_id, &self.queue);
+        } else {
+            self.source.unbind_paint_site(self.widget_id, &self.queue);
+        }
     }
 }
 
@@ -79,7 +102,13 @@ impl StateBindCaptureGuard {
         // 先标记已接管，避免本方法完成后的 Drop 重复弹栈。
         self.active = false;
         // 弹出本层捕获并建立由节点拥有的租约。
-        super::end_state_bind_capture(self.widget_id)
+        super::end_state_bind_capture(self.widget_id, false)
+    }
+
+    // 正常结束捕获并把布局订阅租约交给实际节点。
+    pub(crate) fn finish_layout(mut self) -> Vec<PaintBindLease> {
+        self.active = false;
+        super::end_state_bind_capture(self.widget_id, true)
     }
 }
 

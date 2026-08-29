@@ -17,6 +17,20 @@ impl super::BoxedWidget {
         self.paint_state_binds.borrow_mut().clear();
     }
 
+    // 整体替换节点本轮固有尺寸读取产生的布局租约集合。
+    pub(crate) fn replace_layout_state_binds(
+        &self,
+        leases: Vec<crate::ui::reactive::state::PaintBindLease>,
+    ) {
+        // 与绘制租约分开持有，避免首帧 render 覆盖布局依赖。
+        *self.layout_state_binds.borrow_mut() = leases;
+    }
+
+    // 在窗口关闭前主动释放节点布局 State 租约。
+    pub(crate) fn clear_layout_state_binds(&self) {
+        self.layout_state_binds.borrow_mut().clear();
+    }
+
     // 整体替换节点本轮声明结构依赖的租约集合。
     pub(crate) fn replace_reconcile_state_binds(
         // 接收当前已挂载节点。
