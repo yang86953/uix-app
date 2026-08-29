@@ -181,6 +181,8 @@ Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得�
 
 后台控制与像素呈现是两件事：普通动作只等待进程内声明协调、布局与语义修订完成，不依赖 compositor 前台状态。最小化或被遮挡后若平台仍报告 `presentable=true`，真实截屏与 presented wait 仍可工作；只有平台明确报告无可呈现 surface 时，动作和语义快照继续可用，而 `screenshot` 与 `wait(presented_revision)` 返回 `not_presentable`。连接器的 `uix_interact` 在这种情况下保留已成功动作并回退读取语义快照，`retry_action=false`，不得用旧截图伪造当前画面。
 
+同一窗口的请求以动作收敛边界串行执行：一个动作进入 UI turn 后，后续 `perform`、`snapshot`、`screenshot` 或确认结果会留在队列中，直到该动作完成声明协调、布局和语义快照刷新。后续动作因此总是对新快照重新校验；若仍携带旧 `expected_revision`，明确返回 `stale_revision`，未携带时则按当前 `automation_id` 重新解析。客户端不需要插入任意延时，也不得把 `internal` 当作可重试的树切换信号。
+
 ### 错误码
 
 | 错误码 | 含义 |
@@ -198,7 +200,8 @@ Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得�
 | `did_not_settle` / `not_presentable` | UI 未在限定轮数内稳定 / 窗口不可呈现 |
 | `window_operation_failed` | 窗口管理动作的平台调用失败 |
 | `payload_too_large` | 截屏 PNG 编码结果超出协议载荷上限 |
-| `timeout` / `app_closed` / `internal` | 等待超时 / 应用关闭 / 内部错误 |
+| `timeout` / `app_closed` | 等待超时 / 应用关闭 |
+| `internal` | 服务端内部不变量失败；不是瞬态重试信号，应停止当前自动化链并保留诊断 |
 
 协议等待超时时会原子取消尚未进入 UI turn 的命令，此时返回 `timeout`；若动作已经开始，则返回 `outcome_unknown`，明确表示结果未知。两者的重试语义不同。
 

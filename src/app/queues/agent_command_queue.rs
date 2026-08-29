@@ -516,16 +516,6 @@ impl AgentCommandQueue {
             .pop_front()
     }
 
-    pub(crate) fn push_front(&self, envelope: AgentCommandEnvelope) {
-        let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
-        if inner.closed {
-            drop(inner);
-            send_result(envelope.response, Err(AgentCommandError::AppClosed));
-        } else {
-            inner.pending.push_front(envelope);
-        }
-    }
-
     pub(crate) fn close(&self) {
         let pending = {
             let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());

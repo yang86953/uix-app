@@ -82,6 +82,8 @@ platform IPC
 
 命令票据与 UI 队列共享单向生命周期门。协议等待超时时，仍处于待执行阶段的命令原子取消，UI turn 不得再执行；已经开始的命令不能伪装成取消成功，协议返回 `outcome_unknown`，调用方必须读取当前语义状态后再决定是否重试。
 
+`WindowAgentState` 可以在一次 UI turn 中连续完成不产生在途状态的读取、拒绝或确认登记；任一语义动作、窗口动作、截屏或确认放行动作成功进入 `in_flight` 后立即停止本轮队列消费。后续请求保持 FIFO，直到前一动作完成 reconcile、layout、语义刷新与 settle，下一轮再对新快照校验。这样大子树切换后的紧随动作不会命中旧节点；显式携带旧 `expected_revision` 时返回 `stale_revision`，而不是把旧树的 `NotHandled` 暴露成 `internal`。
+
 ## 窗口动作
 
 窗口级动作分两类：输入注入（按键 / 点击 / 指针）经正常 UI 事件路径派发，未消费视为失败；窗口管理动作（resize / move / maximize / minimize / restore）经 `AgentWindowOps` 契约调用平台窗口——契约由 window 系统实现（`PlatformWindowAgentOps` 适配 `PlatformWindow::properties_mut`），由窗口驱动层在每帧 UI turn 内以借用传入，执行器不持有平台窗口引用。窗口操作失败映射为 `window_operation_failed`。
