@@ -46,4 +46,4 @@ pub use application::di::Container;
 pub use queues::agent_command_queue::AgentConfirmationRequest;
 pub use queues::app_timer::TimerHandle;
 pub use window::window::Window;
-pub use window::window_config::WindowConfig;
+pub use window::window_config::{DesktopLayerConfig, WindowConfig, WindowSurfaceRole};

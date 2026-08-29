@@ -104,6 +104,7 @@ use wayland_protocols::wp::text_input::zv3::client::{
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1;
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
 use wayland_protocols::xdg::shell::client::xdg_wm_base;
+use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ShmBuffer — RAII 包装：SHM 池 + 缓冲区 + 后备文件
@@ -140,6 +141,8 @@ pub(crate) struct WaylandBackend {
     pub(crate) _compositor: Main<wl_compositor::WlCompositor>,
     pub(crate) _wm_base: Main<xdg_wm_base::XdgWmBase>,
     pub(crate) _shm: Main<wl_shm::WlShm>,
+    // layer-shell 是可选桌面协议；普通应用不因其缺失而无法启动。
+    pub(crate) layer_shell: Option<Main<ZwlrLayerShellV1>>,
 
     // ── 窗口状态 ──────────────────────────────────────────────────
     pub(crate) closed: bool,
@@ -288,6 +291,10 @@ impl WaylandBackend {
                 .map_err(|e| format!("no wl_shm: {e}"))?,
             proxy_context.clone(),
         );
+        let layer_shell = globals
+            .bind::<ZwlrLayerShellV1, _, _>(&queue_handle, 1..=4, ())
+            .ok()
+            .map(|proxy| Main::new(proxy, proxy_context.clone()));
 
         let outputs: Arc<Mutex<Vec<output::RawOutput>>> = Arc::new(Mutex::new(Vec::new()));
         // 建立 backend 唯一 output scale registry，复用 runtime failure source。
@@ -425,6 +432,7 @@ impl WaylandBackend {
             _compositor,
             _wm_base,
             _shm,
+            layer_shell,
             closed: false,
             pending_failures,
             events,
