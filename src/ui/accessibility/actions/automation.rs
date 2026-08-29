@@ -464,7 +464,19 @@ impl TestApp {
             let semantic_changed = self.tree.drain_app_state_semantic_events();
             let effects_changed = self.tree.has_pending_effects() && self.tree.tick_effects();
             let reconcile_requested = self.tree.take_reconcile_requested();
-            if !focus_changed && !semantic_changed && !effects_changed && !reconcile_requested {
+            // 动态固有尺寸依赖只投递 Layout；测试驱动必须像真实窗口帧一样消费。
+            let layout_requested = self
+                .tree
+                .invalidation
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .has_layout();
+            if !focus_changed
+                && !semantic_changed
+                && !effects_changed
+                && !reconcile_requested
+                && !layout_requested
+            {
                 return Ok(passes);
             }
             if reconcile_requested {
