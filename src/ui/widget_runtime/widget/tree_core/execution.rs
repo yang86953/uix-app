@@ -381,6 +381,8 @@ impl WidgetTree {
             node.clear_reconcile_state_binds();
             // 关闭节点绘制 State 订阅并释放失效队列强引用。
             node.clear_paint_state_binds();
+            // 布局依赖与绘制依赖分别持有，停止前必须同时释放。
+            node.clear_layout_state_binds();
             // 清空节点 Effect，关闭后不再参与调度。
             node.replace_captured_effects(Vec::new());
         }

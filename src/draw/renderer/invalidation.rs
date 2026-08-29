@@ -322,6 +322,13 @@ pub fn invalidate_paint_handle(handle: &InvalidationQueueHandle, id: NodeId, rec
     }
 }
 
+/// 通过共享句柄推送 Layout 失效（动态固有尺寸绑定用）。
+pub fn invalidate_layout_handle(handle: &InvalidationQueueHandle, id: NodeId) {
+    if let Ok(mut q) = handle.lock() {
+        q.push(Invalidation::Layout(id));
+    }
+}
+
 fn merge_paint_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
     match (a, b) {
         (None, _) | (_, None) => None,

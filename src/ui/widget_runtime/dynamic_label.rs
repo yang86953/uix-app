@@ -1,4 +1,4 @@
-//! 响应式文本标签 — 文本闭包绑定 State → Paint 失效的框架级组件。
+//! 响应式文本标签 — 文本闭包绑定 State → Layout 失效的框架级组件。
 //!
 //! # SMC 边界（SMC-04）
 //!
@@ -115,16 +115,24 @@ impl DynamicLabel {
             .as_ref()
             .map(|s| s.font_size.default_size())
             .unwrap_or(14.0);
+        // 动态文本与静态 Label 共用显式换行估算，避免布局仍按单行占位。
+        let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
+            &text,
+            f32::INFINITY,
+            fs,
+        );
+        // 动态标签绘制固定使用 1.5 倍字号行盒，测量保持同一行距契约。
+        let text_height = fs * 1.5 * estimated.line_count as f32;
         let h = self
             .style
             .as_ref()
             .and_then(|s| s.height)
-            .unwrap_or(fs * 1.5 + pad.vertical());
+            .unwrap_or(text_height + pad.vertical());
         let w = self
             .style
             .as_ref()
             .and_then(|s| s.width)
-            .unwrap_or(text.len() as f32 * 7.0 + pad.horizontal());
+            .unwrap_or(estimated.max_line_width + pad.horizontal());
         Size::new(w, h)
     }
 }

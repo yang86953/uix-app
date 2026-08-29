@@ -412,7 +412,7 @@ impl WidgetTree {
         self.push_invalidation(Invalidation::FullComposite);
     }
 
-    /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
+    /// 绑定响应式 widget（DynamicLabel 等）的 State → 节点级失效。
     pub fn bind_reactive_widget_states(&mut self) {
         use crate::ui::reactive::state::StateBindCaptureGuard;
         use crate::ui::widget_runtime::dynamic_label::DynamicLabel;
@@ -443,10 +443,10 @@ impl WidgetTree {
                         let capture = StateBindCaptureGuard::begin(id, handle.clone(), paint_rect);
                         // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）。
                         dl.probe_dependencies();
-                        // 正常完成后把精确绘制订阅交给实际节点。
-                        let leases = capture.finish();
+                        // 动态文本会改变固有尺寸，正常完成后交接节点级布局订阅。
+                        let leases = capture.finish_layout();
                         // 本轮集合整体替换旧依赖，防止重布局累积陈旧站点。
-                        node.replace_paint_state_binds(leases);
+                        node.replace_layout_state_binds(leases);
                     }
                 }
             }

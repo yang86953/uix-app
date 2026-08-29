@@ -8,7 +8,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::{Rect, WidgetId};
-use crate::draw::renderer::{InvalidationQueueHandle, invalidate_paint_handle};
+use crate::draw::renderer::{
+    InvalidationQueueHandle, invalidate_layout_handle, invalidate_paint_handle,
+};
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
 type StateWatcher<T> = Arc<dyn Fn(&T) + Send + Sync>;
@@ -49,11 +51,19 @@ mod computed;
 // 保持既有响应式公开派生值入口不变。
 pub use computed::Computed;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StateBindInvalidation {
+    Paint,
+    Layout,
+}
+
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
     widget_id: WidgetId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
+    // 区分只重绘与需要重新测量的动态依赖站点。
+    invalidation: StateBindInvalidation,
     // 记录由实际节点生命周期持有的租约数量。
     leases: usize,
     // 标记公开兼容入口是否要求站点持续存活到显式覆盖。
@@ -183,7 +193,7 @@ fn begin_state_bind_capture(
 }
 
 // 结束最内层探测并返回由调用节点接管的绘制租约。
-fn end_state_bind_capture(widget_id: WidgetId) -> Vec<PaintBindLease> {
+fn end_state_bind_capture(widget_id: WidgetId, layout: bool) -> Vec<PaintBindLease> {
     // 只弹出最内层上下文，恢复仍在执行的外层捕获。
     let capture = STATE_BIND_CAPTURE_STACK.with(|stack| stack.borrow_mut().pop());
     // 没有对应捕获时返回空集合，避免制造无所有者绑定。
@@ -200,8 +210,14 @@ fn end_state_bind_capture(widget_id: WidgetId) -> Vec<PaintBindLease> {
     states
         // 逐一交接捕获源。
         .into_iter()
-        // 渲染闭包只需 Paint，不能升级为整树 reconcile。
-        .map(|source| PaintBindLease::bind(source, id, queue.clone(), rect))
+        // 按组件声明建立精确 Paint 或节点级 Layout 租约，不升级为整树 reconcile。
+        .map(|source| {
+            if layout {
+                PaintBindLease::bind_layout(source, id, queue.clone())
+            } else {
+                PaintBindLease::bind(source, id, queue.clone(), rect)
+            }
+        })
         // 返回完整租约集合供节点整体替换。
         .collect()
 }
@@ -289,10 +305,11 @@ fn bind_persistent_paint_site(
     rect: Option<Rect>,
 ) {
     if let Ok(mut guard) = sites.lock() {
-        if let Some(site) = guard
-            .iter_mut()
-            .find(|site| site.widget_id == widget_id && Arc::ptr_eq(&site.queue, &queue))
-        {
+        if let Some(site) = guard.iter_mut().find(|site| {
+            site.widget_id == widget_id
+                && Arc::ptr_eq(&site.queue, &queue)
+                && site.invalidation == StateBindInvalidation::Paint
+        }) {
             // 更新同一端点的最新绘制范围。
             site.rect = rect;
             // 公开直接绑定要求站点保持到状态源销毁。
@@ -303,6 +320,7 @@ fn bind_persistent_paint_site(
                 widget_id,
                 queue,
                 rect,
+                invalidation: StateBindInvalidation::Paint,
                 // 永久入口本身不计入节点租约。
                 leases: 0,
                 // 标记该站点不能因租约归零而删除。
@@ -323,13 +341,34 @@ fn retain_paint_site(
     // 接收当前布局解析出的绘制区域。
     rect: Option<Rect>,
 ) {
+    retain_state_site(sites, widget_id, queue, rect, StateBindInvalidation::Paint);
+}
+
+// 增加一份由实际节点拥有的布局站点租约。
+fn retain_layout_site(
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    widget_id: WidgetId,
+    queue: InvalidationQueueHandle,
+) {
+    retain_state_site(sites, widget_id, queue, None, StateBindInvalidation::Layout);
+}
+
+// 按失效种类增加一份由实际节点拥有的响应式站点租约。
+fn retain_state_site(
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    widget_id: WidgetId,
+    queue: InvalidationQueueHandle,
+    rect: Option<Rect>,
+    invalidation: StateBindInvalidation,
+) {
     // 只在站点集合可访问时登记。
     if let Ok(mut guard) = sites.lock() {
         // 同一节点与队列共享一个站点并累计所有者数量。
-        if let Some(site) = guard
-            .iter_mut()
-            .find(|site| site.widget_id == widget_id && Arc::ptr_eq(&site.queue, &queue))
-        {
+        if let Some(site) = guard.iter_mut().find(|site| {
+            site.widget_id == widget_id
+                && Arc::ptr_eq(&site.queue, &queue)
+                && site.invalidation == invalidation
+        }) {
             // 重绑时刷新最新布局范围。
             site.rect = rect;
             // 增加本次节点依赖持有。
@@ -343,6 +382,8 @@ fn retain_paint_site(
                 queue,
                 // 保存当前精确绘制范围。
                 rect,
+                // 保存状态变化时需要投递的失效种类。
+                invalidation,
                 // 记录首份节点租约。
                 leases: 1,
                 // 节点捕获站点不具有永久所有权。
@@ -361,13 +402,33 @@ fn release_paint_site(
     // 接收用于区分窗口端点的队列句柄。
     queue: &InvalidationQueueHandle,
 ) {
+    release_state_site(sites, widget_id, queue, StateBindInvalidation::Paint);
+}
+
+// 释放一份实际节点持有的布局站点租约。
+fn release_layout_site(
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    widget_id: WidgetId,
+    queue: &InvalidationQueueHandle,
+) {
+    release_state_site(sites, widget_id, queue, StateBindInvalidation::Layout);
+}
+
+// 按失效种类释放一份实际节点持有的响应式站点租约。
+fn release_state_site(
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    widget_id: WidgetId,
+    queue: &InvalidationQueueHandle,
+    invalidation: StateBindInvalidation,
+) {
     // 只在站点集合可访问时执行计数递减。
     if let Ok(mut guard) = sites.lock() {
         // 找到同一节点和窗口端点。
-        if let Some(site) = guard
-            .iter_mut()
-            .find(|site| site.widget_id == widget_id && Arc::ptr_eq(&site.queue, queue))
-        {
+        if let Some(site) = guard.iter_mut().find(|site| {
+            site.widget_id == widget_id
+                && Arc::ptr_eq(&site.queue, queue)
+                && site.invalidation == invalidation
+        }) {
             // 防御性饱和递减，析构路径不能因异常重复释放而下溢。
             site.leases = site.leases.saturating_sub(1);
         }
@@ -382,7 +443,16 @@ fn fire_paint_bindings(sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>) {
         return;
     };
     for site in &sites {
-        invalidate_paint_handle(&site.queue, site.widget_id, site.rect);
+        match site.invalidation {
+            StateBindInvalidation::Paint => {
+                invalidate_paint_handle(&site.queue, site.widget_id, site.rect);
+            }
+            StateBindInvalidation::Layout => {
+                invalidate_layout_handle(&site.queue, site.widget_id);
+                // 文本内容即使尺寸不变也必须重绘，Layout 不替代 Paint。
+                invalidate_paint_handle(&site.queue, site.widget_id, None);
+            }
+        }
     }
 }
 
@@ -475,6 +545,10 @@ pub trait StatePaintBind: Send + Sync {
     );
     /// 释放一份实际节点持有的绘制订阅。
     fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle);
+    /// 增加一份由实际节点生命周期持有的布局订阅。
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle);
+    /// 释放一份实际节点持有的布局订阅。
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
@@ -511,6 +585,14 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
         // 最后一份租约离开时移除站点和窗口队列强引用。
         release_paint_site(&self.paint_sites, widget_id, queue);
     }
+
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle) {
+        retain_layout_site(&self.paint_sites, widget_id, queue);
+    }
+
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+        release_layout_site(&self.paint_sites, widget_id, queue);
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
@@ -535,6 +617,14 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
         // 委托 Computed 内部对象释放派生槽的绘制站点。
         self.unbind_paint_site_invalidation(widget_id, queue);
+    }
+
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle) {
+        self.bind_layout_site_invalidation(widget_id, queue);
+    }
+
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+        self.unbind_layout_site_invalidation(widget_id, queue);
     }
 }
 
