@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$version = '0.0.1'
+$version = '0.0.2'
 $artifactName = "uix-$version-internal-win-x64"
 
 $dirtyEntries = @(git -C $repoRoot status --porcelain=v1 --untracked-files=all)

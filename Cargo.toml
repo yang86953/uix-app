@@ -4,7 +4,7 @@ members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-gate-con
 
 [package]
 name = "uix"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 publish = false
 license-file = "LICENSE"
@@ -34,7 +34,7 @@ opt-level = 3
 codegen-units = 16
 
 [dependencies]
-uix-derive = { path = "uix-derive", version = "0.0.1", default-features = false }
+uix-derive = { path = "uix-derive", version = "0.0.2", default-features = false }
 ab_glyph = "0.2.32"
 # 小端 RHI 图片上传以安全切片转换借用既有 u32 像素，不扩大 unsafe 边界。
 bytemuck = "1.25.2"

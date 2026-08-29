@@ -110,7 +110,7 @@ mod feedback_message {
         // 创建通知管理器。
         let notify = Notification::new();
         // 发布带标题和描述的信息通知。
-        let _notification_id = notify.info("更新完成", "v0.0.1 已就绪");
+        let _notification_id = notify.info("更新完成", "v0.0.2 已就绪");
 
         // 构建气泡确认组件节点。
         let _popconfirm = embed(
@@ -150,7 +150,7 @@ mod feedback_toast_options {
             // 声明通知标题。
             title: "更新".into(),
             // 声明通知描述。
-            description: "v0.0.1 已就绪".into(),
+            description: "v0.0.2 已就绪".into(),
             // 声明可见时长。
             duration_ms: 5_000,
             // 声明用户可手动关闭。
