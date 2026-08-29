@@ -7,6 +7,7 @@
 ### 2026-08-29 Agent 控制协议
 
 - 修复 Agent 截屏协议的帧上限矛盾：此前 `hello` 宣称 PNG 可达 32 MiB，但所有 JSON 回包统一受 4 MiB 上限约束，较大的合法截图在 base64 膨胀后会丢失原 `request_id` 并误报 `internal`。现拆分 4 MiB 请求正文上限与约 42.7 MiB 响应上限，`hello.limits` 新增 `max_request_bytes` / `max_response_bytes`（旧 `max_message_bytes` 保留为请求上限别名）；响应超限降级仍回显原请求 ID。仓库客户端同步执行长度、schema、请求 ID 与截屏载荷校验，避免错配回包或无界累积。
+- 降低连续 Agent 操作的客户端开销：`scripts/agent_client.py session` 在同一已认证连接上按 stdin/stdout JSON Lines 转发多次请求，只在首行发布一次 `hello`；单次命令改为静默握手并只输出目标回包，不再为每步重复输出完整能力目录。Linux/Wayland release 主演示复测：单次 `list_windows` 中位时延由约 37 ms 降到 17.6 ms、stdout 由 1876 字节降到 392 字节；持久会话内 50 次同请求 p50/p95 为 0.046/0.070 ms，20 次首页↔语言能力页切换到真实呈现完成为 15.0/16.9 ms。本批针对已测得的客户端重启与重复输出开销，不改 UI settle 或呈现语义。
 
 ## 0.0.1（2026-08-29）
 
