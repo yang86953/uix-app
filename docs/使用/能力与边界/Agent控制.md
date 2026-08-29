@@ -180,6 +180,8 @@ App::new()
 
 - JSON Lines，本机端点（Unix socket / 命名管道），端点路径含进程 id 与会话 nonce。
 - 首请求必须为 `hello`（携带 token）；已认证连接按 `list_windows` → `snapshot` → `perform` / `confirm` → `wait` 循环工作。
+- 请求帧与响应帧分别有界：`hello.limits.max_request_bytes` 是请求 JSON 正文上限，`max_response_bytes` 是含结尾换行的单条响应上限；旧字段 `max_message_bytes` 保留为请求上限别名。响应上限已计入 32 MiB 截屏 PNG 的 base64 膨胀和 JSON 信封，不会把合法截屏误报为 `internal`。
+- 每个响应必须原样回显请求的 `request_id`；客户端应同时校验 `schema`、`request_id` 与协商后的响应长度，关联不一致时停止该连接，不能把回包归给其他动作。
 - `hello.capabilities.window_state_fields` 发布 `list_windows` 可读取的窗口状态字段；客户端必须先协商再消费。字段来自 UIX 跨平台窗口属性，是框架当前观测，不承诺窗口管理器或 compositor 已确认动作终态。
 - 动作必须命中当前语义快照中的稳定节点（`automation_id` 或 `node_id`）并经过窗口 owner thread。
 - `wait` 返回同 generation 的 `closed` 后，该连接已到达终态并由服务端关闭；应用 teardown 会先给
@@ -224,7 +226,7 @@ python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐
  "target": {"automation_id": "save-button"}, "action": {"kind": "invoke"}}
 ```
 
-**预期结果**：每条命令输出一行 JSON 响应；`perform` 成功表示动作已进入 UI 语义路径执行。标准回路是 `list_windows` → `snapshot` → `perform` / `confirm` → `wait`，等待界面稳定后再读下一次快照断言。
+**预期结果**：每条命令输出一行 JSON 响应；内置客户端会按 `hello` 协商请求/响应/截屏上限，并校验回包的 schema 与 `request_id`。`perform` 成功表示动作已进入 UI 语义路径执行。标准回路是 `list_windows` → `snapshot` → `perform` / `confirm` → `wait`，等待界面稳定后再读下一次快照断言。
 
 **可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。脚本只封装单条命令，确认流程等多次往返会话需按协议自建连接。
 

@@ -29,4 +29,4 @@ Windows 拒绝远程 pipe 并限制当前用户；Unix 校验 peer uid，无法�
 
 ## 模块不变量
 
-不监听 TCP/UDP，不解析 Agent 语义协议，不访问 WidgetTree；字节流有界并支持取消。传输接收或写入成功不等于业务请求已授权、执行或完成。
+不监听 TCP/UDP，不解析 Agent 语义协议，不访问 WidgetTree；字节流有界并支持取消。传输读取按 app/agent 发布的请求帧上限拒绝超长 JSON Lines，响应上限和信封关联仍由协议组件持有。传输接收或写入成功不等于业务请求已授权、执行或完成。

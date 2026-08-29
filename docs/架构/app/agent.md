@@ -29,7 +29,9 @@ app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandRespons
 
 ## 组件：AgentProtocolSession
 
-控制面默认不启动；只有构建启用相应 feature 且应用显式开启后，才建立仅本机 IPC。首请求必须以高熵随机 token 完成 hello；同用户本机连接只是传输筛选，不等于业务信任。消息大小、文本长度、连接数、队列深度和 wait 时间均有硬上限。
+控制面默认不启动；只有构建启用相应 feature 且应用显式开启后，才建立仅本机 IPC。首请求必须以高熵随机 token 完成 hello；同用户本机连接只是传输筛选，不等于业务信任。请求 JSON 正文与响应 JSON Lines 分别有硬上限，响应上限包含截屏 PNG 的 base64 膨胀和信封空间；`hello` 发布两者，旧 `max_message_bytes` 只作为请求上限别名。文本长度、连接数、队列深度和 wait 时间同样有硬上限。
+
+响应信封由 `AgentProtocolSession` 统一生成并回显原始 `request_id`。业务载荷序列化或长度检查失败时，降级错误仍保留该 ID 且记录真实 `internal` 结果，客户端由此可以停止当前调用，而不会因关联信息丢失误重试有副作用动作。
 
 协议提供窗口枚举、语义快照、受控动作（语义动作与窗口动作）、确认流程和等待，不提供 shell、文件系统、网络代理、任意内存访问或 OS 全局输入注入。鉴权失败、超限、未知动作和 stale generation 返回有界错误，不能 panic 或回显 token。
 

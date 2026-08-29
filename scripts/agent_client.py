@@ -22,6 +22,24 @@ if os.name == "nt":
 # 统一以 UTF-8 输出，避免 Windows 控制台默认 GBK 编码破坏 JSON。
 sys.stdout.reconfigure(encoding="utf-8")
 
+AGENT_PROTOCOL_SCHEMA = "uix.agent.v1"
+INITIAL_MAX_REQUEST_BYTES = 4 * 1024 * 1024
+INITIAL_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+HARD_MAX_REQUEST_BYTES = 16 * 1024 * 1024
+HARD_MAX_RESPONSE_BYTES = 48 * 1024 * 1024
+HARD_MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024
+
+
+def negotiated_limit(limits, name, legacy_name, fallback, hard_max):
+    """读取服务端发布的正整数上限，同时保留客户端自身的硬边界。"""
+    value = limits.get(name, limits.get(legacy_name, fallback))
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise RuntimeError(f"agent hello returned invalid {name}")
+    if value > hard_max:
+        raise RuntimeError(f"agent hello {name} exceeds the client safety limit")
+    return value
+
+
 def discovery_dir():
     """返回与框架 private_discovery_directory 一致的平台目录。"""
     if os.name == "nt":
@@ -51,6 +69,9 @@ class AgentSession:
 
     def __init__(self, endpoint, token):
         self.token = token
+        self.max_request_bytes = INITIAL_MAX_REQUEST_BYTES
+        self.max_response_bytes = INITIAL_MAX_RESPONSE_BYTES
+        self.max_screenshot_bytes = HARD_MAX_SCREENSHOT_BYTES
         if os.name == "nt":
             # Windows 使用命名管道。
             self.handle = win32file.CreateFile(
@@ -69,32 +90,74 @@ class AgentSession:
             self.socket.connect(endpoint)
             self.handle = None
         # 保持默认字节模式读取，服务端按 JSON Lines 写入。
-        self.buffer = b""
+        self.buffer = bytearray()
 
     def send(self, payload):
         """发送一个 JSON 对象并读取一行响应。"""
         # 每个请求都必须携带 request_id 与协议 schema。
-        payload.setdefault("request_id", f"req-{time.time_ns()}")
-        payload.setdefault("schema", "uix.agent.v1")
-        line = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+        request_id = payload.setdefault("request_id", f"req-{time.time_ns()}")
+        schema = payload.setdefault("schema", AGENT_PROTOCOL_SCHEMA)
+        if not isinstance(request_id, str) or not request_id:
+            raise RuntimeError("agent request_id must be a non-empty string")
+        if schema != AGENT_PROTOCOL_SCHEMA:
+            raise RuntimeError("agent request schema does not match the client schema")
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if len(encoded) > self.max_request_bytes:
+            raise RuntimeError("agent request exceeds the negotiated protocol limit")
+        line = encoded + b"\n"
         if self.socket is not None:
             self.socket.sendall(line)
         else:
             win32file.WriteFile(self.handle, line)
         # 读取直到收到完整行。
-        while b"\n" not in self.buffer:
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                if newline + 1 > self.max_response_bytes:
+                    raise RuntimeError("agent response exceeds the negotiated protocol limit")
+                break
+            if len(self.buffer) >= self.max_response_bytes:
+                raise RuntimeError("agent response exceeds the negotiated protocol limit")
             if self.socket is not None:
                 data = self.socket.recv(65536)
                 if not data:
                     raise RuntimeError("agent IPC closed before reply")
             else:
                 _, data = win32file.ReadFile(self.handle, 65536)
-            self.buffer += data
-        raw, self.buffer = self.buffer.split(b"\n", 1)
-        return json.loads(raw.decode("utf-8"))
+            self.buffer.extend(data)
+        raw = bytes(self.buffer[:newline])
+        del self.buffer[:newline + 1]
+        try:
+            reply = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError("agent response is not valid UTF-8 JSON") from error
+        if not isinstance(reply, dict):
+            raise RuntimeError("agent response must be a JSON object")
+        if reply.get("schema") != AGENT_PROTOCOL_SCHEMA:
+            raise RuntimeError("agent response schema does not match the client schema")
+        if reply.get("request_id") != request_id:
+            raise RuntimeError("agent response request_id does not match the request")
+        return reply
 
     def hello(self):
-        return self.send({"schema": "uix.agent.v1", "type": "hello", "token": self.token})
+        reply = self.send({"schema": AGENT_PROTOCOL_SCHEMA, "type": "hello", "token": self.token})
+        if reply.get("ok"):
+            limits = reply.get("limits")
+            if not isinstance(limits, dict):
+                raise RuntimeError("agent hello response is missing protocol limits")
+            self.max_request_bytes = negotiated_limit(
+                limits, "max_request_bytes", "max_message_bytes",
+                INITIAL_MAX_REQUEST_BYTES, HARD_MAX_REQUEST_BYTES,
+            )
+            self.max_response_bytes = negotiated_limit(
+                limits, "max_response_bytes", "max_message_bytes",
+                INITIAL_MAX_RESPONSE_BYTES, HARD_MAX_RESPONSE_BYTES,
+            )
+            self.max_screenshot_bytes = negotiated_limit(
+                limits, "max_screenshot_bytes", "max_screenshot_bytes",
+                HARD_MAX_SCREENSHOT_BYTES, HARD_MAX_SCREENSHOT_BYTES,
+            )
+        return reply
 
     def list_windows(self):
         return self.send({"type": "list_windows"})
@@ -152,7 +215,10 @@ def main():
         print("== hello ==")
         print(json.dumps(session.hello(), ensure_ascii=False))
         command = args[0]
-        if command == "list_windows":
+        if command == "hello":
+            # 握手已在上方完成并输出；该命令不再发送第二次 hello。
+            pass
+        elif command == "list_windows":
             print(json.dumps(session.list_windows(), ensure_ascii=False))
         elif command == "snapshot":
             window_id = int(args[1]) if len(args) > 1 else None
@@ -186,7 +252,9 @@ def main():
             if not reply.get("ok"):
                 print(json.dumps(reply, ensure_ascii=False))
                 sys.exit(1)
-            data = base64.b64decode(reply["data_base64"])
+            data = base64.b64decode(reply["data_base64"], validate=True)
+            if len(data) > session.max_screenshot_bytes:
+                raise RuntimeError("agent screenshot exceeds the negotiated protocol limit")
             with open(out_path, "wb") as fh:
                 fh.write(data)
             print(json.dumps({
