@@ -219,6 +219,16 @@ python3 scripts/agent_client.py screenshot out.png   # 像素级截屏（默认�
 python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐标
 ```
 
+AI 连续操作时不要为每一步重启客户端；使用 `session` 保持同一条已认证连接。启动后 stdout 首行是一次 `hello` 回包，随后 stdin 每输入一行请求 JSON，stdout 就输出一行对应响应 JSON；请求缺省的 `schema` 与 `request_id` 仍由客户端补齐：
+
+```bash
+python3 scripts/agent_client.py session
+{"type":"list_windows"}
+{"type":"snapshot","window_id":1}
+```
+
+单次命令仍会在内部完成握手，但只输出目标命令的有效回包，不再重复打印能力目录。持久模式避免每步重新启动 Python、发现端点、建连和握手，也减少 AI 反复读取相同能力清单的输出开销。
+
 语义动作与窗口动作写入 JSON 后用 `perform` 提交；语义动作的 `target` 在请求级（`automation_id` 或 `node_id` 二选一），窗口动作禁止携带 `target`：
 
 ```txt
@@ -226,11 +236,11 @@ python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐
  "target": {"automation_id": "save-button"}, "action": {"kind": "invoke"}}
 ```
 
-**预期结果**：每条命令输出一行 JSON 响应；内置客户端会按 `hello` 协商请求/响应/截屏上限，并校验回包的 schema 与 `request_id`。`perform` 成功表示动作已进入 UI 语义路径执行。标准回路是 `list_windows` → `snapshot` → `perform` / `confirm` → `wait`，等待界面稳定后再读下一次快照断言。
+**预期结果**：单次模式每条命令只输出目标命令的一行 JSON 响应；持久模式额外在首行输出一次 `hello`，此后每个请求对应一行响应。内置客户端会按 `hello` 协商请求/响应/截屏上限，并校验回包的 schema 与 `request_id`。`perform` 成功表示动作已进入 UI 语义路径执行。标准回路是 `list_windows` → `snapshot` → `perform` / `confirm` → `wait`，等待界面稳定后再读下一次快照断言。
 
-**可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。脚本只封装单条命令，确认流程等多次往返会话需按协议自建连接。
+**可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。确认与等待等多次往返优先使用 `session`，业务错误仍作为正常协议回包输出，不会自动重试动作。
 
-**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件；截屏仅 backend-managed GPU 呈现可用。
+**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件；截屏仅 backend-managed GPU 呈现可用。`session` 是前台 JSON Lines 进程，stdin 关闭、输入非法 JSON、传输/关联/schema 校验失败或应用退出时结束；需要继续操作时重新建立会话，不自动重连或重放动作。
 
 ## 安全边界
 

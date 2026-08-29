@@ -8,6 +8,7 @@
   python agent_client.py screenshot [window_id] [output.png]
   python agent_client.py perform <json-file>   # perform 请求体从 JSON 文件读取
   python agent_client.py click <x> <y> [window_id]
+  python agent_client.py session               # 持久连接；stdin/stdout 各一行 JSON
 """
 import base64
 import json
@@ -205,6 +206,24 @@ def resolve_window(session, window_id=None):
     return selected["window_id"], selected["generation"]
 
 
+def run_persistent_session(session, hello_reply):
+    """复用已认证连接，按 stdin/stdout JSON Lines 转发多次请求。"""
+    print(json.dumps(hello_reply, ensure_ascii=False), flush=True)
+    for line_number, line in enumerate(sys.stdin, start=1):
+        if not line.strip():
+            continue
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                f"session stdin line {line_number} is not valid JSON"
+            ) from error
+        if not isinstance(request, dict):
+            raise RuntimeError(f"session stdin line {line_number} must be a JSON object")
+        reply = session.send(request)
+        print(json.dumps(reply, ensure_ascii=False), flush=True)
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -212,12 +231,16 @@ def main():
     endpoint, token = load_discovery()
     session = AgentSession(endpoint, token)
     try:
-        print("== hello ==")
-        print(json.dumps(session.hello(), ensure_ascii=False))
         command = args[0]
+        hello_reply = session.hello()
         if command == "hello":
-            # 握手已在上方完成并输出；该命令不再发送第二次 hello。
-            pass
+            print(json.dumps(hello_reply, ensure_ascii=False))
+            return
+        if not hello_reply.get("ok"):
+            print(json.dumps(hello_reply, ensure_ascii=False))
+            sys.exit(1)
+        if command == "session":
+            run_persistent_session(session, hello_reply)
         elif command == "list_windows":
             print(json.dumps(session.list_windows(), ensure_ascii=False))
         elif command == "snapshot":
