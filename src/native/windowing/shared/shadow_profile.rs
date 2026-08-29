@@ -20,6 +20,9 @@ const SOURCE_SIDE: f32 = 0.24;
 // alpha 衰减到该值以下视为不可见，用于计算各边外扩距离。
 const EXTENT_ALPHA: f32 = 0.0035;
 
+// 角部 tile 内接缝修正的过渡带宽（物理像素）。
+const SEAM_TRANSITION: f32 = 4.0;
+
 const SQRT_2: f32 = 1.414_213_5;
 
 // Abramowitz-Stegun 7.1.26 误差函数近似（最大误差 1.5e-7）。
@@ -84,52 +87,78 @@ pub(crate) fn mean_extent() -> i32 {
     (top_extent() + side_extent() + bottom_extent()) / 3
 }
 
-// 角部 tile 的二维合成值。
+// 角部 tile 的二维合成值（sx/sy 为相对窗口角点向外的物理距离）。
 //
-// 9-patch 边带 tile 只能承载单一一维剖面，而方向性场沿边带长度变化，
-// 因此角部取「双带剖面的加权混合」：与上下边带的接缝（sy = 0）严格取
-// 水平带值保证无缝，向对角平滑过渡到垂直带剖面；从接缝线起 4px 内
-// 完成过渡，残余失配收敛在角点数像素内。负的 sx/sy 表示按剖面公式向
-// 窗口矩形内侧的平滑延续，供圆角缺口补画取值。
-pub(crate) fn corner_alpha(horizontal: f32, vertical: f32, sx: f32, sy: f32, h_extent: f32) -> f32 {
-    let taper = (1.0 - sx / h_extent).clamp(0.0, 2.0);
-    let t = (sy / 4.0).clamp(0.0, 1.0);
-    let smooth = t * t * (3.0 - 2.0 * t);
-    let seam_value = side_profile(0.0);
-    let blended = horizontal + (vertical - seam_value) * taper * smooth;
-    // 缺口延续评估（sx/sy 为负）时禁止超过两条边带的边缘峰值。
-    let edge_peak = seam_value.max(vertical);
-    let limit = if sx < 0.0 || sy < 0.0 {
-        edge_peak
+// 取三者的最大：模型场（两条轴尾部相乘，角部沿对角单调衰减、淡尾长
+// 度与 Windows 一致）、水平带剖面按 sy 接缝接近度的延续、垂直带剖面
+// 按 sx 接缝接近度的延续。内部由模型场主导（无两带平均的隆起），接
+// 缝 4px 内由对应边带项钉住（接缝处偏差 ≤1.5 alpha 点）。负的 sx/sy
+// 表示按模型场向窗口矩形内侧的平滑延续，供圆角缺口补画取值（延续值
+// 钳到两侧边带边缘峰值之内）。
+pub(crate) fn corner_alpha(horizontal: f32, vertical: f32, sx: f32, sy: f32, bottom: bool) -> f32 {
+    let model = PEAK * model_gx(sx) * model_gy(sy, bottom);
+    // 缺口延续评估（sx/sy 为负）：纯模型场，钳到两侧边带边缘峰值之内。
+    if sx < 0.0 || sy < 0.0 {
+        return model.min(side_profile(0.0).max(vertical));
+    }
+    // 接缝接近度：1 在接缝线上，δ=4px 内平滑回落到 0。
+    let near_sy = 1.0 - smooth_step(sy / SEAM_TRANSITION);
+    let near_sx = 1.0 - smooth_step(sx / SEAM_TRANSITION);
+    let combined = model.max(horizontal * near_sy).max(vertical * near_sx);
+    combined.clamp(0.0, 1.0)
+}
+
+// 垂直带在窗口边缘处的峰值（上带或下带）。
+fn edge_peak(bottom: bool) -> f32 {
+    if bottom {
+        bottom_profile(0.0)
     } else {
-        f32::MAX
-    };
-    blended.min(limit)
+        top_profile(0.0)
+    }
+}
+
+// 平滑 0→1 过渡。
+fn smooth_step(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+// 模型场水平轴因子：s 为向外距离。
+fn model_gx(s: f32) -> f32 {
+    1.0 - phi((s - SOURCE_SIDE) / SIGMA)
+}
+
+// 模型场垂直轴因子：s 为向外距离，按上/下边带取对应源偏移。
+fn model_gy(s: f32, bottom: bool) -> f32 {
+    if bottom {
+        1.0 - phi((s - SOURCE_BOTTOM) / SIGMA)
+    } else {
+        phi((-s - SOURCE_TOP) / SIGMA)
+    }
 }
 
 // 圆角缺口补画的逐角事实 (alpha) 与公共衰减距离（scale=1 逻辑距离）。
 //
-// 缺口位于窗口矩形内、圆角轮廓外；补画值取合成场在圆弧对角中点处的
+// 缺口位于窗口矩形内、圆角轮廓外；补画值取模型场在圆弧对角中点处的
 // 取值，使缺口阴影与外圈 tile 在圆弧两侧连续。corner_radius 为当前
 // 物理圆角半径；返回 alpha 按颜色通道的 [左上, 右上, 左下, 右下] 排列。
 pub(crate) fn notch_fill(corner_radius: i32, scale: i32) -> ([f32; 4], i32) {
     let scale = scale.max(1);
     // 圆角缺口最大深度出现在角点对角方向：r·(√2-1)。
     let depth = corner_radius.max(1) as f32 / scale as f32 * (SQRT_2 - 1.0);
-    let h_extent = side_extent() as f32;
     let top = corner_alpha(
         side_profile(-depth),
         top_profile(-depth),
         -depth,
         -depth,
-        h_extent,
+        false,
     );
     let bottom = corner_alpha(
         side_profile(-depth),
         bottom_profile(-depth),
         -depth,
         -depth,
-        h_extent,
+        true,
     );
     ([top, top, bottom, bottom], mean_extent())
 }

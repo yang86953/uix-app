@@ -170,5 +170,5 @@ fn corner_tile_alpha(label: &str, x: i32, y: i32, width: i32, height: i32, scale
     } else {
         profile::bottom_profile(sy)
     };
-    profile::corner_alpha(horizontal, vertical, sx, sy, profile::side_extent() as f32)
+    profile::corner_alpha(horizontal, vertical, sx, sy, !top)
 }
