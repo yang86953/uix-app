@@ -26,15 +26,9 @@ impl WaylandWindowOps {
         }
     }
 
-    // 将客户端阴影环启用事实映射为统一外观通道使用的逻辑外扩距离。
-    pub(super) fn client_shadow_size(enabled: bool) -> i32 {
-        // 启用时与阴影环 tile 使用同一外扩距离，保证缺口补画与外圈连续。
-        if enabled {
-            super::shadow::SHADOW_SIZE
-        } else {
-            0
-        }
-    }
+    // 客户端装饰接管时窗口内容圆角的逻辑半径。
+    // 与 presentation 侧 WaylandSurfaceSnapshot 的圆角事实保持同一取值。
+    pub(super) const CLIENT_CORNER_RADIUS_LOGICAL: i32 = 10;
 
     // 同一 Wayland 窗口父模块下的私有 Components 共享稳定缺失代理诊断。
     pub(super) fn missing_proxy(operation: &str, proxy: &str) -> Error {

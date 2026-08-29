@@ -66,11 +66,16 @@ fragment float4 textured_fs(
         float signed_distance = length(max(distance, 0.0))
             + min(max(distance.x, distance.y), 0.0) - radius;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
-        // c[1].y/z 保存客户端阴影环峰值不透明度与物理外扩距离。
-        if (c[1].y > 0.0 && c[1].z > 0.0) {
-            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影。
-            float falloff = clamp(1.0 - signed_distance / c[1].z, 0.0, 1.0);
-            fill_alpha = c[1].y * falloff * falloff;
+        // c[0].zw 保存左上/右上、c[1].zw 保存左下/右下缺口补画峰值；
+        // c[1].y 保存补画物理衰减距离，同时是补画启用事实。
+        if (c[1].y > 0.0) {
+            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影；
+            // uv 保持内容左上原点约定，按所在象限取逐角补画峰值。
+            float horizontal = input.uv.y < 0.5
+                ? mix(c[0].z, c[0].w, step(0.5, input.uv.x))
+                : mix(c[1].z, c[1].w, step(0.5, input.uv.x));
+            float falloff = clamp(1.0 - signed_distance / c[1].y, 0.0, 1.0);
+            fill_alpha = horizontal * falloff * falloff;
         }
     }
     // 缺口阴影是预乘黑色，只向输出 alpha 贡献补画事实。

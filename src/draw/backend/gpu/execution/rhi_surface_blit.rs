@@ -122,7 +122,8 @@ fn lower_picture_sampled_quad(
         // Picture 合成不承担原生窗口边界裁剪。
         surface_corner_radius: 0.0,
         // Picture 合成同样不承担客户端阴影环缺口补画。
-        surface_shadow_fill: [0.0; 2],
+        surface_shadow_fill: [0.0; 4],
+        surface_shadow_fill_range: 0.0,
         // Picture 场景裁剪已在调用边界验证，当前 ABI 不重复携带 clip。
         scissor: None,
     }

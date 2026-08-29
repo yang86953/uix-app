@@ -36,8 +36,8 @@ pub(crate) trait OpenGlRhiHost {
         0.0
     }
     // 返回平台客户端阴影环外观事实；WGL 等无客户端阴影环的宿主保持关闭。
-    fn rhi_surface_shadow_fill(&self) -> (f32, f32) {
-        (0.0, 0.0)
+    fn rhi_surface_shadow_fill(&self) -> ([f32; 4], f32) {
+        ([0.0; 4], 0.0)
     }
     // 判断原生 drawable 与已验证 resize 请求是否已经完全一致。
     fn rhi_surface_matches(&self, resize: RhiSurfaceResizeTransaction) -> Result<bool>;
@@ -314,7 +314,7 @@ where
         self.rhi_surface_corner_radius()
     }
 
-    fn surface_shadow_fill(&self) -> (f32, f32) {
+    fn surface_shadow_fill(&self) -> ([f32; 4], f32) {
         self.rhi_surface_shadow_fill()
     }
 

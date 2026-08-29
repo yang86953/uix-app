@@ -22,17 +22,18 @@ impl RhiRenderer {
         RhiSampledRasterParams::new(viewport)
     }
 
-    // 把平台窗口外观折叠为最终 sampled 合成使用的圆角与缺口阴影常量。
+    // 把平台窗口外观折叠为最终 sampled 合成使用的圆角与逐角缺口补画常量。
     pub(super) fn surface_sampled_uniform(
         viewport: RhiViewport,
         corner_radius: f32,
-        surface_shadow_fill: [f32; 2],
+        surface_shadow_fill: [f32; 4],
+        surface_shadow_fill_range: f32,
     ) -> RhiSampledRasterParams {
         RhiSampledRasterParams::with_surface_corner_fill(
             viewport,
             corner_radius,
-            surface_shadow_fill[0],
-            surface_shadow_fill[1],
+            surface_shadow_fill,
+            surface_shadow_fill_range,
         )
     }
 

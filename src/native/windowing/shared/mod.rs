@@ -18,6 +18,7 @@ pub(crate) mod native_frame_mailbox;
 pub(crate) mod nonblocking_read;
 #[allow(dead_code)]
 pub(crate) mod nonblocking_write;
+pub(crate) mod shadow_profile;
 pub(crate) mod state;
 pub(crate) mod window;
 pub(crate) mod window_lifecycle;

@@ -17,9 +17,9 @@ void main() {
 
 #elif defined(UIX_TEXTURED)
 layout(set = 0, binding = 0, std140) uniform SampledUniforms {
-    vec2 viewport;
-    vec2 _pad0;
-    // x 保存物理圆角半径；y/z 保存缺口阴影峰值不透明度与物理外扩距离。
+    // xy 保存物理 viewport；zw 保存左上/右上缺口补画峰值。
+    vec4 line0;
+    // x 保存物理圆角半径；y 保存缺口补画物理衰减距离；zw 保存左下/右下峰值。
     vec4 surface_clip;
 } u;
 layout(set = 0, binding = 1) uniform sampler2D u_texture;
@@ -31,17 +31,21 @@ void main() {
     float coverage = 1.0;
     float fill_alpha = 0.0;
     if (u.surface_clip.x > 0.0) {
-        vec2 half_size = u.viewport * 0.5;
+        vec2 half_size = u.line0.xy * 0.5;
         vec2 centered = abs(gl_FragCoord.xy - half_size);
         vec2 distance = centered - half_size + u.surface_clip.x;
         float signed_distance = length(max(distance, vec2(0.0)))
             + min(max(distance.x, distance.y), 0.0) - u.surface_clip.x;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
-        if (u.surface_clip.y > 0.0 && u.surface_clip.z > 0.0) {
+        if (u.surface_clip.y > 0.0) {
             // 圆角缺口位于窗口矩形内但内容没有覆盖，用与客户端阴影环一致
-            // 的二次衰减把外圈阴影延伸进来，避免缺口透出桌面背景。
-            float falloff = clamp(1.0 - signed_distance / u.surface_clip.z, 0.0, 1.0);
-            fill_alpha = u.surface_clip.y * falloff * falloff;
+            // 的二次衰减把外圈阴影延伸进来；v_uv 保持内容左上原点约定，
+            // 按所在象限取逐角补画峰值，避免方向性阴影在缺口内失配。
+            float horizontal = v_uv.y < 0.5
+                ? mix(u.line0.z, u.line0.w, step(0.5, v_uv.x))
+                : mix(u.surface_clip.z, u.surface_clip.w, step(0.5, v_uv.x));
+            float falloff = clamp(1.0 - signed_distance / u.surface_clip.y, 0.0, 1.0);
+            fill_alpha = horizontal * falloff * falloff;
         }
     }
     // 缺口阴影是预乘黑色，只向输出贡献 alpha；内容侧保持原预乘采样结果。

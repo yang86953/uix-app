@@ -18,14 +18,15 @@ use crate::platform::presentation::rhi::{
     PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
     PipelineDepthStencilState, PipelineDitherState, PipelineFrontFace, PipelineKind,
     PipelineMultisampleState, PipelinePrimitiveTopology, PipelineRasterState, PipelineStencilState,
-    SAMPLED_CORNER_RADIUS_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET,
-    SAMPLED_SHADOW_RANGE_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
-    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
-    SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET, SHADOW_COLOR_FLOAT_OFFSET,
-    SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET, SHADOW_RADIUS_FLOAT_OFFSET,
-    SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET, SHAPE_DRAW_RECT_FLOAT_OFFSET,
-    SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET, SHAPE_STROKE_FLOAT_OFFSET,
-    SHAPE_VIEWPORT_FLOAT_OFFSET,
+    SAMPLED_CORNER_RADIUS_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_BL_FLOAT_OFFSET,
+    SAMPLED_SHADOW_ALPHA_BR_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_TL_FLOAT_OFFSET,
+    SAMPLED_SHADOW_ALPHA_TR_FLOAT_OFFSET, SAMPLED_SHADOW_RANGE_FLOAT_OFFSET,
+    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
+    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET, SHADOW_BODY_SIZE_AMBIENT_FLOAT_OFFSET,
+    SHADOW_COLOR_FLOAT_OFFSET, SHADOW_EDGE_Y_BLUR_FLOAT_OFFSET, SHADOW_ORIGIN_EDGE_X_FLOAT_OFFSET,
+    SHADOW_RADIUS_FLOAT_OFFSET, SHADOW_VIEWPORT_FLOAT_OFFSET, SHAPE_COLOR_FLOAT_OFFSET,
+    SHAPE_DRAW_RECT_FLOAT_OFFSET, SHAPE_RADIUS_FLOAT_OFFSET, SHAPE_RECT_FLOAT_OFFSET,
+    SHAPE_STROKE_FLOAT_OFFSET, SHAPE_VIEWPORT_FLOAT_OFFSET,
 };
 // 复用父资源表、目标方向、类型化 shader 语义和错误辅助。
 use super::{OpenGlRhiDevice, rhi_invalid, target_y_sign};
@@ -243,12 +244,30 @@ impl OpenGlRhiDevice {
                         "u_corner_radius",
                         read_f32(&uniform, SAMPLED_CORNER_RADIUS_FLOAT_OFFSET)?,
                     );
-                    // 按共享字段索引映射客户端阴影环缺口补画参数。
+                    // 按共享字段索引映射客户端阴影环逐角缺口补画参数。
                     set_f32(
                         gl,
                         program,
-                        "u_shadow_alpha",
-                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET)?,
+                        "u_shadow_alpha_tl",
+                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_TL_FLOAT_OFFSET)?,
+                    );
+                    set_f32(
+                        gl,
+                        program,
+                        "u_shadow_alpha_tr",
+                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_TR_FLOAT_OFFSET)?,
+                    );
+                    set_f32(
+                        gl,
+                        program,
+                        "u_shadow_alpha_bl",
+                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_BL_FLOAT_OFFSET)?,
+                    );
+                    set_f32(
+                        gl,
+                        program,
+                        "u_shadow_alpha_br",
+                        read_f32(&uniform, SAMPLED_SHADOW_ALPHA_BR_FLOAT_OFFSET)?,
                     );
                     set_f32(
                         gl,
