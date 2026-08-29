@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "uix"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ab_glyph",
  "ash",
@@ -707,13 +707,14 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-plasma",
+ "wayland-protocols-wlr",
  "windows",
  "windows-core",
 ]
 
 [[package]]
 name = "uix-derive"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -724,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "uix-lang-compiler"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -733,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "uix-lang-demo"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -888,6 +889,19 @@ name = "wayland-protocols-plasma"
 version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b6d8cf1eb2c1c31ed1f5643c88a6e53538129d4af80030c8cabd1f9fa884d91"
+dependencies = [
+ "bitflags",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-scanner",
+]
+
+[[package]]
+name = "wayland-protocols-wlr"
+version = "0.3.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb04e52f7836d7c7976c78ca0250d61e33873c34156a2a1fc9474828ec268234"
 dependencies = [
  "bitflags",
  "wayland-backend",

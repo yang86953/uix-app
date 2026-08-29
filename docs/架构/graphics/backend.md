@@ -14,7 +14,7 @@
 | **已实现** | Vulkan | Linux、Windows、macOS 三个生产 registry 中 Vulkan 均为唯一最高优先级 `100`；公开使用方通过 `GraphicsBackend` 与 `Platform` 门面选择和查询。多窗口所有权细节见 [Vulkan 多窗口共享设备合同](vulkan-multi-window.md)。 |
 | **已实现** | OpenGL ES | Linux EGL/OpenGL ES 实现共享 Surface 创建、resize、失效与恢复生命周期。OpenGL 仍是显式兼容候选，不改变 Vulkan-first 生产优先级。 |
 | **已实现** | D3D11 实现边界 | Windows D3D11 已具备生产 draw/submit、Blur 与 Surface 生命周期实现；内部 HWND、readback、RHI 和链接结构不属于公开 API，不建立项目测试。 |
-| **待验收** | D3D11 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D11` 使用路径尚未完成；该状态只描述事实，不构成 `0.0.1` 的发布前提。实时阻塞与环境证据由 [Gitea Issue #10](http://100.79.245.29:3000/admin/uix-app/issues/10) 持有。 |
+| **已验收** | D3D11 真实 Windows 公开运行 | `0.0.2` 已在真实 Windows x64 主机完成 Vulkan 首选、D3D11 兼容回退与最终 surface 验收；环境、提交与制品摘要由私有 Gitea `v0.0.2` Release 持有。 |
 | **已实现** | D3D12 实现边界 | Windows D3D12 已实现完整 thin RHI Device/Surface、12 类 pipeline、swapchain 与生产 registry；仅在显式启用 `d3d12` feature 时成为优先级 `40` 的 GPU-native 候选，仍低于 Vulkan。 |
 | **待验收** | D3D12 真实 Windows 公开运行 | 真实 Windows x64 的公开 `GraphicsBackend::Direct3D12` 使用路径尚未执行；跨目标编译只证明使用方与生产装配可构建，不代替真实设备或 WARP 呈现验收。 |
 | **已实现** | Metal 实现边界 | macOS Metal 已实现完整 thin RHI Device/Surface、12 类 pipeline、CAMetalLayer swapchain 与生产 registry；仅在显式启用 `metal` feature 时成为优先级 `90` 的 GPU-native 候选，仍低于 Vulkan。 |
@@ -24,7 +24,7 @@
 
 ### Windows 公开 API 验证方式
 
-验证公开 `Direct3D11` 路径时，由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得启用 parity/test-harness feature，不得访问 HWND、RHI、FramePlan、readback、故障注入或其他私有入口。在公开入口实际执行并记录环境前继续保持 **待验收**；是否以当前状态发布由仓库所有者自行判断，不设发布条件。
+验证公开 `Direct3D11` 路径时，由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得用交叉编译替代真实主机事实，也不得把 HWND、RHI、FramePlan、readback、故障注入或其他私有入口描述为公开能力。`0.0.2` 已完成当前发布提交的真实主机验收；后续改变 Windows 图形路径或驱动基线时必须重新取得同级证据。
 
 ## 责任边界
 
