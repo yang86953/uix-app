@@ -34,7 +34,7 @@ pub(crate) fn peer_user_ids_match_for_test(current: u32, peer: u32) -> bool {
 
 #[cfg(test)]
 pub(crate) fn connect_for_test(endpoint: &str) -> std::io::Result<AgentStream> {
-    platform_connect_for_test(endpoint)
+    connect(endpoint)
 }
 
 #[cfg(test)]
@@ -54,10 +54,11 @@ pub(crate) fn endpoint_permissions_are_private_for_test(
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub(crate) use unix::{AgentEndpoint, AgentEndpointWake, fill_secure_random};
+pub(crate) use unix::{
+    AgentEndpoint, AgentEndpointWake, agent_hub_endpoint_name, connect, fill_secure_random,
+};
 #[cfg(all(test, unix))]
 use unix::{
-    connect_for_test as platform_connect_for_test,
     discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
     endpoint_permissions_are_private_for_test as platform_endpoint_permissions_are_private_for_test,
 };
@@ -65,10 +66,11 @@ use unix::{
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub(crate) use windows::{AgentEndpoint, AgentEndpointWake, fill_secure_random};
+pub(crate) use windows::{
+    AgentEndpoint, AgentEndpointWake, agent_hub_endpoint_name, connect, fill_secure_random,
+};
 #[cfg(all(test, windows))]
 use windows::{
-    connect_for_test as platform_connect_for_test,
     discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
     endpoint_permissions_are_private_for_test as platform_endpoint_permissions_are_private_for_test,
 };
@@ -76,10 +78,11 @@ use windows::{
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(not(any(unix, windows)))]
-pub(crate) use unsupported::{AgentEndpoint, AgentEndpointWake, fill_secure_random};
+pub(crate) use unsupported::{
+    AgentEndpoint, AgentEndpointWake, agent_hub_endpoint_name, connect, fill_secure_random,
+};
 #[cfg(all(test, not(any(unix, windows))))]
 use unsupported::{
-    connect_for_test as platform_connect_for_test,
     discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
     endpoint_permissions_are_private_for_test as platform_endpoint_permissions_are_private_for_test,
 };

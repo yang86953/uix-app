@@ -124,8 +124,16 @@ pub(crate) fn fill_secure_random(output: &mut [u8]) -> io::Result<()> {
     File::open("/dev/urandom")?.read_exact(output)
 }
 
-#[cfg(test)]
-pub(super) fn connect_for_test(endpoint: &str) -> io::Result<super::AgentStream> {
+/// 返回当前用户唯一的 Hub 控制面地址；应用只向该固定入口登记自身实例。
+pub(crate) fn agent_hub_endpoint_name() -> io::Result<String> {
+    Ok(private_discovery_directory()?
+        .join("hub-v1.sock")
+        .to_string_lossy()
+        .into_owned())
+}
+
+/// 建立应用到 Hub 或测试端点的同机字节流。
+pub(crate) fn connect(endpoint: &str) -> io::Result<super::AgentStream> {
     Ok(Box::new(UnixStream::connect(endpoint)?))
 }
 

@@ -18,8 +18,10 @@ use crate::app::agent::agent_protocol::{
 };
 use crate::platform::adapters::transport::{
     AcceptedAgentStream, AgentEndpoint, AgentEndpointWake, AgentStream, AgentStreamCancelIo,
-    fill_secure_random,
+    agent_hub_endpoint_name, connect, fill_secure_random,
 };
+
+const AGENT_HUB_SCHEMA: &str = "uix.agent.hub.v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentTransportInfo {
@@ -65,6 +67,7 @@ pub(crate) struct AgentTransportHandle {
     shutdown: Arc<AtomicBool>,
     wake_listener: AgentEndpointWake,
     connections: ConnectionRegistry,
+    hub_registration_thread: Option<JoinHandle<()>>,
     listener_thread: Option<JoinHandle<()>>,
 }
 
@@ -72,9 +75,16 @@ type ConnectionRegistry = Arc<Mutex<BTreeMap<u64, Arc<dyn AgentStreamCancelIo>>>
 
 // 应用已发布 closed 终态后，为在途 wait 回复保留的有界传输排空窗口。
 const TERMINAL_REPLY_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+// Hub 心跳只承担实例存活登记；动作仍走应用自己的已认证端点。
+const HUB_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
+const HUB_RECONNECT_MIN_DELAY: Duration = Duration::from_millis(250);
+const HUB_RECONNECT_MAX_DELAY: Duration = Duration::from_secs(2);
 
 impl AgentTransportHandle {
-    pub(crate) fn start(bridge: AgentProcessBridge) -> Result<Self, AgentTransportError> {
+    pub(crate) fn start(
+        bridge: AgentProcessBridge,
+        display_name: &str,
+    ) -> Result<Self, AgentTransportError> {
         // 生成 32 字节会话 token，并取前 24 字节作为端点 nonce。
         let mut token = [0u8; 32];
         fill_secure_random(&mut token).map_err(|source| AgentTransportError::Io {
@@ -114,6 +124,24 @@ impl AgentTransportHandle {
                 source,
             })?;
 
+        // Hub 仅保存应用实例到直连端点的租约；token 不进入 Hub 的枚举响应或日志。
+        let app_id = default_agent_app_id();
+        let display_name = sanitized_agent_display_name(display_name, &app_id);
+        let hub_registration = serde_json::to_vec(&json!({
+            "schema": AGENT_HUB_SCHEMA,
+            "type": "register_app",
+            "app_id": app_id,
+            "display_name": display_name,
+            "instance_id": nonce,
+            "process_id": process_id,
+            "endpoint": info.endpoint,
+            "token": encoded_token,
+        }))
+        .map_err(|source| AgentTransportError::Io {
+            stage: "hub registration serialization",
+            source: io::Error::new(io::ErrorKind::InvalidData, source),
+        })?;
+
         let shutdown = Arc::new(AtomicBool::new(false));
         let connections: ConnectionRegistry = Arc::new(Mutex::new(BTreeMap::new()));
         let wake_listener = endpoint.waker();
@@ -134,6 +162,19 @@ impl AgentTransportHandle {
             })
             .map_err(AgentTransportError::ListenerThread)?;
 
+        // Hub 可以晚于应用启动；后台登记失败不降级应用本身，也不影响兼容直连端点。
+        let registration_shutdown = shutdown.clone();
+        let hub_registration_thread = match thread::Builder::new()
+            .name("uix-agent-hub-registration".to_owned())
+            .spawn(move || hub_registration_loop(hub_registration, registration_shutdown))
+        {
+            Ok(thread) => Some(thread),
+            Err(error) => {
+                tracing::warn!("agent hub registration thread failed to start: {error}");
+                None
+            }
+        };
+
         tracing::info!(
             "agent bridge ready discovery={}",
             info.discovery_path.display()
@@ -143,6 +184,7 @@ impl AgentTransportHandle {
             shutdown,
             wake_listener,
             connections,
+            hub_registration_thread,
             listener_thread: Some(listener_thread),
         })
     }
@@ -157,6 +199,11 @@ impl AgentTransportHandle {
             self.wake_listener.wake();
             cancel_connections(&self.connections);
         }
+        if let Some(registration_thread) = self.hub_registration_thread.take() {
+            if registration_thread.join().is_err() {
+                tracing::error!("agent hub registration thread panicked during shutdown");
+            }
+        }
         // 等待监听线程退出，避免进程结束前残留未回收线程。
         if let Some(listener_thread) = self.listener_thread.take() {
             if listener_thread.join().is_err() {
@@ -169,6 +216,76 @@ impl AgentTransportHandle {
         // close_all 已唤醒 wait；先允许终态帧写回，超时后仍由普通 shutdown 强制回收。
         let _ = wait_for_connections_to_drain(&self.connections, TERMINAL_REPLY_DRAIN_TIMEOUT);
         self.shutdown();
+    }
+}
+
+fn default_agent_app_id() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "uix-app".to_owned())
+}
+
+fn sanitized_agent_display_name(display_name: &str, fallback: &str) -> String {
+    let sanitized: String = display_name
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(512)
+        .collect();
+    if sanitized.is_empty() {
+        fallback.to_owned()
+    } else {
+        sanitized
+    }
+}
+
+fn hub_registration_loop(registration: Vec<u8>, shutdown: Arc<AtomicBool>) {
+    let Ok(hub_endpoint) = agent_hub_endpoint_name() else {
+        return;
+    };
+    let heartbeat = format!("{{\"schema\":\"{AGENT_HUB_SCHEMA}\",\"type\":\"heartbeat\"}}\n");
+    let mut reconnect_delay = HUB_RECONNECT_MIN_DELAY;
+    while !shutdown.load(Ordering::Acquire) {
+        let mut stream = match connect(&hub_endpoint) {
+            Ok(stream) => stream,
+            Err(_) => {
+                sleep_until_shutdown(&shutdown, reconnect_delay);
+                reconnect_delay = (reconnect_delay * 2).min(HUB_RECONNECT_MAX_DELAY);
+                continue;
+            }
+        };
+        reconnect_delay = HUB_RECONNECT_MIN_DELAY;
+        if stream.write_all(&registration).is_err()
+            || stream.write_all(b"\n").is_err()
+            || stream.flush().is_err()
+        {
+            continue;
+        }
+        tracing::debug!("agent instance registered with local hub");
+        while !shutdown.load(Ordering::Acquire) {
+            sleep_until_shutdown(&shutdown, HUB_HEARTBEAT_INTERVAL);
+            if shutdown.load(Ordering::Acquire) {
+                break;
+            }
+            if stream.write_all(heartbeat.as_bytes()).is_err() || stream.flush().is_err() {
+                break;
+            }
+        }
+    }
+}
+
+fn sleep_until_shutdown(shutdown: &AtomicBool, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    while !shutdown.load(Ordering::Acquire) {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        thread::sleep(remaining.min(Duration::from_millis(100)));
     }
 }
 

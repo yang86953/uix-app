@@ -220,8 +220,16 @@ pub(crate) fn fill_secure_random(output: &mut [u8]) -> io::Result<()> {
     }
 }
 
-#[cfg(test)]
-pub(super) fn connect_for_test(endpoint: &str) -> io::Result<super::AgentStream> {
+/// 返回当前用户唯一的 Hub 命名管道；SID 同时避免不同登录用户争用名称。
+pub(crate) fn agent_hub_endpoint_name() -> io::Result<String> {
+    Ok(format!(
+        r"\\.\pipe\uix-agent-hub-{}",
+        current_process_user_sid_string()?
+    ))
+}
+
+/// 建立应用到 Hub 或测试端点的同机字节流。
+pub(crate) fn connect(endpoint: &str) -> io::Result<super::AgentStream> {
     Ok(Box::new(
         OpenOptions::new()
             .read(true)

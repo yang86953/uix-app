@@ -675,7 +675,7 @@ impl App {
         );
         #[cfg(feature = "agent-control")]
         if self.agent_control_enabled {
-            if let Err(error) = self.runtime.start_agent_transport() {
+            if let Err(error) = self.runtime.start_agent_transport(&self.title) {
                 tracing::error!("agent transport startup failed: {error}");
                 report_window_operation_error(
                     "agent transport failure graphics shutdown failed",

@@ -106,6 +106,8 @@ pub(crate) trait AgentCommandExecutor: Send + Sync {
 
 struct PendingAgentResponse {
     response: std::sync::mpsc::SyncSender<AgentCommandResult>,
+    /// 截屏必须等真实 surface；普通动作只需 UI 状态协调完成。
+    requires_presentable_surface: bool,
 }
 
 /// 待用户确认的 Agent 动作（确认流程状态）。
@@ -199,6 +201,12 @@ impl WindowAgentState {
         !self.in_flight.is_empty()
     }
 
+    pub(crate) fn has_background_in_flight(&self) -> bool {
+        self.in_flight
+            .iter()
+            .any(|pending| !pending.requires_presentable_surface)
+    }
+
     pub(crate) fn drain_ready(
         &mut self,
         tree: &mut WidgetTree,
@@ -255,6 +263,7 @@ impl WindowAgentState {
                         batched_action = true;
                         self.in_flight.push(PendingAgentResponse {
                             response: envelope.response,
+                            requires_presentable_surface: false,
                         });
                     }
                     // 命中确认策略：登记待确认动作，错误携带一次性 confirm_id。
@@ -304,6 +313,7 @@ impl WindowAgentState {
                         batched_action = true;
                         self.in_flight.push(PendingAgentResponse {
                             response: envelope.response,
+                            requires_presentable_surface: false,
                         });
                     }
                     Err(error) => send_result(envelope.response, Err(error)),
@@ -315,6 +325,7 @@ impl WindowAgentState {
                         Ok(()) => {
                             self.in_flight.push(PendingAgentResponse {
                                 response: envelope.response,
+                                requires_presentable_surface: true,
                             });
                         }
                         Err(error) => send_result(envelope.response, Err(error)),
@@ -428,10 +439,18 @@ impl WindowAgentState {
     }
 
     pub(crate) fn fail_not_presentable(&mut self) {
-        if !self.in_flight.is_empty() {
-            self.finish_all(Err(AgentCommandError::NotPresentable));
+        let mut retained = Vec::with_capacity(self.in_flight.len());
+        for pending in self.in_flight.drain(..) {
+            if pending.requires_presentable_surface {
+                send_result(pending.response, Err(AgentCommandError::NotPresentable));
+            } else {
+                retained.push(pending);
+            }
         }
-        self.fail_confirmations();
+        self.in_flight = retained;
+        if self.in_flight.is_empty() {
+            self.settle_passes = 0;
+        }
     }
 
     pub(crate) fn close(&mut self) {
@@ -538,10 +557,14 @@ impl WindowAgentState {
             &pending.action,
         ) {
             Ok(()) => {
-                self.in_flight.push(PendingAgentResponse { response });
+                self.in_flight.push(PendingAgentResponse {
+                    response,
+                    requires_presentable_surface: false,
+                });
                 if let Some(ticket_response) = pending.response.take() {
                     self.in_flight.push(PendingAgentResponse {
                         response: ticket_response,
+                        requires_presentable_surface: false,
                     });
                 }
             }

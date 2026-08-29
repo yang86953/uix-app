@@ -38,7 +38,7 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         &self,
         tree: &mut WidgetTree,
         semantic_state: &WindowSemanticState,
-        presentable: bool,
+        _presentable: bool,
         generation: u64,
         expected_revision: Option<u64>,
         target: &SemanticTarget,
@@ -68,9 +68,6 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
             }
             PolicyDecision::Allow => {}
         }
-        if !presentable {
-            return Err(AgentCommandError::NotPresentable);
-        }
         tree.perform_semantic_action(node_id, action)
             .map_err(|error| map_action_error(target.label(), error))
     }
@@ -80,7 +77,7 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         &self,
         tree: &mut WidgetTree,
         semantic_state: &WindowSemanticState,
-        presentable: bool,
+        _presentable: bool,
         generation: u64,
         expected_revision: Option<u64>,
         window: &mut dyn AgentWindowOps,
@@ -93,10 +90,6 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                 target: format!("window {action:?}"),
             });
         }
-        if !presentable {
-            return Err(AgentCommandError::NotPresentable);
-        }
-
         match action {
             AgentWindowAction::PressKey { key, modifiers } => {
                 // KeyDown 未被任何组件消费（如无焦点组件）时命令必须失败，
@@ -140,7 +133,7 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                 // 指针移动的动作效果是悬停事实更新（enter/leave 与悬停目标切换），
                 // 由树在分发过程中同步完成；是否仍有组件继续消费 move 不改变该事实，
                 // 因此不以 `Handled` 判定成败，避免悬停生效却被报告为失败。
-                let _ = tree.dispatch_event(&SystemEvent::PointerMove {
+                let _ = tree.dispatch_agent_event(&SystemEvent::PointerMove {
                     pos: position,
                     mods: KeyMod::NONE,
                 });
@@ -176,7 +169,7 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
             AgentWindowAction::Minimize => window.minimize().map_err(map_window_ops_error)?,
             AgentWindowAction::Restore => window.restore().map_err(map_window_ops_error)?,
             // 激活请求经平台 raise 契约提交（Wayland 走 xdg-activation）；
-            // 成功只表示请求已建立，未聚焦窗口的输入门禁随真实聚焦解除。
+            // 成功只表示请求已建立；Agent 定向输入本身不依赖该前台焦点。
             AgentWindowAction::Activate => window.raise().map_err(map_window_ops_error)?,
             // 关闭只提交平台请求；实际关闭由后续窗口生命周期事实证明。
             AgentWindowAction::Close => window.request_close().map_err(map_window_ops_error)?,
@@ -221,7 +214,7 @@ fn dispatch_window_event(
     tree: &mut WidgetTree,
     event: &SystemEvent,
 ) -> Result<(), AgentCommandError> {
-    if tree.dispatch_event(event) == crate::ui::event::EventResult::NotHandled {
+    if tree.dispatch_agent_event(event) == crate::ui::event::EventResult::NotHandled {
         // 事件没有可交互的接收方：向调用方报告动作未生效。
         return Err(AgentCommandError::NotInteractable(format!("{event:?}")));
     }

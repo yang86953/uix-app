@@ -15,6 +15,7 @@
 | `AgentCommandExecutorImpl` | internal struct | 实现 System 私有语义/窗口动作执行端口，执行动作策略检查 |
 | `AgentPolicy` | internal struct | 动作策略数据：只读 / 受保护目标 / 禁止动作 / 需要确认目标 |
 | `AgentTransportHandle` | internal handle | 管理 platform IPC listener 与连接生命周期 |
+| `HubRegistration` | internal worker | 将应用实例、直连描述符和存活心跳登记到当前用户 Hub；失败不阻断应用 |
 | `AgentWindowRegistration` | RAII handle | 绑定窗口在控制面中的 generation 生命周期 |
 
 app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandResponse`、`AgentCommandQueue`、`WindowAgentState`、`AgentCommandExecutor`、`AgentWindowOps` 与 `AgentSemanticsPort`，并从同一命令契约边界公开重导出确认 UI 载荷 `AgentConfirmationRequest`。这些类型不是 agent Module 的私有实现；`event-loop` / `window` 可以依赖该 System 私有契约，但不得引用 `app::agent`。
@@ -34,6 +35,33 @@ app System 私有边界另外持有 `AgentCommandRequest` / `AgentCommandRespons
 响应信封由 `AgentProtocolSession` 统一生成并回显原始 `request_id`。业务载荷序列化或长度检查失败时，降级错误仍保留该 ID 且记录真实 `internal` 结果，客户端由此可以停止当前调用，而不会因关联信息丢失误重试有副作用动作。
 
 协议提供窗口枚举、语义快照、受控动作（语义动作与窗口动作）、确认流程和等待，不提供 shell、文件系统、网络代理、任意内存访问或 OS 全局输入注入。鉴权失败、超限、未知动作和 stale generation 返回有界错误，不能 panic 或回显 token。
+
+## 多应用 Hub 与动作直连
+
+每个启用控制面的 UIX 进程仍权威持有自己的 `AgentProcessBridge`、协议会话和随机 token；新增的
+`uix.agent.hub.v1` 是外部控制面的注册表，不是状态代理。应用 transport 启动后向当前用户固定 Hub
+入口登记 `app_id`、随机 `instance_id`、进程 id、显示名和直连描述符，并以心跳维持租约。Hub
+不可用时登记线程有界退避重连，应用的窗口、呈现和原直连端点不依赖 Hub。
+
+```text
+UIX App A ── register(instance A, endpoint A) ─┐
+UIX App B ── register(instance B, endpoint B) ─┼─> per-user Agent Hub
+                                               │       ↑ list / attach
+AI connector ──────────────────────────────────┘       │
+AI connector ══ control / wait / media ═════════════> selected UIX App
+```
+
+Hub 的 `list_apps` 只返回非敏感实例目录；`attach(instance_id)` 才在同用户控制通道交付目标描述符。
+连接器取得描述符后直接对该应用完成 `uix.agent.v1` hello，并将自身 `session_id` 固定绑定到该
+`instance_id`。应用断线或重启使绑定终止，连接器不得按 `app_id`、标题、pid 或文件时间自动选择
+替代实例。多条动作连接只消除连接级队头阻塞，不构成事务；状态事实仍以每次 UIX 响应为准。
+
+Agent 定向输入不借用操作系统前台焦点。普通平台键盘 / IME / 剪贴板事件仍遵守窗口焦点门禁；
+已通过 Agent 策略且绑定具体窗口的指针、按键和语义动作由专用分发入口复用同一 WidgetTree 事件
+实现，但显式绕过“窗口未聚焦”筛选。平台判定 surface 不可呈现时，窗口 driver 仍运行有界的
+声明协调、布局和语义刷新并完成普通动作；paint / present 不运行，截屏与 presented wait 保持
+`not_presentable`，不得返回缓存像素冒充当前帧。最小化或遮挡不直接等同于不可呈现，仍以
+platform 发布的 `presentable` 事实为准。
 
 ## 组件：AgentProcessBridge / System 私有命令边界
 
@@ -68,6 +96,7 @@ platform IPC
 
 - password 或 sensitive value 不进入快照、响应、discovery 或日志。
 - discovery 路径、端点信息和 hello token 都按敏感凭据处理；只授予当前用户最小文件权限，日志和协议错误不得回显 token。
+- Hub 枚举不得包含端点或 token；Hub attach、应用登记连接和 connector 内存中的描述符按会话凭据处理。Hub 不得代理、缓存或合成 WidgetTree 状态。
 - `automation_id` 是窗口 generation 内外的定位标识，不是授权凭据；重复 ID 必须被应用消歧或拒绝，不能据此绕过策略检查。
 - Agent 动作进入与用户输入相同的目标窗口事件/语义路径，不建立第二条可写 UI 管线。
 - 动作策略与确认流程在 UI turn 入口把关；命中策略的动作不进入 UI 语义路径。

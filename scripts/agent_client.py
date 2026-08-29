@@ -2,6 +2,8 @@
 """UIX Agent Bridge 客户端：连接 demo 的本地 IPC，发送 JSON Lines 命令。
 
 用法:
+  python agent_client.py apps
+  python agent_client.py --instance <instance_id> list_windows
   python agent_client.py hello
   python agent_client.py list_windows
   python agent_client.py snapshot [window_id]
@@ -14,7 +16,9 @@ import base64
 import json
 import os
 import socket
+import subprocess
 import sys
+import tempfile
 import time
 
 if os.name == "nt":
@@ -29,6 +33,8 @@ INITIAL_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 HARD_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 HARD_MAX_RESPONSE_BYTES = 48 * 1024 * 1024
 HARD_MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024
+HUB_PROTOCOL_SCHEMA = "uix.agent.hub.v1"
+HUB_MAX_RESPONSE_BYTES = 128 * 1024
 
 
 def negotiated_limit(limits, name, legacy_name, fallback, hard_max):
@@ -45,24 +51,207 @@ def discovery_dir():
     """返回与框架 private_discovery_directory 一致的平台目录。"""
     if os.name == "nt":
         return os.path.join(os.environ.get("LOCALAPPDATA", ""), "uix-agent")
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
     return os.path.join(runtime_dir, f"uix-agent-{os.getuid()}")
 
 
-def load_discovery():
-    """读取最新的 discovery 文件，返回 (endpoint, token)。"""
+def load_discoveries():
+    """读取全部兼容 discovery；它只用于 Hub 尚未登记时的迁移回退。"""
     directory = discovery_dir()
+    try:
+        names = os.listdir(directory)
+    except FileNotFoundError:
+        return []
     files = [
         os.path.join(directory, name)
-        for name in os.listdir(directory)
+        for name in names
         if name.startswith("uix-") and name.endswith(".json")
     ]
-    if not files:
-        sys.exit("未找到 discovery 文件，请确认 demo 已带 --agent-control 启动")
-    latest = max(files, key=os.path.getmtime)
-    with open(latest, encoding="utf-8") as fh:
-        data = json.load(fh)
-    return data["endpoint"], data["token"]
+    discoveries = []
+    for path in sorted(files):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(data, dict)
+            and data.get("schema") == AGENT_PROTOCOL_SCHEMA
+            and isinstance(data.get("endpoint"), str)
+            and isinstance(data.get("token"), str)
+        ):
+            discoveries.append(data)
+    return discoveries
+
+
+def load_discovery():
+    """兼容单应用脚本：存在多个实例时拒绝猜测目标。"""
+    discoveries = load_discoveries()
+    if not discoveries:
+        sys.exit("未找到 UIX Agent 应用，请确认应用已带 --agent-control 启动")
+    if len(discoveries) != 1:
+        sys.exit("检测到多个 UIX Agent 应用，请先运行 apps 并用 --instance 显式选择")
+    return discoveries[0]["endpoint"], discoveries[0]["token"]
+
+
+def hub_endpoint():
+    """返回与 UIX 运行时登记线程一致的每用户 Hub 地址。"""
+    if os.name == "nt":
+        import win32api
+        import win32con
+        import win32security
+
+        process_token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+        )
+        try:
+            sid = win32security.GetTokenInformation(
+                process_token, win32security.TokenUser
+            )[0]
+        finally:
+            win32api.CloseHandle(process_token)
+        sid_text = win32security.ConvertSidToStringSid(sid)
+        return rf"\\.\pipe\uix-agent-hub-{sid_text}"
+    return os.path.join(discovery_dir(), "hub-v1.sock")
+
+
+class HubSession:
+    """管理到每用户 Hub 的持久 JSON Lines 控制连接。"""
+
+    def __init__(self):
+        endpoint = hub_endpoint()
+        if os.name == "nt":
+            self.handle = win32file.CreateFile(
+                endpoint,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                0,
+                None,
+            )
+            self.socket = None
+        else:
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.connect(endpoint)
+            self.handle = None
+        self.buffer = bytearray()
+
+    def send(self, payload):
+        request_id = payload.setdefault("request_id", f"hub-{time.time_ns()}")
+        payload.setdefault("schema", HUB_PROTOCOL_SCHEMA)
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n"
+        if len(encoded) > HUB_MAX_RESPONSE_BYTES:
+            raise RuntimeError("hub request exceeds the protocol limit")
+        if self.socket is not None:
+            self.socket.sendall(encoded)
+        else:
+            win32file.WriteFile(self.handle, encoded)
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                break
+            if len(self.buffer) >= HUB_MAX_RESPONSE_BYTES:
+                raise RuntimeError("hub response exceeds the protocol limit")
+            if self.socket is not None:
+                data = self.socket.recv(65536)
+                if not data:
+                    raise RuntimeError("hub closed before reply")
+            else:
+                _, data = win32file.ReadFile(self.handle, 65536)
+            self.buffer.extend(data)
+        raw = bytes(self.buffer[:newline])
+        del self.buffer[: newline + 1]
+        try:
+            reply = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError("hub response is not valid UTF-8 JSON") from error
+        if (
+            not isinstance(reply, dict)
+            or reply.get("schema") != HUB_PROTOCOL_SCHEMA
+            or reply.get("request_id") != request_id
+        ):
+            raise RuntimeError("hub response envelope does not match the request")
+        return reply
+
+    def close(self):
+        if self.socket is not None:
+            self.socket.close()
+        else:
+            win32file.CloseHandle(self.handle)
+
+
+def connect_hub(auto_start=True):
+    """连接 Hub；需要时只启动仓库自带的同用户后台进程。"""
+    try:
+        return HubSession()
+    except OSError:
+        if not auto_start:
+            raise
+    hub_script = os.path.join(os.path.dirname(__file__), "uix_agent_hub.py")
+    options = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        options["start_new_session"] = True
+    subprocess.Popen([sys.executable, hub_script, "serve"], **options)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        try:
+            return HubSession()
+        except OSError:
+            time.sleep(0.025)
+    raise RuntimeError("UIX Agent Hub failed to start")
+
+
+def list_hub_apps(hub, settle=True):
+    deadline = time.monotonic() + 0.75
+    while True:
+        reply = hub.send({"type": "list_apps"})
+        if not reply.get("ok"):
+            raise RuntimeError(f"hub list_apps failed: {reply.get('error')}")
+        if not settle or reply.get("stable", True) or time.monotonic() >= deadline:
+            return reply.get("apps") or []
+        time.sleep(0.025)
+
+
+def attach_hub_app(hub, instance_id):
+    reply = hub.send({"type": "attach", "instance_id": instance_id})
+    if not reply.get("ok"):
+        raise RuntimeError(f"hub attach failed: {reply.get('error')}")
+    app = reply.get("app")
+    if not isinstance(app, dict):
+        raise RuntimeError("hub attach response is missing app data")
+    return app
+
+
+def select_agent_endpoint(instance_id=None):
+    """显式绑定实例；仅有一个实例时允许安全省略选择。"""
+    hub = connect_hub()
+    try:
+        deadline = time.monotonic() + 2.25
+        while True:
+            apps = list_hub_apps(hub)
+            if apps or time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+        if instance_id is not None:
+            app = attach_hub_app(hub, instance_id)
+            return app["endpoint"], app["token"], app
+        if len(apps) == 1:
+            app = attach_hub_app(hub, apps[0]["instance_id"])
+            return app["endpoint"], app["token"], app
+        if len(apps) > 1:
+            raise RuntimeError("检测到多个 UIX 应用，请用 --instance 显式选择")
+    finally:
+        hub.close()
+    endpoint, token = load_discovery()
+    return endpoint, token, None
 
 
 class AgentSession:
@@ -228,11 +417,34 @@ def main():
     args = sys.argv[1:]
     if not args:
         sys.exit(__doc__)
-    endpoint, token = load_discovery()
+    instance_id = None
+    if args[:1] == ["--instance"]:
+        if len(args) < 3:
+            sys.exit("用法: agent_client.py --instance <instance_id> <command>")
+        instance_id = args[1]
+        args = args[2:]
+    command = args[0]
+    if command == "apps":
+        hub = connect_hub()
+        try:
+            print(json.dumps({"apps": list_hub_apps(hub)}, ensure_ascii=False))
+        finally:
+            hub.close()
+        return
+    endpoint, token, selected_app = select_agent_endpoint(instance_id)
     session = AgentSession(endpoint, token)
     try:
-        command = args[0]
         hello_reply = session.hello()
+        if command == "attach":
+            public_app = None
+            if selected_app is not None:
+                public_app = {
+                    key: value
+                    for key, value in selected_app.items()
+                    if key not in ("endpoint", "token")
+                }
+            print(json.dumps({"app": public_app, "hello": hello_reply}, ensure_ascii=False))
+            return
         if command == "hello":
             print(json.dumps(hello_reply, ensure_ascii=False))
             return

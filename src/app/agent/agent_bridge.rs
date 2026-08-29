@@ -33,7 +33,7 @@ pub(crate) struct AgentWindowInfo {
     pub(crate) title: String,
     pub(crate) visible: bool,
     pub(crate) presentable: bool,
-    /// 窗口是否持有输入焦点；未聚焦窗口忽略指针与键盘输入。
+    /// 窗口是否持有操作系统输入焦点；Agent 定向输入不借用该焦点。
     pub(crate) focused: bool,
     pub(crate) logical_width: i32,
     pub(crate) logical_height: i32,
