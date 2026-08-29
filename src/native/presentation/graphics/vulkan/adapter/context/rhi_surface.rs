@@ -213,7 +213,7 @@ impl GraphicsSurface for VulkanContext {
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
-    fn surface_shadow_fill(&self) -> (f32, f32) {
+    fn surface_shadow_fill(&self) -> ([f32; 4], f32) {
         // SAFETY: native_surface 指向窗口 owner 在 VulkanContext 生命周期内保持稳定的 descriptor。
         unsafe {
             crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle::from_native(
@@ -221,8 +221,8 @@ impl GraphicsSurface for VulkanContext {
             )
         }
         .and_then(|surface| surface.metrics.snapshot())
-        .map_or((0.0, 0.0), |snapshot| {
-            (snapshot.shadow_alpha, snapshot.shadow_size as f32)
+        .map_or(([0.0; 4], 0.0), |snapshot| {
+            (snapshot.shadow_fill_alphas, snapshot.shadow_fill_range as f32)
         })
     }
 

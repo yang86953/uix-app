@@ -201,9 +201,10 @@ pub(crate) use primitive::{
 #[allow(unused_imports)]
 pub(crate) use primitive::{
     MESH_COLOR_FLOAT_OFFSET, MESH_VIEWPORT_FLOAT_OFFSET, SAMPLED_CORNER_RADIUS_FLOAT_OFFSET,
-    SAMPLED_SHADOW_ALPHA_FLOAT_OFFSET, SAMPLED_SHADOW_RANGE_FLOAT_OFFSET,
-    SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET, SECTOR_COLOR_FLOAT_OFFSET,
-    SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
+    SAMPLED_SHADOW_ALPHA_BL_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_BR_FLOAT_OFFSET,
+    SAMPLED_SHADOW_ALPHA_TL_FLOAT_OFFSET, SAMPLED_SHADOW_ALPHA_TR_FLOAT_OFFSET,
+    SAMPLED_SHADOW_RANGE_FLOAT_OFFSET, SAMPLED_VIEWPORT_FLOAT_OFFSET, SECTOR_ANGLES_FLOAT_OFFSET,
+    SECTOR_COLOR_FLOAT_OFFSET, SECTOR_RECT_FLOAT_OFFSET, SECTOR_VIEWPORT_FLOAT_OFFSET,
 };
 // 只有 OpenGL Adapter 需要把字节 ABI 解码为逐个原生 uniform 字段。
 #[cfg(feature = "opengles")]
@@ -709,10 +710,10 @@ pub(crate) trait GraphicsSurface {
         0.0
     }
 
-    // 返回客户端阴影环外观事实 (峰值不透明度, 物理外扩距离)。
-    fn surface_shadow_fill(&self) -> (f32, f32) {
+    // 返回客户端阴影环外观事实 (逐角补画峰值 [左上,右上,左下,右下], 物理衰减距离)。
+    fn surface_shadow_fill(&self) -> ([f32; 4], f32) {
         // 只有平台窗口层确实绘制阴影环时才需要合成端补画圆角缺口。
-        (0.0, 0.0)
+        ([0.0; 4], 0.0)
     }
 
     // 获取当前可呈现 image，不提交任何命令。

@@ -707,6 +707,7 @@ impl RhiRenderer {
                             viewport,
                             quad.surface_corner_radius,
                             quad.surface_shadow_fill,
+                            quad.surface_shadow_fill_range,
                         )),
                     });
                     // 原子绑定已经存在的 Picture texture 与共享 sampler。

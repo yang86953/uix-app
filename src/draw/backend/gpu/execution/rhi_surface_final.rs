@@ -39,7 +39,7 @@ impl GpuBackend {
             .rhi_surface()
             .map(|surface| surface.surface_corner_radius())?;
         // 客户端阴影环事实与圆角同源，缺口补画必须与外圈阴影共用同一外观参数。
-        let surface_shadow_fill = self
+        let (surface_shadow_fill, surface_shadow_fill_range) = self
             .gpu_ctx
             .rhi_surface()
             .map(|surface| surface.surface_shadow_fill())?;
@@ -77,7 +77,8 @@ impl GpuBackend {
             // 只在最终 retained-to-surface 合成应用窗口边界遮罩。
             surface_corner_radius,
             // 客户端阴影环启用时在圆角缺口内补画外圈阴影的连续延伸。
-            surface_shadow_fill: [surface_shadow_fill.0, surface_shadow_fill.1],
+            surface_shadow_fill,
+            surface_shadow_fill_range,
             // 最终合成不额外裁剪。
             scissor: None,
         };

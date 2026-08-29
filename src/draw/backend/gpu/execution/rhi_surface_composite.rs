@@ -28,8 +28,11 @@ pub(super) fn plan_surface_composite(
 ) -> SurfaceCompositePlan {
     // 缺口阴影补画只能整体重写缺口像素；局部 Load + SrcOver 会让补画 alpha
     // 逐帧叠加到不透明，因此触及圆角缺口的 partial 集合必须升级为完整合成。
-    let shadow_fill_active = full_quad.surface_shadow_fill[0] > 0.0
-        && full_quad.surface_shadow_fill[1] > 0.0
+    let shadow_fill_active = full_quad.surface_shadow_fill_range > 0.0
+        && full_quad
+            .surface_shadow_fill
+            .iter()
+            .any(|&alpha| alpha > 0.0)
         && full_quad.surface_corner_radius > 0.0;
     // 只有完全位于 drawable 内的受控 partial 集合可以窄绘制。
     if let PresentDamage::Partial(rects) = &damage

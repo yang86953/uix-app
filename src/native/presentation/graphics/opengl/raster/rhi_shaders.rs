@@ -56,8 +56,12 @@ precision highp float;
 uniform sampler2D u_tex;
 uniform vec2 u_viewport;
 uniform float u_corner_radius;
-// 客户端阴影环外观事实：峰值不透明度与物理外扩距离。
-uniform float u_shadow_alpha;
+// 客户端阴影环逐角补画峰值：缺口按 fragment 所在角取值。
+uniform float u_shadow_alpha_tl;
+uniform float u_shadow_alpha_tr;
+uniform float u_shadow_alpha_bl;
+uniform float u_shadow_alpha_br;
+// 客户端阴影环补画的物理衰减距离，同时也是补画启用事实。
 uniform float u_shadow_range;
 in vec2 v_uv;
 in vec4 v_color;
@@ -73,10 +77,14 @@ void main() {
         float signed_distance = length(max(distance, vec2(0.0)))
             + min(max(distance.x, distance.y), 0.0) - u_corner_radius;
         coverage = clamp(0.5 - signed_distance / max(fwidth(signed_distance), 0.0001), 0.0, 1.0);
-        if (u_shadow_alpha > 0.0 && u_shadow_range > 0.0) {
-            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影。
+        if (u_shadow_range > 0.0) {
+            // 圆角缺口用与客户端阴影环一致的二次衰减延伸外圈阴影；
+            // v_uv 保持内容左上原点约定，按所在象限取逐角峰值。
+            float horizontal = v_uv.y < 0.5
+                ? mix(u_shadow_alpha_tl, u_shadow_alpha_tr, step(0.5, v_uv.x))
+                : mix(u_shadow_alpha_bl, u_shadow_alpha_br, step(0.5, v_uv.x));
             float falloff = clamp(1.0 - signed_distance / u_shadow_range, 0.0, 1.0);
-            fill_alpha = u_shadow_alpha * falloff * falloff;
+            fill_alpha = horizontal * falloff * falloff;
         }
     }
     vec4 color = vec4(sample_color.rgb * v_color.rgb, sample_color.a * v_color.a);
