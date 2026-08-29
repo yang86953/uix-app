@@ -220,16 +220,11 @@ impl WindowAgentState {
         }
 
         let mut did_work = false;
-        let mut batched_action = false;
         let drain_budget = self.queue.len();
         for _ in 0..drain_budget {
             let Some(envelope) = self.queue.pop_front() else {
                 break;
             };
-            if batched_action && matches!(envelope.request, AgentCommandRequest::Snapshot) {
-                self.queue.push_front(envelope);
-                break;
-            }
             if !envelope.try_start() {
                 continue;
             }
@@ -260,7 +255,6 @@ impl WindowAgentState {
                     &action,
                 ) {
                     Ok(()) => {
-                        batched_action = true;
                         self.in_flight.push(PendingAgentResponse {
                             response: envelope.response,
                             requires_presentable_surface: false,
@@ -310,7 +304,6 @@ impl WindowAgentState {
                     action,
                 ) {
                     Ok(()) => {
-                        batched_action = true;
                         self.in_flight.push(PendingAgentResponse {
                             response: envelope.response,
                             requires_presentable_surface: false,
@@ -320,7 +313,7 @@ impl WindowAgentState {
                 },
                 #[cfg(any(test, feature = "agent-control"))]
                 AgentCommandRequest::Screenshot => {
-                    // 截屏不进入批量动作延迟：响应与像素都由同一次 settle 交付。
+                    // 截屏成功后同样建立队列屏障，响应与像素由本次 settle 交付。
                     match self.screenshot_command(tree, presentable) {
                         Ok(()) => {
                             self.in_flight.push(PendingAgentResponse {
@@ -344,6 +337,10 @@ impl WindowAgentState {
                         allow,
                     );
                 }
+            }
+            // 一旦动作进入 settle，后续请求必须留在队列中等待新语义快照。
+            if !self.in_flight.is_empty() {
+                break;
             }
         }
 
