@@ -17,7 +17,7 @@
 
 ### 发布状态
 
-- 本版本于 2026-08-29 通过私有 Gitea Release 发布，同时附带经过确定性构建与独立校验的 Linux x64、Windows x64 制品；Windows 制品还完成真实 Windows x64 主机上的 Vulkan、D3D11 与最终 surface 验收。仅限内部授权使用。
+- 本版本于 2026-08-29 通过私有 Gitea Release 发布，本次先附带经过确定性构建与独立校验的 Linux x64 制品；Windows Vulkan、D3D11 与最终 surface 的真实主机验收已完成，但 Windows x64 制品将在 Windows 环境完成最终打包后追加。仅限内部授权使用。
 
 ## 0.0.1（2026-08-29）
 
