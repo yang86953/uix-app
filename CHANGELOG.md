@@ -39,6 +39,10 @@
 
 - 修复 Windows 自定义标题栏窗口最大化后内容下方露出黑色横条：`ShowWindow(SW_MAXIMIZE)` 对保留 `WS_THICKFRAME` 的无边框窗口会把外窗四边各扩一个缩放边框（约 8px），上/左/右超出屏幕不可见，底部边框却落在任务栏上缘的屏幕可见区内；`WM_NCCALCSIZE` 又把客户区对齐回显示器工作区，这条底部非客户区没有任何绘制方（无系统标题栏的窗口 DWM 不绘制非客户区），呈现为窗口内容下方一条黑色横条。现最大化 `WM_SIZE(SIZE_MAXIMIZED)` 时把外窗矩形钉到所在显示器工作区（外窗=客户区=工作区，非客户区不再露出）；仅对扩展客户区窗口生效（保留系统标题栏的窗口不钉，避免系统边框退回屏内），外窗已与工作区一致时跳过且客户区尺寸未变不会重入 `WM_SIZE`，还原与窗口 placement 语义不变。`x86_64-pc-windows-msvc` 交叉编译通过，公开 API 测试 40 文件全绿；最大化/还原、拖顶 Aero Snap、多显示器工作区待 Windows 真机复验。
 
+### 2026-08-29 桌面窗口能力
+
+- 新增公开 `WindowSurfaceRole` 与 `DesktopLayerConfig`，主窗口和次窗口可声明 Wayland background/bottom/top/overlay layer、四边锚点、独占区及键盘交互；普通窗口继续使用 `xdg_toplevel`。桌面角色只在合成器提供 `zwlr_layer_shell_v1` v4 时建立，其他平台稳定拒绝，不静默退化为普通窗口。
+
 ### 2026-08-28 工程收敛（重复机制治理）
 
 - 删除未文档化遗留机制：`uix::ui` 不再重导出 legacy `StateManager` / `TextManager`（状态与样式请使用响应式 `state` 与 `theme::style`，编译器生成的 `WidgetStateStore` 契约不变）；通知组件不再提供 `replace_from_service` / `notify_error_from_service` / `notify_result_error_from_service` 与 `NotificationSource` 协议（文档化的 `AppHandle::notify_error` 与 `replace_from_toasts` 保留）；`PlatformSystem` 端口收窄，移除 `file_dialog` / `keyboard` / `timer` / `notification` / `console` / `file_system` 访问器（功能由 `Platform` 门面提供；文件对话框、系统通知、剪贴板、显示器的公开门面契约不变）。

@@ -33,6 +33,9 @@ use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_ba
 use wayland_protocols_plasma::shadow::client::{
     org_kde_kwin_shadow::OrgKdeKwinShadow, org_kde_kwin_shadow_manager::OrgKdeKwinShadowManager,
 };
+use wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+};
 
 use crate::core::{Errc, Error};
 use crate::diagnostics::PendingFailureSource;
@@ -646,6 +649,25 @@ impl Main<OrgKdeKwinShadowManager> {
         surface: &Main<wl_surface::WlSurface>,
     ) -> Main<OrgKdeKwinShadow> {
         let proxy = self.proxy.create(&surface.proxy, &self.queue_handle(), ());
+        self.child(proxy)
+    }
+}
+
+impl Main<ZwlrLayerShellV1> {
+    pub(crate) fn get_layer_surface(
+        &self,
+        surface: &Main<wl_surface::WlSurface>,
+        layer: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer,
+        namespace: String,
+    ) -> Main<ZwlrLayerSurfaceV1> {
+        let proxy = self.proxy.get_layer_surface(
+            &surface.proxy,
+            None,
+            layer,
+            namespace,
+            &self.queue_handle(),
+            (),
+        );
         self.child(proxy)
     }
 }

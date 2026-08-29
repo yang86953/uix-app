@@ -54,6 +54,7 @@ use crate::platform::presentation::{
     GraphicsApi, GraphicsRecipe, GraphicsSelection, NativeSurfaceHandle, gpu_recipe_candidates,
     graphics_runtime_platform, try_create_gpu_recipe_with_queue,
 };
+use crate::platform::windowing::WindowSurfaceRole;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
@@ -97,6 +98,7 @@ pub struct App {
     title: String,
     size: (i32, i32),
     custom_title_bar: bool,
+    surface_role: WindowSurfaceRole,
     theme: Theme,
     // 保存当前 App 的 UIX 具名主题，不与其他 App 共享可变注册表。
     named_themes: NamedThemes,
@@ -151,6 +153,12 @@ impl App {
     /// 隐藏主窗口的系统标题栏，由根 View 自定义标题栏。
     pub fn custom_title_bar(mut self, enabled: bool) -> Self {
         self.custom_title_bar = enabled;
+        self
+    }
+
+    /// 把主窗口声明为普通 toplevel 或桌面 layer surface。
+    pub fn surface_role(mut self, role: WindowSurfaceRole) -> Self {
+        self.surface_role = role;
         self
     }
 
@@ -467,7 +475,7 @@ impl App {
             }
         };
 
-        let (w, h) = self.size;
+        let (requested_width, requested_height) = self.size;
         let graphics_backend = self.configured_graphics_backend();
         let diagnostics = self.runtime.diagnostics();
         let requested_debug_mode = self
@@ -518,14 +526,21 @@ impl App {
                     return 1;
                 }
             };
-        let mut platform_window =
-            match create_app_window(platform.window_manager(), &self.title, w, h) {
-                Ok(win) => win,
-                Err(e) => {
-                    tracing::error!("create_window 失败: {:?}", e);
-                    return 1;
-                }
-            };
+        let mut platform_window = match create_app_window(
+            platform.window_manager(),
+            &self.title,
+            requested_width,
+            requested_height,
+            &self.surface_role,
+        ) {
+            Ok(win) => win,
+            Err(e) => {
+                tracing::error!("create_window 失败: {:?}", e);
+                return 1;
+            }
+        };
+        // layer-shell 的首个 configure 可以把零维请求解析为真实输出尺寸。
+        let (w, h) = platform_window.client_logical_extent();
         if self.custom_title_bar {
             if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
                 tracing::error!("configure custom title bar failed: {}", error.short_what());
@@ -630,13 +645,8 @@ impl App {
             Some(root_feedback),
             move || root_factory(),
         );
-        let mut session = WindowSession::from_root_factory_for_window(
-            root_window_id,
-            wrapped_root,
-            engine,
-            w,
-            h,
-        );
+        let mut session =
+            WindowSession::from_root_factory_for_window(root_window_id, wrapped_root, engine, w, h);
         #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         self.runtime.register_session_with_graphics_faults(
             root_window_id,

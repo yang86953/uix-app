@@ -22,6 +22,7 @@ use crate::app::window::window_creation::create_app_window;
 use crate::core::{Point, Result};
 use crate::diagnostics::Diagnostics;
 use crate::platform::platform::PlatformSystem;
+use crate::platform::windowing::WindowSurfaceRole;
 use crate::platform::windowing::window::PlatformWindow;
 /// Event-driven application window.
 ///
@@ -87,8 +88,16 @@ impl Window {
     /// 创建平台窗口，存储 PlatformWindow 句柄。
     pub fn create(&mut self, title: &str, width: i32, height: i32) -> bool {
         self.initial_size = (width, height);
-        match create_app_window(self.platform.window_manager(), title, width, height) {
+        match create_app_window(
+            self.platform.window_manager(),
+            title,
+            width,
+            height,
+            &WindowSurfaceRole::Toplevel,
+        ) {
             Ok(mut w) => {
+                // Wayland layer-shell 可在首个 configure 中替换零维请求。
+                self.initial_size = w.client_logical_extent();
                 // 独立 Window 入口与 App 主窗、次窗保持相同能力缺失语义。
                 report_center_on_screen_result(
                     // 保留可定位的调用入口上下文。

@@ -23,18 +23,26 @@ pub(super) fn create_secondary_window(
         width,
         height,
         custom_title_bar,
+        surface_role,
         root,
     } = config;
 
-    let mut platform_window =
-        match create_app_window(platform.window_manager(), &title, width, height) {
-            Ok(window) => window,
-            Err(e) => {
-                runtime.close_session(window_id);
-                tracing::error!("open_window create_window failed: {}", e.short_what());
-                return None;
-            }
-        };
+    let mut platform_window = match create_app_window(
+        platform.window_manager(),
+        &title,
+        width,
+        height,
+        &surface_role,
+    ) {
+        Ok(window) => window,
+        Err(e) => {
+            runtime.close_session(window_id);
+            tracing::error!("open_window create_window failed: {}", e.short_what());
+            return None;
+        }
+    };
+    // layer-shell 首个 configure 后的真实尺寸是图形与布局的唯一初始 extent。
+    let (width, height) = platform_window.client_logical_extent();
     if platform_window.window_id() != window_id {
         let actual = platform_window.window_id();
         report_window_operation_error(
@@ -124,13 +132,8 @@ pub(super) fn create_secondary_window(
     let locale = window_assembly::resolve_or_default::<Locale>(container);
     let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(container);
     // 根包装顺序（WidgetConfig → Locale → prepare_app_root）与主窗共用同一原语。
-    let wrapped_root = window_assembly::wrap_app_root(
-        &widget_config,
-        &locale,
-        window_id,
-        feedback,
-        root,
-    );
+    let wrapped_root =
+        window_assembly::wrap_app_root(&widget_config, &locale, window_id, feedback, root);
     let mut session =
         WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);
     // 新建副窗在收到自身原生焦点事件前保持未聚焦（同步 IME 门控与树内投影）。
@@ -170,7 +173,8 @@ pub(super) fn recreate_exact_graphics_recipe(
     recipe: GraphicsRecipe,
     pending_failures: &PendingFailureQueue,
     // test-harness / Agent 截屏恢复后继续绑定同一个逐窗测试信号。
-    #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_tests: GraphicsFaultSignal,
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
+    graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     // native factory 在返回前已经把兼容 context 收敛为 recipe owner。
     let owner =
@@ -189,7 +193,8 @@ pub(super) fn create_software_recovery_engine(
     width: i32,
     height: i32,
     // test-harness / Agent 截屏的软件降级仍需完成待处理票据并返回未支持结果。
-    #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_tests: GraphicsFaultSignal,
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
+    graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     let mut renderer = Renderer::cpu();
     renderer.initialize(width, height)?;
@@ -205,7 +210,8 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
     selected_recipe: GraphicsRecipe,
     pending_failures: PendingFailureQueue,
     // test-harness / Agent 截屏在所有重建 recipe 间复用同一个窗口信号。
-    #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_tests: GraphicsFaultSignal,
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
+    graphics_tests: GraphicsFaultSignal,
 ) -> RenderTargetRebuilder {
     let candidates = gpu_recipe_candidates(requested);
     let mut current_recipe = selected_recipe;
@@ -277,7 +283,8 @@ pub(crate) fn create_preferred_engine(
     graphics_backend: GraphicsSelection,
     diagnostics: Diagnostics,
     recovery_request: RebuildRequest,
-    #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_faults: GraphicsFaultSignal,
+    #[cfg(any(feature = "test-harness", feature = "agent-control"))]
+    graphics_faults: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
     // 均在同一事件循环线程执行，且 `NativeSurfaceHandle` 是 !Send + !Sync。

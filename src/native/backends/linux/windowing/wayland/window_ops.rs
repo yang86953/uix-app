@@ -27,7 +27,7 @@ use wayland_client::protocol::{
     wl_surface,
     // 结束 Wayland 核心协议类型导入。
 };
-use wayland_client::{Connection, EventQueue, globals::GlobalList};
+use wayland_client::{Connection, EventQueue, Proxy, globals::GlobalList};
 use wayland_protocols::xdg::activation::v1::client::{
     // pending token handle 由逐窗 activation Component 持有直到 Done 或关闭。
     xdg_activation_token_v1::XdgActivationTokenV1,
@@ -43,6 +43,9 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1
     ZxdgToplevelDecorationV1,
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+};
 
 use crate::core::WindowId;
 use crate::core::error::{Errc, Error, Result};
@@ -63,7 +66,10 @@ use crate::platform::windowing::window::{
     NativeFrameRequest, NativeFrameRequestPhase, WindowOcclusionState,
 };
 // 引入平台中立的窗口缩放方向供 Wayland adapter 转交。
-use crate::platform::windowing::{WindowCapabilities, WindowCapability, WindowResizeEdge};
+use crate::platform::windowing::{
+    DesktopAnchor, DesktopKeyboardInteractivity, DesktopLayer, DesktopLayerConfig,
+    WindowCapabilities, WindowCapability, WindowResizeEdge, WindowSurfaceRole,
+};
 
 use super::compat::WaylandDispatchState;
 // 引入私有 frame callback Component，保持 WindowOps 只编排协议生命周期。
@@ -104,6 +110,15 @@ const WAYLAND_WINDOW_CAPABILITIES: WindowCapabilities = WindowCapabilities::from
     WindowCapability::NativeSurface,
 ]);
 
+const WAYLAND_LAYER_CAPABILITIES: WindowCapabilities = WindowCapabilities::from_slice(&[
+    WindowCapability::RequestClose,
+    WindowCapability::ResizeNotify,
+    WindowCapability::RequestNativeFrame,
+    WindowCapability::NativeFramePresented,
+    WindowCapability::CancelNativeFrame,
+    WindowCapability::NativeSurface,
+]);
+
 /// Wayland 平台窗口操作句柄。
 ///
 /// 持有 Wayland 协议窗口对象（surface/toplevel/xdg_surface），
@@ -115,6 +130,7 @@ pub(crate) struct WaylandWindowOps {
     pub(super) surface_id: Option<u32>,
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
+    pub(crate) layer_surface: Option<Main<ZwlrLayerSurfaceV1>>,
     pub(crate) compositor: Main<wl_compositor::WlCompositor>,
     // 后端唯一 SHM global 的逐窗引用，仅用于创建客户端阴影 buffer。
     pub(crate) shm: Main<wl_shm::WlShm>,
@@ -150,6 +166,8 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) activation_token: Option<Main<XdgActivationTokenV1>>,
     // 可选客户端阴影 owner；上层始终只操作统一标题栏外观契约。
     client_shadow: Option<WaylandClientShadow>,
+    // 公开 role 值决定逐窗能力与协议销毁路径，不保存原生句柄到 app 层。
+    surface_role: WindowSurfaceRole,
 }
 
 impl WaylandWindowOps {
@@ -176,6 +194,7 @@ impl WaylandWindowOps {
         // 注入 seat 绑定后实际建立的 data-device 能力事实。
         file_drop_available: bool,
         xdg_activation: Option<Main<XdgActivationV1>>,
+        surface_role: WindowSurfaceRole,
     ) -> Self {
         Self {
             window_id,
@@ -184,6 +203,7 @@ impl WaylandWindowOps {
             surface_id: None,
             xdg_surface: None,
             toplevel: None,
+            layer_surface: None,
             compositor,
             shm,
             input_region: None,
@@ -216,6 +236,7 @@ impl WaylandWindowOps {
             // 新窗口尚未建立异步 activation token 请求。
             activation_token: None,
             client_shadow: None,
+            surface_role,
         }
     }
 
@@ -223,6 +244,7 @@ impl WaylandWindowOps {
     pub(crate) fn init(
         &mut self,
         wm_base: &Main<xdg_wm_base::XdgWmBase>,
+        layer_shell: Option<&Main<ZwlrLayerShellV1>>,
         globals: &GlobalList,
         display: &Connection,
         event_queue: &mut EventQueue<WaylandDispatchState>,
@@ -242,6 +264,20 @@ impl WaylandWindowOps {
 
         let surface = self.compositor.create_surface();
         let surface_id = surface.id().protocol_id();
+        if let WindowSurfaceRole::DesktopLayer(config) = self.surface_role.clone() {
+            return self.init_layer_surface(
+                layer_shell,
+                surface,
+                surface_id,
+                config,
+                display,
+                event_queue,
+                dispatch_state,
+                width,
+                height,
+                window_state,
+            );
+        }
         let xdg_surf = wm_base.get_xdg_surface(&surface);
         let tl = xdg_surf.get_toplevel();
         tl.set_title(title.to_string());
@@ -547,11 +583,198 @@ impl WaylandWindowOps {
         }
         Ok(())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn init_layer_surface(
+        &mut self,
+        layer_shell: Option<&Main<ZwlrLayerShellV1>>,
+        surface: Main<wl_surface::WlSurface>,
+        surface_id: u32,
+        config: DesktopLayerConfig,
+        display: &Connection,
+        event_queue: &mut EventQueue<WaylandDispatchState>,
+        dispatch_state: &mut WaylandDispatchState,
+        width: i32,
+        height: i32,
+        window_state: Rc<RefCell<WindowState>>,
+    ) -> Result<(), Error> {
+        use wayland_protocols_wlr::layer_shell::v1::client::{
+            zwlr_layer_shell_v1::Layer,
+            zwlr_layer_surface_v1::{Anchor, Event, KeyboardInteractivity},
+        };
+
+        config.validate().map_err(Error::invalid_arg)?;
+        if width < 0 || height < 0 {
+            return Err(Error::invalid_arg(
+                "layer surface initial width and height must be non-negative",
+            ));
+        }
+        if width == 0
+            && !(config.is_anchored(DesktopAnchor::Left)
+                && config.is_anchored(DesktopAnchor::Right))
+        {
+            return Err(Error::invalid_arg(
+                "zero layer width requires both left and right anchors",
+            ));
+        }
+        if height == 0
+            && !(config.is_anchored(DesktopAnchor::Top)
+                && config.is_anchored(DesktopAnchor::Bottom))
+        {
+            return Err(Error::invalid_arg(
+                "zero layer height requires both top and bottom anchors",
+            ));
+        }
+        let layer_shell = layer_shell.ok_or_else(|| {
+            Error::new(
+                Errc::NotImplemented,
+                "Wayland compositor does not advertise zwlr_layer_shell_v1",
+            )
+        })?;
+        if config.keyboard_interactivity_value() == DesktopKeyboardInteractivity::OnDemand
+            && layer_shell.version() < 4
+        {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "on-demand layer keyboard interactivity requires zwlr_layer_shell_v1 v4",
+            ));
+        }
+        let protocol_layer = match config.layer() {
+            DesktopLayer::Background => Layer::Background,
+            DesktopLayer::Bottom => Layer::Bottom,
+            DesktopLayer::Top => Layer::Top,
+            DesktopLayer::Overlay => Layer::Overlay,
+        };
+        let layer_surface = layer_shell.get_layer_surface(
+            &surface,
+            protocol_layer,
+            config.namespace_value().to_owned(),
+        );
+
+        let mut anchors = Anchor::empty();
+        for (public, protocol) in [
+            (DesktopAnchor::Top, Anchor::Top),
+            (DesktopAnchor::Bottom, Anchor::Bottom),
+            (DesktopAnchor::Left, Anchor::Left),
+            (DesktopAnchor::Right, Anchor::Right),
+        ] {
+            if config.is_anchored(public) {
+                anchors.insert(protocol);
+            }
+        }
+        layer_surface.set_anchor(anchors);
+        layer_surface.set_exclusive_zone(config.exclusive_zone_value());
+        layer_surface.set_keyboard_interactivity(match config.keyboard_interactivity_value() {
+            DesktopKeyboardInteractivity::None => KeyboardInteractivity::None,
+            DesktopKeyboardInteractivity::Exclusive => KeyboardInteractivity::Exclusive,
+            DesktopKeyboardInteractivity::OnDemand => KeyboardInteractivity::OnDemand,
+        });
+        layer_surface.set_size(width.max(0) as u32, height.max(0) as u32);
+
+        let events = Arc::clone(&self.events);
+        let failures = self.pending_failures.clone();
+        let surface_scale = Arc::clone(&self.surface_scale);
+        let window_id = self.window_id;
+        layer_surface.quick_assign(move |layer, event, _| match event {
+            Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
+                layer.ack_configure(serial);
+                let Ok(mut state) = window_state.try_borrow_mut() else {
+                    let _ = failures.enqueue(Error::new(
+                        Errc::InvalidState,
+                        "Wayland layer-surface Configure WindowState already borrowed",
+                    ));
+                    return;
+                };
+                let Ok(mut queued) = events.lock() else {
+                    let _ = failures.enqueue(Error::new(
+                        Errc::InvalidState,
+                        "Wayland layer-surface Configure event queue mutex poisoned",
+                    ));
+                    return;
+                };
+                let configured_width = i32::try_from(width).unwrap_or(i32::MAX);
+                let configured_height = i32::try_from(height).unwrap_or(i32::MAX);
+                let changed = state.width != configured_width || state.height != configured_height;
+                state.width = configured_width;
+                state.height = configured_height;
+                surface_scale.set_logical_extent(configured_width, configured_height);
+                if changed {
+                    queued.push_back(
+                        UiEvent::resize(configured_width, configured_height).for_window(window_id),
+                    );
+                }
+            }
+            Event::Closed => {
+                let Ok(mut queued) = events.lock() else {
+                    let _ = failures.enqueue(Error::new(
+                        Errc::InvalidState,
+                        "Wayland layer-surface Closed event queue mutex poisoned",
+                    ));
+                    return;
+                };
+                queued.push_back(UiEvent::close().for_window(window_id));
+            }
+            _ => {}
+        });
+
+        let input_region = self.compositor.create_region();
+        input_region.add(0, 0, width.max(0), height.max(0));
+        surface.set_input_region(Some(&input_region));
+        register_window_surface(
+            &self.pointer_activations,
+            &self.surface_windows,
+            surface_id,
+            self.window_id,
+        )?;
+        self.surface_id = Some(surface_id);
+        self.input_region = Some(input_region);
+        surface.set_buffer_scale(self.surface_scale.current_scale());
+        bind_surface_scale_events(
+            &surface,
+            Arc::clone(&self.output_scales),
+            Arc::clone(&self.surface_scale),
+        );
+        surface.commit();
+
+        self.surface = Some(surface);
+        self.layer_surface = Some(layer_surface);
+        self.native_surface = WaylandSurfaceHandle::new(
+            display.backend().display_ptr().cast(),
+            self.surface_c_ptr(),
+            self.surface_scale.metrics(),
+        );
+        // 初始无 buffer commit 后必须等到首个 configure，调用方才能用真实尺寸建立 presenter。
+        event_queue.roundtrip(dispatch_state).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("Wayland layer-surface initialization dispatch failed: {error}"),
+            )
+        })?;
+        if let Err(error) = display.flush()
+            && !matches!(
+                error,
+                WaylandError::Io(ref error) if error.kind() == std::io::ErrorKind::WouldBlock
+            )
+        {
+            return Err(Error::new(
+                Errc::IoError,
+                format!("Wayland layer-surface initialization flush failed: {error}"),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl WindowOps for WaylandWindowOps {
     fn capabilities(&self) -> WindowCapabilities {
-        let mut capabilities = WAYLAND_WINDOW_CAPABILITIES;
+        let mut capabilities = match &self.surface_role {
+            WindowSurfaceRole::Toplevel => WAYLAND_WINDOW_CAPABILITIES,
+            WindowSurfaceRole::DesktopLayer(_) => WAYLAND_LAYER_CAPABILITIES,
+        };
         if self.xdg_activation.is_some() {
             capabilities = capabilities.with(WindowCapability::Raise);
         }
@@ -732,6 +955,24 @@ impl WindowOps for WaylandWindowOps {
     // ── 尺寸/位置 ─────────────────────────────────────────
 
     fn os_set_size(&mut self, w: i32, h: i32) -> Result<()> {
+        if let Some(layer_surface) = self.layer_surface.as_ref() {
+            if w <= 0 || h <= 0 {
+                return Err(Error::invalid_arg(format!(
+                    "os_set_size requires a positive configured extent, got {w}x{h}"
+                )));
+            }
+            let surface = self
+                .surface
+                .as_ref()
+                .ok_or_else(|| Self::missing_proxy("os_set_size", "wl_surface"))?;
+            let region = self.compositor.create_region();
+            region.add(0, 0, w, h);
+            layer_surface.set_size(w as u32, h as u32);
+            surface.set_input_region(Some(&region));
+            self.input_region = Some(region);
+            self.surface_scale.publish_programmatic_resize(w, h)?;
+            return Ok(());
+        }
         let xdg_surface = self
             .xdg_surface
             .as_ref()

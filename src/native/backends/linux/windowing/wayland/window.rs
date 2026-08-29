@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use crate::core::{Errc, Error, WindowId};
 use crate::native::windowing::shared::{PlatformWindowCore, WindowState};
+use crate::platform::windowing::WindowSurfaceRole;
 use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
 
 use super::WaylandBackend;
@@ -22,6 +23,16 @@ impl IWindowManager for WaylandBackend {
         title: &str,
         width: i32,
         height: i32,
+    ) -> Result<Box<dyn PlatformWindow>, Error> {
+        self.create_window_with_role(title, width, height, &WindowSurfaceRole::Toplevel)
+    }
+
+    fn create_window_with_role(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+        surface_role: &WindowSurfaceRole,
     ) -> Result<Box<dyn PlatformWindow>, Error> {
         // closed 事实必须成为窗口工厂访问任何 seat 或协议 owner 前的首个决策。
         if self.closed {
@@ -79,10 +90,12 @@ impl IWindowManager for WaylandBackend {
             // 只有 seat 已建立真实 data-device owner 时能力入口才能成功。
             self.data_device.is_some(),
             self._xdg_activation.clone(),
+            surface_role.clone(),
         );
 
         ops.init(
             &self._wm_base,
+            self.layer_shell.as_ref(),
             &self._globals,
             &self.display,
             &mut self.event_queue,
@@ -94,11 +107,23 @@ impl IWindowManager for WaylandBackend {
             Rc::clone(&state),
         )?;
 
+        // layer-shell 的首个 configure 可以把零维请求解析为真实输出尺寸。
+        let (presenter_width, presenter_height) = {
+            let configured = state.borrow();
+            (configured.width, configured.height)
+        };
+        if presenter_width <= 0 || presenter_height <= 0 {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "Wayland compositor did not configure a positive surface extent",
+            ));
+        }
+
         let presenter = super::presenter::WaylandPresenter::new(
             self._shm.clone(),
             ops.surface.clone(),
-            width,
-            height,
+            presenter_width,
+            presenter_height,
             // CPU presenter 与 EGL descriptor 消费同一逐窗 metrics。
             surface_scale.metrics(),
         );
