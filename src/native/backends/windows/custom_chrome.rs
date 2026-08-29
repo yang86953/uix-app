@@ -291,6 +291,73 @@ pub(crate) unsafe fn handle_nc_calc_size(
     }
 }
 
+/// 最大化时把外窗矩形钉到所在显示器工作区，消除底部可见的非客户区黑条。
+///
+/// Win32 对保留 `WS_THICKFRAME` 的窗口最大化会把外窗四边各扩一个缩放边框
+/// （约 8px）：上/左/右超出屏幕不可见，底部边框却落在任务栏上缘的屏幕
+/// 可见区内；客户区经 `WM_NCCALCSIZE` 对齐回工作区后，这条底部非客户区
+/// 没有任何绘制方（无系统标题栏的窗口 DWM 不绘制非客户区），呈现为
+/// 任务栏上方一条黑色横条。把外窗收缩到工作区后客户区铺满外窗。
+pub(crate) fn snap_maximized_frame_to_work_area(hwnd: *mut c_void) -> Result<()> {
+    if hwnd.is_null() {
+        return Ok(());
+    }
+    // 只服务扩展客户区（无系统标题栏 + WS_THICKFRAME）窗口：标准窗口的
+    // 最大化边框由系统非客户区绘制在屏幕外，钉窗口反而会让边框退回屏内。
+    let style = window_style(hwnd)?;
+    if !uses_extended_client(style) {
+        return Ok(());
+    }
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: hwnd 属于当前同步窗口消息；rect 在调用期间有效可写。
+    if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+        return Err(super::util::windows_diag(
+            Errc::PlatformError,
+            "custom chrome: snap-maximized GetWindowRect failed",
+        ));
+    }
+    // 工作区不可得时保留 Win32 默认最大化几何，不放大失败面。
+    let Some(work) = monitor_work_area(hwnd) else {
+        return Ok(());
+    };
+    // 外窗已与工作区一致时跳过；客户区尺寸未变时 Win32 不再重入 WM_SIZE。
+    if rect.left == work.left
+        && rect.top == work.top
+        && rect.right == work.right
+        && rect.bottom == work.bottom
+    {
+        return Ok(());
+    }
+    let width = work.right.saturating_sub(work.left);
+    let height = work.bottom.saturating_sub(work.top);
+    use super::consts::{SWP_NOACTIVATE, SWP_NOZORDER};
+    use super::ffi::SetWindowPos;
+    // SAFETY: hwnd 属于当前同步消息的窗口；工作区矩形为显示器有效坐标。
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            work.left,
+            work.top,
+            width,
+            height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    } == 0
+    {
+        return Err(super::util::windows_diag(
+            Errc::PlatformError,
+            "custom chrome: snap-maximized SetWindowPos failed",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn screen_point_from_lparam(lparam: isize) -> (i32, i32) {
     let x = (lparam & 0xFFFF) as i16 as i32;
     let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;

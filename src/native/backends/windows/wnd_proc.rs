@@ -336,6 +336,17 @@ impl WindowsPlatform {
                 default_result
             }
             WM_SIZE => {
+                // 最大化先把外窗钉到所在显示器工作区：Win32 最大化矩形四边各含
+                // 一个缩放边框，底部边框在任务栏上缘的屏幕可见区内露出一条无
+                // 绘制方的黑色非客户区横条（客户区已被 NCCALCSIZE 钉回工作区）。
+                if wparam == SIZE_MAXIMIZED {
+                    match super::custom_chrome::snap_maximized_frame_to_work_area(hwnd) {
+                        Ok(()) => {}
+                        Err(error) => {
+                            self.enqueue_callback_failure(error);
+                        }
+                    }
+                }
                 let dpi = super::dpi::dpi_for_window(hwnd);
                 let w = super::dpi::physical_extent_to_logical(Self::loword(lparam) as i32, dpi);
                 let h = super::dpi::physical_extent_to_logical(Self::hiword(lparam) as i32, dpi);
