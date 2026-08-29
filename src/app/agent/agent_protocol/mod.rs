@@ -356,6 +356,12 @@ impl AgentProtocolSession {
                     "window_actions": AGENT_WINDOW_ACTIONS,
                     "window_state_fields": AGENT_WINDOW_STATE_FIELDS,
                     "screenshot": true,
+                    "background_control": {
+                        "actions_without_focus": true,
+                        "semantic_snapshot_without_surface": true,
+                        "presented_wait_requires_surface": true,
+                        "screenshot_requires_surface": true,
+                    },
                     "key_names": AGENT_KEY_CODES
                         .iter()
                         .map(|(name, _)| *name)

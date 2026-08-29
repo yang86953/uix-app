@@ -297,19 +297,36 @@ impl WidgetTree {
 
     /// 在失效批次边界内向组件树分发系统事件。
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
+        self.dispatch_event_with_focus_policy(event, false)
+    }
+
+    /// 分发已通过 Agent 授权且显式绑定窗口的事件，不借用操作系统前台焦点。
+    pub(crate) fn dispatch_agent_event(&mut self, event: &SystemEvent) -> EventResult {
+        self.dispatch_event_with_focus_policy(event, true)
+    }
+
+    fn dispatch_event_with_focus_policy(
+        &mut self,
+        event: &SystemEvent,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
         // 已停止的树不得继续分发可能触发组件回调的系统事件。
         if !self.accepts_external_work() {
             // 明确拒绝事件，避免外层循环把半树视为可交互。
             return EventResult::NotHandled;
         }
         self.begin_invalidation_batch();
-        let result = self.dispatch_event_inner(event);
+        let result = self.dispatch_event_inner(event, allow_unfocused_input);
         self.cancel_hidden_interaction();
         self.finish_invalidation_batch();
         result
     }
 
-    pub(super) fn dispatch_event_inner(&mut self, event: &SystemEvent) -> EventResult {
+    pub(super) fn dispatch_event_inner(
+        &mut self,
+        event: &SystemEvent,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
         if self
             .managers()
             .focus
@@ -318,7 +335,7 @@ impl WidgetTree {
         {
             self.set_focus(None);
         }
-        if self.ignores_input_while_window_unfocused(event) {
+        if !allow_unfocused_input && self.ignores_input_while_window_unfocused(event) {
             return EventResult::NotHandled;
         }
 

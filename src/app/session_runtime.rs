@@ -218,7 +218,10 @@ impl AppRuntime {
     }
 
     #[cfg(feature = "agent-control")]
-    pub(crate) fn start_agent_transport(&self) -> Result<AgentTransportInfo, AgentTransportError> {
+    pub(crate) fn start_agent_transport(
+        &self,
+        display_name: &str,
+    ) -> Result<AgentTransportInfo, AgentTransportError> {
         let bridge = self
             .agent_bridge()
             .ok_or(AgentTransportError::BridgeDisabled)?;
@@ -229,7 +232,7 @@ impl AppRuntime {
         if let Some(transport) = transport.as_ref() {
             return Ok(transport.info().clone());
         }
-        let handle = AgentTransportHandle::start(bridge)?;
+        let handle = AgentTransportHandle::start(bridge, display_name)?;
         let info = handle.info().clone();
         *transport = Some(handle);
         Ok(info)

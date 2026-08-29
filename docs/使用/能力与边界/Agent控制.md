@@ -11,6 +11,7 @@
 - 启用条件是 `agent-control` feature + `.enable_agent_control()`，双门禁缺一不可。
 - 只建立本机同用户 IPC，空闲无轮询，敏感值不导出。
 - 动作与用户输入走同一条 UI 语义路径，不建立第二条可写管线。
+- Agent 请求以 `instance_id + window_id + generation` 定向窗口；应用失去前台焦点、被遮挡、最小化或隐藏时仍可执行语义、指针、按键和窗口动作，不抢占系统前台。
 
 ## 使用前安全评估
 
@@ -49,15 +50,38 @@ cargo run --release --manifest-path demo/Cargo.toml --features agent-control --b
 
 只启用 feature 或只传参数都不会发布端点：前者保持普通主演示，后者在创建窗口前以退出码 2 定向失败。
 
+## 多应用连接：每用户 Agent Hub
+
+AI 默认不再从多个发现文件中猜测“最新应用”。`agent-control` 应用会以长期心跳向当前用户唯一的
+`uix.agent.hub.v1` 本地 Hub 登记；Hub 只负责实例枚举与显式绑定，动作数据仍直连目标应用自己的
+`uix.agent.v1` 端点，因此不改变应用内策略、确认或状态所有权。
+
+身份分为四层：
+
+| 身份 | 作用域 | 失效条件 |
+|---|---|---|
+| `app_id` | 程序种类（当前由可执行文件名派生） | 程序身份变化 |
+| `instance_id` | 一次应用进程运行，由随机 nonce 生成 | 应用退出或重启 |
+| `session_id` | AI 连接器对一个 `instance_id` 的显式绑定 | detach、连接终止或应用终止 |
+| `window_id` + `generation` | 已绑定进程内的一个窗口代际 | 窗口关闭或重建 |
+
+Hub 的 `list_apps` 不返回端点和 token；只有同用户客户端显式 `attach(instance_id)` 后才能取得直连
+描述符。连接器内部再为该实例建立 `control`、`wait`、`media` 三条长期连接，长等待或大截屏不会
+阻塞普通控制。旧实例断开后，原 `session_id` 进入终态；即使同名应用已经重启，也不得自动改绑。
+
+Hub 可以晚于应用启动：应用只在启用 Agent 双门禁后以有界退避后台重连，Hub 不可用不会阻断或
+拖慢应用启动。原每进程 discovery 与直连协议暂时保留为迁移兼容；兼容客户端检测到多个发现文件时
+也必须拒绝猜测目标。
+
 ## 授权模型（三层）
 
 Agent 控制的能力按三层授权逐级把关；默认配置下第一层通过后不会再增加动作限制，第二、三层由应用按需收紧。
 
 ### 第一层：连接鉴权（默认启用，不可关闭）
 
-- 端点只接受**本机同用户**连接（Unix socket / 命名管道权限 + 用户身份校验）。
+- Hub 与应用端点都只接受**本机同用户**连接（Unix socket / 命名管道权限 + 用户身份校验）。
 - 每会话生成 32 字节随机 token，随发现文件发布；客户端必须用 token 完成 `hello` 握手，失败即断开。
-- 发现信息（进程 id、端点地址、token）与控制通道分离。
+- Hub 枚举只公开非敏感实例身份；端点地址和 token 只在显式 attach 的同用户控制连接内传递，并与动作通道分离。
 
 ### 第二层：动作策略（默认无额外限制，应用按需收紧）
 
@@ -151,9 +175,11 @@ App::new()
 窗口管理动作会由 `hello.capabilities.window_actions` 正式发布，并经平台窗口操作契约执行；平台不支持、
 窗口约束拒绝或原生调用失败均返回 `window_operation_failed`，不得伪造成功或隐式降级。
 
-指针动作（`click_at` / `pointer_move` / `pointer_down` / `pointer_up`）不要求窗口焦点；`press_key` 与文本类动作要求窗口已聚焦且事件被组件消费，未消费按失败处理。自动化驱动键盘前先执行 `activate_window`；焦点与悬停用 `focused` / `hovered` 事实断言，不依赖截图猜测界面状态。
+Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得操作系统焦点：它们只在已鉴权、显式绑定的目标窗口 UI turn 内分发，事件未被组件消费仍按失败处理。`activate_window` 只用于确实需要把窗口带到用户前台的流程，不再是 Agent 键盘动作的前置条件；焦点与悬停用 `focused` / `hovered` 事实断言，不依赖截图猜测界面状态。
 
 `screenshot` 属于读取类请求：只读策略下与快照一样可用，且不携带 `target`。请求会使空闲窗口强制出帧并等待下一次真实 present 完成，返回 `window_id`、`width`、`height`、`format` 与 base64 PNG 载荷。像素为物理分辨率（含设备缩放），载荷上限 32 MiB（`hello.limits.max_screenshot_bytes`，超限返回 `payload_too_large`）；仅 backend-managed GPU 呈现支持截屏，软件回退路径以 `unsupported_action` 明确失败；同一窗口上一个截屏未完成前，新请求按 `window_operation_failed` 拒绝。
+
+后台控制与像素呈现是两件事：普通动作只等待进程内声明协调、布局与语义修订完成，不依赖 compositor 前台状态。最小化或被遮挡后若平台仍报告 `presentable=true`，真实截屏与 presented wait 仍可工作；只有平台明确报告无可呈现 surface 时，动作和语义快照继续可用，而 `screenshot` 与 `wait(presented_revision)` 返回 `not_presentable`。连接器的 `uix_interact` 在这种情况下保留已成功动作并回退读取语义快照，`retry_action=false`，不得用旧截图伪造当前画面。
 
 ### 错误码
 
@@ -178,11 +204,13 @@ App::new()
 
 ## 协议
 
-- JSON Lines，本机端点（Unix socket / 命名管道），端点路径含进程 id 与会话 nonce。
+- 控制面为 `uix.agent.hub.v1` JSON Lines，本机每用户固定端点；应用以 `register_app` + 心跳登记，AI 以 `list_apps` → `attach(instance_id)` 选择实例。
+- 动作面仍为 `uix.agent.v1` JSON Lines 本机端点（Unix socket / 命名管道），端点路径含进程 id 与会话 nonce；一次绑定可建立多条独立长期连接。
 - 首请求必须为 `hello`（携带 token）；已认证连接按 `list_windows` → `snapshot` → `perform` / `confirm` → `wait` 循环工作。
 - 请求帧与响应帧分别有界：`hello.limits.max_request_bytes` 是请求 JSON 正文上限，`max_response_bytes` 是含结尾换行的单条响应上限；旧字段 `max_message_bytes` 保留为请求上限别名。响应上限已计入 32 MiB 截屏 PNG 的 base64 膨胀和 JSON 信封，不会把合法截屏误报为 `internal`。
 - 每个响应必须原样回显请求的 `request_id`；客户端应同时校验 `schema`、`request_id` 与协商后的响应长度，关联不一致时停止该连接，不能把回包归给其他动作。
 - `hello.capabilities.window_state_fields` 发布 `list_windows` 可读取的窗口状态字段；客户端必须先协商再消费。字段来自 UIX 跨平台窗口属性，是框架当前观测，不承诺窗口管理器或 compositor 已确认动作终态。
+- `hello.capabilities.background_control` 发布后台矩阵：动作不要求焦点、语义快照不要求 surface；`presented_wait` 与 `screenshot` 明确要求目标窗口当前仍有真实 surface。客户端不得把动作能力外推成像素能力。
 - 动作必须命中当前语义快照中的稳定节点（`automation_id` 或 `node_id`）并经过窗口 owner thread。
 - `wait` 返回同 generation 的 `closed` 后，该连接已到达终态并由服务端关闭；应用 teardown 会先给
   在途终态回复保留有界写回窗口，再强制回收其他连接。
@@ -209,15 +237,42 @@ AI                        UIX 应用                      用户
 cargo run --release --manifest-path demo/Cargo.toml --features agent-control --bin uix-lang-demo -- --agent-control
 ```
 
-**执行步骤**：仓库提供 `scripts/agent_client.py`（Python 3；Windows 命名管道依赖 pywin32）。脚本从发现目录读取最新 `uix-*.json`（Linux 为 `$XDG_RUNTIME_DIR/uix-agent-$UID/`），每条命令独立完成 `hello` 握手后执行：
+**执行步骤**：仓库提供 `scripts/agent_client.py`（Python 3；Windows 命名管道依赖 pywin32）。
+脚本按需启动每用户 Hub；先枚举应用，多于一个实例时必须用 `--instance` 显式选择。只有一个实例时
+可以省略选择；Hub 尚未收到登记时才回退到单一 discovery，发现多个文件同样拒绝猜测：
 
 ```bash
+python3 scripts/agent_client.py apps            # 列出 app_id / instance_id / 标题 / pid
+python3 scripts/agent_client.py --instance <instance_id> attach
+python3 scripts/agent_client.py --instance <instance_id> list_windows
 python3 scripts/agent_client.py hello           # 握手并发布能力目录
 python3 scripts/agent_client.py list_windows    # window_id、generation、focused 等
 python3 scripts/agent_client.py snapshot        # 默认第一个窗口的语义树
 python3 scripts/agent_client.py screenshot out.png   # 像素级截屏（默认第一个窗口）
 python3 scripts/agent_client.py click 120 40    # 应用内 logical 客户区坐标
 ```
+
+连续控制可在绑定后使用 `session`，同一已认证连接按 stdin/stdout JSON Lines 转发多次请求，不重复
+启动 Python 或输出完整 hello：
+
+```bash
+python3 scripts/agent_client.py --instance <instance_id> session
+```
+
+## Codex MCP 接入
+
+可信项目中的 `.codex/config.toml` 已登记 `scripts/uix_agent_mcp.py` 为本地 STDIO MCP。配置在新的
+Codex 任务或客户端重载后生效；修改当前任务的配置不会热加载工具。推荐操作回路：
+
+1. `uix_list_apps` 枚举全部实例。
+2. `uix_attach_app(instance_id)` 取得只绑定该实例的 `session_id`。
+3. `uix_list_windows(session_id)` 与 `uix_snapshot` 读取当前事实。
+4. 优先用 `uix_interact` 一次完成动作、对应修订的呈现等待和新快照；独立长等待与截屏分别走 `uix_wait` / `uix_screenshot`。
+5. 完成后 `uix_detach_app`。应用退出或重启后重新 list + attach，禁止把旧动作自动重放到新实例。
+
+MCP 只提供类型化工具和连接复用，不取得 UIX 状态所有权，也不能绕过应用的动作策略与用户确认。
+截屏由媒体连接接收，连接器解码后写入权限 `0600` 的私有临时 PNG，只把路径与尺寸返回给 AI，
+避免在 MCP 文本响应中重复传输 base64。
 
 AI 连续操作时不要为每一步重启客户端；使用 `session` 保持同一条已认证连接。启动后 stdout 首行是一次 `hello` 回包，随后 stdin 每输入一行请求 JSON，stdout 就输出一行对应响应 JSON；请求缺省的 `schema` 与 `request_id` 仍由客户端补齐：
 

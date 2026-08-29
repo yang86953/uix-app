@@ -8,6 +8,8 @@
 
 - 修复 Agent 截屏协议的帧上限矛盾：此前 `hello` 宣称 PNG 可达 32 MiB，但所有 JSON 回包统一受 4 MiB 上限约束，较大的合法截图在 base64 膨胀后会丢失原 `request_id` 并误报 `internal`。现拆分 4 MiB 请求正文上限与约 42.7 MiB 响应上限，`hello.limits` 新增 `max_request_bytes` / `max_response_bytes`（旧 `max_message_bytes` 保留为请求上限别名）；响应超限降级仍回显原请求 ID。仓库客户端同步执行长度、schema、请求 ID 与截屏载荷校验，避免错配回包或无界累积。
 - 降低连续 Agent 操作的客户端开销：`scripts/agent_client.py session` 在同一已认证连接上按 stdin/stdout JSON Lines 转发多次请求，只在首行发布一次 `hello`；单次命令改为静默握手并只输出目标回包，不再为每步重复输出完整能力目录。Linux/Wayland release 主演示复测：单次 `list_windows` 中位时延由约 37 ms 降到 17.6 ms、stdout 由 1876 字节降到 392 字节；持久会话内 50 次同请求 p50/p95 为 0.046/0.070 ms，20 次首页↔语言能力页切换到真实呈现完成为 15.0/16.9 ms。本批针对已测得的客户端重启与重复输出开销，不改 UI settle 或呈现语义。
+- 新增每用户 `uix.agent.hub.v1` 多应用连接：启用控制面的 UIX 进程以随机 `instance_id` 向固定本地 Hub 长期登记，AI 必须先 `list_apps` 再显式 `attach(instance_id)`，不再按最新 discovery 猜测目标；应用退出或重启后旧绑定终止，不自动切到同名实例。仓库客户端支持 `apps` 与 `--instance`，可信项目配置新增不依赖 MCP SDK 的 STDIO MCP；连接器为每个绑定实例分离 control / wait / media 长期连接，`uix_interact` 合并动作、呈现等待与快照，截屏以权限 0600 临时文件返回，旧直连 discovery 暂作迁移兼容。
+- Agent 动作改为显式窗口定向而非前台焦点定向：应用失焦、被遮挡、最小化或隐藏时，语义、指针、按键和窗口动作继续在目标窗口 UI turn 内完成，后台声明协调、布局和语义修订不依赖 surface；普通操作系统输入仍遵守焦点门禁。无可呈现 surface 时截屏与 presented wait 继续返回 `not_presentable`，MCP `uix_interact` 保留动作成功事实并回退语义快照，禁止自动重放或伪造缓存画面。
 
 ## 0.0.1（2026-08-29）
 

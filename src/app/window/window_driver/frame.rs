@@ -258,6 +258,57 @@ impl WindowDriver {
             || had_app_state_semantic_work
             || pending_effects;
 
+        // Agent 动作绑定的是进程内窗口，不借用合成器前台状态。surface 不可呈现时
+        // 仍完成声明协调、布局和语义刷新；只把 paint/present 与截屏留给可呈现路径。
+        if !presentable && agent_commands.has_background_in_flight() {
+            let mut reconcile_ran = false;
+            if *reconcile_pending {
+                let root = pending_root.take().or_else(|| {
+                    view_factory.and_then(|factory| factory.build(tree.widget_state_store()))
+                });
+                if let Some(root) = root {
+                    ViewAdapter::reconcile_nodes(tree, root);
+                    reconcile_ran = true;
+                }
+                *reconcile_pending = false;
+            }
+            if reconcile_ran {
+                sync_animation_registrations(
+                    active_work,
+                    tree,
+                    &[],
+                    &mut self.animation_registrations_scratch,
+                );
+            }
+            if has_layout_work(tree) {
+                tree.layout();
+                record_layout(metrics);
+            }
+            if let Some(result) = self.finish_if_tree_fail_stopped(
+                tree,
+                active_work,
+                app_timers,
+                main_thread_queue,
+                agent_commands,
+                pending_root,
+                reconcile_pending,
+                loop_state,
+            ) {
+                return result;
+            }
+            semantic_state.refresh(tree);
+            observe_agent_settle(
+                agent_commands,
+                semantic_state,
+                tree,
+                main_thread_queue,
+                pending_root,
+                *reconcile_pending,
+                false,
+                false,
+            );
+        }
+
         if self.suspend_if_surface_unavailable(tree, platform_window) {
             active_work.park_animated_deadlines();
             agent_commands.fail_not_presentable();
