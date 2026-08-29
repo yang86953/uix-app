@@ -4,6 +4,7 @@ use crate::core::WindowId;
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
 use crate::platform::presentation::IPresenter;
+use crate::platform::windowing::WindowSurfaceRole;
 use crate::platform::windowing::event::{FrameRequestToken, PointerActivationId};
 use crate::platform::windowing::{WindowCapabilities, WindowResizeEdge};
 
@@ -86,6 +87,23 @@ pub trait IWindowManager {
         width: i32,
         height: i32,
     ) -> Result<Box<dyn PlatformWindow>, Error>;
+
+    /// 创建带显式 surface role 的窗口；非 Wayland 平台只接受普通 toplevel。
+    fn create_window_with_role(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+        role: &WindowSurfaceRole,
+    ) -> Result<Box<dyn PlatformWindow>, Error> {
+        match role {
+            WindowSurfaceRole::Toplevel => self.create_window(title, width, height),
+            WindowSurfaceRole::DesktopLayer(_) => Err(Error::new(
+                crate::core::Errc::NotImplemented,
+                "desktop layer surfaces require a Wayland layer-shell compositor",
+            )),
+        }
+    }
 }
 
 /// 平台窗口 — 可见性、标题、层级与呈现器访问。

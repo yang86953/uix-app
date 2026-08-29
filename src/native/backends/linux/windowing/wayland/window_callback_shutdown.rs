@@ -24,5 +24,11 @@ impl WaylandWindowOps {
             // 在释放 handle 前注销 configure callback 与其捕获状态。
             xdg_surface.clear_callback();
         }
+        // layer surface 与 xdg_surface 互斥；桌面窗口关闭时注销其 configure/closed callback。
+        if let Some(layer_surface) = self.layer_surface.take() {
+            // 协议 destructor 先通知 compositor 释放桌面 role。
+            layer_surface.destroy();
+            layer_surface.clear_callback();
+        }
     }
 }

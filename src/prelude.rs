@@ -181,7 +181,11 @@ pub use crate::ui::{DropPosition, SnapshotTreeNode, Tree, TreeNode, TreeSelect};
 // app
 
 pub use crate::app::Container as DiContainer;
-pub use crate::app::{App, AppHandle, AppMode, TimerHandle, WindowConfig, map_ui_event};
+pub use crate::app::{
+    App, AppHandle, AppMode, DesktopLayerConfig, TimerHandle, WindowConfig, WindowSurfaceRole,
+    map_ui_event,
+};
+pub use crate::platform::windowing::{DesktopAnchor, DesktopKeyboardInteractivity, DesktopLayer};
 
 // 富文本 capability 启用时才暴露解析与布局辅助函数。
 #[cfg(feature = "rich-text")]

@@ -261,6 +261,7 @@ fn run_wsi_production_chain_test<A: WsiParityAdapter>(
         profile.window_title(),
         logical_width,
         logical_height,
+        &crate::platform::windowing::WindowSurfaceRole::Toplevel,
     )
     .expect("the current session must create a real platform window");
     eprintln!("{backend} WSI stage: window-created");
