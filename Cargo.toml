@@ -104,6 +104,8 @@ libc = "0.2.186"
 wayland-client = { version = "0.31.15", features = ["dlopen", "system"] }
 wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] }
 wayland-protocols-plasma = { version = "0.3.12", features = ["client"] }
+# UIX OS 桌面组件使用 wlr layer-shell；普通应用窗口仍走 xdg_toplevel。
+wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 # 原生 Metal Adapter 只在 macOS 目标和显式 metal feature 下进入解析图。

@@ -4,6 +4,7 @@
 use crate::core::{Errc, Result};
 // 原生窗口管理器只提供机制，Application 在本 Adapter 注入 FileDrop 策略。
 use crate::platform::windowing::WindowCapability;
+use crate::platform::windowing::WindowSurfaceRole;
 use crate::platform::windowing::window::{IWindowManager, PlatformWindow};
 
 // 创建一个默认启用 FileDrop 的应用窗口。
@@ -16,10 +17,12 @@ pub(crate) fn create_app_window(
     width: i32,
     // 高度保持 logical 客户区语义。
     height: i32,
+    // surface role 作为中立值交给平台适配器，不让 app 直接依赖 Wayland 协议。
+    surface_role: &WindowSurfaceRole,
     // 返回已配置应用能力的唯一窗口 owner。
 ) -> Result<Box<dyn PlatformWindow>> {
     // 先创建真实平台窗口，尚不向调用方发布 owner。
-    let mut window = window_manager.create_window(title, width, height)?;
+    let mut window = window_manager.create_window_with_role(title, width, height, surface_role)?;
     // 调用前读取中立能力合同，稳定缺失时不触碰 concrete adapter。
     if !window
         .capabilities()

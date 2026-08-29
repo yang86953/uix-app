@@ -4,6 +4,10 @@ use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
 use uix::draw::FontBundle;
 use uix::ui::label;
 // 引入应用默认注册和 builder 覆盖所需的 UI 服务类型。
+use uix::platform::windowing::{
+    DesktopAnchor, DesktopKeyboardInteractivity, DesktopLayer, DesktopLayerConfig,
+    WindowSurfaceRole,
+};
 use uix::ui::{Locale, WidgetConfig, en_us};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +35,39 @@ fn app_window_config_keeps_public_window_contract() {
     assert_eq!((config.width, config.height), (800, 600));
     assert!(config.custom_title_bar);
     let _root = (config.root)();
+}
+
+// 冻结 UIX OS 桌面组件所需的公开 layer-surface 配置合同。
+#[test]
+fn app_exposes_platform_neutral_desktop_layer_surface_roles() {
+    // 顶栏占据输出顶部并为普通应用保留 36 个逻辑像素。
+    let layer = DesktopLayerConfig::new(DesktopLayer::Top)
+        .anchor(DesktopAnchor::Top, true)
+        .anchor(DesktopAnchor::Left, true)
+        .anchor(DesktopAnchor::Right, true)
+        .exclusive_zone(36)
+        .keyboard_interactivity(DesktopKeyboardInteractivity::OnDemand)
+        .namespace("uixos-top-bar");
+    // 公开值在进入 Wayland 适配器前即可完成确定性验证。
+    assert_eq!(layer.validate(), Ok(()));
+    assert_eq!(layer.layer(), DesktopLayer::Top);
+    assert!(layer.is_anchored(DesktopAnchor::Top));
+    assert!(!layer.is_anchored(DesktopAnchor::Bottom));
+    assert_eq!(layer.exclusive_zone_value(), 36);
+    assert_eq!(layer.namespace_value(), "uixos-top-bar");
+
+    // 主窗与次窗共享同一平台中立 surface role，而不暴露 Wayland 原生对象。
+    let _app = App::new().surface_role(WindowSurfaceRole::DesktopLayer(layer.clone()));
+    let config =
+        WindowConfig::new("UIX OS 顶栏", 0, 36, || label("顶栏")).desktop_layer(layer.clone());
+    assert_eq!(config.surface_role, WindowSurfaceRole::DesktopLayer(layer));
+}
+
+// 非法独占区必须在发送协议请求前稳定拒绝。
+#[test]
+fn desktop_layer_config_rejects_reserved_negative_exclusive_zones() {
+    let config = DesktopLayerConfig::new(DesktopLayer::Overlay).exclusive_zone(-2);
+    assert_eq!(config.validate(), Err("exclusive_zone 只允许 -1 或非负值"));
 }
 
 #[test]

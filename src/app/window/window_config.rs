@@ -1,3 +1,4 @@
+pub use crate::platform::windowing::{DesktopLayerConfig, WindowSurfaceRole};
 use crate::ui::view::ViewNode;
 
 pub(crate) type WindowRootFactory = Box<dyn Fn() -> ViewNode + Send + Sync + 'static>;
@@ -12,6 +13,8 @@ pub struct WindowConfig {
     pub height: i32,
     /// 是否隐藏系统标题栏并由根 View 提供标题栏。
     pub custom_title_bar: bool,
+    /// 平台窗口或桌面 layer surface 角色。
+    pub surface_role: WindowSurfaceRole,
     /// 在窗口建立时创建其根 View 的线程安全工厂。
     pub root: WindowRootFactory,
 }
@@ -27,6 +30,7 @@ impl WindowConfig {
             width,
             height,
             custom_title_bar: false,
+            surface_role: WindowSurfaceRole::Toplevel,
             root: Box::new(root),
         }
     }
@@ -35,5 +39,16 @@ impl WindowConfig {
     pub fn custom_title_bar(mut self, enabled: bool) -> Self {
         self.custom_title_bar = enabled;
         self
+    }
+
+    /// 把次窗口声明为普通 toplevel 或桌面 layer surface。
+    pub fn surface_role(mut self, role: WindowSurfaceRole) -> Self {
+        self.surface_role = role;
+        self
+    }
+
+    /// 使用给定配置创建桌面 layer surface。
+    pub fn desktop_layer(self, config: DesktopLayerConfig) -> Self {
+        self.surface_role(WindowSurfaceRole::DesktopLayer(config))
     }
 }

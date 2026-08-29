@@ -16,6 +16,8 @@
 
 > **文件拖放边界**：Application 窗口创建 Adapter 在原生窗口创建后、向调用方发布 owner 前先查询 `EnableFileDrop`，仅在支持时调用 `enable_file_drop(true)`。能力稳定缺失时窗口仍可创建；其他启用失败必须关闭尚未发布的窗口并保留 typed 原因链。Windows 通过 `DragAcceptFiles` / `WM_DROPFILES` 交付本地路径；Wayland 只接受 `wl_data_device` 提供的 `text/uri-list` 与 Copy 动作，通过事件循环非阻塞读取并严格解析本地 `file:` URI。平台按 `WindowId` 投递一次 `FileDrop`，ui 再按落点命中 overlay 或主树；selection 替换、drag leave、窗口禁用/关闭和 backend teardown 必须消费 offer、pipe 与 callback owner，不得产生迟到事件。
 
+> **surface role 边界**：`surface_role.rs` 唯一持有平台中立的 `WindowSurfaceRole` 与 `DesktopLayerConfig`。app 只传递角色值；Wayland Adapter 把普通角色映射为 `xdg_toplevel`，把桌面角色映射为 `zwlr_layer_shell_v1`，并独占协议对象、configure/closed callback 与销毁顺序。Windows、macOS 和缺少 layer-shell 的 Wayland 实例按 `Errc::NotImplemented` 拒绝桌面角色，不能静默退化成普通窗口。公开值不包含 output、surface、PID、FD 或原生句柄。
+
 ## 当前实现状态
 
 | 状态 | 范围 | 已核实实现 |
@@ -25,6 +27,7 @@
 | **已实现** | Wayland 实例动态能力 | `xdg_activation` 可用时增加 `Raise` 1 项；逐窗 `xdg-decoration` 对象建立时增加 `ShowSystemTitleBar` 1 项；seat 已建立 data-device owner 时增加 `EnableFileDrop`、`DisableFileDrop` 2 项。三组条件相互独立，全部满足时 Wayland 实例为 20 项。 |
 | **已实现** | 统一拒绝边界 | 私有 `WindowOps` 可选默认方法体为 0，Windows、macOS、Wayland 必须显式实现完整方法集。共享核心在可选操作的参数验证、共享状态写入、presenter 与 native Adapter 副作用之前先执行能力门禁；缺失能力稳定返回中立 `Errc::NotImplemented`。 |
 | **已实现** | Wayland `SetResizable` | 单窗口状态机唯一持有用户 min/max、最新正 logical 客户区尺寸与 resizable 状态。锁定把协议 min/max 同时设为最新有效尺寸，解锁恢复用户约束；锁定期间仍更新用户权威但不覆盖固定约束，程序化 resize 与 compositor configure 会把新有效尺寸同步为新的固定 min=max。只有协议成功后才提交规划状态。 |
+| **已实现** | Wayland 桌面 layer | `App::surface_role` 与 `WindowConfig::desktop_layer` 共享同一中立配置；Wayland 绑定可选 layer-shell，映射 background/bottom/top/overlay、四边锚点、独占区与键盘交互（`OnDemand` 要求协议 v4）。layer surface 基础能力固定为 6 项，data-device 可用时再增加文件拖放 2 项；不声明 toplevel 的移动、缩放、最大化或装饰能力。 |
 
 共享窗口层继续唯一负责正尺寸以及 min/max 交叉约束校验；Wayland 状态机只编码中立结果，不复制上层约束规则。能力查询、公开操作与 typed failure 只从外部消费者使用 `uix::platform` 公开门面测试；共享核心、Wayland 状态机与原生 Adapter 均为私有实现，不建立项目测试。
 
