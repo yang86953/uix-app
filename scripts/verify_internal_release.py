@@ -272,7 +272,7 @@ def main() -> int:
     # 候选包路径必须由调用方显式提供。
     parser.add_argument("--archive", required=True, type=Path)
     # 版本默认与当前首发候选一致。
-    parser.add_argument("--version", default="0.0.4")
+    parser.add_argument("--version", default="0.0.5")
     # 解析当前进程参数。
     arguments = parser.parse_args()
     # 执行完整校验并取得容器摘要。

@@ -7,7 +7,7 @@ use crate::ui::theme::style::Style;
 // 引入窗口交互区域的专用样式适配入口。
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
-use crate::ui::widgets::{Button, Card, Container, Grid, Label, ScrollView, Typography};
+use crate::ui::widgets::{Button, Card, Container, Grid, Input, Label, ScrollView, Typography};
 
 // 引入所属适配器类型。
 use super::ViewAdapter;
@@ -88,6 +88,11 @@ impl ViewAdapter {
                     // 传递显式收缩覆盖。
                     flex_shrink_override,
                 );
+            }
+        } else if tid == std::any::TypeId::of::<Input>() {
+            if let Some(input) = widget.as_any_mut().downcast_mut::<Input>() {
+                // 输入组件只接收布局字段；编辑、IME 与视觉状态仍由 Input 私有持有。
+                input.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
             }
         // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
         } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
