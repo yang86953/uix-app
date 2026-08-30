@@ -16,26 +16,29 @@ const NO: Bool = 0;
 
 // 通过公开 Platform System 的窄 Adapter 打开多选文件面板。
 pub(crate) fn choose_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {
-    // 每次同步调用创建无状态 AppKit 对话框组件。
-    let mut dialog = MacosFileDialog;
-    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
-    dialog.open(title, filters)
+    // AppKit 面板只能在进程主线程同步运行。
+    ensure_appkit_thread("MacosFileDialog::open")?;
+    // 通过当前 host Module 的窄函数适配器保留真实确认、取消和错误结果。
+    // SAFETY: 主线程门禁已通过；面板及返回对象只在同步 runModal 期间使用。
+    unsafe { open_files(title, filters) }
 }
 
 // 通过公开 Platform System 的窄 Adapter 打开保存面板。
 pub(crate) fn choose_save_file(title: &str, filters: &str) -> Result<Option<String>> {
-    // 每次同步调用创建无状态 AppKit 对话框组件。
-    let mut dialog = MacosFileDialog;
-    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
-    dialog.save(title, filters)
+    // AppKit 面板只能在进程主线程同步运行。
+    ensure_appkit_thread("MacosFileDialog::save")?;
+    // 通过当前 host Module 的窄函数适配器保留真实确认、取消和错误结果。
+    // SAFETY: 主线程门禁已通过；面板及返回对象只在同步 runModal 期间使用。
+    unsafe { save_file(title, filters) }
 }
 
 // 通过公开 Platform System 的窄 Adapter 打开目录面板。
 pub(crate) fn choose_folder(title: &str) -> Result<Option<String>> {
-    // 每次同步调用创建无状态 AppKit 对话框组件。
-    let mut dialog = MacosFileDialog;
-    // 复用既有主线程门禁、AppKit 生命周期与取消语义。
-    dialog.open_folder(title)
+    // AppKit 面板只能在进程主线程同步运行。
+    ensure_appkit_thread("MacosFileDialog::open_folder")?;
+    // 通过当前 host Module 的窄函数适配器保留真实确认、取消和错误结果。
+    // SAFETY: 主线程门禁已通过；面板及返回对象只在同步 runModal 期间使用。
+    unsafe { open_directory(title) }
 }
 
 // 拒绝从非 AppKit 主线程启动模态面板。

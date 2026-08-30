@@ -7,6 +7,18 @@
 //! widgets Module 拥有具体组件实现与声明式组合子（`combinators`，原
 //! `view::combinators`：组合子构建具体组件，归组件侧避免 view → widgets 环）。
 
+use crate::draw::Color;
+
+// 输入、导航和反馈弹层共享的 token 动画颜色辅助不属于 feedback capability。
+pub(crate) fn fade_token_color(color: Color, opacity: f32) -> Color {
+    // 将动画范围限制到有效不透明度区间。
+    let opacity = opacity.clamp(0.0, 1.0);
+    // 保留 token 自身基础 alpha，只缩放当前动画进度。
+    let alpha = (f32::from(color.a) * opacity).round().clamp(0.0, 255.0) as u8;
+    // 返回保持原 RGB 的动画颜色。
+    color.with_alpha(alpha)
+}
+
 // 输入与导航组件共享的双向绑定原语：依赖捕获与「相等则不写」受控写回。
 pub(crate) mod binding;
 pub(crate) mod combinators;

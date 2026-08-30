@@ -15,8 +15,8 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
-// 复用反馈层共享的颜色衰减辅助。
-use crate::ui::widgets::feedback::fade_token_color;
+// 复用 widgets 层共享的颜色衰减辅助，不依赖 feedback capability。
+use crate::ui::widgets::fade_token_color;
 
 // 将表面约束与坐标转换隔离到私有几何模块。
 mod geometry;

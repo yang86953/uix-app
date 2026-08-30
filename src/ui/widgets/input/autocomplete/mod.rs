@@ -17,9 +17,9 @@ use crate::ui::{
 };
 use std::cell::{Cell, RefCell};
 
-// 复用 input 层共享的字符索引与反馈层的颜色衰减辅助。
+// 复用 input 层共享的字符索引与 widgets 层颜色衰减辅助。
 use super::byte_index_for_char;
-use crate::ui::widgets::feedback::fade_token_color;
+use crate::ui::widgets::fade_token_color;
 
 // 将表面约束与坐标转换隔离到私有几何模块。
 mod geometry;

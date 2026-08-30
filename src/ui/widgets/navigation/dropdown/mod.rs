@@ -19,8 +19,8 @@ use std::rc::Rc;
 
 // 下拉菜单使用基础层共享的触发方式，不依赖反馈组件族。
 use crate::ui::widgets::TriggerMode;
-// 弹层动画颜色衰减复用反馈层共享的 token 衰减辅助。
-use crate::ui::widgets::feedback::fade_token_color;
+// 弹层动画颜色衰减复用 widgets 层共享辅助，不依赖 feedback capability。
+use crate::ui::widgets::fade_token_color;
 
 mod presentation;
 use presentation::*;

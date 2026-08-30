@@ -9,12 +9,6 @@ description = "UIX uix-lang 编译期界面演示"
 [dependencies]
 # 与 API GUI Demo 对齐公开组件能力，同时保留声明式入口自己的运行边界。
 uix = { path = "../..", default-features = false, features = [
-    # Windows/Linux 首选 Vulkan 图形后端。
-    "vulkan",
-    # Windows 保留 D3D11 兼容回退。
-    "d3d11",
-    # Linux/Wayland 保留 EGL OpenGL ES 兼容回退。
-    "opengles",
     # 启用图片编解码能力。
     "image-codecs",
     # 启用二维码组件能力。
@@ -39,10 +33,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [features]
-# 默认启用演示日志订阅，与既有演示行为一致。
-default = ["demo-logging"]
+# 默认保持 Windows/Linux 发布图与既有演示日志行为；macOS 构建显式关闭默认 feature。
+default = ["demo-logging", "windows-linux-backends"]
 # 演示二进制日志订阅独占 tracing-subscriber（库侧不再提供订阅器，日志契约仅保留 tracing）。
 demo-logging = ["dep:tracing-subscriber"]
+# Windows/Linux 发布图继续启用 Vulkan 首选及各自兼容后端。
+windows-linux-backends = ["uix/vulkan", "uix/d3d11", "uix/opengles"]
+# macOS 构建只透传原生 Metal 后端，不把 Apple SDK 依赖泄漏到其他目标。
+macos-backend = ["uix/metal"]
 # 显式透传本机 Agent Bridge 能力，运行时仍需 --agent-control 二次启用。
 agent-control = ["uix/agent-control"]
 # 显式透传图形故障注入能力，运行时仍需 --test-graphics-recovery 二次启用。

@@ -46,7 +46,7 @@ pub(super) fn enumerate_gpu_adapters(backend: GraphicsBackend) -> Result<Box<[Gp
 }
 
 /// 调用当前 Linux 目标的原生文件多选 adapter。
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(super) fn choose_native_files(
     title: &str,
     zenity_filters: &str,
@@ -72,7 +72,7 @@ pub(super) fn choose_native_files(title: &str, filters: &str) -> Result<Option<V
 }
 
 /// 调用当前 Linux 目标的原生文件保存 adapter。
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(super) fn choose_native_save_file(
     title: &str,
     zenity_filters: &str,
@@ -104,7 +104,7 @@ pub(super) fn choose_native_folder(title: &str) -> Result<Option<String>> {
 }
 
 /// 调用当前 Linux 目标的原生目录选择 adapter。
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(super) fn choose_native_folder(title: &str) -> Result<Option<String>> {
     crate::native::backends::linux::file_dialog::choose_folder(title)
 }
@@ -129,7 +129,7 @@ pub(crate) fn create_platform_with_pending(
 }
 
 /// 为当前编译目标创建并拥有唯一的平台聚合。
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(crate) fn create_platform_with_pending(
     options: PendingNativeOptions,
 ) -> Result<Box<dyn PlatformSystem>> {

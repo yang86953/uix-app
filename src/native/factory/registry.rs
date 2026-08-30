@@ -93,14 +93,14 @@ impl GraphicsBackendEntry {
     }
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 use crate::native::factory::registry_linux::PLATFORM_ENTRIES;
 #[cfg(target_os = "macos")]
 use crate::native::factory::registry_macos::PLATFORM_ENTRIES;
 #[cfg(windows)]
 use crate::native::factory::registry_windows::PLATFORM_ENTRIES;
 
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[];
 
 /// All registry rows for the current platform in declaration order.
@@ -292,7 +292,7 @@ pub(crate) fn graphics_runtime_platform() -> &'static str {
     {
         "windows"
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     {
         "linux"
     }
@@ -300,7 +300,7 @@ pub(crate) fn graphics_runtime_platform() -> &'static str {
     {
         "macos"
     }
-    #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         "unknown"
     }

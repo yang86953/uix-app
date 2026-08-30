@@ -1,7 +1,7 @@
 //! 原生图形 recipe 工厂；平台聚合由 `platform::composition_root` 唯一组装。
 
 pub(crate) mod registry;
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(crate) mod registry_linux;
 #[cfg(target_os = "macos")]
 pub(crate) mod registry_macos;
@@ -12,7 +12,7 @@ pub(crate) mod thread_bound;
 #[cfg(any(feature = "opengles", all(feature = "metal", not(target_os = "macos"))))]
 use crate::core::error::Error;
 use crate::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
-#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+#[cfg(any(windows, target_os = "linux"))]
 use crate::platform::system::info::ISystemInfo;
 
 pub(crate) use registry::try_create_gpu_recipe_with_queue;
@@ -137,7 +137,7 @@ pub(crate) fn d3d12_warp_test_context_available() -> bool {
 /// 探测系统可用空闲内存（字节）。
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(crate) fn available_memory_bytes() -> u64 {
     crate::native::backends::linux::system_info::LinuxSystemInfo::new()
         .memory_info()
@@ -164,7 +164,7 @@ pub(crate) fn available_memory_bytes() -> u64 {
 
 // 保留平台诊断查询入口，默认应用路径不直接依赖它。
 #[allow(dead_code)]
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub(crate) fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }

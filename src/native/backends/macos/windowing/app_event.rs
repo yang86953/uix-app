@@ -1,4 +1,6 @@
 use super::*;
+// 显式引入平台无关按键码，避免依赖父模块的旧重导出。
+use crate::platform::windowing::KeyCode;
 
 // 保留拆分前 MacosAppEvent 的诊断与复制能力。
 #[derive(Debug, Clone)]

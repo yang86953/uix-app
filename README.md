@@ -31,6 +31,18 @@ cargo test --features agent-control --test "*_public_api" --quiet
 
 默认构建在 Windows 与 Linux 统一优先选择 Vulkan GPU-native swapchain，以同一 Drawing 语义保证外观和行为一致；Windows 的 D3D11 与 Linux/Wayland 的 OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 
+## 桌面目标交叉编译
+
+统一入口同时覆盖根库与带 Agent 能力的主演示：
+
+```bash
+bash scripts/cross_compile.sh check all dev
+bash scripts/cross_compile.sh build linux-x64 release
+bash scripts/cross_compile.sh build windows-x64 release
+```
+
+检查矩阵包含 Linux x64、Windows x64、Apple Silicon macOS 与 Intel macOS。Windows 可从非 Windows 宿主经冻结版本的 `cargo-xwin` 完成真实 PE/COFF 链接；macOS 的最终链接必须在持有合法 Apple SDK 的 macOS 宿主执行。macOS 仍不是 `0.0.2` 当前交付平台，交叉检查通过也不替代真实窗口与 GPU 验收。完整前置条件、输出和失败语义见[交叉编译](docs/使用/入门/交叉编译.md)。
+
 ## Linux 内部候选包
 
 在 Linux x86_64 的干净工作树中生成并校验内部候选包：

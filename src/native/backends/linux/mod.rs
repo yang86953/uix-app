@@ -2,7 +2,7 @@
 // platform/linux/mod.rs — Linux 平台入口（Wayland）
 // ============================================================================
 
-#![cfg(all(unix, not(target_os = "macos")))]
+#![cfg(target_os = "linux")]
 
 pub(crate) mod file_dialog;
 pub(crate) mod platform;

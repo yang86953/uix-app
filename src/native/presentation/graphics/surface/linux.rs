@@ -1,6 +1,6 @@
 //! Linux native GPU surface descriptors.
 
-#![cfg(all(unix, not(target_os = "macos")))]
+#![cfg(target_os = "linux")]
 // 在 Rust 2024 下禁止 unsafe 函数体隐式扩大底层操作范围。
 #![deny(unsafe_op_in_unsafe_fn)]
 
