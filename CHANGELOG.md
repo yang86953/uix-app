@@ -24,6 +24,11 @@
   `zed_extension_api` 适配 `uix-lang-ls`（服务器二进制经用户 settings
   `lsp.binary` 提供）；已在 Zed 1.18 端到端实测（扩展加载、`.uix` 语言
   关联、语言服务器拉起）。
+- Zed 扩展新增 tree-sitter 语法高亮（`grammars/uix`）：覆盖标签、属性、
+  `@` 事件、字符串、数字、注释、`@import/@export/@theme/@keyframes`
+  指令、样式属性、伪类与 `#token` 主题引用；以真实 `.uix` 样例
+  （demo 全部页面、全部 widget 声明、导入 fixtures）回归零解析错误，
+  并在 Zed 1.18 截图验收高亮渲染。
 
 ### 2026-08-30 布局收敛与动态文本修复（uix-app#91）
 

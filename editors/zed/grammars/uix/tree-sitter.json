@@ -1,0 +1,17 @@
+{
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "UIX Lang grammar for Zed",
+    "authors": [{ "name": "yang86" }],
+    "links": { "repository": "https://127.0.0.1/local" }
+  },
+  "grammars": [
+    {
+      "name": "uix",
+      "scope": "source.uix",
+      "file-types": ["uix"],
+      "path": "."
+    }
+  ]
+}
