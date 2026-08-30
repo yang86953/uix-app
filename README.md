@@ -6,8 +6,8 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 
 ## 当前状态
 
-- 当前 crate 候选版本为 `0.0.5`，正式发布版仍为 `0.0.4`；只有 Gitea tag、Release 与制品全部核验后才更新发布事实。
-- Windows 与 Linux 均纳入 `0.0.5` 候选产品范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
+- 当前版本为 `0.0.5`，已于 2026-08-30 通过私有 Gitea Release 发布。
+- Windows 与 Linux 均纳入 `0.0.5` 产品范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；任务级进度不在仓库内复制（原 Gitea 父 Issue #1 已停止维护，相关链接按撰写时点存档）。
 
@@ -63,7 +63,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_internal_relea
 
 该入口生成并校验 `uix-0.0.5-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。Vulkan 与 D3D11 的真实 Windows x64 验收结果及制品摘要由 Gitea Release 持有。
 
-`v0.0.5` 候选尚未附带 Windows x64 制品；该入口保留用于后续在 Windows 环境从同一发布提交完成最终构建、校验与制品追加。
+`v0.0.5` Release 当前未附带 Windows x64 制品；该入口保留用于后续在 Windows 环境从同一发布提交完成最终构建、校验与制品追加。
 
 ## 文档导航
 
