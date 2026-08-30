@@ -36,7 +36,5 @@ __pycache__/
 # demo 工作区构建产物
 demo/target/
 
-# Cargo.lock：默认忽略测试夹具的锁文件；两个正式发布工作区必须入库。
+# Cargo.lock：全部不入库，本地由 cargo 按清单语义化范围解析生成。
 Cargo.lock
-!/Cargo.lock
-!/demo/Cargo.lock
