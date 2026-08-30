@@ -14,7 +14,29 @@ if ($dirtyEntries.Count -gt 0) {
     throw 'The internal release must be built from a clean worktree.'
 }
 
-$metadataJson = cargo metadata --format-version 1 --no-deps --locked
+# 仓库不跟踪 Cargo.lock；只在缺失时为当前发布生成，并在结束时精确回收。
+$rootLockPath = Join-Path $repoRoot 'Cargo.lock'
+$demoLockPath = Join-Path $repoRoot 'demo\Cargo.lock'
+$rootLockGenerated = $false
+$demoLockGenerated = $false
+
+try {
+if (-not (Test-Path -LiteralPath $rootLockPath -PathType Leaf)) {
+    $rootLockGenerated = $true
+    cargo generate-lockfile --manifest-path (Join-Path $repoRoot 'Cargo.toml')
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Root cargo lock generation failed.'
+    }
+}
+if (-not (Test-Path -LiteralPath $demoLockPath -PathType Leaf)) {
+    $demoLockGenerated = $true
+    cargo generate-lockfile --manifest-path (Join-Path $repoRoot 'demo\Cargo.toml')
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Demo cargo lock generation failed.'
+    }
+}
+
+$metadataJson = cargo metadata --manifest-path (Join-Path $repoRoot 'Cargo.toml') --format-version 1 --no-deps --locked
 if ($LASTEXITCODE -ne 0) {
     throw 'cargo metadata failed.'
 }
@@ -161,3 +183,12 @@ $zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerIn
 
 Write-Output "Artifact: $zipPath"
 Write-Output "SHA256:   $zipHash"
+}
+finally {
+    if ($demoLockGenerated -and (Test-Path -LiteralPath $demoLockPath -PathType Leaf)) {
+        Remove-Item -Force -LiteralPath $demoLockPath
+    }
+    if ($rootLockGenerated -and (Test-Path -LiteralPath $rootLockPath -PathType Leaf)) {
+        Remove-Item -Force -LiteralPath $rootLockPath
+    }
+}

@@ -42,6 +42,33 @@ release_dirty_entries="$(git -C "$release_repo_root" status --porcelain=v1 --unt
 # 内部候选包只能从干净工作树生成。
 [[ -z "$release_dirty_entries" ]] || release_fail "the internal release must be built from a clean worktree"
 
+# 固定两个独立 Cargo workspace 的锁文件路径。
+readonly release_root_lock="$release_repo_root/Cargo.lock"
+readonly release_demo_lock="$release_repo_root/demo/Cargo.lock"
+# 只清理本次为干净源码生成的锁文件，不触碰使用方既有忽略文件。
+release_root_lock_generated=false
+release_demo_lock_generated=false
+release_cleanup_generated_locks() {
+    if [[ "$release_demo_lock_generated" == true ]]; then
+        rm -f -- "$release_demo_lock"
+    fi
+    if [[ "$release_root_lock_generated" == true ]]; then
+        rm -f -- "$release_root_lock"
+    fi
+}
+# 在发布临时根建立前发生任何错误，也必须回收本次生成的锁文件。
+trap release_cleanup_generated_locks EXIT
+
+# 仓库不跟踪环境相关 Cargo.lock；干净发布源先解析一次，随后全程只使用该锁定图。
+if [[ ! -f "$release_root_lock" ]]; then
+    release_root_lock_generated=true
+    cargo generate-lockfile --manifest-path "$release_repo_root/Cargo.toml"
+fi
+if [[ ! -f "$release_demo_lock" ]]; then
+    release_demo_lock_generated=true
+    cargo generate-lockfile --manifest-path "$release_repo_root/demo/Cargo.toml"
+fi
+
 # 从锁定依赖图读取根工作区元数据。
 release_metadata="$(cd "$release_repo_root" && cargo metadata --format-version 1 --no-deps --locked)"
 # 验证恰好存在一个匹配版本的 uix package。
@@ -97,6 +124,8 @@ release_cleanup() {
         *) printf 'Refusing to clean unexpected temporary path: %s\n' "$release_temp_root" >&2 ;;
     # 结束临时根边界检查。
     esac
+    # 临时归档目录回收后，再精确移除本次生成的锁文件。
+    release_cleanup_generated_locks
 }
 # 无论成功或失败都回收本次临时根。
 trap release_cleanup EXIT
