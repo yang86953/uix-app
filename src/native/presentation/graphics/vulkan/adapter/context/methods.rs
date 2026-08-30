@@ -97,7 +97,7 @@ impl VulkanContext {
             runtime: Some(runtime),
             device_lease: Some(device_lease),
             surface_loader,
-            #[cfg(all(unix, not(target_os = "macos")))]
+            #[cfg(target_os = "linux")]
             _wayland_surface_loader: platform_loader,
             #[cfg(windows)]
             _win32_surface_loader: platform_loader,

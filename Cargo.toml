@@ -99,7 +99,7 @@ features = [
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.186"
 
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 # Linux backend uses the current 0.31 callback-dispatch API.
 wayland-client = { version = "0.31.15", features = ["dlopen", "system"] }
 wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] }

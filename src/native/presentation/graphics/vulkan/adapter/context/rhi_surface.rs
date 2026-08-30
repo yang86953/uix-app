@@ -200,7 +200,7 @@ impl GraphicsSurface for VulkanContext {
         self.surface_lifecycle.token()
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     fn surface_corner_radius(&self) -> f32 {
         // SAFETY: native_surface 指向窗口 owner 在 VulkanContext 生命周期内保持稳定的 descriptor。
         unsafe {
@@ -212,7 +212,7 @@ impl GraphicsSurface for VulkanContext {
         .map_or(0.0, |snapshot| snapshot.corner_radius as f32)
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     fn surface_shadow_fill(&self) -> ([f32; 4], f32) {
         // SAFETY: native_surface 指向窗口 owner 在 VulkanContext 生命周期内保持稳定的 descriptor。
         unsafe {

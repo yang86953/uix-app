@@ -1,0 +1,27 @@
+name: macOS 原生链接
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apple-sdk:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 固定 Rust 工具链与目标
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: 验证 Apple SDK
+        run: xcrun --show-sdk-path
+
+      - name: 链接 Apple Silicon 目标
+        run: bash scripts/cross_compile.sh build macos-arm64 dev
+
+      - name: 链接 Intel macOS 目标
+        run: bash scripts/cross_compile.sh build macos-x64 dev

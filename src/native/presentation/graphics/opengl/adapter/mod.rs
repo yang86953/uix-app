@@ -7,14 +7,14 @@ use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub mod egl;
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 mod parity;
 #[cfg(windows)]
 pub mod wgl;
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub use egl::EglContext;
 #[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
 pub(crate) use parity::OpenGlWsiParityAdapter;
@@ -52,7 +52,7 @@ pub(crate) fn create(
     })
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
@@ -73,7 +73,7 @@ pub(crate) fn create(
     })
 }
 
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub(crate) fn create(
     _surface: *mut c_void,
     _width: i32,

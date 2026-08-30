@@ -208,7 +208,7 @@ pub struct VulkanContext {
     runtime: Option<Rc<VulkanRuntime>>,
     device_lease: Option<Rc<VulkanDevice>>,
     surface_loader: ash::khr::surface::Instance,
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     _wayland_surface_loader: ash::khr::wayland_surface::Instance,
     #[cfg(windows)]
     _win32_surface_loader: ash::khr::win32_surface::Instance,

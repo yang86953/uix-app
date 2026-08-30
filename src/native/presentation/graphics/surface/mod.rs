@@ -3,5 +3,5 @@
 #[cfg(windows)]
 pub(crate) mod windows;
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(crate) mod linux;

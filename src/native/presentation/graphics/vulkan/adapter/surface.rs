@@ -8,7 +8,7 @@ use crate::core::Result;
 #[cfg(windows)]
 use crate::core::{Errc, Error};
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 use crate::native::presentation::graphics::platform::linux::WaylandSurfaceHandle;
 #[cfg(windows)]
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -31,7 +31,7 @@ pub(super) fn destroy_failed_surface(
 
 pub(super) fn surface_instance_extensions(entry: &Entry) -> (Vec<*const std::ffi::c_char>, bool) {
     let mut extensions = vec![ash::khr::surface::NAME.as_ptr()];
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     extensions.push(ash::khr::wayland_surface::NAME.as_ptr());
     #[cfg(windows)]
     extensions.push(ash::khr::win32_surface::NAME.as_ptr());
@@ -70,7 +70,7 @@ fn instance_supports_surface_maintenance1(entry: &Entry) -> bool {
         && has_extension(ash::ext::surface_maintenance1::NAME)
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 pub(super) type PlatformSurfaceLoader = ash::khr::wayland_surface::Instance;
 
 #[cfg(windows)]
@@ -84,7 +84,7 @@ pub(super) fn create_platform_surface(
     instance: &ash::Instance,
     native_surface: *mut c_void,
 ) -> Result<(vk::SurfaceKHR, PlatformSurfaceLoader)> {
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     {
         // SAFETY: native_surface 必须是平台层传入且在 context 生命周期内有效的 Wayland 句柄包。
         let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
@@ -178,7 +178,7 @@ pub(super) fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentMo
 pub(crate) fn choose_composite_alpha(
     supported: vk::CompositeAlphaFlagsKHR,
 ) -> Option<vk::CompositeAlphaFlagsKHR> {
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     let candidates = [
         // Wayland 客户端装饰需要把圆角外像素交给 compositor 合成。
         vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
@@ -186,7 +186,7 @@ pub(crate) fn choose_composite_alpha(
         vk::CompositeAlphaFlagsKHR::OPAQUE,
         vk::CompositeAlphaFlagsKHR::INHERIT,
     ];
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    #[cfg(not(target_os = "linux"))]
     let candidates = [
         vk::CompositeAlphaFlagsKHR::OPAQUE,
         vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,

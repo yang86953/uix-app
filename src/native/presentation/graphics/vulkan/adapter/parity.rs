@@ -139,7 +139,7 @@ fn verify_surface_fault(
     rebuilt
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
+#[cfg(target_os = "linux")]
 fn native_session_diagnostic() -> String {
     let display = std::env::var("WAYLAND_DISPLAY").unwrap_or_else(|_| "<unset>".to_owned());
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "<unset>".to_owned());

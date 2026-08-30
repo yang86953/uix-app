@@ -4,6 +4,10 @@
 
 ## 0.0.2（2026-08-30）
 
+### 2026-08-30 交叉编译
+
+- 新增统一桌面目标交叉编译入口与 Gitea Actions 门禁：根库和带 Agent 能力的主演示可检查 Linux x64、Windows x64、Apple Silicon macOS 与 Intel macOS；Linux runner 真实链接 Linux/Windows，macOS runner 持有 Apple SDK 时链接两种 macOS 架构。Windows 非原生宿主固定使用 `cargo-xwin 0.23.1` 与 MSVC x64 target；编译成功不替代目标平台真实窗口、输入、Agent 与 GPU 验收，macOS 仍不改写为 `0.0.2` 当前交付平台。
+
 ### 2026-08-29 Agent 控制协议
 
 - 修复 Agent 截屏协议的帧上限矛盾：此前 `hello` 宣称 PNG 可达 32 MiB，但所有 JSON 回包统一受 4 MiB 上限约束，较大的合法截图在 base64 膨胀后会丢失原 `request_id` 并误报 `internal`。现拆分 4 MiB 请求正文上限与约 42.7 MiB 响应上限，`hello.limits` 新增 `max_request_bytes` / `max_response_bytes`（旧 `max_message_bytes` 保留为请求上限别名）；响应超限降级仍回显原请求 ID。仓库客户端同步执行长度、schema、请求 ID 与截屏载荷校验，避免错配回包或无界累积。

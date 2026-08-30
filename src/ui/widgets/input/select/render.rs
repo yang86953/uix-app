@@ -1,10 +1,10 @@
 // 复用选择弹层的共享表面解析与绝对坐标转换。
 use super::{ResolvedSelectVisual, Select, VisibleRow, normalize_select_rect, select_popup_rect};
-// 复用反馈层共享的颜色衰减辅助。
+// 复用 widgets 层共享的颜色衰减辅助，不依赖 feedback capability。
 use crate::core::{Point, Rect};
 use crate::draw::{Color, Radius};
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widgets::feedback::fade_token_color;
+use crate::ui::widgets::fade_token_color;
 
 impl Select {
     pub(super) fn render_select(&self, frame: Rect, ctx: &mut PaintContext) {

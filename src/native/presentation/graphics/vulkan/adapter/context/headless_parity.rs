@@ -79,7 +79,7 @@ impl VulkanContext {
             runtime: Some(runtime.clone()),
             device_lease: Some(device_lease),
             surface_loader: ash::khr::surface::Instance::new(runtime.entry(), &instance),
-            #[cfg(all(unix, not(target_os = "macos")))]
+            #[cfg(target_os = "linux")]
             _wayland_surface_loader: ash::khr::wayland_surface::Instance::new(
                 runtime.entry(),
                 &instance,
