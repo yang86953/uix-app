@@ -29,6 +29,11 @@ use crate::draw::resources::font::text_backend::{self as tb, GlyphRaster, TextLa
 
 pub(crate) use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
 
+// 系统主字体必须至少能画出一枚基础拉丁字形，避免只完成字符映射却静默输出空栅格。
+const PRIMARY_RASTER_PROBES: [char; 2] = ['A', '0'];
+// CJK 回退必须真实画出完整探针集合，不能只以 cmap 映射冒充可用字体。
+const CJK_RASTER_PROBES: [char; 3] = ['中', '国', '文'];
+
 // ════════════════════════════════════════════════════════════════════════════
 // FontService — 字体管理器
 // ════════════════════════════════════════════════════════════════════════════
@@ -327,7 +332,9 @@ impl FontService {
                 }
             };
             for path in &fallback_paths {
-                if let Some(handle) = self.load_mapped_font(path) {
+                if let Some(handle) =
+                    self.load_mapped_system_font(path, &PRIMARY_RASTER_PROBES, false, size)
+                {
                     self.install_primary_font(
                         handle,
                         Self::infer_family_from_path(path),
@@ -361,7 +368,9 @@ impl FontService {
                 // 启动只装主字体：其余 Latin fallback 不在首帧同步读盘。
                 // CJK 由 load_cjk_fallback / probe_cjk_font_path 单独装一枚。
                 for path in &paths {
-                    if let Some(handle) = self.load_mapped_font(path) {
+                    if let Some(handle) =
+                        self.load_mapped_system_font(path, &PRIMARY_RASTER_PROBES, false, size)
+                    {
                         self.install_primary_font(
                             handle,
                             self.primary_family.clone(),
@@ -388,7 +397,9 @@ impl FontService {
         // 第 4 步：最后的兜底——随机扫描一个可用字体
         tracing::info!("No primary font found via platform, scanning for fallback...");
         if let Some(path) = system_info.scan_fallback_font_path() {
-            if let Some(handle) = self.load_mapped_font(&path) {
+            if let Some(handle) =
+                self.load_mapped_system_font(&path, &PRIMARY_RASTER_PROBES, false, size)
+            {
                 self.install_primary_font(handle, self.primary_family.clone(), Some(path.clone()));
                 tracing::info!(
                     "Loaded fallback font (random scan): {} (handle={:?})",
@@ -408,7 +419,7 @@ impl FontService {
     /// 如果主字体本身已经包含中文字形则跳过，避免重复加载。
     fn load_cjk_fallback(
         &mut self,
-        _size: f32,
+        size: f32,
         system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) {
         // 内存剖析开关：跳过 CJK 回退字体加载，量化中文字体常驻对 working set 的贡献。
@@ -416,10 +427,9 @@ impl FontService {
             tracing::info!("UIX_SKIP_CJK_FONT set; skipping CJK fallback font load");
             return;
         }
-        let cjk_test = ['中', '国', '文'];
-        let primary_has_cjk = cjk_test.iter().all(|&ch| {
+        let primary_has_cjk = CJK_RASTER_PROBES.iter().all(|&ch| {
             self.text_backend.is_valid(&self.loaded_font_handle)
-                && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
+                && self.font_rasterizes_probe(&self.loaded_font_handle, ch, size)
         });
         if primary_has_cjk {
             tracing::info!("Primary font already supports CJK, skipping CJK fallback load",);
@@ -433,15 +443,9 @@ impl FontService {
         }
 
         for path in cjk_paths {
-            if let Some(handle) = self.load_mapped_font(&path) {
-                let supports_cjk = cjk_test
-                    .iter()
-                    .all(|&ch| self.text_backend.has_glyph(&handle, ch));
-                if !supports_cjk {
-                    self.unload_font(&handle);
-                    tracing::info!("CJK candidate '{}' does not cover the probe set", path);
-                    continue;
-                }
+            if let Some(handle) =
+                self.load_mapped_system_font(&path, &CJK_RASTER_PROBES, true, size)
+            {
                 self.register_font(
                     handle,
                     Self::infer_family_from_path(&path),
@@ -451,10 +455,7 @@ impl FontService {
                 tracing::info!("Loaded CJK fallback font: {}", path);
                 return;
             }
-            tracing::info!(
-                "CJK font '{}' found but failed to load (unsupported format)",
-                path
-            );
+            tracing::info!("CJK font '{}' failed mapping or raster probes", path);
         }
         tracing::info!("No CJK fallback font could be loaded via platform");
     }
@@ -463,11 +464,13 @@ impl FontService {
     fn load_family_font(
         &mut self,
         family: &str,
-        _size: f32,
+        size: f32,
         system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) -> Option<FontHandle> {
         if let Some(p) = system_info.probe_family_font_path(family) {
-            if let Some(handle) = self.load_mapped_font(&p) {
+            if let Some(handle) =
+                self.load_mapped_system_font(&p, &PRIMARY_RASTER_PROBES, false, size)
+            {
                 self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
                 tracing::info!("Loaded family font '{}': {}", family, p);
                 return Some(handle);
@@ -484,6 +487,71 @@ impl FontService {
         let handle = self.text_backend.load_font_mapped(mmap).ok()?;
         self.register_font(handle, self.primary_family.clone(), None);
         Some(handle)
+    }
+
+    /// 仅为平台自动发现的正文候选执行真实栅格探针；显式辅助字体仍可保留符号专用覆盖。
+    fn load_mapped_system_font(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        probes: &[char],
+        require_all: bool,
+        pixel_size: f32,
+    ) -> Option<FontHandle> {
+        let path = path.as_ref();
+        let handle = self.load_mapped_font(path)?;
+        let accepts = if require_all {
+            probes
+                .iter()
+                .all(|&ch| self.font_rasterizes_probe(&handle, ch, pixel_size))
+        } else {
+            probes
+                .iter()
+                .any(|&ch| self.font_rasterizes_probe(&handle, ch, pixel_size))
+        };
+        if accepts {
+            return Some(handle);
+        }
+        self.unload_font(&handle);
+        tracing::warn!(
+            "Rejected system font '{}' because mapped glyphs produced no visible raster",
+            path.display()
+        );
+        None
+    }
+
+    /// 用当前文本后端完成布局与栅格化，验证指定字符确实产生可见像素或轮廓。
+    fn font_rasterizes_probe(&self, font: &FontHandle, ch: char, pixel_size: f32) -> bool {
+        if !self.text_backend.has_glyph(font, ch) {
+            return false;
+        }
+        let mut text = [0_u8; 4];
+        let text = ch.encode_utf8(&mut text);
+        let options = TextLayoutOptions {
+            max_width: f32::INFINITY,
+            max_height: 0.0,
+            line_height: 0.0,
+            word_wrap: false,
+            h_align: crate::draw::HAlign::Left,
+            v_align: crate::draw::VAlign::Top,
+            font_size: tb::bounded_font_size(pixel_size),
+        };
+        self.text_backend
+            .layout_text(font, text, &options)
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.font == *font)
+            .any(|glyph| {
+                let raster =
+                    self.text_backend
+                        .rasterize_glyph(font, glyph.glyph_id, options.font_size);
+                raster.width > 0
+                    && raster.height > 0
+                    && (raster.coverage.iter().any(|coverage| *coverage != 0)
+                        || raster
+                            .outline_mesh
+                            .as_ref()
+                            .is_some_and(|mesh| !mesh.is_empty()))
+            })
     }
 
     // ── 文本度量 ──

@@ -18,7 +18,6 @@ pub(crate) use fonts::*;
 use crate::native::{Errc, Error, Result};
 use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
 
-
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxSystemInfo
 // ════════════════════════════════════════════════════════════════════════════
@@ -63,10 +62,8 @@ impl ISystemInfo for LinuxSystemInfo {
         probe_uptime_ms()
     }
     fn default_font_paths(&self) -> Result<Vec<String>> {
-        Ok(match probe_system_default_font() {
-            Some(p) => vec![p],
-            None => vec![],
-        })
+        // 返回有序候选，由 FontService 以真实栅格探针选择首个可用字体。
+        Ok(probe_system_default_font_paths())
     }
 
     fn probe_cjk_font_path(&self) -> Option<String> {
