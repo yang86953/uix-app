@@ -258,6 +258,24 @@ impl WidgetTree {
         id: WidgetId,
         action: &SemanticAction,
     ) -> Result<(), SemanticActionError> {
+        self.perform_semantic_action_with_focus_policy(id, action, false)
+    }
+
+    /// 经 Agent 所有权与动作策略校验后执行语义动作，允许目标窗口位于后台。
+    pub(crate) fn perform_agent_semantic_action(
+        &mut self,
+        id: WidgetId,
+        action: &SemanticAction,
+    ) -> Result<(), SemanticActionError> {
+        self.perform_semantic_action_with_focus_policy(id, action, true)
+    }
+
+    fn perform_semantic_action_with_focus_policy(
+        &mut self,
+        id: WidgetId,
+        action: &SemanticAction,
+        allow_unfocused_input: bool,
+    ) -> Result<(), SemanticActionError> {
         // 停止树必须在读取节点快照或用户 handler 前拒绝语义动作。
         if !self.accepts_external_work() {
             // 复用既有未处理错误以维持调用方的动作失败契约。
@@ -309,7 +327,7 @@ impl WidgetTree {
                     EventResult::Handled
                 } else {
                     let keyboard = if role == AccessibilityRole::Button {
-                        self.focus_and_press(id, KeyCode::Enter)
+                        self.focus_and_press(id, KeyCode::Enter, allow_unfocused_input)
                     } else {
                         EventResult::NotHandled
                     };
@@ -334,18 +352,29 @@ impl WidgetTree {
                     EventResult::NotHandled
                 }
             }
-            SemanticAction::SetValue(value) => self.set_input_value(id, value),
+            SemanticAction::SetValue(value) => {
+                self.set_input_value(id, value, allow_unfocused_input)
+            }
             SemanticAction::InsertText(text) => {
                 self.set_focus(Some(id));
                 if text.is_empty() {
                     EventResult::Handled
                 } else {
-                    self.dispatch_event(&SystemEvent::TextInput { text: text.clone() })
+                    self.dispatch_synthetic_input(
+                        &SystemEvent::TextInput { text: text.clone() },
+                        allow_unfocused_input,
+                    )
                 }
             }
-            SemanticAction::Toggle => self.focus_and_press(id, KeyCode::Space),
-            SemanticAction::Increment => self.focus_and_press(id, KeyCode::Up),
-            SemanticAction::Decrement => self.focus_and_press(id, KeyCode::Down),
+            SemanticAction::Toggle => {
+                self.focus_and_press(id, KeyCode::Space, allow_unfocused_input)
+            }
+            SemanticAction::Increment => {
+                self.focus_and_press(id, KeyCode::Up, allow_unfocused_input)
+            }
+            SemanticAction::Decrement => {
+                self.focus_and_press(id, KeyCode::Down, allow_unfocused_input)
+            }
             // 连续值调整能力（E-05）：执行时聚焦目标并返回 Handled，方向性
             // 步进由 `Increment` / `Decrement` 动作驱动；min/max 已进入语义快照。
             SemanticAction::Adjust { .. } => {
@@ -371,7 +400,9 @@ impl WidgetTree {
                     )
                 }
             }
-            SemanticAction::Select(value) => self.select_option(id, role, value)?,
+            SemanticAction::Select(value) => {
+                self.select_option(id, role, value, allow_unfocused_input)?
+            }
         };
 
         if handled == EventResult::Handled {
@@ -384,24 +415,47 @@ impl WidgetTree {
         }
     }
 
-    fn focus_and_press(&mut self, id: WidgetId, key: KeyCode) -> EventResult {
+    fn focus_and_press(
+        &mut self,
+        id: WidgetId,
+        key: KeyCode,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
         self.set_focus(Some(id));
-        self.press_key(key)
+        self.press_key(key, allow_unfocused_input)
     }
 
-    fn press_key(&mut self, key: KeyCode) -> EventResult {
-        let down = self.dispatch_event(&SystemEvent::KeyDown {
-            key,
-            mods: KeyMod::SYNTHETIC,
-        });
-        let up = self.dispatch_event(&SystemEvent::KeyUp {
-            key,
-            mods: KeyMod::SYNTHETIC,
-        });
+    fn press_key(&mut self, key: KeyCode, allow_unfocused_input: bool) -> EventResult {
+        let down = self.dispatch_synthetic_input(
+            &SystemEvent::KeyDown {
+                key,
+                mods: KeyMod::SYNTHETIC,
+            },
+            allow_unfocused_input,
+        );
+        let up = self.dispatch_synthetic_input(
+            &SystemEvent::KeyUp {
+                key,
+                mods: KeyMod::SYNTHETIC,
+            },
+            allow_unfocused_input,
+        );
         if down == EventResult::Handled || up == EventResult::Handled {
             EventResult::Handled
         } else {
             EventResult::NotHandled
+        }
+    }
+
+    fn dispatch_synthetic_input(
+        &mut self,
+        event: &SystemEvent,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
+        if allow_unfocused_input {
+            self.dispatch_agent_event(event)
+        } else {
+            self.dispatch_event(event)
         }
     }
 
@@ -410,6 +464,7 @@ impl WidgetTree {
         id: WidgetId,
         role: AccessibilityRole,
         value: &str,
+        allow_unfocused_input: bool,
     ) -> Result<EventResult, SemanticActionError> {
         let selection = self
             .get(id)
@@ -445,7 +500,9 @@ impl WidgetTree {
         }
 
         if role == AccessibilityRole::Combobox {
-            if !selection.expanded && self.press_key(KeyCode::Down) != EventResult::Handled {
+            if !selection.expanded
+                && self.press_key(KeyCode::Down, allow_unfocused_input) != EventResult::Handled
+            {
                 return Ok(EventResult::NotHandled);
             }
             let key = if index > current {
@@ -454,12 +511,12 @@ impl WidgetTree {
                 KeyCode::Up
             };
             for _ in 0..current.abs_diff(index) {
-                if self.press_key(key) != EventResult::Handled {
-                    let _ = self.press_key(KeyCode::Escape);
+                if self.press_key(key, allow_unfocused_input) != EventResult::Handled {
+                    let _ = self.press_key(KeyCode::Escape, allow_unfocused_input);
                     return Ok(EventResult::NotHandled);
                 }
             }
-            let _ = self.press_key(KeyCode::Escape);
+            let _ = self.press_key(KeyCode::Escape, allow_unfocused_input);
         } else {
             while current != index {
                 let next = if index > current {
@@ -478,7 +535,7 @@ impl WidgetTree {
                 } else {
                     KeyCode::Up
                 };
-                if self.press_key(key) != EventResult::Handled {
+                if self.press_key(key, allow_unfocused_input) != EventResult::Handled {
                     return Ok(EventResult::NotHandled);
                 }
                 current = next;
@@ -497,7 +554,12 @@ impl WidgetTree {
         })
     }
 
-    fn set_input_value(&mut self, id: WidgetId, value: &str) -> EventResult {
+    fn set_input_value(
+        &mut self,
+        id: WidgetId,
+        value: &str,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
         let Some(current_value) = self.get(id).and_then(|node| {
             node.widget()
                 .as_any()
@@ -508,32 +570,47 @@ impl WidgetTree {
         };
 
         self.set_focus(Some(id));
-        let _ = self.dispatch_event(&SystemEvent::KeyDown {
-            key: KeyCode::A,
-            mods: KeyMod::CTRL,
-        });
-        let _ = self.dispatch_event(&SystemEvent::KeyUp {
-            key: KeyCode::A,
-            mods: KeyMod::CTRL,
-        });
+        let _ = self.dispatch_synthetic_input(
+            &SystemEvent::KeyDown {
+                key: KeyCode::A,
+                mods: KeyMod::CTRL,
+            },
+            allow_unfocused_input,
+        );
+        let _ = self.dispatch_synthetic_input(
+            &SystemEvent::KeyUp {
+                key: KeyCode::A,
+                mods: KeyMod::CTRL,
+            },
+            allow_unfocused_input,
+        );
         if value.is_empty() {
             if current_value.is_empty() {
                 EventResult::Handled
             } else {
-                let down = self.dispatch_event(&SystemEvent::KeyDown {
-                    key: KeyCode::Backspace,
-                    mods: KeyMod::NONE,
-                });
-                let _ = self.dispatch_event(&SystemEvent::KeyUp {
-                    key: KeyCode::Backspace,
-                    mods: KeyMod::NONE,
-                });
+                let down = self.dispatch_synthetic_input(
+                    &SystemEvent::KeyDown {
+                        key: KeyCode::Backspace,
+                        mods: KeyMod::NONE,
+                    },
+                    allow_unfocused_input,
+                );
+                let _ = self.dispatch_synthetic_input(
+                    &SystemEvent::KeyUp {
+                        key: KeyCode::Backspace,
+                        mods: KeyMod::NONE,
+                    },
+                    allow_unfocused_input,
+                );
                 down
             }
         } else {
-            self.dispatch_event(&SystemEvent::TextInput {
-                text: value.to_owned(),
-            })
+            self.dispatch_synthetic_input(
+                &SystemEvent::TextInput {
+                    text: value.to_owned(),
+                },
+                allow_unfocused_input,
+            )
         }
     }
 }
