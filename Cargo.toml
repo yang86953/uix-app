@@ -4,7 +4,7 @@ members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-lsp", "u
 
 [package]
 name = "uix"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 publish = false
 license-file = "LICENSE"

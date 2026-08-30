@@ -465,6 +465,18 @@ widget! {
         }
         self.render_status_message(frame, control_height, ctx, visual);
     }
+
+    draw_margin => (&self) -> f32 {
+        // 边框以 frame 边界为中心线描边，绘制像素向外溢出半个线宽加 AA 过渡；
+        // 失效矩形必须覆盖外溢带，否则聚焦换宽等局部重绘会残留上一帧边框
+        // （实测表现为聚焦首帧上边 2px、其余三边 1px 旧边框残影）。
+        let border = self
+            .visual
+            .chrome
+            .focus_border_width
+            .max(self.visual.chrome.border_width);
+        border * 0.5 + 1.0
+    }
 }
 
 mod ext;
