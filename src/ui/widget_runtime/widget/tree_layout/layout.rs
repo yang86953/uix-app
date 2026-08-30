@@ -337,6 +337,32 @@ impl WidgetTree {
                 break;
             }
         }
+        // uix-app#91 兜底：收敛退出（含打满上限）后再跑一轮 Phase1，保证
+        // 最后一轮 Phase2/viewport 的容器移动有配套的子孙 arrange——否则
+        // 移动过的容器与残留旧 frame 的子节点会父子脱节，被自身 clip 裁掉。
+        {
+            #[cfg(test)]
+            LAYOUT_TRACE_PHASE.with(|p| p.set(1));
+            for &id in order.iter() {
+                if !effective_visible.contains(&id) {
+                    continue;
+                }
+                let node = match self.get(id) {
+                    Some(n) => n,
+                    None => continue,
+                };
+                if node.children().is_empty() {
+                    continue;
+                }
+                node.layout_children_into(node.frame(), node.children(), self, arrange);
+                for position_index in 0..arrange.positions.len() {
+                    let (child_id, rect) = arrange.positions[position_index];
+                    self.set_layout_frame(child_id, rect, layout_damage);
+                }
+            }
+            #[cfg(test)]
+            LAYOUT_TRACE_PHASE.with(|p| p.set(0));
+        }
         #[cfg(test)]
         {
             self.layout_converge_passes.set(converge_passes);

@@ -81,7 +81,7 @@
 //! ```
 //!
 //! ```compile_fail
-//! // 测试平台聚合不可达。
+//! // 测试平台聚合不可达：native 测试替身已随平台 facade 重构移除。
 //! use uix::native::test_harness::FakePlatform;
 //! ```
 //!
