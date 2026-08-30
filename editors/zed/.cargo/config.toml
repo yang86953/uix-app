@@ -1,0 +1,3 @@
+# wasip2 组件链接器：zed_extension_api 0.7 产出 Zed 要求的 wasm 组件。
+[target.wasm32-wasip2]
+linker = "wasm-component-ld"

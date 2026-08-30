@@ -1,0 +1,16 @@
+id = "uix-lang"
+name = "UIX Lang"
+version = "0.0.1"
+schema_version = 1
+authors = ["yang86"]
+description = "UIX Lang support for Zed (language server: uix-lang-ls)"
+
+languages = ["languages/uix"]
+
+[lib]
+kind = "Rust"
+version = "0.7.0"
+
+[language_servers.uix-lang-ls]
+language = "UIX Lang"
+languages = []

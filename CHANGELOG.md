@@ -20,6 +20,10 @@
   中文等非 ASCII 行定位错误）。
 - 新增使用文档 [语言服务器](docs/uix-lang/指南/语言服务器.md)：启动方式、
   编辑器接入、能力清单、可见失败与安全边界。
+- 新增 Zed 编辑器扩展 `editors/zed/`：注册 `.uix` 文件类型并通过
+  `zed_extension_api` 适配 `uix-lang-ls`（服务器二进制经用户 settings
+  `lsp.binary` 提供）；已在 Zed 1.18 端到端实测（扩展加载、`.uix` 语言
+  关联、语言服务器拉起）。
 
 ### 2026-08-30 布局收敛与动态文本修复（uix-app#91）
 

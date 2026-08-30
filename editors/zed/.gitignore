@@ -1,0 +1,3 @@
+# 构建产物：dev extension 安装时由 Zed 自动编译，本机可用 cargo 生成。
+/target
+/extension.wasm
