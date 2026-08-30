@@ -68,7 +68,9 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
             }
             PolicyDecision::Allow => {}
         }
-        tree.perform_semantic_action(node_id, action)
+        // Agent 已经过连接、调用者与动作策略门禁；专用入口允许后台窗口接收
+        // 合成键盘与文本事件，同时不放宽普通应用输入的前台焦点约束。
+        tree.perform_agent_semantic_action(node_id, action)
             .map_err(|error| map_action_error(target.label(), error))
     }
 
