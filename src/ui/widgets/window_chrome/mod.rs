@@ -100,7 +100,11 @@ impl WindowInteractionRegion {
         self.interaction == WindowInteraction::Drag
     }
 
-    fn action(control: WindowControl) -> WindowAction {
+    /// 把公开窗口控件映射为平台中立窗口动作。
+    ///
+    /// 指针、键盘与无障碍语义入口必须复用此映射，避免三条输入路径各自
+    /// 维护关闭、最小化和最大化语义而发生漂移。
+    pub(crate) const fn window_action(control: WindowControl) -> WindowAction {
         match control {
             WindowControl::Minimize => WindowAction::Minimize,
             WindowControl::MaximizeRestore => WindowAction::MaximizeRestore,
@@ -385,7 +389,7 @@ impl EventHandler for WindowInteractionRegion {
                 },
             ) if self.activation == Some(ControlActivation::Pointer) => {
                 self.activation = None;
-                self.pending = Some(Self::action(control));
+                self.pending = Some(Self::window_action(control));
                 EventResult::Handled
             }
             (WindowInteraction::Control(_), SystemEvent::PointerEnter) => {
@@ -420,7 +424,7 @@ impl EventHandler for WindowInteractionRegion {
                 if self.activation == Some(ControlActivation::Keyboard(*key)) =>
             {
                 self.activation = None;
-                self.pending = Some(Self::action(control));
+                self.pending = Some(Self::window_action(control));
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,

@@ -14,8 +14,9 @@ use crate::core::{Point, WidgetId};
 use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widget_runtime::widget::{EventResult, WidgetTree};
-use crate::ui::widget_snapshot::AccessibilityRole;
+use crate::ui::widget_snapshot::{AccessibilityRole, SnapshotFields};
 use crate::ui::widgets::Input;
+use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// 不携带动作载荷的稳定语义动作种类。
@@ -271,7 +272,14 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return Err(SemanticActionError::NodeNotFound(id));
         };
-        let accessibility = node.widget_snapshot(id).accessibility();
+        let widget_snapshot = node.widget_snapshot(id);
+        let accessibility = widget_snapshot.accessibility();
+        // 原生窗口控件的 Invoke 是类型化窗口动作，不应绕经键盘事件再猜测
+        // 默认行为。先复制公开枚举，释放节点借用后由 WidgetTree 唯一队列提交。
+        let window_control = match widget_snapshot.fields {
+            SnapshotFields::WindowControl { control, .. } => Some(control),
+            _ => None,
+        };
         let role = accessibility.role;
         let actions = self.supported_semantic_actions(id);
         if !actions.contains(&action_kind) {
@@ -295,20 +303,26 @@ impl WidgetTree {
 
         let handled = match action {
             SemanticAction::Invoke => {
-                let keyboard = if role == AccessibilityRole::Button {
-                    self.focus_and_press(id, KeyCode::Enter)
+                if let Some(control) = window_control {
+                    self.pending_window_actions
+                        .push(WindowInteractionRegion::window_action(control));
+                    EventResult::Handled
                 } else {
-                    EventResult::NotHandled
-                };
-                if keyboard == EventResult::Handled {
-                    keyboard
-                } else {
-                    let click = ClickEvent {
-                        button: MouseButton::Left,
-                        pos: center(visible_bounds),
-                        modifiers: KeyMod::NONE,
+                    let keyboard = if role == AccessibilityRole::Button {
+                        self.focus_and_press(id, KeyCode::Enter)
+                    } else {
+                        EventResult::NotHandled
                     };
-                    self.dispatch_semantic(SemanticEvent::click(id, click))
+                    if keyboard == EventResult::Handled {
+                        keyboard
+                    } else {
+                        let click = ClickEvent {
+                            button: MouseButton::Left,
+                            pos: center(visible_bounds),
+                            modifiers: KeyMod::NONE,
+                        };
+                        self.dispatch_semantic(SemanticEvent::click(id, click))
+                    }
                 }
             }
             SemanticAction::Focus => {

@@ -9,13 +9,17 @@
 - `AppHandle` 新增 `is_open` 瞬时会话快照与 `request_activate` owner-thread 激活请求。激活只经逐窗
   main-thread queue 到达原生窗口，不公开 platform backend、surface 或句柄；关闭先发生时稳定返回
   `InvalidState`，请求不会按标题或创建顺序重定向到其他窗口。
+- 修复 `WindowControl` 的 Agent / 无障碍 `Invoke`：语义入口现在复用控件持有的类型化窗口动作映射，
+  直接进入当前 `WidgetTree` 的窗口动作队列，不再通过合成键盘事件推断最小化、最大化/还原或关闭。
+  平台最终状态仍须由窗口生命周期事实确认，不能把动作已入队当作窗口管理器已经执行。
 - 多窗口公开文档与外部消费者编译门禁同步覆盖存活观测、关闭竞态和激活请求。UIX Lang 版本随根
   crate 升级到 `0.0.3`，本版本没有新增语言语法、组件登记或生成映射。
 
 ### 发布状态
 
-- 本版本于 2026-08-30 通过私有 Gitea Release 发布，先附带确定性构建并独立校验的 Linux x64
-  内部制品；Windows x64 制品仍须在对应环境从同一 tag 构建和追加。
+- 本版本尚处候选状态：必须先通过外部 UIX OS 对窗口关闭、Dock 重开、最大化/还原和新窗口身份的
+  真实 Agent 门禁，再创建 `v0.0.3` tag、私有 Gitea Release 与 Linux x64 内部制品。候选提交或
+  构建成功不等于已经发布；Windows x64 制品仍须在对应环境从最终 tag 构建和追加。
 
 ## 0.0.2（2026-08-30）
 
