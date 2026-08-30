@@ -278,14 +278,26 @@ pub(crate) fn finite_non_negative(value: f32) -> f32 {
     finite_or_zero(value).max(0.0)
 }
 
+// 把布局坐标吸附到千分之一像素网格。
+//
+// 收敛循环以 `frame == new_frame` 的精确比较判定稳定；不同求和顺序产生的
+// 1e-6 级浮点噪声会穿透归一并让 `any_change` 永真，布局每帧打满收敛上限，
+// 最后一轮的位置调整失去后续修正机会，部分节点 frame 停留在中间态
+// （uix-app#91）。千分之一像素远低于渲染可感知阈值，只吞噬比较噪声。
+fn snap_subpixel(value: f32) -> f32 {
+    let snapped = (value * 1000.0).round() / 1000.0;
+    // 抖动值仍需经过有限值清洗，防止 NaN/无穷穿透吸附。
+    finite_or_zero(snapped)
+}
+
 // 归一最终或待求解的矩形。
 pub(crate) fn normalize_layout_rect(rect: Rect) -> Rect {
     // Rect::new 继续承担 NaN 安全构造，传入值已满足布局层更强契约。
     Rect::new(
-        finite_or_zero(rect.x),
-        finite_or_zero(rect.y),
-        finite_non_negative(rect.w),
-        finite_non_negative(rect.h),
+        snap_subpixel(finite_or_zero(rect.x)),
+        snap_subpixel(finite_or_zero(rect.y)),
+        snap_subpixel(finite_non_negative(rect.w)),
+        snap_subpixel(finite_non_negative(rect.h)),
     )
 }
 

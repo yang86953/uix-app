@@ -28,10 +28,10 @@ pub(crate) mod backends;
 pub(crate) mod capabilities;
 pub(crate) mod factory;
 pub(crate) mod presentation;
-#[cfg(feature = "test-harness")]
-// 将测试支撑实现统一存放在根 tests 目录。
-#[path = "../../tests/support/native/test_harness/mod.rs"]
-pub(crate) mod test_harness;
+// native 测试替身（FakePlatform/FakeWindow 等）在 0.0.6 平台 facade 重构后
+// 引用的系统服务 trait（IConsole/IFileDialog/INotification/ITimer）已被移除，
+// 且无任何测试消费方；恢复 native parity 夹具时需同步重写该模块。
+// UI 层 TestApp（tests/support/ui）不依赖本模块，由 test-harness feature 独立提供。
 pub(crate) mod windowing;
 
 pub(crate) use crate::core::error::*;
