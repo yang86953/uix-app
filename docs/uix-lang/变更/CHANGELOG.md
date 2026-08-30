@@ -49,6 +49,7 @@
 
 | 日期 | 范围 | 说明 | 关联 |
 |---|---|---|---|
+| 2026-08-30 | 工具链 / 语言服务器 | 语言服务器从 `uix-lang-cli` 内嵌实现收敛为独立工作区成员 `uix-lang-lsp`（二进制 `uix-lang-ls`），`uix lsp` 委托同一实现；在既有诊断与格式化之上新增上下文感知补全（标签 / 属性 / 事件 / 样式 / `#token` / 指令）、语义 IR 悬停、导入闭包定义与全词边界引用、文档大纲、`workspace/didChangeWatchedFiles` 缓存失效复核，并修正编辑器位置换算为 UTF-16 双向；诊断、schema 与格式化仍全部经 Compiler System 公开命令 | [语言服务器](../指南/语言服务器.md) |
 | 2026-08-27 | 测试面 / 门禁 | 建立消费者层门禁证据基建：评估 trybuild / ui_test 后未引入外部框架，根包 `tests/uix_lang_gate_public_api.rs` 经公开 check 入口锁定诊断码、阶段、主 SourceSpan 与文案快照；新增 derive-only 工作区成员 `uix-lang-gate-consumer`，以真实子进程失败编译驱动成员混用双写（UIX1000）与 CascaderValue 值类型门禁（UIX2000），失败输出行同时携带码、阶段与行列；组件 / 属性级 UIX2001 关闭场景留待后续批次 | [语言完善计划](语言完善计划.md) |
 | 2026-08-27 | 工具链 | 完成公开宏文件入口消费者证据补全：新增 `tests/uix_lang_public_api.rs` 消费 `uix!` 递归导入闭包、`uix_app!` 未运行 builder 与 `uix_items!` Visual 静态项并断言单一静态地址（五个此前无引用的 fixture 资产归位）；`uix scaffold visual` 骨架输出锁定单测落地；消费者层 compile-fail 证据基建与 capability 关闭场景验证登记为下一目标 | [语言完善计划](语言完善计划.md) |
 | 2026-08-27 | Widget / 语法 | 新增 `@props` / `@state` / `@computed` / `@actions` 块级成员声明，与字符串属性形式解析等价（双写拒绝、仅在 `<Widget>` 内、不参与 Slot 归位）；成员列表统一允许尾随逗号 | [语法 · Widget 成员](../规范/语法.md#2-widget-成员) |
