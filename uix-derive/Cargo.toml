@@ -1,6 +1,6 @@
 [package]
 name = "uix-derive"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 publish = false
 license-file = "../LICENSE"
@@ -10,7 +10,7 @@ description = "UIX derive macros: Display for route keys"
 proc-macro = true
 
 [dependencies]
-uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.3", default-features = false }
+uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.4", default-features = false }
 proc-macro2 = "1"
 quote = "1"
 serde_json = "1"
