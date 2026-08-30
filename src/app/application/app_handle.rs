@@ -241,6 +241,46 @@ impl AppHandle {
         self.window_id
     }
 
+    /// 返回此句柄关联窗口在该次读取时是否仍有活动会话。
+    ///
+    /// 结果是瞬时生命周期快照；并发关闭可能在返回后立即发生。调用方仍须处理
+    /// 后续窗口请求的 `InvalidState`，不得把该布尔值当作跨线程租约。
+    pub fn is_open(&self) -> bool {
+        self.alive.load(Ordering::Acquire)
+    }
+
+    /// 请求合成器激活并聚焦此窗口。
+    ///
+    /// 成功只表示请求已由活动窗口会话接受并投递到其 owner thread，不保证窗口
+    /// 管理器最终授予焦点。平台在执行期拒绝请求时由框架记录 typed error；关闭
+    /// 后的句柄稳定返回 `InvalidState`，不会重定向到其他窗口。
+    pub fn request_activate(&self) -> Result<()> {
+        if !self.is_open() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot activate a closed AppHandle",
+            ));
+        }
+        let accepted = self
+            .runtime
+            .enqueue_with_context(self.window_id, move |context| {
+                if let Err(error) = context.request_activate() {
+                    tracing::warn!(
+                        reason = %error.short_what(),
+                        "window activation request failed"
+                    );
+                }
+            });
+        if accepted {
+            Ok(())
+        } else {
+            Err(Error::new(
+                Errc::InvalidState,
+                "cannot activate a closed AppHandle",
+            ))
+        }
+    }
+
     /// 返回可克隆的应用状态访问句柄。
     pub fn app_state(&self) -> AppState {
         self.app_state.clone()
@@ -513,7 +553,8 @@ impl AppHandle {
             // 捕获 Application owner，使替换根继续绑定同一逐窗反馈队列。
             let feedback = self.container.resolve_clone::<AppFeedbackState>();
             let window_id = self.window_id;
-            self.runtime
+            let _accepted = self
+                .runtime
                 .enqueue_with_context(self.window_id, move |ctx| {
                     let root = ViewAdapter::capture_root(build_root);
                     // 运行期替换与初始窗口复用同一应用根默认处理。

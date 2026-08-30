@@ -159,7 +159,8 @@ impl AppRuntime {
         app_timers: AppTimerQueue,
         main_thread_queue: MainThreadQueue,
         alive: Arc<AtomicBool>,
-        #[cfg(any(feature = "test-harness", feature = "agent-control"))] graphics_faults: GraphicsFaultSignal,
+        #[cfg(any(feature = "test-harness", feature = "agent-control"))]
+        graphics_faults: GraphicsFaultSignal,
     ) {
         self.reserve_after(window_id);
         let agent_commands = AgentCommandQueue::new();
@@ -462,14 +463,27 @@ impl AppRuntime {
         }
     }
 
-    pub(crate) fn enqueue_with_context<F>(&self, window_id: WindowId, f: F)
+    pub(crate) fn enqueue_with_context<F>(&self, window_id: WindowId, f: F) -> bool
     where
         F: for<'a> FnOnce(&mut MainThreadContext<'a>) + Send + 'static,
     {
-        if let Some(session) = self.session(window_id) {
+        // 与 close_session 复用同一会话表锁形成接受线性化点：关闭先移除时
+        // 稳定拒绝；先入队后并发关闭则由关闭路径清空本次已接受工作。
+        let accepted = {
+            let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(session) = sessions.get(&window_id) else {
+                return false;
+            };
+            if !session.alive.load(Ordering::Acquire) {
+                return false;
+            }
             session.main_thread_queue.enqueue_with_context(f);
+            true
+        };
+        if accepted {
             self.wake_event_loop();
         }
+        accepted
     }
 
     pub(crate) fn submit_agent_command(

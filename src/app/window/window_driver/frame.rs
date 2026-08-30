@@ -108,8 +108,12 @@ impl WindowDriver {
             return result;
         }
 
-        let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
-        let had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
+        let had_main_thread_work = {
+            // 主线程任务只在当前逐窗 owner turn 内短借原生窗口。
+            let mut main_thread_context =
+                MainThreadContext::new(pending_root, reconcile_pending, platform_window);
+            main_thread_queue.drain(&mut main_thread_context)
+        };
         // 主线程任务可能在内部捕获发布 panic，必须在处理 Agent 工作前停止本帧。
         if let Some(result) = self.finish_if_tree_fail_stopped(
             // 检查本窗口唯一拥有的树状态。

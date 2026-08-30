@@ -35,6 +35,26 @@ mod multi_window_open {
     }
 }
 
+// 隔离 multi-window-lifecycle 围栏中的窗口存活观测与激活请求。
+mod multi_window_lifecycle {
+    // 引入文档承诺的公开 AppHandle 与 typed Result。
+    use uix::prelude::*;
+
+    // 暴露当前模块对应的文档编译标识。
+    pub(super) const COMPILE_ID: &str = "multi-window-lifecycle";
+
+    // 编译窗口句柄的瞬时存活快照与 owner-thread 激活请求。
+    fn compile_example(handle: &AppHandle) -> Result<(), Error> {
+        // 存活值只用于决定创建或激活分支，不充当跨线程租约。
+        if handle.is_open() {
+            // 激活请求保持 typed 失败，不泄漏原生窗口对象。
+            handle.request_activate()?;
+        }
+        // 返回公开 Result，要求使用方显式处理关闭竞态。
+        Ok(())
+    }
+}
+
 // 隔离 multi-window-control 围栏中的标准窗口交互。
 mod multi_window_control {
     // 引入文档承诺的公开窗口控制与 View prelude。
@@ -128,6 +148,8 @@ fn multi_window_rust_fences_compile_as_external_consumers() {
         multi_window_control::COMPILE_ID,
         // 登记延迟窗口配置围栏。
         multi_window_config::COMPILE_ID,
+        // 登记窗口生命周期与激活围栏。
+        multi_window_lifecycle::COMPILE_ID,
     ];
     // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
     assert_eq!(
@@ -141,6 +163,8 @@ fn multi_window_rust_fences_compile_as_external_consumers() {
             "multi-window-control",
             // 延迟窗口配置围栏标识。
             "multi-window-config",
+            // 窗口生命周期与激活围栏标识。
+            "multi-window-lifecycle",
         ],
     );
 }
