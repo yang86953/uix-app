@@ -19,7 +19,7 @@ pub(crate) trait AgentSemanticsPort: std::fmt::Debug {
 }
 
 /// UI turn 发布给 Agent 目录的跨平台窗口状态；不包含原生句柄或平台枚举。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct AgentWindowState {
     pub(crate) visible: bool,
     pub(crate) presentable: bool,
@@ -27,6 +27,9 @@ pub(crate) struct AgentWindowState {
     pub(crate) focused: bool,
     pub(crate) logical_width: i32,
     pub(crate) logical_height: i32,
+    /// 当前 surface 的逻辑→物理像素比；语义 bounds（logical）与截屏
+    /// （physical）之间的唯一换算事实。
+    pub(crate) device_pixel_ratio: f32,
     pub(crate) maximized: bool,
     pub(crate) minimized: bool,
     pub(crate) fullscreen: bool,
@@ -39,6 +42,9 @@ pub(crate) struct WindowSemanticSnapshot {
     pub(crate) revision: u64,
     pub(crate) presented_revision: u64,
     pub(crate) closed: bool,
+    /// 快照 bounds 坐标空间的逻辑→物理像素比；frame/visible_bounds 是
+    /// logical 客户区坐标，截屏像素需除以该值才能与 bounds 直接对照。
+    pub(crate) device_pixel_ratio: f32,
     pub(crate) nodes: Vec<SemanticNode>,
 }
 
@@ -59,6 +65,7 @@ impl WindowSemanticState {
                 revision: 0,
                 presented_revision: 0,
                 closed: false,
+                device_pixel_ratio: 1.0,
                 nodes: Vec::new(),
             },
             agent_window: None,
@@ -123,7 +130,10 @@ impl WindowSemanticState {
         true
     }
 
-    pub(crate) fn publish_agent_window_state(&self, state: AgentWindowState) {
+    pub(crate) fn publish_agent_window_state(&mut self, state: AgentWindowState) {
+        // DPR 是窗口渲染事实，随状态发布同步刷新；变化必然伴随 resize 布局
+        // 传播并由既有 revision 门禁覆盖，这里不单独推进修订号。
+        self.snapshot.device_pixel_ratio = state.device_pixel_ratio;
         if let Some(agent_window) = self.agent_window.as_ref() {
             agent_window.publish_window_state(state);
         }

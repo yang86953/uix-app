@@ -594,6 +594,7 @@ mod tests {
             focused: true,
             logical_width: 1000,
             logical_height: 700,
+            device_pixel_ratio: 1.0,
             maximized: true,
             minimized: false,
             fullscreen: false,

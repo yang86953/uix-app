@@ -57,7 +57,7 @@ impl WindowDriver {
             );
         }
         self.started_at.get_or_insert(now);
-        self.publish_agent_window_availability(semantic_state, platform_window);
+        self.publish_agent_window_availability(semantic_state, platform_window, engine);
 
         // 关闭调试且未显式配置卡顿阈值时，不读取时钟或扫描现场。
         let collect_frame_diagnostics = frame_diagnostics_enabled(debug_mode.debug_mode());
@@ -324,7 +324,7 @@ impl WindowDriver {
                 false,
                 agent_commands.has_work(),
             );
-            self.publish_agent_window_availability(semantic_state, platform_window);
+            self.publish_agent_window_availability(semantic_state, platform_window, engine);
             return WindowFrameResult {
                 did_work: event_work,
             };
@@ -355,7 +355,7 @@ impl WindowDriver {
                         false,
                         agent_commands.has_work(),
                     );
-                    self.publish_agent_window_availability(semantic_state, platform_window);
+                    self.publish_agent_window_availability(semantic_state, platform_window, engine);
                     return WindowFrameResult { did_work: true };
                 }
                 Err(error) => {
@@ -378,7 +378,7 @@ impl WindowDriver {
                         false,
                         agent_commands.has_work(),
                     );
-                    self.publish_agent_window_availability(semantic_state, platform_window);
+                    self.publish_agent_window_availability(semantic_state, platform_window, engine);
                     return WindowFrameResult { did_work: true };
                 }
             }
@@ -414,7 +414,7 @@ impl WindowDriver {
                 false,
                 agent_commands.has_work(),
             );
-            self.publish_agent_window_availability(semantic_state, platform_window);
+            self.publish_agent_window_availability(semantic_state, platform_window, engine);
             return WindowFrameResult {
                 did_work: event_work,
             };
@@ -589,7 +589,7 @@ impl WindowDriver {
                 false,
                 agent_commands.has_work(),
             );
-            self.publish_agent_window_availability(semantic_state, platform_window);
+            self.publish_agent_window_availability(semantic_state, platform_window, engine);
             return WindowFrameResult { did_work: true };
         }
         let surface_corrected =
@@ -924,7 +924,7 @@ impl WindowDriver {
             self.deferred_show = false;
         }
 
-        self.publish_agent_window_availability(semantic_state, platform_window);
+        self.publish_agent_window_availability(semantic_state, platform_window, engine);
 
         #[cfg(feature = "test-harness")]
         if let Some(snapshot) = semantic_state.snapshot() {

@@ -8,6 +8,24 @@
 > （原 0.0.8 草稿）作为收敛后的正式 v0.0.2。以下 0.0.3~0.0.7 历史小节保留
 > 作为当时交付事实的记录，其对应标签已不存在。
 
+### 2026-08-31 Agent 语义快照坐标空间声明（修复 bounds 与截屏对照错位）
+
+- 症状：AI 使用方读取语义快照 `visible_bounds` 后与 `screenshot` 像素直接
+  对照定位部件，在显示缩放（device pixel ratio ≠ 1）环境下出现与纵坐标
+  成正比的位置偏差（125% 缩放下逻辑 y≈400 处约 100 物理像素），语义
+  focus / 点击的动作点因此不中实际部件。
+- 根因：`frame` / `visible_bounds` 始终是 logical 客户区坐标，`screenshot`
+  始终是物理像素，但快照协议没有声明坐标空间与换算比例；两者空间不同却
+  无任何字段可供消费方判别与换算。逻辑空间内部（快照 ↔ click/hit-test）
+  经四种场景实测完全自洽，缺陷在协议可观测性缺口。
+- 修复：`AgentWindowState` 与 `WindowSemanticSnapshot` 携带渲染 engine 的
+  `device_pixel_ratio`（`WindowDriver` 每次发布窗口可用性时从 engine 读
+  取）；`snapshot` 回复顶层新增 `device_pixel_ratio` 字段；[Agent 控制]
+  文档补「坐标空间与换算」约定。
+- 验证：demo + Agent 通道实测初始页、页面切换、内容滚动 +120px、窗口最
+  大化四场景，`visible_bounds` 与截屏部件位置一致（DPR=1 环境下两者数值
+  相同）；`device_pixel_ratio` 字段正确输出。
+
 ### 2026-08-31 渲染 CPU/GPU 双路径重复实现收敛
 
 - 审查确认渲染语义单一源架构整体成立（软回退与 CPU 后端共用

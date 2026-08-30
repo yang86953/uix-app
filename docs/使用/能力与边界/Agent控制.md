@@ -142,9 +142,11 @@ App::new()
 | 请求 | 说明 |
 |---|---|
 | `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、焦点 `focused`、修订号） |
-| `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项、节点 `focused` 与 `hovered`，敏感值过滤） |
+| `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项、节点 `focused` 与 `hovered`，敏感值过滤；顶层 `device_pixel_ratio` 声明 bounds 坐标空间） |
 | `screenshot` | 截取目标窗口下一次真实呈现帧：PNG（RGB8、物理像素、左上原点）以 base64 返回；要求 backend-managed GPU 呈现，载荷上限见 `hello.limits.max_screenshot_bytes` |
 | `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
+
+**坐标空间与换算**：`snapshot` 的 `frame` / `visible_bounds` 与 `click` / `pointer` 系列动作同属**应用内 logical 客户区坐标**；`screenshot` 是**物理像素**（logical × `device_pixel_ratio`，左上原点）。跨空间对照（例如在截屏上定位快照节点）必须把 bounds 乘以快照顶层的 `device_pixel_ratio`，反向换算则相除；在 `device_pixel_ratio != 1` 的显示下不做换算会产生与纵坐标成正比的位置偏差（如 125% 缩放下逻辑 y=400 处偏差约 100 物理像素）。
 
 ### 语义动作（作用于语义树节点，须命中快照中的稳定目标）
 

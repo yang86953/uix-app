@@ -2,6 +2,7 @@
 
 use super::WindowDriver;
 use crate::app::window_semantics::{AgentWindowState, WindowSemanticState};
+use crate::draw::target::RenderTarget;
 use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 
 impl WindowDriver {
@@ -32,8 +33,9 @@ impl WindowDriver {
 
     pub(super) fn publish_agent_window_availability(
         &self,
-        semantic_state: &WindowSemanticState,
+        semantic_state: &mut WindowSemanticState,
         platform_window: &dyn PlatformWindow,
+        engine: &dyn RenderTarget,
     ) {
         let properties = platform_window.properties();
         semantic_state.publish_agent_window_state(AgentWindowState {
@@ -42,6 +44,8 @@ impl WindowDriver {
             focused: self.window_focused,
             logical_width: properties.width(),
             logical_height: properties.height(),
+            // 语义 bounds（logical）与截屏像素（physical）之间的换算事实。
+            device_pixel_ratio: engine.device_pixel_ratio(),
             maximized: properties.is_maximized(),
             minimized: properties.is_minimized(),
             fullscreen: properties.is_fullscreen(),
