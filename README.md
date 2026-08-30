@@ -6,7 +6,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 
 ## 当前状态
 
-- 当前版本为 `0.0.6`；正式发布状态与制品摘要以私有 Gitea Release 为准。
+- 当前版本为 `0.0.6`，已于 2026-08-30 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
 - Windows 与 Linux 均纳入 `0.0.6` 产品范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；任务级进度不在仓库内复制（原 Gitea 父 Issue #1 已停止维护，相关链接按撰写时点存档）。
