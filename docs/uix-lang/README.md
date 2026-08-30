@@ -20,7 +20,7 @@ Rust Application System
 Rust UI 代码 ──cargo──> 原生可执行文件
 ```
 
-正式产物不携带 UIX Lang 解释器；LSP 会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。共享 `uix-lang-compiler` Compiler System 统一提供 `compile`、`check`、`format`、`query`，`uix` CLI 另提供 `lsp`。
+正式产物不携带 UIX Lang 解释器；语言服务器会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。共享 `uix-lang-compiler` Compiler System 统一提供 `compile`、`check`、`format`、`query`，语言服务器（`uix-lang-ls`）与 `uix` CLI 另提供 `lsp` 入口。
 
 ## 设计原则
 
@@ -85,7 +85,7 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 | 角色 | 文档 |
 |---|---|
 | 长期设计 | [语言边界](设计/语言边界.md)、[编译器架构](设计/编译器架构.md)、[边界成本度量](设计/边界成本度量.md) |
-| 当前指南 | [快速开始](指南/快速开始.md)、[教程](指南/教程.md) |
+| 当前指南 | [快速开始](指南/快速开始.md)、[教程](指南/教程.md)、[语言服务器](指南/语言服务器.md) |
 | 演进治理 | [语言完善计划](变更/语言完善计划.md)、[版本策略](变更/版本策略.md)、[变更日志](变更/CHANGELOG.md) |
 | 历史依据 | [组合与表达式历史设计](变更/目标设计.md) |
 
@@ -101,6 +101,6 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ## 与 Rust 的映射
 
-共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`scaffold visual`、`lsp`，三个公开宏均有真实 consumer 验证。
+共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`scaffold visual`；语言服务器 `uix-lang-ls` 提供诊断、补全、导航与格式化（`uix lsp` 委托同一实现），三个公开宏均有真实 consumer 验证。
 
 UIX Lang 是 UIX Rust API 的编译期文本投影。公开宏与 `uix` CLI 均通过共享 `uix-lang-compiler` Compiler System；三个宏已有真实 consumer 验证。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部边界以[编译器架构](设计/编译器架构.md)为准。

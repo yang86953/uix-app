@@ -4,8 +4,6 @@ use serde_json::json;
 use std::{env, fs, path::PathBuf, process::ExitCode};
 use uix_lang_compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem, QueryEntry, QueryKind};
 
-mod lsp;
-
 // 结构体驱动的 Visual 骨架生成。
 mod scaffold;
 
@@ -29,7 +27,8 @@ fn run(args: Vec<String>) -> Result<u8, String> {
         "compile" => compile(&args[1..]),
         "query" => query(&args[1..]),
         "scaffold" => scaffold(&args[1..]),
-        "lsp" => lsp::run_stdio(),
+        // lsp 子命令委托独立语言服务器 crate，两个入口共享同一实现。
+        "lsp" => uix_lang_lsp::run_stdio(),
         _ => Err(usage()),
     }
 }

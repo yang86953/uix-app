@@ -4,6 +4,23 @@
 
 ## 0.0.7（2026-08-30）
 
+### 2026-08-30 UIX Lang 独立语言服务器（uix-lang-ls）
+
+- 新增工作区成员 `uix-lang-lsp`：UIX Lang 语言服务器独立实现（stdio
+  LSP，二进制 `uix-lang-ls`）；原 `uix-lang-cli` 内嵌的最小 LSP 移除，
+  `uix lsp` 子命令委托同一实现，两个入口共享一套会话与特性代码。
+- 语言事实不复制：诊断、schema、格式化、源码图与语义 IR 全部经共享
+  `uix-lang-compiler` 公开命令；`CompilerSession` 阶段缓存继续承担
+  跨请求复用，语义与失败语义与 `uix check` 一致。
+- 相比原内嵌实现的增量：上下文感知补全（标签 / 属性 / `@` 事件 / 样式
+  属性 / `#token` / 样式类 / 顶层指令）、语义 IR 悬停（组件、事件载荷、
+  State 句柄位、capability 门禁）、导入闭包内的定义跳转与全词边界引用、
+  文档大纲、`workspace/didChangeWatchedFiles` 缓存失效后立即复核仍打开
+  的根，以及修复编辑器位置换算（原 `word_at` 将 UTF-16 列当字节偏移，
+  中文等非 ASCII 行定位错误）。
+- 新增使用文档 [语言服务器](docs/uix-lang/指南/语言服务器.md)：启动方式、
+  编辑器接入、能力清单、可见失败与安全边界。
+
 ### 2026-08-30 布局收敛与动态文本修复（uix-app#91）
 
 - 修复数据更新后 For 重建卡片内 `dynamic_label` 文本不渲染的核心缺陷
