@@ -3,7 +3,7 @@
 /// 当前 schema 的独立版本；缓存与工具协议必须把它计入身份。
 pub const SCHEMA_VERSION: u32 = 3;
 /// 当前语言基线版本。
-pub const LANGUAGE_VERSION: &str = "0.0.5";
+pub const LANGUAGE_VERSION: &str = "0.0.6";
 
 /// 声明一个登记项当前是否可用于正式 AOT。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
