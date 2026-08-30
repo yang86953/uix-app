@@ -180,7 +180,7 @@ impl GpuBackend {
         let (target, target_width, target_height, target_load, writes_main_retained) =
             if let Some(active) = active {
                 // 当前 Picture target 必须仍存在，才能继续使用同一条 RHI 链路。
-                let Some(Some(offscreen)) = self.offscreens.get(active as usize) else {
+                let Some(offscreen) = self.offscreens.get(active) else {
                     // 返回稳定的状态错误。
                     return Err(Error::new(
                         Errc::InvalidState,

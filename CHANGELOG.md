@@ -8,6 +8,30 @@
 > （原 0.0.8 草稿）作为收敛后的正式 v0.0.2。以下 0.0.3~0.0.7 历史小节保留
 > 作为当时交付事实的记录，其对应标签已不存在。
 
+### 2026-08-31 渲染 CPU/GPU 双路径重复实现收敛
+
+- 审查确认渲染语义单一源架构整体成立（软回退与 CPU 后端共用
+  `SharedRasterizer`，字形数据单一来源），同时收敛了 9 处重复实现与 2 处
+  语义分叉。影响使用方可观察像素的变化有两处：
+- 对角线性渐变（`DiagonalTLBR`/`DiagonalBLTR`）统一为 CPU 局部空间公式，
+  GPU shader 改由 lowering 传入渐变局部矩形宽高：任意仿射（含非等比缩
+  放、剪切）下 GPU 与 CPU 输出同源；等比缩放（含 DPR）下像素不变。一致
+  性场景新增剪切四角对角渐变钉住该语义。
+- 圆角半径规范化（CSS 式：相邻角半径和超边长时等比缩小）从 GPU 变换路
+  径推广为 CPU/GPU 全链每 draw call 单次应用的共享规则
+  （`rasterizer/core.rs::normalize_corner_radii`）：极端半径输入下两个媒
+  体轮廓一致；常规输入下像素不变。
+- 内部单源化（不影响像素）：共享高斯核 `gaussian_weights`（CPU 卷积与
+  GPU blur uniform 同源）、泛型离屏 `SlotPool`（CPU/GPU Picture 池簿记）、
+  `GlyphAtlasKey`/`GlyphAtlasPage`（R8 与 MSDF atlas 共用 shelf 分配器）、
+  `d3d_common_sdf.hlsl` 与 `glsl_common_sdf.frag`（shader 数学单定义，直
+  到 SPIR-V 变体重编校验字节不变）、字形 blit 的 `modulate_coverage` 与
+  `color_to_premul` 量化共享、旧 queue 的字形提交路径改走跨帧 coverage
+  atlas（此前每帧创建/销毁纹理）、`BitmapFont` 度量单源化。
+- 验证：公开 API 测试 80 通过；一致性场景与内部测试通过；Vulkan 19 个
+  SPIR-V 变体重编并通过 spirv-val 校验（shape/shadow 字节不变证明重构等
+  价；textured.frag.spv 顺带修复既有的源码-产物漂移）。
+
 ### 2026-08-30 Input 聚焦边框局部重绘残留修复
 
 - 症状：文本输入框聚焦瞬间边框宽度不一致——上边 2px、其余三边 1px。真窗

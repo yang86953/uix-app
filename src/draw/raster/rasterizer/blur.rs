@@ -16,6 +16,48 @@ use std::sync::Arc;
 const MAX_BLUR_RADIUS: f32 = 256.0;
 const MAX_CACHED_KERNELS: usize = 32;
 
+/// 一维高斯核——CPU 像素卷积与 GPU blur uniform 的唯一共享数学。
+pub(crate) struct GaussianWeights {
+    /// 归一化后的核权重，长度为 `2 * tap_radius + 1`。
+    pub(crate) weights: Vec<f32>,
+    /// 核中心两侧的 tap 半径。
+    pub(crate) tap_radius: u32,
+}
+
+/// 以 `sigma = radius / 3` 构造归一化一维高斯核（`tap_radius = radius.ceil()`，
+/// 上限 `max_tap_radius`）。
+///
+/// 半径非有限、小于 `0.5` 或核退化时返回 `None`；no-op 与 typed error
+/// 语义由调用方按各自边界决定。
+pub(crate) fn gaussian_weights(radius: f32, max_tap_radius: u32) -> Option<GaussianWeights> {
+    if !radius.is_finite() || radius < 0.5 {
+        return None;
+    }
+    let sigma = radius / 3.0;
+    if !sigma.is_finite() || sigma <= 0.0 {
+        return None;
+    }
+    let tap_radius = (radius.ceil() as u32).min(max_tap_radius);
+    let tap_count = (2 * tap_radius + 1) as usize;
+    let sigma2 = -(1.0 / (2.0 * sigma * sigma));
+    let mut weights = Vec::with_capacity(tap_count);
+    let mut total = 0.0_f32;
+    for index in 0..tap_count {
+        let distance = index as f32 - tap_radius as f32;
+        let weight = (distance * distance * sigma2).exp();
+        weights.push(weight);
+        total += weight;
+    }
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    let inv_total = 1.0 / total;
+    for weight in &mut weights {
+        *weight *= inv_total;
+    }
+    Some(GaussianWeights { weights, tap_radius })
+}
+
 thread_local! {
     /// 小型 LRU：key 使用规范化半径的完整位编码，避免小数半径错误复用。
     #[allow(
@@ -36,24 +78,12 @@ fn gaussian_kernel(radius: f32) -> Arc<[f32]> {
             }
         }
 
-        let sigma = radius / 3.0;
-        let kernel_radius = radius.ceil() as usize;
-        let kernel_size = kernel_radius * 2 + 1;
-        let sigma2 = -(1.0 / (2.0 * sigma * sigma));
-        let mut kernel = Vec::with_capacity(kernel_size);
-        let mut total = 0.0_f32;
-        for index in 0..kernel_size {
-            let x = (index as i64 - kernel_radius as i64) as f32;
-            let weight = (x * x * sigma2).exp();
-            kernel.push(weight);
-            total += weight;
-        }
-        let inv_total = 1.0 / total;
-        for weight in &mut kernel {
-            *weight *= inv_total;
-        }
+        // 调用方 gaussian_blur 已拒绝无效半径，此处不会出现空核。
+        let weights = gaussian_weights(radius, MAX_BLUR_RADIUS as u32)
+            .map(|kernel| kernel.weights)
+            .unwrap_or_default();
 
-        let kernel = Arc::<[f32]>::from(kernel);
+        let kernel = Arc::<[f32]>::from(weights);
         if cache.len() == MAX_CACHED_KERNELS {
             cache.pop_front();
         }
@@ -109,8 +139,9 @@ pub(crate) fn gaussian_blur(pixels: &mut [u32], width: i32, height: i32, rect: R
     }
 
     let radius = radius.min(MAX_BLUR_RADIUS);
-    let kernel_radius = radius.ceil() as i64;
     let kernel = gaussian_kernel(radius);
+    // 核半径直接由共享核长度推导，保证采样循环与权重一一对应。
+    let kernel_radius = (kernel.len() as i64 - 1) / 2;
 
     let stride = width;
     let rw = x1 - x0;

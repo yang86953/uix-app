@@ -26,6 +26,9 @@ impl SoftwareRasterizer {
         };
         let c = self.apply_opa(Self::premul(color));
         let has_transform = !Self::is_identity(&self.transform);
+        // 半径规范化每 draw call 一次，与 GPU shape/path lowering 同一 CSS 式规则。
+        let radius =
+            radius.map(|rad| super::rasterizer::core::normalize_corner_radius(rect.w, rect.h, rad));
 
         if has_transform {
             let bounds = self.transform_rect(&rect);

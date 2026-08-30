@@ -32,6 +32,10 @@ pub(crate) use execution::{RhiRendererFrame, RhiRendererPass};
 #[path = "rhi_renderer_coverage.rs"]
 mod coverage;
 
+// 将 R8 与 RGBA8 字形 atlas 共用的内容键与 shelf 分配器拆到独立文件。
+#[path = "rhi_renderer_glyph_atlas.rs"]
+mod glyph_atlas;
+
 // 将圆角/描边矩形 lowering 拆到独立文件，保持 renderer 主文件边界清晰。
 #[path = "rhi_renderer_shape.rs"]
 mod shape;
@@ -310,13 +314,13 @@ pub(crate) struct RhiRenderer {
     // 缓存点采样 sampler，保持 R8 glyph coverage 的旧像素语义。
     coverage_sampler: Option<SamplerHandle>,
     // 保存跨帧复用的 R8 coverage atlas pages 与字形 placement。
-    coverage_atlas_pages: Vec<coverage::CoverageAtlasPage>,
+    coverage_atlas_pages: Vec<glyph_atlas::GlyphAtlasPage>,
     // 保存 coverage 内容索引，避免页面切换时逐字形创建和上传纹理。
     coverage_atlas_cache:
-        std::collections::HashMap<coverage::CoverageCacheKey, coverage::CoverageAtlasEntry>,
+        std::collections::HashMap<glyph_atlas::GlyphAtlasKey, coverage::CoverageAtlasEntry>,
     // 保存仍由 atlas 条目持有的不可变 coverage 身份，稳态命中时避免重复扫描像素。
     coverage_atlas_identity_cache:
-        std::collections::HashMap<coverage::CoverageIdentityKey, coverage::CoverageCacheKey>,
+        std::collections::HashMap<coverage::CoverageIdentityKey, glyph_atlas::GlyphAtlasKey>,
     // 缓存 MSDF 字形 pipeline。
     msdf_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存 MSDF 字形常量 uniform buffer。
@@ -324,9 +328,9 @@ pub(crate) struct RhiRenderer {
     // 缓存 MSDF 字形的线性 clamp sampler。
     msdf_sampler: Option<SamplerHandle>,
     // 保存跨帧复用的 MSDF RGBA8 atlas pages 与字形 placement。
-    msdf_atlas_pages: Vec<msdf::MsdfAtlasPage>,
+    msdf_atlas_pages: Vec<glyph_atlas::GlyphAtlasPage>,
     // 保存 MSDF atlas 的内容索引，避免每帧重复创建和上传字形纹理。
-    msdf_atlas_cache: std::collections::HashMap<msdf::MsdfCacheKey, msdf::MsdfAtlasEntry>,
+    msdf_atlas_cache: std::collections::HashMap<glyph_atlas::GlyphAtlasKey, msdf::MsdfAtlasEntry>,
     // 缓存渐变 pipeline。
     gradient_pipeline: Option<crate::platform::presentation::rhi::PipelineBinding>,
     // 缓存单位 quad vertex buffer。

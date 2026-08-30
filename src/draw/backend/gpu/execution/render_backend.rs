@@ -215,18 +215,7 @@ impl RenderBackend for GpuBackend {
                 TextureFormat::Bgra8Unorm,
                 // RHI DeviceLost/OOM 等错误必须保持原分类。
             ))?;
-        let id = if let Some(id) = self.free_offscreen_ids.pop() {
-            id
-        } else {
-            let id = self.next_offscreen_id;
-            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
-            id
-        };
-        let idx = id as usize;
-        while self.offscreens.len() <= idx {
-            self.offscreens.push(None);
-        }
-        self.offscreens[idx] = Some(NativeGpuOffscreen {
+        let id = self.offscreens.insert(NativeGpuOffscreen {
             // Picture slot 只保存这一份 RHI 纹理身份。
             rhi_texture,
             // Picture 与主 surface 共用 GPU-only 语义，不得复活 hybrid soft upload owner。
@@ -239,8 +228,7 @@ impl RenderBackend for GpuBackend {
     }
 
     fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
-        let idx = handle.0 as usize;
-        let Some(Some(off)) = self.offscreens.get(idx) else {
+        let Some(off) = self.offscreens.get(handle.0) else {
             return Ok(());
         };
         // 复制唯一 RHI 纹理身份，释放 slot 借用后进入 owner context。
@@ -248,24 +236,24 @@ impl RenderBackend for GpuBackend {
         // 离屏纹理必须仍由同一 owner-thread context 管理。
         // 已验证 owner 丢失时直接返回 typed 状态错误。
         let context = self.gpu_ctx.rhi_device()?;
-        // 只有 RHI 销毁成功后才释放 backend 槽位。
+        // 只有 RHI 销毁成功后才释放 backend 槽位；销毁失败时槽位保持占用，
+        // 资源仍可由后续恢复或 shutdown 重试回收。
         context.destroy_texture(rhi_texture)?;
-        // 清除已完成资源回收的 Picture slot。
-        self.offscreens[idx] = None;
+        let Some(_) = self.offscreens.remove(handle.0) else {
+            // RHI 销毁与槽位释放之间不存在其他变更者，此处为防御性不可达。
+            return Ok(());
+        };
         if self.active_offscreen == Some(handle.0) {
             self.active_offscreen = None;
             self.offscreen_flush_committed = false;
         }
-        self.free_offscreen_ids.push(handle.0);
         self.compact_offscreen_slots();
         Ok(())
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
-        let idx = handle.0 as usize;
         self.offscreens
-            .get_mut(idx)?
-            .as_mut()
+            .get_mut(handle.0)
             .map(|o| &mut o.canvas as &mut dyn Canvas2D)
     }
 
@@ -282,8 +270,7 @@ impl RenderBackend for GpuBackend {
         }
         let target = self
             .offscreens
-            .get(handle.0 as usize)
-            .and_then(Option::as_ref)
+            .get(handle.0)
             .ok_or_else(|| {
                 Error::new(
                     Errc::InvalidState,
@@ -329,7 +316,7 @@ impl RenderBackend for GpuBackend {
             "Picture FrameEncoder cannot be lowered losslessly to the RHI texture",
         )?;
         // 只有整条 encoder RHI 提交成功才消费 Picture staging 状态。
-        if let Some(Some(offscreen)) = self.offscreens.get_mut(handle.0 as usize) {
+        if let Some(offscreen) = self.offscreens.get_mut(handle.0) {
             // 让 Canvas2D 基线与已提交到纹理的内容保持一致。
             offscreen.canvas.commit_presented_frame();
         }
@@ -425,14 +412,13 @@ impl RenderBackend for GpuBackend {
 
     fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         self.offscreen_flush_committed = false;
-        let idx = handle.0 as usize;
-        let Some(Some(_off)) = self.offscreens.get(idx) else {
+        if self.offscreens.get(handle.0).is_none() {
             return Err(Error::new(
                 Errc::InvalidState,
                 "Picture offscreen target does not exist",
             ));
-        };
-        if let Some(Some(off)) = self.offscreens.get_mut(idx) {
+        }
+        if let Some(off) = self.offscreens.get_mut(handle.0) {
             off.canvas.reset_for_repaint();
         }
         self.active_offscreen = Some(handle.0);
@@ -443,11 +429,9 @@ impl RenderBackend for GpuBackend {
         if self.active_offscreen == Some(handle.0) {
             self.offscreen_flush_committed = false;
         }
-        let idx = handle.0 as usize;
         let off = self
             .offscreens
-            .get_mut(idx)
-            .and_then(Option::as_mut)
+            .get_mut(handle.0)
             .ok_or_else(|| {
                 Error::new(
                     Errc::InvalidState,
@@ -583,10 +567,8 @@ impl RenderBackend for GpuBackend {
         if self.offscreen_flush_committed {
             // 定位刚刚结束的 Picture slot。
             if let Some(offscreen) = active
-                // 把稳定句柄转换为槽位索引。
-                .and_then(|id| self.offscreens.get_mut(id as usize))
                 // 忽略已被显式销毁的空槽位。
-                .and_then(Option::as_mut)
+                .and_then(|id| self.offscreens.get_mut(id))
             {
                 // 释放已由 RHI 消费的 Picture staging。
                 offscreen.canvas.release_committed_picture_staging();
@@ -606,8 +588,7 @@ impl RenderBackend for GpuBackend {
         src_rect: Rect,
         dst_rect: Rect,
     ) -> Result<(), Error> {
-        let idx = handle.0 as usize;
-        let Some(Some(off)) = self.offscreens.get(idx) else {
+        let Some(off) = self.offscreens.get(handle.0) else {
             return Err(Error::new(
                 Errc::InvalidState,
                 "Picture offscreen target does not exist before blit",
@@ -619,8 +600,7 @@ impl RenderBackend for GpuBackend {
         let source_height = off.height;
         let opacity = if let Some(active) = self.active_offscreen {
             self.offscreens
-                .get(active as usize)
-                .and_then(|slot| slot.as_ref())
+                .get(active)
                 .map(|slot| slot.canvas.opacity())
                 .unwrap_or(1.0)
         } else {
@@ -628,8 +608,7 @@ impl RenderBackend for GpuBackend {
         };
         let additive = if let Some(active) = self.active_offscreen {
             self.offscreens
-                .get(active as usize)
-                .and_then(|slot| slot.as_ref())
+                .get(active)
                 .map(|slot| matches!(slot.canvas.current_blend_mode(), BlendMode::Additive))
                 .unwrap_or(false)
         } else {
@@ -708,8 +687,7 @@ impl RenderBackend for GpuBackend {
         if !radius.is_finite() || radius < 0.5 {
             return Ok(());
         }
-        let idx = handle.0 as usize;
-        let Some(Some(off)) = self.offscreens.get(idx) else {
+        let Some(off) = self.offscreens.get(handle.0) else {
             return Err(Error::new(
                 Errc::InvalidState,
                 "Picture offscreen target does not exist before blur",

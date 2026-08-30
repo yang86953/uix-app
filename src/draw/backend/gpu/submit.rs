@@ -144,8 +144,15 @@ fn scale_rhi_corners(corners: [[f32; 2]; 4], scale_x: f32, scale_y: f32) -> Opti
     Some(scaled)
 }
 
-// 按旧 queue 的几何平均规则把逻辑圆角半径降低到物理 RHI 空间。
-fn scale_rhi_shape_radius(radius: [f32; 4], scale_x: f32, scale_y: f32) -> Option<[f32; 4]> {
+// 按旧 queue 的几何平均规则把逻辑圆角半径降低到物理 RHI 空间，并应用与
+// CPU SDF 同源的 CSS 式半径规范化，保证超半径输入在两个媒体同一轮廓。
+fn scale_rhi_shape_radius(
+    radius: [f32; 4],
+    scale_x: f32,
+    scale_y: f32,
+    extent_w: f32,
+    extent_h: f32,
+) -> Option<[f32; 4]> {
     // 各向异性缩放下沿用旧 SDF 的等效圆角半径定义。
     let scale = (scale_x.abs() * scale_y.abs()).sqrt();
     // 缩放因子必须是可表示的正有限值。
@@ -170,8 +177,12 @@ fn scale_rhi_shape_radius(radius: [f32; 4], scale_x: f32, scale_y: f32) -> Optio
             return None;
         }
     }
+    // 物理空间 CSS 式规范化，超半径输入与 CPU 光栅化保持同一轮廓。
+    let (tl, tr, br, bl) = crate::draw::raster::rasterizer::core::normalize_corner_radii(
+        extent_w, extent_h, scaled[0], scaled[1], scaled[2], scaled[3],
+    );
     // 返回物理空间圆角半径。
-    Some(scaled)
+    Some([tl, tr, br, bl])
 }
 
 impl NativeGpuCanvas2D {
@@ -301,7 +312,7 @@ impl NativeGpuCanvas2D {
                         return Ok(false);
                     }
                     let value = rect.rect;
-                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y)
+                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y, value.w * scale_x, value.h * scale_y)
                     else {
                         // 异常半径交回兼容路径。
                         return Ok(false);
@@ -325,7 +336,7 @@ impl NativeGpuCanvas2D {
                         return Ok(false);
                     }
                     let value = rect.rect;
-                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y)
+                    let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y, value.w * scale_x, value.h * scale_y)
                     else {
                         // 异常半径交回兼容路径。
                         return Ok(false);
@@ -408,7 +419,7 @@ impl NativeGpuCanvas2D {
             };
             // 把旧 queue 已完成的 body/offset/blur/radius 统一转换为物理空间。
             let value = shadow.shadow;
-            let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y) else {
+            let Some(radius) = scale_rhi_shape_radius(value.radius, scale_x, scale_y, value.w * scale_x, value.h * scale_y) else {
                 // 异常半径交回兼容路径。
                 return Ok(false);
             };

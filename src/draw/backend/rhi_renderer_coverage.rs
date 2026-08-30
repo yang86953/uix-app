@@ -15,17 +15,12 @@ use crate::platform::presentation::rhi::{
 use super::{
     FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiRenderer,
 };
+// 复用 R8 与 MSDF 共用的 atlas 内容键、placement 与 shelf 分配器。
+use super::glyph_atlas::{self, GlyphAtlasKey, GlyphAtlasPage, GlyphAtlasPlacement};
 
 // R8 atlas 使用四张 1024² 页面，固定在 4 MiB 预算内。
 const COVERAGE_ATLAS_PAGE_SIZE: u32 = 1024;
 const COVERAGE_ATLAS_MAX_PAGES: usize = 4;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(super) struct CoverageCacheKey {
-    hash: u64,
-    pixel_w: u32,
-    pixel_h: u32,
-}
 
 // 标识一份仍由 atlas 条目持有的不可变 coverage 载荷。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,24 +35,10 @@ pub(super) struct CoverageIdentityKey {
     pixel_h: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CoverageAtlasPlacement {
-    page: usize,
-    uv: [f32; 4],
-}
-
-#[derive(Debug)]
-pub(super) struct CoverageAtlasPage {
-    pub(super) texture: TextureHandle,
-    cursor_x: u32,
-    cursor_y: u32,
-    row_height: u32,
-}
-
 #[derive(Debug)]
 pub(super) struct CoverageAtlasEntry {
     coverage: Arc<[u8]>,
-    placement: CoverageAtlasPlacement,
+    placement: GlyphAtlasPlacement,
 }
 
 // 为 coverage shader 创建或复用 R8 专用的 pipeline、buffer 和 sampler。
@@ -98,17 +79,6 @@ impl RhiRenderer {
         };
         // 返回 coverage draw 所需的固定资源。
         Ok((pipeline, vertex_buffer, uniform_buffer, sampler))
-    }
-
-    // 把单通道 coverage 编码为紧密 R8 上传载荷。
-    pub(super) fn encode_coverage(values: &[u8]) -> Arc<[u8]> {
-        // 保持 coverage 原始字节值，不进行颜色或 alpha 转换。
-        Arc::from(values.to_vec())
-    }
-
-    // 生成 position/uv/color float8 的两个三角形。
-    pub(super) fn coverage_quad_vertices(quad: &RhiCoverageQuad) -> [f32; 48] {
-        Self::coverage_quad_vertices_with_uv(quad, [0.0, 0.0, 1.0, 1.0])
     }
 
     // 生成带 atlas placement UV 的 position/uv/color float8 顶点。
@@ -179,8 +149,7 @@ impl RhiRenderer {
     ) -> crate::core::Result<(TextureHandle, [f32; 4], bool)> {
         let identity = Self::coverage_identity_key(quad);
         // 上游字形缓存跨帧复用同一不可变 Arc 时，直接恢复既有内容键。
-        if let Some(key) = self.coverage_atlas_identity_cache.get(&identity).copied() {
-            if let Some(entry) = self.coverage_atlas_cache.get(&key) {
+        if let Some(key) = self.coverage_atlas_identity_cache.get(&identity).copied() {            if let Some(entry) = self.coverage_atlas_cache.get(&key) {
                 // 身份索引只能命中仍由主条目持有的同一 Arc，避免地址复用误判。
                 if Arc::ptr_eq(&entry.coverage, &quad.coverage) {
                     let page = self
@@ -228,24 +197,25 @@ impl RhiRenderer {
         let mut packed = None;
         let mut created_page = false;
         for (page_index, page) in self.coverage_atlas_pages.iter_mut().enumerate() {
-            if let Some((x, y)) = Self::pack_coverage_slot(page, quad.pixel_w, quad.pixel_h) {
+            if let Some((x, y)) = page.pack(COVERAGE_ATLAS_PAGE_SIZE, quad.pixel_w, quad.pixel_h) {
                 packed = Some((page_index, x, y));
                 break;
             }
         }
         if packed.is_none() && self.coverage_atlas_pages.len() < COVERAGE_ATLAS_MAX_PAGES {
-            self.coverage_atlas_pages
-                .push(Self::create_coverage_atlas_page(device)?);
+            self.coverage_atlas_pages.push(GlyphAtlasPage::create(
+                device,
+                COVERAGE_ATLAS_PAGE_SIZE,
+                TextureFormat::R8Unorm,
+            )?);
             created_page = true;
             let page_index = self.coverage_atlas_pages.len() - 1;
-            packed = Self::pack_coverage_slot(
-                self.coverage_atlas_pages
-                    .last_mut()
-                    .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage atlas page missing"))?,
-                quad.pixel_w,
-                quad.pixel_h,
-            )
-            .map(|(x, y)| (page_index, x, y));
+            packed = self
+                .coverage_atlas_pages
+                .last_mut()
+                .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage atlas page missing"))?
+                .pack(COVERAGE_ATLAS_PAGE_SIZE, quad.pixel_w, quad.pixel_h)
+                .map(|(x, y)| (page_index, x, y));
         }
         let Some((page_index, slot_x, slot_y)) = packed else {
             return Self::create_transient_coverage_texture(device, quad);
@@ -268,7 +238,7 @@ impl RhiRenderer {
             return Err(error);
         }
         let inverse = 1.0 / COVERAGE_ATLAS_PAGE_SIZE as f32;
-        let placement = CoverageAtlasPlacement {
+        let placement = GlyphAtlasPlacement {
             page: page_index,
             uv: [
                 slot_x as f32 * inverse,
@@ -299,54 +269,12 @@ impl RhiRenderer {
         }
     }
 
-    fn coverage_cache_key(quad: &RhiCoverageQuad) -> CoverageCacheKey {
-        let mut hash = 14_695_981_039_346_656_037_u64;
+    fn coverage_cache_key(quad: &RhiCoverageQuad) -> GlyphAtlasKey {
+        let mut hash = glyph_atlas::FNV1A_OFFSET;
         for byte in quad.coverage.iter() {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(1_099_511_628_211_u64);
+            hash = glyph_atlas::fnv1a_mix(hash, u64::from(*byte));
         }
-        hash ^= u64::from(quad.pixel_w);
-        hash = hash.wrapping_mul(1_099_511_628_211_u64);
-        hash ^= u64::from(quad.pixel_h);
-        CoverageCacheKey {
-            hash,
-            pixel_w: quad.pixel_w,
-            pixel_h: quad.pixel_h,
-        }
-    }
-
-    fn create_coverage_atlas_page(
-        device: &mut dyn GraphicsDevice,
-    ) -> crate::core::Result<CoverageAtlasPage> {
-        let texture = device.create_texture(TextureDesc::new(
-            RhiExtent::new(COVERAGE_ATLAS_PAGE_SIZE, COVERAGE_ATLAS_PAGE_SIZE),
-            TextureFormat::R8Unorm,
-        ))?;
-        Ok(CoverageAtlasPage {
-            texture,
-            cursor_x: 0,
-            cursor_y: 0,
-            row_height: 0,
-        })
-    }
-
-    fn pack_coverage_slot(
-        page: &mut CoverageAtlasPage,
-        width: u32,
-        height: u32,
-    ) -> Option<(u32, u32)> {
-        if page.cursor_x.saturating_add(width) > COVERAGE_ATLAS_PAGE_SIZE {
-            page.cursor_x = 0;
-            page.cursor_y = page.cursor_y.saturating_add(page.row_height);
-            page.row_height = 0;
-        }
-        if page.cursor_y.saturating_add(height) > COVERAGE_ATLAS_PAGE_SIZE {
-            return None;
-        }
-        let position = (page.cursor_x, page.cursor_y);
-        page.cursor_x = page.cursor_x.saturating_add(width);
-        page.row_height = page.row_height.max(height);
-        Some(position)
+        GlyphAtlasKey::finish(hash, quad.pixel_w, quad.pixel_h)
     }
 
     fn create_transient_coverage_texture(
@@ -456,51 +384,24 @@ impl RhiRenderer {
             .ok_or_else(|| super::rhi_invalid("RhiRenderer coverage vertex capacity overflows"))?;
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
             self.ensure_coverage_resources(frame.device(), vertex_bytes)?;
-        // 为本次帧逐项创建、上传并记录临时 R8 texture。
-        let mut textures = Vec::with_capacity(quads.len());
+        // 与 mixed lowering 消费同一条跨帧 atlas 缓存；只有 atlas 满载或
+        // 超大字形才回退到本帧临时纹理，帧末只销毁临时资源。
+        let mut transient_textures = Vec::new();
+        let mut bindings = Vec::with_capacity(quads.len());
         for quad in quads {
-            // 创建只含 shader resource view 的 R8 coverage texture。
-            let texture = match frame.device().create_texture(TextureDesc::new(
-                // coverage 资源采用字形实际像素范围。
-                RhiExtent::new(quad.pixel_w, quad.pixel_h),
-                // coverage 使用单通道 R8 格式。
-                TextureFormat::R8Unorm,
-            )) {
-                // 资源成功创建后进入统一清理列表。
-                Ok(texture) => texture,
-                // 创建失败时先释放已创建资源，再返回原始错误。
-                Err(error) => {
-                    let _ = Self::destroy_textures(frame.device(), &textures);
-                    return Err(error);
-                }
-            };
-            // 上传紧密的 R8 coverage 字节。
-            let upload = Self::encode_coverage(quad.coverage.as_ref());
-            // 资源上传失败时不能把半成品 texture 留在 adapter。
-            if let Err(error) = frame.device().update_texture(RhiTextureUpload::full(
-                // 更新刚由同一 Device 创建的 coverage 纹理。
-                texture,
-                // 上传范围使用 coverage 的物理像素尺寸。
-                RhiExtent::new(quad.pixel_w, quad.pixel_h),
-                // 保留单通道 coverage 载荷。
-                &upload,
-            )) {
-                // 把当前失败资源加入清理列表。
-                textures.push(texture);
-                // 尝试释放所有已经创建的 coverage 资源。
-                let _ = Self::destroy_textures(frame.device(), &textures);
-                // 保留上传失败的真实错误。
-                return Err(error);
+            let (texture, uv, owned) = self.ensure_coverage_texture(frame.device(), quad)?;
+            // atlas page 由 renderer 跨帧持有；临时纹理在帧末统一检查式销毁。
+            if !owned {
+                transient_textures.push(texture);
             }
-            // 记录上传完成且可以进入 FramePlan 的 coverage texture。
-            textures.push(texture);
+            bindings.push((texture, uv));
         }
         // 创建不携带 target/load 的 coverage pass 命令包。
         let mut pass = frame.new_pass();
         // 每个 glyph 以独立 texture binding 和 scissor 保留 painter order。
-        for (quad, texture) in quads.iter().zip(textures.iter().copied()) {
-            // 生成当前 glyph 的顶点数据。
-            let vertices = Self::coverage_quad_vertices(quad);
+        for (quad, (texture, uv)) in quads.iter().zip(bindings.iter().copied()) {
+            // 生成带 atlas placement UV 的顶点数据。
+            let vertices = Self::coverage_quad_vertices_with_uv(quad, uv);
             // 上传当前 glyph 的类型化 float8 顶点数据。
             pass.push(FramePlanCommand::UploadVertex {
                 buffer: vertex_buffer,
@@ -529,8 +430,8 @@ impl RhiRenderer {
         frame.push_pass(load, pass);
         // 封闭帧决定最终 Surface present 或 Offscreen submit。
         let execution = frame.execute();
-        // 计划结束后释放本次 glyph 的临时 texture。
-        let cleanup = Self::destroy_textures(frame.device(), &textures);
+        // 计划结束后只释放本帧临时 texture；atlas page 保持跨帧复用。
+        let cleanup = Self::destroy_textures(frame.device(), &transient_textures);
         // 优先返回绘制或 present 失败；否则报告资源清理失败。
         match (execution, cleanup) {
             // 计划失败时保留原始执行错误。

@@ -36,6 +36,7 @@ use std::time::Instant;
 
 use crate::core::{Error, PresentDamageTracker, PresentSurface};
 use crate::draw::backend::rhi_renderer::RhiRenderer;
+use crate::draw::backend::slot_pool::SlotPool;
 // test-harness 与 Agent 截屏在 backend 内暂存最终合成后的规范像素结果。
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::SurfaceReadback;
@@ -53,9 +54,7 @@ pub struct GpuBackend {
     pub(crate) height: i32,
     pub(crate) surface: NativeGpuDrawSurface,
     // 离屏槽位只供 GPU backend 自身及其子模块访问，和元素类型保持同级可见性。
-    pub(super) offscreens: Vec<Option<NativeGpuOffscreen>>,
-    pub(crate) free_offscreen_ids: Vec<u32>,
-    next_offscreen_id: u32,
+    pub(super) offscreens: SlotPool<NativeGpuOffscreen>,
     /// Picture paint currently targeting this offscreen handle id.
     pub(crate) active_offscreen: Option<u32>,
     /// RHI Picture target 是否已经执行过首个 Clear pass。

@@ -179,40 +179,19 @@ impl RhiRenderer {
         let geometry = RhiBlurPassGeometry::new(extent, physical_region, extent, physical_region)?;
         // scissor 只从已验证目标区域机械投影。
         let region = geometry.destination_scissor();
-        // 计算与 legacy blur 相同的 sigma 和最多 63 taps。
-        let sigma = radius / 3.0;
-        let tap_radius = (sigma * 3.0).ceil().min(31.0) as i32;
-        // 小半径不需要进入两个 GPU pass。
-        if tap_radius < 1 || !sigma.is_finite() || sigma <= 0.0 {
-            // 保持小半径的稳定 no-op 语义。
+        // 唯一共享高斯核：与 CPU 像素卷积同源同 sigma 语义，最多 63 taps。
+        let Some(kernel) = crate::draw::raster::rasterizer::blur::gaussian_weights(radius, 31)
+        else {
+            // 小半径或退化核保持稳定 no-op 语义。
             return Ok(());
-        }
-        // 构造归一化的一维高斯核，未使用槽位保持零终止。
+        };
+        debug_assert!(kernel.weights.len() <= BLUR_WEIGHT_COUNT);
+        // 构造未使用槽位零终止的完整权重槽。
         let mut weights = [0.0f32; BLUR_WEIGHT_COUNT];
-        let tap_count = (2 * tap_radius + 1) as usize;
-        let mut sum = 0.0f32;
-        // 只遍历有效核槽位，并同时保留中心距离所需的索引。
-        for (index, weight) in weights.iter_mut().enumerate().take(tap_count) {
-            // 计算当前 tap 相对中心的距离。
-            let distance = index as f32 - tap_radius as f32;
-            // 保存未归一化的高斯权重。
-            *weight = (-distance * distance / (2.0 * sigma * sigma)).exp();
-            // 累加归一化因子。
-            sum += *weight;
+        for (slot, weight) in kernel.weights.iter().enumerate() {
+            weights[slot] = *weight;
         }
-        // 极端浮点参数不能继续生成 shader uniform。
-        if !sum.is_finite() || sum <= 0.0 {
-            // 返回稳定的参数错误而不是上传 NaN。
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                "RHI blur gaussian weights are invalid",
-            ));
-        }
-        // 归一化当前使用的 taps。
-        for weight in weights.iter_mut().take(tap_count) {
-            // 保持所有 pass 的颜色能量一致。
-            *weight /= sum;
-        }
+        let tap_radius = kernel.tap_radius;
         // 准备通用 blur 资源，失败时不创建临时纹理。
         let (pipeline, vertex_buffer, uniform_buffer, sampler) =
             self.ensure_blur_resources(device)?;
@@ -241,7 +220,7 @@ impl RhiRenderer {
             data: FrameUniformPayload::Blur(blur_uniform(
                 geometry,
                 RhiBlurDirection::Horizontal,
-                tap_radius as u32,
+                tap_radius,
                 &weights,
             )),
         });
@@ -273,7 +252,7 @@ impl RhiRenderer {
             data: FrameUniformPayload::Blur(blur_uniform(
                 geometry,
                 RhiBlurDirection::Vertical,
-                tap_radius as u32,
+                tap_radius,
                 &weights,
             )),
         });

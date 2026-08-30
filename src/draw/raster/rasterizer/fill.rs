@@ -9,7 +9,7 @@ use crate::draw::geometry::types::Radius;
 
 use super::{
     align_rounded_rect, clip_to_int, color_to_premul, fill_rect_raw, fill_span, intersect_rect,
-    put_pixel_aa, rect_to_pixels, rounded_rect_sdf, sdf_to_coverage,
+    normalize_corner_radius, put_pixel_aa, rect_to_pixels, rounded_rect_sdf, sdf_to_coverage,
 };
 
 /// 纯函数：填充矩形，可选圆角。
@@ -25,6 +25,8 @@ pub fn fill_rect(
 ) {
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
     let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
+    // 参考路径与生产路径消费同一 CSS 式半径规范化规则。
+    let radius = radius.map(|rad| normalize_corner_radius(rect.w, rect.h, rad));
 
     if let Some(rad) = radius {
         if rad.tl != 0.0 || rad.tr != 0.0 || rad.bl != 0.0 || rad.br != 0.0 {

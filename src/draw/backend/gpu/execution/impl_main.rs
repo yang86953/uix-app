@@ -16,6 +16,7 @@ use crate::draw::backend::contract::RenderBackend;
 // 测试读回与 Agent 截屏只返回 Drawing 层的 API 无关快照。
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
 use crate::draw::backend::contract::SurfaceReadback;
+use crate::draw::backend::slot_pool::SlotPool;
 use crate::draw::geometry::types::ImageHandle;
 // 使用薄 RHI 的设备维护入口承接每帧 owner-context 准备。
 use crate::platform::presentation::rhi::GraphicsDevice;
@@ -139,9 +140,7 @@ impl GpuBackend {
             width: logical_w,
             height: logical_h,
             shutdown: false,
-            offscreens: Vec::new(),
-            free_offscreen_ids: Vec::new(),
-            next_offscreen_id: 0,
+            offscreens: SlotPool::new(),
             active_offscreen: None,
             offscreen_rhi_initialized: false,
             offscreen_flush_committed: false,
@@ -248,26 +247,18 @@ impl GpuBackend {
         self.offscreen_flush_committed = false;
         let handles = self
             .offscreens
-            .iter()
-            .enumerate()
-            .filter_map(|(id, target)| target.as_ref().map(|_| ImageHandle(id as u32)))
+            .occupied_ids()
+            .map(ImageHandle)
             .collect::<Vec<_>>();
         for handle in handles {
             self.try_destroy_offscreen(handle)?;
         }
         self.offscreens.clear();
-        self.free_offscreen_ids.clear();
-        self.next_offscreen_id = 0;
         Ok(())
     }
 
     pub(super) fn compact_offscreen_slots(&mut self) {
-        while self.offscreens.last().is_some_and(Option::is_none) {
-            self.offscreens.pop();
-        }
-        self.free_offscreen_ids
-            .retain(|id| (*id as usize) < self.offscreens.len());
-        self.next_offscreen_id = self.offscreens.len() as u32;
+        self.offscreens.compact();
     }
 
     pub(super) fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
@@ -299,8 +290,7 @@ impl GpuBackend {
         self.surface.canvas.soft_fallback.is_some()
             || self
                 .offscreens
-                .iter()
-                .flatten()
+                .iter_values()
                 .any(|off| off.canvas.soft_fallback.is_some())
     }
 
@@ -325,7 +315,7 @@ impl GpuBackend {
             return;
         }
         self.surface.canvas.release_idle_soft_fallback();
-        for offscreen in self.offscreens.iter_mut().flatten() {
+        for offscreen in self.offscreens.iter_values_mut() {
             offscreen.canvas.release_idle_soft_fallback();
         }
         self.soft_fallback_idle_deadline = None;

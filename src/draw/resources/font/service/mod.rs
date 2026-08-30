@@ -568,11 +568,11 @@ impl FontService {
                 layout.height.max(tb::bounded_font_size(opts.font_size)),
             )
         } else {
-            // 回退到简单度量（无后端字体可用时）：按字符数，非字节
-            let cw = 6.0;
-            let lh = 10.0;
+            // 回退到 BitmapFont 等宽度量（无后端字体可用时）：按字符数，非字节。
+            // 度量从 BitmapFont 读取，禁止在此复制魔数造成双源漂移。
+            let bitmap = crate::draw::resources::font::bitmap_font::BitmapFont::new();
             let len = text.chars().count() as f32;
-            Size::new(len * cw, lh)
+            Size::new(len * bitmap.char_width(), bitmap.line_height())
         }
     }
 

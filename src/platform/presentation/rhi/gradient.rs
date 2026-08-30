@@ -48,8 +48,9 @@ impl RhiGradientRasterParams {
         color_a: [f32; 4],
         // 接收结束 straight-alpha 颜色。
         color_b: [f32; 4],
-        // 接收 mode、方向或径向半径参数。
-        mut params: [f32; 4],
+        // 接收 mode、方向或径向半径参数；线性模式的 params[2]/[3] 由 graphics
+        // lowering 按渐变局部矩形宽高填入，与 CPU `linear_gradient_t` 同源。
+        params: [f32; 4],
     ) -> Self {
         // TL 是单位 quad 仿射映射的唯一物理原点。
         let origin = corners[0];
@@ -67,13 +68,6 @@ impl RhiGradientRasterParams {
             // 保存 Y 边的物理纵向分量。
             corners[3][1] - origin[1],
         ];
-        // 线性模式需要两条仿射边的物理长度保持既有方向插值语义。
-        if params[0] < 0.5 {
-            // 共享层唯一计算 X 边长度，禁止 Adapter 使用不同公式。
-            params[2] = edge_x[0].hypot(edge_x[1]);
-            // 共享层唯一计算 Y 边长度，禁止 Adapter 使用不同公式。
-            params[3] = edge_y[0].hypot(edge_y[1]);
-        }
         // 按固定六个 float4 ABI 构造不可分叉的 Gradient 参数。
         let values = [
             // viewport.width。
@@ -120,9 +114,9 @@ impl RhiGradientRasterParams {
             params[0],
             // params.direction_or_inner_radius。
             params[1],
-            // params.outer_radius_or_edge_x_length。
+            // params.linear_local_width_or_radial_outer_radius。
             params[2],
-            // params.edge_y_length。
+            // params.linear_local_height。
             params[3],
         ];
         // 返回已经冻结的共享 Gradient 值对象。

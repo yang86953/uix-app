@@ -245,7 +245,7 @@ impl GpuBackend {
         // 保持与其他 RHI present 路径相同的 canvas 消费和软资源 aging 语义。
         let mut used_soft = self.surface.canvas.finish_presented_frame();
         // 同一最终 present 后推进 Picture 软回退资源的生命周期。
-        for offscreen in self.offscreens.iter_mut().flatten() {
+        for offscreen in self.offscreens.iter_values_mut() {
             // 任一 Picture 软资源被使用都应保留 backend 级使用标记。
             used_soft |= offscreen.canvas.age_soft_fallback_after_present();
         }
