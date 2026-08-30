@@ -10,5 +10,5 @@ description = "UIX Lang command-line toolchain adapter"
 proc-macro2 = "1"
 quote = "1"
 serde_json = "1"
-syn = { version = "2", features = ["full"] }
+syn = { version = "3", features = ["full"] }
 uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.3" }
