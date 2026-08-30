@@ -1,2 +1,3 @@
 name = "UIX Lang"
+grammar = "uix"
 path_suffixes = ["uix"]
