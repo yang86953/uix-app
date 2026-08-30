@@ -165,6 +165,18 @@ widget! {
         textarea_rows: usize,
         /// 用户输入允许的最大 Unicode 字符数；`None` 表示不限制。
         max_length: Option<usize>,
+        #[snapshot(skip)]
+        /// View DSL 传入的显式宽度；未声明时继续使用组件固有宽度。
+        view_width: Option<f32>,
+        #[snapshot(skip)]
+        /// View DSL 传入的显式高度；未声明时继续使用组件固有高度。
+        view_height: Option<f32>,
+        #[snapshot(skip)]
+        /// View DSL 传入的 Flex 增长因子。
+        view_flex_grow: f32,
+        #[snapshot(skip)]
+        /// View DSL 传入的 Flex 收缩因子。
+        view_flex_shrink: f32,
         pending_change: RefCell<Option<String>>,
         pending_submit: RefCell<Option<String>>,
         /// 清除按钮区域（用于命中检测）。
@@ -183,8 +195,16 @@ widget! {
     text_input_cursor_rect => (&self) -> Rect { self.caret_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let intrinsic = self.intrinsic_size();
+        constraints.clamp(Size::new(
+            self.view_width.unwrap_or(intrinsic.w),
+            self.view_height.unwrap_or(intrinsic.h),
+        ))
     }
+
+    flex_grow => (&self) -> f32 { self.view_flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.view_flex_shrink }
 
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

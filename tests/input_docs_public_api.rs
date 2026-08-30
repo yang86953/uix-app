@@ -199,3 +199,31 @@ fn input_rust_fences_compile_as_external_consumers() {
         ],
     );
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn input_view_width_and_flex_grow_reach_public_layout() {
+    use uix::ui::test_harness::TestApp;
+
+    let app = TestApp::new((320.0, 100.0), || {
+        column((
+            input()
+                .placeholder("固定宽度")
+                .width(180.0)
+                .automation_id("input.fixed"),
+            row((
+                input()
+                    .placeholder("弹性宽度")
+                    .flex_grow(1.0)
+                    .automation_id("input.flex"),
+                space(40.0).width(40.0),
+            )),
+        ))
+    });
+    let snapshot = app.snapshot();
+    let fixed = snapshot.find("input.fixed").expect("固定输入框应存在");
+    let flex = snapshot.find("input.flex").expect("弹性输入框应存在");
+
+    assert!((fixed.frame.w - 180.0).abs() < 0.01);
+    assert!((flex.frame.w - 280.0).abs() < 0.01);
+}

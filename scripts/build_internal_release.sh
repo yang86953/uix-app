@@ -11,7 +11,7 @@ export TZ=UTC
 # 解析脚本所在仓库的规范绝对路径。
 readonly release_repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 # 固定当前内部候选版本。
-readonly release_version="0.0.4"
+readonly release_version="0.0.5"
 # 固定 Linux x64 候选包名称。
 readonly release_artifact_name="uix-${release_version}-internal-linux-x64"
 

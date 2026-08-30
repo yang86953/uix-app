@@ -91,6 +91,10 @@ impl Input {
             textarea: false,
             textarea_rows: 3,
             max_length: None,
+            view_width: None,
+            view_height: None,
+            view_flex_grow: 0.0,
+            view_flex_shrink: 1.0,
             pending_change: RefCell::new(None),
             pending_submit: RefCell::new(None),
             clear_icon_rect: Cell::new(Rect::zero()),
@@ -142,6 +146,30 @@ impl Input {
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
+    }
+    /// 接收 View DSL 的显式尺寸与 Flex 覆盖，保持 Input 的编辑状态归组件私有所有。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+        flex_grow: Option<f32>,
+        flex_shrink: Option<f32>,
+    ) {
+        if let Some(width) = style.width {
+            self.view_width = width.is_finite().then_some(width.max(0.0));
+        }
+        if let Some(height) = style.height {
+            self.view_height = height.is_finite().then_some(height.max(0.0));
+        }
+        if let Some(grow) = flex_grow {
+            self.view_flex_grow = if grow.is_finite() { grow.max(0.0) } else { 0.0 };
+        }
+        if let Some(shrink) = flex_shrink {
+            self.view_flex_shrink = if shrink.is_finite() {
+                shrink.max(0.0)
+            } else {
+                1.0
+            };
+        }
     }
     /// 设置值为空时显示的占位文本。
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
