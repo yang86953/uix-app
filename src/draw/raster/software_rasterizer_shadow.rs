@@ -276,8 +276,9 @@ impl SoftwareRasterizer {
             // 局部高度不受偏移影响。
             rect.h,
         );
-        // 缺省角半径表示直角矩形。
-        let radius = radius.unwrap_or_default();
+        // 缺省角半径表示直角矩形；规范化与 GPU shadow lowering 同一 CSS 式规则。
+        let radius =
+            crate::draw::raster::rasterizer::core::normalize_corner_radius(rect.w, rect.h, radius.unwrap_or_default());
         // identity 下保持旧实现的圆角像素网格对齐。
         if Self::is_identity(&self.transform)
             // 只有实际圆角才需要对齐。

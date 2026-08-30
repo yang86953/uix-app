@@ -5,6 +5,8 @@ pub(crate) mod frame_plan;
 // 显式 GPU parity 通过真实 PaintContext/Canvas2D 入口验收共享 FramePlan。
 #[cfg(feature = "graphics-parity-test")]
 pub(crate) mod production_chain_parity;
+// CPU/GPU 离屏 Picture 池共用的槽位簿记。
+pub(crate) mod slot_pool;
 // 通用 RHI lowering，逐步替代 GPU backend 的逐 UI native submit。
 pub(crate) mod rhi_renderer;
 

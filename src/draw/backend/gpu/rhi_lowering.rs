@@ -101,8 +101,14 @@ fn lower_operation(
         PendingNativeOp::SolidRect(rect) => {
             // 读取已经规整过颜色和圆角的矩形。
             let value = rect.rect;
-            // 把逻辑圆角换算到物理空间。
-            let radius = super::scale_rhi_shape_radius(value.radius, scale_x, scale_y)?;
+            // 把逻辑圆角换算到物理空间并按物理矩形规范化。
+            let radius = super::scale_rhi_shape_radius(
+                value.radius,
+                scale_x,
+                scale_y,
+                value.w * scale_x,
+                value.h * scale_y,
+            )?;
             // 拒绝异常几何或颜色。
             if value.w <= 0.0
                 || value.h <= 0.0
@@ -137,8 +143,14 @@ fn lower_operation(
         PendingNativeOp::StrokeRect(rect) => {
             // 读取已经规整过颜色、半径和线宽的矩形。
             let value = rect.rect;
-            // 把逻辑圆角换算到物理空间。
-            let radius = super::scale_rhi_shape_radius(value.radius, scale_x, scale_y)?;
+            // 把逻辑圆角换算到物理空间并按物理矩形规范化。
+            let radius = super::scale_rhi_shape_radius(
+                value.radius,
+                scale_x,
+                scale_y,
+                value.w * scale_x,
+                value.h * scale_y,
+            )?;
             // 各向异性缩放沿用已有 shader 的等效半径规则。
             let half_stroke = value.line_width * 0.5 * (scale_x * scale_y).sqrt();
             // 拒绝异常几何、颜色或线宽。
@@ -183,8 +195,14 @@ fn lower_operation(
                 // 不把真实四边形错误压平为 AABB。
                 return None;
             }
-            // 把逻辑圆角换算到物理空间。
-            let radius = super::scale_rhi_shape_radius(value.radius, scale_x, scale_y)?;
+            // 把逻辑圆角换算到物理空间并按物理本体矩形规范化。
+            let radius = super::scale_rhi_shape_radius(
+                value.radius,
+                scale_x,
+                scale_y,
+                value.w * scale_x,
+                value.h * scale_y,
+            )?;
             // 分别缩放 blur 和 offset，保留各向异性语义。
             let blur_x = value.blur_x * scale_x.abs();
             let blur_y = value.blur_y * scale_y.abs();
@@ -394,7 +412,9 @@ fn lower_operation(
                 corners,
                 color_a: value.color_a,
                 color_b: value.color_b,
-                params: [0.0, value.dir as f32, 0.0, 0.0],
+                // params[2]/[3] 携带渐变局部矩形宽高，shader 的对角插值与
+                // CPU linear_gradient_t 在任意仿射下同源。
+                params: [0.0, value.dir as f32, value.local_w, value.local_h],
                 scissor: Some(scissor),
             }))
         }

@@ -16,6 +16,48 @@ pub(crate) fn premul(c: u32) -> u32 {
     (a << 24) | (r << 16) | (g << 8) | b
 }
 
+/// CSS 式圆角半径规范化的唯一共享规则：非有限或负半径收敛为 0；相邻角
+/// 半径之和超过对应边长时按最大容许比例统一缩小，保持圆角轮廓不相交。
+///
+/// CPU SDF 填充/描边/阴影与 GPU path tessellation、shape/shadow lowering
+/// 都在各自工作空间按此规则做每 draw call 一次的规范化，超半径输入在
+/// 两个媒体产生同一轮廓。
+pub(crate) fn normalize_corner_radii(
+    width: f32,
+    height: f32,
+    tl: f32,
+    tr: f32,
+    br: f32,
+    bl: f32,
+) -> (f32, f32, f32, f32) {
+    // 异常半径先收敛，避免非有限值污染缩放比例。
+    let finite = |value: f32| if value.is_finite() { value.max(0.0) } else { 0.0 };
+    let tl = finite(tl);
+    let tr = finite(tr);
+    let br = finite(br);
+    let bl = finite(bl);
+    // 按相邻边总长统一缩放，保持不相交的圆角轮廓。
+    let mut factor = 1.0_f32;
+    for (sum, extent) in [
+        (tl + tr, width),
+        (bl + br, width),
+        (tl + bl, height),
+        (tr + br, height),
+    ] {
+        if sum > extent && sum > 0.0 && extent.is_finite() {
+            factor = factor.min((extent / sum).max(0.0));
+        }
+    }
+    (tl * factor, tr * factor, br * factor, bl * factor)
+}
+
+/// 对 [`Radius`] 应用 CSS 式规范化，返回不会相交的圆角半径。
+pub(crate) fn normalize_corner_radius(width: f32, height: f32, radius: Radius) -> Radius {
+    let (tl, tr, br, bl) = normalize_corner_radii(width, height, radius.tl, radius.tr, radius.br, radius.bl);
+    Radius { tl, tr, br, bl }
+}
+
+
 #[inline]
 pub(crate) fn blend_srcover(
     src_a: u32,
@@ -94,6 +136,18 @@ pub(crate) fn color_to_premul(r: u8, g: u8, b: u8, a: u8, opacity: f32) -> u32 {
     let g = (g as u32 * ra / 255).min(255);
     let b = (b as u32 * ra / 255).min(255);
     (ra << 24) | (r << 16) | (g << 8) | b
+}
+
+/// 按 coverage 调制预乘颜色——参考执行与 SharedRasterizer 字形 blit 的
+/// 唯一共享量化规则，保持旧字形路径的整数向下取整。
+#[inline]
+pub(crate) fn modulate_coverage(color: u32, coverage: u8) -> u32 {
+    // 把单字节 coverage 提升到通道乘法宽度。
+    let factor = coverage as u32;
+    // 每个通道独立执行乘法再除以 255。
+    let channel = |shift: u32| ((color >> shift) & 0xff) * factor / 255;
+    // 重新组合预乘 AARRGGBB 像素。
+    (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
 #[inline]

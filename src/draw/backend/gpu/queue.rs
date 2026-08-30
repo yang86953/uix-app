@@ -358,6 +358,10 @@ impl NativeGpuCanvas2D {
                     y: device.y,
                     w: device.w,
                     h: device.h,
+                    // 局部宽高来自变换前的原始渐变矩形，保证对角插值与
+                    // CPU linear_gradient_t 的局部空间公式同源。
+                    local_w: rect.w,
+                    local_h: rect.h,
                     corners,
                     color_a: self.rgba(ca),
                     color_b: self.rgba(cb),

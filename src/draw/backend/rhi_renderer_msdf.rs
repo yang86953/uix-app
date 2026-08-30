@@ -20,38 +20,8 @@ const MSDF_ATLAS_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 const MSDF_ATLAS_MAX_PAGES: usize =
     MSDF_ATLAS_LIMIT_BYTES / (MSDF_ATLAS_PAGE_SIZE as usize * MSDF_ATLAS_PAGE_SIZE as usize * 4);
 
-// 使用边列表内容和源尺寸识别一个可复用的 MSDF texture。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(super) struct MsdfCacheKey {
-    // 保存轮廓边列表的稳定哈希。
-    hash: u64,
-    // 保存源纹理宽度。
-    pixel_w: u32,
-    // 保存源纹理高度。
-    pixel_h: u32,
-}
-
-// 保存一个字形在 atlas 中的页号和归一化 UV。
-#[derive(Debug, Clone, Copy)]
-pub(super) struct MsdfAtlasPlacement {
-    // 保存 atlas page 索引。
-    page: usize,
-    // 保存字形内容的归一化 UV，不包含 gutter。
-    uv: [f32; 4],
-}
-
-// 保存一个可跨帧复用的 RGBA8 atlas page。
-#[derive(Debug)]
-pub(super) struct MsdfAtlasPage {
-    // 保存该 page 的 GPU texture 句柄。
-    pub(super) texture: TextureHandle,
-    // 保存 shelf allocator 的当前横坐标。
-    cursor_x: u32,
-    // 保存 shelf allocator 的当前纵坐标。
-    cursor_y: u32,
-    // 保存当前 shelf 已占用的高度。
-    row_height: u32,
-}
+// 复用 R8 与 MSDF 共用的 atlas 内容键、placement 与 shelf 分配器。
+use super::glyph_atlas::{self, GlyphAtlasKey, GlyphAtlasPage, GlyphAtlasPlacement};
 
 // 保存 atlas placement 及其边列表快照，用于处理哈希碰撞。
 #[derive(Debug)]
@@ -59,7 +29,7 @@ pub(super) struct MsdfAtlasEntry {
     // 保存生成该 placement 的边列表内容。
     edges: Arc<[f32]>,
     // 保存字形在跨帧 atlas 中的物理位置。
-    placement: MsdfAtlasPlacement,
+    placement: GlyphAtlasPlacement,
 }
 
 // 保存一个已经完成 lowering 的 RGBA8 MSDF 字形 quad。
@@ -161,26 +131,16 @@ impl RhiRenderer {
     }
 
     // 根据轮廓边列表生成跨帧 texture cache key。
-    fn msdf_cache_key(quad: &RhiMsdfQuad) -> MsdfCacheKey {
+    fn msdf_cache_key(quad: &RhiMsdfQuad) -> GlyphAtlasKey {
         // 使用 FNV-1a 风格的轻量哈希，避免在热路径复制完整边列表。
-        let mut hash = 14_695_981_039_346_656_037_u64;
+        let mut hash = glyph_atlas::FNV1A_OFFSET;
         // 将每个有限 f32 的 bit pattern 纳入 key，保持 NaN 之外的几何精确区分。
         for edge in quad.edges.iter() {
             // 轮廓验证已在 mixed validation 阶段拒绝非有限边。
-            hash ^= u64::from(edge.to_bits());
-            // 采用 FNV 素数推进哈希状态。
-            hash = hash.wrapping_mul(1_099_511_628_211_u64);
+            hash = glyph_atlas::fnv1a_mix(hash, u64::from(edge.to_bits()));
         }
-        // 把源纹理尺寸也纳入 key，避免不同栅格分辨率复用错误纹理。
-        hash ^= u64::from(quad.pixel_w);
-        hash = hash.wrapping_mul(1_099_511_628_211_u64);
-        hash ^= u64::from(quad.pixel_h);
         // 返回不包含 range 的 key，因为 range 只影响 shader 常量而不影响源纹理。
-        MsdfCacheKey {
-            hash,
-            pixel_w: quad.pixel_w,
-            pixel_h: quad.pixel_h,
-        }
+        GlyphAtlasKey::finish(hash, quad.pixel_w, quad.pixel_h)
     }
 
     // 对比边列表内容，避免极小概率的哈希碰撞造成错误字形复用。
@@ -242,25 +202,23 @@ impl RhiRenderer {
         // 记录本次是否追加了新 page，便于上传失败时只回收半成品。
         let mut created_page = false;
         for (page_index, page) in self.msdf_atlas_pages.iter_mut().enumerate() {
-            if let Some((x, y)) = Self::pack_atlas_slot(page, alloc_width, alloc_height) {
+            if let Some((x, y)) = page.pack(MSDF_ATLAS_PAGE_SIZE, alloc_width, alloc_height) {
                 packed = Some((page_index, x, y));
                 break;
             }
         }
         // 无空槽时按预算创建下一个 page。
         if packed.is_none() && self.msdf_atlas_pages.len() < MSDF_ATLAS_MAX_PAGES {
-            let page = Self::create_msdf_atlas_page(device)?;
+            let page = GlyphAtlasPage::create(device, MSDF_ATLAS_PAGE_SIZE, TextureFormat::Rgba8Unorm)?;
             self.msdf_atlas_pages.push(page);
             created_page = true;
             let page_index = self.msdf_atlas_pages.len() - 1;
-            packed = Self::pack_atlas_slot(
-                self.msdf_atlas_pages
-                    .last_mut()
-                    .ok_or_else(|| super::rhi_invalid("RhiRenderer MSDF atlas page missing"))?,
-                alloc_width,
-                alloc_height,
-            )
-            .map(|(x, y)| (page_index, x, y));
+            packed = self
+                .msdf_atlas_pages
+                .last_mut()
+                .ok_or_else(|| super::rhi_invalid("RhiRenderer MSDF atlas page missing"))?
+                .pack(MSDF_ATLAS_PAGE_SIZE, alloc_width, alloc_height)
+                .map(|(x, y)| (page_index, x, y));
         }
         // 四页均没有空间时仍保证当前绘制可完成，但不继续扩大常驻预算。
         let Some((page_index, slot_x, slot_y)) = packed else {
@@ -294,7 +252,7 @@ impl RhiRenderer {
         }
         // 只把不含 gutter 的内容区域暴露给 shader。
         let inverse = 1.0 / MSDF_ATLAS_PAGE_SIZE as f32;
-        let placement = MsdfAtlasPlacement {
+        let placement = GlyphAtlasPlacement {
             page: page_index,
             uv: [
                 (slot_x + MSDF_ATLAS_GUTTER) as f32 * inverse,
@@ -318,46 +276,6 @@ impl RhiRenderer {
             RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE),
             true,
         ))
-    }
-
-    // 创建固定尺寸的 RGBA8 MSDF atlas page。
-    fn create_msdf_atlas_page(
-        device: &mut dyn GraphicsDevice,
-    ) -> crate::core::Result<MsdfAtlasPage> {
-        // atlas page 只承担 sampled texture，不把字形资源伪装成 render target。
-        let extent = RhiExtent::new(MSDF_ATLAS_PAGE_SIZE, MSDF_ATLAS_PAGE_SIZE);
-        let texture = device.create_texture(TextureDesc::new(
-            // atlas page 使用固定物理尺寸。
-            extent,
-            // atlas page 保存 RGBA8 距离场。
-            TextureFormat::Rgba8Unorm,
-        ))?;
-        // 返回从左上角开始的空 shelf。
-        Ok(MsdfAtlasPage {
-            texture,
-            cursor_x: 0,
-            cursor_y: 0,
-            row_height: 0,
-        })
-    }
-
-    // 在一个 page 上执行带右下 gutter 的 shelf 分配。
-    fn pack_atlas_slot(page: &mut MsdfAtlasPage, width: u32, height: u32) -> Option<(u32, u32)> {
-        // 当前 shelf 放不下时换到下一行。
-        if page.cursor_x.saturating_add(width) > MSDF_ATLAS_PAGE_SIZE {
-            page.cursor_x = 0;
-            page.cursor_y = page.cursor_y.saturating_add(page.row_height);
-            page.row_height = 0;
-        }
-        // page 没有足够的垂直空间时不推进 cursor。
-        if page.cursor_y.saturating_add(height) > MSDF_ATLAS_PAGE_SIZE {
-            return None;
-        }
-        // 保留当前 slot，并让下一项与其保持完整 gutter 间距。
-        let position = (page.cursor_x, page.cursor_y);
-        page.cursor_x = page.cursor_x.saturating_add(width);
-        page.row_height = page.row_height.max(height);
-        Some(position)
     }
 
     // 为字形内容复制四周 gutter，避免 atlas page 内相邻 UV 串色。

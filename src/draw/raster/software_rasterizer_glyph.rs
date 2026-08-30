@@ -4,8 +4,8 @@
 use crate::core::Rect;
 // 引入字形的直通颜色。
 use crate::draw::geometry::color::Color;
-// 引入保持历史量化顺序的颜色转换函数。
-use crate::draw::raster::rasterizer::color_to_premul;
+// 复用共享 premul 量化与 coverage 调制规则（参考执行同一函数）。
+use crate::draw::raster::rasterizer::{color_to_premul, modulate_coverage};
 
 // 复用持有 offset、transform、clip、opacity 与 blend 的软件执行器。
 use super::software_rasterizer::SoftwareRasterizer;
@@ -28,16 +28,6 @@ fn scan_bounds(rect: Rect) -> (i32, i32, i32, i32) {
     let y1 = (rect.y + rect.h).ceil() as i32;
     // 返回半开扫描范围。
     (x0, y0, x1, y1)
-}
-
-// 按 coverage 调制预乘颜色，并保持旧字形路径的整数向下取整。
-fn modulate_coverage(color: u32, coverage: u8) -> u32 {
-    // 把单字节 coverage 提升到通道乘法宽度。
-    let factor = coverage as u32;
-    // 每个通道独立执行乘法再除以 255。
-    let channel = |shift: u32| ((color >> shift) & 0xff) * factor / 255;
-    // 重新组合预乘 AARRGGBB 像素。
-    (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
 // surface、coverage 与字形几何共同构成软件采样契约。

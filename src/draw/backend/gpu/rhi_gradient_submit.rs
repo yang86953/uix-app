@@ -68,7 +68,9 @@ impl NativeGpuCanvas2D {
                         corners,
                         color_a: value.color_a,
                         color_b: value.color_b,
-                        params: [0.0, value.dir as f32, 0.0, 0.0],
+                        // params[2]/[3] 携带渐变局部矩形宽高，shader 的对角
+                        // 插值与 CPU linear_gradient_t 在任意仿射下同源。
+                        params: [0.0, value.dir as f32, value.local_w, value.local_h],
                         scissor: Some(scissor),
                     }
                 }

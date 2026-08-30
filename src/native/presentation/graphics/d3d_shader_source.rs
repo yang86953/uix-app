@@ -1,7 +1,9 @@
 //! Windows D3D Adapter 共享的唯一 HLSL 源集合。
 
 // RECT_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
-pub(super) const RECT_HLSL: &str = r#"
+pub(super) const RECT_HLSL: &str = concat!(
+    include_str!("d3d_common_sdf.hlsl"),
+    r#"
 cbuffer RectCB : register(b0)
 {
     float2 u_viewport;
@@ -39,21 +41,8 @@ VSOut VSMain(VSIn input)
     return o;
 }
 
-// Port of CPU `rounded_rect_sdf` (center-relative, per-corner radius).
-float rounded_rect_sdf(float2 local, float2 size, float4 radius)
-{
-    float2 half_size = size * 0.5;
-    float2 q = local - half_size;
-    float cr;
-    if (q.x < 0.0)
-        cr = (q.y < 0.0) ? radius.x : radius.w;
-    else
-        cr = (q.y < 0.0) ? radius.y : radius.z;
-    float2 d = abs(q) - half_size + cr;
-    float outside = length(max(d, 0.0));
-    float inside = min(max(d.x, d.y), 0.0);
-    return outside + inside - cr;
-}
+// Port of CPU `rounded_rect_sdf` (center-relative, per-corner radius)
+// moved to d3d_common_sdf.hlsl, included once at the top of this source.
 
 float4 PSMain(VSOut input) : SV_Target
 {
@@ -101,7 +90,8 @@ float4 PSMain(VSOut input) : SV_Target
     float3 premul = floor(color.rgb * color.a / 255.0);
     return float4(premul * mask, color.a * mask) / 255.0;
 }
-"#;
+"#,
+);
 
 // GLYPH_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
 pub(super) const GLYPH_HLSL: &str = r#"
@@ -218,8 +208,8 @@ cbuffer GradCB : register(b0)
     float4 u_color_b;
     // x = mode (0=linear, 1=radial)
     // y = linear dir (0..3) OR radial inner radius in local space
-    // z = radial outer radius in local space OR linear edge X length
-    // w = linear edge Y length
+    // z = radial outer radius in local space OR linear local rect width
+    // w = linear local rect height
     float4 u_params;
 };
 
@@ -363,7 +353,9 @@ float4 PSMain(VSOut input) : SV_TARGET
 "#;
 
 // SHADOW_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
-pub(super) const SHADOW_HLSL: &str = r#"
+pub(super) const SHADOW_HLSL: &str = concat!(
+    include_str!("d3d_common_sdf.hlsl"),
+    r#"
 cbuffer ShadowCB : register(b0)
 {
     float2 u_viewport;
@@ -408,20 +400,7 @@ VSOut VSMain(VSIn input)
     return o;
 }
 
-float rounded_rect_sdf(float2 local, float2 size, float4 radius)
-{
-    float2 half_size = size * 0.5;
-    float2 q = local - half_size;
-    float cr;
-    if (q.x < 0.0)
-        cr = (q.y < 0.0) ? radius.x : radius.w;
-    else
-        cr = (q.y < 0.0) ? radius.y : radius.z;
-    float2 d = abs(q) - half_size + cr;
-    float outside = length(max(d, 0.0));
-    float inside = min(max(d.x, d.y), 0.0);
-    return outside + inside - cr;
-}
+// rounded_rect_sdf is shared via d3d_common_sdf.hlsl, included once above.
 
 float shadow_coverage(float sd, float blur)
 {
@@ -461,7 +440,8 @@ float4 PSMain(VSOut input) : SV_Target
     // Straight-alpha for SRC_ALPHA blend (matches glyph / rounded-rect path).
     return float4(u_color.rgb, u_color.a * coverage);
 }
-"#;
+"#,
+);
 
 // MSDF_GLYPH_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
 pub(super) const MSDF_GLYPH_HLSL: &str = r#"

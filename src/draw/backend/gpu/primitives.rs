@@ -89,14 +89,18 @@ impl GpuGlyphBlit {
 #[derive(Debug, Clone, Copy, PartialEq)]
 // 描述 GPU-native Canvas2D 的线性渐变矩形。
 pub(crate) struct GpuLinearGradientRect {
-    /// 记录渐变本地左边界。
+    /// 记录渐变变换后 AABB 左边界。
     pub(crate) x: f32,
-    /// 记录渐变本地上边界。
+    /// 记录渐变变换后 AABB 上边界。
     pub(crate) y: f32,
-    /// 记录渐变本地宽度。
+    /// 记录渐变变换后 AABB 宽度。
     pub(crate) w: f32,
-    /// 记录渐变本地高度。
+    /// 记录渐变变换后 AABB 高度。
     pub(crate) h: f32,
+    /// 记录渐变局部矩形（变换前）宽度，供对角插值与 CPU 同源。
+    pub(crate) local_w: f32,
+    /// 记录渐变局部矩形（变换前）高度，供对角插值与 CPU 同源。
+    pub(crate) local_h: f32,
     /// 记录当前仿射变换后的设备坐标四角。
     pub(crate) corners: [[f32; 2]; 4],
     /// 记录渐变起始颜色。

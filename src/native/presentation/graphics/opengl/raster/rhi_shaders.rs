@@ -301,7 +301,9 @@ void main() {
 "#;
 
 // 圆角矩形与描边的 SDF fragment 阶段。
-pub(super) const SHAPE_FRAGMENT: &str = r#"#version 300 es
+// rounded_rect_sdf 与 shadow coverage 由 glsl_common_sdf.frag 唯一提供。
+pub(super) const SHAPE_FRAGMENT: &str = concat!(
+    r#"#version 300 es
 precision highp float;
 uniform vec4 u_color;
 uniform vec4 u_radius;
@@ -310,19 +312,9 @@ uniform vec4 u_stroke;
 in vec2 v_local;
 in vec2 v_rect_size;
 out vec4 fragColor;
-float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
-    vec2 half_size = size * 0.5;
-    vec2 q = local - half_size;
-    float corner_radius;
-    if (q.x < 0.0)
-        corner_radius = (q.y < 0.0) ? radius.x : radius.w;
-    else
-        corner_radius = (q.y < 0.0) ? radius.y : radius.z;
-    vec2 d = abs(q) - half_size + corner_radius;
-    float outside = length(max(d, vec2(0.0)));
-    float inside = min(max(d.x, d.y), 0.0);
-    return outside + inside - corner_radius;
-}
+"#,
+    include_str!("../../glsl_common_sdf.frag"),
+    r#"
 void main() {
     float mask;
     // 描边判定只读取共享常量中的半线宽。
@@ -357,7 +349,8 @@ void main() {
     vec3 premul = floor(color.rgb * color.a / 255.0);
     fragColor = vec4(premul * mask, color.a * mask) / 255.0;
 }
-"#;
+"#,
+);
 
 // 轴对齐原生扇形的分析抗锯齿 fragment 阶段。
 pub(super) const SECTOR_FRAGMENT: &str = r#"#version 300 es
@@ -450,7 +443,9 @@ void main() {
 "#;
 
 // 阴影 shader 的 SDF fragment 阶段，保持 straight-alpha blend ABI。
-pub(super) const SHADOW_FRAGMENT: &str = r#"#version 300 es
+// rounded_rect_sdf 与 shadow coverage 由 glsl_common_sdf.frag 唯一提供。
+pub(super) const SHADOW_FRAGMENT: &str = concat!(
+    r#"#version 300 es
 precision highp float;
 uniform vec4 u_color;
 uniform vec4 u_radius;
@@ -459,29 +454,9 @@ uniform vec4 u_size;
 in vec2 v_local;
 in vec2 v_rect_size;
 out vec4 fragColor;
-float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
-    vec2 half_size = size * 0.5;
-    vec2 q = local - half_size;
-    float corner_radius;
-    if (q.x < 0.0)
-        corner_radius = (q.y < 0.0) ? radius.x : radius.w;
-    else
-        corner_radius = (q.y < 0.0) ? radius.y : radius.z;
-    vec2 d = abs(q) - half_size + corner_radius;
-    float outside = length(max(d, vec2(0.0)));
-    float inside = min(max(d.x, d.y), 0.0);
-    return outside + inside - corner_radius;
-}
-float shadow_coverage(float signed_distance, float blur) {
-    float t = clamp((blur - signed_distance) / (2.0 * blur), 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
-float shadow_coverage_ambient(float signed_distance, float blur) {
-    float half_blur = blur * 0.5;
-    float t = clamp((half_blur - signed_distance) / (blur + half_blur), 0.0, 1.0);
-    float squared = t * t;
-    return squared * squared * (5.0 - 4.0 * t);
-}
+"#,
+    include_str!("../../glsl_common_sdf.frag"),
+    r#"
 void main() {
     vec2 blur = max(u_params.zw, vec2(0.0));
     float blur_radius = max(blur.x, blur.y);
@@ -499,7 +474,8 @@ void main() {
         discard;
     fragColor = vec4(u_color.rgb, u_color.a * coverage);
 }
-"#;
+"#,
+);
 
 // Blur pass 只透传共享几何已经冻结的 NDC position 与绝对 source UV。
 pub(super) const BLUR_VERTEX: &str = r#"#version 300 es

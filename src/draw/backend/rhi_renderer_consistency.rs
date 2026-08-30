@@ -545,6 +545,7 @@ fn textured_scene(additive: bool) -> ConsistencyScene {
 }
 
 fn gradient_scene() -> ConsistencyScene {
+    // 剪切 quad：device = TL + u·(8,0) + v·(4,8)，局部矩形为 8×8。
     let corners = [[34.0, 2.0], [42.0, 2.0], [46.0, 10.0], [38.0, 10.0]];
     ConsistencyScene {
         name: "GradientRect",
@@ -556,7 +557,9 @@ fn gradient_scene() -> ConsistencyScene {
             corners,
             [1.0, 0.0, 0.0, 1.0],
             [0.0, 0.0, 1.0, 1.0],
-            [0.0, 0.0, 0.0, 0.0],
+            // DiagonalTLBR + 局部宽高：t = (u + v) / 2，与 CPU
+            // linear_gradient_t 在剪切变换下同源。
+            [0.0, 2.0, 8.0, 8.0],
         )),
         texture: None,
         scissor: None,
@@ -564,9 +567,9 @@ fn gradient_scene() -> ConsistencyScene {
             ConsistencySample::exact(
                 39,
                 5,
-                [135, 0, 120, 255],
+                [140, 0, 116, 255],
                 ConsistencyTolerance::Filtered,
-                "affine gradient",
+                "affine diagonal gradient",
             ),
             background(36, 8, "affine quad outside"),
         ],

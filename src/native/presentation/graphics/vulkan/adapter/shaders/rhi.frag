@@ -121,20 +121,7 @@ layout(set = 0, binding = 0, std140) uniform ShapeUniforms {
 layout(location = 0) in vec2 v_local;
 layout(location = 1) in vec2 v_rect_size;
 
-float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
-    vec2 half_size = size * 0.5;
-    vec2 q = local - half_size;
-    float corner_radius;
-    if (q.x < 0.0) {
-        corner_radius = q.y < 0.0 ? radius.x : radius.w;
-    } else {
-        corner_radius = q.y < 0.0 ? radius.y : radius.z;
-    }
-    vec2 distance = abs(q) - half_size + corner_radius;
-    float outside = length(max(distance, vec2(0.0)));
-    float inside = min(max(distance.x, distance.y), 0.0);
-    return outside + inside - corner_radius;
-}
+// rounded_rect_sdf 由 glsl_common_sdf.frag 在 #version 后统一注入。
 
 void main() {
     float mask;
@@ -180,32 +167,7 @@ layout(set = 0, binding = 0, std140) uniform ShadowUniforms {
 layout(location = 0) in vec2 v_local;
 layout(location = 1) in vec2 v_rect_size;
 
-float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
-    vec2 half_size = size * 0.5;
-    vec2 q = local - half_size;
-    float corner_radius;
-    if (q.x < 0.0) {
-        corner_radius = q.y < 0.0 ? radius.x : radius.w;
-    } else {
-        corner_radius = q.y < 0.0 ? radius.y : radius.z;
-    }
-    vec2 distance = abs(q) - half_size + corner_radius;
-    float outside = length(max(distance, vec2(0.0)));
-    float inside = min(max(distance.x, distance.y), 0.0);
-    return outside + inside - corner_radius;
-}
-
-float shadow_coverage(float signed_distance, float blur) {
-    float t = clamp((blur - signed_distance) / (2.0 * blur), 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
-
-float ambient_coverage(float signed_distance, float blur) {
-    float half_blur = blur * 0.5;
-    float t = clamp((half_blur - signed_distance) / (blur + half_blur), 0.0, 1.0);
-    float squared = t * t;
-    return squared * squared * (5.0 - 4.0 * t);
-}
+// rounded_rect_sdf 与 shadow coverage 曲线由 glsl_common_sdf.frag 统一注入。
 
 void main() {
     vec2 blur = max(u.params.zw, vec2(0.0));
@@ -215,7 +177,7 @@ void main() {
     float coverage;
     if (blur_radius > 0.5) {
         coverage = u.size.z > 0.5
-            ? ambient_coverage(signed_distance, blur_radius)
+            ? shadow_coverage_ambient(signed_distance, blur_radius)
             : shadow_coverage(signed_distance, blur_radius);
     } else {
         coverage = clamp(0.5 - signed_distance, 0.0, 1.0);

@@ -31,7 +31,9 @@ impl SoftwareRasterizer {
             rect
         };
         let lw = line_width.max(0.0);
-        let rad = radius.unwrap_or_default();
+        // 半径规范化每 draw call 一次，与 GPU shape/path lowering 同一 CSS 式规则。
+        let rad =
+            super::rasterizer::core::normalize_corner_radius(rect.w, rect.h, radius.unwrap_or_default());
         let c = self.apply_opa(Self::premul(color));
         // 只有 identity transform 才能使用直接写轴对齐像素的快速路径。
         let identity = Self::is_identity(&self.transform);

@@ -9,6 +9,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 SHADERS = ROOT / "src/native/presentation/graphics/vulkan/adapter/shaders"
 OUTPUT = SHADERS / "spv"
+# GLSL 圆角/阴影数学的唯一共享定义，注入每个变体的 #version 行之后。
+COMMON_SDF = (
+    ROOT / "src/native/presentation/graphics/glsl_common_sdf.frag"
+).read_text()
 
 VERTEX_VARIANTS = {
     "mesh.vert.spv": "UIX_MESH",
@@ -57,6 +61,17 @@ def compile_variant(
 
     source = SHADERS / f"rhi.{stage}"
     target = temporary / output_name
+    combined = temporary / f"{output_name}.frag.combined"
+    text = source.read_text()
+    # 共享数学注入 #version 之后，保证跨变体单一定义。
+    lines = text.split("\n")
+    if stage == "frag":
+        combined.write_text(
+            "\n".join([lines[0], COMMON_SDF, *lines[1:]])
+        )
+        compile_source = combined
+    else:
+        compile_source = source
     subprocess.run(
         [
             glslc,
@@ -64,7 +79,7 @@ def compile_variant(
             "-O",
             f"-fshader-stage={stage}",
             f"-D{macro}=1",
-            str(source),
+            str(compile_source),
             "-o",
             str(target),
         ],

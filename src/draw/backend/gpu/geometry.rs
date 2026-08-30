@@ -69,41 +69,15 @@ pub(super) fn scaled_corner_radii(radius: Option<Radius>, scale: (f32, f32)) -> 
 
 // 把圆角矩形构造成闭合路径，供旋转、剪切和任意仿射 solid mesh 复用。
 pub(super) fn rounded_rect_path(rect: Rect, radius: Option<Radius>) -> Path {
-    // 先把已验证输入规整为有限非负半径，避免路径 builder 接收异常值。
-    let finite_radius = |value: f32| {
-        if value.is_finite() {
-            value.max(0.0)
-        } else {
-            0.0
-        }
-    };
-    // 保存左上、右上、右下、左下四个角的半径。
-    let mut radii = radius
+    // 与 CPU SDF 填充消费同一 CSS 式半径规范化：异常值收敛为 0，
+    // 相邻角半径之和超边长时等比缩小，保持不相交的圆角轮廓。
+    let radii = radius
         .map(|value| {
-            [
-                finite_radius(value.tl),
-                finite_radius(value.tr),
-                finite_radius(value.br),
-                finite_radius(value.bl),
-            ]
+            let normalized =
+                crate::draw::raster::rasterizer::core::normalize_corner_radius(rect.w, rect.h, value);
+            [normalized.tl, normalized.tr, normalized.br, normalized.bl]
         })
         .unwrap_or([0.0; 4]);
-    // 按相邻边总长统一缩放，保持不相交的圆角轮廓。
-    let mut factor = 1.0_f32;
-    for (sum, extent) in [
-        (radii[0] + radii[1], rect.w),
-        (radii[3] + radii[2], rect.w),
-        (radii[0] + radii[3], rect.h),
-        (radii[1] + radii[2], rect.h),
-    ] {
-        if sum > extent && sum > 0.0 && extent.is_finite() {
-            factor = factor.min((extent / sum).max(0.0));
-        }
-    }
-    // 应用统一比例，处理圆角和矩形尺寸不匹配的边界输入。
-    for value in &mut radii {
-        *value *= factor;
-    }
     // 使用圆弧的三次 Bézier 近似，精度与共享 PathBuilder ellipse 一致。
     const KAPPA: f32 = 0.552_284_8;
     // 读取矩形边界和四个圆角半径。
