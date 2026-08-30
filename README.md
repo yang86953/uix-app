@@ -6,8 +6,8 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 
 ## 当前状态
 
-- 当前版本为 `0.0.6`，已于 2026-08-30 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
-- Windows 与 Linux 均纳入 `0.0.6` 产品范围；两平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
+- 当前版本为 `0.0.7`，已于 2026-08-30 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
+- Windows 与 Linux 平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；任务级进度不在仓库内复制（原 Gitea 父 Issue #1 已停止维护，相关链接按撰写时点存档）。
 
@@ -15,6 +15,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生 UI 框架。
 
 - **推荐方式**：从 [UIX Lang 快速开始](docs/uix-lang/指南/快速开始.md)创建第一个 `.uix` 界面。
 - **Rust API**：需要直接使用 Rust 声明式 API 时，阅读[使用 · 快速开始](docs/使用/入门/快速开始.md)。
+- **UIX Lang 编辑器接入**：工作区成员 `uix-lang-lsp` 提供独立语言服务器（stdio LSP，二进制 `uix-lang-ls`）；原 `uix-lang-cli` 内嵌最小 LSP 已移除，`uix lsp` 子命令委托同一实现。接入方式、能力清单与可见失败见[语言服务器](docs/uix-lang/指南/语言服务器.md)。
 - **了解能力**：先看[产品能力与边界](docs/产品/能力.md)，再按[文档中心](docs/README.md)选择专题。
 
 ## 公开 API 测试
@@ -41,7 +42,7 @@ bash scripts/cross_compile.sh build linux-x64 release
 bash scripts/cross_compile.sh build windows-x64 release
 ```
 
-检查矩阵包含 Linux x64、Windows x64、Apple Silicon macOS 与 Intel macOS。Windows 可从非 Windows 宿主经冻结版本的 `cargo-xwin` 完成真实 PE/COFF 链接；macOS 的最终链接必须在持有合法 Apple SDK 的 macOS 宿主执行。macOS 仍不是 `0.0.6` 当前交付平台，交叉检查通过也不替代真实窗口与 GPU 验收。完整前置条件、输出和失败语义见[交叉编译](docs/使用/入门/交叉编译.md)。
+检查矩阵包含 Linux x64、Windows x64、Apple Silicon macOS 与 Intel macOS。Windows 可从非 Windows 宿主经冻结版本的 `cargo-xwin` 完成真实 PE/COFF 链接；macOS 的最终链接必须在持有合法 Apple SDK 的 macOS 宿主执行。macOS 仍不是当前交付平台，交叉检查通过也不替代真实窗口与 GPU 验收。完整前置条件、输出和失败语义见[交叉编译](docs/使用/入门/交叉编译.md)。
 
 ## Linux 内部候选包
 
@@ -51,7 +52,7 @@ bash scripts/cross_compile.sh build windows-x64 release
 bash scripts/build_internal_release.sh
 ```
 
-产物写入 `target/internal-release/uix-0.0.6-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
+产物写入 `target/internal-release/uix-0.0.7-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
 
 ## Windows 内部候选包
 
@@ -61,9 +62,9 @@ bash scripts/build_internal_release.sh
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_internal_release.ps1
 ```
 
-该入口生成并校验 `uix-0.0.6-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。Vulkan 与 D3D11 的真实 Windows x64 验收结果及制品摘要由 Gitea Release 持有。
+该入口生成并校验 `uix-0.0.7-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。Vulkan 与 D3D11 的真实 Windows x64 验收结果及制品摘要由 Gitea Release 持有。
 
-`v0.0.6` Release 当前未附带 Windows x64 制品；该入口保留用于后续在 Windows 环境从同一发布提交完成最终构建、校验与制品追加。
+`v0.0.6` 的 Windows x64 制品缺失已由 `v0.0.7` 继承处理；该入口保留用于后续在 Windows 环境从发布提交完成最终构建、校验与制品追加。
 
 ## 文档导航
 
@@ -99,8 +100,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_internal_relea
 |---|---|
 | `src/` | 框架实现与公开 API |
 | `demo/` | 只包含 `uix-lang-demo`：以 `.uix` 声明全部已登记组件、展示数据、界面状态与局部交互的全组件主演示 |
+| `uix-lang-lsp/` | 独立 UIX Lang 语言服务器（stdio LSP，二进制 `uix-lang-ls`） |
 | `uix-derive/` | UIX 派生宏 |
 | `tests/` | 仅允许外部消费者视角的 `*_public_api.rs` 公开 API 测试 |
-| `scripts/` | 内部打包工具 |
+| `scripts/` | 内部打包工具、Agent Hub/MCP 连接器、交叉编译与内部候选包校验 |
 | `docs/` | 产品、架构、使用文档 |
 | `assets/` | 编译期与 Demo 运行时资源 |
