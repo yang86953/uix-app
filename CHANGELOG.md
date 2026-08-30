@@ -22,7 +22,7 @@
 - 本版本已于 2026-08-30 通过私有 Gitea Release 发布。`v0.0.5` 精确指向提交
   `5c73a0d85a18a9c85f48392e45497bc5f83016ac`；发布前 41 个非空公开 API suite、81 项测试全部通过，
   无新增 warning/error。
-- 本次 Release 附带从干净源码确定性构建并独立校验的 Linux x64 内部制品，容器
+- 本次 Release 附带从干净源码确定性构建并独立校验的 Linux x64 内部制品，容器大小为 34,614,651 字节，
   SHA-256 为 `b4a6b3b839903230e2c73703bd6178d2b12baef62665fefd5c383329275ffdd1`；从 Release
   重新下载后摘要一致。Windows x64 制品仍须在对应环境从同一 tag 构建、校验和追加。
 
