@@ -14,7 +14,7 @@ uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.3", default-
 proc-macro2 = "1"
 quote = "1"
 serde_json = "1"
-syn = { version = "2", features = ["full"] }
+syn = { version = "3", features = ["full"] }
 
 [features]
 default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
