@@ -10,7 +10,7 @@
 
 | 组件 | 类型 | 职责 |
 |---|---|---|
-| `Window` / `WindowConfig` | public structs | 描述窗口能力、根 View 工厂、标题和初始几何 |
+| `AppHandle` / `WindowConfig` | public structs | 描述逐窗存活快照、owner-thread 激活请求、根 View 工厂、标题和初始几何 |
 | `WindowSession` | internal struct | 独占组件树、渲染目标、队列、调度状态、IME 和语义状态 |
 | `SessionRuntime` | internal struct | 管理窗口身份预留、创建、查找和销毁 |
 | `WindowDriver` | internal struct | 按确定顺序推进单个窗口的一轮 UI/图形管线 |
@@ -22,6 +22,10 @@
 ## 组件：Window / WindowConfig
 
 配置在创建原生资源前完成验证。未支持的标题栏、透明度或输入能力返回 typed error，不能静默退回不同语义。公开 `Window` 只暴露稳定窗口操作，不泄漏 platform backend、surface 或可变组件树。
+
+`AppHandle::is_open` 只提供该次读取时的会话存活快照，不建立跨线程租约；
+`AppHandle::request_activate` 经逐窗 main-thread queue 投递到 owner thread，接受成功不承诺窗口管理器
+最终授予焦点。关闭竞态返回 `InvalidState`，不得把请求重定向到标题相同或后来创建的窗口。
 
 ## 组件：WindowSession
 

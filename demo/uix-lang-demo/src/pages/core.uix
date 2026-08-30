@@ -475,7 +475,7 @@
         // 展示面板小节标题。
         <Text fontSize="heading5">Navigation</Text>
         // 选择、展开与整栏折叠分别绑定调用方唯一状态。
-        <Navigation title="UIX Demo" items={[MenuItem('首页', 'home').icon('home'), MenuItem('管理', 'admin').icon('settings').children([MenuItem('用户', 'users'), MenuItem('权限', 'roles')])]} activeKey={nav_active} openKeys={nav_open} collapsed={nav_collapsed} version="v0.0.2" width="320px" height="320px" />
+        <Navigation title="UIX Demo" items={[MenuItem('首页', 'home').icon('home'), MenuItem('管理', 'admin').icon('settings').children([MenuItem('用户', 'users'), MenuItem('权限', 'roles')])]} activeKey={nav_active} openKeys={nav_open} collapsed={nav_collapsed} version="v0.0.3" width="320px" height="320px" />
       // 结束完整侧栏组合内容。
       </Column>
     // 结束 Navigation 面板。

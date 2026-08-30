@@ -24,7 +24,7 @@
 
 ### Windows 公开 API 验证方式
 
-验证公开 `Direct3D11` 路径时，由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得用交叉编译替代真实主机事实，也不得把 HWND、RHI、FramePlan、readback、故障注入或其他私有入口描述为公开能力。`0.0.2` 已完成当前发布提交的真实主机验收；后续改变 Windows 图形路径或驱动基线时必须重新取得同级证据。
+验证公开 `Direct3D11` 路径时，由外部应用在真实 Windows x64 桌面会话中，只通过公开 `App`、`GraphicsBackend` 与 `Platform` API 选择 D3D11，并观察公开成功结果或 typed failure。不得用交叉编译替代真实主机事实，也不得把 HWND、RHI、FramePlan、readback、故障注入或其他私有入口描述为公开能力。`0.0.2` 发布提交已完成对应真实主机验收；后续改变 Windows 图形路径或驱动基线时必须重新取得同级证据。
 
 ## 责任边界
 

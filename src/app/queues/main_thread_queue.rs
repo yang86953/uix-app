@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::core::Result;
+use crate::platform::windowing::window::PlatformWindow;
 use crate::ui::view::ViewNode;
 
 // 单个窗口轮次最多执行固定数量的主线程任务，避免自投递队列独占 owner thread。
@@ -10,22 +12,30 @@ const MAX_JOBS_PER_DRAIN: usize = 64;
 pub(crate) struct MainThreadContext<'a> {
     pending_root: &'a mut Option<ViewNode>,
     reconcile_pending: &'a mut bool,
+    platform_window: &'a mut dyn PlatformWindow,
 }
 
 impl<'a> MainThreadContext<'a> {
     pub(crate) fn new(
         pending_root: &'a mut Option<ViewNode>,
         reconcile_pending: &'a mut bool,
+        platform_window: &'a mut dyn PlatformWindow,
     ) -> Self {
         Self {
             pending_root,
             reconcile_pending,
+            platform_window,
         }
     }
 
     pub(crate) fn update_root(&mut self, root: ViewNode) {
         *self.pending_root = Some(root);
         *self.reconcile_pending = true;
+    }
+
+    /// 向当前逐窗 owner 请求原生激活；不把平台窗口借用暴露给上层。
+    pub(crate) fn request_activate(&mut self) -> Result<()> {
+        self.platform_window.raise()
     }
 }
 
