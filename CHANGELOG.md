@@ -17,8 +17,12 @@
 
 ### 发布状态
 
-- 本版本于 2026-08-30 通过私有 Gitea Release 发布，先附带确定性构建并独立校验的 Linux x64
-  内部制品；Windows x64 制品仍须在对应环境从同一 tag 构建、校验和追加。
+- 本版本已于 2026-08-30 通过私有 Gitea Release 发布。`v0.0.4` 精确指向提交
+  `e055eb99f275a005f8894eac10961ce147b7a626`；发布前 40 个公开 API suite、80 项测试全部通过，
+  无新增 warning/error。
+- 本次 Release 附带从干净 `main` 确定性构建并独立校验的 Linux x64 内部制品，容器 SHA-256 为
+  `f7a8d1b142d7faef819ab2b529c41e4c8fd48ad933cfb50b4d37685bb0d4de34`；从 Release 重新下载后
+  摘要一致。Windows x64 制品仍须在对应环境从同一 tag 构建、校验和追加。
 
 ## 0.0.3（2026-08-30）
 
