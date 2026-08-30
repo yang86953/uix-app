@@ -454,6 +454,9 @@ pub(super) fn semantic_snapshot_value(snapshot: &WindowSemanticSnapshot) -> Valu
         "revision": snapshot.revision,
         "presented_revision": snapshot.presented_revision,
         "closed": snapshot.closed,
+        // bounds 坐标空间事实：frame/visible_bounds 是 logical 客户区坐标，
+        // 截屏像素为 physical；跨空间对照必须除以 device_pixel_ratio。
+        "device_pixel_ratio": finite_number(snapshot.device_pixel_ratio as f64),
         "nodes": snapshot.nodes.iter().map(semantic_node_value).collect::<Vec<_>>(),
     })
 }
