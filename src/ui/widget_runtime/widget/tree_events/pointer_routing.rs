@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::event::SemanticKind;
-use crate::ui::{OverlayEntry, OverlayKind};
+use crate::ui::OverlayEntry;
 
 impl WidgetTree {
     pub(crate) fn cancel_hidden_interaction(&mut self) {
@@ -174,17 +174,16 @@ impl WidgetTree {
                 // Click 是可选观察事件；零订阅者必须安静地保留 NotHandled 契约。
                 let _ = self.dispatch_semantic(SemanticEvent::click(target, click));
                 if button == MouseButton::Right {
-                    let mut context_menu = SemanticEvent::context_menu(target, click);
-                    // ContextMenu 语义未被消费：记录日志，行为不变。
-                    if self.dispatch_semantic_event(&mut context_menu) == EventResult::NotHandled {
+                    // ContextMenu 语义是纯通知：菜单一律由消费者自建，框架不提供默认菜单。
+                    // 零消费者是合法状态，只记诊断，不弹任何覆盖层。
+                    if self.dispatch_semantic(SemanticEvent::context_menu(target, click))
+                        == EventResult::NotHandled
+                    {
                         tracing::warn!(
                             event = "ContextMenu",
                             target = ?target,
                             "context menu semantic was not handled"
                         );
-                    }
-                    if !context_menu.default_prevented() {
-                        self.open_context_menu_overlay(target, click.pos);
                     }
                 }
             }
@@ -242,19 +241,6 @@ impl WidgetTree {
         }
         self.restore_focus_after_trap_owner(top.owner());
         Some(EventResult::Handled)
-    }
-
-    pub(super) fn open_context_menu_overlay(&mut self, owner: WidgetId, pos: Point) {
-        self.overlay_stack
-            .retain_entries(|entry| entry.kind() != OverlayKind::ContextMenu);
-        self.overlay_stack.push_entry(
-            OverlayEntry::new(owner, OverlayKind::ContextMenu)
-                .bounds(Rect::new(pos.x, pos.y, 160.0, 160.0))
-                .z_index(1200)
-                .dismiss_on_outside(true)
-                .managed(true),
-        );
-        self.invalidate_paint(owner);
     }
 
     pub(super) fn secondary_pointer_drag_boundary(
