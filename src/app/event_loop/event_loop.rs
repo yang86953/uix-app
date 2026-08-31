@@ -10,11 +10,13 @@ use crate::app::window::window_session::{WindowLoopState, WindowSession, WindowT
 use crate::app::window_semantics::WindowSemanticState;
 use crate::core::Point;
 use crate::diagnostics::Diagnostics;
+use crate::draw::debug::DebugHudState;
 use crate::draw::renderer::RenderMetrics;
 use crate::draw::resources::font::font_service::FontService;
 use crate::draw::resources::image::ImageService;
 use crate::draw::target::RenderTarget;
 use crate::platform::platform::PlatformSystem;
+use crate::platform::windowing::MouseButton;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::PlatformWindow;
 use crate::ui::theme::{DynTokens, Theme};
@@ -35,6 +37,23 @@ pub(crate) fn push_coalesced_event(events: &mut Vec<UiEvent>, event: &UiEvent) {
         }
     }
     events.push(event.clone());
+}
+
+/// debug HUD 的指针拦截：把左键按下、移动与抬起翻译为 HUD 会话操作。
+///
+/// 返回是否被 HUD 消费；被消费的事件不再进入应用树分发，避免拖动或
+/// 折叠 HUD 时误触下层组件。
+fn debug_hud_consumes_pointer(hud: &DebugHudState, ev: &UiEvent) -> bool {
+    match (&ev.type_, &ev.payload) {
+        (UiEventType::PointerDown, UiEventPayload::PointerButton(data))
+            if data.btn == MouseButton::Left =>
+        {
+            hud.pointer_down(data.pos)
+        }
+        (UiEventType::PointerMove, UiEventPayload::PointerMove(data)) => hud.pointer_move(data.pos),
+        (UiEventType::PointerUp, UiEventPayload::PointerButton(data)) => hud.pointer_up(data.pos),
+        _ => false,
+    }
 }
 
 /// 运行完整的 widget 渲染事件循环。
@@ -67,6 +86,7 @@ where
     let mut text_input = WindowTextInputState::default();
     let mut semantic_state = WindowSemanticState::new(platform_window.window_id());
     let mut agent_commands = WindowAgentState::new();
+    let hud_state = DebugHudState::default();
     run_widget_loop_with_active_work(
         platform,
         platform_window,
@@ -89,6 +109,7 @@ where
         None,
         debug_mode,
         cursor_pos,
+        &hud_state,
         metrics,
         map_event,
         on_exit,
@@ -305,6 +326,7 @@ where
     F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 {
     let parts = session.parts_mut();
+    let hud_state = DebugHudState::default();
     run_widget_loop_with_active_work(
         platform,
         platform_window,
@@ -327,6 +349,7 @@ where
         system_theme_tokens,
         debug_mode,
         cursor_pos,
+        &hud_state,
         metrics,
         map_event,
         on_exit,
@@ -360,6 +383,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     system_theme_tokens: Option<&DynTokens>,
     debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
+    hud_state: &DebugHudState,
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
     on_exit: X,
@@ -507,6 +531,15 @@ where
                     event_type = ?ev.type_,
                     "window input entered the UI dispatch boundary"
                 );
+            }
+            // debug HUD 优先消费落在其按钮/标题条或拖动会话上的指针事件，
+            // 折叠与拖动不得同时触达下层应用组件。
+            if debug_mode.debug_mode() && debug_hud_consumes_pointer(hud_state, &ev) {
+                if let UiEventPayload::PointerMove(ref data) = ev.payload {
+                    cursor_pos.set(data.pos);
+                }
+                tree.mark_full_frame_dirty();
+                continue;
             }
             had_layout_event |=
                 driver.handle_window_event(&ev, tree, engine, platform_window, text_input);
@@ -668,6 +701,7 @@ where
             theme,
             debug_mode,
             debug_correlation_id,
+            hud_state: Some(hud_state),
             cursor_pos,
             metrics,
             now,

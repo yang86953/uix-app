@@ -22,6 +22,7 @@ impl WindowDriver {
             theme,
             debug_mode,
             debug_correlation_id,
+            hud_state,
             cursor_pos,
             metrics,
             now,
@@ -752,6 +753,7 @@ impl WindowDriver {
                     hover_pos,
                     metrics: metrics_ref.as_ref(),
                     debug_frame: self.frame_diag.last_frame.as_ref(),
+                    hud: hud_state,
                     invalidation_source,
                 },
             );

@@ -144,6 +144,8 @@ impl SecondaryWindowSession {
             debug_correlation_id: debug_mode
                 .debug_mode()
                 .then(|| debug_mode.next_debug_correlation_id()),
+            // 副窗事件路径不携带 debug 指针拦截，HUD 保持固定右上角形态。
+            hud_state: None,
             cursor_pos,
             metrics: None,
             now,
