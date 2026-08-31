@@ -5,7 +5,7 @@ use crate::core::{Errc, Error, Point, Rect};
 use crate::core::DirtyRegion;
 
 use crate::draw::backend::DamageRegion;
-use crate::draw::debug::{DebugFrameSnapshot, DebugRenderService};
+use crate::draw::debug::{DebugFrameSnapshot, DebugHudState, DebugRenderService};
 use crate::draw::painting::{EncodedFrameExecution, FrameImage, recorder::CommandRecorder};
 use crate::draw::renderer::{InvalidationSource, RenderMetrics};
 use crate::draw::resources::font::font_service::FontService;
@@ -40,6 +40,8 @@ pub struct FrameRenderInput<'a> {
     pub metrics: Option<&'a RenderMetrics>,
     /// 上一已完成帧的无文本诊断快照。
     pub debug_frame: Option<&'a DebugFrameSnapshot>,
+    /// 可选的逐窗口 HUD 交互状态；提供时 HUD 可折叠与拖动，缺省保持固定形态。
+    pub hud: Option<&'a DebugHudState>,
     /// 调用方根据事件、动画与布局事实给出的本帧失效来源。
     pub invalidation_source: InvalidationSource,
 }

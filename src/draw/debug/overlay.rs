@@ -10,6 +10,8 @@ use crate::draw::scene::viewport_transform::{node_viewport_frame, visible_viewpo
 use crate::draw::scene::{HoverInspectorSnapshot, PicturePolicy, ScenePaint};
 use crate::draw::{Canvas2D, Color, FontHandle, Transform};
 
+use super::hud::{HUD_PAD_TOP, HudLayout};
+
 /// 上一已完成帧的无文本诊断快照，供下一次最终调试 Pass 展示。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DebugFrameSnapshot {
@@ -170,6 +172,9 @@ impl DebugRenderService {
     pub const HUD_LINE_H: f32 = 17.0;
 
     /// 在所有应用内容与浮层之后绘制唯一最终调试 Pass。
+    ///
+    /// `hud` 提供逐窗口 HUD 交互状态时，HUD 按其折叠态与自定义位置布局，
+    /// 并在标题行绘制折叠按钮；为 `None` 时保持固定右上角的既有形态。
     #[allow(clippy::too_many_arguments)]
     pub fn draw_final_overlay(
         &self,
@@ -180,6 +185,7 @@ impl DebugRenderService {
         metrics: Option<&RenderMetrics>,
         font: FontHandle,
         font_service: &FontService,
+        hud: Option<&super::hud::DebugHudState>,
     ) {
         if !self.debug_mode {
             return;
@@ -202,7 +208,13 @@ impl DebugRenderService {
             scene.hover_inspector(leaf).map(|snapshot| (pos, snapshot))
         });
         let hud_line_count = frame.map_or(1, |value| value.hud_lines(metrics).len()) + 1;
-        let hud_rect = frame_hud_rect(hud_line_count, surface_w, surface_h);
+        let hud_layout = hud.map(|hud| hud.layout(hud_line_count, surface_w, surface_h));
+        let hud_rect = hud_layout
+            .as_ref()
+            .map_or_else(
+                || frame_hud_rect(hud_line_count, surface_w, surface_h),
+                |layout| layout.bounds,
+            );
         if let Some((pointer, snapshot)) = snapshot.as_ref() {
             self.draw_hover_outlines(canvas, scene, snapshot);
             self.draw_inspector_panel(
@@ -210,7 +222,7 @@ impl DebugRenderService {
             );
         }
         // 固定 HUD 最后绘制，祖先轮廓与极端小窗下的检查器都不能降低其可读性。
-        self.draw_frame_hud(canvas, &mut text, frame, metrics, hud_rect);
+        self.draw_frame_hud(canvas, &mut text, frame, metrics, hud_rect, hud_layout.as_ref());
         canvas.restore();
     }
 
@@ -285,25 +297,40 @@ impl DebugRenderService {
         frame: Option<&DebugFrameSnapshot>,
         metrics: Option<&RenderMetrics>,
         panel: Rect,
+        layout: Option<&HudLayout>,
     ) {
         const PAD_X: f32 = 12.0;
-        const PAD_TOP: f32 = 10.0;
         const FONT_SIZE: f32 = 12.5;
-        let mut lines = frame.map_or_else(
-            || vec!["last presented frame: waiting for first sample".to_string()],
-            |frame| frame.hud_lines(metrics),
-        );
-        lines.push("Ctrl+Shift+D  |  hover a component to inspect".to_string());
+        let collapsed = layout.is_some_and(|layout| layout.collapsed);
+        let mut lines = if collapsed {
+            Vec::new()
+        } else {
+            frame.map_or_else(
+                || vec!["last presented frame: waiting for first sample".to_string()],
+                |frame| frame.hud_lines(metrics),
+            )
+        };
+        if !collapsed {
+            lines.push("Ctrl+Shift+D  |  hover a component to inspect".to_string());
+        }
+        let title = match (collapsed, frame) {
+            (true, Some(frame)) => hud_pill_title(frame),
+            (true, None) => "UIX DEBUG".to_string(),
+            (false, _) => "UIX DEBUG  /  LAST PRESENTED FRAME".to_string(),
+        };
         let x = panel.x;
         let y = panel.y;
         draw_panel_shell(canvas, panel, Color::from_rgba(69, 183, 255, 235));
         text.draw_text(
             canvas,
-            "UIX DEBUG  /  LAST PRESENTED FRAME",
-            Point::new(x + PAD_X, y + PAD_TOP + FONT_SIZE * 0.8),
+            &title,
+            Point::new(x + PAD_X, y + HUD_PAD_TOP + FONT_SIZE * 0.8),
             Color::from_rgba(112, 211, 255, 255),
             FONT_SIZE,
         );
+        if let Some(layout) = layout {
+            draw_collapse_button(canvas, text, layout);
+        }
         let max_chars = ((panel.w - PAD_X * 2.0) / 7.0).floor().max(1.0) as usize;
         for (index, line) in lines.iter().enumerate() {
             let color = if index == 1 && frame.is_some() {
@@ -322,7 +349,7 @@ impl DebugRenderService {
                 &truncate_line(line, max_chars),
                 Point::new(
                     x + PAD_X,
-                    y + PAD_TOP + (index as f32 + 1.0) * Self::HUD_LINE_H + FONT_SIZE * 0.8,
+                    y + HUD_PAD_TOP + (index as f32 + 1.0) * Self::HUD_LINE_H + FONT_SIZE * 0.8,
                 ),
                 color,
                 FONT_SIZE,
@@ -549,11 +576,40 @@ fn draw_panel_shell(canvas: &mut dyn Canvas2D, panel: Rect, accent: Color) {
     canvas.fill_rect(Rect::new(panel.x, panel.y, 4.0, panel.h), accent, None);
 }
 
+// 折叠药丸只保留最易读的帧耗时事实，宽度由药丸固定几何决定。
+fn hud_pill_title(frame: &DebugFrameSnapshot) -> String {
+    let frame_ms = duration_ms(frame.frame_time);
+    let fps = if frame_ms > 0.0 { 1000.0 / frame_ms } else { 0.0 };
+    format!("UIX DEBUG  ~{fps:.0} fps")
+}
+
+// 折叠按钮只表达折叠态切换；拖动能力由标题条矩形承担，不绘制装饰。
+fn draw_collapse_button(
+    canvas: &mut dyn Canvas2D,
+    text: &mut TextRenderService<'_>,
+    layout: &HudLayout,
+) {
+    const FONT_SIZE: f32 = 12.5;
+    let button = layout.collapse_button;
+    canvas.fill_rect(button, Color::from_rgba(30, 42, 60, 235), None);
+    canvas.stroke_rect(button, Color::from_rgba(112, 211, 255, 220), 1.0, None);
+    let glyph = if layout.collapsed { "+" } else { "-" };
+    // draw_text 的 y 是文本框顶部；减号/加号字形位于字面框约 62% 高度处，
+    // y 取 button.y - 1 让字形落在按钮竖直中心附近。
+    text.draw_text(
+        canvas,
+        glyph,
+        Point::new(button.x + 4.0, button.y - 1.0),
+        Color::from_rgba(196, 233, 255, 255),
+        FONT_SIZE,
+    );
+}
+
 fn frame_hud_rect(line_count: usize, surface_w: i32, surface_h: i32) -> Rect {
-    const PAD_TOP: f32 = 10.0;
     let margin = DebugRenderService::HUD_MARGIN;
     let panel_w = DebugRenderService::HUD_PANEL_W.min(surface_w as f32 - margin * 2.0);
-    let panel_h = PAD_TOP * 2.0 + DebugRenderService::HUD_LINE_H * (line_count as f32 + 1.0);
+    let panel_h =
+        HUD_PAD_TOP * 2.0 + DebugRenderService::HUD_LINE_H * (line_count as f32 + 1.0);
     let x = (surface_w as f32 - panel_w - margin).max(margin);
     let y = margin;
     Rect::new(x, y, panel_w, panel_h.min(surface_h as f32 - y))

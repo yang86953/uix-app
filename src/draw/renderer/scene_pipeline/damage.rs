@@ -21,6 +21,7 @@ pub(super) fn draw_debug_overlay(
     metrics: Option<&RenderMetrics>,
     font: FontHandle,
     font_service: &FontService,
+    hud: Option<&crate::draw::debug::DebugHudState>,
 ) {
     let canvas = engine.canvas_2d();
     DebugRenderService::new(true).draw_final_overlay(
@@ -31,6 +32,7 @@ pub(super) fn draw_debug_overlay(
         metrics,
         font,
         font_service,
+        hud,
     );
 }
 

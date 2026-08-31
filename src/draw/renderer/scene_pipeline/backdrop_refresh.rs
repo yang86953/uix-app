@@ -434,6 +434,7 @@ impl ScenePipeline {
                 input.metrics,
                 input.font,
                 input.font_service,
+                input.hud,
             );
         }
         // 只有此处执行本事务唯一的最终 present。

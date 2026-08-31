@@ -621,6 +621,7 @@ impl ScenePipeline {
                 input.metrics,
                 input.font,
                 input.font_service,
+                input.hud,
             );
         }
 
@@ -870,6 +871,7 @@ impl ScenePipeline {
                 input.metrics,
                 input.font,
                 input.font_service,
+                input.hud,
             );
         }
         let present_inv_source =

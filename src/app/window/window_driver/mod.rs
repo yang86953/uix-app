@@ -19,7 +19,7 @@ use crate::app::window_semantics::WindowSemanticState;
 use crate::core::{Errc, Error, Point, PresentDamageTracker, Rect, WindowId};
 use crate::diagnostics::Diagnostics;
 use crate::draw::RenderOutcome;
-use crate::draw::debug::DebugFrameSnapshot;
+use crate::draw::debug::{DebugFrameSnapshot, DebugHudState};
 use crate::draw::renderer::GraphicsFailure;
 use crate::draw::renderer::{FrameRenderInput, InvalidationSource, RenderMetrics, ScenePipeline};
 use crate::draw::resources::font::font_service::FontService;
@@ -76,6 +76,8 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) debug_mode: &'a Diagnostics,
     /// 关联触发本帧的输入/运行时批次；空值表示本帧未启用关联追踪。
     pub(crate) debug_correlation_id: Option<u64>,
+    /// 可选的逐窗口调试 HUD 交互状态；副窗与测试入口保持固定形态 HUD。
+    pub(crate) hud_state: Option<&'a DebugHudState>,
     pub(crate) cursor_pos: &'a Cell<Point>,
     pub(crate) metrics: Option<&'a Cell<RenderMetrics>>,
     pub(crate) now: Instant,
