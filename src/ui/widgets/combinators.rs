@@ -521,6 +521,66 @@ pub fn space(height: f32) -> ViewNode {
     )
 }
 
+// 作用域捕获帧守卫：正常路径显式结束，panic 展开时恢复线程捕获栈深度。
+struct ScopedCaptureFrame {
+    finished: bool,
+}
+
+impl ScopedCaptureFrame {
+    fn begin() -> Self {
+        crate::ui::reactive::state::begin_state_capture();
+        Self { finished: false }
+    }
+    fn finish(mut self) -> crate::ui::reactive::state::StateCaptureOutput {
+        let output = crate::ui::reactive::state::end_state_capture();
+        self.finished = true;
+        output
+    }
+}
+
+impl Drop for ScopedCaptureFrame {
+    fn drop(&mut self) {
+        if !self.finished {
+            // 丢弃仅属于异常构建帧的捕获输出并恢复栈深度。
+            let _ = crate::ui::reactive::state::end_state_capture();
+        }
+    }
+}
+
+/// 声明一个子树作用域（node-scoped reactive view）。
+///
+/// 闭包在挂载时执行一次；其中读取的 [`State`](crate::ui::reactive::state::State)
+/// 登记为本子树的结构依赖——变化时框架只重跑本闭包并原位协调该子树，
+/// 不再触发整树根重建。外层其他 State 变化引起的根重建会照常重跑本闭包。
+///
+/// 闭包契约与 [`State::map`](crate::ui::reactive::state::State::map) 一致：
+/// 必须是可重复执行的纯构建（不修改外部可变状态、不依赖执行次数）。
+/// 高频更新的值仍应优先使用窄失效通道（`canvas`、`map_text`、输入组件绑定）；
+/// `scoped` 面向的是「结构随状态变化」的中低频子树。
+pub fn scoped<F, V>(build: F) -> ViewNode
+where
+    F: Fn() -> V + 'static,
+    V: View,
+{
+    // 重建工厂：节点失效时由所属树在完整捕获边界内重跑。
+    let rebuild: std::sync::Arc<dyn Fn() -> ViewNode> =
+        std::sync::Arc::new(move || build().build());
+    // 独立捕获帧：作用域内读取的 State 登记到本子树，不进入外层根帧。
+    let frame = ScopedCaptureFrame::begin();
+    let mut node = rebuild();
+    let output = frame.finish();
+    // 直接返回另一个 scoped 节点会让外层工厂覆盖内层语义；需要嵌套时
+    // 必须在两者之间包一层容器节点（如 column）形成真实父子结构。
+    assert!(
+        node.scoped_rebuild.is_none(),
+        "scoped 闭包不得直接返回另一个 scoped 节点：请在两者之间包一层容器"
+    );
+    node.captured_state_binds.extend(output.state_binds);
+    node.captured_effects.extend(output.effects);
+    node.scoped_rebuild = Some(rebuild);
+    node
+}
+
 // ── 按钮（View DSL 唯一入口）──────────────────────────────────
 
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};

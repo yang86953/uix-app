@@ -31,6 +31,8 @@ pub(super) fn adopt_widget_node(
         children: children.into_iter().map(adopt_widget_node).collect(),
         // 转移节点已经携带的结构性 State 输出。
         captured_state_binds: node.captured_state_binds,
+        // 命令式节点不携带子树作用域重建工厂。
+        scoped_rebuild: None,
         // 转移节点已经携带的节点生命周期 Effect 输出。
         captured_effects: node.captured_effects,
         // 命令式节点没有声明构建期的动画源输出。

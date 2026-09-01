@@ -89,6 +89,106 @@ impl WidgetTree {
         self.reconcile_requested.swap(false, Ordering::AcqRel)
     }
 
+    /// 原子消费一次待处理的作用域重建请求；非运行态树始终返回 `false`。
+    pub fn take_scoped_rebuild_requested(&self) -> bool {
+        // 非运行态树不得让窗口驱动重入声明更新。
+        if !self.accepts_external_work() {
+            if self.is_fail_stopped() {
+                // 清除失败前已发布的请求位，避免 teardown 前空转。
+                self.scoped_rebuild_requested
+                    .store(false, Ordering::Release);
+            }
+            return false;
+        }
+        self.scoped_rebuild_requested.swap(false, Ordering::AcqRel)
+    }
+
+    /// 是否存在待处理的作用域重建请求（调度保活探测用）。
+    pub fn has_scoped_rebuild_requested(&self) -> bool {
+        // 非运行态树不得因半树请求保持活跃。
+        if !self.accepts_external_work() {
+            return false;
+        }
+        self.scoped_rebuild_requested.load(Ordering::Acquire)
+    }
+
+    /// 取走全部待处理的作用域重建节点身份；重复请求在同一帧合并。
+    pub fn take_scoped_rebuild_requests(&mut self) -> Vec<WidgetId> {
+        // 与请求位同步清空：之后的 set 会重新置位并追加。
+        self.take_scoped_rebuild_requested();
+        let mut pending = self
+            .scoped_rebuild_pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let ids = std::mem::take(&mut *pending);
+        // 同帧多次失效同一作用域只保留一次重建。
+        let (mut unique, mut seen) = (
+            Vec::with_capacity(ids.len()),
+            std::collections::HashSet::new(),
+        );
+        for id in ids {
+            if seen.insert(id) {
+                unique.push(id);
+            }
+        }
+        unique
+    }
+
+    /// 丢弃待处理的作用域重建请求（整树根协调已重跑全部作用域闭包）。
+    pub fn drop_scoped_rebuild_requests(&mut self) {
+        // 根协调覆盖全部 scoped 输出，残余请求全部作废。
+        self.scoped_rebuild_requested
+            .store(false, Ordering::Release);
+        self.scoped_rebuild_pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+    }
+
+    // 把一个节点的结构性 State 绑定安装为该节点的作用域失效：
+    // set 只请求重建该子树（入队 + 置位），不再请求整树 reconcile；
+    // 同时把作用域重建工厂挂到节点，供帧循环重跑闭包并原位协调。
+    pub(crate) fn install_scoped_node(
+        &mut self,
+        id: WidgetId,
+        state_binds: Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+        rebuild: std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>,
+    ) {
+        // 请求回调捕获本树队列与节点身份；重复 set 只会重复入队并被合并。
+        let pending = std::sync::Arc::clone(&self.scoped_rebuild_pending);
+        let requested = std::sync::Arc::clone(&self.scoped_rebuild_requested);
+        let enqueue = Arc::new(move || {
+            // 先置位再入队：消费端按位判断后取队列，顺序保证不丢请求。
+            requested.store(true, Ordering::Release);
+            pending
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(id);
+        });
+        // 节点身份哈希即租约去重键：不同 scoped 节点绑定同一 State 也各自失效。
+        let lease_key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            id.hash(&mut hasher);
+            hasher.finish() as usize
+        };
+        let leases = state_binds
+            .into_iter()
+            .map(|source| {
+                crate::ui::reactive::state::ReconcileBindLease::bind(
+                    source,
+                    lease_key,
+                    std::sync::Arc::clone(&enqueue) as Arc<dyn Fn() + Send + Sync>,
+                )
+            })
+            .collect();
+        if let Some(node) = self.get_mut(id) {
+            // 作用域租约与重建工厂同属节点生命周期。
+            node.replace_reconcile_state_binds(leases);
+            node.set_scoped_rebuild(Some(rebuild));
+        }
+    }
+
     pub(crate) fn has_reconcile_requested(&self) -> bool {
         // 非运行态不得让调度器因半树请求保持活跃。
         if !self.accepts_external_work() {

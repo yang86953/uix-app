@@ -52,6 +52,9 @@ pub struct ViewNode {
     pub(crate) children: Vec<ViewNode>,
     // 保存当前捕获根读取的结构性 State 绑定，建树时由所属 WidgetTree 提交。
     pub(crate) captured_state_binds: Vec<Arc<dyn StatePaintBind>>,
+    // 子树作用域的重建工厂：由 `scoped()` 声明；presence 同时表示本节点的
+    // 结构性 State 绑定须安装为节点作用域失效（而非整树 reconcile 请求）。
+    pub(crate) scoped_rebuild: Option<Arc<dyn Fn() -> ViewNode>>,
     // 保存当前捕获根创建的 Effect，协调时由所属 WidgetTree 整体替换。
     pub(crate) captured_effects: Vec<Effect>,
     pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
@@ -108,6 +111,8 @@ impl ViewNode {
             children: vec![],
             // 非捕获构造路径不携带结构性 State 绑定。
             captured_state_binds: Vec::new(),
+            // 非捕获构造路径不携带子树作用域重建工厂。
+            scoped_rebuild: None,
             // 非捕获构造路径不携带根 Effect。
             captured_effects: Vec::new(),
             animated_sources: Vec::new(),
@@ -149,6 +154,8 @@ impl ViewNode {
             children,
             // 非捕获构造路径不携带结构性 State 绑定。
             captured_state_binds: Vec::new(),
+            // 非捕获构造路径不携带子树作用域重建工厂。
+            scoped_rebuild: None,
             // 非捕获构造路径不携带根 Effect。
             captured_effects: Vec::new(),
             animated_sources: Vec::new(),

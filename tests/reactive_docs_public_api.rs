@@ -68,6 +68,44 @@ mod computed_full_name {
     }
 }
 
+// 隔离 scoped-subtree 围栏中的子树作用域声明。
+mod scoped_subtree {
+    // 引入文档承诺的公开 State、scoped 组合器与布局 API。
+    use uix::prelude::*;
+
+    // 暴露当前模块对应的文档编译标识。
+    pub(super) const COMPILE_ID: &str = "scoped-subtree";
+
+    // 编译读取 State 的子树作用域公开组合。
+    fn compile_example() {
+        // 创建当前高亮行状态。
+        let highlight = State::new(0_usize);
+        // 准备静态歌词行。
+        let lines = vec!["第一行".to_string(), "第二行".to_string()];
+
+        // 闭包内读取的 State 登记为该子树的作用域依赖。
+        let _scope = scoped(move || {
+            // 读取当前高亮行。
+            let active = highlight.get();
+            // 按高亮态装配行样式。
+            let rows = lines
+                .iter()
+                .enumerate()
+                .map(|(index, text)| {
+                    // 当前行放大、其余行常规。
+                    if index == active {
+                        label(text.clone()).font_size(17.0).height(32.0)
+                    } else {
+                        label(text.clone()).font_size(14.0).height(32.0)
+                    }
+                })
+                .collect::<Vec<_>>();
+            // 返回定高列容器作为作用域子树。
+            column(rows)
+        });
+    }
+}
+
 // 隔离 state-view-mapping 围栏中的两个响应式 View 映射。
 mod state_view_mapping {
     // 引入文档承诺的公开 State、View 与颜色 API。
@@ -225,7 +263,7 @@ mod computed_model {
 #[test]
 // 确认本批外部消费者覆盖入口与响应式文档的八个围栏。
 fn application_and_reactive_rust_fences_compile_as_external_consumers() {
-    // 收集八个已经由编译器类型检查的公开示例标识。
+    // 收集九个已经由编译器类型检查的公开示例标识。
     let compile_ids = [
         // 登记最小应用围栏。
         app_minimal::COMPILE_ID,
@@ -235,6 +273,8 @@ fn application_and_reactive_rust_fences_compile_as_external_consumers() {
         computed_full_name::COMPILE_ID,
         // 登记 State 到 View 映射围栏。
         state_view_mapping::COMPILE_ID,
+        // 登记子树作用域围栏。
+        scoped_subtree::COMPILE_ID,
         // 登记 Effect 依赖围栏。
         effect_dependency::COMPILE_ID,
         // 登记条件与列表围栏。
@@ -258,6 +298,8 @@ fn application_and_reactive_rust_fences_compile_as_external_consumers() {
             "computed-full-name",
             // State 到 View 映射围栏标识。
             "state-view-mapping",
+            // 子树作用域围栏标识。
+            "scoped-subtree",
             // Effect 依赖围栏标识。
             "effect-dependency",
             // 条件与列表围栏标识。

@@ -120,6 +120,10 @@ pub struct WidgetTree {
     pub(crate) layout_ancestor_scratch: Vec<WidgetId>,
     pub(crate) reconcile_requested: Arc<AtomicBool>,
     pub(crate) reconcile_callback: Arc<dyn Fn() + Send + Sync>,
+    // 作用域重建请求位：任一 scoped 节点失效时置位，供帧循环快速探测。
+    pub(crate) scoped_rebuild_requested: Arc<AtomicBool>,
+    // 等待帧循环消费的 scoped 节点身份集合（同帧多源可合并去重）。
+    pub(crate) scoped_rebuild_pending: Arc<std::sync::Mutex<Vec<WidgetId>>>,
     // 保存声明根持有的结构性 State 订阅租约。
     pub(crate) root_reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
     pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
@@ -175,6 +179,9 @@ impl Default for WidgetTree {
             Arc::new(move || requested.store(true, Ordering::Release))
                 as Arc<dyn Fn() + Send + Sync>
         };
+        // scoped 重建通道与根协调通道并行：位 + 队列都在本树私有。
+        let scoped_rebuild_requested = Arc::new(AtomicBool::new(false));
+        let scoped_rebuild_pending = Arc::new(std::sync::Mutex::new(Vec::new()));
         Self {
             // 新树从可接收协调与外部工作的私有状态开始。
             execution_state: execution_state::WidgetTreeExecutionState::operational(),
@@ -206,6 +213,8 @@ impl Default for WidgetTree {
             layout_ancestor_scratch: Vec::new(),
             reconcile_requested,
             reconcile_callback,
+            scoped_rebuild_requested,
+            scoped_rebuild_pending,
             // 初始树尚未接纳任何声明根结构性 State 绑定。
             root_reconcile_state_binds: Vec::new(),
             effects: Vec::new(),
