@@ -33,21 +33,23 @@ fn generates_reactive_widget_scoped_wrapping() {
     assert!(tokens.contains(":: uix :: prelude :: scoped"));
     // scoped 闭包应使用 move 捕获准备语句建立的绑定。
     assert!(tokens.contains("move ||"));
-    // State 句柄克隆语句应位于 scoped 闭包内（clone 出现在 scoped 之后）。
+    // 调用方句柄求值位于 scoped 闭包外（调用方帧），组件体读值在闭包内。
     let scoped_at = tokens
         .find("scoped")
         .expect("scoped 组合器应存在");
-    // 句柄克隆的准备语句文本。
+    // 句柄克隆的准备语句文本在调用方帧：先于 scoped 出现。
     let clone_at = tokens
         .find("shared_count")
         .expect("共享句柄应出现在准备语句");
-    // 本例中调用方句柄在克隆语句内被引用，必须晚于 scoped 出现。
     assert!(
-        tokens[scoped_at..].contains("shared_count"),
-        "共享句柄引用应在 scoped 闭包内"
+        clone_at < scoped_at,
+        "调用参数求值应位于调用方帧（scoped 闭包之前）"
     );
-    // 读值 get 调用也应位于闭包内。
-    assert!(tokens[scoped_at..].contains(". get"));
+    // 组件体读值 get 调用位于闭包内：句柄的闭包内克隆副本再读值。
+    assert!(
+        tokens[scoped_at..].contains(". get"),
+        "组件体读值应在 scoped 闭包内"
+    );
     // 普通（非 reactive）文档不应出现 scoped。
     let plain = parse_document(
         // 不声明 reactive 的对照组件。
@@ -68,8 +70,6 @@ fn generates_reactive_widget_scoped_wrapping() {
         .to_string();
     // 未声明 reactive 时不得出现 scoped 组合器。
     assert!(!plain_tokens.contains(":: uix :: prelude :: scoped"));
-    // 避免未使用变量警告。
-    let _ = clone_at;
 }
 
 // 验证 reactive 组件内 external 投影函数进入 scoped 闭包。
