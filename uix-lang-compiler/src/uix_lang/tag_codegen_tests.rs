@@ -61,6 +61,24 @@ fn generates_custom_and_dynamic_tag_values() {
     );
 }
 
+// 验证语义色表达式映射到公开 TagColor 构建器。
+#[test]
+fn generates_dynamic_semantic_color_binding() {
+    // 生成绑定语义色表达式的 Tag。
+    let snapshot = generate(r#"<Tag semanticColor={status_color}>live</Tag>"#)
+        .expect("语义色表达式应映射到公开构建器");
+    // 语义色必须调用公开预设颜色入口。
+    assert!(snapshot.contains("color (status_color)"), "{snapshot}");
+    // 与具体色同时声明必须在编译期拒绝。
+    let conflict = generate(r##"<Tag color="#999999" semanticColor={status_color}>live</Tag>"##)
+        .expect_err("双色来源必须失败");
+    assert!(conflict.message.contains("不能同时声明"));
+    // 字面量语义色必须失败。
+    let literal = generate(r#"<Tag semanticColor="success">live</Tag>"#)
+        .expect_err("语义色字面量必须失败");
+    assert!(literal.message.contains("TagColor 表达式"));
+}
+
 // 验证 Tag 拒绝未知颜色、非法十六进制与嵌套元素。
 #[test]
 fn rejects_invalid_tag_contracts() {

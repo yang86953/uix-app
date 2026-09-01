@@ -25,6 +25,36 @@ pub(crate) fn generate_tag(element: &Element) -> Result<TokenStream, Diagnostic>
         // 生成颜色配置后的 Tag。
         widget = apply_color(widget, attribute)?;
     }
+    // 可选语义色绑定公开 TagColor 表达式；与 color 的具体色互斥。
+    if let Some(attribute) = find_attribute(element, "semanticColor") {
+        // 语义色必须是受限表达式，类型由 Rust 检查为公开 TagColor。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回语义色形状诊断。
+            return Err(Diagnostic::new(
+                // 指向非法 semanticColor 属性。
+                attribute.span,
+                // 说明公开运行时绑定类型。
+                "Tag semanticColor 必须是 TagColor 表达式",
+                // 给出规范绑定写法。
+                "使用 semanticColor={status_color}",
+            ));
+        };
+        if find_attribute(element, "color").is_some() {
+            // 双色来源会造成未定义优先级。
+            return Err(Diagnostic::new(
+                // 指向 semanticColor 属性。
+                attribute.span,
+                // 说明互斥原因。
+                "Tag semanticColor 与 color 不能同时声明",
+                // 给出单一颜色来源建议。
+                "使用语义色表达式或具体颜色之一",
+            ));
+        }
+        // 生成受限语义色表达式。
+        let semantic = generate_expression(&expression.expression, None)?;
+        // 调用公开预设颜色构建器。
+        widget = quote! { (#widget).color(#semantic) };
+    }
     // 可关闭能力只改变运行时初始配置，不接管关闭生命周期。
     if let Some(attribute) = find_attribute(element, "closable") {
         // 复用统一布尔属性诊断与动态表达式生成。
@@ -58,7 +88,7 @@ pub(crate) fn generate_tag(element: &Element) -> Result<TokenStream, Diagnostic>
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性进入公共映射。
-        &["color", "closable", "checkable"],
+        &["color", "semanticColor", "closable", "checkable"],
     )
 }
 

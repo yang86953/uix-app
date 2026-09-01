@@ -4,6 +4,33 @@
 
 ## 未发布
 
+### UIX Lang 补齐消费者侧登记缺口（语言能力）
+
+- 背景：桌面消费者（小贝）按 UIX Lang 迁移界面时实证出五项登记缺口，
+  按适配规则形成产品需求，本批统一补齐。
+- `Input` 新增 `rows`（最小可见行数，隐含启用多行模式）与 `maxLength`
+  （后续用户输入的最大字符数）属性，均接受 `usize` 整数字面量或受限
+  表达式，映射公开 `rows`/`max_length` 构建器。
+- `Select` 与 `Checkbox` 新增 `@change` 事件：选中值或勾选状态提交后
+  触发，`$event` / `$event.value` 是当前值的文本借用（Checkbox 为
+  `"true"` / `"false"`），映射公开 `on_change_fn` 入口。
+- `Tag` 新增 `semanticColor` 属性：绑定 `TagColor` 表达式走公开预设
+  语义色入口，与 `color`（具体色）互斥，同时声明得到编译期诊断。
+- 同步 `docs/uix-lang/参考`（组件属性表、示例围栏与事件登记表）与
+  编译器生成快照测试。
+
+### TestApp 公开系统事件注入（测试能力）
+
+- 症状：test-harness 的 `TestApp` 只暴露语义动作与三个硬编码便捷事件，
+  文件拖放、指针序列等交互在无窗口测试中无法端到端驱动。
+- 改进：新增 `TestApp::dispatch_system_event(&SystemEvent)`，前后各执行
+  一次收敛并返回树级 `EventResult`；坐标为逻辑客户区坐标，与语义快照
+  同空间。视口变化仍应使用 `resize()`（裸 `Resize` 不更新根 frame），
+  拖拽手势应由 PointerDown → PointerMove → PointerUp 序列合成。
+- 新增使用文档 `docs/使用/框架设施/测试驱动.md` 与公开 API 测试
+  `tests/test_harness_event_injection_public_api.rs`（FileDrop → Upload
+  队列端到端）。
+
 ### 调试 HUD 支持折叠与拖动（可用性改进）
 
 - 症状：统一调试模式的帧 HUD 固定锚在窗口右上角且不可收起，遮挡其下方

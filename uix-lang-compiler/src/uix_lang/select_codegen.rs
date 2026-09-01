@@ -10,8 +10,8 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Select 属性、表达式、值转换与诊断契约。
 use super::{
-    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_expression,
-    string_value,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_event_handler_expression,
+    generate_expression, string_value,
 };
 
 // 生成绑定结构化选项和单选或多选状态的下拉选择器节点。
@@ -85,8 +85,36 @@ pub(crate) fn generate_select(element: &Element) -> Result<TokenStream, Diagnost
     // 最后绑定状态并由 const 泛型核对单选或多选值类型。
     widget = quote! { (#widget).value_mode::<#multiple, _>(&(#state)) };
 
-    // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 物化为公开叶 View；Change 处理器由 View 契约拥有。
+    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    // 可选值提交事件读取统一选中值文本载荷。
+    if let Some(attribute) = find_attribute(element, "@change") {
+        // 事件解析器应始终提供受限表达式。
+        let AttributeValue::Expression(expression) = &attribute.value else {
+            // 返回内部形状保护诊断。
+            return Err(Diagnostic::new(
+                // 指向完整事件属性。
+                attribute.span,
+                // 说明事件处理器形状。
+                "Select @change 必须是受限处理器表达式",
+                // 给出带载荷的规范写法。
+                "使用 @change=\"on_change($event)\"",
+            ));
+        };
+        // 创建卫生的选中值载荷变量。
+        let value = proc_macro2::Ident::new("__uix_change_value", proc_macro2::Span::mixed_site());
+        // 生成裸处理器或显式载荷调用。
+        let handler =
+            generate_event_handler_expression(&expression.expression, &value, "@change")?;
+        // 使用公开 View Change 注册入口保存处理器。
+        view = quote! {
+            // 注册只接收当前选中值文本借用的提交闭包。
+            (#view).on_change_fn(move |#value| {
+                // 丢弃处理器返回值并保留副作用。
+                let _ = { #handler };
+            })
+        };
+    }
     // 消费 Select 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的下拉选择器 View。
@@ -94,7 +122,7 @@ pub(crate) fn generate_select(element: &Element) -> Result<TokenStream, Diagnost
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止专有属性进入公共映射。
-        &["options", "value", "multiple", "searchable", "placeholder"],
+        &["options", "value", "multiple", "searchable", "placeholder", "@change"],
     )
 }
 

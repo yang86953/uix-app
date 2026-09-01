@@ -44,6 +44,29 @@ fn generates_bound_select_contract() {
     assert!(snapshot.contains("width (240.0)"));
 }
 
+// 验证 Select 值提交事件的文本载荷生成。
+#[test]
+fn generates_select_change_event_with_payload() {
+    // 生成带值提交事件的单选选择器。
+    let snapshot = generate(
+        r#"<Select value={city} options={city_options} @change="on_city_change($event)" />"#,
+    )
+    // 合法事件必须成功生成。
+    .expect("Select @change 应映射到公开 View Change 入口");
+    // Change 事件必须把选中值文本载荷交给处理器。
+    assert!(
+        snapshot.contains("on_change_fn")
+            && snapshot.contains("(on_city_change) (__uix_change_value)"),
+        "{snapshot}"
+    );
+    // 裸零参数处理器也必须成立。
+    let bare = generate(
+        r#"<Select value={city} options={city_options} @change="on_city_committed()" />"#,
+    )
+    .expect("零参数 Select @change 应生成");
+    assert!(bare.contains("on_change_fn") && bare.contains("(on_city_committed) ()"), "{bare}");
+}
+
 // 验证 Select 默认单选模式和拒绝路径。
 #[test]
 fn validates_select_contracts() {
