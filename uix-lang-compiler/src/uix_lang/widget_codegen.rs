@@ -329,6 +329,7 @@ impl WidgetExpander {
             for_iteration_clones: Vec::new(),
             // 合成容器不是 For，因此没有逐迭代组件准备语句。
             for_iteration_setup: Vec::new(),
+            reactive_setup: None,
         })
     }
 
@@ -719,6 +720,10 @@ impl WidgetExpander {
         }
         // 验证调用属性与 props 一一对应。
         let attributes = validate_widget_attributes(element, &widget)?;
+        // reactive 组件在进入展开前记录准备语句边界：本组件与全部嵌套
+        // 组件的准备语句收归本子树，供 scoped 闭包重建时在独立捕获帧重跑。
+        // 边界必须先于插槽投影：插槽内容在调用方作用域求值，其依赖归调用方。
+        let reactive_boundary = widget.reactive.then(|| self.setup.len());
         // 进入当前组件展开栈。
         self.stack.push(widget.name.clone());
         // 标记当前调用是否已进入被调用组件的 external 作用域。
@@ -887,10 +892,128 @@ impl WidgetExpander {
         }
         // 离开当前组件展开栈。
         self.stack.pop();
+        // reactive 组件在栈恢复后收归本子树准备语句并把标记挂到唯一根。
+        let result = match (result, reactive_boundary) {
+            // 普通（非 reactive）组件保持既有内联展开结果。
+            (result, None) => result,
+            // reactive 组件把展开结果转换成带作用域准备语句的单一根。
+            (Ok(nodes), Some(boundary)) => {
+                // 取回本子树作用域的全部准备语句文本。
+                let own_setup: Vec<String> = self
+                    // 借用文档级准备语句列表。
+                    .setup
+                    // 从边界开始收归本组件与嵌套组件的语句。
+                    .drain(boundary..)
+                    // 序列化为可恢复的内部令牌文本。
+                    .map(|statement| statement.to_string())
+                    // 保持依赖顺序。
+                    .collect();
+                // 把准备语句与唯一根标记结合。
+                attach_reactive_setup(element, nodes, own_setup)
+            }
+            // 展开失败的 reactive 组件不再需要收归语句。
+            (Err(diagnostic), Some(boundary)) => {
+                // 展开路径的语句在错误恢复时可能已部分压入。
+                self.setup.truncate(boundary);
+                // 透传原诊断。
+                Err(diagnostic)
+            }
+        };
         // 返回展开结果或诊断。
         result
     }
+}
 
+// 把 reactive 组件的展开结果收敛为携带作用域准备语句的单一元素根。
+fn attach_reactive_setup(
+    // 接收实际的组件调用元素。
+    element: &Element,
+    // 接收组件体展开后的同层节点。
+    nodes: Vec<Node>,
+    // 接收收归本子树作用域的准备语句文本。
+    own_setup: Vec<String>,
+) -> Result<Vec<Node>, Diagnostic> {
+    // 过滤只承担排版的空白文本。
+    let mut renderable: Vec<Node> = nodes
+        // 遍历全部展开节点。
+        .into_iter()
+        // 只保留会生成可见或结构 View 的节点。
+        .filter(|node| is_renderable_node(node))
+        // 收集为拥有型列表。
+        .collect();
+    // reactive 组件需要至少一个可渲染根承载作用域。
+    if renderable.is_empty() {
+        // 返回空组件诊断。
+        return Err(Diagnostic::new(
+            // 指向完整调用位置。
+            element.span,
+            // 说明 reactive 组件的根要求。
+            "reactive 组件展开后没有可渲染节点",
+            // 给出最小修复动作。
+            "在组件体加入 View 元素，或移除 reactive 声明",
+        ));
+    }
+    // 多根组件以合成 Column 收敛为唯一根，与文档根多根策略一致。
+    let mut root = if renderable.len() > 1 {
+        // 交出全部可渲染根。
+        let children = std::mem::take(&mut renderable);
+        // 合成 Column 不携带用户属性与作用域标记。
+        Node::Element(Element {
+            // 使用已登记的核心列容器。
+            name: "Column".to_string(),
+            // 合成容器没有额外属性。
+            attributes: Vec::new(),
+            // 保存全部展开节点。
+            children,
+            // 合成容器不是控制元素。
+            control: None,
+            // 沿用调用位置跨度。
+            span: element.span,
+            // 合成容器不属于用户组件实例。
+            widget_scopes: Vec::new(),
+            // 合成容器不是 For。
+            for_iteration_clones: Vec::new(),
+            // 合成容器不是 For。
+            for_iteration_setup: Vec::new(),
+            // 作用域标记由下方统一写入。
+            reactive_setup: None,
+        })
+    } else {
+        // 单根组件直接取唯一可渲染根。
+        renderable.remove(0)
+    };
+    // 唯一根必须是元素：文本与插值节点无法携带作用域准备语句。
+    let Node::Element(root_element) = &mut root else {
+        // 返回根形状诊断。
+        return Err(Diagnostic::new(
+            // 指向完整调用位置。
+            element.span,
+            // 说明根必须是元素。
+            "reactive 组件的唯一根必须是元素节点",
+            // 给出容器包裹建议。
+            "用 Container、Row 或 Column 包裹文本根后声明 reactive",
+        ));
+    };
+    // 唯一根不得已是另一个 reactive 组件的 scoped 根：运行时 scoped
+    // 节点不允许直接返回另一个 scoped 节点，必须在两者之间有真实容器。
+    if root_element.reactive_setup.is_some() {
+        // 返回嵌套 scoped 诊断。
+        return Err(Diagnostic::new(
+            // 指向完整调用位置。
+            element.span,
+            // 说明直接嵌套不可行。
+            "reactive 组件的根不能直接是另一个 reactive 组件的根",
+            // 给出与 Rust scoped 相同的修复动作。
+            "在两个组件之间包一层 Container、Row 或 Column 形成真实父子结构",
+        ));
+    }
+    // 把收归的准备语句挂到唯一根。
+    root_element.reactive_setup = Some(own_setup);
+    // 返回带作用域标记的单一根。
+    Ok(vec![root])
+}
+
+impl WidgetExpander {
     // 为组件展开后的每个顶层实际根附加私有状态作用域标记。
     fn mark_widget_roots(&mut self, nodes: &mut [Node], scope: &Ident) {
         // 按展开后的源码顺序分配多根组件的稳定根序号。

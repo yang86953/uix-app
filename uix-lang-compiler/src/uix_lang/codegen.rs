@@ -34,6 +34,8 @@ use super::{
 mod for_setup;
 // 引入只解析编译器内部令牌文本的恢复入口。
 use for_setup::parse_for_iteration_setup;
+// 引入 reactive 组件作用域准备语句恢复入口。
+use for_setup::parse_reactive_setup;
 // 生成一个可直接消费的公开 UIX View 表达式。
 pub(crate) fn generate_view(element: &Element) -> Result<TokenStream, Diagnostic> {
     let source_id = element
@@ -76,6 +78,20 @@ fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic
     let view = quote! { ::uix::prelude::View::build(#view) };
     // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
     let view = apply_widget_scopes(view, &element.widget_scopes)?;
+    // reactive 组件根包进独立捕获帧的 scoped 闭包：收归的准备语句在
+    // 闭包内重建时重跑，组件体读取的 State 只登记为本子树结构依赖。
+    let view = if let Some(reactive_setup) = &element.reactive_setup {
+        // 恢复本子树作用域的准备语句。
+        let setup = parse_reactive_setup(reactive_setup, element.span)?;
+        // 复用公开 scoped 组合器建立子树作用域。
+        quote! {
+            // 先重建 props、状态与回调适配器，再构建只含核心元素的 View。
+            ::uix::prelude::scoped(move || { #(#setup)* #view })
+        }
+    } else {
+        // 普通根保持既有表达式。
+        view
+    };
     Ok(mark_source_tokens(view, element.span))
 }
 

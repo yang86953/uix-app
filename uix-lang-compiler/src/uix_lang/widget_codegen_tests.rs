@@ -862,3 +862,86 @@ fn generates_typed_private_state_tokens() {
     // setState 更新值中的整数字面量同样恢复作者形状。
     assert!(!tokens.contains("rating + 1.0"));
 }
+
+// 验证 State<Vec<String>> prop 作为共享列表句柄进入组件并被 For 消费。
+#[test]
+fn generates_shared_state_vec_string_prop_tokens() {
+    // 解析共享列表组件。
+    let document = parse_document(
+        // 使用公开 State<Vec<String>> 契约。
+        r#"
+        <Widget name="QueuePanel" props="queue: State<Vec<String>>">
+          <Column>
+            <For {item} {i} in {queue}>
+              <Text>{i}: {item}</Text>
+            </For>
+          </Column>
+        </Widget>
+        <QueuePanel queue={shared_queue} />
+        "#,
+    )
+    // 合法共享列表文档必须解析成功。
+    .expect("共享列表文档应解析成功");
+    // 生成完整令牌。
+    let tokens = generate_document_view(&document)
+        // 合法共享列表应生成成功。
+        .expect("共享列表组件应生成成功")
+        // 转换为文本。
+        .to_string();
+    // State prop 应固定内部 Vec<String> 类型。
+    assert!(tokens.contains("State < :: std :: vec :: Vec < :: std :: string :: String > >"));
+    // 共享句柄应保留调用方名称。
+    assert!(tokens.contains("shared_queue"));
+    // For 数据源应从句柄读值并克隆迭代。
+    assert!(tokens.contains(". get ()"));
+}
+
+// 验证 State<usize> prop 作为精确索引句柄被组件读取。
+#[test]
+fn generates_shared_state_usize_prop_tokens() {
+    // 解析共享索引组件。
+    let document = parse_document(
+        // 使用公开 State<usize> 契约。
+        r#"
+        <Widget name="PositionBadge" props="index: State<usize>">
+          <Text>当前 {index}</Text>
+        </Widget>
+        <PositionBadge index={shared_index} />
+        "#,
+    )
+    // 合法共享索引文档必须解析成功。
+    .expect("共享索引文档应解析成功");
+    // 生成完整令牌。
+    let tokens = generate_document_view(&document)
+        // 合法共享索引应生成成功。
+        .expect("共享索引组件应生成成功")
+        // 转换为文本。
+        .to_string();
+    // State prop 应固定内部 usize 类型。
+    assert!(tokens.contains("State < usize >"));
+    // 共享句柄应保留调用方名称。
+    assert!(tokens.contains("shared_index"));
+}
+
+// 验证集合类型仍不能冒充基础值 prop 或回调参数。
+#[test]
+fn rejects_collection_value_props_and_callback_arguments() {
+    // 解析集合值 prop 组件。
+    let value_prop = parse_document(
+        // 直接把 Vec<String> 用作值 prop。
+        r#"<Widget name="BadList" props="items: Vec<String>"><Text>items</Text></Widget><BadList />"#,
+    )
+    // 解析阶段即应拒绝未登记值 prop。
+    .expect_err("集合值 prop 必须解析失败");
+    // 诊断应指向类型白名单。
+    assert!(value_prop.message.contains("不支持 prop 类型"));
+    // 解析集合回调参数组件。
+    let callback = parse_document(
+        // 把 Vec<String> 用作回调参数类型。
+        r#"<Widget name="BadCb" props="onItems: (Vec<String>)"><Text>x</Text></Widget><BadCb onItems={noop} />"#,
+    )
+    // 解析阶段即应拒绝集合回调参数。
+    .expect_err("集合回调参数必须解析失败");
+    // 诊断应指向 props 类型。
+    assert!(callback.message.contains("不支持 prop 类型"));
+}

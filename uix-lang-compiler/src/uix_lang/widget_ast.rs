@@ -18,6 +18,9 @@ pub(crate) struct WidgetDeclaration {
     pub(crate) slots: Vec<WidgetSlot>,
     // 保存组件体获准引用的 Rust 外部符号。
     pub(crate) external: Vec<String>,
+    // 声明组件调用位形成独立响应式作用域：组件体（含嵌套与 external
+    // 调用）读取的 State 登记为本子树的结构依赖，变化只重跑本子树。
+    pub(crate) reactive: bool,
     // 保存组件视图体的有序节点。
     pub(crate) children: Vec<Node>,
     // 保存完整 Widget 声明跨度。

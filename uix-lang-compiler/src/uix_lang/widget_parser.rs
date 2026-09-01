@@ -200,9 +200,9 @@ fn parse_prop_type(source: &str, span: SourceSpan) -> Result<WidgetPropType, Dia
         // 去除末尾右尖括号。
         .and_then(|value| value.strip_suffix('>'))
     {
-        // State 泛型只允许基础类型。
+        // State 泛型允许共享状态类型：精确整数、集合与基础值。
         let value =
-            parse_value_type(inner.trim()).ok_or_else(|| invalid_prop_type(source, span))?;
+            parse_state_prop_type(inner.trim()).ok_or_else(|| invalid_prop_type(source, span))?;
         // 返回响应式状态 prop。
         return Ok(WidgetPropType::State(value));
     }
@@ -266,6 +266,16 @@ fn parse_value_type(source: &str) -> Option<WidgetValueType> {
     let spec = super::super::projection_schema::UI_PROJECTION_SCHEMA
         .value_type(source)
         .filter(|spec| spec.allowed_in_props)?;
+    // 返回登记名到 lowering 变体的确定映射。
+    registered_value_type(spec.name)
+}
+
+// 解析 State<T> 泛型内允许的共享状态类型。
+fn parse_state_prop_type(source: &str) -> Option<WidgetValueType> {
+    // State 泛型白名单由 schema 的独立登记位持有。
+    let spec = super::super::projection_schema::UI_PROJECTION_SCHEMA
+        .value_type(source)
+        .filter(|spec| spec.allowed_in_state_props)?;
     // 返回登记名到 lowering 变体的确定映射。
     registered_value_type(spec.name)
 }
@@ -596,7 +606,7 @@ fn invalid_prop_type(source: &str, span: SourceSpan) -> Diagnostic {
         // 说明未知类型。
         format!("不支持 prop 类型 {source:?}"),
         // 给出完整允许集合。
-        "使用 String、number、bool、State<T> 或基础类型组成的回调签名",
+        "使用 String、number、bool、Date、Time、Color、Point、State<T>（含精确整数与集合）或基础类型组成的回调签名",
     )
 }
 

@@ -3,6 +3,8 @@ use proc_macro2::TokenStream;
 
 // 引入核心文本、按钮与图标生成 helper。
 use super::codegen::{generate_button, generate_icon, generate_text};
+// 引入 Canvas 绘制组件专用生成入口。
+use super::generate_canvas;
 // 引入所有独立组件生成器、语法树与诊断入口。
 use super::{
     Diagnostic, Element, generate_affix, generate_alert, generate_anchor, generate_app_layout,
@@ -58,6 +60,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "KernelView" => generate_kernel_view(element),
         // 框架模板可把唯一 UIX 展示子树交给 Rust 基础内核包装。
         "KernelHost" => generate_kernel_host(element),
+        // 画布映射到公开 canvas 组合器，绘制回调与窄失效由 Rust 侧持有。
+        "Canvas" => generate_canvas(element),
         // 文本映射到公开 label 构造器。
         "Text" => generate_text(element),
         // 文档通用组件 Label 与 Text 使用同一公开构造器。
