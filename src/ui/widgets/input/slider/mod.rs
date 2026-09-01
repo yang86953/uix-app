@@ -263,6 +263,8 @@ widget! {
         )));
         // 继续捕获受控值依赖。
         self.capture_bound_value_dependency();
+        // 受控显示值在绘制期解析：外部 set 只触发本节点 Paint 失效。
+        let value = self.display_value();
         let control_height = frame.h.max(0.0).min(self.control_height());
         let control_rect = Rect::new(frame.x, frame.y, frame.w.max(0.0), control_height);
         self.last_frame
@@ -277,7 +279,7 @@ widget! {
         let thumb_r = self.thumb_radius(control_rect);
         let cy = control_rect.y + control_rect.h * self.visual.center_ratio;
 
-        let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
+        let pct = ((value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32;
         let (track_x, track_w) = self.track_span(control_rect);
         let thumb_x = track_x + pct * track_w;
 
@@ -302,7 +304,7 @@ widget! {
                 mark_x,
                 cy,
                 mark_radius,
-                if *mark <= self.value {
+                if *mark <= value {
                     visual.primary
                 } else {
                     visual.track
@@ -513,6 +515,15 @@ impl Slider {
         capture_dependency(self.value_binding.as_ref());
     }
 
+    /// 受控显示值：绘制期直接读绑定 State（同一次读取完成 Paint 依赖捕获），
+    /// 外部 set 无需整树重建即可反映到本节点；非受控回落 `self.value`。
+    fn display_value(&self) -> f64 {
+        match self.value_binding.as_ref() {
+            Some(state) => self.clamp_value(state.get()),
+            None => self.value,
+        }
+    }
+
     fn write_bound_value(&self) {
         write_if_changed(self.value_binding.as_ref(), self.value);
     }
@@ -656,9 +667,13 @@ impl Slider {
     }
 
     /// 将滑块值绑定到外部 `State<f64>`。
+    ///
+    /// 初始值用无跟踪读取：构建期 `get()` 会把绑定 State 登记为根 View
+    /// 结构依赖，外部每次 `set`（如播放进度回填）都会触发整树重建；
+    /// 受控值的后续变更由绘制期读取经 Paint 租约走节点级失效。
     pub fn value(mut self, state: &State<f64>) -> Self {
         self.value_binding = Some(state.clone());
-        self.value = self.clamp_value(state.get());
+        self.value = self.clamp_value(state.get_untracked());
         self
     }
 
