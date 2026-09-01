@@ -77,12 +77,9 @@ widget! {
 
     visible => (&self) -> bool { self.style.visible }
 
-    on_children_changed => (&mut self, child_count: usize) {
-        // 最后一个子节点移除后，旧内容尺寸不再是有效的测量下限。
-        if child_count == 0 {
-            // 立即归零，避免下一轮布局跳过空节点时继续暴露陈旧尺寸。
-            self.cached_content_size.set(Size::zero());
-        }
+    on_children_changed => (&mut self, _child_count: usize) {
+        // 任意子树拓扑变化都会使旧内容尺寸失效；嵌套 If 保留兄弟节点时也必须清空。
+        self.cached_content_size.set(Size::zero());
     }
 
     on_child_visibility_changed => (&mut self) {
@@ -324,17 +321,20 @@ impl Container {
             padding: style.padding,
         }
         .content_rect(frame);
-        // 零主轴是首次固有尺寸 bootstrap，不得提前返回，否则子节点会堆叠在原点。
-        let main_axis_indefinite = matches!(
+        // 只有尚未取得父级有限主轴 frame 的首次 bootstrap 才按固有尺寸求解。
+        // flexGrow 链取得实际 frame 后必须分配剩余空间，不能因未声明 width/height
+        // 再次退回 hug，否则根布局及其后代会稳定停留在自然尺寸。
+        let main_axis_indefinite = if matches!(
             style.flex_direction,
             crate::ui::theme::style::FlexDirection::Column
                 | crate::ui::theme::style::FlexDirection::ColumnReverse
-        ) && style.height.is_none_or(|height| height <= 0.0)
-            || matches!(
-                style.flex_direction,
-                crate::ui::theme::style::FlexDirection::Row
-                    | crate::ui::theme::style::FlexDirection::RowReverse
-            ) && style.width.is_none_or(|width| width <= 0.0);
+        ) {
+            content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold
+                && style.height.is_none_or(|height| height <= 0.0)
+        } else {
+            content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
+                && style.width.is_none_or(|width| width <= 0.0)
+        };
         let cross_axis_indefinite = if matches!(
             style.flex_direction,
             crate::ui::theme::style::FlexDirection::Row

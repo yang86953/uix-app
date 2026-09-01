@@ -253,10 +253,22 @@ impl Input {
         self.status_message = next.status_message;
         self.textarea_rows = next.textarea_rows;
         self.max_length = next.max_length;
+        // 声明树重建时同步最新叶控件布局覆盖，避免旧 hug 宽度残留。
+        self.view_width = next.view_width;
+        self.view_height = next.view_height;
+        self.view_flex_grow = next.view_flex_grow;
+        self.view_flex_shrink = next.view_flex_shrink;
         self.visual = next.visual;
     }
     pub(crate) fn controlled_value_changed(&self, next: &Self) -> bool {
         next.value_binding.is_some() && self.value != next.value
+    }
+    /// 返回快照跳过的 View 布局字段是否发生变化。
+    pub(crate) fn view_layout_changed(&self, next: &Self) -> bool {
+        self.view_width != next.view_width
+            || self.view_height != next.view_height
+            || self.view_flex_grow != next.view_flex_grow
+            || self.view_flex_shrink != next.view_flex_shrink
     }
     /// 设置输入区域内部、文本之前显示的前缀。
     pub fn prefix(mut self, s: &str) -> Self {

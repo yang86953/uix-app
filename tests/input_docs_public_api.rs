@@ -203,27 +203,66 @@ fn input_rust_fences_compile_as_external_consumers() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn input_view_width_and_flex_grow_reach_public_layout() {
+    use uix::prelude::*;
     use uix::ui::test_harness::TestApp;
 
-    let app = TestApp::new((320.0, 100.0), || {
+    let expanded = State::new(false);
+    let root_expanded = expanded.clone();
+    let mut app = TestApp::new((360.0, 140.0), move || {
+        let expanded = root_expanded.get();
+        let input_width = if expanded { 230.0 } else { 180.0 };
+        let select_width = if expanded { 250.0 } else { 200.0 };
         column((
-            input()
+            row((input()
                 .placeholder("固定宽度")
-                .width(180.0)
-                .automation_id("input.fixed"),
+                .width(input_width)
+                .automation_id("input.fixed"),)),
+            row((embed(Select::new().options(["中文", "English"]))
+                .width(select_width)
+                .automation_id("select.fixed"),)),
             row((
                 input()
                     .placeholder("弹性宽度")
                     .flex_grow(1.0)
                     .automation_id("input.flex"),
-                space(40.0).width(40.0),
+                label("").width(40.0).height(40.0),
             )),
         ))
     });
     let snapshot = app.snapshot();
     let fixed = snapshot.find("input.fixed").expect("固定输入框应存在");
+    let select = snapshot.find("select.fixed").expect("固定选择器应存在");
     let flex = snapshot.find("input.flex").expect("弹性输入框应存在");
 
     assert!((fixed.frame.w - 180.0).abs() < 0.01);
-    assert!((flex.frame.w - 280.0).abs() < 0.01);
+    assert!((select.frame.w - 200.0).abs() < 0.01);
+    assert!(
+        (flex.frame.w - 320.0).abs() < 0.01,
+        "弹性输入框应取得剩余宽度: {:?}",
+        flex.frame
+    );
+
+    expanded.set(true);
+    app.settle().expect("叶控件宽度更新应完成协调");
+    let snapshot = app.snapshot();
+    let fixed = snapshot.find("input.fixed").expect("固定输入框应仍存在");
+    let select = snapshot.find("select.fixed").expect("固定选择器应仍存在");
+    assert!((fixed.frame.w - 230.0).abs() < 0.01);
+    assert!((select.frame.w - 250.0).abs() < 0.01);
+}
+
+#[test]
+fn controlled_select_keeps_value_and_display_label_distinct() {
+    use uix::prelude::*;
+
+    let selected = State::new("cn".to_owned());
+    let select = Select::new()
+        .select_options([
+            SelectOption::new("中文", "cn"),
+            SelectOption::new("English", "en"),
+        ])
+        .value(&selected);
+
+    assert_eq!(select.current_value().as_deref(), Some("cn"));
+    assert_eq!(select.current_label(), Some("中文"));
 }

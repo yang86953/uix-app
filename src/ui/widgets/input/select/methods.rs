@@ -9,6 +9,39 @@ use super::search::VisibleRow;
 use super::{Select, normalize_select_rect, resolve_select_popup_rect, select_fallback_surface};
 
 impl Select {
+    /// 接收 View DSL 的显式尺寸与 Flex 覆盖，选择器内部交互状态保持私有。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+        flex_grow: Option<f32>,
+        flex_shrink: Option<f32>,
+    ) {
+        if let Some(width) = style.width {
+            self.view_width = width.is_finite().then_some(width.max(0.0));
+        }
+        if let Some(height) = style.height {
+            self.view_height = height.is_finite().then_some(height.max(0.0));
+        }
+        if let Some(grow) = flex_grow {
+            self.view_flex_grow = if grow.is_finite() { grow.max(0.0) } else { 0.0 };
+        }
+        if let Some(shrink) = flex_shrink {
+            self.view_flex_shrink = if shrink.is_finite() {
+                shrink.max(0.0)
+            } else {
+                1.0
+            };
+        }
+    }
+
+    /// 返回快照跳过的 View 布局字段是否发生变化。
+    pub(crate) fn view_layout_changed(&self, next: &Self) -> bool {
+        self.view_width != next.view_width
+            || self.view_height != next.view_height
+            || self.view_flex_grow != next.view_flex_grow
+            || self.view_flex_shrink != next.view_flex_shrink
+    }
+
     pub(crate) fn control_height(&self) -> f32 {
         self.visual.layout.control_height(self.select_size)
     }

@@ -130,10 +130,12 @@ fn progress_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
             // 返回已验证的静态 fraction。
             Ok(quote! { #literal })
         }
-        // 动态表达式由 Rust 类型检查，运行时负责安全归一化与观察。
+        // 动态表达式接受 UIX number 的 f64 事实，并在组件边界统一收口到 f32。
         AttributeValue::Expression(expression) => {
-            // 生成受限 f32 表达式。
-            generate_expression(&expression.expression, None)
+            // 先保留调用侧表达式的正常 Rust 类型检查。
+            let value = generate_expression(&expression.expression, None)?;
+            // ProgressBar 公开 fraction 使用 f32；显式边界转换也兼容已有 f32 表达式。
+            Ok(quote! { (#value) as f32 })
         }
         // 内联样式不可能成为 fraction。
         AttributeValue::InlineStyle(_) => Err(Diagnostic::new(

@@ -121,3 +121,132 @@ fn for_row_prop_text_survives_data_update() {
         assert!(visible, "卡片 {card_id} 标题必须可见（uix-app#91）");
     }
 }
+
+// 构造双层条件中的动态文本，覆盖隐藏、更新并重新插入后的重新测量。
+fn nested_conditional_text_root(
+    outer: State<bool>,
+    inner: State<bool>,
+    text: State<String>,
+) -> impl Fn() -> ViewNode {
+    move || {
+        uix!(
+            r#"
+            <Widget name="NestedConditionalText" reactive props="outer: State<bool>, inner: State<bool>, message: State<String>">
+              <Column width="300px" gap="8px" automationId="nested.root">
+                <If {outer}>
+                  <Column width="280px" gap="4px" automationId="nested.outer">
+                    <Text>固定行</Text>
+                    <If {inner}>
+                      <Column width="260px" automationId="nested.inner">
+                        <Text automationId="nested.dynamic">{message}</Text>
+                      </Column>
+                    </If>
+                  </Column>
+                </If>
+              </Column>
+            </Widget>
+            <NestedConditionalText outer={outer} inner={inner} message={text} />
+            "#
+        )
+    }
+}
+
+// 验证嵌套条件重新插入动态文本后使用新内容的多行固有尺寸。
+#[test]
+fn nested_conditional_dynamic_text_remeasures_after_reinsert() {
+    let outer = State::new(true);
+    let inner = State::new(true);
+    let text = State::new("单行".to_owned());
+    let mut app = TestApp::new(
+        (320.0, 280.0),
+        nested_conditional_text_root(outer.clone(), inner.clone(), text.clone()),
+    );
+
+    let initial = app
+        .snapshot()
+        .find("nested.dynamic")
+        .expect("首屏动态文本应存在")
+        .frame;
+    let initial_inner = app
+        .snapshot()
+        .find("nested.inner")
+        .expect("首屏内层布局应存在")
+        .frame;
+    let initial_outer = app
+        .snapshot()
+        .find("nested.outer")
+        .expect("首屏外层布局应存在")
+        .frame;
+    assert!(initial.h > 0.0);
+
+    text.set("第一行\n第二行\n第三行".to_owned());
+    app.settle().expect("可见动态文本更新应完成重新测量");
+    let measured = app
+        .snapshot()
+        .find("nested.dynamic")
+        .expect("更新后的动态文本应存在")
+        .frame;
+    let measured_inner = app
+        .snapshot()
+        .find("nested.inner")
+        .expect("更新后的内层布局应存在")
+        .frame;
+    assert!(measured.h > initial.h * 2.5);
+    assert!(measured_inner.h > initial_inner.h * 2.5);
+
+    inner.set(false);
+    app.settle().expect("内层条件隐藏应完成协调");
+    assert!(app.snapshot().find("nested.dynamic").is_err());
+    let hidden_outer = app
+        .snapshot()
+        .find("nested.outer")
+        .expect("保留固定兄弟后的外层布局应存在")
+        .frame;
+    assert!(hidden_outer.h < initial_outer.h);
+
+    text.set("重新插入".to_owned());
+    inner.set(true);
+    app.settle().expect("内层条件重新显示应完成协调与布局");
+    let reinserted = app
+        .snapshot()
+        .find("nested.dynamic")
+        .expect("重新插入的动态文本应存在")
+        .frame;
+    let reinserted_inner = app
+        .snapshot()
+        .find("nested.inner")
+        .expect("重新插入后的内层布局应存在")
+        .frame;
+    let reinserted_outer = app
+        .snapshot()
+        .find("nested.outer")
+        .expect("重新插入后的外层布局应存在")
+        .frame;
+    assert_eq!(app.text("nested.dynamic").as_deref(), Ok("重新插入"));
+    assert!((reinserted.h - initial.h).abs() < 0.01);
+    assert!((reinserted_inner.h - initial_inner.h).abs() < 0.01);
+    assert!((reinserted_outer.h - initial_outer.h).abs() < 0.01);
+
+    text.set("第一行\n第二行\n第三行\n第四行".to_owned());
+    app.settle().expect("重新插入后的动态文本应再次测量");
+    let restored = app
+        .snapshot()
+        .find("nested.dynamic")
+        .expect("二次更新后的动态文本应存在")
+        .frame;
+    assert!(
+        restored.h > initial.h * 3.5,
+        "四行文本高度应显著大于首屏单行高度: initial={initial:?}, restored={restored:?}"
+    );
+
+    outer.set(false);
+    app.settle().expect("外层条件隐藏应完成协调");
+    outer.set(true);
+    app.settle().expect("外层条件恢复应完成协调与布局");
+    let second_restore = app
+        .snapshot()
+        .find("nested.dynamic")
+        .expect("双层条件恢复后的动态文本应存在")
+        .frame;
+    assert!((second_restore.h - restored.h).abs() < 0.01);
+}

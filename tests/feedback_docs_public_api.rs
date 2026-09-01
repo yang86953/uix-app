@@ -450,3 +450,63 @@ fn feedback_rust_fences_compile_as_external_consumers() {
         ],
     );
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn modal_common_size_reconciles_and_refollows_surface() {
+    use uix::prelude::*;
+    use uix::ui::test_harness::TestApp;
+
+    let open = State::new(true);
+    let expanded = State::new(false);
+    let root_open = open.clone();
+    let root_expanded = expanded.clone();
+    let mut app = TestApp::new((760.0, 560.0), move || {
+        let (width, height) = if root_expanded.get() {
+            (520.0, 340.0)
+        } else {
+            (420.0, 260.0)
+        };
+        Modal::builder()
+            .open(&root_open)
+            .title("尺寸回归")
+            .footer_visible(false)
+            .content(|| label("正文").automation_id("modal.body"))
+            .build()
+            .width(width)
+            .height(height)
+            .automation_id("modal.root")
+    });
+
+    let initial = app.snapshot();
+    let initial_body = initial.find("modal.body").expect("Modal 正文应存在").frame;
+    assert!(initial_body.w > 0.0 && initial_body.h > 0.0);
+
+    expanded.set(true);
+    app.settle().expect("Modal 尺寸更新应完成协调");
+    let expanded_body = app
+        .snapshot()
+        .find("modal.body")
+        .expect("扩展后的 Modal 正文应存在")
+        .frame;
+    assert!((expanded_body.w - initial_body.w - 100.0).abs() < 0.01);
+    assert!((expanded_body.h - initial_body.h - 80.0).abs() < 0.01);
+
+    app.resize(360.0, 240.0).expect("缩小表面应完成重排");
+    let compact_body = app
+        .snapshot()
+        .find("modal.body")
+        .expect("缩小表面后的 Modal 正文应存在")
+        .frame;
+    assert!(compact_body.w >= 0.0 && compact_body.w < expanded_body.w);
+    assert!(compact_body.h >= 0.0 && compact_body.h < expanded_body.h);
+
+    app.resize(760.0, 560.0).expect("恢复表面应完成重排");
+    let restored_body = app
+        .snapshot()
+        .find("modal.body")
+        .expect("恢复表面后的 Modal 正文应存在")
+        .frame;
+    assert!((restored_body.w - expanded_body.w).abs() < 0.01);
+    assert!((restored_body.h - expanded_body.h).abs() < 0.01);
+}

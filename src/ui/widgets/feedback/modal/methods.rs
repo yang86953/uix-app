@@ -227,6 +227,16 @@ impl Modal {
         self
     }
 
+    /// 接收 UIX 公共 width/height 样式并写入 Modal 自己的对话框几何。
+    pub(crate) fn apply_view_layout_style(&mut self, style: &crate::ui::theme::style::Style) {
+        if let Some(width) = style.width {
+            self.width = Self::normalize_dimension(width);
+        }
+        if let Some(height) = style.height {
+            self.height = Self::normalize_dimension(height);
+        }
+    }
+
     /// 设置控件尺寸档位及其对应的预设宽高。
     pub fn modal_size(mut self, s: ControlSize) -> Self {
         self.modal_size = s;
@@ -489,6 +499,8 @@ impl Modal {
         self.visual = next.visual;
         if interaction_geometry_changed {
             self.cancel_interaction();
+            // 尺寸、页脚或定位策略变化必须让现有内容子树重新取得 dialog frame。
+            self.layout_requested.set(true);
         }
     }
 

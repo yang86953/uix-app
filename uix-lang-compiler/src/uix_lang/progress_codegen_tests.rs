@@ -21,7 +21,7 @@ fn generates_progress_bar_contract() {
     // 运行时必须接收动态 fraction、显式模式与圆形选择。
     assert!(
         tokens.contains("ProgressBar :: new")
-            && tokens.contains("progress (upload_progress)")
+            && tokens.contains("progress ((upload_progress) as f32)")
             && tokens.contains("indeterminate_when (waiting)")
             && tokens.contains("circle ()"),
         "{tokens}"
