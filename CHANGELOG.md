@@ -106,6 +106,14 @@
 
 - 本版本于 2026-09-01 通过私有 Gitea Release 发布，附带从同一精确 tag
   确定性构建并独立校验的 Linux x64 与 Windows x64 内部制品。
+- `v0.0.3` 精确指向提交 `33f8fbccdaac94544e4b3e950d219e1aff44fae1`；
+  自 `v0.0.2` 起累计 13 个提交，发布前 45 个公开 API suite、85 项测试全部
+  通过。
+- Linux x64 制品为 34,661,176 字节，SHA-256 为
+  `d616b9b10091e2ad8735b67df27bf923f95231e2cdfb8ef06e20a3ef1181a2e0`；
+  Windows x64 制品为 34,584,126 字节，SHA-256 为
+  `6542b76f377c818034b75caaab8c97975bbf69ba9eaf6ac2ccf394bd29b76d5e`。
+  两个平台均完成连续两次相同摘要的候选构建、上传后回下载和独立校验。
 - Linux 制品在 Linux x64 宿主原生链接；Windows 制品通过冻结的
   `cargo-xwin 0.23.1` 与 LLVM 交叉链接为 PE/COFF。交叉链接不替代当前
   提交在真实 Windows 主机上的窗口、GPU、输入与 Agent 运行验收。
