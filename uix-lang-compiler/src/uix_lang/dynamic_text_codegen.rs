@@ -113,8 +113,24 @@ fn rewrite_captures(
                 })
                 // 复制标识符供 AST 名称替换。
                 .clone();
-            // 表达式后续生成时只引用闭包拥有的捕获。
-            *name = captured.to_string();
+            // 表达式后续生成时引用闭包拥有的捕获；Fn 闭包可重复执行，
+            // 按值使用处必须克隆捕获，不能把捕获移动出闭包。
+            let span = expression.span;
+            expression.kind = ExpressionKind::Call {
+                // 构造捕获变量的公开 clone 成员调用。
+                callee: Box::new(Expression {
+                    kind: ExpressionKind::Member {
+                        object: Box::new(Expression {
+                            kind: ExpressionKind::Identifier(captured.to_string()),
+                            span,
+                        }),
+                        member: "clone".to_string(),
+                    },
+                    span,
+                }),
+                // clone 不接收参数。
+                arguments: Vec::new(),
+            };
         }
         // 字面量没有自由标识符。
         ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {}

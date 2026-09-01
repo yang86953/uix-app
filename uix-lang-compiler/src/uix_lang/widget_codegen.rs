@@ -720,10 +720,11 @@ impl WidgetExpander {
         }
         // 验证调用属性与 props 一一对应。
         let attributes = validate_widget_attributes(element, &widget)?;
-        // reactive 组件在进入展开前记录准备语句边界：本组件与全部嵌套
-        // 组件的准备语句收归本子树，供 scoped 闭包重建时在独立捕获帧重跑。
-        // 边界必须先于插槽投影：插槽内容在调用方作用域求值，其依赖归调用方。
-        let reactive_boundary = widget.reactive.then(|| self.setup.len());
+        // reactive 组件的准备语句收归边界：组件私有成员与全部嵌套展开
+        // 的语句进入本子树作用域，供 scoped 闭包重建时在独立捕获帧重跑。
+        // 边界在闭包内、调用参数生成之后记录：插槽内容与 props 求值都
+        // 属于调用方作用域，其依赖必须登记进调用方帧。
+        let mut reactive_boundary = None;
         // 进入当前组件展开栈。
         self.stack.push(widget.name.clone());
         // 标记当前调用是否已进入被调用组件的 external 作用域。
@@ -819,6 +820,9 @@ impl WidgetExpander {
                 // 生成类型化 prop 绑定。
                 self.emit_prop_binding(prop, attribute, outer_bindings, &mut bindings)?;
             }
+            // 调用参数与插槽都在调用方作用域求值完毕：reactive 边界在此
+            // 生效——组件私有成员与嵌套展开的准备语句才收归本子树作用域。
+            reactive_boundary = widget.reactive.then(|| self.setup.len());
             // props 在调用方作用域求值完成后进入被调用组件白名单。
             self.external_scope_stack
                 // 转为确定性集合供 state 与组件体表达式查询。

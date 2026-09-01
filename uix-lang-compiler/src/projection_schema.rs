@@ -849,7 +849,7 @@ const HANDLE_SLOTS: &[HandleSpec] = &[
     handle!("Navigation", "activeKey", "State<Option<String>>"),
     handle!("Navigation", "openKeys", "State<Vec<String>>"),
     handle!("Navigation", "collapsed", "State<bool>"),
-    handle!("ScrollView", "offset", "State<f32>"),
+    handle!("ScrollView", "offset", "State<Point>"),
     handle!("Affix", "scrollY", "State<f32>"),
     handle!("BackTop", "scrollY", "State<f32>"),
     handle!("FloatButtonBackTop", "scrollY", "State<f32>"),
