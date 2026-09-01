@@ -301,6 +301,8 @@ impl WindowDriver {
         if !self.rendered_first
             || pending_root.is_some()
             || reconcile_pending
+            // 作用域重建请求同样需要一个渲染机会才能被协调段消费。
+            || tree.has_scoped_rebuild_requested()
             || has_invalidation_work(tree)
         {
             // 动画延续帧按 fallback cadence 武装（request_frame 只接受更早

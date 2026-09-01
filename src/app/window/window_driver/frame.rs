@@ -277,7 +277,21 @@ impl WindowDriver {
                 }
                 *reconcile_pending = false;
             }
-            if reconcile_ran {
+            // 作用域重建：根协调已重跑全部作用域闭包时请求作废；否则逐节点原位重建。
+            let mut scoped_ran = false;
+            if tree.has_scoped_rebuild_requested() {
+                let requests = if reconcile_ran {
+                    tree.drop_scoped_rebuild_requests();
+                    Vec::new()
+                } else {
+                    tree.take_scoped_rebuild_requests()
+                };
+                for id in requests {
+                    ViewAdapter::reconcile_scoped_node(tree, id);
+                    scoped_ran = true;
+                }
+            }
+            if reconcile_ran || scoped_ran {
                 sync_animation_registrations(
                     active_work,
                     tree,
@@ -437,8 +451,12 @@ impl WindowDriver {
             .extend(active_work.animation_ids());
         // 先保存是否存在已调度动画，避免让切片借用跨越 fail-stop helper。
         let had_scheduled_animation_work = !self.scheduled_animation_ids_scratch.is_empty();
-        let discover_animation_work =
-            event_work || !self.rendered_first || *reconcile_pending || has_invalidation_work(tree);
+        let discover_animation_work = event_work
+            || !self.rendered_first
+            || *reconcile_pending
+            // 作用域重建请求同样驱动本轮声明工作发现。
+            || tree.has_scoped_rebuild_requested()
+            || has_invalidation_work(tree);
         let dt = self
             .frame_scheduler
             .animation_delta(frame_time, had_scheduled_animation_work)
@@ -538,7 +556,22 @@ impl WindowDriver {
             }
             *reconcile_pending = false;
         }
-        if reconcile_ran {
+        // 作用域重建：根协调已重跑全部作用域闭包时请求作废；否则逐节点原位重建。
+        let mut scoped_ran = false;
+        if tree.has_scoped_rebuild_requested() {
+            let requests = if reconcile_ran {
+                // 根协调的输出已覆盖每个作用域子树，残余请求全部作废。
+                tree.drop_scoped_rebuild_requests();
+                Vec::new()
+            } else {
+                tree.take_scoped_rebuild_requests()
+            };
+            for id in requests {
+                ViewAdapter::reconcile_scoped_node(tree, id);
+                scoped_ran = true;
+            }
+        }
+        if reconcile_ran || scoped_ran {
             sync_animation_registrations(
                 active_work,
                 tree,

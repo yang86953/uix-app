@@ -85,7 +85,8 @@ pub(crate) struct WindowFrameContext<'a, 'platform> {
     pub(crate) had_layout_event: bool,
     pub(crate) next_external_deadline: Option<Instant>,
     pub(crate) on_runtime_tasks: &'a mut dyn FnMut(&mut dyn PlatformSystem, &mut WidgetTree),
-    pub(crate) on_frame: &'a dyn Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
+    pub(crate) on_frame:
+        &'a dyn Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
 }
 
 // 帧诊断统计：累计帧数与各阶段耗时，供每秒输出一次性能摘要。
