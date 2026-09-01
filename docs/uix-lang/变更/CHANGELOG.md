@@ -6,6 +6,20 @@
 >
 > **接口**：声明 UIX Lang 语言面的变更记录。依赖：[版本策略](版本策略.md)。导出：无。
 
+## 0.0.4（2026-09-02）
+
+- `<Widget>` 新增 `reactive` 布尔属性：组件调用位生成独立 `scoped` 子树
+  作用域，组件体（含嵌套与 `external` 调用）读取的 State 登记为本子树
+  结构依赖，Rust 侧更新只重跑本子树，不再触发整树根重建；准备语句收归
+  子树作用域，多根自动收敛 `Column`，空组件、非元素根与直接嵌套
+  reactive 根在生成前诊断。
+- `State<T>` props 泛型白名单从 `String` / `number` / `bool` 扩展
+  `u32` / `usize` / `f32` / `i32` / `Option<String>` / `Vec<String>` /
+  `Vec<number>`（经由 schema 独立登记位，不影响基础值 props 与回调参数
+  白名单）；集合句柄可作为 `For` 数据源与插值读取。
+- 新增 `Canvas` 组件登记：映射公开 `canvas` 组合器，`width` / `height` /
+  `paint` 三属性必填，绘制函数与窄 Paint 失效由 Rust 侧持有。
+
 ## 0.0.3（2026-09-01，发布序列重整后）
 
 - 语言版本随根 crate 升级到 `0.0.3`。

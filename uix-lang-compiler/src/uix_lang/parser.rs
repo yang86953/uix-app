@@ -132,6 +132,7 @@ fn parse_document_with_mode(
                 widget_scopes: Vec::new(),
                 for_iteration_clones: Vec::new(),
                 for_iteration_setup: Vec::new(),
+            reactive_setup: None,
             },
         };
         validate_record_references(&document)?;

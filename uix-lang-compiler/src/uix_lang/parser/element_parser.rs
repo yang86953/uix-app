@@ -112,6 +112,7 @@ pub(super) fn parse_element(
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
                 for_iteration_setup: Vec::new(),
+            reactive_setup: None,
             });
         }
         // 普通开始标签进入子节点阶段。
@@ -336,6 +337,7 @@ pub(super) fn parse_element(
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
                 for_iteration_setup: Vec::new(),
+            reactive_setup: None,
             });
         }
         // Widget 模板允许 @props/@state/@computed/@actions 成员声明块。

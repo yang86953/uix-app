@@ -76,6 +76,14 @@ mod kernel_view_codegen;
 // 集中验证基础 View 桥接的所有权与拒绝路径。
 #[cfg(test)]
 mod kernel_view_codegen_tests;
+// 定义 Canvas 绘制组件的公开 API 代码生成边界。
+mod canvas_codegen;
+// 集中验证 Canvas 组件的专有属性与拒绝路径。
+#[cfg(test)]
+mod canvas_codegen_tests;
+// 集中验证 reactive 组件的作用域包装与拒绝路径。
+#[cfg(test)]
+mod reactive_codegen_tests;
 // 定义 Divider 内置组件的公开 API 代码生成边界。
 mod divider_codegen;
 // 定义 Space 内置组件的公开 API 代码生成边界。
@@ -650,6 +658,8 @@ pub(crate) use codegen::generate_view;
 pub(crate) use kernel_view_codegen::{
     generate_kernel_children, generate_kernel_host, generate_kernel_view,
 };
+// 向核心元素生成器暴露 Canvas 专用映射。
+pub(crate) use canvas_codegen::generate_canvas;
 // 向核心元素生成器暴露 Divider 专用映射。
 pub(crate) use divider_codegen::generate_divider;
 // 向核心元素生成器暴露 Space 专用映射。

@@ -126,6 +126,8 @@ pub(crate) fn parse_widget_declaration(
     let mut actions_source = None;
     // 保存可选 external 声明及跨度。
     let mut external_source = None;
+    // 保存响应式作用域声明；缺省不建立独立捕获帧。
+    let mut reactive = false;
     // 验证 Widget 只包含已登记声明属性。
     for attribute in &element.attributes {
         // 拒绝重复属性。
@@ -140,7 +142,33 @@ pub(crate) fn parse_widget_declaration(
                 "合并重复属性并只保留一次",
             ));
         }
-        // Widget 元数据必须使用字符串字面量。
+        // reactive 是布尔简写属性，只接受 true / false 字面量。
+        if attribute.name == "reactive" {
+            // 解析声明期布尔值。
+            let value = match &attribute.value {
+                // 字面量只接受 true 或 false。
+                AttributeValue::Literal(value) if value == "true" => true,
+                // 显式关闭同样是合法声明。
+                AttributeValue::Literal(value) if value == "false" => false,
+                // 其他形状不属于声明期布尔元数据。
+                _ => {
+                    // 返回布尔形状诊断。
+                    return Err(Diagnostic::new(
+                        // 指向 reactive 属性。
+                        attribute.span,
+                        // 说明只接受声明期布尔。
+                        "Widget reactive 只接受布尔简写或 \"true\" / \"false\"",
+                        // 给出两种合法写法。
+                        "使用 <Widget name=\"X\" reactive> 或 reactive=\"false\"",
+                    ));
+                }
+            };
+            // 保存响应式作用域声明。
+            reactive = value;
+            // 继续处理其余属性。
+            continue;
+        }
+        // 其余 Widget 元数据必须使用字符串字面量。
         let AttributeValue::Literal(value) = &attribute.value else {
             // 返回元数据值形状诊断。
             return Err(Diagnostic::new(
@@ -175,7 +203,7 @@ pub(crate) fn parse_widget_declaration(
                     // 说明未知元数据。
                     format!("Widget 不支持属性 {}", attribute.name),
                     // 给出允许集合。
-                    "只使用 name、props、state、computed、actions 与 external",
+                    "只使用 name、props、state、computed、actions、external 与 reactive",
                 ));
             }
         }
@@ -342,6 +370,8 @@ pub(crate) fn parse_widget_declaration(
         slots,
         // 保存外部符号白名单。
         external,
+        // 保存响应式作用域声明。
+        reactive,
         // 转移剔除成员块后的有序组件体。
         children,
         // 保存完整声明跨度。

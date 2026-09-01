@@ -185,6 +185,11 @@ pub struct ValueTypeSpec {
     pub shape: ValueTypeShape,
     /// 是否允许作为 props 与回调参数的基础值类型。
     pub allowed_in_props: bool,
+    /// 是否允许作为 `State<T>` prop 的泛型内类型。
+    ///
+    /// Rust 侧驱动的整数索引与集合句柄需要精确类型传入共享状态，
+    /// 但它们不构成拥有型值 prop，也不进入回调参数白名单。
+    pub allowed_in_state_props: bool,
     /// 拥有该类型的参考文档类别；`None` 表示核心语言通用类型。
     pub owner_category: Option<ComponentCategory>,
     pub capability: Option<&'static str>,
@@ -558,6 +563,8 @@ const COMPONENTS: &[ComponentSpec] = &[
     component!("FormSliderItem", Input, "generate_orphan_form_slider_item"),
     component!("Col", Layout, "generate_orphan_col"),
     component!("Icon", General, "generate_icon"),
+    // 画布组件映射公开 canvas 组合器；绘制逻辑留在 Rust 侧。
+    component!("Canvas", General, "generate_canvas"),
     component!("Divider", General, "generate_divider"),
     component!("Space", General, "generate_space"),
     component!("Typography", General, "generate_typography"),
@@ -995,11 +1002,15 @@ macro_rules! value_type {
         value_type!($name, $shape, $in_props, $owner, None)
     };
     ($name:literal, $shape:ident, $in_props:expr, $owner:expr, $capability:expr) => {
+        value_type!($name, $shape, $in_props, $owner, $capability, $in_props)
+    };
+    ($name:literal, $shape:ident, $in_props:expr, $owner:expr, $capability:expr, $in_state_props:expr) => {
         ValueTypeSpec {
             id: concat!("valueType.", $name),
             name: $name,
             shape: ValueTypeShape::$shape,
             allowed_in_props: $in_props,
+            allowed_in_state_props: $in_state_props,
             owner_category: $owner,
             capability: $capability,
         }
@@ -1177,17 +1188,17 @@ const VALUE_TYPES: &[ValueTypeSpec] = &[
     value_type!("String", Scalar, true, None),
     value_type!("number", Scalar, true, None),
     value_type!("bool", Scalar, true, None),
-    value_type!("u32", Scalar, false, None),
-    value_type!("usize", Scalar, false, None),
-    value_type!("f32", Scalar, false, None),
-    value_type!("i32", Scalar, false, None),
+    value_type!("u32", Scalar, false, None, None, true),
+    value_type!("usize", Scalar, false, None, None, true),
+    value_type!("f32", Scalar, false, None, None, true),
+    value_type!("i32", Scalar, false, None, None, true),
     value_type!("Date", Semantic, true, None),
     value_type!("Time", Semantic, true, None),
     value_type!("Color", Semantic, true, None),
     value_type!("Point", Semantic, true, None),
     value_type!("HashSet<String>", Collection, false, None),
-    value_type!("Vec<String>", Collection, false, None),
-    value_type!("Vec<number>", Collection, false, None),
+    value_type!("Vec<String>", Collection, false, None, None, true),
+    value_type!("Vec<number>", Collection, false, None, None, true),
     value_type!("Option<String>", Optional, true, None),
     value_type!(
         "CascaderValue",
@@ -1298,7 +1309,7 @@ mod tests {
             .iter()
             .filter(|entry| entry.status == RegistrationStatus::Available)
             .count();
-        assert_eq!(available, 109);
+        assert_eq!(available, 110);
         assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 31);
         assert_eq!(UI_PROJECTION_SCHEMA.events().len(), 12);
         assert_eq!(UI_PROJECTION_SCHEMA.style_properties().len(), 63);

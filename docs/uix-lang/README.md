@@ -93,7 +93,7 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ### 当前基线
 
-当前发布基线包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。同步 action 只组合局部 UI 更新和转发 Rust 回调；异步、服务、持久化、业务校验、领域状态转换及跨页面流程不进入 UIX Lang。组件专属状态值类型由 schema 登记 capability 门禁。
+当前发布基线包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`（泛型含精确整数、`Option<String>` 与 `Vec<String>` / `Vec<number>` 集合）、`reactive` 子树作用域、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、`Canvas` 绘制组件、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。同步 action 只组合局部 UI 更新和转发 Rust 回调；异步、服务、持久化、业务校验、领域状态转换及跨页面流程不进入 UIX Lang。组件专属状态值类型由 schema 登记 capability 门禁。
 
 公开 `uix!` 支持内嵌源码与 `.uix` 文件并生成 `ViewNode`；`uix_app!` 读取 `<App>` 根并返回尚未运行的现有 `App` builder；`uix_items!` 生成模块级 Record 结构体与 Visual 静态项。文件入口支持递归 `@import`、显式 `@export` 和依赖追踪。
 
