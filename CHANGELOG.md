@@ -2,7 +2,47 @@
 
 这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；正式发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
-## 未发布
+## 0.0.3（2026-09-01）
+
+### Agent 语义快照声明坐标空间（修复 bounds 与截屏对照错位）
+
+- 症状：AI 使用方读取语义快照 `visible_bounds` 后与 `screenshot` 像素直接
+  对照定位部件，在显示缩放（device pixel ratio ≠ 1）环境下出现与纵坐标
+  成正比的位置偏差；语义 focus / 点击的动作点因此不中实际部件。
+- 根因：`frame` / `visible_bounds` 始终是 logical 客户区坐标，`screenshot`
+  始终是物理像素，但快照协议没有声明坐标空间与换算比例。
+- 修复：`AgentWindowState` 与 `WindowSemanticSnapshot` 携带渲染 engine 的
+  `device_pixel_ratio`；`snapshot` 回复顶层新增同名字段，Agent 文档补充
+  坐标空间与换算约定。
+- 验证：demo + Agent 通道实测初始页、页面切换、内容滚动与窗口最大化，
+  `visible_bounds` 与截屏部件位置一致；DPR 字段正确输出。
+
+### 渲染 CPU/GPU 双路径重复实现收敛
+
+- 对角线性渐变统一为 CPU 局部空间公式，GPU shader 由 lowering 传入局部
+  矩形宽高；任意仿射下 CPU/GPU 语义同源。
+- 圆角半径规范化推广为 CPU/GPU 全链共享规则；极端半径输入下两个媒体
+  轮廓一致，常规输入像素不变。
+- 高斯核、离屏 SlotPool、字形 atlas 分配、shader SDF 数学、字形覆盖量化
+  与跨帧 coverage atlas 等实现收敛为共享组件；Vulkan 19 个 SPIR-V 变体
+  重编并通过 `spirv-val`。
+
+### ContextMenu 零消费者不再弹默认占位覆盖层（交互修复）
+
+- 指针右键命中没有 ContextMenu 消费者的节点时，不再创建框架默认占位
+  覆盖层；应用未声明菜单即保持无副作用。
+- 已声明 ContextMenu 的语义路由与事件消费保持不变。
+
+### Slider 受控值变更使用节点级窄 Paint 失效（响应式优化）
+
+- `Slider` 的受控值变化改走节点级 Paint 失效，不再升级为整树结构重建；
+  滑块几何与语义值仍在同一收敛帧更新。
+
+### Agent 滚动在边界无位移时保持成功语义（自动化修复）
+
+- 语义滚动动作到达内容边界且没有实际位移时，不再误报 `internal`；已处理
+  的边界动作稳定返回成功，未找到或不可交互仍保留原类型化失败。
+- 新增公开 API 回归覆盖滚动边界、可滚动路径与失败语义。
 
 ### 子树作用域 scoped：结构变化不再强制整树重建（框架能力）
 
@@ -62,53 +102,20 @@
 - 关联：`FrameRenderInput` 新增 `hud` 字段；`Ctrl+Shift+D` 与调试模式语义
   不变。
 
+### 发布状态
+
+- 本版本于 2026-09-01 通过私有 Gitea Release 发布，附带从同一精确 tag
+  确定性构建并独立校验的 Linux x64 与 Windows x64 内部制品。
+- Linux 制品在 Linux x64 宿主原生链接；Windows 制品通过冻结的
+  `cargo-xwin 0.23.1` 与 LLVM 交叉链接为 PE/COFF。交叉链接不替代当前
+  提交在真实 Windows 主机上的窗口、GPU、输入与 Agent 运行验收。
+- macOS 不在 `0.0.3` 发布范围内。
+
 ## 0.0.2（2026-08-31）
 
 > 发布序列重整：0.0.2~0.0.8 的碎片版本标签与 Release 已收敛删除，本条目
 > （原 0.0.8 草稿）作为收敛后的正式 v0.0.2。以下 0.0.3~0.0.7 历史小节保留
 > 作为当时交付事实的记录，其对应标签已不存在。
-
-### 2026-08-31 Agent 语义快照坐标空间声明（修复 bounds 与截屏对照错位）
-
-- 症状：AI 使用方读取语义快照 `visible_bounds` 后与 `screenshot` 像素直接
-  对照定位部件，在显示缩放（device pixel ratio ≠ 1）环境下出现与纵坐标
-  成正比的位置偏差（125% 缩放下逻辑 y≈400 处约 100 物理像素），语义
-  focus / 点击的动作点因此不中实际部件。
-- 根因：`frame` / `visible_bounds` 始终是 logical 客户区坐标，`screenshot`
-  始终是物理像素，但快照协议没有声明坐标空间与换算比例；两者空间不同却
-  无任何字段可供消费方判别与换算。逻辑空间内部（快照 ↔ click/hit-test）
-  经四种场景实测完全自洽，缺陷在协议可观测性缺口。
-- 修复：`AgentWindowState` 与 `WindowSemanticSnapshot` 携带渲染 engine 的
-  `device_pixel_ratio`（`WindowDriver` 每次发布窗口可用性时从 engine 读
-  取）；`snapshot` 回复顶层新增 `device_pixel_ratio` 字段；[Agent 控制]
-  文档补「坐标空间与换算」约定。
-- 验证：demo + Agent 通道实测初始页、页面切换、内容滚动 +120px、窗口最
-  大化四场景，`visible_bounds` 与截屏部件位置一致（DPR=1 环境下两者数值
-  相同）；`device_pixel_ratio` 字段正确输出。
-
-### 2026-08-31 渲染 CPU/GPU 双路径重复实现收敛
-
-- 审查确认渲染语义单一源架构整体成立（软回退与 CPU 后端共用
-  `SharedRasterizer`，字形数据单一来源），同时收敛了 9 处重复实现与 2 处
-  语义分叉。影响使用方可观察像素的变化有两处：
-- 对角线性渐变（`DiagonalTLBR`/`DiagonalBLTR`）统一为 CPU 局部空间公式，
-  GPU shader 改由 lowering 传入渐变局部矩形宽高：任意仿射（含非等比缩
-  放、剪切）下 GPU 与 CPU 输出同源；等比缩放（含 DPR）下像素不变。一致
-  性场景新增剪切四角对角渐变钉住该语义。
-- 圆角半径规范化（CSS 式：相邻角半径和超边长时等比缩小）从 GPU 变换路
-  径推广为 CPU/GPU 全链每 draw call 单次应用的共享规则
-  （`rasterizer/core.rs::normalize_corner_radii`）：极端半径输入下两个媒
-  体轮廓一致；常规输入下像素不变。
-- 内部单源化（不影响像素）：共享高斯核 `gaussian_weights`（CPU 卷积与
-  GPU blur uniform 同源）、泛型离屏 `SlotPool`（CPU/GPU Picture 池簿记）、
-  `GlyphAtlasKey`/`GlyphAtlasPage`（R8 与 MSDF atlas 共用 shelf 分配器）、
-  `d3d_common_sdf.hlsl` 与 `glsl_common_sdf.frag`（shader 数学单定义，直
-  到 SPIR-V 变体重编校验字节不变）、字形 blit 的 `modulate_coverage` 与
-  `color_to_premul` 量化共享、旧 queue 的字形提交路径改走跨帧 coverage
-  atlas（此前每帧创建/销毁纹理）、`BitmapFont` 度量单源化。
-- 验证：公开 API 测试 80 通过；一致性场景与内部测试通过；Vulkan 19 个
-  SPIR-V 变体重编并通过 spirv-val 校验（shape/shadow 字节不变证明重构等
-  价；textured.frag.spv 顺带修复既有的源码-产物漂移）。
 
 ### 2026-08-30 Input 聚焦边框局部重绘残留修复
 
