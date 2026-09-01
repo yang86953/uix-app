@@ -51,6 +51,23 @@ fn generates_dynamic_checkbox_values() {
     assert!(snapshot.contains("disabled (locked)"));
 }
 
+// 验证 Checkbox 勾选提交事件的文本载荷生成。
+#[test]
+fn generates_checkbox_change_event() {
+    // 生成带勾选提交事件的复选框。
+    let snapshot = generate(
+        r#"<Checkbox text="自动匹配" checked={enabled} @change="on_enabled_change($event)" />"#,
+    )
+    // 合法事件必须成功生成。
+    .expect("Checkbox @change 应映射到公开 View Change 入口");
+    // Change 事件必须把勾选文本载荷交给处理器。
+    assert!(
+        snapshot.contains("on_change_fn")
+            && snapshot.contains("(on_enabled_change) (__uix_change_value)"),
+        "{snapshot}"
+    );
+}
+
 // 验证 Checkbox 拒绝无法兑现的绑定、布尔值与叶形状。
 #[test]
 fn rejects_invalid_checkbox_contracts() {

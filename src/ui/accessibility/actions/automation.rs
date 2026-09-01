@@ -452,6 +452,22 @@ impl TestApp {
         Ok(())
     }
 
+    /// 以逻辑坐标注入系统事件，返回树级分发结果。
+    ///
+    /// 与真实窗口走同一 `SystemEvent` 路径；适合文件拖放、指针序列等
+    /// 语义动作无法覆盖的交互。视口变化仍应使用 [`Self::resize`]（裸
+    /// `Resize` 不更新根 frame）；拖拽手势由指针移动在树内合成，外部
+    /// 应注入 PointerDown → PointerMove → PointerUp 序列。
+    pub fn dispatch_system_event(
+        &mut self,
+        event: &SystemEvent,
+    ) -> Result<EventResult, AutomationError> {
+        self.settle()?;
+        let result = self.tree.dispatch_event(event);
+        self.settle()?;
+        Ok(result)
+    }
+
     pub fn settle(&mut self) -> Result<usize, AutomationError> {
         let mut passes = 0;
         loop {

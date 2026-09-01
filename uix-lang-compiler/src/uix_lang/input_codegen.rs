@@ -10,7 +10,7 @@ use quote::quote;
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 Input 属性、表达式、值映射与诊断契约。
 use super::{
-    AttributeValue, Diagnostic, Element, boolean_value, generate_event_handler_expression,
+    Attribute, AttributeValue, Diagnostic, Element, boolean_value, generate_event_handler_expression,
     generate_expression, literal_string, string_value,
 };
 
@@ -91,6 +91,20 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
         // 应用公开禁用构建器。
         widget = quote! { (#widget).disabled(#disabled) };
     }
+    // 可选最小可见行数支持 usize 字面量或受限表达式；公开运行时会启用多行模式。
+    if let Some(attribute) = find_attribute(element, "rows") {
+        // 生成 usize 行数。
+        let rows = usize_value(attribute)?;
+        // 应用公开行数构建器。
+        widget = quote! { (#widget).rows(#rows) };
+    }
+    // 可选输入长度上限支持 usize 字面量或受限表达式。
+    if let Some(attribute) = find_attribute(element, "maxLength") {
+        // 生成 usize 上限。
+        let max_length = usize_value(attribute)?;
+        // 应用公开长度上限构建器。
+        widget = quote! { (#widget).max_length(#max_length) };
+    }
 
     // 先物化公开叶节点，Change 处理器与样式都由 View 契约拥有。
     let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
@@ -129,8 +143,46 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
         // 保留属性源码顺序供公共映射处理。
         &element.attributes,
         // 防止 Input 专有属性和 Change 事件被二次映射。
-        &["value", "placeholder", "type", "disabled", "@change"],
+        &["value", "placeholder", "type", "disabled", "rows", "maxLength", "@change"],
     )
+}
+
+// 生成 usize 字面量或受限表达式。
+fn usize_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
+    // 按属性值形状生成无符号整数。
+    match &attribute.value {
+        // 静态值必须是 usize 整数。
+        AttributeValue::Literal(source) => {
+            // 解析无符号平台整数。
+            let value = source.parse::<usize>().map_err(|_| {
+                // 返回整数类型诊断。
+                Diagnostic::new(
+                    // 指向非法属性。
+                    attribute.span,
+                    // 说明公开运行时类型。
+                    "Input 的行数与长度上限必须是 usize 整数",
+                    // 给出合法示例。
+                    "使用 rows=\"2\"、maxLength=\"8192\" 或 usize 表达式",
+                )
+            })?;
+            // 生成类型明确的 usize 字面量。
+            Ok(quote! { #value })
+        }
+        // 动态值保持 Rust usize 类型检查。
+        AttributeValue::Expression(expression) => {
+            // 生成受限整数表达式。
+            generate_expression(&expression.expression, None)
+        }
+        // 结构化内联样式不可能用于整数。
+        AttributeValue::InlineStyle(_) => Err(Diagnostic::new(
+            // 指向异常属性。
+            attribute.span,
+            // 说明内部属性形状不匹配。
+            "Input 的行数与长度上限不能使用内联样式值",
+            // 给出有效整数写法。
+            "使用 usize 整数字面量或受限表达式",
+        )),
+    }
 }
 
 // 查找元素上的具名属性。

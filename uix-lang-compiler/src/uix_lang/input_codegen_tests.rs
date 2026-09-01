@@ -53,6 +53,30 @@ fn maps_text_textarea_and_password_constructors() {
     );
 }
 
+// 验证行数与长度上限映射到公开 usize 构建器。
+#[test]
+fn maps_rows_and_max_length_builders() {
+    // 生成带行数与长度上限的多行输入。
+    let snapshot = generate(
+        r#"<Input type="textarea" rows="2" maxLength="8192" value={goal} />"#,
+    )
+    .expect("行数与长度上限应映射到公开构建器");
+    // 行数必须进入公开构建链并保持 usize 字面量。
+    assert!(
+        snapshot.contains("rows (2usize)") || snapshot.contains("rows (2)"),
+        "{snapshot}"
+    );
+    // 长度上限必须进入公开构建链。
+    assert!(
+        snapshot.contains("max_length (8192usize)") || snapshot.contains("max_length (8192)"),
+        "{snapshot}"
+    );
+    // 非整数行数必须在编译期拒绝。
+    let invalid = generate(r#"<Input rows="wide" />"#).expect_err("非整数行数必须失败");
+    // 诊断必须指向 usize 语义。
+    assert!(invalid.message.contains("usize"));
+}
+
 // 验证 Input 拒绝无法兑现的绑定、类型与子树。
 #[test]
 fn rejects_invalid_input_shapes() {
