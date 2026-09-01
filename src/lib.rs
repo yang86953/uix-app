@@ -1,6 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
-//! UIX — Rust Native UI Framework
+//! UIX — Rust Native Application Framework
 //!
 //! # 功能域
 //!
