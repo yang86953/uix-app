@@ -391,13 +391,26 @@ impl WidgetTree {
                 } else {
                     // 语义滚动必须命中已解析的目标；按坐标重新命中会被目标内部的
                     // Table / ScrollView 截获，导致自动化滚动了错误的视口。
-                    self.dispatch_to(
+                    let result = self.dispatch_to(
                         id,
                         &SystemEvent::Wheel {
                             pos: center(visible_bounds),
                             delta: *delta,
                         },
-                    )
+                    );
+                    if result == EventResult::NotHandled {
+                        // 目标已声明滚动能力（viewport_scroll_offset 门禁）；滚到
+                        // 边界或滚动范围未就绪时被夹取成无位移，是动作的合法结果
+                        // 而非内部故障——曾按 NotHandled 上报被误映射为
+                        // internal command failure。实际位移由调用方经快照核对；
+                        // 保留告警以区分边界夹取与滚动链路真正断裂。
+                        tracing::warn!(
+                            target: "uix::semantic",
+                            node = ?id,
+                            "semantic scroll produced no movement"
+                        );
+                    }
+                    EventResult::Handled
                 }
             }
             SemanticAction::Select(value) => {
