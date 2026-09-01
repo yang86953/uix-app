@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验 Linux x64 内部候选包的结构、元数据与内容摘要。"""
+"""校验 Linux 或 Windows x64 内部候选包的结构、元数据与内容摘要。"""
 
 # 引入命令行参数解析。
 import argparse
@@ -11,6 +11,8 @@ import re
 import sys
 # 引入 gzip tar 读取能力。
 import tarfile
+# 引入 Windows 候选 ZIP 的只读校验能力。
+import zipfile
 # 引入稳定路径处理。
 from pathlib import Path, PurePosixPath
 
@@ -30,6 +32,27 @@ def expected_payload(version: str) -> tuple[str, ...]:
     return (
         # Linux 主演示使用规范 bin 路径。
         "bin/uix-lang-demo",
+        # 内部 crate 使用精确版本命名。
+        f"uix-{version}.crate",
+        # 专有许可必须随包交付。
+        "LICENSE",
+        # 第三方声明必须随包交付。
+        "THIRD_PARTY_NOTICES.md",
+        # 当前版本变更记录必须随包交付。
+        "CHANGELOG.md",
+        # 使用入口必须随包交付。
+        "README.md",
+        # Demo 图片使用规范相对路径。
+        "assets/images/demo.png",
+    )
+
+
+# 返回指定版本的七项 Windows payload 冻结顺序。
+def expected_windows_payload(version: str) -> tuple[str, ...]:
+    # Windows 与 Linux 共享资料载荷，只让可执行文件路径体现平台差异。
+    return (
+        # Windows 主演示使用根级 exe 名称。
+        "uix-lang-demo.exe",
         # 内部 crate 使用精确版本命名。
         f"uix-{version}.crate",
         # 专有许可必须随包交付。
@@ -265,6 +288,132 @@ def verify_archive(path: Path, version: str) -> str:
     return hash_file(path)
 
 
+# 验证一个 Windows x64 内部候选 ZIP。
+def verify_zip_archive(path: Path, version: str) -> str:
+    # 版本必须满足冻结数字形式。
+    if VERSION_PATTERN.fullmatch(version) is None:
+        # 拒绝无法安全拼接载荷名称的版本。
+        raise ValueError(f"internal release version is invalid: {version}")
+    # 输入必须是现有普通文件。
+    if not path.is_file():
+        # 拒绝目录或消失路径。
+        raise ValueError(f"internal release ZIP is not a file: {path}")
+    # 候选包文件名必须与平台契约完全一致。
+    expected_archive_name = f"uix-{version}-internal-win-x64.zip"
+    # 临时或误命名容器不能作为正式候选包通过。
+    if path.name != expected_archive_name:
+        # 报告实际与预期文件名。
+        raise ValueError(
+            f"internal release archive name mismatch: expected {expected_archive_name}, got {path.name}"
+        )
+    # 固化七项载荷与最后一个摘要清单的顺序。
+    payload_names = expected_windows_payload(version)
+    # 清单必须是最后且唯一不自哈希的条目。
+    expected_names = payload_names + (MANIFEST_NAME,)
+    # Windows ZIP 统一冻结为 ZIP 规范允许的最早时间。
+    expected_timestamp = (1980, 1, 1, 0, 0, 0)
+    # 以只读模式打开候选包。
+    with zipfile.ZipFile(path, mode="r") as archive:
+        # 固化条目快照，避免多次枚举产生状态差异。
+        members = archive.infolist()
+        # 保存大小写折叠后的已见名称。
+        seen_names: set[str] = set()
+        # 在集合比较前逐项验证路径与元数据。
+        for member in members:
+            # 验证原始条目名称。
+            validate_entry_name(member.filename)
+            # 目录条目不属于冻结交付物。
+            if member.is_dir():
+                # 拒绝额外目录与空路径 owner。
+                raise ValueError(
+                    f"internal release entry is not a regular file: {member.filename}"
+                )
+            # 使用 Windows 消费语义拒绝仅大小写不同的重复路径。
+            folded_name = member.filename.casefold()
+            # 重复路径会让解包结果不确定。
+            if folded_name in seen_names:
+                # 报告重复条目。
+                raise ValueError(
+                    f"internal release contains a duplicate entry: {member.filename}"
+                )
+            # 发布当前条目名称所有权。
+            seen_names.add(folded_name)
+            # 条目时间必须与构建契约一致。
+            if member.date_time != expected_timestamp:
+                # 拒绝使相同载荷产生不同容器摘要的时间漂移。
+                raise ValueError(
+                    f"internal release entry timestamp is not canonical: {member.filename}"
+                )
+        # 名称、大小写与顺序必须与冻结契约完全一致。
+        actual_names = tuple(member.filename for member in members)
+        # 同时拒绝缺失、额外、重排与大小写漂移。
+        if actual_names != expected_names:
+            # 报告完整实际与预期顺序。
+            raise ValueError(
+                f"internal release entry order mismatch: expected {expected_names}, got {actual_names}"
+            )
+        # 读取唯一且已经过结构门禁的摘要清单。
+        manifest_bytes = archive.read(MANIFEST_NAME)
+        # 小型清单必须保持有界。
+        if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+            # 拒绝异常大清单。
+            raise ValueError(
+                f"internal release hash manifest is too large: {len(manifest_bytes)} bytes"
+            )
+        # 清单不能为空且最后一行必须显式结束。
+        if not manifest_bytes or not manifest_bytes.endswith(b"\n"):
+            # 拒绝空清单与不稳定尾行。
+            raise ValueError("internal release hash manifest lacks a final newline")
+        # Windows 原生构建器可写 CRLF，交叉构建器写 LF；两者归一后语义相同。
+        normalized_manifest = manifest_bytes.replace(b"\r\n", b"\n")
+        # 孤立 CR 不是受支持的跨平台换行。
+        if b"\r" in normalized_manifest:
+            # 拒绝混合或异常换行。
+            raise ValueError("internal release hash manifest newline format is invalid")
+        # 清单只允许纯 ASCII。
+        try:
+            # 解码已经完成边界检查的清单。
+            manifest_text = normalized_manifest.decode("ascii")
+        # 非 ASCII 字节必须形成稳定失败。
+        except UnicodeDecodeError as error:
+            # 包装为公开校验错误而不泄漏二进制。
+            raise ValueError("internal release hash manifest is not ASCII") from error
+        # 按最终 LF 拆分出七行摘要。
+        manifest_lines = manifest_text[:-1].split("\n")
+        # 摘要行数必须与 payload 一致。
+        if len(manifest_lines) != len(payload_names):
+            # 拒绝缺失、重复或额外摘要。
+            raise ValueError(
+                f"internal release hash line count mismatch: expected {len(payload_names)}, got {len(manifest_lines)}"
+            )
+        # 按冻结顺序验证每条摘要语法、名称与真实内容。
+        for expected_name, line in zip(payload_names, manifest_lines, strict=True):
+            # 解析小写摘要和规范名称。
+            match = MANIFEST_LINE.fullmatch(line)
+            # 行格式必须完全匹配。
+            if match is None:
+                # 拒绝长度、大小写或分隔漂移。
+                raise ValueError(f"internal release hash line is invalid: {line}")
+            # 读取声明摘要与名称。
+            declared_hash, declared_name = match.groups()
+            # 名称必须与冻结顺序完全一致。
+            if declared_name != expected_name:
+                # 拒绝别名、重排或未覆盖载荷。
+                raise ValueError(
+                    f"internal release hash entry mismatch: expected {expected_name}, got {declared_name}"
+                )
+            # 对 ZIP 内真实解包内容计算摘要。
+            actual_hash = hashlib.sha256(archive.read(expected_name)).hexdigest()
+            # 声明摘要必须逐字节匹配。
+            if declared_hash != actual_hash:
+                # 报告具体损坏载荷。
+                raise ValueError(
+                    f"internal release hash mismatch for {expected_name}: expected {declared_hash}, got {actual_hash}"
+                )
+    # 返回整个 ZIP 的最终摘要。
+    return hash_file(path)
+
+
 # 解析命令行并执行校验。
 def main() -> int:
     # 创建稳定命令行解析器。
@@ -272,13 +421,27 @@ def main() -> int:
     # 候选包路径必须由调用方显式提供。
     parser.add_argument("--archive", required=True, type=Path)
     # 版本默认与当前首发候选一致。
-    parser.add_argument("--version", default="0.0.6")
+    parser.add_argument("--version", default="0.0.3")
     # 解析当前进程参数。
     arguments = parser.parse_args()
-    # 执行完整校验并取得容器摘要。
-    archive_hash = verify_archive(arguments.archive.resolve(), arguments.version)
+    # 解析一次规范绝对路径供分派与输出复用。
+    archive_path = arguments.archive.resolve()
+    # 根据冻结文件名后缀选择平台容器校验器。
+    if archive_path.name.endswith(".tar.gz"):
+        # 执行 Linux ustar/gzip 完整校验。
+        archive_hash = verify_archive(archive_path, arguments.version)
+        # 固化平台标签供稳定输出。
+        platform_name = "Linux"
+    elif archive_path.name.endswith(".zip"):
+        # 执行 Windows ZIP 完整校验。
+        archive_hash = verify_zip_archive(archive_path, arguments.version)
+        # 固化平台标签供稳定输出。
+        platform_name = "Windows"
+    else:
+        # 拒绝没有受支持容器契约的输入。
+        raise ValueError(f"unsupported internal release container: {archive_path.name}")
     # 输出稳定成功证据。
-    print(f"Verified Linux internal release: {arguments.archive.resolve()}")
+    print(f"Verified {platform_name} internal release: {archive_path}")
     # 输出整个归档的小写 SHA-256。
     print(f"Verified SHA256: {archive_hash}")
     # 返回成功进程状态。
@@ -292,8 +455,8 @@ if __name__ == "__main__":
         # 执行主入口并返回其状态。
         raise SystemExit(main())
     # 只捕获预期输入、文件与归档错误。
-    except (OSError, tarfile.TarError, ValueError) as error:
+    except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
         # 把失败原因写入标准错误。
-        print(f"Linux internal release verification failed: {error}", file=sys.stderr)
+        print(f"Internal release verification failed: {error}", file=sys.stderr)
         # 使用非零状态结束进程。
         raise SystemExit(1) from error
