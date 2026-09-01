@@ -127,3 +127,32 @@ fn button_interaction_gate_preserves_accessibility_override_precedence() {
     }
     assert_eq!(count.get(), 1);
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn root_flex_grow_chain_fills_and_refollows_viewport() {
+    use uix::ui::test_harness::TestApp;
+
+    let mut app = TestApp::new((420.0, 280.0), || {
+        column((column((label("内容"),))
+            .flex_grow(1.0)
+            .automation_id("layout.middle"),))
+        .flex_grow(1.0)
+        .automation_id("layout.root")
+    });
+
+    let initial = app.snapshot();
+    let root = initial.find("layout.root").expect("根布局应存在");
+    let middle = initial.find("layout.middle").expect("中间布局应存在");
+    assert!((root.frame.h - 280.0).abs() < 0.01);
+    assert!((middle.frame.h - 280.0).abs() < 0.01);
+
+    app.resize(640.0, 360.0).expect("视口重排应完成");
+    let resized = app.snapshot();
+    let root = resized.find("layout.root").expect("根布局应仍存在");
+    let middle = resized.find("layout.middle").expect("中间布局应仍存在");
+    assert!((root.frame.w - 640.0).abs() < 0.01);
+    assert!((root.frame.h - 360.0).abs() < 0.01);
+    assert!((middle.frame.w - 640.0).abs() < 0.01);
+    assert!((middle.frame.h - 360.0).abs() < 0.01);
+}

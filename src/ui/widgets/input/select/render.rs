@@ -126,11 +126,12 @@ impl Select {
         }
 
         let showing_query = self.search && self.open && !self.search_query.is_empty();
-        let selected_value = self.current_value();
+        // 受控状态保存稳定 value，闭合控件始终绘制对应的用户可读 label。
+        let selected_label = self.current_label();
         let display_text = if showing_query {
             self.search_query.as_str()
         } else {
-            selected_value.as_deref().unwrap_or("")
+            selected_label.unwrap_or("")
         };
         let showing_placeholder = display_text.is_empty() && !self.placeholder.is_empty();
         let display_text = if showing_placeholder {

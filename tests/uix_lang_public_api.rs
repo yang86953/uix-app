@@ -25,6 +25,19 @@ fn consume_app_root_file_entry() {
         uix_app!("tests/fixtures/uix_lang/imports/app-root.uix").title("uix-lang 公开宏消费者测试");
 }
 
+// 展开 number prop 到 ProgressBar 的类型边界，确保调用方无需手工降为 f32。
+fn consume_number_prop_progress() {
+    // 自定义 Widget 的 number 公开为 f64，内层 ProgressBar 应自行适配 fraction 类型。
+    let _view = uix!(
+        r#"
+        <Widget name="NumberProgress" props="value: number">
+          <ProgressBar progress={value} />
+        </Widget>
+        <NumberProgress value="0.5" />
+        "#
+    );
+}
+
 // 确认 Visual 文件入口只生成一份静态视觉事实，借用常量直接指向它。
 #[test]
 fn visual_item_compiles_with_single_shared_address() {
@@ -41,4 +54,6 @@ fn file_entries_compile_as_external_consumers() {
     consume_recursive_import_view();
     // 再展开 App 组合根；builder 到此为止，不进入事件循环。
     consume_app_root_file_entry();
+    // 最后编译自定义 number prop 到 ProgressBar 的直接传递路径。
+    consume_number_prop_progress();
 }

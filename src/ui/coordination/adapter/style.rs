@@ -7,7 +7,12 @@ use crate::ui::theme::style::Style;
 // 引入窗口交互区域的专用样式适配入口。
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
-use crate::ui::widgets::{Button, Card, Container, Grid, Input, Label, ScrollView, Typography};
+use crate::ui::widgets::{
+    Button, Card, Container, Grid, Input, Label, ScrollView, Select, Typography,
+};
+// Modal 只在 feedback capability 启用时进入统一样式桥接。
+#[cfg(feature = "feedback")]
+use crate::ui::widgets::Modal;
 
 // 引入所属适配器类型。
 use super::ViewAdapter;
@@ -94,6 +99,11 @@ impl ViewAdapter {
                 // 输入组件只接收布局字段；编辑、IME 与视觉状态仍由 Input 私有持有。
                 input.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
             }
+        } else if tid == std::any::TypeId::of::<Select>() {
+            if let Some(select) = widget.as_any_mut().downcast_mut::<Select>() {
+                // 选择器同 Input 一样直接消费叶控件尺寸，避免父容器重新按 hug 测量。
+                select.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
+            }
         // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
         } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
             // 把公开 Style 中排版组件消费的文本字段交给组件。
@@ -117,6 +127,14 @@ impl ViewAdapter {
                 .downcast_mut::<WindowInteractionRegion>()
             {
                 region.apply_view_style(style, flex_grow_override, flex_shrink_override);
+            }
+        }
+
+        #[cfg(feature = "feedback")]
+        if tid == std::any::TypeId::of::<Modal>() {
+            if let Some(modal) = widget.as_any_mut().downcast_mut::<Modal>() {
+                // Modal 公共尺寸描述的是对话框而非零尺寸 overlay 占位节点。
+                modal.apply_view_layout_style(style);
             }
         }
 

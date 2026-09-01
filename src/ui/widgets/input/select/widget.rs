@@ -44,6 +44,18 @@ widget! {
         pub(crate) search_query: String,
         pub(crate) custom_option_views: bool,
         pub(crate) materialized_custom_options: RefCell<Vec<usize>>,
+        // View DSL 传入的显式宽度；未声明时继续使用选择器固有宽度。
+        #[snapshot(skip)]
+        pub(crate) view_width: Option<f32>,
+        // View DSL 传入的显式高度；未声明时继续使用尺寸档位高度。
+        #[snapshot(skip)]
+        pub(crate) view_height: Option<f32>,
+        // View DSL 传入的 Flex 增长因子。
+        #[snapshot(skip)]
+        pub(crate) view_flex_grow: f32,
+        // View DSL 传入的 Flex 收缩因子。
+        #[snapshot(skip)]
+        pub(crate) view_flex_shrink: f32,
         // 缓存只由选项文案与静态视觉决定的固有宽度。
         #[snapshot(skip)]
         pub(crate) intrinsic_width: Cell<Option<f32>>,
@@ -70,8 +82,16 @@ widget! {
     text_input_cursor_rect => (&self) -> Rect { self.search_cursor_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        let intrinsic = self.intrinsic_size();
+        constraints.clamp(Size::new(
+            self.view_width.unwrap_or(intrinsic.w),
+            self.view_height.unwrap_or(intrinsic.h),
+        ))
     }
+
+    flex_grow => (&self) -> f32 { self.view_flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.view_flex_shrink }
 
     measure_children_into => (
         &self,

@@ -50,6 +50,10 @@ impl Select {
             search_query: String::new(),
             custom_option_views: false,
             materialized_custom_options: RefCell::new(Vec::new()),
+            view_width: None,
+            view_height: None,
+            view_flex_grow: 0.0,
+            view_flex_shrink: 1.0,
             intrinsic_width: Cell::new(None),
             visible_row_count_cache: RefCell::new(None),
             search_cursor_rect: Cell::new(Rect::zero()),
@@ -235,6 +239,11 @@ impl Select {
             .map(|value| (*value).to_owned())
     }
 
+    /// 返回当前单选项面向用户的显示文案；索引无效时返回 `None`。
+    pub fn current_label(&self) -> Option<&str> {
+        self.option_label(self.selected)
+    }
+
     /// 返回当前全部多选项的稳定值集合。
     pub fn current_values(&self) -> HashSet<String> {
         let options = self.all_options();
@@ -360,6 +369,11 @@ impl Select {
         self.multiple = next.multiple;
         self.search = next.search;
         self.custom_option_views = next.custom_option_views;
+        // 声明树重建时同步最新叶控件布局覆盖，避免固有宽度重新覆盖直接尺寸。
+        self.view_width = next.view_width;
+        self.view_height = next.view_height;
+        self.view_flex_grow = next.view_flex_grow;
+        self.view_flex_shrink = next.view_flex_shrink;
         if !self.custom_option_views {
             self.materialized_custom_options.borrow_mut().clear();
         }

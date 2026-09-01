@@ -415,8 +415,16 @@ pub(crate) fn builtin_widget_runtime_changed(current: &dyn Widget, next: &dyn Wi
         current.as_any().downcast_ref::<Input>(),
         next.as_any().downcast_ref::<Input>(),
     ) {
-        // 把外部值变化交给统一 patch 失效传播。
-        return current.controlled_value_changed(next);
+        // 把外部值或快照跳过的 View 布局变化交给统一 patch 失效传播。
+        return current.controlled_value_changed(next) || current.view_layout_changed(next);
+    }
+    // Select 的直接尺寸保存在私有布局字段中，不进入含运行态的公开快照。
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Select>(),
+        next.as_any().downcast_ref::<Select>(),
+    ) {
+        // 显式尺寸或 Flex 变化必须触发布局并由 sync_from 采用新值。
+        return current.view_layout_changed(next);
     }
     // Collapse 的受控展开集合也会改变父子布局位置与可见性。
     if let (Some(current), Some(next)) = (
