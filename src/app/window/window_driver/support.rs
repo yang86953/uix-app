@@ -114,6 +114,8 @@ pub(super) fn observe_agent_settle(
     let synchronous_work_pending = pending_root.is_some()
         || reconcile_pending
         || tree.has_reconcile_requested()
+        // 作用域重建请求属于同一同步声明工作。
+        || tree.has_scoped_rebuild_requested()
         || !main_thread_queue.is_empty()
         || tree.has_app_state_focus_requests()
         || tree.has_app_state_semantic_events()
