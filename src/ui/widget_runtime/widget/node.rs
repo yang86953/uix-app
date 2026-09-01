@@ -39,6 +39,8 @@ pub struct WidgetNode {
     // 保存捕获阶段交接的结构性 State 绑定。
     pub(crate) captured_state_binds:
         Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+    // 子树作用域重建工厂；存在时 captured_state_binds 安装为节点作用域失效。
+    pub(crate) scoped_rebuild: Option<std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>>,
     // 保存捕获阶段交接的节点私有 Effect。
     pub(crate) captured_effects: Vec<crate::ui::reactive::state::Effect>,
     // 保留内联组件的非视觉状态作用域标记。
@@ -78,6 +80,8 @@ impl WidgetNode {
             render_handlers: Vec::new(),
             // 新建命令式节点默认没有捕获的 State 绑定。
             captured_state_binds: Vec::new(),
+            // 新建命令式节点默认不携带作用域重建工厂。
+            scoped_rebuild: None,
             // 新建命令式节点默认没有捕获的 Effect。
             captured_effects: Vec::new(),
             // 新建命令式节点默认没有捕获的动画源。
@@ -125,6 +129,8 @@ impl WidgetNode {
             render_handlers: Vec::new(),
             // 叶节点默认没有捕获的 State 绑定。
             captured_state_binds: Vec::new(),
+            // 叶节点默认不携带作用域重建工厂。
+            scoped_rebuild: None,
             // 叶节点默认没有捕获的 Effect。
             captured_effects: Vec::new(),
             // 叶节点默认没有捕获的动画源。
@@ -270,6 +276,17 @@ impl WidgetNode {
     ) -> Self {
         // 保留声明节点本次捕获的全部结构性依赖。
         self.captured_state_binds = state_binds;
+        // 返回仍可继续配置的节点。
+        self
+    }
+
+    // 把子树作用域重建工厂交给将来拥有节点的 WidgetTree。
+    pub(crate) fn with_scoped_rebuild(
+        mut self,
+        rebuild: Option<std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>>,
+    ) -> Self {
+        // 保存作用域闭包；结构性 State 绑定随后仍走既有交接通道。
+        self.scoped_rebuild = rebuild;
         // 返回仍可继续配置的节点。
         self
     }

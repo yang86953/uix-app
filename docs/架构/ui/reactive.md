@@ -19,7 +19,7 @@
 
 ## 组件：State
 
-根 View 构建期间读取 `State` 会登记 reconcile 依赖；组件绘制绑定只登记所属节点的 Paint 或 Layout 失效。每次成功写入单调推进 revision，并沿已知目标窗口登记可合并失效。状态写入发生在目标窗口 UI 轮次；后台线程必须通过 app 的 `post_to_ui` 投递 owned 结果，不能直接写 State、执行 View/Effect/handler，也不为每个状态源创建 timer、线程或轮询。
+根 View 构建期间读取 `State` 会登记 reconcile 依赖；`scoped` 子树作用域闭包内读取的 `State` 登记为该节点的局部 reconcile 依赖（变化时只重跑该闭包并原位协调子树）；组件绘制绑定只登记所属节点的 Paint 或 Layout 失效。每次成功写入单调推进 revision，并沿已知目标窗口登记可合并失效。状态写入发生在目标窗口 UI 轮次；后台线程必须通过 app 的 `post_to_ui` 投递 owned 结果，不能直接写 State、执行 View/Effect/handler，也不为每个状态源创建 timer、线程或轮询。
 
 ## 组件：Computed
 

@@ -48,3 +48,22 @@ impl super::BoxedWidget {
         self.reconcile_state_binds.clear();
     }
 }
+
+// 子树作用域重建工厂与作用域租约同属节点生命周期。
+impl super::BoxedWidget {
+    // 整体替换本节点的作用域重建工厂；None 表示该节点不是作用域根。
+    pub(crate) fn set_scoped_rebuild(
+        &self,
+        rebuild: Option<std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>>,
+    ) {
+        // 安装新工厂再释放旧闭包，保持与租约替换一致的顺序语义。
+        *self.scoped_rebuild.borrow_mut() = rebuild;
+    }
+
+    // 克隆本节点的作用域重建工厂；非作用域根返回 None。
+    pub(crate) fn scoped_rebuild(
+        &self,
+    ) -> Option<std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>> {
+        self.scoped_rebuild.borrow().clone()
+    }
+}

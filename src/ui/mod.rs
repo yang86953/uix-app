@@ -197,8 +197,8 @@ pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNo
 pub use virtualization::{VirtualScroll, VirtualScrollBuilder};
 pub use widgets::combinators::{
     ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
-    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll,
-    show, space,
+    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scoped,
+    scroll, show, space,
 };
 pub use widgets::window_chrome::{
     WindowControl, WindowResizeEdge, window_control, window_control_named, window_drag_region,
@@ -217,9 +217,7 @@ pub use widget_runtime::clipboard;
 pub use widget_runtime::config;
 pub use widget_runtime::focus_trap;
 pub use widget_runtime::locale;
-pub use widget_runtime::managers::{
-    DragManager, FocusManager, InteractionManager, WidgetManagers,
-};
+pub use widget_runtime::managers::{DragManager, FocusManager, InteractionManager, WidgetManagers};
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
 #[doc(hidden)]
 #[path = "widget_runtime/state.rs"]

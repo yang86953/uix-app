@@ -135,7 +135,7 @@ thread_local! {
 #[derive(Default)]
 pub(crate) struct StateCaptureOutput {
     // 保存本帧已登记的槽身份以保持同帧订阅去重。
-    state_bind_slots: Vec<StateSlotId>,
+    pub(crate) state_bind_slots: Vec<StateSlotId>,
     // 保存去重后的结构性 State 绑定源。
     pub(crate) state_binds: Vec<Arc<dyn StatePaintBind>>,
     // 保存本次构建创建的 Effect 实例。

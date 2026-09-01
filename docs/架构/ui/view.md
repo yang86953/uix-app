@@ -13,7 +13,7 @@
 | `View` | trait | 一次性构建 ViewNode |
 | `ViewNode` | struct | 组件类型、key、子树、handler 与 Provider 上下文 |
 | `ViewAdapter` | internal adapter | ViewNode 到 WidgetNode/patch 的桥 |
-| combinators | functions/builders | 声明组件、样式、事件、动画与子树 |
+| combinators | functions/builders | 声明组件、样式、事件、动画与子树；`scoped` 声明节点级重建粒度的子树作用域 |
 | `widget!` 等宏 | macro | 生成 widget 样板和能力实现 |
 
 ## 组件：ViewNode

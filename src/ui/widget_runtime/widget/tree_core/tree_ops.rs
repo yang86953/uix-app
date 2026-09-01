@@ -272,6 +272,7 @@ impl WidgetTree {
             system_event_handlers,
             render_handlers,
             captured_state_binds,
+            scoped_rebuild,
             captured_effects,
             uix_widget_scopes,
             animated_sources,
@@ -323,8 +324,13 @@ impl WidgetTree {
         self.register_focusable(id);
         // 非根节点已加入当前树后才由自身生命周期持有结构性 State 租约。
         if parent.is_some() {
-            // 把结构性 State 订阅绑定到该实际节点的真实移除生命周期。
-            self.replace_node_captured_state_binds(id, captured_state_binds);
+            // 作用域节点的结构依赖安装为节点作用域失效；其余维持整树请求。
+            if let Some(rebuild) = scoped_rebuild {
+                self.install_scoped_node(id, captured_state_binds, rebuild);
+            } else {
+                // 把结构性 State 订阅绑定到该实际节点的真实移除生命周期。
+                self.replace_node_captured_state_binds(id, captured_state_binds);
+            }
         }
         self.set_focus_handle(id, focus_handle);
         let handler_signatures = handlers

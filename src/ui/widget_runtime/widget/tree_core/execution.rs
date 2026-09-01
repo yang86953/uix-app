@@ -409,6 +409,13 @@ impl WidgetTree {
         // 清空协调请求，防止关闭树触发空转帧循环。
         self.reconcile_requested
             .store(false, std::sync::atomic::Ordering::Release);
+        // 关闭树同样不得保留作用域重建请求，避免 teardown 前空转。
+        self.scoped_rebuild_requested
+            .store(false, std::sync::atomic::Ordering::Release);
+        self.scoped_rebuild_pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         // 清空本地与共享失效工作，关闭后不得继续请求渲染。
         self.reset_invalidation();
         // 关闭树不会再完成未闭合的失效批次。

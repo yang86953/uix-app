@@ -178,6 +178,8 @@ impl ViewAdapter {
             // 保存非根声明节点交接给运行时树的 State 绑定。
             captured_state_binds:
                 Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
+            // 保存子树作用域声明交接给运行时树的重建工厂。
+            scoped_rebuild: Option<std::sync::Arc<dyn Fn() -> crate::ui::view::ViewNode>>,
             // 保存非根声明节点交接给运行时节点的 Effect。
             captured_effects: Vec<crate::ui::reactive::state::Effect>,
             // 保存非根或动态声明节点交接给所属节点的动画源。
@@ -218,6 +220,8 @@ impl ViewAdapter {
                 mut children,
                 // 把非根与动态子树的 State 输出继续传递到运行时节点。
                 captured_state_binds,
+                // 把子树作用域重建工厂继续传递到运行时节点。
+                scoped_rebuild,
                 // 把非根与动态子树的 Effect 输出继续传递到运行时节点。
                 captured_effects,
                 // 把非根与动态子树的动画源继续传递到运行时节点。
@@ -260,6 +264,8 @@ impl ViewAdapter {
                 style,
                 // 保留本声明节点的结构性 State 输出。
                 captured_state_binds,
+                // 保留本声明节点的作用域重建工厂。
+                scoped_rebuild,
                 // 保留本声明节点的 Effect 输出。
                 captured_effects,
                 // 保留本声明节点拥有的动画源输出。
@@ -358,6 +364,8 @@ impl ViewAdapter {
             }
             // 把动态子树捕获的 State 绑定交接给将来拥有该节点的树。
             wnode = wnode.with_captured_state_binds(frame.captured_state_binds);
+            // 把子树作用域重建工厂交接给将来拥有该节点的树。
+            wnode = wnode.with_scoped_rebuild(frame.scoped_rebuild);
             // 把动态子树捕获的 Effect 交接给将来拥有该节点的节点生命周期。
             wnode = wnode.with_captured_effects(frame.captured_effects);
             // 把动态子树捕获的动画源交接给将来拥有该节点的树级注册表。
@@ -413,6 +421,8 @@ impl ViewAdapter {
             children,
             // 接收本节点本轮捕获的结构性 State 输出。
             captured_state_binds,
+            // 接收本节点声明的作用域重建工厂。
+            scoped_rebuild,
             // 接收本节点本轮捕获的 Effect 输出。
             captured_effects,
             // 接收本节点本轮捕获的动画源输出。
@@ -460,8 +470,13 @@ impl ViewAdapter {
         // 将本节点本轮结构性 State 绑定到所属树的 reconcile 请求端口。
         // 根绑定由根所有者整体替换，非根节点才持有节点生命周期租约。
         if tree.root_id() != Some(id) {
-            // 把非根节点本轮结构依赖交给实际节点生命周期。
-            tree.replace_node_captured_state_binds(id, captured_state_binds);
+            // 作用域节点的结构依赖安装为节点作用域失效；其余维持整树请求。
+            if let Some(rebuild) = scoped_rebuild {
+                tree.install_scoped_node(id, captured_state_binds, rebuild);
+            } else {
+                // 把非根节点本轮结构依赖交给实际节点生命周期。
+                tree.replace_node_captured_state_binds(id, captured_state_binds);
+            }
         }
         if !style.visible {
             tree.set_node_visibility(id, false);
