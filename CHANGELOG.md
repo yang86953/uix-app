@@ -249,15 +249,16 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；89 项公开 API
   测试全绿；`python3 scripts/diagnostics_audit.py --verbose` 违规为零。
 
-### 未处置错误落地检测与编译期丢弃强制
+### 未处置错误落地检测与编译期丢弃警告
 
 - 背景：静态审计只能覆盖仓库内 `src/`；使用框架的应用程序绕过诊断系统
-  丢弃错误（`let _ =`、match 后丢弃）时框架无从知晓。本轮补齐双层强制。
-- 编译期（框架内硬性）：`Error` 标注 `#[must_use]`（文案指明必须经诊断
-  通道处置），crate 级 `deny(unused_must_use)`——框架代码把 `Error` 作为
-  表达式语句直接丢弃即编译失败；下游应用的同类丢弃得到 `must_use`
-  warning，应用可自行 deny 升级。存量代码零违规一次通过（前序审计清零
-  的直接收益）。
+  丢弃错误（`let _ =`、match 后丢弃）时框架无从知晓。本轮补齐编译期
+  警告与运行时落地检测（处置强度经取舍：未按规范以警告提示为主，
+  不阻断构建；运行时检测与静态审计兜底）。
+- 编译期警告：`Error` 标注 `#[must_use]`（文案指明必须经诊断通道处置），
+  框架或下游应用把 `Error` 作为表达式语句直接丢弃即产生编译警告；
+  需要更强约束的宿主可自行 `deny(unused_must_use)` 升级为错误。存量
+  代码零违规（前序审计清零的直接收益）。
 - 运行时落地检测（全覆盖，含应用）：`Error` 内增处置标记（原子布尔）；
   `report_with_origin`、`observe_boundary_error`、新增公开
   `observe_transient_error`（瞬态观察的错误值变体，等价 observe_transient
@@ -278,7 +279,7 @@
 - 新增公开 API 测试：未处置丢弃计数、报告/边界/瞬态观察完成处置后
   不计数（含原因链随链）、副本独立承担观测责任（全局状态在专用锁内
   串行断言）。
-- 文档：架构文档决策矩阵的强制机制升格为四层（编译期 must_use+deny、
+- 文档：架构文档决策矩阵的强制机制升格为四层（编译期 must_use 警告、
   静态审计、运行时落地检测、类型入口）；使用层运行保障补
   `unhandled_error_summary` 检视说明。
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；90 项公开 API
