@@ -462,6 +462,12 @@ const COMPONENTS: &[ComponentSpec] = &[
         Some("navigation")
     ),
     component!(
+        "MenuBar",
+        Navigation,
+        "generate_menu_bar",
+        Some("navigation")
+    ),
+    component!(
         "Navigation",
         Navigation,
         "generate_navigation",
@@ -1080,6 +1086,20 @@ const DATA_CONSTRUCTORS: &[DataConstructorSpec] = &[
         Some("navigation")
     ),
     data_constructor!(
+        "MenuBarMenu",
+        "::uix::prelude::MenuBarMenu",
+        "from_text",
+        false,
+        Some("navigation")
+    ),
+    data_constructor!(
+        "MenuBarItem",
+        "::uix::prelude::MenuBarItem",
+        "from_text",
+        false,
+        Some("navigation")
+    ),
+    data_constructor!(
         "BarData",
         "::uix::prelude::BarData",
         "new",
@@ -1309,8 +1329,8 @@ mod tests {
             .iter()
             .filter(|entry| entry.status == RegistrationStatus::Available)
             .count();
-        assert_eq!(available, 110);
-        assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 31);
+        assert_eq!(available, 111);
+        assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 33);
         assert_eq!(UI_PROJECTION_SCHEMA.events().len(), 12);
         assert_eq!(UI_PROJECTION_SCHEMA.style_properties().len(), 63);
         assert_eq!(UI_PROJECTION_SCHEMA.theme_tokens().len(), 90);

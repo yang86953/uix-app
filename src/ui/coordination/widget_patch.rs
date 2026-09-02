@@ -28,7 +28,7 @@ use crate::ui::widgets::Table;
 #[cfg(feature = "navigation")]
 // 该导入覆盖全部拥有运行时组件状态的导航目标。
 use crate::ui::widgets::{
-    Anchor, Breadcrumb, Dropdown, Menu, NavItem, NavigationShell, Pagination, Steps, Tabs,
+    Anchor, Breadcrumb, Dropdown, Menu, MenuBar, NavItem, NavigationShell, Pagination, Steps, Tabs,
 };
 // 二维码 capability 启用时才引入对应组件类型。
 #[cfg(feature = "qrcode")]
@@ -585,6 +585,9 @@ pub(crate) fn patch_builtin_widget(
     // 导航 capability 启用时才生成下拉菜单类型化 patch 分支。
     #[cfg(feature = "navigation")]
     patch_as!(Dropdown);
+    // 导航 capability 启用时才生成菜单栏类型化 patch 分支。
+    #[cfg(feature = "navigation")]
+    patch_as!(MenuBar);
     // 导航 capability 启用时才生成菜单类型化 patch 分支。
     #[cfg(feature = "navigation")]
     patch_as!(Menu);

@@ -371,11 +371,25 @@
 </Widget>
 
 // 声明导航组件页组件：持有步骤、分页、标签页、菜单与侧栏受控状态。
-<Widget name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false">
+<Widget name="NavPage" state="steps_current: usize = 1, page_current: usize = 1, page_size: usize = 10, active_tab: 'account', menu_selected: Option<String> = None, menu_open: Vec<String> = [], nav_active: Option<String> = None, nav_open: Vec<String> = [], nav_collapsed: false, menu_bar_choice: String = ''">
   // 组织导航组件内容。
   <Column gap="16px">
     // 展示导航组件标题。
     <Text fontSize="heading2">导航组件</Text>
+    // 展示横向菜单栏与稳定 key 的 Change 事实。
+    <Container class="pagePanel">
+      // 组织菜单栏内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">MenuBar</Text>
+        // 顶级入口点击展开下拉，选择后发布条目稳定 key。
+        <MenuBar menus={[MenuBarMenu('文件', 'file').item(MenuBarItem('新建任务', 'file-new-task').icon('plus')).item(MenuBarItem('新建项目', 'file-new-project').icon('folder')).item(MenuBarItem('打开工作区…', 'file-open-workspace')), MenuBarMenu('视图', 'view').item(MenuBarItem('导航页', 'view-nav').icon('compass')).item(MenuBarItem('禁用项', 'view-disabled').disabled(true))]} @change="setState(menu_bar_choice: $event.value)" automationId="demo-menu-bar" />
+        // 展示最近一次菜单选择的稳定 key。
+        <Text fontSize="small">最近选择：{menu_bar_choice == '' ? '（未选择）' : menu_bar_choice}</Text>
+      // 结束菜单栏内容。
+      </Column>
+    // 结束菜单栏面板。
+    </Container>
     // 展示步骤与分页面板。
     <Container class="pagePanel">
       // 组织步骤内容。

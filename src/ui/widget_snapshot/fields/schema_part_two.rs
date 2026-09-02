@@ -145,6 +145,17 @@ macro_rules! snapshot_fields_part_two {
                 /// 当前键盘高亮选项的索引。
                 highlighted_index: Option<usize>,
             },
+            // 导航 capability 关闭时同步收缩菜单栏快照变体。
+            #[cfg(feature = "navigation")]
+            /// 菜单栏的顶级菜单、打开索引与高亮条目快照。
+            MenuBar {
+                /// 按声明顺序保存的顶级菜单。
+                menus: Vec<MenuBarMenu>,
+                /// 当前展开（含退出动画中）的顶级菜单索引。
+                open_index: Option<usize>,
+                /// 弹层内键盘高亮条目索引。
+                highlighted_index: Option<usize>,
+            },
             // 导航 capability 关闭时同步收缩标签页快照变体。
             #[cfg(feature = "navigation")]
             /// 标签页的条目、活动身份、方位与尺寸快照。

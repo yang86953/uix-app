@@ -191,6 +191,24 @@ pub(super) fn dropdown_accessibility(
     })
 }
 
+// 导航 capability 启用时才编译菜单栏无障碍转换。
+#[cfg(feature = "navigation")]
+pub(super) fn menu_bar_accessibility(
+    menus: &[crate::ui::widgets::MenuBarMenu],
+    open_index: Option<usize>,
+) -> AccessibilitySnapshot {
+    // MenuBar 复用 Menu 容器角色；expanded 反映当前是否有菜单展开。
+    let label = menus
+        .iter()
+        .map(|menu| menu.label.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    AccessibilitySnapshot::named(AccessibilityRole::Menu, label).with_state(AccessibilityState {
+        expanded: Some(open_index.is_some()),
+        ..AccessibilityState::default()
+    })
+}
+
 // 反馈 capability 启用时才编译气泡确认框无障碍转换。
 #[cfg(feature = "feedback")]
 pub(super) fn popconfirm_accessibility(

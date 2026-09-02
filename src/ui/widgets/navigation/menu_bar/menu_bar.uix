@@ -1,0 +1,30 @@
+// MenuBar 的入口行、弹层、排版、焦点和主题由 UIX 唯一拥有。
+<Visual name="MENUBAR_LAYOUT_VISUAL" type="MenuBarLayoutVisual"
+  entryHeight={36.0} entryPaddingX={12.0} entryGap={4.0} entryMinWidth={48.0}
+  menuWidth={200.0} rowHeight={30.0} dividerRowHeight={8.0}
+  contentStart={12.0} iconSlotWidth={20.0} iconAdvance={24.0}
+  labelEndPadding={8.0} dividerInset={8.0} dividerThickness={1.0}
+/>
+<Visual name="MENUBAR_TYPOGRAPHY_VISUAL" type="MenuBarTypographyVisual"
+  entryLabel={14.0} label={13.0} icon={14.0}
+/>
+<Visual name="MENUBAR_CHROME_VISUAL" type="MenuBarChromeVisual"
+  borderWidth={1.0} focusWidth={1.5} shadowExpand={8.0} overlayZ={900}
+  radius={menu_bar_radius_small()} shadow={menu_bar_shadow_secondary()}
+/>
+<Visual name="MENUBAR_PALETTE_VISUAL" type="MenuBarPaletteVisual"
+  text={menu_bar_text()}
+  textQuaternary={menu_bar_text_quaternary()}
+  entryHover={menu_bar_entry_hover()}
+  entryOpen={menu_bar_entry_open()}
+  elevatedBackground={menu_bar_elevated_background()}
+  border={menu_bar_border()}
+  fillTertiary={menu_bar_fill_tertiary()}
+/>
+<Visual name="MENUBAR_VISUAL" type="MenuBarVisual"
+  layout={MENUBAR_LAYOUT_VISUAL}
+  typography={MENUBAR_TYPOGRAPHY_VISUAL}
+  chrome={MENUBAR_CHROME_VISUAL}
+  palette={MENUBAR_PALETTE_VISUAL}
+/>
+<KernelView value={build_menu_bar_view(kernel, MENUBAR_VISUAL_REF)} />

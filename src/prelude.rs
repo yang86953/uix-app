@@ -143,9 +143,9 @@ pub use crate::ui::{
 #[cfg(feature = "navigation")]
 // 该列表保持导航组件族既有的便捷导入面。
 pub use crate::ui::{
-    Anchor, AnchorItem, Breadcrumb, BreadcrumbItem, Dropdown, DropdownItem, Menu, MenuItem,
-    MenuMode, NavGroup, NavItem, Navigation, Pagination, SharedActive, Step, StepStatus, Steps,
-    Tab, TabPosition, Tabs,
+    Anchor, AnchorItem, Breadcrumb, BreadcrumbItem, Dropdown, DropdownItem, Menu, MenuBar,
+    MenuBarItem, MenuBarMenu, MenuItem, MenuMode, NavGroup, NavItem, Navigation, Pagination,
+    SharedActive, Step, StepStatus, Steps, Tab, TabPosition, Tabs,
 };
 // 表格 capability 启用时才在 prelude 暴露组件、构建器与数据模型。
 #[cfg(feature = "table")]
