@@ -28,6 +28,10 @@
   `flexShrink` 覆盖同步登记。
 - v1 边界：嵌套子菜单与 UIX 声明层分隔线构造不在首版
   （`MenuBarItem::divider()` 仅 Rust API）。
+- 版本对齐：uix-derive、uix-lang-compiler、uix-lang-cli、uix-lang-lsp
+  与 uix-lang-gate-consumer 随主 crate 同步升至 0.0.5，修复首个 v0.0.5
+  tag 只改主 crate 版本导致外部 git 依赖无法解析 `uix-derive ^0.0.5`
+  的发版缺陷（tag 已删除重打）。
 - 验证：编译器 561 项单测（含 MenuBar codegen 生成/拒绝路径与 schema
   计数 111/33）全绿；公开 API 测试 45 文件全绿；demo 导航页新增面板经
   Agent 通道真窗实测——语义树 `expanded` 状态、弹层像素呈现（浮起白板
