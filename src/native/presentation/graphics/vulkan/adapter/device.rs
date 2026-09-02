@@ -279,7 +279,8 @@ impl VulkanDevice {
                 "vkDeviceWaitIdle during shutdown",
                 vk::Result::ERROR_DEVICE_LOST,
             ));
-            tracing::error!("{}", error.what());
+            // shutdown 期 device-lost 观察经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("vulkan/device", &error);
         }
     }
 

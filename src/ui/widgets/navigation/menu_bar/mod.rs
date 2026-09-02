@@ -343,6 +343,7 @@ widget! {
         let disabled_color = fade_token_color(visual.menu.text_quaternary, opacity);
         let highlight = fade_token_color(visual.menu.highlight, opacity);
 
+        // 绘制分支仅在菜单展开状态进入，展开状态的弹层矩形必然存在。
         let menu_rect = self.menu_rect(frame).expect("已开状态必有弹层矩形");
         let radius = Some(Radius::uniform(visual.chrome.radius));
         let shadow = visual.chrome.shadow;

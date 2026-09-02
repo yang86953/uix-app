@@ -191,10 +191,9 @@ impl WindowSession {
 
     pub(crate) fn shutdown(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            tracing::error!(
-                "WindowSession checked shutdown failed: {}",
-                error.short_what()
-            );
+            // 主关闭路径首失败已由窗口操作边界上报；此处 teardown 重试失败
+            // 经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("window_session", &error);
         }
     }
 

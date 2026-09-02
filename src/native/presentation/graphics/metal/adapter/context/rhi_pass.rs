@@ -136,7 +136,8 @@ impl MetalContext {
         encoder.setScissorRect(metal_scissor(scissor));
         let components = color.components();
         let pointer = NonNull::new(components.as_ptr().cast_mut().cast::<c_void>())
-            .expect("four color components are non-null");
+            // [f32; 4] 数组指针永不为 null。
+        .expect("four color components are non-null");
         // SAFETY: MSL clear_fs 读取恰好一个 float4，指针在调用期间有效。
         unsafe {
             encoder.setFragmentBytes_length_atIndex(pointer, size_of::<[f32; 4]>(), 0);

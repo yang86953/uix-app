@@ -231,7 +231,9 @@ impl ProxyContext {
     fn queue_handle(&self) -> &QueueHandle<WaylandDispatchState> {
         self.queue_handle
             .as_ref()
-            .expect("Wayland proxy context must have a queue handle")
+            // 两个构造器（new/with_registry）都写入 Some(queue_handle)，
+        // 不存在置 None 的路径。
+        .expect("Wayland proxy context must have a queue handle")
     }
 
     fn with_registry(

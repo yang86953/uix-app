@@ -279,7 +279,8 @@ fn metal_drawable_extent(width: i32, height: i32, scale: f32) -> Result<RhiExten
 impl Drop for MetalContext {
     fn drop(&mut self) {
         if let Err(error) = self.shutdown_result() {
-            tracing::error!("MetalContext shutdown failed: {}", error.short_what());
+            // teardown 边界无诊断句柄：经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("metal/adapter", &error);
         }
     }
 }

@@ -428,8 +428,9 @@ pub(super) fn probe_device<D: GraphicsDevice + ?Sized>(device: &mut D) -> Result
     if let Err(main_error) = probe_result {
         // 清理失败不能覆盖导致探针失败的主错误。
         if let Err(cleanup_error) = cleanup_result {
-            // 同时记录主错误和清理错误，便于定位双重故障。
-            tracing::error!(main_error = ?main_error, cleanup_error = ?cleanup_error, "Drawing GPU FramePlan startup probe failed during cleanup");
+            // 主错误与清理错误分别经边界观察入口记录，便于定位双重故障。
+            crate::diagnostics::observe_boundary_error("gpu_probe", &main_error);
+            crate::diagnostics::observe_boundary_error("gpu_probe/cleanup", &cleanup_error);
         }
         // 返回原始主错误。
         return Err(main_error);

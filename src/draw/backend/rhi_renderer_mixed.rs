@@ -746,6 +746,7 @@ impl RhiRenderer {
                     let mut vertices = Vec::with_capacity((batch_end - index) * 48);
                     for batch_index in index..batch_end {
                         let RhiOp::Coverage(batch_quad) = &operations[batch_index] else {
+                            // 批次构成由编码阶段保证：coverage 批只含 coverage 操作。
                             unreachable!("coverage batch contains a non-coverage operation");
                         };
                         vertices.extend_from_slice(&RhiRenderer::coverage_quad_vertices_with_uv(
@@ -805,6 +806,7 @@ impl RhiRenderer {
                     let mut vertices = Vec::with_capacity((batch_end - index) * 48);
                     for batch_index in index..batch_end {
                         let RhiOp::Msdf(batch_quad) = &operations[batch_index] else {
+                            // 批次构成由编码阶段保证：MSDF 批只含 MSDF 操作。
                             unreachable!("MSDF batch contains a non-MSDF operation");
                         };
                         vertices.extend_from_slice(&RhiRenderer::msdf_quad_vertices_with_uv(

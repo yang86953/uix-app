@@ -644,9 +644,11 @@ impl App {
 
         let system_theme_tokens = if self.follow_system_theme {
             let is_dark = platform.display().is_dark_mode().unwrap_or_else(|error| {
-                tracing::warn!(
-                    "startup theme query failed, defaulting to light: {}",
-                    error.short_what()
+                // 平台主题查询失败回退浅色：经冷却去重观察的自愈降级。
+                diagnostics.observe_transient(
+                    "theme",
+                    "startup theme query failed, defaulting to light",
+                    error.short_what(),
                 );
                 false
             });
@@ -750,13 +752,20 @@ impl App {
         let publish_theme_applied = {
             let theme_bus = &theme_bus;
             let theme_revision = &theme_revision;
+            // move 闭包需要自有诊断句柄（廉价 Arc clone）。
+            let theme_diagnostics = diagnostics.clone();
             move |is_dark: bool| {
                 theme_revision.set(theme_revision.get() + 1);
                 if let Err(error) = theme_bus.borrow().publish(ThemeApplied {
                     is_dark,
                     revision: theme_revision.get(),
                 }) {
-                    tracing::error!("theme applied publish failed: {}", error.short_what());
+                    // 单次发布失败不中断主题状态：经冷却去重观察。
+                    theme_diagnostics.observe_transient(
+                        "theme_bus",
+                        "theme applied publish failed",
+                        error.short_what(),
+                    );
                 }
             }
         };
@@ -774,7 +783,10 @@ impl App {
                 Err(error) => {
                     // 新总线必为 Active，此处不可达；若发生（实现缺陷）
                     // 中止启动并报告，不静默吞掉订阅失败。
-                    tracing::error!("theme event subscription failed: {}", error.short_what());
+                    diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("theme_bus", "subscribe"),
+                    );
                     return 1;
                 }
             };

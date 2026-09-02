@@ -127,6 +127,7 @@ impl MetalRhiDevice {
                 )
             })?);
         }
+        // 前几行刚在 is_none 分支内完成赋值，此处必然存在。
         Ok(self.command_buffer.as_deref().expect("just initialized"))
     }
 

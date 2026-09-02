@@ -100,7 +100,9 @@ fn publish_lucide_font(result: crate::core::Result<FontHandle>) {
             let _ = LUCIDE_FONT.set(fh);
         }
         Err(e) => {
-            tracing::warn!("Failed to load Lucide font: {}", e.short_what());
+            // Lucide 图标字体加载失败（图标退化为占位）：widget 层无诊断
+            // 句柄，经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("fonts/lucide", &e);
         }
     }
 }

@@ -301,11 +301,8 @@ pub(crate) fn create_swap_chain(
         Ok(swap_chain) => Ok(swap_chain),
         // 任何接口或创建缺口只在构造边界回退一次。
         Err(error) => {
-            // 记录主路径失败原因，保留可诊断兼容性事实。
-            tracing::warn!(
-                "D3d11Context: tracked flip swapchain unavailable; falling back to legacy DISCARD: {}",
-                error.what()
-            );
+            // flip→legacy 兼容降级事实经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("d3d11/swapchain_fallback", &error);
             // 使用同一 device 和 adapter 创建 FullOnly 回退。
             create_legacy_swap_chain(device, &adapter, hwnd, width, height)
         }

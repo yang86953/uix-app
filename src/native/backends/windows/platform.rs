@@ -326,7 +326,9 @@ impl IWindowManager for WindowsPlatform {
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
                 Err(e) => {
-                    tracing::warn!("GdiPresenter failed ({}), using null", e.short_what());
+                    // Gdi 不可用回退空 presenter（窗口静默不呈现）：该事实
+                    // 经边界观察入口记录，值得 error 级注意。
+                    crate::diagnostics::observe_boundary_error("windows/gdi_presenter", &e);
                     Box::new(crate::native::presentation::presenter::NullPresenter::new())
                 }
             };

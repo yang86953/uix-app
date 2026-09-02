@@ -22,10 +22,8 @@ impl D3d11Context {
         ) {
             Ok(context) => Ok(context),
             Err(hardware_error) => {
-                tracing::warn!(
-                    "D3d11Context: hardware device unavailable; retrying with WARP: {}",
-                    hardware_error.what()
-                );
+                // HW→WARP 性能降级事实经边界观察入口记录。
+                crate::diagnostics::observe_boundary_error("d3d11/hw_to_warp", &hardware_error);
                 create_with_drawable(
                     native_window,
                     drawable,
@@ -353,10 +351,8 @@ pub(crate) fn create_with_driver(
         let swap_chain = create_swap_chain(&device, hwnd, width, height)?;
 
         let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
-            tracing::warn!(
-                "D3d11Context: adapter diagnostics unavailable: {}",
-                error.what()
-            );
+            // 适配器诊断信息缺失回退占位：经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("d3d11/adapter_info", &error);
             D3d11AdapterInfo::unavailable(driver)
         });
         let pipeline = D3d11Pipeline::new(&device)?;

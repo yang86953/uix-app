@@ -286,10 +286,17 @@ where
             if let Err(command_error) = self.execute_command(command) {
                 // pass 已成功开始，任何中途错误都必须尝试清除共享和原生状态。
                 if let Err(cleanup_error) = self.device.end_render_pass() {
-                    // cleanup 失败不能覆盖最初的命令根因，但必须留下明确诊断。
-                    tracing::error!(
-                        // 同时记录主错误和收尾错误，便于判断 Device 是否需要重建。
-                        "FramePlan render pass cleanup failed after command error: primary={}; cleanup={}",
+                    // cleanup 失败不能覆盖最初的命令根因：主错误与收尾错误分别
+                    // 经边界观察入口记录，便于判断 Device 是否需要重建。
+                    crate::diagnostics::observe_boundary_error(
+                        "frame_plan",
+                        &command_error,
+                    );
+                    crate::diagnostics::observe_boundary_error(
+                        "frame_plan/cleanup",
+                        &cleanup_error,
+                    );
+                    let _ = (
                         // 保留最初失败命令的稳定诊断。
                         command_error.what(),
                         // 保留 Adapter 收尾失败诊断。
@@ -374,11 +381,9 @@ fn with_acquired_surface_frame<T>(
     if let Err(primary) = &result
         && let Err(cleanup) = context.surface().discard_acquired_frame(frame)
     {
-        tracing::error!(
-            "Surface frame rollback failed after frame error: primary={}; cleanup={}",
-            primary.what(),
-            cleanup.what(),
-        );
+        // 主错误与回滚清理错误分别经边界观察入口记录，不互相覆盖。
+        crate::diagnostics::observe_boundary_error("frame_plan/rollback", primary);
+        crate::diagnostics::observe_boundary_error("frame_plan/rollback_cleanup", &cleanup);
     }
     result
 }
