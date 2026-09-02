@@ -815,7 +815,7 @@ impl RhiRenderer {
                 Ok(texture) => texture,
                 // 创建失败时先释放已创建资源，再返回原始错误。
                 Err(error) => {
-                    let _ = Self::destroy_textures(frame.device(), &textures);
+                    warn_destroy_textures(frame.device(), &textures);
                     return Err(error);
                 }
             };
@@ -833,7 +833,7 @@ impl RhiRenderer {
                 // 把当前失败资源加入清理列表。
                 textures.push(texture);
                 // 尝试释放所有已经创建的图片资源。
-                let _ = Self::destroy_textures(frame.device(), &textures);
+                warn_destroy_textures(frame.device(), &textures);
                 // 保留上传失败的真实错误。
                 return Err(error);
             }
@@ -956,4 +956,25 @@ fn rhi_invalid(message: &'static str) -> Error {
 fn rhi_state(message: &'static str) -> Error {
     // 资源缓存状态破坏属于 renderer 内部状态错误。
     Error::new(Errc::InvalidState, message)
+}
+
+// 错误清理边界共享：销毁失败只保留一次可观测 warn，既不向调用方传播
+// 二次清理错误，也不覆盖调用方即将返回的原始失败。
+pub(super) fn warn_destroy_texture(device: &mut dyn GraphicsDevice, texture: TextureHandle) {
+    if let Err(error) = device.destroy_texture(texture) {
+        tracing::warn!(
+            "GPU texture destroy failed during error cleanup: {}",
+            error.short_what()
+        );
+    }
+}
+
+// 同一清理边界对一批临时 texture 的批量形态。
+pub(super) fn warn_destroy_textures(device: &mut dyn GraphicsDevice, textures: &[TextureHandle]) {
+    if let Err(error) = RhiRenderer::destroy_textures(device, textures) {
+        tracing::warn!(
+            "GPU texture cleanup failed during error teardown: {}",
+            error.short_what()
+        );
+    }
 }

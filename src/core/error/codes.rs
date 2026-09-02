@@ -30,8 +30,6 @@ pub enum Errc {
     InvalidOperation = 10,
     /// 表示系统资源不足以完成操作。
     InsufficientResources = 11,
-    /// 表示弱引用无法升级为有效对象。
-    BadWeakPointer = 12,
     /// 表示操作需要等待后再重试。
     WouldBlock = 13,
 
@@ -41,32 +39,14 @@ pub enum Errc {
     FileNotFound = 101,
     /// 表示文件访问被拒绝。
     AccessDenied = 102,
-    /// 表示文件正被占用。
-    FileBusy = 103,
     /// 表示写入操作失败。
     WriteFailure = 104,
-    /// 表示读取操作失败。
-    ReadFailure = 105,
-    /// 表示已到达输入末尾。
-    EndOfFile = 106,
 
-    /// 表示通用网络错误。
-    NetworkError = 200,
     /// 表示远端拒绝连接。
     ConnectionRefused = 201,
     /// 表示连接被对端重置。
     ConnectionReset = 202,
-    /// 表示建立或使用连接超时。
-    ConnectionTimeout = 203,
-    /// 表示域名解析失败。
-    DnsLookupFailed = 204,
-    /// 表示通信内容违反协议约定。
-    ProtocolViolation = 205,
-    /// 表示 TLS 握手或传输失败。
-    TlsError = 206,
 
-    /// 表示通用协议错误。
-    ProtocolError = 300,
     /// 表示协议状态无效。
     InvalidState = 301,
     /// 表示数据格式无效。
@@ -75,15 +55,9 @@ pub enum Errc {
     ParseError = 303,
     /// 表示数据序列化或反序列化失败。
     SerializationError = 304,
-    /// 表示数据校验和不匹配。
-    ChecksumMismatch = 305,
 
-    /// 表示检测到并发死锁。
-    DeadlockDetected = 400,
     /// 表示异步任务已被放弃。
     TaskAbandoned = 401,
-    /// 表示异步结果已被设置，不能再次满足。
-    FutureAlreadySatisfied = 402,
 
     /// 表示通用平台错误。
     PlatformError = 500,
@@ -91,8 +65,6 @@ pub enum Errc {
     WindowCreationFailed = 501,
     /// 表示原生窗口类注册失败。
     ClassRegistrationFailed = 502,
-    /// 表示 Windows GDI 操作失败。
-    GdiOperationFailed = 503,
     /// 表示图形呈现表面已失效。
     GraphicsSurfaceLost = 504,
     /// 表示图形设备已失效。
@@ -138,7 +110,7 @@ impl Errc {
                 Some(std::io::ErrorKind::PermissionDenied)
             }
             Self::Cancelled => Some(std::io::ErrorKind::Interrupted),
-            Self::Timeout | Self::ConnectionTimeout => Some(std::io::ErrorKind::TimedOut),
+            Self::Timeout => Some(std::io::ErrorKind::TimedOut),
             Self::ConnectionRefused => Some(std::io::ErrorKind::ConnectionRefused),
             Self::ConnectionReset => Some(std::io::ErrorKind::ConnectionReset),
             Self::AlreadyExists => Some(std::io::ErrorKind::AlreadyExists),
@@ -167,35 +139,21 @@ impl fmt::Display for Errc {
             Errc::NotImplemented => "not_implemented",
             Errc::InvalidOperation => "invalid_operation",
             Errc::InsufficientResources => "insufficient_resources",
-            Errc::BadWeakPointer => "bad_weak_pointer",
             Errc::WouldBlock => "would_block",
             Errc::IoError => "io_error",
             Errc::FileNotFound => "file_not_found",
             Errc::AccessDenied => "access_denied",
-            Errc::FileBusy => "file_busy",
             Errc::WriteFailure => "write_failure",
-            Errc::ReadFailure => "read_failure",
-            Errc::EndOfFile => "end_of_file",
-            Errc::NetworkError => "network_error",
             Errc::ConnectionRefused => "connection_refused",
             Errc::ConnectionReset => "connection_reset",
-            Errc::ConnectionTimeout => "connection_timeout",
-            Errc::DnsLookupFailed => "dns_lookup_failed",
-            Errc::ProtocolViolation => "protocol_violation",
-            Errc::TlsError => "tls_error",
-            Errc::ProtocolError => "protocol_error",
             Errc::InvalidState => "invalid_state",
             Errc::FormatError => "format_error",
             Errc::ParseError => "parse_error",
             Errc::SerializationError => "serialization_error",
-            Errc::ChecksumMismatch => "checksum_mismatch",
-            Errc::DeadlockDetected => "deadlock_detected",
             Errc::TaskAbandoned => "task_abandoned",
-            Errc::FutureAlreadySatisfied => "future_already_satisfied",
             Errc::PlatformError => "platform_error",
             Errc::WindowCreationFailed => "window_creation_failed",
             Errc::ClassRegistrationFailed => "class_registration_failed",
-            Errc::GdiOperationFailed => "gdi_operation_failed",
             Errc::GraphicsSurfaceLost => "graphics_surface_lost",
             Errc::GraphicsDeviceLost => "graphics_device_lost",
             Errc::GraphicsOutOfMemory => "graphics_out_of_memory",

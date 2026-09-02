@@ -14,6 +14,7 @@ use crate::platform::presentation::rhi::{
 // 复用 renderer 主模块的计划类型和 coverage payload。
 use super::{
     FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiRenderer,
+    warn_destroy_texture,
 };
 // 复用 R8 与 MSDF 共用的 atlas 内容键、placement 与 shelf 分配器。
 use super::glyph_atlas::{self, GlyphAtlasKey, GlyphAtlasPage, GlyphAtlasPlacement};
@@ -232,7 +233,7 @@ impl RhiRenderer {
         )) {
             if created_page {
                 if let Some(page) = self.coverage_atlas_pages.pop() {
-                    let _ = device.destroy_texture(page.texture);
+                    warn_destroy_texture(device, page.texture);
                 }
             }
             return Err(error);
@@ -288,7 +289,7 @@ impl RhiRenderer {
             extent,
             quad.coverage.as_ref(),
         )) {
-            let _ = device.destroy_texture(texture);
+            warn_destroy_texture(device, texture);
             return Err(error);
         }
         Ok((texture, [0.0, 0.0, 1.0, 1.0], false))

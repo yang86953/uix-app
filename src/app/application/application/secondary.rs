@@ -17,6 +17,8 @@ pub(crate) struct SecondaryWindowSession {
     pub(crate) handle: AppHandle,
     pub(super) driver: WindowDriver,
     pub(crate) last_frame: Option<Instant>,
+    // 副窗生命周期的窗口操作失败经此句柄进入框架报告。
+    pub(super) diagnostics: crate::diagnostics::Diagnostics,
 }
 
 impl SecondaryWindowSession {
@@ -51,6 +53,7 @@ impl SecondaryWindowSession {
             parts.engine,
             self._window.as_mut(),
             parts.text_input,
+            &self.diagnostics,
         );
 
         if let Some(system_event) = map_ui_event(event) {
@@ -115,6 +118,7 @@ impl SecondaryWindowSession {
             _window,
             driver,
             last_frame,
+            diagnostics,
             ..
         } = self;
         let parts = session.parts_mut();
@@ -170,6 +174,7 @@ impl SecondaryWindowSession {
                 error.short_what()
             );
             report_window_operation_error(
+                diagnostics,
                 "secondary window action failure close request failed",
                 _window.request_close(),
             );
@@ -196,13 +201,18 @@ impl SecondaryWindowSession {
 
     pub(super) fn close(mut self) {
         report_window_operation_error(
+            &self.diagnostics,
             "secondary graphics shutdown failed",
             self.session.try_shutdown(),
         );
         // Drop retries a failed checked shutdown while the native surface is
         // still alive. Successful shutdown is idempotent.
         drop(self.session);
-        report_window_operation_error("secondary close failed", self._window.close());
+        report_window_operation_error(
+            &self.diagnostics,
+            "secondary close failed",
+            self._window.close(),
+        );
         self.handle.mark_closed();
     }
 }

@@ -165,6 +165,8 @@ pub(crate) struct WindowDriver {
     due_work_scratch: Vec<ActiveWorkKind>,
     // 帧诊断统计，用于定位卡顿时的阶段耗时分布。
     frame_diag: FrameDiagnostics,
+    // 终态图形失败是否已报告，防止恢复放弃后的重复帧持续产生报告。
+    terminal_failure_reported: bool,
 }
 
 pub(crate) fn sync_graphics_maintenance(

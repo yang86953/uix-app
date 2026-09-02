@@ -3,7 +3,6 @@
 use std::ffi::c_void;
 
 use crate::core::error::{Errc, Error};
-use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::thread_bound::bind_to_current_thread;
 // 引入离开 native factory 前必须构造的已验证 recipe owner。
 use crate::platform::presentation::GraphicsRecipeOwner;
@@ -60,7 +59,7 @@ pub(crate) enum BackendStatus {
 }
 
 pub(crate) type GraphicsContextFactory =
-    fn(*mut c_void, i32, i32, PendingFailureQueue) -> Result<GraphicsContextCandidate, Error>;
+    fn(*mut c_void, i32, i32) -> Result<GraphicsContextCandidate, Error>;
 
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
@@ -152,7 +151,6 @@ fn try_create_context(
     native_surface: *mut c_void,
     width: i32,
     height: i32,
-    pending_failures: PendingFailureQueue,
     // 返回 context 与 registry 唯一读取的静态 capability 快照。
 ) -> Result<ValidatedGraphicsContext, Error> {
     if entry.status == BackendStatus::Planned {
@@ -171,7 +169,7 @@ fn try_create_context(
         ));
     }
     // 让 adapter 创建层先交付同源 context 与静态 capability 候选记录。
-    let candidate = (entry.create)(native_surface, width, height, pending_failures)?;
+    let candidate = (entry.create)(native_surface, width, height)?;
     // 一次解包 candidate，registry 不再通过统一门面查询 recipe 能力。
     let (mut context, caps) = candidate.into_parts();
     // 从唯一静态快照构造 adapter 实际 recipe。
@@ -334,7 +332,6 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     native_surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
-    pending_failures: PendingFailureQueue,
 ) -> Result<GraphicsRecipeOwner, Error> {
     let entry = entry_for_recipe(recipe).ok_or_else(|| {
         Error::new(
@@ -345,13 +342,8 @@ pub(crate) fn try_create_gpu_recipe_with_queue(
     // Only the native factory bridge unwraps the opaque surface handle before
     // it reaches an API/platform constructor.
     // 先通过精确 registry 行创建并验证 native context 与静态快照。
-    let ValidatedGraphicsContext { context, caps } = try_create_context(
-        entry,
-        native_surface.as_raw(),
-        width,
-        height,
-        pending_failures,
-    )?;
+    let ValidatedGraphicsContext { context, caps } =
+        try_create_context(entry, native_surface.as_raw(), width, height)?;
     // context 不得跨越 native factory，离开前消费同一快照并收敛为已验证 owner。
     GraphicsRecipeOwner::try_new(context, caps)
 }

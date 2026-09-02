@@ -32,6 +32,59 @@
   消费方（markdown-project-manager）深绿标题栏真窗实测图标前景
   #E7F2ED 呈现清晰（见消费方 0.8 版界面文档验收记录）。
 
+### 诊断系统覆盖整改（框架侧 reporting 接入与死代码清理）
+
+- 背景：诊断系统审计发现框架侧 reporting 未接入——生产代码
+  `Diagnostics::report` 仅 pending drain 边界 1 处，`ReportOrigin::framework`
+  标注 dead_code「供尚未接入的调用点使用」，GPU registry 的
+  `PendingFailureQueue` 参数在三平台 factory 全部 `_pending` 丢弃；图形帧
+  失败、窗口操作失败与字体初始化失败只走 tracing，宿主 `snapshot()` 完全
+  不可见。另有 14 个零引用 `Errc` 变体、`WindowsTextInput::default()` 孤儿
+  队列与若干错误吞没点。
+- 框架侧 reporting 接入：检查式窗口操作失败（主窗、副窗与创建/清理边界
+  共 15 处）与启动字体初始化失败经 `report_with_origin` +
+  `ReportOrigin::framework("window"/"fonts", ...)` 进入框架报告；图形恢复
+  序列放弃后的终态失败（`has_terminal_failure`）按窗口只报告一次
+  （`framework("graphics", "terminal_failure")`），瞬态图形失败仍由
+  RecoveryDriver 有界恢复收敛、不打扰报告存储（防恢复期风暴）；
+  `ReportOrigin::framework` 摘除 dead_code。
+- GPU registry 死参数链删除：`GraphicsContextFactory` 与
+  `try_create_gpu_recipe_with_queue`、bootstrap、恢复 rebuilder、三平台
+  factory 函数的 `PendingFailureQueue` 形参与传递全部移除——当前 GPU
+  失败模型为同步 Result → RecoveryDriver → 终态报告，不存在回调投递面，
+  保留死参数是误导；`create_preferred_engine` 的 `diagnostics` 形参随之
+  移除（crate 内签名，非公开 API）。
+- `Errc` 删除 14 个零构造零转换变体（`BadWeakPointer`、`FileBusy`、
+  `ReadFailure`、`EndOfFile`、`NetworkError`、`ConnectionTimeout`、
+  `DnsLookupFailed`、`ProtocolViolation`、`TlsError`、`ProtocolError`、
+  `ChecksumMismatch`、`DeadlockDetected`、`FutureAlreadySatisfied`、
+  `GdiOperationFailed`）；保留数值空洞不重排既有判别值。外部若引用这些
+  变体需迁移到相邻语义（如 `IoError`、`Timeout`、`PlatformError`）。
+- 吞没点整改：GPU 纹理销毁在错误清理路径的失败（10 处
+  `let _ = destroy_texture(s)`）改为统一 `warn_destroy_texture(s)` 辅助——
+  保留可观测 warn、不传播二次清理错误、不覆盖原始失败；表单
+  `validate_pattern` 的非法正则不再静默降级为无规则，构造时告警一次。
+  Vulkan device-wait 的 `Err(_) => {}` 核实为后续
+  `accept_device_wait_for_shutdown` 统一转换（非吞没，未改）；
+  `PixelSurface::new` panic 为既有文档化契约（固定尺寸 + `try_new`
+  typed 出路，未改）。
+- Wayland 未知子对象降级：`event_created_child` 遇到未登记接口/opcode
+  时不再 panic 终止应用，改为 `UnhandledWaylandChild` noop 宿主吞掉该子
+  对象事件并输出一次含接口名与 opcode 的告警。
+- 孤儿队列清理：删除全仓库零调用的 `WindowsTextInput` `Default` 实现
+  （其自建 `PendingFailureQueue` 脱离运行时诊断，错误永不排空）。
+- demo 宿主最小消费：主演示经 `.diagnostics(DiagnosticsConfig)` 显式配置
+  崩溃报告目录（系统临时目录 `uix-lang-demo-diagnostics`），`on_start`
+  保存可 clone 诊断句柄，应用退出后输出报告摘要（total/evicted/retained）
+  并原子写出复现清单——报告产出首次有真实宿主消费方。
+- 文档：架构 diagnostics 文档补 `report_with_origin` 框架侧接线行；使用
+  层运行保障文档补框架失败分支的报告语义（瞬态收敛、终态一次、origin
+  目标区分）。
+- 验证：`cargo test --features agent-control --test "*_public_api"` 全绿；
+  主 crate 与 demo `cargo check` 通过；pending 队列的 `Overflowed`/
+  `Closed` 状态丢弃核实为设计内语义（溢出经 `InsufficientResources`
+  信号浮出、关闭为 teardown 拒绝），未改动。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

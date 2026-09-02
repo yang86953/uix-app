@@ -57,8 +57,8 @@ impl ReportOrigin {
         }
     }
 
-    // 保留框架来源构造器，供尚未接入的 framework reporting 调用点使用。
-    #[allow(dead_code)]
+    // 框架来源构造器：窗口操作、图形终态失败与字体初始化等框架自身
+    // 失败分支经 crate 内 report_with_origin 上报时使用。
     pub(crate) const fn framework(target: &'static str, operation: &'static str) -> Self {
         Self {
             target,

@@ -60,7 +60,7 @@ pub(crate) struct RhiMsdfQuad {
 }
 
 // 引入父 renderer 的执行器。
-use super::RhiRenderer;
+use super::{RhiRenderer, warn_destroy_texture};
 
 // 为 MSDF 字形准备固定 pipeline、共享顶点 buffer、常量 buffer 和 sampler。
 impl RhiRenderer {
@@ -245,7 +245,7 @@ impl RhiRenderer {
             if created_page {
                 let page = self.msdf_atlas_pages.pop();
                 if let Some(page) = page {
-                    let _ = device.destroy_texture(page.texture);
+                    warn_destroy_texture(device, page.texture);
                 }
             }
             return Err(error);
@@ -344,7 +344,7 @@ impl RhiRenderer {
         let upload = RhiTextureUpload::full(texture, extent, payload);
         // 上传失败时立即回收半成品 texture。
         if let Err(error) = device.update_texture(upload) {
-            let _ = device.destroy_texture(texture);
+            warn_destroy_texture(device, texture);
             return Err(error);
         }
         // false 表示 mixed executor 要在本帧结束时销毁该 texture。

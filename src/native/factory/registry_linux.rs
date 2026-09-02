@@ -1,7 +1,6 @@
 //! Linux backend registry table.
 
 use crate::core::{Errc, Error};
-use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode,
@@ -15,7 +14,6 @@ fn create_opengles(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // EGL adapter 直接接管 Wayland surface 与 owner-thread RHI。
     crate::native::presentation::graphics::opengl::create(surface, width, height)
@@ -26,7 +24,6 @@ fn create_opengles(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // feature 关闭时保留 typed disabled 诊断。
     Err(Error::new(
@@ -40,7 +37,6 @@ fn create_vulkan(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // Vulkan Adapter 只处理 Wayland/Vulkan WSI，像素语义由共享 Drawing 路径产生。
     crate::native::presentation::graphics::vulkan::create(surface, width, height)
@@ -51,7 +47,6 @@ fn create_vulkan(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
         Errc::PlatformError,

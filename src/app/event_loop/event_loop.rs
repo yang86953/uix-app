@@ -542,7 +542,7 @@ where
                 continue;
             }
             had_layout_event |=
-                driver.handle_window_event(&ev, tree, engine, platform_window, text_input);
+                driver.handle_window_event(&ev, tree, engine, platform_window, text_input, debug_mode);
 
             match ev.type_ {
                 UiEventType::PointerMove => {

@@ -5,8 +5,10 @@ use super::*;
 
 // 只在组合根的最终责任边界记录检查式窗口操作失败。
 pub(super) fn report_window_operation_error(
-    // 附带调用方提供的窄操作上下文。
-    context: &str,
+    // 接收统一诊断 System，失败时进入框架报告。
+    diagnostics: &crate::diagnostics::Diagnostics,
+    // 附带调用方提供的窄操作上下文（静态标签即报告 operation）。
+    context: &'static str,
     // 接收已完成调用的 typed Result，不接管资源 owner。
     result: crate::core::Result<()>,
 ) {
@@ -14,6 +16,11 @@ pub(super) fn report_window_operation_error(
     if let Err(error) = result {
         // 失败在最终责任边界记录一次结构化警告。
         tracing::warn!("{context}: {}", error.short_what());
+        // 检查式窗口操作没有恢复状态机兜底，直接进入框架报告供宿主快照观察。
+        diagnostics.report_with_origin(
+            error,
+            crate::diagnostics::ReportOrigin::framework("window", context),
+        );
     }
 }
 

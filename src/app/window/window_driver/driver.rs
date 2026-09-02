@@ -21,6 +21,7 @@ impl WindowDriver {
             due_work_scratch: Vec::new(),
             // 诊断统计从零开始，计时起点由 Default 取当前时刻。
             frame_diag: FrameDiagnostics::default(),
+            terminal_failure_reported: false,
         }
     }
 
@@ -54,6 +55,7 @@ impl WindowDriver {
         engine: &mut dyn RenderTarget,
         platform_window: &mut dyn PlatformWindow,
         text_input: &mut WindowTextInputState,
+        diagnostics: &Diagnostics,
     ) -> bool {
         match event.type_ {
             UiEventType::FrameOpportunity => {
@@ -75,6 +77,7 @@ impl WindowDriver {
                             engine.resize(data.width, data.height),
                         );
                         report_window_operation_error(
+                            diagnostics,
                             "window resize_notify failed",
                             platform_window.resize_notify(data.width, data.height),
                         );

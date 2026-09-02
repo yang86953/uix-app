@@ -46,6 +46,7 @@ pub(super) fn create_secondary_window(
     if platform_window.window_id() != window_id {
         let actual = platform_window.window_id();
         report_window_operation_error(
+            &runtime.diagnostics(),
             "window_id mismatch cleanup close failed",
             platform_window.close(),
         );
@@ -61,6 +62,7 @@ pub(super) fn create_secondary_window(
     if custom_title_bar {
         if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), width, height) {
             report_window_operation_error(
+                &runtime.diagnostics(),
                 "custom title bar failure cleanup close failed",
                 platform_window.close(),
             );
@@ -83,6 +85,7 @@ pub(super) fn create_secondary_window(
         Some(signal) => signal,
         None => {
             report_window_operation_error(
+                &runtime.diagnostics(),
                 "secondary graphics test signal failure cleanup close failed",
                 platform_window.close(),
             );
@@ -96,7 +99,6 @@ pub(super) fn create_secondary_window(
         width,
         height,
         graphics_backend,
-        runtime.diagnostics(),
         recovery_request.clone(),
         graphics_faults,
     );
@@ -106,7 +108,6 @@ pub(super) fn create_secondary_window(
         width,
         height,
         graphics_backend,
-        runtime.diagnostics(),
         recovery_request.clone(),
     );
     let engine = match preferred_engine {
@@ -118,6 +119,7 @@ pub(super) fn create_secondary_window(
                 error.what()
             );
             report_window_operation_error(
+                &runtime.diagnostics(),
                 "secondary engine failure cleanup close failed",
                 platform_window.close(),
             );
@@ -163,6 +165,7 @@ pub(super) fn create_secondary_window(
         handle,
         driver: WindowDriver::new(width, height, true),
         last_frame: None,
+        diagnostics: runtime.diagnostics(),
     })
 }
 
@@ -171,14 +174,13 @@ pub(super) fn recreate_exact_graphics_recipe(
     width: i32,
     height: i32,
     recipe: GraphicsRecipe,
-    pending_failures: &PendingFailureQueue,
     // test-harness / Agent 截屏恢复后继续绑定同一个逐窗测试信号。
     #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     // native factory 在返回前已经把兼容 context 收敛为 recipe owner。
     let owner =
-        try_create_gpu_recipe_with_queue(recipe, surface, width, height, pending_failures.clone())?;
+        try_create_gpu_recipe_with_queue(recipe, surface, width, height)?;
     // 恢复路径与首次 bootstrap 复用同一个 owner 装配入口。
     let renderer =
         assemble_renderer(owner, width, height).map_err(|failure| failure.into_error())?;
@@ -208,7 +210,6 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
     surface: NativeSurfaceHandle,
     requested: GraphicsSelection,
     selected_recipe: GraphicsRecipe,
-    pending_failures: PendingFailureQueue,
     // test-harness / Agent 截屏在所有重建 recipe 间复用同一个窗口信号。
     #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     graphics_tests: GraphicsFaultSignal,
@@ -222,7 +223,6 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
                 width,
                 height,
                 current_recipe,
-                &pending_failures,
                 // 为重建后的 Renderer 重新接通测试读回端口。
                 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
                 graphics_tests.clone(),
@@ -244,7 +244,6 @@ pub(crate) fn graphics_recovery_rebuilder_with_pending(
                     width,
                     height,
                     candidate,
-                    &pending_failures,
                     // 尝试下一个 recipe 时仍保持同一逐窗信号。
                     #[cfg(any(feature = "test-harness", feature = "agent-control"))]
                     graphics_tests.clone(),
@@ -281,7 +280,6 @@ pub(crate) fn create_preferred_engine(
     width: i32,
     height: i32,
     graphics_backend: GraphicsSelection,
-    diagnostics: Diagnostics,
     recovery_request: RebuildRequest,
     #[cfg(any(feature = "test-harness", feature = "agent-control"))]
     graphics_faults: GraphicsFaultSignal,
@@ -289,14 +287,7 @@ pub(crate) fn create_preferred_engine(
     // SAFETY: `PlatformWindow` 在同步窗口会话全程拥有该 surface；图形启动与恢复
     // 均在同一事件循环线程执行，且 `NativeSurfaceHandle` 是 !Send + !Sync。
     let surface = unsafe { NativeSurfaceHandle::from_raw(platform_window.native_surface_ptr()) };
-    let pending_failures = diagnostics.pending_failure_queue();
-    match bootstrap_renderer_with_pending(
-        surface,
-        width,
-        height,
-        graphics_backend,
-        pending_failures.clone(),
-    ) {
+    match bootstrap_renderer_with_pending(surface, width, height, graphics_backend) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
                 tracing::info!("GPU renderer initialized ({})", gpu.selected);
@@ -325,7 +316,6 @@ pub(crate) fn create_preferred_engine(
                     surface,
                     graphics_backend,
                     selected_recipe,
-                    pending_failures,
                     // 恢复路径必须能为每个新 Renderer 重连同一信号。
                     #[cfg(any(feature = "test-harness", feature = "agent-control"))]
                     graphics_faults.clone(),
