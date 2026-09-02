@@ -696,6 +696,8 @@ impl VulkanContext {
                     .complete_submission(&self.device, &self.swapchain_loader)?;
             }
             Err(vk::Result::ERROR_DEVICE_LOST) => {}
+            // 非 LOST 错误不在 match 内处理：下方 accept 统一转换为 typed
+            // Error 传播，此空臂只是 Ok 分支的分派占位。
             Err(_) => {}
         }
         accept_device_wait_for_shutdown(wait_result)?;

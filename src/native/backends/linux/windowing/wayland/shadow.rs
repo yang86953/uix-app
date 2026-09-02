@@ -39,6 +39,8 @@ impl WaylandClientShadow {
         window_id: WindowId,
         scale: i32,
     ) -> Option<Self> {
+        // KDE shadow 是可选协议：compositor 不提供时按无阴影降级，不产生
+        // 用户可见错误。
         let manager = globals
             .bind::<OrgKdeKwinShadowManager, _, _>(queue_handle, 1..=2, ())
             .ok()
@@ -66,9 +68,13 @@ impl WaylandClientShadow {
                 height,
                 &format!("shadow-{}-{label}", window_id.raw()),
             )
+            .inspect_err(|error| tracing::warn!("shadow buffer creation failed: {error}"))
             .ok()?;
             let pixels = shadow_pixels(label, width, height, scale);
-            buffer.write_pixels(&pixels).ok()?;
+            buffer
+                .write_pixels(&pixels)
+                .inspect_err(|error| tracing::warn!("shadow buffer write failed: {error}"))
+                .ok()?;
             buffers.push(buffer);
         }
         Some(Self {

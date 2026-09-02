@@ -30,6 +30,8 @@ impl ImmStringRead {
         match read {
             Ok(None) => Self::NoData,
             Ok(Some(text)) => Self::Text(text),
+            // 注册表读取失败按无数据处理（Skipped）：下一次消息循环会重试，
+            // 不把瞬态读取错误升级为输入失败。
             Err(_) => Self::Skipped,
         }
     }

@@ -63,6 +63,8 @@ pub fn copy_to_clipboard(text: &str) {
         // SAFETY: `with_clipboard` 安装的指针在作用域结束前始终有效；当前
         // RefCell 独占借用同时阻止通过本服务重入并创建第二个可变引用。
         if let Err(error) = unsafe { pointer.as_mut().set_text(text) } {
+            // widget_runtime 层不持有 Diagnostics 句柄（诊断属于 app 组装根，
+            // UI 树不得反向依赖）：剪贴板失败保留 typed 日志观察。
             tracing::error!("copy_to_clipboard failed: {}", error.short_what());
         }
     });
@@ -80,6 +82,7 @@ pub fn read_text_from_clipboard() -> Option<String> {
         match unsafe { pointer.as_ref().text() } {
             Ok(text) => (!text.is_empty()).then_some(text),
             Err(error) => {
+                // 同上：UI 层边界，保留 typed 日志观察。
                 tracing::error!("read_text_from_clipboard failed: {}", error.short_what());
                 None
             }

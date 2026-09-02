@@ -100,6 +100,7 @@ impl Window {
                 self.initial_size = w.client_logical_extent();
                 // 独立 Window 入口与 App 主窗、次窗保持相同能力缺失语义。
                 report_center_on_screen_result(
+                    &self.diagnostics,
                     // 保留可定位的调用入口上下文。
                     "Window::create: center_on_screen failed",
                     // 平台 typed result 直接交给统一分类器。
@@ -108,16 +109,32 @@ impl Window {
                 );
                 if let Err(error) = w.show() {
                     tracing::error!("Window::create: show failed: {}", error.short_what());
+                    // show 失败导致创建终态失败：主错误与清理失败都进框架报告。
+                    self.diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("window", "show"),
+                    );
                     if let Err(close_error) = w.close() {
                         tracing::warn!(
                             "Window::create: cleanup close failed: {}",
                             close_error.short_what()
+                        );
+                        self.diagnostics.report_with_origin(
+                            close_error,
+                            crate::diagnostics::ReportOrigin::framework(
+                                "window",
+                                "create_cleanup_close",
+                            ),
                         );
                     }
                     return false;
                 }
                 if let Err(error) = w.raise() {
                     tracing::warn!("Window::create: raise failed: {}", error.short_what());
+                    self.diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("window", "raise"),
+                    );
                 }
                 tracing::info!(
                     "Window created and shown ({}x{}, title='{}')",
@@ -130,6 +147,11 @@ impl Window {
             }
             Err(e) => {
                 tracing::error!("Window::create: platform failed: {}", e.short_what());
+                // 独立 Window 入口的创建终态失败同样进入框架报告。
+                self.diagnostics.report_with_origin(
+                    e,
+                    crate::diagnostics::ReportOrigin::framework("window", "create"),
+                );
                 false
             }
         }
@@ -220,6 +242,10 @@ impl Window {
         if let Some(ref mut window) = self.window {
             if let Err(error) = window.close() {
                 tracing::warn!("Window::run: close failed: {}", error.short_what());
+                self.diagnostics.report_with_origin(
+                    error,
+                    crate::diagnostics::ReportOrigin::framework("window", "close"),
+                );
             }
         }
         self.running = false;
@@ -234,6 +260,10 @@ impl Drop for Window {
             if let Some(ref mut w) = self.window {
                 if let Err(error) = w.close() {
                     tracing::warn!("Window::drop: close failed: {}", error.short_what());
+                    self.diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("window", "close"),
+                    );
                 }
             }
         }

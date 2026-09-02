@@ -42,6 +42,7 @@ impl SecondaryWindowSession {
                 window_id,
                 native_window,
                 platform,
+                &self.diagnostics,
             );
             return false;
         }
@@ -69,6 +70,11 @@ impl SecondaryWindowSession {
                 // 结束副窗口当前事件动作参数。
             ) {
                 tracing::error!("secondary window action failed: {}", error.short_what());
+                // 副窗事件动作失败终止该窗口会话，终态事实进入框架报告。
+                self.diagnostics.report_with_origin(
+                    error,
+                    crate::diagnostics::ReportOrigin::framework("window", "action"),
+                );
                 return false;
             }
         }
@@ -80,6 +86,7 @@ impl SecondaryWindowSession {
             window_id,
             native_window,
             platform,
+            &self.diagnostics,
         );
         true
     }
@@ -172,6 +179,11 @@ impl SecondaryWindowSession {
             tracing::error!(
                 "secondary window action failed after runtime work: {}",
                 error.short_what()
+            );
+            // 主错误先进入框架报告，清理失败由下方包装另报。
+            diagnostics.report_with_origin(
+                error,
+                crate::diagnostics::ReportOrigin::framework("window", "action_after_work"),
             );
             report_window_operation_error(
                 diagnostics,

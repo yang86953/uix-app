@@ -109,6 +109,46 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；
   `cargo test --features agent-control --test "*_public_api"` 86 项全绿。
 
+### 诊断覆盖第三轮：启动终态、独立 Window API 与 IME 全量接线
+
+- 背景：第二轮复查确认主干闭合后，剩余缺口集中在三类——启动终态错误与
+  fonts 的接入不对称、独立 `Window` API 整条路径无报告、IME 会话边界
+  tracing-only；另有 `ReportOrigin::with_resource` 为唯一未接线的报告
+  预留与若干无声明裸露点。本轮全部处置。
+- 启动终态接线（8 处）：平台创建、主窗创建、自定义标题栏配置、图形
+  初始化全失败（含 CPU 兜底失败）、设置加载、Agent 传输启动失败与副窗
+  创建/身份校验失败，全部在终止启动的最终边界进入
+  `ReportOrigin::framework("platform"/"window"/"graphics"/"settings"/"agent", ...)`
+  框架报告；副窗两处携带 `with_resource("window", id)` 资源身份，
+  `with_resource` 摘除 dead_code。Agent 传输专用错误收敛为 typed
+  `IoError` 后上报。
+- 独立 `Window` API 接线（6 处）：create（平台失败/show 失败/清理
+  close）、raise、run close、Drop close 经自有 Diagnostics 句柄进入
+  框架报告；`report_center_on_screen_result` 增加 Diagnostics 参数，
+  非 `NotImplemented` 的真实居中失败在三个入口（主窗/副窗/独立窗口）
+  统一上报。
+- 事件终态与 IME 接线：主循环 window action 失败（2 处）、副窗 action
+  失败（2 处）、首帧后 deferred show/raise 失败（窗口可能持续不可见）
+  进入框架报告；`sync_window_text_input` 增加 Diagnostics 参数，IME
+  会话 start/select_target/stop 失败上报
+  （`framework("ime", ...)`，五个调用点同步），光标矩形高频更新失败
+  保留日志不进报告（防 IME 会话期风暴）。
+- 设计边界显式化（保留日志、加注释声明）：GPU adapter Drop 期主动
+  retain/forget 的泄漏事实（Vulkan/D3D12）与 teardown 恢复失败——
+  adapter 层不持有 Diagnostics 句柄且 Drop 期报告存储随进程消亡，经
+  `tracing::error` 观察；widget_runtime 剪贴板失败——UI 树层不反向
+  依赖 app 组装根诊断服务；帧通知取消/请求失败——高频瞬态且 fallback
+  保持武装；`AppHandle::request_activate` 执行期拒绝——文档声明的
+  平台策略行为。
+- 零散清理：`tree_events` 两处 `unreachable!()` 补文案（外层事件组分派
+  结构性保证）；字体路径/映射探测链（5 处 `.ok()`）与 Wayland 阴影
+  缓冲失败补 debug/warn 级错误细节（公开 Option 契约不变）；Picture
+  编码器构造失败补 debug 细节；widget_handle 语义重入降级、Windows
+  IME 注册表读取、icon 字体 OnceCell 竞争、Vulkan device-wait catch-all
+  空臂补设计注释。
+- 验证：主 crate 与 demo 全 feature `cargo check` 通过；86 项公开 API
+  测试全绿。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

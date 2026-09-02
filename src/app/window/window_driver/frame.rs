@@ -437,6 +437,8 @@ impl WindowDriver {
 
         if let Some(token) = opportunity.fallback_token() {
             if let Err(error) = platform_window.cancel_native_frame(token) {
+                // 逐帧取消失败是瞬态平台噪声：调度器保持自身状态，下一帧
+                // 机会会重新对齐，只保留日志观察、不进报告存储。
                 tracing::warn!(
                     "[WindowDriver] fallback native frame cancellation failed: {}",
                     error.short_what()
@@ -531,6 +533,8 @@ impl WindowDriver {
                     }
                     Ok(false) => {}
                     Err(error) => {
+                        // 帧请求失败保留 fallback 武装状态，下个机会重试：
+                        // 高频瞬态只做日志观察，不进报告存储。
                         tracing::warn!(
                             "[WindowDriver] native frame request failed; fallback remains armed: {}",
                             error.short_what()
@@ -810,6 +814,7 @@ impl WindowDriver {
                 window_id,
                 native_window,
                 platform,
+                debug_mode,
             );
         }
 
@@ -948,6 +953,12 @@ impl WindowDriver {
                         "[WindowDriver] deferred show after first present failed: {}",
                         error.short_what()
                     );
+                    // 首帧后 deferred show 失败意味着窗口可能持续不可见，
+                    // 进入框架报告供宿主观察。
+                    debug_mode.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("window", "deferred_show"),
+                    );
                 }
             }
             // 首帧提交成功后再提升窗口层级，保持原有焦点与窗口顺序语义。
@@ -955,6 +966,10 @@ impl WindowDriver {
                 tracing::warn!(
                     "[WindowDriver] deferred raise after first present failed: {}",
                     error.short_what()
+                );
+                debug_mode.report_with_origin(
+                    error,
+                    crate::diagnostics::ReportOrigin::framework("window", "deferred_raise"),
                 );
             }
             let elapsed = self

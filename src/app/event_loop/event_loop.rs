@@ -654,6 +654,11 @@ where
                     // 结束当前事件动作执行参数。
                 ) {
                     tracing::error!("window action failed: {}", error.short_what());
+                    // 窗口动作失败终止主循环，终态事实进入框架报告。
+                    debug_mode.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("window", "action"),
+                    );
                     running.set(false);
                     break;
                 }
@@ -665,6 +670,7 @@ where
                 window_id,
                 native_window,
                 platform,
+                debug_mode,
             );
 
             unsafe {
@@ -734,6 +740,11 @@ where
                 "window action failed after runtime work: {}",
                 error.short_what()
             );
+            // 运行时工作后的窗口动作失败同样终止主循环，进入框架报告。
+            debug_mode.report_with_origin(
+                error,
+                crate::diagnostics::ReportOrigin::framework("window", "action_after_work"),
+            );
             break;
         }
     }
@@ -746,6 +757,7 @@ where
         window_id,
         native_window,
         platform,
+        debug_mode,
     );
     0
 }

@@ -48,6 +48,8 @@ impl Drop for D3d12Context {
     fn drop(&mut self) {
         if let Err(error) = self.shutdown_result() {
             tracing::error!(
+                // 泄漏事实经 tracing::error 观察：adapter 层不持有 Diagnostics
+                // 句柄（诊断属于 app 组装根），Drop 期报告存储同步消亡。
                 "D3d12Context: undrained Drop retained GPU COM objects: {}",
                 error.short_what()
             );

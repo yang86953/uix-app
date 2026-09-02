@@ -67,8 +67,8 @@ impl ReportOrigin {
         }
     }
 
-    // 保留资源身份构造器，供框架资源诊断接入时复用。
-    #[allow(dead_code)]
+    // 资源身份构造器：副窗创建/身份校验与图形终态等携带具体资源事实的
+    // 框架报告使用。
     pub(crate) fn with_resource(
         mut self,
         kind: &'static str,

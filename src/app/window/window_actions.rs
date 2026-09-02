@@ -82,8 +82,10 @@ pub(crate) fn apply_window_action(
 
 // 统一报告自动居中结果，并把平台预期不支持与真实执行失败分开。
 pub(crate) fn report_center_on_screen_result(
+    // 接收统一诊断 System，真实失败进入框架报告。
+    diagnostics: &crate::diagnostics::Diagnostics,
     // 日志上下文由具体窗口创建入口提供。
-    context: &str,
+    context: &'static str,
     // 平台结果保持 typed error，不在适配层改写能力事实。
     result: Result<()>,
     // 返回本次是否实际记录了警告，供局部契约测试观测。
@@ -100,8 +102,12 @@ pub(crate) fn report_center_on_screen_result(
         return false;
         // 结束预期能力缺失分支。
     }
-    // 其余平台错误仍需保留可观测诊断。
+    // 其余平台错误保留可观测诊断，并携带静态上下文进入框架报告。
     tracing::warn!("{context}: {}", error.short_what());
+    diagnostics.report_with_origin(
+        error,
+        crate::diagnostics::ReportOrigin::framework("window", context),
+    );
     // 告知测试本次确实走过警告路径。
     true
     // 结束自动居中结果报告。

@@ -428,7 +428,7 @@ impl App {
         // panic hook 在配置加载前安装：settings / CLI / GUI 任一段 panic 都被
         // 捕获并原子写入 crash report（配置目录时），且从不吞 panic。
         self.runtime.diagnostics().install_panic_hook();
-        if !self.load_configured_settings() {
+        if !self.load_configured_settings(&self.runtime.diagnostics()) {
             return self.exit_code;
         }
         match self.mode {
@@ -437,7 +437,10 @@ impl App {
         }
     }
 
-    pub(crate) fn load_configured_settings(&mut self) -> bool {
+    pub(crate) fn load_configured_settings(
+        &mut self,
+        diagnostics: &crate::diagnostics::Diagnostics,
+    ) -> bool {
         let Some(path) = self.settings_path.as_deref() else {
             return true;
         };
@@ -447,6 +450,11 @@ impl App {
             .and_then(|resolved_path| settings.load(&resolved_path));
         if let Err(err) = load_result {
             tracing::error!("load settings failed: {}", err.short_what());
+            // 设置加载失败终止启动，与字体初始化同样进入框架报告。
+            diagnostics.report_with_origin(
+                err,
+                crate::diagnostics::ReportOrigin::framework("settings", "load"),
+            );
             self.exit_code = 1;
             return false;
         }
@@ -509,6 +517,11 @@ impl App {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!("create_platform 失败: {:?}", e);
+                // 平台创建失败终止启动，进入框架报告供宿主持久化诊断。
+                diagnostics.report_with_origin(
+                    e,
+                    crate::diagnostics::ReportOrigin::framework("platform", "initialize"),
+                );
                 return 1;
             }
         };
@@ -541,6 +554,11 @@ impl App {
             Ok(win) => win,
             Err(e) => {
                 tracing::error!("create_window 失败: {:?}", e);
+                // 主窗口创建失败终止启动，进入框架报告供宿主持久化诊断。
+                diagnostics.report_with_origin(
+                    e,
+                    crate::diagnostics::ReportOrigin::framework("window", "create"),
+                );
                 return 1;
             }
         };
@@ -549,6 +567,11 @@ impl App {
         if self.custom_title_bar {
             if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
                 tracing::error!("configure custom title bar failed: {}", error.short_what());
+                // 标题栏配置失败终止启动：主错误进入框架报告，清理失败另报。
+                diagnostics.report_with_origin(
+                    error,
+                    crate::diagnostics::ReportOrigin::framework("window", "configure_title_bar"),
+                );
                 report_window_operation_error(
                     &diagnostics,
                     "custom title bar failure cleanup close failed",
@@ -559,6 +582,7 @@ impl App {
         }
         // Wayland 的预期不支持由 compositor 默认放置，不记录误导警告。
         report_center_on_screen_result(
+            &diagnostics,
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
         );
@@ -585,6 +609,12 @@ impl App {
             Err(error) => {
                 // 在关闭原生窗口前记录完整的图形初始化与候选清理原因链。
                 tracing::error!("initial graphics initialization failed: {}", error.what());
+                // 图形初始化全失败（含 CPU 兜底失败）终止启动，与终态失败报告
+                // 对称地进入框架报告。
+                diagnostics.report_with_origin(
+                    error,
+                    crate::diagnostics::ReportOrigin::framework("graphics", "initialize"),
+                );
                 report_window_operation_error(
                     &diagnostics,
                     "initial engine failure cleanup close failed",
@@ -682,6 +712,12 @@ impl App {
         if self.agent_control_enabled {
             if let Err(error) = self.runtime.start_agent_transport(&self.title) {
                 tracing::error!("agent transport startup failed: {error}");
+                // Agent 传输启动失败终止 GUI 循环；专用传输错误收敛为 typed
+                // IoError 后进入框架报告。
+                diagnostics.report_with_origin(
+                    Error::new(Errc::IoError, format!("agent transport startup failed: {error}")),
+                    crate::diagnostics::ReportOrigin::framework("agent", "start_transport"),
+                );
                 report_window_operation_error(
                     &diagnostics,
                     "agent transport failure graphics shutdown failed",

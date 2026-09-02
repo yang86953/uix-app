@@ -124,7 +124,15 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
                         engine.try_execute_encoded_picture(&handle, &encoder)?,
                         crate::draw::painting::EncodedPictureExecution::Executed
                     ),
-                    Err(_) => false,
+                    // 编码器构造失败只损失缓存资格（回退直绘），保留一次
+                    // debug 级细节供性能问题定位。
+                    Err(error) => {
+                        tracing::debug!(
+                            "picture encoder construction failed; caching skipped: {}",
+                            error.short_what()
+                        );
+                        false
+                    }
                 }
             } else {
                 false
