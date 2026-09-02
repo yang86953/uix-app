@@ -32,6 +32,9 @@
   与 uix-lang-gate-consumer 随主 crate 同步升至 0.0.5，修复首个 v0.0.5
   tag 只改主 crate 版本导致外部 git 依赖无法解析 `uix-derive ^0.0.5`
   的发版缺陷（tag 已删除重打）。
+- 修复（随首个 v0.0.5 tag 后补齐）：入口行与已开弹层内的
+  `PointerUp` 由内核消费——Agent `click_at` 成对派发按下与抬起，
+  此前抬起未处理导致整次点击被误报 `not_interactable`（按下已生效）。
 - 验证：编译器 561 项单测（含 MenuBar codegen 生成/拒绝路径与 schema
   计数 111/33）全绿；公开 API 测试 45 文件全绿；demo 导航页新增面板经
   Agent 通道真窗实测——语义树 `expanded` 状态、弹层像素呈现（浮起白板
