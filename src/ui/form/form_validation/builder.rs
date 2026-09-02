@@ -104,8 +104,14 @@ impl FormBuilder {
         pattern: impl AsRef<str>,
         message: impl Into<String>,
     ) -> Self {
+        // 非法正则不得静默降级为无规则，保留一次开发者可定位的告警。
+        let matcher = Regex::new(pattern.as_ref())
+            .inspect_err(|error| {
+                tracing::warn!("form validation pattern is invalid and will be skipped: {error}")
+            })
+            .ok();
         self.current.rules.push(FieldRule::Pattern {
-            matcher: Regex::new(pattern.as_ref()).ok(),
+            matcher,
             message: message.into(),
         });
         self

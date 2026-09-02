@@ -86,6 +86,10 @@ fn run_gui(options: LaunchOptions) {
     // Agent 确认回调只取得 Application System 交付的公开句柄。
     let agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
+    // 保存可 clone 的诊断句柄，供应用退出后消费复现清单与报告摘要。
+    let diagnostics_slot: std::sync::Arc<
+        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
 
     // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
     #[cfg(feature = "test-harness")]
@@ -94,7 +98,11 @@ fn run_gui(options: LaunchOptions) {
     } else if options.graphics_readback_test {
         graphics_readback::build_app()
     } else {
-        build_demo_app(options.follow_system_theme, agent_handle_slot.clone())
+        build_demo_app(
+            options.follow_system_theme,
+            agent_handle_slot.clone(),
+            diagnostics_slot.clone(),
+        )
     };
 
     // 测试能力缺失时只保留全组件主演示组合路径。
@@ -102,7 +110,11 @@ fn run_gui(options: LaunchOptions) {
     let app = {
         debug_assert!(!options.graphics_recovery_test);
         debug_assert!(!options.graphics_readback_test);
-        build_demo_app(options.follow_system_theme, agent_handle_slot.clone())
+        build_demo_app(
+            options.follow_system_theme,
+            agent_handle_slot.clone(),
+            diagnostics_slot.clone(),
+        )
     };
 
     // 所有启动模式都在窗口创建前安装同一正文与 CJK 字体包。
@@ -140,20 +152,64 @@ fn run_gui(options: LaunchOptions) {
         app
     };
 
-    app.run();
+    let _ = app.run();
+
+    // 宿主最终消费：应用循环结束后落盘复现清单并输出报告摘要。
+    finalize_diagnostics(&diagnostics_slot);
 }
 
 // 只组装语言文档无法拥有的应用生命周期策略；全部界面来自 main.uix。
 fn build_demo_app(
     follow_system_theme: bool,
     agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>>,
+    diagnostics_slot: std::sync::Arc<
+        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
+    >,
 ) -> App {
+    // 宿主显式配置诊断：崩溃报告与复现清单写入固定临时目录。
     uix_app!("src/main.uix")
         .custom_title_bar(true)
         .follow_system_theme(follow_system_theme)
+        .diagnostics(
+            uix::diagnostics::DiagnosticsConfig::default()
+                .crash_report_directory(demo_diagnostics_directory()),
+        )
         .on_start(move |handle| {
             *agent_handle_slot.lock().unwrap() = Some(handle.clone());
+            // 诊断句柄可 clone 且在窗口关闭后仍可用，供退出路径消费。
+            *diagnostics_slot.lock().unwrap() = Some(handle.diagnostics());
         })
+}
+
+// demo 诊断落盘目录：固定在系统临时目录下，便于人工检视后整体清理。
+fn demo_diagnostics_directory() -> std::path::PathBuf {
+    std::env::temp_dir().join("uix-lang-demo-diagnostics")
+}
+
+// 应用退出后的宿主诊断消费：写出复现清单并汇总留存报告。
+fn finalize_diagnostics(
+    diagnostics_slot: &std::sync::Arc<
+        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
+    >,
+) {
+    // 测试验收组合不经过 demo 组装根，没有可消费的诊断句柄。
+    let Some(diagnostics) = diagnostics_slot.lock().unwrap().clone() else {
+        return;
+    };
+    let snapshot = diagnostics.snapshot();
+    tracing::info!(
+        total_reports = snapshot.total_reports(),
+        evicted_reports = snapshot.evicted_reports(),
+        retained_reports = snapshot.reports().len(),
+        "demo diagnostics summary"
+    );
+    match diagnostics.write_debug_repro_manifest(demo_diagnostics_directory()) {
+        Ok(path) => tracing::info!(manifest = %path.display(), "demo debug repro manifest written"),
+        Err(error) => tracing::warn!(
+            "demo debug repro manifest write failed: {}",
+            error.what()
+        ),
+    }
 }
 
 // 将确定性正文资源注入 Application 组合根，不让声明页面接触字体句柄。

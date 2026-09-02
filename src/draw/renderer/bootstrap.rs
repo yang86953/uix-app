@@ -1,7 +1,6 @@
 //! GPU graphics bootstrap — sole owner of the init-time backend probe loop (P6.7 M3).
 
 use crate::core::{Errc, Error, Result};
-use crate::diagnostics::PendingFailureQueue;
 use crate::draw::renderer::Renderer;
 use crate::draw::target::RenderTarget;
 // recipe 装配输入与图形选择面经 platform 公开面消费。
@@ -149,16 +148,9 @@ pub(crate) fn bootstrap_renderer_with_pending(
     width: i32,
     height: i32,
     request: GraphicsSelection,
-    pending_failures: PendingFailureQueue,
 ) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_renderer_with(surface, width, height, request, |candidate| {
-        try_create_gpu_recipe_with_queue(
-            candidate,
-            surface,
-            width,
-            height,
-            pending_failures.clone(),
-        )
+        try_create_gpu_recipe_with_queue(candidate, surface, width, height)
     })
 }
 

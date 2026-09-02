@@ -11,7 +11,7 @@ use crate::platform::presentation::rhi::{
 use super::{
     FramePlanCommand, FrameUniformPayload, FrameVertexPayload, RhiCoverageQuad, RhiGradientRect,
     RhiLineSegment, RhiMsdfQuad, RhiRenderer, RhiSampledQuad, RhiShadow, RhiShapeRect,
-    RhiSolidMesh, RhiTexturedQuad,
+    RhiSolidMesh, RhiTexturedQuad, warn_destroy_textures,
 };
 // 将混合操作 ABI 约束检查拆到独立文件，保持执行器文件边界清晰。
 #[path = "rhi_renderer_mixed_contract.rs"]
@@ -433,7 +433,7 @@ impl RhiRenderer {
                 {
                     Ok(result) => result,
                     Err(error) => {
-                        let _ = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
+                        warn_destroy_textures(frame.device(), &transient_textures);
                         return Err(error);
                     }
                 };
@@ -453,12 +453,7 @@ impl RhiRenderer {
                         Ok(result) => result,
                         // 保留原始资源错误，不伪造可提交的混合计划。
                         Err(error) => {
-                            let _ = RhiRenderer::destroy_textures(
-                                // 清理只借用 Device 资源生命周期。
-                                frame.device(),
-                                // 释放本帧已经创建的临时纹理。
-                                &transient_textures,
-                            );
+                            warn_destroy_textures(frame.device(), &transient_textures);
                             return Err(error);
                         }
                     };
@@ -497,7 +492,7 @@ impl RhiRenderer {
                 Ok(texture) => texture,
                 // 创建失败时清理此前已创建的资源。
                 Err(error) => {
-                    let _ = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
+                    warn_destroy_textures(frame.device(), &transient_textures);
                     return Err(error);
                 }
             };
@@ -510,7 +505,7 @@ impl RhiRenderer {
             // 上传紧密排列的 source payload。
             if let Err(error) = frame.device().update_texture(upload) {
                 // 释放当前帧已经创建的全部临时资源。
-                let _ = RhiRenderer::destroy_textures(frame.device(), &transient_textures);
+                warn_destroy_textures(frame.device(), &transient_textures);
                 // 保留上传失败的原始错误。
                 return Err(error);
             }

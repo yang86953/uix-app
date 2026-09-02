@@ -522,6 +522,11 @@ impl App {
                 Err(error) => {
                     // 在最终责任边界记录不含字体数据的 typed 原因。
                     tracing::error!("startup font initialization failed: {}", error.what());
+                    // 字体初始化失败终止启动，同样进入框架报告供宿主持久化诊断。
+                    diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("fonts", "initialize"),
+                    );
                     // 此时尚未创建窗口或图形资源，可直接返回失败退出码。
                     return 1;
                 }
@@ -545,6 +550,7 @@ impl App {
             if let Err(error) = configure_custom_title_bar(platform_window.as_mut(), w, h) {
                 tracing::error!("configure custom title bar failed: {}", error.short_what());
                 report_window_operation_error(
+                    &diagnostics,
                     "custom title bar failure cleanup close failed",
                     platform_window.close(),
                 );
@@ -563,7 +569,6 @@ impl App {
             w,
             h,
             graphics_backend,
-            self.runtime.diagnostics(),
             recovery_request.clone(),
             self.graphics_faults.clone(),
         );
@@ -573,7 +578,6 @@ impl App {
             w,
             h,
             graphics_backend,
-            self.runtime.diagnostics(),
             recovery_request.clone(),
         );
         let engine = match preferred_engine {
@@ -582,6 +586,7 @@ impl App {
                 // 在关闭原生窗口前记录完整的图形初始化与候选清理原因链。
                 tracing::error!("initial graphics initialization failed: {}", error.what());
                 report_window_operation_error(
+                    &diagnostics,
                     "initial engine failure cleanup close failed",
                     platform_window.close(),
                 );
@@ -678,11 +683,13 @@ impl App {
             if let Err(error) = self.runtime.start_agent_transport(&self.title) {
                 tracing::error!("agent transport startup failed: {error}");
                 report_window_operation_error(
+                    &diagnostics,
                     "agent transport failure graphics shutdown failed",
                     session.try_shutdown(),
                 );
                 drop(session);
                 report_window_operation_error(
+                    &diagnostics,
                     "agent transport failure window close failed",
                     platform_window.close(),
                 );
@@ -869,10 +876,18 @@ impl App {
         // 幂等注销主题事实订阅。
         drop(theme_events_subscription);
 
-        report_window_operation_error("main graphics shutdown failed", session.try_shutdown());
+        report_window_operation_error(
+            &diagnostics,
+            "main graphics shutdown failed",
+            session.try_shutdown(),
+        );
         // Keep the native window alive through the checked Drop retry.
         drop(session);
-        report_window_operation_error("main close failed", platform_window.close());
+        report_window_operation_error(
+            &diagnostics,
+            "main close failed",
+            platform_window.close(),
+        );
 
         let mut secondary_windows = secondary_windows.into_inner();
         for window in secondary_windows.drain(..) {

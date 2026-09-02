@@ -926,6 +926,15 @@ impl WindowDriver {
             self.cancel_outstanding_native_frame(platform_window);
             if engine.has_terminal_failure() {
                 self.frame_scheduler.mark_terminal_failure();
+                // 有界恢复序列已放弃：终态失败只报告一次，进入框架诊断
+                // 供宿主快照观察；瞬态失败由 RecoveryDriver 继续恢复不打扰报告。
+                if !self.terminal_failure_reported {
+                    self.terminal_failure_reported = true;
+                    debug_mode.report_with_origin(
+                        failure.error().clone(),
+                        crate::diagnostics::ReportOrigin::framework("graphics", "terminal_failure"),
+                    );
+                }
             } else {
                 self.frame_scheduler.frame_failed(failure, frame_time);
             }

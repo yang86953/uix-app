@@ -383,10 +383,34 @@ where
         if TypeId::of::<I>() == TypeId::of::<wl_data_device::WlDataDevice>() && opcode == 0 {
             return qhandle.make_data::<wl_data_offer::WlDataOffer, _>(());
         }
-        panic!(
-            "missing event-created child dispatch for opcode {opcode} on {}",
+        // compositor 版本差异会发出框架未登记的子对象；吞掉其后续事件并保留
+        // 可观测告警，不能让环境差异以 panic 终止整个应用。
+        tracing::warn!(
+            "wayland compositor created an unhandled child object; interface={}, opcode={opcode}; its events will be ignored",
             I::interface().name
         );
+        Arc::new(UnhandledWaylandChild)
+    }
+}
+
+// 未知子对象的最小事件宿主：不执行任何用户代码，也不产生协议请求。
+struct UnhandledWaylandChild;
+
+impl wayland_client::backend::ObjectData for UnhandledWaylandChild {
+    fn event(
+        self: Arc<Self>,
+        _backend: &wayland_client::backend::Backend,
+        _msg: wayland_client::backend::protocol::Message<
+            wayland_client::backend::ObjectId,
+            std::os::fd::OwnedFd,
+        >,
+    ) -> Option<Arc<dyn wayland_client::backend::ObjectData>> {
+        // 丢弃未知子对象的全部事件；返回 None 表示本事件不创建新对象。
+        None
+    }
+
+    fn destroyed(&self, _object_id: wayland_client::backend::ObjectId) {
+        // 未知对象的销毁通知无需处理。
     }
 }
 

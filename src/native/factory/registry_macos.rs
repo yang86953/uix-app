@@ -1,7 +1,6 @@
 //! macOS backend registry table.
 
 use crate::core::{Errc, Error};
-use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode,
@@ -14,7 +13,6 @@ fn create_metal(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     crate::native::presentation::graphics::metal::platform::create(surface, width, height)
 }
@@ -24,7 +22,6 @@ fn create_metal(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
         Errc::PlatformError,
@@ -37,7 +34,6 @@ fn create_vulkan(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // MoltenVK surface 只负责原生 WSI，Drawing 仍复用同一 FramePlan 语义。
     crate::native::presentation::graphics::vulkan::create(surface, width, height)
@@ -48,7 +44,6 @@ fn create_vulkan(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(Error::new(
         Errc::PlatformError,

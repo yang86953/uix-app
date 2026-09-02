@@ -1,6 +1,7 @@
 use super::*;
 // 帧诊断：读取每秒文本布局调用计数。
 use crate::draw::resources::font::font_service::take_text_layout_calls;
+use crate::diagnostics::ReportOrigin;
 // 卡顿阈值环境变量只解析一次。
 use std::sync::OnceLock;
 
@@ -167,12 +168,20 @@ pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
     }
 }
 
-pub(super) fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
+// 窗口操作失败没有恢复状态机兜底，在最终观察边界直接进入框架报告。
+pub(super) fn report_window_operation_error(
+    diagnostics: &Diagnostics,
+    context: &'static str,
+    result: crate::core::Result<()>,
+) {
     if let Err(error) = result {
         tracing::warn!("{context}: {}", error.short_what());
+        diagnostics.report_with_origin(error, ReportOrigin::framework("window", context));
     }
 }
 
+// resize 失败已被 RecoveryDriver 登记并驱动下一帧有界恢复序列；瞬态失败只做
+// tracing 观察，待恢复放弃为 terminal_failure 时才由帧驱动边界统一报告。
 pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) -> bool {
     match result {
         Ok(()) => true,

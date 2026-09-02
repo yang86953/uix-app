@@ -12,7 +12,7 @@ use super::ffi::*;
 // ============================================================================
 
 use crate::core::{Errc, Error, Rect, Result, WindowId};
-use crate::diagnostics::{PendingFailureQueue, PendingFailureSource};
+use crate::diagnostics::PendingFailureSource;
 use crate::native::backends::windows::tsf_session::{TsfActivateParams, TsfSession};
 use crate::native::backends::windows::util::windows_diag;
 use crate::platform::windowing::ITextInput;
@@ -226,15 +226,6 @@ impl WindowsTextInput {
         if let Some(session) = self.tsf.take() {
             session.deactivate();
         }
-    }
-}
-
-impl Default for WindowsTextInput {
-    fn default() -> Self {
-        Self::new(
-            Arc::new(Mutex::new(VecDeque::new())),
-            PendingFailureQueue::new().source(),
-        )
     }
 }
 

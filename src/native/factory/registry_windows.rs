@@ -1,7 +1,6 @@
 //! Windows backend registry table.
 
 use crate::core::{Errc, Error};
-use crate::diagnostics::PendingFailureQueue;
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
 use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, PresentMode, RasterMode,
@@ -14,7 +13,6 @@ fn create_d3d11(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     crate::native::presentation::graphics::d3d11::create(surface, width, height)
 }
@@ -24,7 +22,6 @@ fn create_d3d11(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("d3d11"))
 }
@@ -35,7 +32,6 @@ fn create_d3d12(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     crate::native::presentation::graphics::d3d12::create(surface, width, height)
 }
@@ -45,7 +41,6 @@ fn create_d3d12(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("d3d12"))
 }
@@ -55,7 +50,6 @@ fn create_vulkan(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // Vulkan 通过统一 GPU-native recipe 接管 Win32 surface，绘制语义仍由共享 FramePlan 冻结。
     crate::native::presentation::graphics::vulkan::create(surface, width, height)
@@ -66,7 +60,6 @@ fn create_vulkan(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("vulkan"))
 }
@@ -76,7 +69,6 @@ fn create_opengles(
     surface: *mut c_void,
     width: i32,
     height: i32,
-    _pending: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     // OpenGL ES 已接入同一 FramePlan/RHI，进入生产 registry 的次级候选。
     crate::native::presentation::graphics::opengl::create(surface, width, height)
@@ -87,7 +79,6 @@ fn create_opengles(
     _: *mut c_void,
     _: i32,
     _: i32,
-    _: PendingFailureQueue,
 ) -> Result<GraphicsContextCandidate, Error> {
     Err(feature_disabled("opengles"))
 }

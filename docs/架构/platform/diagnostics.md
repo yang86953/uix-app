@@ -78,6 +78,7 @@ crate 内编排入口（不属公开 API，由 app 组装层调用）：
 |---|---|---|
 | `Diagnostics::install_panic_hook` | `src/diagnostics/mod.rs` | 绑定 runtime 的 panic hook；`App::run` 在配置加载前安装 |
 | `drain_platform_pending_failures` | `src/app/application/lifecycle/runtime/mod.rs` | App owner-thread 任务边界取出 callback/worker 失败，先恢复后报告 |
+| `Diagnostics::report_with_origin` + `ReportOrigin::framework` | 框架侧失败边界 | 窗口操作失败、图形恢复终态失败与字体初始化失败经 crate 内入口以 framework 来源上报；图形瞬态失败由 RecoveryDriver 收敛不进入报告 |
 
 ## Callback → owner-thread 边界
 
