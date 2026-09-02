@@ -76,6 +76,8 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsSe
     match value.parse::<GraphicsSelection>() {
         Ok(backend) => Some(backend),
         Err(err) => {
+            // diagnostics-exempt: 配置值不可解析的提示事实（回退默认策略），
+            // 错误不向上传播也无诊断通道语义。
             tracing::warn!(
                 "graphics backend config {source} ignored: {}",
                 err.short_what()

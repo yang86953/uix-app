@@ -310,8 +310,8 @@ impl MessageDeclaration {
         } else if let Some(lease) = self.lease.as_ref() {
             // 同 key 只更新活动条目或 tombstone 配置。
             if let Err(error) = lease.update(FeedbackDeclarationSpec::Message(self.spec.clone())) {
-                // 生命周期失败必须可观察，不能静默忽略。
-                tracing::error!("Message declaration update failed: {}", error.short_what());
+                // 生命周期失败必须可观察：widget 层无诊断句柄，经边界观察记录。
+                crate::diagnostics::observe_boundary_error("feedback/message", &error);
             }
         }
     }
@@ -336,7 +336,7 @@ impl MessageDeclaration {
             Ok(lease) => self.lease = Some(lease),
             // 重复 key 或失效窗口必须可观察。
             Err(error) => {
-                tracing::error!("Message declaration mount failed: {}", error.short_what())
+                crate::diagnostics::observe_boundary_error("feedback/message_mount", &error);
             }
         }
     }
@@ -497,11 +497,8 @@ impl NotificationDeclaration {
             if let Err(error) =
                 lease.update(FeedbackDeclarationSpec::Notification(self.spec.clone()))
             {
-                // 生命周期失败必须可观察，不能静默忽略。
-                tracing::error!(
-                    "Notification declaration update failed: {}",
-                    error.short_what()
-                );
+                // 生命周期失败必须可观察：widget 层无诊断句柄，经边界观察记录。
+                crate::diagnostics::observe_boundary_error("feedback/notification", &error);
             }
         }
     }
@@ -527,10 +524,9 @@ impl NotificationDeclaration {
             // 成功后保存租约。
             Ok(lease) => self.lease = Some(lease),
             // 重复 key 或失效窗口必须可观察。
-            Err(error) => tracing::error!(
-                "Notification declaration mount failed: {}",
-                error.short_what()
-            ),
+            Err(error) => {
+                crate::diagnostics::observe_boundary_error("feedback/notification_mount", &error)
+            }
         }
     }
 

@@ -96,7 +96,7 @@ impl RenderSession {
     /// 在所有者线程上关闭后端；失败会记录错误并保留可重试所有权。
     pub fn shutdown(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            tracing::error!("RenderSession: {}", error.short_what());
+            crate::diagnostics::observe_boundary_error("render_session", &error);
         }
     }
 

@@ -169,7 +169,8 @@ impl ChartPlaceholder {
                 ChartKind::Combo => self.paint_combo(ctx, plot, &visual),
                 ChartKind::Treemap => self.paint_treemap(ctx, plot, &visual),
                 ChartKind::Gauge => self.paint_gauge(ctx, plot, &visual),
-                ChartKind::Generic => unreachable!("generic charts do not contain data"),
+                // Generic 声明不携带数据序列，外层分派不会进入本臂。
+        ChartKind::Generic => unreachable!("generic charts do not contain data"),
             }
         } else {
             // 无数据：空态提示。

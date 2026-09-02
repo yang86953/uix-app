@@ -606,7 +606,11 @@ impl WidgetTree {
         };
         let result = recorder.publish(snapshot);
         if let Err(error) = result {
-            tracing::error!("automation snapshot export disabled after write failure: {error}");
+            // 快照导出失败即禁用 recorder：UI 层无诊断句柄，经边界观察记录。
+            crate::diagnostics::observe_boundary_error(
+                "a11y/automation_export",
+                &crate::core::Error::new(crate::core::Errc::IoError, error.to_string()),
+            );
             self.automation_recorder = None;
         }
     }
@@ -621,7 +625,10 @@ impl WidgetTree {
             return;
         };
         if let Err(error) = recorder.close(generation, revision, presented_revision) {
-            tracing::error!("automation snapshot close marker failed: {error}");
+            crate::diagnostics::observe_boundary_error(
+                "a11y/automation_close",
+                &crate::core::Error::new(crate::core::Errc::IoError, error.to_string()),
+            );
         }
         self.automation_recorder = None;
     }

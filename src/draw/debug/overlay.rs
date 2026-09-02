@@ -334,7 +334,8 @@ impl DebugRenderService {
         let max_chars = ((panel.w - PAD_X * 2.0) / 7.0).floor().max(1.0) as usize;
         for (index, line) in lines.iter().enumerate() {
             let color = if index == 1 && frame.is_some() {
-                frame_time_color(frame.expect("frame checked above").frame_time)
+                // 同一条件表达式上方已判 frame.is_some()，此处解包安全。
+            frame_time_color(frame.expect("frame checked above").frame_time)
             } else if line.starts_with("inv ") {
                 frame
                     .map(|value| invalidation_color(value.invalidation_source))

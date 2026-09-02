@@ -442,11 +442,8 @@ impl Drop for BootstrapContext {
     fn drop(&mut self) {
         // Drop 只重试尚未完成的检查式关闭，失败必须留下最终诊断。
         if let Err(error) = self.shutdown_result() {
-            // 保留 bootstrap owner 身份与 typed error 摘要，便于定位启动期泄漏。
-            tracing::error!(
-                "WglContext: bootstrap checked shutdown failed during Drop: {}",
-                error.short_what()
-            );
+            // 启动期关闭失败经边界观察入口记录，便于定位泄漏。
+            crate::diagnostics::observe_boundary_error("wgl/bootstrap", &error);
         }
     }
 }
@@ -543,11 +540,8 @@ impl Drop for PendingWglContext {
     fn drop(&mut self) {
         // Drop 只重试尚未完成的检查式关闭，失败必须留下最终诊断。
         if let Err(error) = self.shutdown_result() {
-            // 保留 pending owner 身份与 typed error 摘要，便于定位创建期泄漏。
-            tracing::error!(
-                "WglContext: pending context checked shutdown failed during Drop: {}",
-                error.short_what()
-            );
+            // 创建期关闭失败经边界观察入口记录，便于定位泄漏。
+            crate::diagnostics::observe_boundary_error("wgl/pending", &error);
         }
     }
 }
@@ -910,11 +904,8 @@ impl Drop for WglContext {
     fn drop(&mut self) {
         // Drop 直接调用 inherent shutdown，避免依赖已拆出的 trait impl。
         if let Err(error) = self.shutdown_result() {
-            // 保留 adapter 身份和完整 typed error 摘要，供最终责任边界定位泄漏。
-            tracing::error!(
-                "WglContext: checked shutdown failed during Drop: {}",
-                error.short_what()
-            );
+            // Drop 关闭失败经边界观察入口记录，供最终责任边界定位泄漏。
+            crate::diagnostics::observe_boundary_error("wgl/adapter", &error);
         }
     }
 }

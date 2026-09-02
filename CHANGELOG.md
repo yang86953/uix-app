@@ -216,6 +216,39 @@
   报告存储）。
 - 验证：主 crate 全 feature `cargo check` 通过；89 项公开 API 测试全绿。
 
+### 诊断处置契约静态审计（防止绕过诊断系统的错误报告）
+
+- 背景：处置判断机制（决策矩阵 + 类型化入口）就位后，其强制力仍依赖约定
+  ——新代码可能退回裸 `tracing::error!`、无声明 panic 或静默吞没。本轮把
+  矩阵编码为可执行检查，接入验证流程形成硬门禁。
+- 新增 `scripts/diagnostics_audit.py`：扫描 `src/` 生产代码（自动剔除
+  `#[cfg(test)]` 与测试/验收 feature 门控块），执行三条规则——R1 错误值
+  （短述/错误绑定）的裸 `tracing::error!/warn!` 必须同分支已有诊断通道
+  调用或带 `diagnostics-exempt: <理由>` 豁免标记；R2 生产路径
+  `panic!/unreachable!/expect` 必须带邻近契约注释，`todo!/unimplemented!`
+  一律违规；R3 空体 `Err(_) =>` 吞没必须带理由注释。另输出通道统计仪表
+  （report_with_origin / observe_transient / observe_boundary_error /
+  panic 家族调用点计数）。违规时非零退出码失败；命令接入 AGENTS.md 构建
+  与测试节，并约定改动 src/ 错误处理路径后必须重跑且违规清零后提交。
+- 首跑暴露 55 处存量违规，全部按矩阵语义处置而非豁免：GPU adapter
+  teardown/降级链（Metal/EGL/WGL/D3D11/D3D12/Vulkan/线程绑定/渲染会话）
+  22 处迁移 `observe_boundary_error`（HW→WARP、flip→legacy、Gdi→空
+  presenter、字体路径缺失等降级事实获得带层标识的结构化记录）；UI 层
+  （自动化快照导出/关闭、feedback 租约更新/挂载 ×4、Lucide 字体、表单
+  非法正则）8 处迁移边界观察；主题查询/publish 失败迁移
+  `observe_transient`（app 层有句柄）、主题订阅失败升级为终态报告
+  （`framework("theme_bus", "subscribe")`，与注释声明的「中止启动并报告」
+  对齐）；agent 线程基础设施 4 处与 io/正则错误收敛为 typed
+  `IoError/FormatError` 后走边界观察；7 处 panic/expect 补契约注释；
+  1 处配置提示加豁免标记。
+- 审计终态：`src/` 无绕过诊断系统的错误报告点；通道统计为
+  report_with_origin 28、observe_transient 18、observe_boundary_error 49、
+  生产 panic 家族 38（全部带契约声明）。
+- 文档：架构文档决策矩阵补「静态强制」段（工具规则、豁免标记、退出码
+  语义）。
+- 验证：主 crate 与 demo 全 feature `cargo check` 通过；89 项公开 API
+  测试全绿；`python3 scripts/diagnostics_audit.py --verbose` 违规为零。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

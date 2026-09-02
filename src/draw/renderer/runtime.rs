@@ -122,7 +122,8 @@ impl Renderer {
         let session = match RenderSession::new(BackendKind::Cpu) {
             Ok(session) => session,
             Err(error) => {
-                tracing::error!("RenderSession 创建失败: {}", error.short_what());
+                // RenderSession 失败回退内建 CPU 后端：降级事实经边界观察记录。
+                crate::diagnostics::observe_boundary_error("renderer/session", &error);
                 RenderSession::with_backend(Box::new(CpuBackend::new()))
             }
         };
@@ -699,7 +700,7 @@ impl RenderTarget for Renderer {
 impl Drop for Renderer {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            tracing::error!("Renderer checked shutdown failed: {}", error.short_what());
+            crate::diagnostics::observe_boundary_error("renderer/drop", &error);
         }
     }
 }

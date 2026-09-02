@@ -121,11 +121,9 @@ impl<T: GraphicsContextLifecycle + ?Sized> ThreadBoundGraphicsContext<T> {
 
     // 记录无错误返回通道的析构拒绝。
     fn log_drop_rejection(operation: &str, error: &Error) {
-        // 让诊断可见但不在 Drop 路径 panic。
-        tracing::error!(
-            "thread-bound graphics context {operation} rejected: {}",
-            error.what()
-        );
+        // 让诊断可见但不在 Drop 路径 panic：经边界观察入口记录。
+        crate::diagnostics::observe_boundary_error("thread_bound", error);
+        let _ = operation;
     }
 
     // 为单元测试注入不同 owner thread 身份。

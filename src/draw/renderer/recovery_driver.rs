@@ -608,10 +608,8 @@ impl RenderTarget for RecoveryDriver {
 impl Drop for RecoveryDriver {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
-            tracing::error!(
-                "RecoveryDriver checked shutdown failed: {}",
-                error.short_what()
-            );
+            // 主关闭路径首失败已由窗口操作边界上报；Drop 重试失败走边界观察。
+            crate::diagnostics::observe_boundary_error("recovery_driver/drop", &error);
         }
     }
 }

@@ -962,19 +962,13 @@ fn rhi_state(message: &'static str) -> Error {
 // 二次清理错误，也不覆盖调用方即将返回的原始失败。
 pub(super) fn warn_destroy_texture(device: &mut dyn GraphicsDevice, texture: TextureHandle) {
     if let Err(error) = device.destroy_texture(texture) {
-        tracing::warn!(
-            "GPU texture destroy failed during error cleanup: {}",
-            error.short_what()
-        );
+        crate::diagnostics::observe_boundary_error("rhi/texture_cleanup", &error);
     }
 }
 
 // 同一清理边界对一批临时 texture 的批量形态。
 pub(super) fn warn_destroy_textures(device: &mut dyn GraphicsDevice, textures: &[TextureHandle]) {
     if let Err(error) = RhiRenderer::destroy_textures(device, textures) {
-        tracing::warn!(
-            "GPU texture cleanup failed during error teardown: {}",
-            error.short_what()
-        );
+        crate::diagnostics::observe_boundary_error("rhi/texture_cleanup", &error);
     }
 }

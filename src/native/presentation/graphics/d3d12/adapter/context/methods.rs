@@ -53,10 +53,8 @@ impl Drop for PendingFenceEvent {
             unsafe { CloseHandle(event) }
                 .map_err(|error| d3d12_error("CloseHandle pending fence event", error))
         }) {
-            tracing::error!(
-                "D3d12Context: pending fence event close failed: {}",
-                error.short_what()
-            );
+            // 清理边界失败经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("d3d12/fence_close", &error);
         }
     }
 }
@@ -78,10 +76,8 @@ impl D3d12Context {
         ) {
             Ok(context) => Ok(context),
             Err(hardware_error) => {
-                tracing::warn!(
-                    "D3d12Context: hardware device unavailable; retrying with WARP: {}",
-                    hardware_error.what()
-                );
+                // HW→WARP 性能降级事实经边界观察入口记录。
+                crate::diagnostics::observe_boundary_error("d3d12/hw_to_warp", &hardware_error);
                 Self::create_with_factory(
                     native_window,
                     width,

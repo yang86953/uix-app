@@ -68,12 +68,22 @@ impl WaylandClientShadow {
                 height,
                 &format!("shadow-{}-{label}", window_id.raw()),
             )
-            .inspect_err(|error| tracing::warn!("shadow buffer creation failed: {error}"))
+            .inspect_err(|error| {
+                crate::diagnostics::observe_boundary_error(
+                    "wayland/shadow",
+                    &crate::core::Error::new(crate::core::Errc::PlatformError, error.clone()),
+                )
+            })
             .ok()?;
             let pixels = shadow_pixels(label, width, height, scale);
             buffer
                 .write_pixels(&pixels)
-                .inspect_err(|error| tracing::warn!("shadow buffer write failed: {error}"))
+                .inspect_err(|error| {
+                    crate::diagnostics::observe_boundary_error(
+                        "wayland/shadow",
+                        &crate::core::Error::new(crate::core::Errc::PlatformError, error.to_string()),
+                    )
+                })
                 .ok()?;
             buffers.push(buffer);
         }

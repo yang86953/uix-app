@@ -60,11 +60,8 @@ impl Drop for D3d11Context {
     fn drop(&mut self) {
         // 显式观察 checked shutdown 结果，禁止静默丢弃未来新增的失败。
         if let Err(error) = self.shutdown_result() {
-            // 保留 adapter 身份与 typed error 摘要。
-            tracing::error!(
-                "D3d11Context: checked shutdown failed during Drop: {}",
-                error.short_what()
-            );
+            // Drop 关闭失败经边界观察入口记录。
+            crate::diagnostics::observe_boundary_error("d3d11/adapter", &error);
         }
     }
 }

@@ -170,7 +170,14 @@ impl AgentTransportHandle {
         {
             Ok(thread) => Some(thread),
             Err(error) => {
-                tracing::warn!("agent hub registration thread failed to start: {error}");
+                // agent 线程基础设施不持有诊断句柄：经显式边界观察入口记录。
+                crate::diagnostics::observe_boundary_error(
+                    "agent/transport",
+                    &crate::core::Error::new(
+                        crate::core::Errc::IoError,
+                        error.to_string(),
+                    ),
+                );
                 None
             }
         };
@@ -311,7 +318,14 @@ fn listener_loop(
             Err(error) => {
                 // 非关闭状态下的 accept 失败视为致命错误，终止监听。
                 if !shutdown.load(Ordering::Acquire) {
-                    tracing::error!("agent listener stopped after accept failure: {error}");
+                    // agent 线程基础设施不持有诊断句柄：经显式边界观察入口记录。
+                crate::diagnostics::observe_boundary_error(
+                    "agent/transport",
+                    &crate::core::Error::new(
+                        crate::core::Errc::IoError,
+                        error.to_string(),
+                    ),
+                );
                 }
                 break;
             }
@@ -348,7 +362,13 @@ fn listener_loop(
             .spawn(move || {
                 if let Err(error) = serve_connection(stream, worker_bridge, worker_token) {
                     if !worker_shutdown.load(Ordering::Acquire) {
-                        tracing::error!("agent connection ended after I/O failure: {error}");
+                        crate::diagnostics::observe_boundary_error(
+                    "agent/transport",
+                    &crate::core::Error::new(
+                        crate::core::Errc::IoError,
+                        error.to_string(),
+                    ),
+                );
                     }
                 }
                 // worker 退出时从注册表摘除自身，释放连接名额。
@@ -368,7 +388,13 @@ fn listener_loop(
                     .lock()
                     .unwrap_or_else(|lock_error| lock_error.into_inner())
                     .remove(&connection_id);
-                tracing::error!("agent connection thread failed to start: {error}");
+                crate::diagnostics::observe_boundary_error(
+                    "agent/transport",
+                    &crate::core::Error::new(
+                        crate::core::Errc::IoError,
+                        error.to_string(),
+                    ),
+                );
             }
         }
     }

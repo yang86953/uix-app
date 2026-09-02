@@ -334,10 +334,9 @@ impl FontService {
             let fallback_paths = match system_info.default_font_paths() {
                 Ok(paths) => paths,
                 Err(error) => {
-                    tracing::warn!(
-                        "system default font paths unavailable: {}",
-                        error.short_what()
-                    );
+                    // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
+                    // 启动期一次，经边界观察入口记录。
+                    crate::diagnostics::observe_boundary_error("fonts/system", &error);;
                     Vec::new()
                 }
             };
@@ -364,10 +363,9 @@ impl FontService {
             let paths = match system_info.default_font_paths() {
                 Ok(paths) => paths,
                 Err(error) => {
-                    tracing::warn!(
-                        "system default font paths unavailable: {}",
-                        error.short_what()
-                    );
+                    // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
+                    // 启动期一次，经边界观察入口记录。
+                    crate::diagnostics::observe_boundary_error("fonts/system", &error);;
                     Vec::new()
                 }
             };
