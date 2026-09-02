@@ -527,18 +527,26 @@ impl ViewAdapter {
             view_children(widget.as_ref())
         };
         // Button 通过窄端口直接读取作者禁用语义，不再构造包含字符串的快照。
-        let (next_fields, next_disabled) = if BUTTON {
-            let button_disabled = widget
-                .as_any()
-                .downcast_ref::<Button>()
-                .expect("Button reconciliation must preserve the incoming concrete type")
-                .reconcile_disabled();
+        let (next_fields, next_disabled) = if let Some(button) = widget
+            .as_any()
+            .downcast_ref::<Button>()
+            .filter(|_| BUTTON)
+        {
+            let button_disabled = button.reconcile_disabled();
             let next_disabled = accessibility_override
                 .as_ref()
                 .and_then(|override_state| override_state.disabled_override())
                 .unwrap_or(button_disabled);
             (None, next_disabled)
         } else {
+            // 类型前置与实际组件不一致（理论不可达）或非 Button：记录一次
+            // 可观测错误并回退通用快照路径，协调继续而不中断帧。
+            if BUTTON {
+                tracing::error!(
+                    "Button reconciliation received a non-Button widget; \
+                     falling back to snapshot reconciliation"
+                );
+            }
             // 非 Button 恢复原有快照观察时机，enabled 路径可在 patch 前复用字段。
             let next_fields = widget.snapshot_fields();
             let next_disabled = accessibility_override
@@ -865,9 +873,16 @@ impl ViewAdapter {
 
         // 已由 reconcile_existing 的类型前置确认 Button，直接比较窄配置与运行态。
         let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
+        // downcast 失配只可能来自类型复用前置破坏；保守视为配置已变化强制
+        // 失效，实际同步交由下方 patch 的替换路径完成，而不是 panic。
         let authored_changed =
             builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
-                .expect("Button reconciliation must preserve both Button widget types");
+                .unwrap_or_else(|| {
+                    tracing::error!(
+                        "Button patch boundary received a non-Button current widget"
+                    );
+                    true
+                });
         // Button 作者配置变化始终保守归入 Layout，与通用 patch 语义一致。
         let config_changed = authored_changed || runtime_changed;
         let layout_changed = config_changed;
@@ -992,19 +1007,39 @@ impl ViewAdapter {
         let direct_keyed_reuse =
             direct_reuse_kind == Some(true) && reconcile_keys_are_unique(&children);
         let direct_unkeyed_reuse = direct_reuse_kind == Some(false);
-        if direct_keyed_reuse || direct_unkeyed_reuse {
-            for (index, child) in children.into_iter().enumerate() {
+        // 快路假定协调期间父级直接子序列保持稳定；前面子节点的专项协调若
+        // 移除了后续兄弟，放弃快路并把未消费声明交回下方完整协调，而不是
+        // panic。已协调前缀在树上保持 key 幂等，完整协调会再次匹配复用。
+        let children = if direct_keyed_reuse || direct_unkeyed_reuse {
+            let mut remaining = children.into_iter().enumerate();
+            let mut leftover: Vec<ViewNode> = Vec::new();
+            for (index, child) in remaining.by_ref() {
                 // 两类快路都已证明同序且可复用，协调期间父级直接子序列保持稳定。
-                let child_id = tree
+                let Some(child_id) = tree
                     .get(parent_id)
                     .and_then(|parent| parent.children().get(index))
                     .copied()
-                    .expect("direct sibling reconciliation child must remain present");
+                else {
+                    tracing::error!(
+                        "direct sibling reconciliation lost child {index}; \
+                         falling back to full child reconciliation"
+                    );
+                    // 当前声明未消费，连同迭代器剩余部分一并交回完整协调。
+                    leftover.push(child);
+                    leftover.extend(remaining.map(|(_, child)| child));
+                    break;
+                };
                 tree.cancel_pending_removal(child_id);
                 Self::reconcile_existing(tree, child_id, child);
             }
-            return false;
-        }
+            if leftover.is_empty() {
+                // 快路完整消费本轮声明：父级子序列已同步，无需通用协调。
+                return false;
+            }
+            leftover
+        } else {
+            children
+        };
 
         // 摘要索引不取得旧 key 字符串所有权，避免每轮复制全部业务 key。
         let keyed_old_count = tree.get(parent_id).map_or(0, |parent| {

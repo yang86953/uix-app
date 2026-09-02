@@ -263,9 +263,17 @@ impl LayerTree {
         // 同一有状态节点按父布局提供的每个不连续片段重放。
         for clip_region_index in 0..clip_region_count {
             // Rect 是 Copy 值；逐项读取避免每帧克隆整个 Vec 并申请堆内存。
-            let clip_region = node
+            // 片段在数量确定后消失说明节点元数据在本帧内被移除：终止本节点
+            // 重放并向调用方传播 typed 状态错误，绝不静默退化为未裁剪绘制。
+            let Some(clip_region) = node
                 .clip_regions()
-                .expect("裁剪片段数量确定后节点元数据必须保持存在")[clip_region_index];
+                .and_then(|regions| regions.get(clip_region_index).copied())
+            else {
+                return Err(crate::core::Error::new(
+                    crate::core::Errc::InvalidState,
+                    "layer replay lost clip region metadata mid-frame",
+                ));
+            };
             // 在节点自身变换之前压入父级内容坐标裁剪。
             engine.canvas_2d().push_clip(clip_region);
             // 在当前片段内执行一次完整节点与后代绘制。
