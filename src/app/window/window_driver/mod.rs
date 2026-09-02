@@ -167,6 +167,8 @@ pub(crate) struct WindowDriver {
     frame_diag: FrameDiagnostics,
     // 终态图形失败是否已报告，防止恢复放弃后的重复帧持续产生报告。
     terminal_failure_reported: bool,
+    // 窗口驱动拥有的诊断句柄：终态报告与瞬态观察（含去重）共用。
+    pub(crate) diagnostics: Diagnostics,
 }
 
 pub(crate) fn sync_graphics_maintenance(

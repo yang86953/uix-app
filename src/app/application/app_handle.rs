@@ -261,13 +261,17 @@ impl AppHandle {
                 "cannot activate a closed AppHandle",
             ));
         }
+        // 平台在执行期拒绝激活请求是文档声明的策略行为（如 compositor 焦点
+        // 管控）：经冷却去重观察，不进报告存储。
+        let diagnostics = self.runtime.diagnostics();
         let accepted = self
             .runtime
             .enqueue_with_context(self.window_id, move |context| {
                 if let Err(error) = context.request_activate() {
-                    tracing::warn!(
-                        reason = %error.short_what(),
-                        "window activation request failed"
+                    diagnostics.observe_transient(
+                        "window",
+                        "activation request rejected by platform",
+                        error.short_what(),
                     );
                 }
             });

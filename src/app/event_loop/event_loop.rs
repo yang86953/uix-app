@@ -422,6 +422,7 @@ where
         platform_window.properties().width(),
         platform_window.properties().height(),
         !platform_window.is_visible(),
+        debug_mode.clone(),
     );
     // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
     let last_debug_hover = Cell::new(None::<WidgetId>);
@@ -556,6 +557,7 @@ where
                             tree.active_pointer_cursor(),
                             // 相同请求由窗口循环状态去重。
                             &active_pointer_cursor,
+                            debug_mode,
                         );
                         // debug hover 链：仅 hit 目标变化时标脏（#105；非每 move 全帧）。
                         if debug_mode.debug_mode() {
@@ -725,6 +727,7 @@ where
             tree.active_pointer_cursor(),
             // 已在事件路径应用的相同值不会重复调用平台。
             &active_pointer_cursor,
+            debug_mode,
         );
         // 非原生事件触发的运行时动作不得借用历史指针授权。
         if let Err(error) = apply_pending_window_actions(

@@ -71,9 +71,8 @@ pub(crate) fn sync_window_text_input(
         return;
     }
     if let Err(error) = platform.text_input().set_cursor_rect(cursor_rect) {
-        // 光标矩形随每次输入高频更新，失败保留日志观察、不进报告存储，
-        // 避免 IME 会话期间的报告风暴。
-        tracing::warn!("IME cursor rect update failed: {}", error.short_what());
+        // 光标矩形随每次输入高频更新，经 observe_transient 冷却去重观察。
+        diagnostics.observe_transient("ime", "cursor rect update failed", error.short_what());
     }
     state.cursor_rect = Some(cursor_rect);
 }

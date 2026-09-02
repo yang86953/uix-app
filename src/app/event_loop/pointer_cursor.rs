@@ -17,9 +17,11 @@ pub(super) fn apply_pointer_cursor(
     requested: CursorType,
     // 保存本窗口循环最后一次成功或已确认不支持的光标请求。
     active: &Cell<Option<CursorType>>,
+    // 接收统一诊断 System：瞬态更新失败经冷却去重观察。
+    diagnostics: &crate::diagnostics::Diagnostics,
 ) {
     // 从平台能力根借用唯一光标端口并委托去重逻辑。
-    apply_cursor_port(platform.cursor(), requested, active);
+    apply_cursor_port(platform.cursor(), requested, active, diagnostics);
 }
 
 // 把去重后的请求应用到窄光标能力端口。
@@ -30,6 +32,8 @@ fn apply_cursor_port(
     requested: CursorType,
     // 保存最后一次成功或已确认不支持的光标请求。
     active: &Cell<Option<CursorType>>,
+    // 接收统一诊断 System：瞬态更新失败经冷却去重观察。
+    diagnostics: &crate::diagnostics::Diagnostics,
 ) {
     // 相同光标不重复进入原生平台调用。
     if active.get() == Some(requested) {
@@ -52,12 +56,14 @@ fn apply_cursor_port(
                 "pointer cursor capability is unavailable"
             );
         }
-        // 失败时保留旧状态，让后续循环仍可重试。
-        Err(error) => tracing::warn!(
-            // 记录结构化失败原因但不终止窗口循环。
-            error = %error.short_what(),
-            // 标识发生错误的 App System 能力交接。
-            "pointer cursor update failed"
-        ),
+        // 失败时保留旧状态，让后续循环仍可重试；指针移动频率高，经
+        // observe_transient 冷却去重避免逐事件刷屏。
+        Err(error) => {
+            diagnostics.observe_transient(
+                "pointer_cursor",
+                "pointer cursor update failed; previous cursor retained",
+                error.short_what(),
+            );
+        }
     }
 }

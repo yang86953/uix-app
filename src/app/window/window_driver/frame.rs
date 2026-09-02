@@ -437,11 +437,12 @@ impl WindowDriver {
 
         if let Some(token) = opportunity.fallback_token() {
             if let Err(error) = platform_window.cancel_native_frame(token) {
-                // 逐帧取消失败是瞬态平台噪声：调度器保持自身状态，下一帧
-                // 机会会重新对齐，只保留日志观察、不进报告存储。
-                tracing::warn!(
-                    "[WindowDriver] fallback native frame cancellation failed: {}",
-                    error.short_what()
+                // 逐帧取消失败是瞬态平台噪声：调度器保持自身状态，经
+                // observe_transient 冷却去重观察。
+                self.diagnostics.observe_transient(
+                    "window_driver",
+                    "fallback native frame cancellation failed",
+                    error.short_what(),
                 );
             }
         }
@@ -534,10 +535,11 @@ impl WindowDriver {
                     Ok(false) => {}
                     Err(error) => {
                         // 帧请求失败保留 fallback 武装状态，下个机会重试：
-                        // 高频瞬态只做日志观察，不进报告存储。
-                        tracing::warn!(
-                            "[WindowDriver] native frame request failed; fallback remains armed: {}",
-                            error.short_what()
+                        // 经 observe_transient 冷却去重观察。
+                        self.diagnostics.observe_transient(
+                            "window_driver",
+                            "native frame request failed; fallback remains armed",
+                            error.short_what(),
                         );
                     }
                 }
@@ -631,7 +633,7 @@ impl WindowDriver {
             return WindowFrameResult { did_work: true };
         }
         let surface_corrected =
-            ensure_surface_matches_window(tree, engine, native_width, native_height);
+            ensure_surface_matches_window(tree, engine, native_width, native_height, &self.diagnostics);
         let has_layout = has_layout_work(tree);
         let needs_layout =
             had_layout_event || surface_corrected || !self.rendered_first || has_layout;
@@ -767,10 +769,13 @@ impl WindowDriver {
                     // 成功显示后仍保留 deferred_show，直到首帧真正提交才消费状态。
                     Ok(()) => pre_present_shown = true,
                     // 显示失败不丢弃 deferred_show，后续首帧提交仍可重试原有边界。
-                    Err(error) => tracing::warn!(
-                        "[WindowDriver] pre-present show failed; deferred retry remains armed: {}",
-                        error.short_what()
-                    ),
+                    Err(error) => {
+                        self.diagnostics.observe_transient(
+                            "window_driver",
+                            "pre-present show failed; deferred retry remains armed",
+                            error.short_what(),
+                        );
+                    }
                 }
             }
             // 帧诊断：渲染阶段起点。
@@ -904,7 +909,7 @@ impl WindowDriver {
                 self.rendered_first = false;
             }
             RenderOutcome::Failed(error) => {
-                report_graphics_frame_failure(&error);
+                report_graphics_frame_failure(&self.diagnostics, &error);
                 self.rendered_first = false;
                 frame_failure = Some(error);
             }
@@ -921,9 +926,10 @@ impl WindowDriver {
                 .filter(|token| self.frame_scheduler.outstanding_native_token() == Some(*token))
             {
                 if let Err(error) = platform_window.native_frame_presented(token) {
-                    tracing::warn!(
-                        "[WindowDriver] native frame present notification failed; fallback remains armed: {}",
-                        error.short_what()
+                    self.diagnostics.observe_transient(
+                        "window_driver",
+                        "native frame present notification failed; fallback remains armed",
+                        error.short_what(),
                     );
                 }
             }

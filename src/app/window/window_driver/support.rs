@@ -157,11 +157,17 @@ pub(crate) fn graphics_failure_diagnostic(failure: &GraphicsFailure) -> String {
     failure.error().what()
 }
 
-pub(super) fn report_graphics_frame_failure(failure: &GraphicsFailure) {
+pub(super) fn report_graphics_frame_failure(
+    diagnostics: &Diagnostics,
+    failure: &GraphicsFailure,
+) {
     if graphics_failure_is_error(failure) {
-        tracing::error!(
-            "[WindowDriver] graphics frame failed: {}",
-            graphics_failure_diagnostic(failure)
+        // 图形帧失败由 RecoveryDriver 有界恢复收敛：瞬态 episode 经冷却
+        // 去重观察，恢复放弃的终态由帧驱动边界单独报告。
+        diagnostics.observe_transient(
+            "graphics",
+            "graphics frame failed; bounded recovery owns the episode",
+            graphics_failure_diagnostic(failure),
         );
     } else {
         tracing::debug!("[WindowDriver] graphics surface occluded; waiting for availability",);
@@ -180,13 +186,17 @@ pub(super) fn report_window_operation_error(
     }
 }
 
-// resize 失败已被 RecoveryDriver 登记并驱动下一帧有界恢复序列；瞬态失败只做
-// tracing 观察，待恢复放弃为 terminal_failure 时才由帧驱动边界统一报告。
-pub(super) fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) -> bool {
+// resize 失败已被 RecoveryDriver 登记并驱动下一帧有界恢复序列；瞬态失败经
+// 冷却去重观察，待恢复放弃为 terminal_failure 时才由帧驱动边界统一报告。
+pub(super) fn report_graphics_resize_error(
+    diagnostics: &Diagnostics,
+    context: &'static str,
+    result: crate::core::Result<()>,
+) -> bool {
     match result {
         Ok(()) => true,
         Err(error) => {
-            tracing::warn!("{context}: {}", error.what());
+            diagnostics.observe_transient("graphics", context, error.what());
             false
         }
     }
@@ -231,6 +241,7 @@ pub(crate) fn ensure_surface_matches_window(
     engine: &mut dyn RenderTarget,
     native_width: i32,
     native_height: i32,
+    diagnostics: &Diagnostics,
 ) -> bool {
     if native_width <= 0 || native_height <= 0 {
         return false;
@@ -248,6 +259,7 @@ pub(crate) fn ensure_surface_matches_window(
             || (canvas_height - native_height as f32).abs() > 0.5)
     {
         if report_graphics_resize_error(
+            diagnostics,
             "window graphics size reconciliation failed",
             engine.resize(native_width, native_height),
         ) {

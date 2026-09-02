@@ -1,7 +1,7 @@
 //! 应用运行时辅助：图形选择、副窗编排与平台事件映射。
 
 use super::*;
-use crate::diagnostics::{Diagnostics, PendingFailureQueue};
+use crate::diagnostics::Diagnostics;
 use crate::draw::renderer::{GraphicsRecoveryAction, RebuildRequest};
 
 /// 在应用 owner 线程边界排空原生回调失败。

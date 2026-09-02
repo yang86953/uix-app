@@ -473,3 +473,42 @@ fn rebuild_tracing_interest_cache_keeps_callsites_delivering() {
         );
     });
 }
+
+/// 瞬态观察去重：同一 (target, reason) 首条发射、冷却窗口内重复抑制，
+/// 不同键互不影响。返回值让去重行为无需等待真实冷却时间即可锁定。
+#[test]
+fn observe_transient_deduplicates_within_cooldown_window() {
+    let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
+
+    // 首条立即发射。
+    assert!(
+        diagnostics.observe_transient("test_layer", "first failure", "detail-a"),
+        "first observation of a key must emit"
+    );
+    // 冷却窗口内的重复观察被抑制。
+    assert!(
+        !diagnostics.observe_transient("test_layer", "first failure", "detail-b"),
+        "repeated observation within the cooldown must be suppressed"
+    );
+    assert!(
+        !diagnostics.observe_transient("test_layer", "first failure", "detail-c"),
+        "further repeats stay suppressed within the same window"
+    );
+    // 不同 reason 是独立键，不受首个键的窗口影响。
+    assert!(
+        diagnostics.observe_transient("test_layer", "second failure", "detail-d"),
+        "a different reason is an independent key and must emit"
+    );
+    // 不同 target 同样独立。
+    assert!(
+        diagnostics.observe_transient("other_layer", "first failure", "detail-e"),
+        "a different target is an independent key and must emit"
+    );
+    // 抑制不影响报告面：瞬态观察不产生任何留存报告。
+    let snapshot = diagnostics.snapshot();
+    assert_eq!(
+        snapshot.total_reports(),
+        0,
+        "transient observations must not enter the retained report store"
+    );
+}
