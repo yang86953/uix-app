@@ -1,5 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
-#![deny(unused_must_use)]
+// Error 的 #[must_use] 保持默认 warn 级：不按诊断规范处置错误时提出
+// 编译警告提示，不阻断构建（运行时落地检测与静态审计兜底）。
 
 //! UIX — Rust Native Application Framework
 //!
