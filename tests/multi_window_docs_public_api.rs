@@ -70,6 +70,12 @@ mod multi_window_control {
         // 消费标准控制组合以保持纯编译示例。
         let _ = controls;
 
+        // 为深色标题栏表面创建指定图标前景色的控制组合。
+        let dark_controls =
+            window_controls_with_icon_color(true, true, true, "#E7F2ED".into());
+        // 消费定制前景色控制组合以保持纯编译示例。
+        let _ = dark_controls;
+
         // 创建带稳定无障碍名称的定制关闭控件。
         let close = window_control_named(WindowControl::Close, "关闭窗口", button("×"));
         // 消费定制关闭控件以保持纯编译示例。

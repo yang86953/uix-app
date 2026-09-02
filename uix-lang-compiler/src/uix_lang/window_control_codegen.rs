@@ -6,7 +6,7 @@ use quote::quote;
 // 引入共享公共属性生成器与可见节点判定。
 use super::codegen::{apply_common_attributes, is_renderable_node};
 // 引入 WindowControl 所需的语法树、属性值生成器与诊断。
-use super::{Diagnostic, Element, boolean_value};
+use super::{Diagnostic, Element, boolean_value, string_value};
 
 // 生成文档化 WindowControl 标签对应的公开 Rust View。
 pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, Diagnostic> {
@@ -28,7 +28,9 @@ pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, 
     let mut show_maximize = quote! { true };
     // 默认显示关闭动作。
     let mut show_close = quote! { true };
-    // 按源码顺序解析三个专有布尔属性。
+    // 可选图标前景色保持未指定，运行时回退主题文本角色。
+    let mut icon_color: Option<proc_macro2::TokenStream> = None;
+    // 按源码顺序解析四个专有属性。
     for attribute in &element.attributes {
         // 按属性名更新对应显示表达式。
         match attribute.name.as_str() {
@@ -38,14 +40,30 @@ pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, 
             "showMaximize" => show_maximize = boolean_value(attribute)?,
             // 映射关闭显示状态。
             "showClose" => show_close = boolean_value(attribute)?,
+            // 映射可选图标前景色字符串或表达式。
+            "iconColor" => icon_color = Some(string_value(attribute)?),
             // 公共属性由统一生成器处理。
             _ => {}
         }
     }
-    // 把三项显示契约委托给 window_chrome 模块的公开组合函数。
-    let base = quote! {
-        // 保持窗口动作、无障碍语义与默认外观由运行时模块拥有。
-        ::uix::prelude::window_controls(#show_minimize, #show_maximize, #show_close)
+    // 按是否声明图标前景色选择公开组合入口。
+    let base = if let Some(color) = icon_color {
+        // 指定前景色时把颜色表达式转换为 ColorValue 并进入定制组合。
+        quote! {
+            // 窗口动作、无障碍语义保持由运行时模块拥有。
+            ::uix::prelude::window_controls_with_icon_color(
+                #show_minimize,
+                #show_maximize,
+                #show_close,
+                (#color).into(),
+            )
+        }
+    } else {
+        // 未指定前景色时保持既有主题文本色组合入口。
+        quote! {
+            // 保持窗口动作、无障碍语义与默认外观由运行时模块拥有。
+            ::uix::prelude::window_controls(#show_minimize, #show_maximize, #show_close)
+        }
     };
     // 专有属性消费后继续复用统一样式与未知属性诊断路径。
     apply_common_attributes(
@@ -54,6 +72,6 @@ pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, 
         // 传入原始属性列表。
         &element.attributes,
         // 防止专有属性被公共映射重复处理。
-        &["showMinimize", "showMaximize", "showClose"],
+        &["showMinimize", "showMaximize", "showClose", "iconColor"],
     )
 }
