@@ -30,6 +30,8 @@ diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障
 
 判定顺序自上而下：先问终态性，再问回调边界，再问恢复所有者，然后是瞬态性，最后才考虑边界与契约。新错误处理点不得使用裸 `tracing::error!`/`warn!` 表达上述任何一类——裸日志只在诊断系统自身（emit/crash fallback）与无关事实日志中出现。
 
+「马上知道」的即时性由两条通道保证：终态报告在入库的同时经 `on_report` 订阅同步通知宿主（无需 tracing subscriber），全部类别（含瞬态与边界观察）的结构化事件以 `uix::diagnostics` target 即时发射；瞬态观察的量级（累计观察与被抑制次数）并入 `DiagnosticsSnapshot`，宿主可随时回看观察通道的活动而不只依赖事件窗口。
+
 ## 组件清单
 
 | 组件 | 类型 | 职责 |
@@ -60,6 +62,7 @@ Diagnostics 的首个 Rust SMC 纵切已经把公开 System 契约与私有实�
 | Component | `reporting/mod.rs` 的 `ReportDraftBuilder` | 单一负责 typed Error 的预算、脱敏、cause 截断和按策略捕获 backtrace |
 | Component | `reporting/store.rs` 的 `ReportStore` | 单一负责 ReportId 顺序、固定容量保留和淘汰计数 |
 | Component | `reporting/emit.rs` 的 emission guard/event emitter | 单一负责 tracing 结构化事件、递归抑制和 subscriber panic 隔离 |
+| Component | `reporting/notify.rs` 的 `ReportNotifier` / `ReportSubscription` | 单一负责报告即时通知的注册、RAII 注销、递归抑制与处理器 panic 隔离；不访问 store 或发射 |
 | Component | `recovery.rs` 的 `RecoveryGuard` | 单一负责同线程递归恢复保护；不拥有 handler 或 System 状态 |
 | Component | `crash.rs` 的原子写入与 panic hook | 单一负责 tmp + fsync + rename 原子落盘、失败清理与 hook 递归 guard；不写敏感值，不吞 panic |
 | Component | `repro.rs` 的事件环与渲染器 | 单一负责固定事件的容量淘汰、32 KiB 行式渲染和 panic 非阻塞快照；不执行文件写入 |
@@ -87,6 +90,7 @@ System 只通过 `ReportingModule::{report,snapshot}`、`RecoveryModule::{regist
 | `on_error` | `on_error(&self, code: Errc, handler: F) -> RecoverySubscription` | 按精确 Errc 登记恢复 handler；RAII 句柄释放即注销 |
 | `attempt_recovery` | `attempt_recovery(&self, error: Error) -> RecoveryOutcome` | 在调用方选定的安全 owner thread 同步尝试；未处理结果保留原 Error |
 | `observe_transient` | `observe_transient(&self, target, reason, detail) -> bool` | 瞬态失败的冷却去重观察（30 秒窗口、抑制计数、首条立即发射）；返回本次是否实际发射，不进报告存储 |
+| `on_report` | `on_report(&self, handler) -> ReportSubscription` | 每份报告入库的同时在 report 调用线程同步通知（RAII 注销；嵌套上报不再分发；处理器 panic 被隔离为限流 emergency 输出） |
 | `debug_mode` / `set_debug_mode` | 查询或动态切换 runtime-scoped 开关 | 全窗口共享；关闭时不采集帧与组件树调试事实 |
 | `rebuild_tracing_interest_cache` | `(&self)` | 重新评估 tracing 进程级 callsite interest 缓存；subscriber 晚于首次报告安装导致事件不可见时，调用即可恢复诊断事件可见性 |
 | `write_debug_repro_manifest` | `(&self, directory) -> Result<PathBuf, Error>` | 原子写出不含用户文本、上限 32 KiB 的固定 schema 复现清单 |

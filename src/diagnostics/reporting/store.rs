@@ -54,6 +54,9 @@ impl ReportStore {
             reports: self.reports.iter().cloned().collect(),
             total_reports: self.total_reports,
             evicted_reports: self.evicted_reports,
+            // 瞬态观察计数由 System 层按同运行时事实填充。
+            total_transient_observations: 0,
+            suppressed_transient_observations: 0,
         }
     }
 }

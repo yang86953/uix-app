@@ -512,3 +512,100 @@ fn observe_transient_deduplicates_within_cooldown_window() {
         "transient observations must not enter the retained report store"
     );
 }
+
+/// 报告即时订阅：报告入库的同时同步通知；RAII 注销停止通知；处理器内的
+/// 嵌套上报照常入库但不再分发（防递归）。
+#[test]
+fn on_report_notifies_immediately_and_unsubscribes_on_drop() {
+    let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
+    let received = Arc::new(Mutex::new(Vec::<(Errc, String)>::new()));
+
+    let recorder = Arc::clone(&received);
+    let subscription = diagnostics.on_report(move |report| {
+        recorder
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push((
+                report.code(),
+                report.origin_target().to_string(),
+            ));
+    });
+
+    // 报告入库的同时处理器同步收到，携带完整分类与来源。
+    diagnostics.report(Error::new(Errc::IoError, "immediate notification probe"));
+    let received_now = received
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(received_now.len(), 1, "report must notify synchronously");
+    assert_eq!(received_now[0].0, Errc::IoError);
+    assert_eq!(received_now[0].1, "application");
+    drop(received_now);
+
+    // 先注销第一个订阅，后续段不再受它影响。
+    drop(subscription);
+
+    // 处理器内部的嵌套上报照常入库，但不再次分发。
+    let nesting = Arc::new(Mutex::new(0u32));
+    let nesting_counter = Arc::clone(&nesting);
+    let nested_diagnostics = diagnostics.clone();
+    let _nested_subscription = diagnostics.on_report(move |_report| {
+        let mut count = nesting_counter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *count == 0 {
+            *count += 1;
+            nested_diagnostics.report(Error::new(Errc::InvalidState, "nested report"));
+        }
+    });
+    diagnostics.report(Error::new(Errc::Timeout, "outer report"));
+    assert_eq!(
+        *nesting.lock().unwrap_or_else(|poisoned| poisoned.into_inner()),
+        1,
+        "nested report must be delivered exactly once (no recursion)"
+    );
+    assert_eq!(
+        diagnostics.snapshot().total_reports(),
+        3,
+        "outer + first probe + nested report must all be retained"
+    );
+    drop(_nested_subscription);
+
+    // RAII 注销后不再通知；报告本身照常入库。
+    diagnostics.report(Error::new(Errc::WriteFailure, "after unsubscribe"));
+    assert_eq!(
+        received
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len(),
+        1,
+        "dropped subscription must stop notifications"
+    );
+    assert_eq!(diagnostics.snapshot().total_reports(), 4);
+}
+
+/// 瞬态观察计数并入快照：累计观察（含抑制）与被抑制次数可回看。
+#[test]
+fn snapshot_exposes_transient_observation_counts() {
+    let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
+
+    diagnostics.observe_transient("layer", "reason-a", "one");
+    diagnostics.observe_transient("layer", "reason-a", "two");
+    diagnostics.observe_transient("layer", "reason-a", "three");
+
+    let snapshot = diagnostics.snapshot();
+    assert_eq!(
+        snapshot.total_transient_observations(),
+        3,
+        "all observations (emitted + suppressed) must be counted"
+    );
+    assert_eq!(
+        snapshot.suppressed_transient_observations(),
+        2,
+        "cooldown-suppressed repeats must be counted separately"
+    );
+    assert_eq!(
+        snapshot.total_reports(),
+        0,
+        "transient observations never enter the report store"
+    );
+}

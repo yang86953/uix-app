@@ -58,6 +58,7 @@ pub use config::{BacktracePolicy, DiagnosticsConfig};
 pub(crate) use debug::debug_mode_from_env;
 pub(crate) use pending::{PendingFailureQueue, PendingFailureSource};
 pub use recovery::{RecoveryAction, RecoveryOutcome, RecoverySubscription};
+pub use reporting::ReportSubscription;
 
 /// 测试专用：保护进程级全局 panic hook 的安装/恢复窗口。
 ///
@@ -186,6 +187,20 @@ impl Diagnostics {
         }
     }
 
+    /// 订阅每份报告的即时通知。
+    ///
+    /// 每当新报告入库（应用 [`Self::report`] 或框架内部上报），处理器在
+    /// report 调用线程同步收到该 [`ErrorReport`]——宿主不依赖 tracing
+    /// subscriber 也能在错误发生的第一时间感知。丢弃返回的 RAII 句柄即
+    /// 停止通知；处理器内部的嵌套上报照常入库但不再次分发；处理器 panic
+    /// 被隔离为限流 emergency 输出，不影响报告与其他订阅者。
+    pub fn on_report<F>(&self, handler: F) -> ReportSubscription
+    where
+        F: Fn(&ErrorReport) + Send + Sync + 'static,
+    {
+        self.inner.reporting.subscribe_report(handler)
+    }
+
     /// 为同一批输入、状态变更与最终帧分配稳定关联身份。
     pub(crate) fn next_debug_correlation_id(&self) -> u64 {
         self.inner.debugging.next_correlation_id()
@@ -286,7 +301,12 @@ impl Diagnostics {
 
     /// 返回按 `ReportId` 排序的不可变时间点快照。
     pub fn snapshot(&self) -> DiagnosticsSnapshot {
-        self.inner.reporting.snapshot()
+        let mut snapshot = self.inner.reporting.snapshot();
+        // 同一运行时的瞬态观察量级并入快照，宿主可回看观察通道活动。
+        let (total, suppressed) = self.inner.transient.counts();
+        snapshot.total_transient_observations = total;
+        snapshot.suppressed_transient_observations = suppressed;
+        snapshot
     }
 
     /// 返回原生回调用于把类型化失败投递给 owner 线程资源的运行时队列。

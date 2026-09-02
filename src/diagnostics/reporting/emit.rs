@@ -124,7 +124,7 @@ fn emit_event(report: &ErrorReport) {
     }
 }
 
-fn emergency_notice(counter: &AtomicU64, message: &str) {
+pub(super) fn emergency_notice(counter: &AtomicU64, message: &str) {
     let occurrence = counter.fetch_add(1, Ordering::Relaxed).saturating_add(1);
     if occurrence.is_power_of_two() {
         eprintln!("uix diagnostics emergency: {message}; occurrence={occurrence}");
