@@ -30,7 +30,12 @@ diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障
 
 判定顺序自上而下：先问终态性，再问回调边界，再问恢复所有者，然后是瞬态性，最后才考虑边界与契约。新错误处理点不得使用裸 `tracing::error!`/`warn!` 表达上述任何一类——裸日志只在诊断系统自身（emit/crash fallback）与无关事实日志中出现。
 
-矩阵由 `scripts/diagnostics_audit.py` 静态强制（接入 AGENTS.md 验证流程）：扫描 `src/` 生产代码（剔除测试/验收 feature 门控块），检查错误值的裸 tracing 日志必须有同分支诊断通道、panic 家族必须带契约注释（`todo!`/`unimplemented!` 一律违规）、空体 `Err(_) =>` 吞没必须带理由注释；确属事实日志或设计豁免时在调用点上方加 `diagnostics-exempt: <理由>` 标记。新增违规使工具以非零退出码失败，防止新代码退回绕过诊断系统的错误报告方式。
+矩阵由四层机制强制，强度从编译期到运行时递进：
+
+1. **编译期（框架内）**：`Error` 标注 `#[must_use]` 且 crate 级 `deny(unused_must_use)`——框架代码把 `Error` 值作为表达式语句直接丢弃即编译失败；下游应用的同类丢弃得到 `must_use` warning（应用可自行 `deny` 升级为错误）。
+2. **静态审计**：`scripts/diagnostics_audit.py`（接入 AGENTS.md 验证流程）扫描 `src/` 生产代码（剔除测试/验收 feature 门控块），检查错误值的裸 tracing 日志必须有同分支诊断通道、panic 家族必须带契约注释（`todo!`/`unimplemented!` 一律违规）、空体 `Err(_) =>` 吞没必须带理由注释；确属事实日志或设计豁免时在调用点上方加 `diagnostics-exempt: <理由>` 标记。新增违规使工具以非零退出码失败。
+3. **落地检测（运行时全覆盖，含应用）**：每个 `Error` 携带处置标记；`report`/`observe_boundary_error`/`observe_transient_error`/pending 入队与恢复尝试在消费时递归标记全原因链（`with_source` 附加的源错误随父错误承担）。Drop 时仍未处置的错误进入全局有界去重观测——按 `(code, 消息前缀)` 每键一条 debug 事件、键数硬上限 256（超出折叠为溢出键），`uix::core::unhandled_error_summary()` 返回 `(累计次数, 去重键数)` 供宿主与测试检视。应用吞掉框架错误（`let _ =`、match 后丢弃）不再是静默行为。
+4. **类型入口**：六个处置类别的类型化调用（见上表），处置意图从调用点直接判读。
 
 「马上知道」的即时性由两条通道保证：终态报告在入库的同时经 `on_report` 订阅同步通知宿主（无需 tracing subscriber），全部类别（含瞬态与边界观察）的结构化事件以 `uix::diagnostics` target 即时发射；瞬态观察的量级（累计观察与被抑制次数）并入 `DiagnosticsSnapshot`，宿主可随时回看观察通道的活动而不只依赖事件窗口。
 

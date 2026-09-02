@@ -72,7 +72,7 @@ pub(crate) fn sync_window_text_input(
     }
     if let Err(error) = platform.text_input().set_cursor_rect(cursor_rect) {
         // 光标矩形随每次输入高频更新，经 observe_transient 冷却去重观察。
-        diagnostics.observe_transient("ime", "cursor rect update failed", error.short_what());
+        diagnostics.observe_transient_error("ime", "cursor rect update failed", &error);
     }
     state.cursor_rect = Some(cursor_rect);
 }

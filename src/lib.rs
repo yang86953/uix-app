@@ -1,4 +1,5 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
+#![deny(unused_must_use)]
 
 //! UIX — Rust Native Application Framework
 //!

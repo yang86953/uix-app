@@ -94,6 +94,8 @@ impl RecoveryModule {
     }
 
     pub(super) fn attempt(&self, error: Error) -> RecoveryOutcome {
+        // 进入恢复尝试即完成诊断处置：错误已接触诊断通道。
+        error.mark_observed();
         // 恢复过程内不允许嵌套再次触发恢复，防止递归。
         let Some(_guard) = RecoveryGuard::enter() else {
             return RecoveryOutcome::Unhandled(error);

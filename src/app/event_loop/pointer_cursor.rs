@@ -59,11 +59,9 @@ fn apply_cursor_port(
         // 失败时保留旧状态，让后续循环仍可重试；指针移动频率高，经
         // observe_transient 冷却去重避免逐事件刷屏。
         Err(error) => {
-            diagnostics.observe_transient(
+            diagnostics.observe_transient_error(
                 "pointer_cursor",
-                "pointer cursor update failed; previous cursor retained",
-                error.short_what(),
-            );
+                "pointer cursor update failed; previous cursor retained", &error);
         }
     }
 }

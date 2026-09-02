@@ -153,10 +153,6 @@ pub(crate) fn graphics_failure_is_error(failure: &GraphicsFailure) -> bool {
     !matches!(failure, GraphicsFailure::Occluded(_))
 }
 
-pub(crate) fn graphics_failure_diagnostic(failure: &GraphicsFailure) -> String {
-    failure.error().what()
-}
-
 pub(super) fn report_graphics_frame_failure(
     diagnostics: &Diagnostics,
     failure: &GraphicsFailure,
@@ -164,10 +160,10 @@ pub(super) fn report_graphics_frame_failure(
     if graphics_failure_is_error(failure) {
         // 图形帧失败由 RecoveryDriver 有界恢复收敛：瞬态 episode 经冷却
         // 去重观察，恢复放弃的终态由帧驱动边界单独报告。
-        diagnostics.observe_transient(
+        diagnostics.observe_transient_error(
             "graphics",
             "graphics frame failed; bounded recovery owns the episode",
-            graphics_failure_diagnostic(failure),
+            failure.error(),
         );
     } else {
         tracing::debug!("[WindowDriver] graphics surface occluded; waiting for availability",);
@@ -196,7 +192,7 @@ pub(super) fn report_graphics_resize_error(
     match result {
         Ok(()) => true,
         Err(error) => {
-            diagnostics.observe_transient("graphics", context, error.what());
+            diagnostics.observe_transient_error("graphics", context, &error);
             false
         }
     }

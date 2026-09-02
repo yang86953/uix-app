@@ -439,11 +439,9 @@ impl WindowDriver {
             if let Err(error) = platform_window.cancel_native_frame(token) {
                 // 逐帧取消失败是瞬态平台噪声：调度器保持自身状态，经
                 // observe_transient 冷却去重观察。
-                self.diagnostics.observe_transient(
+                self.diagnostics.observe_transient_error(
                     "window_driver",
-                    "fallback native frame cancellation failed",
-                    error.short_what(),
-                );
+                    "fallback native frame cancellation failed", &error);
             }
         }
         let frame_time = opportunity.frame_time();
@@ -536,11 +534,9 @@ impl WindowDriver {
                     Err(error) => {
                         // 帧请求失败保留 fallback 武装状态，下个机会重试：
                         // 经 observe_transient 冷却去重观察。
-                        self.diagnostics.observe_transient(
+                        self.diagnostics.observe_transient_error(
                             "window_driver",
-                            "native frame request failed; fallback remains armed",
-                            error.short_what(),
-                        );
+                            "native frame request failed; fallback remains armed", &error);
                     }
                 }
             }
@@ -770,11 +766,9 @@ impl WindowDriver {
                     Ok(()) => pre_present_shown = true,
                     // 显示失败不丢弃 deferred_show，后续首帧提交仍可重试原有边界。
                     Err(error) => {
-                        self.diagnostics.observe_transient(
+                        self.diagnostics.observe_transient_error(
                             "window_driver",
-                            "pre-present show failed; deferred retry remains armed",
-                            error.short_what(),
-                        );
+                            "pre-present show failed; deferred retry remains armed", &error);
                     }
                 }
             }
@@ -926,11 +920,9 @@ impl WindowDriver {
                 .filter(|token| self.frame_scheduler.outstanding_native_token() == Some(*token))
             {
                 if let Err(error) = platform_window.native_frame_presented(token) {
-                    self.diagnostics.observe_transient(
+                    self.diagnostics.observe_transient_error(
                         "window_driver",
-                        "native frame present notification failed; fallback remains armed",
-                        error.short_what(),
-                    );
+                        "native frame present notification failed; fallback remains armed", &error);
                 }
             }
         } else if let Some(failure) = frame_failure.as_ref() {

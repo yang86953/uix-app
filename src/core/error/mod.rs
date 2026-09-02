@@ -7,6 +7,9 @@ mod codes;
 pub(crate) mod result;
 mod severity;
 mod types;
+mod unhandled;
+
+pub use unhandled::unhandled_error_summary;
 
 pub use codes::Errc;
 pub use result::{

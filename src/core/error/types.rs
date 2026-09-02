@@ -2,10 +2,12 @@
 
 use std::fmt;
 use std::panic::Location;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 use super::codes::Errc;
 use super::severity::ErrorSeverity;
+use super::unhandled;
 
 /// 框架级错误类型。
 ///
@@ -19,7 +21,7 @@ use super::severity::ErrorSeverity;
 /// let err = Error::fatal(Errc::OutOfRange, "数组越界");
 /// let err = Error::invalid_arg("参数 id 不能为空");
 /// ```
-#[derive(Clone)]
+#[must_use = "框架错误必须经诊断系统处置（report / observe / enqueue / recovery），丢弃会留下未处置观测记录"]
 pub struct Error {
     code: Errc,
     message: String,
@@ -28,6 +30,33 @@ pub struct Error {
     line: u32,
     timestamp: SystemTime,
     source: Option<Box<Error>>,
+    // 诊断处置标记：任一诊断通道消费（或随原因链被父错误承担）后置位，
+    // Drop 时仍未置位的错误进入全局未处置观测（有界去重）。
+    disposition: AtomicBool,
+}
+
+// Clone 不复制处置标记：副本是独立的未处置错误实例，拥有自己的观测责任。
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        Self {
+            code: self.code,
+            message: self.message.clone(),
+            severity: self.severity,
+            file: self.file,
+            line: self.line,
+            timestamp: self.timestamp,
+            source: self.source.clone(),
+            disposition: AtomicBool::new(false),
+        }
+    }
+}
+
+impl Drop for Error {
+    fn drop(&mut self) {
+        if !self.disposition.load(Ordering::Acquire) {
+            unhandled::record_disposed_without_disposition(self);
+        }
+    }
 }
 
 impl Error {
@@ -45,6 +74,7 @@ impl Error {
             line: location.line(),
             timestamp: SystemTime::now(),
             source: None,
+            disposition: AtomicBool::new(false),
         }
     }
 
@@ -60,6 +90,7 @@ impl Error {
             line: location.line(),
             timestamp: SystemTime::now(),
             source: None,
+            disposition: AtomicBool::new(false),
         }
     }
 
@@ -96,19 +127,25 @@ impl Error {
             line,
             timestamp: SystemTime::now(),
             source: None,
+            disposition: AtomicBool::new(false),
         }
     }
 
     // ── 原因链 ──
 
     /// 为此错误附加一个上游原因。
+    ///
+    /// 错误链作为一个观测单位：父错误的诊断处置覆盖全链，因此源错误在
+    /// 附加时即视为随链处置；父错误未处置时只有父错误进入未处置观测。
     pub fn with_source(mut self, source: Error) -> Self {
+        source.disposition.store(true, Ordering::Release);
         self.source = Some(Box::new(source));
         self
     }
 
     /// 把新原因追加到现有原因链尾部，不覆盖已经采集的中间失败。
     pub(crate) fn with_appended_source(mut self, source: Error) -> Self {
+        source.disposition.store(true, Ordering::Release);
         let mut tail = &mut self.source;
         while let Some(error) = tail {
             tail = &mut error.source;
@@ -135,6 +172,19 @@ impl Error {
             current = &source.source;
         }
         d
+    }
+
+    // ── 诊断处置 ──
+
+    /// 标记该错误已经过诊断通道处置（crate 内：报告、观察、入队或恢复
+    /// 尝试的消费入口调用）；原因链一并标记。
+    pub(crate) fn mark_observed(&self) {
+        self.disposition.store(true, Ordering::Release);
+        let mut source = &self.source;
+        while let Some(error) = source {
+            error.disposition.store(true, Ordering::Release);
+            source = &error.source;
+        }
     }
 
     // ── 访问器 ──

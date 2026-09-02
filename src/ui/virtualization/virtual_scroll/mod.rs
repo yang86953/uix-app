@@ -329,6 +329,8 @@ widget! {
         scroll_offset: Cell<f32>,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        flex_grow_val: f32,
+        flex_shrink_val: f32,
         overscan: usize,
         #[snapshot(skip)]
         materialized_range: Cell<Option<(usize, usize)>>,
@@ -345,6 +347,10 @@ widget! {
         pub(crate) last_frame: Cell<Option<Rect>>,
         scroll_delta_strip: Cell<(f32, f32)>,
     }
+
+    flex_grow => (&self) -> f32 { self.flex_grow_val }
+
+    flex_shrink => (&self) -> f32 { self.flex_shrink_val }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -506,10 +512,10 @@ impl VirtualScroll {
             }
             // 使用缓存前缀或固定行高计算项目起点。
             let item_offset = self.item_offset(absolute_index) as f64;
-            // 每个项目都读取最新的可变行高重锚偏移。
-            let scroll_offset = finite_scroll_offset(self.scroll_offset.get()) as f64;
-            // 使用 f64 完成坐标与偏移累加。
-            let y = frame.y as f64 + item_offset - scroll_offset;
+            // 行子树 frame 保持 content 坐标（viewport 契约）：绘制、命中与
+            // 语义快照统一经 viewport_scroll_offset 平移，布局不得预先扣除，
+            // 否则滚动偏移被应用两次，滚动后整窗内容移出可见区。
+            let y = frame.y as f64 + item_offset;
             // 最终纵坐标保留方向并夹到有限虚拟坐标范围。
             let y = finite_virtual_coordinate(y);
             // 可变模式返回实际高度，未测量项目回退到估算高度。
@@ -537,6 +543,8 @@ impl VirtualScroll {
             scroll_offset: Cell::new(0.0),
             fixed_width: None,
             fixed_height: None,
+            flex_grow_val: 0.0,
+            flex_shrink_val: 1.0,
             overscan: 5,
             materialized_range: Cell::new(None),
             materialized_measurement_generation: Cell::new(0),
@@ -588,6 +596,9 @@ impl VirtualScroll {
         self.fixed_width = next.fixed_width;
         // 同步下一版固定高度声明。
         self.fixed_height = next.fixed_height;
+        // 同步下一版 Flex 系数声明。
+        self.flex_grow_val = next.flex_grow_val;
+        self.flex_shrink_val = next.flex_shrink_val;
         // 同步下一版 overscan 声明。
         self.overscan = next.overscan;
         // 配置变化后让协调器重新核对物化窗口。
@@ -640,6 +651,43 @@ impl VirtualScroll {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
+    }
+
+    /// 设置此视图作为 Flex 子项时的扩张系数。
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow_val = v;
+        self
+    }
+
+    /// 设置此视图作为 Flex 子项时的收缩系数。
+    pub fn flex_shrink(mut self, v: f32) -> Self {
+        self.flex_shrink_val = v;
+        self
+    }
+
+    /// 应用 ViewNode 显式尺寸与 Flex 覆盖，不接收绘制或平台语义。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+        flex_grow_override: Option<f32>,
+        flex_shrink_override: Option<f32>,
+    ) {
+        // 只在声明显式宽度时覆盖 builder 自有配置。
+        if let Some(width) = style.width {
+            self.fixed_width = Some(width);
+        }
+        // 只在声明显式高度时覆盖 builder 自有配置。
+        if let Some(height) = style.height {
+            self.fixed_height = Some(height);
+        }
+        // ViewNode 覆盖优先于 builder 默认扩张值，保留显式零值。
+        if let Some(flex_grow) = flex_grow_override {
+            self.flex_grow_val = flex_grow;
+        }
+        // ViewNode 覆盖优先于 builder 默认收缩值。
+        if let Some(flex_shrink) = flex_shrink_override {
+            self.flex_shrink_val = flex_shrink;
+        }
     }
 
     /// Total scrollable content height (fixed row height contract).
@@ -857,10 +905,12 @@ impl VirtualScroll {
     }
 
     fn intrinsic_size(&self) -> Size {
-        // 声明尺寸在进入约束求解前先满足有限非负规则。
+        // flex_grow 视口与 ScrollView 同语义：未固定边以 0 为 basis，
+        // 由父级分得剩余客户区；否则 300 固有尺寸阻止 grow 视口撑满。
+        let grow = self.flex_grow_val > 0.0;
         Size::new(
-            finite_virtual_size(self.fixed_width.unwrap_or(300.0)),
-            finite_virtual_size(self.fixed_height.unwrap_or(300.0)),
+            finite_virtual_size(self.fixed_width.unwrap_or(if grow { 0.0 } else { 300.0 })),
+            finite_virtual_size(self.fixed_height.unwrap_or(if grow { 0.0 } else { 300.0 })),
         )
     }
 
@@ -977,6 +1027,18 @@ impl VirtualScrollBuilder {
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.scroll.fixed_width = Some(width);
         self.scroll.fixed_height = Some(height);
+        self
+    }
+
+    /// 设置此视图作为 Flex 子项时的扩张系数。
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.scroll.flex_grow_val = v;
+        self
+    }
+
+    /// 设置此视图作为 Flex 子项时的收缩系数。
+    pub fn flex_shrink(mut self, v: f32) -> Self {
+        self.scroll.flex_shrink_val = v;
         self
     }
 }

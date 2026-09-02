@@ -249,6 +249,41 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；89 项公开 API
   测试全绿；`python3 scripts/diagnostics_audit.py --verbose` 违规为零。
 
+### 未处置错误落地检测与编译期丢弃强制
+
+- 背景：静态审计只能覆盖仓库内 `src/`；使用框架的应用程序绕过诊断系统
+  丢弃错误（`let _ =`、match 后丢弃）时框架无从知晓。本轮补齐双层强制。
+- 编译期（框架内硬性）：`Error` 标注 `#[must_use]`（文案指明必须经诊断
+  通道处置），crate 级 `deny(unused_must_use)`——框架代码把 `Error` 作为
+  表达式语句直接丢弃即编译失败；下游应用的同类丢弃得到 `must_use`
+  warning，应用可自行 deny 升级。存量代码零违规一次通过（前序审计清零
+  的直接收益）。
+- 运行时落地检测（全覆盖，含应用）：`Error` 内增处置标记（原子布尔）；
+  `report_with_origin`、`observe_boundary_error`、新增公开
+  `observe_transient_error`（瞬态观察的错误值变体，等价 observe_transient
+  并完成处置标记）、pending 入队与 `attempt_recovery` 在消费时递归标记
+  全原因链；`with_source`/`with_appended_source` 附加的源错误随父错误
+  承担（错误链作为一个观测单位，父未处置时只有父进入观测）。`Clone`
+  不复制标记——副本是独立的未处置实例。
+- Drop 时仍未处置的错误进入新增 `core::error::unhandled` 模块的全局
+  有界去重观测：按 `(code, 消息前缀 64 字节)` 每键一条 debug 事件
+  （target `uix::diagnostics`）、键数硬上限 256（超出折叠为溢出键），
+  动态消息无法突破内存上界；公开
+  `uix::core::unhandled_error_summary() -> (累计次数, 去重键数)` 供宿主
+  与测试检视。应用吞掉框架错误不再是静默行为。
+- 存量迁移：13 处瞬态观察调用点迁移 `observe_transient_error`（帧通知、
+  resize、图形帧 episode、指针光标、IME 光标、主题查询/publish、激活
+  拒绝、pre-present show）；删除失去调用者的
+  `graphics_failure_diagnostic` 辅助。
+- 新增公开 API 测试：未处置丢弃计数、报告/边界/瞬态观察完成处置后
+  不计数（含原因链随链）、副本独立承担观测责任（全局状态在专用锁内
+  串行断言）。
+- 文档：架构文档决策矩阵的强制机制升格为四层（编译期 must_use+deny、
+  静态审计、运行时落地检测、类型入口）；使用层运行保障补
+  `unhandled_error_summary` 检视说明。
+- 验证：主 crate 与 demo 全 feature `cargo check` 通过；90 项公开 API
+  测试全绿；诊断契约审计违规为零。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

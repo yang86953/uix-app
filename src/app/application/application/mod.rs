@@ -645,11 +645,9 @@ impl App {
         let system_theme_tokens = if self.follow_system_theme {
             let is_dark = platform.display().is_dark_mode().unwrap_or_else(|error| {
                 // 平台主题查询失败回退浅色：经冷却去重观察的自愈降级。
-                diagnostics.observe_transient(
+                diagnostics.observe_transient_error(
                     "theme",
-                    "startup theme query failed, defaulting to light",
-                    error.short_what(),
-                );
+                    "startup theme query failed, defaulting to light", &error);
                 false
             });
             let tokens = Arc::new(DynTokens::new(if is_dark {
@@ -761,11 +759,9 @@ impl App {
                     revision: theme_revision.get(),
                 }) {
                     // 单次发布失败不中断主题状态：经冷却去重观察。
-                    theme_diagnostics.observe_transient(
+                    theme_diagnostics.observe_transient_error(
                         "theme_bus",
-                        "theme applied publish failed",
-                        error.short_what(),
-                    );
+                        "theme applied publish failed", &error);
                 }
             }
         };

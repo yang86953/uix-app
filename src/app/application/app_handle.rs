@@ -268,11 +268,9 @@ impl AppHandle {
             .runtime
             .enqueue_with_context(self.window_id, move |context| {
                 if let Err(error) = context.request_activate() {
-                    diagnostics.observe_transient(
+                    diagnostics.observe_transient_error(
                         "window",
-                        "activation request rejected by platform",
-                        error.short_what(),
-                    );
+                        "activation request rejected by platform", &error);
                 }
             });
         if accepted {
