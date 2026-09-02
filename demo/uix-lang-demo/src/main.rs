@@ -90,6 +90,10 @@ fn run_gui(options: LaunchOptions) {
     let diagnostics_slot: std::sync::Arc<
         std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
     > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    // 持有报告即时订阅句柄：订阅随演示会话存活，drop 即注销。
+    let report_subscription_slot: std::sync::Arc<
+        std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
 
     // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
     #[cfg(feature = "test-harness")]
@@ -102,6 +106,7 @@ fn run_gui(options: LaunchOptions) {
             options.follow_system_theme,
             agent_handle_slot.clone(),
             diagnostics_slot.clone(),
+            report_subscription_slot.clone(),
         )
     };
 
@@ -114,6 +119,7 @@ fn run_gui(options: LaunchOptions) {
             options.follow_system_theme,
             agent_handle_slot.clone(),
             diagnostics_slot.clone(),
+            report_subscription_slot.clone(),
         )
     };
 
@@ -165,6 +171,9 @@ fn build_demo_app(
     diagnostics_slot: std::sync::Arc<
         std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
     >,
+    report_subscription_slot: std::sync::Arc<
+        std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
+    >,
 ) -> App {
     // 宿主显式配置诊断：崩溃报告与复现清单写入固定临时目录。
     uix_app!("src/main.uix")
@@ -177,7 +186,21 @@ fn build_demo_app(
         .on_start(move |handle| {
             *agent_handle_slot.lock().unwrap() = Some(handle.clone());
             // 诊断句柄可 clone 且在窗口关闭后仍可用，供退出路径消费。
-            *diagnostics_slot.lock().unwrap() = Some(handle.diagnostics());
+            let diagnostics = handle.diagnostics();
+            // 报告即时订阅：任何报告入库的同时实时输出摘要，错误发生的
+            // 第一时间控制台可见，无需事后翻快照。
+            let subscription = diagnostics.on_report(|report| {
+                tracing::warn!(
+                    code = %report.code(),
+                    severity = ?report.severity(),
+                    origin = report.origin_target(),
+                    operation = report.operation().unwrap_or(""),
+                    summary = report.summary(),
+                    "framework or application report emitted in real time"
+                );
+            });
+            *report_subscription_slot.lock().unwrap() = Some(subscription);
+            *diagnostics_slot.lock().unwrap() = Some(diagnostics);
         })
 }
 

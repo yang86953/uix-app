@@ -213,6 +213,9 @@ pub struct DiagnosticsSnapshot {
     pub(crate) reports: Vec<ErrorReport>,
     pub(crate) total_reports: u64,
     pub(crate) evicted_reports: u64,
+    // 由 System 层填充的瞬态观察累计（不含报告面，仅观察通道量级）。
+    pub(crate) total_transient_observations: u64,
+    pub(crate) suppressed_transient_observations: u64,
 }
 
 impl DiagnosticsSnapshot {
@@ -229,5 +232,15 @@ impl DiagnosticsSnapshot {
     /// 返回因保留容量限制而被淘汰的报告数。
     pub fn evicted_reports(&self) -> u64 {
         self.evicted_reports
+    }
+
+    /// 返回瞬态观察通道的累计观察次数（含被冷却抑制的重复）。
+    pub fn total_transient_observations(&self) -> u64 {
+        self.total_transient_observations
+    }
+
+    /// 返回其中被冷却窗口抑制、未发射事件的观察次数。
+    pub fn suppressed_transient_observations(&self) -> u64 {
+        self.suppressed_transient_observations
     }
 }

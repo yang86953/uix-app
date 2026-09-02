@@ -187,6 +187,35 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；87 项公开 API
   测试全绿。
 
+### 报告即时通知与瞬态量级可见（发生即感知）
+
+- 背景：诊断覆盖与处置判断机制就位后，「马上知道」还差两块——报告产生
+  后宿主只能装 tracing subscriber（全量日志）或事后轮询 `snapshot()`，
+  没有「一产生就通知我」的订阅通道；被冷却抑制的瞬态观察只有事件窗口，
+  快照无法回看观察通道的量级。
+- 新增公开 `Diagnostics::on_report(handler) -> ReportSubscription`：每份
+  报告入库的同时（应用 `report` 或框架内部上报），处理器在 report 调用
+  线程同步收到该 `ErrorReport`——宿主不依赖 tracing subscriber 也能在
+  错误发生的第一时间感知。RAII 句柄 drop 即注销；处理器内部的嵌套上报
+  照常入库但不再分发（thread-local 通知递归抑制）；处理器 panic 被隔离
+  为 2^n 限流 emergency 输出，不影响报告与其他订阅者。新增私有 Component
+  `reporting/notify.rs`（`ReportNotifier`/`ReportSubscription`，SMC：注册/
+  注销/分发与发射、存储互不访问）。
+- `DiagnosticsSnapshot` 新增瞬态量级字段与 getter：
+  `total_transient_observations()`（累计观察次数，含被抑制的重复）与
+  `suppressed_transient_observations()`（被冷却窗口抑制的次数）——宿主
+  可随时回看观察通道活动；`TransientObservationModule` 新增对应原子计数。
+- demo 宿主接入即时订阅：主演示 `on_start` 注册 `on_report`，任何框架或
+  应用报告产生的同一时刻实时输出 code/severity/origin/operation/summary，
+  运行中错误无需事后翻快照即可见。
+- 文档：架构文档公开契约表补 `on_report` 行、SMC 边界表补 notify
+  Component、决策矩阵补即时性双通道说明；使用层运行保障文档补订阅示例
+  与处理器契约（同步线程、防递归、panic 隔离）。
+- 新增公开 API 测试：即时同步通知与分类/来源字段、RAII 注销后停止通知、
+  嵌套上报恰好分发一次（无递归）且全部入库、瞬态计数（累计/抑制/不进
+  报告存储）。
+- 验证：主 crate 全 feature `cargo check` 通过；89 项公开 API 测试全绿。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

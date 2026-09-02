@@ -8,6 +8,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,10 @@ const TRANSIENT_COOLDOWN: Duration = Duration::from_secs(30);
 
 pub(super) struct TransientObservationModule {
     observed: Mutex<HashMap<(&'static str, &'static str), TransientState>>,
+    // 累计观察次数（含被抑制的重复），供诊断快照回看瞬态量级。
+    total: AtomicU64,
+    // 累计被冷却窗口抑制的观察次数。
+    suppressed: AtomicU64,
 }
 
 struct TransientState {
@@ -35,10 +40,21 @@ impl TransientObservationModule {
     pub(super) fn new() -> Self {
         Self {
             observed: Mutex::new(HashMap::new()),
+            total: AtomicU64::new(0),
+            suppressed: AtomicU64::new(0),
         }
     }
 
+    /// 返回累计瞬态观察次数（含抑制）与其中被抑制的次数。
+    pub(super) fn counts(&self) -> (u64, u64) {
+        (
+            self.total.load(Ordering::Relaxed),
+            self.suppressed.load(Ordering::Relaxed),
+        )
+    }
+
     pub(super) fn observe(&self, target: &'static str, reason: &'static str) -> TransientObservation {
+        self.total.fetch_add(1, Ordering::Relaxed);
         let mut observed = self
             .observed
             .lock()
@@ -59,6 +75,7 @@ impl TransientObservationModule {
                 let state = slot.get_mut();
                 if now.duration_since(state.last_emitted) < TRANSIENT_COOLDOWN {
                     state.suppressed = state.suppressed.saturating_add(1);
+                    self.suppressed.fetch_add(1, Ordering::Relaxed);
                     return TransientObservation::Suppressed;
                 }
                 // 冷却到期：携带窗口内累计数发射并重置窗口。

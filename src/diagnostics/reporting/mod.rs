@@ -11,17 +11,22 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Mutex, MutexGuard};
 use std::time::SystemTime;
 
+use std::sync::Arc;
+
 use crate::core::{Error, ErrorSeverity};
 
 use super::config::{BacktracePolicy, DiagnosticsConfig};
 use super::report::{
-    DiagnosticsSnapshot, ErrorCause, ReportDraft, ReportId, ReportOrigin, ReportSite,
+    DiagnosticsSnapshot, ErrorCause, ErrorReport, ReportDraft, ReportId, ReportOrigin, ReportSite,
 };
 
 mod emit;
+mod notify;
 mod store;
 
+pub use notify::ReportSubscription;
 use emit::emit_report;
+use notify::ReportNotifier;
 use store::ReportStore;
 
 const MAX_REPORT_BYTES: usize = 32 * 1024;
@@ -30,10 +35,12 @@ const MAX_CAUSES: usize = 16;
 const MAX_METADATA_TEXT_BYTES: usize = 256;
 const RESERVED_FIXED_BYTES: usize = 2 * 1024;
 
-/// 为一个 `Diagnostics` System 实例持有报告留存与结构化诊断发射的私有 Module。
+/// 为一个 `Diagnostics` System 实例持有报告留存、结构化诊断发射与即时
+/// 通知的私有 Module。
 pub(super) struct ReportingModule {
     store: Mutex<ReportStore>,
     emergency_count: AtomicU64,
+    notifier: Arc<ReportNotifier>,
 }
 
 impl ReportingModule {
@@ -41,7 +48,15 @@ impl ReportingModule {
         Self {
             store: Mutex::new(ReportStore::new(config.report_capacity)),
             emergency_count: AtomicU64::new(0),
+            notifier: Arc::new(ReportNotifier::new()),
         }
+    }
+
+    pub(super) fn subscribe_report<F>(&self, handler: F) -> ReportSubscription
+    where
+        F: Fn(&ErrorReport) + Send + Sync + 'static,
+    {
+        self.notifier.subscribe(handler)
     }
 
     pub(super) fn snapshot(&self) -> DiagnosticsSnapshot {
@@ -65,6 +80,8 @@ impl ReportingModule {
             if emit_report(&report, &self.emergency_count) {
                 self.lock_store().mark_event_emitted(id);
             }
+            // 报告入库后立即同步通知订阅者：错误一发生宿主即可感知。
+            self.notifier.notify(&report, &self.emergency_count);
         }
         id
     }
