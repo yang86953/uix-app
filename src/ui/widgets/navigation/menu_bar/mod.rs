@@ -232,6 +232,15 @@ widget! {
                 self.close();
                 EventResult::Handled
             }
+            // Agent click_at 与真实指针都成对派发抬起；入口行与已开弹层内的抬起
+            // 属于菜单栏交互面，消费后保持整次点击语义完整（选择只在按下时发生）。
+            SystemEvent::PointerUp { pos, button, .. } if *button == MouseButton::Left => {
+                if self.hits_interactive_area(pos.x, pos.y) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Enter | KeyCode::Space => {
                     if self.is_open() {
@@ -706,6 +715,15 @@ impl MenuBar {
         ))
     }
 
+    // 已开弹层的可见总高度。
+    fn visible_menu_height(&self) -> f32 {
+        let mut height = 0.0_f32;
+        for item in self.open_items() {
+            height += self.row_height(item);
+        }
+        height
+    }
+
     fn open_items(&self) -> impl Iterator<Item = &MenuBarItem> {
         self.open_index
             .and_then(|index| self.menus.get(index))
@@ -719,6 +737,25 @@ impl MenuBar {
         } else {
             self.visual.layout.row_height
         }
+    }
+
+    // 命中入口行与已开弹层的完整交互面（含分隔线与禁用行）。
+    fn hits_interactive_area(&self, x: f32, y: f32) -> bool {
+        let layout = &self.visual.layout;
+        if y >= 0.0 && y <= layout.entry_height && self.entry_at(x).is_some() {
+            return true;
+        }
+        if !self.is_present() {
+            return false;
+        }
+        let Some(menu_index) = self.open_index else {
+            return false;
+        };
+        let entry = self.entry_rect(Rect::zero(), menu_index);
+        let inside_width = x >= entry.x && x < entry.x + layout.menu_width;
+        let inside_height = y > layout.entry_height
+            && y <= layout.entry_height + self.visible_menu_height();
+        inside_width && inside_height
     }
 
     // 命中弹层条目的坐标到（菜单索引, 条目索引）。
