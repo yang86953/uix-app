@@ -134,6 +134,18 @@ impl Diagnostics {
         tracing::callsite::rebuild_interest_cache();
     }
 
+    /// 以错误值形态观察一个瞬态失败：等价 [`Self::observe_transient`]，
+    /// 并把该错误标记为已经过诊断通道处置（不进入未处置落地观测）。
+    pub fn observe_transient_error(
+        &self,
+        target: &'static str,
+        reason: &'static str,
+        error: &crate::core::Error,
+    ) -> bool {
+        error.mark_observed();
+        self.observe_transient(target, reason, error.short_what())
+    }
+
     /// 观察一个瞬态失败：按错误处置决策矩阵不进入报告存储。
     ///
     /// 适用于自愈重试、fallback 保持武装、高频平台噪声等设计内瞬态。同一
@@ -336,6 +348,8 @@ impl Diagnostics {
     /// 仅框架内部使用的上报入口，携带一个有界、类型化的来源。
     #[track_caller]
     pub(crate) fn report_with_origin(&self, error: Error, origin: ReportOrigin) -> ReportId {
+        // 进入报告通道即完成该错误（及其原因链）的诊断处置。
+        error.mark_observed();
         let report_site = Location::caller();
         let id = self.inner.reporting.report(
             self.inner.runtime_id,
@@ -394,6 +408,8 @@ impl Default for Diagnostics {
 /// 失败保留 typed 结构化日志观察；本入口把该决策显式化为命名调用，取代
 /// 裸 `tracing::error!`，使错误处置类别可从调用点直接判读。
 pub fn observe_boundary_error(layer: &'static str, error: &crate::core::Error) {
+    // 边界观察同样完成诊断处置：错误已被显式观察而非被吞。
+    error.mark_observed();
     tracing::error!(
         target: "uix::diagnostics",
         boundary_layer = layer,

@@ -619,11 +619,9 @@ where
                     if let Some(tokens) = system_theme_tokens {
                         let is_dark = platform.display().is_dark_mode().unwrap_or_else(|error| {
                             // 平台主题查询失败回退浅色：经冷却去重观察的自愈降级。
-                            debug_mode.observe_transient(
+                            debug_mode.observe_transient_error(
                                 "theme",
-                                "theme query failed, defaulting to light",
-                                error.short_what(),
-                            );
+                                "theme query failed, defaulting to light", &error);
                             false
                         });
                         tokens.set_mode(is_dark);

@@ -10,6 +10,8 @@ use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 use crate::ui::widgets::{
     Button, Card, Container, Grid, Input, Label, MenuBar, ScrollView, Select, Typography,
 };
+// VirtualScroll 是布局能力组件而非 widgets 命名空间成员，单独引入。
+use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 // Modal 只在 feedback capability 启用时进入统一样式桥接。
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::Modal;
@@ -91,6 +93,15 @@ impl ViewAdapter {
                     // 传递显式扩张覆盖。
                     flex_grow_override,
                     // 传递显式收缩覆盖。
+                    flex_shrink_override,
+                );
+            }
+        } else if tid == std::any::TypeId::of::<VirtualScroll>() {
+            // VirtualScroll 与 ScrollView 同语义：尺寸与 Flex 覆盖必须进入组件私有视口配置。
+            if let Some(virtual_scroll) = widget.as_any_mut().downcast_mut::<VirtualScroll>() {
+                virtual_scroll.apply_view_layout_style(
+                    style,
+                    flex_grow_override,
                     flex_shrink_override,
                 );
             }

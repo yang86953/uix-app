@@ -104,6 +104,8 @@ impl PendingFailureSource {
             self.inner.dropped.fetch_add(1, Ordering::Relaxed);
             return PendingFailureEnqueue::Overflowed;
         }
+        // 入队即完成诊断处置：错误已进入投递通道，由 owner 边界消费。
+        error.mark_observed();
         pending.push_back(PendingFailure {
             source_id: self.inner.id,
             error,

@@ -15,11 +15,9 @@ impl WindowDriver {
         };
         if let Err(error) = platform_window.cancel_native_frame(token) {
             // 取消失败是瞬态平台噪声：经 observe_transient 冷却去重观察。
-            self.diagnostics.observe_transient(
+            self.diagnostics.observe_transient_error(
                 "window_driver",
-                "native frame cancellation failed",
-                error.short_what(),
-            );
+                "native frame cancellation failed", &error);
         }
     }
 

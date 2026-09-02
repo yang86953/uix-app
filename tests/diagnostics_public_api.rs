@@ -609,3 +609,54 @@ fn snapshot_exposes_transient_observation_counts() {
         "transient observations never enter the report store"
     );
 }
+
+/// 未处置错误落地观测：未经任何诊断通道的 Error 在丢弃时进入全局摘要；
+/// 报告、边界观察与瞬态观察完成处置后不再计数；原因链随父错误承担。
+/// 全局状态要求相关断言在专用锁内串行执行。
+#[test]
+fn unhandled_error_drop_accounting_respects_disposition() {
+    static UNHANDLED_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = UNHANDLED_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
+
+    // 基线：直接丢弃一个未处置错误 → 计数 +1。
+    let (before, _) = uix::core::unhandled_error_summary();
+    drop(Error::new(Errc::Unknown, "dropped without disposition probe"));
+    let (after, _) = uix::core::unhandled_error_summary();
+    assert!(after >= before + 1, "undisposed drop must be accounted");
+
+    // 报告完成处置：错误及其原因链 drop 都不再计数。
+    let (before, _) = uix::core::unhandled_error_summary();
+    diagnostics.report(
+        Error::new(Errc::IoError, "reported error keeps its chain disposed").with_source(
+            Error::new(Errc::IoError, "source error rides the parent disposition"),
+        ),
+    );
+    let (after, _) = uix::core::unhandled_error_summary();
+    assert_eq!(after, before, "report must dispose the full cause chain");
+
+    // 边界观察与瞬态观察同样完成处置。
+    let (before, _) = uix::core::unhandled_error_summary();
+    uix::diagnostics::observe_boundary_error(
+        "test/boundary",
+        &Error::new(Errc::PlatformError, "boundary observed probe"),
+    );
+    diagnostics.observe_transient_error(
+        "test/transient",
+        "transient observed probe",
+        &Error::new(Errc::Timeout, "transient observed probe"),
+    );
+    let (after, _) = uix::core::unhandled_error_summary();
+    assert_eq!(after, before, "observation channels must dispose errors");
+
+    // 副本是独立的未处置实例：丢弃产生自己的观测记录。
+    let original = Error::new(Errc::InvalidState, "clone keeps fresh disposition");
+    let (before, _) = uix::core::unhandled_error_summary();
+    drop(original.clone());
+    let (after, _) = uix::core::unhandled_error_summary();
+    assert!(after >= before + 1, "clones carry their own disposition duty");
+    diagnostics.report(original);
+}
