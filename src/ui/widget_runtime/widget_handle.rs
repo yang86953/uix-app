@@ -241,6 +241,8 @@ impl WidgetHandle {
             event.current_target = self.id;
             return match tree.try_borrow_mut() {
                 Ok(mut tree) => tree.dispatch_semantic(event),
+                // 树正处于可变借用（布局/动画事务）时丢弃本次语义分发并回退
+                // NotHandled：重入传播会破坏树事务，降级是既定安全语义。
                 Err(_) => EventResult::NotHandled,
             };
         }

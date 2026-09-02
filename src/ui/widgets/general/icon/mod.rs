@@ -96,6 +96,7 @@ fn publish_lucide_font(result: crate::core::Result<FontHandle>) {
     match result {
         Ok(fh) => {
             tracing::info!("Lucide font loaded, handle={:?}", fh);
+            // OnceCell 竞争时先注册者胜出（同一字体字节），失败方静默即可。
             let _ = LUCIDE_FONT.set(fh);
         }
         Err(e) => {

@@ -1,6 +1,7 @@
 use crate::app::queues::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::window::window_session::WindowTextInputState;
 use crate::core::WindowId;
+use crate::diagnostics::{Diagnostics, ReportOrigin};
 use crate::platform::platform::PlatformSystem;
 use crate::ui::WidgetTree;
 
@@ -15,6 +16,7 @@ pub(crate) fn sync_window_text_input(
     window_id: WindowId,
     native_window: *mut std::ffi::c_void,
     platform: &mut dyn PlatformSystem,
+    diagnostics: &Diagnostics,
 ) {
     let requested = state.window_focused.then(|| {
         let target = tree.managers().focus.focused_widget()?;
@@ -30,8 +32,8 @@ pub(crate) fn sync_window_text_input(
         if let Some(previous) = state.ime_session.take() {
             active_work.unregister(ActiveWorkKind::ImeSession(previous));
             if state.coordinator.active_window() == Some(window_id)
-                && select_target(platform, window_id, native_window)
-                && report_stop_error(platform.text_input().stop())
+                && select_target(platform, window_id, native_window, diagnostics)
+                && report_stop_error(platform.text_input().stop(), diagnostics)
             {
                 state.coordinator.deactivate(window_id);
             }
@@ -41,8 +43,8 @@ pub(crate) fn sync_window_text_input(
 
     let Some((target, cursor_rect)) = requested else {
         if state.coordinator.active_window() == Some(window_id)
-            && select_target(platform, window_id, native_window)
-            && report_stop_error(platform.text_input().stop())
+            && select_target(platform, window_id, native_window, diagnostics)
+            && report_stop_error(platform.text_input().stop(), diagnostics)
         {
             state.coordinator.deactivate(window_id);
         }
@@ -50,11 +52,14 @@ pub(crate) fn sync_window_text_input(
     };
 
     if state.coordinator.active_window() != Some(window_id) {
-        if !select_target(platform, window_id, native_window) {
+        if !select_target(platform, window_id, native_window, diagnostics) {
             return;
         }
         if let Err(error) = platform.text_input().start() {
             tracing::error!("IME session start failed: {}", error.short_what());
+            // IME 激活失败直接放弃本次输入法会话，进入框架报告供宿主观察。
+            diagnostics
+                .report_with_origin(error, ReportOrigin::framework("ime", "start"));
             return;
         }
         state.coordinator.activate(window_id);
@@ -66,6 +71,8 @@ pub(crate) fn sync_window_text_input(
         return;
     }
     if let Err(error) = platform.text_input().set_cursor_rect(cursor_rect) {
+        // 光标矩形随每次输入高频更新，失败保留日志观察、不进报告存储，
+        // 避免 IME 会话期间的报告风暴。
         tracing::warn!("IME cursor rect update failed: {}", error.short_what());
     }
     state.cursor_rect = Some(cursor_rect);
@@ -75,20 +82,23 @@ fn select_target(
     platform: &mut dyn PlatformSystem,
     window_id: WindowId,
     native_window: *mut std::ffi::c_void,
+    diagnostics: &Diagnostics,
 ) -> bool {
     if let Err(error) = platform
         .text_input()
         .set_target_window(window_id, native_window)
     {
         tracing::error!("IME target selection failed: {}", error.short_what());
+        diagnostics.report_with_origin(error, ReportOrigin::framework("ime", "select_target"));
         return false;
     }
     true
 }
 
-fn report_stop_error(result: crate::core::Result<()>) -> bool {
+fn report_stop_error(result: crate::core::Result<()>, diagnostics: &Diagnostics) -> bool {
     if let Err(error) = result {
         tracing::error!("IME session stop failed: {}", error.short_what());
+        diagnostics.report_with_origin(error, ReportOrigin::framework("ime", "stop"));
         return false;
     }
     true

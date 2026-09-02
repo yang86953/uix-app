@@ -36,6 +36,12 @@ pub(super) fn create_secondary_window(
     ) {
         Ok(window) => window,
         Err(e) => {
+            // 副窗创建失败放弃本窗口：主错误携带窗口资源身份进入框架报告。
+            runtime.diagnostics().report_with_origin(
+                e.clone(),
+                crate::diagnostics::ReportOrigin::framework("window", "create")
+                    .with_resource("window", window_id.raw().to_string()),
+            );
             runtime.close_session(window_id);
             tracing::error!("open_window create_window failed: {}", e.short_what());
             return None;
@@ -45,6 +51,19 @@ pub(super) fn create_secondary_window(
     let (width, height) = platform_window.client_logical_extent();
     if platform_window.window_id() != window_id {
         let actual = platform_window.window_id();
+        // 保留窗口与会话身份不一致的终态事实，资源身份记录预留槽位。
+        runtime.diagnostics().report_with_origin(
+            Error::new(
+                crate::core::Errc::InvalidState,
+                format!(
+                    "open_window window_id mismatch: reserved={}, native={}",
+                    window_id.raw(),
+                    actual.raw()
+                ),
+            ),
+            crate::diagnostics::ReportOrigin::framework("window", "verify_identity")
+                .with_resource("window", window_id.raw().to_string()),
+        );
         report_window_operation_error(
             &runtime.diagnostics(),
             "window_id mismatch cleanup close failed",
@@ -77,6 +96,7 @@ pub(super) fn create_secondary_window(
 
     // 次窗与主窗使用同一自动居中错误分类。
     report_center_on_screen_result(
+        &runtime.diagnostics(),
         "secondary center_on_screen failed",
         platform_window.center_on_screen(),
     );

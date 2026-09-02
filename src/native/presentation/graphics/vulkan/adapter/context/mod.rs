@@ -267,6 +267,8 @@ pub struct VulkanContext {
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         if let Err(error) = self.try_shutdown() {
+            // 泄漏事实经 tracing::error 观察：adapter 层不持有 Diagnostics 句柄
+            // （诊断属于 app 组装根），且 Drop 期报告存储随进程关闭同步消亡。
             tracing::error!(
                 "VulkanContext: undrained Drop retained Vulkan parents: {}",
                 error.short_what()

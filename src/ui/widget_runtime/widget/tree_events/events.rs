@@ -530,7 +530,8 @@ impl WidgetTree {
                             SystemEvent::ImeCompositionEnd { text } => {
                                 SemanticEvent::ime_composition_end(t, text.clone())
                             }
-                            _ => unreachable!(),
+                            // 外层按 Ime 组事件分派，其余变体不可能进入本臂。
+                            _ => unreachable!("ime arm only receives composition events"),
                         };
                         // IME 组合语义未被消费：记录日志，行为不变。
                         if self.dispatch_semantic(semantic) == EventResult::NotHandled {
@@ -563,7 +564,8 @@ impl WidgetTree {
                             SystemEvent::Copy => SemanticEvent::copy(t),
                             SystemEvent::Cut => SemanticEvent::cut(t),
                             SystemEvent::Paste { text } => SemanticEvent::paste(t, text.clone()),
-                            _ => unreachable!(),
+                            // 外层按剪贴板组事件分派，其余变体不可能进入本臂。
+                            _ => unreachable!("clipboard arm only receives copy/cut/paste"),
                         };
                         // 剪贴板语义未被消费：记录日志，行为不变。
                         if self.dispatch_semantic(semantic) == EventResult::NotHandled {

@@ -182,8 +182,18 @@ impl FontService {
 
     /// 从文件路径加载字体，注册时会记录路径信息。
     pub fn load_font_from_path(&mut self, path: &str, _size: f32) -> Option<FontHandle> {
-        let data = std::fs::read(path).ok()?;
-        let handle = self.text_backend.load_font_owned(data).ok()?;
+        // 字体路径探测是预期回退链；失败细节保留 debug 级供诊断，公开
+        // Option 契约不变。
+        let data = std::fs::read(path)
+            .inspect_err(|error| tracing::debug!("font read {path} failed: {error}"))
+            .ok()?;
+        let handle = self
+            .text_backend
+            .load_font_owned(data)
+            .inspect_err(|error| {
+                tracing::debug!("font backend load {path} failed: {}", error.short_what())
+            })
+            .ok()?;
         self.register_font(
             handle,
             Self::infer_family_from_path(path),
@@ -481,10 +491,21 @@ impl FontService {
 
     /// 从文件路径内存映射加载字体（惰性分页：未触达字形不驻留 working set）。
     fn load_mapped_font(&mut self, path: impl AsRef<std::path::Path>) -> Option<FontHandle> {
-        let file = std::fs::File::open(path.as_ref()).ok()?;
+        // 映射探测同样是预期回退链；失败细节保留 debug 级供诊断。
+        let file = std::fs::File::open(path.as_ref())
+            .inspect_err(|error| tracing::debug!("font open failed: {error}"))
+            .ok()?;
         // SAFETY: 映射只读；文件由本函数持有至映射建立；映射生命周期由后端槽位持有。
-        let mmap = unsafe { memmap2::Mmap::map(&file).ok()? };
-        let handle = self.text_backend.load_font_mapped(mmap).ok()?;
+        let mmap = unsafe { memmap2::Mmap::map(&file) }
+            .inspect_err(|error| tracing::debug!("font mmap failed: {error}"))
+            .ok()?;
+        let handle = self
+            .text_backend
+            .load_font_mapped(mmap)
+            .inspect_err(|error| {
+                tracing::debug!("font mmap backend load failed: {}", error.short_what())
+            })
+            .ok()?;
         self.register_font(handle, self.primary_family.clone(), None);
         Some(handle)
     }
