@@ -119,7 +119,7 @@ impl RenderHandlerTable {
         // 读取该虚拟滚动节点当前声明的行渲染器。
         let renderer = self.virtual_scroll_item.get_mut(&capture_context.owner())?;
         // 先计算整批稳定键，避免任何行捕获后才发现身份冲突。
-        let keyed_indices = (start..end)
+        let mut keyed_indices = (start..end)
             // 每个绝对索引只调用一次应用键工厂。
             .map(|index| {
                 // 类型化身份必须先规范化，再同时交给状态与节点所有权。
@@ -127,19 +127,21 @@ impl RenderHandlerTable {
             })
             // 保存本轮确定的索引与业务身份供后续捕获消费。
             .collect::<Vec<_>>();
-        // 在执行任意行工厂前拒绝同一物化窗口内的重复稳定键。
+        // 在执行任意行工厂前校验同一物化窗口内的稳定键唯一性。
         let mut unique_keys = std::collections::HashMap::with_capacity(keyed_indices.len());
-        // 逐项验证键工厂满足当前窗口的唯一性前置条件。
-        for (index, stable_key) in &keyed_indices {
-            // 保存首次出现的绝对索引，不把可能敏感的业务标识写入 panic。
+        // 重复键会同时破坏 keyed reconcile 与组件私有状态所有权；丢弃后续
+        // 重复声明并保留可观测错误（只报冲突位置，不泄露业务标识），
+        // 该行本窗口跳过渲染，不再以 panic 终止整个应用。
+        keyed_indices.retain(|(index, stable_key)| {
             if let Some(first_index) = unique_keys.insert(stable_key.clone(), *index) {
-                // 重复键会同时破坏 keyed reconcile 与组件私有状态所有权。
-                panic!(
-                    // 只报告冲突位置，避免泄露应用业务标识。
-                    "VirtualScroll renderer 的索引 {first_index} 与 {index} 返回了重复稳定键"
+                tracing::error!(
+                    "VirtualScroll renderer 的索引 {first_index} 与 {index} 返回了重复稳定键；\
+                     后者将在本窗口跳过渲染"
                 );
+                return false;
             }
-        }
+            true
+        });
         // 完成整批身份校验后才构建当前有界物化窗口中的 View。
         Some(
             keyed_indices

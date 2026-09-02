@@ -85,6 +85,30 @@
   `Closed` 状态丢弃核实为设计内语义（溢出经 `InsufficientResources`
   信号浮出、关闭为 teardown 拒绝），未改动。
 
+### 协调与渲染热路径不变量 panic 全部转 typed 降级（失败隔离收尾）
+
+- 背景：上一节整改后仍遗留五处「框架内部不变量」panic/expect——每帧协调
+  热路径三处、每帧渲染热路径一处、应用 VirtualScroll 键工厂一处。按
+  「失败隔离并继续」原则，这些路径在前提被打破时应降级并保留可观测
+  错误，而不是以 panic 终止应用（闪退丢用户现场）。
+- 渲染热路径（`draw/scene/layer_tree/render.rs`）：裁剪片段在数量确定后
+  消失时不再 `expect` panic，改为返回 typed
+  `InvalidState` 错误——该错误沿既有 `render_node` → `RenderOutcome::Failed`
+  链进入 RecoveryDriver 有界恢复与终态框架报告，且绝不静默退化为未裁剪
+  绘制。
+- 协调热路径（`ui/coordination/adapter/mod.rs`）三处：Button 快照读取的
+  downcast 失配（理论不可达）回退通用快照协调路径；Button patch 边界的
+  downcast 失配保守视为配置已变化强制失效、实际同步交由既有替换路径；
+  直接兄弟复用快路中后续兄弟被前序专项协调移除时，放弃快路并把未消费
+  声明连同剩余迭代交回完整 keyed/unkeyed 协调（已协调前缀 key 幂等可
+  再次匹配），三处均保留一次性 `tracing::error`。
+- VirtualScroll 重复稳定键（`ui/coordination/render_handler.rs`）：应用
+  键工厂对同一物化窗口返回重复键时，丢弃后续重复声明（该行本窗口跳过
+  渲染）并输出只含冲突索引、不含业务标识的错误日志；不再以 panic 终止
+  应用。首个键保持原有 keyed reconcile 与组件私有状态所有权语义。
+- 验证：主 crate 与 demo 全 feature `cargo check` 通过；
+  `cargo test --features agent-control --test "*_public_api"` 86 项全绿。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）
