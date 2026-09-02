@@ -110,7 +110,7 @@
         // 说明反馈标签覆盖。
         <Text>反馈：Message / Notification / Alert / Modal / Drawer / Tooltip / Popover / Popconfirm / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
-        <Text>导航与框架：Menu / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
+        <Text>导航与框架：Menu / MenuBar / Dropdown / Navigation / Steps / Pagination / Breadcrumb / Anchor / Tabs / ThemeToggle / WindowControl / WindowDragRegion / QRCode / Watermark</Text>
         // 说明 Rust 图表文档列出的十二类标签均已覆盖。
         <Text>图表：十二类 Rust 图表标签均已登记类型化静态数据与基础视觉配置。</Text>
         // 展示语言能力小节。

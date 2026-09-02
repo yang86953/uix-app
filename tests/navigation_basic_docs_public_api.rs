@@ -1,6 +1,42 @@
 // 声明本文件只编译导航基础文档，不启动窗口或真实滚动宿主。
 #![allow(dead_code)]
 
+// 隔离 menu-bar 围栏中的横向菜单栏。
+mod menu_bar {
+    // 引入文档承诺的导航组件公开 prelude。
+    use uix::prelude::*;
+
+    // 暴露当前模块对应的文档编译标识。
+    pub(super) const COMPILE_ID: &str = "menu-bar";
+
+    // 编译带稳定 key 的横向菜单栏构建器。
+    fn compile_example() {
+        // 构造两个顶级菜单及带分隔线的条目集合。
+        let _menu_bar = MenuBar::new()
+            // 提交由菜单栏组件拥有的 keyed 顶级菜单集。
+            .keyed_menus(vec![
+                // 声明文件菜单及稳定 key。
+                MenuBarMenu::from_text("文件", "file")
+                    // 追加图标叶子条目。
+                    .item(MenuBarItem::from_text("新建任务", "file-new-task").icon("plus"))
+                    // 追加分隔线条目。
+                    .item(MenuBarItem::divider())
+                    // 追加禁用叶子条目。
+                    .item(MenuBarItem::from_text("导入", "file-import").disabled(true)),
+                // 声明视图菜单及稳定 key。
+                MenuBarMenu::from_text("视图", "view")
+                    // 追加普通叶子条目。
+                    .item(MenuBarItem::from_text("导航页", "view-nav")),
+            ]);
+        // 读取 keyed 门禁诊断的公开入口保持可用。
+        let _diagnostics = _menu_bar.diagnostics();
+        // 读取打开入口索引的公开查询保持可用。
+        let _open = _menu_bar.open_index();
+        // 构建 View 保持公开契约可用。
+        let _view: ViewNode = MenuBar::default().build();
+    }
+}
+
 // 隔离 menu-navigation 围栏中的基础菜单。
 mod menu_navigation {
     // 引入文档承诺的导航组件公开 prelude。
@@ -348,6 +384,8 @@ mod nav_anchor_advanced {
 fn navigation_basic_rust_fences_compile_as_external_consumers() {
     // 收集十一个已经由编译器类型检查的公开示例标识。
     let compile_ids = [
+        // 登记菜单栏围栏。
+        menu_bar::COMPILE_ID,
         // 登记菜单基础围栏。
         menu_navigation::COMPILE_ID,
         // 登记菜单高级围栏。
@@ -377,6 +415,8 @@ fn navigation_basic_rust_fences_compile_as_external_consumers() {
         compile_ids,
         // 使用导航文档当前声明的稳定标识作为期望。
         [
+            // 菜单栏围栏标识。
+            "menu-bar",
             // 菜单基础围栏标识。
             "menu-navigation",
             // 菜单高级围栏标识。

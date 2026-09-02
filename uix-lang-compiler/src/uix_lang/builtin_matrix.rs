@@ -40,6 +40,6 @@ mod tests {
         let app = UI_PROJECTION_SCHEMA.component("App").expect("App 应已登记");
         assert_eq!(app.status, RegistrationStatus::Available);
         let names = supported_builtin_hint().split('、').count();
-        assert_eq!(names, 110);
+        assert_eq!(names, 111);
     }
 }

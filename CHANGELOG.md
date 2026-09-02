@@ -2,6 +2,40 @@
 
 这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；正式发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
+## 0.0.5（2026-09-02）
+
+### MenuBar 横向菜单栏组件（新增导航 capability 公开面）
+
+- 背景：导航组件族只有垂直 `Menu` 与单触发器 `Dropdown`，桌面应用顶部
+  的「文件 / 视图」式横向菜单栏没有公开承载，消费方只能用多个 Dropdown
+  自行拼装且无法获得互斥切换与统一键盘语义。
+- 新增 `MenuBar`（feature `navigation`）：横向顶级入口条 + 每入口下拉
+  弹层全部由组件内核自绘。数据模型 `MenuBarMenu { key, label, items }`
+  与 `MenuBarItem { key, label, icon, disabled, divider }` 走 keyed 门禁
+  （入口 key 全栏唯一、条目 key 菜单内唯一，被拒身份经 `diagnostics()`
+  暴露）。
+- 交互契约：点击入口开/关，已开状态下点击或悬停其他入口直接切换；
+  `Enter`/`Space` 打开或选择，`Up`/`Down` 循环高亮，`Left`/`Right` 切换
+  相邻入口，`Escape` 与外部点击关闭；选择发布条目稳定 key 的
+  `SemanticKind::Change`。UIX 声明层 `<MenuBar menus={...} @change=...>`
+  的 `$event.value` 物化为拥有型 `String`（与 Dropdown 的借用载荷不同，
+  可直接写入 String 状态）。弹层登记 `OverlayKind::Popover`，
+  `dismiss_on_outside` 关闭与 `SnapshotFields::MenuBar` /
+  无障碍快照同步提供。
+- 样式桥：入口前景 `color` 与悬停/打开背景
+  （`backgroundColor:hover` / `backgroundColor:active`）接入统一样式，
+  支持深色标题栏适配；弹层视觉保持组件私有。View 显式 `flexGrow` /
+  `flexShrink` 覆盖同步登记。
+- v1 边界：嵌套子菜单与 UIX 声明层分隔线构造不在首版
+  （`MenuBarItem::divider()` 仅 Rust API）。
+- 验证：编译器 561 项单测（含 MenuBar codegen 生成/拒绝路径与 schema
+  计数 111/33）全绿；公开 API 测试 45 文件全绿；demo 导航页新增面板经
+  Agent 通道真窗实测——语义树 `expanded` 状态、弹层像素呈现（浮起白板
+  与对照区区分）与选择后 `@change` 状态回写闭环。已知观察：Agent
+  `click_at` 对自绘弹层坐标偶发 `not_interactable` 误报但事件已送达
+  （状态断言证明），交互路径不受影响，待后续 Agent 协议可交互性判定
+  修订时一并核对。
+
 ## 0.0.4（2026-09-02）
 
 ### Agent 协议官方 Rust 客户端（新增公开面）

@@ -17,7 +17,7 @@ use crate::ui::widgets::{Container, Grid, ScrollView, Space};
 use crate::ui::widgets::{Modal, Popconfirm, Popover};
 // 导航 capability 启用时才引入兄弟项联动与 Tabs 焦点迁移所需类型。
 #[cfg(feature = "navigation")]
-use crate::ui::widgets::{Dropdown, NavItem, Tabs};
+use crate::ui::widgets::{Dropdown, MenuBar, NavItem, Tabs};
 
 /// 最近 viewport 祖先允许内容溢出的轴。
 ///
@@ -182,6 +182,16 @@ pub(crate) fn dismiss_overlay_owner_from_outside(tree: &mut WidgetTree, owner: W
         {
             // 用户外部点击关闭已打开的 Dropdown 菜单。
             dropdown.close();
+        }
+        // 同一取消端口同时服务 MenuBar：外部点击关闭已开菜单。
+        if let Some(menu_bar) = tree
+            // 获取浮层 owner 节点的可变引用。
+            .get_mut(owner)
+            // 下转到具体导航组件。
+            .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<MenuBar>())
+        {
+            // 用户外部点击关闭菜单栏的已开菜单。
+            menu_bar.close();
         }
     }
     // 反馈与导航能力均关闭时保留通用调用点并退化为空操作。

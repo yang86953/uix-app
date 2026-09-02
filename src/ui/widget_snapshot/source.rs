@@ -190,6 +190,11 @@ pub fn snapshot_fields_from_any(widget: &dyn Any) -> SnapshotFields {
     if let Some(dropdown) = widget.downcast_ref::<Dropdown>() {
         return dropdown.snapshot_fields();
     }
+    // 导航 capability 启用时才引用菜单栏组件类型。
+    #[cfg(feature = "navigation")]
+    if let Some(menu_bar) = widget.downcast_ref::<MenuBar>() {
+        return menu_bar.snapshot_fields();
+    }
     // 导航 capability 启用时才引用标签页组件类型。
     #[cfg(feature = "navigation")]
     if let Some(tabs) = widget.downcast_ref::<Tabs>() {

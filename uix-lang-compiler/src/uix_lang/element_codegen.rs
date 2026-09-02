@@ -17,7 +17,7 @@ use super::{
     generate_grid, generate_hierarchy_gauge_chart, generate_input, generate_input_group,
     generate_input_number, generate_kernel_host, generate_kernel_view, generate_list,
     generate_matrix_delta_chart, generate_mentions, generate_menu, generate_message_declaration,
-    generate_modal, generate_navigation, generate_notification_declaration, generate_orphan_col,
+    generate_menu_bar, generate_modal, generate_navigation, generate_notification_declaration, generate_orphan_col,
     generate_orphan_form_checkbox_item, generate_orphan_form_input_item,
     generate_orphan_form_radio_item, generate_orphan_form_select_item,
     generate_orphan_form_slider_item, generate_orphan_form_switch_item, generate_pagination,
@@ -174,6 +174,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Menu" => generate_menu(element),
         // 下拉菜单映射到 keyed 数据、唯一 trigger 子树与 Change 稳定 key。
         "Dropdown" => generate_dropdown(element),
+        // 菜单栏映射到 keyed 顶级菜单集与 Change 稳定 key。
+        "MenuBar" => generate_menu_bar(element),
         // 侧栏导航映射到只拥有外壳状态并复用唯一受控 Menu 的组合 View。
         "Navigation" => generate_navigation(element),
         // 步骤条映射到类型化 Step 集合与 State<usize> 双向 current 契约。

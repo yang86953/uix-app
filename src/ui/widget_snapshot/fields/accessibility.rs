@@ -16,8 +16,9 @@ use super::super::accessibility::{popconfirm_accessibility, progress_accessibili
 #[cfg(feature = "navigation")]
 // 这些函数只处理同步门控的八种导航快照变体。
 use super::super::accessibility::{
-    anchor_accessibility, breadcrumb_accessibility, dropdown_accessibility, menu_accessibility,
-    pagination_accessibility, steps_accessibility, tabs_accessibility,
+    anchor_accessibility, breadcrumb_accessibility, dropdown_accessibility,
+    menu_accessibility, menu_bar_accessibility, pagination_accessibility, steps_accessibility,
+    tabs_accessibility,
 };
 // 图表 capability 启用时才引入专属无障碍摘要辅助函数。
 #[cfg(feature = "charts")]
@@ -497,6 +498,11 @@ impl SnapshotFields {
                 selected_index,
                 ..
             } => dropdown_accessibility(label, items, *open, *selected_index),
+            // 导航 capability 启用时才匹配同步存在的菜单栏快照变体。
+            #[cfg(feature = "navigation")]
+            Self::MenuBar {
+                menus, open_index, ..
+            } => menu_bar_accessibility(menus, *open_index),
             // 导航 capability 启用时才匹配同步存在的标签页快照变体。
             #[cfg(feature = "navigation")]
             Self::Tabs {
