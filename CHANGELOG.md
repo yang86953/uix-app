@@ -149,6 +149,44 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；86 项公开 API
   测试全绿。
 
+### 错误处置判断机制（类型层强制：决策矩阵 + 显式处置入口）
+
+- 背景：三轮覆盖整改中「某错误该进报告、保留日志还是 panic」始终依赖
+  人工逐点裁定。本轮把该判断机制化：处置类别编码为类型化入口，决策
+  规则固化为架构文档的权威矩阵，新错误处理点不显式选择处置方式就无法
+  表达瞬态观察。
+- 新增公开 `Diagnostics::observe_transient(target, reason, detail) -> bool`：
+  瞬态失败（自愈重试、fallback 保持武装、高频平台噪声）的显式观察入口。
+  内置新私有 Module `TransientObservationModule`（`src/diagnostics/transient.rs`）
+  按 `(target, reason)` 冷却去重——首条立即发射结构化事件（target
+  `uix::diagnostics`，携带 `transient_target`/`reason`/`suppressed_in_window`/
+  `detail`），30 秒窗口内重复观察抑制并计数，窗口结束后的下一条携带累计
+  数。键为静态字符串对、编译期有界，不违反错误风暴内存上界；不进入报告
+  存储。返回值公开去重行为供测试锁定。
+- 新增 crate 内 `diagnostics::observe_boundary_error(layer, error)`：无诊断
+  句柄层（UI 树、adapter teardown 等 SMC 边界层）的显式边界观察入口，
+  取代裸 `tracing::error!`，失败事实携带层标识结构化记录。
+- 新增公开 `uix_contract_violation!` 宏：契约破坏 panic 的统一前缀入口
+  （`[uix-contract]`），便于日志与崩溃报告检索；既有带文档声明的契约
+  panic 保持不动。
+- 架构文档新增「错误处置决策矩阵」：按终态性、回调边界、恢复所有者、
+  瞬态性、层边界的顺序判定六个处置类别（终态报告/回调投递/恢复/瞬态
+  观察/边界观察/契约 panic）及对应类型化入口；明确新错误处理点不得以
+  裸 `tracing::error!`/`warn!` 表达任何处置类别。组件清单、SMC 落地边界
+  与公开契约表同步；使用层运行保障文档补瞬态观察语义。
+- 存量迁移：`WindowDriver` 现持有诊断句柄（构造时注入），帧通知
+  cancel/request/presented、pre-present show、native frame cancellation、
+  resize 收敛与图形帧瞬态 episode 共 8 处改经 `observe_transient`（获得
+  去重）；指针光标更新失败（原逐事件 warn）与 IME 光标矩形更新失败经
+  `observe_transient`；`AppHandle::request_activate` 执行期拒绝经
+  `observe_transient`；widget_runtime 剪贴板 ×2、Vulkan/D3D12 adapter
+  Drop retain ×2 与 Windows DPI teardown 共 5 处改经
+  `observe_boundary_error`。
+- 新增公开 API 测试锁定去重语义：同键首条发射、窗口内抑制、不同
+  target/reason 键独立、瞬态观察不产生留存报告。
+- 验证：主 crate 与 demo 全 feature `cargo check` 通过；87 项公开 API
+  测试全绿。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）

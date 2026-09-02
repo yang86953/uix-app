@@ -14,11 +14,11 @@ impl WindowDriver {
             return;
         };
         if let Err(error) = platform_window.cancel_native_frame(token) {
-            // 取消失败是瞬态平台噪声，compositor 侧 token 自然过期；保留
-            // 日志观察，不进报告存储。
-            tracing::warn!(
-                "[WindowDriver] native frame cancellation failed: {}",
-                error.short_what()
+            // 取消失败是瞬态平台噪声：经 observe_transient 冷却去重观察。
+            self.diagnostics.observe_transient(
+                "window_driver",
+                "native frame cancellation failed",
+                error.short_what(),
             );
         }
     }

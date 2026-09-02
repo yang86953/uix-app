@@ -1,7 +1,12 @@
 use super::*;
 
 impl WindowDriver {
-    pub(crate) fn new(width: i32, height: i32, deferred_show: bool) -> Self {
+    pub(crate) fn new(
+        width: i32,
+        height: i32,
+        deferred_show: bool,
+        diagnostics: Diagnostics,
+    ) -> Self {
         Self {
             frame_renderer: ScenePipeline::new(),
             rendered_first: false,
@@ -22,6 +27,7 @@ impl WindowDriver {
             // 诊断统计从零开始，计时起点由 Default 取当前时刻。
             frame_diag: FrameDiagnostics::default(),
             terminal_failure_reported: false,
+            diagnostics,
         }
     }
 
@@ -73,6 +79,7 @@ impl WindowDriver {
                     self.cancel_outstanding_native_frame(platform_window);
                     if data.width > 0 && data.height > 0 {
                         let resized = report_graphics_resize_error(
+                            diagnostics,
                             "window graphics resize failed",
                             engine.resize(data.width, data.height),
                         );

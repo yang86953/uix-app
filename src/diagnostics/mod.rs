@@ -46,6 +46,7 @@ mod recovery;
 mod report;
 mod reporting;
 mod repro;
+mod transient;
 
 use std::panic::Location;
 use std::sync::Arc;
@@ -79,6 +80,7 @@ struct DiagnosticsInner {
     recovery: Arc<recovery::RecoveryModule>,
     debugging: debug::DebugModule,
     repro: repro::ReproModule,
+    transient: transient::TransientObservationModule,
 }
 
 /// 一个运行时的公开 Diagnostics System 句柄。
@@ -104,6 +106,7 @@ impl Diagnostics {
                 recovery: Arc::new(recovery::RecoveryModule::new()),
                 debugging: debug::DebugModule::new(debug_mode),
                 repro: repro::ReproModule::new(),
+                transient: transient::TransientObservationModule::new(),
             }),
         }
     }
@@ -128,6 +131,37 @@ impl Diagnostics {
     /// interest,恢复诊断事件可见性。
     pub fn rebuild_tracing_interest_cache(&self) {
         tracing::callsite::rebuild_interest_cache();
+    }
+
+    /// 观察一个瞬态失败：按错误处置决策矩阵不进入报告存储。
+    ///
+    /// 适用于自愈重试、fallback 保持武装、高频平台噪声等设计内瞬态。同一
+    /// `(target, reason)` 首条立即发射结构化事件，冷却窗口内（30 秒）的重复
+    /// 观察被抑制并计数，窗口结束后的下一条携带累计抑制数——瞬态失败既从
+    /// 第一条就可见，也不会刷屏。返回本次是否实际发射了事件，供测试与
+    /// 调用方观测去重行为。
+    pub fn observe_transient(
+        &self,
+        target: &'static str,
+        reason: &'static str,
+        detail: impl std::fmt::Display,
+    ) -> bool {
+        match self.inner.transient.observe(target, reason) {
+            transient::TransientObservation::Emit {
+                suppressed_in_window,
+            } => {
+                tracing::warn!(
+                    target: "uix::diagnostics",
+                    transient_target = target,
+                    reason,
+                    suppressed_in_window,
+                    detail = %detail,
+                    "transient failure observed (deduplicated)"
+                );
+                true
+            }
+            transient::TransientObservation::Suppressed => false,
+        }
     }
 
     /// 返回当前运行时是否启用了统一调试模式。
@@ -332,4 +366,29 @@ impl Default for Diagnostics {
     fn default() -> Self {
         Self::new(DiagnosticsConfig::default())
     }
+}
+
+/// 无诊断句柄层（UI 树、adapter teardown 等 SMC 边界层）的显式边界观察入口。
+///
+/// 这些层按架构边界不持有 [`Diagnostics`] 句柄（诊断属于 app 组合根），
+/// 失败保留 typed 结构化日志观察；本入口把该决策显式化为命名调用，取代
+/// 裸 `tracing::error!`，使错误处置类别可从调用点直接判读。
+pub fn observe_boundary_error(layer: &'static str, error: &crate::core::Error) {
+    tracing::error!(
+        target: "uix::diagnostics",
+        boundary_layer = layer,
+        error = %error.short_what(),
+        "boundary failure observed outside diagnostics ownership"
+    );
+}
+
+/// 契约破坏 panic 的统一入口：文案带稳定前缀，便于日志与崩溃报告检索。
+///
+/// 按错误处置决策矩阵，开发者契约或内部不变量破坏选择 panic 终止；调用
+/// 方应在函数文档中声明契约，文案只报告事实与位置，不携带业务标识。
+#[macro_export]
+macro_rules! uix_contract_violation {
+    ($($arg:tt)*) => {
+        panic!("[uix-contract] {}", format_args!($($arg)*))
+    };
 }

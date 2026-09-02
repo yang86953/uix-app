@@ -15,6 +15,21 @@ diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障
 - **框架与宿主共用**：同一公开面服务框架自身（图形后端、窗口/输入/TSF 等失败分支）与应用宿主（业务 typed `Error`、日志 subscriber、报告配置与崩溃目录）。
 - **稳定运行保障**：崩溃只做最小安全记录、不吞 panic、不在损坏状态下继续运行复杂 UI；失败隔离并继续，错误不在中间层被吞掉或转换成伪成功；错误风暴不能无限增长内存。
 
+## 错误处置决策矩阵
+
+任何框架错误处理点必须按下表显式选择处置类别；判断依据是错误的**终态性、频率与恢复所有者**，而不是位置直觉。类型化入口让选择成为编译期可见的调用事实：
+
+| 判定问题 | 处置类别 | 类型化入口 | 可观测结果 |
+|---|---|---|---|
+| 错误是否到达最终责任边界且无恢复可能（启动终止、恢复放弃、清理失败）？ | **终态报告** | `Diagnostics::report_with_origin` + `ReportOrigin::framework`（crate 内） | 进入有界报告存储与 `snapshot()`，tracing 结构化事件同步发射 |
+| 错误是否发生在跨线程回调/worker 边界？ | **回调投递** | `PendingFailureSource::enqueue`（crate 内） | owner-thread drain 边界先恢复后报告 |
+| 错误是否有恢复所有者（RecoveryDriver FSM、注册的恢复 handler）？ | **恢复** | `attempt_recovery` / 恢复状态机 | 恢复成功不报告；放弃时转终态报告 |
+| 错误是自愈重试、fallback 保持武装或高频平台噪声？ | **瞬态观察** | `Diagnostics::observe_transient(target, reason, detail)` | 冷却去重的结构化事件（30 秒窗口 + 抑制计数），不进报告存储 |
+| 所在层按 SMC 边界不持有 Diagnostics 句柄（UI 树、adapter teardown）？ | **边界观察** | `diagnostics::observe_boundary_error(layer, error)`（crate 内） | 带层标识的结构化日志 |
+| 是否为开发者契约或内部不变量破坏（文档声明的组装期/所有权契约）？ | **契约 panic** | `uix_contract_violation!` 宏（或带文档声明的 panic） | crash hook 捕获为 CrashReport + 复现清单，不吞 panic |
+
+判定顺序自上而下：先问终态性，再问回调边界，再问恢复所有者，然后是瞬态性，最后才考虑边界与契约。新错误处理点不得使用裸 `tracing::error!`/`warn!` 表达上述任何一类——裸日志只在诊断系统自身（emit/crash fallback）与无关事实日志中出现。
+
 ## 组件清单
 
 | 组件 | 类型 | 职责 |
@@ -28,6 +43,8 @@ diagnostics 是 UIX 框架稳定运行的基石——整个框架的运行保障
 | `CrashReport` | private struct | 有界、脱敏的进程 panic 快照（私有 crash Module） |
 | `ReproSnapshot` | private struct | 固定 schema、无用户文本的有界运行现场（私有 repro Module） |
 | `PendingFailureQueue` / `PendingFailureSource` | private queue/source | callback 到 owner-thread 的固定容量 typed failure 投递 |
+| 瞬态观察（`observe_transient`） | method | 瞬态失败的冷却去重结构化观察，不进报告存储 |
+| `observe_boundary_error` / `uix_contract_violation!` | fn / macro | 无句柄层边界观察与契约 panic 的显式处置入口 |
 
 ## SMC 落地边界
 
@@ -47,6 +64,7 @@ Diagnostics 的首个 Rust SMC 纵切已经把公开 System 契约与私有实�
 | Component | `crash.rs` 的原子写入与 panic hook | 单一负责 tmp + fsync + rename 原子落盘、失败清理与 hook 递归 guard；不写敏感值，不吞 panic |
 | Component | `repro.rs` 的事件环与渲染器 | 单一负责固定事件的容量淘汰、32 KiB 行式渲染和 panic 非阻塞快照；不执行文件写入 |
 | Component | `pending.rs` 的 `PendingFailureQueue` / `PendingFailureSource` | 单一负责 callback 失败的固定容量入队、按 source 隔离、溢出信号和 teardown 关闭；不调用 subscriber、handler 或用户代码 |
+| 私有 Module | `src/diagnostics/transient.rs` 的 `TransientObservationModule` | 由同一 Diagnostics 实例拥有；持有 `(target, reason)` 冷却窗口与抑制计数（键为静态字符串对，编译期有界），只做去重判定不发射事件；不访问 reporting / recovery Module |
 
 System 只通过 `ReportingModule::{report,snapshot}`、`RecoveryModule::{register,attempt}` 与 `ReproModule` 的固定事实入口
 协作；crash Module 由 `Diagnostics::install_panic_hook` 编排，System 将 repro 的纯渲染结果交给 crash 原子写入 Component。私有 Module 不互相引用、查找或持有实例。`report.rs` 的报告值和
@@ -68,6 +86,7 @@ System 只通过 `ReportingModule::{report,snapshot}`、`RecoveryModule::{regist
 | `snapshot` | `snapshot(&self) -> DiagnosticsSnapshot` | 按 ReportId 排序的时点快照 |
 | `on_error` | `on_error(&self, code: Errc, handler: F) -> RecoverySubscription` | 按精确 Errc 登记恢复 handler；RAII 句柄释放即注销 |
 | `attempt_recovery` | `attempt_recovery(&self, error: Error) -> RecoveryOutcome` | 在调用方选定的安全 owner thread 同步尝试；未处理结果保留原 Error |
+| `observe_transient` | `observe_transient(&self, target, reason, detail) -> bool` | 瞬态失败的冷却去重观察（30 秒窗口、抑制计数、首条立即发射）；返回本次是否实际发射，不进报告存储 |
 | `debug_mode` / `set_debug_mode` | 查询或动态切换 runtime-scoped 开关 | 全窗口共享；关闭时不采集帧与组件树调试事实 |
 | `rebuild_tracing_interest_cache` | `(&self)` | 重新评估 tracing 进程级 callsite interest 缓存；subscriber 晚于首次报告安装导致事件不可见时，调用即可恢复诊断事件可见性 |
 | `write_debug_repro_manifest` | `(&self, directory) -> Result<PathBuf, Error>` | 原子写出不含用户文本、上限 32 KiB 的固定 schema 复现清单 |

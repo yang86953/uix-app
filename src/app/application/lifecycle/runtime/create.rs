@@ -183,7 +183,7 @@ pub(super) fn create_secondary_window(
         session,
         _window: platform_window,
         handle,
-        driver: WindowDriver::new(width, height, true),
+        driver: WindowDriver::new(width, height, true, runtime.diagnostics()),
         last_frame: None,
         diagnostics: runtime.diagnostics(),
     })

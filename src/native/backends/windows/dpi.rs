@@ -171,9 +171,9 @@ impl Drop for PerMonitorV2Scope {
             return;
         };
         if let Err(error) = restore_thread_context(previous) {
-            // teardown 边界的线程上下文恢复失败只保留日志：此刻窗口已在
-            // 关闭路径，报告化无额外消费者。
-            tracing::error!("{}", error.short_what());
+            // teardown 边界的线程上下文恢复失败经边界观察入口记录：此刻窗口
+            // 已在关闭路径，报告化无额外消费者。
+            crate::diagnostics::observe_boundary_error("windows/dpi", &error);
         }
     }
 }
