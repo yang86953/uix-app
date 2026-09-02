@@ -101,6 +101,9 @@ mod window_drag_region_codegen;
 // 集中验证 WindowDragRegion 生成、形状与交互所有权诊断。
 #[cfg(test)]
 mod window_drag_region_codegen_tests;
+// 集中验证 WindowControl 生成与图标前景色定制诊断。
+#[cfg(test)]
+mod window_control_codegen_tests;
 // 集中验证代码生成快照、消费者编译与拒绝路径。
 #[cfg(test)]
 mod codegen_tests;

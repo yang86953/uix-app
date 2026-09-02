@@ -95,6 +95,7 @@ pub use crate::ui::{
 };
 // 在便捷导入面公开标准窗口控制组合构造器。
 pub use crate::ui::window_controls;
+pub use crate::ui::window_controls_with_icon_color;
 pub use crate::ui::{
     Animated, Animation, AnimationConfig, AnimationGroup, AnimationGroupError, AnimationGroupItem,
     Easing, Keyframe, KeyframeAnimation, KeyframeDirection, KeyframeError, KeyframeFillMode,

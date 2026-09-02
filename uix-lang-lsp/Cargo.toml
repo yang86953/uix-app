@@ -1,6 +1,6 @@
 [package]
 name = "uix-lang-lsp"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 publish = false
 license-file = "../LICENSE"
@@ -10,7 +10,7 @@ description = "UIX Lang language server stdio adapter"
 # 本 crate 只依赖协议编码与编译器公开契约，不引入异步运行时或额外重库。
 [dependencies]
 serde_json = "1"
-uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.5" }
+uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.6" }
 
 # 独立语言服务器二进制：编辑器可直接以 `uix-lang-ls --stdio` 启动。
 [[bin]]

@@ -205,7 +205,7 @@ pub use widgets::window_chrome::{
     window_resize_region,
 };
 // 公开独立 UIX 窗口控制组合构造器。
-pub use widgets::window_controls::window_controls;
+pub use widgets::window_controls::{window_controls, window_controls_with_icon_color};
 pub use widgets::*;
 
 // 保持既有公开模块路径（公开面收口前的兼容层）：组件配置 / i18n / 剪贴板 /

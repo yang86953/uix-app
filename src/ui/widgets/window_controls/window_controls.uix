@@ -12,19 +12,19 @@ standardWindowControl {
   // 按文档顺序按需构造最小化控制，隐藏分支不创建节点。
   <If {show_minimize}>
     <KernelHost value={standard_minimize_control} class="standardWindowControl" align="center" justify="center">
-      <Icon name="minus" size="14px" />
+      <Icon name="minus" size="14px" color={icon_color} />
     </KernelHost>
   </If>
   // 按需构造最大化/还原控制。
   <If {show_maximize}>
     <KernelHost value={standard_maximize_control} class="standardWindowControl" align="center" justify="center">
-      <Icon name="maximize-2" size="14px" />
+      <Icon name="maximize-2" size="14px" color={icon_color} />
     </KernelHost>
   </If>
   // 按需构造关闭控制。
   <If {show_close}>
     <KernelHost value={standard_close_control} class="standardWindowControl" align="center" justify="center">
-      <Icon name="x" size="14px" />
+      <Icon name="x" size="14px" color={icon_color} />
     </KernelHost>
   </If>
 </Container>
