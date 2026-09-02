@@ -32,6 +32,10 @@
 pub(crate) mod agent;
 pub(crate) mod app_events;
 pub(crate) mod application;
+// Agent 协议的官方 Rust 客户端：服务端组装保持私有边界（SMC-06），
+// 仅协议消费面公开，与 scripts/agent_client.py 同源同语义。
+#[cfg(feature = "agent-control")]
+pub mod agent_client;
 pub(crate) mod event_loop;
 pub(crate) mod queues;
 pub(crate) mod session_runtime;
@@ -39,6 +43,8 @@ pub(crate) mod window;
 pub(crate) mod window_semantics;
 
 pub use crate::ui::AppState;
+#[cfg(feature = "agent-control")]
+pub use agent_client::AgentBridgeClient;
 pub use application::app_handle::AppHandle;
 pub use application::application::{App, AppMode, map_ui_event};
 pub use application::cli::{Cli, CliArgs};

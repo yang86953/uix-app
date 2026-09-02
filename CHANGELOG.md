@@ -2,6 +2,27 @@
 
 这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；正式发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
+## 0.0.4（2026-09-02）
+
+### Agent 协议官方 Rust 客户端（新增公开面）
+
+- 背景：`uix.agent.v1` 此前只承诺线协议与 Python 参考客户端
+  （`scripts/agent_client.py`）；Rust 宿主与集成测试需要自行拼装
+  JSON Lines、按平台连接端点并手写发现目录定位，消费成本高且易漂移。
+- 新增 `uix::app::agent_client::AgentBridgeClient`（feature
+  `agent-control`）：与 Python 客户端同源同语义的公开 Rust 消费面。
+  能力包括发现文件定位（`discovery_file`）、按进程连接并完成 `hello`
+  限额协商（`connect_to_process` / `connect`）、窗口枚举与等待
+  （`list_windows` / `wait_for_window`）、语义快照与谓词轮询
+  （`snapshot` / `wait_for_snapshot`）、受控动作便捷入口
+  （`perform_invoke` / `perform_set_value` / `perform_raw`）与呈现等待
+  （`wait_until_presented`）。
+- 边界：服务端 IPC 组装仍为私有边界（SMC-06 不变）；报文逐条校验
+  `schema` 与 `request_id` 回显，请求/响应受协商限额约束，超限即失败。
+- 验证：发现目录布局、发现文件命名与限额协商单测通过；由消费方
+  belldandy-agent 桌面集成测试在 Linux 上完成五场景全链路实测
+  （发现、连接、语义树、审批决策、冲突保护）。
+
 ## 0.0.3（2026-09-01）
 
 ### Agent 语义快照声明坐标空间（修复 bounds 与截屏对照错位）
