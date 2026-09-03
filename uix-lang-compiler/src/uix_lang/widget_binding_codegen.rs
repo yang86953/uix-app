@@ -31,6 +31,19 @@ impl WidgetExpander {
         }
     }
 
+    // 把逐迭代准备语句引用的组件级声明名登记到最近 For 的引用名契约。
+    pub(super) fn register_for_iteration_outer_capture(&mut self, ident: &Ident) {
+        // 只有位于 For 子树内时才需要记录（惰性行工厂据此克隆遮蔽）。
+        if let Some(captures) = self.for_iteration_capture_stack.last_mut() {
+            // 同一声明可能被多个事件准备引用，保留首次出现顺序去重。
+            let name = ident.to_string();
+            if !captures.contains(&name) {
+                // 保存卫生标识符文本供 VirtualScroll 闭包外克隆遮蔽。
+                captures.push(name);
+            }
+        }
+    }
+
     // 生成一个类型化 prop 的 Rust 局部绑定。
     pub(super) fn emit_prop_binding(
         // 可变借用展开状态。
@@ -426,6 +439,8 @@ impl WidgetExpander {
                     // 每个事件持有同一底层状态槽的独立句柄所有权。
                     let #value_ident = #state_ident.clone();
                 });
+                // 惰性行工厂闭包外需要先克隆遮蔽该组件级句柄。
+                self.register_for_iteration_outer_capture(&state_ident);
             } else {
                 // 读取普通值或 Arc 回调名称。
                 let source_ident = super::widget_expression_lower::ident_from_name(
@@ -437,6 +452,8 @@ impl WidgetExpander {
                     // 避免多个事件闭包争用同一字段局部值。
                     let #value_ident = (#source_ident).clone();
                 });
+                // 惰性行工厂闭包外需要先克隆遮蔽该组件级值。
+                self.register_for_iteration_outer_capture(&source_ident);
             }
             // For 子树中的事件必须在每次迭代重新克隆这份拥有型捕获。
             self.register_for_iteration_clone(&value_ident);

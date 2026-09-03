@@ -186,4 +186,33 @@ fn rejects_virtual_scroll_key_external_capture_and_calls() {
     .expect_err("VirtualScroll key 不得包含调用");
     // 诊断必须明确拒绝调用结构。
     assert!(call.message.contains("调用"));
+    // 字符串字面量会被降低为组件准备区的转换器调用，key 工厂闭包内不可见。
+    let string_literal = generate(
+        // 构造包含字符串字面量的 key。
+        r#"<VirtualScroll data={items} rowHeight="32px"><For {item} in {items} key={'row-' + item.id}><Text>{item.name}</Text></For></VirtualScroll>"#,
+    )
+    // 提取预期的字面量诊断。
+    .expect_err("VirtualScroll key 不得包含字符串字面量");
+    // 诊断必须指向 item 字段方案。
+    assert!(
+        string_literal.message.contains("字符串字面量")
+            && string_literal.suggestion.contains("item")
+    );
+}
+
+// 验证 VirtualScroll 行 For 的实例作用域在 renderer 闭包内自包含建立。
+#[test]
+fn generates_row_scope_inside_renderer_closure() {
+    // 行模板包含嵌套 For 与字符串比较时，依赖闭包内声明的路径与准备语句；
+    // 嵌套 For 的实例身份需要完整组件展开入口（与公开 uix! 一致）。
+    let source = r#"<VirtualScroll data={logs} rowHeight="32px"><For {log} in {logs} key={log.id}><Container direction="row"><For {tag} in {log.tags}><Text>{tag}</Text></For><If {log.line != ''}><Text>{log.line}</Text></If></Container></For></VirtualScroll>"#;
+    // 经完整展开生成包含嵌套结构与比较的行模板令牌。
+    let tokens = super::generate_test_document_view(source)
+        .expect("行内嵌套 For 与字符串比较应生成行作用域");
+    // keyed renderer 保持不变。
+    assert!(tokens.contains("render_keyed"));
+    // renderer 闭包内必须声明行 For 实例路径（嵌套 For 的父级身份来源）。
+    assert!(tokens.contains("virtual-scroll-row"));
+    // 行模板准备语句（字符串字面量转换器）必须出现在同一闭包内。
+    assert!(tokens.contains("owned_string"));
 }

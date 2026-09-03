@@ -161,6 +161,8 @@ pub(super) struct WidgetExpander {
     pub(super) for_iteration_clone_stack: Vec<Vec<String>>,
     // 保存嵌套 For 子树各自需要在实际迭代中执行的组件准备语句。
     pub(super) for_iteration_setup_stack: Vec<Vec<TokenStream>>,
+    // 保存逐迭代准备语句引用的组件级声明名，供惰性行工厂闭包外克隆遮蔽。
+    pub(super) for_iteration_capture_stack: Vec<Vec<String>>,
 }
 
 // 实现文档级组件展开与结构校验。
@@ -270,6 +272,7 @@ impl WidgetExpander {
             for_iteration_clone_stack: Vec::new(),
             // 文档根没有等待收集的逐迭代组件准备语句。
             for_iteration_setup_stack: Vec::new(),
+            for_iteration_capture_stack: Vec::new(),
         }
     }
 
@@ -329,6 +332,7 @@ impl WidgetExpander {
             for_iteration_clones: Vec::new(),
             // 合成容器不是 For，因此没有逐迭代组件准备语句。
             for_iteration_setup: Vec::new(),
+            for_iteration_outer_captures: Vec::new(),
             reactive_setup: None,
         })
     }
@@ -547,6 +551,8 @@ impl WidgetExpander {
             self.for_iteration_clone_stack.push(Vec::new());
             // 为当前 For 建立独立的逐迭代准备语句收集区。
             self.for_iteration_setup_stack.push(Vec::new());
+            // 为当前 For 建立独立的组件级引用名收集区。
+            self.for_iteration_capture_stack.push(Vec::new());
         }
         // 展开全部有序子节点并暂存诊断以确保作用域恢复。
         let expanded_children = self.expand_nodes(&element.children, bindings, child_inside_for);
@@ -574,6 +580,14 @@ impl WidgetExpander {
                 .map(|statement| statement.to_string())
                 // 保持生成顺序收集到控制元素。
                 .collect();
+            // 取出逐迭代准备语句引用的组件级声明名，供惰性行工厂使用。
+            expanded.for_iteration_outer_captures = self
+                // 借用最近循环的独立引用名收集区。
+                .for_iteration_capture_stack
+                // 弹出当前 For 的去重引用名列表。
+                .pop()
+                // 捕获收集栈必须与准备语句栈同步压弹。
+                .expect("For 引用名收集栈必须与路径栈同步");
             // 弹出刚才压入的循环路径。
             self.for_path_stack.pop();
         }
@@ -979,6 +993,7 @@ fn attach_reactive_setup(
             for_iteration_clones: Vec::new(),
             // 合成容器不是 For。
             for_iteration_setup: Vec::new(),
+            for_iteration_outer_captures: Vec::new(),
             // 作用域标记由下方统一写入。
             reactive_setup: None,
         })

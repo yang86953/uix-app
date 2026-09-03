@@ -112,6 +112,7 @@ pub(super) fn parse_element(
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
                 for_iteration_setup: Vec::new(),
+                for_iteration_outer_captures: Vec::new(),
             reactive_setup: None,
             });
         }
@@ -337,6 +338,7 @@ pub(super) fn parse_element(
                 for_iteration_clones: Vec::new(),
                 // 源码元素尚未经过组件展开，因此没有逐迭代组件准备语句。
                 for_iteration_setup: Vec::new(),
+                for_iteration_outer_captures: Vec::new(),
             reactive_setup: None,
             });
         }

@@ -3,8 +3,11 @@ use proc_macro2::{Ident, Span, TokenStream};
 // 引入 Rust 令牌拼接宏。
 use quote::quote;
 
-// 引入共享 View 属性、单节点生成与可渲染判断。
-use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node};
+// 引入共享 View 属性、单节点生成、可渲染判断与逐迭代准备语句恢复。
+use super::codegen::{apply_common_attributes, generate_node_view, is_renderable_node,
+                      parse_for_iteration_setup};
+// 引入 For 内部实例路径读取。
+use super::for_identity_codegen::optional_internal_control_ident;
 // 引入 VirtualScroll 映射所需的语言 AST、值生成与诊断类型。
 use super::{
     Attribute, AttributeValue, ControlBinding, Diagnostic, Element, Expression, ExpressionKind,
@@ -119,6 +122,44 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
     });
     // 为业务键闭包保存独立数据快照，避免两个 static 闭包争用所有权。
     let key_data_snapshot = Ident::new("__uix_virtual_key_data", Span::mixed_site());
+    // 行 For 的实例路径：行工厂闭包必须自包含声明，行模板内嵌套 For 依赖它
+    // 组合子节点身份，而普通循环体声明的位置对惰性 renderer 闭包不可见。
+    // 完整宏路径由组件展开阶段写入该内部属性；未经展开的直接 codegen
+    //（单测快照路径）没有嵌套 For 引用，允许缺省。
+    let row_path = optional_internal_control_ident(template, "__uix_for_path")?;
+    // 行模板内表达式降低收集的逐迭代准备语句（字符串字面量转换器、嵌套
+    // 组件调用的 props 准备等），同样必须在 renderer 闭包内建立才可见。
+    let row_setup = parse_for_iteration_setup(&template.for_iteration_setup, element.span)?;
+    // 行模板拥有型事件捕获的逐迭代克隆契约，与普通 For 每次迭代克隆语义一致。
+    let row_clones = template
+        .for_iteration_clones
+        .iter()
+        .map(|name| Ident::new(name, Span::call_site()))
+        .collect::<Vec<_>>();
+    // 逐迭代准备语句引用的组件级声明名：move 行闭包不能夺走组件体后续
+    // 仍要使用的所有权，闭包外先克隆遮蔽，闭包捕获的是克隆副本。
+    let row_outer_captures = template
+        .for_iteration_outer_captures
+        .iter()
+        .map(|name| Ident::new(name, Span::call_site()))
+        .collect::<Vec<_>>();
+    // 行 For 作用域前置语句：在行绑定建立后、行 View 构建前执行。
+    // 路径声明按存在性预展开，避免对 Option 做重复插值。
+    let row_path_decl = row_path.map(|path| {
+        quote! {
+            // 行实例路径按绝对索引派生，跨物化窗口重建时身份稳定，且不引用
+            // 闭包外的父级路径变量。
+            let #path = ::std::format!("virtual-scroll-row|{}", #item_index);
+        }
+    });
+    let row_scope = quote! {
+        // 行 For 实例路径声明（存在嵌套 For 引用时由展开阶段写入）。
+        #row_path_decl
+        // 行模板准备语句在闭包内建立。
+        #(#row_setup)*
+        // 拥有型事件捕获按行克隆。
+        #(let #row_clones = (#row_clones).clone();)*
+    };
     // 根据 For 是否声明 key 生成独立快照准备语句与一致身份 renderer。
     let (key_snapshot_setup, renderer) = if let Some(key) = key {
         // 带 key 时必须在行 View 构建前计算业务身份并交给运行时捕获。
@@ -143,6 +184,8 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
                         let #binding = (#data_snapshot)[#item_index].clone();
                         // 建立可选绝对索引绑定。
                         #index_statement
+                        // 建立行 For 实例作用域（路径、准备语句、事件捕获克隆）。
+                        #row_scope
                         // 返回唯一行根 View。
                         #row
                     },
@@ -161,6 +204,8 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
                     let #binding = (#data_snapshot)[#item_index].clone();
                     // 建立可选绝对索引绑定。
                     #index_statement
+                    // 建立行 For 实例作用域（路径、准备语句、事件捕获克隆）。
+                    #row_scope
                     // 返回唯一行根 View。
                     #row
                 })
@@ -173,6 +218,11 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
         let #data_snapshot = ::std::sync::Arc::new((#data).clone());
         // 在快照移动进 renderer 前计算稳定项目总数。
         let #item_count = (#data_snapshot).len();
+        // 逐迭代准备语句引用的组件级声明在 move 行闭包外克隆遮蔽：
+        // 闭包捕获克隆副本，组件体后续代码继续使用原声明。
+        #(
+            let #row_outer_captures = ::std::clone::Clone::clone(&#row_outer_captures);
+        )*
         // 带业务键时为键闭包准备同一已求值数据的独立所有权快照。
         #key_snapshot_setup
         // 运行时 VirtualScroll 继续唯一拥有滚动与物化状态。
@@ -222,11 +272,21 @@ fn validate_virtual_key_expression(
             // 引导把稳定 id 放入当前业务项。
             "使用 key={item.id}，不要在 key 中引用外部状态",
         )),
-        // 数字、字符串和布尔字面量本身没有捕获或副作用。
-        ExpressionKind::Number(_) | ExpressionKind::String(_) | ExpressionKind::Boolean(_) => {
+        // 数字与布尔字面量本身没有捕获或副作用。
+        ExpressionKind::Number(_) | ExpressionKind::Boolean(_) => {
             // 保留字面量供更高层纯组合表达式消费。
             Ok(())
         }
+        // 字符串字面量会被降低为组件准备区的转换器调用，key 工厂闭包
+        // 按子语言设计不注入行作用域准备语句，闭包内不可见。
+        ExpressionKind::String(_) => Err(Diagnostic::new(
+            // 指向字符串字面量位置。
+            expression.span,
+            // 说明稳定键工厂不支持字符串字面量。
+            "VirtualScroll 的 For key 不支持字符串字面量",
+            // 引导使用数据项的字符串字段组合身份。
+            "使用 item 的字符串字段（如 item.id）参与 key",
+        )),
         // 一元表达式只需验证其操作数。
         ExpressionKind::Unary { operand, .. } => {
             // 递归沿用同一局部绑定白名单。

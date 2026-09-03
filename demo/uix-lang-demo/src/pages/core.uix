@@ -333,7 +333,7 @@
           </Column>
         // 结束滚动容器。
         </ScrollView>
-        // 展示惰性行虚拟滚动。
+        // 展示惰性行虚拟滚动（行内嵌套 For 与字符串字面量比较）。
         <VirtualScroll data={virtual_items} rowHeight="32px" item={item} height="160px">
           // 用 For 模板描述单行结构。
           <For {item} {index} in {virtual_items} key={item}>
@@ -343,6 +343,14 @@
               <Text>{index}</Text>
               // 展示行内容。
               <Text>{item}</Text>
+              // 展示行内嵌套 For 派生的标签（验证行作用域自包含）。
+              <For {badge} in {['虚拟', '行']} key={badge}>
+                <Text>{badge}</Text>
+              </For>
+              // 展示与字符串字面量的比较（验证转换器在行闭包内可见）。
+              <If {item != '惰性行 3'}>
+                <Text>…</Text>
+              </If>
             // 结束行容器。
             </Container>
           // 结束行模板。
