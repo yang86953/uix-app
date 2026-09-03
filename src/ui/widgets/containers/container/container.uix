@@ -2,7 +2,6 @@
   name="CONTAINER_LAYOUT_VISUAL"
   type="ContainerLayoutVisual"
   bootstrapCrossAxisThreshold={1.0}
-  childFlexShrink={0.0}
 />
 
 <Visual

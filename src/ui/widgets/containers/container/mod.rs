@@ -36,7 +36,6 @@ impl ContainerStyleRole {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ContainerLayoutVisual {
     bootstrap_cross_axis_threshold: f32,
-    child_flex_shrink: f32,
 }
 
 // 全部 Container 实例共享的完整静态视觉配置。
@@ -321,20 +320,31 @@ impl Container {
             padding: style.padding,
         }
         .content_rect(frame);
-        // 只有尚未取得父级有限主轴 frame 的首次 bootstrap 才按固有尺寸求解。
-        // flexGrow 链取得实际 frame 后必须分配剩余空间，不能因未声明 width/height
-        // 再次退回 hug，否则根布局及其后代会稳定停留在自然尺寸。
-        let main_axis_indefinite = if matches!(
+        // 无显式主轴尺寸且不参与 grow 的容器始终由内容撑开；这也是 column_fit
+        // 进入 ScrollView 后建立自然滚动范围的前提。flexGrow 链只在 bootstrap
+        // 阶段保持自然尺寸，取得实际 frame 后必须分配剩余空间。
+        let (main_axis_extent, explicit_main_axis) = if matches!(
             style.flex_direction,
             crate::ui::theme::style::FlexDirection::Column
                 | crate::ui::theme::style::FlexDirection::ColumnReverse
         ) {
-            content_rect.h <= self.visual.layout.bootstrap_cross_axis_threshold
-                && style.height.is_none_or(|height| height <= 0.0)
+            (
+                content_rect.h,
+                style
+                    .height
+                    .is_some_and(|height| height.is_finite() && height > 0.0),
+            )
         } else {
-            content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
-                && style.width.is_none_or(|width| width <= 0.0)
+            (
+                content_rect.w,
+                style
+                    .width
+                    .is_some_and(|width| width.is_finite() && width > 0.0),
+            )
         };
+        let main_axis_indefinite = !explicit_main_axis
+            && (style.flex_grow <= 0.0
+                || main_axis_extent <= self.visual.layout.bootstrap_cross_axis_threshold);
         let cross_axis_indefinite = if matches!(
             style.flex_direction,
             crate::ui::theme::style::FlexDirection::Row
@@ -355,19 +365,13 @@ impl Container {
             intrinsic_cross: cross_axis_indefinite,
         };
 
-        // 临时取出输入数组，避免同时借用工作区与其中的 Flex 求解缓冲。
-        let mut layout_children = std::mem::take(&mut scratch.layout_children);
-        layout_children.clear();
-        layout_children.extend_from_slice(children);
-        for child in &mut layout_children {
-            child.flex_shrink = self.visual.layout.child_flex_shrink;
-        }
-        let _total_size = engine.layout_into(content_rect, &layout_children, scratch);
+        // 子项自身拥有 grow/shrink 声明，容器不得用视觉默认值覆盖其公开契约。
+        let _total_size = engine.layout_into(content_rect, children, scratch);
         let positions = &scratch.flex.child_rects;
         self.cached_content_size.set(content_size_from_children(
             content_rect,
             positions,
-            &layout_children,
+            children,
         ));
         output.reserve(children.len());
         output.extend(
@@ -376,8 +380,6 @@ impl Container {
                 .zip(positions)
                 .map(|(child, rect)| (child.id, *rect)),
         );
-        layout_children.clear();
-        scratch.layout_children = layout_children;
     }
 
     // ═══════════════════════════════════════════════════

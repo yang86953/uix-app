@@ -476,10 +476,8 @@ widget! {
             return;
         }
 
-        // 先根据自然外尺寸与上一轮内容范围判断滚动条。
-        let need_v = self.needs_v_scrollbar(frame, children);
-        // 横向判断与纵向判断共同决定两个方向的沟槽。
-        let need_h = self.needs_h_scrollbar(frame, children);
+        // 同时求解两轴，确保一侧滚动条沟槽触发的另一轴溢出不会被漏掉。
+        let (need_v, need_h) = self.resolve_scrollbars(frame, children);
         // 得到扣除当前滚动条沟槽后的真实内容视口。
         let content = self.content_frame(frame, need_v, need_h);
 
@@ -518,13 +516,9 @@ widget! {
             let w = if can_scroll_x {
                 if natural_w <= 0.0 {
                     available_w
-                } else if can_scroll_y && need_h {
-                    natural_w.max(available_w)
                 } else if can_scroll_y {
-                    // Both + only vertical overflow: the vertical gutter reduces
-                    // the usable cross axis. Keeping the pre-gutter measured width
-                    // here would place content underneath the scrollbar.
-                    available_w
+                    // 双向滚动轴保留固定自然宽度；窄内容仍填满真实视口。
+                    natural_w.max(available_w)
                 } else {
                     natural_w
                 }
@@ -700,6 +694,54 @@ impl ScrollView {
         let outer_height = finite_non_negative(height + margin.top + margin.bottom);
         // 返回供首轮滚动条判断使用的有限外尺寸。
         Size::new(outer_width, outer_height)
+    }
+
+    // 同时求解两个滚动条，处理一侧沟槽触发另一轴溢出的固定点。
+    fn resolve_scrollbars(&self, frame: Rect, children: &[LayoutChild]) -> (bool, bool) {
+        // 先沿用上一轮范围，避免动态子树短暂测得零尺寸时闪烁沟槽。
+        let mut need_v = self.needs_v_scrollbar(frame, children);
+        // 水平轴使用相同的上一轮稳定策略。
+        let mut need_h = self.needs_h_scrollbar(frame, children);
+        // 当前组件只有两条轴；两轮单调补充足以达到滚动条固定点。
+        let frame_w = finite_non_negative(frame.w);
+        let frame_h = finite_non_negative(frame.h);
+        let can_scroll_x = self.scrollbar_h.show && self.direction.can_scroll_x();
+        let can_scroll_y = self.scrollbar_v.show && self.direction.can_scroll_y();
+        // 仅横向模式按单行累计，其余可纵向模式按纵列累计。
+        let horizontal_flow = self.direction.can_scroll_x() && !self.direction.can_scroll_y();
+        let natural_w = if horizontal_flow {
+            children.iter().fold(0.0f32, |width, child| {
+                finite_non_negative(width + Self::child_outer_size(child).w)
+            })
+        } else {
+            children
+                .iter()
+                .map(|child| Self::child_outer_size(child).w)
+                .fold(0.0f32, f32::max)
+        };
+        let natural_h = if horizontal_flow {
+            children
+                .iter()
+                .map(|child| Self::child_outer_size(child).h)
+                .fold(0.0f32, f32::max)
+        } else {
+            children.iter().fold(0.0f32, |height, child| {
+                finite_non_negative(height + Self::child_outer_size(child).h)
+            })
+        };
+
+        for _ in 0..2 {
+            // 对侧滚动条先从当前轴可用视口扣除沟槽。
+            let available_w =
+                finite_non_negative(frame_w - if need_v { ScrollBar::gutter() } else { 0.0 });
+            let available_h =
+                finite_non_negative(frame_h - if need_h { ScrollBar::gutter() } else { 0.0 });
+            // 固定点只单调增加本轮需要的滚动条；旧沟槽会在下一次布局自然退出。
+            need_h |= can_scroll_x && natural_w > available_w + SCROLLBAR_OVERFLOW_EPSILON;
+            need_v |= can_scroll_y && natural_h > available_h + SCROLLBAR_OVERFLOW_EPSILON;
+        }
+
+        (need_v, need_h)
     }
 
     fn needs_v_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {

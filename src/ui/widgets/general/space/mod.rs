@@ -44,7 +44,6 @@ pub(crate) struct SpaceVisual {
     pub(crate) default_align: AlignItems,
     pub(crate) default_flex_grow: f32,
     pub(crate) container_flex_shrink: f32,
-    pub(crate) child_flex_shrink: f32,
     pub(crate) padding: EdgeInsets,
 }
 
@@ -225,8 +224,8 @@ impl Space {
             .flex_children
             .extend(children.iter().map(|child| FlexChild {
                 flex_grow: child.flex_grow,
-                // Space 的正常流保持自然主轴尺寸，扩展由树级收敛阶段负责。
-                flex_shrink: self.visual.child_flex_shrink,
+                // Space 与通用 Flex 容器一致，保留每个子项自己的收缩声明。
+                flex_shrink: child.flex_shrink,
                 align_self: child.align_self,
                 measured_size: child.measured_size,
                 margin: child.margin,
