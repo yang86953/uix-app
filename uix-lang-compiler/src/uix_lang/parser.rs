@@ -132,6 +132,7 @@ fn parse_document_with_mode(
                 widget_scopes: Vec::new(),
                 for_iteration_clones: Vec::new(),
                 for_iteration_setup: Vec::new(),
+                for_iteration_outer_captures: Vec::new(),
             reactive_setup: None,
             },
         };

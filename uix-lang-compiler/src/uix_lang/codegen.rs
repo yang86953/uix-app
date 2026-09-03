@@ -32,8 +32,8 @@ use super::{
 };
 // 拆分 For 逐实例准备语句恢复，保持核心代码生成器规模受控。
 mod for_setup;
-// 引入只解析编译器内部令牌文本的恢复入口。
-use for_setup::parse_for_iteration_setup;
+// 引入只解析编译器内部令牌文本的恢复入口；对 VirtualScroll 映射重导出。
+pub(super) use for_setup::parse_for_iteration_setup;
 // 引入 reactive 组件作用域准备语句恢复入口。
 use for_setup::parse_reactive_setup;
 // 生成一个可直接消费的公开 UIX View 表达式。

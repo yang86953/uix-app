@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use super::super::{Diagnostic, SourceSpan};
 
 // 恢复由组件展开器保存的 For 逐迭代准备语句。
-pub(super) fn parse_for_iteration_setup(
+pub(in crate::uix_lang) fn parse_for_iteration_setup(
     // 接收按依赖顺序保存的内部令牌文本。
     statements: &[String],
     // 接收所属 For 的源码跨度供内部诊断定位。

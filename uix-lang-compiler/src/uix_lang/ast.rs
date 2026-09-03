@@ -42,6 +42,9 @@ pub(crate) struct Element {
     pub(crate) for_iteration_clones: Vec<String>,
     // 保存 For 每次迭代在构建实际子树前执行的组件准备语句。
     pub(crate) for_iteration_setup: Vec<String>,
+    // 保存逐迭代准备语句引用的组件级声明名：惰性行工厂（VirtualScroll）
+    // 闭包外需先克隆遮蔽，避免 move 闭包夺走组件体后续仍要使用的所有权。
+    pub(crate) for_iteration_outer_captures: Vec<String>,
     // 保存 reactive 组件的作用域准备语句；None 表示普通组件，
     // Some 表示组件根会被包进独立捕获帧的 scoped 闭包重建。
     pub(crate) reactive_setup: Option<Vec<String>>,
