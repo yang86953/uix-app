@@ -28,6 +28,9 @@ __pycache__/
 # Reasonix 扩展机器状态（桌面会话主题元数据，不入库）
 .reasonix/
 
+# ZCode 会话状态（自动生成的本地计划文件，不入库）
+.zcode/
+
 # 图形调试产物（仅忽略调试快照，assets/ 下的正式资产不受影响）
 *.png
 !assets/**
