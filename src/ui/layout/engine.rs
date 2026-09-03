@@ -190,7 +190,6 @@ pub struct LayoutOutput {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct LayoutEngineScratch {
-    pub(crate) layout_children: Vec<LayoutChild>,
     pub(crate) flex_children: Vec<FlexChild>,
     pub(crate) flex: FlexComputeScratch,
     grid: Option<Box<GridLayoutScratch>>,

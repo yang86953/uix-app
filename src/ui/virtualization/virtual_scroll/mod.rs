@@ -21,6 +21,8 @@ pub use list_scroll::VirtualListScroll;
 
 // 复用布局层对非有限值与测量哨兵的统一归一规则。
 use crate::ui::layout::engine::{finite_non_negative, finite_or_zero};
+// 可变行高模式需要读取已物化行子树的真实自然尺寸。
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints;
 
 // 限制一次刷新可创建的虚拟行数量，避免不可信视口或 overscan 耗尽资源。
 const MAX_MATERIALIZED_ITEMS: usize = 4_096;
@@ -442,19 +444,29 @@ widget! {
 
     measure_children_into => (
         &self,
-        _frame: Rect,
+        frame: Rect,
         children: &[WidgetId],
-        _tree: &WidgetTree,
+        tree: &WidgetTree,
         output: &mut Vec<crate::ui::LayoutChild>
     ) {
         output.clear();
         output.reserve(children.len());
-        output.extend(
-            children
-                .iter()
-                .copied()
-                .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
-        );
+        if self.variable_height {
+            // 行宽受当前逻辑视口约束，高度保持无界以取得真实自然测量。
+            let frame = finite_virtual_rect(frame);
+            let constraints = Constraints::loose(Size::new(frame.w, f32::MAX));
+            output.extend(children.iter().copied().map(|id| {
+                child_from_tree_with_natural_constraints(id, tree, constraints)
+            }));
+        } else {
+            // 固定行高完全由 VirtualScroll 拥有，不重复测量应用行子树。
+            output.extend(
+                children
+                    .iter()
+                    .copied()
+                    .map(|id| crate::ui::LayoutChild::new(id, Size::zero())),
+            );
+        }
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)

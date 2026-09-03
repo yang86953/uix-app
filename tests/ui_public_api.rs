@@ -5,7 +5,7 @@ use uix::ui::{
     DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, State,
     ThemeTokens, TokenPatch, TokenProvider,
 };
-use uix::ui::{StyleExt, button, column, label};
+use uix::ui::{StyleExt, button, column, embed, label, row, scroll};
 
 #[test]
 fn theme_and_token_contracts_are_owned_by_ui() {
@@ -155,4 +155,113 @@ fn root_flex_grow_chain_fills_and_refollows_viewport() {
     assert!((root.frame.h - 360.0).abs() < 0.01);
     assert!((middle.frame.w - 640.0).abs() < 0.01);
     assert!((middle.frame.h - 360.0).abs() < 0.01);
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn flex_children_honor_their_public_shrink_factors() {
+    use uix::prelude::Container;
+    use uix::ui::test_harness::TestApp;
+
+    let app = TestApp::new((100.0, 40.0), || {
+        row((
+            embed(Container::new().size(80.0, 40.0)).automation_id("layout.shrinkable"),
+            embed(Container::new().size(80.0, 40.0).flex_shrink(0.0)).automation_id("layout.fixed"),
+        ))
+        .width(100.0)
+        .height(40.0)
+    });
+
+    let snapshot = app.snapshot();
+    let shrinkable = snapshot
+        .find("layout.shrinkable")
+        .expect("默认可收缩子项应存在");
+    let fixed = snapshot
+        .find("layout.fixed")
+        .expect("显式禁止收缩子项应存在");
+    assert!((shrinkable.frame.w - 20.0).abs() < 0.01);
+    assert!((fixed.frame.w - 80.0).abs() < 0.01);
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn space_children_honor_their_public_shrink_factors() {
+    use uix::prelude::{Container, Space};
+    use uix::ui::test_harness::TestApp;
+
+    let app = TestApp::new((100.0, 40.0), || {
+        embed(
+            Space::new()
+                .width(100.0)
+                .height(40.0)
+                .child(Container::new().size(80.0, 40.0))
+                .child(Container::new().size(80.0, 40.0).flex_shrink(0.0)),
+        )
+        .automation_id("layout.space")
+    });
+
+    let snapshot = app.snapshot();
+    let space = snapshot.find("layout.space").expect("Space 根节点应存在");
+    let children: Vec<_> = snapshot
+        .nodes
+        .iter()
+        .filter(|node| node.parent == Some(space.id))
+        .collect();
+    assert_eq!(children.len(), 2);
+    assert!(children[0].frame.w < 80.0);
+    assert!((children[1].frame.w - 80.0).abs() < 0.01);
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn bidirectional_scroll_preserves_fixed_content_across_coupled_scrollbars() {
+    use uix::prelude::Container;
+    use uix::ui::test_harness::TestApp;
+
+    let app = TestApp::new((100.0, 100.0), || {
+        scroll(embed(Container::new().size(100.0, 120.0)).automation_id("layout.scroll-content"))
+            .both()
+            .size(100.0, 100.0)
+            .flex_grow(0.0)
+            .into()
+    });
+
+    let snapshot = app.snapshot();
+    let content = snapshot
+        .find("layout.scroll-content")
+        .expect("双向滚动内容应存在");
+    assert!((content.frame.w - 100.0).abs() < 0.01);
+    assert!((content.frame.h - 120.0).abs() < 0.01);
+}
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn variable_virtual_scroll_uses_materialized_row_measurements() {
+    use uix::prelude::VirtualScroll;
+    use uix::ui::test_harness::TestApp;
+
+    let app = TestApp::new((100.0, 100.0), || {
+        VirtualScroll::new()
+            .item_count(2)
+            .item_height(10.0)
+            .variable_height()
+            .size(100.0, 100.0)
+            .render(|index| {
+                label(format!("行 {index}"))
+                    .height(if index == 0 { 30.0 } else { 40.0 })
+                    .automation_id(format!("layout.virtual-row-{index}"))
+            })
+            .into()
+    });
+
+    let snapshot = app.snapshot();
+    let first = snapshot
+        .find("layout.virtual-row-0")
+        .expect("第一条可变高虚拟行应存在");
+    let second = snapshot
+        .find("layout.virtual-row-1")
+        .expect("第二条可变高虚拟行应存在");
+    assert!((first.frame.h - 30.0).abs() < 0.01);
+    assert!((second.frame.y - first.frame.y - 30.0).abs() < 0.01);
+    assert!((second.frame.h - 40.0).abs() < 0.01);
 }
