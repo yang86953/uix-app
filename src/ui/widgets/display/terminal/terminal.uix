@@ -1,0 +1,50 @@
+// Terminal 的具名分组视觉由 UIX 唯一拥有；Rust 内核负责输出缓冲、命令输入、历史与滚动。
+<Visual
+  name="TERMINAL_GEOMETRY_VISUAL"
+  type="TerminalGeometryVisual"
+  defaultWidth={420.0}
+  defaultHeight={280.0}
+  rowHeight={22.0}
+  paddingX={10.0}
+  paddingY={8.0}
+/>
+
+<Visual
+  name="TERMINAL_CHROME_VISUAL"
+  type="TerminalChromeVisual"
+  fontSize={13.0}
+  cursorWidth={1.5}
+  cursorHeightRatio={0.68}
+  cursorCharWidth={8.0}
+  cursorBaseWidth={2.0}
+  promptSpacing={6.0}
+  focusInset={0.75}
+  focusStroke={1.5}
+  borderStroke={1.0}
+/>
+
+<Visual
+  name="TERMINAL_PALETTE_VISUAL"
+  type="TerminalPaletteVisual"
+  background={terminal_background_color()}
+  border={terminal_border_color()}
+  text={terminal_text_color()}
+  muted={terminal_muted_color()}
+  prompt={terminal_prompt_color()}
+  cursor={terminal_cursor_color()}
+  primary={terminal_primary_color()}
+  success={terminal_success_color()}
+  warning={terminal_warning_color()}
+  error={terminal_error_color()}
+  info={terminal_info_color()}
+/>
+
+<Visual
+  name="TERMINAL_VISUAL"
+  type="TerminalVisual"
+  geometry={TERMINAL_GEOMETRY_VISUAL}
+  chrome={TERMINAL_CHROME_VISUAL}
+  palette={TERMINAL_PALETTE_VISUAL}
+/>
+
+<KernelView value={build_terminal_view(kernel, TERMINAL_VISUAL_REF)} />

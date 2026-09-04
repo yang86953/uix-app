@@ -17,7 +17,7 @@ serde_json = "1"
 syn = { version = "3", features = ["full"] }
 
 [features]
-default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "terminal"]
 image-codecs = ["uix-lang-compiler/image-codecs"]
 qrcode = ["uix-lang-compiler/qrcode"]
 form-pattern = ["uix-lang-compiler/form-pattern"]
@@ -27,3 +27,4 @@ table = ["uix-lang-compiler/table"]
 navigation = ["uix-lang-compiler/navigation"]
 feedback = ["uix-lang-compiler/feedback"]
 tree-widgets = ["uix-lang-compiler/tree-widgets"]
+terminal = ["uix-lang-compiler/terminal"]

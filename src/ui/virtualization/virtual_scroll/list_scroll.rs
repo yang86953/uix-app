@@ -36,6 +36,11 @@ impl VirtualListScroll {
         self
     }
 
+    /// 返回可见区前后额外纳入窗口的项目数量。
+    pub fn overscan_count(&self) -> usize {
+        self.overscan
+    }
+
     /// 返回归一化后的有限非负滚动偏移。
     pub fn scroll_offset(&self) -> f32 {
         // 对外只暴露有限非负的共享滚动状态。

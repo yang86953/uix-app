@@ -27,6 +27,8 @@ uix = { path = "../..", default-features = false, features = [
     "feedback",
     # 启用树形组件能力。
     "tree-widgets",
+    # 启用终端组件能力。
+    "terminal",
     # 结束与 API GUI Demo 对齐的公开组件能力列表。
 ] }
 tracing = "0.1"

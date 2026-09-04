@@ -262,11 +262,13 @@
       // 组织时间轴内容。
       <Column gap="12px">
         // 展示面板小节标题。
-        <Text fontSize="heading5">Timeline / Tree / Carousel</Text>
+        <Text fontSize="heading5">Timeline / Tree / Terminal / Carousel</Text>
         // 展示带 pending 与 reverse 的时间轴。
         <Timeline items={[TimelineItem('创建').description('2026-08-01'), TimelineItem('设计').description('2026-08-05'), TimelineItem('上线').description('2026-08-10')]} pending reverse />
         // 展示可勾选默认展开的树。
         <Tree data={[TreeNode('部门', 'dept').children([TreeNode('成员', 'member'), TreeNode('访客', 'guest')]), TreeNode('项目', 'project')]} checkable defaultExpandAll width="320px" />
+        // 展示滚动输出与命令输入的终端视图。
+        <Terminal data={[TerminalLine('UIX 控制台就绪'), TerminalLine(''), TerminalLine('回车提交命令，↑/↓ 漫游历史')]} prompt="$ " width="420px" automationId="demo-terminal" />
         // 展示自动播放轮播器。
         <Carousel autoplay height="120px" width="320px">
           // 展示第一张幻灯片。

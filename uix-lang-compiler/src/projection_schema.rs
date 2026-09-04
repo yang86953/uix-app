@@ -452,6 +452,7 @@ const COMPONENTS: &[ComponentSpec] = &[
     component!("Calendar", Display, "generate_calendar"),
     component!("Carousel", Display, "generate_carousel"),
     component!("Tree", Display, "generate_tree", Some("tree-widgets")),
+    component!("Terminal", Display, "generate_terminal", Some("terminal")),
     component!("Table", Display, "generate_table", Some("table")),
     component!("Tabs", Navigation, "generate_tabs", Some("navigation")),
     component!("Menu", Navigation, "generate_menu", Some("navigation")),
@@ -915,6 +916,7 @@ const CAPABILITIES: &[CapabilitySpec] = &[
     capability!("navigation"),
     capability!("feedback"),
     capability!("tree-widgets"),
+    capability!("terminal"),
 ];
 
 const ATTRIBUTE_CAPABILITIES: &[AttributeCapabilitySpec] = &[AttributeCapabilitySpec {
@@ -1038,6 +1040,13 @@ const DATA_CONSTRUCTORS: &[DataConstructorSpec] = &[
         "new",
         false,
         Some("tree-widgets")
+    ),
+    data_constructor!(
+        "TerminalLine",
+        "::uix::prelude::TerminalLine",
+        "text",
+        false,
+        Some("terminal")
     ),
     data_constructor!("TimelineItem", "::uix::prelude::TimelineItem"),
     data_constructor!("SelectableItem", "::uix::prelude::SelectableItem"),
@@ -1329,14 +1338,14 @@ mod tests {
             .iter()
             .filter(|entry| entry.status == RegistrationStatus::Available)
             .count();
-        assert_eq!(available, 111);
-        assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 33);
+        assert_eq!(available, 112);
+        assert_eq!(UI_PROJECTION_SCHEMA.data_constructors().len(), 34);
         assert_eq!(UI_PROJECTION_SCHEMA.events().len(), 12);
         assert_eq!(UI_PROJECTION_SCHEMA.style_properties().len(), 63);
         assert_eq!(UI_PROJECTION_SCHEMA.theme_tokens().len(), 90);
         assert_eq!(UI_PROJECTION_SCHEMA.handle_slots().len(), 39);
         assert_eq!(UI_PROJECTION_SCHEMA.slots().len(), 5);
-        assert_eq!(UI_PROJECTION_SCHEMA.capabilities().len(), 9);
+        assert_eq!(UI_PROJECTION_SCHEMA.capabilities().len(), 10);
         assert_eq!(UI_PROJECTION_SCHEMA.attribute_capabilities().len(), 1);
         assert_eq!(UI_PROJECTION_SCHEMA.value_types().len(), 17);
         assert_eq!(

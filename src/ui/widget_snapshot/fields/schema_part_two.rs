@@ -233,6 +233,19 @@ macro_rules! snapshot_fields_part_two {
                 /// 树是否允许同时选择多个节点。
                 multiple: bool,
             },
+            // 终端 capability 关闭时不保留终端快照变体。
+            #[cfg(feature = "terminal")]
+            /// 终端的提示符、输出行、当前输入与历史命令快照。
+            Terminal {
+                /// 当前显示在输入行前方的提示符文本。
+                prompt: String,
+                /// 按声明顺序保存的输出行纯文本。
+                lines: Vec<String>,
+                /// 输入行当前草稿文本。
+                input: String,
+                /// 按提交顺序保存的历史命令。
+                history: Vec<String>,
+            },
             /// 列表的首尾内容、边框、尺寸、条目与加载入口快照。
             List {
                 /// 列表头部显示的文字。

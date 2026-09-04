@@ -354,6 +354,28 @@ pub struct TreeWidgetsEnabledContract;
 /// ```
 pub struct TreeWidgetsDisabledContract;
 
+// 终端启用侧验证终端组件 capability 的代表公开类型。
+#[cfg(feature = "terminal")]
+/// # terminal enabled
+///
+/// ```
+/// // 引入终端 capability 的代表公开类型。
+/// use uix::prelude::Terminal;
+/// // feature 启用后终端组件类型必须可解析。
+/// let _ = std::any::TypeId::of::<Terminal>();
+/// ```
+pub struct TerminalEnabledContract;
+
+// 终端关闭侧要求代表组件从 prelude 消失。
+#[cfg(not(feature = "terminal"))]
+/// # terminal disabled
+///
+/// ```compile_fail,E0432
+/// // 未启用 terminal 时公开门面不得导出终端组件。
+/// use uix::prelude::Terminal;
+/// ```
+pub struct TerminalDisabledContract;
+
 // settings-serde 启用侧验证结构化设置 codec 的公开方法。
 #[cfg(feature = "settings-serde")]
 /// # settings-serde enabled
