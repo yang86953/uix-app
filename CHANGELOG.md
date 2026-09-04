@@ -4,6 +4,29 @@
 
 ## 0.0.8（进行中）
 
+### 修复：Tooltip 声明尺寸生效与容器内悬停目标重定向
+
+- 背景：For 物化行内（目录树箭头、行内收藏）的 `<Tooltip>` 悬停无气泡、
+  `@click` 移入 Tooltip 后点击整体失效。真窗口排查确认两个叠加根因，
+  均与此前怀疑的「父布局片段过滤」无关（片段集合只有 table 子布局会
+  写入，普通 For/虚拟滚动场景从不涉及）。
+- 根因一：`ViewAdapter::apply_style` 是按具体组件类型的闭合分派链，
+  Tooltip 不在链上，文档声明的 `width`/`height` 被静默丢弃，触发区停留
+  主题默认 80×28；横向行内超宽命中框压过后继兄弟（后声明优先命中），
+  命中与点击被兄弟抢走。修复：Tooltip 内核新增 `apply_view_layout_style`
+  消费显式尺寸（与 Input/Select 同款窄入口），`apply_style` 链按 feedback
+  feature 门控登记 Tooltip 分支；`sync_from` 携带尺寸，reconcile 不丢。
+- 根因二：PointerMove 悬停快路径只验证「指针仍在当前悬停目标的 hit
+  frame 内」就跳过重命中。容器型目标（侧栏、滚动视口等）的 frame 覆盖
+  整片区域，重建时序可能让当初的命中停在祖先容器，此后指针在 frame 内
+  的每次移动都不再重跑命中，更深的可交互后代（Tooltip、行内按钮）永远
+  收不到 PointerEnter。修复：快路径收窄到「指针位置不存在更深命中」的
+  目标（`hit_test_children=false` 或无子节点）；容器目标每步移动重跑
+  完整命中，叶目标（按钮、滑块等高频悬停场景）保留快路径。
+- 回归测试 `tooltip_for_row_hit_test_public_api.rs`：静态/For 行内/
+  ScrollView+For 行内 Tooltip 的声明尺寸断言与点击命中、容器悬停目标
+  重定向四项；分别验证过无对应修复时必败。
+
 ### 界面：动态文本在有限约束宽度内自动换行
 
 - 背景：uix-lang `<Text>{插值}</Text>` 编译为 `DynamicLabel`，其测量按

@@ -15,6 +15,9 @@ use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 // Modal 只在 feedback capability 启用时进入统一样式桥接。
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::Modal;
+// Tooltip 的触发区显式尺寸同样只在 feedback capability 下桥接。
+#[cfg(feature = "feedback")]
+use crate::ui::widgets::Tooltip;
 
 // 引入所属适配器类型。
 use super::ViewAdapter;
@@ -157,6 +160,15 @@ impl ViewAdapter {
             if let Some(modal) = widget.as_any_mut().downcast_mut::<Modal>() {
                 // Modal 公共尺寸描述的是对话框而非零尺寸 overlay 占位节点。
                 modal.apply_view_layout_style(style);
+            }
+        }
+
+        // Tooltip 不消费样式会停留主题默认触发区尺寸（80×28），横向行内
+        // 超宽命中框会遮挡后继兄弟的命中；显式尺寸必须进入组件测量。
+        #[cfg(feature = "feedback")]
+        if tid == std::any::TypeId::of::<Tooltip>() {
+            if let Some(tooltip) = widget.as_any_mut().downcast_mut::<Tooltip>() {
+                tooltip.apply_view_layout_style(style);
             }
         }
 

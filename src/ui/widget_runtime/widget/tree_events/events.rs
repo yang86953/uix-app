@@ -416,7 +416,17 @@ impl WidgetTree {
                     self.get(*hovered)
                         .is_some_and(|node| node.is_interaction_enabled())
                 }) {
-                    if self.pointer_inside_widget_hit_frame(hovered, *pos) {
+                    // 快路径只对「指针位置不存在更深命中」的目标有效：叶目标
+                    // （不再命中子节点或没有子节点）才允许跳过重命中。容器型
+                    // 目标的 frame 覆盖整片区域，重建时序可能让当初的命中停在
+                    // 祖先容器；此后指针在 frame 内的每次移动都必须重跑完整
+                    // 命中，否则更深的可交互后代永远收不到 PointerEnter。
+                    let hover_blocks_deeper_hits = self.get(hovered).is_some_and(|node| {
+                        !node.hit_test_children() || node.children().is_empty()
+                    });
+                    if hover_blocks_deeper_hits
+                        && self.pointer_inside_widget_hit_frame(hovered, *pos)
+                    {
                         let result = if self
                             .get(hovered)
                             .is_some_and(|node| node.wants_continuous_pointer_move())
