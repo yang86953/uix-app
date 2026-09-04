@@ -298,7 +298,9 @@ impl TestApp {
         let label = target.label();
         let node = self.snapshot().resolve(&target)?.clone();
         self.tree
-            .perform_semantic_action(node.id, &action)
+            // TestApp 是无窗口概念的测试替身，语义动作等价窗口已聚焦；
+            // 走后台放行入口，避免文本合成输入被前台焦点策略拒绝。
+            .perform_agent_semantic_action(node.id, &action)
             .map_err(|error| map_semantic_action_error(label, error))?;
         self.settle()?;
         Ok(())

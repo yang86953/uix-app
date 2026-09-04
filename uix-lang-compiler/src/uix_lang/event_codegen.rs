@@ -7,6 +7,7 @@ use quote::quote;
 use super::{
     Attribute, AttributeValue, Diagnostic, expression_uses_event,
     generate_event_handler_expression, generate_handler_expression,
+    generate_key_event_handler_expression,
 };
 
 // 生成当前核心 Gate 支持的通用事件。
@@ -34,14 +35,18 @@ pub(super) fn apply_event(
         let system_event = Ident::new("__uix_key_system_event", Span::mixed_site());
         // 创建卫生的 KeyCode 值载荷变量。
         let key_payload = Ident::new("__uix_key_payload", Span::mixed_site());
-        // 按当前事件登记表校验 key/code 后生成处理器。
-        let handler = generate_event_handler_expression(
+        // 创建卫生的修饰键载荷变量，供 $event.mods 引用。
+        let mods_payload = Ident::new("__uix_mods_payload", Span::mixed_site());
+        // 按当前事件登记表校验 key/code/mods 后生成处理器。
+        let handler = generate_key_event_handler_expression(
             // 传递处理器表达式。
             &expression.expression,
             // 传递实际 KeyCode 载荷。
             &key_payload,
             // 传递当前键盘事件名。
             &attribute.name,
+            // 传递修饰键载荷，处理器可经 $event.mods 引用。
+            Some(&mods_payload),
         )?;
         // 选择对应系统事件变体。
         let event_variant = if attribute.name == "@keyDown" {
@@ -56,9 +61,11 @@ pub(super) fn apply_event(
             // 复用公开键盘事件注册入口。
             (#view).on_key(move |#system_event| {
                 // 只在声明的键盘事件变体执行语言处理器。
-                if let #event_variant { key: __uix_key, .. } = #system_event {
+                if let #event_variant { key: __uix_key, mods: __uix_mods } = #system_event {
                     // 复制公开 KeyCode 作为稳定载荷。
                     let #key_payload = *__uix_key;
+                    // 复制公开 KeyMod 作为稳定修饰键载荷。
+                    let #mods_payload = *__uix_mods;
                     // 丢弃处理器返回值并保留副作用。
                     let _ = { #handler };
                 }

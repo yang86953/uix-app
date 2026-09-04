@@ -67,3 +67,43 @@ fn avoids_unconditional_widget_state_reads() {
     // 事件注册只克隆 State 句柄，不在注册时读取值。
     assert!(tokens.contains("__uix_event_value") && tokens.contains(". clone ()"));
 }
+
+// 验证 State 字段显式 .get() 成员调用与裸字段读值同义归一，嵌套条件内不叠加双重解引用。
+#[test]
+fn normalizes_explicit_state_get_inside_nested_conditionals() {
+    // 构造单层条件与嵌套条件两处同构的显式 get 动态文本，实参与调用方形状对齐。
+    let document = parse_document(
+        // 单层 If 与 If 内嵌 Column 再嵌 If 使用完全相同的字段表达式。
+        r#"
+        <Widget name="Demo" props="label: State<String>">
+          <If {true}>
+            <Text>单层: {label.get()} 字</Text>
+          </If>
+          <If {true}>
+            <Column>
+              <If {true}>
+                <Text fontSize="small">嵌套: {label.get()} 字</Text>
+              </If>
+            </Column>
+          </If>
+        </Widget>
+        <Demo label={label.clone()} />
+        "#,
+    )
+    // 组件声明与调用必须解析成功。
+    .expect("显式 get 组件文档应解析");
+    // 生成完整组件感知 Rust View 令牌。
+    let tokens = generate_document_view(&document)
+        // 两处动态文本都应生成成功。
+        .expect("显式 get 动态文本应生成")
+        // 转成稳定文本供结构断言。
+        .to_string();
+    // State 读值不得叠加双重 .get()：显式成员调用必须与裸字段读值同义归一。
+    // 双重形状含跨闭括号与直连两种，均视为叠加。
+    assert!(
+        !tokens.contains("get () . get ()") && !tokens.contains("get ()) . get ()"),
+        "State 字段显式 get 不得叠加句柄 get：{tokens}"
+    );
+    // 两处动态文本仍必须延迟求值。
+    assert!(tokens.contains("dynamic_label (move ||"));
+}

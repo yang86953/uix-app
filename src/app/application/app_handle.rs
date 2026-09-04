@@ -2,6 +2,8 @@ use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use std::time::Duration;
 
 use crate::app::application::di::Container;
+use crate::app::queues::main_thread_queue::MainThreadContext;
+use crate::ui::semantic_action::SemanticAction;
 // 连接 Application Module 私有逐窗 owner；无 feedback 时为零尺寸哨兵。
 use crate::app::application::feedback_state::AppFeedbackState;
 use crate::app::queues::app_timer::TimerHandle;
@@ -546,6 +548,43 @@ impl AppHandle {
         Ok(dismissed)
     }
 
+    /// 在窗口 UI turn 内按 automationId 定位唯一节点并执行语义动作。
+    ///
+    /// 这是应用内部（非外部 Agent 通道）的自动化入口：不经过 Agent 策略与
+    /// 代际校验，直接走窗口正常 UI 路径。动作结果经通道回传；目标不存在、
+    /// 不唯一或动作未生效时回传错误描述。窗口关闭后命令不会执行，接收方
+    /// 应使用带超时的等待。
+    pub fn perform_automation_action(
+        &self,
+        automation_id: impl Into<String>,
+        action: SemanticAction,
+    ) -> Result<std::sync::mpsc::Receiver<Result<(), String>>> {
+        if !self.alive.load(Ordering::Acquire) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "应用已关闭，无法执行自动化动作",
+            ));
+        }
+        let automation_id = automation_id.into();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let accepted = self.runtime.enqueue_with_context(
+            self.window_id,
+            move |context: &mut MainThreadContext<'_>| {
+                let outcome =
+                    perform_automation_action_on_tree(context.tree_mut(), &automation_id, &action);
+                // 接收方已放弃等待时发送失败是合法结果。
+                let _ = tx.send(outcome);
+            },
+        );
+        if !accepted {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "窗口不存在或已关闭，自动化动作被拒绝",
+            ));
+        }
+        Ok(rx)
+    }
+
     /// 在窗口 UI 上下文中重新构建并替换应用根视图。
     pub fn update_view<F>(&self, build_root: F)
     where
@@ -603,4 +642,26 @@ impl AppHandle {
         }
         self.runtime.close_session(self.window_id);
     }
+}
+
+
+/// 在窗口 WidgetTree 上按 automationId 定位唯一节点并执行语义动作。
+fn perform_automation_action_on_tree(
+    tree: &mut crate::ui::WidgetTree,
+    automation_id: &str,
+    action: &SemanticAction,
+) -> Result<(), String> {
+    let body = tree.semantic_snapshot_body();
+    let matches: Vec<_> = body
+        .nodes
+        .iter()
+        .filter(|node| node.automation_id.as_deref() == Some(automation_id))
+        .collect();
+    let node = match matches.as_slice() {
+        [node] => node.id,
+        [] => return Err(format!("未找到自动化目标 {automation_id}")),
+        _ => return Err(format!("自动化目标 {automation_id} 不唯一")),
+    };
+    tree.perform_semantic_action(node, action)
+        .map_err(|error| format!("{error:?}"))
 }

@@ -29,6 +29,8 @@ pub enum SemanticActionKind {
     SetValue,
     /// 在目标当前编辑位置插入文本。
     InsertText,
+    /// 用前缀与后缀包裹目标当前选区；无选区时在光标处插入成对标记。
+    WrapSelection,
     /// 按稳定选项值选择单选目标。
     Select,
     /// 切换复选框或开关状态。
@@ -52,6 +54,7 @@ impl SemanticActionKind {
             Self::Focus => "focus",
             Self::SetValue => "set_value",
             Self::InsertText => "insert_text",
+            Self::WrapSelection => "wrap_selection",
             Self::Select => "select",
             Self::Toggle => "toggle",
             Self::Increment => "increment",
@@ -74,6 +77,13 @@ pub enum SemanticAction {
     SetValue(String),
     /// 在目标当前编辑位置插入所给文本。
     InsertText(String),
+    /// 用所给前缀与后缀包裹目标当前选区；无选区时在光标处插入成对标记。
+    WrapSelection {
+        /// 选区前粘贴的前缀标记。
+        prefix: String,
+        /// 选区后粘贴的后缀标记。
+        suffix: String,
+    },
     /// 按所给稳定选项值选择单选目标。
     Select(String),
     /// 切换复选框或开关状态。
@@ -105,6 +115,7 @@ impl SemanticAction {
             Self::Focus => SemanticActionKind::Focus,
             Self::SetValue(_) => SemanticActionKind::SetValue,
             Self::InsertText(_) => SemanticActionKind::InsertText,
+            Self::WrapSelection { .. } => SemanticActionKind::WrapSelection,
             Self::Select(_) => SemanticActionKind::Select,
             Self::Toggle => SemanticActionKind::Toggle,
             Self::Increment => SemanticActionKind::Increment,
@@ -122,6 +133,7 @@ impl fmt::Debug for SemanticAction {
             Self::Focus => f.write_str("Focus"),
             Self::SetValue(_) => f.write_str("SetValue(<redacted>)"),
             Self::InsertText(_) => f.write_str("InsertText(<redacted>)"),
+            Self::WrapSelection { .. } => f.write_str("WrapSelection(<redacted>)"),
             Self::Select(_) => f.write_str("Select(<redacted>)"),
             Self::Toggle => f.write_str("Toggle"),
             Self::Increment => f.write_str("Increment"),
@@ -214,6 +226,7 @@ impl WidgetTree {
         }
         if is_input {
             actions.push(SemanticActionKind::SetValue);
+            actions.push(SemanticActionKind::WrapSelection);
         }
         if accepts_text {
             actions.push(SemanticActionKind::InsertText);
@@ -365,6 +378,9 @@ impl WidgetTree {
                         allow_unfocused_input,
                     )
                 }
+            }
+            SemanticAction::WrapSelection { prefix, suffix } => {
+                self.wrap_input_selection(id, &prefix.clone(), &suffix.clone(), allow_unfocused_input)
             }
             SemanticAction::Toggle => {
                 self.focus_and_press(id, KeyCode::Space, allow_unfocused_input)
@@ -565,6 +581,75 @@ impl WidgetTree {
         } else {
             EventResult::NotHandled
         })
+    }
+
+    /// 用前缀与后缀包裹目标输入框当前选区；无选区时在光标处插入成对标记。
+    /// 光标与选区均为字符索引，替换前统一换算到字节边界；组合编辑作为
+    /// 一次完整值替换落盘，保持与既有语义动作相同的焦点语义。
+    fn wrap_input_selection(
+        &mut self,
+        id: WidgetId,
+        prefix: &str,
+        suffix: &str,
+        allow_unfocused_input: bool,
+    ) -> EventResult {
+        // 先在不可变借用内取出值、光标与选区，释放借用后再执行替换写入。
+        let edit = self.get(id).and_then(|node| {
+            let input = node.widget().as_any().downcast_ref::<Input>()?;
+            let value = input.current_value().to_owned();
+            let selection = input.selection.get();
+            let caret = input.cursor_char;
+            Some((value, selection, caret))
+        });
+        let Some((value, selection, caret)) = edit else {
+            return EventResult::NotHandled;
+        };
+        // 字符索引到字节偏移的换算；越过末尾视为越界。
+        let char_to_byte = |index: usize| {
+            if index > value.chars().count() {
+                return None;
+            }
+            Some(
+                value
+                    .char_indices()
+                    .nth(index)
+                    .map(|(byte, _)| byte)
+                    .unwrap_or(value.len()),
+            )
+        };
+        let replaced = match selection {
+            // 有非空选区：包裹选中文本（选区按字符索引归一顺序）。
+            Some((start, end)) if start != end => {
+                let (start, end) = (start.min(end), end.max(start));
+                let (Some(start_byte), Some(end_byte)) =
+                    (char_to_byte(start), char_to_byte(end))
+                else {
+                    return EventResult::NotHandled;
+                };
+                let mut out =
+                    String::with_capacity(value.len() + prefix.len() + suffix.len());
+                out.push_str(&value[..start_byte]);
+                out.push_str(prefix);
+                out.push_str(&value[start_byte..end_byte]);
+                out.push_str(suffix);
+                out.push_str(&value[end_byte..]);
+                out
+            }
+            // 无选区：在光标处插入成对标记。
+            _ => {
+                let Some(caret_byte) = char_to_byte(caret) else {
+                    return EventResult::NotHandled;
+                };
+                let mut out =
+                    String::with_capacity(value.len() + prefix.len() + suffix.len());
+                out.push_str(&value[..caret_byte]);
+                out.push_str(prefix);
+                out.push_str(suffix);
+                out.push_str(&value[caret_byte..]);
+                out
+            }
+        };
+        self.set_input_value(id, &replaced, allow_unfocused_input)
     }
 
     fn set_input_value(

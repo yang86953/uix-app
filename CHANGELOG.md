@@ -2,6 +2,33 @@
 
 这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；正式发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
+## 0.0.8（进行中）
+
+### Lang 编译：State 字段显式 `get()` 与裸字段读值同义归一（修复）
+
+- `Widget` 内 `{field.get()}` 此前会把字段改写为句柄 `get()` 调用、再叠加作者
+  显式 `.get()`，生成双重解引用并编译失败；现与裸 `{field}` 读值归一为单一
+  `State::get`，方法链（如 `{field.get().len()}`）按公开 API 语义保留。
+- 新增 codegen 契约测试锁定单层与嵌套条件分支的生成形状。
+
+### Lang 绑定：键盘事件新增 `$event.mods` 修饰键载荷
+
+- `@keyDown` / `@keyUp` 的载荷在既有 `$event.key` / `$event.code` 之外新增
+  `$event.mods`，编译器把事件 `mods` 解构为稳定局部并改写成员访问；
+  事件登记表同步收录 `mods` 字段，未知字段诊断的建议清单同步更新。
+- `KeyMod` 新增 `has_ctrl` / `has_shift` / `has_alt` / `has_super` 便捷判断，
+  与公开常量位语义一致，供受限表达式直接消费。
+
+### 语义动作：`WrapSelection` 与应用内自动化入口
+
+- `SemanticAction` 新增 `WrapSelection { prefix, suffix }`：对文本输入组件，
+  有选区时用前缀与后缀包裹选中文本，无选区时在光标处插入成对标记；光标与
+  选区按字符索引换算字节边界后替换，`Input` 的语义能力宣告同步收录。
+- `TestApp::perform` 改走后台放行的语义入口：测试替身无窗口前台概念，文本
+  合成输入不再被前台焦点策略拒绝；真实窗口的 Agent 授权链路行为不变。
+- `AppHandle::perform_automation_action` 新增应用内自动化入口：按 automationId
+  定位唯一节点并执行语义动作，结果经通道回传；不经过 Agent 策略与代际校验。
+
 ## 0.0.7（2026-09-04）
 
 ### VirtualScroll 行模板作用域完整化（UIX Lang 编译修复）

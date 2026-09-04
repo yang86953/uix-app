@@ -287,6 +287,26 @@ impl KeyMod {
     pub const fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
+
+    /// 判断是否按住 Control 修饰键。
+    pub const fn has_ctrl(self) -> bool {
+        self.contains(Self::CTRL)
+    }
+
+    /// 判断是否按住 Shift 修饰键。
+    pub const fn has_shift(self) -> bool {
+        self.contains(Self::SHIFT)
+    }
+
+    /// 判断是否按住 Alt 修饰键。
+    pub const fn has_alt(self) -> bool {
+        self.contains(Self::ALT)
+    }
+
+    /// 判断是否按住系统或 Command 修饰键。
+    pub const fn has_super(self) -> bool {
+        self.contains(Self::SUPER)
+    }
 }
 
 impl std::ops::BitOr for KeyMod {

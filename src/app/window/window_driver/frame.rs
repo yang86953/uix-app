@@ -111,8 +111,12 @@ impl WindowDriver {
 
         let had_main_thread_work = {
             // 主线程任务只在当前逐窗 owner turn 内短借原生窗口。
-            let mut main_thread_context =
-                MainThreadContext::new(pending_root, reconcile_pending, platform_window);
+            let mut main_thread_context = MainThreadContext::new(
+                pending_root,
+                reconcile_pending,
+                platform_window,
+                tree,
+            );
             main_thread_queue.drain(&mut main_thread_context)
         };
         // 主线程任务可能在内部捕获发布 panic，必须在处理 Agent 工作前停止本帧。

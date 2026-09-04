@@ -77,15 +77,28 @@ fn generates_registered_keyboard_payload_fields() {
     );
     // code 使用公开 KeyCode 的稳定调试文本。
     assert!(tokens.contains("format !") && tokens.contains("key_payload"));
-    // 未知键盘字段必须失败。
-    let unknown = generate(
-        // 构造未登记修饰键字段。
+    // mods 已随修饰键载荷登记，读取后必须生成稳定的 KeyMod 局部。
+    let mods = generate(
+        // 构造读取修饰键载荷载荷的处理器。
         r#"<Button @keyDown="handle($event.mods)">Go</Button>"#,
     )
-    // 提取预期诊断。
-    .expect_err("keyDown mods 未登记时必须失败");
-    // 修复建议必须列出 key 和 code。
+    // 登记字段必须生成成功。
+    .expect("keyDown mods 应生成成功");
+    // 生成物必须解构 mods 并建立稳定修饰键载荷局部。
     assert!(
-        unknown.suggestion.contains("$event.key") && unknown.suggestion.contains("$event.code")
+        mods.contains("mods : __uix_mods") && mods.contains("__uix_mods_payload")
+    );
+    // 未知键盘字段仍然必须失败。
+    let unknown = generate(
+        // 构造未登记的坐标字段。
+        r#"<Button @keyDown="handle($event.x)">Go</Button>"#,
+    )
+    // 提取预期诊断。
+    .expect_err("keyDown 未登记字段必须失败");
+    // 修复建议必须列出 key、code 与 mods。
+    assert!(
+        unknown.suggestion.contains("$event.key")
+            && unknown.suggestion.contains("$event.code")
+            && unknown.suggestion.contains("$event.mods")
     );
 }

@@ -143,6 +143,42 @@ impl WidgetExpander {
             // 返回 action 主体降低结果。
             return result;
         }
+        // State 字段显式 .get() 零参成员调用与裸字段读值同义：先归一为裸标识符，
+        // 复用下方读值改写，避免字段改写为句柄 get 后再叠加用户显式 get 造成双重解引用。
+        if let ExpressionKind::Call { callee, arguments } = &expression.kind {
+            // 只归一零参调用；带参 get 属于切片/集合语义，交由既有递归路径。
+            if arguments.is_empty() {
+                // 识别形状为 <字段>.get() 的成员调用。
+                if let ExpressionKind::Member { object, member } = &callee.kind {
+                    // 名称必须精确匹配 State 公开读值入口。
+                    if member == "get" {
+                        // 接收者必须是标识符。
+                        if let ExpressionKind::Identifier(name) = &object.kind {
+                            // 词法局部与 For 迭代变量优先，避免遮蔽误判。
+                            if !self.is_local_identifier(name) {
+                                // 只归一登记为 State 类别的字段绑定。
+                                if bindings
+                                    // 按源码名称查找字段绑定。
+                                    .get(name)
+                                    // 仅保留 State 类别。
+                                    .filter(
+                                        |binding| {
+                                            binding.kind
+                                                == super::widget_codegen::BindingKind::State
+                                        },
+                                    )
+                                    .is_some()
+                                {
+                                    // 整体替换为裸字段标识符，交由下方读值改写统一处理。
+                                    expression.kind =
+                                        ExpressionKind::Identifier(name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // State 普通读值位置改写为就地 get()，避免组件入口无条件建立结构依赖。
         if let ExpressionKind::Identifier(name) = &expression.kind {
             // 当前 For 或闭包局部变量仍优先遮蔽组件字段。

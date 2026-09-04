@@ -16,10 +16,114 @@ pub(crate) fn generate_event_handler_expression(
     // 接收 UIX 事件属性名。
     event_name: &str,
 ) -> Result<TokenStream, Diagnostic> {
+    // 非键盘事件不提供修饰键载荷。
+    generate_key_event_handler_expression(expression, event, event_name, None)
+}
+
+// 校验键盘事件字段后生成处理器；修饰键载荷提供时 $event.mods 改写为该局部。
+pub(crate) fn generate_key_event_handler_expression(
+    // 接收事件处理器表达式。
+    expression: &Expression,
+    // 接收实际运行时 KeyCode 载荷局部变量。
+    event: &Ident,
+    // 接收 UIX 事件属性名。
+    event_name: &str,
+    // 接收可选的键盘修饰键载荷局部；提供时 $event.mods 改写为该局部。
+    modifier_payload: Option<&Ident>,
+) -> Result<TokenStream, Diagnostic> {
     // 在生成 Rust 前验证全部 $event 顶层字段。
     validate_event_payload_fields(expression, event_name)?;
+    // 键盘事件把 $event.mods 改写为修饰键载荷局部后按既有路径生成。
+    if let Some(mods) = modifier_payload {
+        // 克隆表达式以便在生成前完成限定改写。
+        let mut lowered = expression.clone();
+        // 递归替换全部 $event.mods 成员访问。
+        rewrite_modifier_access(&mut lowered, mods);
+        // 复用既有处理器调用与来源标记生成。
+        return generate_handler_expression(&lowered, Some(event));
+    }
     // 复用既有处理器调用与来源标记生成。
     generate_handler_expression(expression, Some(event))
+}
+
+// 递归把 $event.mods 成员访问改写为修饰键载荷局部引用。
+fn rewrite_modifier_access(
+    // 接收待改写表达式。
+    expression: &mut Expression,
+    // 接收修饰键载荷局部变量。
+    mods: &Ident,
+) {
+    // 按表达式形状递归。
+    match &mut expression.kind {
+        // action 块由独立降低路径处理，内部不含 $event。
+        ExpressionKind::LoweredAction(_) => {}
+        // 成员访问优先识别直接的 $event.mods 形状。
+        ExpressionKind::Member { object, member } => {
+            // 命中 $event.mods 时整体替换为载荷局部引用。
+            if matches!(&object.kind, ExpressionKind::Identifier(name) if name == "$event")
+                && member == "mods"
+            {
+                // 沿用原成员访问跨度，避免诊断漂移。
+                let span = expression.span;
+                // 替换为卫生载荷局部标识符。
+                expression.kind = ExpressionKind::Identifier(mods.to_string());
+                // 同步刷新被替换节点的跨度。
+                expression.span = span;
+                // 该节点已完成改写，不再下钻。
+                return;
+            }
+            // 普通成员对象继续递归。
+            rewrite_modifier_access(object, mods);
+        }
+        // 一元表达式递归操作数。
+        ExpressionKind::Unary { operand, .. } => rewrite_modifier_access(operand, mods),
+        // 二元表达式递归两侧。
+        ExpressionKind::Binary { left, right, .. } => {
+            rewrite_modifier_access(left, mods);
+            rewrite_modifier_access(right, mods);
+        }
+        // 三元表达式递归条件与两支。
+        ExpressionKind::Ternary {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            rewrite_modifier_access(condition, mods);
+            rewrite_modifier_access(then_branch, mods);
+            rewrite_modifier_access(else_branch, mods);
+        }
+        // 索引访问递归对象与索引。
+        ExpressionKind::Index { object, index } => {
+            rewrite_modifier_access(object, mods);
+            rewrite_modifier_access(index, mods);
+        }
+        // 调用递归目标与全部参数。
+        ExpressionKind::Call { callee, arguments } => {
+            rewrite_modifier_access(callee, mods);
+            for argument in arguments {
+                rewrite_modifier_access(&mut argument.value, mods);
+            }
+        }
+        // 对象字面量递归全部字段值。
+        ExpressionKind::Object(fields) => {
+            for field in fields {
+                rewrite_modifier_access(&mut field.value, mods);
+            }
+        }
+        // 数组字面量递归全部元素。
+        ExpressionKind::Array(items) => {
+            for item in items {
+                rewrite_modifier_access(item, mods);
+            }
+        }
+        // 受限闭包递归表达式体。
+        ExpressionKind::Closure { body, .. } => rewrite_modifier_access(body, mods),
+        // 标识符与字面量没有成员访问。
+        ExpressionKind::Identifier(_)
+        | ExpressionKind::Number(_)
+        | ExpressionKind::String(_)
+        | ExpressionKind::Boolean(_) => {}
+    }
 }
 
 // 递归验证表达式中的事件顶层成员。
