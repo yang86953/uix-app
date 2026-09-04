@@ -61,6 +61,9 @@ widget! {
         last_frame: std::cell::Cell<Rect>,
         // 缓存当前逻辑表面，统一绘制、脏区与浮层登记的边界。
         surface_rect: std::cell::Cell<Option<Rect>>,
+        // View DSL 声明的触发区显式尺寸；缺省时回落主题默认尺寸。
+        view_width: Option<f32>,
+        view_height: Option<f32>,
         #[snapshot(skip)]
         visual: &'static TooltipVisual,
         #[snapshot(skip)]
@@ -428,6 +431,8 @@ impl Tooltip {
             // 新组件尚未接收布局或绘制表面。
             surface_rect: std::cell::Cell::new(None),
             // 直接 Rust 叶路径保留与 UIX 声明相同的兼容默认。
+            view_width: None,
+            view_height: None,
             visual: TOOLTIP_VISUAL_REF,
             authored: TooltipAuthored::default(),
             natural_bubble_size: std::cell::Cell::new(natural_bubble_size),
@@ -540,15 +545,16 @@ impl Tooltip {
 
     fn trigger_rect(&self) -> Rect {
         let frame = self.last_frame.get();
+        let intrinsic = self.intrinsic_size();
         let width = if frame.w > 0.0 {
             frame.w
         } else {
-            self.visual.defaults.width
+            intrinsic.w
         };
         let height = if frame.h > 0.0 {
             frame.h
         } else {
-            self.visual.defaults.height
+            intrinsic.h
         };
         Rect::new(0.0, 0.0, width, height)
     }
@@ -575,7 +581,26 @@ impl Tooltip {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(self.visual.defaults.width, self.visual.defaults.height)
+        Size::new(
+            self.view_width.unwrap_or(self.visual.defaults.width),
+            self.view_height.unwrap_or(self.visual.defaults.height),
+        )
+    }
+
+    /// 接收 View DSL 的显式触发区尺寸与 Flex 覆盖。
+    ///
+    /// 样式宽度/高度只在声明时消费一次；气泡视觉仍由主题与专有颜色属性
+    /// 决定，不消费背景、前景等外观字段。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+    ) {
+        if let Some(width) = style.width {
+            self.view_width = width.is_finite().then_some(width.max(0.0));
+        }
+        if let Some(height) = style.height {
+            self.view_height = height.is_finite().then_some(height.max(0.0));
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -601,6 +626,8 @@ impl Tooltip {
         self.delay_ms = next.delay_ms;
         self.timer_id = next.timer_id;
         self.arrow = next.arrow;
+        self.view_width = next.view_width;
+        self.view_height = next.view_height;
         self.visual = next.visual;
         self.authored = next.authored;
         self.natural_bubble_size.set(next.natural_bubble_size.get());
