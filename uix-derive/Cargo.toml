@@ -2,7 +2,7 @@
 name = "uix-derive"
 version = "0.0.7"
 edition = "2024"
-publish = false
+publish = ["gitea"]
 license-file = "../LICENSE"
 description = "UIX derive macros: Display for route keys"
 
@@ -10,7 +10,7 @@ description = "UIX derive macros: Display for route keys"
 proc-macro = true
 
 [dependencies]
-uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.7", default-features = false }
+uix-lang-compiler = { path = "../uix-lang-compiler", version = "0.0.7", registry = "gitea", default-features = false }
 proc-macro2 = "1"
 quote = "1"
 serde_json = "1"

@@ -6,7 +6,7 @@ members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-lsp", "u
 name = "uix"
 version = "0.0.7"
 edition = "2024"
-publish = false
+publish = ["gitea"]
 license-file = "LICENSE"
 # 内部 crate 使用与产品定位一致且不泄露私有仓库位置的稳定描述。
 description = "UIX cross-platform native app framework for authorized internal use"
@@ -34,7 +34,7 @@ opt-level = 3
 codegen-units = 16
 
 [dependencies]
-uix-derive = { path = "uix-derive", version = "0.0.7", default-features = false }
+uix-derive = { path = "uix-derive", version = "0.0.7", registry = "gitea", default-features = false }
 ab_glyph = "0.2.32"
 # 小端 RHI 图片上传以安全切片转换借用既有 u32 像素，不扩大 unsafe 边界。
 bytemuck = "1.25.2"
