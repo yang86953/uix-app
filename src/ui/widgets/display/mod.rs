@@ -25,6 +25,11 @@ pub mod timeline;
 // 启用后保留既有 display::tree 子模块路径。
 /// 用于展示层级数据的树组件。
 pub mod tree;
+// 终端 capability 关闭时不解析终端实现目录。
+#[cfg(feature = "terminal")]
+// 启用后保留 display::terminal 子模块路径。
+/// 用于命令行交互与滚动输出的终端组件。
+pub mod terminal;
 
 pub use avatar::*;
 pub use badge::*;
@@ -50,3 +55,7 @@ pub use timeline::*;
 #[cfg(feature = "tree-widgets")]
 // 启用后保持 Tree 与 TreeNode 的既有扁平重导出。
 pub use tree::*;
+// 终端 capability 启用时才汇入数据展示公开面。
+#[cfg(feature = "terminal")]
+// 启用后保持 Terminal 与行模型的扁平重导出。
+pub use terminal::*;

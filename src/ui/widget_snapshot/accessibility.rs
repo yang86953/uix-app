@@ -91,6 +91,33 @@ pub(super) fn tree_accessibility(
     })
 }
 
+// 终端 capability 关闭时不编译终端无障碍转换逻辑。
+#[cfg(feature = "terminal")]
+pub(super) fn terminal_accessibility(
+    prompt: &str,
+    lines: &[String],
+    input: &str,
+) -> AccessibilitySnapshot {
+    // 无障碍观察通道有界：只保留最近 8 行非空输出与当前输入。
+    const MAX_TAIL_LINES: usize = 8;
+    let start = lines.len().saturating_sub(MAX_TAIL_LINES);
+    let mut entries: Vec<&str> = lines[start..]
+        .iter()
+        .map(String::as_str)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let input = input.trim();
+    if !input.is_empty() {
+        entries.push(input);
+    }
+    AccessibilitySnapshot::new(AccessibilityRole::List).with_state(AccessibilityState {
+        value_text: (!entries.is_empty())
+            .then(|| entries.join("; "))
+            .or_else(|| (!prompt.trim().is_empty()).then(|| prompt.trim().to_string())),
+        ..AccessibilityState::default()
+    })
+}
+
 // 图表 capability 关闭时不编译专属无障碍摘要辅助函数。
 #[cfg(feature = "charts")]
 pub(super) fn chart_accessibility<'a>(

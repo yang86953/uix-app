@@ -12,7 +12,7 @@ quote = "1"
 syn = { version = "3", features = ["full"] }
 
 [features]
-default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+default = ["image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "terminal"]
 # 仅为开发工具提供 overlay 驱动的 AOT 重编译入口，不进入默认构建。
 hot-reload = []
 image-codecs = []
@@ -24,6 +24,7 @@ table = []
 navigation = []
 feedback = []
 tree-widgets = []
+terminal = []
 
 [lints.clippy]
 unwrap_used = "warn"

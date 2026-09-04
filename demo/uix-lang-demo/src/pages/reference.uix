@@ -106,7 +106,7 @@
         // 说明输入标签覆盖。
         <Text>输入：Input / InputNumber / InputGroup / Slider / RangeSlider / Rate / Checkbox / Switch / Radio / Segmented / Select / Cascader / TreeSelect / AutoComplete / Mentions / DatePicker / DateRangePicker / TimePicker / ColorPicker / Upload / Form 全字段</Text>
         // 说明数据展示标签覆盖。
-        <Text>数据展示：Card / List / SelectableList / Collapse / Badge / Skeleton / Empty / ResultView / Descriptions / Timeline / Calendar / Carousel / Tree / Table / Avatar / Image / ImageGroup / RichText</Text>
+        <Text>数据展示：Card / List / SelectableList / Collapse / Badge / Skeleton / Empty / ResultView / Descriptions / Timeline / Calendar / Carousel / Tree / Terminal / Table / Avatar / Image / ImageGroup / RichText</Text>
         // 说明反馈标签覆盖。
         <Text>反馈：Message / Notification / Alert / Modal / Drawer / Tooltip / Popover / Popconfirm / FocusTrap / ProgressBar / Spin</Text>
         // 说明导航与框架标签覆盖。
@@ -118,7 +118,7 @@
         // 说明组件与状态能力。
         <Text>组件：props / 私有 state / 类型化 state（u32、usize、f32、i32、Date、Time、Color、Point、CascaderValue、HashSet、Option、Vec、UploadFile）/ setState / 句柄位绑定 / If / For / 样式类继承 / setTheme。</Text>
         // 说明数据声明能力。
-        <Text>数据：数组字面量 / 数据类型构造链（含 SelectableItem、CollapsePanel、SelectOption、TreeNode、TimelineItem、Step、MenuItem、DropdownItem、BarData、LineData、PieData、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
+        <Text>数据：数组字面量 / 数据类型构造链（含 SelectableItem、CollapsePanel、SelectOption、TreeNode、TerminalLine、TimelineItem、Step、MenuItem、DropdownItem、BarData、LineData、PieData、Date、Time、Color、Point）/ Record 类型化业务模型。</Text>
         // 展示保留边界小节。
         <Text fontSize="heading5">保留边界</Text>
         // 说明保留在 Rust API 的边界。

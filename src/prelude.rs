@@ -178,6 +178,10 @@ pub use crate::ui::{RichText, RichTextSegment, RichTextStyle};
 #[cfg(feature = "tree-widgets")]
 // 该列表覆盖展示树与树选择器的完整公开模型。
 pub use crate::ui::{DropPosition, SnapshotTreeNode, Tree, TreeNode, TreeSelect};
+// 终端 capability 启用时才在 prelude 暴露终端组件与行模型。
+#[cfg(feature = "terminal")]
+// 该列表覆盖终端组件的完整公开模型。
+pub use crate::ui::{Terminal, TerminalColor, TerminalLine};
 
 // app
 

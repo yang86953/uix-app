@@ -44,6 +44,10 @@ use crate::ui::Widget;
 #[cfg(feature = "tree-widgets")]
 // 两个类型共享同一源码与公开面门禁。
 use crate::ui::widgets::{Tree, TreeSelect};
+// 终端 capability 启用时才引入终端 patch 目标。
+#[cfg(feature = "terminal")]
+// 该类型与终端快照变体共享同一门禁。
+use crate::ui::widgets::Terminal;
 // 导入区分布局字段与纯绘制字段所需的统一样式快照。
 use crate::ui::theme::style::Style;
 
@@ -541,6 +545,10 @@ pub(crate) fn patch_builtin_widget(
     #[cfg(feature = "tree-widgets")]
     // 启用后保持展示树的原位同步语义。
     patch_as!(Tree);
+    // 终端 capability 启用时才生成终端类型化 patch 分支。
+    #[cfg(feature = "terminal")]
+    // 启用后保持终端的原位同步语义。
+    patch_as!(Terminal);
     patch_as!(SelectableList);
     // 图表 capability 启用时才生成柱状图类型化 patch 分支。
     #[cfg(feature = "charts")]

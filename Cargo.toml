@@ -153,7 +153,7 @@ uix-lang-compiler = { path = "uix-lang-compiler" }
 [features]
 # 默认启用首发平台图形矩阵与九项使用方能力：
 #   Windows/Linux 优先 Vulkan；Windows 保留 D3D11、Linux 保留 OpenGL ES 兼容回退。
-default = ["vulkan", "d3d11", "opengles", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets"]
+default = ["vulkan", "d3d11", "opengles", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "terminal"]
 d3d11 = [
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
@@ -205,6 +205,8 @@ navigation = ["uix-derive/navigation"]
 feedback = ["uix-derive/feedback"]
 # 树展示、树节点模型、树选择器、patch 与快照公开面作为一个可独立关闭的源码能力。
 tree-widgets = ["uix-derive/tree-widgets"]
+# 终端组件族、行缓冲模型、命令输入与快照公开面作为一个可独立关闭的源码能力。
+terminal = ["uix-derive/terminal"]
 agent-control = [
     "dep:serde_json",
     "dep:png",

@@ -27,7 +27,8 @@ use super::{
     generate_skeleton, generate_slider, generate_space, generate_spin, generate_splitter,
     generate_static_chart, generate_steps, generate_switch, generate_table, generate_tabs,
     generate_tag, generate_theme_toggle, generate_time_picker, generate_timeline, generate_tooltip,
-    generate_tree, generate_tree_select, generate_typography, generate_upload,
+    generate_terminal, generate_tree, generate_tree_select, generate_typography,
+    generate_upload,
     generate_virtual_scroll, generate_watermark, generate_window_control,
     generate_window_drag_region, planned_builtin_diagnostic, supported_builtin_hint,
 };
@@ -166,6 +167,8 @@ pub(super) fn generate_element(element: &Element) -> Result<TokenStream, Diagnos
         "Carousel" => generate_carousel(element),
         // 树形控件映射到类型化节点与初始勾选、展开契约。
         "Tree" => generate_tree(element),
+        // 终端映射到类型化输出行与可选提示符契约。
+        "Terminal" => generate_terminal(element),
         // 数据表格映射到类型化 TableRow / TableColumn 与首版运行配置。
         "Table" => generate_table(element),
         // 标签页映射到静态元数据、State<String> 活动 key 与有序面板子树。

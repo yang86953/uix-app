@@ -403,6 +403,11 @@ mod tree_codegen;
 // 集中验证 Tree 生成、默认值与拒绝路径。
 #[cfg(test)]
 mod tree_codegen_tests;
+// 定义 Terminal 类型化输出行与提示符的公开 API 代码生成边界。
+mod terminal_codegen;
+// 集中验证 Terminal 生成、默认值与拒绝路径。
+#[cfg(test)]
+mod terminal_codegen_tests;
 // 定义 Table 类型化行列与运行配置的公开 API 代码生成边界。
 mod table_codegen;
 // 集中验证 Table 生成与拒绝路径。
@@ -819,6 +824,8 @@ pub(crate) use calendar_codegen::generate_calendar;
 pub(crate) use carousel_codegen::generate_carousel;
 // 向核心元素生成器暴露 Tree 叶组件专用映射。
 pub(crate) use tree_codegen::generate_tree;
+// 向核心元素生成器暴露 Terminal 叶组件专用映射。
+pub(crate) use terminal_codegen::generate_terminal;
 // 向核心元素生成器暴露 Table 叶组件专用映射。
 pub(crate) use table_codegen::generate_table;
 // 向核心元素生成器暴露 Tabs 容器专用映射。

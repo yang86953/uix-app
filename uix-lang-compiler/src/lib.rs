@@ -977,6 +977,7 @@ fn capability_enabled(name: &str) -> bool {
         "navigation" => cfg!(feature = "navigation"),
         "feedback" => cfg!(feature = "feedback"),
         "tree-widgets" => cfg!(feature = "tree-widgets"),
+        "terminal" => cfg!(feature = "terminal"),
         _ => false,
     }
 }

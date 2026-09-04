@@ -32,6 +32,10 @@ use super::super::accessibility::rich_text_accessibility;
 #[cfg(feature = "tree-widgets")]
 // 该函数只处理同步门控的展示树快照变体。
 use super::super::accessibility::tree_accessibility;
+// 终端 capability 启用时才引入专属无障碍转换函数。
+#[cfg(feature = "terminal")]
+// 该函数只处理同步门控的终端快照变体。
+use super::super::accessibility::terminal_accessibility;
 use super::super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 use super::SnapshotFields;
 
@@ -547,6 +551,14 @@ impl SnapshotFields {
                 expanded_keys,
                 ..
             } => tree_accessibility(nodes, selected_key, expanded_keys),
+            // 终端 capability 启用时才转换终端无障碍快照。
+            #[cfg(feature = "terminal")]
+            Self::Terminal {
+                prompt,
+                lines,
+                input,
+                ..
+            } => terminal_accessibility(prompt, lines, input),
             Self::Calendar {
                 year,
                 month,

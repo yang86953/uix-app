@@ -27,6 +27,32 @@
   ScrollView+For 行内 Tooltip 的声明尺寸断言与点击命中、容器悬停目标
   重定向四项；分别验证过无对应修复时必败。
 
+### 组件：新增终端组件族（terminal capability）
+
+- 新增 `Terminal` 终端视图组件：上部为虚拟化滚动输出缓冲区，底部为固定
+  提示符输入行；支持完整字符级编辑（方向键、Home/End、Backspace/Delete、
+  光标处插入与粘贴，拒绝控制字符）、`↑`/`↓` 命令历史漫游（上限 100 条）、
+  `Escape` 清空草稿；输出默认跟随底部，用户上滚即停止跟随、回底恢复。
+- 公开模型：`TerminalLine`（着色文本段集合，`plain()` 输出纯文本）与
+  `TerminalColor` 语义色板（Default/Muted/Primary/Success/Warning/Error/
+  Info），色值全部经主题 token 解析；组件视觉几何由同目录 UIX 声明唯一
+  拥有。
+- 命令执行属于应用域：回车提交非空命令后组件清空草稿入历史、调用
+  `on_command` 回调并发出 `submit` 语义事件；组件不执行命令、不回显、
+  不解析 ANSI 转义序列，输出缓冲由应用拥有并自行截断。
+- capability 门控贯通三层：主 crate `terminal` feature、uix-derive 转发、
+  uix-lang-compiler 能力登记（`capability!` + `component!("Terminal", …)`）；
+  关闭后公开门面、快照变体与声明式标签一并消失，`<Terminal data={…}
+  prompt="…" />` 映射经编译期生成矩阵登记（可用组件 112、能力 10）。
+- 快照与协调接线：`SnapshotFields::Terminal`（提示符、输出行纯文本、当前
+  输入与历史）、有界无障碍摘要（最近 8 行非空输出与当前草稿）与
+  `patch_as!(Terminal)` 原位同步；滚动沿用 `VirtualListScroll` 等高虚拟化
+  （新增 `overscan_count` 只读取）。
+- 文档与验证：新增使用文档[终端](docs/使用/数据展示/终端.md)（3 个
+  `uix-compile` 围栏）、uix-lang 展示组件参考与组件速查条目；
+  `tests/terminal_docs_public_api.rs` 从外部消费者视角编译全部围栏，
+  编译器侧新增 Terminal codegen 契约测试（生成、缺省、拒绝路径）。
+
 ### 界面：动态文本在有限约束宽度内自动换行
 
 - 背景：uix-lang `<Text>{插值}</Text>` 编译为 `DynamicLabel`，其测量按

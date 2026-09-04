@@ -221,6 +221,11 @@ pub fn snapshot_fields_from_any(widget: &dyn Any) -> SnapshotFields {
     if let Some(tree) = widget.downcast_ref::<Tree>() {
         return tree.snapshot_fields();
     }
+    // 终端 capability 启用时才引用终端组件类型。
+    #[cfg(feature = "terminal")]
+    if let Some(terminal) = widget.downcast_ref::<Terminal>() {
+        return terminal.snapshot_fields();
+    }
     if let Some(list) = widget.downcast_ref::<List>() {
         return list.snapshot_fields();
     }
