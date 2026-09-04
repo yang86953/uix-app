@@ -145,7 +145,7 @@ widget! {
         /// 多行模式每行 glyph x 位置（行索引 → glyph x 数组）
         /// 多行模式逐行保存真实 shaping 字形簇，供方向感知命中使用。
         line_glyphs: RefCell<Vec<Vec<PositionedGlyph>>>,
-        selection: Cell<Option<(usize, usize)>>,
+        pub(crate) selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
         // 扩展字段

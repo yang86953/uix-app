@@ -953,12 +953,12 @@ const EVENTS: &[EventSpec] = &[
     EventSpec {
         id: "event.keyDown",
         name: "@keyDown",
-        fields: &["key", "code"],
+        fields: &["key", "code", "mods"],
     },
     EventSpec {
         id: "event.keyUp",
         name: "@keyUp",
-        fields: &["key", "code"],
+        fields: &["key", "code", "mods"],
     },
     EventSpec {
         id: "event.mouseEnter",

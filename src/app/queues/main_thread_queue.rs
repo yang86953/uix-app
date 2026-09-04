@@ -9,10 +9,13 @@ use crate::ui::view::ViewNode;
 // 单个窗口轮次最多执行固定数量的主线程任务，避免自投递队列独占 owner thread。
 const MAX_JOBS_PER_DRAIN: usize = 64;
 
+use crate::ui::WidgetTree;
+
 pub(crate) struct MainThreadContext<'a> {
     pending_root: &'a mut Option<ViewNode>,
     reconcile_pending: &'a mut bool,
     platform_window: &'a mut dyn PlatformWindow,
+    tree: &'a mut WidgetTree,
 }
 
 impl<'a> MainThreadContext<'a> {
@@ -20,12 +23,19 @@ impl<'a> MainThreadContext<'a> {
         pending_root: &'a mut Option<ViewNode>,
         reconcile_pending: &'a mut bool,
         platform_window: &'a mut dyn PlatformWindow,
+        tree: &'a mut WidgetTree,
     ) -> Self {
         Self {
             pending_root,
             reconcile_pending,
             platform_window,
+            tree,
         }
+    }
+
+    /// 在当前 UI turn 内短借窗口 WidgetTree，供应用内自动化命令执行语义动作。
+    pub(crate) fn tree_mut(&mut self) -> &mut WidgetTree {
+        self.tree
     }
 
     pub(crate) fn update_root(&mut self, root: ViewNode) {
