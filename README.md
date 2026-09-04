@@ -6,7 +6,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生跨平台应用框架：让同一套�
 
 ## 当前状态
 
-- 当前版本为 `0.0.7`，已于 2026-09-04 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
+- 当前版本为 `0.0.7`，已于 2026-09-04 通过私有 Gitea Release 发布；应用依赖使用私有 Cargo Registry 中带 checksum 的正式包，不读取源码仓库。
 - Windows 与 Linux 平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；任务级进度不在仓库内复制（原 Gitea 父 Issue #1 已停止维护，相关链接按撰写时点存档）。
@@ -17,6 +17,20 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生跨平台应用框架：让同一套�
 - **Rust API**：需要直接使用 Rust 声明式 API 时，阅读[使用 · 快速开始](docs/使用/入门/快速开始.md)。
 - **UIX Lang 编辑器接入**：工作区成员 `uix-lang-lsp` 提供独立语言服务器（stdio LSP，二进制 `uix-lang-ls`）；原 `uix-lang-cli` 内嵌最小 LSP 已移除，`uix lsp` 子命令委托同一实现。接入方式、能力清单与可见失败见[语言服务器](docs/uix-lang/指南/语言服务器.md)。
 - **了解能力**：先看[产品能力与边界](docs/产品/能力.md)，再按[文档中心](docs/README.md)选择专题。
+
+应用先配置内部 Registry，再锁定正式包：
+
+```toml
+[registries.gitea]
+index = "sparse+https://yang-server.tail9d5559.ts.net/api/packages/admin/cargo/"
+```
+
+```toml
+[dependencies]
+uix = { version = "=0.0.7", registry = "gitea" }
+```
+
+`Cargo.lock` 必须保留 Registry 来源和 SHA-256 checksum；禁止改用 `path`、`git` 或移动分支。
 
 ## 公开 API 测试
 

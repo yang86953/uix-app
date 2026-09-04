@@ -2,7 +2,7 @@
 name = "uix-lang-compiler"
 version = "0.0.7"
 edition = "2024"
-publish = false
+publish = ["gitea"]
 license-file = "../LICENSE"
 description = "UIX Lang shared build-time compiler system"
 

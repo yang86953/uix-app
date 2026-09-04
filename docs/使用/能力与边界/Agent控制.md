@@ -27,7 +27,7 @@
 
 ```toml
 [dependencies]
-uix = { path = "../uix-app", features = ["agent-control"] }
+uix = { version = "=0.0.7", registry = "gitea", features = ["agent-control"] }
 ```
 
 **第二步**，应用入口显式启用：
