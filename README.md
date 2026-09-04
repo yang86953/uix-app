@@ -6,7 +6,7 @@ UIX（/ˈjuːɪks/）是一个 Rust 原生跨平台应用框架：让同一套�
 
 ## 当前状态
 
-- 当前版本为 `0.0.3`，已于 2026-09-01 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
+- 当前版本为 `0.0.7`，已于 2026-09-04 通过私有 Gitea Release 发布；正式制品摘要以该 Release 为准。
 - Windows 与 Linux 平台统一以 Vulkan GPU-native swapchain 为首选，Windows 保留已完成真实主机验收的 D3D11 兼容回退，Linux/Wayland 保留 EGL OpenGL ES 兼容回退。平台与硬件完成度以实际代码、公开 API 测试与[图形后端状态](docs/架构/graphics/backend.md#当前实现状态)为准。
 - 版本与交付物口径见[交付与许可](docs/产品/交付与许可.md)，近期变化见[变更记录](CHANGELOG.md)。
 - 仓库文档描述稳定的产品、使用与架构契约；任务级进度不在仓库内复制（原 Gitea 父 Issue #1 已停止维护，相关链接按撰写时点存档）。
@@ -52,7 +52,7 @@ bash scripts/cross_compile.sh build windows-x64 release
 bash scripts/build_internal_release.sh
 ```
 
-产物写入 `target/internal-release/uix-0.0.3-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
+产物写入 `target/internal-release/uix-0.0.7-internal-linux-x64.tar.gz`。构建器会调用独立校验器核对精确载荷、规范路径、归档元数据与 SHA-256；候选包可生成不表示版本已正式发布，完整契约见[交付与许可](docs/产品/交付与许可.md)。
 
 ## Windows 内部候选包
 
@@ -68,7 +68,7 @@ Linux x64 宿主也可使用冻结的 `cargo-xwin 0.23.1` 与 LLVM 交叉链接�
 bash scripts/build_internal_windows_cross_release.sh
 ```
 
-两个入口均生成并校验 `uix-0.0.3-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。交叉链接能证明 PE/COFF 产物，不替代真实 Windows 主机上的 Vulkan、D3D11、窗口、输入与 Agent 运行验收，实际证据边界由 Gitea Release 持有。
+两个入口均生成并校验 `uix-0.0.7-internal-win-x64.zip` 的载荷、路径与摘要；这是交付物完整性操作，不属于项目测试。交叉链接能证明 PE/COFF 产物，不替代真实 Windows 主机上的 Vulkan、D3D11、窗口、输入与 Agent 运行验收，实际证据边界由 Gitea Release 持有。
 
 ## 文档导航
 

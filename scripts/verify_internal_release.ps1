@@ -5,7 +5,7 @@ param(
     # 接收待验证的内部候选包路径。
     [string]$ZipPath,
     # 版本默认与当前首发候选保持一致。
-    [string]$Version = '0.0.3'
+    [string]$Version = '0.0.7'
 )
 
 # 任何校验失败都立即终止并返回非零进程状态。

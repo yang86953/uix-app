@@ -1,6 +1,6 @@
 [package]
 name = "uix-lang-gate-consumer"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2024"
 publish = false
 
@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 # capability 全部默认关闭，由各 gate-broken-* 场景单独驱动失败编译。
-uix-derive = { path = "../uix-derive", version = "0.0.6", default-features = false }
+uix-derive = { path = "../uix-derive", version = "0.0.7", default-features = false }
 
 [dev-dependencies]
 # 关闭场景快照与生产门禁共享同一 Compiler System，且默认同样不启用任何 capability。

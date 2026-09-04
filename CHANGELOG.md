@@ -2,35 +2,27 @@
 
 这里记录 UIX 闭源版本中已经发生、会影响使用方、交付物或验证方式的变化。变更条目不表示版本已发布，也不承担任务、负责人、阻塞和实时完成度管理；正式发布与交付事实见[交付与许可](docs/产品/交付与许可.md)。
 
-## 0.0.6（2026-09-02）
+## 0.0.7（2026-09-04）
 
-### WindowControl 图标前景色定制（深色标题栏对比度适配）
+### VirtualScroll 行模板作用域完整化（UIX Lang 编译修复）
 
-- 背景：`window_controls` 组合的三个图标颜色固定为主题文本角色
-  （`ColorValue::Neutral(NeutralRole::Text)`），浅色标题栏表面正确；
-  消费方在深色标题栏（如深绿品牌栏）上使用自定义标题栏时，深色图标
-  在深色表面对比度不足（实测约 1.4:1），且 UIX 样式类不级联、组件未
-  暴露图标颜色入口，消费方无公开途径适配。
-- 新增公开 `window_controls_with_icon_color(show_minimize, show_maximize,
-  show_close, icon_color: ColorValue)` 组合构造器（prelude 与
-  `ui::window_controls_with_icon_color` 双路径导出）；声明层同目录 UIX
-  的三个 Icon 前景改为注入参数。既有 `window_controls` 签名与默认
-  主题文本色外观完全不变（委托新入口）。
-- UIX 声明层 `<WindowControl>` 新增专有属性 `iconColor`：接受颜色
-  字面量或字符串表达式（`impl Into<ColorValue>`，含 `&str`/`String`）；
-  未声明时保持既有 `window_controls` 生成路径与主题文本色，声明时生成
-  `window_controls_with_icon_color(..., (#color).into())`。窗口动作、
-  无障碍语义与 hover/focus/active 热区外观继续由运行时 `window_chrome`
-  模块拥有。
-- 文档：通用组件参考第 10 节属性表补 `iconColor`；多窗口使用文档
-  `multi-window-control` 围栏示例补深色表面用法。
-- 版本对齐：uix-derive、uix-lang-compiler、uix-lang-cli、uix-lang-lsp
-  与 uix-lang-gate-consumer 随主 crate 同步升至 0.0.6。
-- 验证：新增 WindowControl codegen 契约测试（默认/定制入口分叉、
-  `.into()` 转换、子节点与未登记属性拒绝路径）；`multi-window-control`
-  公开 API 编译消费者补深色表面示例；框架全量 46 个测试套件全绿；
-  消费方（markdown-project-manager）深绿标题栏真窗实测图标前景
-  #E7F2ED 呈现清晰（见消费方 0.8 版界面文档验收记录）。
+- `VirtualScroll` 的惰性行工厂现会在闭包内自包含建立行级 For 实例路径、
+  逐迭代准备语句与事件捕获克隆；行根内嵌套 `<For>`、引用当前行字段的
+  数据源及字符串字面量比较不再生成作用域外符号。
+- 行身份按绝对索引生成，跨物化窗口重建保持稳定；准备语句引用的组件级
+  声明在闭包外克隆遮蔽，不夺走组件体后续使用的所有权。
+- `<For key={...}>` 的纯表达式子语言明确拒绝字符串字面量，需改用数据项
+  的字符串字段；新增 codegen 契约测试，主演示同步覆盖嵌套 For 与字面量
+  比较场景。
+
+### 布局伸缩、双向滚动与可变行高收敛
+
+- Container 与 Space 不再用组件视觉默认值覆盖子项公开的 `flexShrink`
+  声明；无显式主轴尺寸且不参与 grow 的容器保持由内容撑开。
+- ScrollView 同时求解两轴滚动条固定点，保留双向滚动内容的固定自然宽度，
+  避免一侧沟槽触发另一轴溢出时漏判或把内容压入滚动条下方。
+- `VirtualScroll::variable_height()` 改用已物化行子树的真实自然尺寸布局，
+  固定行高模式继续避免无谓的子树重复测量；公开 API 测试覆盖四类回归。
 
 ### 诊断系统覆盖整改（框架侧 reporting 接入与死代码清理）
 
@@ -285,6 +277,36 @@
 - 验证：主 crate 与 demo 全 feature `cargo check` 通过；90 项公开 API
   测试全绿；诊断契约审计违规为零。
 
+## 0.0.6（2026-09-02）
+
+### WindowControl 图标前景色定制（深色标题栏对比度适配）
+
+- 背景：`window_controls` 组合的三个图标颜色固定为主题文本角色
+  （`ColorValue::Neutral(NeutralRole::Text)`），浅色标题栏表面正确；
+  消费方在深色标题栏（如深绿品牌栏）上使用自定义标题栏时，深色图标
+  在深色表面对比度不足（实测约 1.4:1），且 UIX 样式类不级联、组件未
+  暴露图标颜色入口，消费方无公开途径适配。
+- 新增公开 `window_controls_with_icon_color(show_minimize, show_maximize,
+  show_close, icon_color: ColorValue)` 组合构造器（prelude 与
+  `ui::window_controls_with_icon_color` 双路径导出）；声明层同目录 UIX
+  的三个 Icon 前景改为注入参数。既有 `window_controls` 签名与默认
+  主题文本色外观完全不变（委托新入口）。
+- UIX 声明层 `<WindowControl>` 新增专有属性 `iconColor`：接受颜色
+  字面量或字符串表达式（`impl Into<ColorValue>`，含 `&str`/`String`）；
+  未声明时保持既有 `window_controls` 生成路径与主题文本色，声明时生成
+  `window_controls_with_icon_color(..., (#color).into())`。窗口动作、
+  无障碍语义与 hover/focus/active 热区外观继续由运行时 `window_chrome`
+  模块拥有。
+- 文档：通用组件参考第 10 节属性表补 `iconColor`；多窗口使用文档
+  `multi-window-control` 围栏示例补深色表面用法。
+- 版本对齐：uix-derive、uix-lang-compiler、uix-lang-cli、uix-lang-lsp
+  与 uix-lang-gate-consumer 随主 crate 同步升至 0.0.6。
+- 验证：新增 WindowControl codegen 契约测试（默认/定制入口分叉、
+  `.into()` 转换、子节点与未登记属性拒绝路径）；`multi-window-control`
+  公开 API 编译消费者补深色表面示例；框架全量 46 个测试套件全绿；
+  消费方（markdown-project-manager）深绿标题栏真窗实测图标前景
+  #E7F2ED 呈现清晰（见消费方 0.8 版界面文档验收记录）。
+
 ## 0.0.5（2026-09-02）
 
 ### MenuBar 横向菜单栏组件（新增导航 capability 公开面）
@@ -490,7 +512,7 @@
   外扩契约 + 真实聚焦路径 frame 包含断言）全绿；workspace 53 个测试目标
   全部通过。
 
-## 0.0.7（2026-08-30）
+## 0.0.7（2026-08-30，已删除碎片标签）
 
 ### 2026-08-30 UIX Lang 独立语言服务器（uix-lang-ls）
 
