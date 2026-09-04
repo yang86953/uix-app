@@ -81,7 +81,7 @@ impl Widget for DynamicLabel {
 
 impl WidgetLayout for DynamicLabel {
     fn measure(&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        constraints.clamp(self.intrinsic_size(constraints))
     }
 
     fn layout_margin(&self) -> crate::core::EdgeInsets {
@@ -102,7 +102,7 @@ impl WidgetLayout for DynamicLabel {
 }
 
 impl DynamicLabel {
-    fn intrinsic_size(&self) -> Size {
+    fn intrinsic_size(&self, constraints: Constraints) -> Size {
         let pad = self.style.as_ref().map(|s| s.padding).unwrap_or_default();
         if let Some(style) = &self.style {
             if let (Some(w), Some(h)) = (style.width, style.height) {
@@ -115,10 +115,18 @@ impl DynamicLabel {
             .as_ref()
             .map(|s| s.font_size.default_size())
             .unwrap_or(14.0);
+        // 换行宽度：显式样式宽度优先，否则用布局约束的有限宽度参与估算；
+        // 无显式高度时行数随折行增长，保持与绘制同一行距契约。
+        let available_width = self
+            .style
+            .as_ref()
+            .and_then(|s| s.width)
+            .unwrap_or(constraints.max.w);
+        let wrap_width = (available_width - pad.horizontal()).max(0.0);
         // 动态文本与静态 Label 共用显式换行估算，避免布局仍按单行占位。
         let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
             &text,
-            f32::INFINITY,
+            wrap_width,
             fs,
         );
         // 动态标签绘制固定使用 1.5 倍字号行盒，测量保持同一行距契约。
@@ -132,7 +140,11 @@ impl DynamicLabel {
             .style
             .as_ref()
             .and_then(|s| s.width)
-            .unwrap_or(estimated.max_line_width + pad.horizontal());
+            .unwrap_or(if estimated.width_wrapped {
+                available_width
+            } else {
+                (estimated.max_line_width + pad.horizontal()).min(available_width)
+            });
         Size::new(w, h)
     }
 }
@@ -151,11 +163,55 @@ impl WidgetRender for DynamicLabel {
             .map(|s| s.resolve_font_size(ctx.tokens()))
             .unwrap_or(14.0);
         let padding = style.map(|s| s.padding).unwrap_or_default();
-        ctx.draw_text(
-            &text,
-            crate::core::Point::new(frame.x + padding.left, frame.y + padding.top),
-            color,
-            font_size,
+        // 约束矩形内自动换行；首行顶左位置与单行绘制保持一致。
+        let rect = Rect::new(
+            frame.x + padding.left,
+            frame.y + padding.top,
+            (frame.w - padding.horizontal()).max(0.0),
+            (frame.h - padding.vertical()).max(0.0),
         );
+        ctx.draw_text_wrapped(&text, rect, color, font_size);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::theme::style::Style;
+
+    // 宽松约束保持单行内在尺寸。
+    #[test]
+    fn single_line_with_unbounded_width() {
+        let label = DynamicLabel::new(|| "标题".to_string());
+        let size = label.measure(Constraints::loose(Size::infinite()));
+        assert_eq!(size.h, 14.0 * 1.5);
+        assert!(size.w > 0.0);
+    }
+
+    // 有限约束宽度内折行：行数增长、宽度不越界。
+    #[test]
+    fn wraps_within_finite_constraint() {
+        let label = DynamicLabel::new(|| "一首特别特别特别长的歌曲标题超出了侧栏可用宽度".to_string());
+        let single = label.measure(Constraints::loose(Size::infinite()));
+        let wrapped = label.measure(Constraints::new(
+            Size::zero(),
+            Size::new(80.0, f32::INFINITY),
+            None,
+        ));
+        assert!(wrapped.h > single.h, "约束变窄后高度应随折行增长");
+        assert!(wrapped.w <= 80.0, "折行后宽度不得超出约束");
+    }
+
+    // 显式宽高仍然是固定尺寸契约。
+    #[test]
+    fn explicit_size_wins() {
+        let mut style = Style::default();
+        style.width = Some(48.0);
+        style.height = Some(24.0);
+        let mut label = DynamicLabel::new(|| "任意长度文本".to_string());
+        label.set_style(style);
+        let size = label.measure(Constraints::loose(Size::infinite()));
+        assert_eq!(size.w, 48.0);
+        assert_eq!(size.h, 24.0);
     }
 }
