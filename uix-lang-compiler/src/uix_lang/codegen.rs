@@ -372,6 +372,12 @@ pub(super) fn apply_common_attributes(
                 // 应用固定高度。
                 quote! { (#view).height(#value) }
             }
+            // 动态定位四边复用公开数值属性契约，几何仍由 ViewNode 统一求解。
+            "top" | "right" | "bottom" | "left" => {
+                let value = numeric_value(attribute)?;
+                let method = Ident::new(&attribute.name, Span::call_site());
+                quote! { (#view).#method(#value) }
+            }
             // 主轴扩张映射到 ViewNode::flex_grow。
             "flexGrow" => {
                 // 生成数值。

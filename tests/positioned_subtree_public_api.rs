@@ -7,6 +7,58 @@ use uix::ui::PositionMode;
 use uix::ui::test_harness::TestApp;
 
 #[test]
+fn lang_dynamic_insets_move_visible_and_clickable_content() {
+    let offset = State::new(24.0_f32);
+    let clicked = State::new(false);
+    let view_offset = offset.clone();
+    let view_clicked = clicked.clone();
+    let mut app = TestApp::new((600.0, 400.0), move || {
+        let offset = view_offset.clone();
+        let clicked = view_clicked.clone();
+        uix!(
+            r#"
+          <Widget name="Positioned" props="offset: State<f32>, clicked: State<bool>">
+            <Container style="position: relative;" width="600px" height="400px">
+              <Container style="position: absolute;" left={offset.get()} top={offset.get()} width="220px" height="72px" automationId="card">
+                <Button automationId="node" @click="setState(clicked: true)">中文节点</Button>
+              </Container>
+              <Container style="position: absolute;" right={offset.get()} bottom={offset.get()} width="80px" height="40px" automationId="corner" />
+            </Container>
+          </Widget>
+          <Positioned offset={offset.clone()} clicked={clicked.clone()} />
+        "#
+        )
+    });
+    assert_eq!(
+        app.snapshot().find("card").unwrap().frame,
+        Rect::new(24.0, 24.0, 220.0, 72.0)
+    );
+    assert_eq!(
+        app.snapshot().find("corner").unwrap().frame,
+        Rect::new(496.0, 336.0, 80.0, 40.0)
+    );
+    offset.set(100.0);
+    app.settle().unwrap();
+    assert_eq!(
+        app.snapshot().find("card").unwrap().frame,
+        Rect::new(100.0, 100.0, 220.0, 72.0)
+    );
+    assert_eq!(
+        app.snapshot().find("corner").unwrap().frame,
+        Rect::new(420.0, 260.0, 80.0, 40.0)
+    );
+    assert!(
+        app.snapshot()
+            .find("node")
+            .unwrap()
+            .visible_bounds
+            .is_some()
+    );
+    app.click("node").expect("坐标更新后按钮仍应可点击");
+    assert!(clicked.get());
+}
+
+#[test]
 fn absolute_container_keeps_declared_size_and_clickable_descendants() {
     let clicked = State::new(false);
     let view_clicked = clicked.clone();
