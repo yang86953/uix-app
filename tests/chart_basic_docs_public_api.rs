@@ -6,9 +6,6 @@ mod dynamic_chart {
     // 引入文档承诺的图表与状态公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "dynamic-chart";
-
     // 编译业务 State 到图表数据快照的公开数据流。
     fn compile_example() {
         // 创建由业务拥有的柱状图数据状态。
@@ -41,9 +38,6 @@ mod bar_chart {
     // 引入文档承诺的柱状图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "bar-chart";
-
     // 编译固定数据与尺寸配置。
     fn compile_example() {
         // 构造三季度柱状图。
@@ -68,9 +62,6 @@ mod bar_chart {
 mod chart_bar_advanced {
     // 引入文档承诺的柱状图与系列公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-bar-advanced";
 
     // 编译分组、堆叠与横向柱状图配置。
     fn compile_example() {
@@ -148,9 +139,6 @@ mod line_chart {
     // 引入文档承诺的折线图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "line-chart";
-
     // 编译固定数据、尺寸与数据点半径配置。
     fn compile_example() {
         // 构造三个月份的折线图。
@@ -177,9 +165,6 @@ mod line_chart {
 mod chart_line_advanced {
     // 引入文档承诺的折线、面积与系列公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-line-advanced";
 
     // 编译多系列、面积、堆叠与平滑配置。
     fn compile_example() {
@@ -242,9 +227,6 @@ mod pie_chart {
     // 引入文档承诺的饼图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "pie-chart";
-
     // 编译产品占比环形图配置。
     fn compile_example() {
         // 构造三个产品占比的环形图。
@@ -269,9 +251,6 @@ mod pie_chart {
 mod chart_pie_advanced {
     // 引入文档承诺的饼图公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-pie-advanced";
 
     // 编译玫瑰图与半圆环配置。
     fn compile_example() {
@@ -303,9 +282,6 @@ mod chart_pie_advanced {
 mod chart_scatter {
     // 引入文档承诺的散点、气泡与系列公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-scatter";
 
     // 编译单系列、多系列与气泡尺寸配置。
     fn compile_example() {
@@ -359,53 +335,4 @@ mod chart_scatter {
             // 声明垂直轴标题。
             .y_axis("GDP (万亿美元)");
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖基础图表文档的全部八个围栏。
-fn chart_basic_rust_fences_compile_as_external_consumers() {
-    // 收集八个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记动态图表围栏。
-        dynamic_chart::COMPILE_ID,
-        // 登记基础柱状图围栏。
-        bar_chart::COMPILE_ID,
-        // 登记高级柱状图围栏。
-        chart_bar_advanced::COMPILE_ID,
-        // 登记基础折线图围栏。
-        line_chart::COMPILE_ID,
-        // 登记高级折线图围栏。
-        chart_line_advanced::COMPILE_ID,
-        // 登记基础饼图围栏。
-        pie_chart::COMPILE_ID,
-        // 登记高级饼图围栏。
-        chart_pie_advanced::COMPILE_ID,
-        // 登记散点与气泡图围栏。
-        chart_scatter::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用图表文档当前声明的稳定标识作为期望。
-        [
-            // 动态图表围栏标识。
-            "dynamic-chart",
-            // 基础柱状图围栏标识。
-            "bar-chart",
-            // 高级柱状图围栏标识。
-            "chart-bar-advanced",
-            // 基础折线图围栏标识。
-            "line-chart",
-            // 高级折线图围栏标识。
-            "chart-line-advanced",
-            // 基础饼图围栏标识。
-            "pie-chart",
-            // 高级饼图围栏标识。
-            "chart-pie-advanced",
-            // 散点与气泡图围栏标识。
-            "chart-scatter",
-        ],
-    );
 }

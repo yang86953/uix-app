@@ -6,9 +6,6 @@ mod chart_radar {
     // 引入文档承诺的高级图表公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-radar";
-
     // 编译多维多系列与圆形雷达配置。
     fn compile_example() {
         // 构造五个维度的多系列雷达图。
@@ -92,9 +89,6 @@ mod chart_heatmap {
     // 引入文档承诺的热力图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-heatmap";
-
     // 编译矩阵标签、颜色范围与日历配置。
     fn compile_example() {
         // 构造带标签与数值的矩阵热力图。
@@ -141,9 +135,6 @@ mod chart_funnel {
     // 引入文档承诺的漏斗图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-funnel";
-
     // 编译转化阶段与对称漏斗配置。
     fn compile_example() {
         // 构造带转化率标签的漏斗图。
@@ -186,9 +177,6 @@ mod chart_waterfall {
     // 引入文档承诺的瀑布图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-waterfall";
-
     // 编译纵向累计分解与横向汇总配置。
     fn compile_example() {
         // 构造利润累计变化瀑布图。
@@ -230,9 +218,6 @@ mod chart_waterfall {
 mod chart_combo {
     // 引入文档承诺的组合图公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-combo";
 
     // 编译柱线组合与逐系列类型配置。
     fn compile_example() {
@@ -292,9 +277,6 @@ mod chart_treemap {
     // 引入文档承诺的矩形树图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-treemap";
-
     // 编译嵌套层级、尺寸、间距与标签配置。
     fn compile_example() {
         // 构造部门层级占比矩形树图。
@@ -335,9 +317,6 @@ mod chart_treemap {
 mod chart_gauge {
     // 引入文档承诺的仪表盘公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-gauge";
 
     // 编译范围颜色、格式化与仪表盘类型配置。
     fn compile_example() {
@@ -390,9 +369,6 @@ mod chart_common {
     // 引入文档承诺的图表交互公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-common";
-
     // 编译响应式尺寸、点击、缩放、平移、十字线与刷选配置。
     fn compile_example() {
         // 创建营收柱数据。
@@ -436,9 +412,6 @@ mod chart_state_driven {
     // 引入文档承诺的图表、状态与视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-state-driven";
-
     // 编译 State 数据快照到响应式图表节点的映射。
     fn compile_example() {
         // 创建由业务拥有的系列状态。
@@ -464,9 +437,6 @@ mod chart_empty_state {
     // 引入文档承诺的图表、状态与视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "chart-empty-state";
-
     // 把非空业务数据构造成图表节点。
     fn chart_view(data: &[BarData]) -> ViewNode {
         // 克隆数据快照并嵌入响应式柱状图。
@@ -480,61 +450,4 @@ mod chart_empty_state {
         // 只在数据非空时构造图表节点。
         let _optional = series.map_opt(|data| (!data.is_empty()).then(|| chart_view(data)));
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖高级图表文档的全部十个围栏。
-fn chart_advanced_rust_fences_compile_as_external_consumers() {
-    // 收集十个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记雷达图围栏。
-        chart_radar::COMPILE_ID,
-        // 登记热力图围栏。
-        chart_heatmap::COMPILE_ID,
-        // 登记漏斗图围栏。
-        chart_funnel::COMPILE_ID,
-        // 登记瀑布图围栏。
-        chart_waterfall::COMPILE_ID,
-        // 登记组合图围栏。
-        chart_combo::COMPILE_ID,
-        // 登记矩形树图围栏。
-        chart_treemap::COMPILE_ID,
-        // 登记仪表盘围栏。
-        chart_gauge::COMPILE_ID,
-        // 登记通用交互围栏。
-        chart_common::COMPILE_ID,
-        // 登记 State 驱动围栏。
-        chart_state_driven::COMPILE_ID,
-        // 登记数据空态围栏。
-        chart_empty_state::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用图表文档当前声明的稳定标识作为期望。
-        [
-            // 雷达图围栏标识。
-            "chart-radar",
-            // 热力图围栏标识。
-            "chart-heatmap",
-            // 漏斗图围栏标识。
-            "chart-funnel",
-            // 瀑布图围栏标识。
-            "chart-waterfall",
-            // 组合图围栏标识。
-            "chart-combo",
-            // 矩形树图围栏标识。
-            "chart-treemap",
-            // 仪表盘围栏标识。
-            "chart-gauge",
-            // 通用交互围栏标识。
-            "chart-common",
-            // State 驱动围栏标识。
-            "chart-state-driven",
-            // 数据空态围栏标识。
-            "chart-empty-state",
-        ],
-    );
 }

@@ -6,9 +6,6 @@ mod event_semantic {
     // 引入文档承诺的公开事件与状态 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "event-semantic";
-
     // 编译绑定状态、精确语义匹配与无状态点击三种入口。
     fn compile_example() {
         // 创建由业务作用域拥有的计数状态。
@@ -38,9 +35,6 @@ mod event_semantic {
 mod event_keyboard {
     // 引入文档承诺的公开组件、事件与绘制 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "event-keyboard";
 
     // 声明只在 Enter 按下后激活的自定义组件。
     widget! {
@@ -101,9 +95,6 @@ mod event_a11y {
     // 引入文档承诺的公开组件与无障碍 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "event-a11y";
-
     // 编译图标与进度文本的公开角色声明。
     fn compile_example() {
         // 为设置图标声明可读图像角色。
@@ -117,9 +108,6 @@ mod event_a11y {
 mod event_semantic_actions {
     // 引入文档承诺的公开语义动作与组件 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "event-semantic-actions";
 
     // 为文档中的业务确认调用提供最小无副作用宿主。
     fn confirm_delete() {}
@@ -157,37 +145,4 @@ mod event_semantic_actions {
         // 使用公开三参数 render 形态声明无自绘内容。
         render => (&self, _frame: Rect, _ctx: &mut PaintContext) {}
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖事件文档的全部四个围栏。
-fn event_rust_fences_compile_as_external_consumers() {
-    // 收集四个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记语义事件围栏。
-        event_semantic::COMPILE_ID,
-        // 登记键盘事件组件围栏。
-        event_keyboard::COMPILE_ID,
-        // 登记无障碍角色围栏。
-        event_a11y::COMPILE_ID,
-        // 登记语义动作围栏。
-        event_semantic_actions::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用事件文档当前声明的稳定标识作为期望。
-        [
-            // 语义事件围栏标识。
-            "event-semantic",
-            // 键盘事件围栏标识。
-            "event-keyboard",
-            // 无障碍角色围栏标识。
-            "event-a11y",
-            // 语义动作围栏标识。
-            "event-semantic-actions",
-        ],
-    );
 }

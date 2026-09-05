@@ -4,6 +4,19 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'demo/src/**'
+      - 'demo/uix-lang-demo/src/**'
+      - 'uix-*/src/**'
+      - '**/build.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.cargo/**'
+      - '**/.cargo/**'
+      - 'assets/**'
+      - 'scripts/cross_compile.sh'
+      - '.gitea/workflows/cross-compile.yml'
   workflow_dispatch:
 
 jobs:
@@ -30,8 +43,12 @@ jobs:
           sudo apt-get install --yes --no-install-recommends clang lld llvm
           cargo install --locked cargo-xwin --version 0.23.1
 
-      - name: 检查全部桌面目标
-        run: bash scripts/cross_compile.sh check all dev
+      # Linux/Windows 的下一步 build 已包含编译检查；这里只补不能原生链接的 Apple 图。
+      - name: 检查 Apple Silicon 目标
+        run: bash scripts/cross_compile.sh check macos-arm64 dev
+
+      - name: 检查 Intel macOS 目标
+        run: bash scripts/cross_compile.sh check macos-x64 dev
 
       - name: 链接 Linux x64
         run: bash scripts/cross_compile.sh build linux-x64 dev

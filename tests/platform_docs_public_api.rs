@@ -10,9 +10,6 @@ mod platform_query {
     // 引入公开系统硬件 owned 描述类型。
     use uix::platform::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "platform-query";
-
     // 声明不泄漏任何原生句柄的平台快照。
     type PlatformSnapshot = (
         // 保存操作系统 owned 描述。
@@ -82,9 +79,6 @@ mod platform_service {
         SystemNotificationCapability,
     };
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "platform-service";
-
     // 编译同步文件对话框的 owned 结果契约。
     fn choose_images(platform: &mut Platform) -> uix::core::Result<Option<Box<[PathBuf]>>> {
         // 构造并验证图片文件扩展名过滤器。
@@ -119,9 +113,6 @@ mod platform_system_info {
     use uix::prelude::*;
     // 引入公开平台门面。
     use uix::platform::Platform;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "platform-system-info";
 
     // 编译三项系统查询到业务状态的完整穷尽映射。
     fn show_hardware(platform: &Platform, status: &State<String>) {
@@ -159,33 +150,4 @@ mod platform_system_info {
             }
         }
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖平台能力文档的三个真实围栏。
-fn platform_rust_fences_compile_as_external_consumers() {
-    // 收集三个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记平台快照查询围栏。
-        platform_query::COMPILE_ID,
-        // 登记平台服务围栏。
-        platform_service::COMPILE_ID,
-        // 登记平台系统信息围栏。
-        platform_system_info::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用平台能力文档当前声明的稳定标识作为期望。
-        [
-            // 平台快照查询围栏标识。
-            "platform-query",
-            // 平台服务围栏标识。
-            "platform-service",
-            // 平台系统信息围栏标识。
-            "platform-system-info",
-        ],
-    );
 }

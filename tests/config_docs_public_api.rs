@@ -6,9 +6,6 @@ mod settings_service {
     // 引入文档承诺的公开 Application 与数据服务 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "settings-service";
-
     // 编译设置路径、服务解析、typed 读写与显式保存链。
     fn documented_main() {
         // 配置应用组合根及其设置服务。
@@ -48,9 +45,6 @@ mod settings_typed_scalars {
     // 引入文档承诺的公开 Error 与 SettingsService。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "settings-typed-scalars";
-
     // 编译 typed 标量的可选、默认与必需读取路径。
     fn read_launch_count(settings: &SettingsService) -> std::result::Result<u32, Error> {
         // 以规范文本形式写入无符号整数。
@@ -73,9 +67,6 @@ mod settings_typed_scalars {
 mod settings_structured {
     // 引入文档承诺的公开 Error 与 SettingsService。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "settings-structured";
 
     // 声明按单个设置 key 编解码的应用偏好。
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -115,9 +106,6 @@ mod graphics_backend {
     // 引入文档承诺的公开 App 与 GraphicsBackend。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "graphics-backend";
-
     // 编译省略后端的自动策略与显式后端选择。
     fn compile_example() {
         // 省略 graphics_backend 以保留框架自动选择策略。
@@ -148,9 +136,6 @@ mod cli_mode {
     // 引入文档承诺的公开 App 与 AppMode。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "cli-mode";
-
     // 编译 CLI 模式的启动回调与运行入口。
     fn documented_main() {
         // 配置不创建窗口的应用入口。
@@ -172,9 +157,6 @@ mod cli_mode {
 mod settings_typed_struct {
     // 引入文档承诺的公开 Application 与设置 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "settings-typed-struct";
 
     // 声明组合根示例使用的应用偏好结构体。
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -221,49 +203,4 @@ mod settings_typed_struct {
             // 保留文档运行入口供编译器检查。
             .run();
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖默认四个围栏与两个 opt-in 围栏。
-fn config_rust_fences_compile_as_external_consumers() {
-    // 收集当前 feature 图中已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记应用设置服务围栏。
-        settings_service::COMPILE_ID,
-        // 登记 typed 标量围栏。
-        settings_typed_scalars::COMPILE_ID,
-        // 仅在 settings-serde 下登记结构体 codec 围栏。
-        #[cfg(feature = "settings-serde")]
-        settings_structured::COMPILE_ID,
-        // 登记图形后端选择围栏。
-        graphics_backend::COMPILE_ID,
-        // 登记 CLI 模式围栏。
-        cli_mode::COMPILE_ID,
-        // 仅在 settings-serde 下登记 typed 组合根围栏。
-        #[cfg(feature = "settings-serde")]
-        settings_typed_struct::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用配置文档当前声明的稳定标识作为期望。
-        [
-            // 应用设置服务围栏标识。
-            "settings-service",
-            // typed 标量围栏标识。
-            "settings-typed-scalars",
-            // settings-serde 下的结构体 codec 围栏标识。
-            #[cfg(feature = "settings-serde")]
-            "settings-structured",
-            // 图形后端选择围栏标识。
-            "graphics-backend",
-            // CLI 模式围栏标识。
-            "cli-mode",
-            // settings-serde 下的 typed 组合根围栏标识。
-            #[cfg(feature = "settings-serde")]
-            "settings-typed-struct",
-        ],
-    );
 }

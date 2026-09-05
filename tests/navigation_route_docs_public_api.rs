@@ -6,9 +6,6 @@ mod tabs {
     // 引入文档承诺的标签页公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tabs";
-
     // 编译带稳定 key 的非受控标签页构建器。
     fn compile_example() {
         // 构造两个标签并声明初始活动索引。
@@ -44,9 +41,6 @@ mod nav_tabs_advanced {
     // 引入文档承诺的标签页公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-tabs-advanced";
-
     // 编译位置、编辑、滚动与图标配置。
     fn compile_example() {
         // 构造顶部标签页。
@@ -74,9 +68,6 @@ mod dropdown {
     // 引入文档承诺的下拉菜单公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "dropdown";
-
     // 编译由字符串选项构造的下拉菜单。
     fn compile_example() {
         // 构造包含编辑、删除与导出的操作菜单。
@@ -88,9 +79,6 @@ mod dropdown {
 mod nav_dropdown_advanced {
     // 引入文档承诺的下拉菜单公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-dropdown-advanced";
 
     // 编译子菜单、分隔线、禁用项、图标与触发模式。
     fn compile_example() {
@@ -126,9 +114,6 @@ mod nav_dropdown_advanced {
 mod typed_navigation_route {
     // 引入文档承诺的导航、状态与视图公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "typed-navigation-route";
 
     // 声明应用拥有的类型化页面 key。
     #[derive(Clone, PartialEq)]
@@ -197,9 +182,6 @@ mod typed_tabs_route {
     // 引入文档承诺的标签页、状态与视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "typed-tabs-route";
-
     // 声明应用拥有的类型化标签 key。
     #[derive(Clone, PartialEq)]
     // 枚举列表与详情标签。
@@ -250,9 +232,6 @@ mod typed_tabs_route {
 mod navigation_typed_route {
     // 引入文档承诺的应用、导航与派生宏公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "navigation-typed-route";
 
     // 声明应用唯一的类型化路由真值。
     #[derive(Clone, PartialEq, Display)]
@@ -310,49 +289,4 @@ mod navigation_typed_route {
             ))
         });
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖导航路由文档的全部七个围栏。
-fn navigation_route_rust_fences_compile_as_external_consumers() {
-    // 收集七个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记标签页基础围栏。
-        tabs::COMPILE_ID,
-        // 登记标签页高级围栏。
-        nav_tabs_advanced::COMPILE_ID,
-        // 登记下拉菜单基础围栏。
-        dropdown::COMPILE_ID,
-        // 登记下拉菜单高级围栏。
-        nav_dropdown_advanced::COMPILE_ID,
-        // 登记类型化 Navigation 围栏。
-        typed_navigation_route::COMPILE_ID,
-        // 登记类型化 Tabs 围栏。
-        typed_tabs_route::COMPILE_ID,
-        // 登记完整应用路由围栏。
-        navigation_typed_route::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用导航文档当前声明的稳定标识作为期望。
-        [
-            // 标签页基础围栏标识。
-            "tabs",
-            // 标签页高级围栏标识。
-            "nav-tabs-advanced",
-            // 下拉菜单基础围栏标识。
-            "dropdown",
-            // 下拉菜单高级围栏标识。
-            "nav-dropdown-advanced",
-            // 类型化 Navigation 围栏标识。
-            "typed-navigation-route",
-            // 类型化 Tabs 围栏标识。
-            "typed-tabs-route",
-            // 完整应用路由围栏标识。
-            "navigation-typed-route",
-        ],
-    );
 }

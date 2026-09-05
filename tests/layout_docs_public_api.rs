@@ -6,9 +6,6 @@ mod layout_grid {
     // 引入文档承诺的公开布局 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "layout-grid";
-
     // 编译显式轨道与响应式二十四栅格两种公开写法。
     fn compile_example() {
         // 构造带两个比例轨道和两个子项的显式网格。
@@ -48,9 +45,6 @@ mod layout_splitter {
     // 引入文档承诺的公开布局 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "layout-splitter";
-
     // 编译双面板 Splitter 的公开 builder 链。
     fn compile_example() {
         // 构造可拖拽的横向双面板分隔组件。
@@ -72,9 +66,6 @@ mod layout_affix {
     // 引入文档承诺的公开布局 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "layout-affix";
-
     // 编译带子节点的 Affix 与独立 BackTop 公开写法。
     fn compile_example() {
         // 构造包含操作按钮的固钉节点。
@@ -94,9 +85,6 @@ mod layout_affix {
 mod layout_scroll {
     // 引入文档承诺的公开布局 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "layout-scroll";
 
     // 编译普通滚动容器与固定行高虚拟列表。
     fn compile_example() {
@@ -132,9 +120,6 @@ mod layout_scroll {
 mod layout_app_shell {
     // 引入文档承诺的公开布局 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "layout-app-shell";
 
     // 为文档中的 cards 调用提供最小拥有型业务卡片集合。
     fn cards() -> Vec<ViewNode> {
@@ -175,41 +160,4 @@ mod layout_app_shell {
             .flex_grow(1.0),
         ))
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖布局文档的全部五个围栏。
-fn layout_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记显式与响应式 Grid 围栏。
-        layout_grid::COMPILE_ID,
-        // 登记 Splitter 围栏。
-        layout_splitter::COMPILE_ID,
-        // 登记 Affix 与 BackTop 围栏。
-        layout_affix::COMPILE_ID,
-        // 登记普通与虚拟滚动围栏。
-        layout_scroll::COMPILE_ID,
-        // 登记应用壳组合围栏。
-        layout_app_shell::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用布局文档当前声明的稳定标识作为期望。
-        [
-            // Grid 围栏标识。
-            "layout-grid",
-            // Splitter 围栏标识。
-            "layout-splitter",
-            // Affix 围栏标识。
-            "layout-affix",
-            // 滚动围栏标识。
-            "layout-scroll",
-            // 应用壳围栏标识。
-            "layout-app-shell",
-        ],
-    );
 }

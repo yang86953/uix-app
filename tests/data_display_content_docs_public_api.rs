@@ -6,9 +6,6 @@ mod data_typography {
     // 引入文档承诺的排版组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-typography";
-
     // 编译标题、段落与可复制文本配置。
     fn compile_example() {
         // 构造二级标题。
@@ -25,9 +22,6 @@ mod data_typography_title {
     // 引入文档承诺的排版组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-typography-title";
-
     // 编译页面标题配置。
     fn compile_example() {
         // 构造一级页面标题。
@@ -39,9 +33,6 @@ mod data_typography_title {
 mod data_typography_text {
     // 引入文档承诺的排版组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-typography-text";
 
     // 编译加粗且高亮的普通文本。
     fn compile_example() {
@@ -55,9 +46,6 @@ mod data_typography_paragraph {
     // 引入文档承诺的排版组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-typography-paragraph";
-
     // 编译斜体且带下划线的段落。
     fn compile_example() {
         // 构造同时使用 italic 与 underline 的段落。
@@ -69,9 +57,6 @@ mod data_typography_paragraph {
 mod data_descriptions {
     // 引入文档承诺的描述列表与标签公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-descriptions";
 
     // 编译两列描述列表和带文字语义的成功标签。
     fn compile_example() {
@@ -99,9 +84,6 @@ mod data_timeline {
     // 引入文档承诺的时间轴公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-timeline";
-
     // 编译按顺序展示标题与说明的时间轴。
     fn compile_example() {
         // 构造包含创建与评审事件的时间轴。
@@ -121,9 +103,6 @@ mod data_timeline {
 mod data_progress_advanced {
     // 引入文档承诺的进度组件与颜色公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-progress-advanced";
 
     // 编译确定进度、渐变、步骤与仪表盘配置。
     fn compile_example() {
@@ -149,9 +128,6 @@ mod data_progress_advanced {
 mod data_skeleton_advanced {
     // 引入文档承诺的骨架屏公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-skeleton-advanced";
 
     // 编译矩形、圆形与活动段落骨架。
     fn compile_example() {
@@ -183,9 +159,6 @@ mod data_watermark_advanced {
     // 引入文档承诺的水印公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-watermark-advanced";
-
     // 编译字号、透明度、旋转角和间距配置。
     fn compile_example() {
         // 构造平铺在内容区域上方但不抢占布局的水印。
@@ -208,9 +181,6 @@ mod data_watermark_advanced {
 mod data_table_model {
     // 引入文档承诺的类型化表格公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-table-model";
 
     // 声明由应用层拥有的类型化业务行。
     #[derive(Clone, PartialEq)]
@@ -261,9 +231,6 @@ mod data_table_virtualized {
     // 引入文档承诺的类型化表格与标签公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-table-virtualized";
-
     // 声明由应用层拥有的类型化业务行。
     #[derive(Clone, PartialEq)]
     // 保留稳定 id、名称与邮箱事实。
@@ -308,36 +275,4 @@ mod data_table_virtualized {
                 .build(),
         );
     }
-}
-
-// 验证本消费者登记了文档中的全部十一个目标围栏。
-#[test]
-fn content_data_display_rust_fences_compile_as_external_consumers() {
-    // 收集各独立模块公开的围栏标识。
-    let compile_ids = [
-        // 登记综合排版围栏。
-        data_typography::COMPILE_ID,
-        // 登记标题排版围栏。
-        data_typography_title::COMPILE_ID,
-        // 登记文本排版围栏。
-        data_typography_text::COMPILE_ID,
-        // 登记段落排版围栏。
-        data_typography_paragraph::COMPILE_ID,
-        // 登记描述列表围栏。
-        data_descriptions::COMPILE_ID,
-        // 登记时间轴围栏。
-        data_timeline::COMPILE_ID,
-        // 登记进度围栏。
-        data_progress_advanced::COMPILE_ID,
-        // 登记骨架屏围栏。
-        data_skeleton_advanced::COMPILE_ID,
-        // 登记水印围栏。
-        data_watermark_advanced::COMPILE_ID,
-        // 登记类型化表格围栏。
-        data_table_model::COMPILE_ID,
-        // 登记虚拟化表格围栏。
-        data_table_virtualized::COMPILE_ID,
-    ];
-    // 防止遗漏或重复缩减本批文档覆盖。
-    assert_eq!(compile_ids.len(), 11);
 }

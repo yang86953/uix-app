@@ -6,9 +6,6 @@ mod input_basic {
     // 引入文档承诺的公开输入与状态 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "input-basic";
-
     // 编译单行、多行和密码输入的受控状态入口。
     fn compile_example() {
         // 创建由业务作用域拥有的已提交文本状态。
@@ -35,9 +32,6 @@ mod input_basic {
 mod input_number {
     // 引入文档承诺的公开数值输入 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "input-number";
 
     // 编译受控数值输入、单值滑块和区间滑块。
     fn compile_example() {
@@ -80,9 +74,6 @@ mod input_choice {
     // 引入文档承诺的公开选择与状态 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "input-choice";
-
     // 编译复选框、单选组和开关公开入口。
     fn compile_example() {
         // 创建由业务作用域拥有的布尔状态。
@@ -116,9 +107,6 @@ mod input_select {
     // 引入文档承诺的公开选择与状态 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "input-select";
-
     // 编译稳定选项与业务值状态绑定。
     fn compile_example() {
         // 创建由业务作用域拥有的当前语言值。
@@ -141,9 +129,6 @@ mod input_date {
     // 引入文档承诺的公开选择器与状态 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "input-date";
-
     // 编译日期、时间和颜色三种受控值入口。
     fn compile_example() {
         // 创建由业务作用域拥有的日期状态。
@@ -161,43 +146,6 @@ mod input_date {
         // 构造绑定颜色状态的选择器。
         let _color_picker = embed(ColorPicker::new().value(&color));
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖输入组件文档的五个围栏。
-fn input_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记文本输入围栏。
-        input_basic::COMPILE_ID,
-        // 登记数值与滑块围栏。
-        input_number::COMPILE_ID,
-        // 登记选择控件围栏。
-        input_choice::COMPILE_ID,
-        // 登记下拉选择器围栏。
-        input_select::COMPILE_ID,
-        // 登记日期时间颜色围栏。
-        input_date::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用输入文档当前声明的稳定标识作为期望。
-        [
-            // 文本输入围栏标识。
-            "input-basic",
-            // 数值与滑块围栏标识。
-            "input-number",
-            // 选择控件围栏标识。
-            "input-choice",
-            // 下拉选择器围栏标识。
-            "input-select",
-            // 日期时间颜色围栏标识。
-            "input-date",
-        ],
-    );
 }
 
 #[cfg(feature = "test-harness")]

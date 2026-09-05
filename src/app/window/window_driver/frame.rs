@@ -58,6 +58,8 @@ impl WindowDriver {
             );
         }
         self.started_at.get_or_insert(now);
+        // 布局与绘制必须消费本轮同一窗口主题，首帧也不能使用默认字号测量。
+        tree.set_theme_tokens(theme.borrow().tokens_arc());
         self.publish_agent_window_availability(semantic_state, platform_window, engine);
 
         // 关闭调试且未显式配置卡顿阈值时，不读取时钟或扫描现场。
@@ -743,8 +745,6 @@ impl WindowDriver {
         let (outcome, outcome_source) = if !need_render {
             (RenderOutcome::Idle, InvalidationSource::None)
         } else {
-            let theme_ref = theme.borrow();
-            tree.set_theme_tokens(theme_ref.tokens_arc());
             let scroll_move = tree.scroll_region_moves();
             let hover_pos = debug_mode.debug_mode().then(|| cursor_pos.get());
             let invalidation_source = if !self.rendered_first {

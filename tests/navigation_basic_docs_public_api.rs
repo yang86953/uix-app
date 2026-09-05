@@ -6,9 +6,6 @@ mod menu_bar {
     // 引入文档承诺的导航组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "menu-bar";
-
     // 编译带稳定 key 的横向菜单栏构建器。
     fn compile_example() {
         // 构造两个顶级菜单及带分隔线的条目集合。
@@ -41,9 +38,6 @@ mod menu_bar {
 mod menu_navigation {
     // 引入文档承诺的导航组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "menu-navigation";
 
     // 编译带稳定 key 的垂直菜单构建器。
     fn compile_example() {
@@ -90,9 +84,6 @@ mod nav_menu_advanced {
     // 引入文档承诺的菜单公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-menu-advanced";
-
     // 编译嵌套、内联、受控 key 与图标配置。
     fn compile_example() {
         // 构造带两个子项的系统菜单项。
@@ -126,9 +117,6 @@ mod navigation_sidebar {
     // 引入文档承诺的导航与主题公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "navigation-sidebar";
-
     // 编译带 typed key 的复合侧边栏及其主题节点。
     fn compile_example() {
         // 创建公开浅色主题。
@@ -157,9 +145,6 @@ mod nav_collapse_advanced {
     // 引入文档承诺的导航与状态公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-collapse-advanced";
-
     // 编译受控折叠句柄与变化回调。
     fn compile_example() {
         // 创建由业务拥有的折叠状态。
@@ -176,9 +161,6 @@ mod nav_collapse_advanced {
 mod navigation_group {
     // 引入文档承诺的导航与视图公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "navigation-group";
 
     // 编译 NavGroup 到列视图的公开转换。
     fn compile_example() {
@@ -205,9 +187,6 @@ mod pagination {
     // 引入文档承诺的分页公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "pagination";
-
     // 编译当前页、总数与页尺寸选项。
     fn compile_example() {
         // 构造二百条数据、每页二十条的分页组件。
@@ -227,9 +206,6 @@ mod pagination {
 mod nav_pagination_advanced {
     // 引入文档承诺的分页公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-pagination-advanced";
 
     // 编译简洁模式、跳转输入与总数模板。
     fn compile_example() {
@@ -251,9 +227,6 @@ mod nav_pagination_advanced {
 mod steps_breadcrumb_anchor {
     // 引入文档承诺的线性导航公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "steps-breadcrumb-anchor";
 
     // 编译步骤、面包屑与锚点的基础公开构建器。
     fn compile_example() {
@@ -300,9 +273,6 @@ mod nav_steps_advanced {
     // 引入文档承诺的步骤公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-steps-advanced";
-
     // 编译步骤状态、点击、圆点、图标与回调配置。
     fn compile_example() {
         // 构造完成状态步骤。
@@ -339,9 +309,6 @@ mod nav_breadcrumb_advanced {
     // 引入文档承诺的面包屑公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-breadcrumb-advanced";
-
     // 编译条目图标与最大可见项配置。
     fn compile_example() {
         // 构造带首页图标的面包屑条目。
@@ -356,9 +323,6 @@ mod nav_breadcrumb_advanced {
 mod nav_anchor_advanced {
     // 引入文档承诺的锚点公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "nav-anchor-advanced";
 
     // 编译偏移、指示器、边界与自定义容器工厂。
     fn compile_example() {
@@ -376,69 +340,4 @@ mod nav_anchor_advanced {
         // 构造由当前 Anchor 实例拥有的最小自定义容器。
         let _container = Anchor::new(items).container(|| ());
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖导航基础文档的全部十一个围栏。
-fn navigation_basic_rust_fences_compile_as_external_consumers() {
-    // 收集十一个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记菜单栏围栏。
-        menu_bar::COMPILE_ID,
-        // 登记菜单基础围栏。
-        menu_navigation::COMPILE_ID,
-        // 登记菜单高级围栏。
-        nav_menu_advanced::COMPILE_ID,
-        // 登记侧边栏围栏。
-        navigation_sidebar::COMPILE_ID,
-        // 登记折叠状态围栏。
-        nav_collapse_advanced::COMPILE_ID,
-        // 登记导航组围栏。
-        navigation_group::COMPILE_ID,
-        // 登记分页基础围栏。
-        pagination::COMPILE_ID,
-        // 登记分页高级围栏。
-        nav_pagination_advanced::COMPILE_ID,
-        // 登记步骤、面包屑与锚点围栏。
-        steps_breadcrumb_anchor::COMPILE_ID,
-        // 登记步骤高级围栏。
-        nav_steps_advanced::COMPILE_ID,
-        // 登记面包屑高级围栏。
-        nav_breadcrumb_advanced::COMPILE_ID,
-        // 登记锚点高级围栏。
-        nav_anchor_advanced::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用导航文档当前声明的稳定标识作为期望。
-        [
-            // 菜单栏围栏标识。
-            "menu-bar",
-            // 菜单基础围栏标识。
-            "menu-navigation",
-            // 菜单高级围栏标识。
-            "nav-menu-advanced",
-            // 侧边栏围栏标识。
-            "navigation-sidebar",
-            // 折叠状态围栏标识。
-            "nav-collapse-advanced",
-            // 导航组围栏标识。
-            "navigation-group",
-            // 分页基础围栏标识。
-            "pagination",
-            // 分页高级围栏标识。
-            "nav-pagination-advanced",
-            // 步骤、面包屑与锚点围栏标识。
-            "steps-breadcrumb-anchor",
-            // 步骤高级围栏标识。
-            "nav-steps-advanced",
-            // 面包屑高级围栏标识。
-            "nav-breadcrumb-advanced",
-            // 锚点高级围栏标识。
-            "nav-anchor-advanced",
-        ],
-    );
 }

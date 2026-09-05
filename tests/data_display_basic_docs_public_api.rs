@@ -6,9 +6,6 @@ mod data_label {
     // 引入文档承诺的文本与样式公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-label";
-
     // 编译字号与行高样式配置。
     fn compile_example() {
         // 构造固定字号短文本。
@@ -28,9 +25,6 @@ mod data_label {
 mod data_avatar {
     // 引入文档承诺的头像公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-avatar";
 
     // 编译文字头像与图片回退配置。
     fn compile_example() {
@@ -53,9 +47,6 @@ mod data_badge {
     // 引入文档承诺的徽标与视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-badge";
-
     // 编译颜色、计数上限与唯一子 View 配置。
     fn compile_example() {
         // 构造红色计数徽标。
@@ -71,9 +62,6 @@ mod data_badge {
 mod calendar_basic {
     // 引入文档承诺的日历公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "calendar-basic";
 
     // 编译日期格尺寸与非受控默认日期。
     fn compile_example() {
@@ -94,9 +82,6 @@ mod calendar_controlled {
     // 引入文档承诺的日历与状态公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "calendar-controlled";
-
     // 编译业务 State 到日历选择值的双向绑定。
     fn compile_example() {
         // 创建由业务拥有的选中日期。
@@ -110,9 +95,6 @@ mod calendar_controlled {
 mod calendar_policy {
     // 引入文档承诺的日历、状态与颜色公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "calendar-policy";
 
     // 编译选择值、显示月份、事件快照与禁用策略。
     fn compile_example() {
@@ -152,9 +134,6 @@ mod calendar_date_cell {
     // 引入文档承诺的日期上下文与 View 公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "calendar-date-cell";
-
     // 为一个日期构造由 Calendar 拥有的自定义格子 View。
     fn calendar_date_cell(date: Date, info: CalendarCellInfo) -> ViewNode {
         // 根据只读上下文选择稳定状态标记。
@@ -186,9 +165,6 @@ mod carousel_basic {
     // 引入文档承诺的轮播公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "carousel-basic";
-
     // 编译轮播尺寸与三秒自动播放间隔。
     fn compile_example() {
         // 构造固定尺寸的自动播放轮播组件。
@@ -207,9 +183,6 @@ mod carousel_basic {
 mod data_card {
     // 引入文档承诺的卡片公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-card";
 
     // 编译卡片复合内容配置。
     fn compile_example() {
@@ -232,9 +205,6 @@ mod collapse {
     // 引入文档承诺的折叠面板公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "collapse";
-
     // 编译展开初值与面板列表。
     fn compile_example() {
         // 构造两个折叠面板并展开首项。
@@ -251,9 +221,6 @@ mod collapse {
 mod data_image_advanced {
     // 引入文档承诺的图片公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-image-advanced";
 
     // 编译资源路径、替代文本、回退、圆角、预览与适配配置。
     fn compile_example() {
@@ -275,65 +242,4 @@ mod data_image_advanced {
                 .fit(true),
         );
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖基础数据展示文档的全部十一个围栏。
-fn data_display_basic_rust_fences_compile_as_external_consumers() {
-    // 收集十一个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记 Label 围栏。
-        data_label::COMPILE_ID,
-        // 登记 Avatar 围栏。
-        data_avatar::COMPILE_ID,
-        // 登记 Badge 围栏。
-        data_badge::COMPILE_ID,
-        // 登记 Calendar 基础围栏。
-        calendar_basic::COMPILE_ID,
-        // 登记 Calendar 受控围栏。
-        calendar_controlled::COMPILE_ID,
-        // 登记 Calendar 策略围栏。
-        calendar_policy::COMPILE_ID,
-        // 登记 Calendar 日期格围栏。
-        calendar_date_cell::COMPILE_ID,
-        // 登记 Carousel 围栏。
-        carousel_basic::COMPILE_ID,
-        // 登记 Card 围栏。
-        data_card::COMPILE_ID,
-        // 登记 Collapse 围栏。
-        collapse::COMPILE_ID,
-        // 登记 Image 围栏。
-        data_image_advanced::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用数据展示文档当前声明的稳定标识作为期望。
-        [
-            // Label 围栏标识。
-            "data-label",
-            // Avatar 围栏标识。
-            "data-avatar",
-            // Badge 围栏标识。
-            "data-badge",
-            // Calendar 基础围栏标识。
-            "calendar-basic",
-            // Calendar 受控围栏标识。
-            "calendar-controlled",
-            // Calendar 策略围栏标识。
-            "calendar-policy",
-            // Calendar 日期格围栏标识。
-            "calendar-date-cell",
-            // Carousel 围栏标识。
-            "carousel-basic",
-            // Card 围栏标识。
-            "data-card",
-            // Collapse 围栏标识。
-            "collapse",
-            // Image 围栏标识。
-            "data-image-advanced",
-        ],
-    );
 }

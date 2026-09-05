@@ -4,9 +4,6 @@
 // 引入文档承诺的 UIX 宏、受控状态与上传类型。
 use uix::prelude::*;
 
-// 暴露当前测试对应的文档编译标识。
-const COMPILE_ID: &str = "upload";
-
 // 提供应用拥有的类型化上传队列变更处理器。
 fn on_upload_change(change: &UploadChange) {
     // 只读取框架发布的最新队列事实，不执行文件或网络 I/O。
@@ -34,12 +31,4 @@ fn compile_example() {
 />
 "#
     ));
-}
-
-// 运行无文件系统副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认外部消费者登记 Upload 文档围栏。
-fn upload_rust_fence_compiles_as_external_consumer() {
-    // 核对编译消费者与 Markdown 当前稳定标识一致。
-    assert_eq!(COMPILE_ID, "upload");
 }

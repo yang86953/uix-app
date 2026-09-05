@@ -39,10 +39,16 @@ uix = { version = "=0.0.7", registry = "gitea" }
 在已安装 Rust 与 Cargo 的环境中，从仓库根目录执行：
 
 ```powershell
-cargo test --features agent-control --test "*_public_api" --quiet
+cargo test --features agent-control,test-harness --test "*_public_api" --quiet
 ```
 
 不得为私有 Module、Component、内部算法、缓存、状态机、源码目录、依赖方向、测试专用 feature/harness、GPU parity、真窗视觉、性能、打包或文档结构建立项目测试；不得使用 `cargo test --lib`、`cargo test --tests` 或 Python 源码扫描扩大测试面。发布构建与人工验收不是项目测试，也不计入公开 API 测试覆盖。带时点的公开 API 测试结果仍以 Gitea 为准。
+
+上述全量入口用于发布或影响多个系统的变更；日常修改使用 `--test <受影响目标>`，通过后没有新的变更或证据缺口就停止。`test-harness` 仅让公开组件行为用例取得无窗口驱动，不把驱动内部变成测试对象，也不进入发布构建。
+
+只检查使用示例的类型兼容性时，执行 `cargo check --features agent-control,test-harness --test <文档消费者目标>`。编译失败即示例失效；消费者可以有零个运行测试。手写围栏 ID、数量或目录结构断言不能证明文档覆盖，不保留这类标记测试，也不把编译成功计作行为验收。
+
+纯文字或导航改动只复核相关内容与链接。交叉编译 CI 对源码、UIX、资源和构建配置变更触发：Linux/Windows 直接构建，macOS 执行交叉检查；同配置不先重复 `check` 再 `build`。真实窗口、GPU 像素和其他平台运行需要独立验收，编译与公开 API 通过不代替这些证据。
 
 默认构建在 Windows 与 Linux 统一优先选择 Vulkan GPU-native swapchain，以同一 Drawing 语义保证外观和行为一致；Windows 的 D3D11 与 Linux/Wayland 的 OpenGL ES 只作为兼容回退。配置方法、失败语义与回退边界见[图形后端配置](docs/使用/框架设施/配置.md#图形后端)；真实环境覆盖以 Gitea 中的记录为准。
 

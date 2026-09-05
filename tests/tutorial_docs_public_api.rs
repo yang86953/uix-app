@@ -6,9 +6,6 @@ mod tutorial_step1 {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step1";
-
     // 定义但不调用教程第一步应用入口。
     fn main() {
         // 构造最小待办应用。
@@ -29,9 +26,6 @@ mod tutorial_step2 {
     // 引入文档承诺的公开 State 类型。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step2";
-
     // 定义但不调用待办状态读写组合。
     fn compile_example() {
         // 创建两个初始待办。
@@ -47,9 +41,6 @@ mod tutorial_step2 {
 mod tutorial_step3 {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step3";
 
     // 定义但不调用完整待办应用入口。
     fn main() {
@@ -149,9 +140,6 @@ mod tutorial_step4 {
     // 引入文档承诺的公开 View 与颜色 API。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step4";
-
     // 编译教程中的根容器、待办卡片和输入框样式组合。
     fn compile_example() {
         // 构造浅色背景的圆角根容器。
@@ -193,9 +181,6 @@ mod tutorial_step5 {
     // 引入文档承诺的公开动画与应用 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step5";
-
     // 定义但不调用动画待办应用入口。
     fn main() {
         // 创建从零过渡到一的淡入动画。
@@ -234,9 +219,6 @@ mod tutorial_step6 {
     use uix::data::SettingsService;
     // 引入文档承诺的公开应用 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-step6";
 
     // 定义但不调用持久化待办应用入口。
     fn main() {
@@ -293,9 +275,6 @@ mod tutorial_step6 {
 mod tutorial_virtualized_todo {
     // 引入文档承诺的公开虚拟滚动、设置与响应式 API。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tutorial-virtualized-todo";
 
     // 派生设置结构体编解码所需的公开 serde trait。
     #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -368,52 +347,4 @@ mod tutorial_virtualized_todo {
         // 返回成功而不执行其它副作用。
         Ok(())
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖教程的全部可用围栏。
-fn tutorial_rust_fences_compile_as_external_consumers() {
-    // 先收集默认 capability 下的六个教程标识。
-    let mut compile_ids = vec![
-        // 登记教程第一步围栏。
-        tutorial_step1::COMPILE_ID,
-        // 登记教程第二步围栏。
-        tutorial_step2::COMPILE_ID,
-        // 登记教程第三步围栏。
-        tutorial_step3::COMPILE_ID,
-        // 登记教程第四步围栏。
-        tutorial_step4::COMPILE_ID,
-        // 登记教程第五步围栏。
-        tutorial_step5::COMPILE_ID,
-        // 登记教程第六步围栏。
-        tutorial_step6::COMPILE_ID,
-    ];
-    // 在 settings-serde 下登记类型化虚拟待办围栏。
-    #[cfg(feature = "settings-serde")]
-    // 把 feature 专属标识加入同一覆盖集合。
-    compile_ids.push(tutorial_virtualized_todo::COMPILE_ID);
-
-    // 声明默认 capability 下的稳定期望标识。
-    let mut expected_ids = vec![
-        // 教程第一步围栏标识。
-        "tutorial-step1",
-        // 教程第二步围栏标识。
-        "tutorial-step2",
-        // 教程第三步围栏标识。
-        "tutorial-step3",
-        // 教程第四步围栏标识。
-        "tutorial-step4",
-        // 教程第五步围栏标识。
-        "tutorial-step5",
-        // 教程第六步围栏标识。
-        "tutorial-step6",
-    ];
-    // 在 settings-serde 下声明 feature 专属期望标识。
-    #[cfg(feature = "settings-serde")]
-    // 把虚拟待办标识加入期望集合。
-    expected_ids.push("tutorial-virtualized-todo");
-
-    // 核对实际隔离模块与 Markdown fence 标识一致。
-    assert_eq!(compile_ids, expected_ids);
 }

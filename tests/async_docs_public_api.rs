@@ -6,9 +6,6 @@ mod async_load_state {
     // 引入文档承诺的公开状态与反馈呈现 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "async-load-state";
-
     // 声明用户列表中的最小业务记录。
     #[derive(Clone)]
     // 保存文档展示所需的用户名。
@@ -71,9 +68,6 @@ mod async_load_pattern {
     use std::thread;
     // 引入文档承诺的公开 App、状态和视图 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "async-load-pattern";
 
     // 声明完整示例使用的用户业务记录。
     #[derive(Clone)]
@@ -222,9 +216,6 @@ mod async_optional_state {
     // 引入文档承诺的公开状态与反馈呈现 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "async-optional-state";
-
     // 声明简化示例中的用户记录。
     #[derive(Clone)]
     // 保存用户显示名称。
@@ -280,9 +271,6 @@ mod async_typed_three_state {
     use std::thread;
     // 引入文档承诺的公开 App、错误、状态和反馈 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "async-typed-three-state";
 
     // 声明 typed 示例使用的用户记录。
     #[derive(Clone)]
@@ -369,37 +357,4 @@ mod async_typed_three_state {
                 .collect::<Vec<_>>(),
         )
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖异步加载文档的四个真实围栏。
-fn async_rust_fences_compile_as_external_consumers() {
-    // 收集四个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记加载三态围栏。
-        async_load_state::COMPILE_ID,
-        // 登记完整加载流程围栏。
-        async_load_pattern::COMPILE_ID,
-        // 登记可选状态围栏。
-        async_optional_state::COMPILE_ID,
-        // 登记 typed 错误三态围栏。
-        async_typed_three_state::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用异步文档当前声明的稳定标识作为期望。
-        [
-            // 加载三态围栏标识。
-            "async-load-state",
-            // 完整加载流程围栏标识。
-            "async-load-pattern",
-            // 可选状态围栏标识。
-            "async-optional-state",
-            // typed 错误三态围栏标识。
-            "async-typed-three-state",
-        ],
-    );
 }

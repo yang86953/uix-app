@@ -6,9 +6,6 @@ mod framework_di {
     // 引入文档承诺的公开 DI、AppHandle 与设置服务 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-di";
-
     // 编译组合根注册与组件公开门面解析路径。
     fn compile_example(handle: &AppHandle) {
         // 创建进程级服务容器。
@@ -25,9 +22,6 @@ mod framework_di {
 mod framework_provider {
     // 引入文档承诺的公开 Provider、控件与 View prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-provider";
 
     // 编译 Locale 与组件配置在独立子树中的覆写。
     fn compile_example() {
@@ -78,9 +72,6 @@ mod framework_overrides {
     // 引入文档承诺的公开配置、令牌与组件 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-overrides";
-
     // 编译组件构造覆盖与类型索引令牌补丁。
     fn compile_example() {
         // 创建空的组件构造覆盖集合。
@@ -126,9 +117,6 @@ mod framework_locale {
     // 引入文档承诺的公开 Application、Locale 与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-locale";
-
     // 编译应用级 Locale 注册与组件内语言消费。
     fn documented_main() {
         // 创建简体中文语言包。
@@ -160,9 +148,6 @@ mod framework_singleton {
     // 引入文档承诺的公开 Application 与设置服务 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-singleton";
-
     // 编译组合根单例注册与根视图装配。
     fn documented_main() {
         // 配置带全局设置服务单例的应用。
@@ -186,9 +171,6 @@ mod framework_singleton {
 mod framework_services_i18n {
     // 引入文档承诺的公开服务注册、i18n 与 View prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "framework-services-i18n";
 
     // 声明应用自注册的分析服务占位实现。
     #[derive(Clone, Default)]
@@ -250,45 +232,4 @@ mod framework_services_i18n {
         // 返回稳定的占位业务内容。
         label("应用")
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖框架能力文档的六个真实围栏。
-fn framework_rust_fences_compile_as_external_consumers() {
-    // 收集六个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记组合根 DI 围栏。
-        framework_di::COMPILE_ID,
-        // 登记 Provider 继承围栏。
-        framework_provider::COMPILE_ID,
-        // 登记组件窄覆盖围栏。
-        framework_overrides::COMPILE_ID,
-        // 登记应用 Locale 围栏。
-        framework_locale::COMPILE_ID,
-        // 登记 App 单例围栏。
-        framework_singleton::COMPILE_ID,
-        // 登记聚合服务与 i18n 围栏。
-        framework_services_i18n::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用框架能力文档当前声明的稳定标识作为期望。
-        [
-            // 组合根 DI 围栏标识。
-            "framework-di",
-            // Provider 继承围栏标识。
-            "framework-provider",
-            // 组件窄覆盖围栏标识。
-            "framework-overrides",
-            // 应用 Locale 围栏标识。
-            "framework-locale",
-            // App 单例围栏标识。
-            "framework-singleton",
-            // 聚合服务与 i18n 围栏标识。
-            "framework-services-i18n",
-        ],
-    );
 }

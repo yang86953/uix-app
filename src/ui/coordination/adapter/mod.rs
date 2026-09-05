@@ -22,7 +22,8 @@ use crate::ui::theme::style::Style;
 use crate::ui::view::ViewNode;
 use crate::ui::widget_patch::{
     builtin_widget_config_changed, builtin_widget_config_changed_without_snapshot,
-    builtin_widget_layout_changed, builtin_widget_runtime_changed, patch_builtin_widget,
+    builtin_widget_layout_changed, builtin_widget_layout_changed_without_snapshot,
+    builtin_widget_runtime_changed, patch_builtin_widget,
 };
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
 use crate::ui::widget_runtime::traits::Widget;
@@ -932,13 +933,17 @@ impl ViewAdapter {
             &owned_next_fields
         };
         // 排除含运行时字段的特殊快照，再回退到完整快照比较。
-        let config_changed = builtin_widget_config_changed(&current_fields, next_fields)
-            .unwrap_or_else(|| current_fields != *next_fields)
-            || *next_fields == SnapshotFields::Unknown
-            || runtime_changed;
+        let config_changed =
+            builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
+                .or_else(|| builtin_widget_config_changed(&current_fields, next_fields))
+                .unwrap_or_else(|| current_fields != *next_fields)
+                || *next_fields == SnapshotFields::Unknown
+                || runtime_changed;
         // 已审计类型按字段分类，其余类型由显式保守分类请求布局。
         let layout_changed = config_changed
-            && builtin_widget_layout_changed(&current_fields, next_fields).unwrap_or(true);
+            && builtin_widget_layout_changed_without_snapshot(current.widget(), widget.as_ref())
+                .or_else(|| builtin_widget_layout_changed(&current_fields, next_fields))
+                .unwrap_or(true);
         // 只有实际完成原位 patch 或替换后才报告失效影响。
         match patch_builtin_widget(current.widget_mut(), widget) {
             // 原位同步成功时返回精细分类结果。

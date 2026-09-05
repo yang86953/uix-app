@@ -6,9 +6,6 @@ mod multi_window_open {
     // 引入文档承诺的公开 AppHandle、状态与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "multi-window-open";
-
     // 编译回调次窗创建与后续共享主题更新的独立所有权。
     fn compile_example(handle: &AppHandle, dark: bool) {
         // 为按钮回调克隆独立的 Application 多窗门面。
@@ -40,9 +37,6 @@ mod multi_window_lifecycle {
     // 引入文档承诺的公开 AppHandle 与 typed Result。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "multi-window-lifecycle";
-
     // 编译窗口句柄的瞬时存活快照与 owner-thread 激活请求。
     fn compile_example(handle: &AppHandle) -> Result<(), Error> {
         // 存活值只用于决定创建或激活分支，不充当跨线程租约。
@@ -59,9 +53,6 @@ mod multi_window_lifecycle {
 mod multi_window_control {
     // 引入文档承诺的公开窗口控制与 View prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "multi-window-control";
 
     // 编译标准控制组合、具名关闭控件、拖拽区域与缩放热区。
     fn compile_example() {
@@ -106,9 +97,6 @@ mod multi_window_config {
     // 引入文档承诺的公开 Application、WindowConfig 与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "multi-window-config";
-
     // 编译拥有型窗口配置到 on_start 延迟打开的移动语义。
     fn documented_main() {
         // 创建声明式设置窗口配置。
@@ -140,37 +128,4 @@ mod multi_window_config {
         // 返回稳定的主页面内容。
         label("主页")
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖多窗口文档的三个真实围栏。
-fn multi_window_rust_fences_compile_as_external_consumers() {
-    // 收集三个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记次窗创建与共享主题围栏。
-        multi_window_open::COMPILE_ID,
-        // 登记标准窗口控制围栏。
-        multi_window_control::COMPILE_ID,
-        // 登记延迟窗口配置围栏。
-        multi_window_config::COMPILE_ID,
-        // 登记窗口生命周期与激活围栏。
-        multi_window_lifecycle::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用多窗口文档当前声明的稳定标识作为期望。
-        [
-            // 次窗创建与共享主题围栏标识。
-            "multi-window-open",
-            // 标准窗口控制围栏标识。
-            "multi-window-control",
-            // 延迟窗口配置围栏标识。
-            "multi-window-config",
-            // 窗口生命周期与激活围栏标识。
-            "multi-window-lifecycle",
-        ],
-    );
 }

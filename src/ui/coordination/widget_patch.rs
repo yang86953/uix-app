@@ -56,10 +56,33 @@ pub(crate) fn builtin_widget_config_changed_without_snapshot(
     current: &dyn Widget,
     next: &dyn Widget,
 ) -> Option<bool> {
-    // 该窄端口只由已确认的 Button 协调分支调用。
+    #[cfg(feature = "terminal")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Terminal>(),
+        next.as_any().downcast_ref::<Terminal>(),
+    ) {
+        // 排除草稿与历史，保留语义快照刻意省略的视觉字段。
+        return Some(current.reconcile_config_changed(next));
+    }
     let current = current.as_any().downcast_ref::<Button>()?;
     let next = next.as_any().downcast_ref::<Button>()?;
     Some(!current.has_same_reconcile_config(next))
+}
+
+// 终端输出变化只重绘；尺寸与 Flex 变化才请求父级重新布局。
+pub(crate) fn builtin_widget_layout_changed_without_snapshot(
+    current: &dyn Widget,
+    next: &dyn Widget,
+) -> Option<bool> {
+    #[cfg(feature = "terminal")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Terminal>(),
+        next.as_any().downcast_ref::<Terminal>(),
+    ) {
+        return Some(current.reconcile_layout_changed(next));
+    }
+    let _ = (current, next);
+    None
 }
 
 /// Compare authored configuration for widgets whose public snapshot also
