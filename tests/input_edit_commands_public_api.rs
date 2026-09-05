@@ -146,16 +146,51 @@ fn lang_key_observer_keeps_input_navigation_and_reports_modifiers() {
         let text = view_text.clone();
         let observed = view_observed.clone();
         uix!(
-            r#"<Widget name="Editor" props="text: State<String>, observed: State<bool>"><Column @keyDown="setState(observed: $event.mods.has_ctrl() || $event.mods.has_super())"><Input value={text} automationId="body" /></Column></Widget><Editor text={text.clone()} observed={observed.clone()} />"#
+            r#"<Widget name="Editor" props="text: State<String>, observed: State<bool>"><Container><Column @keyDown="setState(observed: $event.mods.has_ctrl() || $event.mods.has_super())"><Input value={text} automationId="body" /></Column></Container></Widget><Editor text={text.clone()} observed={observed.clone()} />"#
         )
     });
     app.focus("body").unwrap();
     app.press_key(KeyCode::Home, KeyMod::NONE).unwrap();
     app.insert_text("body", "开始").unwrap();
     assert_eq!(text.get(), "开始前后");
-    app.press_key(KeyCode::S, KeyMod::CTRL).unwrap();
+    assert_eq!(
+        app.dispatch_system_event(&SystemEvent::KeyDown {
+            key: KeyCode::S,
+            mods: KeyMod::CTRL
+        })
+        .unwrap(),
+        EventResult::Bubbled
+    );
     assert!(observed.get());
     observed.set(false);
     app.press_key(KeyCode::S, KeyMod::SUPER).unwrap();
     assert!(observed.get());
+}
+
+#[test]
+fn key_dispatch_distinguishes_no_receiver_from_input_navigation() {
+    let text = State::new("中文正文".to_owned());
+    let view_text = text.clone();
+    let mut app = TestApp::new((400.0, 240.0), move || {
+        input().value(&view_text).build().automation_id("body")
+    });
+    app.focus("body").unwrap();
+    assert_eq!(
+        app.dispatch_system_event(&SystemEvent::KeyDown {
+            key: KeyCode::S,
+            mods: KeyMod::CTRL
+        })
+        .unwrap(),
+        EventResult::NotHandled
+    );
+    assert_eq!(
+        app.dispatch_system_event(&SystemEvent::KeyDown {
+            key: KeyCode::Home,
+            mods: KeyMod::NONE
+        })
+        .unwrap(),
+        EventResult::Handled
+    );
+    app.insert_text("body", "光标起点").unwrap();
+    assert_eq!(text.get(), "光标起点中文正文");
 }
