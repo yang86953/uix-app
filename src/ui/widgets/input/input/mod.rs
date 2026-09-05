@@ -282,7 +282,7 @@ widget! {
             SystemEvent::FocusOut => {
                 self.focused = false;
                 self.composition.clear();
-                self.selection.set(None);
+                // 工具栏会临时取得焦点；逻辑选区保留到明确导航、点击或正文替换。
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {

@@ -661,6 +661,7 @@ fn perform_automation_action_on_tree(
         [] => return Err(format!("未找到自动化目标 {automation_id}")),
         _ => return Err(format!("自动化目标 {automation_id} 不唯一")),
     };
-    tree.perform_semantic_action(node, action)
+    // 应用内已排队命令使用窗口逻辑焦点，不依赖操作系统前台归属。
+    tree.perform_agent_semantic_action(node, action)
         .map_err(|error| format!("{error:?}"))
 }

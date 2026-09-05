@@ -727,6 +727,20 @@ impl Input {
         }
     }
 
+    /// 编辑命令提交正文后恢复逻辑光标与选区；后续声明协调保持这些位置。
+    pub(crate) fn restore_edit_selection(&mut self, start: usize, end: usize) {
+        let index = TextIndexCursor::new(&self.value);
+        let start = index
+            .normalize_char(CharIndex(start), BoundaryBias::Backward)
+            .0;
+        let end = index
+            .normalize_char(CharIndex(end), BoundaryBias::Forward)
+            .0;
+        self.sel_anchor.set(start);
+        self.cursor_char = end;
+        self.set_selection_range(start, end);
+    }
+
     pub(crate) fn set_selection_range(&self, a: usize, b: usize) {
         // 同一逻辑位置始终表示空选择，不因旧位置非法而扩展文本。
         if a == b {

@@ -156,17 +156,22 @@ App::new()
 | `focus` | — | 可聚焦目标 |
 | `set_value` | `value` | 文本输入 |
 | `insert_text` | `text` | 接受文本输入的目标 |
+| `wrap_selection` | `prefix` / `suffix` | 文本输入；包裹当前选区，无选区时在光标处插入成对标记 |
 | `select` | `value` | 单选目标（下拉、单选组等） |
 | `toggle` | — | 复选框、开关 |
 | `increment` / `decrement` | — | 滑块、步进器 |
 | `adjust` | `min` / `max` | 连续值目标（能力声明） |
 | `scroll` | `delta_x` / `delta_y` | 可滚动视口 |
 
+Input 在工具栏取得焦点时保留逻辑选区；包裹后继续选中内部文本，无选区时光标置于前缀和后缀之间。再次点击正文、键盘导航或外部替换正文按各自编辑语义更新选区。索引按 Unicode 文本边界处理，不把 UTF-8 字节位置当作光标步数。
+
+应用内工具栏可用 `AppHandle::perform_automation_action(automation_id, SemanticAction::WrapSelection { prefix, suffix })`，不需要开放外部 Agent 端点。命令进入所属窗口 UI 队列，使用窗口逻辑焦点；返回的通道承载实际动作结果，不能在 UI 线程阻塞等待。目标不存在、不唯一、不可见或不可编辑时返回错误，窗口关闭后不能承诺命令执行。受控正文仍由 Input 绑定的 State 回传。
+
 ### 窗口动作（作用于窗口，不携带 target）
 
 | 动作 | 载荷 | 说明 |
 |---|---|---|
-| `press_key` | `key` / `modifiers` | 应用内按键序列（事件未被消费视为失败） |
+| `press_key` | `key` / `modifiers` | 完整下发 KeyDown/KeyUp；任一段被消费或观察则成功，两段均无人处理时失败 |
 | `click_at` / `pointer_move` / `pointer_down` / `pointer_up` | `x` / `y` | 应用内指针事件（未命中可交互目标视为失败） |
 | `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
 | `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
