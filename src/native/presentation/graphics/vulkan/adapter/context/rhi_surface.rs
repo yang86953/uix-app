@@ -405,6 +405,9 @@ impl GraphicsSurface for VulkanContext {
         let pixels =
             self.surface_readback
                 .read_pixels(&self.device, self.swapchain_format, pixel_count);
+        // immediate 已确认 GPU 完成，read_pixels 已解除映射且返回自有像素。
+        // 连同读取失败一起回收临时 staging，避免截图永久抬高窗口的内存基线。
+        self.surface_readback.release(&self.device);
         let pixels = owner.observe(pixels)?;
         RhiSurfaceReadback::try_new(region, token.extent, pixels)
     }

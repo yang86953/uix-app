@@ -26,6 +26,22 @@ semaphore、command pool、swapchain/present retirement、surface、device lease
 lease 的逆依赖顺序执行。最后一个旧 lease 释放时才由 `VulkanDevice::Drop` 唯一销毁
 旧 `VkDevice`，新 device 不接管旧 child，也不能提前或重复销毁旧 device。
 
+## 像素传输缓冲生命周期
+
+`GpuNative` 窗口初始化不预分配整窗 CPU 像素上传缓冲。只有显式调用
+`PixelUpload` 上传入口时，才在等待上一笔上传完成后按实际像素尺寸申请或扩容；
+窗口关闭仍由所属 Context 回收该缓冲。
+
+Surface 回读缓冲只服务当前显式截图事务：按请求区域申请，沿共享 queue 的
+串行即时命令提交，成功等待 GPU 完成后映射、复制到自有 `Vec<u32>` 并解除映射，
+随即释放原生 buffer/memory。回读成功或映射、像素转换失败均走该释放点，
+不把最大截图尺寸变成窗口常驻缓存。连续截图需要重新申请临时缓冲。
+
+如果提交或等待失败，则不在 GPU 完成情况未知时提前释放；残留资源仍由 Context
+按既有 shutdown / device-lost 协议回收。实例、共享设备、交换链和正常绘制资源
+的所有权保持原契约。一次 Linux 真窗测量见
+[UIX-PERF-031](../../性能/UIX-PERF-031.md)，数据不代表其它驱动或平台的收益。
+
 ## 丢失与重建状态
 
 ```text

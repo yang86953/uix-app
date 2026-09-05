@@ -50,3 +50,9 @@
 | [UIX-PERF-028](UIX-PERF-028.md) | 可搜索 Select 稳态行计数快路 |
 | [UIX-PERF-029](UIX-PERF-029.md) | 布局有效可见性门控评估与测量校准（不实施） |
 | [UIX-PERF-030](UIX-PERF-030.md) | 动画延续帧 cadence 门控（页面切换卡顿修复） |
+
+### 原生图形资源
+
+| 记录 | 场景摘要 |
+|---|---|
+| [UIX-PERF-031](UIX-PERF-031.md) | Vulkan 像素上传按需申请、截图读回缓冲及时回收 |
