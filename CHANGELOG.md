@@ -4,6 +4,15 @@
 
 ## 0.0.8（进行中）
 
+### 真实终端最小闭环（Linux PTY）
+
+- 新增 `TerminalSession`：显式 spawn 交互式 shell（PTY + fork/exec + readiness 管道确认）、专职读线程持续读取（poll 驱动、8 MiB 有界缓冲）、非阻塞写入、TIOCSWINSZ + SIGWINCH 网格尺寸同步、退出码收割与 fd/子进程/线程的完整释放；跨读取边界 UTF-8、EOF、启动失败与会话关闭均为类型化结果。
+- 新增 `TerminalScreen` 组件与 VT 屏幕状态（vte 状态机）：按列网格绘制（宽字符占两列、16/256/直接色 SGR）、焦点光标块、退出状态带；按键原样编码转发 PTY（Enter/Backspace/Tab/方向/功能键/Ctrl 组合/Alt 前缀/中文与标点文本），无本地输入行，不与程序回显重复。
+- 框架：焦点位于 `consumes_tab_key` 组件时 Tab 不再做树层焦点导航（真实终端把 Tab 交给子进程）；Linux 键盘补标点键位与文本映射（US 布局）；快照新增 `TerminalScreen` 变体（屏幕行文本、光标、网格与会话状态）。
+- 会话输出经内部代际 State 精确失效订阅组件；主演示「其他组件」页接入真实终端面板（显式启停、宽窄切换），声明式页面经 KernelView 投影，会话生命周期由宿主 Rust 拥有。
+- 依赖：新增 `vte` 0.15（Apache-2.0 OR MIT）与 `unicode-width` 0.1（MIT OR Apache-2.0），均仅随 `terminal` capability 进入解析图。
+- 已验证平台：Linux（Wayland 真窗口 + headless 公开 API 测试）；Windows/macOS 上 `TerminalSession::spawn` 返回 `NotImplemented`。已验证：双向读写、`pwd`/`cd` 后再 `pwd`、彩色与中文输出、Ctrl+C 中断、`exit`、关闭后 fd 释放。已知边界：交替屏（Vim/top）、scrollback 滚回、DECSTBM、bracketed paste、鼠标上报与组合字符不支持，见使用文档清单。
+
 ### 编辑器选区、键盘动作与定位容器
 
 - Input 失焦保留逻辑选区；WrapSelection 包裹后保留内部选择，无选区时将光标放在成对标记之间，继续输入不会落到文末。

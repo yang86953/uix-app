@@ -182,6 +182,13 @@ pub use crate::ui::{DropPosition, SnapshotTreeNode, Tree, TreeNode, TreeSelect};
 #[cfg(feature = "terminal")]
 // 该列表覆盖终端组件的完整公开模型。
 pub use crate::ui::{Terminal, TerminalColor, TerminalLine};
+// 终端 capability 启用时才在 prelude 暴露真实终端会话与屏幕模型。
+#[cfg(feature = "terminal")]
+// 该列表覆盖真实终端（PTY 会话 + VT 屏幕）的完整公开模型。
+pub use crate::ui::{
+    TerminalColorSpec, TerminalRow, TerminalRowSpan, TerminalScreen, TerminalSession,
+    TerminalSessionConfig, TerminalSessionStatus, TerminalSpanStyle,
+};
 
 // app
 

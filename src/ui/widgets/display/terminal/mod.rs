@@ -14,6 +14,19 @@ pub(crate) struct TerminalGeometryVisual {
     padding_y: f32,
 }
 
+// 保存由 UIX 声明的 TerminalScreen 网格几何与内容留白。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TerminalScreenGeometryVisual {
+    default_width: f32,
+    default_height: f32,
+    cell_width: f32,
+    row_height: f32,
+    font_size: f32,
+    padding_x: f32,
+    padding_y: f32,
+    status_height: f32,
+}
+
 // 保存由 UIX 声明的输入行光标、提示符间距与焦点装饰视觉。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TerminalChromeVisual {
@@ -52,8 +65,35 @@ pub(crate) struct TerminalVisual {
     palette: TerminalPaletteVisual,
 }
 
+// 真实终端屏幕共享的完整静态视觉配置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TerminalScreenVisual {
+    geometry: TerminalScreenGeometryVisual,
+    palette: TerminalPaletteVisual,
+}
+
+impl TerminalScreenVisual {
+    pub(crate) fn resolve(self, tokens: &dyn ThemeTokens) -> ResolvedTerminalVisual {
+        ResolvedTerminalVisual {
+            background: self.palette.background.resolve(tokens),
+            border: self.palette.border.resolve(tokens),
+            text: self.palette.text.resolve(tokens),
+            muted: self.palette.muted.resolve(tokens),
+            prompt: self.palette.prompt.resolve(tokens),
+            cursor: self.palette.cursor.resolve(tokens),
+            primary: self.palette.primary.resolve(tokens),
+            success: self.palette.success.resolve(tokens),
+            warning: self.palette.warning.resolve(tokens),
+            error: self.palette.error.resolve(tokens),
+            info: self.palette.info.resolve(tokens),
+        }
+    }
+}
+
 // 同目录 UIX 生成几何、装饰、色板与根视觉记录及稳定借用。
 crate::uix_items!("src/ui/widgets/display/terminal/terminal.uix");
+// 真实终端屏幕的网格几何与色板视觉由同目录 UIX 声明拥有。
+crate::uix_items!("src/ui/widgets/display/terminal/screen.uix");
 
 // 保存 Terminal 每帧只解析一次的主题颜色。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -201,12 +241,30 @@ impl TerminalLine {
 }
 
 mod methods;
+mod screen_methods;
+mod screen_widget;
+mod session;
+mod vt;
 mod widget;
 
+pub use screen_widget::*;
+pub use session::{
+    TerminalOutputWaker, TerminalSession, TerminalSessionConfig, TerminalSessionStatus,
+};
+pub use vt::{TerminalColorSpec, TerminalRow, TerminalRowSpan, TerminalSpanStyle};
 pub use widget::*;
 
 // 把输出缓冲、交互状态与 UIX 静态视觉融合为单一根节点。
 fn build_terminal_view(mut kernel: Terminal, visual: &'static TerminalVisual) -> ViewNode {
+    kernel.visual = visual;
+    ViewNode::leaf(kernel)
+}
+
+// 把 PTY 会话投影内核与 UIX 静态视觉融合为单一根节点。
+fn build_terminal_screen_view(
+    mut kernel: TerminalScreen,
+    visual: &'static TerminalScreenVisual,
+) -> ViewNode {
     kernel.visual = visual;
     ViewNode::leaf(kernel)
 }
@@ -216,5 +274,13 @@ impl View for Terminal {
         // UIX 拥有公开根与静态视觉；Rust 保留输出缓冲、命令输入与滚动算法。
         let kernel = self;
         crate::uix!("src/ui/widgets/display/terminal/terminal.uix")
+    }
+}
+
+impl View for TerminalScreen {
+    fn build(self) -> ViewNode {
+        // 视图构建不隐式创建进程：会话由应用显传入组件内核。
+        let kernel = self;
+        crate::uix!("src/ui/widgets/display/terminal/screen.uix")
     }
 }

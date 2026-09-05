@@ -226,6 +226,11 @@ pub fn snapshot_fields_from_any(widget: &dyn Any) -> SnapshotFields {
     if let Some(terminal) = widget.downcast_ref::<Terminal>() {
         return terminal.snapshot_fields();
     }
+    // 终端 capability 启用时才引用真实终端屏幕组件类型。
+    #[cfg(feature = "terminal")]
+    if let Some(screen) = widget.downcast_ref::<crate::ui::TerminalScreen>() {
+        return screen.snapshot_fields();
+    }
     if let Some(list) = widget.downcast_ref::<List>() {
         return list.snapshot_fields();
     }

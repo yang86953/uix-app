@@ -68,3 +68,64 @@ mod terminal_command {
         let _history: &[String] = console.history();
     }
 }
+
+// 隔离 terminal-live-session 围栏中的真实会话启动与投影。
+mod terminal_live_session {
+    // 引入文档承诺的真实终端公开 prelude。
+    use uix::prelude::*;
+
+    // 编译显式 spawn 与纯投影视图构建。
+    fn compile_example() {
+        // 取得应用句柄即可组装读取唤醒回调。
+        fn spawn_session(handle: &AppHandle) -> Result<TerminalSession, uix::core::Error> {
+            // 复制窗口句柄供读线程唤醒。
+            let wakeup = handle.clone();
+            // 使用默认 shell 命令与窗口尺寸。
+            let mut config = TerminalSessionConfig::default();
+            // 输出到达时经 post_to_ui 回 UI 线程。
+            config.on_output = Some(std::sync::Arc::new(move || {
+                wakeup.post_to_ui(|| {
+                    // 应用在 UI 线程调用 session.pump() 消费新输出。
+                });
+            }));
+            // 显式创建会话；视图构建永远不会创建进程。
+            TerminalSession::spawn(&config)
+        }
+
+        // 视图只投影已存在的会话。
+        fn live_view(session: &TerminalSession) -> ViewNode {
+            embed(TerminalScreen::new(session))
+        }
+
+        let _ = (
+            spawn_session as fn(&AppHandle) -> Result<TerminalSession, uix::core::Error>,
+            live_view as fn(&TerminalSession) -> ViewNode,
+        );
+    }
+}
+
+// 隔离 terminal-live-query 围栏中的读写、尺寸与状态查询。
+mod terminal_live_query {
+    // 引入文档承诺的会话运行期公开 prelude。
+    use uix::prelude::*;
+
+    // 编译写入、resize 与屏幕投影查询。
+    fn compile_example() {
+        // 查询与驱动只接收已存在的会话句柄。
+        fn inspect_and_drive(session: &TerminalSession) -> Result<(), uix::core::Error> {
+            // 按键字节与文本直接写入 PTY。
+            session.write(b"ls --color=auto\r")?;
+            // 显式同步窗口网格尺寸。
+            session.resize(100, 30)?;
+            // 屏幕投影：行快照、光标与网格尺寸。
+            let rows: Vec<String> = session.rows().iter().map(TerminalRow::plain).collect();
+            let (row, column) = session.cursor();
+            let (cols, lines) = session.screen_size();
+            let running = matches!(session.status(), TerminalSessionStatus::Running);
+            let _ = (rows, row, column, cols, lines, running);
+            Ok(())
+        }
+
+        let _ = inspect_and_drive as fn(&TerminalSession) -> Result<(), uix::core::Error>;
+    }
+}

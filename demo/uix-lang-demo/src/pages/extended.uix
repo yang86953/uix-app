@@ -531,11 +531,33 @@
 </Widget>
 
 // 声明其他组件页组件并持有上传队列唯一状态。
-<Widget name="OtherPage" state="upload_files: Vec<UploadFile> = []">
+<Widget name="OtherPage" state="upload_files: Vec<UploadFile> = []" external="live_terminal_toggle, live_terminal_toggle_width, live_terminal_view">
   // 组织其他组件内容。
   <Column gap="16px">
     // 展示其他组件标题。
     <Text fontSize="heading2">其他组件</Text>
+    // 展示真实交互式终端面板（Linux PTY 会话由 Rust 宿主拥有）。
+    <Container class="pagePanel">
+      // 组织真实终端演示内容。
+      <Column gap="12px">
+        // 展示面板小节标题。
+        <Text fontSize="heading5">TerminalScreen — 真实 PTY 会话</Text>
+        // 排列启停与宽度切换控件。
+        <Container direction="row" gap="8px">
+          // 显式启动或关闭真实 shell 会话。
+          <Button @click="live_terminal_toggle()" automationId="live-terminal-toggle">启动 / 关闭会话</Button>
+          // 切换终端宽度并同步 PTY 列数。
+          <Button @click="live_terminal_toggle_width()" automationId="live-terminal-width">宽度切换</Button>
+        // 结束控件排列。
+        </Container>
+        // 经 KernelView 引用 Rust 侧的终端屏幕投影。
+        <KernelView value={live_terminal_view()} />
+        // 说明会话与视图的职责边界。
+        <Text fontSize="small">会话由 Rust 宿主显式启停；组件只投影 VT 屏幕并转发按键，回显与编辑全部在 PTY 中的 shell 完成。</Text>
+      // 结束真实终端演示内容。
+      </Column>
+    // 结束真实终端面板。
+    </Container>
     // 展示受控上传组件面板。
     <Container class="pagePanel">
       // 组织上传拖放区与边界说明。

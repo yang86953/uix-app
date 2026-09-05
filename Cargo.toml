@@ -46,6 +46,10 @@ unicode-bidi = "0.3.18"
 unicode-segmentation = "1.13.3"
 # 使用 Unicode 15 默认 UAX #14 算法生成强制与允许断行机会。
 unicode-linebreak = "0.1.5"
+# 真实终端 VT 状态机解析（Apache-2.0 OR MIT），仅随 terminal capability 进入解析图。
+vte = { version = "0.15.0", optional = true }
+# 终端屏幕字符列宽（MIT OR Apache-2.0），仅随 terminal capability 进入解析图。
+unicode-width = { version = "0.1.14", optional = true }
 memmap2 = "0.9"
 earcut = "0.4.11"
 glow = { version = "0.18.0", optional = true }
@@ -205,8 +209,8 @@ navigation = ["uix-derive/navigation"]
 feedback = ["uix-derive/feedback"]
 # 树展示、树节点模型、树选择器、patch 与快照公开面作为一个可独立关闭的源码能力。
 tree-widgets = ["uix-derive/tree-widgets"]
-# 终端组件族、行缓冲模型、命令输入与快照公开面作为一个可独立关闭的源码能力。
-terminal = ["uix-derive/terminal"]
+# 终端组件族、行缓冲模型、命令输入、真实 PTY 会话与快照公开面作为一个可独立关闭的源码能力。
+terminal = ["uix-derive/terminal", "dep:vte", "dep:unicode-width"]
 agent-control = [
     "dep:serde_json",
     "dep:png",

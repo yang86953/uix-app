@@ -48,6 +48,9 @@ use crate::ui::widgets::{Tree, TreeSelect};
 #[cfg(feature = "terminal")]
 // 该类型与终端快照变体共享同一门禁。
 use crate::ui::widgets::Terminal;
+#[cfg(feature = "terminal")]
+// 真实终端屏幕与命令终端共享同一门禁。
+use crate::ui::widgets::TerminalScreen;
 // 导入区分布局字段与纯绘制字段所需的统一样式快照。
 use crate::ui::theme::style::Style;
 
@@ -64,6 +67,14 @@ pub(crate) fn builtin_widget_config_changed_without_snapshot(
         // 排除草稿与历史，保留语义快照刻意省略的视觉字段。
         return Some(current.reconcile_config_changed(next));
     }
+    #[cfg(feature = "terminal")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<TerminalScreen>(),
+        next.as_any().downcast_ref::<TerminalScreen>(),
+    ) {
+        // 屏幕内容属于会话运行态；声明比较只看会话身份与视觉配置。
+        return Some(current.reconcile_config_changed(next));
+    }
     let current = current.as_any().downcast_ref::<Button>()?;
     let next = next.as_any().downcast_ref::<Button>()?;
     Some(!current.has_same_reconcile_config(next))
@@ -78,6 +89,13 @@ pub(crate) fn builtin_widget_layout_changed_without_snapshot(
     if let (Some(current), Some(next)) = (
         current.as_any().downcast_ref::<Terminal>(),
         next.as_any().downcast_ref::<Terminal>(),
+    ) {
+        return Some(current.reconcile_layout_changed(next));
+    }
+    #[cfg(feature = "terminal")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<TerminalScreen>(),
+        next.as_any().downcast_ref::<TerminalScreen>(),
     ) {
         return Some(current.reconcile_layout_changed(next));
     }
@@ -585,6 +603,9 @@ pub(crate) fn patch_builtin_widget(
     #[cfg(feature = "terminal")]
     // 启用后保持终端的原位同步语义。
     patch_as!(Terminal);
+    #[cfg(feature = "terminal")]
+    // 真实终端屏幕的运行态（网格同步与焦点）跨帧原位保留。
+    patch_as!(TerminalScreen);
     patch_as!(SelectableList);
     // 图表 capability 启用时才生成柱状图类型化 patch 分支。
     #[cfg(feature = "charts")]

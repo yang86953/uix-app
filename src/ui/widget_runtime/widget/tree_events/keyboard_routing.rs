@@ -12,8 +12,16 @@ impl WidgetTree {
         mods: KeyMod,
     ) -> EventResult {
         self.set_keyboard_focus_visible(true);
+        // 焦点组件把 Tab 作为原始输入消费（如真实终端转发子进程）时，
+        // 跳过树层焦点导航，让 Tab 走正常派发路径。
+        let focused_consumes_tab = self
+            .managers()
+            .focus
+            .focused_widget()
+            .and_then(|id| self.get(id))
+            .is_some_and(|node| node.widget().consumes_tab_key());
         // Tab 键焦点导航（在捕获和冒泡之前处理）。
-        if key == KeyCode::Tab {
+        if key == KeyCode::Tab && !focused_consumes_tab {
             let forward = !mods.contains(KeyMod::SHIFT);
             if let Some(owner) = self
                 .overlay_stack

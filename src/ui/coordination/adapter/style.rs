@@ -16,10 +16,10 @@ use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 #[cfg(feature = "feedback")]
 use crate::ui::widgets::Modal;
 // Tooltip 的触发区显式尺寸同样只在 feedback capability 下桥接。
-#[cfg(feature = "feedback")]
-use crate::ui::widgets::Tooltip;
 #[cfg(feature = "terminal")]
 use crate::ui::widgets::Terminal;
+#[cfg(feature = "feedback")]
+use crate::ui::widgets::Tooltip;
 
 // 引入所属适配器类型。
 use super::ViewAdapter;
@@ -183,6 +183,14 @@ impl ViewAdapter {
         #[cfg(feature = "terminal")]
         if let Some(terminal) = widget.as_any_mut().downcast_mut::<Terminal>() {
             terminal.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
+        }
+
+        #[cfg(feature = "terminal")]
+        if let Some(screen) = widget
+            .as_any_mut()
+            .downcast_mut::<crate::ui::widgets::TerminalScreen>()
+        {
+            screen.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
         }
 
         widget

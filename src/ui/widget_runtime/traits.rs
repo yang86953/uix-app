@@ -124,6 +124,13 @@ pub trait Widget: 'static {
     fn tab_index(&self) -> i32 {
         0
     }
+    /// 焦点位于本组件时是否把 Tab 作为原始输入消费而不是移动焦点。
+    ///
+    /// 默认 `false`（Tab 交给树层焦点导航）；真实终端等把 Tab 交给
+    /// 子进程解释的组件返回 `true`。
+    fn consumes_tab_key(&self) -> bool {
+        false
+    }
     /// 是否将子树作为独立节点暴露给语义快照。
     ///
     /// 复合交互组件可返回 `false`，让内部纯展示 View 不形成嵌套控件语义。
