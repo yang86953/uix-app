@@ -191,6 +191,28 @@ pub enum KeyCode {
     Num8,
     /// 数字 9 键。
     Num9,
+    /// 标点：减号/下划线键。
+    Minus,
+    /// 标点：等号/加号键。
+    Equal,
+    /// 标点：左方括号/左花括号键。
+    LeftBracket,
+    /// 标点：右方括号/右花括号键。
+    RightBracket,
+    /// 标点：分号/冒号键。
+    Semicolon,
+    /// 标点：引号/双引号键。
+    Quote,
+    /// 标点：反引号/波浪号键。
+    Backquote,
+    /// 标点：反斜杠/竖线键。
+    Backslash,
+    /// 标点：逗号/小于号键。
+    Comma,
+    /// 标点：句号/大于号键。
+    Period,
+    /// 标点：斜杠/问号键。
+    Slash,
     /// 功能键 F1。
     F1,
     /// 功能键 F2。

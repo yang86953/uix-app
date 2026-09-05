@@ -118,6 +118,36 @@ pub(super) fn terminal_accessibility(
     })
 }
 
+// 真实终端屏幕的无障碍快照：网格行数本身有界，保留全部非空行，
+// 超出上限时取尾部；行文本去掉网格尾随空格。
+#[cfg(feature = "terminal")]
+pub(super) fn terminal_screen_accessibility(
+    rows: &[String],
+    running: bool,
+    exit_code: Option<i32>,
+) -> AccessibilitySnapshot {
+    const MAX_LINES: usize = 64;
+    let mut entries: Vec<&str> = rows
+        .iter()
+        .map(|line| line.trim_end())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if entries.len() > MAX_LINES {
+        entries.drain(0..entries.len() - MAX_LINES);
+    }
+    let state_text = if running {
+        None
+    } else {
+        exit_code.map(|code| format!("会话已退出，代码 {code}"))
+    };
+    AccessibilitySnapshot::new(AccessibilityRole::TextBox).with_state(AccessibilityState {
+        value_text: (!entries.is_empty())
+            .then(|| entries.join("\n"))
+            .or(state_text),
+        ..AccessibilityState::default()
+    })
+}
+
 // 图表 capability 关闭时不编译专属无障碍摘要辅助函数。
 #[cfg(feature = "charts")]
 pub(super) fn chart_accessibility<'a>(

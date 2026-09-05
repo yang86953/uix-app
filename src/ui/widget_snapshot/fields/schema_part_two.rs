@@ -246,6 +246,20 @@ macro_rules! snapshot_fields_part_two {
                 /// 按提交顺序保存的历史命令。
                 history: Vec<String>,
             },
+            #[cfg(feature = "terminal")]
+            /// 真实终端屏幕的行文本、光标、网格与会话状态快照。
+            TerminalScreen {
+                /// 按行序保存的屏幕纯文本。
+                rows: Vec<String>,
+                /// 光标位置（行、列）。
+                cursor: (usize, usize),
+                /// 网格尺寸（列、行）。
+                size: (usize, usize),
+                /// 会话是否仍在运行。
+                running: bool,
+                /// 会话退出码；被信号终止时为 None。
+                exit_code: Option<i32>,
+            },
             /// 列表的首尾内容、边框、尺寸、条目与加载入口快照。
             List {
                 /// 列表头部显示的文字。

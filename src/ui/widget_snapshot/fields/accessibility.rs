@@ -16,9 +16,8 @@ use super::super::accessibility::{popconfirm_accessibility, progress_accessibili
 #[cfg(feature = "navigation")]
 // 这些函数只处理同步门控的八种导航快照变体。
 use super::super::accessibility::{
-    anchor_accessibility, breadcrumb_accessibility, dropdown_accessibility,
-    menu_accessibility, menu_bar_accessibility, pagination_accessibility, steps_accessibility,
-    tabs_accessibility,
+    anchor_accessibility, breadcrumb_accessibility, dropdown_accessibility, menu_accessibility,
+    menu_bar_accessibility, pagination_accessibility, steps_accessibility, tabs_accessibility,
 };
 // 图表 capability 启用时才引入专属无障碍摘要辅助函数。
 #[cfg(feature = "charts")]
@@ -35,7 +34,7 @@ use super::super::accessibility::tree_accessibility;
 // 终端 capability 启用时才引入专属无障碍转换函数。
 #[cfg(feature = "terminal")]
 // 该函数只处理同步门控的终端快照变体。
-use super::super::accessibility::terminal_accessibility;
+use super::super::accessibility::{terminal_accessibility, terminal_screen_accessibility};
 use super::super::{AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 use super::SnapshotFields;
 
@@ -559,6 +558,13 @@ impl SnapshotFields {
                 input,
                 ..
             } => terminal_accessibility(prompt, lines, input),
+            #[cfg(feature = "terminal")]
+            Self::TerminalScreen {
+                rows,
+                running,
+                exit_code,
+                ..
+            } => terminal_screen_accessibility(rows, *running, *exit_code),
             Self::Calendar {
                 year,
                 month,

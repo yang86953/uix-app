@@ -15,6 +15,11 @@ mod graphics_readback;
 // 只把语言面 Record 投影为提交回调的模块级业务输入类型。
 uix_items!("src/main.uix");
 
+// 真实终端演示组合：会话生命周期由 Rust 宿主拥有，声明式页面经 KernelView 投影。
+mod live_terminal;
+// 声明式页面按 external 名字引用真实终端演示入口。
+use live_terminal::{live_terminal_toggle, live_terminal_toggle_width, live_terminal_view};
+
 // 接收 Form 已完成字段校验与状态写回后的业务提交事实。
 fn submit_profile(model: Profile) -> Result<(), String> {
     tracing::info!(
@@ -87,9 +92,8 @@ fn run_gui(options: LaunchOptions) {
     let agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
     // 保存可 clone 的诊断句柄，供应用退出后消费复现清单与报告摘要。
-    let diagnostics_slot: std::sync::Arc<
-        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
-    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
     // 持有报告即时订阅句柄：订阅随演示会话存活，drop 即注销。
     let report_subscription_slot: std::sync::Arc<
         std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
@@ -168,9 +172,7 @@ fn run_gui(options: LaunchOptions) {
 fn build_demo_app(
     follow_system_theme: bool,
     agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>>,
-    diagnostics_slot: std::sync::Arc<
-        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
-    >,
+    diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>>,
     report_subscription_slot: std::sync::Arc<
         std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
     >,
@@ -185,6 +187,8 @@ fn build_demo_app(
         )
         .on_start(move |handle| {
             *agent_handle_slot.lock().unwrap() = Some(handle.clone());
+            // 真实终端的读线程唤醒经主窗口句柄 post_to_ui 回 UI 线程。
+            live_terminal::install_ui_handle(&handle);
             // 诊断句柄可 clone 且在窗口关闭后仍可用，供退出路径消费。
             let diagnostics = handle.diagnostics();
             // 报告即时订阅：任何报告入库的同时实时输出摘要，错误发生的
@@ -211,9 +215,7 @@ fn demo_diagnostics_directory() -> std::path::PathBuf {
 
 // 应用退出后的宿主诊断消费：写出复现清单并汇总留存报告。
 fn finalize_diagnostics(
-    diagnostics_slot: &std::sync::Arc<
-        std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>,
-    >,
+    diagnostics_slot: &std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>>,
 ) {
     // 测试验收组合不经过 demo 组装根，没有可消费的诊断句柄。
     let Some(diagnostics) = diagnostics_slot.lock().unwrap().clone() else {
@@ -228,10 +230,7 @@ fn finalize_diagnostics(
     );
     match diagnostics.write_debug_repro_manifest(demo_diagnostics_directory()) {
         Ok(path) => tracing::info!(manifest = %path.display(), "demo debug repro manifest written"),
-        Err(error) => tracing::warn!(
-            "demo debug repro manifest write failed: {}",
-            error.what()
-        ),
+        Err(error) => tracing::warn!("demo debug repro manifest write failed: {}", error.what()),
     }
 }
 

@@ -281,6 +281,10 @@ macro_rules! __widget_build_method {
     (tab_index; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn tab_index($($p)*) -> $ret $body
     };
+    // 真实终端类组件声明消费原始 Tab（不走树层焦点导航），直接生成 Widget 方法。
+    (consumes_tab_key; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn consumes_tab_key($($p)*) -> $ret $body
+    };
     (picture_policy; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn picture_policy($($p)*) -> $ret $body
     };
