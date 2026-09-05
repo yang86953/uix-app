@@ -394,6 +394,7 @@ impl WidgetTree {
         }
         let mut current = Some(target);
         let secondary_drag_boundary = self.secondary_pointer_drag_boundary(target, event);
+        let mut observed = EventResult::NotHandled;
         // 每个冒泡节点都按自身的完整 visual/scroll 链反变换到局部坐标。
         while let Some(id) = current {
             if secondary_drag_boundary == Some(id) {
@@ -416,11 +417,14 @@ impl WidgetTree {
             if result == EventResult::Handled {
                 return self.finish_scroll_aware_dispatch(id, &localized);
             }
+            if result == EventResult::Bubbled {
+                observed = EventResult::Bubbled;
+            }
 
             // Bubbled 或 NotHandled → 继续向父节点传播
             current = parent_id;
         }
-        EventResult::NotHandled
+        observed
     }
 
     pub(super) fn dispatch_double_click_to(
