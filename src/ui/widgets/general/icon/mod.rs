@@ -12,7 +12,7 @@ use crate::draw::resources::font::font_service::FontService;
 use crate::draw::{Color, FontHandle};
 use crate::ui::SnapshotFields;
 use crate::ui::theme::NeutralRole;
-use crate::ui::theme::style::ColorValue;
+use crate::ui::theme::style::{ColorValue, Style};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::ui::widget_runtime::widget::WidgetTree;
@@ -142,6 +142,8 @@ widget! {
         #[snapshot(skip)]
         // 区分作者显式尺寸与 UIX 默认尺寸，声明刷新不能覆盖作者输入。
         size_authored: bool,
+        /// View 声明样式；当前只消费颜色字段，尺寸仍归 size 属性所有。
+        pub(crate) style: Option<Style>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -153,7 +155,14 @@ widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let color = ICON_VISUAL.color.resolve(ctx.tokens());
+        // 声明色优先于静态主题色：外部 color 绑定（收藏心形等状态色）
+        // 必须随 reconcile 进入绘制，否则字形恒用主题正文色。
+        let color = self
+            .style
+            .as_ref()
+            .map(|style| style.color.clone())
+            .unwrap_or(ICON_VISUAL.color)
+            .resolve(ctx.tokens());
         if lucide_handle().is_some() {
             Self::paint_glyph_in_frame(ctx, self.glyph, frame, color, self.size * ICON_VISUAL.glyph_scale);
         } else {
@@ -209,13 +218,28 @@ impl Icon {
         self.glyph = next.glyph;
         self.size = next.size;
         self.size_authored = next.size_authored;
+        self.style = next.style;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Icon {
             name: self.name.to_string(),
             size: self.size,
+            // 保存声明色身份而非解析值：颜色变化必须驱动原位 patch。
+            color: self.style.as_ref().map(|style| style.color.clone()),
         }
+    }
+}
+
+impl Icon {
+    /// 融合 View 声明样式；只消费颜色字段，不改变固有尺寸语义。
+    pub(crate) fn apply_view_style(&mut self, style: &Style) {
+        let merged = self
+            .style
+            .clone()
+            .unwrap_or_default()
+            .apply(style.clone());
+        self.style = Some(merged);
     }
 }
 
@@ -235,6 +259,7 @@ impl Icon {
             glyph,
             size: ICON_VISUAL.default_size,
             size_authored: false,
+            style: None,
         }
     }
     /// 设置图标的方形边长。

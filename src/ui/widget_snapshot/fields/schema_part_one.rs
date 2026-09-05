@@ -127,12 +127,14 @@ macro_rules! snapshot_fields_part_one {
                 /// 分隔线是否采用虚线样式。
                 dashed: bool,
             },
-            /// 图标的资源名称与显示尺寸快照。
+            /// 图标的资源名称、显示尺寸与声明色快照。
             Icon {
                 /// 图标资源的稳定名称。
                 name: String,
                 /// 图标声明的方形边长。
                 size: f32,
+                /// 图标声明的主题感知颜色身份；None 表示使用静态默认色。
+                color: Option<ColorValue>,
             },
             /// 富文本排版组件的内容、修饰与颜色快照。
             Typography {
