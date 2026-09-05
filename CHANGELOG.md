@@ -4,6 +4,14 @@
 
 ## 0.0.8（进行中）
 
+### Vulkan：减少像素传输缓冲常驻开销
+
+- GpuNative 窗口不再预分配整窗 CPU 像素上传缓冲；PixelUpload 沿用首次上传时
+  按需申请。Surface 截图在 GPU 完成并复制像素后释放读回缓冲，避免保留最大截图尺寸。
+- Linux 真窗对照：1536×1024 空闲图形驻留约 41.43 → 35.43 MiB；
+  放大截图并缩回后约 50.29 → 35.48 MiB。进程 RSS 未证明稳定下降，
+  详细口径、正确性和验证边界见 [UIX-PERF-031](docs/性能/UIX-PERF-031.md)。
+
 ### 真实终端最小闭环（Linux PTY）
 
 - 新增 `TerminalSession`：显式 spawn 交互式 shell（PTY + fork/exec + readiness 管道确认）、专职读线程持续读取（poll 驱动、8 MiB 有界缓冲）、非阻塞写入、TIOCSWINSZ + SIGWINCH 网格尺寸同步、退出码收割与 fd/子进程/线程的完整释放；跨读取边界 UTF-8、EOF、启动失败与会话关闭均为类型化结果。

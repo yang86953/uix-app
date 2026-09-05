@@ -31,7 +31,7 @@ impl VulkanSurfaceReadbackBuffer {
         }
     }
 
-    // 按当前区域紧密像素载荷扩容；已完成的较大 staging 可跨 resize 复用。
+    // 按当前区域紧密像素载荷申请；成功等待 GPU 并读取像素后立即释放。
     pub(super) fn ensure_capacity(
         &mut self,
         instance: &ash::Instance,
@@ -164,7 +164,8 @@ impl VulkanSurfaceReadbackBuffer {
         pixels
     }
 
-    pub(super) fn shutdown(&mut self, device: &ash::Device) {
+    // 调用方确认 GPU 完成后回收；窗口关闭也复用此入口处理未完成读取的残留。
+    pub(super) fn release(&mut self, device: &ash::Device) {
         let previous = std::mem::replace(self, Self::new());
         previous.destroy(device);
     }

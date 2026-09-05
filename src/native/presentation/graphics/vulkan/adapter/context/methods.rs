@@ -157,7 +157,7 @@ impl VulkanContext {
         ))?;
         ctx.width = ctx.extent.width as i32;
         ctx.height = ctx.extent.height as i32;
-        device.observe(ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height)))?;
+        // GpuNative 不需要 CPU 像素上传缓冲；PixelUpload 在首次上传时按需申请。
         tracing::info!(
             "VulkanContext: created {}x{} swapchain; {}; device_fault_reporting={}; swapchain_maintenance1={}",
             ctx.width,
@@ -704,7 +704,7 @@ impl VulkanContext {
         // Drawing 资源依赖 Vulkan device，必须在 command pool 与 device 父对象前逆序回收。
         self.rhi_device.shutdown(&self.device);
         // immediate 命令池已释放后再销毁它曾引用的 Surface staging 资源。
-        self.surface_readback.shutdown(&self.device);
+        self.surface_readback.release(&self.device);
         // RHI framebuffer 已释放后才能销毁 swapchain image views。
         destroy_image_views(&self.device, &mut self.swapchain_image_views);
         self.acquired_frame = None;
