@@ -732,11 +732,16 @@ impl WidgetTree {
                         .and_then(|n| n.parent())
                         .and_then(|pid| self.get(pid).map(|p| p.frame()))
                 };
+                let parent_auto = self
+                    .get(id)
+                    .and_then(|node| node.parent())
+                    .map(|parent| self.out_of_flow_auto_axes(parent))
+                    .unwrap_or((false, false));
                 let parent_cap_w = parent_frame
-                    .filter(|_| !scrolls_horizontally)
+                    .filter(|_| !scrolls_horizontally && !parent_auto.0)
                     .map(|pf| (pf.x + pf.w - old_frame.x).max(0.0));
                 let parent_cap_h = parent_frame
-                    .filter(|_| !scrolls_vertically)
+                    .filter(|_| !scrolls_vertically && !parent_auto.1)
                     .map(|pf| (pf.y + pf.h - old_frame.y).max(0.0));
                 let mut effective_w = new_w.max(node_frame.w);
                 let mut effective_h = new_h.max(node_frame.h);

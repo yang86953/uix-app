@@ -92,3 +92,70 @@ fn key_mod_provides_documented_modifier_predicates() {
     assert!(combo.has_ctrl() && combo.has_alt() && !combo.has_super());
 }
 
+#[test]
+fn wrap_after_toolbar_focus_preserves_chinese_selection_and_caret() {
+    let text = State::new("前中文🙂后".to_owned());
+    let view_text = text.clone();
+    let mut app = TestApp::new((400.0, 240.0), move || {
+        column_fit((
+            input().value(&view_text).build().automation_id("body"),
+            button("加粗").build().automation_id("toolbar"),
+        ))
+    });
+    app.focus("body").unwrap();
+    app.press_key(KeyCode::Home, KeyMod::NONE).unwrap();
+    app.press_key(KeyCode::Right, KeyMod::NONE).unwrap();
+    for _ in 0..3 {
+        app.press_key(KeyCode::Right, KeyMod::SHIFT).unwrap();
+    }
+    app.focus("toolbar").unwrap();
+    app.perform(
+        "body",
+        AutomationAction::WrapSelection {
+            prefix: "**".to_owned(),
+            suffix: "**".to_owned(),
+        },
+    )
+    .unwrap();
+    assert_eq!(text.get(), "前**中文🙂**后");
+    // 包裹后仍选中内部正文，键入替换不能吞掉标记或后文。
+    app.insert_text("body", "替换").unwrap();
+    assert_eq!(text.get(), "前**替换**后");
+    app.set_value("body", "前后").unwrap();
+    app.press_key(KeyCode::Home, KeyMod::NONE).unwrap();
+    app.press_key(KeyCode::Right, KeyMod::NONE).unwrap();
+    app.perform(
+        "body",
+        AutomationAction::WrapSelection {
+            prefix: "`".to_owned(),
+            suffix: "`".to_owned(),
+        },
+    )
+    .unwrap();
+    app.insert_text("body", "光标🙂").unwrap();
+    assert_eq!(text.get(), "前`光标🙂`后");
+}
+
+#[test]
+fn lang_key_observer_keeps_input_navigation_and_reports_modifiers() {
+    let text = State::new("前后".to_owned());
+    let observed = State::new(false);
+    let view_text = text.clone();
+    let view_observed = observed.clone();
+    let mut app = TestApp::new((400.0, 240.0), move || {
+        let text = view_text.clone();
+        let observed = view_observed.clone();
+        uix!(
+            r#"<Widget name="Editor" props="text: State<String>, observed: State<bool>"><Column @keyDown="setState(observed: $event.mods.has_ctrl() || $event.mods.has_super())"><Input value={text} automationId="body" /></Column></Widget><Editor text={text.clone()} observed={observed.clone()} />"#
+        )
+    });
+    app.focus("body").unwrap();
+    app.press_key(KeyCode::Home, KeyMod::NONE).unwrap();
+    app.insert_text("body", "开始").unwrap();
+    assert_eq!(text.get(), "开始前后");
+    app.press_key(KeyCode::S, KeyMod::CTRL).unwrap();
+    assert!(observed.get());
+    observed.set(false);
+    app.press_key(KeyCode::S, KeyMod::SUPER).unwrap();
+    assert!(observed.get());
+}

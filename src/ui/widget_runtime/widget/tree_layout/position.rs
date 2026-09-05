@@ -14,6 +14,26 @@ use crate::ui::position::{PositionMode, PositionedLayout};
 use crate::ui::LayoutChild;
 
 impl WidgetTree {
+    /// 自动尺寸脱流父级由内容决定大小，不能用上轮自身尺寸反向钳住内容扩展。
+    pub(crate) fn out_of_flow_auto_axes(&self, id: WidgetId) -> (bool, bool) {
+        let Some(node) = self.get(id) else {
+            return (false, false);
+        };
+        let position = node.position();
+        if !position.mode.is_out_of_flow() {
+            return (false, false);
+        }
+        let (width_locked, height_locked) = self.phase2_explicit_size_locks(id);
+        (
+            !width_locked
+                && !(position.insets.left_value().is_some()
+                    && position.insets.right_value().is_some()),
+            !height_locked
+                && !(position.insets.top_value().is_some()
+                    && position.insets.bottom_value().is_some()),
+        )
+    }
+
     /// 把定位分类和父布局结果写入调用方工作区。
     pub(crate) fn arrange_positioned_children_into(
         &self,
@@ -170,15 +190,15 @@ impl WidgetTree {
         }
         // 根据模式选择最近定位祖先或根视口。
         let block = self.position_containing_block(id, position.mode)?;
-        // 用包含块尺寸约束子组件自然测量。
-        let measured = self
-            // 再次读取节点以调用窄测量契约。
-            .get(id)?
-            // 脱流子项仍需取得自己的自然 border-box 尺寸。
-            .measure(Constraints::loose(Size::new(
-                block.w.max(0.0),
-                block.h.max(0.0),
-            )));
+        // 脱流子项不参与 Flex 空间分配，不能沿用 grow 的零 basis。
+        // 统一自然测量入口也保留透明包装节点的子树代理契约。
+        let measured =
+            crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints(
+                id,
+                self,
+                Constraints::loose(Size::new(block.w.max(0.0), block.h.max(0.0))),
+            )
+            .measured_size;
         // 提取四边显式值。
         let top = position.insets.top_value();
         // 提取右边显式值。

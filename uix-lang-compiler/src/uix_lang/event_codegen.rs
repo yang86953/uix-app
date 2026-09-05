@@ -68,6 +68,8 @@ pub(super) fn apply_event(
                     let #mods_payload = *__uix_mods;
                     // 丢弃处理器返回值并保留副作用。
                     let _ = { #handler };
+                    // 观察事实仍允许组件处理与冒泡，但不能向 Agent 伪报无人接收。
+                    return ::uix::prelude::EventResult::Bubbled;
                 }
                 // 继续交付组件自身处理器并向父节点冒泡。
                 ::uix::prelude::EventResult::NotHandled

@@ -94,23 +94,23 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         }
         match action {
             AgentWindowAction::PressKey { key, modifiers } => {
-                // KeyDown 未被任何组件消费（如无焦点组件）时命令必须失败，
-                // 静默忽略会让 agent 误以为按键已生效（假成功）。
-                dispatch_window_event(
-                    tree,
-                    &SystemEvent::KeyDown {
-                        key,
-                        mods: modifiers,
-                    },
-                )?;
-                // KeyUp 与 KeyDown 同样要求被消费，保证按键序列完整生效。
-                dispatch_window_event(
-                    tree,
-                    &SystemEvent::KeyUp {
-                        key,
-                        mods: modifiers,
-                    },
-                )?;
+                // 始终补齐按下与抬起；输入框通常只消费 KeyDown。
+                let down = tree.dispatch_agent_event(&SystemEvent::KeyDown {
+                    key,
+                    mods: modifiers,
+                });
+                let up = tree.dispatch_agent_event(&SystemEvent::KeyUp {
+                    key,
+                    mods: modifiers,
+                });
+                // 已消费或观察的完整序列成功；两段都无人处理仍明确拒绝。
+                if down == crate::ui::EventResult::NotHandled
+                    && up == crate::ui::EventResult::NotHandled
+                {
+                    return Err(AgentCommandError::NotInteractable(format!(
+                        "press_key {key:?}"
+                    )));
+                }
             }
             AgentWindowAction::ClickAt { position } => {
                 // 点击落在空白处（无组件消费）对 agent 而言动作未生效，报告失败。

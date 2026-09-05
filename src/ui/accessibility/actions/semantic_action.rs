@@ -604,6 +604,9 @@ impl WidgetTree {
         let Some((value, selection, caret)) = edit else {
             return EventResult::NotHandled;
         };
+        let (start, end) = selection.unwrap_or((caret, caret));
+        let prefix_chars = prefix.chars().count();
+        let inner_range = (start.min(end) + prefix_chars, start.max(end) + prefix_chars);
         // 字符索引到字节偏移的换算；越过末尾视为越界。
         let char_to_byte = |index: usize| {
             if index > value.chars().count() {
@@ -649,7 +652,16 @@ impl WidgetTree {
                 out
             }
         };
-        self.set_input_value(id, &replaced, allow_unfocused_input)
+        let result = self.set_input_value(id, &replaced, allow_unfocused_input);
+        if result == EventResult::Handled {
+            if let Some(input) = self
+                .get_mut(id)
+                .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<Input>())
+            {
+                input.restore_edit_selection(inner_range.0, inner_range.1);
+            }
+        }
+        result
     }
 
     fn set_input_value(
