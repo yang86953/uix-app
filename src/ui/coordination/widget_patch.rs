@@ -408,6 +408,19 @@ pub(crate) fn builtin_widget_layout_changed(
                 // 滚动条沟槽会改变可用内容范围。
                 || current_show_scrollbar != next_show_scrollbar,
         ),
+        // Icon 的名称与尺寸参与固有测量；颜色是纯绘制字段，留在 Paint。
+        (
+            SnapshotFields::Icon {
+                name: current_name,
+                size: current_size,
+                color: _,
+            },
+            SnapshotFields::Icon {
+                name: next_name,
+                size: next_size,
+                color: _,
+            },
+        ) => Some(current_name != next_name || current_size != next_size),
         // 其余所有快照类型显式归入保守布局，避免新增组件静默漏掉几何失效。
         _ => Some(true),
     }

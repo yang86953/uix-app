@@ -8,7 +8,7 @@ use crate::ui::theme::style::Style;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
 use crate::ui::widgets::{
-    Button, Card, Container, Grid, Input, Label, MenuBar, ScrollView, Select, Typography,
+    Button, Card, Container, Grid, Icon, Input, Label, MenuBar, ScrollView, Select, Typography,
 };
 // VirtualScroll 是布局能力组件而非 widgets 命名空间成员，单独引入。
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
@@ -68,6 +68,12 @@ impl ViewAdapter {
                     l.fixed_height = Some(h);
                 }
                 l.style = Some(merged);
+            }
+        } else if tid == std::any::TypeId::of::<Icon>() {
+            if let Some(icon) = widget.as_any_mut().downcast_mut::<Icon>() {
+                // Icon 不进闭合链时声明色被整体丢弃，字形恒用静态主题色
+                // （收藏心形等外部 color 绑定从未生效）；尺寸仍归 size 属性。
+                icon.apply_view_style(style);
             }
         } else if tid == std::any::TypeId::of::<Button>() {
             if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
