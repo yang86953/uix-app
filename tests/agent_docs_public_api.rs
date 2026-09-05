@@ -6,9 +6,6 @@ mod agent_enable {
     // 引入文档承诺的公开 Application 与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "agent-enable";
-
     // 编译 agent-control feature 与 Application 开关的第二层门禁。
     fn documented_main() {
         // 配置显式启用本机 Agent 端点的应用。
@@ -34,9 +31,6 @@ mod agent_policy {
     use uix::ui::SemanticActionKind;
     // 引入文档承诺的公开 Application 与 View prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "agent-policy";
 
     // 编译只读、目标保护、动作拒绝与确认要求的策略链。
     fn documented_main() {
@@ -72,9 +66,6 @@ mod agent_confirm_ui {
     // 引入文档承诺的公开 Application 与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "agent-confirm-ui";
-
     // 编译确认目标声明与 UI turn 回调注入。
     fn documented_main() {
         // 配置需要用户确认的 Agent 应用入口。
@@ -106,9 +97,6 @@ mod agent_automation_id {
     // 引入文档承诺的公开 Application、组件与语义扩展 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "agent-automation-id";
-
     // 编译只通过稳定 automation_id 暴露语义目标的根视图。
     fn compile_example() {
         // 构造启用 Agent 控制但尚未运行的应用。
@@ -128,37 +116,4 @@ mod agent_automation_id {
         // 消费未运行的 App builder，避免测试产生原生副作用。
         let _ = app;
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖 Agent 控制文档的四个真实围栏。
-fn agent_rust_fences_compile_as_external_consumers() {
-    // 收集四个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记 Agent 显式启用围栏。
-        agent_enable::COMPILE_ID,
-        // 登记 Agent 动作策略围栏。
-        agent_policy::COMPILE_ID,
-        // 登记 Agent 用户确认围栏。
-        agent_confirm_ui::COMPILE_ID,
-        // 登记稳定自动化身份围栏。
-        agent_automation_id::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用 Agent 控制文档当前声明的稳定标识作为期望。
-        [
-            // Agent 显式启用围栏标识。
-            "agent-enable",
-            // Agent 动作策略围栏标识。
-            "agent-policy",
-            // Agent 用户确认围栏标识。
-            "agent-confirm-ui",
-            // 稳定自动化身份围栏标识。
-            "agent-automation-id",
-        ],
-    );
 }

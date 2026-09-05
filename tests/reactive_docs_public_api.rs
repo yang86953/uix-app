@@ -6,9 +6,6 @@ mod app_minimal {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "app-minimal";
-
     // 定义但不调用最小应用入口。
     fn main() {
         // 构造文档中的最小应用。
@@ -28,9 +25,6 @@ mod app_minimal {
 mod state_basics {
     // 引入文档承诺的公开 State 类型。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "state-basics";
 
     // 编译 State 的创建、写入、更新与读取组合。
     fn compile_example() {
@@ -52,9 +46,6 @@ mod computed_full_name {
     // 引入文档承诺的公开 State、Computed 与样式扩展。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "computed-full-name";
-
     // 编译两个 State 派生完整姓名并映射为文本 View 的组合。
     fn compile_example() {
         // 创建名字状态。
@@ -72,9 +63,6 @@ mod computed_full_name {
 mod scoped_subtree {
     // 引入文档承诺的公开 State、scoped 组合器与布局 API。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "scoped-subtree";
 
     // 编译读取 State 的子树作用域公开组合。
     fn compile_example() {
@@ -110,9 +98,6 @@ mod scoped_subtree {
 mod state_view_mapping {
     // 引入文档承诺的公开 State、View 与颜色 API。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "state-view-mapping";
 
     // 编译通用 map 与条件 map_opt 的公开组合。
     fn compile_example() {
@@ -150,9 +135,6 @@ mod effect_dependency {
     // 引入文档承诺的公开 State 与 Effect 类型。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "effect-dependency";
-
     // 定义但不调用 Effect 构造，避免测试产生输出副作用。
     fn compile_example() {
         // 创建被观察的计数状态。
@@ -172,9 +154,6 @@ mod effect_dependency {
 mod conditional_and_list {
     // 引入文档承诺的公开 View 构造 API。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "conditional-and-list";
 
     // 编译少量条件与列表渲染组合。
     fn compile_example() {
@@ -208,9 +187,6 @@ mod clipboard_event {
     // 引入文档承诺的公开剪贴板函数。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "clipboard-event";
-
     // 定义但不调用剪贴板读写组合。
     fn compile_example() {
         // 编译公开剪贴板写入入口。
@@ -228,9 +204,6 @@ mod clipboard_event {
 mod computed_model {
     // 引入文档承诺的公开响应式 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "computed-model";
 
     // 声明以 State 持有业务数据的计数模型。
     struct CounterModel {
@@ -257,57 +230,4 @@ mod computed_model {
             Computed::new(move || count.get() * 2)
         }
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖入口与响应式文档的八个围栏。
-fn application_and_reactive_rust_fences_compile_as_external_consumers() {
-    // 收集九个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记最小应用围栏。
-        app_minimal::COMPILE_ID,
-        // 登记 State 基础围栏。
-        state_basics::COMPILE_ID,
-        // 登记完整姓名派生围栏。
-        computed_full_name::COMPILE_ID,
-        // 登记 State 到 View 映射围栏。
-        state_view_mapping::COMPILE_ID,
-        // 登记子树作用域围栏。
-        scoped_subtree::COMPILE_ID,
-        // 登记 Effect 依赖围栏。
-        effect_dependency::COMPILE_ID,
-        // 登记条件与列表围栏。
-        conditional_and_list::COMPILE_ID,
-        // 登记剪贴板事件围栏。
-        clipboard_event::COMPILE_ID,
-        // 登记业务模型围栏。
-        computed_model::COMPILE_ID,
-    ];
-    // 核对消费者覆盖标识与两个 Markdown 文档一致。
-    assert_eq!(
-        // 使用实际隔离模块暴露的标识作为结果。
-        compile_ids,
-        // 使用文档当前声明的稳定标识作为期望。
-        [
-            // 最小应用围栏标识。
-            "app-minimal",
-            // State 基础围栏标识。
-            "state-basics",
-            // 完整姓名派生围栏标识。
-            "computed-full-name",
-            // State 到 View 映射围栏标识。
-            "state-view-mapping",
-            // 子树作用域围栏标识。
-            "scoped-subtree",
-            // Effect 依赖围栏标识。
-            "effect-dependency",
-            // 条件与列表围栏标识。
-            "conditional-and-list",
-            // 剪贴板事件围栏标识。
-            "clipboard-event",
-            // 业务模型围栏标识。
-            "computed-model",
-        ],
-    );
 }

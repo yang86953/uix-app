@@ -112,6 +112,8 @@ impl WidgetTree {
 
     /// 对当前组件树执行一次完整布局，并发布相应生命周期变化。
     pub fn layout(&mut self) {
+        let _theme_scope =
+            crate::ui::widget_runtime::measurement::LayoutThemeScope::enter(self.theme_tokens());
         // 已停止的树不得继续执行会调用组件代码的布局和生命周期协调。
         if !self.accepts_external_work() {
             // 保留故障现场直到所属窗口执行 teardown。

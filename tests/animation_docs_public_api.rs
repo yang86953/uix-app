@@ -6,9 +6,6 @@ mod animation_animated {
     // 引入文档承诺的公开动画 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-animated";
-
     // 编译缓动、弹簧和关键帧三种 Animated 目标声明。
     fn compile_example() {
         // 声明从零过渡到一的缓动动画。
@@ -39,9 +36,6 @@ mod animation_bind {
     // 引入文档承诺的公开动画与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-bind";
-
     // 编译 Animated 当前值到 View 透明度属性的绑定。
     fn compile_example() {
         // 创建淡入动画源。
@@ -63,9 +57,6 @@ mod animation_bind {
 mod animation_widget {
     // 引入文档承诺的公开组件、动画与绘制 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-widget";
 
     // 声明由逐窗 frame opportunity 推进的脉冲圆环。
     widget! {
@@ -134,9 +125,6 @@ mod animation_enter {
     // 引入文档承诺的公开过渡与 View prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-enter";
-
     // 编译进场、离场和列表交错进场声明。
     fn compile_example() {
         // 声明首次挂载时播放的淡入动画。
@@ -161,9 +149,6 @@ mod animation_enter {
 mod animation_transition {
     // 引入文档承诺的公开过渡、状态与 View prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "animation-transition";
 
     // 编译静态淡入与响应式列表交错滑入声明。
     fn transition_view(items: &State<Vec<String>>) -> ViewNode {
@@ -195,41 +180,4 @@ mod animation_transition {
             }),
         ))
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖动画文档的五个真实围栏。
-fn animation_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记 Animated 目标围栏。
-        animation_animated::COMPILE_ID,
-        // 登记动画属性绑定围栏。
-        animation_bind::COMPILE_ID,
-        // 登记指令式组件动画围栏。
-        animation_widget::COMPILE_ID,
-        // 登记挂载与离场动画围栏。
-        animation_enter::COMPILE_ID,
-        // 登记属性 Transition 围栏。
-        animation_transition::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用动画文档当前声明的稳定标识作为期望。
-        [
-            // Animated 围栏标识。
-            "animation-animated",
-            // 属性绑定围栏标识。
-            "animation-bind",
-            // 组件动画围栏标识。
-            "animation-widget",
-            // 挂载过渡围栏标识。
-            "animation-enter",
-            // 属性 Transition 围栏标识。
-            "animation-transition",
-        ],
-    );
 }

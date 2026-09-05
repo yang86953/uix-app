@@ -6,9 +6,6 @@ mod rich_text_basic {
     // 引入文档承诺的富文本公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "rich-text-basic";
-
     // 编译混合文本、链接、换行与代码段的基础构建器。
     fn compile_example() {
         // 构造启用普通文字选择的富文本组件。
@@ -49,9 +46,6 @@ mod rich_text_styles {
     // 引入文档承诺的富文本与颜色公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "rich-text-styles";
-
     // 编译粗体、颜色与删除线的段级样式组合。
     fn compile_example() {
         // 构造包含两个独立样式段的富文本组件。
@@ -91,9 +85,6 @@ mod rich_text_parse {
     // 引入文档承诺的富文本解析公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "rich-text-parse";
-
     // 编译 Markdown 到富文本段再到组件的公开数据流。
     fn compile_example() {
         // 解析带粗体、代码与链接的 Markdown 文本。
@@ -111,9 +102,6 @@ mod rich_text_layout {
     // 引入文档承诺的富文本布局公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "rich-text-layout";
-
     // 编译非组件消费者使用的富文本测量函数。
     fn compile_example() {
         // 解析需要测量的 Markdown 内容。
@@ -129,9 +117,6 @@ mod rich_text_layout {
 mod rich_text_on_link {
     // 引入文档承诺的富文本与嵌入公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "rich-text-on-link";
 
     // 提供代表应用自有内部路由策略的最小适配器。
     fn open_internal(url: &str) {
@@ -159,41 +144,4 @@ mod rich_text_on_link {
                 }),
         )
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖富文本文档的全部五个围栏。
-fn rich_text_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记基础用法围栏。
-        rich_text_basic::COMPILE_ID,
-        // 登记段级样式围栏。
-        rich_text_styles::COMPILE_ID,
-        // 登记 Markdown 解析围栏。
-        rich_text_parse::COMPILE_ID,
-        // 登记外部布局围栏。
-        rich_text_layout::COMPILE_ID,
-        // 登记链接回调围栏。
-        rich_text_on_link::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用富文本文档当前声明的稳定标识作为期望。
-        [
-            // 基础用法围栏标识。
-            "rich-text-basic",
-            // 段级样式围栏标识。
-            "rich-text-styles",
-            // Markdown 解析围栏标识。
-            "rich-text-parse",
-            // 外部布局围栏标识。
-            "rich-text-layout",
-            // 链接回调围栏标识。
-            "rich-text-on-link",
-        ],
-    );
 }

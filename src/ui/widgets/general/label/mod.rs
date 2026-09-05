@@ -570,7 +570,13 @@ impl Label {
             let raw_font_size = self
                 .font_size_unit
                 .map(|unit| unit.to_dip(self.visual.metrics.measurement_dpi))
-                .or_else(|| self.style.as_ref().map(|s| s.font_size.default_size()))
+                .or_else(|| {
+                    self.style.as_ref().map(|s| {
+                        crate::ui::widget_runtime::measurement::with_measurement_tokens::<Self, _>(
+                            |tokens| s.resolve_font_size(tokens),
+                        )
+                    })
+                })
                 .unwrap_or(self.font_size);
             let fs = normalized_label_font_size(raw_font_size);
             // 显式行高按最终字号解析，未声明时继续使用既有测量策略。

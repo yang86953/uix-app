@@ -6,9 +6,6 @@ mod quick_start_hello {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "quick-start-hello";
-
     // 定义但不调用文档中的第一个应用入口。
     fn main() {
         // 构造文档声明的 Hello UIX 应用。
@@ -28,9 +25,6 @@ mod quick_start_hello {
 mod quick_start_counter {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "quick-start-counter";
 
     // 定义但不调用文档中的计数器应用入口。
     fn main() {
@@ -77,9 +71,6 @@ mod quick_start_counter {
 mod quick_start_typed_route {
     // 引入文档承诺的公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "quick-start-typed-route";
 
     // 派生文档声明的克隆与相等比较能力。
     #[derive(Clone, PartialEq)]
@@ -150,9 +141,6 @@ mod route_display_derive {
     // 引入公开 Display 派生宏及基础 trait。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "route-display-derive";
-
     // 验证公开派生宏可与文档声明的 trait 组合。
     #[derive(Clone, PartialEq, Display)]
     // 声明无需手写 Display 实现的页面集合。
@@ -162,37 +150,4 @@ mod route_display_derive {
         // 声明设置页路由。
         Settings,
     }
-}
-
-// 运行一个无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批公开消费者登记了快速开始的四个围栏。
-fn quick_start_rust_fences_compile_as_external_consumers() {
-    // 收集四个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记第一个应用围栏。
-        quick_start_hello::COMPILE_ID,
-        // 登记计数器应用围栏。
-        quick_start_counter::COMPILE_ID,
-        // 登记类型化路由围栏。
-        quick_start_typed_route::COMPILE_ID,
-        // 登记 Display 派生围栏。
-        route_display_derive::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖的标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用快速开始文档当前声明的稳定标识作为期望。
-        [
-            // 第一个应用围栏标识。
-            "quick-start-hello",
-            // 计数器应用围栏标识。
-            "quick-start-counter",
-            // 类型化路由围栏标识。
-            "quick-start-typed-route",
-            // Display 派生围栏标识。
-            "route-display-derive",
-        ],
-    );
 }

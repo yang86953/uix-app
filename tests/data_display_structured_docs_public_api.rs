@@ -6,9 +6,6 @@ mod data_list_slots {
     // 引入文档承诺的列表与声明式视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-list-slots";
-
     // 编译列表头部、尾部与加载入口的真实子视图。
     fn compile_example() {
         // 构造带稳定角色插槽的列表组件。
@@ -31,9 +28,6 @@ mod data_list_slots {
 mod data_tree {
     // 引入文档承诺的树组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-tree";
 
     // 编译稳定业务 key 驱动的层级树配置。
     fn compile_example() {
@@ -62,9 +56,6 @@ mod tree_basic {
     // 引入文档承诺的树组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "tree-basic";
-
     // 编译最小的父子树结构。
     fn compile_example() {
         // 使用稳定 key 构造部门与成员两级树。
@@ -81,9 +72,6 @@ mod tree_basic {
 mod data_qrcode {
     // 引入文档承诺的二维码组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-qrcode";
 
     // 编译二维码值、尺寸与纠错等级配置。
     fn compile_example() {
@@ -103,9 +91,6 @@ mod data_qrcode {
 mod data_result {
     // 引入文档承诺的结果页公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-result";
 
     // 编译具备文字语义的成功结果页。
     fn compile_example() {
@@ -127,9 +112,6 @@ mod data_result {
 mod data_table_pagination {
     // 引入文档承诺的表格公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-table-pagination";
 
     // 编译由业务层提供当前页数据的远程分页表格。
     fn compile_example() {
@@ -165,9 +147,6 @@ mod data_table_row_click {
     // 引入文档承诺的表格公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-table-row-click";
-
     // 编译接收行快照与行索引的点击回调。
     fn compile_example() {
         // 准备一行外部业务数据。
@@ -194,9 +173,6 @@ mod data_table_row_click {
 mod data_table_span {
     // 引入文档承诺的表格公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-table-span";
 
     // 编译由行内容决定跨度的合并单元格。
     fn compile_example() {
@@ -234,9 +210,6 @@ mod data_transfer_advanced {
     // 引入文档承诺的穿梭框公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "data-transfer-advanced";
-
     // 编译源目标列表、自定义行视图与迁移回调。
     fn compile_example() {
         // 声明源列表、目标列表并开启搜索。
@@ -256,32 +229,4 @@ mod data_transfer_advanced {
         // 将组件嵌入声明式 View 树。
         let _transfer = embed(transfer);
     }
-}
-
-// 验证本消费者登记了文档中的全部九个目标围栏。
-#[test]
-fn structured_data_display_rust_fences_compile_as_external_consumers() {
-    // 收集各独立模块公开的围栏标识。
-    let compile_ids = [
-        // 登记列表插槽围栏。
-        data_list_slots::COMPILE_ID,
-        // 登记完整树围栏。
-        data_tree::COMPILE_ID,
-        // 登记基础树围栏。
-        tree_basic::COMPILE_ID,
-        // 登记二维码围栏。
-        data_qrcode::COMPILE_ID,
-        // 登记结果页围栏。
-        data_result::COMPILE_ID,
-        // 登记表格分页围栏。
-        data_table_pagination::COMPILE_ID,
-        // 登记表格行点击围栏。
-        data_table_row_click::COMPILE_ID,
-        // 登记表格行跨度围栏。
-        data_table_span::COMPILE_ID,
-        // 登记穿梭框围栏。
-        data_transfer_advanced::COMPILE_ID,
-    ];
-    // 防止遗漏或重复缩减本批文档覆盖。
-    assert_eq!(compile_ids.len(), 9);
 }

@@ -6,9 +6,6 @@ mod widget_function {
     // 引入文档承诺的公开组件 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "widget-function";
-
     // 组合公开节点并返回无私有状态的用户卡片。
     fn user_card(name: &str, role: &str) -> ViewNode {
         // 纵向组合用户名与角色文本。
@@ -34,9 +31,6 @@ mod widget_canvas {
     // 引入文档承诺的公开绘制 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "widget-canvas";
-
     // 编译固定尺寸 canvas 的公开绘制闭包。
     fn compile_example() {
         // 构造只消费 frame 与 PaintContext 的画布节点。
@@ -53,9 +47,6 @@ mod widget_canvas {
 mod widget_full {
     // 引入文档承诺的公开组件、事件与绘制 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "widget-full";
 
     // 声明带计数状态、测量、事件和绘制能力的完整组件。
     widget! {
@@ -120,9 +111,6 @@ mod widget_paint_context {
     // 引入片段宿主所需的公开组件与绘制 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "widget-paint-context";
-
     // 为文档中的 render 片段提供最小公开 widget 宿主。
     widget! {
         // 声明无需私有字段的绘制探针。
@@ -163,9 +151,6 @@ mod widget_paint_context {
 mod widget_timer_badge {
     // 引入文档承诺的公开组件与绘制 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "widget-timer-badge";
 
     // 声明显式状态、脏区与绘制能力的计时徽标。
     widget! {
@@ -222,41 +207,4 @@ mod widget_timer_badge {
             );
         }
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖自定义组件文档的全部五个围栏。
-fn widget_rust_fences_compile_as_external_consumers() {
-    // 收集五个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记函数组件围栏。
-        widget_function::COMPILE_ID,
-        // 登记 canvas 围栏。
-        widget_canvas::COMPILE_ID,
-        // 登记完整 widget 宏围栏。
-        widget_full::COMPILE_ID,
-        // 登记 PaintContext 片段围栏。
-        widget_paint_context::COMPILE_ID,
-        // 登记 TimerBadge 围栏。
-        widget_timer_badge::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用组件文档当前声明的稳定标识作为期望。
-        [
-            // 函数组件围栏标识。
-            "widget-function",
-            // canvas 围栏标识。
-            "widget-canvas",
-            // 完整 widget 宏围栏标识。
-            "widget-full",
-            // PaintContext 片段围栏标识。
-            "widget-paint-context",
-            // TimerBadge 围栏标识。
-            "widget-timer-badge",
-        ],
-    );
 }

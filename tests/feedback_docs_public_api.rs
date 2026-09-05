@@ -6,9 +6,6 @@ mod feedback_modal {
     // 引入文档承诺的反馈组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-modal";
-
     // 编译确认对话框与自定义内容对话框的公开构建器。
     fn compile_example() {
         // 构造带确认和取消回调的对话框节点。
@@ -62,9 +59,6 @@ mod feedback_modal_shortcuts {
     // 引入文档承诺的反馈组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-modal-shortcuts";
-
     // 编译三种快捷状态与关闭策略配置。
     fn compile_example() {
         // 构建信息对话框。
@@ -92,9 +86,6 @@ mod feedback_modal_shortcuts {
 mod feedback_message {
     // 引入文档承诺的反馈组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-message";
 
     // 编译进程内反馈管理器与 Popconfirm 构建器。
     fn compile_example() {
@@ -131,9 +122,6 @@ mod feedback_toast_options {
     // 引入文档承诺的反馈模型公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-toast-options";
-
     // 编译通知快捷入口与完整条目提交入口。
     fn compile_example() {
         // 创建通知管理器。
@@ -163,9 +151,6 @@ mod feedback_toast_options {
 mod feedback_popover_options {
     // 引入文档承诺的浮层组件公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-popover-options";
 
     // 编译受控 Popover 与单触发 View 的 Tooltip。
     fn compile_example() {
@@ -208,9 +193,6 @@ mod feedback_alert_options {
     // 引入文档承诺的 Alert 公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-alert-options";
-
     // 编译 Alert 的状态构造、操作槽、关闭槽与通栏配置。
     fn compile_example() {
         // 构建成功状态 Alert。
@@ -230,9 +212,6 @@ mod feedback_spin_options {
     use std::time::Duration;
     // 引入文档承诺的 Spin 公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-spin-options";
 
     // 编译显式尺寸与快捷大尺寸加载组件。
     fn compile_example() {
@@ -254,9 +233,6 @@ mod feedback_spin_options {
 mod feedback_float_group {
     // 引入文档承诺的浮动按钮与视图公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-float-group";
 
     // 编译独立浮动按钮与保留子节点事件的按钮组。
     fn compile_example() {
@@ -296,9 +272,6 @@ mod feedback_focustrap {
     // 引入文档承诺的焦点与视图公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-focustrap";
-
     // 编译包裹两个可聚焦后代的稳定焦点作用域。
     fn compile_example() {
         // 构建由运行时解析后代焦点顺序的 FocusTrap。
@@ -320,9 +293,6 @@ mod feedback_focustrap {
 mod feedback_controlled_modal {
     // 引入文档承诺的反馈与状态公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-controlled-modal";
 
     // 编译业务 State 与 Modal 可见性回写的单向适配。
     fn compile_example() {
@@ -356,9 +326,6 @@ mod feedback_window_handle {
     // 引入文档承诺的 AppHandle 与反馈模型公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "feedback-window-handle";
-
     // 编译向明确窗口宿主投递消息与通知的公开接口。
     fn report_saved(app: &AppHandle) -> std::result::Result<(), Error> {
         // 向当前 AppHandle 对应的窗口提交轻量消息。
@@ -388,67 +355,6 @@ mod feedback_window_handle {
         // 表示两个窗口反馈投递均成功。
         Ok(())
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖反馈文档的全部十一个围栏。
-fn feedback_rust_fences_compile_as_external_consumers() {
-    // 收集十一个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记 Modal 基础围栏。
-        feedback_modal::COMPILE_ID,
-        // 登记 Modal 快捷围栏。
-        feedback_modal_shortcuts::COMPILE_ID,
-        // 登记 Message 与 Notification 围栏。
-        feedback_message::COMPILE_ID,
-        // 登记通知条目配置围栏。
-        feedback_toast_options::COMPILE_ID,
-        // 登记 Popover 与 Tooltip 围栏。
-        feedback_popover_options::COMPILE_ID,
-        // 登记 Alert 配置围栏。
-        feedback_alert_options::COMPILE_ID,
-        // 登记 Spin 配置围栏。
-        feedback_spin_options::COMPILE_ID,
-        // 登记浮动按钮组围栏。
-        feedback_float_group::COMPILE_ID,
-        // 登记 FocusTrap 围栏。
-        feedback_focustrap::COMPILE_ID,
-        // 登记受控 Modal 围栏。
-        feedback_controlled_modal::COMPILE_ID,
-        // 登记窗口反馈句柄围栏。
-        feedback_window_handle::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用反馈文档当前声明的稳定标识作为期望。
-        [
-            // Modal 基础围栏标识。
-            "feedback-modal",
-            // Modal 快捷围栏标识。
-            "feedback-modal-shortcuts",
-            // Message 与 Notification 围栏标识。
-            "feedback-message",
-            // 通知条目配置围栏标识。
-            "feedback-toast-options",
-            // Popover 与 Tooltip 围栏标识。
-            "feedback-popover-options",
-            // Alert 配置围栏标识。
-            "feedback-alert-options",
-            // Spin 配置围栏标识。
-            "feedback-spin-options",
-            // 浮动按钮组围栏标识。
-            "feedback-float-group",
-            // FocusTrap 围栏标识。
-            "feedback-focustrap",
-            // 受控 Modal 围栏标识。
-            "feedback-controlled-modal",
-            // 窗口反馈句柄围栏标识。
-            "feedback-window-handle",
-        ],
-    );
 }
 
 #[cfg(feature = "test-harness")]

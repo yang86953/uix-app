@@ -6,9 +6,6 @@ mod terminal_basic {
     // 引入文档承诺的终端组件公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "terminal-basic";
-
     // 编译带输出行、提示符与命令回调的基础终端。
     fn compile_example() {
         // 构造单行欢迎输出与空命令回调的终端组件。
@@ -29,9 +26,6 @@ mod terminal_basic {
 mod terminal_styled {
     // 引入文档承诺的终端着色模型公开 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "terminal-styled";
 
     // 编译按语义颜色拼接文本段的输出行。
     fn compile_example() {
@@ -62,9 +56,6 @@ mod terminal_command {
     // 引入文档承诺的终端运行期公开 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "terminal-command";
-
     // 编译运行期提示符替换、缓冲重建与历史读取。
     fn compile_example() {
         // 构造默认提示符的终端实例。
@@ -76,20 +67,4 @@ mod terminal_command {
         // 读取按提交顺序保存的历史命令。
         let _history: &[String] = console.history();
     }
-}
-
-// 验证本消费者登记了文档中的全部三个目标围栏。
-#[test]
-fn terminal_rust_fences_compile_as_external_consumers() {
-    // 收集各独立模块公开的围栏标识。
-    let compile_ids = [
-        // 登记基础终端围栏。
-        terminal_basic::COMPILE_ID,
-        // 登记语义着色围栏。
-        terminal_styled::COMPILE_ID,
-        // 登记运行期替换围栏。
-        terminal_command::COMPILE_ID,
-    ];
-    // 防止遗漏或重复缩减本批文档覆盖。
-    assert_eq!(compile_ids.len(), 3);
 }

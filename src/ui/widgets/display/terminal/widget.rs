@@ -29,6 +29,9 @@ widget! {
         pub(crate) layout_requested: Cell<bool>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         pub(crate) pending_submit: RefCell<Option<String>>,
+        // 声明布局独立于草稿、历史和滚动运行态。
+        #[snapshot(skip)]
+        pub(crate) view_style: crate::ui::theme::style::Style,
         // 全部实例共享 UIX 声明固化后的只读视觉配置。
         #[snapshot(skip)]
         pub(crate) visual: &'static TerminalVisual,
@@ -61,6 +64,11 @@ widget! {
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
+
+    flex_grow => (&self) -> f32 { self.view_style.flex_grow }
+    flex_shrink => (&self) -> f32 { self.view_style.flex_shrink }
+    layout_margin => (&self) -> crate::core::EdgeInsets { self.view_style.margin }
+    align_self => (&self) -> Option<crate::ui::layout::AlignItems> { self.view_style.align_self }
 
     // 滚动增量（累积后返回并清零）。
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
@@ -236,8 +244,11 @@ widget! {
             let mut pen_x = frame.x + geometry.padding_x;
             let row_right = frame.x + frame.w - geometry.padding_x;
             for span in line.spans() {
-                if span.text.is_empty() || pen_x >= row_right {
+                if pen_x >= row_right {
                     break;
+                }
+                if span.text.is_empty() {
+                    continue;
                 }
                 let color = resolved_span_color(&resolved, span.color);
                 // 逐段在剩余宽度内绘制；超出右缘由裁剪收敛。

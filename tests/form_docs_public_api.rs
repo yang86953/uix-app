@@ -6,9 +6,6 @@ mod form_basic {
     // 引入文档承诺的公开表单、输入与树宏 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "form-basic";
-
     // 编译垂直布局下的用户名与密码字段声明。
     fn compile_example() {
         // 构造由 Form 拥有布局、FormItem 拥有字段契约的声明树。
@@ -58,9 +55,6 @@ mod form_basic {
 mod form_model {
     // 引入文档承诺的公开类型化表单与状态 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "form-model";
 
     // 派生类型化表单构建所需的克隆与默认值能力。
     #[derive(Clone, Default)]
@@ -210,29 +204,4 @@ mod form_model {
             }),
         )))
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖表单文档的两个围栏。
-fn form_rust_fences_compile_as_external_consumers() {
-    // 收集两个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记声明式 FormItem 树围栏。
-        form_basic::COMPILE_ID,
-        // 登记类型化模型表单围栏。
-        form_model::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用输入与表单文档当前声明的稳定标识作为期望。
-        [
-            // 声明式表单围栏标识。
-            "form-basic",
-            // 类型化表单围栏标识。
-            "form-model",
-        ],
-    );
 }

@@ -13,9 +13,49 @@ impl Terminal {
     // 终端是滚动视口：内在尺寸为固定默认尺寸，不随输出行数增长。
     pub(crate) fn intrinsic_size(&self) -> Size {
         Size::new(
-            self.visual.geometry.default_width,
-            self.visual.geometry.default_height,
+            self.view_style
+                .width
+                .unwrap_or(self.visual.geometry.default_width),
+            self.view_style
+                .height
+                .unwrap_or(self.visual.geometry.default_height),
         )
+    }
+
+    // 公共布局声明通过同一内核测量，显式零 Flex 权重同样生效。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+        flex_grow: Option<f32>,
+        flex_shrink: Option<f32>,
+    ) {
+        self.view_style = crate::ui::theme::style::Style {
+            width: style.width,
+            height: style.height,
+            flex_grow: style.flex_grow,
+            flex_shrink: style.flex_shrink,
+            margin: style.margin,
+            align_self: style.align_self,
+            ..Default::default()
+        };
+        if let Some(value) = flex_grow {
+            self.view_style.flex_grow = value;
+        }
+        if let Some(value) = flex_shrink {
+            self.view_style.flex_shrink = value;
+        }
+    }
+
+    // 语义快照不保存颜色；视觉配置比较必须直接读取完整文本段。
+    pub(crate) fn reconcile_config_changed(&self, next: &Self) -> bool {
+        self.lines != next.lines
+            || self.prompt != next.prompt
+            || self.visual != next.visual
+            || self.view_style != next.view_style
+    }
+
+    pub(crate) fn reconcile_layout_changed(&self, next: &Self) -> bool {
+        self.view_style != next.view_style || self.visual.geometry != next.visual.geometry
     }
 
     pub(crate) fn local_frame(&self) -> Rect {
@@ -178,6 +218,7 @@ impl Terminal {
             layout_requested: Cell::new(false),
             last_frame: Cell::new(None),
             pending_submit: RefCell::new(None),
+            view_style: crate::ui::theme::style::Style::default(),
             visual: TERMINAL_VISUAL_REF,
         }
     }
@@ -228,6 +269,7 @@ impl Terminal {
         self.lines = next.lines;
         self.prompt = next.prompt;
         self.command_callback = next.command_callback;
+        self.view_style = next.view_style;
         // 输入草稿、光标、历史与滚动跟随状态属于组件运行态，跨帧保留。
         self.body_scroll.clamp_to_content(
             self.lines.len(),

@@ -6,9 +6,6 @@ mod style_semantic {
     // 引入文档承诺的公开样式 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "style-semantic";
-
     // 编译文本、按钮和标签的语义样式入口。
     fn compile_example() {
         // 使用中性色板的主要文字角色。
@@ -26,9 +23,6 @@ mod style_semantic {
 mod style_chain {
     // 引入文档承诺的公开样式 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "style-chain";
 
     // 编译背景、边框、圆角、间距与内边距组合。
     fn compile_example() {
@@ -64,9 +58,6 @@ mod theme_toggle {
     // 引入文档承诺的公开主题与应用句柄 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "theme-toggle";
-
     // 为围栏中的 handle 与 is_dark 上下文提供显式参数。
     fn switch_theme(handle: &AppHandle, is_dark: bool) -> Result<(), Error> {
         // 构造由外层主题事实初始化的声明式切换按钮。
@@ -82,9 +73,6 @@ mod theme_toggle {
 mod theme_custom {
     // 引入文档承诺的公开 Provider 与令牌 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "theme-custom";
 
     // 编译只作用于 ConfigProvider 子树的 Button 令牌补丁。
     fn compile_example() {
@@ -113,9 +101,6 @@ mod theme_custom {
 mod theme_custom_app {
     // 引入文档承诺的公开应用、主题与绘制 prelude。
     use uix::prelude::*;
-
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "theme-custom-app";
 
     // 为围栏中的 render 片段提供最小公开 widget 宿主。
     widget! {
@@ -173,9 +158,6 @@ mod theme_custom_seed {
     // 引入文档承诺的公开应用与主题 prelude。
     use uix::prelude::*;
 
-    // 暴露当前模块对应的文档编译标识。
-    pub(super) const COMPILE_ID: &str = "theme-custom-seed";
-
     // 为文档中的 app_root 提供最小公开 View 根。
     fn app_root() -> ViewNode {
         // 返回不持有主题状态的展示节点。
@@ -198,45 +180,4 @@ mod theme_custom_seed {
             // 保留完整运行入口，只由编译器检查而不在测试中调用。
             .run();
     }
-}
-
-// 运行无原生副作用的标记测试，让 Cargo 显式执行本编译消费者。
-#[test]
-// 确认本批外部消费者覆盖样式与主题文档的全部六个围栏。
-fn theme_rust_fences_compile_as_external_consumers() {
-    // 收集六个已经由编译器类型检查的公开示例标识。
-    let compile_ids = [
-        // 登记语义样式围栏。
-        style_semantic::COMPILE_ID,
-        // 登记细粒度样式链围栏。
-        style_chain::COMPILE_ID,
-        // 登记主题切换围栏。
-        theme_toggle::COMPILE_ID,
-        // 登记组件令牌窄覆盖围栏。
-        theme_custom::COMPILE_ID,
-        // 登记自定义主题应用围栏。
-        theme_custom_app::COMPILE_ID,
-        // 登记品牌色种子围栏。
-        theme_custom_seed::COMPILE_ID,
-    ];
-    // 运行阶段核对消费者覆盖标识与 Markdown 围栏一致。
-    assert_eq!(
-        // 使用实际模块暴露的标识作为结果。
-        compile_ids,
-        // 使用样式与主题文档当前声明的稳定标识作为期望。
-        [
-            // 语义样式围栏标识。
-            "style-semantic",
-            // 细粒度样式链围栏标识。
-            "style-chain",
-            // 主题切换围栏标识。
-            "theme-toggle",
-            // 组件令牌窄覆盖围栏标识。
-            "theme-custom",
-            // 自定义主题应用围栏标识。
-            "theme-custom-app",
-            // 品牌色种子围栏标识。
-            "theme-custom-seed",
-        ],
-    );
 }

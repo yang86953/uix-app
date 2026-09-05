@@ -58,7 +58,20 @@ impl WidgetTree {
     }
 
     pub(crate) fn set_theme_tokens(&mut self, tokens: std::sync::Arc<dyn ThemeTokens>) {
+        if std::sync::Arc::ptr_eq(&self.theme_tokens, &tokens) {
+            return;
+        }
+        let font_sizes_changed = crate::ui::widget_runtime::measurement::font_sizes_changed(
+            self.theme_tokens.as_ref(),
+            tokens.as_ref(),
+        );
         self.theme_tokens = tokens;
+        if font_sizes_changed {
+            if let Some(root) = self.root_id() {
+                // 包含首帧前按默认主题预布局的情况，整棵子树重新测量。
+                self.push_layout_invalidation(root);
+            }
+        }
     }
 
     /// 当前 UI 域主题令牌根。

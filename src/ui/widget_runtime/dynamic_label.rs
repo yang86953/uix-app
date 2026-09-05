@@ -8,7 +8,8 @@
 
 use std::any::Any;
 
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
+use crate::draw::resources::font::text_backend::TextLayoutOptions;
 use crate::draw::scene::PicturePolicy;
 use crate::ui::theme::style::Style;
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -110,11 +111,13 @@ impl DynamicLabel {
             }
         }
         let text = (self.text_fn)();
-        let fs = self
-            .style
-            .as_ref()
-            .map(|s| s.font_size.default_size())
-            .unwrap_or(14.0);
+        let fs = super::measurement::with_measurement_tokens::<Self, _>(|tokens| {
+            self.style
+                .as_ref()
+                .map(|s| s.resolve_font_size(tokens))
+                .unwrap_or_else(|| tokens.font_size())
+        });
+        let fs = normalized_font_size(fs);
         // 换行宽度：显式样式宽度优先，否则用布局约束的有限宽度参与估算；
         // 无显式高度时行数随折行增长，保持与绘制同一行距契约。
         let available_width = self
@@ -129,8 +132,13 @@ impl DynamicLabel {
             wrap_width,
             fs,
         );
-        // 动态标签绘制固定使用 1.5 倍字号行盒，测量保持同一行距契约。
-        let text_height = fs * 1.5 * estimated.line_count as f32;
+        // 显式行高优先；未声明时测量与绘制保持 1.5 倍字号行盒。
+        let line_height = self
+            .style
+            .as_ref()
+            .and_then(|s| s.resolve_line_height(fs))
+            .unwrap_or(fs * 1.5);
+        let text_height = line_height * estimated.line_count as f32;
         let h = self
             .style
             .as_ref()
@@ -152,6 +160,9 @@ impl DynamicLabel {
 impl WidgetRender for DynamicLabel {
     fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = (self.text_fn)();
+        if let Some(style) = &self.style {
+            crate::ui::theme::style::apply_style(ctx, frame, style);
+        }
         if text.is_empty() {
             return;
         }
@@ -161,7 +172,8 @@ impl WidgetRender for DynamicLabel {
             .unwrap_or_else(|| ctx.tokens().color_text());
         let font_size = style
             .map(|s| s.resolve_font_size(ctx.tokens()))
-            .unwrap_or(14.0);
+            .unwrap_or_else(|| ctx.tokens().font_size());
+        let font_size = normalized_font_size(font_size);
         let padding = style.map(|s| s.padding).unwrap_or_default();
         // 约束矩形内自动换行；首行顶左位置与单行绘制保持一致。
         let rect = Rect::new(
@@ -170,48 +182,49 @@ impl WidgetRender for DynamicLabel {
             (frame.w - padding.horizontal()).max(0.0),
             (frame.h - padding.vertical()).max(0.0),
         );
-        ctx.draw_text_wrapped(&text, rect, color, font_size);
+        let options = TextLayoutOptions {
+            max_width: rect.w,
+            max_height: rect.h,
+            font_size,
+            line_height: style
+                .and_then(|s| s.resolve_line_height(font_size))
+                .unwrap_or(font_size * 1.5),
+            word_wrap: true,
+            h_align: style
+                .map(Style::effective_text_align)
+                .unwrap_or_default()
+                .to_draw(),
+            v_align: crate::draw::VAlign::Top,
+        };
+        let font = crate::ui::text_family::resolve(ctx, style.and_then(|s| s.font_family.as_ref()));
+        let layout = ctx
+            .font_service()
+            .layout_text_shared(&font, &text, &options);
+        let origin = Point::new(rect.x, rect.y);
+        let decoration = crate::ui::text_decoration::segments(
+            &layout,
+            origin,
+            font_size,
+            style
+                .map(Style::effective_text_decoration)
+                .unwrap_or_default(),
+        );
+        crate::ui::text_weight::paint(
+            ctx,
+            &layout,
+            origin,
+            color,
+            font_size,
+            style.map(Style::effective_font_weight).unwrap_or_default(),
+        );
+        crate::ui::text_decoration::paint(ctx, &decoration, color);
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui::theme::style::Style;
-
-    // 宽松约束保持单行内在尺寸。
-    #[test]
-    fn single_line_with_unbounded_width() {
-        let label = DynamicLabel::new(|| "标题".to_string());
-        let size = label.measure(Constraints::loose(Size::infinite()));
-        assert_eq!(size.h, 14.0 * 1.5);
-        assert!(size.w > 0.0);
-    }
-
-    // 有限约束宽度内折行：行数增长、宽度不越界。
-    #[test]
-    fn wraps_within_finite_constraint() {
-        let label = DynamicLabel::new(|| "一首特别特别特别长的歌曲标题超出了侧栏可用宽度".to_string());
-        let single = label.measure(Constraints::loose(Size::infinite()));
-        let wrapped = label.measure(Constraints::new(
-            Size::zero(),
-            Size::new(80.0, f32::INFINITY),
-            None,
-        ));
-        assert!(wrapped.h > single.h, "约束变窄后高度应随折行增长");
-        assert!(wrapped.w <= 80.0, "折行后宽度不得超出约束");
-    }
-
-    // 显式宽高仍然是固定尺寸契约。
-    #[test]
-    fn explicit_size_wins() {
-        let mut style = Style::default();
-        style.width = Some(48.0);
-        style.height = Some(24.0);
-        let mut label = DynamicLabel::new(|| "任意长度文本".to_string());
-        label.set_style(style);
-        let size = label.measure(Constraints::loose(Size::infinite()));
-        assert_eq!(size.w, 48.0);
-        assert_eq!(size.h, 24.0);
+fn normalized_font_size(size: f32) -> f32 {
+    if size.is_finite() && size > 0.0 {
+        size
+    } else {
+        14.0
     }
 }

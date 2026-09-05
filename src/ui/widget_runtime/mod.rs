@@ -27,6 +27,7 @@ pub mod focus_trap;
 /// 组件本地化语言与翻译资源接口。
 pub mod locale;
 pub(crate) mod managers;
+pub(crate) mod measurement;
 pub(crate) mod provider_context;
 pub(crate) mod traits;
 pub(crate) mod tree_measure;

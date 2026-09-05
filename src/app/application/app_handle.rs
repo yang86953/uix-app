@@ -335,8 +335,7 @@ impl AppHandle {
         }
     }
 
-    /// Replaces the app-wide theme and schedules palette-only repaint work for
-    /// every live window.
+    /// 替换应用主题并通知全部存活窗口；仅色板变化只重绘，字号变化同时请求布局。
     pub fn set_theme(&self, theme: Theme) -> Result<()> {
         if !self.alive.load(Ordering::Acquire) {
             return Err(Error::new(
