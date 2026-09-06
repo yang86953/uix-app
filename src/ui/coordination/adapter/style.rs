@@ -8,7 +8,8 @@ use crate::ui::theme::style::Style;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
 use crate::ui::widgets::{
-    Button, Card, Container, Grid, Icon, Input, Label, MenuBar, ScrollView, Select, Typography,
+    Button, Card, Container, Grid, Icon, Input, Label, MenuBar, ScrollView, Select, Tabs,
+    Typography,
 };
 // VirtualScroll 是布局能力组件而非 widgets 命名空间成员，单独引入。
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
@@ -115,6 +116,12 @@ impl ViewAdapter {
                     flex_grow_override,
                     flex_shrink_override,
                 );
+            }
+        } else if tid == std::any::TypeId::of::<Tabs>() {
+            // Tabs 的面板几何由运行时独占，声明端只桥接 Flex 布局字段：
+            // 缺少该分支时 flexGrow/flexShrink 被静默丢弃，Tabs 永远按固有高度参与布局。
+            if let Some(tabs) = widget.as_any_mut().downcast_mut::<Tabs>() {
+                tabs.apply_view_layout_style(flex_grow_override, flex_shrink_override);
             }
         } else if tid == std::any::TypeId::of::<Input>() {
             if let Some(input) = widget.as_any_mut().downcast_mut::<Input>() {
