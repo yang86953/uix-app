@@ -111,6 +111,10 @@ widget! {
         tab_height: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        // 父级 Flex 布局读取的扩张/收缩系数：Tabs 默认不扩张，声明端经
+        // flexGrow/flexShrink 或统一样式桥接覆盖后才能在纵向 Column 中拉伸。
+        flex_grow_val: f32,
+        flex_shrink_val: f32,
         focused: bool,
         /// 活动面板切换后请求组件树重新同步子可见性与布局。
         layout_requested: std::cell::Cell<bool>,
@@ -130,6 +134,10 @@ widget! {
     }
 
     tab_index => (&self) -> i32 { 1 }
+
+    flex_grow => (&self) -> f32 { self.flex_grow_val }
+
+    flex_shrink => (&self) -> f32 { self.flex_shrink_val }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -576,6 +584,8 @@ impl Tabs {
             tab_height: visual.layout.tab_height,
             fixed_width: None,
             fixed_height: None,
+            flex_grow_val: 0.0,
+            flex_shrink_val: 1.0,
             focused: false,
             // 新组件尚无待处理的布局请求。
             layout_requested: std::cell::Cell::new(false),
@@ -700,6 +710,34 @@ impl Tabs {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
+    }
+
+    /// 设置 Flex 扩张系数：父级纵向布局据此向 Tabs 分配剩余高度。
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow_val = v;
+        self
+    }
+
+    /// 设置 Flex 收缩系数。
+    pub fn flex_shrink(mut self, v: f32) -> Self {
+        self.flex_shrink_val = v;
+        self
+    }
+
+    /// 统一样式桥接入口：只接收布局字段，标签语义与面板子树仍由 Tabs 私有持有。
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        flex_grow_override: Option<f32>,
+        flex_shrink_override: Option<f32>,
+    ) {
+        // ViewNode 覆盖优先于 builder 默认扩张值，保留显式零值。
+        if let Some(g) = flex_grow_override {
+            self.flex_grow_val = g;
+        }
+        // ViewNode 覆盖优先于 builder 默认收缩值，保留显式零值。
+        if let Some(s) = flex_shrink_override {
+            self.flex_shrink_val = s;
+        }
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {

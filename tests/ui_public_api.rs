@@ -265,3 +265,44 @@ fn variable_virtual_scroll_uses_materialized_row_measurements() {
     assert!((second.frame.y - first.frame.y - 30.0).abs() < 0.01);
     assert!((second.frame.h - 40.0).abs() < 0.01);
 }
+
+#[cfg(feature = "test-harness")]
+#[test]
+fn tabs_flex_grow_fills_remaining_column_height() {
+    use uix::prelude::{Tab, Tabs, column_fit, embed, label};
+    use uix::ui::test_harness::TestApp;
+
+    // 契约：column_fit 中声明 flexGrow=1 的 Tabs 底边必须到达 Column 底边，
+    // 面板随 Tabs 拉伸；页头保持固有高度并位于 Tabs 之上。
+    let app = TestApp::new((300.0, 200.0), move || {
+        // 根 column_fit 显式定高：模拟真实窗口链路中被父级拉伸的页面 Column，
+        // 只有此时 Flex 剩余空间才存在并按 flexGrow 分配给 Tabs。
+        column_fit((
+            label("页头").automation_id("tabs.header"),
+            embed(
+                Tabs::new()
+                    .tabs(vec![Tab::new("一").key("a"), Tab::new("二").key("b")])
+                    .active(0)
+                    .flex_grow(1.0),
+            )
+            .automation_id("tabs.stretched"),
+        ))
+        .height(200.0)
+    });
+    let snapshot = app.snapshot();
+    let header = snapshot.find("tabs.header").expect("页头应存在");
+    let tabs = snapshot
+        .find("tabs.stretched")
+        .expect("声明扩张的 Tabs 应存在");
+    assert!(
+        (tabs.frame.y + tabs.frame.h - 200.0).abs() < 0.01,
+        "声明扩张的 Tabs 底边应到达 Column 底边：{:?}",
+        tabs.frame
+    );
+    assert!(
+        (tabs.frame.y - (header.frame.y + header.frame.h)).abs() < 0.01,
+        "Tabs 应紧贴页头之下开始：header={:?} tabs={:?}",
+        header.frame,
+        tabs.frame
+    );
+}
