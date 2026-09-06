@@ -4,6 +4,16 @@
 
 ## 0.0.8（进行中）
 
+### 软件动态扩展 P2：动态 UI、事件与受控业务能力
+
+- `(uix ui)` 动态声明：tagged list（column/row/text/input/button/list 与属性对），提交点全量校验（未知字段、重复 key、深度、节点、文本、列表上限），无效声明保留原树；输入草稿按稳定 key 保留，`(reset #t)` 显式重置。
+- 挂载位与投影：`with_mount` 白名单授权（能力 `mount-<name>`），`UiProjector` 把已校验声明投影为 ViewNode 子树（automation_id 为 `<扩展>/<挂载位>/<key>`），事件闭包只发送不执行脚本——UI 线程、layout、paint 与命中路径无解释器。
+- 执行线程：`spawn_worker` 把引擎移入独立串行线程（准备/激活/调用/事件/异步终态经命令通道），UI 声明更新经 sink 交付 owned 数据，`post_to_ui` 回投窗口 owner thread；回执区分接收（sink）与应用，呈现由 `perform` 的 `presented_revision` 确认。
+- 事件与异步：`register-handler!` 登记 ui-event 处理（代际校验，陈旧事件稳定拒绝）；`call-async` + 异步端口（`AsyncCompletion` 一次性终态、请求号 + 代际防护），终态回调可再提交声明。
+- 服务扩展点：`register-service!` / `call_service`（同步与 worker 模式）。
+- 真窗示例 `examples/extension_panel.rs`（计数、输入回显、异步分析、列表）经 `scripts/agent_client.py` 验收：语义点击驱动 Lisp 状态更新并回屏（presented_revision 递增），异步端口完成后状态文本更新，截图落盘。
+- 新增 4 例公开 API 测试（worker UI 往返 TestApp 真实点击、异步全链路、服务扩展点、陈旧代事件拒绝），合计 18 例全绿。
+
 ### 软件动态扩展 P1：无界面最小闭环
 
 - 移植小贝 Scheme 引擎为 UIX 私有引擎（`extensions` feature，默认关闭；新增可选依赖 num-bigint / num-rational / num-integer / num-traits，不引入 thiserror 与 GC 库），补齐 R7RS-small 缺口：多值、异常（raise / guard / with-exception-handler）、parameterize、lazy、quasiquote、bytevector、内存字符串端口、库系统修饰符与 `(scheme cxr)`。

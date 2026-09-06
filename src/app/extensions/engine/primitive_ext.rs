@@ -133,6 +133,11 @@ pub(crate) fn install(engine: &mut SchemeEngine) {
     engine.define_primitive(" param-ref", param_ref);
     engine.define_primitive(" param-set!", param_set);
 
+    // (uix ui) 与 (uix tasks)：动态声明提交、异步请求与服务登记。
+    engine.define_primitive("submit-ui!", submit_ui);
+    engine.define_primitive("call-async", call_async);
+    engine.define_primitive("register-service!", register_service);
+
     // (scheme cxr) 24 个组合访问器。
     install_cxr(engine);
 }
@@ -1505,4 +1510,65 @@ fn install_cxr(engine: &mut SchemeEngine) {
     engine.define_primitive("cddadr", cddadr);
     engine.define_primitive("cdddar", cdddar);
     engine.define_primitive("cddddr", cddddr);
+}
+
+
+// ---------- (uix ui) / (uix tasks) / 服务扩展点 ----------
+
+/// `(submit-ui! 'mount declaration)`：提交挂载位声明。挂载位须以
+/// `mount:<name>` 能力声明并授权；声明由宿主在提交点全量校验，
+/// 无效声明保留旧树。
+fn submit_ui(engine: &mut SchemeEngine, a: &[Value]) -> Result<Value, SchemeError> {
+    exact_arity("submit-ui!", a, 2)?;
+    let mount = match &a[0] {
+        Value::Symbol(name) => name.to_string(),
+        _ => return Err(wrong("submit-ui!", "挂载位符号")),
+    };
+    engine.submit_ui(&mount, a[1].clone())?;
+    Ok(Value::Unspecified)
+}
+
+/// `(call-async "port" args-list handler)`：登记异步请求，宿主分配
+/// 请求号并在终态回调 `handler`（请求号 + 结果 / error 对象）。
+fn call_async(engine: &mut SchemeEngine, a: &[Value]) -> Result<Value, SchemeError> {
+    exact_arity("call-async", a, 3)?;
+    let port = match &a[0] {
+        Value::String(cell) => cell.borrow().clone(),
+        _ => return Err(wrong("call-async", "端口名字符串")),
+    };
+    let arguments = match &a[1] {
+        Value::Null => Vec::new(),
+        list => engine.value_to_vec("call-async", list)?,
+    };
+    match &a[2] {
+        Value::Closure(_) | Value::Primitive(_) | Value::Control(_) | Value::Continuation(_)
+        | Value::Host(_) => {}
+        _ => return Err(wrong("call-async", "可调用过程")),
+    }
+    engine.request_async(&port, arguments, a[2].clone())?;
+    Ok(Value::Unspecified)
+}
+
+/// `(register-service! "name" procedure)`：登记服务扩展点实现；
+/// 调用走 `namespace = "service"`，与命令同一登记机制。
+fn register_service(engine: &mut SchemeEngine, a: &[Value]) -> Result<Value, SchemeError> {
+    exact_arity("register-service!", a, 2)?;
+    let name = match &a[0] {
+        Value::String(cell) => cell.borrow().clone(),
+        _ => return Err(wrong("register-service!", "服务名字符串")),
+    };
+    if name.is_empty() || name.len() > 64
+        || !name.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
+    {
+        return Err(wrong("register-service!", "小写字母/数字/连字符/下划线的服务名"));
+    }
+    match &a[1] {
+        Value::Closure(_) | Value::Primitive(_) | Value::Control(_) | Value::Continuation(_)
+        | Value::Host(_) => {}
+        _ => return Err(wrong("register-service!", "可调用过程")),
+    }
+    engine.register_host_value("service", &name, a[1].clone())?;
+    Ok(Value::Unspecified)
 }

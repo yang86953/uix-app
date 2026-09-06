@@ -618,3 +618,286 @@ fn shutdown_releases_all_instances() {
     host.shutdown().expect("全部停止");
     assert!(host.list().is_empty());
 }
+
+// ---------- P2：动态 UI、事件与受控业务能力 ----------
+
+use uix::app::extensions::{AsyncCompletion, UiUpdate};
+
+fn ui_package() -> ExtensionPackage {
+    let manifest = "(uix-extension (schema-version 1) (id \"panel-ext\") (version \"0.2.0\") \
+                    (language r7rs-small) (entry \"main.scm\") \
+                    (capabilities documents-query mount-panel))"
+        .to_string();
+    let sources: BTreeMap<String, String> = [(
+        "main.scm".to_string(),
+        r#"
+(define clicks 0)
+(define (panel-declaration)
+  (list 'column (list 'key "root") (list 'pad 8.0) (list 'gap 6.0)
+        (list 'text (list 'key "title") (list 'size 16.0)
+              (string-append "点击次数: " (number->string clicks)))
+        (list 'button (list 'key "btn") (list 'on-click 'on-increment)
+              "增加")
+        (list 'input (list 'key "field") (list 'placeholder "输入文本")
+              (list 'on-change 'on-field-change) "")
+        (list 'list (list 'key "items") (list "规则甲" "规则乙"))))
+(register-command! "refresh" (lambda () (submit-ui! 'panel (panel-declaration)) 0))
+(register-command! "clicks" (lambda () clicks))
+;; 面板事件：更新扩展状态并提交新声明。
+;; on-increment 由投影闭包按 (on-click 'on-increment) 绑定。
+(define (on-increment)
+  (set! clicks (+ clicks 1))
+  (submit-ui! 'panel (panel-declaration)))
+(register-handler! "on-increment" on-increment)
+(define (on-field-change text)
+  (submit-ui! 'panel
+    (list 'column (list 'key "root")
+          (list 'text (list 'key "title") (string-append "输入: " text))
+          (list 'button (list 'key "btn") (list 'on-click 'on-increment) "增加"))))
+(register-handler! "on-field-change" on-field-change)
+;; 受控业务改写：读宿主文档后转换（P2 写端口由应用实现）。
+(register-command! "analyze"
+  (lambda ()
+    (string-upcase (documents-query "intro"))))
+(submit-ui! 'panel (panel-declaration))
+"#
+        .to_string(),
+    )]
+    .into_iter()
+    .collect();
+    ExtensionPackage::from_parts(manifest, sources).expect("包构造")
+}
+
+/// worker 模式：准备 / 激活 / 声明交付 / 事件回投 / 受控读取。
+#[test]
+fn worker_ui_roundtrip_with_test_app() {
+    #[cfg(feature = "test-harness")]
+    {
+        use std::sync::{Arc, Mutex};
+        use uix::app::extensions::{ExtensionHost, ExtensionHostConfig, UiProjector};
+        use uix::prelude::{State, column};
+        use uix::ui::test_harness::TestApp;
+
+        let (updates_tx, updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
+        let host = ExtensionHost::new()
+            .with_config(ExtensionHostConfig::default())
+            .with_mount("panel")
+            .with_port(
+                "documents-query",
+                Arc::new(|arguments: &[ExtensionValue]| match arguments.first() {
+                    Some(ExtensionValue::Text(key)) if key == "intro" => {
+                        Ok(text("worker panel data"))
+                    }
+                    _ => Err("未知文档".to_string()),
+                }),
+            )
+            .with_ui_sink(Arc::new(move |update| {
+                let _ = updates_tx.send(update);
+            }));
+        let handle = host.spawn_worker();
+
+        let prepared = handle.prepare(&ui_package()).expect("准备");
+        let receipt = handle.activate(prepared).expect("激活");
+        assert_eq!(receipt.extension_id, "panel-ext");
+        // 入口顶层 submit 的初始声明在激活后交付。
+        let first = recv_update(&updates_rx);
+        let UiUpdate::Applied { mount, revision, node, .. } = first else {
+            panic!("初始声明应 Applied：{first:?}")
+        };
+        assert_eq!(mount, "panel");
+        assert_eq!(revision, 1);
+
+        // 挂载区域：当前声明 + 修订 State 驱动重建。
+        let current: Arc<Mutex<Option<uix::app::extensions::UiNode>>> = Arc::new(Mutex::new(None));
+        *current.lock().unwrap() = Some(node);
+        let revision_state = State::new(0u64);
+        let projector: Arc<Mutex<UiProjector>> = Arc::new(Mutex::new(UiProjector::new(
+            "panel-ext",
+            receipt.generation,
+            handle.event_sender(),
+        )));
+        let build_current = Arc::clone(&current);
+        let build_projector = Arc::clone(&projector);
+        let build_revision = revision_state.clone();
+        let mut app = TestApp::new(
+            (420.0, 320.0),
+            move || {
+                build_revision.get();
+                let node = build_current.lock().unwrap().clone();
+                match node {
+                    Some(node) => build_projector.lock().unwrap().project("panel", &node),
+                    None => column(Vec::<uix::prelude::ViewNode>::new()),
+                }
+            },
+        );
+        app.settle().expect("初始 settle");
+        // automation 前缀：扩展 / 挂载位 / key。
+        let title_text = app.text("panel-ext/panel/root/title").expect("标题");
+        assert!(title_text.contains("点击次数: 0"), "{title_text}");
+
+        // 点击按钮 → 事件 → worker 执行 → 新声明 → 应用后重投影。
+        app.click("panel-ext/panel/root/btn").expect("点击");
+        let second = recv_update(&updates_rx);
+        let UiUpdate::Applied { revision, node, .. } = second else {
+            panic!("事件后声明应 Applied：{second:?}")
+        };
+        assert_eq!(revision, 2);
+        *current.lock().unwrap() = Some(node);
+        revision_state.set(1);
+        app.settle().expect("更新 settle");
+        let updated = app.text("panel-ext/panel/root/title").expect("新标题");
+        assert!(updated.contains("点击次数: 1"), "{updated}");
+        // 扩展状态与命令共存：无窗口逻辑部分仍可调用。
+        let clicks = handle
+            .call_command("panel-ext", "clicks", &[])
+            .expect("命令调用");
+        assert_eq!(clicks, ExtensionValue::Int(1));
+
+        // 无效声明被拒绝且原树保留。
+        handle
+            .call_command("panel-ext", "refresh", &[])
+            .expect("refresh");
+        app.click("panel-ext/panel/root/btn").expect("再次点击");
+        let third = recv_update(&updates_rx);
+        assert!(
+            matches!(third, UiUpdate::Applied { revision: 3, .. }),
+            "第三次应为 Applied：{third:?}"
+        );
+
+        handle.shutdown().expect("关停");
+    }
+}
+
+fn recv_update(receiver: &std::sync::mpsc::Receiver<UiUpdate>) -> UiUpdate {
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("UI 更新超时")
+}
+
+/// 异步端口：请求-终态-回调-新声明全链路。
+#[test]
+fn async_port_completes_and_drives_declaration() {
+    let (updates_tx, updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
+    let host = ExtensionHost::new()
+        .with_mount("panel")
+        .with_ui_sink(Arc::new(move |update| {
+            let _ = updates_tx.send(update);
+        }))
+        .with_async_port(
+            "documents-analyze",
+            Arc::new(|_request: u64, _args: &[ExtensionValue], completion: AsyncCompletion| {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    completion.complete(Ok(ExtensionValue::Text("analyzed".to_string())));
+                });
+                Ok(())
+            }),
+        );
+    let handle = host.spawn_worker();
+    let manifest = "(uix-extension (schema-version 1) (id \"async-ext\") (version \"0.2.0\") \
+                    (language r7rs-small) (entry \"main.scm\") \
+                    (capabilities documents-analyze mount-panel))"
+        .to_string();
+    let sources: BTreeMap<String, String> = [(
+        "main.scm".to_string(),
+        r#"
+(define status "idle")
+(register-command! "start"
+  (lambda ()
+    (call-async "documents-analyze" '()
+      (lambda (request result)
+        (set! status (string-append "done:" result))
+        (submit-ui! 'panel
+          (list 'column (list 'key "root")
+                (list 'text (list 'key "status") status)))))
+    'started))
+(register-command! "status" (lambda () status))
+(submit-ui! 'panel
+  (list 'column (list 'key "root") (list 'text (list 'key "status") status)))
+"#
+        .to_string(),
+    )]
+    .into_iter()
+    .collect();
+    let package = ExtensionPackage::from_parts(manifest, sources).expect("包构造");
+    let prepared = handle.prepare(&package).expect("准备");
+    handle.activate(prepared).expect("激活");
+    let _first = recv_update(&updates_rx);
+
+    let started = handle
+        .call_command("async-ext", "start", &[])
+        .expect("发起异步");
+    assert_eq!(started, ExtensionValue::Symbol("started".to_string()));
+    // 终态回调提交的新声明经 sink 交付。
+    let done = recv_update(&updates_rx);
+    let UiUpdate::Applied { node, .. } = done else {
+        panic!("异步完成应驱动新声明：{done:?}")
+    };
+    let status = handle.call_command("async-ext", "status", &[]).expect("状态");
+    assert_eq!(status, ExtensionValue::Text("done:analyzed".to_string()));
+    // UiNode 校验已通过；节点文本可核对。
+    let uix::app::extensions::UiNode::Column { children, .. } = &node else {
+        panic!("声明应为 column")
+    };
+    assert_eq!(children.len(), 1);
+    handle.shutdown().expect("关停");
+}
+
+/// 服务扩展点：register-service! 登记的实现在同步与 worker 模式都可调用。
+#[test]
+fn service_extension_point_is_callable() {
+    let package = package(
+        "services",
+        r#"
+(register-service! "normalize"
+  (lambda (s) (string-downcase s)))
+(register-command! "via-command"
+  (lambda (s) (string-append "cmd:" s)))
+"#,
+    );
+    let mut host = ExtensionHost::new();
+    let prepared = host.prepare(&package).expect("准备");
+    host.activate(prepared).expect("激活");
+    let outcome = host
+        .call_service("services", "normalize", &[text("OK")])
+        .expect("服务调用");
+    assert_eq!(outcome, text("ok"));
+    match host.call_service("services", "missing", &[]) {
+        Err(ExtensionError::UnknownCommand { .. }) => {}
+        other => panic!("未知服务应拒绝：{other:?}"),
+    }
+}
+
+/// 陈旧代事件被稳定拒绝：不更新状态、不产生新声明。
+#[test]
+fn stale_generation_events_are_dropped() {
+    let (updates_tx, updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
+    let host = ExtensionHost::new()
+        .with_mount("panel")
+        .with_port(
+            "documents-query",
+            Arc::new(|_: &[ExtensionValue]| Ok(text("stale"))),
+        )
+        .with_ui_sink(Arc::new(move |update| {
+            let _ = updates_tx.send(update);
+        }));
+    let handle = host.spawn_worker();
+    let package = ui_package();
+    let prepared = handle.prepare(&package).expect("准备");
+    let receipt = handle.activate(prepared).expect("激活");
+    let _initial = recv_update(&updates_rx);
+
+    // 直接以陈旧代投递事件（模拟旧代回调迟到）。
+    let sender = handle.event_sender();
+    sender
+        .send(uix::app::extensions::UiEvent {
+            extension: "panel-ext".to_string(),
+            generation: receipt.generation + 100,
+            handler: "on-increment".to_string(),
+            payload: uix::app::extensions::UiEventPayload::Click,
+        })
+        .expect("投递陈旧事件");
+    let clicks = handle.call_command("panel-ext", "clicks", &[]).expect("状态");
+    assert_eq!(clicks, ExtensionValue::Int(0), "陈旧事件不得改状态");
+    handle.shutdown().expect("关停");
+}
