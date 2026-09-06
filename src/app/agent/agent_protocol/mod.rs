@@ -77,12 +77,7 @@ const AGENT_WINDOW_ACTIONS: &[&str] = &[
     "pointer_move",
     "pointer_down",
     "pointer_up",
-    "activate_window",
     "resize_window",
-    "move_window",
-    "maximize_window",
-    "minimize_window",
-    "restore_window",
     "close_window",
 ];
 const AGENT_KEY_MODIFIERS: &[&str] = &["shift", "ctrl", "alt", "super"];
@@ -359,8 +354,13 @@ impl AgentProtocolSession {
                     "background_control": {
                         "actions_without_focus": true,
                         "semantic_snapshot_without_surface": true,
-                        "presented_wait_requires_surface": true,
-                        "screenshot_requires_surface": true,
+                        "isolated_workspace": true,
+                        "private_clipboard": true,
+                        "native_window_access": false,
+                        "presented_wait_requires_surface": false,
+                        "screenshot_requires_surface": false,
+                        "screenshot_source": "offscreen_cpu",
+                        "shared_state": "explicit_business_services_only",
                     },
                     "key_names": AGENT_KEY_CODES
                         .iter()

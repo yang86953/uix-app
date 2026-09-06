@@ -6,12 +6,13 @@
 
 ## 概述
 
-只有同时启用 `agent-control` feature 和 `.enable_agent_control()` 的应用才发布 Agent 端点。已授权的同用户本机客户端可以枚举窗口、读取脱敏语义快照，并执行与用户输入进入同一语义路径的受控动作。启用端点后，默认不增加动作限制；这等价于已鉴权客户端可以执行目标声明支持的全部动作。应用必须在交付前显式判断这一高权限默认值是否可接受，并按风险增加拒绝或确认规则。
+同时启用 `agent-control` feature、`.enable_agent_control()` 并显式配置 `.agent_root(...)` 后，应用才发布 **独立后台操作面** 的 Agent 端点。可见窗口不登记、不接收外部 Agent 请求。后台与用户输入复用正式 UI 语义实现，但各有组件树、导航、草稿、焦点和输入状态。已鉴权客户端默认可以执行后台目标支持的动作；应用仍须按风险增加拒绝或确认规则。
 
-- 启用条件是 `agent-control` feature + `.enable_agent_control()`，双门禁缺一不可。
+- feature 与显式开关双门禁；开关启用而未配置独立根时在创建原生窗口前失败，不降级到同窗控制。
 - 只建立本机同用户 IPC，空闲无轮询，敏感值不导出。
-- 动作与用户输入走同一条 UI 语义路径，不建立第二条可写管线。
-- Agent 请求以 `instance_id + window_id + generation` 定向窗口；应用失去前台焦点、被遮挡、最小化或隐藏时仍可执行语义、指针、按键和窗口动作，不抢占系统前台。
+- 独立 UI 线程、私有剪贴板、CPU 离屏绘制，不移动桌面指针、不夺焦点或改变用户窗口状态。
+- 以 `instance_id + window_id + generation` 定向后台视口；用户可同时编辑自己的窗口。共享业务服务由应用显式注入，不默认 clone 前台 UI State。
+- 完整 API、迁移、安全边界及生命周期见 [Agent 独立后台操作面](Agent后台操作面.md)。
 
 ## 使用前安全评估
 
@@ -27,10 +28,10 @@
 
 ```toml
 [dependencies]
-uix = { version = "=0.0.7", registry = "gitea", features = ["agent-control"] }
+uix = { version = "=0.0.8", registry = "gitea", features = ["agent-control"] }
 ```
 
-**第二步**，应用入口显式启用：
+**第二步**，显式启用并分别构造用户与 AI 根（不得共用捕获的导航、草稿 State）：
 
 ```rust uix-compile=agent-enable
 use uix::prelude::*;
@@ -38,6 +39,7 @@ use uix::prelude::*;
 App::new()
     .enable_agent_control()   // 显式启用本机 uix.agent.v1 端点
     .root(main_view)
+    .agent_root(agent_view)  // 独立工厂，只显式共享业务服务
     .run();
 ```
 
@@ -102,6 +104,7 @@ App::new()
     // 指定组件需要用户确认（进入第三层确认流程）。
     .agent_require_confirm("danger-button")
     .root(main_view)
+    .agent_root(agent_view)
     .run();
 ```
 
@@ -109,7 +112,7 @@ App::new()
 
 ### 第三层：用户确认（默认关闭，应用注入确认 UI 后启用）
 
-对 `agent_require_confirm` 标记的目标，AI 执行动作时先收到 `requires_confirmation` 错误（携带一次性 `confirm_id`），随后 AI 发起 `confirm` 请求；框架在 UI turn 内调用应用注入的确认 UI，**用户决定后才执行**。
+对 `agent_require_confirm` 标记的目标，AI 先收到带一次性 `confirm_id` 的 `requires_confirmation`，随后发起 `confirm`。框架在后台 UI turn 投递确认意图；宿主采用非打断式待办或通知，由用户主动查看，**不自动弹前台模态框或夺焦点**。允许后仍重检修订与拒绝策略，仅执行已确认的一次动作。
 
 ```rust uix-compile=agent-confirm-ui
 use uix::app::AgentConfirmationRequest;
@@ -118,14 +121,15 @@ use uix::prelude::*;
 App::new()
     .enable_agent_control()
     .agent_require_confirm("danger-button")
-    // 注入确认 UI：收到请求时展示确认界面（示意；应用可用任意 UI 实现）。
+    // 在后台接收确认意图：只投递非打断通知，不同步操作用户窗口。
     .agent_confirm_ui(|request: AgentConfirmationRequest| {
         // request: { window_id, confirm_id, target, action }
-        // 展示确认界面；用户决定后调用：
+        // 用户主动查看并决定后调用：
         // handle.resolve_agent_confirmation(
         //     request.window_id, request.confirm_id, allow /* true 允许 / false 拒绝 */);
     })
     .root(main_view)
+    .agent_root(agent_view)
     .run();
 ```
 
@@ -141,12 +145,12 @@ App::new()
 
 | 请求 | 说明 |
 |---|---|
-| `list_windows` | 枚举进程内全部窗口（id、代际、标题、可见性、可呈现性、logical 客户区尺寸、最大化/最小化/全屏状态、焦点 `focused`、修订号） |
+| `list_windows` | 只枚举后台视口（id、代际、标题、可呈现性、尺寸、修订号）；不泄露或暴露可见窗口，窗口级 `visible=false`、`focused=false` |
 | `snapshot` | 读取目标窗口语义树快照（role / name / state / actions / frame / 选择项、节点 `focused` 与 `hovered`，敏感值过滤；顶层 `device_pixel_ratio` 声明 bounds 坐标空间） |
-| `screenshot` | 截取目标窗口下一次真实呈现帧：PNG（RGB8、物理像素、左上原点）以 base64 返回；要求 backend-managed GPU 呈现，载荷上限见 `hello.limits.max_screenshot_bytes` |
+| `screenshot` | 截取本次请求后的真实 CPU 离屏帧：PNG（RGB8、左上原点）以 base64 返回；不要求显示服务或 GPU，载荷上限见 `hello.limits.max_screenshot_bytes` |
 | `wait` | 等待语义修订前进、已呈现修订达标或同代际窗口关闭（上限 30 秒），空闲无轮询 |
 
-**坐标空间与换算**：`snapshot` 的 `frame` / `visible_bounds` 与 `click` / `pointer` 系列动作同属**应用内 logical 客户区坐标**；`screenshot` 是**物理像素**（logical × `device_pixel_ratio`，左上原点）。跨空间对照（例如在截屏上定位快照节点）必须把 bounds 乘以快照顶层的 `device_pixel_ratio`，反向换算则相除；在 `device_pixel_ratio != 1` 的显示下不做换算会产生与纵坐标成正比的位置偏差（如 125% 缩放下逻辑 y=400 处偏差约 100 物理像素）。
+**坐标空间与换算**：`snapshot` 的 `frame` / `visible_bounds` 与指针动作同属后台视口 logical 坐标；像素坐标为 logical × `device_pixel_ratio`。本版后台 DPR 固定 1，与用户显示器缩放无关，客户端仍应按快照声明换算，不拿桌面坐标操作后台。
 
 ### 语义动作（作用于语义树节点，须命中快照中的稳定目标）
 
@@ -173,23 +177,16 @@ Input 在工具栏取得焦点时保留逻辑选区；包裹后继续选中内�
 |---|---|---|
 | `press_key` | `key` / `modifiers` | 完整下发 KeyDown/KeyUp；任一段被消费或观察则成功，两段均无人处理时失败 |
 | `click_at` / `pointer_move` / `pointer_down` / `pointer_up` | `x` / `y` | 应用内指针事件（未命中可交互目标视为失败） |
-| `resize_window` | `width` / `height` | 调整 logical 客户区尺寸；仍受窗口最小/最大约束 |
-| `move_window` | `x` / `y` | 移动平台窗口位置；Wayland 等禁止任意定位的平台会返回 `window_operation_failed` |
-| `maximize_window` / `minimize_window` / `restore_window` | — | 窗口状态切换 |
-| `activate_window` | — | 请求合成器激活并聚焦窗口（Wayland 复用 xdg-activation）；成功只表示请求已提交，不保证已获焦点，自动化用 `list_windows` 的 `focused` 复核 |
-| `close_window` | — | 提交平台关闭请求；成功不声明窗口已关闭，调用方必须另行等待关闭事实 |
+| `resize_window` | `width` / `height` | 只调整后台内存视口，单轴 1..4096，总像素不超过 8,388,608 |
+| `close_window` | — | 只请求关闭后台工作面，等待关闭事实；不关闭用户窗口 |
 
-窗口管理动作会由 `hello.capabilities.window_actions` 正式发布，并经平台窗口操作契约执行；平台不支持、
-窗口约束拒绝或原生调用失败均返回 `window_operation_failed`，不得伪造成功或隐式降级。对语义树中的
-标准 `WindowControl` 执行 `invoke` 时，框架复用该控件持有的类型化窗口动作并写入当前窗口队列，不把
-语义动作翻译成坐标点击、字符串命令或合成键盘事件；响应只证明动作进入 UI 路径，调用方仍须用
-`list_windows` / `wait` 确认最大化、最小化或关闭的最终生命周期事实。
+`hello.capabilities.window_actions` 只发布后台可用动作。`activate_window`、移动、最大化、最小化、还原与系统窗口拖拽不提供，旧请求以 `window_operation_failed` 拒绝。标准 `WindowControl::Invoke` 以 `unsupported_action` 拒绝；回调或输入排入原生操作也必须显式失败，不能报告虚假桌面成功。
 
-Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得操作系统焦点：它们只在已鉴权、显式绑定的目标窗口 UI turn 内分发，事件未被组件消费仍按失败处理。`activate_window` 只用于确实需要把窗口带到用户前台的流程，不再是 Agent 键盘动作的前置条件；焦点与悬停用 `focused` / `hovered` 事实断言，不依赖截图猜测界面状态。
+指针、按键和语义文本事件仅在后台树分发；节点 `focused` / `hovered` 表示 AI 私有逻辑状态。用户前台是否遮挡、最小化、隐藏或全屏不影响后台动作或截屏。
 
-`screenshot` 属于读取类请求：只读策略下与快照一样可用，且不携带 `target`。请求会使空闲窗口强制出帧并等待下一次真实 present 完成，返回 `window_id`、`width`、`height`、`format` 与 base64 PNG 载荷。像素为物理分辨率（含设备缩放），载荷上限 32 MiB（`hello.limits.max_screenshot_bytes`，超限返回 `payload_too_large`）；仅 backend-managed GPU 呈现支持截屏，软件回退路径以 `unsupported_action` 明确失败；同一窗口上一个截屏未完成前，新请求按 `window_operation_failed` 拒绝。
+`screenshot` 是读取类请求，只读策略仍可用。它强制正式渲染管线生成本次请求后的新帧，返回 `window_id`、尺寸、`format` 与 base64 PNG；载荷上限 32 MiB，超限返回 `payload_too_large`。同视口已有截屏请求时拒绝并发占用，不读取桌面、旧截图或仅语义渲染替代图。
 
-后台控制与像素呈现是两件事：普通动作只等待进程内声明协调、布局与语义修订完成，不依赖 compositor 前台状态。最小化或被遮挡后若平台仍报告 `presentable=true`，真实截屏与 presented wait 仍可工作；只有平台明确报告无可呈现 surface 时，动作和语义快照继续可用，而 `screenshot` 与 `wait(presented_revision)` 返回 `not_presentable`。连接器的 `uix_interact` 在这种情况下保留已成功动作并回退读取语义快照，`retry_action=false`，不得用旧截图伪造当前画面。
+`presented_revision` 在此表示已完成离屏帧，不是用户已经看到画面。离屏资源关闭或渲染失败必须真实报错；连接器保留已成功动作且不重放，不能通过激活或改绑用户窗口来“修复”截图。
 
 同一窗口的请求以动作收敛边界串行执行：一个动作进入 UI turn 后，后续 `perform`、`snapshot`、`screenshot` 或确认结果会留在队列中，直到该动作完成声明协调、布局和语义快照刷新。后续动作因此总是对新快照重新校验；若仍携带旧 `expected_revision`，明确返回 `stale_revision`，未携带时则按当前 `automation_id` 重新解析。客户端不需要插入任意延时，也不得把 `internal` 当作可重试的树切换信号。
 
@@ -208,7 +205,7 @@ Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得�
 | `confirmation_rejected` / `confirmation_not_found` | 用户拒绝 / 确认失效或超时 |
 | `not_interactable` / `blocked` | 目标不可交互 / 被模态浮层阻挡 |
 | `did_not_settle` / `not_presentable` | UI 未在限定轮数内稳定 / 窗口不可呈现 |
-| `window_operation_failed` | 窗口管理动作的平台调用失败 |
+| `window_operation_failed` | 不支持的桌面操作、视口约束拒绝或回读占用 |
 | `payload_too_large` | 截屏 PNG 编码结果超出协议载荷上限 |
 | `timeout` / `app_closed` | 等待超时 / 应用关闭 |
 | `internal` | 服务端内部不变量失败；不是瞬态重试信号，应停止当前自动化链并保留诊断 |
@@ -222,8 +219,8 @@ Agent 指针、`press_key` 和语义文本动作都不要求目标窗口取得�
 - 首请求必须为 `hello`（携带 token）；已认证连接按 `list_windows` → `snapshot` → `perform` / `confirm` → `wait` 循环工作。
 - 请求帧与响应帧分别有界：`hello.limits.max_request_bytes` 是请求 JSON 正文上限，`max_response_bytes` 是含结尾换行的单条响应上限；旧字段 `max_message_bytes` 保留为请求上限别名。响应上限已计入 32 MiB 截屏 PNG 的 base64 膨胀和 JSON 信封，不会把合法截屏误报为 `internal`。
 - 每个响应必须原样回显请求的 `request_id`；客户端应同时校验 `schema`、`request_id` 与协商后的响应长度，关联不一致时停止该连接，不能把回包归给其他动作。
-- `hello.capabilities.window_state_fields` 发布 `list_windows` 可读取的窗口状态字段；客户端必须先协商再消费。字段来自 UIX 跨平台窗口属性，是框架当前观测，不承诺窗口管理器或 compositor 已确认动作终态。
-- `hello.capabilities.background_control` 发布后台矩阵：动作不要求焦点、语义快照不要求 surface；`presented_wait` 与 `screenshot` 明确要求目标窗口当前仍有真实 surface。客户端不得把动作能力外推成像素能力。
+- `hello.capabilities.window_state_fields` 发布后台视口可读状态；节点逻辑焦点与桌面焦点不同，不承诺操作系统状态。
+- `hello.capabilities.background_control` 必须声明 `isolated_workspace=true`、`private_clipboard=true`、`native_window_access=false`、`screenshot_source=offscreen_cpu`；`presented_wait_requires_surface=false`、`screenshot_requires_surface=false`。官方 Rust / Python / MCP 客户端拒绝缺失隔离能力的旧应用，不允许同窗降级。
 - 动作必须命中当前语义快照中的稳定节点（`automation_id` 或 `node_id`）并经过窗口 owner thread。
 - `wait` 返回同 generation 的 `closed` 后，该连接已到达终态并由服务端关闭；应用 teardown 会先给
   在途终态回复保留有界写回窗口，再强制回收其他连接。
@@ -308,7 +305,7 @@ python3 scripts/agent_client.py session
 
 **可见失败**：未找到 discovery 文件说明端点未启用（应用未按双门禁启动）；`unauthorized` / `unsupported_schema` 表示 token 或协议版本不符；动作失败语义见[错误码](#错误码)。确认与等待等多次往返优先使用 `session`，业务错误仍作为正常协议回包输出，不会自动重试动作。
 
-**适用限制**：只支持本机同用户；多个应用实例并存时脚本以最新启动的 discovery 为准，操作指定实例需自行选择对应发现文件；截屏仅 backend-managed GPU 呈现可用。`session` 是前台 JSON Lines 进程，stdin 关闭、输入非法 JSON、传输/关联/schema 校验失败或应用退出时结束；需要继续操作时重新建立会话，不自动重连或重放动作。
+**适用限制**：只支持本机同用户，本版每进程一个后台工作面。多实例必须显式选择，不猜测最新发现文件。`session` 是 JSON Lines 连接进程（不是前台 GUI），stdin 关闭、协议校验失败或应用退出时结束；重连须重新选择，不重放动作。后台 CPU 截屏不要求 GPU 或显示服务器，任意 Rust 业务回调不属于框架隔离沙箱。
 
 ## 安全边界
 
@@ -333,7 +330,8 @@ use uix::prelude::*;
 // Agent 只读语义树并执行稳定动作，作为应用自动化与 AI 操作通道
 let app = App::new()
     .enable_agent_control()
-    .root(|| column((
+    .root(|| label("用户界面"))
+    .agent_root(|| column((
         button("保存").automation_id("save-button"),
         label("状态").automation_id("status-label"),
     )));
@@ -343,7 +341,7 @@ let app = App::new()
 //   组件卸载/窗口关闭后，旧动作返回可识别失败
 ```
 
-- Agent 通道用于使用方应用自动化、辅助调试与 AI 操作；它不扩大 UIX 项目的公开 API 测试范围，业务交互不走 Agent。
+- Agent 通道用于使用方应用自动化、辅助调试与 AI 操作。框架测试仍只走文档化公开 API；`agent_workspace_public_api.rs` 验证本后台契约，不用 Agent 代替普通业务单元验证。
 - 只为需要被自动化稳定定位的目标声明唯一 `automation_id`；普通展示节点不必全部设置。
 - 敏感值（密码、令牌）默认不进快照、日志或错误回包。
 - 正式交付的应用应评估动作策略：至少为破坏性操作（删除、清空、提交）声明 `agent_require_confirm` 或 `agent_protect`。

@@ -5,7 +5,7 @@
 //! generated `icon_map` module. The parent app is responsible for loading
 //! `assets/fonts/lucide.ttf` into the engine via `load_font`.
 
-use std::sync::OnceLock;
+use std::cell::Cell;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::font_service::FontService;
@@ -20,9 +20,10 @@ use crate::widget;
 // 引入图标映射组件的封装查找入口。
 use crate::ui::widgets::general::icon_map::find_icon;
 
-/// 全局 Lucide 字体句柄（由 app 启动时加载）。
-/// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
-static LUCIDE_FONT: OnceLock<FontHandle> = OnceLock::new();
+// 字体句柄属于创建 FontService 的 UI 线程；后台字体注册不得污染前台字体索引。
+thread_local! {
+    static LUCIDE_FONT: Cell<Option<FontHandle>> = const { Cell::new(None) };
+}
 
 // 保存由 UIX 声明、由 Rust 字体绘制内核消费的静态视觉值。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -78,7 +79,7 @@ impl IconFallbackLabel {
     }
 }
 
-/// 在 app 初始化时加载 Lucide TTF 字体，并注册全局句柄。
+/// 在所属 UI 线程初始化 Lucide TTF 字体，并注册该线程的句柄。
 ///
 /// 直接通过 `FontService::load_font()` 加载字体数据。
 /// 应在 app 初始化时、FontService 创建之后调用。
@@ -91,13 +92,12 @@ pub(crate) fn init_static_lucide_font(data: &'static [u8], font_service: &mut Fo
     publish_lucide_font(font_service.load_static_font(data));
 }
 
-// 统一发布动态与静态加载结果，保持全局图标句柄和诊断语义一致。
+// 动态与静态加载共享线程局部注册，不跨 FontService 所有者借用索引。
 fn publish_lucide_font(result: crate::core::Result<FontHandle>) {
     match result {
         Ok(fh) => {
             tracing::info!("Lucide font loaded, handle={:?}", fh);
-            // OnceCell 竞争时先注册者胜出（同一字体字节），失败方静默即可。
-            let _ = LUCIDE_FONT.set(fh);
+            LUCIDE_FONT.set(Some(fh));
         }
         Err(e) => {
             // Lucide 图标字体加载失败（图标退化为占位）：widget 层无诊断
@@ -107,9 +107,9 @@ fn publish_lucide_font(result: crate::core::Result<FontHandle>) {
     }
 }
 
-/// 获取 Lucide 字体句柄（若已加载）。
+/// 获取当前 UI 线程的 Lucide 字体句柄（若已加载）。
 pub fn lucide_handle() -> Option<FontHandle> {
-    LUCIDE_FONT.get().copied()
+    LUCIDE_FONT.get()
 }
 
 /// Map icon name → Lucide PUA codepoint character.
@@ -234,11 +234,7 @@ impl Icon {
 impl Icon {
     /// 融合 View 声明样式；只消费颜色字段，不改变固有尺寸语义。
     pub(crate) fn apply_view_style(&mut self, style: &Style) {
-        let merged = self
-            .style
-            .clone()
-            .unwrap_or_default()
-            .apply(style.clone());
+        let merged = self.style.clone().unwrap_or_default().apply(style.clone());
         self.style = Some(merged);
     }
 }

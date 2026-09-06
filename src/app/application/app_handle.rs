@@ -272,7 +272,9 @@ impl AppHandle {
                 if let Err(error) = context.request_activate() {
                     diagnostics.observe_transient_error(
                         "window",
-                        "activation request rejected by platform", &error);
+                        "activation request rejected by platform",
+                        &error,
+                    );
                 }
             });
         if accepted {
@@ -435,11 +437,12 @@ impl AppHandle {
     ) -> Result<()> {
         use crate::app::queues::agent_command_queue::AgentCommandRequest;
         self.runtime
+            .agent_confirmation_runtime()
             .submit_agent_command(
                 window_id,
                 AgentCommandRequest::ResolveConfirmation { confirm_id, allow },
             )
-            .map(|_| ())
+            .map(|ticket| ticket.detach())
             .map_err(|error| {
                 Error::new(
                     Errc::InvalidState,
@@ -642,7 +645,6 @@ impl AppHandle {
         self.runtime.close_session(self.window_id);
     }
 }
-
 
 /// 在窗口 WidgetTree 上按 automationId 定位唯一节点并执行语义动作。
 fn perform_automation_action_on_tree(

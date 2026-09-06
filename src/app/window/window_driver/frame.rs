@@ -113,12 +113,8 @@ impl WindowDriver {
 
         let had_main_thread_work = {
             // 主线程任务只在当前逐窗 owner turn 内短借原生窗口。
-            let mut main_thread_context = MainThreadContext::new(
-                pending_root,
-                reconcile_pending,
-                platform_window,
-                tree,
-            );
+            let mut main_thread_context =
+                MainThreadContext::new(pending_root, reconcile_pending, platform_window, tree);
             main_thread_queue.drain(&mut main_thread_context)
         };
         // 主线程任务可能在内部捕获发布 panic，必须在处理 Agent 工作前停止本帧。
@@ -148,6 +144,10 @@ impl WindowDriver {
         let mut window_ops = PlatformWindowAgentOps::new(platform_window);
         let had_agent_command_work =
             agent_commands.drain_ready(tree, semantic_state, presentable, &mut window_ops);
+        #[cfg(feature = "agent-control")]
+        if agent_commands.has_screenshot_in_flight() {
+            platform_window.prepare_agent_readback();
+        }
         // Agent 命令可能在内部捕获发布 panic，必须在处理 AppState 前停止本帧。
         if let Some(result) = self.finish_if_tree_fail_stopped(
             // 检查本窗口唯一拥有的树状态。
@@ -447,7 +447,9 @@ impl WindowDriver {
                 // observe_transient 冷却去重观察。
                 self.diagnostics.observe_transient_error(
                     "window_driver",
-                    "fallback native frame cancellation failed", &error);
+                    "fallback native frame cancellation failed",
+                    &error,
+                );
             }
         }
         let frame_time = opportunity.frame_time();
@@ -542,7 +544,9 @@ impl WindowDriver {
                         // 经 observe_transient 冷却去重观察。
                         self.diagnostics.observe_transient_error(
                             "window_driver",
-                            "native frame request failed; fallback remains armed", &error);
+                            "native frame request failed; fallback remains armed",
+                            &error,
+                        );
                     }
                 }
             }
@@ -634,8 +638,13 @@ impl WindowDriver {
             self.publish_agent_window_availability(semantic_state, platform_window, engine);
             return WindowFrameResult { did_work: true };
         }
-        let surface_corrected =
-            ensure_surface_matches_window(tree, engine, native_width, native_height, &self.diagnostics);
+        let surface_corrected = ensure_surface_matches_window(
+            tree,
+            engine,
+            native_width,
+            native_height,
+            &self.diagnostics,
+        );
         let has_layout = has_layout_work(tree);
         let needs_layout =
             had_layout_event || surface_corrected || !self.rendered_first || has_layout;
@@ -772,7 +781,9 @@ impl WindowDriver {
                     Err(error) => {
                         self.diagnostics.observe_transient_error(
                             "window_driver",
-                            "pre-present show failed; deferred retry remains armed", &error);
+                            "pre-present show failed; deferred retry remains armed",
+                            &error,
+                        );
                     }
                 }
             }
@@ -926,7 +937,9 @@ impl WindowDriver {
                 if let Err(error) = platform_window.native_frame_presented(token) {
                     self.diagnostics.observe_transient_error(
                         "window_driver",
-                        "native frame present notification failed; fallback remains armed", &error);
+                        "native frame present notification failed; fallback remains armed",
+                        &error,
+                    );
                 }
             }
         } else if let Some(failure) = frame_failure.as_ref() {

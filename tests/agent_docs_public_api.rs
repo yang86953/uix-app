@@ -1,6 +1,9 @@
 // 声明本文件只编译 Agent 控制文档，不运行应用或发布 IPC 端点。
 #![allow(dead_code)]
 
+// 声明式生成模块与手写消费者使用同一公开扩展 trait。
+use uix::prelude::StyleExt;
+
 // 隔离 agent-enable 围栏中的显式应用门禁。
 mod agent_enable {
     // 引入文档承诺的公开 Application 与 View prelude。
@@ -14,6 +17,8 @@ mod agent_enable {
             .enable_agent_control()
             // 安装业务根视图。
             .root(main_view)
+            // 后台根不捕获用户界面 State。
+            .agent_root(agent_view)
             // 保留文档运行入口供编译器检查。
             .run();
     }
@@ -22,6 +27,9 @@ mod agent_enable {
     fn main_view() -> ViewNode {
         // 返回稳定的占位业务内容。
         label("应用")
+    }
+    fn agent_view() -> ViewNode {
+        label("后台")
     }
 }
 
@@ -48,6 +56,7 @@ mod agent_policy {
             .agent_require_confirm("danger-button")
             // 安装业务根视图。
             .root(main_view)
+            .agent_root(agent_view)
             // 保留文档运行入口供编译器检查。
             .run();
     }
@@ -56,6 +65,9 @@ mod agent_policy {
     fn main_view() -> ViewNode {
         // 返回稳定的占位业务内容。
         label("应用")
+    }
+    fn agent_view() -> ViewNode {
+        label("后台")
     }
 }
 
@@ -81,6 +93,7 @@ mod agent_confirm_ui {
             })
             // 安装业务根视图。
             .root(main_view)
+            .agent_root(agent_view)
             // 保留文档运行入口供编译器检查。
             .run();
     }
@@ -89,6 +102,9 @@ mod agent_confirm_ui {
     fn main_view() -> ViewNode {
         // 返回稳定的占位业务内容。
         label("应用")
+    }
+    fn agent_view() -> ViewNode {
+        label("后台")
     }
 }
 
@@ -104,7 +120,8 @@ mod agent_automation_id {
             // 显式启用 Agent 控制入口。
             .enable_agent_control()
             // 声明两个具有稳定身份的语义节点。
-            .root(|| {
+            .root(|| label("用户界面"))
+            .agent_root(|| {
                 // 纵向组合保存动作与状态文本。
                 column((
                     // 为保存按钮声明稳定动作身份。
@@ -116,4 +133,24 @@ mod agent_automation_id {
         // 消费未运行的 App builder，避免测试产生原生副作用。
         let _ = app;
     }
+}
+
+// 无窗口宿主示例与 demo 的后台声明共用公开编译入口，不启动进程或端点。
+fn compile_standalone_workspace() -> Result<(), Box<dyn std::error::Error>> {
+    let workspace = uix::app::agent_workspace::AgentWorkspace::new(640, 480, || {
+        uix::uix!("demo/uix-lang-demo/src/agent.uix")
+    })
+    .spawn()?;
+    let mut client = workspace.client()?;
+    assert_eq!(
+        client.capabilities()["background_control"]["isolated_workspace"],
+        true
+    );
+    let view = client.list_windows()?[0];
+    client.snapshot(view.window_id)?;
+    let pixels =
+        client.request(serde_json::json!({"type":"screenshot", "window_id":view.window_id}))?;
+    assert_eq!(pixels["ok"], true);
+    workspace.close()?;
+    Ok(())
 }

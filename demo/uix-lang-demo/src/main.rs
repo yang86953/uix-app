@@ -134,6 +134,8 @@ fn run_gui(options: LaunchOptions) {
     #[cfg(feature = "agent-control")]
     let app = if options.agent_control {
         app.enable_agent_control()
+            // 专用后台根不捕获主演示的导航、草稿、终端或窗口句柄。
+            .agent_root(|| uix::uix!("src/agent.uix"))
             .agent_require_confirm("demo-popconfirm-trigger")
             .agent_confirm_ui(move |request: uix::app::AgentConfirmationRequest| {
                 tracing::warn!(

@@ -23,9 +23,7 @@ use crate::ui::accessibility::semantic_snapshot::SemanticTarget;
 use crate::ui::semantic_action::SemanticAction;
 
 /// 把当前语义快照映射为「已执行」命令应答；无快照视为内部错误。
-fn settled_performed_result(
-    semantic_state: &WindowSemanticState,
-) -> AgentCommandResult {
+fn settled_performed_result(semantic_state: &WindowSemanticState) -> AgentCommandResult {
     semantic_state.snapshot().map_or_else(
         || Err(AgentCommandError::Internal),
         |snapshot| {
@@ -79,6 +77,28 @@ pub(crate) trait AgentCommandExecutor: Send + Sync {
         action: &SemanticAction,
     ) -> Result<(), AgentCommandError>;
 
+    /// 只由宿主确认解析路径调用，仍须重新检查身份、修订与拒绝策略。
+    fn perform_confirmed(
+        &self,
+        tree: &mut WidgetTree,
+        semantic_state: &WindowSemanticState,
+        presentable: bool,
+        generation: u64,
+        expected_revision: Option<u64>,
+        target: &SemanticTarget,
+        action: &SemanticAction,
+    ) -> Result<(), AgentCommandError> {
+        self.perform(
+            tree,
+            semantic_state,
+            presentable,
+            generation,
+            expected_revision,
+            target,
+            action,
+        )
+    }
+
     /// 在窗口 UI turn 内执行一次窗口级自动化动作（测试 / agent-control 路径）。
     #[cfg(any(test, feature = "agent-control"))]
     fn perform_window(
@@ -97,11 +117,8 @@ pub(crate) trait AgentCommandExecutor: Send + Sync {
     /// 截屏是读取类能力：只读策略放行，与语义快照同级；像素由下一次真实
     /// present 的回读票据交付，本方法只负责校验可呈现性并制造出帧事实。
     #[cfg(any(test, feature = "agent-control"))]
-    fn screenshot(
-        &self,
-        tree: &mut WidgetTree,
-        presentable: bool,
-    ) -> Result<(), AgentCommandError>;
+    fn screenshot(&self, tree: &mut WidgetTree, presentable: bool)
+    -> Result<(), AgentCommandError>;
 }
 
 struct PendingAgentResponse {
@@ -205,6 +222,13 @@ impl WindowAgentState {
         self.in_flight
             .iter()
             .any(|pending| !pending.requires_presentable_surface)
+    }
+
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn has_screenshot_in_flight(&self) -> bool {
+        self.in_flight
+            .iter()
+            .any(|pending| pending.requires_presentable_surface)
     }
 
     pub(crate) fn drain_ready(
@@ -544,15 +568,22 @@ impl WindowAgentState {
             return;
         }
         // 允许：在 UI turn 内执行登记的动作；成功进入 in-flight settle。
-        match self.perform_command(
-            tree,
-            semantic_state,
-            presentable,
-            pending.generation,
-            pending.expected_revision,
-            &pending.target,
-            &pending.action,
-        ) {
+        let outcome = self
+            .executor
+            .as_deref()
+            .ok_or(AgentCommandError::Internal)
+            .and_then(|executor| {
+                executor.perform_confirmed(
+                    tree,
+                    semantic_state,
+                    presentable,
+                    pending.generation,
+                    pending.expected_revision,
+                    &pending.target,
+                    &pending.action,
+                )
+            });
+        match outcome {
             Ok(()) => {
                 self.in_flight.push(PendingAgentResponse {
                     response,

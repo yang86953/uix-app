@@ -17,6 +17,10 @@ pub(crate) mod window_actions;
 pub(crate) mod window_agent_ops;
 pub(crate) mod window_config;
 // 应用窗口创建 Adapter 统一注入 FileDrop 产品策略。
+#[cfg(feature = "agent-control")]
+pub(crate) mod background;
+#[cfg(feature = "agent-control")]
+pub(crate) mod offscreen_window;
 pub(crate) mod window_creation;
 pub(crate) mod window_driver;
 pub(crate) mod window_session;

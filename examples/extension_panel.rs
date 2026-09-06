@@ -1,13 +1,13 @@
 //! 动态扩展示例：真窗口中的 Lisp 扩展面板（P2 验收应用）。
 //!
-//! 运行：`cargo run --release --features extensions,agent-control --example extension_panel`
+//! 运行：`cargo run --release --features extensions --example extension_panel`
 //!
 //! 装载一个文本处理扩展：点击「增加」更新扩展状态并提交新声明；输入
 //! 回显到标题；「分析」走异步端口，完成后状态文本更新。全部 UI 变更经
 //! `(uix ui)` 声明提交 → 宿主校验 → 投影，UI 线程不执行任何 Lisp。
 //!
-//! Agent 验收：先 `apps` 枚举并绑定本实例，再按 automation_id
-//! （`panel-ext/panel/...`）读取与操作。
+//! 本模板的投影器和声明回传绑定用户窗口，不再默认暴露前台 Agent 端点。
+//! AI 接入须另建后台根、投影器和 UI worker；只显式共享业务端口，见 Agent后台操作面文档。
 
 use std::collections::BTreeMap;
 use std::sync::mpsc;
@@ -89,7 +89,7 @@ fn main() {
     let app = App::new()
         .title("UIX 动态扩展示例")
         .size(460, 420)
-        .enable_agent_control()
+        // 前台专属投影器不能克隆成“独立”后台根，因此不启用旧的同窗控制入口。
         .on_start({
             let handle = handle.clone();
             let current = Arc::clone(&current);

@@ -17,13 +17,16 @@ impl WindowDriver {
             // 取消失败是瞬态平台噪声：经 observe_transient 冷却去重观察。
             self.diagnostics.observe_transient_error(
                 "window_driver",
-                "native frame cancellation failed", &error);
+                "native frame cancellation failed",
+                &error,
+            );
         }
     }
 
     pub(super) fn agent_surface_presentable(&self, platform_window: &dyn PlatformWindow) -> bool {
         let properties = platform_window.properties();
-        let visibility_allows_work = self.deferred_show || platform_window.is_visible();
+        let visibility_allows_work =
+            platform_window.is_offscreen() || self.deferred_show || platform_window.is_visible();
         visibility_allows_work
             && properties.width() > 0
             && properties.height() > 0

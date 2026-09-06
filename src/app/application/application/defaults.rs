@@ -91,6 +91,8 @@ impl Default for App {
             graphics_faults: GraphicsFaultSignal::default(),
             #[cfg(feature = "agent-control")]
             agent_control_enabled: false,
+            #[cfg(feature = "agent-control")]
+            agent_root_factory: None,
             agent_policy: AgentPolicy::default(),
             agent_confirm_ui: None,
             exit_code: 0,

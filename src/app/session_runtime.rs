@@ -50,6 +50,8 @@ pub(crate) struct AppRuntime {
     agent_confirm_ui: Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>,
     #[cfg(feature = "agent-control")]
     agent_transport: Arc<Mutex<Option<AgentTransportHandle>>>,
+    #[cfg(feature = "agent-control")]
+    agent_workspace_runtime: Arc<Mutex<Option<AppRuntime>>>,
 }
 
 #[derive(Clone)]
@@ -84,6 +86,13 @@ impl AppRuntime {
     /// 组装期默认：Agent 命令执行器由组合根按当前动作策略创建，注入每窗口状态机。
     pub(crate) fn agent_command_executor(&self) -> Arc<dyn AgentCommandExecutor> {
         Arc::new(AgentCommandExecutorImpl::new(self.agent_policy.clone()))
+    }
+
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn isolated_agent_command_executor(&self) -> Arc<dyn AgentCommandExecutor> {
+        Arc::new(AgentCommandExecutorImpl::isolated(
+            self.agent_policy.clone(),
+        ))
     }
 
     /// 组装期设置 Agent 动作策略（授权第二层）；窗口创建前调用。
@@ -216,6 +225,24 @@ impl AppRuntime {
         self.agent_bridge
             .is_enabled()
             .then(|| AgentProcessBridge::new(self.clone()))
+    }
+
+    /// 主应用只保存后台确认路由，不向外发布可见窗口目录。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn set_agent_workspace_runtime(&self, runtime: AppRuntime) {
+        *self
+            .agent_workspace_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(runtime);
+    }
+
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn agent_confirmation_runtime(&self) -> Self {
+        self.agent_workspace_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or_else(|| self.clone())
     }
 
     #[cfg(feature = "agent-control")]
@@ -393,6 +420,16 @@ impl AppRuntime {
     /// theme update may outlive the native event loop.
     pub(crate) fn shutdown_all(&self) {
         self.shutting_down.store(true, Ordering::Release);
+        #[cfg(feature = "agent-control")]
+        if let Some(workspace) = self
+            .agent_workspace_runtime
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            workspace.shutdown_all();
+            workspace.wake_event_loop();
+        }
         let sessions =
             std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for session in sessions.into_values() {
@@ -668,6 +705,8 @@ impl Default for AppRuntime {
             agent_confirm_ui: Arc::new(|_: AgentConfirmationRequest| {}),
             #[cfg(feature = "agent-control")]
             agent_transport: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "agent-control")]
+            agent_workspace_runtime: Arc::new(Mutex::new(None)),
         }
     }
 }
