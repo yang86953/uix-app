@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../架构.md) · [目标设计](extensions.md) · [实施计划](../动态扩展实施计划.md)
 
-> **状态**：P0 取证产物与实施期第一版合同。引擎选型、兼容矩阵、缺口补齐方案、Cargo 能力名、依赖登记与资源上限初值在本文冻结；公开 API 字段以 `tests/extensions_public_api.rs` 与使用文档实际交付为准。
+> **状态**：P0 取证产物与实施期第一版合同，P1（无界面最小闭环）已按此实现并通过公开 API 测试。引擎选型、兼容矩阵、缺口补齐方案、Cargo 能力名、依赖登记与资源上限初值在本文冻结；公开 API 字段以 `tests/extensions_public_api.rs` 与使用文档实际交付为准。
 >
 > **权威范围**：扩展语言引擎的证据与实施合同。语言选择、生命周期与失败语义由[目标设计](extensions.md)持有；阶段顺序与验收由[实施计划](../动态扩展实施计划.md)持有。
 
@@ -38,11 +38,13 @@
 | `define-library`/`import` 基础形式 | §5.6 | 仅裸库名 | 补 `only`/`except`/`prefix`/`rename` 修饰符 |
 | `include`/`include-ci`/`cond-expand` | §4.1, §5.6 | `NotImplemented` | 补齐：经宿主注入的库解析器读取包内声明来源，不搜索用户目录 |
 | **多值**：`values`、`call-with-values`、`let-values`、`let*-values`、`define-values` | §4.2, §6.10 | 缺失 | 补齐 |
-| **异常**：`raise`、`raise-continuable`、`with-exception-handler`、`guard`（含 reraise）、`error`、error-object 系谓词 | §6.11 | 缺失 | 补齐；配额/取消/超时/内部错误不经 Scheme 异常通道，直接终止求值（宿主边界不可捕获） |
+| **异常**：`raise`、`raise-continuable`、`with-exception-handler`、`guard`（含 reraise）、`error`、error-object 系谓词 | §6.11 | 缺失 | 补齐；配额/取消/超时/内部错误不经 Scheme 异常通道，直接终止求值（宿主边界不可捕获）。已知限制：`with-exception-handler` 的 handler 与 guard 内的 `raise-continuable` 以子机器调用，handler 内 continuation 逃逸语义受限 |
 | **`parameterize`/`make-parameter`** | §4.2 | 缺失 | 补齐（参数对象 + 动态绑定栈，与 `dynamic-wind` 交互按标准） |
 | **lazy**：`delay`、`delay-force`、`force`、`make-promise`、`promise?`（(scheme lazy)） | §6.9 | 缺失 | 补齐 |
 | `(scheme base)` 过程缺口：`string-map`、`string-for-each`、`vector-map`、`vector-for-each`、`eof-object` 系、`exact-integer?`、`exact-integer-sqrt`、`floor/`、`floor-quotient`、`floor-remainder`、`truncate/`、`truncate-quotient`、`truncate-remainder`、`square`、`numerator`、`denominator`、`rationalize`、`assert`、`boolean=?`、`list-copy`、`list-set!`、`string->vector`、`vector->string`、`string-copy!/fill!` 区间、`vector-copy/copy!/fill!` 区间 | §6 系 | 逐项缺失 | 补齐 |
-| bytevector 系（`make-bytevector`、`bytevector-u8-ref/set!`、`bytevector-copy/append`、`u8-list->bytevector`、`utf8->string`、`string->utf8` 等） | §6.3, §6.9 | 缺失 | 补齐（owned 字节，受配额） |
+| bytevector 系（`make-bytevector`、`bytevector-u8-ref/set!`、`bytevector-copy/append`、`u8-list->bytevector`、`utf8->string`、`string->utf8` 等） | §6.3, §6.9 | 缺失 | 补齐（owned 字节，受配额；`#u8(...)` 字面量支持） |
+| quasiquote / unquote / unquote-splicing（嵌套层级） | §4.2.8 | 缺失 | 补齐（求值期展开） |
+| `(scheme eval)`：`eval`、`interaction-environment` | §6.1 | 缺失 | 受限补齐：`interaction-environment` 返回 `#f` 标记，`eval` 在全局环境求值 |
 | `(scheme char)` 缺口：`char-ready?`（内存端口恒真）、`digit-value` | §6.7 | 缺失 | 补齐；大小写映射按 Rust `char` 语义（全 Unicode） |
 | 字符串端口与读写：`open-input-string`、`open-output-string`、`get-output-string`、`read-line`、`read-string`、`write-string`、`write-char`、`write-u8`、`write-bytevector`（内存端口限定） | §6.13 | 缺失 | 补齐为内存端口；文件端口列入受限环境 |
 | `(scheme cxr)` 24 个组合访问器 | §6.4 | 逐项待核 | 补齐（机械展开） |
@@ -57,7 +59,7 @@
 | `(scheme inexact)`/`(scheme complex)` | inexact 开放（f64）；`complex` 拒绝（首期无复数） |
 | `include-declarations`、任意路径逃逸 | 拒绝；只接受包内声明来源 |
 
-覆盖不足时对外称「R7RS-small 实现中的受限宿主环境」，不承诺完整标准兼容。
+覆盖不足时对外称「R7RS-small 实现中的受限宿主环境」，不承诺完整标准兼容。字符串大小写不敏感比较采用简单 Unicode 折叠（非完整 case-fold）；`string-normalize-*` 拒绝（无 Unicode 规范化依赖）。
 
 ## 3. 移植缺口补齐设计
 
@@ -83,7 +85,7 @@
 
 ### 4.1 构建能力与模块
 
-- Cargo feature：**`extensions`**，默认关闭；不进入默认图、最小图与 demo 默认图。
+- Cargo feature：**`extensions`**，默认关闭；不进入默认图、最小图与 demo 默认图（最小图编译失败为既有 `MenuBar` 问题，与本能力无关）。
 - 模块：`uix::app::extensions`（app 私有 Module，引擎为其私有子模块）；能力合同测试按 `capability_compile_contract.rs` 惯例补 `extensions` 一对 doctest。
 - 依赖登记：新增可选依赖 `num-bigint`、`num-rational`（传递 `num-integer`、`num-traits`）；替代方案论证见 §1（Steel 依赖面不可治理、自研大数正确性风险高于复用 num 系）。不引入 thiserror、GC 库或任何解释器外部依赖。
 
@@ -105,17 +107,20 @@ ExtensionHost::deactivate(&ExtensionId) -> Result<TeardownReceipt, ExtensionErro
 
 ### 4.3 包清单（P1 字段冻结）
 
-```toml
-schema_version = 1
-extension_id = "反向字符串"        # 稳定身份，字符集与长度受限
-version = "0.1.0"                 # semver
-language = "r7rs-small"
-entry = "main.scm"
-capabilities = []                 # 声明所需宿主能力名；实际 = 声明 ∩ 宿主已编译 ∩ 授权
-state_schema_version = 0          # P3 启用
+实施采用 S 表达式清单（与扩展语言同一 reader，零新增解析依赖；原拟 TOML 因 `toml` crate 不在依赖图而调整）：
+
+```scheme
+(uix-extension
+  (schema-version 1)              ; 固定为 1
+  (id "text-tools")               ; 稳定身份：小写字母/数字/连字符/下划线，≤64 字节
+  (version "0.1.0")               ; semver（x.y.z）
+  (language r7rs-small)           ; 语言标识（符号或字符串）
+  (entry "main.scm")              ; 包内相对路径，.scm 后缀
+  (capabilities documents-query)  ; 声明宿主能力名；实际 = 声明 ∩ 宿主端口
+  (state-schema-version 0))       ; P3 启用
 ```
 
-未知必需字段、路径逃逸、重复身份、非 semver、清单缺入口拒绝。
+未知字段、路径逃逸、重复身份、非 semver、入口缺失在包冻结或准备期拒绝。
 
 ### 4.4 类型映射（跨边界 owned 值）
 

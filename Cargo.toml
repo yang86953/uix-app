@@ -63,6 +63,12 @@ qrcode = { version = "0.14.1", default-features = false, optional = true }
 regex = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+# 软件动态扩展引擎的数值塔（MIT OR Apache-2.0），仅随 extensions capability
+# 进入解析图；不引入 thiserror 或 GC 库。
+num-bigint = { version = "0.4", optional = true }
+num-rational = { version = "0.4", optional = true }
+num-integer = { version = "0.1", optional = true }
+num-traits = { version = "0.2", optional = true }
 tracing = "0.1"
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
@@ -221,6 +227,9 @@ agent-control = [
     "windows/Win32_System_Pipes",
 ]
 test-harness = []
+# 运行时软件动态扩展（Scheme R7RS-small 受限宿主环境）：默认关闭，
+# 未启用者不承担解释器、包扫描或额外运行成本。
+extensions = ["dep:num-bigint", "dep:num-rational", "dep:num-integer", "dep:num-traits"]
 
 [lib]
 path = "src/lib.rs"
@@ -234,6 +243,12 @@ name = "agent_docs_public_api"
 path = "tests/agent_docs_public_api.rs"
 # 未启用控制面时跳过整个专属消费者目标。
 required-features = ["agent-control"]
+
+# 软件动态扩展公开 API 消费者只在显式扩展 capability 下进入测试图。
+[[test]]
+name = "extensions_public_api"
+path = "tests/extensions_public_api.rs"
+required-features = ["extensions"]
 
 [lints.clippy]
 unwrap_used = "warn"
