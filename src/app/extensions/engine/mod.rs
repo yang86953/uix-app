@@ -136,6 +136,8 @@ pub const STANDARD_LIBRARY_WHITELIST: &[&str] = &[
     // UIX 宿主库：随引擎构造全局安装，import 语义为幂等成功。
     "uix/extension",
     "uix/host",
+    "uix/ui",
+    "uix/tasks",
 ];
 
 /// 读取清单数据（扩展包清单解析复用引擎 reader；限制源码大小）。
@@ -192,6 +194,26 @@ pub struct SchemeEngine {
     live_bytes: u64,
     include_source: Option<IncludeSource>,
     default_output: Option<Value>,
+    /// `submit-ui!` 的待处理提交（挂载位名 + 声明值）；由宿主在调用
+    /// 边界取走校验，不在原语内跨线程。
+    ui_submissions: Vec<(String, Value)>,
+    /// `call-async` 的待处理请求（端口名、实参、完成回调过程）。
+    async_requests: Vec<(String, Vec<Value>, Value)>,
+    /// 在途异步回调表（请求号 → 过程）。
+    async_handlers: std::collections::BTreeMap<u64, Value>,
+}
+
+/// 把引擎错误包装为 error-object（异步终态的错误形态）。
+fn engine_error_object(
+    engine: &mut SchemeEngine,
+    error: &SchemeError,
+) -> Result<Value, SchemeError> {
+    let object = value::ErrorObject::new(
+        error.to_string(),
+        Vec::new(),
+        value::ErrorKind::Raised,
+    );
+    engine.new_error_object(object)
 }
 
 impl SchemeEngine {
@@ -223,6 +245,9 @@ impl SchemeEngine {
             live_bytes: 0,
             include_source: None,
             default_output: None,
+            ui_submissions: Vec::new(),
+            async_requests: Vec::new(),
+            async_handlers: std::collections::BTreeMap::new(),
         };
         engine.track_env(&globals);
         primitive::install(&mut engine);
@@ -814,6 +839,77 @@ impl SchemeEngine {
     /// 库是否已登记（cond-expand 的 library 测试）。
     pub(crate) fn has_library(&self, name: &str) -> bool {
         self.libraries.contains_key(name)
+    }
+
+    /// `(submit-ui! mount declaration)`：挂载位须经 `mount:<name>` 能力
+    /// 声明并授权，否则语言层拒绝；声明值留待宿主校验。
+    pub(crate) fn submit_ui(
+        &mut self,
+        mount: &str,
+        declaration: Value,
+    ) -> Result<(), SchemeError> {
+        let capability = format!("mount-{mount}");
+        if !self.capabilities.contains(&capability) {
+            return Err(SchemeError::CapabilityNotDeclared { name: capability });
+        }
+        self.ui_submissions.push((mount.to_string(), declaration));
+        Ok(())
+    }
+
+    /// 取走待处理 UI 提交（调用边界由宿主驱动）。
+    pub fn take_ui_submissions(&mut self) -> Vec<(String, Value)> {
+        std::mem::take(&mut self.ui_submissions)
+    }
+
+    /// `(call-async port args handler)`：登记异步请求；宿主分配请求号。
+    pub(crate) fn request_async(
+        &mut self,
+        port: &str,
+        arguments: Vec<Value>,
+        handler: Value,
+    ) -> Result<(), SchemeError> {
+        if !self.capabilities.contains(port) {
+            return Err(SchemeError::CapabilityNotDeclared {
+                name: port.to_string(),
+            });
+        }
+        self.async_requests.push((port.to_string(), arguments, handler));
+        Ok(())
+    }
+
+    /// 取走待处理异步请求。
+    pub fn take_async_requests(&mut self) -> Vec<(String, Vec<Value>, Value)> {
+        std::mem::take(&mut self.async_requests)
+    }
+
+    /// 存放异步完成回调（请求号 → 过程），由宿主在终态时登记。
+    pub(crate) fn store_async_handler(&mut self, request: u64, handler: Value) {
+        self.async_handlers.insert(request, handler);
+    }
+
+    /// 丢弃异步回调（陈旧代终态只用于释放，不写入新代）。
+    pub(crate) fn discard_async_handler(&mut self, request: u64) {
+        self.async_handlers.remove(&request);
+    }
+
+    /// 以登记的回调过程应用异步终态；结果以单值返回。
+    pub(crate) fn complete_async(
+        &mut self,
+        request: u64,
+        result: Result<Value, SchemeError>,
+    ) -> Result<Value, SchemeError> {
+        let Some(handler) = self.async_handlers.remove(&request) else {
+            return Err(SchemeError::InvalidSyntax {
+                form: "call-async",
+                reason: "未知或已完成的请求号",
+            });
+        };
+        let payload = match result {
+            Ok(value) => value,
+            Err(error) => engine_error_object(self, &error)?,
+        };
+        self.reset_budgets()?;
+        eval::apply_procedure(self, &handler, &[Value::Fixnum(request as i64), payload])
     }
 
     /// `current-output-port` 的实例级内存端口（惰性创建）。

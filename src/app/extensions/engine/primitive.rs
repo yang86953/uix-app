@@ -175,6 +175,7 @@ pub(crate) fn install(engine: &mut SchemeEngine) {
     engine.define_primitive("extension-id", extension_identity_id);
     engine.define_primitive("extension-version", extension_identity_version);
     engine.define_primitive("register-command!", register_command);
+    engine.define_primitive("register-handler!", register_handler);
 
     // 标准库补充（数值缺口、bytevector、端口、lazy、参数、多值、异常、cxr）。
     super::primitive_ext::install(engine);
@@ -1518,6 +1519,12 @@ fn extension_identity_version(
     }
 }
 
+/// `(register-handler! "name" procedure)`：把 UI 事件处理过程登记进
+/// ui-event 命名空间；面板事件的代际校验后经引擎回投。
+fn register_handler(engine: &mut SchemeEngine, arguments: &[Value]) -> Result<Value, SchemeError> {
+    register_namespaced(engine, arguments, "ui-event")
+}
+
 /// `(register-command! "name" procedure)`：把命令过程登记进宿主命令表。
 /// 过程留在引擎内，宿主调用经引擎回投，闭包不跨边界。
 fn register_command(engine: &mut SchemeEngine, arguments: &[Value]) -> Result<Value, SchemeError> {
@@ -1535,6 +1542,26 @@ fn register_command(engine: &mut SchemeEngine, arguments: &[Value]) -> Result<Va
         }
     }
     engine.register_host_value("command", &name, arguments[1].clone())?;
+    Ok(Value::Unspecified)
+}
+
+/// 命名空间化登记的共享实现。
+fn register_namespaced(
+    engine: &mut SchemeEngine,
+    arguments: &[Value],
+    namespace: &str,
+) -> Result<Value, SchemeError> {
+    exact_arity("register-handler!", arguments, 2)?;
+    let name = string_cell("register-handler!", &arguments[0])?.borrow().clone();
+    if !valid_command_name(&name) {
+        return Err(wrong("register-handler!", "小写字母/数字/连字符/下划线的名称"));
+    }
+    match &arguments[1] {
+        Value::Closure(_) | Value::Primitive(_) | Value::Control(_) | Value::Continuation(_)
+        | Value::Host(_) => {}
+        _ => return Err(wrong("register-handler!", "可调用过程")),
+    }
+    engine.register_host_value(namespace, &name, arguments[1].clone())?;
     Ok(Value::Unspecified)
 }
 

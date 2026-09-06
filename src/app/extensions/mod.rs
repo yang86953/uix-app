@@ -11,12 +11,20 @@
 pub(crate) mod engine;
 mod manifest;
 mod package;
+mod ui_declare;
+pub(crate) mod ui_project;
+mod worker;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 pub use manifest::ExtensionManifest;
 pub use package::ExtensionPackage;
+pub use ui_declare::UiNode;
+pub use ui_project::{UiEvent, UiEventPayload, UiEventSender, UiProjector, UiUpdate};
+pub use worker::{
+    AsyncCompletion, ExtensionAsyncPort, ExtensionUiHandle, ExtensionUiSink,
+};
 
 pub use engine::CancelToken as ExtensionCancelToken;
 
@@ -271,6 +279,10 @@ impl ActiveInstance {
 pub struct ExtensionHost {
     config: ExtensionHostConfig,
     ports: BTreeMap<String, ExtensionPort>,
+    async_ports: BTreeMap<String, ExtensionAsyncPort>,
+    /// 应用显式开放的挂载位白名单（能力名 `mount-<name>`）。
+    mounts: BTreeSet<String>,
+    ui_sink: Option<ExtensionUiSink>,
     instances: BTreeMap<String, ActiveInstance>,
     generation_counter: u64,
 }
@@ -287,6 +299,9 @@ impl ExtensionHost {
         Self {
             config: ExtensionHostConfig::default(),
             ports: BTreeMap::new(),
+            async_ports: BTreeMap::new(),
+            mounts: BTreeSet::new(),
+            ui_sink: None,
             instances: BTreeMap::new(),
             generation_counter: 0,
         }
@@ -304,6 +319,12 @@ impl ExtensionHost {
         self
     }
 
+    /// 开放挂载位：扩展清单以 `mount-<name>` 能力声明后可提交该区域声明。
+    pub fn with_mount(mut self, name: &str) -> Self {
+        self.mounts.insert(name.to_string());
+        self
+    }
+
     /// 冻结包、解析入口、候选求值与暂存注册；不发布任何注册。
     pub fn prepare(&self, package: &ExtensionPackage) -> Result<PreparedExtension, ExtensionError> {
         let manifest = package.manifest()?;
@@ -315,6 +336,20 @@ impl ExtensionHost {
         let mut capabilities = std::collections::BTreeSet::new();
         let mut hosts = Vec::new();
         for declared in &manifest.capabilities {
+            // 挂载位与异步端口不注入同步函数，但计入能力集。
+            if let Some(name) = declared.strip_prefix("mount-") {
+                if !self.mounts.contains(name) {
+                    return Err(ExtensionError::Incompatible(format!(
+                        "清单声明挂载位 {name}，宿主未开放"
+                    )));
+                }
+                capabilities.insert(declared.clone());
+                continue;
+            }
+            if self.async_ports.contains_key(declared) {
+                capabilities.insert(declared.clone());
+                continue;
+            }
             let Some(port) = self.ports.get(declared) else {
                 return Err(ExtensionError::Incompatible(format!(
                     "清单声明能力 {declared}，宿主未提供对应端口"
@@ -421,13 +456,45 @@ impl ExtensionHost {
         command: &str,
         arguments: &[ExtensionValue],
     ) -> Result<ExtensionValue, ExtensionError> {
+        self.call_internal(extension_id, command, "command", arguments)
+    }
+
+    /// 服务扩展点调用（`register-service!` 登记的实现）。
+    pub fn call_service(
+        &mut self,
+        extension_id: &str,
+        service: &str,
+        arguments: &[ExtensionValue],
+    ) -> Result<ExtensionValue, ExtensionError> {
+        self.call_internal(extension_id, service, "service", arguments)
+    }
+
+    /// 内部统一调用入口（worker 与同步门面共用）。
+    fn call_internal(
+        &mut self,
+        extension_id: &str,
+        name: &str,
+        namespace: &'static str,
+        arguments: &[ExtensionValue],
+    ) -> Result<ExtensionValue, ExtensionError> {
         let Some(instance) = self.instances.get_mut(extension_id) else {
             return Err(ExtensionError::UnknownExtension(extension_id.to_string()));
         };
-        if !instance.commands.iter().any(|existing| existing == command) {
+        let known = match namespace {
+            "command" => instance.commands.iter().any(|existing| existing == name),
+            "service" => instance
+                .engine
+                .host_registrations()
+                .iter()
+                .any(|registration| {
+                    registration.namespace == "service" && registration.name == name
+                }),
+            _ => false,
+        };
+        if !known {
             return Err(ExtensionError::UnknownCommand {
                 extension: extension_id.to_string(),
-                command: command.to_string(),
+                command: name.to_string(),
             });
         }
         if arguments.len() > 16 {
@@ -441,10 +508,15 @@ impl ExtensionHost {
         }
         let outcome = instance
             .engine
-            .call_registration("command", command, &engine_arguments);
+            .call_registration(namespace, name, &engine_arguments);
         outcome
             .map_err(ExtensionError::from_engine)
             .and_then(|value| extension_value_from_engine(&value))
+    }
+
+    /// 活动实例的可变视图（worker 事件与终态派发）。
+    fn instance_mut(&mut self, extension_id: &str) -> Option<&mut ActiveInstance> {
+        self.instances.get_mut(extension_id)
     }
 
     /// 活动实例的取消令柄；跨线程安全，下一次检查点生效。
