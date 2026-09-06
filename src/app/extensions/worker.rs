@@ -15,6 +15,7 @@ use super::ui_project::{UiEvent, UiEventPayload, UiUpdate};
 use super::{
     extension_value_from_engine, ActivationReceipt, ExtensionError, ExtensionHost,
     ExtensionHostConfig, ExtensionPackage, ExtensionPort, ExtensionValue, PreparedExtension,
+    ReplacementReceipt,
 };
 
 /// 异步端口：宿主实现的非阻塞业务能力；终态经 `AsyncCompletion` 回投。
@@ -64,6 +65,15 @@ pub(crate) enum WorkerCommand {
         reply: Sender<Result<ExtensionValue, ExtensionError>>,
     },
     Event(UiEvent),
+    Replace {
+        prepared: PreparedRef,
+        expected_generation: u64,
+        reply: Sender<Result<ReplacementReceipt, ExtensionError>>,
+    },
+    Revoke {
+        extension: String,
+        reply: Sender<Result<(), ExtensionError>>,
+    },
     Complete {
         extension: String,
         generation: u64,
@@ -136,6 +146,35 @@ impl ExtensionUiHandle {
                 command: name.to_string(),
                 namespace,
                 arguments: arguments.to_vec(),
+                reply,
+            })
+            .map_err(closed())?;
+        receiver.recv().map_err(closed())?
+    }
+
+    /// 热替换：以预期活动代升级（提交前失败保留旧代）。
+    pub fn replace(
+        &self,
+        prepared: PreparedRef,
+        expected_generation: u64,
+    ) -> Result<ReplacementReceipt, ExtensionError> {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        self.commands
+            .send(WorkerCommand::Replace {
+                prepared,
+                expected_generation,
+                reply,
+            })
+            .map_err(closed())?;
+        receiver.recv().map_err(closed())?
+    }
+
+    /// 撤权：阻止新调用与事件；效果收尾责任在宿主。
+    pub fn revoke(&self, extension_id: &str) -> Result<(), ExtensionError> {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        self.commands
+            .send(WorkerCommand::Revoke {
+                extension: extension_id.to_string(),
                 reply,
             })
             .map_err(closed())?;
@@ -224,6 +263,39 @@ impl Worker {
                 WorkerCommand::Event(event) => {
                     self.dispatch_event(event);
                 }
+                WorkerCommand::Replace {
+                    prepared,
+                    expected_generation,
+                    reply,
+                } => {
+                    let candidate = self.prepared.remove(&prepared.0);
+                    let outcome = match candidate {
+                        Some(candidate) => {
+                            let id = candidate
+                                .manifest()
+                                .map(|manifest| manifest.id.clone())
+                                .unwrap_or_default();
+                            let outcome =
+                                self.host
+                                    .replace(candidate, expected_generation);
+                            // 新代入口顶层 submit 的初始声明在提交后交付。
+                            if let Ok(receipt) = &outcome {
+                                let id = receipt.extension_id.clone();
+                                self.drain_side_effects(&id);
+                            }
+                            let _ = id;
+                            outcome
+                        }
+                        None => Err(ExtensionError::ShutdownIncomplete(
+                            "候选不存在或已激活".to_string(),
+                        )),
+                    };
+                    let _ = reply.send(outcome);
+                }
+                WorkerCommand::Revoke { extension, reply } => {
+                    let outcome = self.host.revoke(&extension);
+                    let _ = reply.send(outcome);
+                }
                 WorkerCommand::Complete {
                     extension,
                     generation,
@@ -243,7 +315,12 @@ impl Worker {
 
     fn dispatch_event(&mut self, event: UiEvent) {
         let generation = match self.host.instance_mut(&event.extension) {
-            Some(instance) => instance.generation,
+            Some(instance) => {
+                if instance.revoked {
+                    return;
+                }
+                instance.generation
+            }
             None => return,
         };
         if generation != event.generation {
@@ -281,7 +358,7 @@ impl Worker {
         let Some(instance) = self.host.instance_mut(&extension) else {
             return;
         };
-        if instance.generation != generation {
+        if instance.revoked || instance.generation != generation {
             instance.engine.discard_async_handler(request);
             return;
         }

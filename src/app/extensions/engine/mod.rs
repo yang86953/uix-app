@@ -861,6 +861,11 @@ impl SchemeEngine {
         std::mem::take(&mut self.ui_submissions)
     }
 
+    /// 丢弃待处理 UI 提交（热替换迁移路径：以迁移后提交为准）。
+    pub fn discard_pending_ui(&mut self) {
+        self.ui_submissions.clear();
+    }
+
     /// `(call-async port args handler)`：登记异步请求；宿主分配请求号。
     pub(crate) fn request_async(
         &mut self,
