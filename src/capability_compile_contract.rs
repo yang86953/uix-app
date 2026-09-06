@@ -435,3 +435,29 @@ pub struct AgentControlEnabledContract;
 /// }
 /// ```
 pub struct AgentControlDisabledContract;
+
+// extensions 启用侧验证软件动态扩展宿主的公开入口。
+#[cfg(feature = "extensions")]
+/// # extensions enabled
+///
+/// ```
+/// // 引入运行时扩展宿主与跨边界值。
+/// use uix::app::extensions::{ExtensionHost, ExtensionValue};
+/// // feature 启用后扩展宿主必须可显式构造并接受类型化调用入口。
+/// let host = ExtensionHost::new();
+/// let _ = host.list();
+/// let _ = ExtensionValue::Null;
+/// ```
+pub struct ExtensionsEnabledContract;
+
+// extensions 关闭侧要求扩展宿主从公开面消失。
+#[cfg(not(feature = "extensions"))]
+/// # extensions disabled
+///
+/// ```compile_fail,E0432
+/// // 未启用 extensions 时不得保留解释器与扩展宿主公开面。
+/// use uix::app::extensions::ExtensionHost;
+/// // 结束预期编译失败的引用。
+/// let _ = ExtensionHost::new;
+/// ```
+pub struct ExtensionsDisabledContract;

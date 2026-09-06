@@ -4,6 +4,13 @@
 
 ## 0.0.8（进行中）
 
+### 软件动态扩展 P1：无界面最小闭环
+
+- 移植小贝 Scheme 引擎为 UIX 私有引擎（`extensions` feature，默认关闭；新增可选依赖 num-bigint / num-rational / num-integer / num-traits，不引入 thiserror 与 GC 库），补齐 R7RS-small 缺口：多值、异常（raise / guard / with-exception-handler）、parameterize、lazy、quasiquote、bytevector、内存字符串端口、库系统修饰符与 `(scheme cxr)`。
+- 长驻实例可回收堆：自研标记-清扫（闭包-环境互引、循环 pair、continuation 捕获可断环回收），墙钟超时与协作取消为不可捕获宿主边界；回收触发点为机器安全点，当前求值状态纳入根集。
+- 扩展宿主门面：S 表达式清单与包冻结校验、准备 / 激活 / 类型化命令调用 / 列举 / 停止；宿主端口经 owned 值桥接，闭包与环境不跨边界；同 ID 重复激活、未知命令、能力未注入、超时与取消均为类型化结果。
+- 新增使用文档 [软件动态扩展](docs/使用/能力与边界/软件动态扩展.md) 与外部消费者测试 `tests/extensions_public_api.rs`（14 例：最小闭环、端口授权、环境隔离、冲突、无效包、超时、取消、深递归配额、循环回收、脚本失败、标准语义样例、边界值限制、关停）。
+
 ### 文档：UIX 语言扩展补充方案
 
 - 新增 [UIX 应用模块与动态执行](docs/uix-lang/设计/应用模块与动态执行.md)补充设计，记录动态 `.uix`、类型化业务模块、共享前端与 AOT / 动态执行一致性的候选路线。
