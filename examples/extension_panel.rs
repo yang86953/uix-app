@@ -21,6 +21,7 @@ use uix::app::extensions::{
 use uix::prelude::*;
 
 fn main() {
+    let hot_replace = std::env::args().any(|argument| argument == "--hot-replace");
     let (updates_tx, updates_rx) = mpsc::channel::<UiUpdate>();
     let current: Arc<Mutex<Option<UiNode>>> = Arc::new(Mutex::new(None));
     let revision = State::new(0u64);
@@ -98,14 +99,21 @@ fn main() {
             move |app_handle| {
                 // 声明交付桥：sink（扩展线程）→ post_to_ui（窗口 owner thread）。
                 let app_handle = app_handle.clone();
+                let bridge_projector = Arc::clone(&projector);
                 let update_source = {
                     let current = Arc::clone(&current);
                     let revision = revision.clone();
                     move |update: UiUpdate| {
                         let current = Arc::clone(&current);
                         let revision = revision.clone();
+                        let projector = Arc::clone(&bridge_projector);
+                        let projector = Arc::clone(&projector);
                         app_handle.post_to_ui(move || {
-                            if let UiUpdate::Applied { node, .. } = update {
+                            if let UiUpdate::Applied { node, generation, .. } = update {
+                                // 热替换后代际切换：事件授权与声明来源一致。
+                                if let Some(projector) = projector.lock().unwrap().as_mut() {
+                                    projector.update_generation(generation);
+                                }
                                 *current.lock().unwrap() = Some(node);
                                 revision.update(|value| { *value += 1; });
                             }
@@ -118,7 +126,7 @@ fn main() {
                     }
                 });
                 // 装载扩展：准备 → 激活（初始声明经桥回投）。
-                let package = extension_package();
+                let package = extension_package("0.3.0", 1);
                 match handle.prepare(&package)
                     .and_then(|prepared| handle.activate(prepared))
                 {
@@ -129,6 +137,27 @@ fn main() {
                             handle.event_sender(),
                         ));
                         *worker_handle.lock().unwrap() = Some(handle.clone());
+                        // 演示热替换：--hot-replace 启动 5 秒后以 v0.4
+                        // （+2 步进 + 标题标记）升级，状态与界面共同迁移。
+                        if hot_replace {
+                            let handle = handle.clone();
+                            thread::spawn(move || {
+                                thread::sleep(std::time::Duration::from_secs(5));
+                                let upgraded = extension_package("0.4.0", 2);
+                                match handle.prepare(&upgraded)
+                                    .and_then(|candidate| handle.replace(candidate, receipt.generation))
+                                {
+                                    Ok(replacement) => eprintln!(
+                                        "[hot-replace] {} -> v{} generation {} migrated={}",
+                                        replacement.extension_id,
+                                        replacement.version,
+                                        replacement.generation,
+                                        replacement.migrated
+                                    ),
+                                    Err(error) => eprintln!("[hot-replace] 失败：{error}"),
+                                }
+                            });
+                        }
                     }
                     Err(error) => {
                         *current.lock().unwrap() = Some(load_failed_node(&error.to_string()));
@@ -168,19 +197,28 @@ fn load_failed_node(message: &str) -> UiNode {
     }
 }
 
-fn extension_package() -> ExtensionPackage {
-    let manifest = "(uix-extension (schema-version 1) (id \"panel-ext\") (version \"0.3.0\") \
-                    (language r7rs-small) (entry \"main.scm\") \
-                    (capabilities documents-query documents-analyze mount-panel))"
-        .to_string();
-    let source = r#"
+fn extension_package(version: &str, step: i64) -> ExtensionPackage {
+    let manifest = format!(
+        "(uix-extension (schema-version 1) (id \"panel-ext\") (version \"{version}\") \
+         (language r7rs-small) (entry \"main.scm\") \
+         (capabilities documents-query documents-analyze mount-panel) \
+         (state-schema-version 1))"
+    );
+    let title_prefix = if step == 1 { "点击次数" } else { "点击次数(v2)" };
+    let source = format!(
+        r#"
 (define clicks 0)
 (define field "")
 (define status "就绪")
+(register-state-export! (lambda () (list 'clicks clicks) ))
+(register-state-import!
+  (lambda (snapshot)
+    (set! clicks (list-ref snapshot 1))
+    (submit-ui! 'panel (declaration))))
 (define (declaration)
   (list 'column (list 'key "root") (list 'pad 14.0) (list 'gap 8.0)
         (list 'text (list 'key "title") (list 'size 15.0)
-              (string-append "点击次数: " (number->string clicks)))
+              (string-append "{title_prefix}: " (number->string clicks)))
         (list 'text (list 'key "status")
               (string-append "状态: " status))
         (list 'row (list 'key "controls") (list 'gap 8.0)
@@ -194,7 +232,7 @@ fn extension_package() -> ExtensionPackage {
                     "挂载位 panel"))))
 (register-handler! "on-increment"
   (lambda ()
-    (set! clicks (+ clicks 1))
+    (set! clicks (+ clicks {step}))
     (submit-ui! 'panel (declaration))))
 (register-handler! "on-field-change"
   (lambda (text)
@@ -210,10 +248,9 @@ fn extension_package() -> ExtensionPackage {
         (submit-ui! 'panel (declaration))))))
 (register-command! "field-length" (lambda () (string-length field)))
 (submit-ui! 'panel (declaration))
-"#;
+"#,
+    );
     let sources: BTreeMap<String, String> =
-        [("main.scm".to_string(), source.to_string())]
-            .into_iter()
-            .collect();
+        [("main.scm".to_string(), source)].into_iter().collect();
     ExtensionPackage::from_parts(manifest, sources).expect("示例包构造")
 }
