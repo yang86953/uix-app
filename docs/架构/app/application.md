@@ -49,6 +49,8 @@
 
 ## 模块不变量
 
+目标中的[运行时动态扩展](extensions.md)由 app System 持有，application 负责显式组装、能力注入与关闭接线。它通过 app 私有契约协调 `extensions`，不直接查找兄弟 Module；扩展不使用 `Container` 访问任意 singleton。该入口尚未实现，现有 `AppHandle::update_view` 也不提供扩展提交或呈现回执。
+
 - application 只负责组装与进程生命周期，不复制 ui、graphics、platform 的内部机制。
 - app System 的兄弟 Module 不直接相互查找、调用或持有实例；application 只通过 System 私有契约完成编排与注入。
 - CLI 模式不隐式创建窗口、surface 或图形 backend。

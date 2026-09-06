@@ -32,6 +32,8 @@ adapter 把声明属性分类为结构、Layout、Paint 或 Composite patch；�
 
 ## 模块不变量
 
+目标中的[Lisp 动态界面](../app/extensions.md#7-状态迁移与动态界面)通过受控挂载位提交 owned 声明，继续由 ui System 校验并协调；ui 不解释 Lisp 或编译器 IR。扩展代控制回调有效性，稳定逻辑 key 控制 widget 复用，两者不混用。挂载位与事务回执是待实现能力，不扩大当前 View API 的成功或原子性承诺。
+
 - View build 可捕获 State/Provider 依赖，但不执行 present、平台 I/O、阻塞业务 I/O 或启动后台任务；失败发生在预检阶段时不得部分改写持久树。
 - 业务闭包只进入所属树管理的 side table，ViewNode/组件快照只保存签名或稳定登记身份；节点销毁、换根和 generation 变化同步释放登记。
 - adapter 输出 patch 只表示声明差异已分类；协调发布、布局、绘制和呈现各自由后续结果建立。

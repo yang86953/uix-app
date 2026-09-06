@@ -22,6 +22,8 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 正式产物不携带 UIX Lang 解释器；语言服务器会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。共享 `uix-lang-compiler` Compiler System 统一提供 `compile`、`check`、`format`、`query`，语言服务器（`uix-lang-ls`）与 `uix` CLI 另提供 `lsp` 入口。
 
+框架的[标准 Lisp 软件动态扩展](../架构/app/extensions.md)另按目标设计推进，尚未实现；它可承载扩展业务与动态界面，不解释 `.uix`，也不由 AOT 编译失败自动启用。
+
 ## 设计原则
 
 1. **职责分离**：UIX Lang 描述 UI，Rust 实现业务，语言能力不得模糊两者边界。
