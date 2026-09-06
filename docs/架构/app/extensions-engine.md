@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../架构.md) · [目标设计](extensions.md) · [实施计划](../动态扩展实施计划.md)
 
-> **状态**：P0 取证产物与实施期第一版合同，P1（无界面最小闭环）、P2（动态 UI 与受控业务能力）、P3（热替换与状态迁移）已按此实现并通过公开 API 测试与真窗 Agent 验收。引擎选型、兼容矩阵、缺口补齐方案、Cargo 能力名、依赖登记与资源上限初值在本文冻结；公开 API 字段以 `tests/extensions_public_api.rs` 与使用文档实际交付为准。
+> **状态**：P0 取证产物与实施期第一版合同，P1（无界面最小闭环）、P2（动态 UI 与受控业务能力）、P3（热替换与状态迁移）、P4（示例与交付验证）已按此实现并通过公开 API 测试与真窗 Agent 验收；参考负载基线见 [UIX-PERF-032](../../性能/UIX-PERF-032.md)。引擎选型、兼容矩阵、缺口补齐方案、Cargo 能力名、依赖登记与资源上限初值在本文冻结；公开 API 字段以 `tests/extensions_public_api.rs` 与使用文档实际交付为准。
 >
 > **权威范围**：扩展语言引擎的证据与实施合同。语言选择、生命周期与失败语义由[目标设计](extensions.md)持有；阶段顺序与验收由[实施计划](../动态扩展实施计划.md)持有。
 
@@ -87,7 +87,7 @@
 
 - Cargo feature：**`extensions`**，默认关闭；不进入默认图、最小图与 demo 默认图（最小图编译失败为既有 `MenuBar` 问题，与本能力无关）。
 - 模块：`uix::app::extensions`（app 私有 Module，引擎为其私有子模块）；能力合同测试按 `capability_compile_contract.rs` 惯例补 `extensions` 一对 doctest。
-- 依赖登记：新增可选依赖 `num-bigint`、`num-rational`（传递 `num-integer`、`num-traits`）；替代方案论证见 §1（Steel 依赖面不可治理、自研大数正确性风险高于复用 num 系）。不引入 thiserror、GC 库或任何解释器外部依赖。
+- 依赖登记（P4 实测）：新增可选依赖 `num-bigint`、`num-rational`、`num-integer`、`num-traits`；三口径基线复核不变（默认 75 / 最小 51 / demo 82，与基线一致），启用 `extensions` 后图为 78（净增 3：num-bigint、num-rational、num-integer）。替代方案论证见 §1（Steel 依赖面不可治理、自研大数正确性风险高于复用 num 系）。不引入 thiserror、GC 库或任何解释器外部依赖。
 
 ### 4.2 Rust 门面（P1 最小闭环）
 

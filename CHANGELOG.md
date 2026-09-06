@@ -4,6 +4,13 @@
 
 ## 0.0.8（进行中）
 
+### 软件动态扩展 P4：示例与交付验证
+
+- `examples/extension_panel.rs --hot-replace`：完整可审查演示（装载 → 点击/输入/异步 → 5 秒后热替换升级算法与界面、状态迁移保留、代际授权切换）；真窗经 `scripts/agent_client.py` 验收（语义点击、presented_revision、截图落盘）。
+- 依赖治理复核：三口径计数与基线一致（默认 75 / 最小 51 / demo 82），启用 extensions 净增 3 crate（num-bigint、num-rational、num-integer）。
+- 参考负载基线 [UIX-PERF-032](docs/性能/UIX-PERF-032.md)：release 冷装载 ~110-250μs、1000 次命令 7-8ms、10 万尾循环 215-218ms；dev 慢约 5 倍。
+- 全量公开 API 验证：`--features agent-control,test-harness,extensions` 下 52 个 `*_public_api` 目标 129 测试全绿；capability doctest（含 extensions 启用/关闭对）通过；诊断契约审计清零。
+
 ### 软件动态扩展 P3：热替换、状态迁移与撤权
 
 - 替换协议 `host.replace / handle.replace(candidate, expected_generation)`：预期代校验（StaleGeneration 冲突）、静止点状态导出、候选导入、原子提交新代、旧代关闭清扫；提交前失败（候选失败、迁移抛错、schema 不一致）丢弃候选并保留旧代接收。
