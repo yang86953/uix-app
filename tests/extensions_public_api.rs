@@ -901,3 +901,320 @@ fn stale_generation_events_are_dropped() {
     assert_eq!(clicks, ExtensionValue::Int(0), "陈旧事件不得改状态");
     handle.shutdown().expect("关停");
 }
+
+// ---------- P3：热替换、状态迁移、撤权与失败恢复 ----------
+
+use uix::app::extensions::ReplacementReceipt;
+
+fn counter_package(id: &str, version: &str, schema: i64, step: i64) -> ExtensionPackage {
+    let manifest = format!(
+        "(uix-extension (schema-version 1) (id \"{id}\") (version \"{version}\") \
+         (language r7rs-small) (entry \"main.scm\") (state-schema-version {schema}))"
+    );
+    let source = format!(
+        r#"
+(define count 0)
+(register-state-export! (lambda () (list 'count count)))
+(register-state-import!
+  (lambda (snapshot)
+    (set! count (list-ref snapshot 1))))
+(register-command! "bump"
+  (lambda () (set! count (+ count {step})) count))
+(register-command! "peek" (lambda () count))
+(register-command! "version" (lambda () "{version}"))
+"#
+    );
+    package_with(manifest, &[("main.scm", &source)])
+}
+
+/// 热替换：算法与状态共同升级；冲突代拒绝；失败候选保留旧代。
+#[test]
+fn hot_replace_upgrades_algorithm_and_migrates_state() {
+    let mut host = ExtensionHost::new();
+    let prepared = host
+        .prepare(&counter_package("hot", "0.1.0", 1, 1))
+        .expect("准备 v1");
+    let receipt = host.activate(prepared).expect("激活");
+    host.call_command("hot", "bump", &[]).unwrap();
+    host.call_command("hot", "bump", &[]).unwrap();
+    let before = host.call_command("hot", "peek", &[]).unwrap();
+    assert_eq!(before, ExtensionValue::Int(2));
+
+    // 热替换到 +10 算法，状态迁移。
+    let candidate = host
+        .prepare(&counter_package("hot", "0.2.0", 1, 10))
+        .expect("准备 v2");
+    let replacement = host
+        .replace(candidate, receipt.generation)
+        .expect("替换");
+    assert_eq!(replacement.generation, receipt.generation + 1);
+    assert!(replacement.migrated);
+    assert_eq!(replacement.version, "0.2.0");
+    // 状态保留且算法升级。
+    let after = host.call_command("hot", "peek", &[]).unwrap();
+    assert_eq!(after, ExtensionValue::Int(2));
+    host.call_command("hot", "bump", &[]).unwrap();
+    let stepped = host.call_command("hot", "peek", &[]).unwrap();
+    assert_eq!(stepped, ExtensionValue::Int(12));
+
+    // 冲突代拒绝：以旧代号重复替换。
+    let stale_candidate = host
+        .prepare(&counter_package("hot", "0.3.0", 1, 1))
+        .expect("准备 v3");
+    match host.replace(stale_candidate, receipt.generation) {
+        Err(ExtensionError::StaleGeneration { expected, actual }) => {
+            assert_eq!(expected, receipt.generation);
+            assert_eq!(actual, receipt.generation + 1);
+        }
+        other => panic!("旧代号应冲突：{other:?}"),
+    }
+    // 旧代持续可用。
+    let version = host.call_command("hot", "version", &[]).unwrap();
+    assert_eq!(version, ExtensionValue::Text("0.2.0".to_string()));
+}
+
+/// 候选导入失败：替换被拒绝，旧代保留并继续接收。
+#[test]
+fn failed_migration_preserves_old_generation() {
+    let mut host = ExtensionHost::new();
+    let prepared = host
+        .prepare(&counter_package("migrate", "0.1.0", 1, 1))
+        .expect("准备");
+    let receipt = host.activate(prepared).expect("激活");
+    host.call_command("migrate", "bump", &[]).unwrap();
+
+    // 坏候选：导入过程抛错。
+    let manifest = "(uix-extension (schema-version 1) (id \"migrate\") (version \"0.2.0\") \
+                    (language r7rs-small) (entry \"main.scm\") (state-schema-version 1))"
+        .to_string();
+    let source = r#"
+(register-state-export! (lambda () '()))
+(register-state-import! (lambda (snapshot) (error "迁移不支持")))
+(register-command! "peek" (lambda () 'broken))
+"#
+    .to_string();
+    let bad = package_with(manifest, &[("main.scm", &source)]);
+    let candidate = host.prepare(&bad).expect("准备坏候选");
+    match host.replace(candidate, receipt.generation) {
+        Err(ExtensionError::ScriptFailure(message)) => {
+            assert!(message.contains("迁移不支持"), "{message}")
+        }
+        other => panic!("迁移失败应拒绝：{other:?}"),
+    }
+    // 旧代不受影响。
+    let preserved = host.call_command("migrate", "peek", &[]).unwrap();
+    assert_eq!(preserved, ExtensionValue::Int(1));
+    host.call_command("migrate", "bump", &[]).unwrap();
+    let still = host.call_command("migrate", "peek", &[]).unwrap();
+    assert_eq!(still, ExtensionValue::Int(2));
+}
+
+/// schema 不一致且无迁移：替换拒绝。
+#[test]
+fn schema_mismatch_replaces_are_rejected() {
+    let mut host = ExtensionHost::new();
+    let prepared = host
+        .prepare(&counter_package("schema", "0.1.0", 1, 1))
+        .expect("准备");
+    let receipt = host.activate(prepared).expect("激活");
+    let candidate = host
+        .prepare(&counter_package("schema", "0.2.0", 2, 1))
+        .expect("准备 v2");
+    match host.replace(candidate, receipt.generation) {
+        Err(ExtensionError::Incompatible(message)) => {
+            assert!(message.contains("schema"), "{message}")
+        }
+        other => panic!("schema 不一致应拒绝：{other:?}"),
+    }
+}
+
+/// 异步外部效果不因替换重复执行或写入新代。
+#[test]
+fn async_effects_are_not_duplicated_across_replace() {
+    let effect_count = Arc::new(std::sync::Mutex::new(0u64));
+    let host = ExtensionHost::new().with_async_port(
+        "slow-port",
+        {
+            let effect_count = Arc::clone(&effect_count);
+            Arc::new(
+                move |_request: u64,
+                      _args: &[ExtensionValue],
+                      completion: AsyncCompletion| {
+                    let effect_count = Arc::clone(&effect_count);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        // 外部效果只发生一次。
+                        *effect_count.lock().unwrap() += 1;
+                        completion.complete(Ok(ExtensionValue::Int(1)));
+                    });
+                    Ok(())
+                },
+            )
+        },
+    );
+    let handle = host.spawn_worker();
+    let manifest = "(uix-extension (schema-version 1) (id \"async-replace\") (version \"0.1.0\") \
+                    (language r7rs-small) (entry \"main.scm\") (capabilities slow-port))"
+        .to_string();
+    let source = r#"
+(define results '())
+(register-command! "kick"
+  (lambda ()
+    (call-async "slow-port" '()
+      (lambda (request result) (set! results (cons result results))))
+    'kicked))
+(register-command! "results" (lambda () results))
+(register-state-export! (lambda () (list 'results results)))
+(register-state-import!
+  (lambda (snapshot) (set! results (list-ref snapshot 1))))
+"#
+    .to_string();
+    let package = package_with(manifest, &[("main.scm", &source)]);
+    let prepared = handle.prepare(&package).expect("准备");
+    let receipt = handle.activate(prepared).expect("激活");
+    handle.call_command("async-replace", "kick", &[]).expect("发起");
+
+    // 在途时热替换（外部效果尚未完成）。
+    let v2_manifest = "(uix-extension (schema-version 1) (id \"async-replace\") (version \"0.2.0\") \
+                       (language r7rs-small) (entry \"main.scm\") (capabilities slow-port) \
+                       (state-schema-version 0))"
+        .to_string();
+    let v2_source = r#"
+(define results '())
+(register-command! "results" (lambda () results))
+"#
+    .to_string();
+    let v2 = package_with(v2_manifest, &[("main.scm", &v2_source)]);
+    // v2 的 schema 为 0 而活动代无 state-schema-version（默认 0）：无状态路径。
+    let candidate = handle.prepare(&v2).expect("准备 v2");
+    let replacement = handle.replace(candidate, receipt.generation).expect("替换");
+    assert!(!replacement.migrated);
+
+    // 等待旧请求终态到达：被代际校验丢弃，不写入新代、不重放。
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    let results = handle
+        .call_command("async-replace", "results", &[])
+        .expect("新代结果");
+    assert_eq!(results, ExtensionValue::Null, "旧代终态不得写入新代");
+    assert_eq!(*effect_count.lock().unwrap(), 1, "外部效果恰好一次");
+    handle.shutdown().expect("关停");
+}
+
+/// 撤权：新调用拒绝，实例仍可停用。
+#[test]
+fn revocation_blocks_calls_until_teardown() {
+    let mut host = ExtensionHost::new();
+    let prepared = host
+        .prepare(&package("revoked", r#"(register-command! "ping" (lambda () 'ok))"#))
+        .expect("准备");
+    host.activate(prepared).expect("激活");
+    host.revoke("revoked").expect("撤权");
+    match host.call_command("revoked", "ping", &[]) {
+        Err(ExtensionError::CapabilityDenied(_)) => {}
+        other => panic!("撤权后应拒绝：{other:?}"),
+    }
+    // 实例仍在列表且可停用。
+    assert_eq!(host.list().len(), 1);
+    host.deactivate("revoked").expect("停用");
+    assert!(host.list().is_empty());
+}
+
+/// 反复替换后引擎堆不无界增长，实例保持可用。
+#[test]
+fn repeated_replace_keeps_heap_bounded() {
+    let mut host = ExtensionHost::new();
+    let prepared = host
+        .prepare(&counter_package("churn", "0.0.1", 0, 1))
+        .expect("准备");
+    let receipt = host.activate(prepared).expect("激活");
+    let mut generation = receipt.generation;
+    // 无状态包（schema 0）反复替换。
+    for round in 1..=12 {
+        let manifest = format!(
+            "(uix-extension (schema-version 1) (id \"churn\") (version \"0.0.{round}\") \
+             (language r7rs-small) (entry \"main.scm\"))"
+        );
+        let source = "(register-command! \"peek\" (lambda () 0))".to_string();
+        let package = package_with(manifest, &[("main.scm", &source)]);
+        let candidate = host.prepare(&package).expect("准备");
+        let replacement: ReplacementReceipt = host.replace(candidate, generation).expect("替换");
+        generation = replacement.generation;
+    }
+    // 替换后命令可用；活动实例只有一个。
+    let peek = host.call_command("churn", "peek", &[]).expect("调用");
+    assert_eq!(peek, ExtensionValue::Int(0));
+    assert_eq!(host.list().len(), 1);
+}
+
+/// worker 模式 UI 草稿跨代保留（替换后投影器换代，草稿仍在）。
+#[test]
+fn ui_draft_survives_hot_replace_in_worker() {
+    let (updates_tx, updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
+    let host = ExtensionHost::new()
+        .with_mount("panel")
+        .with_ui_sink(Arc::new(move |update| {
+            let _ = updates_tx.send(update);
+        }));
+    let handle = host.spawn_worker();
+    let make_package = |version: &str, label: &str| {
+        let manifest = format!(
+            "(uix-extension (schema-version 1) (id \"draft\") (version \"{version}\") \
+             (language r7rs-small) (entry \"main.scm\") (capabilities mount-panel) \
+             (state-schema-version 1))"
+        );
+        let source = format!(
+            r#"
+(define typed "")
+(register-state-export! (lambda () (list 'typed typed)))
+(define (panel)
+  (list 'column (list 'key "root")
+        (list 'input (list 'key "field") (list 'on-change 'on-field-change) typed)
+        (list 'text (list 'key "hint") "{label}")))
+(register-state-import!
+  (lambda (snapshot)
+    (set! typed (list-ref snapshot 1))
+    (submit-ui! 'panel (panel))))
+(register-handler! "on-field-change"
+  (lambda (text) (set! typed text) (submit-ui! 'panel (panel))))
+(submit-ui! 'panel (panel))
+"#
+        );
+        package_with(manifest, &[("main.scm", &source)])
+    };
+    let prepared = handle.prepare(&make_package("0.1.0", "v1")).expect("准备");
+    let receipt = handle.activate(prepared).expect("激活");
+    let _first = recv_update(&updates_rx);
+
+    // 输入草稿（经声明更新回投）。
+    let sender = handle.event_sender();
+    sender
+        .send(uix::app::extensions::UiEvent {
+            extension: "draft".to_string(),
+            generation: receipt.generation,
+            handler: "on-field-change".to_string(),
+            payload: uix::app::extensions::UiEventPayload::Change {
+                text: "保留我".to_string(),
+            },
+        })
+        .expect("输入事件");
+    let after_typing = recv_update(&updates_rx);
+    assert!(matches!(after_typing, UiUpdate::Applied { .. }));
+
+    // 热替换：typed 状态迁移，草稿由声明值带回。
+    let candidate = handle.prepare(&make_package("0.2.0", "v2")).expect("准备 v2");
+    let replacement = handle.replace(candidate, receipt.generation).expect("替换");
+    assert!(replacement.migrated);
+    let replaced = recv_update(&updates_rx);
+    let UiUpdate::Applied { node, .. } = replaced else {
+        panic!("替换后应交付新声明：{replaced:?}")
+    };
+    // 新声明 input 值 = 迁移的 typed。
+    let uix::app::extensions::UiNode::Column { children, .. } = &node else {
+        panic!("column")
+    };
+    let uix::app::extensions::UiNode::Input { value, .. } = &children[0] else {
+        panic!("input")
+    };
+    assert_eq!(value, "保留我");
+    handle.shutdown().expect("关停");
+}

@@ -176,6 +176,8 @@ pub(crate) fn install(engine: &mut SchemeEngine) {
     engine.define_primitive("extension-version", extension_identity_version);
     engine.define_primitive("register-command!", register_command);
     engine.define_primitive("register-handler!", register_handler);
+    engine.define_primitive("register-state-export!", register_state_export);
+    engine.define_primitive("register-state-import!", register_state_import);
 
     // 标准库补充（数值缺口、bytevector、端口、lazy、参数、多值、异常、cxr）。
     super::primitive_ext::install(engine);
@@ -1523,6 +1525,51 @@ fn extension_identity_version(
 /// ui-event 命名空间；面板事件的代际校验后经引擎回投。
 fn register_handler(engine: &mut SchemeEngine, arguments: &[Value]) -> Result<Value, SchemeError> {
     register_namespaced(engine, arguments, "ui-event")
+}
+
+/// `(register-state-export! proc)`：热替换静止点导出扩展私有状态
+/// （无参过程，返回跨边界 owned 兼容值）。
+fn register_state_export(
+    engine: &mut SchemeEngine,
+    arguments: &[Value],
+) -> Result<Value, SchemeError> {
+    register_single_procedure(engine, arguments, "state-export", "register-state-export!")
+}
+
+/// `(register-state-import! proc)`：候选代接收旧代状态快照
+/// （单参过程；失败使替换回退）。
+fn register_state_import(
+    engine: &mut SchemeEngine,
+    arguments: &[Value],
+) -> Result<Value, SchemeError> {
+    register_single_procedure(engine, arguments, "state-import", "register-state-import!")
+}
+
+/// 状态过程登记：每命名空间最多一个。
+fn register_single_procedure(
+    engine: &mut SchemeEngine,
+    arguments: &[Value],
+    namespace: &str,
+    form: &'static str,
+) -> Result<Value, SchemeError> {
+    exact_arity(form, arguments, 1)?;
+    match &arguments[0] {
+        Value::Closure(_) | Value::Primitive(_) | Value::Control(_) | Value::Continuation(_)
+        | Value::Host(_) => {}
+        _ => return Err(wrong(form, "可调用过程")),
+    }
+    if engine
+        .host_registrations()
+        .iter()
+        .any(|registration| registration.namespace == namespace)
+    {
+        return Err(SchemeError::InvalidSyntax {
+            form,
+            reason: "状态过程已登记",
+        });
+    }
+    engine.register_host_value(namespace, "state", arguments[0].clone())?;
+    Ok(Value::Unspecified)
 }
 
 /// `(register-command! "name" procedure)`：把命令过程登记进宿主命令表。

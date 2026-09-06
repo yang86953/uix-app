@@ -4,6 +4,15 @@
 
 ## 0.0.8（进行中）
 
+### 软件动态扩展 P3：热替换、状态迁移与撤权
+
+- 替换协议 `host.replace / handle.replace(candidate, expected_generation)`：预期代校验（StaleGeneration 冲突）、静止点状态导出、候选导入、原子提交新代、旧代关闭清扫；提交前失败（候选失败、迁移抛错、schema 不一致）丢弃候选并保留旧代接收。
+- 状态迁移合同：`state-schema-version` 双方为 0 无状态；非零一致时 `register-state-export!` / `register-state-import!` 必须同时注册（禁止静默清空）；快照为跨边界 owned 值，迁移路径下准备期暂存声明被丢弃，迁移过程负责以导入后状态重新提交。
+- 撤权 `host.revoke`：新调用 CapabilityDenied、事件与异步终态丢弃，实例保留至停用。
+- 在途异步跨替换：外部效果恰好一次（发起不重放），旧代终态经代际校验丢弃不写入新代。
+- 投影器 `update_generation`：替换后切换事件代际，草稿库保留。
+- 新增 7 例公开 API 测试（算法+状态共同升级、迁移失败保留旧代、schema 拒绝、异步不重复、撤权、12 次替换堆稳定、worker 模式 UI 草稿跨代保留），合计 25 例全绿。
+
 ### 软件动态扩展 P2：动态 UI、事件与受控业务能力
 
 - `(uix ui)` 动态声明：tagged list（column/row/text/input/button/list 与属性对），提交点全量校验（未知字段、重复 key、深度、节点、文本、列表上限），无效声明保留原树；输入草稿按稳定 key 保留，`(reset #t)` 显式重置。

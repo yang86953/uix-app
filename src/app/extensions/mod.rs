@@ -245,6 +245,17 @@ pub struct ActivationReceipt {
     pub commands: Vec<String>,
 }
 
+/// 热替换终态：新代已提交，状态按合同迁移。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplacementReceipt {
+    pub extension_id: String,
+    pub version: String,
+    pub generation: u64,
+    pub commands: Vec<String>,
+    /// 是否执行了状态导出与迁移（双方注册且 schema 兼容）。
+    pub migrated: bool,
+}
+
 /// 卸载终态：实例已排空并释放。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeardownReceipt {
@@ -267,6 +278,8 @@ struct ActiveInstance {
     engine: engine::SchemeEngine,
     commands: Vec<String>,
     cancel: engine::CancelToken,
+    /// 撤权后新调用与事件拒绝，实例保留至停用。
+    revoked: bool,
 }
 
 impl ActiveInstance {
@@ -444,9 +457,132 @@ impl ExtensionHost {
                 engine,
                 commands: prepared.commands,
                 cancel,
+                revoked: false,
             },
         );
         Ok(receipt)
+    }
+
+    /// 热替换：候选升级活动代；提交前失败保留旧代并恢复接收。
+    ///
+    /// 状态迁移合同：双方 `state-schema-version` 一致且都注册状态过程时
+    /// 导出快照交给候选导入；schema 不一致或导入失败则替换被拒绝，
+    /// 旧代不受影响。在途异步终态经代际校验自动丢弃，不写入新代。
+    pub fn replace(
+        &mut self,
+        prepared: PreparedExtension,
+        expected_generation: u64,
+    ) -> Result<ReplacementReceipt, ExtensionError> {
+        let manifest = prepared.package.manifest()?;
+        let Some(instance) = self.instances.get(&manifest.id) else {
+            return Err(ExtensionError::UnknownExtension(manifest.id.clone()));
+        };
+        if instance.revoked {
+            return Err(ExtensionError::CapabilityDenied(format!(
+                "扩展 {} 已撤权",
+                manifest.id
+            )));
+        }
+        if instance.generation != expected_generation {
+            return Err(ExtensionError::StaleGeneration {
+                expected: expected_generation,
+                actual: instance.generation,
+            });
+        }
+        // 1) 静止点导出旧状态（同步宿主无在途调用；worker 模式由命令
+        //    串行化门控）。
+        let old_schema = instance.manifest.state_schema_version;
+        let has_old_export = instance
+            .engine
+            .host_registrations()
+            .iter()
+            .any(|registration| registration.namespace == "state-export");
+        let has_new_import = prepared
+            .engine
+            .host_registrations()
+            .iter()
+            .any(|registration| registration.namespace == "state-import");
+        let snapshot = if old_schema == 0 && manifest.state_schema_version == 0 {
+            None
+        } else if old_schema != manifest.state_schema_version {
+            return Err(ExtensionError::Incompatible(format!(
+                "状态 schema 版本不一致：活动代 {old_schema}，候选 {}；不兼容且无迁移时拒绝替换",
+                manifest.state_schema_version
+            )));
+        } else if has_old_export && has_new_import {
+            Some(self.export_state(&manifest.id)?)
+        } else {
+            // schema > 0 但缺少状态过程：静默清空被合同禁止，拒绝替换。
+            return Err(ExtensionError::Incompatible(format!(
+                "状态 schema {old_schema} 非零但双方未同时注册状态过程"
+            )));
+        };
+        // 2) 候选导入（失败丢弃候选，旧代保留并继续接收）。
+        //    迁移路径下丢弃准备期暂存的初始声明：迁移过程拥有状态
+        //    解释权，负责以导入后状态重新提交（外部效果合同不变）。
+        let mut candidate = prepared.engine;
+        let migrated = snapshot.is_some();
+        if let Some(snapshot) = snapshot {
+            candidate.discard_pending_ui();
+            import_state_into(&mut candidate, snapshot)?;
+        }
+        // 3) 提交：释放旧代，发布新代。
+        let commands: Vec<String> = candidate
+            .host_registrations()
+            .iter()
+            .filter(|registration| registration.namespace == "command")
+            .map(|registration| registration.name.clone())
+            .collect();
+        if let Some(mut old) = self.instances.remove(&manifest.id) {
+            old.engine.shutdown_collect();
+        }
+        self.generation_counter += 1;
+        let generation = self.generation_counter;
+        let receipt = ReplacementReceipt {
+            extension_id: manifest.id.clone(),
+            version: manifest.version.clone(),
+            generation,
+            commands: commands.clone(),
+            migrated,
+        };
+        let cancel = engine::CancelToken::new();
+        candidate.rebind_cancel(cancel.clone());
+        candidate.set_command_wall_time_ms(self.config.command_wall_time_ms);
+        self.instances.insert(
+            manifest.id.clone(),
+            ActiveInstance {
+                generation,
+                manifest,
+                engine: candidate,
+                commands,
+                cancel,
+                revoked: false,
+            },
+        );
+        Ok(receipt)
+    }
+
+    /// 导出扩展私有状态快照（owned 值）。
+    fn export_state(&mut self, extension_id: &str) -> Result<ExtensionValue, ExtensionError> {
+        let Some(instance) = self.instances.get_mut(extension_id) else {
+            return Err(ExtensionError::UnknownExtension(extension_id.to_string()));
+        };
+        let value = instance
+            .engine
+            .call_registration("state-export", "state", &[])
+            .map_err(ExtensionError::from_engine)?;
+        extension_value_from_engine(&value)
+    }
+
+    /// 撤权：阻止新调用、事件与声明提交；已发生或不能取消的效果由
+    /// 宿主负责收尾。实例保留至停用（可观察状态）。
+    pub fn revoke(&mut self, extension_id: &str) -> Result<(), ExtensionError> {
+        let Some(instance) = self.instances.get_mut(extension_id) else {
+            return Err(ExtensionError::UnknownExtension(extension_id.to_string()));
+        };
+        instance.revoked = true;
+        instance.cancel.cancel();
+        Ok(())
     }
 
     /// 类型化命令调用；实例串行复用，扩展状态在调用间保留。
@@ -480,6 +616,11 @@ impl ExtensionHost {
         let Some(instance) = self.instances.get_mut(extension_id) else {
             return Err(ExtensionError::UnknownExtension(extension_id.to_string()));
         };
+        if instance.revoked {
+            return Err(ExtensionError::CapabilityDenied(format!(
+                "扩展 {extension_id} 已撤权"
+            )));
+        }
         let known = match namespace {
             "command" => instance.commands.iter().any(|existing| existing == name),
             "service" => instance
@@ -566,6 +707,18 @@ impl ExtensionHost {
             Err(ExtensionError::ShutdownIncomplete(incomplete.join("; ")))
         }
     }
+}
+
+/// 候选导入状态快照：值经候选引擎构造器登记后交给导入过程。
+fn import_state_into(
+    engine: &mut engine::SchemeEngine,
+    snapshot: ExtensionValue,
+) -> Result<(), ExtensionError> {
+    let value = extension_value_into_engine(engine, &snapshot)?;
+    engine
+        .apply_registration("state-import", "state", &[value])
+        .map_err(ExtensionError::from_engine)?;
+    Ok(())
 }
 
 // ---------- 跨边界值转换 ----------

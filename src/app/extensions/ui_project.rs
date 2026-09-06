@@ -256,11 +256,16 @@ impl EventForwarder {
     }
 }
 
-// UiProjector 的列表间距提示：构造后可配置。
+// UiProjector 的构造后配置。
 impl UiProjector {
     /// 配置列表项间距（默认 2.0）。
     pub fn with_list_gap(mut self, gap: f32) -> Self {
         self.list_gap_hint = Some(gap);
         self
+    }
+
+    /// 热替换后切换事件代际；草稿库与挂载位保持，兼容输入沿合同保留。
+    pub fn update_generation(&mut self, generation: u64) {
+        self.generation = generation;
     }
 }
