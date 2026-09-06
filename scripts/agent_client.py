@@ -262,6 +262,8 @@ class AgentSession:
         self.max_request_bytes = INITIAL_MAX_REQUEST_BYTES
         self.max_response_bytes = INITIAL_MAX_RESPONSE_BYTES
         self.max_screenshot_bytes = HARD_MAX_SCREENSHOT_BYTES
+        self.closed = False
+        self.isolated_workspace = False
         if os.name == "nt":
             # Windows 使用命名管道。
             self.handle = win32file.CreateFile(
@@ -284,6 +286,10 @@ class AgentSession:
 
     def send(self, payload):
         """发送一个 JSON 对象并读取一行响应。"""
+        if self.closed:
+            raise RuntimeError("agent session is closed")
+        if payload.get("type") != "hello" and not self.isolated_workspace:
+            raise RuntimeError("background_control_required: refusing foreground application control")
         # 每个请求都必须携带 request_id 与协议 schema。
         request_id = payload.setdefault("request_id", f"req-{time.time_ns()}")
         schema = payload.setdefault("schema", AGENT_PROTOCOL_SCHEMA)
@@ -332,6 +338,12 @@ class AgentSession:
     def hello(self):
         reply = self.send({"schema": AGENT_PROTOCOL_SCHEMA, "type": "hello", "token": self.token})
         if reply.get("ok"):
+            capabilities = reply.get("capabilities", {})
+            background = capabilities.get("background_control", {}) if isinstance(capabilities, dict) else {}
+            if not isinstance(background, dict) or background.get("isolated_workspace") is not True:
+                self.close()
+                raise RuntimeError("background_control_required: rebuild the application with an independent agent_root")
+            self.isolated_workspace = True
             limits = reply.get("limits")
             if not isinstance(limits, dict):
                 raise RuntimeError("agent hello response is missing protocol limits")
@@ -371,6 +383,9 @@ class AgentSession:
         })
 
     def close(self):
+        if self.closed:
+            return
+        self.closed = True
         if self.socket is not None:
             self.socket.close()
         else:

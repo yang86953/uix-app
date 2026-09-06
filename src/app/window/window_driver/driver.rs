@@ -182,7 +182,7 @@ impl WindowDriver {
         if self.deferred_show {
             return false;
         }
-        if !platform_window.is_visible() {
+        if !platform_window.is_offscreen() && !platform_window.is_visible() {
             match self.frame_scheduler.suspended_reason() {
                 Some(SurfaceSuspendReason::Hidden)
                 | Some(SurfaceSuspendReason::TerminalFailure) => {}

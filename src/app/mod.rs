@@ -36,9 +36,11 @@ pub(crate) mod application;
 // 仅协议消费面公开，与 scripts/agent_client.py 同源同语义。
 #[cfg(feature = "agent-control")]
 pub mod agent_client;
+#[cfg(feature = "agent-control")]
+pub mod agent_workspace;
+pub(crate) mod event_loop;
 #[cfg(feature = "extensions")]
 pub mod extensions;
-pub(crate) mod event_loop;
 pub(crate) mod queues;
 pub(crate) mod session_runtime;
 pub(crate) mod window;

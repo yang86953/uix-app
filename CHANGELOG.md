@@ -4,6 +4,16 @@
 
 ## 0.0.8（进行中）
 
+### Agent：独立后台操作面，不干扰用户界面
+
+- 新增 `AgentWorkspace` / `AgentWorkspaceHandle`：专用 UI 线程、独立组件树和 AppRuntime，私有导航、草稿、焦点、指针与剪贴板；仅显式共享业务服务。后台使用正式 CPU 渲染管线，不创建隐藏窗口、不注入桌面输入、不读取用户屏幕。
+- App 接入收紧为 `enable_agent_control()` + `agent_root(...)`；缺少独立根时在原生窗口创建前失败，前台窗口不进入 Agent 目录。旧应用与任意 Rust 回调不被自动“隔离复制”，迁移见 [Agent 后台操作面](docs/使用/能力与边界/Agent后台操作面.md)。
+- 真实离屏 PNG 与 presented wait 不依赖 DISPLAY、Wayland surface 或 GPU；截屏进入 UI turn 后才武装回读。视口单轴上限 4096、总像素上限 8,388,608；激活、移动、最大化、最小化和原生标题栏动作明确拒绝，关闭只影响后台操作面。
+- 修复确认结果票据丢弃导致取消、批准后再次要求确认的问题；确认仍校验原代际、修订、保护与拒绝策略。工作线程失败/关闭清理端点，阻塞回调超时如实失败，不强杀或伪报撤销。
+- 官方 Rust / Python / MCP 客户端拒绝缺少 `isolated_workspace` 的旧同窗端点；MCP 接纳合法根视口 0 与正整数 confirm_id。Lucide 句柄限制到所属 UI 线程，默认正文采用已有 OFL Noto Sans CJK 字体（Agent feature 包含约 16 MiB 资产），避免“语义有字但截图空白/错字形”。
+- 主演示增加专用 `agent.uix`；新增无桌面宿主 `examples/agent_workspace.rs`。扩展真窗模板保留原业务交互，但不再默认开放其前台投影器的旧控制端点，AI 接入须显式构造独立实例。
+- Linux 无显示服务验收：新增 8 项公开 API 行为测试通过，覆盖并行输入、业务共享、离屏真实字形、策略/确认、关闭/重建及 MCP 目录；既有 Agent 滚动回归通过。生产 feature/关闭 feature、文档消费者和主演示编译通过，诊断审计清零；官方客户端精确绑定后完成中英文草稿 → 提交 → 导航 → PNG → 关闭的实际闭环。
+
 ### 软件动态扩展 P4：示例与交付验证
 
 - `examples/extension_panel.rs --hot-replace`：完整可审查演示（装载 → 点击/输入/异步 → 5 秒后热替换升级算法与界面、状态迁移保留、代际授权切换）；真窗经 `scripts/agent_client.py` 验收（语义点击、presented_revision、截图落盘）。

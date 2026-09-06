@@ -51,7 +51,10 @@ impl std::fmt::Display for AgentBridgeClientError {
             }
             Self::Io(error) => write!(formatter, "agent bridge transport failed: {error}"),
             Self::Protocol { code, message } => {
-                write!(formatter, "agent bridge rejected the request: {code}: {message}")
+                write!(
+                    formatter,
+                    "agent bridge rejected the request: {code}: {message}"
+                )
             }
         }
     }
@@ -79,6 +82,7 @@ pub struct AgentBridgeClient {
     max_request_bytes: usize,
     max_response_bytes: usize,
     next_request_id: u64,
+    capabilities: Value,
 }
 
 impl AgentBridgeClient {
@@ -92,9 +96,7 @@ impl AgentBridgeClient {
     /// 定位进程发现文件、读取端点与 token，并完成 `hello` 握手。
     ///
     /// 调用方通常先轮询 [`Self::discovery_file`] 直到 `state == "ready"`。
-    pub fn connect_to_process(
-        process_id: u32,
-    ) -> Result<Self, AgentBridgeClientError> {
+    pub fn connect_to_process(process_id: u32) -> Result<Self, AgentBridgeClientError> {
         let path = Self::discovery_file(process_id)?;
         let bytes = std::fs::read(&path)
             .map_err(|error| AgentBridgeClientError::Discovery(error.to_string()))?;
@@ -116,6 +118,7 @@ impl AgentBridgeClient {
             max_request_bytes: INITIAL_MAX_REQUEST_BYTES,
             max_response_bytes: INITIAL_MAX_RESPONSE_BYTES,
             next_request_id: 0,
+            capabilities: Value::Null,
         };
         let hello = client.exchange(json!({
             "type": "hello",
@@ -123,6 +126,11 @@ impl AgentBridgeClient {
         }))?;
         if hello.get("ok").and_then(Value::as_bool) != Some(true) {
             return Err(protocol_error(&hello, "hello"));
+        }
+        if hello["capabilities"]["background_control"]["isolated_workspace"].as_bool() != Some(true)
+        {
+            return Err(AgentBridgeClientError::Protocol { code: "background_control_required".into(),
+                message: "server does not provide an isolated background workspace; migrate the application before control".into() });
         }
         // v1 旧客户端以 max_message_bytes 作为请求上限别名。
         let limits = &hello["limits"];
@@ -138,7 +146,24 @@ impl AgentBridgeClient {
             INITIAL_MAX_RESPONSE_BYTES,
             HARD_MAX_RESPONSE_BYTES,
         );
+        client.capabilities = hello["capabilities"].clone();
         Ok(client)
+    }
+
+    /// 读取握手发布的能力事实；执行后台控制前须确认 isolated_workspace 为 true。
+    pub fn capabilities(&self) -> &Value {
+        &self.capabilities
+    }
+
+    /// 发送完整协议请求，业务错误原样保留在响应信封中；不自动重试动作。
+    pub fn request(&mut self, request: Value) -> Result<Value, AgentBridgeClientError> {
+        if !request.is_object() {
+            return Err(AgentBridgeClientError::Protocol {
+                code: "invalid_request".into(),
+                message: "agent request must be an object".into(),
+            });
+        }
+        self.exchange(request)
     }
 
     /// 枚举当前窗口身份；应用尚未发布窗口时返回空表。
@@ -273,10 +298,12 @@ impl AgentBridgeClient {
         if reply.get("ok").and_then(Value::as_bool) != Some(true) {
             return Err(protocol_error(&reply, "perform"));
         }
-        reply["revision"].as_u64().ok_or_else(|| AgentBridgeClientError::Protocol {
-            code: "missing_revision".into(),
-            message: "perform reply is missing the confirmed revision".into(),
-        })
+        reply["revision"]
+            .as_u64()
+            .ok_or_else(|| AgentBridgeClientError::Protocol {
+                code: "missing_revision".into(),
+                message: "perform reply is missing the confirmed revision".into(),
+            })
     }
 
     /// 等待修订完成呈现；非 `presented` 结局按协议错误返回。
@@ -372,12 +399,7 @@ fn discovery_directory() -> io::Result<PathBuf> {
     }
 }
 
-fn negotiated_limit(
-    limits: &Value,
-    names: &[&str],
-    fallback: usize,
-    hard_max: usize,
-) -> usize {
+fn negotiated_limit(limits: &Value, names: &[&str], fallback: usize, hard_max: usize) -> usize {
     for name in names {
         if let Some(value) = limits[*name].as_u64() {
             return (value as usize).min(hard_max).max(1);
@@ -400,10 +422,7 @@ fn protocol_error(reply: &Value, operation: &str) -> AgentBridgeClientError {
 }
 
 /// 读取一行有界响应；超过协商上限即失败，不无限缓冲。
-fn read_bounded_line(
-    reader: &mut impl BufRead,
-    maximum_bytes: usize,
-) -> io::Result<Vec<u8>> {
+fn read_bounded_line(reader: &mut impl BufRead, maximum_bytes: usize) -> io::Result<Vec<u8>> {
     let mut line = Vec::new();
     loop {
         let mut byte = [0_u8; 1];
@@ -444,13 +463,10 @@ mod tests {
         let base = std::env::var_os("XDG_RUNTIME_DIR")
             .filter(|value| !value.is_empty())
             .map_or_else(std::env::temp_dir, PathBuf::from);
-        let expected_suffix = format!(
-            "uix-agent-{}",
-            unsafe {
-                // SAFETY: `geteuid` 无参数且无内存安全前置条件。
-                libc::geteuid()
-            }
-        );
+        let expected_suffix = format!("uix-agent-{}", unsafe {
+            // SAFETY: `geteuid` 无参数且无内存安全前置条件。
+            libc::geteuid()
+        });
         assert!(directory.starts_with(&base));
         assert!(directory.ends_with(expected_suffix));
     }
@@ -471,9 +487,17 @@ mod tests {
         );
         let legacy = json!({ "max_message_bytes": 2048 });
         assert_eq!(
-            negotiated_limit(&legacy, &["max_request_bytes", "max_message_bytes"], 1024, 4096),
+            negotiated_limit(
+                &legacy,
+                &["max_request_bytes", "max_message_bytes"],
+                1024,
+                4096
+            ),
             2048
         );
-        assert_eq!(negotiated_limit(&json!({}), &["max_request_bytes"], 1024, 4096), 1024);
+        assert_eq!(
+            negotiated_limit(&json!({}), &["max_request_bytes"], 1024, 4096),
+            1024
+        );
     }
 }

@@ -83,10 +83,15 @@ class AgentLane:
                 raise RuntimeError("app session lane is terminal; attach the instance again")
             if self.session is None:
                 session = AgentSession(self.endpoint, self.token)
-                hello = session.hello()
-                if not hello.get("ok"):
+                try:
+                    hello = session.hello()
+                    if not hello.get("ok"):
+                        raise RuntimeError(f"agent hello failed: {hello.get('error')}")
+                except Exception:
+                    # 隔离能力或握手失败使当前 lane 终止，不重连旧前台端点。
                     session.close()
-                    raise RuntimeError(f"agent hello failed: {hello.get('error')}")
+                    self.broken = True
+                    raise
                 self.session = session
             try:
                 return self.session.send(payload)
@@ -168,7 +173,7 @@ class UixMcpServer:
                 "先调用 uix_list_apps，再用 instance_id 调用 uix_attach_app。"
                 "所有界面调用都必须携带返回的 session_id；应用退出或重启后旧会话终止，"
                 "不得自动改绑另一个实例。动作出现 outcome_unknown 或传输失败时先读状态，"
-                "禁止盲目重试。后台动作可用；无可呈现 surface 时只读语义快照，不得伪造截图。"
+                "禁止盲目重试。只连接独立后台操作面，不操作用户窗口；截图来自真实 CPU 离屏帧，不依赖桌面 surface。"
                 "优先用 uix_interact 完成动作、呈现等待和快照。"
             ),
         }
@@ -179,7 +184,7 @@ class UixMcpServer:
         }
         window_properties = {
             **session_property,
-            "window_id": {"type": "integer", "minimum": 1},
+            "window_id": {"type": "integer", "minimum": 0},
             "generation": {"type": "integer", "minimum": 0},
         }
         action_properties = {
@@ -219,7 +224,7 @@ class UixMcpServer:
             },
             {
                 "name": "uix_list_windows",
-                "description": "列出已绑定应用实例的窗口和真实 generation。",
+                "description": "列出已绑定应用的独立后台视口与真实 generation；不枚举用户窗口。",
                 "inputSchema": {
                     "type": "object",
                     "properties": session_property,
@@ -235,7 +240,7 @@ class UixMcpServer:
                     "type": "object",
                     "properties": {
                         **session_property,
-                        "window_id": {"type": "integer", "minimum": 1},
+                        "window_id": {"type": "integer", "minimum": 0},
                     },
                     "required": ["session_id", "window_id"],
                     "additionalProperties": False,
@@ -255,7 +260,7 @@ class UixMcpServer:
             },
             {
                 "name": "uix_interact",
-                "description": "完成 perform、呈现等待和快照；后台无 surface 时保留动作并回退语义快照。",
+                "description": "在独立后台完成 perform、离屏呈现等待与新快照；失败不激活或改绑前台。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -298,7 +303,7 @@ class UixMcpServer:
                     "type": "object",
                     "properties": {
                         **window_properties,
-                        "confirm_id": {"type": "string"},
+                        "confirm_id": {"type": "integer", "minimum": 1},
                     },
                     "required": ["session_id", "window_id", "generation", "confirm_id"],
                     "additionalProperties": False,
@@ -307,12 +312,12 @@ class UixMcpServer:
             },
             {
                 "name": "uix_screenshot",
-                "description": "在独立媒体流截屏并写入 0600 临时 PNG；无可呈现 surface 时明确失败。",
+                "description": "在独立媒体流取得后台 CPU 离屏 PNG 并写入 0600 临时文件，不读取桌面。",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         **session_property,
-                        "window_id": {"type": "integer", "minimum": 1},
+                        "window_id": {"type": "integer", "minimum": 0},
                     },
                     "required": ["session_id", "window_id"],
                     "additionalProperties": False,
@@ -356,7 +361,7 @@ class UixMcpServer:
         if name == "uix_list_windows":
             return protocol_result(bundle.control.send({"type": "list_windows"}))
         if name == "uix_snapshot":
-            window_id = require_int(arguments, "window_id", 1)
+            window_id = require_int(arguments, "window_id", 0)
             return protocol_result(bundle.control.send({"type": "snapshot", "window_id": window_id}))
         if name in ("uix_perform", "uix_interact"):
             return self.perform(bundle, arguments, interact=name == "uix_interact")
@@ -365,9 +370,9 @@ class UixMcpServer:
         if name == "uix_confirm":
             request = {
                 "type": "confirm",
-                "window_id": require_int(arguments, "window_id", 1),
+                "window_id": require_int(arguments, "window_id", 0),
                 "generation": require_int(arguments, "generation"),
-                "confirm_id": require_text(arguments, "confirm_id", 256),
+                "confirm_id": require_int(arguments, "confirm_id", 1),
             }
             with bundle.write_gate:
                 return protocol_result(bundle.control.send(request))
@@ -381,7 +386,7 @@ class UixMcpServer:
             raise ValueError("action must be an object")
         request = {
             "type": "perform",
-            "window_id": require_int(arguments, "window_id", 1),
+            "window_id": require_int(arguments, "window_id", 0),
             "generation": require_int(arguments, "generation"),
             "action": action,
         }
@@ -478,7 +483,7 @@ class UixMcpServer:
     def wait(self, bundle, arguments):
         request = {
             "type": "wait",
-            "window_id": require_int(arguments, "window_id", 1),
+            "window_id": require_int(arguments, "window_id", 0),
             "generation": require_int(arguments, "generation"),
             "timeout_ms": require_int(
                 arguments, "timeout_ms", 1, MAX_WAIT_TIMEOUT_MS
@@ -492,7 +497,7 @@ class UixMcpServer:
         return protocol_result(bundle.wait.send(request))
 
     def screenshot(self, bundle, arguments):
-        window_id = require_int(arguments, "window_id", 1)
+        window_id = require_int(arguments, "window_id", 0)
         reply = bundle.media.send({"type": "screenshot", "window_id": window_id})
         if not reply.get("ok"):
             return protocol_result(reply)

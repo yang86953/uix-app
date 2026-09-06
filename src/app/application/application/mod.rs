@@ -86,7 +86,7 @@ const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graph
 // 默认构造和窗口启动 helper 保持在 application Module 内部，避免组合根文件超限。
 mod defaults;
 // 组合根与运行时子模块复用同一检查式窗口错误边界。
-use self::defaults::{initially_agent_presentable, report_window_operation_error};
+use self::defaults::report_window_operation_error;
 // 字体配置注入和资源服务组装保持在独立组合根边界。
 mod typography;
 // GUI 启动只消费已验证的完整字体服务。
@@ -123,6 +123,8 @@ pub struct App {
     graphics_faults: GraphicsFaultSignal,
     #[cfg(feature = "agent-control")]
     agent_control_enabled: bool,
+    #[cfg(feature = "agent-control")]
+    agent_root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
     /// Agent 动作策略（授权第二层）：默认全放行，应用按需收紧。
     agent_policy: AgentPolicy,
     /// Agent 确认 UI 回调（授权第三层）：默认不注入（确认请求直接失败）。
@@ -237,11 +239,20 @@ impl App {
         self
     }
 
-    /// Explicitly enables the process-wide Agent Bridge core for this GUI
-    /// application. The build must also opt in to the `agent-control` feature.
+    /// 显式启用独立后台 Agent 操作面；还须设置 `agent_root`，绝不控制可见窗口。
     #[cfg(feature = "agent-control")]
     pub fn enable_agent_control(mut self) -> Self {
         self.agent_control_enabled = true;
+        self
+    }
+
+    /// 设置 AI 专属根工厂。导航、草稿和选择状态必须私有，只显式共享业务服务。
+    #[cfg(feature = "agent-control")]
+    pub fn agent_root<F>(mut self, root: F) -> Self
+    where
+        F: Fn() -> ViewNode + Send + Sync + 'static,
+    {
+        self.agent_root_factory = Some(Arc::new(root));
         self
     }
 
@@ -483,6 +494,27 @@ impl App {
             }
         };
 
+        #[cfg(feature = "agent-control")]
+        let agent_root = if self.agent_control_enabled {
+            match self.agent_root_factory.take() {
+                Some(root) => Some(root),
+                None => {
+                    self.runtime.diagnostics().report_with_origin(
+                        Error::new(
+                            Errc::InvalidArgument,
+                            "enable_agent_control requires an independent agent_root",
+                        ),
+                        crate::diagnostics::ReportOrigin::framework("agent_workspace", "configure"),
+                    );
+                    return 1;
+                }
+            }
+        } else {
+            None
+        };
+        #[cfg(feature = "agent-control")]
+        let agent_fonts = self.container.resolve_clone::<crate::draw::FontBundle>();
+
         let (requested_width, requested_height) = self.size;
         let graphics_backend = self.configured_graphics_backend();
         let diagnostics = self.runtime.diagnostics();
@@ -623,18 +655,7 @@ impl App {
                 return 1;
             }
         };
-        #[cfg(feature = "agent-control")]
-        if self.agent_control_enabled {
-            let _ = self.runtime.enable_agent_control();
-        }
-        // 组装期注入 Agent 动作策略（授权第二层），窗口创建前生效。
-        self.runtime
-            .set_agent_policy(std::mem::take(&mut self.agent_policy));
-        // 组装期注入 Agent 确认 UI 回调（授权第三层），窗口创建前生效。
-        if let Some(handler) = self.agent_confirm_ui.take() {
-            self.runtime
-                .set_agent_confirm_ui(move |request| handler(request));
-        }
+        // 可见窗口不再登记到 Agent 目录。后台操作面拥有独立运行时、树与端点。
         // 推迟 ShowWindow 到首帧 present 成功：否则图形初始化、字体和首 layout 期间用户看到白屏。
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
@@ -647,7 +668,9 @@ impl App {
                 // 平台主题查询失败回退浅色：经冷却去重观察的自愈降级。
                 diagnostics.observe_transient_error(
                     "theme",
-                    "startup theme query failed, defaulting to light", &error);
+                    "startup theme query failed, defaulting to light",
+                    &error,
+                );
                 false
             });
             let tokens = Arc::new(DynTokens::new(if is_dark {
@@ -709,30 +732,42 @@ impl App {
             platform_window.as_ref(),
         );
         #[cfg(feature = "agent-control")]
-        if self.agent_control_enabled {
-            if let Err(error) = self.runtime.start_agent_transport(&self.title) {
-                tracing::error!("agent transport startup failed: {error}");
-                // Agent 传输启动失败终止 GUI 循环；专用传输错误收敛为 typed
-                // IoError 后进入框架报告。
-                diagnostics.report_with_origin(
-                    Error::new(Errc::IoError, format!("agent transport startup failed: {error}")),
-                    crate::diagnostics::ReportOrigin::framework("agent", "start_transport"),
-                );
-                report_window_operation_error(
-                    &diagnostics,
-                    "agent transport failure graphics shutdown failed",
-                    session.try_shutdown(),
-                );
-                drop(session);
-                report_window_operation_error(
-                    &diagnostics,
-                    "agent transport failure window close failed",
-                    platform_window.close(),
-                );
-                self.runtime.shutdown_all();
-                return 1;
+        let _agent_workspace = if let Some(root) = agent_root {
+            let mut config = crate::app::agent_workspace::AgentWorkspace::new(w, h, move || root())
+                .title(self.title.clone())
+                .theme(self.theme.clone());
+            config.fonts = agent_fonts;
+            config.policy = std::mem::take(&mut self.agent_policy);
+            config.confirmation = self.agent_confirm_ui.take();
+            match config.spawn() {
+                Ok(workspace) => {
+                    self.runtime
+                        .set_agent_workspace_runtime(workspace.runtime.clone());
+                    Some(workspace)
+                }
+                Err(error) => {
+                    diagnostics.report_with_origin(
+                        error,
+                        crate::diagnostics::ReportOrigin::framework("agent_workspace", "startup"),
+                    );
+                    report_window_operation_error(
+                        &diagnostics,
+                        "agent workspace failure graphics shutdown failed",
+                        session.try_shutdown(),
+                    );
+                    drop(session);
+                    report_window_operation_error(
+                        &diagnostics,
+                        "agent workspace failure window close failed",
+                        platform_window.close(),
+                    );
+                    self.runtime.shutdown_all();
+                    return 1;
+                }
             }
-        }
+        } else {
+            None
+        };
         let app_handle = self.app_handle_for_window(root_window_id);
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());
@@ -761,7 +796,9 @@ impl App {
                     // 单次发布失败不中断主题状态：经冷却去重观察。
                     theme_diagnostics.observe_transient_error(
                         "theme_bus",
-                        "theme applied publish failed", &error);
+                        "theme applied publish failed",
+                        &error,
+                    );
                 }
             }
         };
@@ -927,11 +964,7 @@ impl App {
         );
         // Keep the native window alive through the checked Drop retry.
         drop(session);
-        report_window_operation_error(
-            &diagnostics,
-            "main close failed",
-            platform_window.close(),
-        );
+        report_window_operation_error(&diagnostics, "main close failed", platform_window.close());
 
         let mut secondary_windows = secondary_windows.into_inner();
         for window in secondary_windows.drain(..) {

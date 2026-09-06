@@ -324,7 +324,9 @@ pub(crate) enum AgentSubmitError {
     AppClosed,
     /// 截屏回读无法安排（无活跃 renderer / 上一请求尚未完成等图形侧原因）。
     #[cfg(any(test, feature = "agent-control"))]
-    ReadbackUnavailable { message: String },
+    ReadbackUnavailable {
+        message: String,
+    },
 }
 
 impl AgentSubmitError {
@@ -347,6 +349,7 @@ pub(crate) struct AgentCommandTicket {
     #[cfg_attr(not(any(test, feature = "agent-control")), allow(dead_code))]
     receiver: Receiver<AgentCommandResult>,
     lifecycle: Arc<AgentCommandLifecycle>,
+    cancel_on_drop: bool,
 }
 
 const AGENT_COMMAND_PENDING: u8 = 0;
@@ -402,6 +405,12 @@ impl AgentCommandTicket {
         self.receiver.recv_timeout(timeout)
     }
 
+    /// 宿主确认是单向投递：丢弃响应不等于取消已交出的决定。
+    #[cfg(feature = "agent-control")]
+    pub(crate) fn detach(mut self) {
+        self.cancel_on_drop = false;
+    }
+
     /// 超时或连接关闭时尝试取消仍在队列中的命令。
     pub(crate) fn cancel_pending(&self) -> bool {
         self.lifecycle.cancel_pending()
@@ -410,7 +419,9 @@ impl AgentCommandTicket {
 
 impl Drop for AgentCommandTicket {
     fn drop(&mut self) {
-        let _ = self.cancel_pending();
+        if self.cancel_on_drop {
+            let _ = self.cancel_pending();
+        }
     }
 }
 
@@ -487,6 +498,7 @@ impl AgentCommandQueue {
             AgentCommandTicket {
                 receiver,
                 lifecycle,
+                cancel_on_drop: true,
             },
             should_wake,
         ))

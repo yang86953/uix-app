@@ -109,6 +109,13 @@ pub trait IWindowManager {
 /// 平台窗口 — 可见性、标题、层级与呈现器访问。
 pub trait PlatformWindow {
     fn window_id(&self) -> WindowId;
+    /// 是否为纯内存离屏视口；此类目标没有桌面可见性、焦点或原生输入服务。
+    fn is_offscreen(&self) -> bool {
+        false
+    }
+    /// 截屏命令进入本次 UI turn 后才允许离屏呈现器消费已预留的回读票据。
+    #[cfg(feature = "agent-control")]
+    fn prepare_agent_readback(&mut self) {}
     /// 返回当前窗口实例在调用时真实具备的只读可选能力集合。
     fn capabilities(&self) -> WindowCapabilities;
     fn show(&mut self) -> Result<()>;
