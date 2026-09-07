@@ -36,26 +36,28 @@ fn main() {
     ));
     let analyze_port: ExtensionAsyncPort = {
         let documents = Arc::clone(&documents);
-        Arc::new(move |request: u64, args: &[ExtensionValue], completion: AsyncCompletion| {
-            let documents = Arc::clone(&documents);
-            let key = match args.first() {
-                Some(ExtensionValue::Text(key)) => key.clone(),
-                _ => "intro".to_string(),
-            };
-            thread::spawn(move || {
-                thread::sleep(std::time::Duration::from_millis(300));
-                let analyzed = documents
-                    .lock()
-                    .unwrap()
-                    .get(&key)
-                    .cloned()
-                    .map(|text| format!("已分析 {} 字符", text.chars().count()))
-                    .unwrap_or_else(|| "文档不存在".to_string());
-                completion.complete(Ok(ExtensionValue::Text(analyzed)));
-            });
-            let _ = request;
-            Ok(())
-        })
+        Arc::new(
+            move |request: u64, args: &[ExtensionValue], completion: AsyncCompletion| {
+                let documents = Arc::clone(&documents);
+                let key = match args.first() {
+                    Some(ExtensionValue::Text(key)) => key.clone(),
+                    _ => "intro".to_string(),
+                };
+                thread::spawn(move || {
+                    thread::sleep(std::time::Duration::from_millis(300));
+                    let analyzed = documents
+                        .lock()
+                        .unwrap()
+                        .get(&key)
+                        .cloned()
+                        .map(|text| format!("已分析 {} 字符", text.chars().count()))
+                        .unwrap_or_else(|| "文档不存在".to_string());
+                    completion.complete(Ok(ExtensionValue::Text(analyzed)));
+                });
+                let _ = request;
+                Ok(())
+            },
+        )
     };
 
     let host = ExtensionHost::new()
@@ -109,13 +111,23 @@ fn main() {
                         let projector = Arc::clone(&bridge_projector);
                         let projector = Arc::clone(&projector);
                         app_handle.post_to_ui(move || {
-                            if let UiUpdate::Applied { node, generation, .. } = update {
+                            if let UiUpdate::Applied {
+                                mut node,
+                                generation,
+                                ..
+                            } = update
+                            {
                                 // 热替换后代际切换：事件授权与声明来源一致。
                                 if let Some(projector) = projector.lock().unwrap().as_mut() {
                                     projector.update_generation(generation);
+                                    // reset 是本次 Applied 的一次性指令：执行后消耗
+                                    // 标记，后续重投影不得再次覆盖本地编辑。
+                                    projector.consume_declaration_resets(&mut node);
                                 }
                                 *current.lock().unwrap() = Some(node);
-                                revision.update(|value| { *value += 1; });
+                                revision.update(|value| {
+                                    *value += 1;
+                                });
                             }
                         });
                     }
@@ -127,7 +139,8 @@ fn main() {
                 });
                 // 装载扩展：准备 → 激活（初始声明经桥回投）。
                 let package = extension_package("0.3.0", 1);
-                match handle.prepare(&package)
+                match handle
+                    .prepare(&package)
                     .and_then(|prepared| handle.activate(prepared))
                 {
                     Ok(receipt) => {
@@ -144,9 +157,9 @@ fn main() {
                             thread::spawn(move || {
                                 thread::sleep(std::time::Duration::from_secs(5));
                                 let upgraded = extension_package("0.4.0", 2);
-                                match handle.prepare(&upgraded)
-                                    .and_then(|candidate| handle.replace(candidate, receipt.generation))
-                                {
+                                match handle.prepare(&upgraded).and_then(|candidate| {
+                                    handle.replace(candidate, receipt.generation)
+                                }) {
                                     Ok(replacement) => eprintln!(
                                         "[hot-replace] {} -> v{} generation {} migrated={}",
                                         replacement.extension_id,
@@ -161,7 +174,9 @@ fn main() {
                     }
                     Err(error) => {
                         *current.lock().unwrap() = Some(load_failed_node(&error.to_string()));
-                        revision.update(|value| { *value += 1; });
+                        revision.update(|value| {
+                            *value += 1;
+                        });
                     }
                 }
             }
@@ -204,7 +219,11 @@ fn extension_package(version: &str, step: i64) -> ExtensionPackage {
          (capabilities documents-query documents-analyze mount-panel) \
          (state-schema-version 1))"
     );
-    let title_prefix = if step == 1 { "点击次数" } else { "点击次数(v2)" };
+    let title_prefix = if step == 1 {
+        "点击次数"
+    } else {
+        "点击次数(v2)"
+    };
     let source = format!(
         r#"
 (define clicks 0)

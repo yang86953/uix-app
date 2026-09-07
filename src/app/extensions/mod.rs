@@ -22,9 +22,7 @@ pub use manifest::ExtensionManifest;
 pub use package::ExtensionPackage;
 pub use ui_declare::UiNode;
 pub use ui_project::{UiEvent, UiEventPayload, UiEventSender, UiProjector, UiUpdate};
-pub use worker::{
-    AsyncCompletion, ExtensionAsyncPort, ExtensionUiHandle, ExtensionUiSink,
-};
+pub use worker::{AsyncCompletion, ExtensionAsyncPort, ExtensionUiHandle, ExtensionUiSink};
 
 pub use engine::CancelToken as ExtensionCancelToken;
 
@@ -131,9 +129,7 @@ impl std::fmt::Display for ExtensionError {
             ExtensionError::StaleGeneration { expected, actual } => {
                 write!(formatter, "预期活动代 {expected}，实际 {actual}")
             }
-            ExtensionError::EnginePoisoned => {
-                formatter.write_str("扩展引擎已污染，实例不可复用")
-            }
+            ExtensionError::EnginePoisoned => formatter.write_str("扩展引擎已污染，实例不可复用"),
             ExtensionError::UnknownExtension(id) => {
                 write!(formatter, "扩展 {id} 未激活或已卸载")
             }
@@ -157,9 +153,7 @@ impl ExtensionError {
     fn from_engine(error: engine::SchemeError) -> Self {
         use engine::SchemeError as Source;
         match error {
-            Source::FuelExhausted => {
-                ExtensionError::Quota("求值燃料耗尽".to_string())
-            }
+            Source::FuelExhausted => ExtensionError::Quota("求值燃料耗尽".to_string()),
             Source::DepthLimitExceeded { maximum } => {
                 ExtensionError::Quota(format!("求值深度超过 {maximum} 上限"))
             }
@@ -169,16 +163,14 @@ impl ExtensionError {
             Source::StringQuotaExceeded { maximum } => {
                 ExtensionError::Quota(format!("字符串字节超过 {maximum} 配额"))
             }
-            Source::SingleAllocationTooLarge { requested, maximum } => ExtensionError::Quota(
-                format!("单次分配 {requested} 字节超过 {maximum} 上限"),
-            ),
+            Source::SingleAllocationTooLarge { requested, maximum } => {
+                ExtensionError::Quota(format!("单次分配 {requested} 字节超过 {maximum} 上限"))
+            }
             Source::HeapQuotaExceeded { live, maximum } => {
                 ExtensionError::Quota(format!("回收后存活堆 {live} 超过 {maximum} 配额"))
             }
             Source::Cancelled => ExtensionError::Cancelled,
-            Source::WallClockExceeded { milliseconds } => {
-                ExtensionError::Timeout { milliseconds }
-            }
+            Source::WallClockExceeded { milliseconds } => ExtensionError::Timeout { milliseconds },
             Source::EnginePoisoned | Source::PanicCaught => ExtensionError::EnginePoisoned,
             Source::UserError { message } | Source::UncapturedRaise { summary: message } => {
                 ExtensionError::ScriptFailure(message)
@@ -192,12 +184,10 @@ impl ExtensionError {
             Source::HostFunctionError { name, message } => {
                 ExtensionError::HostFailure(format!("端口 {name} 失败：{message}"))
             }
-            Source::SourceTooLarge { actual, maximum } => ExtensionError::Package(format!(
-                "源码 {actual} 字节超过 {maximum} 上限"
-            )),
-            Source::NotImplemented { feature } => {
-                ExtensionError::Unsupported(feature.to_string())
+            Source::SourceTooLarge { actual, maximum } => {
+                ExtensionError::Package(format!("源码 {actual} 字节超过 {maximum} 上限"))
             }
+            Source::NotImplemented { feature } => ExtensionError::Unsupported(feature.to_string()),
             Source::LibraryNotFound { name } => {
                 ExtensionError::Unsupported(format!("库 {name} 未定义或不在白名单"))
             }
@@ -270,6 +260,8 @@ pub struct ExtensionStatus {
     pub version: String,
     pub generation: u64,
     pub commands: Vec<String>,
+    /// 是否已撤权（撤权后新调用与事件拒绝，实例保留至停用）。
+    pub revoked: bool,
 }
 
 struct ActiveInstance {
@@ -385,16 +377,18 @@ impl ExtensionHost {
                                 name: "port".to_string(),
                                 message: error.to_string(),
                             })?;
-                        let outcome = bridged(&arguments)
-                            .map_err(|message| engine::SchemeError::HostFunctionError {
+                        let outcome = bridged(&arguments).map_err(|message| {
+                            engine::SchemeError::HostFunctionError {
                                 name: "port".to_string(),
                                 message,
-                            })?;
-                        extension_value_into_engine(constructor, &outcome)
-                            .map_err(|error| engine::SchemeError::HostFunctionError {
+                            }
+                        })?;
+                        extension_value_into_engine(constructor, &outcome).map_err(|error| {
+                            engine::SchemeError::HostFunctionError {
                                 name: "port".to_string(),
                                 message: error.to_string(),
-                            })
+                            }
+                        })
                     },
                 ),
             )
@@ -403,9 +397,15 @@ impl ExtensionHost {
             capabilities.insert(declared.clone());
         }
         let cancel = engine::CancelToken::new();
-        let mut instance_engine = engine::SchemeEngine::new(limits, capabilities, hosts, cancel.clone())
-            .map_err(|error| ExtensionError::internal("引擎构造", &error))?;
+        let mut instance_engine =
+            engine::SchemeEngine::new(limits, capabilities, hosts, cancel.clone())
+                .map_err(|error| ExtensionError::internal("引擎构造", &error))?;
         instance_engine.set_extension_identity(manifest.id.clone(), manifest.version.clone());
+        // include 来源解析：只读包内冻结快照，未登记来源拒绝（引擎合同）。
+        let include_package = package.clone();
+        instance_engine.set_include_source(std::rc::Rc::new(move |path: &str| {
+            include_package.source(path).map(str::to_string)
+        }));
         let source = package.entry_source()?;
         instance_engine
             .run_program(source)
@@ -676,6 +676,7 @@ impl ExtensionHost {
                 version: instance.manifest.version.clone(),
                 generation: instance.generation,
                 commands: instance.commands.clone(),
+                revoked: instance.revoked,
             })
             .collect()
     }
@@ -744,10 +745,12 @@ fn extension_value_into_engine(
                 ))
             }
         }
-        ExtensionValue::Text(text) => engine.new_string_from(text.clone())
+        ExtensionValue::Text(text) => engine
+            .new_string_from(text.clone())
             .map_err(|error| ExtensionError::from_engine(error)),
         ExtensionValue::Symbol(name) => Ok(EngineValue::Symbol(name.as_str().into())),
-        ExtensionValue::Bytes(bytes) => engine.new_bytevector_from(bytes.clone())
+        ExtensionValue::Bytes(bytes) => engine
+            .new_bytevector_from(bytes.clone())
             .map_err(|error| ExtensionError::from_engine(error)),
         ExtensionValue::List(items) => {
             let mut list = EngineValue::Null;

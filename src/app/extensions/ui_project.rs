@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 use crate::ui::reactive::state::State;
 use crate::ui::view::View;
 use crate::ui::widgets::button;
-use crate::ui::widgets::{column, label, row};
 use crate::ui::widgets::combinators::input;
+use crate::ui::widgets::{column, label, row};
 
 use super::ui_declare::UiNode;
 
@@ -91,6 +91,31 @@ impl UiProjector {
         self.project_node(mount, node, &prefix)
     }
 
+    /// 声明应用入口：执行一次性 `(reset #t)` 并消耗标记。
+    ///
+    /// reset 属于本次 `UiUpdate::Applied` 的一次性指令，不是持续状态：
+    /// 同一声明随后可能因无关重绘被重投影，重投影不得再次以声明值
+    /// 覆盖本地编辑。应用层应在 Applied 处理时调用本方法（以声明值
+    /// 重建对应草稿 State 并清除标记），此后 `project` 幂等复用草稿。
+    pub fn consume_declaration_resets(&mut self, node: &mut UiNode) {
+        match node {
+            UiNode::Column { children, .. } | UiNode::Row { children, .. } => {
+                for child in children {
+                    self.consume_declaration_resets(child);
+                }
+            }
+            UiNode::Input {
+                key, value, reset, ..
+            } => {
+                if *reset {
+                    self.drafts.insert(key.clone(), State::new(value.clone()));
+                    *reset = false;
+                }
+            }
+            UiNode::Text { .. } | UiNode::Button { .. } | UiNode::List { .. } => {}
+        }
+    }
+
     fn project_node(
         &mut self,
         mount: &str,
@@ -98,7 +123,13 @@ impl UiProjector {
         automation_prefix: &str,
     ) -> crate::ui::view::ViewNode {
         match node {
-            UiNode::Column { key, padding, gap, background, children } => {
+            UiNode::Column {
+                key,
+                padding,
+                gap,
+                background,
+                children,
+            } => {
                 let children: Vec<_> = children
                     .iter()
                     .map(|child| {
@@ -120,7 +151,13 @@ impl UiProjector {
                 view.automation_id = Some(automation_prefix.to_string());
                 view
             }
-            UiNode::Row { key, padding, gap, background, children } => {
+            UiNode::Row {
+                key,
+                padding,
+                gap,
+                background,
+                children,
+            } => {
                 let children: Vec<_> = children
                     .iter()
                     .map(|child| {
@@ -142,7 +179,12 @@ impl UiProjector {
                 view.automation_id = Some(automation_prefix.to_string());
                 view
             }
-            UiNode::Text { key, content, color, size } => {
+            UiNode::Text {
+                key,
+                content,
+                color,
+                size,
+            } => {
                 let mut view = label(content.as_str());
                 if let Some(color) = color {
                     view = view.color(color.as_str());
@@ -154,7 +196,13 @@ impl UiProjector {
                 view.automation_id = Some(automation_prefix.to_string());
                 view
             }
-            UiNode::Input { key, value, placeholder, on_change, reset } => {
+            UiNode::Input {
+                key,
+                value,
+                placeholder,
+                on_change,
+                reset,
+            } => {
                 // 草稿保留：稳定 key 复用同一 State；仅显式 reset 重建。
                 let draft = match reset {
                     true => {
@@ -178,7 +226,9 @@ impl UiProjector {
                 if let Some(handler) = on_change {
                     let event = self.event_sender(handler.clone());
                     builder = builder.on_change(move |text| {
-                        let _ = event.send(UiEventPayload::Change { text: text.to_string() });
+                        let _ = event.send(UiEventPayload::Change {
+                            text: text.to_string(),
+                        });
                     });
                 }
                 let mut view = builder.build();
@@ -186,7 +236,12 @@ impl UiProjector {
                 view.automation_id = Some(automation_prefix.to_string());
                 view
             }
-            UiNode::Button { key, label: text, on_click, disabled } => {
+            UiNode::Button {
+                key,
+                label: text,
+                on_click,
+                disabled,
+            } => {
                 let mut builder = button(text.as_str());
                 if *disabled {
                     builder = builder.disabled(true);

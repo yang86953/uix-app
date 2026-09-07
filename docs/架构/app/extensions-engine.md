@@ -101,8 +101,10 @@ ExtensionHost::list() -> Vec<ExtensionStatus>
 ExtensionHost::deactivate(&ExtensionId) -> Result<TeardownReceipt, ExtensionError>  // P1 基础停止
 ```
 
-- `ExtensionPackage`：清单 + `.scm` 源文件集（P1 经内存构造；文件装载属宿主应用责任）。
+- `ExtensionPackage`：清单 + `.scm` 源文件集。内存构造经 `from_parts`；外部目录在应用显式指定路径时经 `ExtensionPackage::read_from_directory` 读取并冻结（目录形态、上限与失败语义见使用文档「外部扩展包」节；库不扫描、不监听、不跟随包内链接，来源授权归应用）。多文件包经 `(include "…")` 解析冻结快照内来源。
 - `ActivationReceipt`/`TeardownReceipt`：区分「已接收 / 已激活 / 已卸载」的可观察终态；P2 起扩展「已应用 / 已呈现」。
+- `ExtensionStatus`（`list()`，同步宿主与 worker `ExtensionUiHandle::list()`）：来源版本、活动代、命令表与撤权标记。
+- `UiProjector::consume_declaration_resets(&mut node)`（P4）：`(reset #t)` 在 Applied 处一次性执行并消耗，重投影幂等。
 - 命令名空间：`扩展 ID + 局部名`；同 ID 重复激活按代际冲突拒绝。
 
 ### 4.3 包清单（P1 字段冻结）

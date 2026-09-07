@@ -238,8 +238,9 @@ fn invalid_packages_are_rejected() {
                 .to_string(),
         ),
     ] {
-        let sources: BTreeMap<String, String> =
-            [("main.scm".to_string(), String::new())].into_iter().collect();
+        let sources: BTreeMap<String, String> = [("main.scm".to_string(), String::new())]
+            .into_iter()
+            .collect();
         let outcome = ExtensionPackage::from_parts(manifest, sources);
         assert!(outcome.is_err(), "{label} 应在冻结时被拒绝");
     }
@@ -248,13 +249,16 @@ fn invalid_packages_are_rejected() {
 /// 墙钟超时与取消是可观察终态，且不可被脚本捕获。
 #[test]
 fn timeout_and_cancellation_have_terminal_results() {
-    let package = package("spinner", r#"
+    let package = package(
+        "spinner",
+        r#"
 (register-command! "spin" (lambda () (let loop () (loop))))
 (register-command! "spin-safe"
   (lambda ()
     (guard (caught #t)
       (let loop () (loop)))))
-"#);
+"#,
+    );
     let mut host = ExtensionHost::new().with_config(ExtensionHostConfig {
         command_wall_time_ms: 150,
         ..ExtensionHostConfig::default()
@@ -274,9 +278,12 @@ fn timeout_and_cancellation_have_terminal_results() {
 
 #[test]
 fn cancellation_from_another_thread() {
-    let package = package("cancel-me", r#"
+    let package = package(
+        "cancel-me",
+        r#"
 (register-command! "spin" (lambda () (let loop () (loop))))
-"#);
+"#,
+    );
     let mut host = ExtensionHost::new().with_config(ExtensionHostConfig {
         command_wall_time_ms: 10_000,
         ..ExtensionHostConfig::default()
@@ -298,10 +305,13 @@ fn cancellation_from_another_thread() {
 /// 深度递归以配额拒绝（Quota 终态）。
 #[test]
 fn depth_quota_is_enforced() {
-    let package = package("deep", r#"
+    let package = package(
+        "deep",
+        r#"
 (define (fall n) (if (= n 0) 0 (+ 1 (fall (- n 1)))))
 (register-command! "fall" (lambda () (fall 100000)))
-"#);
+"#,
+    );
     let mut host = ExtensionHost::new();
     let prepared = host.prepare(&package).expect("准备");
     host.activate(prepared).expect("激活");
@@ -314,7 +324,9 @@ fn depth_quota_is_enforced() {
 /// 循环分配在标记-清扫回收后不无界增长，实例保持可用。
 #[test]
 fn garbage_cycles_are_collected_and_instance_survives() {
-    let package = package("cycler", r#"
+    let package = package(
+        "cycler",
+        r#"
 (define discarded 0)
 (register-command! "churn"
   (lambda ()
@@ -324,7 +336,8 @@ fn garbage_cycles_are_collected_and_instance_survives() {
       (set! discarded (+ discarded 1))
       discarded)))
 (register-command! "ping" (lambda () 'alive))
-"#);
+"#,
+    );
     let mut host = ExtensionHost::new().with_config(ExtensionHostConfig::default());
     let prepared = host.prepare(&package).expect("准备");
     host.activate(prepared).expect("激活");
@@ -336,7 +349,9 @@ fn garbage_cycles_are_collected_and_instance_survives() {
         };
     }
     assert_eq!(last, 64);
-    let alive = host.call_command("cycler", "ping", &[]).expect("回收后实例可用");
+    let alive = host
+        .call_command("cycler", "ping", &[])
+        .expect("回收后实例可用");
     assert_eq!(alive, ExtensionValue::Symbol("alive".to_string()));
     host.deactivate("cycler").expect("停止后清扫不 panic");
 }
@@ -344,7 +359,9 @@ fn garbage_cycles_are_collected_and_instance_survives() {
 /// 脚本 error / 未捕获 raise 是脚本域失败。
 #[test]
 fn script_failures_are_typed() {
-    let package = package("failing", r#"
+    let package = package(
+        "failing",
+        r#"
 (register-command! "boom" (lambda () (error "业务失败" 42)))
 (register-command! "raise-it" (lambda () (raise 'custom)))
 (register-command! "guarded"
@@ -352,7 +369,8 @@ fn script_failures_are_typed() {
     (guard (caught ((symbol? caught) #t))
       (raise 'inner)
       'unreachable)))
-"#);
+"#,
+    );
     let mut host = ExtensionHost::new();
     let prepared = host.prepare(&package).expect("准备");
     host.activate(prepared).expect("激活");
@@ -509,44 +527,44 @@ fn r7rs_semantics_samples() {
         panic!("checks 应返回列表");
     };
     let expected: Vec<ExtensionValue> = vec![
-        ExtensionValue::Int(1),                                // counter-a 第一次
-        ExtensionValue::Int(2),                                // counter-a 第二次
-        ExtensionValue::Int(1),                                // counter-b 独立
-        ExtensionValue::Symbol("done".into()),                 // 尾调用
+        ExtensionValue::Int(1),                // counter-a 第一次
+        ExtensionValue::Int(2),                // counter-a 第二次
+        ExtensionValue::Int(1),                // counter-b 独立
+        ExtensionValue::Symbol("done".into()), // 尾调用
         ExtensionValue::List(vec![
             ExtensionValue::Int(2),
             ExtensionValue::Int(1),
             ExtensionValue::Int(99),
-        ]),                                                     // swap! 卫生
-        ExtensionValue::Bool(true),                             // bignum 正数
-        ExtensionValue::Bool(true),                             // 1/3+1/6 = 1/2
-        ExtensionValue::Symbol("out".into()),                   // call/cc 逃逸
+        ]), // swap! 卫生
+        ExtensionValue::Bool(true),            // bignum 正数
+        ExtensionValue::Bool(true),            // 1/3+1/6 = 1/2
+        ExtensionValue::Symbol("out".into()),  // call/cc 逃逸
         ExtensionValue::List(vec![
             ExtensionValue::Symbol("after".into()),
             ExtensionValue::Symbol("before".into()),
-        ]),                                                     // wind 追踪（倒序 cons）
+        ]), // wind 追踪（倒序 cons）
         ExtensionValue::List(vec![
             ExtensionValue::Bool(true),
             ExtensionValue::Int(3),
             ExtensionValue::Int(5),
-        ]),                                                     // record
-        ExtensionValue::Int(42),                                // 库 triple
+        ]), // record
+        ExtensionValue::Int(42),               // 库 triple
         ExtensionValue::List(vec![
             ExtensionValue::Int(1),
             ExtensionValue::Int(2),
             ExtensionValue::Int(3),
             ExtensionValue::Int(4),
-        ]),                                                     // quasiquote
-        ExtensionValue::Int(12),                                // (values 3 4) *
-        ExtensionValue::Int(42),                                // parameterize 内
-        ExtensionValue::Int(10),                                // parameterize 外恢复
-        ExtensionValue::Int(3),                                 // force delay 取尾值
-        ExtensionValue::Int(3),                                 // force 幂等
-        ExtensionValue::Int(15),                                // raise-continuable 5+10
-        ExtensionValue::Text("\u{1}\u{2}\u{3}\u{4}".into()),    // utf8->string
-        ExtensionValue::Text("line1\n".into()),                 // 输出端口
-        ExtensionValue::Int(2),                                 // read 解析 (a b)
-        ExtensionValue::Int(7),                                 // my-or
+        ]), // quasiquote
+        ExtensionValue::Int(12),               // (values 3 4) *
+        ExtensionValue::Int(42),               // parameterize 内
+        ExtensionValue::Int(10),               // parameterize 外恢复
+        ExtensionValue::Int(3),                // force delay 取尾值
+        ExtensionValue::Int(3),                // force 幂等
+        ExtensionValue::Int(15),               // raise-continuable 5+10
+        ExtensionValue::Text("\u{1}\u{2}\u{3}\u{4}".into()), // utf8->string
+        ExtensionValue::Text("line1\n".into()), // 输出端口
+        ExtensionValue::Int(2),                // read 解析 (a b)
+        ExtensionValue::Int(7),                // my-or
     ];
     assert_eq!(items.len(), expected.len(), "样例数量");
     for (index, (actual, want)) in items.iter().zip(expected.iter()).enumerate() {
@@ -568,11 +586,7 @@ fn boundary_value_limits() {
     let mut host = ExtensionHost::new();
     let prepared = host.prepare(&package).expect("准备");
     host.activate(prepared).expect("激活");
-    match host.call_command(
-        "values",
-        "identity",
-        &[ExtensionValue::Float(f64::NAN)],
-    ) {
+    match host.call_command("values", "identity", &[ExtensionValue::Float(f64::NAN)]) {
         Err(ExtensionError::Argument(_)) => {}
         other => panic!("NaN 应拒绝：{other:?}"),
     }
@@ -701,7 +715,13 @@ fn worker_ui_roundtrip_with_test_app() {
         assert_eq!(receipt.extension_id, "panel-ext");
         // 入口顶层 submit 的初始声明在激活后交付。
         let first = recv_update(&updates_rx);
-        let UiUpdate::Applied { mount, revision, node, .. } = first else {
+        let UiUpdate::Applied {
+            mount,
+            revision,
+            node,
+            ..
+        } = first
+        else {
             panic!("初始声明应 Applied：{first:?}")
         };
         assert_eq!(mount, "panel");
@@ -719,17 +739,14 @@ fn worker_ui_roundtrip_with_test_app() {
         let build_current = Arc::clone(&current);
         let build_projector = Arc::clone(&projector);
         let build_revision = revision_state.clone();
-        let mut app = TestApp::new(
-            (420.0, 320.0),
-            move || {
-                build_revision.get();
-                let node = build_current.lock().unwrap().clone();
-                match node {
-                    Some(node) => build_projector.lock().unwrap().project("panel", &node),
-                    None => column(Vec::<uix::prelude::ViewNode>::new()),
-                }
-            },
-        );
+        let mut app = TestApp::new((420.0, 320.0), move || {
+            build_revision.get();
+            let node = build_current.lock().unwrap().clone();
+            match node {
+                Some(node) => build_projector.lock().unwrap().project("panel", &node),
+                None => column(Vec::<uix::prelude::ViewNode>::new()),
+            }
+        });
         app.settle().expect("初始 settle");
         // automation 前缀：扩展 / 挂载位 / key。
         let title_text = app.text("panel-ext/panel/root/title").expect("标题");
@@ -785,13 +802,15 @@ fn async_port_completes_and_drives_declaration() {
         }))
         .with_async_port(
             "documents-analyze",
-            Arc::new(|_request: u64, _args: &[ExtensionValue], completion: AsyncCompletion| {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                    completion.complete(Ok(ExtensionValue::Text("analyzed".to_string())));
-                });
-                Ok(())
-            }),
+            Arc::new(
+                |_request: u64, _args: &[ExtensionValue], completion: AsyncCompletion| {
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        completion.complete(Ok(ExtensionValue::Text("analyzed".to_string())));
+                    });
+                    Ok(())
+                },
+            ),
         );
     let handle = host.spawn_worker();
     let manifest = "(uix-extension (schema-version 1) (id \"async-ext\") (version \"0.2.0\") \
@@ -833,7 +852,9 @@ fn async_port_completes_and_drives_declaration() {
     let UiUpdate::Applied { node, .. } = done else {
         panic!("异步完成应驱动新声明：{done:?}")
     };
-    let status = handle.call_command("async-ext", "status", &[]).expect("状态");
+    let status = handle
+        .call_command("async-ext", "status", &[])
+        .expect("状态");
     assert_eq!(status, ExtensionValue::Text("done:analyzed".to_string()));
     // UiNode 校验已通过；节点文本可核对。
     let uix::app::extensions::UiNode::Column { children, .. } = &node else {
@@ -897,7 +918,9 @@ fn stale_generation_events_are_dropped() {
             payload: uix::app::extensions::UiEventPayload::Click,
         })
         .expect("投递陈旧事件");
-    let clicks = handle.call_command("panel-ext", "clicks", &[]).expect("状态");
+    let clicks = handle
+        .call_command("panel-ext", "clicks", &[])
+        .expect("状态");
     assert_eq!(clicks, ExtensionValue::Int(0), "陈旧事件不得改状态");
     handle.shutdown().expect("关停");
 }
@@ -944,9 +967,7 @@ fn hot_replace_upgrades_algorithm_and_migrates_state() {
     let candidate = host
         .prepare(&counter_package("hot", "0.2.0", 1, 10))
         .expect("准备 v2");
-    let replacement = host
-        .replace(candidate, receipt.generation)
-        .expect("替换");
+    let replacement = host.replace(candidate, receipt.generation).expect("替换");
     assert_eq!(replacement.generation, receipt.generation + 1);
     assert!(replacement.migrated);
     assert_eq!(replacement.version, "0.2.0");
@@ -1032,26 +1053,21 @@ fn schema_mismatch_replaces_are_rejected() {
 #[test]
 fn async_effects_are_not_duplicated_across_replace() {
     let effect_count = Arc::new(std::sync::Mutex::new(0u64));
-    let host = ExtensionHost::new().with_async_port(
-        "slow-port",
-        {
-            let effect_count = Arc::clone(&effect_count);
-            Arc::new(
-                move |_request: u64,
-                      _args: &[ExtensionValue],
-                      completion: AsyncCompletion| {
-                    let effect_count = Arc::clone(&effect_count);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                        // 外部效果只发生一次。
-                        *effect_count.lock().unwrap() += 1;
-                        completion.complete(Ok(ExtensionValue::Int(1)));
-                    });
-                    Ok(())
-                },
-            )
-        },
-    );
+    let host = ExtensionHost::new().with_async_port("slow-port", {
+        let effect_count = Arc::clone(&effect_count);
+        Arc::new(
+            move |_request: u64, _args: &[ExtensionValue], completion: AsyncCompletion| {
+                let effect_count = Arc::clone(&effect_count);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    // 外部效果只发生一次。
+                    *effect_count.lock().unwrap() += 1;
+                    completion.complete(Ok(ExtensionValue::Int(1)));
+                });
+                Ok(())
+            },
+        )
+    });
     let handle = host.spawn_worker();
     let manifest = "(uix-extension (schema-version 1) (id \"async-replace\") (version \"0.1.0\") \
                     (language r7rs-small) (entry \"main.scm\") (capabilities slow-port))"
@@ -1072,13 +1088,16 @@ fn async_effects_are_not_duplicated_across_replace() {
     let package = package_with(manifest, &[("main.scm", &source)]);
     let prepared = handle.prepare(&package).expect("准备");
     let receipt = handle.activate(prepared).expect("激活");
-    handle.call_command("async-replace", "kick", &[]).expect("发起");
+    handle
+        .call_command("async-replace", "kick", &[])
+        .expect("发起");
 
     // 在途时热替换（外部效果尚未完成）。
-    let v2_manifest = "(uix-extension (schema-version 1) (id \"async-replace\") (version \"0.2.0\") \
+    let v2_manifest =
+        "(uix-extension (schema-version 1) (id \"async-replace\") (version \"0.2.0\") \
                        (language r7rs-small) (entry \"main.scm\") (capabilities slow-port) \
                        (state-schema-version 0))"
-        .to_string();
+            .to_string();
     let v2_source = r#"
 (define results '())
 (register-command! "results" (lambda () results))
@@ -1105,7 +1124,10 @@ fn async_effects_are_not_duplicated_across_replace() {
 fn revocation_blocks_calls_until_teardown() {
     let mut host = ExtensionHost::new();
     let prepared = host
-        .prepare(&package("revoked", r#"(register-command! "ping" (lambda () 'ok))"#))
+        .prepare(&package(
+            "revoked",
+            r#"(register-command! "ping" (lambda () 'ok))"#,
+        ))
         .expect("准备");
     host.activate(prepared).expect("激活");
     host.revoke("revoked").expect("撤权");
@@ -1201,7 +1223,9 @@ fn ui_draft_survives_hot_replace_in_worker() {
     assert!(matches!(after_typing, UiUpdate::Applied { .. }));
 
     // 热替换：typed 状态迁移，草稿由声明值带回。
-    let candidate = handle.prepare(&make_package("0.2.0", "v2")).expect("准备 v2");
+    let candidate = handle
+        .prepare(&make_package("0.2.0", "v2"))
+        .expect("准备 v2");
     let replacement = handle.replace(candidate, receipt.generation).expect("替换");
     assert!(replacement.migrated);
     let replaced = recv_update(&updates_rx);
@@ -1217,4 +1241,134 @@ fn ui_draft_survives_hot_replace_in_worker() {
     };
     assert_eq!(value, "保留我");
     handle.shutdown().expect("关停");
+}
+
+// ---------- 外部扩展包：显式目录读取与冻结快照 ----------
+
+/// 仓库交付的文本处理工作台包（示例与测试共用同一交付物）。
+fn delivered_text_bench(major: u32) -> ExtensionPackage {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("extensions")
+        .join("text-bench")
+        .join(format!("v{major}"));
+    ExtensionPackage::read_from_directory(&directory)
+        .unwrap_or_else(|error| panic!("交付包 v{major} 读取失败：{error}"))
+}
+
+/// 独立临时包目录（无效输入构造）；返回路径，调用方负责清理。
+fn temp_package_dir(name: &str) -> std::path::PathBuf {
+    let directory =
+        std::env::temp_dir().join(format!("uix-ext-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("临时包目录创建");
+    directory
+}
+
+const VALID_MANIFEST: &str = "(uix-extension (schema-version 1) (id \"disk-tools\") \
+     (version \"0.1.0\") (language r7rs-small) (entry \"main.scm\"))";
+
+/// 显式目录读取：清单 + .scm 冻结为不可变快照，检查与执行同源；
+/// 交付包 v1/v2 均可读取且版本与来源文件正确。
+#[test]
+fn directory_packages_freeze_into_immutable_snapshots() {
+    for (major, version) in [(1, "0.1.0"), (2, "0.2.0")] {
+        let package = delivered_text_bench(major);
+        let manifest = package.manifest().expect("清单");
+        assert_eq!(manifest.id, "text-bench");
+        assert_eq!(manifest.version, version);
+        let paths: Vec<&str> = package.source_paths().collect();
+        assert_eq!(paths, ["main.scm"], "入口源文件在包内");
+        assert!(
+            package.entry_source().expect("入口").len() > 100,
+            "入口源码非空"
+        );
+    }
+
+    // 构造目录包：清单 + 多个 .scm 源文件（include 解析来源）。
+    let directory = temp_package_dir("valid");
+    std::fs::write(directory.join("manifest.scm"), VALID_MANIFEST).expect("写清单");
+    std::fs::write(
+        directory.join("main.scm"),
+        "(include \"lib.scm\")\n(register-command! \"run\" (lambda () (double 21)))",
+    )
+    .expect("写入口");
+    std::fs::write(directory.join("lib.scm"), "(define (double x) (* 2 x))").expect("写库");
+    let package = ExtensionPackage::read_from_directory(&directory).expect("读取");
+    let mut host = ExtensionHost::new();
+    let prepared = host.prepare(&package).expect("准备");
+    let receipt = host.activate(prepared).expect("激活");
+    let outcome = host
+        .call_command("disk-tools", "run", &[])
+        .expect("命令调用（include 来源在包内解析）");
+    assert_eq!(outcome, ExtensionValue::Int(42));
+    host.deactivate("disk-tools").expect("停用");
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// 目录读取失败：来源不存在、缺清单、非 .scm 条目、子目录与符号链接
+/// 一律类型化拒绝；不扩大文件访问面。
+#[test]
+fn directory_read_failures_are_typed() {
+    use uix::app::extensions::ExtensionError;
+
+    // 来源不存在（或不是目录）。
+    let missing = std::env::temp_dir().join("uix-ext-test-missing-does-not-exist");
+    let _ = std::fs::remove_dir_all(&missing);
+    let rejected = ExtensionPackage::read_from_directory(&missing).expect_err("缺失来源拒绝");
+    assert!(matches!(rejected, ExtensionError::Package(_)));
+
+    // 缺清单：只有源文件不构成完整包。
+    let no_manifest = temp_package_dir("no-manifest");
+    std::fs::write(no_manifest.join("main.scm"), "(define x 1)").expect("写源码");
+    let rejected = ExtensionPackage::read_from_directory(&no_manifest).expect_err("缺清单拒绝");
+    assert!(matches!(rejected, ExtensionError::Package(_)));
+    assert!(rejected.to_string().contains("manifest.scm"));
+    let _ = std::fs::remove_dir_all(&no_manifest);
+
+    // 非 .scm 条目：包内只允许清单与 .scm 源文件。
+    let stray = temp_package_dir("stray-file");
+    std::fs::write(stray.join("manifest.scm"), VALID_MANIFEST).expect("写清单");
+    std::fs::write(stray.join("main.scm"), "(define x 1)").expect("写源码");
+    std::fs::write(stray.join("README.txt"), "not a scheme file").expect("写杂项");
+    let rejected = ExtensionPackage::read_from_directory(&stray).expect_err("杂项条目拒绝");
+    assert!(matches!(rejected, ExtensionError::Package(_)));
+    assert!(rejected.to_string().contains("README.txt"));
+    let _ = std::fs::remove_dir_all(&stray);
+
+    // 子目录：包是扁平来源集合，目录条目拒绝。
+    let nested = temp_package_dir("nested-dir");
+    std::fs::write(nested.join("manifest.scm"), VALID_MANIFEST).expect("写清单");
+    std::fs::write(nested.join("main.scm"), "(define x 1)").expect("写源码");
+    std::fs::create_dir_all(nested.join("subdir")).expect("建子目录");
+    let rejected = ExtensionPackage::read_from_directory(&nested).expect_err("子目录拒绝");
+    assert!(matches!(rejected, ExtensionError::Package(_)));
+    assert!(rejected.to_string().contains("subdir"));
+    let _ = std::fs::remove_dir_all(&nested);
+
+    // 坏清单语法：解析失败类型化（不完整包）。
+    let broken = temp_package_dir("broken-manifest");
+    std::fs::write(
+        broken.join("manifest.scm"),
+        "(uix-extension (schema-version",
+    )
+    .expect("写坏清单");
+    std::fs::write(broken.join("main.scm"), "(define x 1)").expect("写源码");
+    let rejected = ExtensionPackage::read_from_directory(&broken).expect_err("坏清单拒绝");
+    assert!(matches!(rejected, ExtensionError::Package(_)));
+    let _ = std::fs::remove_dir_all(&broken);
+
+    // 符号链接：不跟随，普通文件之外一律拒绝（仅 Unix 可构造）。
+    #[cfg(unix)]
+    {
+        let linked = temp_package_dir("symlink");
+        std::fs::write(linked.join("manifest.scm"), VALID_MANIFEST).expect("写清单");
+        let outside = std::env::temp_dir().join("uix-ext-test-outside.scm");
+        std::fs::write(&outside, "(define secret 1)").expect("写外部文件");
+        std::os::unix::fs::symlink(&outside, linked.join("main.scm")).expect("建符号链接");
+        let rejected = ExtensionPackage::read_from_directory(&linked).expect_err("符号链接拒绝");
+        assert!(matches!(rejected, ExtensionError::Package(_)));
+        assert!(rejected.to_string().contains("main.scm"));
+        let _ = std::fs::remove_dir_all(&linked);
+        let _ = std::fs::remove_file(&outside);
+    }
 }

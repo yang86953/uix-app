@@ -1,16 +1,17 @@
-//! 《软件动态扩展 × Agent 独立后台操作面》集成场景的公开消费者。
+//! 《外部扩展包 × Agent 独立后台操作面》集成场景的公开消费者。
 //!
 //! 以文本处理工作台为场景：宿主持有版本化文档领域数据并显式授权
-//! 查询 / 提交端口；Scheme 扩展提供真实文本统计算法与动态面板；AI 只经
-//! `AgentWorkspace` 后台视口操作，与用户前台（`TestApp` 输入侧）互不
-//! 干预局部交互状态。本文件只使用已文档化的公开 API。
+//! 查询 / 提交端口；Scheme 扩展（仓库交付的 `extensions/text-bench`
+//! 外部包）实现真实文本统计算法与动态面板；AI 只经 `AgentWorkspace`
+//! 后台视口操作，与用户前台（`TestApp` 输入侧）互不干预局部交互状态。
+//! 本文件只使用已文档化的公开 API；无效包输入在临时目录构造。
 #![cfg(all(
     feature = "agent-control",
     feature = "test-harness",
     feature = "extensions"
 ))]
 
-use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -27,6 +28,27 @@ use uix::ui::test_harness::{AutomationNode, TestApp};
 // 文档规定每进程一个后台操作面；消费者串行持有该公开租约。
 static WORKSPACE: Mutex<()> = Mutex::new(());
 
+// ---------- 交付包与无效输入 ----------
+
+/// 读取仓库交付的外部扩展包（示例与测试共用同一交付物）。
+fn delivered_package(major: u32) -> ExtensionPackage {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("extensions")
+        .join("text-bench")
+        .join(format!("v{major}"));
+    ExtensionPackage::read_from_directory(&directory)
+        .unwrap_or_else(|error| panic!("交付包 v{major} 读取失败（{directory:?}）：{error}"))
+}
+
+/// 独立的临时包目录（无效输入构造用；调用方负责清理）。
+fn temp_package_dir(name: &str) -> PathBuf {
+    let directory =
+        std::env::temp_dir().join(format!("uix-text-bench-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("临时包目录创建");
+    directory
+}
+
 // ---------- 宿主领域数据与共享端口 ----------
 
 #[derive(Clone)]
@@ -35,7 +57,7 @@ struct Document {
     version: u64,
 }
 
-type SharedDocuments = Arc<Mutex<BTreeMap<String, Document>>>;
+type SharedDocuments = Arc<Mutex<std::collections::BTreeMap<String, Document>>>;
 
 fn initial_documents() -> SharedDocuments {
     Arc::new(Mutex::new(
@@ -98,170 +120,6 @@ fn commit_port(documents: SharedDocuments) -> ExtensionPort {
     })
 }
 
-// ---------- 扩展包（与 examples/text_workbench.rs 同一业务算法）----------
-
-fn workbench_package(mount: &str, version: &str, major: u32) -> ExtensionPackage {
-    let manifest = format!(
-        "(uix-extension (schema-version 1) (id \"text-bench\") (version \"{version}\") \
-         (language r7rs-small) (entry \"main.scm\") \
-         (capabilities documents-query documents-commit mount-{mount}) \
-         (state-schema-version 1))"
-    );
-    let title = format!("文本处理工作台 · {mount} v{major}");
-    let cjk_definition = if major >= 2 {
-        r#"(define (cjk-count s)
-  (count-if (lambda (c)
-    (let ((code (char->integer c)))
-      (and (>= code 19968) (<= code 40959)))) s))
-(define (latin-char? c)
-  (let ((code (char->integer c)))
-    (and (or (char-alphabetic? c) (char-numeric? c))
-         (not (and (>= code 19968) (<= code 40959))))))
-(define (latin-word-count s)
-  (define (walk i prev n)
-    (if (= i (string-length s))
-        n
-        (let* ((c (string-ref s i))
-               (word-char (latin-char? c)))
-          (walk (+ i 1) word-char
-                (if (and word-char (not prev)) (+ n 1) n)))))
-  (walk 0 #f 0))
-(define (word-count s) (+ (latin-word-count s) (cjk-count s)))"#
-    } else {
-        r#"(define (word-count s)
-  (define (walk i in-word n)
-    (if (= i (string-length s))
-        (if in-word (+ n 1) n)
-        (let ((space (char-whitespace? (string-ref s i))))
-          (cond ((and (not space) (not in-word)) (walk (+ i 1) #t (+ n 1)))
-                ((and space in-word) (walk (+ i 1) #f n))
-                (else (walk (+ i 1) in-word n))))))
-  (walk 0 #f 0))"#
-    };
-    let stats_tail = if major >= 2 {
-        r#"   (string-append " · CJK " (number->string (cjk-count s)))"#
-    } else {
-        ""
-    };
-    let cjk_line = if major >= 2 {
-        r#"        (list 'text (list 'key "cjk")
-              (string-append "CJK 字符: " (number->string (cjk-count draft))))
-"#
-    } else {
-        ""
-    };
-    let source = format!(
-        r#"
-(define draft "")
-(define result "尚未处理")
-(define target "intro")
-(define base-version 0)
-(define status "就绪")
-(define (count-if pred s)
-  (define (walk i n)
-    (if (= i (string-length s))
-        n
-        (walk (+ i 1) (if (pred (string-ref s i)) (+ n 1) n))))
-  (walk 0 0))
-(define (non-space-count s)
-  (count-if (lambda (c) (not (char-whitespace? c))) s))
-(define (line-count s)
-  (+ 1 (count-if (lambda (c) (char=? c #\newline)) s)))
-{cjk_definition}
-(define (collapse-chars chars acc)
-  (cond ((null? chars) (list->string (reverse acc)))
-        ((char-whitespace? (car chars))
-         (if (or (null? acc) (char=? (car acc) #\space))
-             (collapse-chars (cdr chars) acc)
-             (collapse-chars (cdr chars) (cons #\space acc))))
-        (else (collapse-chars (cdr chars) (cons (car chars) acc)))))
-(define (trim-tail s)
-  (define (drop i)
-    (if (and (> i 0) (char-whitespace? (string-ref s (- i 1))))
-        (drop (- i 1))
-        i))
-  (substring s 0 (drop (string-length s))))
-(define (normalize-text s)
-  (trim-tail (collapse-chars (string->list s) '())))
-(define (stats->text s)
-  (string-append
-   "字符 " (number->string (string-length s))
-   " · 非空白 " (number->string (non-space-count s))
-   " · 行 " (number->string (line-count s))
-   " · 词 " (number->string (word-count s))
-{stats_tail}))
-(define (draft-input reset?)
-  (if reset?
-      (list 'input (list 'key "draft")
-            (list 'placeholder "输入或读取要处理的文本")
-            (list 'on-change 'on-draft-change)
-            (list 'reset #t)
-            draft)
-      (list 'input (list 'key "draft")
-            (list 'placeholder "输入或读取要处理的文本")
-            (list 'on-change 'on-draft-change)
-            draft)))
-(define (declaration reset?)
-  (list 'column (list 'key "root") (list 'pad 12.0) (list 'gap 8.0)
-        (list 'text (list 'key "title") (list 'size 14.0) "{title}")
-        (draft-input reset?)
-        (list 'row (list 'key "controls") (list 'gap 8.0)
-              (list 'button (list 'key "process") (list 'on-click 'on-process) "处理文本")
-              (list 'button (list 'key "load") (list 'on-click 'on-load) "读取文档")
-              (list 'button (list 'key "commit") (list 'on-click 'on-commit) "提交到文档"))
-        (list 'text (list 'key "stats") (string-append "统计: " result))
-{cjk_line}        (list 'text (list 'key "status") (string-append "状态: " status))
-        (list 'text (list 'key "doc")
-              (string-append "目标: " target " @v" (number->string base-version)))))
-(define (on-draft-change text)
-  (set! draft text)
-  (submit-ui! '{mount} (declaration #f)))
-(define (on-process)
-  (set! result (stats->text draft))
-  (set! status "已处理")
-  (submit-ui! '{mount} (declaration #f)))
-(define (on-load)
-  (let* ((entry (documents-query target))
-         (content (list-ref entry 0))
-         (version (list-ref entry 1)))
-    (set! base-version version)
-    (set! draft content)
-    (set! status (string-append "已读取 v" (number->string version)))
-    (submit-ui! '{mount} (declaration #t))))
-(define (on-commit)
-  (let ((outcome (documents-commit target base-version (normalize-text draft))))
-    (if (eq? (list-ref outcome 0) 'ok)
-        (begin
-          (set! base-version (list-ref outcome 1))
-          (set! status (string-append "已提交 v" (number->string (list-ref outcome 1)))))
-        (set! status (string-append "版本冲突：文档已是 v"
-                                    (number->string (list-ref outcome 1)))))
-    (submit-ui! '{mount} (declaration #f))))
-(register-handler! "on-draft-change" on-draft-change)
-(register-handler! "on-process" on-process)
-(register-handler! "on-load" on-load)
-(register-handler! "on-commit" on-commit)
-(register-command! "stats" (lambda (text) (stats->text text)))
-(register-command! "normalize" (lambda (text) (normalize-text text)))
-(register-command! "engine-version" (lambda () "{version}"))
-(register-state-export!
-  (lambda () (list draft result target base-version status)))
-(register-state-import!
-  (lambda (snapshot)
-    (set! draft (list-ref snapshot 0))
-    (set! result (list-ref snapshot 1))
-    (set! target (list-ref snapshot 2))
-    (set! base-version (list-ref snapshot 3))
-    (set! status (list-ref snapshot 4))
-    (submit-ui! '{mount} (declaration #t))))
-(submit-ui! '{mount} (declaration #f))
-"#
-    );
-    let sources: BTreeMap<String, String> =
-        [("main.scm".to_string(), source)].into_iter().collect();
-    ExtensionPackage::from_parts(manifest, sources).expect("包构造")
-}
-
 // ---------- 后台操作面装配 ----------
 
 /// 一次后台装配：workspace（根 + 投影器 + 修订 State）与扩展 worker。
@@ -271,9 +129,16 @@ struct BackgroundWorkbench {
     handle: ExtensionUiHandle,
     documents: SharedDocuments,
     generation: u64,
+    /// 停用终态后清空挂载子树并唤醒后台 owner（应用负责子树退出）。
+    clear_mount: Arc<dyn Fn() + Send + Sync>,
 }
 
 fn spawn_background_workbench() -> BackgroundWorkbench {
+    spawn_background_workbench_with(delivered_package(1))
+}
+
+/// 以指定交付包装配后台（装载代 v1 / 候选 v2 复用同一装配）。
+fn spawn_background_workbench_with(package: ExtensionPackage) -> BackgroundWorkbench {
     let documents = initial_documents();
     let revision = State::new(0u64);
     let current: Arc<Mutex<Option<UiNode>>> = Arc::new(Mutex::new(None));
@@ -288,17 +153,22 @@ fn spawn_background_workbench() -> BackgroundWorkbench {
             let node = root_current.lock().expect("后台声明锁").clone();
             let mut projector = root_projector.lock().expect("后台投影器锁");
             let panel = match (node, projector.as_mut()) {
-                (Some(node), Some(projector)) => projector.project("agent-panel", &node),
+                (Some(node), Some(projector)) => projector.project("panel", &node),
                 _ => column(Vec::<ViewNode>::new()),
             };
-            column_fit((label("AI 独立后台操作面 · 文本处理").font_size(15.0), panel))
+            column_fit((
+                label("AI 独立后台操作面 · 文本处理")
+                    .font_size(15.0)
+                    .automation_id("workspace-root"),
+                panel,
+            ))
         })
         .spawn()
         .expect("后台操作面启动")
     };
     // 扩展线程的声明出口：sink 直接应用 owned 声明并唤醒后台 owner。
     let host = ExtensionHost::new()
-        .with_mount("agent-panel")
+        .with_mount("panel")
         .with_port("documents-query", query_port(Arc::clone(&documents)))
         .with_port("documents-commit", commit_port(Arc::clone(&documents)))
         .with_ui_sink(Arc::new({
@@ -308,11 +178,16 @@ fn spawn_background_workbench() -> BackgroundWorkbench {
             let poster = workspace.poster();
             move |update| match update {
                 UiUpdate::Applied {
-                    node, generation, ..
+                    mut node,
+                    generation,
+                    ..
                 } => {
                     if let Some(projector) = sink_projector.lock().expect("后台投影器锁").as_mut()
                     {
                         projector.update_generation(generation);
+                        // reset 是本次 Applied 的一次性指令：执行后消耗标记，
+                        // 后续重投影不得再次覆盖本地编辑。
+                        projector.consume_declaration_resets(&mut node);
                     }
                     *sink_current.lock().expect("后台声明锁") = Some(node);
                     sink_revision.update(|value| *value += 1);
@@ -324,9 +199,7 @@ fn spawn_background_workbench() -> BackgroundWorkbench {
             }
         }));
     let handle = host.spawn_worker();
-    let prepared = handle
-        .prepare(&workbench_package("agent-panel", "0.1.0", 1))
-        .expect("准备");
+    let prepared = handle.prepare(&package).expect("准备");
     let receipt = handle.activate(prepared).expect("激活");
     *projector.lock().expect("后台投影器锁") = Some(UiProjector::new(
         &receipt.extension_id,
@@ -337,6 +210,16 @@ fn spawn_background_workbench() -> BackgroundWorkbench {
     // 安装后主动推进修订并唤醒，保证一次带投影的完整重建。
     revision.update(|value| *value += 1);
     workspace.poster().wake();
+    let clear_mount: Arc<dyn Fn() + Send + Sync> = Arc::new({
+        let current = Arc::clone(&current);
+        let revision = revision.clone();
+        let poster = workspace.poster();
+        move || {
+            *current.lock().expect("后台声明锁") = None;
+            revision.update(|value| *value += 1);
+            poster.wake();
+        }
+    });
     let client = workspace.client().expect("后台客户端");
     BackgroundWorkbench {
         workspace,
@@ -344,6 +227,7 @@ fn spawn_background_workbench() -> BackgroundWorkbench {
         handle,
         documents,
         generation: receipt.generation,
+        clear_mount,
     }
 }
 
@@ -374,23 +258,78 @@ fn node_value(snapshot: &Value, automation_id: &str) -> String {
         .unwrap_or_else(|| panic!("快照缺少输入值 {automation_id}：{snapshot}"))
 }
 
-const DRAFT: &str = "text-bench/agent-panel/root/draft";
-const PROCESS: &str = "text-bench/agent-panel/root/controls/process";
-const LOAD: &str = "text-bench/agent-panel/root/controls/load";
-const COMMIT: &str = "text-bench/agent-panel/root/controls/commit";
-const STATS: &str = "text-bench/agent-panel/root/stats";
-const TITLE: &str = "text-bench/agent-panel/root/title";
-const STATUS: &str = "text-bench/agent-panel/root/status";
-const CJK: &str = "text-bench/agent-panel/root/cjk";
+const DRAFT: &str = "text-bench/panel/root/draft";
+const PROCESS: &str = "text-bench/panel/root/controls/process";
+const LOAD: &str = "text-bench/panel/root/controls/load";
+const COMMIT: &str = "text-bench/panel/root/controls/commit";
+const STATS: &str = "text-bench/panel/root/stats";
+const TITLE: &str = "text-bench/panel/root/title";
+const STATUS: &str = "text-bench/panel/root/status";
+const CJK: &str = "text-bench/panel/root/cjk";
+const WORKSPACE_ROOT: &str = "workspace-root";
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 
 // ---------- 场景 ----------
 
-/// AI 在后台完成读取 → 输入 → 处理 → 查看结果 → 业务提交的完整闭环；
-/// 只有经授权的提交才改变共享领域数据，语义状态与离屏 PNG 对应。
+/// v1 词数口径（文档化 `stats` 命令）：空串、纯空白、无尾空格单词、
+/// 多词与首尾空白等价输入。修复进入单词与字符串结束的重复计数。
 #[test]
-fn background_agent_roundtrip_and_authorized_commit() {
+fn word_count_v1_stats_covers_boundary_inputs() {
+    let documents = initial_documents();
+    let mut host = ExtensionHost::new()
+        .with_mount("panel")
+        .with_port("documents-query", query_port(Arc::clone(&documents)))
+        .with_port("documents-commit", commit_port(Arc::clone(&documents)));
+    let prepared = host.prepare(&delivered_package(1)).expect("准备");
+    let receipt = host.activate(prepared).expect("激活");
+    assert_eq!(receipt.extension_id, "text-bench");
+
+    let mut stats = |text: &str| {
+        host.call_command(
+            "text-bench",
+            "stats",
+            &[ExtensionValue::Text(text.to_string())],
+        )
+        .expect("stats 命令")
+    };
+    assert_eq!(
+        stats(""),
+        ExtensionValue::Text("字符 0 · 非空白 0 · 行 1 · 词 0".to_string()),
+        "空串无单词"
+    );
+    assert_eq!(
+        stats("   "),
+        ExtensionValue::Text("字符 3 · 非空白 0 · 行 1 · 词 0".to_string()),
+        "纯空白无单词"
+    );
+    assert_eq!(
+        stats("hello"),
+        ExtensionValue::Text("字符 5 · 非空白 5 · 行 1 · 词 1".to_string()),
+        "无尾空格单词只计一次"
+    );
+    assert_eq!(
+        stats("hello world foo"),
+        ExtensionValue::Text("字符 15 · 非空白 13 · 行 1 · 词 3".to_string()),
+        "多词逐段计数"
+    );
+    // 首尾空白与无空白版本等价（空白只分段，不产生单词）。
+    assert_eq!(
+        stats("  hello world  "),
+        ExtensionValue::Text("字符 15 · 非空白 10 · 行 1 · 词 2".to_string()),
+    );
+    assert_eq!(
+        stats("hello world"),
+        ExtensionValue::Text("字符 11 · 非空白 10 · 行 1 · 词 2".to_string()),
+    );
+
+    host.deactivate("text-bench").expect("停用");
+}
+
+/// AI 在后台完成读取 → 等待读取已应用 → 编辑为不同内容 → 处理 → 提交的
+/// 完整编辑闭环；最终提交的是编辑后的内容，而不是读取时的旧内容。
+#[test]
+fn background_agent_edits_after_load_and_commits_edited_content() {
     let _serial = WORKSPACE.lock().unwrap_or_else(|error| error.into_inner());
     let mut bench = spawn_background_workbench();
     let view = bench.client.list_windows().expect("窗口枚举")[0];
@@ -411,50 +350,7 @@ fn background_agent_roundtrip_and_authorized_commit() {
             node_field(snapshot, TITLE, "name").is_some()
         })
         .expect("初始声明未到达");
-    assert_eq!(
-        node_text(&initial, TITLE),
-        "文本处理工作台 · agent-panel v1"
-    );
-
-    // 输入草稿（AI 私有交互状态；事件经 worker 执行脚本）。
-    // 单行输入组件会把换行规范化为空格，这里使用无换行文本。
-    bench
-        .client
-        .perform_set_value(
-            view.window_id,
-            view.generation,
-            DRAFT,
-            "  hello   世界  abc  ",
-        )
-        .expect("输入草稿");
-    bench
-        .client
-        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, DRAFT, "value").as_deref() == Some("  hello   世界  abc  ")
-        })
-        .expect("草稿未进入后台语义状态");
-
-    // 执行文本处理算法（v1 口径：空白分段词数）。
-    bench
-        .client
-        .perform_invoke(view.window_id, view.generation, PROCESS)
-        .expect("执行处理");
-    let processed = bench
-        .client
-        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
-        })
-        .expect("处理结果未回显");
-    assert_eq!(
-        node_text(&processed, STATS),
-        "统计: 字符 19 · 非空白 10 · 行 1 · 词 3"
-    );
-    // 等待完成呈现：后台语义已应用，离屏帧已绘制（呈现回执）。
-    let revision = processed["revision"].as_u64().expect("修订号");
-    bench
-        .client
-        .wait_until_presented(view.window_id, view.generation, revision, TIMEOUT)
-        .expect("离屏帧呈现");
+    assert_eq!(node_text(&initial, TITLE), "文本处理工作台 v1");
 
     // 未读取文档就提交（携带初始版本 0）：明确冲突，共享数据不变。
     bench
@@ -471,13 +367,8 @@ fn background_agent_roundtrip_and_authorized_commit() {
         node_text(&premature, STATUS).contains("已是 v1"),
         "{premature:?}"
     );
-    {
-        let store = bench.documents.lock().expect("文档存储锁");
-        let document = store.get("intro").expect("文档存在");
-        assert_eq!(document.version, 1, "冲突提交不改变共享数据");
-    }
 
-    // 读取宿主文档（显式授权的只读端口），携带版本提交。
+    // 读取宿主文档（显式授权的只读端口），等待读取结果已应用。
     bench
         .client
         .perform_invoke(view.window_id, view.generation, LOAD)
@@ -485,15 +376,51 @@ fn background_agent_roundtrip_and_authorized_commit() {
     let loaded = bench
         .client
         .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, DRAFT, "value").is_some_and(|value| value.starts_with("  UIX"))
+            node_field(snapshot, DRAFT, "value")
+                .is_some_and(|value| value.starts_with("  UIX") && value.contains("第二行内容"))
         })
-        .expect("文档内容未进入草稿");
+        .expect("读取结果未应用到草稿");
     assert!(
         node_text(&loaded, STATUS).contains("已读取 v1"),
         "{loaded:?}"
     );
 
-    // 业务提交：共享文档按端口契约更新（版本递增、内容规范化）。
+    // 编辑为不同内容（AI 私有交互状态；事件经 worker 执行脚本）。
+    let edited = "  AI 编辑后的   新内容  ";
+    bench
+        .client
+        .perform_set_value(view.window_id, view.generation, DRAFT, edited)
+        .expect("编辑草稿");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, DRAFT, "value").as_deref() == Some(edited)
+        })
+        .expect("编辑未覆盖读取内容");
+
+    // 处理并确认编辑后内容的 v1 统计（字符 17 · 非空白 9 · 词 3）。
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, PROCESS)
+        .expect("执行处理");
+    let processed = bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
+        })
+        .expect("处理结果未回显");
+    assert_eq!(
+        node_text(&processed, STATS),
+        "统计: 字符 17 · 非空白 9 · 行 1 · 词 3"
+    );
+    // 等待完成呈现：后台语义已应用，离屏帧已绘制（呈现回执）。
+    let revision = processed["revision"].as_u64().expect("修订号");
+    bench
+        .client
+        .wait_until_presented(view.window_id, view.generation, revision, TIMEOUT)
+        .expect("离屏帧呈现");
+
+    // 业务提交：共享文档更新为编辑后内容的规范化文本（版本递增）。
     bench
         .client
         .perform_invoke(view.window_id, view.generation, COMMIT)
@@ -513,8 +440,8 @@ fn background_agent_roundtrip_and_authorized_commit() {
         let document = store.get("intro").expect("文档存在");
         assert_eq!(document.version, 2, "只有授权提交才递增版本");
         assert_eq!(
-            document.content, "UIX 文本处理工作台 示例文档 第二行内容",
-            "提交的是规范化后的文本"
+            document.content, "AI 编辑后的 新内容",
+            "提交的是编辑后内容，不是读取时的旧内容"
         );
     }
 
@@ -644,9 +571,9 @@ fn foreground_local_state_independent_from_background_activity() {
     let documents = initial_documents();
     let (fg_updates_tx, fg_updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
 
-    // 前台用户 worker（挂载位 user-panel）：声明经通道由测试线程应用。
+    // 前台用户 worker（挂载位 panel）：声明经通道由测试线程应用。
     let fg_host = ExtensionHost::new()
-        .with_mount("user-panel")
+        .with_mount("panel")
         .with_port("documents-query", query_port(Arc::clone(&documents)))
         .with_port("documents-commit", commit_port(Arc::clone(&documents)))
         .with_ui_sink(Arc::new(move |update| {
@@ -657,7 +584,7 @@ fn foreground_local_state_independent_from_background_activity() {
     let fg_revision = State::new(0u64);
     let fg_projector: Arc<Mutex<Option<UiProjector>>> = Arc::new(Mutex::new(None));
     let fg_receipt = fg_handle
-        .prepare(&workbench_package("user-panel", "0.1.0", 1))
+        .prepare(&delivered_package(1))
         .and_then(|prepared| fg_handle.activate(prepared))
         .expect("前台装载");
     *fg_projector.lock().expect("前台投影器锁") = Some(UiProjector::new(
@@ -675,11 +602,14 @@ fn foreground_local_state_independent_from_background_activity() {
                 .expect("前台声明超时");
             match update {
                 UiUpdate::Applied {
-                    node, generation, ..
+                    mut node,
+                    generation,
+                    ..
                 } => {
                     if let Some(projector) = projector.lock().expect("前台投影器锁").as_mut()
                     {
                         projector.update_generation(generation);
+                        projector.consume_declaration_resets(&mut node);
                     }
                     *current.lock().expect("前台声明锁") = Some(node);
                     revision.update(|value| *value += 1);
@@ -698,13 +628,13 @@ fn foreground_local_state_independent_from_background_activity() {
         build_revision.get();
         let node = build_current.lock().expect("前台声明锁").clone();
         match (node, build_projector.lock().expect("前台投影器锁").as_mut()) {
-            (Some(node), Some(projector)) => projector.project("user-panel", &node),
+            (Some(node), Some(projector)) => projector.project("panel", &node),
             _ => column(Vec::<ViewNode>::new()),
         }
     });
     user.settle().expect("前台初始帧");
     let user_before = user.snapshot().nodes;
-    let fg_draft = "text-bench/user-panel/root/draft";
+    let fg_draft = "text-bench/panel/root/draft";
 
     // 用户在前台输入自己的草稿。
     user.set_value(fg_draft, "用户前台草稿 内容")
@@ -728,7 +658,7 @@ fn foreground_local_state_independent_from_background_activity() {
                 let node = root_current.lock().expect("后台声明锁").clone();
                 let mut projector = root_projector.lock().expect("后台投影器锁");
                 let panel = match (node, projector.as_mut()) {
-                    (Some(node), Some(projector)) => projector.project("agent-panel", &node),
+                    (Some(node), Some(projector)) => projector.project("panel", &node),
                     _ => column(Vec::<ViewNode>::new()),
                 };
                 column_fit((label("AI 后台").font_size(15.0), panel))
@@ -737,7 +667,7 @@ fn foreground_local_state_independent_from_background_activity() {
             .expect("后台操作面启动")
         };
         let host = ExtensionHost::new()
-            .with_mount("agent-panel")
+            .with_mount("panel")
             .with_port("documents-query", query_port(Arc::clone(&documents)))
             .with_port("documents-commit", commit_port(Arc::clone(&documents)))
             .with_ui_sink(Arc::new({
@@ -747,12 +677,15 @@ fn foreground_local_state_independent_from_background_activity() {
                 let poster = workspace.poster();
                 move |update| match update {
                     UiUpdate::Applied {
-                        node, generation, ..
+                        mut node,
+                        generation,
+                        ..
                     } => {
                         if let Some(projector) =
                             sink_projector.lock().expect("后台投影器锁").as_mut()
                         {
                             projector.update_generation(generation);
+                            projector.consume_declaration_resets(&mut node);
                         }
                         *sink_current.lock().expect("后台声明锁") = Some(node);
                         sink_revision.update(|value| *value += 1);
@@ -765,7 +698,7 @@ fn foreground_local_state_independent_from_background_activity() {
             }));
         let handle = host.spawn_worker();
         let receipt = handle
-            .prepare(&workbench_package("agent-panel", "0.1.0", 1))
+            .prepare(&delivered_package(1))
             .and_then(|prepared| handle.activate(prepared))
             .expect("后台装载");
         *projector.lock().expect("后台投影器锁") = Some(UiProjector::new(
@@ -781,6 +714,7 @@ fn foreground_local_state_independent_from_background_activity() {
             handle,
             documents: Arc::clone(&documents),
             generation: receipt.generation,
+            clear_mount: Arc::new(|| {}),
         }
     };
     let view = bench.client.list_windows().expect("窗口枚举")[0];
@@ -791,7 +725,7 @@ fn foreground_local_state_independent_from_background_activity() {
         })
         .expect("后台初始声明未到达");
 
-    // AI 在后台输入、处理，读取版本后提交（完整业务闭环）。
+    // AI 在后台输入、读取版本后提交（业务闭环）。
     bench
         .client
         .perform_set_value(
@@ -807,20 +741,6 @@ fn foreground_local_state_independent_from_background_activity() {
             node_field(snapshot, DRAFT, "value").as_deref() == Some("  AI 后台提交   内容 ")
         })
         .expect("后台草稿未更新");
-    bench
-        .client
-        .perform_invoke(view.window_id, view.generation, PROCESS)
-        .expect("后台处理");
-    let ai_stats = bench
-        .client
-        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
-        })
-        .expect("后台处理结果未回显");
-    assert_eq!(
-        node_text(&ai_stats, STATS),
-        "统计: 字符 15 · 非空白 8 · 行 1 · 词 3"
-    );
     // 读取会把后台草稿重置为文档内容；随后按读取版本提交。
     bench
         .client
@@ -873,13 +793,11 @@ fn foreground_local_state_independent_from_background_activity() {
     );
 
     // 共享数据更新按业务契约对前台可见：前台重新读取即得新版本。
-    user.invoke("text-bench/user-panel/root/controls/load")
+    user.invoke("text-bench/panel/root/controls/load")
         .expect("前台读取");
     apply_foreground();
     user.settle().expect("前台帧");
-    let fg_status = user
-        .text("text-bench/user-panel/root/status")
-        .expect("状态");
+    let fg_status = user.text("text-bench/panel/root/status").expect("状态");
     assert!(
         fg_status.contains("已读取 v2"),
         "合法提交对前台可见：{fg_status}"
@@ -894,9 +812,10 @@ fn foreground_local_state_independent_from_background_activity() {
     bench.workspace.close().expect("操作面关闭");
 }
 
-/// 热替换同时升级后台算法与界面，兼容状态与草稿保留；候选失败不破坏旧代。
+/// 热替换同时升级后台算法与界面，兼容状态（含读取版本）迁移保留；
+/// 替换后继续编辑并完成业务提交；无效候选与迁移失败保留旧代。
 #[test]
-fn hot_replace_upgrades_background_and_keeps_compatible_state() {
+fn hot_replace_keeps_editing_and_committing_after_upgrade() {
     let _serial = WORKSPACE.lock().unwrap_or_else(|error| error.into_inner());
     let mut bench = spawn_background_workbench();
     let view = bench.client.list_windows().expect("窗口枚举")[0];
@@ -927,25 +846,30 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
         .client
         .perform_invoke(view.window_id, view.generation, PROCESS)
         .expect("处理");
-    bench
+    let v1_stats = bench
         .client
         .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
             node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
         })
         .expect("v1 结果未回显");
+    assert_eq!(
+        node_text(&v1_stats, STATS),
+        "统计: 字符 19 · 非空白 10 · 行 1 · 词 3"
+    );
 
-    // 先注入失败候选（状态 schema 不一致）：替换被拒，旧代继续服务。
-    let bad_manifest = "(uix-extension (schema-version 1) (id \"text-bench\") (version \"0.3.0\") \
+    // 注入无效候选（外部包文件：状态 schema 不一致）：替换被拒，旧代继续服务。
+    let bad_dir = temp_package_dir("schema-mismatch");
+    std::fs::write(
+        bad_dir.join("manifest.scm"),
+        "(uix-extension (schema-version 1) (id \"text-bench\") (version \"0.3.0\") \
          (language r7rs-small) (entry \"main.scm\") \
-         (capabilities documents-query documents-commit mount-agent-panel) \
-         (state-schema-version 2))";
-    let bad_sources: BTreeMap<String, String> =
-        [("main.scm".to_string(), "(define x 1)".to_string())]
-            .into_iter()
-            .collect();
-    let bad =
-        ExtensionPackage::from_parts(bad_manifest.to_string(), bad_sources).expect("坏包构造");
-    let bad_prepared = bench.handle.prepare(&bad).expect("坏包可准备");
+         (capabilities documents-query documents-commit mount-panel) \
+         (state-schema-version 2))",
+    )
+    .expect("写无效清单");
+    std::fs::write(bad_dir.join("main.scm"), "(define x 1)").expect("写无效源码");
+    let bad = ExtensionPackage::read_from_directory(&bad_dir).expect("无效包可读取");
+    let bad_prepared = bench.handle.prepare(&bad).expect("无效包可准备");
     let rejected = bench
         .handle
         .replace(bad_prepared, bench.generation)
@@ -954,11 +878,11 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
         rejected,
         uix::app::extensions::ExtensionError::Incompatible(_)
     ));
+    let _ = std::fs::remove_dir_all(&bad_dir);
     let still_v1 = bench
         .client
         .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, TITLE, "name")
-                .is_some_and(|text| text == "文本处理工作台 · agent-panel v1")
+            node_field(snapshot, TITLE, "name").is_some_and(|text| text == "文本处理工作台 v1")
         })
         .expect("旧代界面保留");
     assert_eq!(
@@ -966,10 +890,22 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
         "统计: 字符 19 · 非空白 10 · 行 1 · 词 3"
     );
 
-    // 正常替换 v2：算法（词数口径 + CJK 统计）与界面（新增 CJK 行）共同升级。
+    // 读取文档（记录版本 1）：为替换后的提交准备兼容状态。
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, LOAD)
+        .expect("读取文档");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, STATUS, "name").is_some_and(|text| text.contains("已读取 v1"))
+        })
+        .expect("读取未回显");
+
+    // 正常替换 v2（外部包文件升级：算法与界面共同升级）。
     let candidate = bench
         .handle
-        .prepare(&workbench_package("agent-panel", "0.2.0", 2))
+        .prepare(&delivered_package(2))
         .expect("候选准备");
     let replacement = bench
         .handle
@@ -980,24 +916,30 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
     let upgraded = bench
         .client
         .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, TITLE, "name")
-                .is_some_and(|text| text == "文本处理工作台 · agent-panel v2")
+            node_field(snapshot, TITLE, "name").is_some_and(|text| text == "文本处理工作台 v2")
         })
         .expect("新代界面未到达");
-    // 迁移保留兼容状态：草稿与状态文本按导入路径重建。
-    assert_eq!(
-        node_value(&upgraded, DRAFT),
-        "  hello   世界  abc  ",
-        "草稿保留"
-    );
+    // 迁移保留兼容状态：读取版本与草稿按导入路径重建。
     assert!(
-        node_text(&upgraded, STATUS).contains("已处理"),
-        "扩展状态保留"
+        node_text(&upgraded, STATUS).contains("已读取 v1"),
+        "读取版本跨代保留：{upgraded:?}"
     );
-    // 新界面节点实际生效。
-    assert_eq!(node_text(&upgraded, CJK), "CJK 字符: 2");
+    // 新界面节点实际生效：CJK 行按迁移草稿（读取的文档内容，16 个
+    // CJK 字）计算，证明新代算法与新界面同时生效。
+    assert_eq!(node_text(&upgraded, CJK), "CJK 字符: 16");
 
-    // 新算法实际生效：同文本重新处理，词数口径从分段改为拉丁词 + CJK 字。
+    // 热替换后继续编辑：新内容 → 新代算法处理 → 按迁移的版本提交。
+    let edited = "  替换后编辑   beta  ";
+    bench
+        .client
+        .perform_set_value(view.window_id, view.generation, DRAFT, edited)
+        .expect("替换后编辑");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, DRAFT, "value").as_deref() == Some(edited)
+        })
+        .expect("替换后编辑未生效");
     bench
         .client
         .perform_invoke(view.window_id, view.generation, PROCESS)
@@ -1005,13 +947,37 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
     let reprocessed = bench
         .client
         .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
-            node_field(snapshot, STATS, "name").is_some_and(|text| text.contains("词 4"))
+            node_field(snapshot, STATS, "name").is_some_and(|text| text.contains("词 6"))
         })
         .expect("新算法未生效");
+    // 字符 16 · 非空白 9 · 行 1 · 词（CJK 5 + 拉丁 1 = 6）· CJK 5。
     assert_eq!(
         node_text(&reprocessed, STATS),
-        "统计: 字符 19 · 非空白 10 · 行 1 · 词 4 · CJK 2"
+        "统计: 字符 16 · 非空白 9 · 行 1 · 词 6 · CJK 5"
     );
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, COMMIT)
+        .expect("替换后提交");
+    let committed = bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, STATUS, "name").is_some_and(|text| text.contains("已提交"))
+        })
+        .expect("替换后提交未回显");
+    assert!(
+        node_text(&committed, STATUS).contains("v2"),
+        "迁移的读取版本支撑提交：{committed:?}"
+    );
+    {
+        let store = bench.documents.lock().expect("文档存储锁");
+        let document = store.get("intro").expect("文档存在");
+        assert_eq!(document.version, 2);
+        assert_eq!(
+            document.content, "替换后编辑 beta",
+            "替换后提交的是编辑后内容"
+        );
+    }
     // 命令入口同步升级（无窗口逻辑与面板同代）。
     let version = bench
         .handle
@@ -1023,9 +989,10 @@ fn hot_replace_upgrades_background_and_keeps_compatible_state() {
     bench.workspace.close().expect("操作面关闭");
 }
 
-/// 撤权、停用与关闭返回真实终态：能力退出、挂载资源释放、不伪报完成。
+/// 撤权、停用与关闭返回真实终态：能力退出、扩展节点退出语义树、
+/// 宿主与后台操作面保持存活；不把关闭操作面当作挂载清理证明。
 #[test]
-fn revocation_deactivation_and_close_return_real_results() {
+fn revocation_deactivation_clears_mount_and_keeps_host_alive() {
     let _serial = WORKSPACE.lock().unwrap_or_else(|error| error.into_inner());
     let mut bench = spawn_background_workbench();
     let view = bench.client.list_windows().expect("窗口枚举")[0];
@@ -1035,9 +1002,14 @@ fn revocation_deactivation_and_close_return_real_results() {
             node_field(snapshot, TITLE, "name").is_some()
         })
         .expect("初始声明未到达");
+    assert_eq!(node_text(&ready, TITLE), "文本处理工作台 v1");
 
-    // 撤权：新调用立即被拒；已呈现界面保留为可观察状态。
+    // 撤权：新调用立即被拒（状态回读可见 revoked）；已呈现界面保留。
     bench.handle.revoke("text-bench").expect("撤权");
+    let statuses = bench.handle.list().expect("状态回读");
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].extension_id, "text-bench");
+    assert!(statuses[0].revoked, "撤权状态可观察");
     let denied = bench
         .handle
         .call_command("text-bench", "engine-version", &[])
@@ -1057,20 +1029,47 @@ fn revocation_deactivation_and_close_return_real_results() {
         })
         .is_err();
     assert!(frozen, "撤权后统计不应变化");
-    assert_eq!(node_text(&ready, TITLE), "文本处理工作台 · agent-panel v1");
 
     // 停用：真实终态后由宿主清空挂载位（示例合同：应用负责子树退出）。
     let teardown = bench.handle.deactivate("text-bench").expect("停用终态");
     assert_eq!(teardown.extension_id, "text-bench");
     assert_eq!(teardown.generation, bench.generation);
-    let gone = bench
-        .handle
-        .call_command("text-bench", "engine-version", &[])
-        .expect_err("停用后实例不可调用");
-    assert!(matches!(
-        gone,
-        uix::app::extensions::ExtensionError::UnknownExtension(_)
-    ));
+    (bench.clear_mount)();
+    let cleared = bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, DRAFT, "value").is_none()
+                && node_field(snapshot, TITLE, "name").is_none()
+                && node_field(snapshot, WORKSPACE_ROOT, "name").is_some()
+        })
+        .expect("挂载子树未退出");
+    // 扩展节点全部退出语义树；宿主根（操作面）仍存活。
+    let extension_nodes = cleared["nodes"]
+        .as_array()
+        .expect("节点表")
+        .iter()
+        .filter(|node| {
+            node["automation_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("text-bench/"))
+        })
+        .count();
+    assert_eq!(extension_nodes, 0, "扩展节点退出语义树");
+    // 旧目标不可再操作：对已退出节点的动作明确失败。
+    let stale_action = bench
+        .client
+        .perform_invoke(view.window_id, view.generation, PROCESS);
+    assert!(stale_action.is_err(), "旧目标不可再操作");
+    // 宿主其他功能仍可用：操作面枚举、快照与截图照常工作。
+    let windows = bench.client.list_windows().expect("操作面存活");
+    assert_eq!(windows.len(), 1);
+    let screenshot = bench
+        .client
+        .request(serde_json::json!({
+            "type": "screenshot", "window_id": view.window_id
+        }))
+        .expect("停用后截图");
+    assert_eq!(screenshot["ok"], true);
     // 重复停用返回真实失败，不伪报完成。
     let repeated = bench
         .handle
@@ -1086,4 +1085,122 @@ fn revocation_deactivation_and_close_return_real_results() {
     bench.workspace.close().expect("操作面关闭");
     let closed = bench.client.snapshot(view.window_id);
     assert!(closed.is_err(), "操作面关闭后端点不可再用");
+}
+
+/// 停用后同一宿主进程重新装载：新实例完成一次业务操作，旧代事件
+/// 不污染新实例（陈旧代事件被稳定丢弃）。
+#[test]
+fn reload_after_teardown_completes_business_without_stale_pollution() {
+    let _serial = WORKSPACE.lock().unwrap_or_else(|error| error.into_inner());
+    let mut bench = spawn_background_workbench();
+    let view = bench.client.list_windows().expect("窗口枚举")[0];
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, TITLE, "name").is_some()
+        })
+        .expect("初始声明未到达");
+
+    // 首代停用并清空挂载。
+    let old_generation = bench.generation;
+    bench.handle.deactivate("text-bench").expect("停用");
+    (bench.clear_mount)();
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, TITLE, "name").is_none()
+        })
+        .expect("挂载子树未退出");
+
+    // 同一 worker 重新装载：新代身份递增，初始声明到达。
+    let prepared = bench
+        .handle
+        .prepare(&delivered_package(1))
+        .expect("重新准备");
+    let receipt = bench.handle.activate(prepared).expect("重新激活");
+    assert!(receipt.generation > old_generation, "新代身份不复用旧代");
+    bench.generation = receipt.generation;
+    let reloaded = bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, TITLE, "name").is_some_and(|text| text == "文本处理工作台 v1")
+        })
+        .expect("重装初始声明未到达");
+    // 新实例状态干净：统计回到初始值，未被首代状态污染。
+    assert_eq!(node_text(&reloaded, STATS), "统计: 尚未处理");
+
+    // 旧代事件不污染新实例：投递首代 generation 的事件，稳定丢弃。
+    bench
+        .handle
+        .event_sender()
+        .send(uix::app::extensions::UiEvent {
+            extension: "text-bench".to_string(),
+            generation: old_generation,
+            handler: "on-process".to_string(),
+            payload: uix::app::extensions::UiEventPayload::Click,
+        })
+        .expect("投递陈旧事件");
+    let untouched = bench
+        .client
+        .wait_for_snapshot(view.window_id, Duration::from_millis(600), |snapshot| {
+            node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
+        })
+        .is_err();
+    assert!(untouched, "陈旧代事件不得驱动新实例");
+
+    // 新实例完成一次业务操作：读取 → 编辑 → 处理 → 提交。
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, LOAD)
+        .expect("读取");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, DRAFT, "value")
+                .is_some_and(|value| value.starts_with("  UIX") && value.contains("第二行内容"))
+        })
+        .expect("读取未应用");
+    bench
+        .client
+        .perform_set_value(view.window_id, view.generation, DRAFT, " 重装后编辑 ")
+        .expect("编辑");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, DRAFT, "value").as_deref() == Some(" 重装后编辑 ")
+        })
+        .expect("编辑未应用");
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, PROCESS)
+        .expect("处理");
+    bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, STATS, "name").is_some_and(|text| text != "统计: 尚未处理")
+        })
+        .expect("处理未回显");
+    bench
+        .client
+        .perform_invoke(view.window_id, view.generation, COMMIT)
+        .expect("提交");
+    let committed = bench
+        .client
+        .wait_for_snapshot(view.window_id, TIMEOUT, |snapshot| {
+            node_field(snapshot, STATUS, "name").is_some_and(|text| text.contains("已提交"))
+        })
+        .expect("提交未回显");
+    assert!(
+        node_text(&committed, STATUS).contains("v2"),
+        "{committed:?}"
+    );
+    {
+        let store = bench.documents.lock().expect("文档存储锁");
+        let document = store.get("intro").expect("文档存在");
+        assert_eq!(document.version, 2);
+        assert_eq!(document.content, "重装后编辑", "新实例提交编辑后内容");
+    }
+
+    bench.handle.shutdown().expect("worker 关停");
+    bench.workspace.close().expect("操作面关闭");
 }
