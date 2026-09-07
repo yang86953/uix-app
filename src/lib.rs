@@ -201,7 +201,7 @@ extern crate self as uix;
 extern crate windows_core;
 
 // 导出 uix-lang 编译期入口与路由 key 派生宏。
-pub use uix_derive::{Display, uix, uix_app, uix_items};
+pub use uix_derive::{Display, uix, uix_app, uix_items, uix_module};
 // 显式 Vulkan/OpenGL parity 的跨 System 测试组合不进入生产公开面。
 #[cfg(any(
     feature = "vulkan-parity-test",

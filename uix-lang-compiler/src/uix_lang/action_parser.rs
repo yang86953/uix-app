@@ -92,6 +92,31 @@ struct ActionBlockParser<'a> {
     source: &'a str,
     origin: SourceSpan,
     offset: usize,
+    // 仅应用模块入口登记 await；既有 Widget action 仍拒绝该关键字。
+    module_awaits: Option<Vec<usize>>,
+}
+
+pub(crate) struct ModuleActionBody {
+    pub body: ActionBody,
+    pub awaits: Vec<usize>,
+}
+
+// 可移植模块复用同一语句解析器，不通过 Widget 的无参数 action 声明语法。
+pub(crate) fn parse_module_body(source: &str, origin: SourceSpan) -> Result<ModuleActionBody, Diagnostic> {
+    if starts_keyword(source, 0, "do") {
+        let mut parser = ActionBlockParser::new(source, origin);
+        parser.module_awaits = Some(Vec::new());
+        parser.consume_keyword("do")?;
+        parser.skip_whitespace();
+        let block = parser.parse_block()?;
+        parser.skip_whitespace();
+        if !parser.is_end() {
+            return Err(parser.error_here("模块函数体后有多余内容", "删除 do 块后的内容"));
+        }
+        Ok(ModuleActionBody { body: ActionBody::Block(block), awaits: parser.module_awaits.unwrap_or_default() })
+    } else {
+        Ok(ModuleActionBody { body: ActionBody::Expression(parse_expression(source, origin)?), awaits: Vec::new() })
+    }
 }
 
 impl<'a> ActionBlockParser<'a> {
@@ -100,6 +125,7 @@ impl<'a> ActionBlockParser<'a> {
             source,
             origin,
             offset: 0,
+            module_awaits: None,
         }
     }
 
@@ -159,8 +185,12 @@ impl<'a> ActionBlockParser<'a> {
         self.expect_char('=', "let 声明缺少 =", "使用 let name = expression;")?;
         let expression_start = self.offset;
         let expression_end = self.read_until_statement_end()?;
-        let (expression_start, expression_end) =
+        let (mut expression_start, expression_end) =
             trim_range(self.source, expression_start, expression_end);
+        if self.module_awaits.is_some() && starts_keyword(self.source, expression_start, "await") {
+            if let Some(awaits) = &mut self.module_awaits { awaits.push(self.origin.start + start); }
+            expression_start = trim_range(self.source, expression_start + "await".len(), expression_end).0;
+        }
         let initializer = parse_expression(
             &self.source[expression_start..expression_end],
             self.span(expression_start, expression_end),

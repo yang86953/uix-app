@@ -15,6 +15,8 @@ use source_map::SourceMap;
 
 mod compiler_session;
 mod formatter;
+/// 可移植应用模块与原有 UI 入口共享词法、语法、来源与表达式事实。
+pub mod modules;
 pub use compiler_session::CompilerSession;
 /// 导出可选的开发期纯 UI AOT 热重载入口。
 #[cfg(feature = "hot-reload")]

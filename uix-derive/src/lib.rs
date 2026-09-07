@@ -111,6 +111,28 @@ pub fn uix_items(input: TokenStream) -> TokenStream {
     uix_entry::expand_items_public(&input).into()
 }
 
+/// 把可移植 Module 编译为含原生 Rust 函数的不可变模块产物。
+#[proc_macro]
+pub fn uix_module(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::LitStr);
+    let source = input.value();
+    let result = if source.trim_end().ends_with(".uix") && !source.contains('<') {
+        let directory = match std::env::var("CARGO_MANIFEST_DIR") {
+            Ok(v) => v,
+            Err(e) => return syn::Error::new(input.span(), format!("缺少构建目录：{e}")).to_compile_error().into(),
+        };
+        let path = std::path::Path::new(&directory).join(&source);
+        uix_lang_compiler::modules::compile_file(&path).map(|tokens| {
+            let path = path.to_string_lossy().to_string();
+            quote! {{ const _: &str = include_str!(#path); #tokens }}
+        })
+    } else { uix_lang_compiler::modules::compile_inline(&source, "<uix_module>") };
+    match result {
+        Ok(tokens) => tokens.into(),
+        Err(e) => syn::Error::new(input.span(), format!("{} {}:{}:{} {}", e.code, e.source_name, e.line, e.column, e.message)).to_compile_error().into(),
+    }
+}
+
 // 为根 crate 的真实消费者编译 Gate 保留内部内嵌入口。
 #[doc(hidden)]
 // 声明内部过程宏以保持既有消费者测试兼容。

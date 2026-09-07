@@ -39,6 +39,8 @@ pub mod agent_client;
 #[cfg(feature = "agent-control")]
 pub mod agent_workspace;
 pub(crate) mod event_loop;
+#[cfg(feature = "uix-modules")]
+pub mod modules;
 #[cfg(feature = "extensions")]
 pub mod extensions;
 pub(crate) mod queues;

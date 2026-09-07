@@ -7,6 +7,7 @@ license-file = "../LICENSE"
 description = "UIX Lang shared build-time compiler system"
 
 [dependencies]
+uix-lang-runtime = { path = "../uix-lang-runtime", version = "0.0.8", registry = "gitea" }
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "3", features = ["full"] }
