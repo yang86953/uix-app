@@ -33,7 +33,6 @@ pub(super) fn module(document: &Document, source: &str) -> Result<(Module, Vec<M
     let mut states = Vec::new();
     let mut functions = Vec::new();
     let mut ports = Vec::new();
-    let mut tasks = Vec::new();
     let mut signatures = BTreeMap::new();
     let mut state_types = BTreeMap::new();
     let mut symbols = Vec::new();
@@ -81,6 +80,11 @@ pub(super) fn module(document: &Document, source: &str) -> Result<(Module, Vec<M
                     asynchronous: if element.name == "AsyncCommand" { true } else { match attr(element, "async")?.unwrap_or("false") {
                         "true" => true, "false" => false, _ => return Err(fail(element.span, "async 必须是 true 或 false")),
                     } } };
+                // 当前运行器只执行同步函数。保留异步合同字段，但不能接受没有
+                // 调度器与 AOT 支持的入口，更不能把 await 静默降级为同步调用。
+                if signature.asynchronous {
+                    return Err(fail(element.span, "当前应用模块运行器尚不支持 AsyncCommand 或异步端口"));
+                }
                 signatures.insert(name.to_string(), signature.clone());
                 if element.name == "Port" { ports.push(signature); }
             }
@@ -100,11 +104,7 @@ pub(super) fn module(document: &Document, source: &str) -> Result<(Module, Vec<M
         let exported = match attr(element, "export")?.unwrap_or(if element.name == "Function" { "false" } else { "true" }) {
             "true" => true, "false" => false, _ => return Err(fail(element.span, "export 必须为 true 或 false")),
         };
-        if signature.asynchronous {
-            tasks.push(super::task::check(signature, exported, body.body, body.awaits, scope, &ports, element.span)?);
-            continue;
-        }
-        if !body.awaits.is_empty() { return Err(fail(element.span, "await 只允许出现在 AsyncCommand")); }
+        if !body.awaits.is_empty() { return Err(fail(element.span, "当前应用模块运行器尚不支持 await")); }
         let (body, returns) = match body.body {
             ActionBody::Expression(expr) => (vec![Statement::Return(Some(scope.expr(&expr, Some(&signature.returns))?))], true),
             ActionBody::Block(block) => scope.block(&block)?,
@@ -115,7 +115,7 @@ pub(super) fn module(document: &Document, source: &str) -> Result<(Module, Vec<M
     let views: Vec<_> = nodes.iter().filter(|e| e.name == "View").collect();
     if views.len() > 1 { return Err(fail(root.span, "模块只允许一个 View")); }
     let view = views.first().map(|element| super::view::check(element, source, &signatures, &state_types, &mut functions)).transpose()?;
-    Ok((Module { name, version, state_schema: schema, states, functions, ports, view, tasks }, symbols))
+    Ok((Module { name, version, state_schema: schema, states, functions, ports, view, tasks: Vec::new() }, symbols))
 }
 
 fn parameters(source: &str, records: &BTreeMap<String, Type>, span: SourceSpan) -> Result<Vec<(String, Type)>, Diagnostic> {

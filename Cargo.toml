@@ -254,6 +254,11 @@ required-features = ["agent-control"]
 name = "text_workbench"
 required-features = ["extensions", "agent-control"]
 
+# 外部扩展面板同样依赖可选的扩展运行器；默认测试图不得编译此示例。
+[[example]]
+name = "extension_panel"
+required-features = ["extensions"]
+
 # 软件动态扩展公开 API 消费者只在显式扩展 capability 下进入测试图。
 [[test]]
 name = "extensions_public_api"

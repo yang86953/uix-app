@@ -5,7 +5,6 @@ mod check;
 mod expression;
 mod emit;
 mod view;
-mod task;
 use crate::{CompilerDiagnostic, DiagnosticPhase, source_graph::{SourceGraph, SourceId}, uix_lang::*};
 use std::{collections::BTreeMap, path::Path};
 use uix_lang_runtime::*;

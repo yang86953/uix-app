@@ -8,8 +8,10 @@ use crate::ui::theme::style::Style;
 use crate::ui::widgets::window_chrome::WindowInteractionRegion;
 // 引入当前已登记消费统一样式的具体组件。
 use crate::ui::widgets::{
-    Button, Card, Container, Grid, Icon, Input, Label, MenuBar, ScrollView, Select, Typography,
+    Button, Card, Container, Grid, Icon, Input, Label, ScrollView, Select, Typography,
 };
+#[cfg(feature = "navigation")]
+use crate::ui::widgets::MenuBar;
 // VirtualScroll 是布局能力组件而非 widgets 命名空间成员，单独引入。
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 // Modal 只在 feedback capability 启用时进入统一样式桥接。
@@ -126,17 +128,6 @@ impl ViewAdapter {
                 // 选择器同 Input 一样直接消费叶控件尺寸，避免父容器重新按 hug 测量。
                 select.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
             }
-        } else if tid == std::any::TypeId::of::<MenuBar>() {
-            if let Some(menu_bar) = widget.as_any_mut().downcast_mut::<MenuBar>() {
-                // 菜单栏只消费入口前景/背景覆盖与 Flex 布局字段，弹层视觉保持私有。
-                menu_bar.apply_view_layout_style(style);
-                if let Some(g) = flex_grow_override {
-                    menu_bar.override_flex_grow(g);
-                }
-                if let Some(s) = flex_shrink_override {
-                    menu_bar.override_flex_shrink(s);
-                }
-            }
         // Typography 只取得自己消费的文本排版字段，不取得 View 生命周期。
         } else if let Some(typography) = widget.as_any_mut().downcast_mut::<Typography>() {
             // 把公开 Style 中排版组件消费的文本字段交给组件。
@@ -160,6 +151,18 @@ impl ViewAdapter {
                 .downcast_mut::<WindowInteractionRegion>()
             {
                 region.apply_view_style(style, flex_grow_override, flex_shrink_override);
+            }
+        }
+
+        #[cfg(feature = "navigation")]
+        if let Some(menu_bar) = widget.as_any_mut().downcast_mut::<MenuBar>() {
+            // 菜单栏只消费入口前景/背景覆盖与 Flex 布局字段，弹层视觉保持私有。
+            menu_bar.apply_view_layout_style(style);
+            if let Some(g) = flex_grow_override {
+                menu_bar.override_flex_grow(g);
+            }
+            if let Some(s) = flex_shrink_override {
+                menu_bar.override_flex_shrink(s);
             }
         }
 

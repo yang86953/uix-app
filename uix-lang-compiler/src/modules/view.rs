@@ -50,7 +50,7 @@ fn node(element: &Element, source: &str, signatures: &BTreeMap<String, Signature
         };
         let generated = format!("__uix_view_{}", functions.len());
         functions.push(Function { signature: Signature { name: generated.clone(), parameters: vec![], returns: ty,
-            effect: Effect::Query }, exported: false, local_count: scope.next_slot,
+            effect: Effect::Query, asynchronous: false }, exported: false, local_count: scope.next_slot,
             body: Body::Dynamic(vec![Statement::Return(Some(expr))]), location: location(source, element.span) });
         properties.insert(name.to_string(), generated);
     }
@@ -66,7 +66,7 @@ fn node(element: &Element, source: &str, signatures: &BTreeMap<String, Signature
         } else { vec![] };
         let expr = scope.expr(&value.expression, None)?;
         let generated = format!("__uix_event_{}", functions.len());
-        functions.push(Function { signature: Signature { name: generated.clone(), parameters, returns: expr.ty.clone(), effect: Effect::Command },
+        functions.push(Function { signature: Signature { name: generated.clone(), parameters, returns: expr.ty.clone(), effect: Effect::Command, asynchronous: false },
             exported: false, local_count: scope.next_slot, body: Body::Dynamic(vec![Statement::Return(Some(expr))]), location: location(source, a.span) });
         Ok(generated)
     }).transpose()?;

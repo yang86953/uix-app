@@ -69,6 +69,54 @@ fn compiler_rejects_types_unbound_names_and_effects_before_execution() {
 }
 
 #[test]
+fn unfinished_async_module_syntax_is_rejected_by_both_compiler_entries() {
+    for declaration in [
+        r#"<AsyncCommand name="run" returns="Int" body="1" />"#,
+        r#"<Port name="read" returns="String" effect="query" async="true" />"#,
+        r#"<Port name="write" returns="Unit" effect="command" async="true" />"#,
+        r#"<Function name="value" returns="Int" body="1" />
+            <Command name="run" returns="Int" body="do { let result = await value(); return result; }" />"#,
+        r#"<Function name="value" returns="Int" body="1" />
+            <Command name="run" returns="Unit" body="do { if true { let result = await value(); } }" />"#,
+    ] {
+        let source = format!(r#"<Module name="AsyncBoundary" version="1" schema="1">{declaration}</Module>"#);
+        let dynamic = load_module(&source, "async-boundary.uix").expect_err("未交付的异步能力必须明确拒绝");
+        let aot = uix_lang_compiler::modules::compile_inline(&source, "async-boundary.uix")
+            .expect_err("AOT 不得静默丢弃异步任务或 await");
+        assert_eq!(dynamic.code, "UIX2100");
+        assert!(dynamic.message.contains("尚不支持"), "{}", dynamic.message);
+        assert_eq!(aot.code, dynamic.code);
+        assert_eq!(aot.message, dynamic.message);
+        assert_eq!(aot.source_name, "async-boundary.uix");
+        assert!(aot.line > 0);
+    }
+}
+
+#[test]
+fn generated_aot_and_dynamic_signatures_keep_the_synchronous_contract() {
+    for module in [
+        uix::uix_module!("examples/modules/text_bench.uix"),
+        load_module(TEXT, "text_bench.uix").expect("动态模块"),
+    ] {
+        assert!(module.tasks.is_empty());
+        assert!(module.functions.iter().all(|function| !function.signature.asynchronous));
+        assert!(module.ports.iter().all(|port| !port.asynchronous));
+        assert!(module.view.is_some());
+    }
+    let source = r#"<Module name="SyncPort" version="1" schema="1">
+        <Port name="read" returns="Int" effect="query" async="false" />
+        <Query name="run" returns="Int" body="read()" />
+    </Module>"#;
+    let module = load_module(source, "sync-port.uix").expect("显式同步端口仍可用");
+    let signature = module.ports[0].clone();
+    let ports = BTreeMap::from([("read".into(), HostPort {
+        signature, callback: Arc::new(|_| Ok(Value::Int(42))),
+    })]);
+    let mut instance = Instance::new(module, ports, Limits::default()).expect("同步实例");
+    assert_eq!(instance.call("run", &[]).expect("同步调用"), Value::Int(42));
+}
+
+#[test]
 fn failures_rollback_state_and_keep_checked_arithmetic_and_short_circuit() {
     // 表达式字符串沿 UIX 原有规则直接使用运算符，不进行 XML 实体转义。
     let source = FAILURES.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">");
