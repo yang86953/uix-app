@@ -83,8 +83,12 @@ python3 scripts/agent_client.py --instance <本示例的实例ID> screenshot /tm
 
 - `AgentWorkspace::read_only` / `protect` / `deny_action` / `require_confirm` 与 App 上的同名 Agent 策略等价。确认不能覆盖拒绝。
 - `confirm_with` 在后台 UI turn 交付一次性确认意图。回调必须快速返回；建议投递非打断式通知，等待用户主动查看，不自动弹前台模态框或夺焦点。宿主随后调用 `workspace.resolve_confirmation(window_id, confirm_id, allow)`。App 集成的既有 `AppHandle::resolve_agent_confirmation` 只转交后台确认路由。
-- 后台业务线程更新 State 后，调用 `workspace.wake()` 通知此 owner；或用 `workspace.post_to_ui` 在后台 owner 执行短任务。禁止在 UI 回调中阻塞等待客户端响应。空闲无轮询；动画和定时器沿正式驱动的截止时间调度。
+- 后台业务线程更新 State 后，调用 `workspace.wake()` 通知此 owner；或用 `workspace.post_to_ui` 在后台 owner 执行短任务。`workspace.poster()` 返回可克隆的 `AgentWorkspacePoster`（`wake` / `post_to_ui`，能力与 handle 一致、不转移租约与关闭责任），供扩展 worker 线程等长期持有方把结果转交后台 owner——例如动态扩展的 UI 声明 sink。禁止在 UI 回调中阻塞等待客户端响应。空闲无轮询；动画和定时器沿正式驱动的截止时间调度。
 - `close()` / Drop 请求停止；窗口注册、命令、IPC、私有剪贴板与像素资源随 owner 释放。等待线程最多两秒，超时后另有控制面有界排空；阻塞 Rust 回调不能被安全强杀，超时明确失败，不声称回调已撤销。实际线程结束前不允许重用工作面租约。
+
+## 与软件动态扩展的集成
+
+后台操作面可以承载动态扩展面板：应用为后台单独创建 `ExtensionHost`（独立挂载位）并 `spawn_worker`，声明经 `with_ui_sink` 回调应用为 owned 快照后用 `poster.wake()` 唤醒后台 owner 重投影。前台用户界面与后台操作面各自拥有投影器与交互草稿库，只共享应用显式注入的领域端口（查询、受控提交与版本仲裁）。完整业务场景（文本处理工作台：读取 → 输入 → 处理 → 提交闭环、热替换、撤权与停用）见 [软件动态扩展 · 后台操作面接入](软件动态扩展.md#后台操作面接入独立-ui-worker-与共享领域端口)与 `examples/text_workbench.rs`；公开行为验证为 `tests/text_workbench_public_api.rs`。
 
 ## 公开 API 验证
 

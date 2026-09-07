@@ -244,6 +244,11 @@ path = "tests/agent_docs_public_api.rs"
 # 未启用控制面时跳过整个专属消费者目标。
 required-features = ["agent-control"]
 
+# 文本处理工作台示例同时需要动态扩展与 Agent 后台操作面能力。
+[[example]]
+name = "text_workbench"
+required-features = ["extensions", "agent-control"]
+
 # 软件动态扩展公开 API 消费者只在显式扩展 capability 下进入测试图。
 [[test]]
 name = "extensions_public_api"
