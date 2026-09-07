@@ -4,6 +4,14 @@
 
 ## 0.0.8（进行中）
 
+### 动态扩展 × Agent 后台操作面：文本处理工作台集成
+
+- 新增 `examples/text_workbench.rs`（`--features extensions,agent-control`）：宿主持有版本化文档领域数据（内容 + 乐观并发版本），显式授权 `documents-query` 只读与 `documents-commit` 受控提交端口（版本不一致返回冲突、不静默覆盖）；前台真窗与后台操作面各自拥有独立扩展 worker、投影器与草稿库，只共享领域端口。Scheme 扩展实现真实文本统计算法（字符 / 非空白 / 行 / 词 / CJK、空白规范化）与动态面板；`--hot-replace` 两侧共同升级 v2 算法与界面并保留兼容状态，前台原生按钮支持手动热替换 / 撤权 / 停用后台扩展，`--quit-after 秒` 自动优雅退出。
+- 框架补缺：`AgentWorkspaceHandle::poster()` 返回可克隆 `AgentWorkspacePoster`（`wake` / `post_to_ui`，能力与 handle 一致），使扩展 worker 线程等长期持有方能按已文档化方式把结果转交后台 owner；`ExtensionUiHandle::deactivate` 补齐 worker 模式单实例停用（返回 `TeardownReceipt`，挂载子树清空由应用在终态后执行）。
+- 修复后台接入装配竞争：激活回执触发的重帧可能早于投影器安装（渲染空面板后无新触发）；激活后安装投影器须推进一次修订并唤醒，且修订推进必须先于唤醒。
+- 新增公开行为验证 `tests/text_workbench_public_api.rs`（5 项）：后台读取→输入→处理→提交闭环与授权提交语义、未读取 / 陈旧版本提交的显式冲突、前后台并行时局部交互状态独立且合法提交对前台可见、热替换同时升级算法与界面并保留草稿（含坏候选保留旧代）、撤权 / 停用 / 关闭的真实终态。Linux 无显示服务下三轮全绿；另经 `agent_client.py` 完成 `apps` 枚举 → 绑定实例 → set_value → invoke → snapshot → 真实离屏 PNG 的实操闭环。
+- 文档：使用文档补「后台操作面接入」章节（装配要点、wake 顺序、停用合同、可复制操作回路与可见失败）；清理已删除 TODO.md 的全部失效引用与已停用 Gitea Issue 进度口径，动态完成度以实际代码与各文档事实所有者为准。
+
 ### Agent：独立后台操作面，不干扰用户界面
 
 - 新增 `AgentWorkspace` / `AgentWorkspaceHandle`：专用 UI 线程、独立组件树和 AppRuntime，私有导航、草稿、焦点、指针与剪贴板；仅显式共享业务服务。后台使用正式 CPU 渲染管线，不创建隐藏窗口、不注入桌面输入、不读取用户屏幕。

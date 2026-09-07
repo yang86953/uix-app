@@ -6,16 +6,16 @@
 //! layout、paint 与命中路径无解释器参与。
 
 use std::collections::BTreeMap;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
 
 use super::engine::Value as EngineValue;
 use super::ui_declare::UiNode;
 use super::ui_project::{UiEvent, UiEventPayload, UiUpdate};
 use super::{
-    extension_value_from_engine, ActivationReceipt, ExtensionError, ExtensionHost,
-    ExtensionHostConfig, ExtensionPackage, ExtensionPort, ExtensionValue, PreparedExtension,
-    ReplacementReceipt,
+    ActivationReceipt, ExtensionError, ExtensionHost, ExtensionHostConfig, ExtensionPackage,
+    ExtensionPort, ExtensionValue, PreparedExtension, ReplacementReceipt, TeardownReceipt,
+    extension_value_from_engine,
 };
 
 /// 异步端口：宿主实现的非阻塞业务能力；终态经 `AsyncCompletion` 回投。
@@ -73,6 +73,10 @@ pub(crate) enum WorkerCommand {
     Revoke {
         extension: String,
         reply: Sender<Result<(), ExtensionError>>,
+    },
+    Deactivate {
+        extension: String,
+        reply: Sender<Result<TeardownReceipt, ExtensionError>>,
     },
     Complete {
         extension: String,
@@ -181,6 +185,19 @@ impl ExtensionUiHandle {
         receiver.recv().map_err(closed())?
     }
 
+    /// 停止单个实例：撤销注册、排空并释放；重复停用返回 `UnknownExtension`。
+    /// 挂载位子树的清空由应用在收到终态后执行。
+    pub fn deactivate(&self, extension_id: &str) -> Result<TeardownReceipt, ExtensionError> {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        self.commands
+            .send(WorkerCommand::Deactivate {
+                extension: extension_id.to_string(),
+                reply,
+            })
+            .map_err(closed())?;
+        receiver.recv().map_err(closed())?
+    }
+
     /// 面板事件出口：投影闭包经此投递事件（只发送，不执行脚本）。
     pub fn event_sender(&self) -> super::ui_project::UiEventSender {
         super::ui_project::UiEventSender {
@@ -255,8 +272,9 @@ impl Worker {
                     arguments,
                     reply,
                 } => {
-                    let outcome =
-                        self.host.call_internal(&extension, &command, namespace, &arguments);
+                    let outcome = self
+                        .host
+                        .call_internal(&extension, &command, namespace, &arguments);
                     self.drain_side_effects(&extension);
                     let _ = reply.send(outcome);
                 }
@@ -275,9 +293,7 @@ impl Worker {
                                 .manifest()
                                 .map(|manifest| manifest.id.clone())
                                 .unwrap_or_default();
-                            let outcome =
-                                self.host
-                                    .replace(candidate, expected_generation);
+                            let outcome = self.host.replace(candidate, expected_generation);
                             // 新代入口顶层 submit 的初始声明在提交后交付。
                             if let Ok(receipt) = &outcome {
                                 let id = receipt.extension_id.clone();
@@ -294,6 +310,12 @@ impl Worker {
                 }
                 WorkerCommand::Revoke { extension, reply } => {
                     let outcome = self.host.revoke(&extension);
+                    let _ = reply.send(outcome);
+                }
+                WorkerCommand::Deactivate { extension, reply } => {
+                    // 单实例停用：撤销注册、排空并释放；挂载位清空由应用
+                    // 在收到终态后执行（本 worker 不拥有任何窗口）。
+                    let outcome = self.host.deactivate(&extension);
                     let _ = reply.send(outcome);
                 }
                 WorkerCommand::Complete {

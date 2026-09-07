@@ -195,6 +195,28 @@ impl AgentWorkspace {
     }
 }
 
+/// 后台操作面的可克隆转发出口：唤醒后台 owner 或向其投递短任务。
+///
+/// 能力与 `AgentWorkspaceHandle::wake` / `post_to_ui` 完全一致，不转移租约
+/// 与关闭责任；供扩展 worker 线程、业务线程等长期持有方把结果转交后台
+/// owner thread（文档场景：后台业务线程更新 State 后唤醒此操作面）。
+#[derive(Clone)]
+pub struct AgentWorkspacePoster {
+    runtime: AppRuntime,
+    waker: EventLoopWaker,
+}
+
+impl AgentWorkspacePoster {
+    /// 唤醒后台 owner 重新组帧；不触碰任何可见窗口。
+    pub fn wake(&self) {
+        self.waker.wake();
+    }
+    /// 在后台 owner thread 执行短任务；会话已关闭时安全跳过。
+    pub fn post_to_ui(&self, task: impl FnOnce() + Send + 'static) {
+        self.runtime.post_to_ui(WindowId::ROOT, task);
+    }
+}
+
 /// 后台操作面租约。Drop 请求停止并有界等待；不会关闭或激活可见窗口。
 pub struct AgentWorkspaceHandle {
     pub(crate) runtime: AppRuntime,
@@ -233,6 +255,13 @@ impl AgentWorkspaceHandle {
     /// 在后台 owner thread 执行短任务；不得在回调中阻塞等待 Agent 响应。
     pub fn post_to_ui(&self, task: impl FnOnce() + Send + 'static) {
         self.runtime.post_to_ui(WindowId::ROOT, task);
+    }
+    /// 克隆转发出口（wake / post_to_ui）；租约与关闭责任仍由本句柄独占。
+    pub fn poster(&self) -> AgentWorkspacePoster {
+        AgentWorkspacePoster {
+            runtime: self.runtime.clone(),
+            waker: self.waker.clone(),
+        }
     }
     /// 交回用户确认决定；只路由到本租约，不接受其他实例的确认身份。
     pub fn resolve_confirmation(
