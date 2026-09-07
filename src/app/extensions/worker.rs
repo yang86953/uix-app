@@ -74,6 +74,9 @@ pub(crate) enum WorkerCommand {
         extension: String,
         reply: Sender<Result<(), ExtensionError>>,
     },
+    List {
+        reply: Sender<Vec<super::ExtensionStatus>>,
+    },
     Deactivate {
         extension: String,
         reply: Sender<Result<TeardownReceipt, ExtensionError>>,
@@ -183,6 +186,15 @@ impl ExtensionUiHandle {
             })
             .map_err(closed())?;
         receiver.recv().map_err(closed())?
+    }
+
+    /// 活动实例列表（含撤权状态；worker 模式的状态观察入口）。
+    pub fn list(&self) -> Result<Vec<super::ExtensionStatus>, ExtensionError> {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        self.commands
+            .send(WorkerCommand::List { reply })
+            .map_err(closed())?;
+        receiver.recv().map_err(closed())
     }
 
     /// 停止单个实例：撤销注册、排空并释放；重复停用返回 `UnknownExtension`。
@@ -311,6 +323,9 @@ impl Worker {
                 WorkerCommand::Revoke { extension, reply } => {
                     let outcome = self.host.revoke(&extension);
                     let _ = reply.send(outcome);
+                }
+                WorkerCommand::List { reply } => {
+                    let _ = reply.send(self.host.list());
                 }
                 WorkerCommand::Deactivate { extension, reply } => {
                     // 单实例停用：撤销注册、排空并释放；挂载位清空由应用

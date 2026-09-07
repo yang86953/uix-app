@@ -1,34 +1,33 @@
-//! 文本处理工作台：软件动态扩展 × Agent 独立后台操作面集成示例。
+//! 文本处理工作台：外部扩展包交付 × 显式生命周期管理 × Agent 独立后台操作面。
 //!
 //! 运行：
 //! ```sh
 //! cargo run --release --features extensions,agent-control --example text_workbench \
-//!   [--hot-replace] [--quit-after 秒]
+//!   -- --extension-source extensions/text-bench/v1 [--quit-after 秒]
 //! ```
 //!
-//! - 宿主持有文档领域数据（内容 + 乐观并发版本），显式授权
-//!   `documents-query`（只读）与 `documents-commit`（受控写；携带预期
-//!   版本，冲突时携带当前版本拒绝，不静默覆盖）。
-//! - Scheme 扩展实现真实文本处理算法（字符 / 非空白 / 行 / 词统计、
-//!   空白规范化）与动态面板，不是标题或颜色装饰。
-//! - 前台真窗与后台操作面各自拥有扩展 worker、投影器与交互草稿库；
-//!   只共享领域端口，不 clone 同一投影器或前台 AppHandle。
-//! - AI 经 `scripts/agent_client.py` 绑定本进程的后台视口，完成读取 →
-//!   输入 → 处理 → 查看结果 → 提交的完整业务闭环；合法提交后的共享
-//!   文档更新按业务契约对前台可见。
-//! - `--hot-replace` 启动 5 秒后两侧同时升级 v2（统计算法 + 界面共同
-//!   升级，兼容状态与草稿按合同保留）；前台按钮亦可手动触发。
+//! - 宿主启动时不装载任何扩展：外部扩展包（`manifest.scm` + `.scm` 源文件）
+//!   只在显式管理操作时从 `--extension-source` 指定的目录读取并冻结为
+//!   不可变快照；宿主不扫描、不监听目录，来源由本参数显式授权。
+//! - 前台真窗与后台操作面各自拥有扩展 worker、投影器、草稿与交互状态，
+//!   只共享领域端口（查询 / 受控提交）；两侧原生管理按钮执行同一套
+//!   装载 / 替换 / 状态 / 撤权 / 停用操作，结果按侧分别报告到管理状态。
+//!   AI 经 `scripts/agent_client.py` 在后台操作面驱动同一受控入口，不控制
+//!   前台按钮；面板内的业务操作（读取 → 输入 → 处理 → 提交）由扩展自身
+//!   实现，合法提交按版本与授权规则对两侧可见。
+//! - 收尾责任统一：正常关闭与 `--quit-after` 复用同一收尾函数，逐步取得
+//!   扩展 worker 与后台操作面的真实终态；失败与超时如实诊断并以非零码
+//!   退出，不把强制进程退出冒充资源已优雅释放。
 //!
-//! 前台控制区按钮属于宿主原生 UI，不是扩展能力；AI 只经后台操作面
-//! 操作，不控制用户窗口。边界见 docs/使用/能力与边界/Agent后台操作面.md。
+//! 边界见 docs/使用/能力与边界/软件动态扩展.md 与 Agent后台操作面.md。
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
-use uix::app::agent_workspace::AgentWorkspace;
+use uix::app::agent_workspace::{AgentWorkspace, AgentWorkspaceHandle};
 use uix::app::extensions::{
     ExtensionHost, ExtensionPackage, ExtensionPort, ExtensionUiHandle, ExtensionValue, UiNode,
     UiProjector, UiUpdate,
@@ -100,12 +99,301 @@ fn commit_port(documents: SharedDocuments, notice: CommitNotice) -> ExtensionPor
     })
 }
 
+// ---------- 侧装配：worker 句柄、投影器、声明与修订 ----------
+
+/// 一侧扩展装配（前台 / 后台同构；差异只在修订推进的唤醒通道）。
+struct SideAssembly {
+    name: &'static str,
+    handle_slot: Arc<Mutex<Option<ExtensionUiHandle>>>,
+    generation: Arc<Mutex<u64>>,
+    current: Arc<Mutex<Option<UiNode>>>,
+    projector: Arc<Mutex<Option<UiProjector>>>,
+    /// 在该侧 owner 推进一次修订并唤醒重建（前台 post_to_ui；后台 wake）。
+    notify: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl SideAssembly {
+    /// 激活后安装投影器并补帧（初始声明可能早于投影器安装）。
+    fn install_projector(&self, handle: &ExtensionUiHandle, extension_id: &str, generation: u64) {
+        *self.projector.lock().expect("投影器锁") = Some(UiProjector::new(
+            extension_id,
+            generation,
+            handle.event_sender(),
+        ));
+        (self.notify)();
+    }
+
+    /// 停用终态后清空挂载子树（应用负责子树退出）。
+    fn clear_mount(&self) {
+        *self.current.lock().expect("声明锁") = None;
+        (self.notify)();
+    }
+
+    fn report(&self, text: String) -> String {
+        format!("{}：{text}", self.name)
+    }
+}
+
+// ---------- 显式管理操作 ----------
+
+#[derive(Clone, Copy, PartialEq)]
+enum ManageAction {
+    /// 读取授权来源并装载（要求该侧尚无活动实例）。
+    Load,
+    /// 重读授权来源并热替换（预期当前活动代；失败侧旧代保留）。
+    Replace,
+    /// 查看两侧活动实例状态（handle.list 真实回读）。
+    Status,
+    /// 撤权两侧（新调用与事件拒绝，实例保留至停用）。
+    Revoke,
+    /// 停用两侧（排空释放并清空挂载子树）。
+    Deactivate,
+}
+
+impl ManageAction {
+    fn label(self) -> &'static str {
+        match self {
+            ManageAction::Load => "装载",
+            ManageAction::Replace => "替换",
+            ManageAction::Status => "状态",
+            ManageAction::Revoke => "撤权",
+            ManageAction::Deactivate => "停用",
+        }
+    }
+}
+
+/// 管理操作上下文：授权来源、共享管理状态与两侧装配。
+#[derive(Clone)]
+struct ManageContext {
+    source: Option<PathBuf>,
+    status: State<String>,
+    user: Arc<SideAssembly>,
+    agent: Arc<SideAssembly>,
+}
+
+/// 读取授权来源并冻结（阶段 1：包检查）。失败写入管理状态并返回 `None`。
+fn read_authorized_source(context: &ManageContext) -> Option<(ExtensionPackage, PathBuf)> {
+    let Some(path) = context.source.clone() else {
+        context
+            .status
+            .set("装载/替换失败：未配置 --extension-source，宿主未授权任何包来源".to_string());
+        return None;
+    };
+    match ExtensionPackage::read_from_directory(&path) {
+        Ok(package) => Some((package, path)),
+        Err(error) => {
+            context
+                .status
+                .set(format!("包检查失败（来源 {}）：{error}", path.display()));
+            None
+        }
+    }
+}
+
+/// 在独立线程执行管理操作（prepare / activate / replace 阻塞求值，
+/// 不占用任何 UI 线程）；结果按侧分别写入管理状态。
+fn run_manage(action: ManageAction, context: ManageContext) {
+    thread::spawn(move || match action {
+        ManageAction::Status => {
+            let mut reports = Vec::new();
+            for side in [context.user.as_ref(), context.agent.as_ref()] {
+                reports.push(match side_status(&side.handle_slot) {
+                    Ok(text) => side.report(text),
+                    Err(error) => side.report(format!("状态读取失败：{error}")),
+                });
+            }
+            context
+                .status
+                .set(format!("状态回读 · {}", reports.join(" · ")));
+        }
+        ManageAction::Revoke => {
+            let mut reports = Vec::new();
+            for side in [context.user.as_ref(), context.agent.as_ref()] {
+                let Some(handle) = side.handle_slot.lock().expect("扩展句柄锁").clone() else {
+                    reports.push(side.report("worker 不存在".to_string()));
+                    continue;
+                };
+                let outcome = match handle.list() {
+                    Ok(instances) if instances.is_empty() => Ok("无活动实例".to_string()),
+                    _ => handle
+                        .revoke("text-bench")
+                        .map(|_| "已撤权（新调用与面板事件被拒，实例保留至停用）".to_string()),
+                };
+                reports.push(match outcome {
+                    Ok(text) => side.report(text),
+                    Err(error) => side.report(format!("撤权失败：{error}")),
+                });
+            }
+            context
+                .status
+                .set(format!("撤权 · {}", reports.join(" · ")));
+        }
+        ManageAction::Deactivate => {
+            let mut reports = Vec::new();
+            for side in [context.user.as_ref(), context.agent.as_ref()] {
+                let Some(handle) = side.handle_slot.lock().expect("扩展句柄锁").clone() else {
+                    reports.push(side.report("worker 不存在".to_string()));
+                    continue;
+                };
+                match handle.deactivate("text-bench") {
+                    Ok(receipt) => {
+                        // 终态真实返回后按合同清空该侧挂载子树。
+                        side.clear_mount();
+                        reports.push(side.report(format!(
+                            "已停用（generation {}），挂载子树已退出",
+                            receipt.generation
+                        )));
+                    }
+                    Err(error) => reports.push(side.report(format!("停用失败：{error}"))),
+                }
+            }
+            context
+                .status
+                .set(format!("停用 · {}", reports.join(" · ")));
+        }
+        ManageAction::Load | ManageAction::Replace => {
+            let action_label = action.label();
+            // 阶段 1：包检查（读取并冻结为不可变快照）。
+            let Some((package, path)) = read_authorized_source(&context) else {
+                return;
+            };
+            let header = match package.manifest() {
+                Ok(manifest) => format!(
+                    "{action_label} · 包检查通过：{} v{}（{} 文件，来源 {}）",
+                    manifest.id,
+                    manifest.version,
+                    package.source_paths().count() + 1,
+                    path.display()
+                ),
+                Err(error) => {
+                    context.status.set(format!(
+                        "{action_label} · 清单解析失败（来源 {}）：{error}",
+                        path.display()
+                    ));
+                    return;
+                }
+            };
+            // 阶段 2：候选准备；阶段 3：活动代切换（装载 / 热替换）。
+            let mut reports = Vec::new();
+            for side in [context.user.as_ref(), context.agent.as_ref()] {
+                let Some(handle) = side.handle_slot.lock().expect("扩展句柄锁").clone() else {
+                    reports.push(side.report("worker 不存在".to_string()));
+                    continue;
+                };
+                let expected = *side.generation.lock().expect("扩展代际锁");
+                let outcome = match handle.prepare(&package) {
+                    Err(error) => Err(error),
+                    Ok(candidate) => match action {
+                        ManageAction::Load => handle.activate(candidate).map(|receipt| {
+                            (receipt.extension_id, receipt.generation, receipt.commands)
+                        }),
+                        ManageAction::Replace => {
+                            handle.replace(candidate, expected).map(|receipt| {
+                                (receipt.extension_id, receipt.generation, receipt.commands)
+                            })
+                        }
+                        _ => unreachable!("装载与替换之外的分支不携带候选"),
+                    },
+                };
+                match outcome {
+                    Ok((extension_id, generation, commands)) => {
+                        *side.generation.lock().expect("扩展代际锁") = generation;
+                        if action == ManageAction::Load {
+                            side.install_projector(&handle, &extension_id, generation);
+                        } else {
+                            // 热替换：投影器沿用，代际由声明回执切换。
+                            (side.notify)();
+                        }
+                        reports.push(side.report(format!(
+                            "{} g{}（命令 {}），界面应用中",
+                            if action == ManageAction::Load {
+                                "已激活"
+                            } else {
+                                "已切换"
+                            },
+                            generation,
+                            commands.join("/")
+                        )));
+                    }
+                    Err(error) => {
+                        let hint = if action == ManageAction::Replace {
+                            "（旧代保留并继续服务）"
+                        } else {
+                            ""
+                        };
+                        reports.push(side.report(format!("{action_label}失败：{error}{hint}")));
+                    }
+                }
+            }
+            // 阶段结果按侧分别报告；呈现由后台视口 presented_revision 观察。
+            context
+                .status
+                .set(format!("{header} · {}", reports.join(" · ")));
+        }
+    });
+}
+
+/// 单侧活动实例摘要（handle.list 真实回读）。
+fn side_status(
+    handle_slot: &Arc<Mutex<Option<ExtensionUiHandle>>>,
+) -> Result<String, uix::app::extensions::ExtensionError> {
+    let Some(handle) = handle_slot.lock().expect("扩展句柄锁").clone() else {
+        return Ok("worker 不存在".to_string());
+    };
+    let instances = handle.list()?;
+    if instances.is_empty() {
+        return Ok("无活动实例".to_string());
+    }
+    Ok(instances
+        .iter()
+        .map(|instance| {
+            format!(
+                "{} v{} g{}{}（命令 {}）",
+                instance.extension_id,
+                instance.version,
+                instance.generation,
+                if instance.revoked { " 已撤权" } else { "" },
+                instance.commands.join("/")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("；"))
+}
+
+/// 构建管理按钮（宿主原生 UI；点击在独立线程执行管理操作）。
+/// `context_slot` 允许后台根在装配完成前先渲染按钮（点击时读取当前值）。
+fn manage_button(
+    text: &str,
+    automation_id: &str,
+    action: ManageAction,
+    context_slot: &Arc<Mutex<Option<ManageContext>>>,
+) -> ViewNode {
+    button(text)
+        .on_click(&State::new(false), {
+            let context_slot = Arc::clone(context_slot);
+            move |_: &State<bool>| {
+                if let Some(context) = context_slot.lock().expect("管理上下文锁").clone() {
+                    run_manage(action, context);
+                }
+            }
+        })
+        .build()
+        .automation_id(automation_id)
+}
+
+/// 取 `--flag value` 形式的命令行参数值。
+fn argument_value(flag: &str) -> Option<String> {
+    let arguments: Vec<String> = std::env::args().collect();
+    arguments
+        .iter()
+        .position(|argument| argument == flag)
+        .and_then(|index| arguments.get(index + 1))
+        .cloned()
+}
+
 fn main() {
-    let hot_replace = std::env::args().any(|argument| argument == "--hot-replace");
-    let quit_after = std::env::args()
-        .position(|argument| argument == "--quit-after")
-        .and_then(|index| std::env::args().nth(index + 1))
-        .and_then(|value| value.parse::<u64>().ok());
+    let source: Option<PathBuf> = argument_value("--extension-source").map(PathBuf::from);
+    let quit_after = argument_value("--quit-after").and_then(|value| value.parse::<u64>().ok());
 
     // ---- 宿主领域数据与共享端口（前台 / 后台 worker 共同授权面）----
     let documents: SharedDocuments = Arc::new(Mutex::new(
@@ -123,6 +411,12 @@ fn main() {
     let shared_query = query_port(Arc::clone(&documents));
     let shared_commit = commit_port(Arc::clone(&documents), committed_tx);
 
+    // ---- 共享管理状态（两个根读同一 State，操作结果两侧同显）----
+    let mgmt_status =
+        State::new("未装载扩展：等待显式装载（装载 / 替换 / 状态 / 撤权 / 停用）".to_string());
+    // 后台根先于管理上下文装配：按钮经槽在点击时读取当前上下文。
+    let manage_slot: Arc<Mutex<Option<ManageContext>>> = Arc::new(Mutex::new(None));
+
     // ---- 后台操作面：独立根、投影器与交互状态（AI 专用）----
     let bg_revision = State::new(0u64);
     let bg_current: Arc<Mutex<Option<UiNode>>> = Arc::new(Mutex::new(None));
@@ -134,15 +428,58 @@ fn main() {
         let root_revision = bg_revision.clone();
         let root_current = Arc::clone(&bg_current);
         let root_projector = Arc::clone(&bg_projector);
-        let workspace = AgentWorkspace::new(760, 600, move || {
+        let root_status = mgmt_status.clone();
+        let root_manage_slot = Arc::clone(&manage_slot);
+        let workspace = AgentWorkspace::new(800, 660, move || {
             root_revision.get();
+            let status = root_status.get();
             let node = root_current.lock().expect("后台声明锁").clone();
             let mut projector = root_projector.lock().expect("后台投影器锁");
             let panel = match (node, projector.as_mut()) {
-                (Some(node), Some(projector)) => projector.project("agent-panel", &node),
+                (Some(node), Some(projector)) => projector.project("panel", &node),
                 _ => column(Vec::<ViewNode>::new()),
             };
-            column_fit((label("AI 独立后台操作面 · 文本处理").font_size(15.0), panel))
+            // 宿主管理入口：原生 UI，不属于扩展能力；AI 经 Agent 通道驱动。
+            let load = manage_button(
+                "装载扩展",
+                "manage-load",
+                ManageAction::Load,
+                &root_manage_slot,
+            );
+            let replace = manage_button(
+                "热替换扩展",
+                "manage-replace",
+                ManageAction::Replace,
+                &root_manage_slot,
+            );
+            let status_btn = manage_button(
+                "扩展状态",
+                "manage-status-btn",
+                ManageAction::Status,
+                &root_manage_slot,
+            );
+            let revoke = manage_button(
+                "撤权两侧",
+                "manage-revoke",
+                ManageAction::Revoke,
+                &root_manage_slot,
+            );
+            let deactivate = manage_button(
+                "停用两侧",
+                "manage-deactivate",
+                ManageAction::Deactivate,
+                &root_manage_slot,
+            );
+            column_fit((
+                label("AI 独立后台操作面 · 文本处理").font_size(15.0),
+                label(status.as_str())
+                    .font_size(11.0)
+                    .automation_id("manage-status"),
+                row((load, replace, status_btn)).gap(8.0),
+                row((revoke, deactivate)).gap(8.0),
+                label("扩展面板（外部包装载后出现）").font_size(11.0),
+                panel,
+            ))
         })
         .title("UIX text workbench (agent workspace)");
         match workspace.spawn() {
@@ -156,7 +493,7 @@ fn main() {
     // 后台 worker：引擎在独立执行线程；声明经 sink 直接应用并唤醒后台
     // owner（poster 能力与 handle 一致，只是允许扩展线程持有）。
     let bg_host = ExtensionHost::new()
-        .with_mount("agent-panel")
+        .with_mount("panel")
         .with_port("documents-query", Arc::clone(&shared_query))
         .with_port("documents-commit", Arc::clone(&shared_commit))
         .with_ui_sink(Arc::new({
@@ -166,11 +503,16 @@ fn main() {
             let poster = workspace.poster();
             move |update| match update {
                 UiUpdate::Applied {
-                    node, generation, ..
+                    mut node,
+                    generation,
+                    ..
                 } => {
                     if let Some(projector) = projector.lock().expect("后台投影器锁").as_mut()
                     {
                         projector.update_generation(generation);
+                        // reset 是本次 Applied 的一次性指令：执行后消耗标记，
+                        // 后续重投影不得再次覆盖本地编辑。
+                        projector.consume_declaration_resets(&mut node);
                     }
                     *current.lock().expect("后台声明锁") = Some(node);
                     revision.update(|value| *value += 1);
@@ -182,36 +524,34 @@ fn main() {
             }
         }));
     let bg_handle = bg_host.spawn_worker();
-    let bg_receipt = match bg_handle
-        .prepare(&workbench_package("agent-panel", "0.1.0", 1))
-        .and_then(|prepared| bg_handle.activate(prepared))
-    {
-        Ok(receipt) => receipt,
-        Err(error) => {
-            eprintln!("[workbench] 后台扩展装载失败：{error}");
-            let _ = bg_handle.shutdown();
-            let _ = workspace.close();
-            std::process::exit(1);
-        }
-    };
-    *bg_projector.lock().expect("后台投影器锁") = Some(UiProjector::new(
-        &bg_receipt.extension_id,
-        bg_receipt.generation,
-        bg_handle.event_sender(),
-    ));
-    // 装配补帧：初始声明的重帧可能早于投影器安装（渲染出空面板），
-    // 安装后主动推进修订并唤醒，保证一次带投影的完整重建。
-    bg_revision.update(|value| *value += 1);
-    workspace.poster().wake();
-    *bg_generation.lock().expect("后台代际锁") = bg_receipt.generation;
-    *bg_handle_slot.lock().expect("后台句柄锁") = Some(bg_handle.clone());
-    // 关闭权共享槽：定时退出与主线程收尾都会真实释放后台资源。
-    let bg_poster = workspace.poster();
-    let workspace_slot: Arc<Mutex<Option<_>>> = Arc::new(Mutex::new(Some(workspace)));
+    *bg_handle_slot.lock().expect("后台句柄锁") = Some(bg_handle);
+    let agent_side = Arc::new(SideAssembly {
+        name: "agent",
+        handle_slot: Arc::clone(&bg_handle_slot),
+        generation: Arc::clone(&bg_generation),
+        current: Arc::clone(&bg_current),
+        projector: Arc::clone(&bg_projector),
+        notify: Arc::new({
+            let revision = bg_revision.clone();
+            let poster = workspace.poster();
+            move || {
+                revision.update(|value| *value += 1);
+                poster.wake();
+            }
+        }),
+    });
 
     println!(
-        "[workbench] 文本处理工作台已启动：pid={}（前台用户窗口 + 后台操作面）",
-        std::process::id()
+        "[workbench] 宿主已启动：pid={}，二进制 {:?}",
+        std::process::id(),
+        std::env::current_exe().unwrap_or_default()
+    );
+    println!(
+        "[workbench] 授权包来源：{}",
+        source
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "（未配置 --extension-source）".to_string())
     );
     println!(
         "[workbench] 后台接入：python3 scripts/agent_client.py apps 枚举后 --instance 绑定本进程"
@@ -225,38 +565,71 @@ fn main() {
     let fg_handle_slot: Arc<Mutex<Option<ExtensionUiHandle>>> = Arc::new(Mutex::new(None));
     let (fg_updates_tx, fg_updates_rx) = mpsc::channel::<UiUpdate>();
     let doc_summary = State::new("共享文档 intro @v1".to_string());
+    // 前台窗口句柄槽：管理线程经 post_to_ui 把修订推进投回窗口 owner。
+    let fg_app_slot: Arc<Mutex<Option<AppHandle>>> = Arc::new(Mutex::new(None));
 
     let fg_host = ExtensionHost::new()
-        .with_mount("user-panel")
+        .with_mount("panel")
         .with_port("documents-query", shared_query)
         .with_port("documents-commit", shared_commit)
         .with_ui_sink(Arc::new(move |update| {
             let _ = fg_updates_tx.send(update);
         }));
     let fg_handle = fg_host.spawn_worker();
+    *fg_handle_slot.lock().expect("前台句柄锁") = Some(fg_handle);
+    let user_side = Arc::new(SideAssembly {
+        name: "user",
+        handle_slot: Arc::clone(&fg_handle_slot),
+        generation: Arc::clone(&fg_generation),
+        current: Arc::clone(&fg_current),
+        projector: Arc::clone(&fg_projector),
+        notify: Arc::new({
+            let revision = fg_revision.clone();
+            let app_slot = Arc::clone(&fg_app_slot);
+            move || {
+                let revision = revision.clone();
+                match app_slot.lock().expect("app 句柄锁").clone() {
+                    Some(app) => app.post_to_ui(move || {
+                        revision.update(|value| *value += 1);
+                    }),
+                    // 窗口尚未启动时无消费者，直接推进无害。
+                    None => revision.update(|value| *value += 1),
+                }
+            }
+        }),
+    });
+
+    *manage_slot.lock().expect("管理上下文锁") = Some(ManageContext {
+        source: source.clone(),
+        status: mgmt_status.clone(),
+        user: Arc::clone(&user_side),
+        agent: Arc::clone(&agent_side),
+    });
 
     let app = App::new()
         .title("UIX 文本处理工作台")
-        .size(560, 640)
+        .size(620, 720)
         .on_start({
-            let fg_handle = fg_handle.clone();
             let fg_current = Arc::clone(&fg_current);
             let fg_revision = fg_revision.clone();
             let fg_projector = Arc::clone(&fg_projector);
-            let fg_handle_slot = Arc::clone(&fg_handle_slot);
-            let fg_generation = Arc::clone(&fg_generation);
+            let app_capture = Arc::clone(&fg_app_slot);
             let doc_summary = doc_summary.clone();
             move |app_handle| {
+                *app_capture.lock().expect("app 句柄锁") = Some(app_handle.clone());
                 // 声明交付桥：扩展线程 sink → 通道 → 本线程 → 窗口 owner
                 // thread 应用（UI 线程不执行任何 Lisp）。
-                let bridge_projector = Arc::clone(&fg_projector);
                 let deliver = {
                     let current = Arc::clone(&fg_current);
                     let revision = fg_revision.clone();
-                    let projector = Arc::clone(&bridge_projector);
+                    let projector = Arc::clone(&fg_projector);
                     let app_handle = app_handle.clone();
                     move |update: UiUpdate| match update {
-                        UiUpdate::Applied { node, generation, .. } => {
+                        UiUpdate::Applied {
+                            mut node,
+                            generation,
+                            ..
+                        } => {
                             let current = Arc::clone(&current);
                             let revision = revision.clone();
                             let projector = Arc::clone(&projector);
@@ -265,6 +638,8 @@ fn main() {
                                     projector.lock().expect("前台投影器锁").as_mut()
                                 {
                                     projector.update_generation(generation);
+                                    // 同后台：reset 在 Applied 处一次性执行并消耗。
+                                    projector.consume_declaration_resets(&mut node);
                                 }
                                 *current.lock().expect("前台声明锁") = Some(node);
                                 revision.update(|value| *value += 1);
@@ -286,29 +661,12 @@ fn main() {
                     while let Ok((key, version)) = committed_rx.recv() {
                         let summary_state = summary_state.clone();
                         app_handle.post_to_ui(move || {
-                            summary_state.set(format!("共享文档 {key} @v{version}（后台或前台提交后更新）"));
+                            summary_state.set(format!(
+                                "共享文档 {key} @v{version}（后台或前台提交后更新）"
+                            ));
                         });
                     }
                 });
-                // 前台扩展装载：准备 → 激活（初始声明经桥回投）。
-                match fg_handle
-                    .prepare(&workbench_package("user-panel", "0.1.0", 1))
-                    .and_then(|prepared| fg_handle.activate(prepared))
-                {
-                    Ok(receipt) => {
-                        *fg_projector.lock().expect("前台投影器锁") = Some(UiProjector::new(
-                            &receipt.extension_id,
-                            receipt.generation,
-                            fg_handle.event_sender(),
-                        ));
-                        *fg_generation.lock().expect("前台代际锁") = receipt.generation;
-                        *fg_handle_slot.lock().expect("前台句柄锁") = Some(fg_handle.clone());
-                    }
-                    Err(error) => {
-                        *fg_current.lock().expect("前台声明锁") = Some(load_failed_node(&error.to_string()));
-                        fg_revision.update(|value| *value += 1);
-                    }
-                }
             }
         })
         .root({
@@ -316,390 +674,124 @@ fn main() {
             let root_current = Arc::clone(&fg_current);
             let root_projector = Arc::clone(&fg_projector);
             let root_summary = doc_summary.clone();
-            let upgrade_state = State::new(false);
-            let revoke_state = State::new(false);
-            let teardown_state = State::new(false);
-            let fg_upgrade_slot = Arc::clone(&fg_handle_slot);
-            let bg_upgrade_slot = Arc::clone(&bg_handle_slot);
-            let fg_upgrade_generation = Arc::clone(&fg_generation);
-            let bg_upgrade_generation = Arc::clone(&bg_generation);
-            let revoke_slot = Arc::clone(&bg_handle_slot);
-            let teardown_slot = Arc::clone(&bg_handle_slot);
-            let teardown_current = Arc::clone(&bg_current);
-            let teardown_revision = bg_revision.clone();
-            let teardown_poster = bg_poster.clone();
+            let root_status = mgmt_status.clone();
+            let root_manage_slot = Arc::clone(&manage_slot);
             move || {
                 root_revision.get();
                 let summary = root_summary.get();
+                let status = root_status.get();
                 let node = root_current.lock().expect("前台声明锁").clone();
                 let mut projector = root_projector.lock().expect("前台投影器锁");
                 let panel = match (node, projector.as_mut()) {
-                    (Some(node), Some(projector)) => projector.project("user-panel", &node),
+                    (Some(node), Some(projector)) => projector.project("panel", &node),
                     _ => column(Vec::<ViewNode>::new()),
                 };
-                // 宿主控制区：原生 UI，每次重建时构建（ViewNode 不可克隆）。
-                let upgrade = button("热替换扩展到 v2")
-                    .on_click(&upgrade_state, {
-                        let fg_handle_slot = Arc::clone(&fg_upgrade_slot);
-                        let bg_handle_slot = Arc::clone(&bg_upgrade_slot);
-                        let fg_generation = Arc::clone(&fg_upgrade_generation);
-                        let bg_generation = Arc::clone(&bg_upgrade_generation);
-                        move |_flag: &State<bool>| {
-                            spawn_upgrade(
-                                Arc::clone(&fg_handle_slot),
-                                Arc::clone(&bg_handle_slot),
-                                Arc::clone(&fg_generation),
-                                Arc::clone(&bg_generation),
-                            );
-                        }
-                    })
-                    .build()
-                    .automation_id("upgrade-button");
-                let revoke = button("撤权后台扩展")
-                    .on_click(&revoke_state, {
-                        let bg_handle_slot = Arc::clone(&revoke_slot);
-                        move |_flag: &State<bool>| {
-                            let bg_handle_slot = Arc::clone(&bg_handle_slot);
-                            thread::spawn(move || {
-                                let Some(bg_handle) = bg_handle_slot
-                                    .lock()
-                                    .expect("后台句柄锁")
-                                    .clone()
-                                else {
-                                    return;
-                                };
-                                match bg_handle.revoke("text-bench") {
-                                    Ok(()) => eprintln!(
-                                        "[workbench] 后台扩展已撤权：新调用与面板事件被拒绝"
-                                    ),
-                                    Err(error) => {
-                                        eprintln!("[workbench] 撤权失败：{error}")
-                                    }
-                                }
-                            });
-                        }
-                    })
-                    .build()
-                    .automation_id("revoke-button");
-                let teardown = button("停用后台扩展")
-                    .on_click(&teardown_state, {
-                        let bg_handle_slot = Arc::clone(&teardown_slot);
-                        let bg_current = Arc::clone(&teardown_current);
-                        let bg_revision = teardown_revision.clone();
-                        let poster = teardown_poster.clone();
-                        move |_flag: &State<bool>| {
-                            let bg_handle_slot = Arc::clone(&bg_handle_slot);
-                            let bg_current = Arc::clone(&bg_current);
-                            let bg_revision = bg_revision.clone();
-                            let poster = poster.clone();
-                            thread::spawn(move || {
-                                let Some(bg_handle) = bg_handle_slot
-                                    .lock()
-                                    .expect("后台句柄锁")
-                                    .clone()
-                                else {
-                                    return;
-                                };
-                                match bg_handle.deactivate("text-bench") {
-                                    Ok(receipt) => {
-                                        // 终态真实返回后按合同清空挂载子树。
-                                        *bg_current.lock().expect("后台声明锁") = None;
-                                        bg_revision.update(|value| *value += 1);
-                                        poster.wake();
-                                        eprintln!(
-                                            "[workbench] 后台扩展已停用（generation {}），挂载位已清空",
-                                            receipt.generation
-                                        );
-                                    }
-                                    Err(error) => {
-                                        eprintln!("[workbench] 停用失败：{error}")
-                                    }
-                                }
-                            });
-                        }
-                    })
-                    .build()
-                    .automation_id("teardown-button");
+                // 宿主管理区：原生 UI，每次重建时构建（ViewNode 不可克隆）。
+                let load = manage_button(
+                    "装载扩展",
+                    "manage-load",
+                    ManageAction::Load,
+                    &root_manage_slot,
+                );
+                let replace = manage_button(
+                    "热替换扩展",
+                    "manage-replace",
+                    ManageAction::Replace,
+                    &root_manage_slot,
+                );
+                let status_btn = manage_button(
+                    "扩展状态",
+                    "manage-status-btn",
+                    ManageAction::Status,
+                    &root_manage_slot,
+                );
+                let revoke = manage_button(
+                    "撤权两侧",
+                    "manage-revoke",
+                    ManageAction::Revoke,
+                    &root_manage_slot,
+                );
+                let deactivate = manage_button(
+                    "停用两侧",
+                    "manage-deactivate",
+                    ManageAction::Deactivate,
+                    &root_manage_slot,
+                );
                 column_fit((
                     label("用户前台 · 文本处理工作台").font_size(15.0),
                     label(summary.as_str())
                         .font_size(12.0)
                         .automation_id("doc-summary"),
+                    label(status.as_str())
+                        .font_size(11.0)
+                        .automation_id("manage-status"),
+                    row((load, replace, status_btn)).gap(8.0),
+                    row((revoke, deactivate)).gap(8.0),
+                    label("扩展面板（外部包装载后出现）").font_size(11.0),
                     panel,
-                    label("宿主控制（原生 UI，不属于扩展能力）")
-                        .font_size(11.0),
-                    row((upgrade, revoke, teardown)).gap(8.0),
                 ))
             }
         });
 
-    // 演示热替换：--hot-replace 启动 5 秒后两侧共同升级 v2。
-    if hot_replace {
-        let fg_handle_slot = Arc::clone(&fg_handle_slot);
-        let bg_handle_slot = Arc::clone(&bg_handle_slot);
-        let fg_generation = Arc::clone(&fg_generation);
-        let bg_generation = Arc::clone(&bg_generation);
-        thread::spawn(move || {
-            thread::sleep(Duration::from_secs(5));
-            spawn_upgrade(fg_handle_slot, bg_handle_slot, fg_generation, bg_generation);
-        });
-    }
-    // 自动退出：到点先真实排空两个扩展 worker 并回收后台操作面，再结束
-    // 进程（前台窗口随进程退出；扩展实例的释放在上方有真实终态）。
+    // 关闭权共享槽：定时退出与主线程收尾复用同一收尾责任（先到先得）。
+    let workspace_slot: Arc<Mutex<Option<AgentWorkspaceHandle>>> =
+        Arc::new(Mutex::new(Some(workspace)));
+    // 自动退出：到点先执行统一收尾（真实排空 worker、回收操作面并记录
+    // 终态），再结束进程；前台窗口随进程退出，收尾结果决定退出码。
     if let Some(seconds) = quit_after {
-        let workspace_slot = Arc::clone(&workspace_slot);
-        let fg_handle_slot = Arc::clone(&fg_handle_slot);
-        let bg_handle_slot = Arc::clone(&bg_handle_slot);
+        let fg_slot = Arc::clone(&fg_handle_slot);
+        let bg_slot = Arc::clone(&bg_handle_slot);
+        let quit_workspace_slot = Arc::clone(&workspace_slot);
         thread::spawn(move || {
-            thread::sleep(Duration::from_secs(seconds));
-            eprintln!("[workbench] --quit-after 到期，释放资源并退出");
-            if let Some(handle) = fg_handle_slot.lock().expect("前台句柄锁").take() {
-                let _ = handle.shutdown();
-            }
-            if let Some(handle) = bg_handle_slot.lock().expect("后台句柄锁").take() {
-                let _ = handle.shutdown();
-            }
-            if let Some(workspace) = workspace_slot.lock().expect("操作面锁").take() {
-                let _ = workspace.close();
-            }
-            std::process::exit(0);
+            thread::sleep(std::time::Duration::from_secs(seconds));
+            eprintln!("[workbench] --quit-after 到期，执行统一收尾");
+            let code = shutdown_all(&fg_slot, &bg_slot, &quit_workspace_slot);
+            std::process::exit(code);
         });
     }
 
     let exit = app.run();
-    // 优雅关闭：两个 worker 各自排空释放，后台操作面回收视口与端点。
-    let _ = fg_handle.shutdown();
-    let _ = bg_handle.shutdown();
-    if let Some(workspace) = workspace_slot.lock().expect("操作面锁").take() {
-        let _ = workspace.close();
+    // 正常关闭：与自动退出共用同一收尾函数；逐步记录真实终态。
+    let close_code = shutdown_all(&fg_handle_slot, &bg_handle_slot, &workspace_slot);
+    let final_code = if exit != 0 { exit } else { close_code };
+    if close_code != 0 {
+        eprintln!("[workbench] 收尾存在失败项，以退出码 {close_code} 如实报告");
     }
-    std::process::exit(exit);
+    std::process::exit(final_code);
 }
 
-/// 双 worker 热替换：候选在独立线程准备与提交，UI 线程不等待求值。
-fn spawn_upgrade(
-    fg_handle_slot: Arc<Mutex<Option<ExtensionUiHandle>>>,
-    bg_handle_slot: Arc<Mutex<Option<ExtensionUiHandle>>>,
-    fg_generation: Arc<Mutex<u64>>,
-    bg_generation: Arc<Mutex<u64>>,
-) {
-    thread::spawn(move || {
-        for (handle_slot, generation_slot, mount) in [
-            (fg_handle_slot, fg_generation, "user-panel"),
-            (bg_handle_slot, bg_generation, "agent-panel"),
-        ] {
-            let Some(handle) = handle_slot.lock().expect("扩展句柄锁").clone() else {
-                continue;
-            };
-            let expected = *generation_slot.lock().expect("扩展代际锁");
-            let upgraded = workbench_package(mount, "0.2.0", 2);
-            match handle
-                .prepare(&upgraded)
-                .and_then(|candidate| handle.replace(candidate, expected))
-            {
-                Ok(receipt) => {
-                    *generation_slot.lock().expect("扩展代际锁") = receipt.generation;
-                    eprintln!(
-                        "[workbench] {mount} 已升级 v{}（generation {}，migrated={}）",
-                        receipt.version, receipt.generation, receipt.migrated
-                    );
+/// 统一收尾：前台 worker → 后台 worker → 后台操作面，逐步取得真实终态。
+///
+/// 成功与失败都打印明确诊断；任何失败或超时返回非零码，不把强制进程
+/// 退出冒充资源已优雅释放。前台窗口的生命周期归 `App::run`（随进程
+/// 结束）；本函数只声称它真正释放的资源。
+fn shutdown_all(
+    fg_slot: &Arc<Mutex<Option<ExtensionUiHandle>>>,
+    bg_slot: &Arc<Mutex<Option<ExtensionUiHandle>>>,
+    workspace_slot: &Arc<Mutex<Option<AgentWorkspaceHandle>>>,
+) -> i32 {
+    let mut exit_code = 0;
+    for (name, slot) in [("前台", fg_slot), ("后台", bg_slot)] {
+        if let Some(handle) = slot.lock().expect("扩展句柄锁").take() {
+            match handle.shutdown() {
+                Ok(()) => {
+                    println!("[workbench] {name}扩展 worker 已排空释放（实例与引擎堆回收）")
                 }
-                Err(error) => eprintln!("[workbench] {mount} 升级失败：{error}"),
+                Err(error) => {
+                    eprintln!("[workbench] {name}扩展 worker 关闭未完成：{error}");
+                    exit_code = 1;
+                }
             }
         }
-    });
-}
-
-fn load_failed_node(message: &str) -> UiNode {
-    UiNode::Column {
-        key: "root".to_string(),
-        padding: Some(14.0),
-        gap: None,
-        background: None,
-        children: vec![UiNode::Text {
-            key: "error".to_string(),
-            content: format!("扩展装载失败：{message}"),
-            color: None,
-            size: Some(13.0),
-        }],
     }
-}
-
-/// 构造文本处理工作台扩展包（v1：分段词数；v2：拉丁词 + CJK 字口径，
-/// 并在界面增加 CJK 统计行——算法与界面共同升级）。
-fn workbench_package(mount: &str, version: &str, major: u32) -> ExtensionPackage {
-    let manifest = format!(
-        "(uix-extension (schema-version 1) (id \"text-bench\") (version \"{version}\") \
-         (language r7rs-small) (entry \"main.scm\") \
-         (capabilities documents-query documents-commit mount-{mount}) \
-         (state-schema-version 1))"
-    );
-    let title = format!("文本处理工作台 · {mount} v{major}");
-    // v2 才定义 cjk-count 并在统计与界面中使用；v1 无该节点。
-    let cjk_definition = if major >= 2 {
-        r#"(define (cjk-count s)
-  (count-if (lambda (c)
-    (let ((code (char->integer c)))
-      (and (>= code 19968) (<= code 40959)))) s))
-(define (latin-char? c)
-  (let ((code (char->integer c)))
-    (and (or (char-alphabetic? c) (char-numeric? c))
-         (not (and (>= code 19968) (<= code 40959))))))
-(define (latin-word-count s)
-  (define (walk i prev n)
-    (if (= i (string-length s))
-        n
-        (let* ((c (string-ref s i))
-               (word-char (latin-char? c)))
-          (walk (+ i 1) word-char
-                (if (and word-char (not prev)) (+ n 1) n)))))
-  (walk 0 #f 0))
-(define (word-count s) (+ (latin-word-count s) (cjk-count s)))"#
-    } else {
-        r#"(define (word-count s)
-  (define (walk i in-word n)
-    (if (= i (string-length s))
-        (if in-word (+ n 1) n)
-        (let ((space (char-whitespace? (string-ref s i))))
-          (cond ((and (not space) (not in-word)) (walk (+ i 1) #t (+ n 1)))
-                ((and space in-word) (walk (+ i 1) #f n))
-                (else (walk (+ i 1) in-word n))))))
-  (walk 0 #f 0))"#
-    };
-    let stats_tail = if major >= 2 {
-        r#"   (string-append " · CJK " (number->string (cjk-count s)))"#
-    } else {
-        ""
-    };
-    let cjk_line = if major >= 2 {
-        r#"        (list 'text (list 'key "cjk")
-              (string-append "CJK 字符: " (number->string (cjk-count draft))))
-"#
-    } else {
-        ""
-    };
-    let source = format!(
-        r#"
-;; 文本处理工作台扩展（挂载位 {mount}，算法代 v{major}）
-(define draft "")
-(define result "尚未处理")
-(define target "intro")
-(define base-version 0)
-(define status "就绪")
-
-;; ---- 文本统计算法 ----
-(define (count-if pred s)
-  (define (walk i n)
-    (if (= i (string-length s))
-        n
-        (walk (+ i 1) (if (pred (string-ref s i)) (+ n 1) n))))
-  (walk 0 0))
-(define (non-space-count s)
-  (count-if (lambda (c) (not (char-whitespace? c))) s))
-(define (line-count s)
-  (+ 1 (count-if (lambda (c) (char=? c #\newline)) s)))
-{cjk_definition}
-
-;; ---- 空白规范化：压缩连续空白为单空格并去首尾 ----
-(define (collapse-chars chars acc)
-  (cond ((null? chars) (list->string (reverse acc)))
-        ((char-whitespace? (car chars))
-         (if (or (null? acc) (char=? (car acc) #\space))
-             (collapse-chars (cdr chars) acc)
-             (collapse-chars (cdr chars) (cons #\space acc))))
-        (else (collapse-chars (cdr chars) (cons (car chars) acc)))))
-(define (trim-tail s)
-  (define (drop i)
-    (if (and (> i 0) (char-whitespace? (string-ref s (- i 1))))
-        (drop (- i 1))
-        i))
-  (substring s 0 (drop (string-length s))))
-(define (normalize-text s)
-  (trim-tail (collapse-chars (string->list s) '())))
-
-(define (stats->text s)
-  (string-append
-   "字符 " (number->string (string-length s))
-   " · 非空白 " (number->string (non-space-count s))
-   " · 行 " (number->string (line-count s))
-   " · 词 " (number->string (word-count s))
-{stats_tail}))
-
-;; ---- 动态面板 ----
-(define (draft-input reset?)
-  (if reset?
-      (list 'input (list 'key "draft")
-            (list 'placeholder "输入或读取要处理的文本")
-            (list 'on-change 'on-draft-change)
-            (list 'reset #t)
-            draft)
-      (list 'input (list 'key "draft")
-            (list 'placeholder "输入或读取要处理的文本")
-            (list 'on-change 'on-draft-change)
-            draft)))
-(define (declaration reset?)
-  (list 'column (list 'key "root") (list 'pad 12.0) (list 'gap 8.0)
-        (list 'text (list 'key "title") (list 'size 14.0) "{title}")
-        (draft-input reset?)
-        (list 'row (list 'key "controls") (list 'gap 8.0)
-              (list 'button (list 'key "process") (list 'on-click 'on-process) "处理文本")
-              (list 'button (list 'key "load") (list 'on-click 'on-load) "读取文档")
-              (list 'button (list 'key "commit") (list 'on-click 'on-commit) "提交到文档"))
-        (list 'text (list 'key "stats") (string-append "统计: " result))
-{cjk_line}        (list 'text (list 'key "status") (string-append "状态: " status))
-        (list 'text (list 'key "doc")
-              (string-append "目标: " target " @v" (number->string base-version)))))
-
-;; ---- 面板事件 ----
-(define (on-draft-change text)
-  (set! draft text)
-  (submit-ui! '{mount} (declaration #f)))
-(define (on-process)
-  (set! result (stats->text draft))
-  (set! status "已处理")
-  (submit-ui! '{mount} (declaration #f)))
-(define (on-load)
-  (let* ((entry (documents-query target))
-         (content (list-ref entry 0))
-         (version (list-ref entry 1)))
-    (set! base-version version)
-    (set! draft content)
-    (set! status (string-append "已读取 v" (number->string version)))
-    (submit-ui! '{mount} (declaration #t))))
-(define (on-commit)
-  (let ((outcome (documents-commit target base-version (normalize-text draft))))
-    (if (eq? (list-ref outcome 0) 'ok)
-        (begin
-          (set! base-version (list-ref outcome 1))
-          (set! status (string-append "已提交 v" (number->string (list-ref outcome 1)))))
-        (set! status (string-append "版本冲突：文档已是 v"
-                                    (number->string (list-ref outcome 1)))))
-    (submit-ui! '{mount} (declaration #f))))
-(register-handler! "on-draft-change" on-draft-change)
-(register-handler! "on-process" on-process)
-(register-handler! "on-load" on-load)
-(register-handler! "on-commit" on-commit)
-
-;; ---- 无窗口命令（逻辑部分与面板共用同一实例）----
-(register-command! "stats" (lambda (text) (stats->text text)))
-(register-command! "normalize" (lambda (text) (normalize-text text)))
-(register-command! "engine-version" (lambda () "{version}"))
-
-;; ---- 状态迁移（schema 1：草稿与摘要跨代保留）----
-(register-state-export!
-  (lambda () (list draft result target base-version status)))
-(register-state-import!
-  (lambda (snapshot)
-    (set! draft (list-ref snapshot 0))
-    (set! result (list-ref snapshot 1))
-    (set! target (list-ref snapshot 2))
-    (set! base-version (list-ref snapshot 3))
-    (set! status (list-ref snapshot 4))
-    (submit-ui! '{mount} (declaration #t))))
-(submit-ui! '{mount} (declaration #f))
-"#
-    );
-    let sources: BTreeMap<String, String> =
-        [("main.scm".to_string(), source)].into_iter().collect();
-    ExtensionPackage::from_parts(manifest, sources).expect("示例包构造")
+    if let Some(workspace) = workspace_slot.lock().expect("操作面锁").take() {
+        match workspace.close() {
+            Ok(()) => println!("[workbench] 后台操作面已回收（视口、端点与像素资源释放）"),
+            Err(error) => {
+                eprintln!("[workbench] 后台操作面关闭失败（含两秒等待超时）：{error:?}");
+                exit_code = 1;
+            }
+        }
+    }
+    exit_code
 }

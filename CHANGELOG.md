@@ -4,6 +4,16 @@
 
 ## 0.0.8（进行中）
 
+### 外部扩展包交付与生命周期收口
+
+- 文本处理工作台扩展交付为独立、可审查的外部包目录 `extensions/text-bench/`（`v1`、`v2` 各含 `manifest.scm` 清单与 `main.scm` 源文件，挂载位统一 `panel`）：示例与公开 API 测试从同一交付物装载，不再在示例与测试中复制整套源码字符串；失败场景以临时目录中的明确无效输入构造。v1 修复词数重复计数（进入单词与字符串结束时双计；经文档化 `stats` 命令覆盖空串、纯空白、无尾空格单词、多词与首尾空白等价输入）。
+- 新增 `ExtensionPackage::read_from_directory(path)`：只读取应用显式指定的目录并冻结为不可变快照（不扫描、不监听、不跟随包内链接；子目录、符号链接与非 `.scm` 条目拒绝，大小/数量上限沿用冻结合同）；来源授权策略归应用。`ExtensionHost::prepare` 补注入 include 来源解析器，多文件包经 `(include "…")` 解析冻结快照内来源（此前该入口在宿主路径缺失）。
+- 修复 reset 重投影竞争：`(reset #t)` 声明存入快照后，无关重绘会触发同一声明的重投影并以声明值覆盖用户刚输入的编辑（读取后编辑静默丢失）。新增 `UiProjector::consume_declaration_resets(&mut node)`：reset 属于本次 `UiUpdate::Applied` 的一次性指令，应用层在 Applied 处执行并消耗标记，`project` 对已应用声明完全幂等；text_workbench、extension_panel 与测试装配同步接入。
+- `ExtensionStatus` 增补 `revoked` 标记，`ExtensionUiHandle::list()` 提供 worker 模式状态回读。
+- `examples/text_workbench.rs` 重构为外部包宿主：启动时不装载任何扩展，`--extension-source <dir>` 显式授权唯一包来源；两侧原生管理按钮（装载 / 热替换 / 状态 / 撤权 / 停用）执行同一套管理操作，AI 经既有 Agent `perform invoke` 驱动后台管理入口，不控制前台按钮、不另造管理服务；管理状态区分包检查（版本、文件数）、候选准备、活动代切换（generation、命令表）与界面应用各阶段，两侧结果分别报告，一侧失败如实呈现部分结果。移除 `--hot-replace` 定时自动替换（显式操作为主路径）。
+- 关闭语义收口：正常关闭与 `--quit-after` 复用同一收尾函数（前台 worker → 后台 worker → 后台操作面），每步取得真实终态并打印诊断；失败与超时以非零退出码如实报告，不再以 `let _ =` 丢弃结果或把强制进程退出冒充优雅释放。
+- 公开行为验证：`tests/text_workbench_public_api.rs`（7 项）覆盖 v1 词数边界、读取→等待应用→编辑→处理→提交的真实编辑闭环（断言提交编辑后内容）、陈旧版本冲突、前后台独立性、热替换后继续编辑并按迁移的读取版本提交、撤权/停用终态（扩展节点退出语义树、旧目标不可操作、宿主与操作面存活、`list()` 回读撤权标记）、停用后重新装载完成业务且陈旧事件不污染新实例；`tests/extensions_public_api.rs` 新增目录读取冻结快照与类型化读取失败（含符号链接、子目录、非 `.scm`、坏清单、缺清单、来源不存在）。
+
 ### 动态扩展 × Agent 后台操作面：文本处理工作台集成
 
 - 新增 `examples/text_workbench.rs`（`--features extensions,agent-control`）：宿主持有版本化文档领域数据（内容 + 乐观并发版本），显式授权 `documents-query` 只读与 `documents-commit` 受控提交端口（版本不一致返回冲突、不静默覆盖）；前台真窗与后台操作面各自拥有独立扩展 worker、投影器与草稿库，只共享领域端口。Scheme 扩展实现真实文本统计算法（字符 / 非空白 / 行 / 词 / CJK、空白规范化）与动态面板；`--hot-replace` 两侧共同升级 v2 算法与界面并保留兼容状态，前台原生按钮支持手动热替换 / 撤权 / 停用后台扩展，`--quit-after 秒` 自动优雅退出。
