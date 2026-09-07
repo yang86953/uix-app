@@ -4,6 +4,7 @@ mod ast;
 mod action_ast;
 // 定义同步 action 声明与 do 语句块解析。
 mod action_parser;
+pub(crate) use action_parser::parse_module_body;
 // 定义同步 action 词法作用域、调用图与递归语义验证。
 mod action_semantic;
 // 定义已降低 action 标签块到纯 Rust 令牌的生成。
