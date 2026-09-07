@@ -41,7 +41,8 @@ pub(super) fn module(module: &Module) -> TokenStream {
         use ::uix::app::modules::__runtime as __uix_module;
         #(#definitions)*
         __uix_module::Module { name: #name.into(), version: #version.into(), state_schema: #schema,
-            states: vec![#(#states),*], functions: vec![#(#functions),*], ports: vec![#(#ports),*], view: #view }
+            states: vec![#(#states),*], functions: vec![#(#functions),*], ports: vec![#(#ports),*], view: #view,
+            tasks: vec![] }
     }}
 }
 
@@ -60,8 +61,9 @@ fn signature(s: &Signature) -> TokenStream {
     let parameters = s.parameters.iter().map(|(name, t)| { let t = ty(t); quote! { (#name.into(), #t) } });
     let returns = ty(&s.returns);
     let effect = format_ident!("{}", format!("{:?}", s.effect));
+    let asynchronous = s.asynchronous;
     quote! { __uix_module::Signature { name: #name.into(), parameters: vec![#(#parameters),*],
-        returns: #returns, effect: __uix_module::Effect::#effect } }
+        returns: #returns, effect: __uix_module::Effect::#effect, asynchronous: #asynchronous } }
 }
 
 fn ty(t: &Type) -> TokenStream {
