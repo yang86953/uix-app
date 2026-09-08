@@ -468,6 +468,21 @@ pub(crate) fn builtin_widget_layout_changed(
 }
 
 pub(crate) fn builtin_widget_runtime_changed(current: &dyn Widget, next: &dyn Widget) -> bool {
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Label>(),
+        next.as_any().downcast_ref::<Label>(),
+    ) {
+        return current.typography_changed(next);
+    }
+
+    #[cfg(feature = "rich-text")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<RichText>(),
+        next.as_any().downcast_ref::<RichText>(),
+    ) {
+        return current.view_layout_changed(next);
+    }
+
     // Input 的受控文本值属于运行态而不是作者静态配置。
     if let (Some(current), Some(next)) = (
         current.as_any().downcast_ref::<Input>(),

@@ -36,7 +36,7 @@ impl Input {
         );
         ctx.push_clip(message_frame);
         let color = self.status_color(visual).unwrap_or(visual.text_secondary);
-        let font_size = self.visual.typography.status_font_size;
+        let font_size = self.resolved_typography(ctx.tokens()).status_font_size;
         let y = ctx.visual_center_y(message_frame, font_size);
         ctx.draw_text(
             &self.status_message,
@@ -54,7 +54,8 @@ impl Input {
         visual: ResolvedInputVisual,
     ) {
         let layout = self.visual.layout;
-        let typography = self.visual.typography;
+        let typography = self.resolved_typography(ctx.tokens());
+        let padding = self.content_padding();
 
         let inner_frame = Rect::new(frame.x, frame.y, frame.w, frame.h);
 
@@ -85,13 +86,14 @@ impl Input {
         );
 
         let text_area = Rect::new(
-            inner_frame.x + layout.horizontal_padding,
-            inner_frame.y + layout.textarea_content_vertical_inset,
-            (inner_frame.w - layout.horizontal_padding * 2.0)
-                .max(layout.textarea_content_min_width),
-            (inner_frame.h - layout.textarea_content_vertical_inset * 2.0)
-                .max(layout.textarea_content_min_height),
+            inner_frame.x + padding.left,
+            inner_frame.y + padding.top,
+            (inner_frame.w - padding.horizontal()).max(0.0),
+            (inner_frame.h - padding.vertical()).max(0.0),
         );
+        self.text_origin
+            .set(Point::new(text_area.x - frame.x, text_area.y - frame.y));
+        self.painted_line_height.set(typography.line_height);
         ctx.push_clip(text_area);
 
         let has_composition = !self.composition.is_empty();
@@ -151,81 +153,50 @@ impl Input {
             // 一次推进即可得到该行在原始值中的 Unicode 字符范围。
             let (value_line, line_start, line_end) = value_cursor.next_line();
 
-            // 选中高亮
+            let options = crate::draw::resources::font::text_backend::TextLayoutOptions {
+                max_width: f32::MAX,
+                max_height: 0.0,
+                line_height: line_h,
+                word_wrap: false,
+                h_align: crate::draw::HAlign::Left,
+                v_align: crate::draw::VAlign::Top,
+                font_size: typography.font_size,
+            };
+            let font = *ctx.font();
+            let shaped = ctx.font_service().layout_text_shared(&font, line, &options);
             if !has_composition {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e && sel_s < line_end && sel_e > line_start {
-                        let sel_in_line_start = sel_s.saturating_sub(line_start);
-                        let sel_in_line_end = if sel_e < line_end {
-                            sel_e - line_start
-                        } else {
-                            value_line.chars().count()
-                        };
-                        // 使用共享 shaping、双向与字素簇几何流式绘制选区。
-                        ctx.fill_text_selection(
-                            // 选择几何使用未注入 composition 的真实值行。
-                            value_line,
-                            // 使用输入控件字体大小。
-                            typography.font_size,
-                            // 把行内几何平移到文本区域。
-                            Point::new(text_area.x, y),
-                            // 传入行内合法选择起点。
-                            sel_in_line_start,
-                            // 传入行内合法选择终点。
-                            sel_in_line_end,
-                            // 使用主题选择背景色。
-                            visual.primary.with_alpha(
-                                self.visual.chrome.selection_alpha.min(u8::MAX as u32) as u8,
-                            ),
+                        let start = sel_s.saturating_sub(line_start);
+                        let end = (sel_e - line_start).min(value_line.chars().count());
+                        crate::draw::resources::font::text_backend::visit_glyph_selection_x_ranges(
+                            &shaped.glyphs,
+                            start,
+                            end,
+                            |x0, x1| {
+                                ctx.fill_rect(
+                                    Rect::new(text_area.x + x0, y, (x1 - x0).max(0.0), line_h),
+                                    visual.primary.with_alpha(
+                                        self.visual.chrome.selection_alpha.min(255) as u8,
+                                    ),
+                                    None,
+                                );
+                            },
                         );
                     }
                 }
             }
-
-            // 行内光学居中：用 visual_center_y，去掉魔法 +2.0
-            let text_y = ctx.visual_center_y(
-                Rect::new(text_area.x, y, text_area.w, line_h),
-                typography.font_size,
-            );
-            ctx.draw_text(
-                line,
-                Point::new(text_area.x, text_y),
+            crate::ui::text_weight::paint(
+                ctx,
+                &shaped,
+                Point::new(text_area.x, y),
                 disp_color,
                 typography.font_size,
+                self.text_weight(),
             );
-
-            // 收集该行每个字符的 x 坐标（用于 char_at_xy 命中）
-            let hit_text = if showing_placeholder { "" } else { line };
-            // 构造与绘制一致的单行文本布局选项。
-            let hit_options = crate::draw::TextLayoutOptions {
-                // 多行控件按逻辑换行拆分后不再限制单行宽度。
-                max_width: f32::MAX,
-                // 命中布局不限制高度。
-                max_height: 0.0,
-                // 保持输入控件现有行高。
-                line_height: typography.line_height,
-                // 当前逻辑行禁止再次自动换行。
-                word_wrap: false,
-                // 使用左侧行盒对齐并由 UAX #9 决定 run 视觉顺序。
-                h_align: crate::draw::HAlign::Left,
-                // 使用顶部行盒对齐。
-                v_align: crate::draw::VAlign::Top,
-                // 使用输入控件字体大小。
-                font_size: typography.font_size,
-            };
-            // 转换为字体后端布局选项。
-            let backend_options =
-                crate::draw::resources::font::text_backend::TextLayoutOptions::from(hit_options);
-            // 读取当前绘制字体句柄。
-            let font = *ctx.font();
-            // 执行真实 shaping 与双向视觉重排。
-            let hit_layout = ctx
-                // 借用字体服务。
-                .font_service()
-                // 布局当前显示逻辑行。
-                .layout_text_shared(&font, hit_text, &backend_options);
-            // 保存视觉顺序字形及其逻辑 cluster 范围，并复用上一帧容量。
-            line_glyphs[li].extend_from_slice(&hit_layout.glyphs);
+            if !showing_placeholder {
+                line_glyphs[li].extend_from_slice(&shaped.glyphs);
+            }
 
             if li == cursor_line {
                 let composition_chars = if has_composition {
@@ -297,12 +268,13 @@ impl Input {
         visual: ResolvedInputVisual,
     ) {
         let layout = self.visual.layout;
-        let typography = self.visual.typography;
-        let h = input_height(self.input_size).min(frame.h);
+        let typography = self.resolved_typography(ctx.tokens());
+        let padding = self.content_padding();
+        let h = frame.h.max(0.0);
         let input_frame = Rect::new(frame.x, frame.y, frame.w, h);
 
-        let addon_left_w = addon_width(&self.addon_before, self.visual);
-        let addon_right_w = addon_width(&self.addon_after, self.visual);
+        let addon_left_w = addon_width(&self.addon_before, self.visual, typography.addon_font_size);
+        let addon_right_w = addon_width(&self.addon_after, self.visual, typography.addon_font_size);
 
         if !self.addon_before.is_empty() {
             let addon_rect = Rect::new(input_frame.x, input_frame.y, addon_left_w, input_frame.h);
@@ -489,15 +461,29 @@ impl Input {
             text_color
         };
 
-        let text_area_x = inner_frame.x + layout.horizontal_padding + prefix_w;
-        let text_area_w =
-            (inner_frame.w - layout.horizontal_padding * 2.0 - prefix_w - right_extra)
-                .max(layout.singleline_text_min_width);
+        let text_area_x = inner_frame.x + padding.left + prefix_w;
+        let text_area_w = (inner_frame.w - padding.horizontal() - prefix_w - right_extra).max(0.0);
         if text_area_w <= 0.0 {
             return;
         }
-        let text_area = Rect::new(text_area_x, inner_frame.y, text_area_w, inner_frame.h);
-        ctx.push_clip(text_area);
+        let text_area = Rect::new(
+            text_area_x,
+            inner_frame.y + padding.top,
+            text_area_w,
+            (inner_frame.h - padding.vertical()).max(0.0),
+        );
+        self.text_origin
+            .set(Point::new(text_area.x - frame.x, text_area.y - frame.y));
+        self.painted_line_height.set(typography.line_height);
+        // Padding positions the line box, but must not clip descenders when an
+        // explicitly short control still has room for the glyphs inside its border.
+        let border_inset = self.visual.chrome.border_width.max(0.0);
+        ctx.push_clip(Rect::new(
+            text_area.x,
+            inner_frame.y + border_inset,
+            text_area.w,
+            (inner_frame.h - 2.0 * border_inset).max(0.0),
+        ));
 
         let mut scroll_off = self.scroll_offset_x.get();
         let total_text_w = if !display_text.is_empty() {
@@ -541,13 +527,13 @@ impl Input {
         self.scroll_offset_x.set(scroll_off);
 
         let draw_x = text_area_x - scroll_off;
-        let draw_y = ctx.visual_center_y(text_area, typography.font_size);
+        let draw_y = text_area.y + (text_area.h - typography.line_height) * 0.5;
 
         if !display_text.is_empty() {
             let opts = crate::draw::TextLayoutOptions {
                 max_width: f32::MAX,
                 max_height: 0.0,
-                line_height: typography.font_size * typography.layout_line_height_ratio,
+                line_height: typography.line_height,
                 word_wrap: false,
                 h_align: crate::draw::HAlign::Left,
                 v_align: crate::draw::VAlign::Top,
@@ -579,13 +565,7 @@ impl Input {
             if !self.value.is_empty() && !has_composition {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e {
-                        let visual_h = ctx
-                            .font_service()
-                            .horizontal_line_metrics(&fh, typography.font_size)
-                            .map(|m| m.ascent + m.descent)
-                            .unwrap_or(
-                                typography.font_size * typography.fallback_line_height_ratio,
-                            );
+                        let visual_h = typography.line_height;
                         // 选择颜色在全部视觉片段之间保持一致。
                         let selection_color = visual.primary.with_alpha(
                             self.visual.chrome.selection_alpha.min(u8::MAX as u32) as u8,
@@ -623,7 +603,14 @@ impl Input {
                     }
                 }
             }
-            ctx.blit_shared_glyph_layout(layout, abs_pos, disp_color, typography.font_size);
+            crate::ui::text_weight::paint(
+                ctx,
+                &layout,
+                abs_pos,
+                disp_color,
+                typography.font_size,
+                self.text_weight(),
+            );
         }
 
         if has_composition {
@@ -643,11 +630,12 @@ impl Input {
         ctx.pop_clip();
 
         let cursor_x = text_area_x + caret_text_w - scroll_off;
+        let caret_h = typography.line_height.min(text_area.h).max(0.0);
         let caret = Rect::new(
             cursor_x,
-            inner_frame.y + layout.caret_vertical_inset,
+            text_area.y + (text_area.h - caret_h) * 0.5,
             layout.caret_width,
-            inner_frame.h - layout.caret_vertical_inset * 2.0,
+            caret_h,
         );
         self.caret_rect.set(caret);
         if self.focused && self.selection.get().is_none() {

@@ -6,10 +6,14 @@ use crate::ui::widgets::binding::{capture_dependency, write_if_changed};
 
 impl Input {
     pub(super) fn intrinsic_size(&self) -> Size {
+        let typography =
+            crate::ui::widget_runtime::measurement::with_measurement_tokens::<Self, _>(|tokens| {
+                self.resolved_typography(tokens)
+            });
+        let padding = self.content_padding();
         if self.textarea {
             let line_count = logical_line_count(&self.value).max(self.textarea_rows);
-            let h = (line_count as f32 * self.visual.typography.line_height
-                + self.visual.layout.textarea_intrinsic_vertical_padding)
+            let h = (line_count as f32 * typography.line_height + padding.vertical())
                 .max(self.visual.layout.textarea_min_height)
                 + self.status_message_height();
             Size::new(self.visual.layout.natural_width, h)
@@ -42,14 +46,15 @@ impl Input {
             };
             Size::new(
                 layout.natural_width
-                    + addon_width(&self.addon_before, self.visual)
-                    + addon_width(&self.addon_after, self.visual)
+                    + addon_width(&self.addon_before, self.visual, typography.addon_font_size)
+                    + addon_width(&self.addon_after, self.visual, typography.addon_font_size)
                     + prefix_w
                     + suffix_w
                     + clear_w
                     + password_w
                     + search_w,
-                input_height(self.input_size) + self.status_message_height(),
+                input_height(self.input_size).max(typography.line_height + padding.vertical())
+                    + self.status_message_height(),
             )
         }
     }
@@ -95,6 +100,9 @@ impl Input {
             view_height: None,
             view_flex_grow: 0.0,
             view_flex_shrink: 1.0,
+            view_style: None,
+            text_origin: Cell::new(Point::new(12.0, 6.0)),
+            painted_line_height: Cell::new(21.0),
             pending_change: RefCell::new(None),
             pending_submit: RefCell::new(None),
             clear_icon_rect: Cell::new(Rect::zero()),
@@ -154,6 +162,7 @@ impl Input {
         flex_grow: Option<f32>,
         flex_shrink: Option<f32>,
     ) {
+        self.view_style = Some(style.clone());
         if let Some(width) = style.width {
             self.view_width = width.is_finite().then_some(width.max(0.0));
         }
@@ -254,6 +263,7 @@ impl Input {
         self.textarea_rows = next.textarea_rows;
         self.max_length = next.max_length;
         // 声明树重建时同步最新叶控件布局覆盖，避免旧 hug 宽度残留。
+        self.view_style = next.view_style;
         self.view_width = next.view_width;
         self.view_height = next.view_height;
         self.view_flex_grow = next.view_flex_grow;
@@ -265,7 +275,8 @@ impl Input {
     }
     /// 返回快照跳过的 View 布局字段是否发生变化。
     pub(crate) fn view_layout_changed(&self, next: &Self) -> bool {
-        self.view_width != next.view_width
+        self.view_style != next.view_style
+            || self.view_width != next.view_width
             || self.view_height != next.view_height
             || self.view_flex_grow != next.view_flex_grow
             || self.view_flex_shrink != next.view_flex_shrink
@@ -683,13 +694,8 @@ impl Input {
     /// 多行模式下根据 (x, y) 找字符索引
     pub(super) fn char_at_xy(&self, x: f32, y: f32) -> usize {
         // 顶部 padding 区映射到首行；其他位置按可见行偏移并收敛到末行。
-        let requested_line = if y < self.visual.layout.textarea_top_padding {
-            0
-        } else {
-            ((y - self.visual.layout.textarea_top_padding) / self.visual.typography.line_height)
-                as usize
-        }
-        .saturating_add(self.scroll_line.get());
+        let requested_line = (y.max(0.0) / self.painted_line_height.get().max(1.0)) as usize;
+        let requested_line = requested_line.saturating_add(self.scroll_line.get());
         let mut lines = LogicalLineCursor::new(&self.value);
         let (line_idx, _line, line_start, _end) = lines.line_at_or_last(requested_line);
         // 取得现有逐行几何给出的原始字符位置。
