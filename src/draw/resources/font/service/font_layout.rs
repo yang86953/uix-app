@@ -187,44 +187,38 @@ impl FontService {
             width: f32,
             char_start: usize,
             char_end: usize,
+            // 首个非可折叠空白字形下标；None 表示当前行还没有实际内容。
+            first_content: Option<usize>,
+            // 增量维护的最近合法断点（排他字形下标），避免逐字形反向重扫整行。
+            last_break: Option<usize>,
         }
 
+        // 判断字形是否算作行内容，与既有 has_content 判定保持一致。
+        let glyph_is_content = |glyph: &LineGlyph| {
+            !LineBreakMap::collapsible_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
+        };
         let line_width = |line: &LineAccum| {
             line.glyphs.iter().fold(0.0f32, |width, glyph| {
                 width.max(glyph.glyph.x + glyph.glyph.width)
             })
         };
         let last_soft_break = |line: &LineAccum| {
-            let first_content = line.glyphs.iter().position(|glyph| {
-                !LineBreakMap::collapsible_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
-            })?;
-            line.glyphs
-                .iter()
-                .enumerate()
-                .skip(first_content)
-                // 只在完整 shaping cluster 的尾部接受标准 UAX 断行机会。
-                .rposition(|(index, glyph)| {
-                    // 同一 cluster 的后续视觉字形仍在当前行时不能拆开。
-                    let cluster_ends = line
-                        // 检查当前字形之后的相邻视觉字形。
-                        .glyphs
-                        // 索引相对于 skip 后的迭代器，需要恢复完整行索引。
-                        .get(first_content + index + 1)
-                        // 不同 cluster 或行尾都表示当前 cluster 已完整。
-                        .is_none_or(|next| {
-                            // 相同逻辑起点代表仍是同一 shaping cluster。
-                            next.glyph.char_index != glyph.glyph.char_index
-                        });
-                    // cluster 完整且其排他源终点存在 UAX 机会时才可断行。
-                    cluster_ends && breaks.allows_at(glyph.glyph.char_end)
-                })
-                .map(|index| first_content + index + 1)
+            // 全空白行没有任何可断内容。
+            line.first_content?;
+            // 增量记录的断点已经覆盖行首内容之后的全部历史字形。
+            let mut best = line.last_break;
+            // 行尾 cluster 是否完整由调用点保证：进入换行判定时待放置字形
+            // 必然开启新 cluster（cluster_already_on_line 已排除同簇续排）。
+            if let Some(last) = line.glyphs.last()
+                && breaks.allows_at(last.glyph.char_end)
+            {
+                // 行尾本身也是候选断点，取两者较晚者等价于原 rposition 结果。
+                best = best.max(Some(line.glyphs.len()));
+            }
+            // 返回最近合法断点，O(1) 读取不再反向扫描整行。
+            best
         };
-        let line_has_content = |line: &LineAccum| {
-            line.glyphs.iter().any(|glyph| {
-                !LineBreakMap::collapsible_whitespace(glyph.source_char) || glyph.glyph.width > 0.0
-            })
-        };
+        let line_has_content = |line: &LineAccum| line.first_content.is_some();
         let collapse_trailing_wrap_whitespace = |line: &mut LineAccum| {
             let trailing_start = line
                 .glyphs
@@ -386,6 +380,10 @@ impl FontService {
                                     // 保留 shaping cluster 的排他源终点。
                                     .map_or(next_char, |glyph| glyph.glyph.char_end);
                                 line.glyphs = tail;
+                                // 尾段状态重建：分裂位置就是原行最近断点，尾段内部
+                                // 不存在更晚的合法断点，只需重扫首个内容位置。
+                                line.first_content = line.glyphs.iter().position(glyph_is_content);
+                                line.last_break = None;
                                 cx = line_width(&line);
                                 chunk_target_x -= tail_origin;
                                 target_x -= tail_origin;
@@ -470,6 +468,22 @@ impl FontService {
                 cx = cx.max(g.x + g.width);
                 // RTL 或多字形 cluster 都以最大排他逻辑终点描述本行。
                 line.char_end = line.char_end.max(global_char_end);
+                // 增量登记首个行内容，供 has_content 与断点范围判定复用。
+                if line.first_content.is_none()
+                    && (!LineBreakMap::collapsible_whitespace(source_char) || g.width > 0.0)
+                {
+                    line.first_content = Some(line.glyphs.len());
+                }
+                // 前一字形在本字形落地后即确认 cluster 是否完整；完整且其
+                // 排他源终点存在 UAX 机会时，当前位置成为候选断点。
+                if let (Some(first_content), Some(previous)) =
+                    (line.first_content, line.glyphs.last())
+                    && line.glyphs.len() > first_content
+                    && previous.glyph.char_index != global_char_index
+                    && breaks.allows_at(previous.glyph.char_end)
+                {
+                    line.last_break = line.last_break.max(Some(line.glyphs.len()));
+                }
                 line.glyphs.push(LineGlyph {
                     glyph: g,
                     source_char,
