@@ -160,6 +160,7 @@ mod parse;
 mod rich_text_interaction;
 // 把公开构建器、reconcile 与测试观测方法放入独立实现文件。
 mod rich_text_methods;
+mod typography;
 // 集中拥有 RichText 内联图片的资源、几何与绘制生命周期。
 mod inline_image;
 // 集中拥有主题分隔线的解析、布局与绘制策略。
@@ -247,6 +248,18 @@ widget! {
         // 记录调用方是否显式覆盖 UIX 默认字号。
         #[snapshot(skip)]
         font_size_authored: bool,
+        #[snapshot(skip)]
+        view_style: Option<crate::ui::theme::style::Style>,
+        #[snapshot(skip)]
+        view_flex_grow: f32,
+        #[snapshot(skip)]
+        view_flex_shrink: f32,
+        #[snapshot(skip)]
+        last_font: Cell<Option<crate::draw::FontHandle>>,
+        #[snapshot(skip)]
+        last_font_size: Cell<f32>,
+        #[snapshot(skip)]
+        last_line_height: Cell<f32>,
         // 复用每个绘制 run 的 UTF-8 缓冲，避免逐帧分配 String。
         #[snapshot(skip)]
         run_text_scratch: RefCell<String>,
@@ -287,51 +300,17 @@ widget! {
             pending_copy: Arc::new(Mutex::new(None)),
             visual: RICH_TEXT_VISUAL_REF,
             font_size_authored: false,
+            view_style: None,
+            view_flex_grow: 1.0,
+            view_flex_shrink: 1.0,
+            last_font: Cell::new(None),
+            last_font_size: Cell::new(0.0),
+            last_line_height: Cell::new(0.0),
             run_text_scratch: RefCell::new(String::new()),
         }
     }
 
-    measure => (&self, constraints: Constraints) -> Size {
-        // Use the explicit measure constraint first; fall back to the last
-        // rendered width so first layout and render stay close.
-        let est_width = if constraints.max.w.is_finite() && constraints.max.w > 0.0 {
-            constraints.max.w
-        } else if self.last_layout_width.get() > 0.0 {
-            self.last_layout_width.get()
-        } else {
-            self.visual.defaults.unconstrained_width
-        };
-
-        // 宽度约束变化会改变折行与固有高度，必须参与测量缓存失效。
-        let width_changed = (self.last_layout_width.get() - est_width).abs()
-            > self.visual.defaults.relayout_epsilon;
-        if self.layout_dirty.get() || self.layout_height.get() <= 0.0 || width_changed {
-            let dpi = self.visual.defaults.measurement_dpi;
-            let fs = self.resolved_font_size_px(dpi);
-            // 测量阶段没有 PaintContext，只传递不影响几何的派生占位调色板。
-            let estimated_palette = self.visual.estimated_palette(self.default_color);
-            let (_, total_h, max_w) = layout_rich_text_with_images_visual(
-                &self.segments,
-                est_width,
-                fs,
-                estimated_palette,
-                &self.image_states.borrow(),
-                self.visual.metrics,
-            );
-            self.layout_height.set(total_h);
-            self.content_width.set(max_w);
-            // 旧行坐标不再对应当前约束，等待绘制阶段用真实字体重新建立。
-            self.layout_lines.borrow_mut().clear();
-            // 旧代码复制区域同样不能继续参与新宽度下的命中。
-            self.code_regions.borrow_mut().clear();
-            // 记录本轮估算宽度，避免同一布局收敛周期重复测量。
-            self.last_layout_width.set(est_width);
-            // 清除真实布局颜色键，强制下一次绘制刷新真实字体几何。
-            self.last_layout_palette.set(None);
-            self.layout_dirty.set(false);
-        }
-        constraints.clamp(Size::new(self.content_width.get(), self.layout_height.get()))
-    }
+    measure => (&self, constraints: Constraints) -> Size { self.measure_content(constraints) }
 
     tab_index => (&self) -> i32 { i32::from(self.link_count() > 0) }
 
@@ -525,7 +504,9 @@ widget! {
         })
     }
 
-    flex_grow => (&self) -> f32 { 1.0 }
+    flex_grow => (&self) -> f32 { self.view_flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.view_flex_shrink }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         // 图片能力关闭时组件树不参与 RichText 绘制。
@@ -537,11 +518,20 @@ widget! {
         if frame.w <= 0.0 || frame.h <= 0.0 {
             return;
         }
+        let previous_font = *ctx.font();
+        let font = crate::ui::text_family::resolve(ctx,
+            self.view_style.as_ref().and_then(|style| style.font_family.as_ref()));
+        ctx.set_font(font);
+        let fs = self.font_size_with_tokens(ctx.dpi(), ctx.tokens());
+        let metrics = self.resolved_metrics(fs);
+        let padding = self.content_padding();
+        let frame = Rect::new(frame.x + padding.left, frame.y + padding.top,
+            (frame.w - padding.horizontal()).max(0.0), (frame.h - padding.vertical()).max(0.0));
         let max_w = frame.w;
         // 每帧只解析一次 UIX 声明的主题角色。
-        let resolved = self
-            .visual
-            .resolve(self.default_color, self.use_theme_color, ctx.tokens());
+        let explicit_color = self.view_style.as_ref().map(|style| style.color.resolve(ctx.tokens()));
+        let resolved = self.visual.resolve(explicit_color.unwrap_or(self.default_color),
+            explicit_color.is_none() && self.use_theme_color, ctx.tokens());
         let resolved_palette = resolved.layout_palette;
 
         // 图片能力开启时先非阻塞轮询资源事实，尺寸就绪后使布局缓存失效。
@@ -566,11 +556,12 @@ widget! {
         let need_relayout = self.layout_dirty.get()
             || (self.last_layout_width.get() - max_w).abs()
                 > self.visual.defaults.relayout_epsilon
-            || self.last_layout_palette.get() != Some(resolved_palette);
+            || self.last_layout_palette.get() != Some(resolved_palette)
+            || self.last_font.get() != Some(font)
+            || self.last_font_size.get() != fs
+            || self.last_line_height.get() != metrics.line_height_factor;
 
         if need_relayout {
-            let font = *ctx.font();
-            let fs = self.resolved_font_size_px(ctx.dpi());
             let (lines, h, w) = layout_rich_text_real_with_images_visual(
                 &self.segments,
                 max_w,
@@ -579,8 +570,11 @@ widget! {
                 ctx.font_service(),
                 &font,
                 &self.image_states.borrow(),
-                self.visual.metrics,
+                metrics,
             );
+            self.last_font.set(Some(font));
+            self.last_font_size.set(fs);
+            self.last_line_height.set(metrics.line_height_factor);
             // 直接转移相对坐标布局所有权，避免复制全部行与字形。
             self.layout_lines.replace(lines);
             self.layout_height.set(h);
@@ -637,13 +631,13 @@ widget! {
             let line_y = frame.y + line.y;
             for glyph in &line.glyphs {
                 let gx = frame.x + glyph.x;
-                let gy = line_y + (line.height - glyph.font_size) * 0.5;
+                let gy = line_y;
 
                 // 背景色（代码段背景）
                 if let Some(bg) = glyph.bg_color {
                     let pad = self.visual.decoration.background_padding;
                     ctx.fill_rect(
-                        Rect::new(gx - pad, gy - pad, glyph.width + pad * 2.0, glyph.font_size + pad * 2.0),
+                        Rect::new(gx - pad, gy - pad, glyph.width + pad * 2.0, line.height + pad * 2.0),
                         bg,
                         Some(Radius::uniform(self.visual.decoration.background_radius)),
                     );
@@ -655,7 +649,7 @@ widget! {
                         && glyph.global_char_idx + glyph.source_char_len > sel_s
                     {
                         ctx.fill_rect(
-                            Rect::new(gx, gy, glyph.width, glyph.font_size),
+                            Rect::new(gx, gy, glyph.width, line.height),
                             resolved
                                 .primary
                                 .with_alpha(self.visual.decoration.selection_alpha),
@@ -682,7 +676,7 @@ widget! {
                     || pressed_link;
                 if active_link {
                     ctx.fill_rect(
-                        Rect::new(gx, gy, glyph.width, glyph.font_size),
+                        Rect::new(gx, gy, glyph.width, line.height),
                         resolved.primary.with_alpha(if pressed_link {
                             self.visual.decoration.link_pressed_alpha
                         } else {
@@ -766,12 +760,7 @@ widget! {
                         .map(|glyph| glyph.x)
                         // 聚合 run 左缘。
                         .fold(f32::INFINITY, f32::min);
-                let gy = line_y + (line.height - fs) * 0.5
-                    + if matches!(self.segments.get(segment_idx), Some(RichTextSegment::Code { .. })) {
-                        self.visual.metrics.code_baseline_offset
-                    } else {
-                        0.0
-                    };
+                let gy = self.run_draw_y(ctx, line, line_y, fs);
                 let focused_link = focused_link_segment == Some(segment_idx);
                 let color = if first.is_link
                     && (hovered_link == Some(segment_idx)
@@ -853,8 +842,8 @@ widget! {
                     }
                     code_regions.push(CodeCopyRegion {
                         rect: Rect::new(
-                            visible_btn.x - frame.x,
-                            visible_btn.y - frame.y,
+                            visible_btn.x - frame.x + padding.left,
+                            visible_btn.y - frame.y + padding.top,
                             visible_btn.w,
                             visible_btn.h,
                         ),
@@ -864,6 +853,7 @@ widget! {
             }
         }
         ctx.pop_clip();
+        ctx.set_font(previous_font);
     }
 }
 

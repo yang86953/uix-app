@@ -408,8 +408,8 @@ pub(super) fn layout_text_with_face(
         });
         // 结束空文本兼容分支。
     }
-    // 实际文本高度使用最后一行顶部加字体行盒。
-    let text_height = line_y + font_height;
+    // 文本高度使用完整的最后一行行盒，与字号及基线度量分离。
+    let text_height = line_y + line_height;
     // 正 max_height 形成垂直对齐容器，否则使用文本自身高度。
     let max_height = if opts.max_height > 0.0 {
         // 使用调用方显式高度。

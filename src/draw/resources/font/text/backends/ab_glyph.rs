@@ -9,6 +9,32 @@ use std::sync::Arc;
 pub(crate) use text_backend::TextLayoutOptions;
 use text_backend::{TOFU_GLYPH_ID, WHITESPACE_GLYPH_ID};
 
+// ab_glyph's PxScale is ascent−descent, not pixels per em. Convert at the
+// backend boundary, identically for shaping, metrics and rasterization.
+fn em_scale(font: &impl Font, em: f32) -> PxScale {
+    let units = font.units_per_em().filter(|n| n.is_finite() && *n > 0.0);
+    let height = font.height_unscaled();
+    let scale = units
+        .map(|units| em * height / units)
+        .filter(|size| size.is_finite() && *size > 0.0)
+        .unwrap_or(em);
+    PxScale::from(scale)
+}
+
+// Em units can expose tall glyphs or hostile font bounds; cap actual raster
+// dimensions and area before either outline or coverage allocation.
+fn bounded_glyph_bounds(bounds: ab_glyph::Rect) -> bool {
+    let width = (bounds.max.x - bounds.min.x).ceil();
+    let height = (bounds.max.y - bounds.min.y).ceil();
+    width.is_finite()
+        && height.is_finite()
+        && width >= 0.0
+        && height >= 0.0
+        && width <= 2048.0
+        && height <= 2048.0
+        && width * height <= 1_048_576.0
+}
+
 /// 字体槽位：两个字体面借用 `_data` 的内容。
 ///
 /// 数据存放位置在堆上（Box/Arc），`Vec<FontSlot>` 扩容移动本结构体时
@@ -261,17 +287,18 @@ impl TextBackend for AbGlyphBackend {
             };
         };
         let fs = text_backend::bounded_font_size(opts.font_size);
-        let sf = f.as_scaled(PxScale { x: fs, y: fs });
+        let sf = f.as_scaled(em_scale(f, fs));
 
         let asc = sf.ascent();
         let desc = sf.descent();
         let lg = sf.line_gap();
         let font_h = (asc - desc + lg).max(fs);
-        let line_h = if opts.line_height > 0.0 {
+        let line_h = if opts.line_height.is_finite() && opts.line_height > 0.0 {
             opts.line_height
         } else {
-            font_h
+            text_backend::normal_line_height(fs)
         };
+        let baseline = asc + (line_h - asc + desc) * 0.5;
         // 优先使用 OpenType shaping；解析失败时保留原有逐字符回退路径。
         if let Some(layout) = self.fonts[idx]
             // 只借用当前有效槽位在加载期解析的 OpenType 字体面。
@@ -293,7 +320,7 @@ impl TextBackend for AbGlyphBackend {
                     // 与后续 ab_glyph 光栅化共享同一设计单位缩放。
                     sf.h_scale_factor(),
                     // 复用 ab_glyph 的像素 ascent。
-                    asc,
+                    baseline,
                     // 复用 ab_glyph 的实际字体行盒高度。
                     font_h,
                     // 复用调用方解析后的行高。
@@ -319,7 +346,7 @@ impl TextBackend for AbGlyphBackend {
 
         let mut out = Vec::new();
         let mut cx = 0.0f32;
-        let mut cy = asc;
+        let mut cy = baseline;
         let mut prev = GlyphId(0);
         let mut char_index = 0usize;
 
@@ -390,7 +417,7 @@ impl TextBackend for AbGlyphBackend {
             char_index += 1;
         }
 
-        let text_h = cy - asc + font_h;
+        let text_h = cy - baseline + line_h;
         let max_h = if opts.max_height > 0.0 {
             opts.max_height
         } else {
@@ -454,12 +481,7 @@ impl TextBackend for AbGlyphBackend {
         // 约束异常字号以避免非有限 shaping 缩放。
         let font_size = text_backend::bounded_font_size(opts.font_size);
         // 建立与普通入口一致的像素缩放字体。
-        let scaled_font = parsed_font.as_scaled(PxScale {
-            // 水平方向使用统一字号。
-            x: font_size,
-            // 垂直方向使用统一字号。
-            y: font_size,
-        });
+        let scaled_font = parsed_font.as_scaled(em_scale(parsed_font, font_size));
         // 读取像素 ascent 供 shaping 基线定位。
         let ascent = scaled_font.ascent();
         // 读取 descent 供行盒高度计算。
@@ -469,14 +491,15 @@ impl TextBackend for AbGlyphBackend {
         // 形成与普通入口一致的有限字体行盒。
         let font_height = (ascent - descent + line_gap).max(font_size);
         // 优先使用调用方显式行高。
-        let line_height = if opts.line_height > 0.0 {
+        let line_height = if opts.line_height.is_finite() && opts.line_height > 0.0 {
             // 保留正显式行高。
             opts.line_height
         // 缺少显式行高时使用字体自然行盒。
         } else {
             // 返回字体自然高度。
-            font_height
+            text_backend::normal_line_height(font_size)
         };
+        let baseline = ascent + (line_height - ascent + descent) * 0.5;
         // 尝试使用同一字体数据执行显式方向 shaping。
         let shaped = self.fonts[idx]
             // 借用加载期解析且与句柄同生命周期的 OpenType 字体面。
@@ -498,7 +521,7 @@ impl TextBackend for AbGlyphBackend {
                     // 与后续 ab_glyph 光栅化共享同一设计单位缩放。
                     scaled_font.h_scale_factor(),
                     // 传入像素 ascent。
-                    ascent,
+                    baseline,
                     // 传入字体行盒高度。
                     font_height,
                     // 传入解析后的行高。
@@ -526,22 +549,23 @@ impl TextBackend for AbGlyphBackend {
         let Some(idx) = self.idx(font) else {
             return GlyphRaster::empty();
         };
-        let pixel_size = pixel_size as f32;
         let gid = GlyphId(glyph_id as u16);
         // 槽位字体若已失效，则返回稳定的空栅格。
         let Some(f) = self.fonts[idx].font.as_ref() else {
             // 禁止内部槽位漂移触发进程级 panic。
             return GlyphRaster::empty();
         };
-        let glyph = gid.with_scale_and_position(pixel_size, point(0.0, 0.0));
-        let scale_factor = f
-            .as_scaled(PxScale {
-                x: pixel_size,
-                y: pixel_size,
-            })
-            .scale_factor();
+        let scale = em_scale(f, pixel_size);
+        let glyph = gid.with_scale_and_position(scale, point(0.0, 0.0));
+        let scale_factor = f.as_scaled(scale).scale_factor();
         let glyph_position = glyph.position;
         let outlined = f.outline_glyph(glyph);
+        if outlined
+            .as_ref()
+            .is_some_and(|glyph| !bounded_glyph_bounds(glyph.px_bounds()))
+        {
+            return GlyphRaster::empty();
+        }
         // 同一份原始轮廓同时生成两种数据：字体光栅器的真实面积覆盖率供近
         // 1:1 R8 使用，展平边列表供缩放/仿射 MSDF 使用。
         if let (Some(outline), Some(outlined)) = (f.outline(gid), outlined.as_ref()) {
@@ -604,12 +628,10 @@ impl TextBackend for AbGlyphBackend {
 
     fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics> {
         let i = self.idx(font)?;
-        let pixel_size = text_backend::normalized_raster_pixel_size(pixel_size)? as f32;
+        let pixel_size = text_backend::normalized_raster_pixel_size(pixel_size)?;
         // 槽位字体若已失效，则按 Option 契约返回无指标。
-        let sc = self.fonts[i].font.as_ref()?.as_scaled(PxScale {
-            x: pixel_size,
-            y: pixel_size,
-        });
+        let font = self.fonts[i].font.as_ref()?;
+        let sc = font.as_scaled(em_scale(font, pixel_size));
         Some(LineMetrics {
             ascent: sc.ascent(),
             descent: -sc.descent(),

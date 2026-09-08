@@ -52,7 +52,7 @@ impl<'a> TextRenderService<'a> {
         TextLayoutOptions {
             max_width,
             max_height,
-            line_height: font_size * 1.5,
+            line_height: crate::draw::resources::font::text_backend::normal_line_height(font_size),
             word_wrap,
             h_align,
             v_align,
@@ -126,13 +126,9 @@ impl<'a> TextRenderService<'a> {
         self.blit_glyph_layout(canvas, layout, pos, color, font_size);
     }
 
-    /// 单行行盒高度 = ascent + descent（与 `layout_text` 行盒一致）。
+    /// Default single-line box height, identical to `draw_text`'s normal line box.
     pub fn line_box_height(&mut self, font_size: f32) -> f32 {
-        let fs = crate::draw::resources::font::text_backend::bounded_font_size(font_size);
-        self.font_service
-            .horizontal_line_metrics(&self.font, fs)
-            .map(|m| m.ascent + m.descent)
-            .unwrap_or(fs * 1.2)
+        crate::draw::resources::font::text_backend::normal_line_height(font_size)
     }
 
     // ── 2D 文本绘制 ──
@@ -178,8 +174,11 @@ impl<'a> TextRenderService<'a> {
         }
         let fs = crate::draw::resources::font::text_backend::bounded_font_size(font_size);
         let metrics = self.font_service.horizontal_line_metrics(&self.font, fs);
-        let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
-        let top_y = baseline_y - ascent;
+        let line_height = self.line_box_height(fs);
+        let baseline = metrics
+            .map(|m| m.baseline_in_line_box(line_height))
+            .unwrap_or(fs * 0.8 + (line_height - fs) * 0.5);
+        let top_y = baseline_y - baseline;
         self.draw_text(canvas, text, Point::new(x, top_y), color, fs);
     }
 
@@ -438,11 +437,7 @@ impl<'a> TextRenderService<'a> {
         // 还原布局几何接口使用的数值终点。
         let end = end.0;
         let fs = crate::draw::resources::font::text_backend::bounded_font_size(font_size);
-        let visual_h = self
-            .font_service
-            .horizontal_line_metrics(&self.font, fs)
-            .map(|m| m.ascent + m.descent)
-            .unwrap_or(fs * 1.2);
+        let visual_h = self.line_box_height(fs);
         for line in &layout.lines {
             let gs = line.glyph_start;
             let gc = line.glyph_count;
@@ -520,15 +515,11 @@ impl<'a> TextRenderService<'a> {
 
     // ── 辅助 ──
 
-    /// 行盒（ascent+descent）在 `rect` 内几何居中时的 layout 原点 y（行顶）。
+    /// `draw_text`'s normal line box centered inside `rect` (line-top origin).
     ///
     /// 无光学下移。优先用布局把文字盒放好，再 `draw_text`；本函数仅过渡/简单控件。
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
-        let fs = crate::draw::resources::font::text_backend::bounded_font_size(font_size);
-        match self.font_service.horizontal_line_metrics(&self.font, fs) {
-            Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
-            None => rect.y + (rect.h - fs) * 0.5,
-        }
+        rect.y + (rect.h - self.line_box_height(font_size)) * 0.5
     }
 
     /// 获取当前字体句柄。

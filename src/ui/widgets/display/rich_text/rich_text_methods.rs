@@ -17,9 +17,9 @@ impl RichText {
     /// 获取解析后的默认字体大小（像素）。
     /// 如果设置了物理单位，通过 DPI 转换。
     pub fn resolved_font_size_px(&self, dpi: f32) -> f32 {
-        self.default_font_size_unit
-            .map(|unit| unit.to_dip(dpi))
-            .unwrap_or(self.default_font_size)
+        crate::ui::widget_runtime::measurement::with_measurement_tokens::<Self, _>(|tokens| {
+            self.font_size_with_tokens(dpi, tokens)
+        })
     }
 
     /// 设置富文本内容。
@@ -82,13 +82,17 @@ impl RichText {
             .max()
             .unwrap_or(0);
         // 汇总全部影响布局缓存的配置变化。
-        let layout_config_changed = segments_changed
+        let layout_config_changed = self.view_layout_changed(&next)
+            || segments_changed
             || self.default_font_size != next.default_font_size
             || self.default_font_size_unit != next.default_font_size_unit
             || self.default_color != next.default_color
             || self.use_theme_color != next.use_theme_color
             || visual_changed;
 
+        self.view_style = next.view_style;
+        self.view_flex_grow = next.view_flex_grow;
+        self.view_flex_shrink = next.view_flex_shrink;
         // 同步公开段列表。
         self.segments = next.segments;
         // 同步默认字号。

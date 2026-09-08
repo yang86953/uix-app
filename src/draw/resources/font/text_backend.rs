@@ -219,11 +219,19 @@ pub(crate) fn bounded_font_size(pixel_size: f32) -> f32 {
     }
 }
 
-pub(crate) fn normalized_raster_pixel_size(pixel_size: f32) -> Option<u32> {
+pub(crate) fn normalized_raster_pixel_size(pixel_size: f32) -> Option<f32> {
     if !pixel_size.is_finite() || pixel_size <= 0.0 {
         return None;
     }
-    Some(pixel_size.round().clamp(1.0, MAX_RASTER_PIXEL_SIZE) as u32)
+    // Preserve fractional em sizes: layout, metrics and rasterization must not
+    // disagree at fractional DPI or authored sizes. The glyph cache is bounded.
+    Some(pixel_size.clamp(1.0, MAX_RASTER_PIXEL_SIZE))
+}
+
+/// Default line box in logical pixels for an em font size.
+/// Layout and simple text drawing use the same 1.5-em normal line height.
+pub fn normal_line_height(font_size: f32) -> f32 {
+    bounded_font_size(font_size) * 1.5
 }
 
 /// 描述一次 OpenType shaping 使用的已解析行内方向。
@@ -540,6 +548,14 @@ pub struct LineMetrics {
     pub new_line_size: f32,
 }
 
+impl LineMetrics {
+    /// Baseline within a line box, sharing leading equally above and below.
+    /// An explicitly short line height may have negative leading, as with CSS.
+    pub fn baseline_in_line_box(self, line_height: f32) -> f32 {
+        self.ascent + (line_height - self.ascent - self.descent) * 0.5
+    }
+}
+
 /// Text layout options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextLayoutOptions {
@@ -555,7 +571,7 @@ pub struct TextLayoutOptions {
     pub h_align: crate::draw::HAlign,
     /// 整体文本在垂直可用空间中的对齐方式。
     pub v_align: crate::draw::VAlign,
-    /// 塑形与光栅化使用的字体像素大小。
+    /// 塑形与光栅化使用的 em 大小（逻辑像素），不是 ascent−descent 总高度。
     pub font_size: f32,
 }
 

@@ -77,7 +77,7 @@ pub(crate) const fn label_primary_color() -> ColorValue {
 
 fn normalized_label_font_size(size: f32) -> f32 {
     if size.is_finite() && size > 0.0 {
-        size
+        crate::draw::resources::font::text_backend::bounded_font_size(size)
     } else {
         LABEL_VISUAL.metrics.default_font_size
     }
@@ -90,6 +90,8 @@ widget! {
         pub text: String,
         /// 未设置物理单位字号时使用的逻辑像素字号。
         pub font_size: f32,
+        #[snapshot(skip)]
+        font_size_authored: bool,
         /// 物理单位字号（可选，优先级高于 font_size）。
         pub font_size_unit: Option<PhysicalUnit>,
         /// 可选文字颜色覆写；`None` 使用主题正文色。
@@ -217,13 +219,7 @@ widget! {
             self.color.unwrap_or(resolved.text)
         };
         // 分辨率：物理单位优先 > style > self.font_size
-        let fs = if let Some(unit) = self.font_size_unit {
-            unit.to_dip(ctx.dpi())
-        } else if let Some(style) = self.style.as_ref() {
-            style.resolve_font_size(ctx.tokens())
-        } else {
-            self.font_size
-        };
+        let fs = self.resolved_font_size(ctx.dpi(), ctx.tokens());
         let fs = normalized_label_font_size(fs);
         // 显式 lineHeight 同时驱动文本布局与固有测量。
         let line_height = self
@@ -417,12 +413,36 @@ impl SnapshotSource for Label {
 }
 
 impl Label {
+    // Builder flags preserve explicit default-sized text under a custom theme;
+    // direct public-field overrides retain compatibility when non-default.
+    pub(crate) fn typography_changed(&self, next: &Self) -> bool {
+        self.font_size_authored != next.font_size_authored
+    }
+
+    fn resolved_font_size(&self, dpi: f32, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
+        if let Some(unit) = self.font_size_unit {
+            unit.to_dip(dpi)
+        } else if let Some(style) = self.style.as_ref().filter(|style| {
+            style.font_size != crate::ui::theme::style::TypographyToken::Body
+                || (!self.font_size_authored
+                    && self.font_size == self.visual.metrics.default_font_size)
+        }) {
+            style.resolve_font_size(tokens)
+        } else if self.font_size_authored || self.font_size != self.visual.metrics.default_font_size
+        {
+            self.font_size
+        } else {
+            tokens.font_size()
+        }
+    }
+
     /// 创建使用默认字号、主题颜色且不可选中的文本标签。
     pub fn new(text: impl Into<String>) -> Self {
         let t = text.into();
         Self {
             text: t,
             font_size: LABEL_VISUAL.metrics.default_font_size,
+            font_size_authored: false,
             font_size_unit: None,
             color: None,
             fixed_width: None,
@@ -483,6 +503,7 @@ impl Label {
             self.set_text(next.text);
         }
         self.font_size = next.font_size;
+        self.font_size_authored = next.font_size_authored;
         self.font_size_unit = next.font_size_unit;
         self.color = next.color;
         self.fixed_width = next.fixed_width;
@@ -505,6 +526,7 @@ impl Label {
     /// 设置逻辑像素字号并清除物理单位字号；非法值回退默认字号。
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = normalized_label_font_size(s);
+        self.font_size_authored = true;
         self.font_size_unit = None;
         self
     }
@@ -567,17 +589,10 @@ impl Label {
         if let (Some(w), Some(h)) = (w, h) {
             Size::new(w, h)
         } else {
-            let raw_font_size = self
-                .font_size_unit
-                .map(|unit| unit.to_dip(self.visual.metrics.measurement_dpi))
-                .or_else(|| {
-                    self.style.as_ref().map(|s| {
-                        crate::ui::widget_runtime::measurement::with_measurement_tokens::<Self, _>(
-                            |tokens| s.resolve_font_size(tokens),
-                        )
-                    })
-                })
-                .unwrap_or(self.font_size);
+            let raw_font_size =
+                crate::ui::widget_runtime::measurement::with_measurement_tokens::<Self, _>(
+                    |tokens| self.resolved_font_size(self.visual.metrics.measurement_dpi, tokens),
+                );
             let fs = normalized_label_font_size(raw_font_size);
             // 显式行高按最终字号解析，未声明时继续使用既有测量策略。
             let explicit_line_height = self
@@ -592,14 +607,14 @@ impl Label {
                 f32::INFINITY,
                 fs,
             );
-            // 单行固有高度 = 行盒（≈ ascent+descent）；与顶对齐绘制一致。
+            // 单行和多行使用同一 normal 行盒，与顶对齐绘制一致。
             // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。
             // 显式多行保留完整 line box，禁止后继节点压到实际字形上。
             let text_height = if let Some(line_height) = explicit_line_height {
                 // 显式行高对单行与多行统一生效。
                 line_height * estimated.line_count as f32
             } else if estimated.line_count == 1 {
-                // 未声明时保留现有单行视觉字高。
+                // 未声明时使用与动态文字一致的 normal 行高。
                 fs * self.visual.metrics.single_line_height_factor
             } else {
                 // 未声明时保留现有多行 normal 行高。
