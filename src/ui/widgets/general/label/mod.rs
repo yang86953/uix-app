@@ -602,10 +602,13 @@ impl Label {
                 .as_ref()
                 // 只解析显式 lineHeight。
                 .and_then(|style| style.resolve_line_height(fs));
-            let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
+            let estimated = crate::ui::widget_runtime::measurement::text_metrics(
                 &self.text,
                 f32::INFINITY,
                 fs,
+                explicit_line_height.unwrap_or(fs * self.visual.metrics.default_line_height_factor),
+                self.style.as_ref().and_then(|s| s.font_family.as_ref()),
+                false,
             );
             // 单行和多行使用同一 normal 行盒，与顶对齐绘制一致。
             // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。

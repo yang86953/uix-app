@@ -7,6 +7,12 @@ use std::sync::{Arc, OnceLock};
 use crate::ui::ThemeTokens;
 use crate::ui::theme::{ScopedThemeTokens, Theme};
 
+mod fonts;
+pub(crate) use fonts::{LayoutFontScope, text_metrics};
+
+#[cfg(test)]
+mod tests;
+
 thread_local! {
     static LAYOUT_THEME: RefCell<Option<Arc<dyn ThemeTokens>>> = const { RefCell::new(None) };
 }
