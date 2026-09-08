@@ -6,15 +6,15 @@ mod framework_di {
     // 引入文档承诺的公开 DI、AppHandle 与设置服务 prelude。
     use uix::prelude::*;
 
-    // 编译组合根注册与组件公开门面解析路径。
-    fn compile_example(handle: &AppHandle) {
-        // 创建进程级服务容器。
-        let mut container = DiContainer::new();
-        // 注册由容器共享所有权的设置服务单例。
-        container.singleton(SettingsService::new());
-
-        // 通过目标窗口句柄克隆解析同一设置服务实例。
-        let _settings = handle.resolve::<SettingsService>();
+    // 编译同一 App 的注册与启动边界解析；独立容器不会自动注入现有 handle。
+    fn compile_example() {
+        let _app = App::new()
+            .singleton(SettingsService::new())
+            .on_start(|handle| {
+                let _settings = handle
+                    .resolve::<SettingsService>()
+                    .expect("组合根已注册 SettingsService");
+            });
     }
 }
 
@@ -167,69 +167,18 @@ mod framework_singleton {
     }
 }
 
-// 隔离 framework-services-i18n 围栏中的聚合服务与资源表。
+// 隔离 framework-services-i18n 围栏；资源表和 Locale 是独立的公开机制。
 mod framework_services_i18n {
-    // 引入文档承诺的公开服务注册、i18n 与 View prelude。
     use uix::prelude::*;
 
-    // 声明应用自注册的分析服务占位实现。
-    #[derive(Clone, Default)]
-    // 保持分析能力由应用提供而非组件构造。
-    struct Analytics;
-
-    // 声明一次整体注册的应用服务集合。
-    #[derive(Clone)]
-    // 聚合设置与分析两个进程级服务。
-    struct AppServices {
-        // 保存共享设置服务。
-        settings: SettingsService,
-        // 保存应用自注册分析服务。
-        analytics: Analytics,
-    }
-
-    // 为聚合服务提供组合根构造入口。
-    impl AppServices {
-        // 创建所有权完整的服务集合。
-        fn new() -> Self {
-            // 返回默认设置与分析服务。
-            Self {
-                // 创建共享设置服务。
-                settings: SettingsService::new(),
-                // 创建应用分析服务。
-                analytics: Analytics,
-            }
-        }
-    }
-
-    // 编译聚合服务注册与资源表驱动的子树文案。
-    fn documented_main() {
-        // 把服务集合整体注册到 Application 组合根。
-        App::new()
-            // 注册聚合服务单例。
-            .register(AppServices::new())
-            // 安装业务根视图工厂。
-            .root(main_view)
-            // 保留文档运行入口供编译器检查。
-            .run();
-
-        // 增量注册业务文案资源。
+    fn compile_example() {
+        // 在构建目标 UI 前注册进程级业务文案；LocaleProvider 不选择这张资源表。
         register_translations(&[("common.save", "保存")]);
-        // 创建独立 Locale 作用域内的业务文案节点。
         let locale = zh_cn();
-        // 构造只影响当前子树的语言 Provider。
         let _localized = embed(
-            // 使用应用选择的语言包创建作用域。
             LocaleProvider::new(locale)
-                // 通过稳定 key 解析业务文案。
                 .child(|| label(t!("common.save")))
-                // 把 Provider 构建为公开 ViewNode。
                 .build(),
         );
-    }
-
-    // 声明示例所需的业务根视图。
-    fn main_view() -> ViewNode {
-        // 返回稳定的占位业务内容。
-        label("应用")
     }
 }
