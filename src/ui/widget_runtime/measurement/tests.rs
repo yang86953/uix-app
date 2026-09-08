@@ -12,8 +12,8 @@ fn fonts() -> Rc<FontService> {
     let mut fonts = FontService::new();
     fonts
         .install_font_bundle(&FontBundle::from_static(
-            "Fixture Noto",
-            include_bytes!("../../../../assets/fonts/NotoSansCJKsc-Regular.otf"),
+            "LXGW WenKai",
+            include_bytes!("../../../../assets/fonts/LXGWWenKai-Regular.ttf"),
         ))
         .unwrap();
     Rc::new(fonts)

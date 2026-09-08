@@ -10,7 +10,7 @@ use uix::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
 use uix::draw::{FontService, HAlign, TextBackend, VAlign};
 use uix::platform::services::{FontSystemInfo, SystemFontSource};
 
-const FONT: &[u8] = include_bytes!("../assets/fonts/NotoSansCJKsc-Regular.otf");
+const FONT: &[u8] = include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf");
 
 fn table(data: &[u8], tag: &[u8]) -> usize {
     let count = u16::from_be_bytes(data[4..6].try_into().unwrap()) as usize;

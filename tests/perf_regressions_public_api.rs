@@ -11,7 +11,7 @@ use uix::ui::test_harness::TestApp;
 
 const FONT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/assets/fonts/NotoSansCJKsc-Regular.otf"
+    "/assets/fonts/LXGWWenKai-Regular.ttf"
 );
 
 fn fonts() -> (FontService, FontHandle) {
