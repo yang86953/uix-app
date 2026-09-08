@@ -390,11 +390,25 @@ impl Container {
         }
         let children = reflowed.as_ref();
         let positions = &scratch.flex.child_rects;
-        self.cached_content_size.set(content_size_from_children(
-            content_rect,
-            positions,
-            children,
-        ));
+        let mut content_size = content_size_from_children(content_rect, positions, children);
+        if !main_axis_indefinite && !explicit_main_axis && style.flex_grow <= 0.0 {
+            // 内容尺寸容器（无显式主轴尺寸且不 grow）被继承的小宽度挤压后，
+            // positions 的主轴末端只是挤压结果，不能当作自然尺寸回写缓存；
+            // 否则下一轮 measure 永远报告挤压值，父级再也分配不回自然宽度
+            // （顶栏窗口控制按钮塌成细条即此反馈环）。主轴自然下限取子项
+            // 测量基线加间距，与 overflow 布局的内容语义保持一致。
+            let gap = crate::ui::layout::engine::finite_or_zero(style.gap);
+            let basis_sum: f32 = children
+                .iter()
+                .map(|child| {
+                    crate::ui::layout::engine::finite_non_negative(child.measured_size.w)
+                        + crate::ui::layout::engine::finite_or_zero(child.margin.horizontal())
+                })
+                .sum::<f32>()
+                + gap * children.len().saturating_sub(1) as f32;
+            content_size.w = content_size.w.max(basis_sum);
+        }
+        self.cached_content_size.set(content_size);
         output.reserve(children.len());
         output.extend(
             children
