@@ -1054,7 +1054,7 @@ mod tests {
     fn shared_commands_compile_all_public_target_shapes() {
         let view = compile_inline("<Text>Hello</Text>", "<view>", CompileTarget::View)
             .expect("View 编译应成功");
-        assert!(view.tokens.to_string().contains("label"));
+        assert!(view.tokens.to_string().contains("Label :: new"));
         assert!(!view.tokens.to_string().contains("__uix_source_marker"));
         assert!(view.tracked_files.is_empty());
         assert!(!view.source_map.entries().is_empty());
