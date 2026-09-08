@@ -33,6 +33,7 @@ pub(crate) struct FontSlot {
 pub(crate) struct GlyphCacheKey {
     pub(crate) font_idx: u32,
     pub(crate) glyph_id: u32,
+    // Bits of a normalized positive finite em size, including its fraction.
     pub(crate) pixel_size: u32,
 }
 

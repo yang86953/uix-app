@@ -40,6 +40,15 @@ impl ViewAdapter {
             return widget;
         }
 
+        #[cfg(feature = "rich-text")]
+        if let Some(rich_text) = widget
+            .as_any_mut()
+            .downcast_mut::<crate::ui::widgets::RichText>()
+        {
+            rich_text.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
+            return widget;
+        }
+
         let tid = widget.as_any().type_id();
 
         if tid == std::any::TypeId::of::<Container>() {
@@ -120,7 +129,7 @@ impl ViewAdapter {
             }
         } else if tid == std::any::TypeId::of::<Input>() {
             if let Some(input) = widget.as_any_mut().downcast_mut::<Input>() {
-                // 输入组件只接收布局字段；编辑、IME 与视觉状态仍由 Input 私有持有。
+                // 输入组件消费布局与排版样式；编辑、IME 与焦点仍由 Input 私有持有。
                 input.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
             }
         } else if tid == std::any::TypeId::of::<Select>() {
