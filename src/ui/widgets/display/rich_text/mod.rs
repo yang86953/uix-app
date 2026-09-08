@@ -529,7 +529,7 @@ widget! {
             (frame.w - padding.horizontal()).max(0.0), (frame.h - padding.vertical()).max(0.0));
         let max_w = frame.w;
         // 每帧只解析一次 UIX 声明的主题角色。
-        let explicit_color = self.view_style.as_ref().map(|style| style.color.resolve(ctx.tokens()));
+        let explicit_color = self.view_text_color().map(|color| color.resolve(ctx.tokens()));
         let resolved = self.visual.resolve(explicit_color.unwrap_or(self.default_color),
             explicit_color.is_none() && self.use_theme_color, ctx.tokens());
         let resolved_palette = resolved.layout_palette;
