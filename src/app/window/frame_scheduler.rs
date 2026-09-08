@@ -59,6 +59,7 @@ impl FrameOpportunity {
 struct FrameRequest {
     token: FrameRequestToken,
     native_armed: bool,
+    cadence: bool,
     deadline: Instant,
     target_present_time: Option<Instant>,
 }
@@ -74,6 +75,7 @@ pub(crate) struct FrameScheduler {
     last_presented_at: Option<Instant>,
     last_animation_frame: Option<Instant>,
     rebase_animation: bool,
+    last_wake_callback_driven: bool,
     recovery_attempt: u8,
     occlusion_probe_at: Option<Instant>,
     occlusion_probe_attempt: u8,
@@ -95,6 +97,7 @@ impl FrameScheduler {
             last_presented_at: None,
             last_animation_frame: None,
             rebase_animation: true,
+            last_wake_callback_driven: false,
             recovery_attempt: 0,
             occlusion_probe_at: None,
             occlusion_probe_attempt: 0,
@@ -155,21 +158,27 @@ impl FrameScheduler {
             return false;
         }
         request.native_armed = true;
+        // 原生回调是首选唤醒源；fallback deadline 只是回调失约时的安全网，
+        // 追加一个周期的宽限，避免 deadline 与 vsync 回调竞速抢跑。
+        request.deadline += self.fallback_period;
         true
     }
 
     /// Arms one request. A later request is merged into the existing one;
-    /// only an earlier deadline may tighten it.
+    /// only an earlier external deadline may tighten it — cadence
+    /// continuation must never pull a native-armed request back into a
+    /// deadline race with the pending callback.
     pub(crate) fn request_frame(
         &mut self,
         deadline: Instant,
         target_present_time: Option<Instant>,
+        cadence: bool,
     ) -> Option<FrameRequestToken> {
         if !self.is_renderable() || self.ready.is_some() {
             return None;
         }
         if let Some(request) = &mut self.outstanding {
-            if deadline < request.deadline {
+            if !cadence && deadline < request.deadline {
                 request.deadline = deadline;
                 request.target_present_time = target_present_time;
             }
@@ -179,6 +188,7 @@ impl FrameScheduler {
         self.outstanding = Some(FrameRequest {
             token,
             native_armed: false,
+            cadence,
             deadline,
             target_present_time,
         });
@@ -186,12 +196,12 @@ impl FrameScheduler {
     }
 
     pub(crate) fn request_immediate(&mut self, now: Instant) -> Option<FrameRequestToken> {
-        self.request_frame(now, None)
+        self.request_frame(now, None, false)
     }
 
     pub(crate) fn request_animation_frame(&mut self, after: Instant) -> Option<FrameRequestToken> {
         let target = after + self.fallback_period;
-        self.request_frame(target, Some(target))
+        self.request_frame(target, Some(target), true)
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
@@ -252,6 +262,7 @@ impl FrameScheduler {
                     return None;
                 }
                 self.outstanding = None;
+                self.last_wake_callback_driven = false;
                 Some(FrameOpportunity {
                     fallback_native_token: request.native_armed.then_some(request.token),
                     frame_time: now,
@@ -260,6 +271,7 @@ impl FrameScheduler {
             }
             SurfaceState::Recovering { retry_at, .. } if retry_at <= now => {
                 self.surface_state = SurfaceState::Renderable;
+                self.last_wake_callback_driven = false;
                 Some(FrameOpportunity {
                     fallback_native_token: None,
                     frame_time: now,
@@ -291,6 +303,7 @@ impl FrameScheduler {
             return false;
         }
         self.outstanding = None;
+        self.last_wake_callback_driven = true;
         self.ready = Some(FrameOpportunity {
             fallback_native_token: None,
             frame_time,
@@ -366,7 +379,10 @@ impl FrameScheduler {
         if self.is_terminal_failure() {
             return;
         }
-        if cadence_sample {
+        // 只有原生回调驱动的帧才反映真实呈现节奏：deadline 唤醒（含抢跑
+        // 在途回调）的间隔含自身调度相位，采样会把 fallback 周期拖到
+        // vsync 之下形成永久竞速，也会在纯 fallback 平台单向棘轮上升。
+        if cadence_sample && self.last_wake_callback_driven {
             if let Some(previous) = self.last_presented_at {
                 if let Some(observed) = frame_time.checked_duration_since(previous) {
                     if (MIN_FALLBACK_PERIOD..=MAX_FALLBACK_PERIOD).contains(&observed) {
@@ -485,4 +501,93 @@ fn occlusion_probe_delay(attempt: u8) -> Duration {
         .checked_mul(1u32 << shift)
         .unwrap_or(OCCLUSION_PROBE_MAX_DELAY)
         .min(OCCLUSION_PROBE_MAX_DELAY)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn period() -> Duration {
+        INITIAL_FALLBACK_PERIOD
+    }
+
+    #[test]
+    fn native_armed_deadline_backs_off_by_one_period() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        let token = scheduler.request_animation_frame(now).expect("token");
+        assert_eq!(scheduler.next_deadline(), Some(now + period()));
+        assert!(scheduler.mark_native_armed(token));
+        // 安全网 deadline 必须晚于 cadence 目标一个周期，避免与在途
+        // 原生回调竞速抢跑。
+        assert_eq!(scheduler.next_deadline(), Some(now + period() * 2));
+    }
+
+    #[test]
+    fn cadence_continuation_never_tightens_native_armed_request() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        let token = scheduler.request_animation_frame(now).expect("token");
+        assert!(scheduler.mark_native_armed(token));
+        // 帧尾续帧按更早的 frame_time 重新武装 cadence，也不得收紧宽限。
+        scheduler.request_animation_frame(now - Duration::from_millis(5));
+        assert_eq!(scheduler.next_deadline(), Some(now + period() * 2));
+    }
+
+    #[test]
+    fn external_immediate_request_still_tightens() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        let token = scheduler.request_animation_frame(now).expect("token");
+        assert!(scheduler.mark_native_armed(token));
+        // 外部唤醒（输入等）仍可立即收紧，保持响应语义。
+        assert!(scheduler.request_immediate(now - Duration::from_millis(1)).is_none());
+        assert_eq!(scheduler.next_deadline(), Some(now - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn deadline_wake_preempting_native_callback_skips_cadence_sampling() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        scheduler.presented(now, false);
+        let token = scheduler.request_animation_frame(now).expect("token");
+        assert!(scheduler.mark_native_armed(token));
+        // deadline 在宽限后到期抢跑在途回调：该帧间隔不得污染 cadence 学习。
+        let wake = now + period() * 2 + Duration::from_millis(1);
+        let opportunity = scheduler.take_due_opportunity(wake).expect("opportunity");
+        assert!(opportunity.fallback_token().is_some());
+        scheduler.presented(wake, true);
+        assert_eq!(scheduler.fallback_period, INITIAL_FALLBACK_PERIOD);
+    }
+
+    #[test]
+    fn native_callback_wake_samples_cadence() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        scheduler.presented(now, false);
+        let token = scheduler.request_animation_frame(now).expect("token");
+        assert!(scheduler.mark_native_armed(token));
+        let observed = Duration::from_millis(6);
+        assert!(scheduler.notify_opportunity(token, now + observed, None));
+        let opportunity = scheduler
+            .take_due_opportunity(now + observed)
+            .expect("opportunity");
+        assert!(opportunity.fallback_token().is_none());
+        scheduler.presented(now + observed, true);
+        assert_eq!(scheduler.fallback_period, observed);
+    }
+
+    #[test]
+    fn pure_fallback_deadline_wake_does_not_sample() {
+        let mut scheduler = FrameScheduler::new(true);
+        let now = Instant::now();
+        scheduler.presented(now, false);
+        assert!(scheduler.request_animation_frame(now).is_some());
+        // 无原生回调平台：deadline 自身决定唤醒间隔，采样它只会形成
+        // 单向棘轮；学习必须保持关闭，安全网停留在默认节奏。
+        let wake = now + period() + Duration::from_millis(1);
+        assert!(scheduler.take_due_opportunity(wake).is_some());
+        scheduler.presented(wake, true);
+        assert_eq!(scheduler.fallback_period, INITIAL_FALLBACK_PERIOD);
+    }
 }
