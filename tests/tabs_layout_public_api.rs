@@ -158,3 +158,29 @@ fn tabs_rebuild_updates_and_removes_shrink_override() {
         close(app.snapshot().find("tabs").unwrap().frame.h, height);
     }
 }
+
+#[test]
+fn tabs_builder_flex_survives_unrelated_style_and_accepts_explicit_zero() {
+    for zero in [false, true] {
+        let app = TestApp::new((300.0, 400.0), move || {
+            let node = embed(Tabs::new().tab("One", "one").flex_grow(1.0))
+                .width(280.0)
+                .automation_id("builder.tabs");
+            column((if zero { node.flex_grow(0.0) } else { node },))
+        });
+        close(app.snapshot().find("builder.tabs").unwrap().frame.h, if zero { 200.0 } else { 400.0 });
+    }
+}
+
+#[test]
+fn tabs_builder_shrink_survives_unrelated_style_and_accepts_override() {
+    for shrink in [None, Some(1.0)] {
+        let app = TestApp::new((300.0, 100.0), move || {
+            let node = embed(Tabs::new().tab("One", "one").flex_shrink(0.0))
+                .width(280.0)
+                .automation_id("builder.tabs");
+            column((if let Some(value) = shrink { node.flex_shrink(value) } else { node },))
+        });
+        close(app.snapshot().find("builder.tabs").unwrap().frame.h, if shrink.is_none() { 200.0 } else { 100.0 });
+    }
+}
