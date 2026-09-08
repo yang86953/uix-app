@@ -74,6 +74,16 @@ pub(crate) fn builtin_widget_layout_changed_without_snapshot(
     current: &dyn Widget,
     next: &dyn Widget,
 ) -> Option<bool> {
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Label>(),
+        next.as_any().downcast_ref::<Label>(),
+    ) {
+        // 私有排版策略没有公开快照字段；变化必须触发布局，未变时继续比较其余样式。
+        if current.typography_changed(next) {
+            return Some(true);
+        }
+    }
+
     #[cfg(feature = "terminal")]
     if let (Some(current), Some(next)) = (
         current.as_any().downcast_ref::<Terminal>(),
