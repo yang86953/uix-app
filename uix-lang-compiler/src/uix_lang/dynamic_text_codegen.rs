@@ -27,6 +27,7 @@ pub(super) fn generate_dynamic_label(
     children: &[Node],
     // 接收所属 Text 元素跨度。
     span: SourceSpan,
+    ellipsis: Option<TokenStream>,
 ) -> Result<TokenStream, Diagnostic> {
     // 克隆节点以便只改写生成期副本。
     let mut lowered = children.to_vec();
@@ -56,12 +57,24 @@ pub(super) fn generate_dynamic_label(
             let #captured = ::std::clone::Clone::clone(&(#source));
         }
     });
+    let label = if let Some(ellipsis) = ellipsis {
+        quote! {{
+            let __uix_content = move || #content;
+            if #ellipsis {
+                ::uix::prelude::elided_label(__uix_content)
+            } else {
+                ::uix::prelude::dynamic_label(__uix_content)
+            }
+        }}
+    } else {
+        quote! { ::uix::prelude::dynamic_label(move || #content) }
+    };
     // 返回公开 DynamicLabel 构造器与原公共 View 装饰兼容的表达式。
     Ok(quote! {{
         // 在闭包创建前取得全部自由值的独立所有权。
         #(#capture_statements)*
         // State::get 只会在该动态文本闭包执行时发生。
-        ::uix::prelude::dynamic_label(move || #content)
+        #label
     }})
 }
 

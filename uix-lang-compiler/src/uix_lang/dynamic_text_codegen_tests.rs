@@ -107,3 +107,14 @@ fn normalizes_explicit_state_get_inside_nested_conditionals() {
     // 两处动态文本仍必须延迟求值。
     assert!(tokens.contains("dynamic_label (move ||"));
 }
+
+#[test]
+fn text_ellipsis_preserves_dynamic_captures_and_validates_boolean() {
+    for source in [r#"<Text ellipsis>{name.get()}</Text>"#, r#"<Text ellipsis={false}>长标签</Text>"#] {
+        let generated = generate_core(source);
+        assert!(generated.contains("elided_label"));
+        assert!(generated.contains("dynamic_label"));
+    }
+    let doc = parse_document(r#"<Text ellipsis="yes">invalid</Text>"#).unwrap();
+    assert!(generate_view(&doc.root).is_err());
+}

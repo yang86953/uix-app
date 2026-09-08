@@ -66,3 +66,8 @@ pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
     // 复用统一标签构造入口。
     label(f)
 }
+
+/// 响应式单行标签；受限宽度按真实字体省略，语义文本保留完整内容。
+pub fn elided_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
+    ViewNode::leaf(crate::ui::widget_runtime::dynamic_label::DynamicLabel::new(f).elided())
+}
