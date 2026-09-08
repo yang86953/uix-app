@@ -485,9 +485,21 @@ impl Tabs {
         if let Some(height) = style.height {
             self.fixed_height = height.is_finite().then_some(height.max(0.0));
         }
-        let grow = flex_grow.unwrap_or(style.flex_grow);
+        let grow = flex_grow.unwrap_or_else(|| {
+            if style.flex_grow != crate::ui::theme::style::Style::default().flex_grow {
+                style.flex_grow
+            } else {
+                self.view_flex_grow
+            }
+        });
         self.view_flex_grow = if grow.is_finite() { grow.max(0.0) } else { 0.0 };
-        let shrink = flex_shrink.unwrap_or(style.flex_shrink);
+        let shrink = flex_shrink.unwrap_or_else(|| {
+            if style.flex_shrink != crate::ui::theme::style::Style::default().flex_shrink {
+                style.flex_shrink
+            } else {
+                self.view_flex_shrink
+            }
+        });
         self.view_flex_shrink = if shrink.is_finite() {
             shrink.max(0.0)
         } else {
@@ -737,6 +749,18 @@ impl Tabs {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
+        self
+    }
+
+    /// 设置 Flex 扩张系数；View 的显式覆盖（含零）优先。
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.view_flex_grow = if value.is_finite() { value.max(0.0) } else { 0.0 };
+        self
+    }
+
+    /// 设置 Flex 收缩系数；保持布局运行态的唯一字段所有者。
+    pub fn flex_shrink(mut self, value: f32) -> Self {
+        self.view_flex_shrink = if value.is_finite() { value.max(0.0) } else { 1.0 };
         self
     }
 
