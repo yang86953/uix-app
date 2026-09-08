@@ -10,6 +10,9 @@ use uix_lang_compiler::projection_schema::RegistrationStatus;
 
 // 生成 textDocument/completion 响应。
 pub(crate) fn complete(session: &Session, request: &Value) -> Value {
+    if let Some(result) = super::modules::completion(session, request) {
+        return result;
+    }
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     let (line, character) = request_position(request);

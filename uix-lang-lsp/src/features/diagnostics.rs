@@ -7,7 +7,7 @@ use crate::session::{Session, same_document_path};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use uix_lang_compiler::{CompilerDiagnostic, CompilerSystem};
+use uix_lang_compiler::{CompilerDiagnostic, CompilerSystem, DocumentOutput};
 
 // 处理 didOpen / didChange：更新文档后重新发布该根的完整诊断。
 pub(crate) fn did_change_document(session: &mut Session, params: &Value) -> Vec<Value> {
@@ -33,7 +33,9 @@ pub(crate) fn did_change_document(session: &mut Session, params: &Value) -> Vec<
     if let Some(text) = text {
         session.store_document(uri.clone(), text);
     }
-    publish(session, &uri)
+    let mut roots = session.module_uris();
+    roots.push(uri);
+    publish_roots(session, roots)
 }
 
 // 关闭文档：释放 overlay 与缓存，并清理或重新汇聚已发布诊断。
@@ -44,8 +46,9 @@ pub(crate) fn close(session: &mut Session, uri: &str) -> Vec<Value> {
         .as_ref()
         .map(|path| session.evict_file(path))
         .unwrap_or_default();
+    session.forget_module_root(uri);
     // 关闭依赖 overlay 后立即按落盘内容复核仍打开的根，不能等待下一次编辑才失效。
-    let affected_uris = session
+    let mut affected_uris = session
         .open_file_documents()
         .into_iter()
         .filter(|(_, candidate_path)| {
@@ -55,6 +58,7 @@ pub(crate) fn close(session: &mut Session, uri: &str) -> Vec<Value> {
         })
         .map(|(candidate_uri, _)| candidate_uri)
         .collect::<Vec<_>>();
+    affected_uris.extend(session.module_uris());
     let mut notifications = BTreeMap::<String, Value>::new();
     for root_uri in affected_uris {
         for message in publish(session, &root_uri) {
@@ -99,7 +103,7 @@ pub(crate) fn watched_changed(session: &mut Session, params: &Value) -> Vec<Valu
         })
         .unwrap_or_default();
     // 找出受影响且仍打开的根：根自身或其递归依赖命中变化路径。
-    let roots_to_recheck = session
+    let mut roots_to_recheck = session
         .open_file_documents()
         .into_iter()
         .filter(|(_, root_path)| {
@@ -119,6 +123,8 @@ pub(crate) fn watched_changed(session: &mut Session, params: &Value) -> Vec<Valu
         })
         .map(|(root_uri, _)| root_uri)
         .collect::<Vec<_>>();
+    // 模块检查失败时仍可能缺少完整来源图；显式文件事件复核打开的模块根，不扫描磁盘。
+    roots_to_recheck.extend(session.module_uris());
     let mut notifications = BTreeMap::<String, Value>::new();
     for root_uri in roots_to_recheck {
         // 变化路径的编译缓存先行失效。
@@ -159,13 +165,18 @@ pub(crate) fn publish(session: &mut Session, request_uri_value: &str) -> Vec<Val
     let path = uri_to_path(request_uri_value);
     // 文档走会话缓存检查并登记成功分析；虚拟文档走内嵌检查入口。
     let outcome = if let Some(path) = path.as_ref() {
-        session.check_file_with_overlays_auto(path)
+        session.check_document_with_overlays(path)
     } else {
         let snapshot = document_snapshot(session, request_uri_value);
-        CompilerSystem::new().check_inline_auto(&snapshot.text, &snapshot.name)
+        CompilerSystem::new().check_document_inline(&snapshot.text, &snapshot.name)
     };
     match &outcome {
-        Ok(analysis) => session.set_analysis(request_uri_value, analysis.clone()),
+        Ok(DocumentOutput::Ui(analysis)) => {
+            session.set_analysis(request_uri_value, analysis.clone())
+        }
+        Ok(DocumentOutput::Module(analysis)) => {
+            session.set_module_analysis(request_uri_value, analysis.clone())
+        }
         Err(_) => session.drop_analyses_covering_uri(request_uri_value),
     }
     let error = outcome.err();
@@ -204,6 +215,19 @@ pub(crate) fn publish(session: &mut Session, request_uri_value: &str) -> Vec<Val
             )
         })
         .collect()
+}
+
+// 一次显式编辑只发布每个目标文档的最终汇总结果，避免中间重复通知覆盖新诊断。
+fn publish_roots(session: &mut Session, roots: Vec<String>) -> Vec<Value> {
+    let mut messages = BTreeMap::new();
+    for root in roots.into_iter().collect::<BTreeSet<_>>() {
+        for message in publish(session, &root) {
+            if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
+                messages.insert(uri.to_string(), message);
+            }
+        }
+    }
+    messages.into_values().collect()
 }
 
 // 把编译器诊断的目标来源映射为客户端 URI；相对来源回退请求根。

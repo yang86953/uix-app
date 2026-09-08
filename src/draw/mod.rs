@@ -79,7 +79,7 @@ pub use geometry::types::{
     Transform, VAlign,
 };
 pub use geometry::{color, flattener, path, stroker, tessellator, types};
-pub use painting::Canvas2D;
+pub use painting::{Canvas2D, FrameEncoderError, FrameImage};
 pub use renderer::Renderer;
 // test-harness 与 Agent 截屏公开有界等待票据，与规范像素快照组成完整端口。
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]

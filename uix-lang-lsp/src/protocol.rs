@@ -1,7 +1,7 @@
 //! LSP JSON-RPC stdio 协议 Module：帧读写、URI 与路径换算及响应封装。
 
 use serde_json::{Value, json};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 
 // 读取一条 Content-Length 分帧的 JSON-RPC 消息；输入耗尽返回 None。
@@ -10,11 +10,17 @@ pub(crate) fn read_message(input: &mut impl BufRead) -> Result<Option<Value>, St
     let mut length = None;
     let mut saw_header = false;
     let mut line = String::new();
+    let mut header_bytes = 0usize;
     loop {
         line.clear();
-        let read = input
+        let read = (&mut *input)
+            .take(8193)
             .read_line(&mut line)
             .map_err(|error| error.to_string())?;
+        header_bytes += read;
+        if header_bytes > 8192 {
+            return Err("LSP header 超过 8 KiB".into());
+        }
         // 输入在头部中途耗尽属于协议错误；正常耗尽表示服务器可以退出。
         if read == 0 {
             return if saw_header {
@@ -28,11 +34,19 @@ pub(crate) fn read_message(input: &mut impl BufRead) -> Result<Option<Value>, St
         }
         saw_header = true;
         let header = line.trim_end_matches(['\r', '\n']);
-        if let Some(value) = header.strip_prefix("Content-Length:") {
-            length = Some(value.trim().parse::<usize>().map_err(|e| e.to_string())?);
+        if let Some((name, value)) = header.split_once(':') {
+            if name.eq_ignore_ascii_case("Content-Length") {
+                if length.is_some() {
+                    return Err("重复 Content-Length".into());
+                }
+                length = Some(value.trim().parse::<usize>().map_err(|e| e.to_string())?);
+            }
         }
     }
     let length = length.ok_or("缺少 Content-Length")?;
+    if length > 8 * 1_048_576 {
+        return Err("LSP body 超过 8 MiB".into());
+    }
     // 只为当前消息申请精确 body 容量；处理完成后立即释放。
     let mut body = Vec::new();
     body.try_reserve_exact(length)
@@ -60,25 +74,58 @@ pub(crate) fn write_message(out: &mut impl Write, value: &Value) -> Result<(), S
 
 // 把 file:// URI 还原为本地路径；非文件 URI 返回 None。
 pub(crate) fn uri_to_path(uri: &str) -> Option<PathBuf> {
-    uri.strip_prefix("file://").map(|p| {
-        PathBuf::from(if p.starts_with('/') {
-            p.to_string()
+    let rest = uri.strip_prefix("file://")?;
+    let raw = if rest.starts_with('/') {
+        rest
+    } else {
+        rest.strip_prefix("localhost")?
+            .strip_prefix('/')
+            .map(|_| &rest["localhost".len()..])?
+    };
+    if raw.contains(['?', '#']) {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(raw.len());
+    let mut cursor = raw.as_bytes().iter().copied();
+    while let Some(byte) = cursor.next() {
+        bytes.push(if byte == b'%' {
+            let hex = |byte: u8| char::from(byte).to_digit(16).map(|n| n as u8);
+            hex(cursor.next()?)? * 16 + hex(cursor.next()?)?
         } else {
-            format!("/{p}")
-        })
-    })
+            byte
+        });
+    }
+    if bytes.contains(&0) {
+        return None;
+    }
+    let path = String::from_utf8(bytes).ok()?;
+    #[cfg(windows)]
+    let path = if path.starts_with('/') && path.as_bytes().get(2) == Some(&b':') {
+        path[1..].to_string()
+    } else {
+        path
+    };
+    Some(PathBuf::from(path))
 }
 
 // 把本地路径编码为 file:// URI，统一正斜杠分隔。
 pub(crate) fn path_to_uri(path: &Path) -> String {
+    let path = path.to_string_lossy();
     #[cfg(windows)]
-    {
-        format!("file:///{}", path.display().to_string().replace('\\', "/"))
+    let path = path.replace('\\', "/");
+    let mut encoded = String::new();
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~:".contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            let _ = write!(encoded, "%{byte:02X}");
+        }
     }
-    #[cfg(not(windows))]
-    {
-        format!("file://{}", path.display())
-    }
+    format!(
+        "file://{}{encoded}",
+        if encoded.starts_with('/') { "" } else { "/" }
+    )
 }
 
 // 把编译器来源名（规范路径）映射回 URI；内嵌或虚拟来源回退请求 URI。

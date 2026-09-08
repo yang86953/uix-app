@@ -1,0 +1,11 @@
+<Module name="ComposedBench" version="1" schema="1">
+  <Import from="./counter.uix" as="left" version="1" />
+  <Import from="./counter.uix" as="right" version="1" />
+  <State name="local" type="Int" value={0} />
+  <Command name="run" params="input: String" returns="left.Stats" body="do { setState(local: local + 1); return left.step(input); }" />
+  <Command name="other" params="input: String" returns="right.Stats" body="right.step(input)" />
+  <Query name="total" returns="Int" body="left.current() + right.current()" />
+  <Command name="rollback" returns="Int" body="do { let value = left.step('discard'); setState(local: local + 1); return right.divide(0); }" />
+  <Command name="record" returns="Unit" body="left.record()" />
+  <View><Column key="root"><Text key="count" text={local.toString()} /><Button key="fetch" text="读取左侧" onClick={left.fetch()} /></Column></View>
+</Module>

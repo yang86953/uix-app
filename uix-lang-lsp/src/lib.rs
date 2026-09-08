@@ -66,7 +66,7 @@ pub(crate) fn handle(session: &mut Session, message: &Value) -> Vec<Value> {
             features::diagnostics::did_change_document(session, params_of(message))
         }
         "textDocument/didClose" => {
-            features::diagnostics::close(session, &features::request_uri(message))
+            features::diagnostics::close(session, &features::request_uri(params_of(message)))
         }
         "workspace/didChangeWatchedFiles" => {
             features::diagnostics::watched_changed(session, params_of(message))
@@ -117,7 +117,7 @@ fn capabilities() -> Value {
     json!({
         "capabilities": {
             "textDocumentSync": {"openClose": true, "change": 1},
-            "completionProvider": {"triggerCharacters": ["<", "@", "#"]},
+            "completionProvider": {"triggerCharacters": ["<", "@", "#", "."]},
             "hoverProvider": true,
             "definitionProvider": true,
             "referencesProvider": true,

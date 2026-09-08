@@ -17,6 +17,7 @@ use crate::core::{Point, Rect, Size};
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::spatial::{AABB3D, PhysicalUnit, Vec3};
 use crate::draw::geometry::stroker::StrokeOptions;
+use crate::draw::painting::FrameImage;
 use crate::draw::painting::PaintContext as DrawPaintContext;
 use crate::draw::painting::PaintPass;
 use crate::draw::resources::font::font_service::FontService;
@@ -330,6 +331,8 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         visual_center_y(rect: Rect, font_size: f32) -> f32;
         set_max_text_width(width: f32);
         blit_glyph_layout(layout: &TextLayout, pos: Point, color: Color, font_size: f32);
+        draw_frame_image(image: &FrameImage, bounds: Rect);
+        draw_frame_image_fill(image: &FrameImage, bounds: Rect);
         draw_image(handle: BitmapHandle, bounds: Rect);
         draw_image_fill(handle: BitmapHandle, bounds: Rect);
         set_font(font: FontHandle);

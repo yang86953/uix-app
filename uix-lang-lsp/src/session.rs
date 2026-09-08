@@ -2,9 +2,17 @@
 
 use crate::protocol::uri_to_path;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use uix_lang_compiler::{CheckOutput, CompilerSession, CompilerSystem};
+use std::sync::Arc;
+use uix_lang_compiler::{CheckOutput, CompilerSession, CompilerSystem, DocumentOutput, modules};
+
+// 编辑器只保留工具所需的来源与符号，及时释放运行执行产物。
+#[derive(Debug)]
+pub(crate) struct ModuleAnalysis {
+    pub source_graph: uix_lang_compiler::source_graph::SourceGraph,
+    pub symbols: Vec<modules::ModuleSymbol>,
+}
 
 #[derive(Debug)]
 pub(crate) enum OpenDocument {
@@ -25,6 +33,9 @@ pub(crate) struct Session {
     diagnostics_by_root: BTreeMap<String, BTreeMap<String, Vec<Value>>>,
     // 按根 URI 缓存的最近一次成功分析，供导航与悬停复用。
     analyses: BTreeMap<String, CheckOutput>,
+    // 最多缓存 32 份模块分析；失效后保留有界根闭包身份以定位依赖编辑上下文。
+    module_analyses: BTreeMap<String, Arc<ModuleAnalysis>>,
+    module_roots: BTreeMap<String, (PathBuf, BTreeSet<PathBuf>)>,
     // LSP Adapter 独占编译会话；进程退出或文档关闭时释放对应阶段缓存。
     compiler: CompilerSession,
     // shutdown 已收到但尚未 exit；exit 是否已经请求。
@@ -33,6 +44,127 @@ pub(crate) struct Session {
 }
 
 impl Session {
+    pub(crate) fn module_uris(&self) -> Vec<String> {
+        self.documents
+            .keys()
+            .filter(|uri| {
+                self.document_source(uri)
+                    .is_some_and(modules::recognizes_source)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn check_document_with_overlays(
+        &mut self,
+        path: &Path,
+    ) -> Result<DocumentOutput, uix_lang_compiler::CompilerDiagnostic> {
+        let source = self
+            .overlays
+            .get(path)
+            .cloned()
+            .or_else(|| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+        if modules::recognizes_source(&source) {
+            let root = self
+                .module_roots
+                .values()
+                .find(|(root, files)| {
+                    !same_document_path(root, path)
+                        && files.iter().any(|file| same_document_path(file, path))
+                })
+                .map(|(root, _)| root.clone())
+                .unwrap_or_else(|| path.to_path_buf());
+            modules::check_file_with_overlays(&root, &self.overlays).map(DocumentOutput::Module)
+        } else {
+            self.check_file_with_overlays_auto(path)
+                .map(DocumentOutput::Ui)
+        }
+    }
+
+    pub(crate) fn set_module_analysis(&mut self, uri: &str, output: modules::ModuleOutput) {
+        if self.module_analyses.len() >= 32 && !self.module_analyses.contains_key(uri) {
+            if let Some(oldest) = self.module_analyses.keys().next().cloned() {
+                self.module_analyses.remove(&oldest);
+            }
+        }
+        if self.module_roots.len() >= 32 && !self.module_roots.contains_key(uri) {
+            if let Some(oldest) = self.module_roots.keys().next().cloned() {
+                self.module_roots.remove(&oldest);
+            }
+        }
+        let root = output
+            .source_graph
+            .file(output.source_graph.root())
+            .unwrap();
+        if Path::new(&root.path).is_absolute() {
+            self.module_roots.insert(
+                uri.to_string(),
+                (
+                    PathBuf::from(&root.path),
+                    output
+                        .source_graph
+                        .files()
+                        .iter()
+                        .map(|file| PathBuf::from(&file.path))
+                        .collect(),
+                ),
+            );
+        }
+        self.module_analyses.insert(
+            uri.to_string(),
+            Arc::new(ModuleAnalysis {
+                source_graph: output.source_graph,
+                symbols: output.symbols,
+            }),
+        );
+        self.analyses.remove(uri);
+    }
+
+    pub(crate) fn module_analysis(&self, uri: &str) -> Option<Arc<ModuleAnalysis>> {
+        self.module_analyses.get(uri).cloned().or_else(|| {
+            let path = uri_to_path(uri)?;
+            self.module_analyses
+                .values()
+                .find(|analysis| {
+                    analysis
+                        .source_graph
+                        .files()
+                        .iter()
+                        .any(|file| same_document_path(Path::new(&file.path), &path))
+                })
+                .cloned()
+        })
+    }
+
+    pub(crate) fn check_module(&mut self, uri: &str, source: &str) -> Option<Arc<ModuleAnalysis>> {
+        let result = match uri_to_path(uri) {
+            Some(path) => self.check_document_with_overlays(&path),
+            None => CompilerSystem::new().check_document_inline(source, uri),
+        };
+        match result.ok()? {
+            DocumentOutput::Module(output) => {
+                self.set_module_analysis(uri, output);
+                self.module_analysis(uri)
+            }
+            DocumentOutput::Ui(_) => None,
+        }
+    }
+
+    pub(crate) fn forget_module_root(&mut self, uri: &str) {
+        self.module_roots.remove(uri);
+        self.module_analyses.remove(uri);
+        if let Some(path) = uri_to_path(uri) {
+            self.module_roots
+                .retain(|_, (root, _)| !same_document_path(root, &path));
+            self.module_analyses.retain(|_, analysis| {
+                analysis
+                    .source_graph
+                    .file(analysis.source_graph.root())
+                    .is_none_or(|root| !same_document_path(Path::new(&root.path), &path))
+            });
+        }
+    }
     // 打开或更新一个文档；同一 URI 更新前先释放旧路径快照。
     pub(crate) fn store_document(&mut self, uri: String, source: String) {
         // URI 改类（file ↔ 虚拟）时不能残留旧类快照。
@@ -125,6 +257,7 @@ impl Session {
 
     // 登记一次诊断流程产出的成功分析。
     pub(crate) fn set_analysis(&mut self, uri: &str, analysis: CheckOutput) {
+        self.forget_module_root(uri);
         self.analyses.insert(uri.to_string(), analysis);
     }
 
@@ -154,6 +287,13 @@ impl Session {
 
     // 丢弃源码图覆盖指定路径的全部分析。
     pub(crate) fn drop_analyses_covering(&mut self, path: &Path) {
+        self.module_analyses.retain(|_, analysis| {
+            !analysis
+                .source_graph
+                .files()
+                .iter()
+                .any(|file| same_document_path(Path::new(&file.path), path))
+        });
         let stale = self
             .analyses
             .keys()
@@ -172,11 +312,18 @@ impl Session {
     // 丢弃虚拟文档对应的分析。
     pub(crate) fn drop_analyses_covering_uri(&mut self, uri: &str) {
         self.analyses.remove(uri);
+        self.module_analyses.remove(uri);
     }
 
     // 释放直接或递归依赖指定文件的全部根流水线，并丢弃受影响分析。
     pub(crate) fn evict_file(&mut self, path: &Path) -> Vec<PathBuf> {
-        let affected_roots = self.compiler.evict_file(path);
+        let mut affected_roots = self.compiler.evict_file(path);
+        affected_roots.extend(
+            self.module_roots
+                .values()
+                .filter(|(_, files)| files.iter().any(|file| same_document_path(file, path)))
+                .map(|(root, _)| root.clone()),
+        );
         self.drop_analyses_covering(path);
         affected_roots
     }

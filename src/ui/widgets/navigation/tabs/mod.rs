@@ -111,6 +111,10 @@ widget! {
         tab_height: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        #[snapshot(skip)]
+        view_flex_grow: f32,
+        #[snapshot(skip)]
+        view_flex_shrink: f32,
         focused: bool,
         /// 活动面板切换后请求组件树重新同步子可见性与布局。
         layout_requested: std::cell::Cell<bool>,
@@ -130,6 +134,10 @@ widget! {
     }
 
     tab_index => (&self) -> i32 { 1 }
+
+    flex_grow => (&self) -> f32 { self.view_flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.view_flex_shrink }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -464,6 +472,34 @@ widget! {
 }
 
 impl Tabs {
+    /// Consume explicit View layout without changing selection or visual ownership.
+    pub(crate) fn apply_view_layout_style(
+        &mut self,
+        style: &crate::ui::theme::style::Style,
+        flex_grow: Option<f32>,
+        flex_shrink: Option<f32>,
+    ) {
+        if let Some(width) = style.width {
+            self.fixed_width = width.is_finite().then_some(width.max(0.0));
+        }
+        if let Some(height) = style.height {
+            self.fixed_height = height.is_finite().then_some(height.max(0.0));
+        }
+        let grow = flex_grow.unwrap_or(style.flex_grow);
+        self.view_flex_grow = if grow.is_finite() { grow.max(0.0) } else { 0.0 };
+        let shrink = flex_shrink.unwrap_or(style.flex_shrink);
+        self.view_flex_shrink = if shrink.is_finite() {
+            shrink.max(0.0)
+        } else {
+            1.0
+        };
+    }
+
+    // Flex overrides are private layout inputs, not public selection snapshot fields.
+    pub(crate) fn view_layout_changed(&self, next: &Self) -> bool {
+        self.view_flex_grow != next.view_flex_grow || self.view_flex_shrink != next.view_flex_shrink
+    }
+
     // 把活动面板位置写入布局树拥有的跨帧数组。
     fn layout_active_child_into(
         &self,
@@ -576,6 +612,8 @@ impl Tabs {
             tab_height: visual.layout.tab_height,
             fixed_width: None,
             fixed_height: None,
+            view_flex_grow: 0.0,
+            view_flex_shrink: 1.0,
             focused: false,
             // 新组件尚无待处理的布局请求。
             layout_requested: std::cell::Cell::new(false),
@@ -723,6 +761,8 @@ impl Tabs {
         self.tab_height = next.tab_height;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
+        self.view_flex_grow = next.view_flex_grow;
+        self.view_flex_shrink = next.view_flex_shrink;
         self.editable = next.editable;
         self.scrollable = next.scrollable;
         self.add_callback = next.add_callback;

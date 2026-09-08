@@ -20,13 +20,18 @@ pub(crate) fn format_source(
     source: &str,
     source_id: SourceId,
 ) -> Result<FormattedSource, FormatFailure> {
-    let before = parse_document(source).map_err(|diagnostic| FormatFailure {
+    let parse = if crate::modules::recognizes_source(source) {
+        crate::modules::parse_source
+    } else {
+        parse_document
+    };
+    let before = parse(source).map_err(|diagnostic| FormatFailure {
         diagnostic,
         invariant: false,
     })?;
     let original_cst = LosslessCst::from_source(source_id, source);
     let formatted = format_tag_trivia(&original_cst);
-    let after = parse_document(&formatted).map_err(|diagnostic| FormatFailure {
+    let after = parse(&formatted).map_err(|diagnostic| FormatFailure {
         diagnostic,
         invariant: true,
     })?;

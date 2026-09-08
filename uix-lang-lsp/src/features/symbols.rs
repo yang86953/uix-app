@@ -9,6 +9,9 @@ use uix_lang_compiler::semantic_ir::{TypedDeclarationKind, TypedNode};
 
 // 生成 textDocument/documentSymbol 响应。
 pub(crate) fn document_symbols(session: &mut Session, request: &Value) -> Value {
+    if let Some(result) = super::modules::symbols(session, request) {
+        return result;
+    }
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     // 有语义 IR 时按声明建层级大纲。

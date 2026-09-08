@@ -102,7 +102,10 @@ pub(crate) struct ModuleActionBody {
 }
 
 // 可移植模块复用同一语句解析器，不通过 Widget 的无参数 action 声明语法。
-pub(crate) fn parse_module_body(source: &str, origin: SourceSpan) -> Result<ModuleActionBody, Diagnostic> {
+pub(crate) fn parse_module_body(
+    source: &str,
+    origin: SourceSpan,
+) -> Result<ModuleActionBody, Diagnostic> {
     if starts_keyword(source, 0, "do") {
         let mut parser = ActionBlockParser::new(source, origin);
         parser.module_awaits = Some(Vec::new());
@@ -113,9 +116,15 @@ pub(crate) fn parse_module_body(source: &str, origin: SourceSpan) -> Result<Modu
         if !parser.is_end() {
             return Err(parser.error_here("模块函数体后有多余内容", "删除 do 块后的内容"));
         }
-        Ok(ModuleActionBody { body: ActionBody::Block(block), awaits: parser.module_awaits.unwrap_or_default() })
+        Ok(ModuleActionBody {
+            body: ActionBody::Block(block),
+            awaits: parser.module_awaits.unwrap_or_default(),
+        })
     } else {
-        Ok(ModuleActionBody { body: ActionBody::Expression(parse_expression(source, origin)?), awaits: Vec::new() })
+        Ok(ModuleActionBody {
+            body: ActionBody::Expression(parse_expression(source, origin)?),
+            awaits: Vec::new(),
+        })
     }
 }
 
@@ -188,8 +197,15 @@ impl<'a> ActionBlockParser<'a> {
         let (mut expression_start, expression_end) =
             trim_range(self.source, expression_start, expression_end);
         if self.module_awaits.is_some() && starts_keyword(self.source, expression_start, "await") {
-            if let Some(awaits) = &mut self.module_awaits { awaits.push(self.origin.start + start); }
-            expression_start = trim_range(self.source, expression_start + "await".len(), expression_end).0;
+            if let Some(awaits) = &mut self.module_awaits {
+                awaits.push(self.origin.start + start);
+            }
+            expression_start = trim_range(
+                self.source,
+                expression_start + "await".len(),
+                expression_end,
+            )
+            .0;
         }
         let initializer = parse_expression(
             &self.source[expression_start..expression_end],
@@ -305,13 +321,13 @@ impl<'a> ActionBlockParser<'a> {
         let mut scanner = DelimiterScanner::default();
         while let Some(character) = self.peek() {
             let index = self.offset;
+            // 只有进入字符前已处于顶层的右括号才结束语句块；记录值的右括号不能截断 return。
+            if scanner.at_top_level() && character == '}' {
+                break;
+            }
             self.bump();
             if scanner.advance(character)? && character == ';' {
                 return Ok(index);
-            }
-            if scanner.at_top_level() && character == '}' {
-                self.offset = index;
-                break;
             }
         }
         Err(Diagnostic::new(

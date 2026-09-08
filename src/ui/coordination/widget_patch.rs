@@ -483,6 +483,14 @@ pub(crate) fn builtin_widget_runtime_changed(current: &dyn Widget, next: &dyn Wi
         return current.view_layout_changed(next);
     }
 
+    #[cfg(feature = "navigation")]
+    if let (Some(current), Some(next)) = (
+        current.as_any().downcast_ref::<Tabs>(),
+        next.as_any().downcast_ref::<Tabs>(),
+    ) {
+        return current.view_layout_changed(next);
+    }
+
     // Input 的受控文本值属于运行态而不是作者静态配置。
     if let (Some(current), Some(next)) = (
         current.as_any().downcast_ref::<Input>(),

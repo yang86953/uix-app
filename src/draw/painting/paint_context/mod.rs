@@ -73,5 +73,8 @@ pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32
     unit.map(|u| u.to_dip(dpi)).unwrap_or(base)
 }
 
+mod frame_image;
 mod shapes;
 mod state;
+
+pub(crate) use frame_image::blit_frame_image;

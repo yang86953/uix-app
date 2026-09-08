@@ -83,6 +83,7 @@ pub struct AgentBridgeClient {
     max_response_bytes: usize,
     next_request_id: u64,
     capabilities: Value,
+    connection_usable: bool,
 }
 
 impl AgentBridgeClient {
@@ -119,6 +120,7 @@ impl AgentBridgeClient {
             max_response_bytes: INITIAL_MAX_RESPONSE_BYTES,
             next_request_id: 0,
             capabilities: Value::Null,
+            connection_usable: true,
         };
         let hello = client.exchange(json!({
             "type": "hello",
@@ -336,20 +338,29 @@ impl AgentBridgeClient {
 
     /// 发送一个 JSON 请求并读取一行响应，校验 schema 与 `request_id` 回显。
     fn exchange(&mut self, request: Value) -> Result<Value, AgentBridgeClientError> {
+        if !self.connection_usable {
+            return Err(AgentBridgeClientError::Protocol {
+                code: "connection_unusable".into(),
+                message: "an earlier response was not trustworthy; stop this connection and verify the outcome before any further action".into(),
+            });
+        }
         self.next_request_id = self.next_request_id.saturating_add(1);
         let request_id = format!("uix-client-{}", self.next_request_id);
         let mut request = request;
         request["schema"] = json!(PROTOCOL_SCHEMA);
         request["request_id"] = json!(request_id);
-        let encoded = serde_json::to_vec(&request)?;
+        let mut encoded = serde_json::to_vec(&request)?;
         if encoded.len() > self.max_request_bytes {
             return Err(AgentBridgeClientError::Protocol {
                 code: "request_too_large".into(),
                 message: "agent request exceeds the negotiated protocol limit".into(),
             });
         }
+        encoded.push(b'\n');
+        // 一旦开始写入，任何 I/O、分帧或关联失败都不得继续派发该连接的后续动作。
+        // 本地参数拒绝在此前返回；可信业务拒绝仍可在此连接上继续读取。
+        self.connection_usable = false;
         self.stream.get_mut().write_all(&encoded)?;
-        self.stream.get_mut().write_all(b"\n")?;
         self.stream.get_mut().flush()?;
         let line = read_bounded_line(&mut self.stream, self.max_response_bytes)?;
         let reply: Value = serde_json::from_slice(&line)?;
@@ -365,6 +376,8 @@ impl AgentBridgeClient {
                 message: "agent reply request_id does not match the request".into(),
             });
         }
+        // 保留可信的业务错误信封，但已经开始执行且终态未知时也不能继续派发。
+        self.connection_usable = reply["error"]["code"] != "outcome_unknown";
         Ok(reply)
     }
 }
@@ -421,13 +434,12 @@ fn protocol_error(reply: &Value, operation: &str) -> AgentBridgeClientError {
     }
 }
 
-/// 读取一行有界响应；超过协商上限即失败，不无限缓冲。
+/// 按缓冲块读取一行响应；协商上限包含结尾换行，不读取或丢弃后续帧。
 fn read_bounded_line(reader: &mut impl BufRead, maximum_bytes: usize) -> io::Result<Vec<u8>> {
     let mut line = Vec::new();
     loop {
-        let mut byte = [0_u8; 1];
-        let read = reader.read(&mut byte)?;
-        if read == 0 {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
             if line.is_empty() {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
@@ -439,15 +451,19 @@ fn read_bounded_line(reader: &mut impl BufRead, maximum_bytes: usize) -> io::Res
                 "agent bridge closed mid-reply",
             ));
         }
-        if byte[0] == b'\n' {
-            return Ok(line);
-        }
-        line.push(byte[0]);
-        if line.len() > maximum_bytes {
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let copied = newline.unwrap_or(available.len());
+        let consumed = copied + usize::from(newline.is_some());
+        if line.len().saturating_add(consumed) > maximum_bytes {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "agent reply exceeds the negotiated protocol limit",
             ));
+        }
+        line.extend_from_slice(&available[..copied]);
+        reader.consume(consumed);
+        if newline.is_some() {
+            return Ok(line);
         }
     }
 }

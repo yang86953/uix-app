@@ -108,3 +108,5 @@ impl std::fmt::Display for FrameEncoderError {
         }
     }
 }
+
+impl std::error::Error for FrameEncoderError {}

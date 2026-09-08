@@ -2,9 +2,16 @@
 //!
 //! `uix-modules` 支持 AOT 产物；`uix-dynamic` 额外启用运行期源码分析。
 
-pub use uix_lang_runtime::{Cancellation, Effect, ErrorKind, HostPort, HostPorts, Instance,
-    Limits, Location, Module, RuntimeError, RuntimeResult, Signature, Type, Value};
-pub use uix_lang_runtime::{ModuleHandle, ModuleRequest, ModuleSnapshot, ModuleWorker, ViewKind, ViewSnapshot};
+pub use uix_lang_runtime::{
+    AsyncCall, AsyncCompletion, AsyncHostPort, AsyncHostPorts, OperationId,
+};
+pub use uix_lang_runtime::{
+    Cancellation, Effect, ErrorKind, HostPort, HostPorts, Instance, Limits, Location, Module,
+    RuntimeError, RuntimeResult, Signature, Type, Value,
+};
+pub use uix_lang_runtime::{
+    ModuleHandle, ModuleRequest, ModuleSnapshot, ModuleWorker, ViewKind, ViewSnapshot,
+};
 mod project;
 pub use project::ModuleView;
 

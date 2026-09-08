@@ -12,6 +12,9 @@ use uix_lang_compiler::semantic_ir::IrSpan;
 
 // 生成 textDocument/definition 响应：单一 Location 或 null。
 pub(crate) fn definition(session: &mut Session, request: &Value) -> Value {
+    if let Some(result) = super::modules::definition(session, request) {
+        return result;
+    }
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     let (line, character) = request_position(request);
@@ -43,6 +46,9 @@ pub(crate) fn definition(session: &mut Session, request: &Value) -> Value {
 
 // 生成 textDocument/references 响应：闭包内全词边界出现位置。
 pub(crate) fn references(session: &mut Session, request: &Value) -> Value {
+    if let Some(result) = super::modules::references(session, request) {
+        return result;
+    }
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     let (line, character) = request_position(request);

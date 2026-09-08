@@ -1,0 +1,44 @@
+@export('VScrollProbe')
+
+// Neutral consumer fixture adapted from markdown-project-manager/examples/vscroll_probe.uix.
+// Preserve its inline row template, conditional branches, stable keys and logical geometry.
+// The native App and independent paint-only capture marker live in the Rust example.
+<Record name="ProbeRow" fields="id: String, title: String, statusLabel: String, priority: String, due: String, automationId: String" />
+
+<Widget name="VScrollProbe" props="selectedTaskId: State<String>, probeShrinkTrigger: State<bool>, probeRestoreTrigger: State<bool>" external="probeRows, probeStatus">
+  <Column gap="10px" height="844px">
+    <Container direction="row" gap="12px" align="center" height="40px">
+      <Text fontSize="heading4">VirtualScroll 接入验证</Text>
+      <Text fontSize="small" automationId="probe-status">{probeStatus.get()}</Text>
+      <Container flexGrow={1} />
+      <Button size="small" automationId="probe-shrink" @click="setState(probeShrinkTrigger: !probeShrinkTrigger)">截断为 600 行</Button>
+      <Button size="small" automationId="probe-restore" @click="setState(probeRestoreTrigger: !probeRestoreTrigger)">恢复千行</Button>
+    </Container>
+    <Container direction="row" gap="10px" align="center" height="34px" automationId="probe-head"><Text fontSize="small" color="#5F7A6E" width="26px">状态</Text><Text fontSize="small" color="#5F7A6E" flexGrow={1}>任务标题</Text><Text fontSize="small" color="#5F7A6E" width="66px">优先级</Text><Text fontSize="small" color="#5F7A6E" width="92px">截止日期</Text></Container>
+    <VirtualScroll data={probeRows.get()} rowHeight="48px" height="600px" automationId="probe-list">
+      <For {row} in {probeRows.get()} key={row.id}>
+        <Container>
+          <If {selectedTaskId == row.id}>
+            <Container direction="row" gap="10px" align="center" height="48px" backgroundColor="#E4F2E9" automationId={row.automationId.clone()} @click="setState(selectedTaskId: row.id.clone())">
+              <Container width="26px" align="center"><Text fontSize="14px" color="#168858">●</Text></Container>
+              <Container flexGrow={1}><Text fontSize="14px">{row.title}</Text><Text fontSize="small" color="#5F7A6E"> · {row.statusLabel} · 当前</Text></Container>
+              <Container width="66px"><Text fontSize="small">{row.priority}</Text></Container>
+              <Container width="92px"><Text fontSize="small">{row.due}</Text></Container>
+            </Container>
+          </If>
+          <Else>
+            <Container direction="row" gap="10px" align="center" height="48px" automationId={row.automationId.clone()} @click="setState(selectedTaskId: row.id.clone())">
+              <Container width="26px" align="center"><Text fontSize="14px" color="#94A3A8">○</Text></Container>
+              <Container flexGrow={1}><Text fontSize="14px">{row.title}</Text><Text fontSize="small" color="#5F7A6E"> · {row.statusLabel}</Text></Container>
+              <Container width="66px"><Text fontSize="small">{row.priority}</Text></Container>
+              <Container width="92px"><Text fontSize="small">{row.due}</Text></Container>
+            </Container>
+          </Else>
+        </Container>
+      </For>
+    </VirtualScroll>
+    <Container direction="row" gap="8px" align="center" height="36px"><Text fontSize="small">选中：</Text><Text fontSize="small" automationId="probe-selected">{selectedTaskId.get()}</Text></Container>
+  </Column>
+</Widget>
+
+<VScrollProbe selectedTaskId={selectedTaskId.clone()} probeShrinkTrigger={probeShrinkTrigger.clone()} probeRestoreTrigger={probeRestoreTrigger.clone()} />

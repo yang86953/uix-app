@@ -554,6 +554,28 @@ impl WidgetTree {
             }
         }
 
+        // 打开的焦点陷阱必须立即拥有键盘目标；不能等第一次 Tab 才隔离背景。
+        // 无可聚焦正文的 Modal 仍由 owner 接收 Escape 和内置 footer 的配对按键。
+        if let Some(owner) = self
+            .overlay_stack
+            .top()
+            .filter(|entry| entry.traps_focus())
+            .map(|entry| entry.owner())
+        {
+            let focused_inside = self.managers().focus.focused_widget().is_some_and(|id| {
+                self.is_descendant_of(id, owner) && self.focus_target_available(id)
+            });
+            if !focused_inside {
+                self.remember_focus_before_trap(owner);
+                let target = self
+                    .collect_focusable_within(owner)
+                    .into_iter()
+                    .find(|&id| self.focus_target_available(id))
+                    .or_else(|| self.focus_target_available(owner).then_some(owner));
+                self.set_focus(target);
+            }
+        }
+
         if widget_overlays_changed {
             // Overlay membership changes the compositor's clipping/cache topology.
             self.tree_version = self.tree_version.wrapping_add(1);

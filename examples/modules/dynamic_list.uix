@@ -1,0 +1,29 @@
+<Module name="DynamicList" version="1" schema="1">
+  <Data name="Entry" fields="id: String, title: String, enabled: Bool, parts: Array<Int>" />
+  <State name="entries" type="Array<Entry>" value={[{id: 'alpha', title: '甲', enabled: true, parts: [1, 2]}, {id: 'beta', title: '乙', enabled: false, parts: [1]}]} />
+  <State name="phase" type="Int" value={0} />
+  <State name="selected" type="String" value={''} />
+  <State name="spacing" type="Float" value={8} />
+  <Command name="setEntries" params="values: Array<Entry>" returns="Unit" body="do { setState(entries: values); }" />
+  <Command name="setPhase" params="value: Int" returns="Unit" body="do { setState(phase: value); }" />
+  <Command name="setSpacing" params="value: Float" returns="Unit" body="do { setState(spacing: value); }" />
+  <Command name="choose" params="id: String, title: String" returns="Unit" body="do { setState(selected: id + ':' + title); }" />
+  <View>
+    <Column key="root" gap={spacing}>
+      <If {phase == 0}>
+        <For {entry} {position} in {entries} key={entry.id}>
+          <Row key="entry">
+            <Text key="position" text={position.toString()} />
+            <Button key="choose" text={entry.title} disabled={!entry.enabled} onClick={choose(entry.id, entry.title)} />
+            <For {part} in {entry.parts} key={part}>
+              <Button key="part" text={part.toString()} onClick={choose(entry.id, part.toString())} />
+            </For>
+          </Row>
+        </For>
+      </If>
+      <ElseIf {phase == 1}><Text key="alternate" text="另一分支" /></ElseIf>
+      <Else><Text key="empty" text="已隐藏" /></Else>
+      <Text key="selected" text={selected} />
+    </Column>
+  </View>
+</Module>
