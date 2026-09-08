@@ -23,6 +23,18 @@ impl RichText {
         self.layout_dirty.set(true);
     }
 
+    // Layout-only View decoration must not erase an authored builder color.
+    pub(super) fn view_text_color(&self) -> Option<crate::ui::theme::style::ColorValue> {
+        use crate::ui::theme::NeutralRole;
+        use crate::ui::theme::style::ColorValue;
+        self.view_style
+            .as_ref()
+            .filter(|style| {
+                self.use_theme_color || style.color != ColorValue::Neutral(NeutralRole::Text)
+            })
+            .map(|style| style.color)
+    }
+
     pub(crate) fn view_layout_changed(&self, next: &Self) -> bool {
         self.view_style != next.view_style
             || self.view_flex_grow != next.view_flex_grow
@@ -153,5 +165,25 @@ impl RichText {
                 metrics.baseline_in_line_box(normal_line_height(fs))
             });
         y + baseline - run_baseline
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::theme::style::ColorValue;
+
+    #[test]
+    fn layout_only_style_preserves_authored_rich_text_color() {
+        let mut rich = RichText::new().color(Color::from_rgb(255, 0, 0));
+        rich.apply_view_layout_style(&Style::default(), None, None);
+        assert_eq!(rich.view_text_color(), None);
+        let mut explicit = Style::default();
+        explicit.color = ColorValue::Custom(Color::from_rgb(0, 0, 255));
+        rich.apply_view_layout_style(&explicit, None, None);
+        assert_eq!(rich.view_text_color(), Some(explicit.color));
+        let mut themed = RichText::new();
+        themed.apply_view_layout_style(&Style::default(), None, None);
+        assert_eq!(themed.view_text_color(), Some(Style::default().color));
     }
 }
