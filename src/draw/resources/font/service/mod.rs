@@ -331,7 +331,7 @@ impl FontService {
                 return;
             }
 
-            let fallback_paths = match system_info.default_font_paths() {
+            let fallback_paths = match system_info.default_font_sources() {
                 Ok(paths) => paths,
                 Err(error) => {
                     // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
@@ -340,10 +340,15 @@ impl FontService {
                     Vec::new()
                 }
             };
-            for path in &fallback_paths {
-                if let Some(handle) =
-                    self.load_mapped_system_font(path, &PRIMARY_RASTER_PROBES, false, size)
-                {
+            for source in &fallback_paths {
+                let path = &source.path;
+                if let Some(handle) = self.load_mapped_system_font(
+                    path,
+                    source.face_index,
+                    &PRIMARY_RASTER_PROBES,
+                    false,
+                    size,
+                ) {
                     self.install_primary_font(
                         handle,
                         Self::infer_family_from_path(path),
@@ -360,7 +365,7 @@ impl FontService {
                 }
             }
         } else {
-            let paths = match system_info.default_font_paths() {
+            let paths = match system_info.default_font_sources() {
                 Ok(paths) => paths,
                 Err(error) => {
                     // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
@@ -375,10 +380,15 @@ impl FontService {
 
                 // 启动只装主字体：其余 Latin fallback 不在首帧同步读盘。
                 // CJK 由 load_cjk_fallback / probe_cjk_font_path 单独装一枚。
-                for path in &paths {
-                    if let Some(handle) =
-                        self.load_mapped_system_font(path, &PRIMARY_RASTER_PROBES, false, size)
-                    {
+                for source in &paths {
+                    let path = &source.path;
+                    if let Some(handle) = self.load_mapped_system_font(
+                        path,
+                        source.face_index,
+                        &PRIMARY_RASTER_PROBES,
+                        false,
+                        size,
+                    ) {
                         self.install_primary_font(
                             handle,
                             self.primary_family.clone(),
@@ -406,7 +416,7 @@ impl FontService {
         tracing::info!("No primary font found via platform, scanning for fallback...");
         if let Some(path) = system_info.scan_fallback_font_path() {
             if let Some(handle) =
-                self.load_mapped_system_font(&path, &PRIMARY_RASTER_PROBES, false, size)
+                self.load_mapped_system_font(&path, 0, &PRIMARY_RASTER_PROBES, false, size)
             {
                 self.install_primary_font(handle, self.primary_family.clone(), Some(path.clone()));
                 tracing::info!(
@@ -444,23 +454,32 @@ impl FontService {
             return;
         }
 
-        let cjk_paths = system_info.probe_cjk_font_paths();
+        let cjk_paths = system_info.probe_cjk_font_sources();
         if cjk_paths.is_empty() {
             tracing::info!("No CJK fallback font found via platform");
             return;
         }
 
-        for path in cjk_paths {
-            if let Some(handle) =
-                self.load_mapped_system_font(&path, &CJK_RASTER_PROBES, true, size)
-            {
+        for source in cjk_paths {
+            let path = source.path;
+            if let Some(handle) = self.load_mapped_system_font(
+                &path,
+                source.face_index,
+                &CJK_RASTER_PROBES,
+                true,
+                size,
+            ) {
                 self.register_font(
                     handle,
                     Self::infer_family_from_path(&path),
                     Some(path.clone()),
                 );
                 self.add_fallback(handle);
-                tracing::info!("Loaded CJK fallback font: {}", path);
+                tracing::info!(
+                    "Loaded CJK fallback font: {} (face={})",
+                    path,
+                    source.face_index
+                );
                 return;
             }
             tracing::info!("CJK font '{}' failed mapping or raster probes", path);
@@ -475,10 +494,15 @@ impl FontService {
         size: f32,
         system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
     ) -> Option<FontHandle> {
-        if let Some(p) = system_info.probe_family_font_path(family) {
-            if let Some(handle) =
-                self.load_mapped_system_font(&p, &PRIMARY_RASTER_PROBES, false, size)
-            {
+        if let Some(source) = system_info.probe_family_font_source(family) {
+            let p = source.path;
+            if let Some(handle) = self.load_mapped_system_font(
+                &p,
+                source.face_index,
+                &PRIMARY_RASTER_PROBES,
+                false,
+                size,
+            ) {
                 self.install_primary_font(handle, family.to_owned(), Some(p.clone()));
                 tracing::info!("Loaded family font '{}': {}", family, p);
                 return Some(handle);
@@ -488,7 +512,11 @@ impl FontService {
     }
 
     /// 从文件路径内存映射加载字体（惰性分页：未触达字形不驻留 working set）。
-    fn load_mapped_font(&mut self, path: impl AsRef<std::path::Path>) -> Option<FontHandle> {
+    fn load_mapped_font(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        face_index: u32,
+    ) -> Option<FontHandle> {
         // 映射探测同样是预期回退链；失败细节保留 debug 级供诊断。
         let file = std::fs::File::open(path.as_ref())
             .inspect_err(|error| tracing::debug!("font open failed: {error}"))
@@ -499,7 +527,7 @@ impl FontService {
             .ok()?;
         let handle = self
             .text_backend
-            .load_font_mapped(mmap)
+            .load_font_mapped_index(mmap, face_index)
             .inspect_err(|error| {
                 tracing::debug!("font mmap backend load failed: {}", error.short_what())
             })
@@ -512,12 +540,13 @@ impl FontService {
     fn load_mapped_system_font(
         &mut self,
         path: impl AsRef<std::path::Path>,
+        face_index: u32,
         probes: &[char],
         require_all: bool,
         pixel_size: f32,
     ) -> Option<FontHandle> {
         let path = path.as_ref();
-        let handle = self.load_mapped_font(path)?;
+        let handle = self.load_mapped_font(path, face_index)?;
         let accepts = if require_all {
             probes
                 .iter()
