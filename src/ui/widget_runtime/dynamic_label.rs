@@ -118,7 +118,11 @@ impl DynamicLabel {
             }
         }
         let text = (self.text_fn)();
-        let text = if self.ellipsis { text.replace(['\r', '\n'], " ") } else { text };
+        let text = if self.ellipsis {
+            text.replace(['\r', '\n'], " ")
+        } else {
+            text
+        };
         let fs = super::measurement::with_measurement_tokens::<Self, _>(|tokens| {
             self.style
                 .as_ref()
@@ -132,7 +136,8 @@ impl DynamicLabel {
             .style
             .as_ref()
             .and_then(|s| s.width)
-            .unwrap_or(constraints.max.w);
+            .unwrap_or(constraints.max.w)
+            .min(constraints.max.w);
         let wrap_width = (available_width - pad.horizontal()).max(0.0);
         // 行盒与真实字体测量使用和绘制相同的最终样式。
         let line_height = self
@@ -192,6 +197,9 @@ impl WidgetRender for DynamicLabel {
             (frame.w - padding.horizontal()).max(0.0),
             (frame.h - padding.vertical()).max(0.0),
         );
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            return;
+        }
         let options = TextLayoutOptions {
             max_width: rect.w,
             max_height: rect.h,
@@ -212,11 +220,15 @@ impl WidgetRender for DynamicLabel {
             let mut natural = options.clone();
             natural.max_width = 0.0;
             natural.h_align = crate::draw::HAlign::Left;
-            let Some(visible) = super::paint_context::elide_single_line_cow_by(
-                &text, rect.w, |candidate| {
-                    ctx.font_service().layout_text_shared(&font, candidate, &natural).width
-                },
-            ) else { return; };
+            let Some(visible) =
+                super::paint_context::elide_single_line_cow_by(&text, rect.w, |candidate| {
+                    ctx.font_service()
+                        .layout_text_shared(&font, candidate, &natural)
+                        .width
+                })
+            else {
+                return;
+            };
             visible
         } else {
             std::borrow::Cow::Borrowed(text.as_str())
@@ -233,6 +245,7 @@ impl WidgetRender for DynamicLabel {
                 .map(Style::effective_text_decoration)
                 .unwrap_or_default(),
         );
+        ctx.push_clip(rect);
         crate::ui::text_weight::paint(
             ctx,
             &layout,
@@ -242,6 +255,7 @@ impl WidgetRender for DynamicLabel {
             style.map(Style::effective_font_weight).unwrap_or_default(),
         );
         crate::ui::text_decoration::paint(ctx, &decoration, color);
+        ctx.pop_clip();
     }
 }
 

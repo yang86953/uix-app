@@ -168,7 +168,7 @@ fn validates_space_defaults_and_attribute_contract() {
             // 默认保留 SpaceSize::Small 八像素间距。
             && !default.contains("SpaceSize :: Custom")
             // 默认保持不换行。
-            && !default.contains("wrap")
+            && !default.contains(". wrap (")
     );
     // 非法方向必须在代码生成期失败。
     let direction_error = generate(r#"<Space direction="diagonal" />"#)
@@ -630,7 +630,9 @@ fn maps_extended_array_operations_and_restricted_closures() {
         snapshot.contains("insert ((__uix_dynamic_text_capture_1) . clone () , (__uix_dynamic_text_capture_2) . clone ())")
     );
     // updateAt 必须映射为索引赋值。
-    assert!(snapshot.contains("[(__uix_dynamic_text_capture_1) . clone ()] = (__uix_dynamic_text_capture_2) . clone ()"));
+    assert!(snapshot.contains(
+        "[(__uix_dynamic_text_capture_1) . clone ()] = (__uix_dynamic_text_capture_2) . clone ()"
+    ));
     // removeBy 必须查找首个位置后调用一次 remove。
     assert!(snapshot.contains("iter () . position") && snapshot.contains("remove"));
     // filter 与 map 必须基于克隆数组的拥有型迭代器。

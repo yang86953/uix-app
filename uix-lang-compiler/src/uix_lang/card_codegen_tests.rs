@@ -23,7 +23,9 @@ fn generates_card_contract() {
     // 自动化标识仍由公共属性层消费。
     assert!(snapshot.contains("automation_id"));
     // 文本与按钮必须保持源码顺序。
-    let text = snapshot.find("label (\"姓名\")").expect("应生成文本子节点");
+    let text = snapshot
+        .find("Label :: new (\"姓名\") . word_wrap (true)")
+        .expect("应生成文本子节点");
     // 定位后续按钮子节点。
     let button = snapshot
         // 查找按钮构造器快照。
@@ -54,7 +56,7 @@ fn generates_dynamic_and_controlled_card_values() {
     // 条件表达式必须出现在子节点追加作用域。
     assert!(controlled.contains("if show_details"));
     // 条件内文本必须生成公开 View。
-    assert!(controlled.contains("label (\"详情\")"));
+    assert!(controlled.contains("Label :: new (\"详情\") . word_wrap (true)"));
     // 循环绑定必须通过内部位置枚举在 Card 子节点作用域内展开。
     assert!(
         controlled.contains("__uix_for_ordinal")
