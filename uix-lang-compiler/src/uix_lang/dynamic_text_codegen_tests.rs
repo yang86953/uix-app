@@ -19,7 +19,7 @@ fn lowers_only_interpolated_text_to_dynamic_label() {
     // 静态文本无需运行时闭包。
     let static_text = generate_core(r#"<Text fontSize="heading2">静态标题</Text>"#);
     // 静态路径保持既有公开 label 构造器。
-    assert!(static_text.contains("label (\"静态标题\")"));
+    assert!(static_text.contains("Label :: new (\"静态标题\") . word_wrap (true)"));
     // 静态路径不得制造 DynamicLabel。
     assert!(!static_text.contains("dynamic_label"));
     // 动态文本读取调用方 State 并带字号样式。
@@ -110,7 +110,10 @@ fn normalizes_explicit_state_get_inside_nested_conditionals() {
 
 #[test]
 fn text_ellipsis_preserves_dynamic_captures_and_validates_boolean() {
-    for source in [r#"<Text ellipsis>{name.get()}</Text>"#, r#"<Text ellipsis={false}>长标签</Text>"#] {
+    for source in [
+        r#"<Text ellipsis>{name.get()}</Text>"#,
+        r#"<Text ellipsis={false}>长标签</Text>"#,
+    ] {
         let generated = generate_core(source);
         assert!(generated.contains("elided_label"));
         assert!(generated.contains("dynamic_label"));

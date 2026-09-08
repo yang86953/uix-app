@@ -92,6 +92,9 @@ widget! {
         pub font_size: f32,
         #[snapshot(skip)]
         font_size_authored: bool,
+        #[snapshot(skip)]
+        /// 在最终内容宽度内折行；默认 Label 保持不折行，UIX Text 启用。
+        word_wrap: bool,
         /// 物理单位字号（可选，优先级高于 font_size）。
         pub font_size_unit: Option<PhysicalUnit>,
         /// 可选文字颜色覆写；`None` 使用主题正文色。
@@ -113,7 +116,7 @@ widget! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.intrinsic_size())
+        constraints.clamp(self.intrinsic_size(constraints))
     }
 
     flex_grow => (&self) -> f32 {
@@ -253,24 +256,25 @@ widget! {
             .unwrap_or_default()
             // 在 UI 边界完成到 draw 值的单向适配。
             .to_draw();
-        // 对齐容器使用扣除水平内边距后的有限宽度。
-        let content_width = (frame.w - pad.left - pad.right).max(0.0);
-        // 非正或非有限 frame 回退自然文本宽度。
-        let max_width = if content_width.is_finite() && content_width > 0.0 {
-            // 保留有效内容框宽度。
-            content_width
-        } else {
-            // 无限宽度让文本按自然宽度布局。
-            f32::MAX
-        };
+        // 最终分配的内容框既用于折行，也作为绘制硬边界。
+        let content_rect = Rect::new(
+            frame.x + pad.left,
+            frame.y + pad.top,
+            (frame.w - pad.horizontal()).max(0.0),
+            (frame.h - pad.vertical()).max(0.0),
+        );
+        if content_rect.w <= 0.0 || content_rect.h <= 0.0 {
+            self.sel.clear_caches();
+            return;
+        }
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
             // 对齐使用最终内容框宽度。
-            max_width,
-            max_height: self.visual.metrics.layout_max_height,
+            max_width: content_rect.w,
+            max_height: content_rect.h,
             line_height,
-            word_wrap: self.visual.metrics.word_wrap,
+            word_wrap: self.word_wrap || self.visual.metrics.word_wrap,
             // 使用 UI Style 映射后的水平对齐。
             h_align,
             v_align: self.visual.metrics.vertical_align,
@@ -294,6 +298,7 @@ widget! {
         self.sel.set_draw_pos(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
+        ctx.push_clip(content_rect);
         if !self.text.is_empty() {
             // 缓存字形 x / advance / 字符下标与行信息（选区与命中测试用）。
             self.sel.cache_layout(&layout);
@@ -378,6 +383,7 @@ widget! {
             // 在文字上方提交装饰直线，确保删除线和上下划线可见。
             crate::ui::text_decoration::paint(ctx, &decoration_segments, c);
         }
+        ctx.pop_clip();
     }
 }
 
@@ -416,7 +422,7 @@ impl Label {
     // Builder flags preserve explicit default-sized text under a custom theme;
     // direct public-field overrides retain compatibility when non-default.
     pub(crate) fn typography_changed(&self, next: &Self) -> bool {
-        self.font_size_authored != next.font_size_authored
+        self.font_size_authored != next.font_size_authored || self.word_wrap != next.word_wrap
     }
 
     fn resolved_font_size(&self, dpi: f32, tokens: &dyn crate::ui::ThemeTokens) -> f32 {
@@ -443,6 +449,7 @@ impl Label {
             text: t,
             font_size: LABEL_VISUAL.metrics.default_font_size,
             font_size_authored: false,
+            word_wrap: false,
             font_size_unit: None,
             color: None,
             fixed_width: None,
@@ -454,6 +461,12 @@ impl Label {
             style: None,
             visual: LABEL_VISUAL_REF,
         }
+    }
+
+    /// 在父布局分配的内容宽度内折行，并按实际行数测量高度。
+    pub fn word_wrap(mut self, enabled: bool) -> Self {
+        self.word_wrap = enabled;
+        self
     }
 
     /// 允许拖选与快捷键复制选区（导航/标题等默认关闭）。
@@ -504,6 +517,7 @@ impl Label {
         }
         self.font_size = next.font_size;
         self.font_size_authored = next.font_size_authored;
+        self.word_wrap = next.word_wrap;
         self.font_size_unit = next.font_size_unit;
         self.color = next.color;
         self.fixed_width = next.fixed_width;
@@ -580,7 +594,7 @@ impl Label {
         self.sel.cross_text_char_at(&self.text, frame_local)
     }
 
-    fn intrinsic_size(&self) -> Size {
+    fn intrinsic_size(&self, constraints: Constraints) -> Size {
         let style_w = self.style.as_ref().and_then(|s| s.width);
         let style_h = self.style.as_ref().and_then(|s| s.height);
         let pad = self.style.as_ref().map(|s| s.padding).unwrap_or_default();
@@ -602,13 +616,14 @@ impl Label {
                 .as_ref()
                 // 只解析显式 lineHeight。
                 .and_then(|style| style.resolve_line_height(fs));
+            let available_width = w.unwrap_or(constraints.max.w).min(constraints.max.w);
             let estimated = crate::ui::widget_runtime::measurement::text_metrics(
                 &self.text,
-                f32::INFINITY,
+                (available_width - pad.horizontal()).max(0.0),
                 fs,
                 explicit_line_height.unwrap_or(fs * self.visual.metrics.default_line_height_factor),
                 self.style.as_ref().and_then(|s| s.font_family.as_ref()),
-                false,
+                self.word_wrap || self.visual.metrics.word_wrap,
             );
             // 单行和多行使用同一 normal 行盒，与顶对齐绘制一致。
             // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。
@@ -624,7 +639,11 @@ impl Label {
                 fs * self.visual.metrics.default_line_height_factor * estimated.line_count as f32
             };
             Size::new(
-                w.unwrap_or(estimated.max_line_width + pad.horizontal()),
+                w.unwrap_or(if estimated.width_wrapped {
+                    available_width
+                } else {
+                    (estimated.max_line_width + pad.horizontal()).min(available_width)
+                }),
                 h.unwrap_or(text_height + pad.vertical()),
             )
         }

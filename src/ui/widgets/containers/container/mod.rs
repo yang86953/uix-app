@@ -3,6 +3,8 @@
 use crate::ui::widget_runtime::widget::WidgetCore;
 use std::cell::Cell;
 
+mod reflow;
+
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::scene::PicturePolicy;
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -173,12 +175,12 @@ widget! {
         self.measure_children_reusing(frame, children, tree, output);
     }
 
-    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
         let mut scratch = crate::ui::LayoutEngineScratch::default();
         let mut output = Vec::with_capacity(children.len());
-        self.layout_children_reusing(frame, children, &mut scratch, &mut output);
+        self.layout_children_reusing(frame, children, tree, &mut scratch, &mut output);
         output
     }
 
@@ -186,11 +188,11 @@ widget! {
         &self,
         frame: Rect,
         children: &[LayoutChild],
-        _tree: &WidgetTree,
+        tree: &WidgetTree,
         scratch: &mut crate::ui::LayoutEngineScratch,
         output: &mut Vec<(WidgetId, Rect)>
     ) {
-        self.layout_children_reusing(frame, children, scratch, output);
+        self.layout_children_reusing(frame, children, tree, scratch, output);
     }
 }
 
@@ -304,6 +306,7 @@ impl Container {
         &self,
         frame: Rect,
         children: &[LayoutChild],
+        tree: &WidgetTree,
         scratch: &mut crate::ui::LayoutEngineScratch,
         output: &mut Vec<(WidgetId, Rect)>,
     ) {
@@ -367,6 +370,24 @@ impl Container {
 
         // 子项自身拥有 grow/shrink 声明，容器不得用视觉默认值覆盖其公开契约。
         let _total_size = engine.layout_into(content_rect, children, scratch);
+        // 横排先分配主轴宽度，再按各槽位重测高度；否则折行仍沿用无限宽的单行高度。
+        let reflowed = if matches!(
+            engine.direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        ) {
+            reflow::row_children_at_allocated_width(
+                children,
+                &scratch.flex.child_rects,
+                tree,
+                self.child_measure_constraints(content_rect),
+            )
+        } else {
+            std::borrow::Cow::Borrowed(children)
+        };
+        if matches!(reflowed, std::borrow::Cow::Owned(_)) {
+            engine.layout_into(content_rect, &reflowed, scratch);
+        }
+        let children = reflowed.as_ref();
         let positions = &scratch.flex.child_rects;
         self.cached_content_size.set(content_size_from_children(
             content_rect,
@@ -569,7 +590,8 @@ impl Container {
         // measure 会把 wrap 内容从 121 压回 106，Phase 1 写回后与 Phase 2 振荡；
         // ScrollView 内又无 parent_cap，会打满 converge。交叉轴在有明确尺寸时
         // 仍约束，供 wrap 计算行宽。
-        let max_w = if is_row || self.style.width.is_none() {
+        let max_w = if is_row || content_rect.w <= self.visual.layout.bootstrap_cross_axis_threshold
+        {
             f32::MAX
         } else {
             content_rect.w

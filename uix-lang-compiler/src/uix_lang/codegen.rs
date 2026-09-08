@@ -98,8 +98,12 @@ fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic
 // 生成文本元素。
 pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic> {
     // Text 插值由 DynamicLabel 在测量、绘制和语义读取时延迟求值。
-    let ellipsis = element.attributes.iter().find(|a| a.name == "ellipsis")
-        .map(boolean_value).transpose()?;
+    let ellipsis = element
+        .attributes
+        .iter()
+        .find(|a| a.name == "ellipsis")
+        .map(boolean_value)
+        .transpose()?;
     if element.name == "Text" && (has_interpolation(&element.children) || ellipsis.is_some()) {
         // 生成拥有全部表达式捕获的动态文本 View。
         let base = generate_dynamic_label(&element.children, element.span, ellipsis)?;
@@ -134,8 +138,12 @@ pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic
             return apply_common_attributes(base, &element.attributes, &["selectable"]);
         }
     }
-    // 构造公开 label View。
-    let base = quote! { ::uix::prelude::label(#content) };
+    // Text 的字面量与插值共享折行契约；Label 保持既有不折行标签语义。
+    let base = if element.name == "Text" {
+        quote! { ::uix::prelude::View::build(::uix::prelude::Label::new(#content).word_wrap(true)) }
+    } else {
+        quote! { ::uix::prelude::label(#content) }
+    };
     // 应用文本支持的公共属性与事件。
     apply_common_attributes(base, &element.attributes, &[])
 }
