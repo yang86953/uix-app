@@ -63,6 +63,56 @@ impl BoxModel {
         ))
     }
 
+    /// 内容固有尺寸转换为 border-box；空内容也保留 border 与 padding，绝不加 margin。
+    pub fn border_box_size(&self, content: Size) -> Size {
+        let content = normalize_layout_size(content);
+        let border = normalize_non_negative_insets(self.border_width);
+        let padding = normalize_non_negative_insets(self.padding);
+        normalize_layout_size(Size::new(
+            content.w + border.horizontal() + padding.horizontal(),
+            content.h + border.vertical() + padding.vertical(),
+        ))
+    }
+
+    // 声明宽高统一指 border-box；零仍保留 UIX 既有 auto 哨兵语义。
+    pub(crate) fn preferred_size(
+        &self,
+        content: Size,
+        width: Option<f32>,
+        height: Option<f32>,
+    ) -> Size {
+        let natural = self.border_box_size(content);
+        let minimum = self.border_box_size(Size::zero());
+        let declared = |value: Option<f32>| {
+            value.filter(|value| value.is_finite() && *value > 0.0 && *value < f32::MAX)
+        };
+        Size::new(
+            declared(width).unwrap_or(natural.w).max(minimum.w),
+            declared(height).unwrap_or(natural.h).max(minimum.h),
+        )
+    }
+
+    // 零内容基值仍占用不可压缩的 padding 与 border，仅由已知父主轴选择分量。
+    pub(crate) fn flex_basis(
+        &self,
+        direction: FlexDirection,
+        grows: bool,
+        width: Option<f32>,
+        height: Option<f32>,
+    ) -> Option<f32> {
+        let (declared, minimum) = match direction {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                (width, self.border_box_size(Size::zero()).w)
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                (height, self.border_box_size(Size::zero()).h)
+            }
+        };
+        (grows
+            && !declared.is_some_and(|value| value.is_finite() && value > 0.0 && value < f32::MAX))
+        .then_some(minimum)
+    }
+
     /// 视觉区域 = border-box（与 frame 同；margin 在 frame 外由父级留白）。
     pub fn visual_rect(&self, frame: Rect) -> Rect {
         // 视觉入口同样不得重新物化无界哨兵或非有限 frame。
@@ -88,6 +138,10 @@ pub struct LayoutChild {
     pub id: WidgetId,
     /// 子组件在当前约束下测得的自然尺寸。
     pub measured_size: Size,
+    /// 独立的父主轴弹性基值；None 使用 measured_size 的对应分量。
+    pub flex_basis: Option<f32>,
+    /// border-box 不可收缩的最小尺寸（例如 padding + border）。
+    pub min_size: Size,
     /// 主轴存在剩余空间时的伸展权重。
     pub flex_grow: f32,
     /// 主轴空间不足时的收缩权重。
@@ -110,6 +164,8 @@ impl LayoutChild {
         Self {
             id,
             measured_size,
+            flex_basis: None,
+            min_size: Size::zero(),
             flex_grow: 0.0,
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
@@ -209,21 +265,6 @@ impl LayoutEngineScratch {
     pub(crate) fn grid(&mut self) -> &mut GridLayoutScratch {
         self.grid
             .get_or_insert_with(|| Box::new(GridLayoutScratch::default()))
-    }
-}
-
-impl LayoutOutput {
-    // 在共享引擎边界统一收敛最终 frame 与总尺寸。
-    fn normalized(mut self) -> Self {
-        // 逐项清除算法累加产生的非有限值或测量哨兵。
-        for frame in &mut self.positions {
-            // 保留有效几何，仅替换不能写入布局树的分量。
-            *frame = normalize_layout_rect(*frame);
-        }
-        // 总尺寸也必须是有限非负的实际值。
-        self.total_size = normalize_layout_size(self.total_size);
-        // 返回保持子项数量和顺序不变的输出。
-        self
     }
 }
 
@@ -474,13 +515,13 @@ impl FlexLayout {
                     FlexDirection::Column | FlexDirection::ColumnReverse => total_size.h = 0.0,
                 }
             }
+            if self.intrinsic_cross {
+                match self.direction {
+                    FlexDirection::Row | FlexDirection::RowReverse => total_size.h = 0.0,
+                    FlexDirection::Column | FlexDirection::ColumnReverse => total_size.w = 0.0,
+                }
+            }
             return normalize_layout_size(total_size);
-        }
-
-        if self.overflow_content && !self.wrap {
-            let output = overflow_layout(self, content_rect, children).normalized();
-            scratch.flex.child_rects = output.positions;
-            return output.total_size;
         }
 
         scratch.flex_children.clear();
@@ -497,6 +538,13 @@ impl FlexLayout {
                 } else {
                     finite_non_negative(child.flex_shrink)
                 },
+                // 溢出模式保留自然主尺寸，不读取正常流 grow 的零基值。
+                flex_basis: if self.overflow_content {
+                    None
+                } else {
+                    child.flex_basis
+                },
+                min_size: normalize_layout_size(child.min_size),
                 align_self: child.align_self,
                 measured_size: normalize_layout_size(child.measured_size),
                 margin: normalize_margin(child.margin),
@@ -534,191 +582,6 @@ impl LayoutEngine for FlexLayout {
             positions: std::mem::take(&mut scratch.flex.child_rects),
             total_size,
         }
-    }
-}
-
-/// 溢出模式：保留自然主轴尺寸，同时遵守分布、对齐与反向语义。
-fn overflow_layout(
-    engine: &FlexLayout,
-    content_rect: Rect,
-    children: &[LayoutChild],
-) -> LayoutOutput {
-    let is_row = matches!(
-        engine.direction,
-        FlexDirection::Row | FlexDirection::RowReverse
-    );
-    let is_reverse = matches!(
-        engine.direction,
-        FlexDirection::RowReverse | FlexDirection::ColumnReverse
-    );
-    let count = children.len();
-    let gap = finite_or_zero(engine.gap);
-
-    let container_main = if is_row {
-        content_rect.w
-    } else {
-        content_rect.h
-    };
-    let container_cross = if is_row {
-        content_rect.h
-    } else {
-        content_rect.w
-    };
-
-    let total_margin_main: f32 = children
-        .iter()
-        .map(|child| finite_or_zero(child.margin_main(engine.direction)))
-        .sum();
-    let total_main: f32 = children
-        .iter()
-        .map(|child| {
-            finite_non_negative(if is_row {
-                child.measured_size.w
-            } else {
-                child.measured_size.h
-            })
-        })
-        .sum::<f32>()
-        + total_margin_main
-        + gap * (count as f32 - 1.0).max(0.0);
-    // 固有交叉轴占位必须包含子项自然尺寸与两侧 margin。
-    let max_child_cross = children
-        .iter()
-        .map(|child| {
-            // 按布局方向读取子项自然交叉轴尺寸。
-            let cross = finite_non_negative(if is_row {
-                child.measured_size.h
-            } else {
-                child.measured_size.w
-            });
-            // 按布局方向读取有限交叉轴 margin 总量。
-            let margin = finite_or_zero(if is_row {
-                child.margin.vertical()
-            } else {
-                child.margin.horizontal()
-            });
-            // 外尺寸不得因负 margin 或异常加法变为非法值。
-            finite_non_negative(cross + margin)
-        })
-        .fold(0.0, f32::max);
-    // 零交叉轴 bootstrap 由子项自然外尺寸撑开。
-    let effective_cross = if container_cross > 0.0 {
-        container_cross
-    } else {
-        max_child_cross
-    };
-    // 总交叉尺寸同时覆盖父级分配与实际自然内容。
-    let total_cross = effective_cross.max(max_child_cross);
-    let total_size = if is_row {
-        Size::new(total_main, total_cross)
-    } else {
-        Size::new(total_cross, total_main)
-    };
-
-    // 零尺寸 bootstrap 不偏移自然内容；实际容器保留负剩余空间供 Center/End 对齐溢出内容。
-    let remaining_main = if container_main <= 1.0 {
-        // 首次测量沿用自然内容起点，避免无约束对齐生成负坐标。
-        0.0
-    } else {
-        // 实际容器内保留有限差值，让分布器区分正负剩余空间。
-        finite_or_zero(container_main - total_main)
-    };
-    // 与标准 Flex 共享 gap 和起始偏移计算，避免两条路径语义漂移。
-    let (effective_gap, start_offset) =
-        super::flex::compute_justify(remaining_main, count, gap, engine.justify);
-    // 反向布局也先按逻辑顺序正向放置，最后统一镜像。
-    let mut cursor = start_offset;
-    let mut positions = Vec::with_capacity(count);
-
-    for child in children {
-        let main = finite_non_negative(if is_row {
-            child.measured_size.w
-        } else {
-            child.measured_size.h
-        });
-        let cross_size = if is_row {
-            finite_non_negative(child.measured_size.h)
-        } else {
-            finite_non_negative(child.measured_size.w)
-        };
-        let margin_cross = if is_row {
-            finite_or_zero(child.margin.vertical())
-        } else {
-            finite_or_zero(child.margin.horizontal())
-        };
-
-        let cross_align = child.align_self.unwrap_or(engine.align);
-        // 交叉轴先扣除两侧 margin，再在剩余区域内执行对齐。
-        let available_cross = (effective_cross - margin_cross).max(0.0);
-        let child_cross = if cross_align == AlignItems::Stretch {
-            // 已知交叉轴时填满可用区，bootstrap 时至少保留自然尺寸。
-            if container_cross <= 1.0 {
-                available_cross.max(cross_size)
-            } else {
-                available_cross
-            }
-        } else {
-            cross_size
-        };
-
-        let cross_offset = match cross_align {
-            AlignItems::Start => 0.0,
-            AlignItems::Center => (available_cross - child_cross) / 2.0,
-            AlignItems::End => available_cross - child_cross,
-            AlignItems::Stretch => 0.0,
-        };
-
-        let (x, y, w, h) = if is_row {
-            (
-                content_rect.x + cursor + finite_or_zero(child.margin_start(engine.direction)),
-                content_rect.y
-                    + cross_offset
-                    + finite_or_zero(child.margin_cross_start(engine.direction)),
-                main,
-                child_cross,
-            )
-        } else {
-            (
-                content_rect.x
-                    + cross_offset
-                    + finite_or_zero(child.margin_cross_start(engine.direction)),
-                content_rect.y + cursor + finite_or_zero(child.margin_start(engine.direction)),
-                child_cross,
-                main,
-            )
-        };
-
-        positions.push(Rect::new(x, y, w, h));
-
-        let occupied_main = main + finite_or_zero(child.margin_main(engine.direction));
-        cursor += occupied_main + effective_gap;
-    }
-
-    // 与标准 Flex 一致，反向方向沿容器主轴镜像已经完成的逻辑顺序。
-    if is_reverse {
-        // 溢出路径在零尺寸 bootstrap 始终以自然内容长度镜像，已分配 frame 使用实际主轴。
-        let main_extent = if container_main <= 1.0 {
-            // overflow_content 已承诺自然主轴，无需额外依赖 intrinsic_main 标记。
-            finite_non_negative(total_main)
-        } else {
-            // 非零实际 frame 必须与前面的 justify 使用同一镜像边界。
-            container_main
-        };
-        // 逐项镜像可同时保留 justify-content、gap 与方向侧 margin 的语义。
-        for rect in &mut positions {
-            if is_row {
-                // 水平反向布局沿内容区右边界镜像。
-                rect.x = content_rect.x + main_extent - (rect.x - content_rect.x) - rect.w;
-            } else {
-                // 垂直反向布局沿内容区下边界镜像。
-                rect.y = content_rect.y + main_extent - (rect.y - content_rect.y) - rect.h;
-            }
-        }
-    }
-
-    LayoutOutput {
-        positions,
-        total_size,
     }
 }
 
@@ -843,6 +706,7 @@ impl GridLayout {
             row_span: c.grid_row_span,
             // 子项测量哨兵不能进入 cell 尺寸与对齐算术。
             measured_size: normalize_layout_size(c.measured_size),
+            min_size: normalize_layout_size(c.min_size),
             // 外边距保留有限负值语义并清除非法分量。
             margin: normalize_margin(c.margin),
             // Grid 交叉轴继承公开 LayoutChild 的逐项对齐覆盖。

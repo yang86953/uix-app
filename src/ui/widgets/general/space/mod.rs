@@ -7,7 +7,7 @@ use std::cell::Cell;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_flex_constraints;
 use crate::widget;
 // 导入共享的物理内容外尺寸计算。
 use crate::ui::SnapshotFields;
@@ -124,6 +124,10 @@ widget! {
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
 
+    flex_layout_axes => (&self) -> Option<(FlexDirection, AlignItems)> {
+        Some((self.direction, self.align))
+    }
+
     flex_shrink => (&self) -> f32 { self.visual.container_flex_shrink }
 
     on_children_changed => (&mut self, child_count: usize) {
@@ -197,12 +201,9 @@ impl Space {
     ) {
         let constraints = self.child_constraints(frame);
         output.clear();
-        output.extend(
-            children
-                .iter()
-                .copied()
-                .map(|id| child_from_tree_with_constraints(id, tree, constraints)),
-        );
+        output.extend(children.iter().copied().map(|id| {
+            child_from_tree_with_flex_constraints(id, tree, constraints, self.direction)
+        }));
     }
 
     // 由布局树独占求解缓冲，Space 只借用一次并把结果写入调用方数组。
@@ -223,6 +224,8 @@ impl Space {
         scratch
             .flex_children
             .extend(children.iter().map(|child| FlexChild {
+                flex_basis: child.flex_basis,
+                min_size: child.min_size,
                 flex_grow: child.flex_grow,
                 // Space 与通用 Flex 容器一致，保留每个子项自己的收缩声明。
                 flex_shrink: child.flex_shrink,
