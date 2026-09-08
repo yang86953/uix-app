@@ -306,6 +306,14 @@ widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    flex_basis => (&self, parent_direction: crate::ui::layout::FlexDirection) -> Option<f32> {
+        self.box_model().flex_basis(parent_direction, self.style.flex_grow > 0.0, self.style.width, self.style.height)
+    }
+
+    minimum_size => (&self) -> Size {
+        self.box_model().border_box_size(Size::zero())
+    }
+
     on_children_changed => (&mut self, child_count: usize) {
         // 移除最后一个子节点后旧轨道内容不再构成有效测量下限。
         if child_count == 0 {
@@ -436,51 +444,19 @@ impl Grid {
     }
 
     // 结合显式尺寸、内容缓存与盒模型计算 Grid 的自然 border-box 尺寸。
+    fn box_model(&self) -> BoxModel {
+        BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
+    }
+
     fn intrinsic_size(&self) -> Size {
-        // 读取上一轮由零空间轨道求解得到的内容尺寸。
-        let cached = self.cached_content_size.get();
-        // 有内容时把横向 padding 纳入自然 border-box。
-        let content_width = if cached.w > 0.0 {
-            // padding 位于内容与 border 之间。
-            cached.w + self.style.padding.horizontal()
-        } else {
-            // 空内容不单独物化 padding 尺寸，保持既有空 Grid 语义。
-            0.0
-        };
-        // 有内容时把纵向 padding 纳入自然 border-box。
-        let content_height = if cached.h > 0.0 {
-            // padding 位于内容与 border 之间。
-            cached.h + self.style.padding.vertical()
-        } else {
-            // 空内容不单独物化 padding 尺寸。
-            0.0
-        };
-        // flex-grow Grid 继续以零为未分配主尺寸，避免缓存阻止父级收缩。
-        let grows = self.style.flex_grow > 0.0;
-        // 显式正宽度优先，否则采用可用的内容缓存。
-        let width = match self.style.width {
-            // 正宽度保持作者声明。
-            Some(width) if width > 0.0 => width,
-            // grow 子项把剩余空间分配交给父级。
-            _ if grows => 0.0,
-            // 普通 Auto Grid 使用自然内容宽度。
-            _ => content_width,
-        };
-        // 显式正高度优先，否则采用可用的内容缓存。
-        let height = match self.style.height {
-            // 正高度保持作者声明。
-            Some(height) if height > 0.0 => height,
-            // grow 子项把剩余空间分配交给父级。
-            _ if grows => 0.0,
-            // 普通 Auto Grid 使用自然内容高度。
-            _ => content_height,
-        };
-        // border 始终属于最终 border-box 尺寸。
-        Size::new(
-            // 横向尺寸包含左右 border。
-            width + self.style.border_width.horizontal(),
-            // 纵向尺寸包含上下 border。
-            height + self.style.border_width.vertical(),
+        self.box_model().preferred_size(
+            self.cached_content_size.get(),
+            self.style.width,
+            self.style.height,
         )
     }
 

@@ -74,10 +74,14 @@ widget! {
         );
     }
 
+    flex_layout_axes => (&self) -> Option<(FlexDirection, crate::ui::layout::AlignItems)> {
+        Some((self.visual.child_direction, crate::ui::layout::AlignItems::Stretch))
+    }
+
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        measure_shell_children(frame, children, tree)
+        measure_shell_children(self.visual.child_direction, frame, children, tree)
     }
 
     measure_children_into => (
@@ -87,7 +91,7 @@ widget! {
         tree: &WidgetTree,
         output: &mut Vec<LayoutChild>
     ) {
-        measure_shell_children_into(frame, children, tree, output);
+        measure_shell_children_into(self.visual.child_direction, frame, children, tree, output);
     }
 }
 

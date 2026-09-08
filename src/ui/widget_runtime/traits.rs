@@ -232,6 +232,10 @@ pub trait WidgetTextInput: Widget {
 
 /// 布局行为：尺寸、弹性、子节点排列。
 pub trait WidgetLayout: Widget {
+    /// 声明直接子项的 Flex 方向与默认交叉轴对齐；非 Flex 布局返回 None。
+    fn flex_layout_axes(&self) -> Option<(crate::ui::layout::FlexDirection, AlignItems)> {
+        None
+    }
     /// 在给定约束下测量组件固有尺寸。
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::zero())
@@ -249,6 +253,14 @@ pub trait WidgetLayout: Widget {
         _tree: &WidgetTree,
     ) -> Option<Size> {
         None
+    }
+    /// 在指定父主轴上覆盖弹性基值；None 使用测得的 border-box 主尺寸。
+    fn flex_basis(&self, _parent_direction: crate::ui::layout::FlexDirection) -> Option<f32> {
+        None
+    }
+    /// 不可被 Flex 收缩或 Stretch 压破的 border-box 最小尺寸。
+    fn minimum_size(&self) -> Size {
+        Size::zero()
     }
     /// 返回 Flex 扩展系数。
     fn flex_grow(&self) -> f32 {
