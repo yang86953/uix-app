@@ -14,7 +14,7 @@ use crate::ui::widget_runtime::traits::{
 };
 use crate::ui::widget_snapshot::SnapshotFields;
 // 引入窗口交互区域使用的对齐与子布局契约。
-use crate::ui::layout::{AlignItems, LayoutChild};
+use crate::ui::layout::{AlignItems, FlexDirection, LayoutChild};
 // 引入窗口交互区域使用的样式类型。
 use crate::ui::theme::style::{Style, StyleState, apply_style};
 use crate::ui::view::{View, ViewNode};
@@ -208,6 +208,22 @@ impl Widget for WindowInteractionRegion {
 impl WidgetLayout for WindowInteractionRegion {
     fn measure(&self, constraints: Constraints) -> Size {
         self.container.measure(constraints)
+    }
+
+    fn measure_natural(&self, constraints: Constraints) -> Size {
+        WidgetLayout::measure_natural(&self.container, constraints)
+    }
+
+    fn flex_layout_axes(&self) -> Option<(FlexDirection, AlignItems)> {
+        WidgetLayout::flex_layout_axes(&self.container)
+    }
+
+    fn flex_basis(&self, parent_direction: FlexDirection) -> Option<f32> {
+        WidgetLayout::flex_basis(&self.container, parent_direction)
+    }
+
+    fn minimum_size(&self) -> Size {
+        WidgetLayout::minimum_size(&self.container)
     }
 
     fn flex_grow(&self) -> f32 {
