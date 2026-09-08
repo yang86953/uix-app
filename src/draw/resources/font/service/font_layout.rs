@@ -22,13 +22,13 @@ use super::bidi_layout::{
 // 引入视觉行两端对齐的中性几何算法。
 use super::text_justify::justify_line;
 
-// 帧诊断：文本布局调用计数器，每秒摘要读取后清零。
+// 帧诊断：实际执行 shaping 的布局计数器（缓存命中不计），每秒摘要读取后清零。
 static TEXT_LAYOUT_CALLS: AtomicU64 = AtomicU64::new(0);
 
 // 空布局跨服务共享，避免空 Label、Input 占位与测量路径反复申请 Arc 控制块。
 static EMPTY_TEXT_LAYOUT: OnceLock<Arc<TextLayout>> = OnceLock::new();
 
-// 帧诊断：读取并清零文本布局调用计数。
+// 帧诊断：读取并清零实际 shaping 计数。
 pub(crate) fn take_text_layout_calls() -> u64 {
     // 原子交换取出当前计数并复位。
     TEXT_LAYOUT_CALLS.swap(0, Ordering::Relaxed)
@@ -586,8 +586,6 @@ impl FontService {
         text: &str,
         opts: &TextLayoutOptions,
     ) -> TextLayout {
-        // 帧诊断：每次调用累计一次文本布局计数。
-        TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
         if !self.text_backend.is_valid(font) || text.is_empty() {
             return Self::empty_text_layout();
         }
@@ -602,8 +600,6 @@ impl FontService {
         text: &str,
         opts: &TextLayoutOptions,
     ) -> Arc<TextLayout> {
-        // 帧诊断仍按调用次数统计，不把共享缓存命中误记为未布局。
-        TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
         if !self.text_backend.is_valid(font) || text.is_empty() {
             return Arc::clone(
                 EMPTY_TEXT_LAYOUT.get_or_init(|| Arc::new(Self::empty_text_layout())),
@@ -660,6 +656,9 @@ impl FontService {
         if let Some(layout) = self.layout_cache.get(font, text, &cache_opts) {
             return layout;
         }
+        // 帧诊断：只统计实际执行的 shaping；缓存命中复用既有字形，
+        // 不产生布局工作，计入会把纯透明度等重绘动画误报为逐帧布局。
+        TEXT_LAYOUT_CALLS.fetch_add(1, Ordering::Relaxed);
 
         let primary_metrics = self.text_backend.horizontal_line_metrics(font, fs);
         let primary_ascent = primary_metrics
@@ -727,5 +726,41 @@ impl FontService {
             height: container_height,
         });
         self.layout_cache.insert(font, text, &cache_opts, layout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_counter_counts_only_actual_shaping() {
+        let mut service = FontService::new();
+        let font = service
+            .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+            .expect("test font loads");
+        let opts = TextLayoutOptions {
+            max_width: 0.0,
+            max_height: 0.0,
+            line_height: 0.0,
+            word_wrap: false,
+            h_align: HAlign::Left,
+            v_align: VAlign::Top,
+            font_size: 14.0,
+        };
+        // 计数器是进程级全局，lib 测试并行时其他字体用例会叠加噪声：
+        // 冷布局断言下界，命中路径的断言窗口缩到单次调用，保持精确。
+        take_text_layout_calls();
+        let first = service.layout_text_shared(&font, "steady", &opts);
+        assert!(take_text_layout_calls() >= 1);
+        // 缓存命中的重复布局复用 Arc 且不产生任何 shaping。
+        take_text_layout_calls();
+        let second = service.layout_text_shared(&font, "steady", &opts);
+        assert_eq!(take_text_layout_calls(), 0);
+        assert!(Arc::ptr_eq(&first, &second));
+        // 空文本走共享空布局，同样不计入 shaping。
+        take_text_layout_calls();
+        let _ = service.layout_text_shared(&font, "", &opts);
+        assert_eq!(take_text_layout_calls(), 0);
     }
 }

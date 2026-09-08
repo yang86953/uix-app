@@ -615,36 +615,43 @@ pub(super) fn accumulate_frame_diagnostics(
         version_delta,
         source,
     );
-    // 累计帧数，饱和加法避免极端时间戳溢出。
-    diag.frames = diag.frames.saturating_add(1);
-    // 累计总耗时。
-    diag.frame_sum = diag.frame_sum.saturating_add(frame_us);
-    // 跟踪单帧最大耗时。
-    diag.frame_max = diag.frame_max.max(frame_us);
-    // 累计各阶段耗时。
-    diag.layout_sum = diag.layout_sum.saturating_add(layout_us);
-    diag.render_sum = diag.render_sum.saturating_add(render_us);
-    diag.present_sum = diag.present_sum.saturating_add(present_us);
-    // 累计 GPU 提交阶段耗时。
-    diag.submit_sum = diag.submit_sum.saturating_add(submit_us);
-    // 累计全幅重绘帧数。
-    if dirty_full {
-        diag.full_frames = diag.full_frames.saturating_add(1);
+    // 只累计实际渲染帧：Idle 帧无呈现工作，混入会稀释阶段均值，也会把
+    // 吞吐式 fps 虚高成远超呈现节奏的读数（HUD 已遵循同一口径）。
+    let rendered = source != InvalidationSource::None;
+    if rendered {
+        // 累计帧数，饱和加法避免极端时间戳溢出。
+        diag.frames = diag.frames.saturating_add(1);
+        // 累计总耗时。
+        diag.frame_sum = diag.frame_sum.saturating_add(frame_us);
+        // 跟踪单帧最大耗时。
+        diag.frame_max = diag.frame_max.max(frame_us);
+        // 累计各阶段耗时。
+        diag.layout_sum = diag.layout_sum.saturating_add(layout_us);
+        diag.render_sum = diag.render_sum.saturating_add(render_us);
+        diag.present_sum = diag.present_sum.saturating_add(present_us);
+        // 累计 GPU 提交阶段耗时。
+        diag.submit_sum = diag.submit_sum.saturating_add(submit_us);
+        // 累计全幅重绘帧数。
+        if dirty_full {
+            diag.full_frames = diag.full_frames.saturating_add(1);
+        }
+        // 累计脏区面积比例。
+        diag.dirty_area_sum += dirty_area_pct.clamp(0.0, 1.0);
     }
-    // 累计脏区面积比例。
-    diag.dirty_area_sum += dirty_area_pct.clamp(0.0, 1.0);
     // 每满一秒输出一次摘要，避免日志刷屏。
     if diag.last_report.elapsed() < Duration::from_secs(1) {
         return;
     }
+    // 摘要窗口的真实墙钟时长：帧率按渲染帧数除以实际经过时间计算，
+    // 反映呈现节奏而非忙等吞吐。
+    let elapsed_seconds = diag.last_report.elapsed().as_secs_f64().max(0.001);
     // 帧数下限保护，避免除零。
     let frames = diag.frames.max(1);
     // 计算阶段平均耗时（毫秒）。
     let avg = |sum: Duration| sum.as_secs_f64() * 1000.0 / frames as f64;
-    // 以平均帧耗时为基数换算近似帧率。
     let avg_frame_ms = avg(diag.frame_sum).max(0.001);
     // 输出每秒性能摘要，供复测对照卡顿场景。
-    // 读取并清零文本布局调用计数，得到本秒 shaping 次数。
+    // 读取并清零文本布局调用计数，得到本秒实际 shaping 次数。
     let text_layout_calls = take_text_layout_calls();
     tracing::info!(
         target: "uix::diagnostics",
@@ -652,7 +659,8 @@ pub(super) fn accumulate_frame_diagnostics(
         window_id = ?window_id,
         correlation_id = correlation_id.unwrap_or(0),
         has_correlation = correlation_id.is_some(),
-        fps = 1000.0 / avg_frame_ms,
+        fps = diag.frames as f64 / elapsed_seconds,
+        rendered_frames = diag.frames,
         average_frame_ms = avg_frame_ms,
         maximum_frame_ms = diag.frame_max.as_secs_f64() * 1000.0,
         average_layout_ms = avg(diag.layout_sum),
