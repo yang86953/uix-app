@@ -4,18 +4,35 @@
 //! 写入权威；UI 组件（`super::screen_widget`）只是它的只读投影和输入转发。
 //! 视图构建与 reconcile 不隐式创建进程：会话只能经 [`TerminalSession::spawn`]
 //! 显式创建。读写均不阻塞 UI 线程：读取由专职线程 poll 驱动，字节先入共享
-//! 缓冲再由 `pump` 在 UI 线程消费；写入为非阻塞小流量写，缓冲满返回错误。
+//! 缓冲再由 `pump` 在 UI 线程消费；输入整次接受到有界队列，同一线程按
+//! POLLOUT 发送。背压不会丢失已接受输入的后半截，也不阻塞 UI 等待 PTY。
 //!
 //! 平台边界：PTY 仅在 Linux 实现；其他平台 `spawn` 返回 `NotImplemented`
 //! 类型化失败。VT 屏幕解析跨平台可用，但没有会话来源时不会运转。
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::vt::{TerminalRow, VtScreen};
+use super::vt::{MAX_SCROLLBACK_ROWS, ScrollbackState, TerminalModes, TerminalRow, VtScreen};
 use crate::core::{Errc, Error};
+
+// Bound both the primary and lazily allocated alternate screen. The existing
+// u16 dimensions alone would permit billions of cells per screen.
+const MAX_SCREEN_CELLS: usize = 1_048_576;
+const MAX_PENDING_INPUT_BYTES: usize = 1_048_576;
+
+fn validate_screen_size(cols: u16, rows: u16) -> Result<(), Error> {
+    if usize::from(cols.max(2)) * usize::from(rows.max(2)) > MAX_SCREEN_CELLS {
+        return Err(Error::new(
+            Errc::InsufficientResources,
+            "terminal screen exceeds the 1048576-cell limit",
+        ));
+    }
+    Ok(())
+}
 
 /// 有新输出到达时用于唤醒 UI 线程的回调；在读线程上调用，必须只做投递。
 pub type TerminalOutputWaker = Arc<dyn Fn() + Send + Sync>;
@@ -25,7 +42,7 @@ pub type TerminalOutputWaker = Arc<dyn Fn() + Send + Sync>;
 pub struct TerminalSessionConfig {
     /// 要执行的命令与参数；首项是可执行文件路径或 `PATH` 中的名字。
     pub command: Vec<String>,
-    /// 初始网格列数；最小 2。
+    /// 初始网格列数；最小 2，总网格上限 1,048,576 格。
     pub cols: u16,
     /// 初始网格行数；最小 2。
     pub rows: u16,
@@ -60,7 +77,14 @@ pub enum TerminalSessionStatus {
     Exited { code: Option<i32> },
 }
 
-// 读线程与 UI 线程共享的输出通道与生命周期事实。
+// UI 接受输入的唯一容量与关闭门禁；I/O 线程是唯一发送端。
+#[derive(Default)]
+struct PendingInput {
+    bytes: VecDeque<u8>,
+    closed: bool,
+}
+
+// I/O 线程与 UI 线程共享的有界通道与生命周期事实。
 struct SharedOutput {
     // 读线程 append、UI 线程 drain 的字节缓冲。
     pending: Mutex<Vec<u8>>,
@@ -68,6 +92,9 @@ struct SharedOutput {
     eof: AtomicBool,
     // 读线程收割到的子进程退出信息；Running 时为 None。
     exit_code: Mutex<Option<Option<i32>>>,
+    input: Mutex<PendingInput>,
+    stop: AtomicBool,
+    child_reaped: AtomicBool,
     waker: Option<TerminalOutputWaker>,
 }
 
@@ -111,35 +138,40 @@ struct ControlState {
 // Linux PTY 资源；Drop 完成唤醒、join、关闭与子进程回收。
 #[cfg(target_os = "linux")]
 struct PtyResources {
-    // UI 线程持有的 master 副本；写与 ioctl 使用，最后关闭触发 SIGHUP。
+    // UI 线程持有的 master 副本；ioctl 使用，最后关闭触发 SIGHUP。
     master_dup: std::os::fd::RawFd,
-    // 关闭唤醒管道的写端；写一个字节请求读线程退出。
+    // 非阻塞唤醒管道由资源统一持有，I/O 线程仅借读端直到 join。
+    // 保留读端还使线程退出后的唤醒不会产生 SIGPIPE。
     wake_write: std::os::fd::RawFd,
+    wake_read: std::os::fd::RawFd,
     pid: libc::pid_t,
     reader: Option<std::thread::JoinHandle<()>>,
+    shared: Arc<SharedOutput>,
 }
 
 #[cfg(target_os = "linux")]
 impl Drop for PtyResources {
     fn drop(&mut self) {
         // 1. 请求读线程退出并等待它关闭自己的 master 副本。
-        unsafe {
-            let byte = [1u8];
-            let _ = libc::write(self.wake_write, byte.as_ptr().cast(), 1);
-        }
+        self.shared.stop.store(true, Ordering::Release);
+        let _ = signal_io(self.wake_write);
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }
         // 2. 关闭全部 master 副本：前台会话收到 SIGHUP。
         unsafe {
             libc::close(self.wake_write);
+            libc::close(self.wake_read);
             libc::close(self.master_dup);
         }
         // 3. 兜底回收：忽略 SIGHUP 的子进程补 SIGKILL 后阻塞收割。
-        unsafe {
-            libc::kill(self.pid, libc::SIGKILL);
-            let mut status: libc::c_int = 0;
-            let _ = libc::waitpid(self.pid, &mut status, 0);
+        // 读线程已收割的 PID 不再属于会话，绝不能向可能被重用的数字发信号。
+        if !self.shared.child_reaped.load(Ordering::Acquire) {
+            unsafe {
+                libc::kill(self.pid, libc::SIGKILL);
+                let mut status: libc::c_int = 0;
+                while libc::waitpid(self.pid, &mut status, 0) < 0 && errno() == libc::EINTR {}
+            }
         }
     }
 }
@@ -175,10 +207,19 @@ impl TerminalSession {
                 "terminal session command must not be empty",
             ));
         }
+        #[cfg(not(target_os = "linux"))]
+        return Err(Error::new(
+            Errc::NotImplemented,
+            "terminal session requires Linux PTY support",
+        ));
+        validate_screen_size(config.cols, config.rows)?;
         let shared = Arc::new(SharedOutput {
             pending: Mutex::new(Vec::new()),
             eof: AtomicBool::new(false),
             exit_code: Mutex::new(None),
+            input: Mutex::new(PendingInput::default()),
+            stop: AtomicBool::new(false),
+            child_reaped: AtomicBool::new(false),
             waker: config.on_output.clone(),
         });
         let screen = VtScreen::new(config.cols.max(2) as usize, config.rows.max(2) as usize);
@@ -202,6 +243,14 @@ impl TerminalSession {
     ///
     /// 只应在 UI 线程调用（与绘制同线程）。无事件循环的测试可直接轮询本方法。
     pub fn pump(&self) -> bool {
+        // 先读取退出事实再 drain：已公布退出时，所有先前输出都已入队。
+        // 反过来的顺序会在退出竞争中先发布 Exited、把最后一块留到下次 pump。
+        let finished = *self
+            .core
+            .shared
+            .exit_code
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let chunk = self.core.shared.take();
         let mut changed = false;
         let mut control = self.core.control.borrow_mut();
@@ -212,14 +261,7 @@ impl TerminalSession {
             changed = true;
         }
         if control.status == TerminalSessionStatus::Running {
-            if let Some(code) = self
-                .core
-                .shared
-                .exit_code
-                .lock()
-                .ok()
-                .and_then(|guard| *guard)
-            {
+            if let Some(code) = finished {
                 control.status = TerminalSessionStatus::Exited { code };
                 changed = true;
             }
@@ -237,9 +279,11 @@ impl TerminalSession {
         self.core.control.borrow().status
     }
 
-    /// 把按键编码或文本字节写入 PTY；非阻塞，缓冲满返回 `WouldBlock`。
+    /// 整次接受原始输入，按序经非阻塞 PTY 发送；Ok 不等于子进程已执行。
     ///
-    /// 会话已退出或已关闭时返回 `InvalidOperation`。
+    /// 待发预算为 1 MiB。单次超预算返回 `InsufficientResources`，剩余容量
+    /// 不足返回 `WouldBlock`；失败不接受本次任何字节，已接受输入不会因
+    /// EAGAIN 丢尾。会话关闭返回 `InvalidOperation`，不持久重试；空输入无操作。
     pub fn write(&self, bytes: &[u8]) -> Result<(), Error> {
         if bytes.is_empty() {
             return Ok(());
@@ -259,7 +303,38 @@ impl TerminalSession {
                     "terminal session is not running",
                 ));
             };
-            write_all_nonblocking(pty.master_dup, bytes)
+            if bytes.len() > MAX_PENDING_INPUT_BYTES {
+                return Err(Error::new(
+                    Errc::InsufficientResources,
+                    "terminal input exceeds 1 MiB",
+                ));
+            }
+            let mut input = self
+                .core
+                .shared
+                .input
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if input.closed {
+                return Err(Error::new(
+                    Errc::InvalidOperation,
+                    "terminal session is closed",
+                ));
+            }
+            if bytes.len() > MAX_PENDING_INPUT_BYTES - input.bytes.len() {
+                return Err(Error::warn(
+                    Errc::WouldBlock,
+                    "terminal pending input buffer is full; input not accepted",
+                ));
+            }
+            let previous_len = input.bytes.len();
+            input.bytes.extend(bytes.iter().copied());
+            if let Err(error) = signal_io(pty.wake_write) {
+                // 锁仍在手，发送线程不可能消费本次输入；回滚后再暴露失败。
+                input.bytes.truncate(previous_len);
+                return Err(error);
+            }
+            Ok(())
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -271,8 +346,52 @@ impl TerminalSession {
         }
     }
 
+    /// 按当前 2004 模式发送粘贴，与普通键入文本/原始 write 区分。
+    ///
+    /// 保留 Unicode 与 Tab/CR/LF，去掉其他 C0/C1/DEL 控制字符，防止内容
+    /// 提前结束粘贴包围；需要控制字节时使用 write。空内容不产生标记。
+    /// 原始文本加包围字节最多 1 MiB；接受与背压语义同 write。
+    pub fn paste(&self, text: &str) -> Result<(), Error> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let bracketed = self.modes().bracketed_paste;
+        let framing = if bracketed { 12 } else { 0 };
+        if text.len() > MAX_PENDING_INPUT_BYTES - framing {
+            return Err(Error::new(
+                Errc::InsufficientResources,
+                "terminal paste exceeds 1 MiB",
+            ));
+        }
+        let mut bytes = Vec::with_capacity(text.len() + framing);
+        if bracketed {
+            bytes.extend_from_slice(b"\x1b[200~");
+        }
+        for ch in text
+            .chars()
+            .filter(|ch| !ch.is_control() || matches!(ch, '\t' | '\r' | '\n'))
+        {
+            let mut encoded = [0u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+        }
+        if bytes.len() == framing / 2 {
+            return Ok(());
+        }
+        if bracketed {
+            bytes.extend_from_slice(b"\x1b[201~");
+        }
+        self.write(&bytes)
+    }
+
+    /// 当前会话模式快照；由已 pump 的子进程控制序列驱动。
+    pub fn modes(&self) -> TerminalModes {
+        self.core.control.borrow().screen.modes()
+    }
+
     /// 同步窗口网格尺寸到 PTY（TIOCSWINSZ + SIGWINCH）并调整屏幕状态。
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), Error> {
+        // Reject before ioctl or changing either retained screen.
+        validate_screen_size(cols, rows)?;
         #[cfg(target_os = "linux")]
         {
             let borrow = self.core.pty.borrow();
@@ -324,6 +443,58 @@ impl TerminalSession {
     /// 整屏文本段快照（行序、列序）。
     pub fn rows(&self) -> Vec<TerminalRow> {
         self.core.control.borrow().screen.snapshot()
+    }
+
+    /// 当前保留的主屏滚回行数，交替屏不向这份历史写入。
+    pub fn scrollback_len(&self) -> usize {
+        self.core.control.borrow().screen.scrollback_state().rows
+    }
+
+    /// 历史行数上限，默认 1,000；总格数还受 1,048,576 的独立上限约束。
+    pub fn scrollback_limit(&self) -> usize {
+        self.core.control.borrow().screen.scrollback_limit()
+    }
+
+    /// 设置 0–100,000 行的保留上限；0 禁用并清除现有历史。
+    /// 超限拒绝且保留原设置；缩减上限先淘汰最旧行，不改变活动屏。
+    pub fn set_scrollback_limit(&self, rows: usize) -> Result<(), Error> {
+        if rows > MAX_SCROLLBACK_ROWS {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "terminal scrollback limit exceeds 100000 rows",
+            ));
+        }
+        self.core
+            .control
+            .borrow_mut()
+            .screen
+            .set_scrollback_limit(rows);
+        self.core.revision.set(self.core.revision.get() + 1);
+        Ok(())
+    }
+
+    /// 从最旧保留行的零基 start 读取最多 count 行；越界返回空或剩余行。
+    /// 返回记录时的列宽与颜色，不包含活动网格，不读磁盘或阻塞 PTY。
+    pub fn scrollback_rows(&self, start: usize, count: usize) -> Vec<TerminalRow> {
+        self.core
+            .control
+            .borrow()
+            .screen
+            .scrollback_rows(start, count)
+    }
+
+    /// 明确清除主屏滚回内容；活动网格与子进程不变。
+    pub fn clear_scrollback(&self) {
+        self.core.control.borrow_mut().screen.clear_scrollback();
+        self.core.revision.set(self.core.revision.get() + 1);
+    }
+
+    pub(crate) fn scrollback_state(&self) -> ScrollbackState {
+        self.core.control.borrow().screen.scrollback_state()
+    }
+
+    pub(crate) fn viewport_rows(&self, offset: usize) -> Vec<TerminalRow> {
+        self.core.control.borrow().screen.viewport_rows(offset)
     }
 
     /// 光标位置（行、列）。
@@ -443,7 +614,7 @@ fn spawn_pty(
     }
     // 关闭唤醒管道：读线程 poll master 与 wake 读端。
     let mut wake = [0 as libc::c_int; 2];
-    if unsafe { libc::pipe2(wake.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+    if unsafe { libc::pipe2(wake.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
         unsafe {
             libc::close(readiness[0]);
             libc::close(readiness[1]);
@@ -596,7 +767,7 @@ fn spawn_pty(
         ));
     }
 
-    // UI 线程写端设非阻塞，避免大段粘贴时阻塞 UI。
+    // I/O 线程读写设非阻塞，poll 决定何时可以继续传输。
     if unsafe {
         let flags = libc::fcntl(master, libc::F_GETFL);
         libc::fcntl(master, libc::F_SETFL, flags | libc::O_NONBLOCK)
@@ -613,7 +784,7 @@ fn spawn_pty(
         ));
     }
 
-    // 读线程持有独立 fd 副本：它退出时关闭自己的副本，不影响 UI 写端。
+    // I/O 线程持有独立 fd 副本，UI 保留 ioctl 与最终关闭的所有权。
     let reader_master = unsafe { libc::dup(master) };
     if reader_master < 0 {
         unsafe {
@@ -629,7 +800,7 @@ fn spawn_pty(
 
     let reader_shared = Arc::clone(&shared);
     let reader = std::thread::Builder::new()
-        .name("uix-terminal-reader".to_string())
+        .name("uix-terminal-io".to_string())
         .spawn(move || reader_loop(reader_master, wake[0], pid, reader_shared))
         .map_err(|error| {
             unsafe {
@@ -637,6 +808,7 @@ fn spawn_pty(
                 let mut status: libc::c_int = 0;
                 let _ = libc::waitpid(pid, &mut status, 0);
                 libc::close(master);
+                libc::close(reader_master);
                 libc::close(wake[0]);
                 libc::close(wake[1]);
             }
@@ -649,12 +821,14 @@ fn spawn_pty(
     Ok(PtyResources {
         master_dup: master,
         wake_write: wake[1],
+        wake_read: wake[0],
         pid,
         reader: Some(reader),
+        shared,
     })
 }
 
-// 读线程：poll master 与 wake；字节入共享缓冲并唤醒 UI，EOF 后收割子进程。
+// 同一 I/O 线程公平处理读/写与关闭；无输入时不订阅 POLLOUT，避免空转。
 #[cfg(target_os = "linux")]
 fn reader_loop(
     master: std::os::fd::RawFd,
@@ -664,10 +838,19 @@ fn reader_loop(
 ) {
     let mut buffer = [0u8; 8192];
     loop {
+        if shared.stop.load(Ordering::Acquire) {
+            break;
+        }
+        let writable = !shared
+            .input
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .bytes
+            .is_empty();
         let mut polls = [
             libc::pollfd {
                 fd: master,
-                events: libc::POLLIN,
+                events: libc::POLLIN | if writable { libc::POLLOUT } else { 0 },
                 revents: 0,
             },
             libc::pollfd {
@@ -692,43 +875,62 @@ fn reader_loop(
             break;
         }
         if polls[1].revents & (libc::POLLIN | libc::POLLHUP) != 0 {
-            // UI 线程请求关闭；由 Drop 继续完成资源回收。
-            break;
+            // 唤醒可以是新输入或关闭；关闭事实独立存储，不依赖管道剩余容量。
+            loop {
+                let read =
+                    unsafe { libc::read(wake_read, buffer.as_mut_ptr().cast(), buffer.len()) };
+                if read > 0 || (read < 0 && errno() == libc::EINTR) {
+                    continue;
+                }
+                break;
+            }
+            if shared.stop.load(Ordering::Acquire) {
+                break;
+            }
         }
-        if polls[0].revents & (libc::POLLIN | libc::POLLHUP) != 0 {
+        if polls[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0 {
             let read = unsafe { libc::read(master, buffer.as_mut_ptr().cast(), buffer.len()) };
             if read > 0 {
                 shared.append(&buffer[..read as usize]);
                 shared.notify_output();
-                continue;
-            }
-            if read == 0 {
+            } else if read == 0 {
+                shared.eof.store(true, Ordering::Release);
+                shared.notify_output();
+                break;
+            } else if !matches!(errno(), libc::EINTR | libc::EAGAIN) {
+                // EIO 等：master 对端已全部关闭，按 EOF 处理。
                 shared.eof.store(true, Ordering::Release);
                 shared.notify_output();
                 break;
             }
-            let code = errno();
-            if code == libc::EINTR {
-                continue;
+        }
+        if polls[0].revents & libc::POLLOUT != 0 {
+            if let Err(error) = send_pending_input(master, &shared) {
+                crate::diagnostics::observe_boundary_error("terminal::session-writer", &error);
+                shared.eof.store(true, Ordering::Release);
+                shared.notify_output();
+                break;
             }
-            if code == libc::EAGAIN {
-                // poll 已确认可读，EAGAIN 只可能是偶发竞态。
-                continue;
-            }
-            // EIO/EPERM 等：master 对端已全部关闭，按 EOF 处理。
-            shared.eof.store(true, Ordering::Release);
-            shared.notify_output();
+        }
+        if polls[0].revents & libc::POLLNVAL != 0 {
             break;
         }
+    }
+    {
+        let mut input = shared.input.lock().unwrap_or_else(|e| e.into_inner());
+        input.closed = true;
+        input.bytes = VecDeque::new();
     }
     // 读线程关闭自己的 master 副本；UI 副本仍由 Drop 关闭。
     unsafe {
         libc::close(master);
-        libc::close(wake_read);
     }
     // EOF 后短轮询收割子进程退出码（父进程在 UI 线程，读线程代收）。
     if shared.eof.load(Ordering::Acquire) {
         for _ in 0..400 {
+            if shared.stop.load(Ordering::Acquire) {
+                break;
+            }
             let mut status: libc::c_int = 0;
             let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
             if result == pid {
@@ -740,6 +942,7 @@ fn reader_loop(
                     // 停止/继续不构成退出事实，继续轮询。
                     continue;
                 };
+                shared.child_reaped.store(true, Ordering::Release);
                 if let Ok(mut slot) = shared.exit_code.lock() {
                     *slot = Some(code);
                 }
@@ -747,7 +950,10 @@ fn reader_loop(
                 break;
             }
             if result < 0 {
-                // ECHILD 等异常：保留 Running，让 Drop 的兜底 waitpid 处理。
+                if errno() == libc::ECHILD {
+                    // 即使由宿主其他收割者消费，PID 也不再归本会话所有。
+                    shared.child_reaped.store(true, Ordering::Release);
+                }
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -755,36 +961,55 @@ fn reader_loop(
     }
 }
 
-// 非阻塞写全部字节；EINTR 重试，EAGAIN 暴露为 WouldBlock。
+// 非阻塞唤醒。管道满意味着已有唤醒可读，不要求为每条输入保留一个通知。
 #[cfg(target_os = "linux")]
-fn write_all_nonblocking(fd: std::os::fd::RawFd, mut bytes: &[u8]) -> Result<(), Error> {
-    while !bytes.is_empty() {
-        let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
-        if written >= 0 {
-            bytes = &bytes[written as usize..];
-            continue;
+fn signal_io(fd: std::os::fd::RawFd) -> Result<(), Error> {
+    loop {
+        let written = unsafe { libc::write(fd, [1u8].as_ptr().cast(), 1) };
+        if written == 1 {
+            return Ok(());
+        }
+        if written == 0 {
+            return Err(Error::new(
+                Errc::WriteFailure,
+                "terminal I/O wake made no progress",
+            ));
         }
         match errno() {
             libc::EINTR => continue,
-            libc::EAGAIN => {
-                return Err(Error::warn(
-                    Errc::WouldBlock,
-                    "terminal session write buffer full; input dropped",
-                ));
-            }
-            libc::EIO | libc::EBADF => {
-                return Err(Error::new(
-                    Errc::InvalidOperation,
-                    "terminal session is closed",
-                ));
-            }
+            libc::EAGAIN if written < 0 => return Ok(()),
             code => {
                 return Err(Error::new(
                     Errc::WriteFailure,
-                    format!("terminal session write failed: errno {code}"),
+                    format!("terminal I/O wake failed: errno {code}"),
                 ));
             }
         }
     }
-    Ok(())
+}
+
+// 每轮最多写 8 KiB，让持续输入与输出都获得处理机会；EAGAIN 保留全部余量。
+#[cfg(target_os = "linux")]
+fn send_pending_input(fd: std::os::fd::RawFd, shared: &SharedOutput) -> Result<(), Error> {
+    let mut input = shared.input.lock().unwrap_or_else(|e| e.into_inner());
+    let (first, second) = input.bytes.as_slices();
+    let bytes = if first.is_empty() { second } else { first };
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len().min(8192)) };
+    if written > 0 {
+        input.bytes.drain(..written as usize);
+        return Ok(());
+    }
+    if written < 0 && matches!(errno(), libc::EINTR | libc::EAGAIN) {
+        return Ok(());
+    }
+    Err(Error::new(
+        Errc::WriteFailure,
+        format!(
+            "terminal input delivery stopped: bytes written {written}, errno {}",
+            errno()
+        ),
+    ))
 }

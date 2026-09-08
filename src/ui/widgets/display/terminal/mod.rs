@@ -251,7 +251,7 @@ pub use screen_widget::*;
 pub use session::{
     TerminalOutputWaker, TerminalSession, TerminalSessionConfig, TerminalSessionStatus,
 };
-pub use vt::{TerminalColorSpec, TerminalRow, TerminalRowSpan, TerminalSpanStyle};
+pub use vt::{TerminalColorSpec, TerminalModes, TerminalRow, TerminalRowSpan, TerminalSpanStyle};
 pub use widget::*;
 
 // 把输出缓冲、交互状态与 UIX 静态视觉融合为单一根节点。

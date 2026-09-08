@@ -186,8 +186,8 @@ pub use crate::ui::{Terminal, TerminalColor, TerminalLine};
 #[cfg(feature = "terminal")]
 // 该列表覆盖真实终端（PTY 会话 + VT 屏幕）的完整公开模型。
 pub use crate::ui::{
-    TerminalColorSpec, TerminalRow, TerminalRowSpan, TerminalScreen, TerminalSession,
-    TerminalSessionConfig, TerminalSessionStatus, TerminalSpanStyle,
+    TerminalColorSpec, TerminalModes, TerminalRow, TerminalRowSpan, TerminalScreen,
+    TerminalSession, TerminalSessionConfig, TerminalSessionStatus, TerminalSpanStyle,
 };
 
 // app
@@ -209,7 +209,8 @@ pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 pub use crate::ui::{
     AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder, IntoLabelContent,
     IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode, button, canvas,
-    column, column_fit, dynamic_label, elided_label, embed, grid, input, label, row, scoped, scroll, show, space,
+    column, column_fit, dynamic_label, elided_label, embed, grid, input, label, row, scoped,
+    scroll, show, space,
 };
 pub use crate::views;
 pub use crate::with_cloned;

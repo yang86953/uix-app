@@ -351,6 +351,146 @@ fn dependency_symlink_cannot_escape_the_explicit_package() {
 }
 
 #[test]
+fn explicit_source_closure_accepts_file_and_depth_limits_and_rejects_the_next_dependency() {
+    let package = Package::new();
+    let leaf = r#"<Module name="Leaf" version="1" schema="1" />"#;
+    package.write("unreferenced.uix", "invalid source must not be discovered");
+    let root_with_imports = |count: usize| {
+        let mut source = r#"<Module name="Root" version="1" schema="1">"#.to_owned();
+        for index in 0..count {
+            source.push_str(&format!(
+                r#"<Import from="./leaf{index}.uix" as="leaf{index}" version="1" />"#
+            ));
+        }
+        source.push_str("</Module>");
+        source
+    };
+    for index in 0..64 {
+        package.write(&format!("leaf{index}.uix"), leaf);
+    }
+    package.write("main.uix", &root_with_imports(63));
+    let at_limit = modules::check_file(&package.root()).unwrap();
+    assert_eq!(at_limit.source_graph.files().len(), 64);
+    assert_eq!(at_limit.module.dependencies.len(), 63);
+    package.write("main.uix", &root_with_imports(64));
+    assert!(
+        modules::check_file(&package.root())
+            .unwrap_err()
+            .message
+            .contains("64")
+    );
+
+    // 允许十六条依赖边；第十七条必须拒绝。
+    for index in 0..16 {
+        let name = if index == 0 {
+            "main.uix".to_owned()
+        } else {
+            format!("depth{index}.uix")
+        };
+        package.write(&name, &format!(
+            r#"<Module name="Level{index}" version="1" schema="1"><Import from="./depth{}.uix" as="child" version="1" /></Module>"#,
+            index + 1
+        ));
+    }
+    package.write("depth16.uix", leaf);
+    assert_eq!(
+        modules::check_file(&package.root())
+            .unwrap()
+            .module
+            .dependencies
+            .len(),
+        16
+    );
+    package.write("depth16.uix", r#"<Module name="Level16" version="1" schema="1"><Import from="./depth17.uix" as="child" version="1" /></Module>"#);
+    package.write("depth17.uix", leaf);
+    assert!(
+        modules::check_file(&package.root())
+            .unwrap_err()
+            .message
+            .contains("16")
+    );
+}
+
+#[test]
+fn source_byte_limits_and_imported_views_reject_candidates_without_touching_a_live_instance() {
+    let package = Package::new();
+    let mut app = instance(
+        load_module_file(&package.root()).unwrap(),
+        Arc::new(Mutex::new(vec![])),
+    );
+    app.call("run", &[Value::String("retained".into())])
+        .unwrap();
+    let before = (
+        app.generation(),
+        app.state(),
+        app.revision(),
+        app.view().unwrap(),
+    );
+    let with_view = COUNTER.replace(
+        "</Module>",
+        r#"<View><Text key="library" text="library" /></View></Module>"#,
+    );
+    package.write("counter.uix", &with_view);
+    let rejected = modules::check_file(&package.root()).unwrap_err();
+    assert!(rejected.message.contains("View"), "{rejected:?}");
+    assert_eq!(
+        rejected,
+        modules::compile_file(&package.root()).unwrap_err()
+    );
+
+    const MIB: usize = 1_048_576;
+    let pad = |source: &str| format!("{source}{}", " ".repeat(MIB - source.len()));
+    let leaf = pad(r#"<Module name="Leaf" version="1" schema="1" />"#);
+    for name in ["a.uix", "b.uix", "c.uix"] {
+        package.write(name, &leaf);
+    }
+    let root = r#"<Module name="Root" version="1" schema="1"><Import from="./a.uix" as="a" version="1"/><Import from="./b.uix" as="b" version="1"/><Import from="./c.uix" as="c" version="1"/></Module>"#;
+    package.write("main.uix", &pad(root));
+    let accepted = modules::check_file(&package.root()).unwrap();
+    assert_eq!(
+        accepted
+            .source_graph
+            .files()
+            .iter()
+            .map(|f| f.source.len())
+            .sum::<usize>(),
+        4 * MIB
+    );
+    package.write("main.uix", &(pad(root) + " "));
+    assert!(
+        load_module_file(&package.root())
+            .unwrap_err()
+            .message
+            .contains("1 MiB")
+    );
+    package.write(
+        "extra.uix",
+        r#"<Module name="Extra" version="1" schema="1" />"#,
+    );
+    let expanded = root.replace(
+        "</Module>",
+        r#"<Import from="./extra.uix" as="extra" version="1"/></Module>"#,
+    );
+    package.write("main.uix", &pad(&expanded));
+    assert!(
+        load_module_file(&package.root())
+            .unwrap_err()
+            .message
+            .contains("4 MiB")
+    );
+    assert_eq!(
+        (
+            app.generation(),
+            app.state(),
+            app.revision(),
+            app.view().unwrap()
+        ),
+        before
+    );
+    assert_eq!(app.call("total", &[]).unwrap(), Value::Int(1));
+}
+
+#[test]
 fn formatter_query_and_auto_tool_entry_share_module_facts_without_changing_ui_entry() {
     use uix_lang_compiler::{CompilerSystem, DocumentOutput, QueryEntry, QueryKind};
     let system = CompilerSystem::new();

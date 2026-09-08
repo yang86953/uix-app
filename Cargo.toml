@@ -254,6 +254,11 @@ required-features = ["agent-control"]
 name = "text_workbench"
 required-features = ["extensions", "agent-control"]
 
+# 可移植模块工作台独立于 Scheme 示例；源码装载与后台面均显式启用。
+[[example]]
+name = "module_workbench"
+required-features = ["uix-dynamic", "agent-control"]
+
 # 外部扩展面板同样依赖可选的扩展运行器；默认测试图不得编译此示例。
 [[example]]
 name = "extension_panel"

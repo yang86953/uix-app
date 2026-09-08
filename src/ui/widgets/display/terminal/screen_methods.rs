@@ -1,7 +1,7 @@
 //! `TerminalScreen` 的构造、布局、reconcile 与快照方法。
 
 use crate::core::{Rect, Size};
-use crate::ui::SnapshotFields;
+use crate::ui::{KeyCode, KeyMod, SnapshotFields};
 
 use super::TERMINAL_SCREEN_VISUAL_REF;
 use super::screen_widget::TerminalScreen;
@@ -17,8 +17,12 @@ impl TerminalScreen {
             session: session.clone(),
             focused: std::cell::Cell::new(false),
             suppress_next_text: std::cell::Cell::new(false),
+            alt_next_text: std::cell::Cell::new(false),
             last_frame: std::cell::Cell::new(None),
             synced_grid: std::cell::Cell::new((0, 0)),
+            history_offset: std::cell::Cell::new(0),
+            observed_history: std::cell::Cell::new(session.scrollback_state()),
+            wheel_fraction: std::cell::Cell::new(0.0),
             view_style: crate::ui::theme::style::Style::default(),
             visual: TERMINAL_SCREEN_VISUAL_REF,
         }
@@ -115,6 +119,7 @@ impl TerminalScreen {
 
     // 按键字节写入会话；失败按边界观察处置（写入端无恢复所有者）。
     pub(crate) fn write_to_session(&self, bytes: &[u8]) {
+        self.follow_live_output();
         if let Err(error) = self.session.write(bytes) {
             // 会话关闭后的残留按键是预期事实，其余写入失败保留观察。
             if error.code() != crate::core::Errc::InvalidOperation {
@@ -123,7 +128,24 @@ impl TerminalScreen {
         }
     }
 
+    pub(crate) fn paste_to_session(&self, text: &str) {
+        self.follow_live_output();
+        if let Err(error) = self.session.paste(text) {
+            if error.code() != crate::core::Errc::InvalidOperation {
+                crate::diagnostics::observe_boundary_error("ui::terminal-screen-paste", &error);
+            }
+        }
+    }
+
     pub(crate) fn sync_from(&mut self, next: Self) {
+        if !self.session.same_session(&next.session) {
+            self.history_offset.set(0);
+            self.observed_history.set(next.session.scrollback_state());
+            self.wheel_fraction.set(0.0);
+            self.synced_grid.set((0, 0));
+            self.suppress_next_text.set(false);
+            self.alt_next_text.set(false);
+        }
         self.visual = next.visual;
         self.session = next.session;
         self.view_style = next.view_style;
@@ -133,7 +155,7 @@ impl TerminalScreen {
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         let rows: Vec<String> = self
             .session
-            .rows()
+            .viewport_rows(self.effective_history_offset())
             .iter()
             .map(super::vt::TerminalRow::plain)
             .collect();
@@ -150,6 +172,71 @@ impl TerminalScreen {
             running,
             exit_code,
         }
+    }
+
+    // offset 为视口底部距活动屏底部的行数；0 跟随输出。输出代际只用于
+    // 锚定所看行，淘汰时夹紧到最早仍在内存的行，不缓存第二份历史。
+    pub(crate) fn effective_history_offset(&self) -> usize {
+        let history = self.session.scrollback_state();
+        let previous = self.observed_history.replace(history);
+        let mut offset = self.history_offset.get();
+        if history.epoch != previous.epoch {
+            offset = 0;
+            self.wheel_fraction.set(0.0);
+        } else if offset > 0 {
+            let added =
+                usize::try_from(history.total.saturating_sub(previous.total)).unwrap_or(usize::MAX);
+            offset = offset.saturating_add(added);
+        }
+        offset = offset.min(history.rows);
+        self.history_offset.set(offset);
+        if history.alternate { 0 } else { offset }
+    }
+
+    fn follow_live_output(&self) {
+        self.history_offset.set(0);
+        self.observed_history.set(self.session.scrollback_state());
+        self.wheel_fraction.set(0.0);
+    }
+
+    pub(crate) fn scroll_history_wheel(&self, delta: f32) -> bool {
+        let old = self.effective_history_offset();
+        let history = self.observed_history.get();
+        if history.alternate || history.rows == 0 || delta.is_nan() || delta == 0.0 {
+            return false;
+        }
+        // 与框架滚轮步长一致；积累高精度触控板不足一行的增量。
+        let movement = self.wheel_fraction.get()
+            - f64::from(delta) * 40.0 / f64::from(self.visual.geometry.row_height.max(1.0));
+        let target = (old as f64 + movement.trunc()).clamp(0.0, history.rows as f64);
+        let past_edge =
+            (target == 0.0 && movement < 0.0) || (target == history.rows as f64 && movement > 0.0);
+        self.wheel_fraction
+            .set(if past_edge { 0.0 } else { movement.fract() });
+        self.history_offset.set(target as usize);
+        old != target as usize || (!past_edge && movement != 0.0)
+    }
+
+    pub(crate) fn browse_history_key(&self, key: KeyCode, mods: KeyMod) -> bool {
+        if mods != KeyMod::SHIFT {
+            return false;
+        }
+        let old = self.effective_history_offset();
+        let history = self.observed_history.get();
+        if history.alternate {
+            return false;
+        }
+        let page = self.session.screen_size().1.saturating_sub(1).max(1);
+        let offset = match key {
+            KeyCode::PageUp => old.saturating_add(page).min(history.rows),
+            KeyCode::PageDown => old.saturating_sub(page),
+            KeyCode::Home => history.rows,
+            KeyCode::End => 0,
+            _ => return false,
+        };
+        self.history_offset.set(offset);
+        self.wheel_fraction.set(0.0);
+        true
     }
 
     // 语义快照比较组件声明配置；会话运行态由 pump 驱动。

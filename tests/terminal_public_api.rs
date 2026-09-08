@@ -271,6 +271,59 @@ fn terminal_session_drop_releases_file_descriptors() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn terminal_session_drop_releases_a_saturated_input_queue_and_all_pty_descriptors() {
+    let _guard = PTY_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let before = open_fd_count();
+    let child_pid;
+    let closing;
+    {
+        let session = spawn_command(&[
+            "/bin/sh",
+            "-c",
+            "stty raw -echo; printf 'READY %s' \"$$\"; exec sleep 30",
+        ]);
+        assert!(pump_until(&session, Duration::from_secs(5), |session| {
+            screen_text(session).contains("READY")
+        }));
+        child_pid = session.rows()[0]
+            .plain()
+            .trim()
+            .strip_prefix("READY ")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        session.write(&vec![b'A'; 1024 * 1024]).unwrap();
+        let mut full = false;
+        for _ in 0..64 {
+            match session.write(&[b'B'; 65536]) {
+                Ok(()) => {}
+                Err(error) if error.code() == uix::core::Errc::WouldBlock => {
+                    full = true;
+                    break;
+                }
+                Err(error) => panic!("unexpected input error: {error:?}"),
+            }
+        }
+        assert!(full, "child is not reading; input must be bounded");
+        let clone = session.clone();
+        closing = Instant::now();
+        drop(session);
+        assert!(std::path::Path::new(&format!("/proc/{child_pid}")).exists());
+        drop(clone);
+    }
+    // Close cancels queued input rather than waiting for a stalled child to consume it.
+    assert!(closing.elapsed() < Duration::from_secs(5));
+    assert!(
+        !std::path::Path::new(&format!("/proc/{child_pid}")).exists(),
+        "last handle drop must reap the child, not just close its PTY descriptors"
+    );
+    assert_eq!(open_fd_count(), before);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn terminal_screen_forwards_keys_and_ime_text_through_the_session() {
     let _guard = PTY_TEST_LOCK
         .lock()
