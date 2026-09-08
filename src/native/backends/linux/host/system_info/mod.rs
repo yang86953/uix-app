@@ -79,6 +79,21 @@ impl ISystemInfo for LinuxSystemInfo {
     fn probe_family_font_path(&self, family: &str) -> Option<String> {
         probe_font_path_via_fc_match(family)
     }
+
+    fn default_font_sources(&self) -> Result<Vec<crate::platform::services::SystemFontSource>> {
+        Ok(probe_system_default_font_sources())
+    }
+
+    fn probe_cjk_font_sources(&self) -> Vec<crate::platform::services::SystemFontSource> {
+        probe_cjk_font_sources()
+    }
+
+    fn probe_family_font_source(
+        &self,
+        family: &str,
+    ) -> Option<crate::platform::services::SystemFontSource> {
+        probe_font_source_via_fc_match(family)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

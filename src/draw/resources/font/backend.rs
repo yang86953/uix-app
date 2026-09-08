@@ -13,6 +13,18 @@ use crate::draw::resources::font::text_backend::{
 pub trait TextBackend: std::fmt::Debug + Send + Sync {
     /// 从借用字节加载字体并返回后端句柄。
     fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error>;
+    /// 加载完整字体集合中的指定面。旧后端不支持非零面时必须显式失败，
+    /// 不得悄悄加载第零面并返回错误地域字形。
+    fn load_font_index(&mut self, data: &[u8], face_index: u32) -> Result<FontHandle, Error> {
+        if face_index == 0 {
+            self.load_font(data)
+        } else {
+            Err(Error::new(
+                crate::core::Errc::NotImplemented,
+                "text backend does not support font collection indices",
+            ))
+        }
+    }
     /// 消费所有权的字体加载：内部路径（fs::read 已持有 Vec）避免二次复制。
     fn load_font_owned(&mut self, data: Vec<u8>) -> Result<FontHandle, Error> {
         self.load_font(&data)
@@ -31,6 +43,18 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
     /// 默认实现退化为拷贝（后端不支持映射时保底正确）。
     fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {
         self.load_font(mmap.as_ref())
+    }
+    /// 映射完整文件并选择指定面；默认实现保持第零面映射优化。
+    fn load_font_mapped_index(
+        &mut self,
+        mmap: memmap2::Mmap,
+        face_index: u32,
+    ) -> Result<FontHandle, Error> {
+        if face_index == 0 {
+            self.load_font_mapped(mmap)
+        } else {
+            self.load_font_index(mmap.as_ref(), face_index)
+        }
     }
     /// 卸载字体句柄及其后端资源。
     fn unload_font(&mut self, handle: &FontHandle);

@@ -70,6 +70,22 @@ pub(crate) trait ISystemInfo {
     fn scan_fallback_font_path(&self) -> Option<String> {
         None
     }
+    fn default_font_sources(&self) -> Result<Vec<crate::platform::services::SystemFontSource>> {
+        self.default_font_paths()
+            .map(|paths| paths.into_iter().map(Into::into).collect())
+    }
+    fn probe_cjk_font_sources(&self) -> Vec<crate::platform::services::SystemFontSource> {
+        self.probe_cjk_font_paths()
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+    fn probe_family_font_source(
+        &self,
+        family: &str,
+    ) -> Option<crate::platform::services::SystemFontSource> {
+        self.probe_family_font_path(family).map(Into::into)
+    }
     fn process_memory(&self) -> Result<(usize, usize)> {
         Err(Error::new(
             Errc::NotImplemented,
@@ -97,5 +113,18 @@ where
 
     fn scan_fallback_font_path(&self) -> Option<String> {
         ISystemInfo::scan_fallback_font_path(self)
+    }
+
+    fn default_font_sources(&self) -> Result<Vec<crate::platform::services::SystemFontSource>> {
+        ISystemInfo::default_font_sources(self)
+    }
+    fn probe_cjk_font_sources(&self) -> Vec<crate::platform::services::SystemFontSource> {
+        ISystemInfo::probe_cjk_font_sources(self)
+    }
+    fn probe_family_font_source(
+        &self,
+        family: &str,
+    ) -> Option<crate::platform::services::SystemFontSource> {
+        ISystemInfo::probe_family_font_source(self, family)
     }
 }
