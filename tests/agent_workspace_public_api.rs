@@ -12,6 +12,34 @@ use uix::ui::test_harness::TestApp;
 // 文档规定每进程一个操作面，消费者串行持有该公开租约，不重试重复启动。
 static WORKSPACE: Mutex<()> = Mutex::new(());
 
+#[test]
+fn background_text_hug_measurement_uses_its_rendering_font() {
+    let _serial = WORKSPACE.lock().unwrap_or_else(|e| e.into_inner());
+    let workspace = AgentWorkspace::new(400, 240, || {
+        row((
+            label("11").font_size(12.0).build().automation_id("static-count"),
+            dynamic_label(|| "11".to_owned())
+                .map_style(|style| style.font_size = TypographyToken::Custom(12.0))
+                .automation_id("dynamic-count"),
+        ))
+    })
+    .spawn()
+    .unwrap();
+    let mut client = workspace.client().unwrap();
+    let window = client.list_windows().unwrap()[0];
+    let reply = client.request(json!({"type":"snapshot", "window_id":window.window_id})).unwrap();
+    assert_ok(&reply);
+    for id in ["static-count", "dynamic-count"] {
+        let node = reply["snapshot"]["nodes"].as_array().unwrap().iter()
+            .find(|node| node["automation_id"] == id).unwrap();
+        let width = node["frame"]["w"].as_f64().unwrap();
+        // 默认后台 OFL Noto 的两个数字为 13.32px；旧估算仅分配 7.2px。
+        assert!((13.32..14.33).contains(&width), "{id}: {node}");
+    }
+    screenshot(&mut client, window.window_id);
+    workspace.close().unwrap();
+}
+
 fn action(client: &mut AgentBridgeClient, view: AgentWindowEntry, action: Value) -> Value {
     client
         .request(json!({"type":"perform", "window_id":view.window_id,

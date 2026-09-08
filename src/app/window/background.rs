@@ -80,6 +80,11 @@ fn run_inner(
         include_bytes!("../../../assets/fonts/lucide.ttf"),
         &mut fonts,
     );
+    // 后台操作面同样让布局与 CPU 绘制共享本线程的字体权威。
+    let fonts = std::rc::Rc::new(fonts);
+    let _layout_fonts = crate::ui::widget_runtime::measurement::LayoutFontScope::enter(
+        std::rc::Rc::clone(&fonts),
+    );
     let images = ImageService::new();
     let theme = RefCell::new(config.theme);
     let diagnostics = runtime.diagnostics();
