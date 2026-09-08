@@ -15,9 +15,19 @@ static WORKSPACE: Mutex<()> = Mutex::new(());
 #[test]
 fn background_text_hug_measurement_uses_its_rendering_font() {
     let _serial = WORKSPACE.lock().unwrap_or_else(|e| e.into_inner());
+    // 使用独立字体表的 em advance，不把某个旧字体的固定数字宽度当成布局契约。
+    use ab_glyph::{Font, FontRef};
+    let font =
+        FontRef::try_from_slice(include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf")).unwrap();
+    let one = font.glyph_id('1');
+    let expected = (2.0 * font.h_advance_unscaled(one) + font.kern_unscaled(one, one)) * 12.0
+        / font.units_per_em().unwrap();
     let workspace = AgentWorkspace::new(400, 240, || {
         row((
-            label("11").font_size(12.0).build().automation_id("static-count"),
+            label("11")
+                .font_size(12.0)
+                .build()
+                .automation_id("static-count"),
             dynamic_label(|| "11".to_owned())
                 .map_style(|style| style.font_size = TypographyToken::Custom(12.0))
                 .automation_id("dynamic-count"),
@@ -27,14 +37,23 @@ fn background_text_hug_measurement_uses_its_rendering_font() {
     .unwrap();
     let mut client = workspace.client().unwrap();
     let window = client.list_windows().unwrap()[0];
-    let reply = client.request(json!({"type":"snapshot", "window_id":window.window_id})).unwrap();
+    let reply = client
+        .request(json!({"type":"snapshot", "window_id":window.window_id}))
+        .unwrap();
     assert_ok(&reply);
     for id in ["static-count", "dynamic-count"] {
-        let node = reply["snapshot"]["nodes"].as_array().unwrap().iter()
-            .find(|node| node["automation_id"] == id).unwrap();
+        let node = reply["snapshot"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["automation_id"] == id)
+            .unwrap();
         let width = node["frame"]["w"].as_f64().unwrap();
-        // 默认后台 OFL Noto 的两个数字为 13.32px；旧估算仅分配 7.2px。
-        assert!((13.32..14.33).contains(&width), "{id}: {node}");
+        // 首选尺寸允许向上取整到一个逻辑像素，但不能退回半字宽估算。
+        assert!(
+            (f64::from(expected)..f64::from(expected) + 1.01).contains(&width),
+            "{id}: {node}"
+        );
     }
     screenshot(&mut client, window.window_id);
     workspace.close().unwrap();
