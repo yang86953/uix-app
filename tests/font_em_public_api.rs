@@ -4,7 +4,7 @@ use uix::draw::resources::font::text_backend::{TextLayoutOptions, normal_line_he
 use uix::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
 use uix::draw::{FontService, HAlign, TextBackend, VAlign};
 
-const FONT: &[u8] = include_bytes!("../assets/fonts/NotoSansCJKsc-Regular.otf");
+const FONT: &[u8] = include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf");
 
 fn options(font_size: f32, line_height: f32) -> TextLayoutOptions {
     TextLayoutOptions {

@@ -1,9 +1,9 @@
 // 导入应用组合根与 uix-lang 编译期入口。
 use uix::prelude::*;
 
-// 把主演示正文与中文统一到随应用分发的同一字体字节。
+// 把主演示正文与中文统一到随应用分发的同一字体字节（LXGW WenKai，OFL）。
 const DETERMINISTIC_UI_FONT: &[u8] =
-    include_bytes!("../../../assets/fonts/NotoSansCJKsc-Regular.otf");
+    include_bytes!("../../../assets/fonts/LXGWWenKai-Regular.ttf");
 
 // 仅在显式测试能力存在时编译专用图形恢复验收组合模块。
 #[cfg(feature = "test-harness")]
@@ -239,7 +239,7 @@ fn finalize_diagnostics(
 // 将确定性正文资源注入 Application 组合根，不让声明页面接触字体句柄。
 fn with_deterministic_fonts(app: App) -> App {
     app.font_bundle(uix::draw::FontBundle::from_static(
-        "Noto Sans CJK SC",
+        "LXGW WenKai",
         DETERMINISTIC_UI_FONT,
     ))
 }
