@@ -576,7 +576,10 @@ impl FrameImage {
     }
 
     /// 验证像素数量后接管共享不可变帧图像，不复制像素载荷。
-    pub(crate) fn from_shared(
+    ///
+    /// 像素必须为紧密行排列的预乘 AARRGGBB。克隆帧或提交绘制可能延长
+    /// `Arc` 的生命周期；这不是解码器缓冲区、GPU 纹理或呈现完成的租约。
+    pub fn from_shared(
         width: i32,
         height: i32,
         pixels: Arc<Vec<u32>>,

@@ -52,10 +52,14 @@ fn check(args: &[String]) -> Result<u8, String> {
     let (target, json_output, files) = parse_target_json(args, true)?;
     let system = CompilerSystem::new();
     for file in files {
-        let result = if target == TargetArg::Auto {
-            system.check_file_auto(&file)
+        let result = if target == TargetArg::Module {
+            uix_lang_compiler::modules::check_file(&file).map(|_| ())
+        } else if target == TargetArg::Auto {
+            system.check_document_file(&file).map(|_| ())
         } else {
-            system.check_file(&file, target.compile_target().expect("非 auto target"))
+            system
+                .check_file(&file, target.compile_target().expect("非 auto target"))
+                .map(|_| ())
         };
         match result {
             Ok(_) => {
@@ -99,6 +103,15 @@ fn compile(args: &[String]) -> Result<u8, String> {
     let Some(file) = files.first() else {
         return Err("uix compile 需要一个文件".into());
     };
+    if files.len() != 1 {
+        return Err("uix compile 只接收一个根文件".into());
+    }
+    if target == TargetArg::Module {
+        let tokens = uix_lang_compiler::modules::compile_file(file)
+            .map_err(|error| diagnostic_text(&error))?;
+        print!("{tokens}");
+        return Ok(0);
+    }
     let target = target.compile_target().ok_or("compile 不允许 auto")?;
     let output = CompilerSystem::new()
         .compile_file(file, target)
@@ -113,11 +126,12 @@ enum TargetArg {
     View,
     App,
     Items,
+    Module,
 }
 impl TargetArg {
     fn compile_target(self) -> Option<CompileTarget> {
         match self {
-            Self::Auto => None,
+            Self::Auto | Self::Module => None,
             Self::View => Some(CompileTarget::View),
             Self::App => Some(CompileTarget::App),
             Self::Items => Some(CompileTarget::Items),
@@ -146,7 +160,7 @@ fn parse_target_json(
         i += 1;
     }
     if !allow_auto && target == TargetArg::Auto {
-        return Err("该命令必须指定 --target view|app|items".into());
+        return Err("该命令必须指定 --target view|app|items|module".into());
     }
     if files.is_empty() {
         return Err("缺少输入文件".into());
@@ -160,6 +174,7 @@ fn parse_target(value: &str) -> Result<TargetArg, String> {
         "view" => Ok(TargetArg::View),
         "app" => Ok(TargetArg::App),
         "items" => Ok(TargetArg::Items),
+        "module" => Ok(TargetArg::Module),
         _ => Err(format!("未知 target: {value}")),
     }
 }
@@ -232,6 +247,9 @@ fn query_entry_json(entry: QueryEntry) -> serde_json::Value {
         }
         QueryEntry::Data(e) => {
             json!({"id":e.id,"name":e.name,"rust_path":e.rust_path,"method":e.method,"normalize_numbers":e.normalize_numbers,"capability":e.capability})
+        }
+        QueryEntry::Module(e) => {
+            json!({"name":e.name,"cargo_feature":e.feature,"summary":e.summary})
         }
     }
 }

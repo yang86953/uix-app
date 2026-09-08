@@ -4,6 +4,7 @@ pub(crate) mod completion;
 pub(crate) mod diagnostics;
 pub(crate) mod formatting;
 pub(crate) mod hover;
+mod modules;
 pub(crate) mod navigation;
 pub(crate) mod symbols;
 

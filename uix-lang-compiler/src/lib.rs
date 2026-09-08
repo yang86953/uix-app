@@ -70,6 +70,7 @@ pub enum QueryKind {
     Capabilities,
     CapabilityUses,
     Data,
+    Modules,
 }
 
 impl QueryKind {
@@ -86,6 +87,7 @@ impl QueryKind {
             "capabilities" => Some(Self::Capabilities),
             "capability-uses" => Some(Self::CapabilityUses),
             "data" => Some(Self::Data),
+            "modules" => Some(Self::Modules),
             _ => None,
         }
     }
@@ -103,6 +105,7 @@ impl QueryKind {
             Self::Capabilities => "capabilities",
             Self::CapabilityUses => "capability-uses",
             Self::Data => "data",
+            Self::Modules => "modules",
         }
     }
 }
@@ -120,6 +123,7 @@ pub enum QueryEntry {
     Capability(&'static projection_schema::CapabilitySpec),
     AttributeCapability(&'static projection_schema::AttributeCapabilitySpec),
     Data(&'static projection_schema::DataConstructorSpec),
+    Module(&'static modules::ModuleCapability),
 }
 
 /// 保存 Compiler System 的确定性 schema 查询结果。
@@ -127,6 +131,13 @@ pub enum QueryEntry {
 pub struct QueryOutput {
     pub kind: QueryKind,
     pub entries: Vec<QueryEntry>,
+}
+
+/// 工具自动入口区分两种产物，不把业务模块伪装成 UI IR。
+#[derive(Debug, Clone)]
+pub enum DocumentOutput {
+    Ui(CheckOutput),
+    Module(modules::ModuleOutput),
 }
 
 /// 保存可用于阶段缓存与增量失效判定的完整编译身份。
@@ -245,6 +256,47 @@ impl Default for CompilerSystem {
 }
 
 impl CompilerSystem {
+    /// 工具用自动入口；原有 UI 专用入口与宏语义保持不变。
+    pub fn check_document_inline(
+        self,
+        source: &str,
+        source_name: &str,
+    ) -> Result<DocumentOutput, CompilerDiagnostic> {
+        if modules::recognizes_source(source) {
+            modules::check_inline(source, source_name).map(DocumentOutput::Module)
+        } else {
+            self.check_inline_auto(source, source_name)
+                .map(DocumentOutput::Ui)
+        }
+    }
+
+    /// 明确文件的自动工具入口；不会在不同语言失败时静默回退。
+    pub fn check_document_file(self, path: &Path) -> Result<DocumentOutput, CompilerDiagnostic> {
+        self.check_document_file_with_overlays(path, &BTreeMap::new())
+    }
+
+    /// 自动识别覆盖后的根家族，分别产出模块或 UI 的受检结果。
+    pub fn check_document_file_with_overlays(
+        self,
+        path: &Path,
+        overlays: &BTreeMap<PathBuf, String>,
+    ) -> Result<DocumentOutput, CompilerDiagnostic> {
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let source = overlays
+            .get(path)
+            .or_else(|| overlays.get(&canonical))
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| {
+                fs::read_to_string(path).map_err(|error| source_io_diagnostic(path, error))
+            })?;
+        if modules::recognizes_source(&source) {
+            modules::check_file_with_overlays(path, overlays).map(DocumentOutput::Module)
+        } else {
+            self.check_file_with_overlays_auto(path, overlays)
+                .map(DocumentOutput::Ui)
+        }
+    }
     /// 使用仓库唯一 UI 投影登记创建 Compiler System。
     pub const fn new() -> Self {
         Self {
@@ -406,6 +458,10 @@ impl CompilerSystem {
                 .data_constructors()
                 .iter()
                 .map(QueryEntry::Data)
+                .collect(),
+            QueryKind::Modules => modules::capabilities()
+                .iter()
+                .map(QueryEntry::Module)
                 .collect(),
         };
         QueryOutput { kind, entries }

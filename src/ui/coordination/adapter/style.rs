@@ -11,7 +11,7 @@ use crate::ui::widgets::{
     Button, Card, Container, Grid, Icon, Input, Label, ScrollView, Select, Typography,
 };
 #[cfg(feature = "navigation")]
-use crate::ui::widgets::MenuBar;
+use crate::ui::widgets::{MenuBar, Tabs};
 // VirtualScroll 是布局能力组件而非 widgets 命名空间成员，单独引入。
 use crate::ui::virtualization::virtual_scroll::VirtualScroll;
 // Modal 只在 feedback capability 启用时进入统一样式桥接。
@@ -161,6 +161,11 @@ impl ViewAdapter {
             {
                 region.apply_view_style(style, flex_grow_override, flex_shrink_override);
             }
+        }
+
+        #[cfg(feature = "navigation")]
+        if let Some(tabs) = widget.as_any_mut().downcast_mut::<Tabs>() {
+            tabs.apply_view_layout_style(style, flex_grow_override, flex_shrink_override);
         }
 
         #[cfg(feature = "navigation")]

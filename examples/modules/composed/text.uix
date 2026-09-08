@@ -1,0 +1,6 @@
+<Module name="TextLibrary" version="1" schema="1">
+  <Data name="Stats" fields="text: String, count: Int" export="true" />
+  <Data name="Private" fields="secret: String" />
+  <Function name="normalize" params="input: String" returns="String" body="input.words().join(' ')" />
+  <Function name="analyze" params="input: String" returns="Stats" export="true" body="do { let text = normalize(input); return { text: text, count: text.words().len() }; }" />
+</Module>

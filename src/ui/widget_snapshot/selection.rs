@@ -1,9 +1,23 @@
 use super::{SelectionSnapshot, SnapshotFields};
 
 impl SnapshotFields {
-    /// 从快照字段中提取选择类控件（单选框/下拉/分段控件）的统一选择状态。
+    /// 从快照字段中提取选择类控件（单选框/下拉/分段控件/页签）的统一选择状态。
     pub(super) fn selection(&self) -> Option<SelectionSnapshot> {
         match self {
+            // 页签也是单选目标；索引来自当前稳定 key 顺序，不暴露组件私有状态。
+            #[cfg(feature = "navigation")]
+            Self::Tabs {
+                tabs, active_index, ..
+            } => Some(SelectionSnapshot {
+                options: tabs.iter().map(|tab| tab.label.clone()).collect(),
+                selected_indices: (*active_index < tabs.len())
+                    .then_some(*active_index)
+                    .into_iter()
+                    .collect(),
+                disabled_indices: Vec::new(),
+                multiple: false,
+                expanded: false,
+            }),
             // 单选框：单选，选中索引超出选项数则视为未选中。
             Self::Radio {
                 options, selected, ..

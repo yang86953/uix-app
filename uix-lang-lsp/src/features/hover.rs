@@ -10,6 +10,9 @@ use uix_lang_compiler::{CompilerSystem, projection_schema::UiProjectionSchema};
 
 // 生成 textDocument/hover 响应。
 pub(crate) fn hover(session: &mut Session, request: &Value) -> Value {
+    if let Some(result) = super::modules::hover(session, request) {
+        return result;
+    }
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     let (line, character) = request_position(request);

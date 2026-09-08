@@ -4,7 +4,7 @@ mod ast;
 mod action_ast;
 // 定义同步 action 声明与 do 语句块解析。
 mod action_parser;
-pub(crate) use action_parser::parse_module_body;
+pub(crate) use action_parser::{ModuleActionBody, parse_module_body};
 // 定义同步 action 词法作用域、调用图与递归语义验证。
 mod action_semantic;
 // 定义已降低 action 标签块到纯 Rust 令牌的生成。
@@ -734,7 +734,9 @@ pub(crate) use expression_codegen::{
 // 编译器内部用该属性把导入后的元素绑定到稳定 SourceId，写出前必须消费。
 pub(crate) const SOURCE_ID_ATTRIBUTE: &str = "__uix_source_id";
 // 向各事件适配器暴露带字段登记校验的处理器生成入口。
-pub(crate) use event_payload_codegen::{generate_event_handler_expression, generate_key_event_handler_expression};
+pub(crate) use event_payload_codegen::{
+    generate_event_handler_expression, generate_key_event_handler_expression,
+};
 // 向表达式解析器暴露词法标记。
 pub(crate) use expression_lexer::*;
 // 向核心解析器暴露受限表达式入口。

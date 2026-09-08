@@ -273,3 +273,11 @@ required-features = ["uix-dynamic"]
 [lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
+
+[workspace.metadata.smc]
+schema = 1
+spec_version = "2.0"
+spec_revision = "64f55bc5634bf5a647a37cfc296a4b75a4799734"
+spec_repository = "../smc"
+scope = "all-first-party-rust"
+adoption_document = "../../workspace/projects/uix-app/docs/SMC架构采用.md"

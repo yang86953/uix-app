@@ -7,7 +7,8 @@ use crate::core::{Point, Rect};
 use crate::draw::Canvas2D;
 use crate::draw::geometry::path::{FillRule, Path};
 use crate::draw::geometry::stroker::StrokeOptions;
-use crate::draw::painting::PaintContext;
+use crate::draw::painting::paint_context::blit_frame_image;
+use crate::draw::painting::{FrameImage, PaintContext};
 use crate::draw::resources::font::text::TextRenderService;
 use crate::draw::resources::image::{BitmapHandle, ImageService, blit_handle};
 use crate::draw::{BlendMode, Color, FontHandle, GradientDirection, Radius, Transform};
@@ -296,6 +297,15 @@ pub enum PaintOp {
         /// 图像目标边界。
         bounds: Rect,
         /// 是否保持比例适配目标边界。
+        fit: bool,
+    },
+    /// 绘制自包含的共享不可变 CPU 帧，不依赖图像服务句柄。
+    DrawFrameImage {
+        /// 保持到绘制命令释放的共享像素。
+        image: FrameImage,
+        /// 目标 logical 边界。
+        bounds: Rect,
+        /// 是否保持宽高比并居中。
         fit: bool,
     },
     /// 压入矩形裁剪。
@@ -625,6 +635,13 @@ impl DisplayList {
                         ctx.draw_image_fill(*handle, *bounds);
                     }
                 }
+                PaintOp::DrawFrameImage { image, bounds, fit } => {
+                    if *fit {
+                        ctx.draw_frame_image(image, *bounds);
+                    } else {
+                        ctx.draw_frame_image_fill(image, *bounds);
+                    }
+                }
                 // 状态类：裁剪、变换、透明度与混合模式。
                 PaintOp::PushClip { rect } => ctx.push_clip(*rect),
                 PaintOp::PushClipPath { path } => ctx.push_clip_path(path),
@@ -836,6 +853,9 @@ impl DisplayList {
                     if let Some(svc) = image_service {
                         blit_handle(svc, canvas, *handle, *bounds, *fit);
                     }
+                }
+                PaintOp::DrawFrameImage { image, bounds, fit } => {
+                    blit_frame_image(canvas, image, *bounds, *fit);
                 }
                 // 状态类：裁剪、变换、透明度与混合模式。
                 PaintOp::PushClip { rect } => canvas.push_clip(*rect),
