@@ -129,3 +129,38 @@ mod terminal_live_query {
         let _ = inspect_and_drive as fn(&TerminalSession) -> Result<(), uix::core::Error>;
     }
 }
+
+// 编译公开滚回合同：历史属于会话，滚动位置不属于共享会话。
+mod terminal_scrollback {
+    use uix::prelude::*;
+
+    fn inspect_history(session: &TerminalSession) -> Result<(), uix::core::Error> {
+        session.set_scrollback_limit(2_000)?;
+        let retained = session.scrollback_len();
+        let limit = session.scrollback_limit();
+        let oldest: Vec<TerminalRow> = session.scrollback_rows(0, 20);
+        let active_grid: Vec<TerminalRow> = session.rows();
+        let _ = (retained, limit, oldest, active_grid);
+        session.clear_scrollback();
+        Ok(())
+    }
+}
+
+// 编译会话模式查询、受模式控制的粘贴与原始输入的区别。
+mod terminal_input_modes {
+    use uix::prelude::*;
+
+    fn inspect_and_paste(session: &TerminalSession) -> Result<(), uix::core::Error> {
+        let modes: TerminalModes = session.modes();
+        let _ = (
+            modes.application_cursor_keys,
+            modes.cursor_visible,
+            modes.bracketed_paste,
+        );
+        // 由会话按 2004 模式添加包围并过滤非排版控制字符。
+        session.paste("第一行\n第二行")?;
+        // 原始 write 不过滤控制字节，也不自动添加粘贴包围。
+        session.write(b"\x03")?;
+        Ok(())
+    }
+}

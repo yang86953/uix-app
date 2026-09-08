@@ -3,8 +3,8 @@
 //!
 //! SMC 职责：本组件是纯投影与输入转发——不创建进程（会话必须显式传入）、
 //! 不解释命令、不维护本地输入行；回显与编辑全部由 PTY 中的程序完成。
-//! 与命令终端 `Terminal` 的关系：互不替代，本组件没有本地草稿、历史或
-//! 输出行，避免与程序自身回显重复。
+//! 与命令终端 `Terminal` 的关系：互不替代，本组件没有本地命令草稿或
+//! 命令历史；仅独立浏览会话持有的滚回行，避免与程序自身回显重复。
 
 use crate::core::{Constraints, Rect, Size};
 use crate::ui::widget_runtime::paint_context::PaintContext;
@@ -13,7 +13,7 @@ use crate::widget;
 use std::cell::Cell;
 
 use super::session::{TerminalSession, TerminalSessionStatus};
-use super::vt::{TerminalColorSpec, TerminalRow, TerminalSpanStyle};
+use super::vt::{ScrollbackState, TerminalColorSpec, TerminalRow, TerminalSpanStyle};
 use super::{ResolvedTerminalVisual, TerminalScreenVisual};
 
 widget! {
@@ -22,8 +22,16 @@ widget! {
         pub(crate) session: TerminalSession,
         pub(crate) focused: Cell<bool>,
         pub(crate) suppress_next_text: Cell<bool>,
+        #[snapshot(skip)]
+        pub(crate) alt_next_text: Cell<bool>,
         pub(crate) last_frame: Cell<Option<Rect>>,
         pub(crate) synced_grid: Cell<(u16, u16)>,
+        #[snapshot(skip)]
+        pub(crate) history_offset: Cell<usize>,
+        #[snapshot(skip)]
+        pub(crate) observed_history: Cell<ScrollbackState>,
+        #[snapshot(skip)]
+        pub(crate) wheel_fraction: Cell<f64>,
         // 声明布局独立于会话运行态。
         #[snapshot(skip)]
         pub(crate) view_style: crate::ui::theme::style::Style,
@@ -39,6 +47,16 @@ widget! {
 
     // 屏幕接收文本输入与输入法（中文等经 TextInput 进入 PTY）。
     accepts_text_input => (&self) -> bool { true }
+
+    // 只暴露当前视图的主屏历史滚动，不把共享会话变成共享导航状态。
+    viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
+        let offset = self.effective_history_offset();
+        let history = self.observed_history.get();
+        (!history.alternate && history.rows > 0).then_some((
+            0.0,
+            (history.rows - offset) as f32 * self.visual.geometry.row_height,
+        ))
+    }
 
     // 输入法候选窗定位到屏幕光标像素位置。
     text_input_cursor_rect => (&self) -> Rect {
@@ -66,25 +84,45 @@ widget! {
     // 事件入口：真实按键编码进 PTY；可打印文本与粘贴走 TextInput/Paste。
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
+            SystemEvent::Wheel { pos, delta } => {
+                if self.local_frame().contains(*pos) && self.scroll_history_wheel(delta.y) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::FocusIn => {
                 self.focused.set(true);
                 EventResult::Handled
             }
             SystemEvent::FocusOut => {
                 self.focused.set(false);
+                self.suppress_next_text.set(false);
+                self.alt_next_text.set(false);
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {
+                self.alt_next_text.set(false);
+                if self.browse_history_key(*key, *mods) {
+                    self.suppress_next_text.set(false);
+                    return EventResult::Handled;
+                }
                 let handled_as_control =
                     (*mods).intersects(KeyMod::CTRL | KeyMod::ALT | KeyMod::SUPER);
-                match encode_key(*key, *mods) {
+                match encode_key(*key, *mods, self.session.modes().application_cursor_keys) {
                     Some(bytes) => {
                         // 控制组合后的平台文本事件（如 Ctrl+A 附带 "a"）必须丢弃；
                         // 该文本只会紧随本次 KeyDown 到达，KeyUp 时统一清标记。
-                        if handled_as_control {
-                            self.suppress_next_text.set(true);
-                        }
+                        self.suppress_next_text.set(handled_as_control);
                         self.write_to_session(&bytes);
+                        EventResult::Handled
+                    }
+                    None if mods.contains(KeyMod::ALT)
+                        && !mods.intersects(KeyMod::CTRL | KeyMod::SUPER) => {
+                        // 布局相关可打印字符由平台 TextInput 决定，不能从 KeyCode
+                        // 猜字符；Alt 文本仍经同一事件添加 Meta 前缀。
+                        self.suppress_next_text.set(false);
+                        self.alt_next_text.set(true);
                         EventResult::Handled
                     }
                     None if handled_as_control => {
@@ -103,14 +141,31 @@ widget! {
                 // 控制组合的伴随文本只存在于按下与抬起之间；抬起即过期，
                 // 避免误杀后续输入（Agent 注入或无伴随文本的平台）。
                 self.suppress_next_text.set(false);
+                self.alt_next_text.set(false);
                 EventResult::NotHandled
             }
-            SystemEvent::TextInput { text } | SystemEvent::Paste { text } => {
-                if matches!(event, SystemEvent::TextInput { .. }) && self.suppress_next_text.replace(false) {
+            SystemEvent::TextInput { text } => {
+                if self.suppress_next_text.replace(false) {
                     return EventResult::Handled;
                 }
+                let alt = self.alt_next_text.replace(false);
                 if !text.is_empty() {
-                    self.write_to_session(text.as_bytes());
+                    if alt {
+                        let mut bytes = Vec::with_capacity(text.len() + 1);
+                        bytes.push(0x1b);
+                        bytes.extend_from_slice(text.as_bytes());
+                        self.write_to_session(&bytes);
+                    } else {
+                        self.write_to_session(text.as_bytes());
+                    }
+                }
+                EventResult::Handled
+            }
+            SystemEvent::Paste { text } => {
+                self.suppress_next_text.set(false);
+                self.alt_next_text.set(false);
+                if !text.is_empty() {
+                    self.paste_to_session(text);
                 }
                 EventResult::Handled
             }
@@ -187,7 +242,8 @@ widget! {
             frame.w - geometry.padding_x * 2.0,
             inner_h.max(0.0),
         ));
-        let snapshot = self.session.rows();
+        let history_offset = self.effective_history_offset();
+        let snapshot = self.session.viewport_rows(history_offset);
         for (row_index, row) in snapshot.iter().enumerate() {
             let y = grid_top + row_index as f32 * geometry.row_height;
             if y + geometry.row_height < grid_top {
@@ -202,6 +258,8 @@ widget! {
 
         // 焦点光标块：运行中且焦点可见时覆盖在光标格上。
         if self.focused.get()
+            && history_offset == 0
+            && self.session.modes().cursor_visible
             && tree.keyboard_focus_visible()
             && status == TerminalSessionStatus::Running
         {
@@ -346,7 +404,71 @@ fn with_alpha(color: crate::draw::Color, alpha: u8) -> crate::draw::Color {
 
 // 键盘事件到 PTY 字节序列的编码（xterm 惯例）。
 // 可打印字符不在此编码，交给紧随其后的 TextInput 事件。
-fn encode_key(key: KeyCode, mods: KeyMod) -> Option<Vec<u8>> {
+fn encode_key(key: KeyCode, mods: KeyMod, application_cursor: bool) -> Option<Vec<u8>> {
+    // Super 组合留在宿主快捷键层；不能伪装成无修饰的终端按键。
+    if mods.contains(KeyMod::SUPER) {
+        return None;
+    }
+    let modifier = 1
+        + u8::from(mods.contains(KeyMod::SHIFT))
+        + 2 * u8::from(mods.contains(KeyMod::ALT))
+        + 4 * u8::from(mods.contains(KeyMod::CTRL));
+    let cursor = match key {
+        KeyCode::Up => Some('A'),
+        KeyCode::Down => Some('B'),
+        KeyCode::Right => Some('C'),
+        KeyCode::Left => Some('D'),
+        KeyCode::Home => Some('H'),
+        KeyCode::End => Some('F'),
+        _ => None,
+    };
+    if let Some(final_char) = cursor {
+        return Some(if modifier > 1 {
+            format!("\x1b[1;{modifier}{final_char}").into_bytes()
+        } else {
+            format!(
+                "\x1b{}{final_char}",
+                if application_cursor { 'O' } else { '[' }
+            )
+            .into_bytes()
+        });
+    }
+    let function = match key {
+        KeyCode::F1 => Some('P'),
+        KeyCode::F2 => Some('Q'),
+        KeyCode::F3 => Some('R'),
+        KeyCode::F4 => Some('S'),
+        _ => None,
+    };
+    if let Some(final_char) = function {
+        return Some(if modifier > 1 {
+            format!("\x1b[1;{modifier}{final_char}").into_bytes()
+        } else {
+            format!("\x1bO{final_char}").into_bytes()
+        });
+    }
+    let code = match key {
+        KeyCode::Insert => Some(2),
+        KeyCode::Delete => Some(3),
+        KeyCode::PageUp => Some(5),
+        KeyCode::PageDown => Some(6),
+        KeyCode::F5 => Some(15),
+        KeyCode::F6 => Some(17),
+        KeyCode::F7 => Some(18),
+        KeyCode::F8 => Some(19),
+        KeyCode::F9 => Some(20),
+        KeyCode::F10 => Some(21),
+        KeyCode::F11 => Some(23),
+        KeyCode::F12 => Some(24),
+        _ => None,
+    };
+    if let Some(code) = code {
+        return Some(if modifier > 1 {
+            format!("\x1b[{code};{modifier}~").into_bytes()
+        } else {
+            format!("\x1b[{code}~").into_bytes()
+        });
+    }
     // Ctrl 组合：字母/数字/空格转控制字节。
     if mods.contains(KeyMod::CTRL) {
         let control = match key {
@@ -395,28 +517,6 @@ fn encode_key(key: KeyCode, mods: KeyMod) -> Option<Vec<u8>> {
         KeyCode::Backspace => b"\x7f".to_vec(),
         KeyCode::Tab => b"\t".to_vec(),
         KeyCode::Escape => b"\x1b".to_vec(),
-        KeyCode::Up => b"\x1b[A".to_vec(),
-        KeyCode::Down => b"\x1b[B".to_vec(),
-        KeyCode::Right => b"\x1b[C".to_vec(),
-        KeyCode::Left => b"\x1b[D".to_vec(),
-        KeyCode::Home => b"\x1b[H".to_vec(),
-        KeyCode::End => b"\x1b[F".to_vec(),
-        KeyCode::Insert => b"\x1b[2~".to_vec(),
-        KeyCode::Delete => b"\x1b[3~".to_vec(),
-        KeyCode::PageUp => b"\x1b[5~".to_vec(),
-        KeyCode::PageDown => b"\x1b[6~".to_vec(),
-        KeyCode::F1 => b"\x1bOP".to_vec(),
-        KeyCode::F2 => b"\x1bOQ".to_vec(),
-        KeyCode::F3 => b"\x1bOR".to_vec(),
-        KeyCode::F4 => b"\x1bOS".to_vec(),
-        KeyCode::F5 => b"\x1b[15~".to_vec(),
-        KeyCode::F6 => b"\x1b[17~".to_vec(),
-        KeyCode::F7 => b"\x1b[18~".to_vec(),
-        KeyCode::F8 => b"\x1b[19~".to_vec(),
-        KeyCode::F9 => b"\x1b[20~".to_vec(),
-        KeyCode::F10 => b"\x1b[21~".to_vec(),
-        KeyCode::F11 => b"\x1b[23~".to_vec(),
-        KeyCode::F12 => b"\x1b[24~".to_vec(),
         _ => return None,
     };
     // Shift+Tab 是反向 Tab（BackTab）。
