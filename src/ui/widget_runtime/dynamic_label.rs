@@ -126,18 +126,20 @@ impl DynamicLabel {
             .and_then(|s| s.width)
             .unwrap_or(constraints.max.w);
         let wrap_width = (available_width - pad.horizontal()).max(0.0);
-        // 动态文本与静态 Label 共用显式换行估算，避免布局仍按单行占位。
-        let estimated = crate::draw::resources::font::text_backend::estimate_text_metrics(
-            &text,
-            wrap_width,
-            fs,
-        );
-        // 显式行高优先；未声明时测量与绘制保持 1.5 倍字号行盒。
+        // 行盒与真实字体测量使用和绘制相同的最终样式。
         let line_height = self
             .style
             .as_ref()
             .and_then(|s| s.resolve_line_height(fs))
             .unwrap_or(fs * 1.5);
+        let estimated = super::measurement::text_metrics(
+            &text,
+            wrap_width,
+            fs,
+            line_height,
+            self.style.as_ref().and_then(|s| s.font_family.as_ref()),
+            true,
+        );
         let text_height = line_height * estimated.line_count as f32;
         let h = self
             .style

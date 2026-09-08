@@ -576,6 +576,11 @@ impl App {
                     return 1;
                 }
             };
+        // 布局与绘制借用同一服务；Rc 不复制字体资产、回退链或缓存。
+        let font_service = std::rc::Rc::new(font_service);
+        let _layout_fonts = crate::ui::widget_runtime::measurement::LayoutFontScope::enter(
+            std::rc::Rc::clone(&font_service),
+        );
         let mut platform_window = match create_app_window(
             platform.window_manager(),
             &self.title,
