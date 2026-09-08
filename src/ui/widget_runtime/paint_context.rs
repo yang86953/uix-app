@@ -100,7 +100,7 @@ fn elide_normalized_single_line_by<'a>(
 }
 
 // 使用调用方提供的保守度量函数规范化换行并执行单行省略。
-fn elide_single_line_cow_by<'a>(
+pub(crate) fn elide_single_line_cow_by<'a>(
     text: &'a str,
     max_width: f32,
     mut text_width: impl FnMut(&str) -> f32,

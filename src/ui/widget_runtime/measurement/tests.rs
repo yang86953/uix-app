@@ -134,3 +134,24 @@ fn explicit_newlines_empty_text_padding_and_line_height_remain_stable() {
     assert_eq!(label.measure(c).h, 130.0);
     assert_eq!(dynamic("", 20.0).measure(c).h, 30.0);
 }
+
+#[test]
+fn elided_label_keeps_single_line_height_and_full_semantics() {
+    let fonts = fonts();
+    let _scope = LayoutFontScope::enter(Rc::clone(&fonts));
+    let source = "computer-control-toolkit\n中文";
+    let label = dynamic(source, 14.0).elided();
+    let bounds = Constraints::new(Size::zero(), Size::new(95.0, 500.0), None);
+    assert_eq!(label.measure(bounds), Size::new(95.0, 21.0));
+    assert_eq!(label.semantic_text(), source);
+    for width in [1.0, 30.0, 95.0, 500.0] {
+        let value = crate::ui::widget_runtime::paint_context::elide_single_line_cow_by(
+            source, width, |text| actual(&fonts, text, 14.0, 0.0).0,
+        );
+        if let Some(value) = value {
+            assert!(!value.contains(['\r', '\n']));
+            assert!(actual(&fonts, &value, 14.0, 0.0).0 <= width);
+            if width == 95.0 { assert!(value.ends_with("…")); }
+        } else { assert_eq!(width, 1.0); }
+    }
+}

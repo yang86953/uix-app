@@ -197,7 +197,7 @@ pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNo
 pub use virtualization::{VirtualScroll, VirtualScrollBuilder};
 pub use widgets::combinators::{
     ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
-    button, canvas, column, column_fit, dynamic_label, embed, grid, input, label, row, scoped,
+    button, canvas, column, column_fit, dynamic_label, elided_label, embed, grid, input, label, row, scoped,
     scroll, show, space,
 };
 pub use widgets::window_chrome::{
