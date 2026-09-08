@@ -245,24 +245,30 @@ pub(crate) fn compute_grid_layout_into(
 
         let h_align = child.justify.unwrap_or(input.justify_items);
         let v_align = child.align.unwrap_or(input.align_items);
+        let minimum = Size::new(
+            finite_non_negative(child.min_size.w),
+            finite_non_negative(child.min_size.h),
+        );
         let pref = Size::new(
-            finite_non_negative(child.measured_size.w),
-            finite_non_negative(child.measured_size.h),
+            finite_non_negative(child.measured_size.w).max(minimum.w),
+            finite_non_negative(child.measured_size.h).max(minimum.h),
         );
         let margin = finite_insets(child.margin);
         let available_w = (cell_w - margin.horizontal()).max(0.0);
         let available_h = (cell_h - margin.vertical()).max(0.0);
 
-        let child_w = match h_align {
+        let child_w = (match h_align {
             JustifyContent::Start | JustifyContent::Center | JustifyContent::End => {
                 pref.w.min(available_w)
             }
             _ => available_w,
-        };
-        let child_h = match v_align {
+        })
+        .max(minimum.w);
+        let child_h = (match v_align {
             AlignItems::Start | AlignItems::Center | AlignItems::End => pref.h.min(available_h),
             AlignItems::Stretch => available_h,
-        };
+        })
+        .max(minimum.h);
         let child_x = match h_align {
             JustifyContent::Start => cell_x + margin.left,
             JustifyContent::Center => cell_x + margin.left + (available_w - child_w) * 0.5,

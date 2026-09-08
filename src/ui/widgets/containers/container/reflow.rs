@@ -3,8 +3,8 @@
 use std::borrow::Cow;
 
 use crate::core::{Constraints, Rect, Size};
-use crate::ui::layout::LayoutChild;
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::layout::{FlexDirection, LayoutChild};
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_flex_constraints;
 use crate::ui::widget_runtime::widget::WidgetTree;
 
 pub(super) fn row_children_at_allocated_width<'a>(
@@ -18,10 +18,11 @@ pub(super) fn row_children_at_allocated_width<'a>(
         if !rect.w.is_finite() || (rect.w - child.measured_size.w).abs() <= 0.01 {
             continue;
         }
-        let measured = child_from_tree_with_constraints(
+        let measured = child_from_tree_with_flex_constraints(
             child.id,
             tree,
             Constraints::loose(Size::new(rect.w.max(0.0), constraints.max.h)),
+            FlexDirection::Row,
         );
         if (measured.measured_size.h - child.measured_size.h).abs() > 0.01 {
             // 宽度仍使用第一轮 basis，避免 shrink 被重复分配；只更新依宽度变化的高度。

@@ -722,7 +722,11 @@ fn compute_wrapped(
         // 取所有行末端最大值，并把完全位于原点前的范围收敛为零。
         .fold(0.0, f32::max);
     // 自动交叉轴同样保留父级分配值，后续行账本再以自然尺寸作为下限。
-    let layout_cross = container_cross;
+    let layout_cross = if input.intrinsic_cross {
+        container_cross.max(natural_total_cross)
+    } else {
+        container_cross
+    };
     // 容器级 Stretch 同时承担多行交叉轴分布，让 wrap 开关不改变单行填充语义。
     let cross_align = input.align_items;
     // 实际未换行时应与非换行路径共享完整容器交叉轴行盒。

@@ -86,7 +86,7 @@ macro_rules! widget {
                 let mut c = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
+                        "flex_basis" | "minimum_size" | "flex_layout_axes" | "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "paint_after_children" | "overlay_entry" | "overlay_entry_for_surface" | "draw_margin" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
@@ -141,7 +141,7 @@ macro_rules! widget {
         $crate::__widget_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure measure_natural measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
+            [flex_basis minimum_size flex_layout_axes measure measure_natural measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -363,6 +363,15 @@ macro_rules! __widget_method_builder {
         fn measure($($p)*) -> $ret $body
     };
     // 生成组件独立声明的自然内容测量实现。
+    (flex_basis; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn flex_basis($($p)*) -> $ret $body
+    };
+    (minimum_size; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn minimum_size($($p)*) -> $ret $body
+    };
+    (flex_layout_axes; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn flex_layout_axes($($p)*) -> $ret $body
+    };
     (measure_natural; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         // 保留组件声明提供的自然测量窄契约签名。
         fn measure_natural($($p)*) -> $ret $body
@@ -537,6 +546,15 @@ macro_rules! __match_trait_method {
         fn measure($($p)*) -> $ret $body
     };
     // 将自然内容测量声明归入 WidgetLayout 实现。
+    (WidgetLayout, flex_basis, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn flex_basis($($p)*) -> $ret $body
+    };
+    (WidgetLayout, minimum_size, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn minimum_size($($p)*) -> $ret $body
+    };
+    (WidgetLayout, flex_layout_axes, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn flex_layout_axes($($p)*) -> $ret $body
+    };
     (WidgetLayout, measure_natural, ($($p:tt)*) -> $ret:ty $body:block) => {
         // 原样生成组件提供的自然尺寸实现。
         fn measure_natural($($p)*) -> $ret $body

@@ -8,7 +8,7 @@ mod reflow;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::scene::PicturePolicy;
 use crate::ui::widget_runtime::paint_context::PaintContext;
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_flex_constraints;
 use crate::widget;
 // 导入共享布局入口与内容外尺寸计算。
 use crate::ui::layout::engine::{BoxModel, FlexLayout, LayoutChild, content_size_from_children};
@@ -89,39 +89,26 @@ widget! {
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        let intrinsic = self.intrinsic_size();
-        let clamped = constraints.clamp(intrinsic);
-        let cached = self.cached_content_size.get();
-        let uses_content_floor = self.style.flex_grow <= 0.0;
-        // 仅 indefinite（None 或 0）轴用 cached（子项溢出尺寸）撑开 measure；
-        // 显式 >0 尺寸为定高/定宽，尊重 clamped，不被 cached 溢出撑大。
-        let w = if uses_content_floor
-            && cached.w > 0.0
-            && self.style.width.is_none_or(|w| w <= 0.0)
-        {
-            clamped.w.max(cached.w)
-        } else {
-            clamped.w
-        };
-        let h = if uses_content_floor
-            && cached.h > 0.0
-            && self.style.height.is_none_or(|h| h <= 0.0)
-        {
-            clamped.h.max(cached.h)
-        } else {
-            clamped.h
-        };
-        // 内容缓存只在父级对应轴无上界时允许撑出视口；有限约束下必须重新
-        // 收口，否则最大化阶段写入的缓存会让还原后的标题栏与内容区保持旧宽度。
-        constraints.clamp(Size::new(w, h))
+        constraints.clamp(self.intrinsic_size())
     }
 
     measure_natural => (&self, constraints: Constraints) -> Size {
-        // 自然测量显式绕过 flex-grow 的零 basis 策略。
-        constraints.clamp(self.natural_intrinsic_size())
+        constraints.clamp(self.intrinsic_size())
+    }
+
+    flex_basis => (&self, parent_direction: FlexDirection) -> Option<f32> {
+        self.box_model().flex_basis(parent_direction, self.style.flex_grow > 0.0, self.style.width, self.style.height)
+    }
+
+    minimum_size => (&self) -> Size {
+        self.box_model().border_box_size(Size::zero())
     }
 
     flex_grow => (&self) -> f32 { self.style.flex_grow }
+
+    flex_layout_axes => (&self) -> Option<(FlexDirection, AlignItems)> {
+        Some((convert_flex_direction(self.style.flex_direction), convert_align(self.style.align_items)))
+    }
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
@@ -297,7 +284,14 @@ impl Container {
                     child_id
                 );
             }
-            visible.then(|| child_from_tree_with_constraints(child_id, tree, child_constraints))
+            visible.then(|| {
+                child_from_tree_with_flex_constraints(
+                    child_id,
+                    tree,
+                    child_constraints,
+                    convert_flex_direction(self.style.flex_direction),
+                )
+            })
         }));
     }
 
@@ -352,7 +346,8 @@ impl Container {
         );
         // 已继承有限宽度的 Row 不能继续按无界主轴排布；Column 的自动高度仍由内容撑开。
         let main_axis_indefinite = !explicit_main_axis
-            && ((is_column && style.flex_grow <= 0.0)
+            && ((is_column && (style.flex_grow <= 0.0
+                || crate::ui::widget_runtime::tree_measure::container_height_is_flex_cross_content(children, tree)))
                 || main_axis_extent <= self.visual.layout.bootstrap_cross_axis_threshold);
         let cross_axis_indefinite = if matches!(
             style.flex_direction,
@@ -610,93 +605,19 @@ impl Container {
         Constraints::loose(Size::new(max_w, max_h))
     }
 
-    fn intrinsic_size(&self) -> Size {
-        let bh = self.style.border_width.horizontal();
-        let bv = self.style.border_width.vertical();
-        let cached = self.cached_content_size.get();
-        // flex_grow 子项必须以 0 为 basis，让父级分配确定空间；
-        // 否则窗口缩小后仍用上一轮 cached 内容高/宽，ScrollView 视口被撑满 → 无滚动条。
-        let grow = self.style.flex_grow > 0.0;
-        let content_w = if cached.w > 0.0 {
-            cached.w + self.style.padding.horizontal()
-        } else {
-            0.0
-        };
-        let content_h = if cached.h > 0.0 {
-            cached.h + self.style.padding.vertical()
-        } else {
-            0.0
-        };
-        // 显式 >0 是定高/定宽，尊重之，不被内容溢出撑大（内容溢出走 overflow）；
-        // None 或 0 视为 indefinite，用内容尺寸撑开（ScrollView 内 size(_,0) 撑开用）。
-        let effective_w = match self.style.width {
-            Some(w) if w > 0.0 => w,
-            _ => {
-                if grow {
-                    0.0
-                } else {
-                    content_w
-                }
-            }
-        };
-        let effective_h = match self.style.height {
-            Some(h) if h > 0.0 => h,
-            _ => {
-                if grow {
-                    0.0
-                } else {
-                    content_h
-                }
-            }
-        };
-        Size::new(effective_w + bh, effective_h + bv)
+    fn box_model(&self) -> BoxModel {
+        BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
     }
 
-    // 返回不受 flex-grow basis 归零影响的内容固有尺寸。
-    fn natural_intrinsic_size(&self) -> Size {
-        // 边框属于 Container 的 border-box 自然宽度。
-        let border_width = self.style.border_width.horizontal();
-        // 边框属于 Container 的 border-box 自然高度。
-        let border_height = self.style.border_width.vertical();
-        // 子布局缓存是当前组件拥有的内容尺寸事实。
-        let cached = self.cached_content_size.get();
-        // 有内容时把水平内边距计入自然 border-box。
-        let content_width = if cached.w > 0.0 {
-            // 缓存不含 Container 自己的内边距。
-            cached.w + self.style.padding.horizontal()
-        } else {
-            // 尚无内容缓存时保持稳定零宽 bootstrap。
-            0.0
-        };
-        // 有内容时把垂直内边距计入自然 border-box。
-        let content_height = if cached.h > 0.0 {
-            // 缓存不含 Container 自己的内边距。
-            cached.h + self.style.padding.vertical()
-        } else {
-            // 尚无内容缓存时保持稳定零高 bootstrap。
-            0.0
-        };
-        // 显式正宽仍优先于子树自然宽度。
-        let width = self
-            // 读取可选的声明宽度。
-            .style
-            // 选择严格为正的有效宽度。
-            .width
-            // 零值仍代表未指定轴。
-            .filter(|width| *width > 0.0)
-            // 未指定宽度时采用真实内容宽度。
-            .unwrap_or(content_width);
-        // 显式正高仍优先于子树自然高度。
-        let height = self
-            // 读取可选的声明高度。
-            .style
-            // 选择严格为正的有效高度。
-            .height
-            // 零值仍代表未指定轴。
-            .filter(|height| *height > 0.0)
-            // 未指定高度时采用真实内容高度。
-            .unwrap_or(content_height);
-        // 返回包含边框的完整自然 border-box 尺寸。
-        Size::new(width + border_width, height + border_height)
+    fn intrinsic_size(&self) -> Size {
+        self.box_model().preferred_size(
+            self.cached_content_size.get(),
+            self.style.width,
+            self.style.height,
+        )
     }
 }

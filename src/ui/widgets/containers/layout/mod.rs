@@ -18,7 +18,7 @@ use crate::draw::Color;
 use crate::ui::widget_runtime::paint_context::PaintContext;
 use crate::widget;
 // 引入共享子节点测量入口。
-use crate::ui::widget_runtime::tree_measure::child_from_tree_with_constraints;
+use crate::ui::widget_runtime::tree_measure::child_from_tree_with_flex_constraints;
 use crate::ui::widget_runtime::widget::WidgetTree;
 // 引入布局尺寸归一化入口。
 use crate::ui::layout::engine::normalize_layout_size;
@@ -61,11 +61,15 @@ widget! {
 
     flex_grow => (&self) -> f32 { self.visual.flex_grow }
 
+    flex_layout_axes => (&self) -> Option<(FlexDirection, crate::ui::layout::AlignItems)> {
+        Some((self.direction, crate::ui::layout::AlignItems::Stretch))
+    }
+
     measure_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
         // 复用布局壳统一的有限子节点测量入口。
-        measure_shell_children(frame, children, tree)
+        measure_shell_children(self.direction, frame, children, tree)
     }
 
     measure_children_into => (
@@ -76,7 +80,7 @@ widget! {
         output: &mut Vec<LayoutChild>
     ) {
         // 真实布局帧把测量快照直接写入树级工作区。
-        measure_shell_children_into(frame, children, tree, output);
+        measure_shell_children_into(self.direction, frame, children, tree, output);
     }
 
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
@@ -107,6 +111,7 @@ widget! {
 
 // 以当前区域尺寸收窄布局壳子节点测量约束。
 fn measure_shell_children(
+    direction: FlexDirection,
     // 接收父区域边框盒。
     frame: Rect,
     // 接收来源顺序组件标识。
@@ -115,12 +120,13 @@ fn measure_shell_children(
     tree: &WidgetTree,
 ) -> Vec<LayoutChild> {
     let mut output = Vec::with_capacity(children.len());
-    measure_shell_children_into(frame, children, tree, &mut output);
+    measure_shell_children_into(direction, frame, children, tree, &mut output);
     output
 }
 
 // 把布局壳子节点测量快照写入调用方拥有的工作区。
 fn measure_shell_children_into(
+    direction: FlexDirection,
     frame: Rect,
     children: &[WidgetId],
     tree: &WidgetTree,
@@ -139,7 +145,7 @@ fn measure_shell_children_into(
             // 复制标识供测量入口使用。
             .copied()
             // 从组件树读取尺寸、弹性与边距事实。
-            .map(|id| child_from_tree_with_constraints(id, tree, constraints)),
+            .map(|id| child_from_tree_with_flex_constraints(id, tree, constraints, direction)),
     );
 }
 
