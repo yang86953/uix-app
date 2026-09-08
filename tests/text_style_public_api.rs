@@ -133,3 +133,23 @@ fn inherited_column_width_and_reactive_wrap_policy_remeasure() {
     app.settle().unwrap();
     assert_eq!(app.snapshot().find("policy").unwrap().frame.h, 18.0);
 }
+
+#[test]
+fn inherited_row_width_constrains_text_without_a_local_width_override() {
+    let app = TestApp::new((208.0, 500.0), || {
+        let content = "从代码事实生成模块、组件与依赖；先预览，再由人确认合入。".to_owned();
+        column((row((
+            label("icon").width(80.0).flex_shrink(0.0),
+            uix!(r#"<Text automationId="inherited-row" fontSize="12">{content}</Text>"#)
+                .flex_shrink(1.0),
+        ))
+        .gap(8.0),))
+    });
+    let snapshot = app.snapshot();
+    let frame = snapshot.find("inherited-row").unwrap().frame;
+    assert_eq!(
+        frame.w, 120.0,
+        "finite inherited row frame is a real constraint"
+    );
+    assert!(frame.h > 21.0);
+}
