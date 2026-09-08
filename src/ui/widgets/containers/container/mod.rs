@@ -345,8 +345,14 @@ impl Container {
                     .is_some_and(|width| width.is_finite() && width > 0.0),
             )
         };
+        let is_column = matches!(
+            style.flex_direction,
+            crate::ui::theme::style::FlexDirection::Column
+                | crate::ui::theme::style::FlexDirection::ColumnReverse
+        );
+        // 已继承有限宽度的 Row 不能继续按无界主轴排布；Column 的自动高度仍由内容撑开。
         let main_axis_indefinite = !explicit_main_axis
-            && (style.flex_grow <= 0.0
+            && ((is_column && style.flex_grow <= 0.0)
                 || main_axis_extent <= self.visual.layout.bootstrap_cross_axis_threshold);
         let cross_axis_indefinite = if matches!(
             style.flex_direction,
