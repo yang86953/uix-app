@@ -514,43 +514,70 @@ impl WidgetTree {
 
     /// 绑定响应式 widget（DynamicLabel 等）的 State → 节点级失效。
     pub fn bind_reactive_widget_states(&mut self) {
-        use crate::ui::reactive::state::StateBindCaptureGuard;
-        use crate::ui::widget_runtime::dynamic_label::DynamicLabel;
         let handle = self.invalidation_handle();
         for &id in self.traverse().iter() {
-            let type_id = self
-                .get(id)
-                .map(|n| n.widget().as_any().type_id())
-                .unwrap_or(std::any::TypeId::of::<()>());
-            if type_id == std::any::TypeId::of::<DynamicLabel>() {
-                let paint_rect = self.get(id).and_then(|n| {
-                    let frame = n.frame();
-                    let dirty = n.dirty_rect(frame);
-                    let r = if dirty.w > 0.0 && dirty.h > 0.0 {
-                        dirty
-                    } else {
-                        frame
-                    };
-                    if r.w > 0.0 && r.h > 0.0 {
-                        self.clipped_visual_rect(id, r)
-                    } else {
-                        None
-                    }
-                });
-                if let Some(node) = self.get(id) {
-                    if let Some(dl) = node.widget().as_any().downcast_ref::<DynamicLabel>() {
-                        // 以可在 panic 时自动恢复的作用域探测闭包依赖。
-                        let capture = StateBindCaptureGuard::begin(id, handle.clone(), paint_rect);
-                        // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）。
-                        dl.probe_dependencies();
-                        // 动态文本会改变固有尺寸，正常完成后交接节点级布局订阅。
-                        let leases = capture.finish_layout();
-                        // 本轮集合整体替换旧依赖，防止重布局累积陈旧站点。
-                        node.replace_layout_state_binds(leases);
-                    }
-                }
+            // 兼容入口保持全树重探测语义，供测试驱动与外部直接调用。
+            self.rebind_dynamic_label_states(id, &handle);
+        }
+    }
+
+    /// 只重探测本轮布局失效子树内的动态标签依赖。
+    ///
+    /// 依赖闭包只在节点被布局失效（依赖 State 变化或子树重挂载）后才需要
+    /// 重新捕获；未失效标签复用既有租约。布局遍历可能因全帧绘制失效
+    /// （needs_full_frame）扩展到整树，但那不代表任何标签依赖变化，因此
+    /// 候选集合取布局根的子树闭包，而不是整个遍历顺序。
+    pub(crate) fn bind_reactive_widget_states_for_layout(
+        &self,
+        layout_roots: &std::collections::HashSet<WidgetId>,
+    ) {
+        let handle = self.invalidation_handle();
+        // 多个布局根的子树可能重叠（祖先与后代同时失效），用已见集合去重。
+        let mut seen = std::collections::HashSet::new();
+        let mut pending: Vec<WidgetId> = layout_roots.iter().copied().collect();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            self.rebind_dynamic_label_states(id, &handle);
+            if let Some(node) = self.get(id) {
+                pending.extend(node.children().iter().copied());
             }
         }
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            self.rebind_dynamic_label_states(id, &handle);
+            if let Some(node) = self.get(id) {
+                pending.extend(node.children().iter().copied());
+            }
+        }
+    }
+
+    // 对单个 DynamicLabel 节点重探测闭包依赖并整体替换布局租约。
+    fn rebind_dynamic_label_states(&self, id: WidgetId, handle: &InvalidationQueueHandle) {
+        use crate::ui::reactive::state::StateBindCaptureGuard;
+        use crate::ui::widget_runtime::dynamic_label::DynamicLabel;
+        let Some(node) = self.get(id) else {
+            return;
+        };
+        // 快速类型过滤避免非标签节点的下轋试错。
+        if node.widget().as_any().type_id() != std::any::TypeId::of::<DynamicLabel>() {
+            return;
+        }
+        let Some(dl) = node.widget().as_any().downcast_ref::<DynamicLabel>() else {
+            return;
+        };
+        // 以可在 panic 时自动恢复的作用域探测闭包依赖；布局租约不消费
+        // 绘制矩形（end_state_bind_capture 的 layout 分支不读取 rect）。
+        let capture = StateBindCaptureGuard::begin(id, handle.clone(), None);
+        // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）。
+        dl.probe_dependencies();
+        // 动态文本会改变固有尺寸，正常完成后交接节点级布局订阅。
+        let leases = capture.finish_layout();
+        // 本轮集合整体替换旧依赖，防止重布局累积陈旧站点。
+        node.replace_layout_state_binds(leases);
     }
 
     /// 将捕获根显式交接的结构性 State 绑定为 reconcile。

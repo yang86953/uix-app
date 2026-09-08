@@ -9,6 +9,14 @@ use crate::draw::{FontHandle, HAlign, VAlign};
 // 页面切换只需要覆盖近期可见控件；固定上限避免动态文本导致无界增长。
 const TEXT_LAYOUT_CACHE_CAPACITY: usize = 1024;
 
+// 全部缓存条目的总字节预算（文本字节 + 定位字形 + 行信息），与
+// `memory_usage` 同一口径；长文本历史按 FIFO 淘汰到预算内。
+const TEXT_LAYOUT_CACHE_BUDGET_BYTES: usize = 8 * 1024 * 1024;
+
+// 单条 admission 上限：超过该规模的布局不入缓存，调用方仍拿到正确布局，
+// 只是该次结果不参与跨帧复用，避免单条超长文本独占或频繁冲刷缓存。
+const TEXT_LAYOUT_CACHE_MAX_ENTRY_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct TextLayoutCacheKey {
     font: u32,
@@ -60,12 +68,27 @@ struct TextLayoutCacheEntry {
     layout: Arc<TextLayout>,
 }
 
+// 单条布局的字节占用，与 memory_usage 的统计口径一致。
+fn layout_entry_bytes(layout: &TextLayout) -> usize {
+    layout
+        .glyphs
+        .len()
+        .saturating_mul(std::mem::size_of::<
+            crate::draw::resources::font::text_backend::PositionedGlyph,
+        >())
+        .saturating_add(layout.lines.len().saturating_mul(std::mem::size_of::<
+            crate::draw::resources::font::text_backend::LineInfo,
+        >()))
+}
+
 #[derive(Default)]
 struct TextLayoutCacheState {
     entries: HashMap<TextLayoutCacheKey, TextLayoutCacheEntry>,
     insertion_order: VecDeque<TextLayoutCacheKey>,
     texts: HashMap<Arc<str>, TextIntern>,
     next_text_id: u64,
+    // 增量维护的总字节（文本 + 字形 + 行信息），驱动预算淘汰。
+    tracked_bytes: usize,
 }
 
 /// 线程安全的近期文本布局缓存。
@@ -116,15 +139,36 @@ impl TextLayoutCache {
                 return Arc::clone(&entry.layout);
             }
         }
-        while state.entries.len() >= TEXT_LAYOUT_CACHE_CAPACITY {
+        // 超大布局直接绕过缓存：返回正确结果但不参与跨帧复用。
+        let entry_bytes = layout_entry_bytes(&layout);
+        if entry_bytes > TEXT_LAYOUT_CACHE_MAX_ENTRY_BYTES {
+            return layout;
+        }
+        // 条目数量或总字节预算超限时按 FIFO 淘汰最旧条目；文本字节是否
+        // 需要计入取决于驻留表是否已有该文本，淘汰过程可能改变这一状态，
+        // 因此每轮重新求值。
+        loop {
+            let incoming_text_bytes = if state.texts.contains_key(text) {
+                0
+            } else {
+                text.len()
+            };
+            let incoming = entry_bytes.saturating_add(incoming_text_bytes);
+            if state.entries.len() < TEXT_LAYOUT_CACHE_CAPACITY
+                && state.tracked_bytes.saturating_add(incoming) <= TEXT_LAYOUT_CACHE_BUDGET_BYTES
+            {
+                break;
+            }
             let Some(oldest) = state.insertion_order.pop_front() else {
                 state.entries.clear();
                 state.texts.clear();
+                state.tracked_bytes = 0;
                 break;
             };
             let Some(entry) = state.entries.remove(&oldest) else {
                 continue;
             };
+            state.tracked_bytes = state.tracked_bytes.saturating_sub(layout_entry_bytes(&entry.layout));
             let remove_text = state
                 .texts
                 .get_mut(entry.text.as_ref())
@@ -133,8 +177,23 @@ impl TextLayoutCache {
                     intern.references == 0
                 });
             if remove_text {
+                state.tracked_bytes = state.tracked_bytes.saturating_sub(entry.text.len());
                 state.texts.remove(entry.text.as_ref());
             }
+        }
+        // 防御：极端长文本在空缓存下仍可能超过总预算，此时放弃入缓存。
+        let incoming_text_bytes = if state.texts.contains_key(text) {
+            0
+        } else {
+            text.len()
+        };
+        if state
+            .tracked_bytes
+            .saturating_add(entry_bytes)
+            .saturating_add(incoming_text_bytes)
+            > TEXT_LAYOUT_CACHE_BUDGET_BYTES
+        {
+            return layout;
         }
         // 淘汰可能释放了当前文本的最后一个布局，必须在淘汰后重新查询驻留表。
         let (text_id, shared_text) = if let Some((shared, intern)) = state.texts.get_key_value(text)
@@ -151,12 +210,14 @@ impl TextLayoutCache {
                     references: 0,
                 },
             );
+            state.tracked_bytes = state.tracked_bytes.saturating_add(shared.len());
             (text_id, shared)
         };
         let key = TextLayoutCacheKey::new(font, text_id, opts);
         if let Some(intern) = state.texts.get_mut(shared_text.as_ref()) {
             intern.references = intern.references.saturating_add(1);
         }
+        state.tracked_bytes = state.tracked_bytes.saturating_add(entry_bytes);
         state.insertion_order.push_back(key);
         state.entries.insert(
             key,
@@ -177,6 +238,7 @@ impl TextLayoutCache {
         state.insertion_order.clear();
         state.texts.clear();
         state.next_text_id = 0;
+        state.tracked_bytes = 0;
     }
 
     pub(super) fn memory_usage(&self) -> usize {

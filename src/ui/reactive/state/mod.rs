@@ -51,11 +51,38 @@ mod computed;
 // 保持既有响应式公开派生值入口不变。
 pub use computed::Computed;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum StateBindInvalidation {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum StateBindInvalidation {
     Paint,
     Layout,
 }
+
+// 订阅站点唯一身份：节点、窗口队列端点与失效种类。
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct PaintSiteKey {
+    widget_id: WidgetId,
+    // 以队列 Arc 地址区分窗口端点；站点自身持有队列强引用，地址在键存活期间稳定。
+    queue: usize,
+    invalidation: StateBindInvalidation,
+}
+
+impl PaintSiteKey {
+    // 由节点身份与队列句柄构造站点键。
+    pub(crate) fn new(
+        widget_id: WidgetId,
+        queue: &InvalidationQueueHandle,
+        invalidation: StateBindInvalidation,
+    ) -> Self {
+        Self {
+            widget_id,
+            queue: Arc::as_ptr(queue) as usize,
+            invalidation,
+        }
+    }
+}
+
+// 站点表按键索引，替代线性扫描，保证共享 State 的大规模订阅仍是 O(log N)。
+pub(crate) type PaintSiteMap = std::collections::BTreeMap<PaintSiteKey, PaintBindSite>;
 
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
@@ -299,33 +326,34 @@ fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Comput
 
 // 注册不会由节点租约自动释放的兼容绘制站点。
 fn bind_persistent_paint_site(
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 ) {
     if let Ok(mut guard) = sites.lock() {
-        if let Some(site) = guard.iter_mut().find(|site| {
-            site.widget_id == widget_id
-                && Arc::ptr_eq(&site.queue, &queue)
-                && site.invalidation == StateBindInvalidation::Paint
-        }) {
+        // 以精确站点键定位，避免共享 State 大规模订阅时的线性查找。
+        let key = PaintSiteKey::new(widget_id, &queue, StateBindInvalidation::Paint);
+        if let Some(site) = guard.get_mut(&key) {
             // 更新同一端点的最新绘制范围。
             site.rect = rect;
             // 公开直接绑定要求站点保持到状态源销毁。
             site.persistent = true;
         } else {
             // 创建首个永久兼容站点。
-            guard.push(PaintBindSite {
-                widget_id,
-                queue,
-                rect,
-                invalidation: StateBindInvalidation::Paint,
-                // 永久入口本身不计入节点租约。
-                leases: 0,
-                // 标记该站点不能因租约归零而删除。
-                persistent: true,
-            });
+            guard.insert(
+                key,
+                PaintBindSite {
+                    widget_id,
+                    queue,
+                    rect,
+                    invalidation: StateBindInvalidation::Paint,
+                    // 永久入口本身不计入节点租约。
+                    leases: 0,
+                    // 标记该站点不能因租约归零而删除。
+                    persistent: true,
+                },
+            );
         }
     }
 }
@@ -333,7 +361,7 @@ fn bind_persistent_paint_site(
 // 增加一份由实际节点拥有的精确绘制站点租约。
 fn retain_paint_site(
     // 接收状态源内部站点集合。
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     // 接收当前节点的代际身份。
     widget_id: WidgetId,
     // 接收所属窗口失效队列。
@@ -346,7 +374,7 @@ fn retain_paint_site(
 
 // 增加一份由实际节点拥有的布局站点租约。
 fn retain_layout_site(
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
     queue: InvalidationQueueHandle,
 ) {
@@ -355,7 +383,7 @@ fn retain_layout_site(
 
 // 按失效种类增加一份由实际节点拥有的响应式站点租约。
 fn retain_state_site(
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
@@ -363,32 +391,32 @@ fn retain_state_site(
 ) {
     // 只在站点集合可访问时登记。
     if let Ok(mut guard) = sites.lock() {
-        // 同一节点与队列共享一个站点并累计所有者数量。
-        if let Some(site) = guard.iter_mut().find(|site| {
-            site.widget_id == widget_id
-                && Arc::ptr_eq(&site.queue, &queue)
-                && site.invalidation == invalidation
-        }) {
+        // 以精确站点键定位同一节点与队列的既有站点。
+        let key = PaintSiteKey::new(widget_id, &queue, invalidation);
+        if let Some(site) = guard.get_mut(&key) {
             // 重绑时刷新最新布局范围。
             site.rect = rect;
             // 增加本次节点依赖持有。
             site.leases = site.leases.saturating_add(1);
         } else {
             // 首份节点租约创建可自动清理的站点。
-            guard.push(PaintBindSite {
-                // 保存代际化组件身份。
-                widget_id,
-                // 保存仍由节点租约负责释放的窗口队列。
-                queue,
-                // 保存当前精确绘制范围。
-                rect,
-                // 保存状态变化时需要投递的失效种类。
-                invalidation,
-                // 记录首份节点租约。
-                leases: 1,
-                // 节点捕获站点不具有永久所有权。
-                persistent: false,
-            });
+            guard.insert(
+                key,
+                PaintBindSite {
+                    // 保存代际化组件身份。
+                    widget_id,
+                    // 保存仍由节点租约负责释放的窗口队列。
+                    queue,
+                    // 保存当前精确绘制范围。
+                    rect,
+                    // 保存状态变化时需要投递的失效种类。
+                    invalidation,
+                    // 记录首份节点租约。
+                    leases: 1,
+                    // 节点捕获站点不具有永久所有权。
+                    persistent: false,
+                },
+            );
         }
     }
 }
@@ -396,7 +424,7 @@ fn retain_state_site(
 // 释放一份实际节点持有的精确绘制站点租约。
 fn release_paint_site(
     // 接收状态源内部站点集合。
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     // 接收正在离开的组件身份。
     widget_id: WidgetId,
     // 接收用于区分窗口端点的队列句柄。
@@ -407,7 +435,7 @@ fn release_paint_site(
 
 // 释放一份实际节点持有的布局站点租约。
 fn release_layout_site(
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
     queue: &InvalidationQueueHandle,
 ) {
@@ -416,29 +444,29 @@ fn release_layout_site(
 
 // 按失效种类释放一份实际节点持有的响应式站点租约。
 fn release_state_site(
-    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
     queue: &InvalidationQueueHandle,
     invalidation: StateBindInvalidation,
 ) {
     // 只在站点集合可访问时执行计数递减。
     if let Ok(mut guard) = sites.lock() {
-        // 找到同一节点和窗口端点。
-        if let Some(site) = guard.iter_mut().find(|site| {
-            site.widget_id == widget_id
-                && Arc::ptr_eq(&site.queue, queue)
-                && site.invalidation == invalidation
-        }) {
+        // 以精确站点键定位同一节点和窗口端点。
+        let key = PaintSiteKey::new(widget_id, queue, invalidation);
+        if let Some(site) = guard.get_mut(&key) {
             // 防御性饱和递减，析构路径不能因异常重复释放而下溢。
             site.leases = site.leases.saturating_sub(1);
+            // 与既有 retain 语义等价：非永久站点在租约归零时精确移除，
+            // 不再为每次释放重扫整张站点表。
+            if !site.persistent && site.leases == 0 {
+                guard.remove(&key);
+            }
         }
-        // 仅保留永久入口或仍有实际节点持有者的站点。
-        guard.retain(|site| site.persistent || site.leases != 0);
     }
 }
 
-fn fire_paint_bindings(sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>) {
-    let sites = sites.lock().ok().map(|guard| guard.clone());
+fn fire_paint_bindings(sites: &Arc<std::sync::Mutex<PaintSiteMap>>) {
+    let sites = sites.lock().ok().map(|guard| guard.values().cloned().collect::<Vec<_>>());
     let Some(sites) = sites else {
         return;
     };
@@ -748,7 +776,7 @@ pub struct State<T> {
     /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     pub(crate) reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（WidgetId + 队列句柄）。
-    pub(crate) paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    pub(crate) paint_sites: Arc<std::sync::Mutex<PaintSiteMap>>,
 }
 
 struct StateInner<T> {
@@ -786,7 +814,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     /// 创建代数为零、拥有独立稳定槽身份的响应式状态。
     pub fn new(value: T) -> Self {
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let paint_sites = Arc::new(std::sync::Mutex::new(PaintSiteMap::new()));
         Self {
             source: Arc::new(StateDependencySource {
                 inner: RwLock::new(StateInner {
@@ -939,7 +967,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     fn fire_invalidation(
         reconcile_sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
-        paint_sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+        paint_sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     ) {
         fire_paint_bindings(paint_sites);
         fire_reconcile_bindings(reconcile_sites);

@@ -378,8 +378,9 @@ impl WidgetTree {
         // 表格 capability 启用时才用最终 viewport 再刷新泛型单元格。
         #[cfg(feature = "table")]
         self.refresh_table_cell_children(order);
-        // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
-        self.bind_reactive_widget_states();
+        // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect。
+        // 只重探测本轮布局失效子树内的标签，未失效标签复用既有租约。
+        self.bind_reactive_widget_states_for_layout(&traversal.roots);
         self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
         self.sync_app_state_registry_from_lifecycle_states();

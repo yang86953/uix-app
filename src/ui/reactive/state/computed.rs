@@ -20,7 +20,7 @@ use crate::draw::renderer::InvalidationQueueHandle;
 use super::effect::{self, DependencySource, DependencySubscriber, EffectDependency, EffectLease};
 // 引入父模块拥有的依赖追踪和绘制辅助函数。
 use super::{
-    NEXT_STATE_SLOT, PaintBindSite, StateSlotId, bind_persistent_paint_site, collect_deps,
+    NEXT_STATE_SLOT, StateSlotId, bind_persistent_paint_site, collect_deps,
     fire_paint_bindings, state_bind_capture_active, state_capture_active, track_dep,
 };
 
@@ -66,7 +66,7 @@ struct ComputedInner<T> {
     // 唤醒等待前一轮重算结束的读取者。
     gate_ready: Condvar,
     // 保存精确 Paint 失效端点。
-    paint_sites: Arc<Mutex<Vec<PaintBindSite>>>,
+    paint_sites: Arc<Mutex<super::PaintSiteMap>>,
     // 保存对外稳定的派生槽身份。
     slot_id: StateSlotId,
 }
@@ -224,7 +224,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
                 // 建立等待前一轮计算完成的条件变量。
                 gate_ready: Condvar::new(),
                 // 建立私有精确 Paint 端点集合。
-                paint_sites: Arc::new(Mutex::new(Vec::new())),
+                paint_sites: Arc::new(Mutex::new(super::PaintSiteMap::new())),
                 // 分配对外稳定的派生槽身份。
                 slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
             }),

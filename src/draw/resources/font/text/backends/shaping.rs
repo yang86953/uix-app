@@ -17,41 +17,125 @@ use crate::draw::resources::font::text_backend::{
     // 结束布局类型导入。
 };
 
+// 一次遍历源文本建立的 cluster 字节起点到字符序号映射。
+struct ClusterCharTable {
+    // 与排序去重后的 cluster 起点平行的 chars() 序号；usize::MAX 表示该起点不是合法边界。
+    char_starts: Vec<usize>,
+    // 全文 chars().count()，构建时一次算清，避免逐字形重复扫描。
+    total_chars: usize,
+}
+
+// 对排序去重后的 cluster 起点一次建立字符序号映射。
+fn build_cluster_char_table(
+    // 原始文本提供 UTF-8 边界与字符序列。
+    text: &str,
+    // 已排序去重的 cluster 字节起点。
+    cluster_starts: &[usize],
+) -> ClusterCharTable {
+    // 预留与起点数量一致的平行数组。
+    let mut char_starts = Vec::with_capacity(cluster_starts.len());
+    // 已消费的 UTF-8 字节数只落在字符边界上。
+    let mut byte_pos = 0_usize;
+    // 已消费的 chars() 序号。
+    let mut char_pos = 0_usize;
+    // 惰性字符游标与起点同步推进。
+    let mut chars = text.chars();
+    // 起点已排序，顺序匹配每个起点的字符序号。
+    for &start in cluster_starts {
+        // 推进到不小于当前起点的边界；越界时停在文本末尾。
+        while byte_pos < start {
+            // 整字符推进保证 byte_pos 始终是合法边界。
+            match chars.next() {
+                // 消费一个完整 Unicode 标量。
+                Some(ch) => {
+                    // 累加该标量的 UTF-8 长度。
+                    byte_pos += ch.len_utf8();
+                    // 累加字符序号。
+                    char_pos += 1;
+                    // 结束标量消费。
+                }
+                // 文本耗尽时保持边界停在末尾。
+                None => break,
+                // 结束推进分支。
+            }
+            // 结束边界推进循环。
+        }
+        // 恰好落在边界上才能给出序号，否则标记为异常起点。
+        if byte_pos == start {
+            // 记录该起点的 chars() 序号。
+            char_starts.push(char_pos);
+            // 结束合法边界分支。
+        } else {
+            // 半个标量或越界起点沿用既有拒绝语义。
+            char_starts.push(usize::MAX);
+            // 结束异常边界分支。
+        }
+        // 结束起点匹配。
+    }
+    // 消费剩余标量得到全文总字符数。
+    let mut total_chars = char_pos;
+    // 逐个统计尾部标量。
+    for _ in chars {
+        // 计入总字符数。
+        total_chars += 1;
+        // 结束尾部统计。
+    }
+    // 返回可被全部字形复用的映射表。
+    ClusterCharTable {
+        // 保存平行序号数组。
+        char_starts,
+        // 保存全文总字符数。
+        total_chars,
+    }
+    // 结束映射表构建。
+}
+
 // 将 UTF-8 字节 cluster 转换为源文本 Unicode 标量区间。
 fn cluster_char_range(
-    // 原始文本用于验证 UTF-8 边界并计算字符下标。
-    text: &str,
+    // 原始文本长度用于末尾 cluster 的排他终点。
+    text_len: usize,
     // 排序去重后的 cluster 字节起点。
     cluster_starts: &[usize],
+    // 预先建立的起点到字符序号映射。
+    table: &ClusterCharTable,
     // 当前字形所属的 cluster 字节起点。
     cluster: usize,
     // 返回排他的字符区间，异常字体数据返回空值。
 ) -> Option<(usize, usize)> {
-    // cluster 必须落在合法 UTF-8 字符边界上。
-    if cluster > text.len() || !text.is_char_boundary(cluster) {
+    // 定位首个不小于当前起点的表项。
+    let index = cluster_starts.partition_point(|start| *start < cluster);
+    // 当前 cluster 必须是表中真实登记的合法起点。
+    let char_start = *table.char_starts.get(index)?;
+    // 未登记、越界或半个 UTF-8 标量的起点一律拒绝。
+    if cluster_starts.get(index) != Some(&cluster) || char_start == usize::MAX {
         // 拒绝传播异常字体返回的无效源索引。
         return None;
         // 结束无效 cluster 分支。
     }
-    // 查找严格大于当前起点的下一个 cluster。
-    let next_index = cluster_starts.partition_point(|start| *start <= cluster);
-    // 文本尾部作为最后一个 cluster 的排他终点。
-    let end_byte = cluster_starts
-        .get(next_index)
-        .copied()
-        .unwrap_or(text.len());
-    // 下一个起点也必须是合法边界且不能倒退。
-    if end_byte < cluster || !text.is_char_boundary(end_byte) {
-        // 拒绝形成逆序或半个 UTF-8 标量的区间。
-        return None;
-        // 结束无效终点分支。
-    }
-    // 将字节起点转换为 chars() 序号。
-    let char_start = text[..cluster].chars().count();
-    // 将字节终点转换为 chars() 排他序号。
-    let char_end = text[..end_byte].chars().count();
+    // 下一个 cluster 起点或文本尾部作为排他终点。
+    let char_end = match cluster_starts.get(index + 1) {
+        // 中间 cluster 复用相邻起点的序号。
+        Some(&next_start) => {
+            // 相邻起点也必须是合法边界，否则区间跨半个标量。
+            let next = table.char_starts[index + 1];
+            // 沿用既有对逆序或非法终点起点的拒绝语义。
+            if next == usize::MAX || next_start < cluster {
+                // 拒绝形成逆序或半个 UTF-8 标量的区间。
+                return None;
+                // 结束无效终点分支。
+            }
+            // 返回相邻起点的字符序号。
+            next
+            // 结束中间 cluster 分支。
+        }
+        // 末尾 cluster 以全文字符数为排他终点。
+        None => table.total_chars,
+        // 结束终点选择。
+    };
     // 有内容的 glyph cluster 至少覆盖一个源字符。
-    let char_end = char_end.max(char_start.saturating_add(1).min(text.chars().count()));
+    let char_end = char_end.max(char_start.saturating_add(1).min(table.total_chars));
+    // 文本长度防御：起点不可能越过文本末尾。
+    debug_assert!(cluster <= text_len);
     // 返回稳定的源字符区间。
     Some((char_start, char_end))
     // 结束 cluster 区间转换。
@@ -232,6 +316,8 @@ pub(super) fn layout_text_with_face(
     cluster_starts.sort_unstable();
     // 合并 ligature 或重排产生的重复 cluster。
     cluster_starts.dedup();
+    // 一次遍历文本建立 cluster 起点到字符序号的映射，供全部字形复用。
+    let cluster_table = build_cluster_char_table(text, &cluster_starts);
     // 预留最终定位字形，避免 shaping 后重复扩容。
     let mut glyphs = Vec::with_capacity(infos.len());
     // 预留按宽度形成的行信息。
@@ -314,10 +400,12 @@ pub(super) fn layout_text_with_face(
         for index in group_start..group_end {
             // 读取当前字形的源字符排他区间。
             let (char_index, char_end) = cluster_char_range(
-                // 传入原始文本。
-                text,
+                // 传入原始文本长度用于防御校验。
+                text.len(),
                 // 传入已排序 cluster 起点。
                 &cluster_starts,
+                // 传入一次构建的字符序号映射。
+                &cluster_table,
                 // 传入当前字形 cluster。
                 infos[index].cluster as usize,
                 // 无效 cluster 触发整个 shaping 回退。
