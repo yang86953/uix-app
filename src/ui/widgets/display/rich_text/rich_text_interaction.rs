@@ -171,6 +171,7 @@ impl RichText {
 
     // 先保留视觉布局给出的原始 shaping cluster 字符边界。
     fn raw_char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
+        let pos = self.content_point(pos);
         for line in lines {
             if pos.y < line.y || pos.y >= line.y + line.height {
                 continue;
@@ -303,6 +304,7 @@ impl RichText {
     }
 
     fn link_segment_at_pos(&self, pos: Point) -> Option<usize> {
+        let pos = self.content_point(pos);
         let lines = self.layout_lines.borrow();
         for line in lines.iter() {
             if pos.y < line.y || pos.y >= line.y + line.height {

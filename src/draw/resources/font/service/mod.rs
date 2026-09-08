@@ -336,7 +336,7 @@ impl FontService {
                 Err(error) => {
                     // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
                     // 启动期一次，经边界观察入口记录。
-                    crate::diagnostics::observe_boundary_error("fonts/system", &error);;
+                    crate::diagnostics::observe_boundary_error("fonts/system", &error);
                     Vec::new()
                 }
             };
@@ -365,7 +365,7 @@ impl FontService {
                 Err(error) => {
                     // 系统字体路径不可用回退空列表（CJK fallback 可能缺失）：
                     // 启动期一次，经边界观察入口记录。
-                    crate::diagnostics::observe_boundary_error("fonts/system", &error);;
+                    crate::diagnostics::observe_boundary_error("fonts/system", &error);
                     Vec::new()
                 }
             };
@@ -605,7 +605,6 @@ impl FontService {
         let Some(pixel_size) = tb::normalized_raster_pixel_size(pixel_size) else {
             return GlyphRaster::empty();
         };
-        let pixel_size = pixel_size as f32;
 
         if glyph_id == tb::WHITESPACE_GLYPH_ID {
             return GlyphRaster::empty();
@@ -620,7 +619,7 @@ impl FontService {
             return GlyphRaster::empty();
         }
 
-        let ps = pixel_size as u32;
+        let ps = pixel_size.to_bits();
         let key = GlyphCacheKey {
             font_idx: font.0,
             glyph_id,
@@ -839,7 +838,7 @@ impl FontService {
         font: &FontHandle,
         pixel_size: f32,
     ) -> Option<tb::LineMetrics> {
-        let pixel_size = tb::normalized_raster_pixel_size(pixel_size)? as f32;
+        let pixel_size = tb::normalized_raster_pixel_size(pixel_size)?;
         self.text_backend.horizontal_line_metrics(font, pixel_size)
     }
 

@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::resources::font::text_backend::estimate_text_metrics;
 use crate::widget;
 // 保存单行真实 shaping 字形，以便方向感知命中。
@@ -113,11 +113,11 @@ fn normalize_newlines(text: &str) -> Cow<'_, str> {
     Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
-fn addon_width(text: &str, visual: &InputVisual) -> f32 {
+fn addon_width(text: &str, visual: &InputVisual, font_size: f32) -> f32 {
     if text.is_empty() {
         0.0
     } else {
-        estimate_text_metrics(text, f32::INFINITY, visual.typography.addon_font_size).max_line_width
+        estimate_text_metrics(text, f32::INFINITY, font_size).max_line_width
             + visual.layout.addon_horizontal_padding
     }
 }
@@ -177,6 +177,12 @@ widget! {
         #[snapshot(skip)]
         /// View DSL 传入的 Flex 收缩因子。
         view_flex_shrink: f32,
+        #[snapshot(skip)]
+        view_style: Option<crate::ui::theme::style::Style>,
+        #[snapshot(skip)]
+        text_origin: Cell<Point>,
+        #[snapshot(skip)]
+        painted_line_height: Cell<f32>,
         pending_change: RefCell<Option<String>>,
         pending_submit: RefCell<Option<String>>,
         /// 清除按钮区域（用于命中检测）。
@@ -230,9 +236,9 @@ widget! {
                     return EventResult::Handled;
                 }
                 let ci = if self.textarea {
-                    self.char_at_xy(pos.x - self.visual.layout.horizontal_padding, pos.y)
+                    self.char_at_xy(pos.x - self.text_origin.get().x, pos.y - self.text_origin.get().y)
                 } else {
-                    let text_x = pos.x - self.visual.layout.horizontal_padding
+                    let text_x = pos.x - self.text_origin.get().x
                         + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
                 }
@@ -251,9 +257,9 @@ widget! {
             SystemEvent::PointerMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let ci = if self.textarea {
-                    self.char_at_xy(pos.x - self.visual.layout.horizontal_padding, pos.y)
+                    self.char_at_xy(pos.x - self.text_origin.get().x, pos.y - self.text_origin.get().y)
                 } else {
-                    let text_x = pos.x - self.visual.layout.horizontal_padding
+                    let text_x = pos.x - self.text_origin.get().x
                         + self.scroll_offset_x.get();
                     self.char_at_x(text_x)
                 }
@@ -450,20 +456,22 @@ widget! {
         } else {
             self.visual.chrome.status_message_height.min(frame.h.max(0.0))
         };
-        let control_height = if self.textarea {
-            (frame.h - message_height).max(0.0)
-        } else {
-            input_height(self.input_size).min((frame.h - message_height).max(0.0))
-        };
+        let control_height = (frame.h - message_height).max(0.0);
+        let previous_font = *ctx.font();
+        let font = crate::ui::text_family::resolve(
+            ctx, self.view_style.as_ref().and_then(|style| style.font_family.as_ref()),
+        );
+        ctx.set_font(font);
         let control_frame = Rect::new(frame.x, frame.y, frame.w, control_height);
         // 单行、多行与状态消息共享同帧一次 UIX 主题解析。
-        let visual = self.visual.resolve(ctx.tokens());
+        let visual = self.resolved_visual(ctx.tokens());
         if self.textarea {
             self.render_textarea(control_frame, ctx, visual);
         } else {
             self.render_singleline(control_frame, ctx, visual);
         }
         self.render_status_message(frame, control_height, ctx, visual);
+        ctx.set_font(previous_font);
     }
 
     draw_margin => (&self) -> f32 {
@@ -482,6 +490,7 @@ widget! {
 mod ext;
 mod input_render;
 mod methods;
+mod typography;
 // 声明 Input 的 UIX 静态视觉与主题解析模块。
 mod presentation;
 

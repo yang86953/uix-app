@@ -278,7 +278,9 @@ impl FontService {
             }
 
             let seg_metrics = self.text_backend.horizontal_line_metrics(&seg.font, fs);
-            let seg_ascent = seg_metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+            let seg_ascent = seg_metrics
+                .map(|m| m.baseline_in_line_box(line_h))
+                .unwrap_or(fs * 0.8 + (line_h - fs) * 0.5);
 
             // 用 &str 切片代替 String 分配
             let seg_text = &text[seg.byte_start..seg.byte_end];
@@ -615,7 +617,7 @@ impl FontService {
         let line_h = if opts.line_height.is_finite() && opts.line_height > 0.0 {
             opts.line_height
         } else {
-            fs * 1.5
+            tb::normal_line_height(fs)
         };
         let has_max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let do_wrap = has_max_w && opts.word_wrap;
@@ -646,7 +648,9 @@ impl FontService {
         }
 
         let primary_metrics = self.text_backend.horizontal_line_metrics(font, fs);
-        let primary_ascent = primary_metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+        let primary_ascent = primary_metrics
+            .map(|m| m.baseline_in_line_box(line_h))
+            .unwrap_or(fs * 0.8 + (line_h - fs) * 0.5);
 
         let seg_opts = TextLayoutOptions {
             max_width: f32::MAX,

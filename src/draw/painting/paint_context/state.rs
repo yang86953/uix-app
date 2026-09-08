@@ -408,7 +408,7 @@ impl<'a> PaintContext<'a> {
         self.text.measure_text(text, font_size)
     }
 
-    /// 单行行盒高度（ascent + descent）。
+    /// Default line box height, shared by layout and `draw_text`.
     pub fn line_box_height(&mut self, font_size: f32) -> f32 {
         self.text.line_box_height(font_size)
     }
