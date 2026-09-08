@@ -219,3 +219,38 @@ fn growing_cross_axis_respects_padding_border_and_explicit_size() {
         assert!((frame.y + frame.h / 2.0 - 80.0).abs() < 0.01, "{frame:?}");
     }
 }
+
+#[test]
+fn window_drag_spacer_forwards_basis_without_shrinking_brand_after_resize() {
+    let mut app = TestApp::new((1000.0, 56.0), || {
+        uix!(
+            r#"<Container direction="row" gap="16px" align="center">
+            <WindowDragRegion height="56px" automationId="brand">
+                <Container direction="row" height="56px" gap="10px" align="center">
+                    <Container width="40px" height="25px" />
+                    <Text fontSize="14px" automationId="brand-title">智协</Text>
+                </Container>
+            </WindowDragRegion>
+            <Container width="450px" height="36px" automationId="search" />
+            <WindowDragRegion flexGrow={1} height="56px" automationId="spacer">
+                <Container flexGrow={1} height="56px" />
+            </WindowDragRegion>
+            <Container width="138px" height="28px" automationId="controls" />
+        </Container>"#
+        )
+    });
+    for width in [1000.0, 1600.0, 900.0, 1440.0, 900.0] {
+        app.resize(width, 56.0).unwrap();
+        app.settle().unwrap();
+        let snapshot = app.snapshot();
+        let title = snapshot.find("brand-title").unwrap().frame;
+        assert_eq!(title.h, 21.0, "Brand wrapped at width {width}: {title:?}");
+        for (id, expected) in [("brand", 78.0), ("search", 450.0), ("controls", 138.0)] {
+            let frame = snapshot.find(id).unwrap().frame;
+            assert!(
+                (frame.w - expected).abs() < 0.01,
+                "{id} shrunk despite available grow space at {width}: {frame:?}"
+            );
+        }
+    }
+}
