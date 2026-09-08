@@ -1,64 +1,89 @@
-// ============================================================================
-// platform/linux/system_info/fonts.rs — Font discovery via fontconfig
-// ============================================================================
-//
-// Uses fc-match / fontconfig to discover ordered system-default and CJK fonts.
-// ============================================================================
+//! Linux fontconfig discovery. A collection file and its face index form one
+//! identity; dropping the index silently changes regional CJK glyph forms.
+use crate::platform::services::SystemFontSource;
 
-/// 用 `fc-match` 查询首个字体路径；轮廓能力统一由 FontService 的真实栅格探针判断。
-pub(crate) fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
-    let output = std::process::Command::new("fc-match")
-        .args(["-f", "%{file}\n", pattern])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+const MAX_CANDIDATES: usize = 32;
+
+// Stable output includes an index on every row. Malformed metadata is rejected,
+// never reinterpreted as face zero. Spaces in file names remain intact.
+fn parse_font_sources(output: &str) -> Vec<SystemFontSource> {
+    let mut sources = Vec::new();
+    for line in output.lines() {
+        let Some((path, index)) = line.rsplit_once('\t') else {
+            continue;
+        };
+        if path.is_empty() || path == "(null)" {
+            continue;
+        }
+        let Ok(face_index) = index.trim().parse::<u32>() else {
+            continue;
+        };
+        let source = SystemFontSource {
+            path: path.to_owned(),
+            face_index,
+        };
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+        if sources.len() >= MAX_CANDIDATES {
+            break;
+        }
     }
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() || path == "(null)" {
-        return None;
-    }
-    Some(path)
+    sources
 }
 
-/// 使用 fontconfig 的排序结果收集同一模式下的全部字体路径。
-fn probe_font_paths_via_fc_match(pattern: &str) -> Vec<String> {
-    // 要求 fontconfig 返回按匹配优先级排列的完整候选，而不是只取可能缺字的首项。
-    let output = std::process::Command::new("fc-match")
-        // `-s` 保留排序列表，稳定格式只输出文件路径。
-        .args(["-s", "-f", "%{file}\n", pattern])
-        // 同步等待短生命周期的字体发现进程完成。
+fn probe_font_sources(pattern: &str, sorted: bool) -> Vec<SystemFontSource> {
+    let mut command = std::process::Command::new("fc-match");
+    if sorted {
+        command.arg("-s");
+    }
+    let output = command
+        .args(["-f", "%{file}\t%{index}\n", pattern])
         .output();
-    // 命令不可用时保持平台能力缺失语义。
     let Ok(output) = output else {
-        // 空列表允许 FontService 使用最终 bitmap fallback。
         return Vec::new();
     };
-    // fontconfig 失败时不得解析不完整的标准输出。
     if !output.status.success() {
-        // 返回空列表保留调用方既有失败处理。
         return Vec::new();
     }
-    // 把 fontconfig 的逐行路径转成拥有所有权的候选列表。
-    String::from_utf8_lossy(&output.stdout)
-        // 每一行对应一个按优先级排序的字体文件。
-        .lines()
-        // 清除命令输出可能携带的首尾空白。
-        .map(str::trim)
-        // 忽略空行与 fontconfig 的空值占位。
-        .filter(|path| !path.is_empty() && *path != "(null)")
-        // 平台发现层不猜测字体轮廓能力；FontService 会用当前文本后端真实尝试并继续回退。
-        // 候选必须独立拥有路径，不能借用命令输出缓冲区。
-        .map(str::to_owned)
-        // 收集后交给跨模式去重逻辑。
-        .collect()
+    parse_font_sources(&String::from_utf8_lossy(&output.stdout))
 }
 
-/// 在 Linux 上返回 fontconfig 排序后的默认字体候选，让 FontService 跳过空栅格字体。
-pub(crate) fn probe_system_default_font_paths() -> Vec<String> {
-    // 有界候选避免异常 fontconfig 配置放大启动探测成本。
-    const MAX_CANDIDATES: usize = 32;
-    // 桌面显式字体优先，其后才是通用 sans 与保底 serif。
+pub(crate) fn probe_font_source_via_fc_match(pattern: &str) -> Option<SystemFontSource> {
+    probe_font_sources(pattern, false).into_iter().next()
+}
+
+pub(crate) fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
+    probe_font_source_via_fc_match(pattern).map(|source| source.path)
+}
+
+fn collect_sources(patterns: impl IntoIterator<Item = String>) -> Vec<SystemFontSource> {
+    let mut sources = Vec::new();
+    for pattern in patterns {
+        for source in probe_font_sources(&pattern, true) {
+            if !sources.contains(&source) {
+                sources.push(source);
+            }
+            if sources.len() >= MAX_CANDIDATES {
+                return sources;
+            }
+        }
+    }
+    sources
+}
+
+// Compatibility path-only APIs intentionally cannot identify collection members.
+fn unique_paths(sources: Vec<SystemFontSource>) -> Vec<String> {
+    let mut paths = Vec::new();
+    for source in sources {
+        if !paths.contains(&source.path) {
+            paths.push(source.path);
+        }
+    }
+    paths
+}
+
+pub(crate) fn probe_system_default_font_sources() -> Vec<SystemFontSource> {
     let mut patterns = Vec::new();
     if let Some(desktop_font) = probe_desktop_font() {
         patterns.push(desktop_font);
@@ -72,19 +97,11 @@ pub(crate) fn probe_system_default_font_paths() -> Vec<String> {
         .into_iter()
         .map(str::to_owned),
     );
+    collect_sources(patterns)
+}
 
-    let mut paths = Vec::new();
-    for pattern in patterns {
-        for path in probe_font_paths_via_fc_match(&pattern) {
-            if !paths.iter().any(|known| known == &path) {
-                paths.push(path);
-            }
-            if paths.len() >= MAX_CANDIDATES {
-                return paths;
-            }
-        }
-    }
-    paths
+pub(crate) fn probe_system_default_font_paths() -> Vec<String> {
+    unique_paths(probe_system_default_font_sources())
 }
 
 /// 探测桌面环境配置的系统界面字体（GNOME/KDE）。
@@ -136,46 +153,70 @@ fn probe_desktop_font() -> Option<String> {
     None
 }
 
-/// 探测系统上支持中文（CJK）的字体路径。
-///
-/// 优先用 `:lang=zh` 找含中日韩统一表意文字的字形回退字体。
-/// 适用于主字体不含中文时需要找回退字体的场景。
-pub(crate) fn probe_cjk_font() -> Option<String> {
-    // 兼容单候选调用方时沿用完整有序列表的首项。
-    probe_cjk_font_paths().into_iter().next()
+// Preserve the existing fontconfig language/family policy; only retain the face
+// it actually selected. Do not force a font family or rewrite OS configuration.
+pub(crate) fn probe_cjk_font_sources() -> Vec<SystemFontSource> {
+    collect_sources(
+        [
+            "sans-serif:lang=zh-cn:scalable=true",
+            "sans-serif:lang=zh:scalable=true",
+            "serif:lang=zh-cn:scalable=true",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
 }
 
-/// 探测系统上按优先级排列的 CJK 字体候选。
 pub(crate) fn probe_cjk_font_paths() -> Vec<String> {
-    // 限制启动阶段保留的候选数量，避免异常 fontconfig 配置放大内存和失败探测成本。
-    const MAX_CANDIDATES: usize = 32;
-    // zh-cn 在常见 fontconfig 配置中比宽泛 zh 更可靠地把真实 CJK 字体排在首位。
-    const PATTERNS: [&str; 3] = [
-        // 优先选择简体中文无衬线 UI 字体。
-        "sans-serif:lang=zh-cn:scalable=true",
-        // 兼容只登记宽泛中文语言标签的系统字体。
-        "sans-serif:lang=zh:scalable=true",
-        // 无衬线候选均不可用时允许中文衬线字体回退。
-        "serif:lang=zh-cn:scalable=true",
-    ];
-    // 按模式与 fontconfig 排序共同维护稳定候选顺序。
-    let mut paths = Vec::new();
-    // 逐个查询从具体到宽泛的 CJK 模式。
-    for pattern in PATTERNS {
-        // 保留当前模式下的全部后续候选，让 FontService 能跳过缺字首项。
-        for path in probe_font_paths_via_fc_match(pattern) {
-            // 同一字体可能被多个模式返回，只允许进入候选列表一次。
-            if !paths.iter().any(|known| known == &path) {
-                // 新候选保持 fontconfig 的原始优先级。
-                paths.push(path);
-            }
-            // 达到上限后停止继续解析低优先级候选。
-            if paths.len() >= MAX_CANDIDATES {
-                // 返回已经按优先级去重的有界列表。
-                return paths;
-            }
-        }
+    unique_paths(probe_cjk_font_sources())
+}
+
+pub(crate) fn probe_cjk_font() -> Option<String> {
+    probe_cjk_font_sources()
+        .into_iter()
+        .next()
+        .map(|source| source.path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_members_remain_distinct_and_malformed_indices_are_rejected() {
+        let sources = parse_font_sources(
+            "/fonts/Noto CJK.ttc\t2\n/fonts/Noto CJK.ttc\t0\n/fonts/Noto CJK.ttc\t2\n/fonts/latin.ttf\t0\n/fonts/bad.ttc\tno\n/fonts/missing-index.ttc\n/fonts/negative.ttc\t-1\n(null)\t0\n\t0\n",
+        );
+        assert_eq!(
+            sources,
+            vec![
+                SystemFontSource {
+                    path: "/fonts/Noto CJK.ttc".into(),
+                    face_index: 2
+                },
+                SystemFontSource {
+                    path: "/fonts/Noto CJK.ttc".into(),
+                    face_index: 0
+                },
+                SystemFontSource {
+                    path: "/fonts/latin.ttf".into(),
+                    face_index: 0
+                },
+            ]
+        );
+        assert_eq!(
+            unique_paths(sources),
+            ["/fonts/Noto CJK.ttc", "/fonts/latin.ttf"]
+        );
     }
-    // 返回不足上限的完整去重候选列表。
-    paths
+
+    #[test]
+    fn candidate_budget_is_preserved_with_many_faces_in_one_file() {
+        let output = (0..100)
+            .map(|index| format!("/fonts/collection.ttc\t{index}\n"))
+            .collect::<String>();
+        let sources = parse_font_sources(&output);
+        assert_eq!(sources.len(), MAX_CANDIDATES);
+        assert_eq!(sources.last().unwrap().face_index, 31);
+    }
 }

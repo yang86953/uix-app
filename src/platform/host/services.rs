@@ -11,9 +11,27 @@ use super::capabilities::StatusLevel;
 // 保持公开 services 路径，同时复用 Platform System 的唯一文件系统目录类型。
 pub use crate::platform::system::filesystem::SpecialDir;
 
+/// 一个完整字体文件中的具体字体面；路径相同的集合成员仍是不同字体。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SystemFontSource {
+    /// 字体文件路径；集合文件必须完整加载，不能按 face offset 截断。
+    pub path: String,
+    /// 从零开始的 TTC/OTC 面索引；普通 TTF/OTF 为零。
+    pub face_index: u32,
+}
+
+impl From<String> for SystemFontSource {
+    fn from(path: String) -> Self {
+        Self {
+            path,
+            face_index: 0,
+        }
+    }
+}
+
 /// Drawing 字体发现所需的最小平台协议。
 ///
-/// OS 实现可以同时提供更多系统信息，但 Drawing 只能依赖这四项字体能力。
+/// OS 实现可以同时提供更多系统信息，但 Drawing 只能依赖字体发现能力。
 pub trait FontSystemInfo {
     /// 返回按优先级排列的默认字体路径。
     fn default_font_paths(&self) -> Result<Vec<String>>;
@@ -26,6 +44,25 @@ pub trait FontSystemInfo {
 
     /// 执行受限的最后回退扫描。
     fn scan_fallback_font_path(&self) -> Option<String>;
+
+    /// 返回包含集合面索引的默认候选。旧 Provider 继续使用第零面。
+    fn default_font_sources(&self) -> Result<Vec<SystemFontSource>> {
+        self.default_font_paths()
+            .map(|paths| paths.into_iter().map(Into::into).collect())
+    }
+
+    /// 返回包含集合面索引的 CJK 候选，不得仅按文件路径去重。
+    fn probe_cjk_font_sources(&self) -> Vec<SystemFontSource> {
+        self.probe_cjk_font_paths()
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
+
+    /// 按字体族返回具体集合成员。
+    fn probe_family_font_source(&self, family: &str) -> Option<SystemFontSource> {
+        self.probe_family_font_path(family).map(Into::into)
+    }
 }
 
 /// UI 消费的中立 Toast 值，不持有系统通知 Provider。
