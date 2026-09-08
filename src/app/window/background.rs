@@ -69,10 +69,11 @@ fn run_inner(
     let mut fonts = FontService::new();
     let bundle = config.fonts.unwrap_or_else(|| {
         // CPU 场景呈现需要真实字形资源；位图测量后备不能冒充可绘制字体。
-        // 默认正文使用仓库已有 OFL 字体，避免访问桌面或先装 Lucide 污染正文索引。
+        // 默认正文使用仓库集成的 LXGW WenKai（OFL，见 assets/fonts/LXGWWenKai-OFL.txt），
+        // 避免访问桌面或先装 Lucide 污染正文索引。
         crate::draw::FontBundle::from_static(
-            "Noto Sans CJK SC",
-            include_bytes!("../../../assets/fonts/NotoSansCJKsc-Regular.otf"),
+            "LXGW WenKai",
+            include_bytes!("../../../assets/fonts/LXGWWenKai-Regular.ttf"),
         )
     });
     fonts.install_font_bundle(&bundle)?;
