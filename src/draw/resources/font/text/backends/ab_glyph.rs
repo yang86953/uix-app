@@ -79,12 +79,12 @@ impl FontData {
 
 impl FontSlot {
     /// 从即将由本槽位唯一持有的数据同时构造两个借用字体面。
-    fn parse(handle: FontHandle, data: FontData) -> Result<Self, Error> {
+    fn parse(handle: FontHandle, data: FontData, face_index: u32) -> Result<Self, Error> {
         // 两个解析器必须在同一封闭构造器内借用同一份数据，调用者无法错配来源。
-        let font = FontRef::try_from_slice_and_index(data.as_slice(), 0)
+        let font = FontRef::try_from_slice_and_index(data.as_slice(), face_index)
             .map_err(|error| Error::new(Errc::FormatError, format!("ab_glyph: {error:?}")))?;
         // rustybuzz 只借用同一份稳定字节；解析失败保留既有逐字符回退语义。
-        let shaping_face = rustybuzz::Face::from_slice(data.as_slice(), 0).map(|face| {
+        let shaping_face = rustybuzz::Face::from_slice(data.as_slice(), face_index).map(|face| {
             // SAFETY: data 随槽位持有且晚于 shaping_face 释放，底层 Arc/mmap 地址稳定。
             unsafe { std::mem::transmute::<rustybuzz::Face<'_>, rustybuzz::Face<'static>>(face) }
         });
@@ -189,13 +189,20 @@ impl AbGlyphBackend {
 
 impl TextBackend for AbGlyphBackend {
     fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
-        // 对 TTC/OTC 保留完整文件并选择首个 face。集合内表可跨 face 共享，
+        self.load_font_index(data, 0)
+    }
+
+    fn load_font_index(&mut self, data: &[u8], face_index: u32) -> Result<FontHandle, Error> {
+        // 对 TTC/OTC 保留完整文件并选择调用者指定的 face。集合内表可跨 face 共享，
         // 不能把 offset 区间切成伪 TTF 后再解析。
         let id = self.fonts.len() as u32;
         let data: Arc<[u8]> = Arc::from(data);
         // 槽位构造器从自有 Arc 内同时建立两个字体面，避免来源错配。
-        self.fonts
-            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
+        self.fonts.push(FontSlot::parse(
+            FontHandle::new(id),
+            FontData::Owned(data),
+            face_index,
+        )?);
         Ok(FontHandle::new(id))
     }
 
@@ -203,8 +210,11 @@ impl TextBackend for AbGlyphBackend {
         let id = self.fonts.len() as u32;
         let data: Arc<[u8]> = Arc::from(data);
         // 消费调用方 Vec 后由同一安全构造器封闭自引用不变式。
-        self.fonts
-            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
+        self.fonts.push(FontSlot::parse(
+            FontHandle::new(id),
+            FontData::Owned(data),
+            0,
+        )?);
         Ok(FontHandle::new(id))
     }
 
@@ -213,8 +223,11 @@ impl TextBackend for AbGlyphBackend {
         // 新句柄严格对应即将追加的后端槽位。
         let id = self.fonts.len() as u32;
         // 保存共享字节本身，并由槽位封闭两个借用面与 owner 的关系。
-        self.fonts
-            .push(FontSlot::parse(FontHandle::new(id), FontData::Owned(data))?);
+        self.fonts.push(FontSlot::parse(
+            FontHandle::new(id),
+            FontData::Owned(data),
+            0,
+        )?);
         // 返回与追加槽位编号一致的稳定句柄。
         Ok(FontHandle::new(id))
     }
@@ -227,18 +240,28 @@ impl TextBackend for AbGlyphBackend {
         self.fonts.push(FontSlot::parse(
             FontHandle::new(id),
             FontData::Static(data),
+            0,
         )?);
         // 返回与追加槽位编号一致的稳定句柄。
         Ok(FontHandle::new(id))
     }
 
     fn load_font_mapped(&mut self, mmap: memmap2::Mmap) -> Result<FontHandle, Error> {
+        self.load_font_mapped_index(mmap, 0)
+    }
+
+    fn load_font_mapped_index(
+        &mut self,
+        mmap: memmap2::Mmap,
+        face_index: u32,
+    ) -> Result<FontHandle, Error> {
         let boxed = Box::new(mmap);
         let id = self.fonts.len() as u32;
         // mmap 所有权先进入统一构造器，解析失败也会在返回前安全解除映射。
         self.fonts.push(FontSlot::parse(
             FontHandle::new(id),
             FontData::Mapped(boxed),
+            face_index,
         )?);
         Ok(FontHandle::new(id))
     }
