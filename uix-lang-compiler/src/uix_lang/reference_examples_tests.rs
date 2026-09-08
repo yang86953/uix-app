@@ -6,6 +6,13 @@ use std::path::{Path, PathBuf};
 // 引入与公开 uix!、uix_app! 一致的完整文档解析和生成测试入口。
 use super::{Diagnostic, generate_document_app, generate_test_document_view, parse_document};
 
+// 文档迁出源码后由验证调用方指定权威目录；旧消费检出仍可用原相对入口。
+fn documentation_root() -> PathBuf {
+    std::env::var_os("UIX_DOCS_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs"))
+}
+
 // 返回按路径排序的 Markdown 文件。
 fn markdown_paths(markdown_root: &Path) -> Vec<PathBuf> {
     // 读取权威 Markdown 目录。
@@ -76,9 +83,9 @@ fn fenced_uix_examples(source: &str, display_path: &str) -> Vec<(usize, String)>
 #[test]
 fn widget_reference_examples_generate_as_documents() {
     // 从过程宏 crate 定位仓库根目录。
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let repository_root = documentation_root();
     // 组件参考目录是本门禁的唯一事实输入。
-    let reference_root = repository_root.join("docs/uix-lang/参考/组件");
+    let reference_root = repository_root.join("uix-lang/参考/组件");
     // 枚举所有权威组件参考页面。
     let paths = markdown_paths(&reference_root);
     // 空目录不能伪装成门禁成功。
@@ -126,13 +133,13 @@ fn widget_reference_examples_generate_as_documents() {
 #[test]
 fn style_and_event_reference_examples_generate_as_documents() {
     // 从过程宏 crate 定位仓库根目录。
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let repository_root = documentation_root();
     // 明确列出不属于组件目录的两个权威参考页面。
     let reference_paths = [
         // 样式页包含顶层样式声明与少量元素示例。
-        repository_root.join("docs/uix-lang/参考/样式属性.md"),
+        repository_root.join("uix-lang/参考/样式属性.md"),
         // 事件页包含公开事件绑定示例。
-        repository_root.join("docs/uix-lang/参考/事件.md"),
+        repository_root.join("uix-lang/参考/事件.md"),
     ];
     // 记录跨页面示例总数，防止输入意外退化为空。
     let mut total_examples = 0_usize;
@@ -228,13 +235,13 @@ fn generate_guide_example(example: &str) -> Result<(), Diagnostic> {
 #[test]
 fn guide_examples_generate_through_public_entry_shapes() {
     // 从过程宏 crate 定位仓库根目录。
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let repository_root = documentation_root();
     // 明确列出承担入门契约的两份权威指南。
     let guide_paths = [
         // 快速开始覆盖首个 View、计数器 App 及主题 App。
-        repository_root.join("docs/uix-lang/指南/快速开始.md"),
+        repository_root.join("uix-lang/指南/快速开始.md"),
         // 教程覆盖逐步 Widget 片段与最终 App。
-        repository_root.join("docs/uix-lang/指南/教程.md"),
+        repository_root.join("uix-lang/指南/教程.md"),
     ];
     // 记录跨指南示例总数，防止输入意外退化为空。
     let mut total_examples = 0_usize;
@@ -318,9 +325,9 @@ fn materialize_specification_example(example: &str) -> String {
 #[test]
 fn specification_examples_generate_as_documents() {
     // 从过程宏 crate 定位仓库根目录。
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let repository_root = documentation_root();
     // 规范目录是语言当前契约示例的唯一事实输入。
-    let specification_root = repository_root.join("docs/uix-lang/规范");
+    let specification_root = repository_root.join("uix-lang/规范");
     // 枚举全部规范页面，让新增页面自动进入治理范围。
     let paths = markdown_paths(&specification_root);
     // 空目录不能伪装成门禁成功。
@@ -368,9 +375,9 @@ fn specification_examples_generate_as_documents() {
 #[test]
 fn completed_target_design_examples_generate_as_documents() {
     // 从过程宏 crate 定位仓库根目录。
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let repository_root = documentation_root();
     // 目标设计页面承载已经完成并回填的七项设计事实。
-    let target_design_path = repository_root.join("docs/uix-lang/变更/目标设计.md");
+    let target_design_path = repository_root.join("uix-lang/变更/目标设计.md");
     // 使用仓库相对路径生成跨机器稳定诊断。
     let display_path = target_design_path
         // 目标设计页面必定位于仓库根目录之下。
