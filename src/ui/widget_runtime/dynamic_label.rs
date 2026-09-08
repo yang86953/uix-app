@@ -20,6 +20,7 @@ use crate::ui::widget_runtime::widget::WidgetTree;
 pub(crate) struct DynamicLabel {
     text_fn: Box<dyn Fn() -> String>,
     style: Option<Style>,
+    ellipsis: bool,
 }
 
 impl DynamicLabel {
@@ -27,7 +28,13 @@ impl DynamicLabel {
         Self {
             text_fn: Box::new(f),
             style: None,
+            ellipsis: false,
         }
+    }
+
+    pub(crate) fn elided(mut self) -> Self {
+        self.ellipsis = true;
+        self
     }
 
     pub(crate) fn set_style(&mut self, style: Style) {
@@ -111,6 +118,7 @@ impl DynamicLabel {
             }
         }
         let text = (self.text_fn)();
+        let text = if self.ellipsis { text.replace(['\r', '\n'], " ") } else { text };
         let fs = super::measurement::with_measurement_tokens::<Self, _>(|tokens| {
             self.style
                 .as_ref()
@@ -138,7 +146,7 @@ impl DynamicLabel {
             fs,
             line_height,
             self.style.as_ref().and_then(|s| s.font_family.as_ref()),
-            true,
+            !self.ellipsis,
         );
         let text_height = line_height * estimated.line_count as f32;
         let h = self
@@ -191,7 +199,7 @@ impl WidgetRender for DynamicLabel {
             line_height: style
                 .and_then(|s| s.resolve_line_height(font_size))
                 .unwrap_or(font_size * 1.5),
-            word_wrap: true,
+            word_wrap: !self.ellipsis,
             h_align: style
                 .map(Style::effective_text_align)
                 .unwrap_or_default()
@@ -199,9 +207,23 @@ impl WidgetRender for DynamicLabel {
             v_align: crate::draw::VAlign::Top,
         };
         let font = crate::ui::text_family::resolve(ctx, style.and_then(|s| s.font_family.as_ref()));
+        // 省略只改变绘制文本；语义和 State 依赖仍保存完整原文。
+        let visible = if self.ellipsis {
+            let mut natural = options.clone();
+            natural.max_width = 0.0;
+            natural.h_align = crate::draw::HAlign::Left;
+            let Some(visible) = super::paint_context::elide_single_line_cow_by(
+                &text, rect.w, |candidate| {
+                    ctx.font_service().layout_text_shared(&font, candidate, &natural).width
+                },
+            ) else { return; };
+            visible
+        } else {
+            std::borrow::Cow::Borrowed(text.as_str())
+        };
         let layout = ctx
             .font_service()
-            .layout_text_shared(&font, &text, &options);
+            .layout_text_shared(&font, &visible, &options);
         let origin = Point::new(rect.x, rect.y);
         let decoration = crate::ui::text_decoration::segments(
             &layout,

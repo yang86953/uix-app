@@ -36,7 +36,7 @@ mod embed_node;
 // 编译标签内容转换的私有实现模块。
 mod label_content;
 // 保持标签构造器与内容转换契约的既有公开路径。
-pub use label_content::{IntoLabelContent, dynamic_label, label};
+pub use label_content::{IntoLabelContent, dynamic_label, elided_label, label};
 
 /// 将异质 / 同质子节点收成 `Vec<ViewNode>`（公开用法见仓库 `docs/使用/布局.md`）。
 ///

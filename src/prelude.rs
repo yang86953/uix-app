@@ -209,7 +209,7 @@ pub use crate::ui::{layout_rich_text_segments, parse_rich_text};
 pub use crate::ui::{
     AccessibilityExt, ButtonBuilder, EventExt, GridBuilder, InputBuilder, IntoLabelContent,
     IntoViewChildren, ScrollBuilder, StyleExt, TransitionExt, View, ViewNode, button, canvas,
-    column, column_fit, dynamic_label, embed, grid, input, label, row, scoped, scroll, show, space,
+    column, column_fit, dynamic_label, elided_label, embed, grid, input, label, row, scoped, scroll, show, space,
 };
 pub use crate::views;
 pub use crate::with_cloned;
