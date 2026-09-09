@@ -71,7 +71,7 @@ def validate_contents(read, version, platform):
     notices = json.loads(read('RUST_THIRD_PARTY_NOTICES.json', MAX_JSON))
     if notices['schema'] != 1 or not notices['packages']:
         raise ValueError('missing Rust license inventory')
-    for package in notices['packages']:
+    for package in [*notices['packages'], {'name': 'Rust standard library', 'files': notices['rust_standard_library']['files']}]:
         if not package['files']:
             raise ValueError(f'missing Rust license texts: {package["name"]}')
         for entry in package['files']:
