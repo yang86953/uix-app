@@ -1,0 +1,53 @@
+<Widget name="TaskRow" props="task_key: String, title: String, toggle: (String), remove: (String)">
+  <Container direction="row" gap="8px">
+    <Text flexGrow={1}>{title}</Text>
+    <Button automationId={'toggle-' + task_key.as_str()} @click="toggle(task_key.clone())">切换完成</Button>
+    <Button automationId={'remove-' + task_key.as_str()} @click="remove(task_key.clone())">删除</Button>
+  </Container>
+</Widget>
+
+<Widget name="TaskList" props="draft: State<String>, ids: State<Vec<String>>, message: State<String>, stats: State<bool>, result: State<String>, busy: State<bool>, dirty: State<bool>, writable: bool, path: String, add: (String), toggle: (String), remove: (String), tasks: (), statistics: (), save: (), calculate: (), cancel: ()" external="title_for, close_control">
+  <Column gap="12px" padding="20px">
+    <Container direction="row" gap="8px">
+      <Text fontSize="heading2" flexGrow={1}>UIX 任务清单</Text>
+      <KernelHost value={close_control} automationId="close" padding="8px"><Text>关闭</Text></KernelHost>
+    </Container>
+    <Container direction="row" gap="8px">
+      <Button automationId="nav-tasks" @click="tasks()">任务</Button>
+      <Button automationId="nav-stats" @click="statistics()">统计</Button>
+      <Button automationId="save" disabled={!writable} @click="save()">保存</Button>
+      <If {dirty}><Text automationId="dirty">未保存</Text></If>
+    </Container>
+    <Text automationId="status">{message}</Text>
+    <If {!stats}>
+      <Column gap="8px">
+        <Container direction="row" gap="8px">
+          <Input automationId="draft" value={draft} disabled={!writable} placeholder="任务标题（1–80 字符）" flexGrow={1} />
+          <Button automationId="add" type="primary" disabled={!writable} @click="add(draft)">添加</Button>
+        </Container>
+        <ScrollView height="300px">
+          <Column gap="8px">
+            <For {id} in {ids} key={id}>
+              <TaskRow task_key={id.clone()} title={title_for(id.clone())} toggle={toggle} remove={remove} />
+            </For>
+          </Column>
+        </ScrollView>
+      </Column>
+    </If>
+    <Else>
+      <Column gap="12px">
+        <Text fontSize="heading3">本地清单统计</Text>
+        <Container direction="row" gap="8px">
+          <Button automationId="start-stats" disabled={!writable} @click="calculate()">开始统计</Button>
+          <Button automationId="cancel-stats" disabled={!busy} @click="cancel()">取消</Button>
+          <If {busy}><Text automationId="busy">忙碌中</Text></If>
+        </Container>
+        <Text automationId="stats-result">{result}</Text>
+        <Text>仅统计当前内存清单；重复请求不启动第二个线程，离页/修改会作废旧结果。</Text>
+      </Column>
+    </Else>
+    <Text fontSize="small">保存文件：{path}</Text>
+    <Text fontSize="small">仅“保存”会写文件；关闭丢弃未保存编辑。单实例使用，不做自动保存。</Text>
+  </Column>
+</Widget>
+<TaskList draft={draft} ids={task_ids} message={message} stats={show_stats} result={stats_result} busy={busy} dirty={dirty} writable={writable} path={file_path} add={on_add} toggle={on_toggle} remove={on_remove} tasks={on_tasks} statistics={on_stats} save={on_save} calculate={on_start_stats} cancel={on_cancel_stats} />
