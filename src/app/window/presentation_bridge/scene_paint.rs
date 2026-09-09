@@ -77,7 +77,12 @@ impl ScenePaint for WidgetTree {
                 // 由 layer 合成器统一应用于整节点绘制与命中共享输出。
                 let declared = node.declared_opacity();
                 let transition = node.view_transition_opacity();
-                (declared * transition).clamp(0.0, 1.0)
+                let content = node
+                    .parent()
+                    .and_then(|parent| self.get(parent))
+                    .and_then(|parent| parent.widget().as_render())
+                    .map_or(1.0, |render| render.children_opacity());
+                (declared * transition * content).clamp(0.0, 1.0)
             })
             .unwrap_or(1.0)
     }
@@ -107,7 +112,17 @@ impl ScenePaint for WidgetTree {
         }
         self.get(id)
             .map(|n| {
-                if n.view_transition_active() {
+                let content_boundary = n
+                    .parent()
+                    .and_then(|parent| self.get(parent))
+                    .and_then(|parent| {
+                        parent
+                            .widget()
+                            .as_render()
+                            .and_then(|render| render.children_transform(parent.frame()))
+                    })
+                    .is_some();
+                if n.view_transition_active() || content_boundary {
                     PicturePolicy::Never
                 } else {
                     n.picture_policy()

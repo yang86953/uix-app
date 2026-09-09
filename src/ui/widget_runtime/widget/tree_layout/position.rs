@@ -176,7 +176,23 @@ impl WidgetTree {
         // 计算 relative 或 sticky 的纯布局视觉偏移。
         let offset = self.position_visual_offset(id);
         // 先移动布局盒，再应用节点作者变换。
-        Transform::translate(offset.x, offset.y).concat(authored)
+        self.parent_children_transform(id)
+            .concat(Transform::translate(offset.x, offset.y))
+            .concat(authored)
+    }
+
+    // 父组件拥有子树动画状态，消费方只在直接父子边界读取一次。
+    pub(crate) fn parent_children_transform(&self, id: WidgetId) -> Transform {
+        self.get(id)
+            .and_then(|node| node.parent())
+            .and_then(|parent| self.get(parent))
+            .and_then(|parent| {
+                parent
+                    .widget()
+                    .as_render()
+                    .and_then(|render| render.children_transform(parent.frame()))
+            })
+            .unwrap_or_else(Transform::identity)
     }
 
     // 根据包含块和四边值求解脱流节点 frame。

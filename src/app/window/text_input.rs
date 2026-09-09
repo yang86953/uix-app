@@ -21,9 +21,12 @@ pub(crate) fn sync_window_text_input(
     let requested = state.window_focused.then(|| {
         let target = tree.managers().focus.focused_widget()?;
         let client = tree.get(target)?.as_text_input()?;
-        client
-            .accepts_text_input()
-            .then(|| (target, client.text_input_cursor_rect()))
+        if !client.accepts_text_input() {
+            return None;
+        }
+        // 组件返回布局绘制坐标；平台候选窗需要与子树缩放、滚动一致的表面坐标。
+        let cursor_rect = tree.node_visual_rect(target, client.text_input_cursor_rect())?;
+        Some((target, cursor_rect))
     });
     let requested = requested.flatten();
     let requested_target = requested.map(|(target, _)| target);
@@ -58,8 +61,7 @@ pub(crate) fn sync_window_text_input(
         if let Err(error) = platform.text_input().start() {
             tracing::error!("IME session start failed: {}", error.short_what());
             // IME 激活失败直接放弃本次输入法会话，进入框架报告供宿主观察。
-            diagnostics
-                .report_with_origin(error, ReportOrigin::framework("ime", "start"));
+            diagnostics.report_with_origin(error, ReportOrigin::framework("ime", "start"));
             return;
         }
         state.coordinator.activate(window_id);

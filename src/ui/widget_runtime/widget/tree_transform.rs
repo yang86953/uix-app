@@ -149,7 +149,9 @@ impl WidgetTree {
             // 普通后代只追加自身变换；父变换与滚动已经反映在内容坐标中。
             let transform = match node.position().mode {
                 // static/absolute 不需要再次查询树级定位偏移。
-                PositionMode::Static | PositionMode::Absolute => node.visual_transform_matrix(),
+                PositionMode::Static | PositionMode::Absolute => self
+                    .parent_children_transform(id)
+                    .concat(node.visual_transform_matrix()),
                 // relative/sticky 仍由树级定位算法解析当前动态偏移。
                 PositionMode::Relative | PositionMode::Sticky => {
                     self.positioned_visual_transform(id)
@@ -172,6 +174,7 @@ impl WidgetTree {
             path.iter().copied().any(|current_id| {
                 self.get(current_id)
                     .is_some_and(BoxedWidget::has_effective_visual_transform)
+                    || !self.parent_children_transform(current_id).is_identity()
             })
         })
     }

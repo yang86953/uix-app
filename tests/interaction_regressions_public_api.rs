@@ -261,3 +261,81 @@ fn modal_hidden_footer_does_not_confirm_on_enter() {
     app.press_key(KeyCode::Escape, KeyMod::NONE).unwrap();
     assert!(!open.get());
 }
+
+#[test]
+fn modal_enter_scales_nested_visual_bounds_once_and_keeps_hit_testing() {
+    fn scene(animated: bool, calls: State<u32>) -> TestApp {
+        TestApp::new((640.0, 480.0), move || {
+            let calls = calls.clone();
+            Modal::builder()
+                .open(&State::new(true))
+                .size(480.0, 320.0)
+                .enter_animation(AnimationConfig::zoom_in(if animated { 3.0 } else { 0.0 }))
+                .content(move || {
+                    column_fit((button("Nested action")
+                        .on_click_fn(move || calls.update(|n| *n += 1))
+                        .automation_id("nested-action"),))
+                    .scale(0.75)
+                    .automation_id("content-wrapper")
+                })
+                .build()
+        })
+    }
+    let calls = State::new(0);
+    let mut animated = scene(true, calls.clone());
+    let stable = scene(false, State::new(0));
+    // TestApp 不推进时钟；明确检查公开 zoom_in 的首个 0.8 缩放采样。
+    let initial = animated.snapshot();
+    let settled = stable.snapshot();
+    for id in ["content-wrapper", "nested-action"] {
+        let first = initial.find(id).unwrap();
+        let last = settled.find(id).unwrap();
+        // AutomationSnapshot.frame 已是视觉坐标，不冒充组件的原始布局 frame。
+        assert!((first.frame.w / last.frame.w - 0.8).abs() < 0.001);
+        assert!((first.frame.h / last.frame.h - 0.8).abs() < 0.001);
+        let first = first.visible_bounds.unwrap();
+        let last = last.visible_bounds.unwrap();
+        assert!(
+            (first.w / last.w - 0.8).abs() < 0.001,
+            "只在父子边界缩放一次: {id}"
+        );
+        assert!((first.h / last.h - 0.8).abs() < 0.001);
+    }
+    animated.click("nested-action").unwrap();
+    assert_eq!(calls.get(), 1, "真实坐标命中必须跟随组合后的缩放");
+}
+
+#[test]
+fn modal_enter_close_slot_uses_the_same_scaled_geometry_as_paint() {
+    let open = State::new(true);
+    let root_open = open.clone();
+    let mut app = TestApp::new((640.0, 480.0), move || {
+        Modal::builder()
+            .open(&root_open)
+            .size(480.0, 320.0)
+            .mask_closable(false)
+            .enter_animation(AnimationConfig::zoom_in(3.0))
+            .content(|| label("Body"))
+            .build()
+    });
+    // 480x320 panel 居中；关闭槽中心 (536,108) 围绕 (320,240) 缩放 0.8。
+    let pos = Point::new(492.8, 134.4);
+    for event in [
+        SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+        SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        },
+    ] {
+        app.dispatch_system_event(&event).unwrap();
+    }
+    assert!(
+        !open.get(),
+        "缩放后的关闭图标应命中，且不能由 mask_closable 冒充成功"
+    );
+}

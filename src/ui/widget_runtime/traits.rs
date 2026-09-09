@@ -224,7 +224,7 @@ pub trait WidgetTextInput: Widget {
         true
     }
 
-    /// 返回平台输入法候选窗口应跟随的光标矩形。
+    /// 返回布局绘制坐标中的光标矩形；窗口层统一映射为输入法表面坐标。
     fn text_input_cursor_rect(&self) -> Rect {
         Rect::zero()
     }
@@ -383,6 +383,15 @@ pub trait WidgetRender: Widget {
     /// 返回应用到直接子树的可选裁剪矩形。
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
+    }
+    /// 在父坐标系中作用于直接子树的绘制和命中变换；不改变终态布局。
+    /// `Some(identity)` 仍保留动态合成边界，避免静止帧被固化为 Picture。
+    fn children_transform(&self, _frame: Rect) -> Option<crate::draw::Transform> {
+        None
+    }
+    /// 乘到直接子树的合成透明度；由子树继承，不逐后代重复相乘。
+    fn children_opacity(&self) -> f32 {
+        1.0
     }
     /// 声明该组件是否需要在真实子树完成后获得覆盖绘制阶段。
     fn paint_after_children(&self) -> bool {

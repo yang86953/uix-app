@@ -26,6 +26,11 @@ impl<'a> PaintContext<'a> {
         self.set_transform(combined);
     }
 
+    /// 返回当前继承的绘制透明度。
+    pub fn opacity(&mut self) -> f32 {
+        self.spatial.canvas_2d().opacity()
+    }
+
     /// 设置后续绘制的绝对透明度。
     pub fn set_opacity(&mut self, opacity: f32) {
         self.record_op(PaintOp::SetOpacity { opacity });

@@ -29,6 +29,22 @@ use crate::native::windowing::shared::ime_events::{
 
 use super::WaylandBackend;
 
+// enter 之前只保存期望状态；协议 surface 就绪后才发布 enable 与光标矩形。
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TextInputProtocolState {
+    entered: bool,
+    cursor_rect: Option<Rect>,
+}
+
+fn send_cursor_rect(text_input: &super::compat::Main<super::ZwpTextInputV3>, rect: Rect) {
+    text_input.set_cursor_rectangle(
+        rect.x.round() as i32,
+        rect.y.round() as i32,
+        rect.w.max(0.0).round() as i32,
+        rect.h.max(0.0).round() as i32,
+    );
+}
+
 // 固定 Wayland IME composition 与事件队列的双 guard 事务类型。
 type ImeStateGuards<'a> = (
     // 第一把 guard 唯一修改 composition 状态。
@@ -102,6 +118,8 @@ impl WaylandBackend {
         self.text_input_generation.fetch_add(1, Ordering::SeqCst);
         // 随后发布 session 已禁用事实，阻止其他 owner 继续视为活跃。
         self.text_input_enabled.store(false, Ordering::SeqCst);
+        self.text_input_protocol
+            .set(TextInputProtocolState::default());
         // teardown 确定性取得 composition owner。
         let mut composition = self
             // 访问 backend 唯一 IME composition 状态。
@@ -189,10 +207,12 @@ impl ITextInput for WaylandBackend {
         let generation = active_generation
             .fetch_add(1, Ordering::SeqCst)
             .wrapping_add(1);
-        let mut focused = false;
+        self.text_input_protocol
+            .set(TextInputProtocolState::default());
+        let protocol = self.text_input_protocol.clone();
         let mut pending = PendingImeBatch::default();
 
-        ti.quick_assign(move |_, event, _| {
+        ti.quick_assign(move |text_input, event, _| {
             if active_generation.load(Ordering::SeqCst) != generation {
                 return;
             }
@@ -220,7 +240,7 @@ impl ITextInput for WaylandBackend {
                         }
                     };
                     // 已聚焦 session 进入非目标 surface 时先事务化 unmark。
-                    if focused && !owns_surface {
+                    if protocol.get().entered && !owns_surface {
                         // 两个 owner 必须在任何 composition/event 修改前健康。
                         let (mut state, mut event_queue) = match lock_ime_state_checked(
                             // 第一把 guard 是 composition owner。
@@ -251,13 +271,23 @@ impl ITextInput for WaylandBackend {
                         );
                     }
                     // owner 事务成功后再提交 callback focus。
-                    focused = owns_surface;
+                    let mut state = protocol.get();
+                    state.entered = owns_surface;
+                    protocol.set(state);
                     // 新 Enter 边界丢弃上一批未 Done 的输入。
                     pending = PendingImeBatch::default();
+                    if owns_surface {
+                        // enter/enable 会使旧状态失效；在同一提交中重发最新光标。
+                        text_input.enable();
+                        if let Some(rect) = state.cursor_rect {
+                            send_cursor_rect(text_input, rect);
+                        }
+                        text_input.commit();
+                    }
                 }
                 zwp_text_input_v3::Event::Leave { .. } => {
                     // 只有当前聚焦 session 需要投递 unmark。
-                    if focused {
+                    if protocol.get().entered {
                         // 两个 owner 必须在任何 composition/event 修改前健康。
                         let (mut state, mut event_queue) = match lock_ime_state_checked(
                             // 第一把 guard 是 composition owner。
@@ -288,17 +318,19 @@ impl ITextInput for WaylandBackend {
                         );
                     }
                     // owner 事务成功后再提交失焦事实。
-                    focused = false;
+                    let mut state = protocol.get();
+                    state.entered = false;
+                    protocol.set(state);
                     // Leave 边界丢弃未 Done 的输入。
                     pending = PendingImeBatch::default();
                 }
-                zwp_text_input_v3::Event::PreeditString { text, .. } if focused => {
+                zwp_text_input_v3::Event::PreeditString { text, .. } if protocol.get().entered => {
                     pending.set_preedit(text);
                 }
-                zwp_text_input_v3::Event::CommitString { text } if focused => {
+                zwp_text_input_v3::Event::CommitString { text } if protocol.get().entered => {
                     pending.set_commit(text);
                 }
-                zwp_text_input_v3::Event::Done { .. } if focused => {
+                zwp_text_input_v3::Event::Done { .. } if protocol.get().entered => {
                     // 两个 owner 必须在 take pending batch 前健康。
                     let (mut state, mut event_queue) = match lock_ime_state_checked(
                         // 第一把 guard 是 composition owner。
@@ -332,8 +364,6 @@ impl ITextInput for WaylandBackend {
             }
         });
 
-        ti.enable();
-        ti.commit();
         self.text_input = Some(ti);
         self.active_text_input_window_id = Some(window_id);
         self.text_input_enabled.store(true, Ordering::SeqCst);
@@ -392,10 +422,13 @@ impl ITextInput for WaylandBackend {
         if let Some(text_input) = self.text_input.take() {
             // 显式注销 callback；compat::Main 的 Drop 不自动清理 registry。
             text_input.clear_callback();
+            text_input.destroy();
             // proxy 随分支结束释放本地 owner。
         }
         // 最后发布 session 已禁用事实。
         self.text_input_enabled.store(false, Ordering::SeqCst);
+        self.text_input_protocol
+            .set(TextInputProtocolState::default());
         // 同步 stop 全部成功。
         Ok(())
     }
@@ -409,13 +442,13 @@ impl ITextInput for WaylandBackend {
                 "Wayland text_input: no active IME session",
             ));
         };
-        text_input.set_cursor_rectangle(
-            rect.x.round() as i32,
-            rect.y.round() as i32,
-            rect.w.max(0.0).round() as i32,
-            rect.h.max(0.0).round() as i32,
-        );
-        text_input.commit();
+        let mut state = self.text_input_protocol.get();
+        state.cursor_rect = Some(rect);
+        self.text_input_protocol.set(state);
+        if state.entered {
+            send_cursor_rect(text_input, rect);
+            text_input.commit();
+        }
         Ok(())
     }
 }
