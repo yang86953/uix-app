@@ -1,462 +1,149 @@
 #!/usr/bin/env python3
-"""校验 Linux 或 Windows x64 内部候选包的结构、元数据与内容摘要。"""
-
-# 引入命令行参数解析。
+"""独立校验当前候选容器、实际载荷摘要及输入身份；Python 3.11+。"""
 import argparse
-# 引入流式 SHA-256 计算。
 import hashlib
-# 引入摘要行语法验证。
+import io
+import json
 import re
-# 引入标准错误输出。
 import sys
-# 引入 gzip tar 读取能力。
 import tarfile
-# 引入 Windows 候选 ZIP 的只读校验能力。
+import tomllib
 import zipfile
-# 引入稳定路径处理。
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+from internal_release_contract import (CRATES, DOCS, TARGETS, COMMIT, MANIFEST_NAME,
+                                       archive_name, binary_name, hash_file, payload, safe_name)
 
-# 固化摘要文件名称。
-MANIFEST_NAME = "SHA256SUMS.txt"
-# 固化摘要文件最大字节数。
-MAX_MANIFEST_BYTES = 65_536
-# 固化小写 SHA-256 清单语法。
-MANIFEST_LINE = re.compile(r"^([0-9a-f]{64})  (.+)$")
-# 固化可接受的语义版本语法。
-VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+MAX_JSON = 32 * 1024 * 1024
 
 
-# 返回指定版本的七项 payload 冻结顺序。
-def expected_payload(version: str) -> tuple[str, ...]:
-    # 组合 Linux 可执行文件、crate 与五项资料载荷。
-    return (
-        # Linux 主演示使用规范 bin 路径。
-        "bin/uix-lang-demo",
-        # 内部 crate 使用精确版本命名。
-        f"uix-{version}.crate",
-        # 专有许可必须随包交付。
-        "LICENSE",
-        # 第三方声明必须随包交付。
-        "THIRD_PARTY_NOTICES.md",
-        # 当前版本变更记录必须随包交付。
-        "CHANGELOG.md",
-        # 使用入口必须随包交付。
-        "README.md",
-        # Demo 图片使用规范相对路径。
-        "assets/images/demo.png",
-    )
+def validate_contents(read, version, platform):
+    names = payload(version, platform)
+    sums = read(MANIFEST_NAME, 65536)
+    if not sums.endswith(b'\n') or b'\r' in sums:
+        raise ValueError('invalid hash manifest newline')
+    lines = sums.decode('ascii').splitlines()
+    if len(lines) != len(names):
+        raise ValueError('hash manifest entry count mismatch')
+    actual = {}
+    for name, line in zip(names, lines, strict=True):
+        match = re.fullmatch(r'([0-9a-f]{64})  (.+)', line)
+        if not match or match[2] != name:
+            raise ValueError(f'hash manifest entry mismatch: {name}')
+        content = read(name)
+        actual[name] = hashlib.sha256(content).hexdigest()
+        if not content or actual[name] != match[1]:
+            raise ValueError(f'empty payload or hash mismatch: {name}')
+    identity = json.loads(read('CANDIDATE.json', MAX_JSON))
+    if (identity['schema'] != 1 or identity['version'] != version
+            or identity['platform'] != platform or identity['target'] != TARGETS[platform]
+            or identity['first_party_crates'] != list(CRATES)
+            or identity['distribution'] != 'internal-candidate-not-published'):
+        raise ValueError('candidate identity mismatch')
+    if not COMMIT.fullmatch(identity['source']['commit']) or not COMMIT.fullmatch(identity['docs']['commit']):
+        raise ValueError('candidate source/docs must identify full commits')
+    expected = {n: h for n, h in actual.items() if n != 'CANDIDATE.json'}
+    if identity['payload_sha256'] != expected:
+        raise ValueError('candidate input payload hashes mismatch')
+    for name in DOCS:
+        if identity['docs']['sha256'][name] != actual[name]:
+            raise ValueError(f'document input mismatch: {name}')
+    for name in ('Cargo.lock', 'demo-Cargo.lock'):
+        if identity['locks'][name] != actual['inputs/' + name]:
+            raise ValueError(f'lock input mismatch: {name}')
+    if not identity['tools']['cargo'] or not identity['tools']['rustc'] or not identity['demo_features']:
+        raise ValueError('missing toolchain/features identity')
+    for name in CRATES:
+        with tarfile.open(fileobj=io.BytesIO(read(f'{name}-{version}.crate')), mode='r:gz') as crate:
+            seen = set()
+            for member in crate.getmembers():
+                safe_name(member.name)
+                if (not member.isfile() or not member.name.startswith(f'{name}-{version}/')
+                        or member.name.casefold() in seen):
+                    raise ValueError(f'unsafe crate entry: {member.name}')
+                seen.add(member.name.casefold())
+            package = tomllib.loads(crate.extractfile(f'{name}-{version}/Cargo.toml').read().decode())
+            if package['package']['name'] != name or package['package']['version'] != version:
+                raise ValueError(f'crate identity mismatch: {name}')
+            license_path = package['package']['license-file']
+            safe_name(license_path)
+            if not crate.extractfile(f'{name}-{version}/{license_path}').read().strip():
+                raise ValueError(f'missing crate license: {name}')
+    notices = json.loads(read('RUST_THIRD_PARTY_NOTICES.json', MAX_JSON))
+    if notices['schema'] != 1 or not notices['packages']:
+        raise ValueError('missing Rust license inventory')
+    for package in notices['packages']:
+        if not package['files']:
+            raise ValueError(f'missing Rust license texts: {package["name"]}')
+        for entry in package['files']:
+            safe_name(entry['path'])
+            if not entry['text'].strip() or hashlib.sha256(entry['text'].encode()).hexdigest() != entry['sha256']:
+                raise ValueError('Rust license content/hash mismatch')
+    expected_packages = sorted(identity['rust_build_packages'])
+    if expected_packages != sorted(p['id'] for p in notices['packages']):
+        raise ValueError('Rust notice inventory does not match recorded build package closure')
 
 
-# 返回指定版本的七项 Windows payload 冻结顺序。
-def expected_windows_payload(version: str) -> tuple[str, ...]:
-    # Windows 与 Linux 共享资料载荷，只让可执行文件路径体现平台差异。
-    return (
-        # Windows 主演示使用根级 exe 名称。
-        "uix-lang-demo.exe",
-        # 内部 crate 使用精确版本命名。
-        f"uix-{version}.crate",
-        # 专有许可必须随包交付。
-        "LICENSE",
-        # 第三方声明必须随包交付。
-        "THIRD_PARTY_NOTICES.md",
-        # 当前版本变更记录必须随包交付。
-        "CHANGELOG.md",
-        # 使用入口必须随包交付。
-        "README.md",
-        # Demo 图片使用规范相对路径。
-        "assets/images/demo.png",
-    )
-
-
-# 验证归档条目名称是安全且规范的 POSIX 相对路径。
-def validate_entry_name(name: str) -> None:
-    # 空名称不能描述交付文件。
-    if not name:
-        # 报告稳定空名称错误。
-        raise ValueError("internal release contains an empty archive entry name")
-    # 反斜杠会让不同解包器产生不同路径。
-    if "\\" in name:
-        # 拒绝非规范分隔符。
-        raise ValueError(f"internal release entry is not canonical: {name}")
-    # 根路径与盘符形式都可能越过解包根。
-    if name.startswith("/") or ":" in name:
-        # 拒绝绝对或带卷标的路径。
-        raise ValueError(f"internal release entry is rooted: {name}")
-    # 按 POSIX 分隔符保留每个原始路径段。
-    segments = name.split("/")
-    # 空段、当前目录与父目录都不是规范交付路径。
-    if any(segment in {"", ".", ".."} for segment in segments):
-        # 拒绝路径穿越与重复分隔符。
-        raise ValueError(f"internal release entry contains an unsafe path segment: {name}")
-    # PurePosixPath 必须保持原始名称不变。
-    if str(PurePosixPath(name)) != name:
-        # 拒绝会被路径库归一化的名称。
-        raise ValueError(f"internal release entry is not canonical: {name}")
-
-
-# 验证 gzip 头没有文件名或构建时间漂移。
-def validate_gzip_header(path: Path) -> None:
-    # 只读取固定十字节基础头。
-    with path.open("rb") as stream:
-        # 保存基础 gzip header。
-        header = stream.read(10)
-    # gzip 基础头必须完整并使用 deflate。
-    if len(header) != 10 or header[:3] != b"\x1f\x8b\x08":
-        # 拒绝错误容器或截断头。
-        raise ValueError("internal release is not a canonical gzip stream")
-    # FNAME 标志会把临时文件名写入容器。
-    if header[3] & 0x08:
-        # 拒绝携带文件名的 gzip 头。
-        raise ValueError("internal release gzip header contains a file name")
-    # MTIME 四字节必须全部为零。
-    if header[4:8] != b"\0\0\0\0":
-        # 拒绝构建时间进入容器摘要。
-        raise ValueError("internal release gzip timestamp is not canonical")
-
-
-# 从 tar 中读取一个已验证存在的普通文件。
-def read_member(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
-    # 打开当前普通文件的解压流。
-    stream = archive.extractfile(member)
-    # 普通文件必须可以取得内容流。
-    if stream is None:
-        # 报告无法读取的具体条目。
-        raise ValueError(f"internal release entry cannot be read: {member.name}")
-    # 由上下文管理器确保流及时关闭。
-    with stream:
-        # 读取由上层大小门禁约束的内容。
-        return stream.read()
-
-
-# 流式计算一个 tar payload 的 SHA-256。
-def hash_member(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str:
-    # 创建单项 SHA-256 owner。
-    digest = hashlib.sha256()
-    # 打开当前普通文件的解压流。
-    stream = archive.extractfile(member)
-    # 普通文件必须可以取得内容流。
-    if stream is None:
-        # 报告无法读取的具体条目。
-        raise ValueError(f"internal release entry cannot be read: {member.name}")
-    # 由上下文管理器确保流及时关闭。
-    with stream:
-        # 分块读取以避免把二进制整体载入内存。
-        while chunk := stream.read(1024 * 1024):
-            # 把当前块加入摘要。
-            digest.update(chunk)
-    # 返回小写十六进制摘要。
-    return digest.hexdigest()
-
-
-# 流式计算整个归档的 SHA-256。
-def hash_file(path: Path) -> str:
-    # 创建容器 SHA-256 owner。
-    digest = hashlib.sha256()
-    # 打开候选包原始字节流。
-    with path.open("rb") as stream:
-        # 分块读取整个归档。
-        while chunk := stream.read(1024 * 1024):
-            # 把当前块加入摘要。
-            digest.update(chunk)
-    # 返回小写十六进制摘要。
-    return digest.hexdigest()
-
-
-# 验证一个 Linux 内部候选包。
-def verify_archive(path: Path, version: str) -> str:
-    # 版本必须满足冻结数字形式。
-    if VERSION_PATTERN.fullmatch(version) is None:
-        # 拒绝无法安全拼接载荷名称的版本。
-        raise ValueError(f"internal release version is invalid: {version}")
-    # 输入必须是现有普通文件。
-    if not path.is_file():
-        # 拒绝目录或消失路径。
-        raise ValueError(f"internal release archive is not a file: {path}")
-    # 候选包文件名必须与平台契约完全一致。
-    expected_archive_name = f"uix-{version}-internal-linux-x64.tar.gz"
-    # 临时或误命名容器不能作为正式候选包通过。
-    if path.name != expected_archive_name:
-        # 报告实际与预期文件名。
-        raise ValueError(f"internal release archive name mismatch: expected {expected_archive_name}, got {path.name}")
-    # 先验证外层 gzip 确定性元数据。
-    validate_gzip_header(path)
-    # 固化七项载荷顺序。
-    payload_names = expected_payload(version)
-    # 清单必须是最后且唯一不自哈希的条目。
-    expected_names = payload_names + (MANIFEST_NAME,)
-    # 以 gzip tar 模式打开候选包。
-    with tarfile.open(path, mode="r:gz") as archive:
-        # 固化条目快照，避免多次枚举产生状态差异。
-        members = archive.getmembers()
-        # 保存大小写折叠后的已见名称。
-        seen_names: set[str] = set()
-        # 在集合比较前逐项验证路径与元数据。
-        for member in members:
-            # 验证原始条目名称。
-            validate_entry_name(member.name)
-            # 使用大小写折叠键拒绝跨平台重复。
-            folded_name = member.name.casefold()
-            # 重复路径会让解包结果不确定。
-            if folded_name in seen_names:
-                # 报告重复条目。
-                raise ValueError(f"internal release contains a duplicate entry: {member.name}")
-            # 发布当前条目名称所有权。
-            seen_names.add(folded_name)
-            # 候选包只允许普通文件。
-            if not member.isfile():
-                # 拒绝目录、链接与设备节点。
-                raise ValueError(f"internal release entry is not a regular file: {member.name}")
-            # ustar 构建不得携带扩展 PAX 元数据。
-            if member.pax_headers:
-                # 拒绝可能包含漂移字段的 PAX header。
-                raise ValueError(f"internal release entry contains PAX metadata: {member.name}")
-            # 所有条目时间统一冻结为 Unix epoch。
-            if member.mtime != 0:
-                # 拒绝文件时间漂移。
-                raise ValueError(f"internal release entry timestamp is not canonical: {member.name}")
-            # 数字所有者必须固定为 root/root 身份值。
-            if member.uid != 0 or member.gid != 0:
-                # 拒绝构建机器用户进入归档。
-                raise ValueError(f"internal release entry owner is not canonical: {member.name}")
-            # 只有主演示保留可执行权限。
-            expected_mode = 0o755 if member.name == "bin/uix-lang-demo" else 0o644
-            # 文件模式必须与平台契约完全一致。
-            if member.mode != expected_mode:
-                # 报告实际八进制模式。
-                raise ValueError(f"internal release entry mode is not canonical: {member.name} has {member.mode:o}")
-        # 条目名称和顺序必须与冻结契约完全一致。
-        actual_names = tuple(member.name for member in members)
-        # 同时拒绝缺失、额外、重排与大小写漂移。
-        if actual_names != expected_names:
-            # 报告精确集合与顺序错误。
-            raise ValueError(f"internal release entry order mismatch: expected {expected_names}, got {actual_names}")
-        # 取得唯一清单条目。
-        manifest_member = members[-1]
-        # 小型清单必须保持有界。
-        if manifest_member.size > MAX_MANIFEST_BYTES:
-            # 拒绝异常大清单。
-            raise ValueError(f"internal release hash manifest is too large: {manifest_member.size} bytes")
-        # 读取已通过大小门禁的清单。
-        manifest_bytes = read_member(archive, manifest_member)
-        # 清单不能为空。
-        if not manifest_bytes:
-            # 拒绝无法证明 payload 的空清单。
-            raise ValueError("internal release hash manifest is empty")
-        # 清单必须以 LF 结束且不使用 CRLF。
-        if not manifest_bytes.endswith(b"\n") or b"\r" in manifest_bytes:
-            # 拒绝不稳定的换行格式。
-            raise ValueError("internal release hash manifest newline format is invalid")
-        # 清单只允许纯 ASCII。
-        try:
-            # 解码已经完成边界检查的清单。
-            manifest_text = manifest_bytes.decode("ascii")
-        # 非 ASCII 字节必须形成稳定失败。
-        except UnicodeDecodeError as error:
-            # 包装为公开校验错误而不泄漏二进制。
-            raise ValueError("internal release hash manifest is not ASCII") from error
-        # 按最终 LF 拆分出七行摘要。
-        manifest_lines = manifest_text[:-1].split("\n")
-        # 摘要行数必须与 payload 一致。
-        if len(manifest_lines) != len(payload_names):
-            # 拒绝缺失、重复或额外摘要。
-            raise ValueError(f"internal release hash line count mismatch: expected {len(payload_names)}, got {len(manifest_lines)}")
-        # 建立名称到唯一成员的映射。
-        members_by_name = {member.name: member for member in members}
-        # 按冻结顺序验证每条摘要。
-        for expected_name, line in zip(payload_names, manifest_lines, strict=True):
-            # 解析小写摘要和规范名称。
-            match = MANIFEST_LINE.fullmatch(line)
-            # 行格式必须完全匹配。
-            if match is None:
-                # 拒绝长度、大小写或分隔漂移。
-                raise ValueError(f"internal release hash line is invalid: {line}")
-            # 读取声明摘要。
-            declared_hash = match.group(1)
-            # 读取声明名称。
-            declared_name = match.group(2)
-            # 名称必须与冻结顺序完全一致。
-            if declared_name != expected_name:
-                # 拒绝别名、重排或未覆盖载荷。
-                raise ValueError(f"internal release hash entry mismatch: expected {expected_name}, got {declared_name}")
-            # 对归档内真实解包内容计算摘要。
-            actual_hash = hash_member(archive, members_by_name[expected_name])
-            # 声明摘要必须逐字节匹配。
-            if declared_hash != actual_hash:
-                # 报告具体损坏载荷。
-                raise ValueError(f"internal release hash mismatch for {expected_name}: expected {declared_hash}, got {actual_hash}")
-    # 返回整个候选包的最终摘要。
-    return hash_file(path)
-
-
-# 验证一个 Windows x64 内部候选 ZIP。
-def verify_zip_archive(path: Path, version: str) -> str:
-    # 版本必须满足冻结数字形式。
-    if VERSION_PATTERN.fullmatch(version) is None:
-        # 拒绝无法安全拼接载荷名称的版本。
-        raise ValueError(f"internal release version is invalid: {version}")
-    # 输入必须是现有普通文件。
-    if not path.is_file():
-        # 拒绝目录或消失路径。
-        raise ValueError(f"internal release ZIP is not a file: {path}")
-    # 候选包文件名必须与平台契约完全一致。
-    expected_archive_name = f"uix-{version}-internal-win-x64.zip"
-    # 临时或误命名容器不能作为正式候选包通过。
-    if path.name != expected_archive_name:
-        # 报告实际与预期文件名。
-        raise ValueError(
-            f"internal release archive name mismatch: expected {expected_archive_name}, got {path.name}"
-        )
-    # 固化七项载荷与最后一个摘要清单的顺序。
-    payload_names = expected_windows_payload(version)
-    # 清单必须是最后且唯一不自哈希的条目。
-    expected_names = payload_names + (MANIFEST_NAME,)
-    # Windows ZIP 统一冻结为 ZIP 规范允许的最早时间。
-    expected_timestamp = (1980, 1, 1, 0, 0, 0)
-    # 以只读模式打开候选包。
-    with zipfile.ZipFile(path, mode="r") as archive:
-        # 固化条目快照，避免多次枚举产生状态差异。
-        members = archive.infolist()
-        # 保存大小写折叠后的已见名称。
-        seen_names: set[str] = set()
-        # 在集合比较前逐项验证路径与元数据。
-        for member in members:
-            # 验证原始条目名称。
-            validate_entry_name(member.filename)
-            # 目录条目不属于冻结交付物。
-            if member.is_dir():
-                # 拒绝额外目录与空路径 owner。
-                raise ValueError(
-                    f"internal release entry is not a regular file: {member.filename}"
-                )
-            # 使用 Windows 消费语义拒绝仅大小写不同的重复路径。
-            folded_name = member.filename.casefold()
-            # 重复路径会让解包结果不确定。
-            if folded_name in seen_names:
-                # 报告重复条目。
-                raise ValueError(
-                    f"internal release contains a duplicate entry: {member.filename}"
-                )
-            # 发布当前条目名称所有权。
-            seen_names.add(folded_name)
-            # 条目时间必须与构建契约一致。
-            if member.date_time != expected_timestamp:
-                # 拒绝使相同载荷产生不同容器摘要的时间漂移。
-                raise ValueError(
-                    f"internal release entry timestamp is not canonical: {member.filename}"
-                )
-        # 名称、大小写与顺序必须与冻结契约完全一致。
-        actual_names = tuple(member.filename for member in members)
-        # 同时拒绝缺失、额外、重排与大小写漂移。
-        if actual_names != expected_names:
-            # 报告完整实际与预期顺序。
-            raise ValueError(
-                f"internal release entry order mismatch: expected {expected_names}, got {actual_names}"
-            )
-        # 读取唯一且已经过结构门禁的摘要清单。
-        manifest_bytes = archive.read(MANIFEST_NAME)
-        # 小型清单必须保持有界。
-        if len(manifest_bytes) > MAX_MANIFEST_BYTES:
-            # 拒绝异常大清单。
-            raise ValueError(
-                f"internal release hash manifest is too large: {len(manifest_bytes)} bytes"
-            )
-        # 清单不能为空且最后一行必须显式结束。
-        if not manifest_bytes or not manifest_bytes.endswith(b"\n"):
-            # 拒绝空清单与不稳定尾行。
-            raise ValueError("internal release hash manifest lacks a final newline")
-        # Windows 原生构建器可写 CRLF，交叉构建器写 LF；两者归一后语义相同。
-        normalized_manifest = manifest_bytes.replace(b"\r\n", b"\n")
-        # 孤立 CR 不是受支持的跨平台换行。
-        if b"\r" in normalized_manifest:
-            # 拒绝混合或异常换行。
-            raise ValueError("internal release hash manifest newline format is invalid")
-        # 清单只允许纯 ASCII。
-        try:
-            # 解码已经完成边界检查的清单。
-            manifest_text = normalized_manifest.decode("ascii")
-        # 非 ASCII 字节必须形成稳定失败。
-        except UnicodeDecodeError as error:
-            # 包装为公开校验错误而不泄漏二进制。
-            raise ValueError("internal release hash manifest is not ASCII") from error
-        # 按最终 LF 拆分出七行摘要。
-        manifest_lines = manifest_text[:-1].split("\n")
-        # 摘要行数必须与 payload 一致。
-        if len(manifest_lines) != len(payload_names):
-            # 拒绝缺失、重复或额外摘要。
-            raise ValueError(
-                f"internal release hash line count mismatch: expected {len(payload_names)}, got {len(manifest_lines)}"
-            )
-        # 按冻结顺序验证每条摘要语法、名称与真实内容。
-        for expected_name, line in zip(payload_names, manifest_lines, strict=True):
-            # 解析小写摘要和规范名称。
-            match = MANIFEST_LINE.fullmatch(line)
-            # 行格式必须完全匹配。
-            if match is None:
-                # 拒绝长度、大小写或分隔漂移。
-                raise ValueError(f"internal release hash line is invalid: {line}")
-            # 读取声明摘要与名称。
-            declared_hash, declared_name = match.groups()
-            # 名称必须与冻结顺序完全一致。
-            if declared_name != expected_name:
-                # 拒绝别名、重排或未覆盖载荷。
-                raise ValueError(
-                    f"internal release hash entry mismatch: expected {expected_name}, got {declared_name}"
-                )
-            # 对 ZIP 内真实解包内容计算摘要。
-            actual_hash = hashlib.sha256(archive.read(expected_name)).hexdigest()
-            # 声明摘要必须逐字节匹配。
-            if declared_hash != actual_hash:
-                # 报告具体损坏载荷。
-                raise ValueError(
-                    f"internal release hash mismatch for {expected_name}: expected {declared_hash}, got {actual_hash}"
-                )
-    # 返回整个 ZIP 的最终摘要。
-    return hash_file(path)
-
-
-# 解析命令行并执行校验。
-def main() -> int:
-    # 创建稳定命令行解析器。
-    parser = argparse.ArgumentParser(description=__doc__)
-    # 候选包路径必须由调用方显式提供。
-    parser.add_argument("--archive", required=True, type=Path)
-    # 版本默认与当前首发候选一致。
-    parser.add_argument("--version", default="0.0.7")
-    # 解析当前进程参数。
-    arguments = parser.parse_args()
-    # 解析一次规范绝对路径供分派与输出复用。
-    archive_path = arguments.archive.resolve()
-    # 根据冻结文件名后缀选择平台容器校验器。
-    if archive_path.name.endswith(".tar.gz"):
-        # 执行 Linux ustar/gzip 完整校验。
-        archive_hash = verify_archive(archive_path, arguments.version)
-        # 固化平台标签供稳定输出。
-        platform_name = "Linux"
-    elif archive_path.name.endswith(".zip"):
-        # 执行 Windows ZIP 完整校验。
-        archive_hash = verify_zip_archive(archive_path, arguments.version)
-        # 固化平台标签供稳定输出。
-        platform_name = "Windows"
+def verify(path, version, platform):
+    names = payload(version, platform) + (MANIFEST_NAME,)
+    if path.name != archive_name(version, platform):
+        raise ValueError(f'archive name mismatch: expected {archive_name(version, platform)}')
+    if platform == 'linux-x64':
+        with path.open('rb') as stream:
+            header = stream.read(10)
+        if len(header) != 10 or header[:4] != b'\x1f\x8b\x08\x00' or header[4:8] != bytes(4):
+            raise ValueError('noncanonical gzip header')
+        with tarfile.open(path, 'r:gz') as archive:
+            members = archive.getmembers()
+            for member in members:
+                safe_name(member.name)
+                mode = 0o755 if member.name == binary_name(platform) else 0o644
+                if (not member.isfile() or member.pax_headers or member.mtime != 0
+                        or member.uid != 0 or member.gid != 0 or member.mode != mode
+                        or member.uname or member.gname):
+                    raise ValueError(f'noncanonical tar metadata: {member.name}')
+            if tuple(m.name for m in members) != names:
+                raise ValueError('archive entry order/closure mismatch')
+            def read(name, limit=None):
+                member = archive.getmember(name)
+                if limit is not None and member.size > limit:
+                    raise ValueError(f'oversize metadata: {name}')
+                with archive.extractfile(member) as stream:
+                    return stream.read()
+            validate_contents(read, version, platform)
     else:
-        # 拒绝没有受支持容器契约的输入。
-        raise ValueError(f"unsupported internal release container: {archive_path.name}")
-    # 输出稳定成功证据。
-    print(f"Verified {platform_name} internal release: {archive_path}")
-    # 输出整个归档的小写 SHA-256。
-    print(f"Verified SHA256: {archive_hash}")
-    # 返回成功进程状态。
-    return 0
+        with zipfile.ZipFile(path) as archive:
+            members = archive.infolist()
+            for member in members:
+                safe_name(member.filename)
+                if (member.is_dir() or member.date_time != (1980, 1, 1, 0, 0, 0)
+                        or member.extra or member.comment or (member.external_attr >> 16) != 0o100644):
+                    raise ValueError(f'noncanonical zip metadata: {member.filename}')
+            if tuple(m.filename for m in members) != names or archive.comment:
+                raise ValueError('archive entry order/closure mismatch')
+            def read(name, limit=None):
+                if limit is not None and archive.getinfo(name).file_size > limit:
+                    raise ValueError(f'oversize metadata: {name}')
+                return archive.read(name)
+            validate_contents(read, version, platform)
+    return hash_file(path)
 
 
-# 只在脚本入口执行命令行逻辑。
-if __name__ == "__main__":
-    # 把校验错误转换为稳定非零退出。
+def verify_archive(path, version):
+    return verify(path, version, 'linux-x64')
+
+
+def verify_zip_archive(path, version):
+    return verify(path, version, 'win-x64')
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--archive', type=Path, required=True)
+    parser.add_argument('--version', required=True)
+    args = parser.parse_args()
     try:
-        # 执行主入口并返回其状态。
-        raise SystemExit(main())
-    # 只捕获预期输入、文件与归档错误。
-    except (OSError, tarfile.TarError, zipfile.BadZipFile, ValueError) as error:
-        # 把失败原因写入标准错误。
-        print(f"Internal release verification failed: {error}", file=sys.stderr)
-        # 使用非零状态结束进程。
-        raise SystemExit(1) from error
+        platform = 'linux-x64' if args.archive.name.endswith('.tar.gz') else 'win-x64'
+        print(f'Verified SHA256: {verify(args.archive, args.version, platform)}')
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        print(f'Internal release verification failed: {exc}', file=sys.stderr)
+        sys.exit(1)

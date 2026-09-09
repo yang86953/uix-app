@@ -1,9 +1,19 @@
+# 真机验收沿用共同文档输入；本脚本本批未运行。
+param(
+    [Parameter(Mandatory = $true)][string]$DocsRepo,
+    [Parameter(Mandatory = $true)][string]$DocsRevision
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # 固定仓库、版本与 Windows 候选包路径。
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
-$version = '0.0.7'
+$metadataJson = & cargo metadata --manifest-path (Join-Path $repoRoot 'Cargo.toml') --format-version 1 --no-deps --locked
+if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed.' }
+$metadata = $metadataJson | ConvertFrom-Json
+$rootPackage = @($metadata.packages | Where-Object { $_.name -eq 'uix' })
+if ($rootPackage.Count -ne 1) { throw 'Expected one uix package.' }
+$version = [string]$rootPackage[0].version
 $artifactName = "uix-$version-internal-win-x64.zip"
 $artifactPath = Join-Path $repoRoot "target\internal-release\$artifactName"
 $evidencePath = Join-Path $repoRoot "target\internal-release\uix-$version-windows-acceptance.json"
@@ -120,14 +130,14 @@ try {
     }
 
     # 第一次生成并内置校验规范 Windows ZIP。
-    & (Join-Path $PSScriptRoot 'build_internal_release.ps1')
+    & (Join-Path $PSScriptRoot 'build_internal_release.ps1') -DocsRepo $DocsRepo -DocsRevision $DocsRevision -Version $version
     if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
         throw "Windows release artifact is missing: $artifactPath"
     }
     $firstHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifactPath).Hash.ToLowerInvariant()
 
     # 使用相同提交、工具链和依赖输入再次生成候选包。
-    & (Join-Path $PSScriptRoot 'build_internal_release.ps1')
+    & (Join-Path $PSScriptRoot 'build_internal_release.ps1') -DocsRepo $DocsRepo -DocsRevision $DocsRevision -Version $version
     if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
         throw "Second Windows release artifact is missing: $artifactPath"
     }
