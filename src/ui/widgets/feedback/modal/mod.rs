@@ -338,7 +338,6 @@ widget! {
         } else {
             self.dialog_rect_for_surface(frame)
         };
-        let dialog = self.apply_transition_to_dialog(dialog);
         self.last_dialog_rect.set(dialog);
         // 保留主题遮罩色的基础 alpha，并按当前进出场进度衰减。
         let mask = super::fade_token_color(
@@ -358,6 +357,11 @@ widget! {
         if dialog.w <= 0.0 || dialog.h <= 0.0 {
             return;
         }
+        // 面板与真实内容子树使用同一变换；遮罩留在原表面坐标系。
+        ctx.save();
+        ctx.concat_transform(self.dialog_transition_transform(dialog));
+        let opacity = ctx.opacity() * self.transition_opacity();
+        ctx.set_opacity(opacity);
         ctx.push_clip(dialog);
         let radius = Some(Radius::uniform(resolved.panel_radius));
         ctx.fill_rect(dialog, resolved.background, radius);
@@ -498,6 +502,7 @@ widget! {
             );
         }
         ctx.pop_clip();
+        ctx.restore();
     }
 
     overlay_entry => (&self, id: crate::ui::WidgetId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
@@ -601,10 +606,19 @@ widget! {
 
     children_clip => (&self, _frame: Rect) -> Option<Rect> {
         if self.is_present() {
-            Some(self.body_rect(self.last_dialog_rect.get()))
+            let dialog = self.last_dialog_rect.get();
+            Some(self.dialog_transition_transform(dialog).transform_rect(self.body_rect(dialog)))
         } else {
             Some(Rect::zero())
         }
+    }
+
+    children_transform => (&self, _frame: Rect) -> Option<crate::draw::Transform> {
+        Some(self.dialog_transition_transform(self.last_dialog_rect.get()))
+    }
+
+    children_opacity => (&self) -> f32 {
+        self.transition_opacity()
     }
 
     take_layout_request => (&mut self) -> bool {

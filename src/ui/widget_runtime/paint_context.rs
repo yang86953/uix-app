@@ -306,6 +306,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         current_transform() -> Transform;
         set_transform(transform: Transform);
         concat_transform(transform: Transform);
+        opacity() -> f32;
         set_opacity(opacity: f32);
         set_blend_mode(mode: BlendMode);
         save();

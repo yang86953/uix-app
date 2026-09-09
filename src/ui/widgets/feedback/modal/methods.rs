@@ -624,6 +624,14 @@ impl Modal {
     }
 
     pub(crate) fn pointer_target_at(&self, pos: Point) -> Option<ModalPointerTarget> {
+        // 事件已是 Modal 本地坐标；把面板动画逆变换后复用稳定的命中几何。
+        let frame = self.last_frame.get();
+        let point = Point::new(pos.x + frame.x, pos.y + frame.y);
+        let point = self
+            .dialog_transition_transform(self.last_dialog_rect.get())
+            .inverse()?
+            .transform_point(point);
+        let pos = Point::new(point.x - frame.x, point.y - frame.y);
         // 标题栏关闭槽优先于其他目标。
         if self.closable && self.close_rect_local().contains(pos) {
             // 返回关闭目标。
@@ -748,16 +756,16 @@ impl Modal {
         self.transition.opacity_progress.clamp(0.0, 1.0)
     }
 
-    pub(crate) fn apply_transition_to_dialog(&self, rect: Rect) -> Rect {
+    pub(crate) fn dialog_transition_transform(&self, rect: Rect) -> crate::draw::Transform {
         let scale = self.transition.scale.clamp(0.0, 1.0);
-        let w = rect.w * scale;
-        let h = rect.h * scale;
-        Rect::new(
-            rect.x + (rect.w - w) * 0.5 + self.transition.offset.x,
-            rect.y + (rect.h - h) * 0.5 + self.transition.offset.y,
-            w,
-            h,
+        let center_x = rect.x + rect.w * 0.5;
+        let center_y = rect.y + rect.h * 0.5;
+        crate::draw::Transform::translate(
+            center_x + self.transition.offset.x,
+            center_y + self.transition.offset.y,
         )
+        .concat(crate::draw::Transform::scale(scale, scale))
+        .concat(crate::draw::Transform::translate(-center_x, -center_y))
     }
 
     pub(crate) fn intrinsic_size(&self) -> Size {

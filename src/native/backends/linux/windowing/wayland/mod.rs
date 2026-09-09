@@ -201,6 +201,9 @@ pub(crate) struct WaylandBackend {
     // ── 文本输入（IME）──────────────────────────────────────────
     pub(crate) text_input_manager: Option<Main<ZwpTextInputManagerV3>>,
     pub(crate) text_input: Option<Main<ZwpTextInputV3>>,
+    // 协议回调与同步文本端口仅在 Wayland owner thread 共享，不引入跨线程锁。
+    pub(crate) text_input_protocol:
+        std::rc::Rc<std::cell::Cell<text_input::TextInputProtocolState>>,
     pub(crate) text_input_window_id: Option<WindowId>,
     pub(crate) active_text_input_window_id: Option<WindowId>,
     pub(crate) text_input_composition: Arc<Mutex<ImeCompositionState>>,
@@ -476,6 +479,7 @@ impl WaylandBackend {
             _wl_outputs: wl_output_handles,
             text_input_manager,
             text_input: None,
+            text_input_protocol: Default::default(),
             text_input_window_id: None,
             active_text_input_window_id: None,
             text_input_composition: Arc::new(Mutex::new(ImeCompositionState::default())),
