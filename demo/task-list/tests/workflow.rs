@@ -93,3 +93,48 @@ fn malformed_file_stays_visible_and_cannot_be_overwritten() {
     assert!(app.data().tasks.is_empty());
     app.shutdown().unwrap();
 }
+
+#[test]
+fn full_bounded_list_scrolls_to_last_task_and_back() {
+    let dir = DataDir::new();
+    let app = TaskApp::new(dir.file()).unwrap();
+    for n in 1..=uix_task_list::domain::MAX_TASKS {
+        app.add(format!("任务 {n}"));
+    }
+    let root = app.clone();
+    let mut ui = TestApp::new((720.0, 680.0), move || root.view());
+    assert!(
+        ui.snapshot()
+            .find("toggle-1")
+            .unwrap()
+            .visible_bounds
+            .is_some()
+    );
+    assert!(
+        ui.snapshot()
+            .find("toggle-128")
+            .unwrap()
+            .visible_bounds
+            .is_none()
+    );
+    ui.scroll("task-scroll", uix::core::Point::new(0.0, -100_000.0))
+        .unwrap();
+    assert!(
+        ui.snapshot()
+            .find("toggle-128")
+            .unwrap()
+            .visible_bounds
+            .is_some()
+    );
+    ui.scroll("task-scroll", uix::core::Point::new(0.0, 100_000.0))
+        .unwrap();
+    assert!(
+        ui.snapshot()
+            .find("toggle-1")
+            .unwrap()
+            .visible_bounds
+            .is_some()
+    );
+    assert_eq!(app.data().tasks.len(), 128);
+    app.shutdown().unwrap();
+}
