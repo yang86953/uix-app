@@ -96,7 +96,18 @@ def rust_notices(meta, artifacts, output):
                           'source': p['source'], 'license_expression': p['license'], 'files': files})
     if not collected:
         raise ValueError('no Rust third-party build artifacts recorded')
-    write_json(output, {'schema': 1, 'scope': 'Cargo compiler-artifact package set for the demo build; includes build/proc-macro dependencies, not a claim of exact linker-symbol reachability', 'packages': collected})
+    sysroot = Path(run(['rustc', '--print', 'sysroot'], capture=True).decode().strip())
+    rust_docs = sysroot / 'share/doc/rust'
+    library_copyright = rust_docs / 'COPYRIGHT-library.html'
+    if not library_copyright.is_file() or not (rust_docs / 'licenses').is_dir():
+        raise ValueError('Rust toolchain standard-library copyright/license materials are missing')
+    std_files = []
+    for path in [library_copyright, *sorted((rust_docs / 'licenses').glob('*.txt'))]:
+        text = path.read_bytes().decode('utf-8')
+        if not text.strip():
+            raise ValueError(f'empty Rust toolchain license: {path.name}')
+        std_files.append({'path': path.relative_to(rust_docs).as_posix(), 'text': text, 'sha256': hash_file(path)})
+    write_json(output, {'schema': 1, 'rust_standard_library': {'scope': 'Toolchain-shipped complete standard-library copyright inventory and referenced license directory; conservative, not target-level reachability', 'files': std_files}, 'scope': 'Cargo compiler-artifact package set for the demo build; includes build/proc-macro dependencies, not a claim of exact linker-symbol reachability', 'packages': collected})
     return [p['id'] for p in collected]
 
 

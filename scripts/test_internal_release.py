@@ -37,7 +37,7 @@ class CandidateContractTests(unittest.TestCase):
                     info.size = len(data)
                     archive.addfile(info, io.BytesIO(data))
         license_path = self.stage / 'LICENSE'
-        write_json(self.stage / 'RUST_THIRD_PARTY_NOTICES.json', {'schema': 1, 'packages': [{
+        write_json(self.stage / 'RUST_THIRD_PARTY_NOTICES.json', {'schema': 1, 'rust_standard_library': {'files': [{'path': 'COPYRIGHT-library.html', 'text': license_path.read_text(), 'sha256': hash_file(license_path)}]}, 'packages': [{
             'id': 'test-package', 'name': 'test-package', 'files': [{
                 'path': 'LICENSE', 'text': license_path.read_text(), 'sha256': hash_file(license_path)}]}]})
         identity = {
