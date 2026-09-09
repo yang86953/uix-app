@@ -25,7 +25,7 @@
           <Input automationId="draft" value={draft} disabled={!writable} placeholder="任务标题（1–80 字符）" flexGrow={1} />
           <Button automationId="add" type="primary" disabled={!writable} @click="add(draft)">添加</Button>
         </Container>
-        <ScrollView height="300px">
+        <ScrollView automationId="task-scroll" height="300px">
           <Column gap="8px">
             <For {id} in {ids} key={id}>
               <TaskRow task_key={id.clone()} title={title_for(id.clone())} toggle={toggle} remove={remove} />
