@@ -563,15 +563,21 @@ impl WidgetTree {
             .filter(|entry| entry.traps_focus())
             .map(|entry| entry.owner())
         {
+            let just_opened = !scratch.previous_trap_owners.contains(&owner);
+            let focused_owner = self.managers().focus.focused_widget() == Some(owner);
+            if just_opened {
+                // 在进入内容前记住实际原焦点，包括由同一 owner 承担的关闭态入口。
+                self.remember_focus_before_trap(owner);
+            }
             let focused_inside = self.managers().focus.focused_widget().is_some_and(|id| {
                 self.is_descendant_of(id, owner) && self.focus_target_available(id)
             });
-            if !focused_inside {
+            if !focused_inside || (just_opened && focused_owner) {
                 self.remember_focus_before_trap(owner);
                 let target = self
                     .collect_focusable_within(owner)
                     .into_iter()
-                    .find(|&id| self.focus_target_available(id))
+                    .find(|&id| id != owner && self.focus_target_available(id))
                     .or_else(|| self.focus_target_available(owner).then_some(owner));
                 self.set_focus(target);
             }

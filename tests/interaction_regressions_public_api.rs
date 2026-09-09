@@ -339,3 +339,59 @@ fn modal_enter_close_slot_uses_the_same_scaled_geometry_as_paint() {
         "缩放后的关闭图标应命中，且不能由 mask_closable 冒充成功"
     );
 }
+
+#[test]
+fn modal_openers_key_pairs_move_focus_into_content() {
+    for opener in ["external-opener", "builtin-opener"] {
+        for key in [KeyCode::Space, KeyCode::Enter] {
+            let open = State::new(false);
+            let changes = State::new(0_u32);
+            let root_open = open.clone();
+            let root_changes = changes.clone();
+            let mut app = TestApp::new((640.0, 480.0), move || {
+                let changes = root_changes.clone();
+                let external_changes = root_changes.clone();
+                let external_open = root_open.clone();
+                column_fit((
+                    input()
+                        .placeholder("Previous focus")
+                        .build()
+                        .automation_id("previous"),
+                    button("External opener")
+                        .on_click_fn(move || {
+                            external_changes.update(|n| *n += 1);
+                            external_open.set(true);
+                        })
+                        .automation_id("external-opener"),
+                    Modal::builder()
+                        .open(&root_open)
+                        .content(|| {
+                            input()
+                                .placeholder("Dialog input")
+                                .build()
+                                .automation_id("body-input")
+                        })
+                        .on_open_change(move |_| changes.update(|n| *n += 1))
+                        .build()
+                        .automation_id("builtin-opener"),
+                ))
+            });
+            app.focus("previous").unwrap();
+            // The native probe separately establishes this restored closed-state target.
+            // Here test its public paired keys, without claiming TestApp advanced an exit.
+            app.focus(opener).unwrap();
+            app.press_key(key, KeyMod::NONE).unwrap();
+            assert!(
+                open.get(),
+                "{opener} must accept its advertised keyboard activation"
+            );
+            assert_eq!(changes.get(), 1, "a paired key opens exactly once");
+            assert!(
+                app.snapshot().find("body-input").unwrap().focused,
+                "the closed-state owner is an opener, not already-focused dialog content"
+            );
+            app.press_key(KeyCode::Escape, KeyMod::NONE).unwrap();
+            assert!(!open.get());
+        }
+    }
+}

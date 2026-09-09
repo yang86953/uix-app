@@ -196,7 +196,9 @@ impl WidgetTree {
             return;
         }
         let current = self.managers.focus.focused_widget();
-        let restore = current.filter(|&id| !self.is_descendant_of(id, owner));
+        // 关闭态的 owner 也可能是公开的可聚焦触发按钮（如 Modal 内置入口）。
+        // 它自身是有效恢复目标；只排除将随浮层关闭而隐藏的内容后代。
+        let restore = current.filter(|&id| id == owner || !self.is_descendant_of(id, owner));
         self.focus_trap_restore.push((owner, restore));
     }
 
