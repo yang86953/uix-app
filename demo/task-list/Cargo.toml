@@ -1,0 +1,21 @@
+[package]
+name = "uix-task-list"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license-file = "LICENSE"
+description = "内部授权使用的 UIX Lang 与 Rust 任务清单示例"
+
+[workspace]
+
+[dependencies]
+uix = { version = "=0.0.8", git = "ssh://gitea@100.79.245.29:2222/admin/uix-app.git", rev = "e39a2220efdde3e5078e3b919953b4a59e9043b0", default-features = false, features = ["vulkan", "settings-serde"] }
+serde = { version = "1", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+test-harness = ["uix/test-harness"]
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = false

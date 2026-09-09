@@ -39,5 +39,8 @@ __pycache__/
 # demo 工作区构建产物
 demo/target/
 
-# Cargo.lock：全部不入库，本地由 cargo 按清单语义化范围解析生成。
+# Cargo.lock：默认不入库；下方独立固定依赖应用保留自己的解析锁。
 Cargo.lock
+
+# 独立任务清单示例按第一方 Git 完整 rev 消费，随应用提交解析锁。
+!demo/task-list/Cargo.lock
