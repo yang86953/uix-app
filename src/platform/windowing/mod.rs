@@ -395,3 +395,5 @@ pub trait IClipboard {
     /// 判断剪贴板是否包含可读取文本。
     fn has_text(&self) -> Result<bool>;
 }
+
+pub mod desktop_cursor;
