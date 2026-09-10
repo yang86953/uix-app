@@ -82,7 +82,8 @@ UIX 不随仓库或 crate 分发完整正文字体：
   不创建显示连接、窗口或访问用户应用。
 - 需要确定性正文外观的应用随应用自带字体，并以 `App::font_bundle`（窗口应用）
   或 `AgentWorkspace::font_bundle`（后台操作面）显式注入；显式字体包优先于系统发现。
-- 找不到可加载的正文字体时，启动返回可识别错误。随包的 `assets/fonts/lucide.ttf`
+- 无窗口 `AgentWorkspace` 找不到可加载的正文字体时，启动返回可识别错误；窗口 `App`
+  仍保留既有系统字体后备行为。随包的 `assets/fonts/lucide.ttf`
   只是图标字体（Lucide，ISC），不会也不得被用作正文字体。
 - `tests/fixtures/fonts/uix-test-body.ttf` 是仅用于自动化测试的 OFL 子集 fixture，
   详见 `THIRD_PARTY_NOTICES.md`。
