@@ -34,9 +34,9 @@ opt-level = 3
 codegen-units = 16
 
 [dependencies]
-uix-lang-runtime = { path = "uix-lang-runtime", version = "0.0.8", registry = "gitea", optional = true }
-uix-lang-compiler = { path = "uix-lang-compiler", version = "0.0.8", registry = "gitea", default-features = false, optional = true }
-uix-derive = { path = "uix-derive", version = "0.0.8", registry = "gitea", default-features = false }
+uix-lang-runtime = { path = "uix-lang-runtime", version = "0.0.8", optional = true }
+uix-lang-compiler = { path = "uix-lang-compiler", version = "0.0.8", default-features = false, optional = true }
+uix-derive = { path = "uix-derive", version = "0.0.8", default-features = false }
 ab_glyph = "0.2.32"
 # 小端 RHI 图片上传以安全切片转换借用既有 u32 像素，不扩大 unsafe 边界。
 bytemuck = "1.25.2"
