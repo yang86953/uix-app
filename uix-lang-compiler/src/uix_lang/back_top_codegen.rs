@@ -67,7 +67,7 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
         }
     };
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::BackTop::new() };
+    let mut widget = quote! { ::uix_app::prelude::BackTop::new() };
     // 可选阈值支持长度字面量与受限数值表达式。
     if let Some(attribute) = find_attribute(element, "threshold") {
         // 生成 f32 阈值表达式。
@@ -78,7 +78,7 @@ pub(crate) fn generate_back_top(element: &Element) -> Result<TokenStream, Diagno
     // 最后应用状态绑定或只读快照配置。
     widget = quote! { (#widget) #scroll_configuration };
     // 先通过公开 View 契约进入 BackTop 的 UIX 声明壳，再应用调用方公共属性。
-    let base = quote! { ::uix::prelude::View::build(#widget) };
+    let base = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费专有属性并返回公共 View 表达式。
     apply_common_attributes(base, &element.attributes, &["threshold", "scrollY"])
 }

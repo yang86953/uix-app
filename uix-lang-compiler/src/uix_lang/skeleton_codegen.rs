@@ -26,7 +26,7 @@ pub(crate) fn generate_skeleton(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Skeleton::new() };
+    let mut widget = quote! { ::uix_app::prelude::Skeleton::new() };
     // 可选形状必须在编译期映射为公开枚举。
     if let Some(attribute) = find_attribute(element, "shape") {
         // 形状是确定的关键字，不接受运行时表达式。
@@ -34,11 +34,11 @@ pub(crate) fn generate_skeleton(element: &Element) -> Result<TokenStream, Diagno
         // 把文档关键字映射到公开运行时枚举。
         let shape = match shape_name.as_str() {
             // 映射矩形占位。
-            "rect" => quote! { ::uix::prelude::SkeletonShape::Rect },
+            "rect" => quote! { ::uix_app::prelude::SkeletonShape::Rect },
             // 映射圆形占位。
-            "circle" => quote! { ::uix::prelude::SkeletonShape::Circle },
+            "circle" => quote! { ::uix_app::prelude::SkeletonShape::Circle },
             // 映射文字行占位。
-            "text" => quote! { ::uix::prelude::SkeletonShape::Text },
+            "text" => quote! { ::uix_app::prelude::SkeletonShape::Text },
             // 拒绝文档外的形状关键字。
             _ => {
                 // 返回包含合法集合的确定性诊断。
@@ -71,7 +71,7 @@ pub(crate) fn generate_skeleton(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Skeleton 专有尺寸，避免重复应用到外层 View。
     apply_common_attributes(
         // 传入已经配置的骨架屏 View。

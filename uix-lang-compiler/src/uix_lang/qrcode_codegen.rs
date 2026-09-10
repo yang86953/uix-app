@@ -48,12 +48,12 @@ pub(crate) fn generate_qrcode(element: &Element) -> Result<TokenStream, Diagnost
 
     // 构造时临时借用字符串，运行时 QRCode 立即取得内容所有权。
     let widget = quote! {
-        ::uix::prelude::QRCode::new(&(#value))
+        ::uix_app::prelude::QRCode::new(&(#value))
             .size(#size)
             .error_level(#error_level)
     };
     // 经公开 View 契约进入 QRCode 自己的同目录 UIX 声明根。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(
         // 传入已经配置的二维码 View。

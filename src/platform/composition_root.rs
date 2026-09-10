@@ -59,6 +59,27 @@ pub(super) fn choose_native_files(
     )
 }
 
+/// 返回当前目标的原生字体发现 Provider，供无窗口后台组合复用平台窄接口。
+///
+/// 只执行字体路径发现（fontconfig、注册表、CoreText），不创建显示连接、窗口
+/// 或访问用户应用；OS 分支保持在平台组合根内，应用侧只消费
+/// [`crate::platform::services::FontSystemInfo`] 窄接口。
+#[cfg(feature = "agent-control")]
+pub(crate) fn native_font_system_info() -> impl crate::platform::services::FontSystemInfo {
+    #[cfg(target_os = "linux")]
+    {
+        crate::native::backends::linux::system_info::LinuxSystemInfo::new()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::native::backends::windows::system_info::WindowsSystemInfo
+    }
+    #[cfg(target_os = "macos")]
+    {
+        crate::native::backends::macos::platform::services2::MacosSystemInfo
+    }
+}
+
 /// 调用当前 Windows 或 macOS 目标的原生文件多选 adapter。
 #[cfg(windows)]
 pub(super) fn choose_native_files(title: &str, filters: &str) -> Result<Option<Vec<String>>> {

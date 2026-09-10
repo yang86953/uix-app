@@ -16,14 +16,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
-use uix::app::agent_client::AgentBridgeClient;
-use uix::app::agent_workspace::AgentWorkspace;
-use uix::app::extensions::{
+use uix_app::app::agent_client::AgentBridgeClient;
+use uix_app::app::agent_workspace::AgentWorkspace;
+use uix_app::app::extensions::{
     ExtensionHost, ExtensionPackage, ExtensionPort, ExtensionUiHandle, ExtensionValue, UiNode,
     UiProjector, UiUpdate,
 };
-use uix::prelude::*;
-use uix::ui::test_harness::{AutomationNode, TestApp};
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::{AutomationNode, TestApp};
 
 // 文档规定每进程一个后台操作面；消费者串行持有该公开租约。
 static WORKSPACE: Mutex<()> = Mutex::new(());
@@ -124,7 +124,7 @@ fn commit_port(documents: SharedDocuments) -> ExtensionPort {
 
 /// 一次后台装配：workspace（根 + 投影器 + 修订 State）与扩展 worker。
 struct BackgroundWorkbench {
-    workspace: uix::app::agent_workspace::AgentWorkspaceHandle,
+    workspace: uix_app::app::agent_workspace::AgentWorkspaceHandle,
     client: AgentBridgeClient,
     handle: ExtensionUiHandle,
     documents: SharedDocuments,
@@ -876,7 +876,7 @@ fn hot_replace_keeps_editing_and_committing_after_upgrade() {
         .expect_err("schema 不一致应拒绝");
     assert!(matches!(
         rejected,
-        uix::app::extensions::ExtensionError::Incompatible(_)
+        uix_app::app::extensions::ExtensionError::Incompatible(_)
     ));
     let _ = std::fs::remove_dir_all(&bad_dir);
     let still_v1 = bench
@@ -1016,7 +1016,7 @@ fn revocation_deactivation_clears_mount_and_keeps_host_alive() {
         .expect_err("撤权后命令应被拒");
     assert!(matches!(
         denied,
-        uix::app::extensions::ExtensionError::CapabilityDenied(_)
+        uix_app::app::extensions::ExtensionError::CapabilityDenied(_)
     ));
     // 面板事件被丢弃：处理后统计冻结（有界负等待，非固定延时替代流程）。
     let _ = bench
@@ -1077,7 +1077,7 @@ fn revocation_deactivation_clears_mount_and_keeps_host_alive() {
         .expect_err("重复停用应失败");
     assert!(matches!(
         repeated,
-        uix::app::extensions::ExtensionError::UnknownExtension(_)
+        uix_app::app::extensions::ExtensionError::UnknownExtension(_)
     ));
 
     // 关闭：worker 排空释放，操作面回收端点；客户端随后观察到关闭事实。
@@ -1133,11 +1133,11 @@ fn reload_after_teardown_completes_business_without_stale_pollution() {
     bench
         .handle
         .event_sender()
-        .send(uix::app::extensions::UiEvent {
+        .send(uix_app::app::extensions::UiEvent {
             extension: "text-bench".to_string(),
             generation: old_generation,
             handler: "on-process".to_string(),
-            payload: uix::app::extensions::UiEventPayload::Click,
+            payload: uix_app::app::extensions::UiEventPayload::Click,
         })
         .expect("投递陈旧事件");
     let untouched = bench

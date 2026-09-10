@@ -90,11 +90,11 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             let widget = if expected_data_type == "ChartSeries" {
                 // 多系列固定收集嵌套 LineData 泛型。
                 quote! {
-                    ::uix::prelude::AreaChart::new().series(
+                    ::uix_app::prelude::AreaChart::new().series(
                         ::std::iter::IntoIterator::into_iter((#data).clone())
                             .collect::<::std::vec::Vec<
-                                ::uix::prelude::ChartSeries<
-                                    ::std::vec::Vec<::uix::prelude::LineData>
+                                ::uix_app::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix_app::prelude::LineData>
                                 >
                             >>()
                     )
@@ -102,9 +102,9 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             } else {
                 // 单集合保持既有 LineData 映射。
                 quote! {
-                    ::uix::prelude::AreaChart::new().data(
+                    ::uix_app::prelude::AreaChart::new().data(
                         ::std::iter::IntoIterator::into_iter((#data).clone())
-                            .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
+                            .collect::<::std::vec::Vec<::uix_app::prelude::LineData>>()
                     )
                 }
             };
@@ -138,11 +138,11 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             let widget = if expected_data_type == "ChartSeries" {
                 // 多系列固定收集嵌套 ScatterData 泛型。
                 quote! {
-                    ::uix::prelude::ScatterChart::new().series(
+                    ::uix_app::prelude::ScatterChart::new().series(
                         ::std::iter::IntoIterator::into_iter((#data).clone())
                             .collect::<::std::vec::Vec<
-                                ::uix::prelude::ChartSeries<
-                                    ::std::vec::Vec<::uix::prelude::ScatterData>
+                                ::uix_app::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix_app::prelude::ScatterData>
                                 >
                             >>()
                     )
@@ -150,17 +150,17 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
             } else if expected_data_type == "BubbleData" {
                 // 气泡入口精确收集 BubbleData。
                 quote! {
-                    ::uix::prelude::ScatterChart::new().data(
+                    ::uix_app::prelude::ScatterChart::new().data(
                         ::std::iter::IntoIterator::into_iter((#data).clone())
-                            .collect::<::std::vec::Vec<::uix::prelude::BubbleData>>()
+                            .collect::<::std::vec::Vec<::uix_app::prelude::BubbleData>>()
                     )
                 }
             } else {
                 // 普通散点入口精确收集 ScatterData。
                 quote! {
-                    ::uix::prelude::ScatterChart::new().data(
+                    ::uix_app::prelude::ScatterChart::new().data(
                         ::std::iter::IntoIterator::into_iter((#data).clone())
-                            .collect::<::std::vec::Vec<::uix::prelude::ScatterData>>()
+                            .collect::<::std::vec::Vec<::uix_app::prelude::ScatterData>>()
                     )
                 }
             };
@@ -194,9 +194,9 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
         "FunnelChart" => (
             // 生成精确类型收集。
             quote! {
-                ::uix::prelude::FunnelChart::new().data(
+                ::uix_app::prelude::FunnelChart::new().data(
                     ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::FunnelData>>()
+                        .collect::<::std::vec::Vec<::uix_app::prelude::FunnelData>>()
                 )
             },
             // 登记漏斗图专有属性。
@@ -237,7 +237,7 @@ pub(crate) fn generate_static_chart(element: &Element) -> Result<TokenStream, Di
         widget = apply_chart_attribute(widget, attribute)?;
     }
     // 把现有 Chart Widget 物化为叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
 }
@@ -528,27 +528,27 @@ fn apply_enum_attribute(
     // 按属性名和值选择公开枚举路径。
     let mapped = match (attribute.name.as_str(), value) {
         // 映射圆形散点。
-        ("pointStyle", "circle") => quote! { ::uix::prelude::PointStyle::Circle },
+        ("pointStyle", "circle") => quote! { ::uix_app::prelude::PointStyle::Circle },
         // 映射菱形散点。
-        ("pointStyle", "diamond") => quote! { ::uix::prelude::PointStyle::Diamond },
+        ("pointStyle", "diamond") => quote! { ::uix_app::prelude::PointStyle::Diamond },
         // 映射十字散点。
-        ("pointStyle", "cross") => quote! { ::uix::prelude::PointStyle::Cross },
+        ("pointStyle", "cross") => quote! { ::uix_app::prelude::PointStyle::Cross },
         // 映射内部标签。
-        ("labelPosition", "inside") => quote! { ::uix::prelude::LabelPosition::Inside },
+        ("labelPosition", "inside") => quote! { ::uix_app::prelude::LabelPosition::Inside },
         // 映射外部标签。
-        ("labelPosition", "outside") => quote! { ::uix::prelude::LabelPosition::Outside },
+        ("labelPosition", "outside") => quote! { ::uix_app::prelude::LabelPosition::Outside },
         // 映射右侧标签。
-        ("labelPosition", "right") => quote! { ::uix::prelude::LabelPosition::Right },
+        ("labelPosition", "right") => quote! { ::uix_app::prelude::LabelPosition::Right },
         // 映射居中漏斗。
-        ("align", "center") => quote! { ::uix::prelude::FunnelAlign::Center },
+        ("align", "center") => quote! { ::uix_app::prelude::FunnelAlign::Center },
         // 映射左对齐漏斗。
-        ("align", "left") => quote! { ::uix::prelude::FunnelAlign::Left },
+        ("align", "left") => quote! { ::uix_app::prelude::FunnelAlign::Left },
         // 映射右对齐漏斗。
-        ("align", "right") => quote! { ::uix::prelude::FunnelAlign::Right },
+        ("align", "right") => quote! { ::uix_app::prelude::FunnelAlign::Right },
         // 映射常规漏斗形状。
-        ("shape", "normal") => quote! { ::uix::prelude::FunnelShape::Normal },
+        ("shape", "normal") => quote! { ::uix_app::prelude::FunnelShape::Normal },
         // 映射对称漏斗形状。
-        ("shape", "symmetric") => quote! { ::uix::prelude::FunnelShape::Symmetric },
+        ("shape", "symmetric") => quote! { ::uix_app::prelude::FunnelShape::Symmetric },
         // 其他组合不在登记表。
         _ => {
             // 返回允许值诊断。

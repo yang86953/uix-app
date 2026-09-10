@@ -16,13 +16,13 @@ pub(super) fn text_align_field(
     // 规范关键字不允许额外参数或大小写漂移。
     let variant = match property.value.source.trim() {
         // left 显式选择左对齐并可覆盖继承值。
-        "left" => quote! { ::uix::prelude::TextAlign::Left },
+        "left" => quote! { ::uix_app::prelude::TextAlign::Left },
         // right 选择内容框右缘对齐。
-        "right" => quote! { ::uix::prelude::TextAlign::Right },
+        "right" => quote! { ::uix_app::prelude::TextAlign::Right },
         // center 选择内容框水平居中。
-        "center" => quote! { ::uix::prelude::TextAlign::Center },
+        "center" => quote! { ::uix_app::prelude::TextAlign::Center },
         // justify 选择段落非末行的两端对齐。
-        "justify" => quote! { ::uix::prelude::TextAlign::Justify },
+        "justify" => quote! { ::uix_app::prelude::TextAlign::Justify },
         // 未登记值必须在编译期明确拒绝。
         _ => {
             // 返回指向完整属性值的修复性诊断。

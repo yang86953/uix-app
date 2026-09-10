@@ -38,7 +38,7 @@ pub(crate) fn generate_menu(element: &Element) -> Result<TokenStream, Diagnostic
 
     // 由公开受控构造器建立 typed key 到绘制层字符串的唯一映射。
     let mut widget = quote! {
-        ::uix::prelude::Menu::controlled(
+        ::uix_app::prelude::Menu::controlled(
             (#items).clone(),
             &(#selected),
             &(#open),
@@ -57,7 +57,7 @@ pub(crate) fn generate_menu(element: &Element) -> Result<TokenStream, Diagnostic
     }
 
     // Menu 物化为公开叶 View。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选选择事件观察运行时已经提交的稳定 key。
     if let Some(attribute) = find_attribute(element, "@select") {
         // 事件解析器应始终提供受限表达式。
@@ -142,7 +142,7 @@ fn mode_tokens(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 缺省模式固定为文档声明的 vertical。
     let Some(attribute) = find_attribute(element, "mode") else {
         // 返回公开垂直模式路径。
-        return Ok(quote! { ::uix::prelude::MenuMode::Vertical });
+        return Ok(quote! { ::uix_app::prelude::MenuMode::Vertical });
     };
     // mode 是有限关键字，不接受动态表达式。
     let AttributeValue::Literal(value) = &attribute.value else {
@@ -152,11 +152,11 @@ fn mode_tokens(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 映射三个公开文档关键字。
     match value.as_str() {
         // 水平模式映射公开枚举。
-        "horizontal" => Ok(quote! { ::uix::prelude::MenuMode::Horizontal }),
+        "horizontal" => Ok(quote! { ::uix_app::prelude::MenuMode::Horizontal }),
         // 垂直模式映射公开枚举。
-        "vertical" => Ok(quote! { ::uix::prelude::MenuMode::Vertical }),
+        "vertical" => Ok(quote! { ::uix_app::prelude::MenuMode::Vertical }),
         // 内联模式映射始终展开的公开枚举。
-        "inline" => Ok(quote! { ::uix::prelude::MenuMode::Inline }),
+        "inline" => Ok(quote! { ::uix_app::prelude::MenuMode::Inline }),
         // 其他关键字不在首版 UIX 契约。
         _ => Err(mode_diagnostic(attribute)),
     }

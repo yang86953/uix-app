@@ -27,7 +27,7 @@ pub(crate) fn generate_switch(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 从公开 Switch 构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Switch::new() };
+    let mut widget = quote! { ::uix_app::prelude::Switch::new() };
     // 禁用状态接受静态或动态布尔值。
     if let Some(attribute) = find_attribute(element, "disabled") {
         // 生成统一布尔属性令牌。
@@ -56,7 +56,7 @@ pub(crate) fn generate_switch(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Switch 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的开关 View。

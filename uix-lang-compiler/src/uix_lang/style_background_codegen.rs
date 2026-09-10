@@ -50,7 +50,7 @@ pub(super) fn background_image_field(
     // 按闭合背景来源语法生成公开运行时值。
     let value = if source == "none" {
         // 显式 none 保持可覆盖继承图片的语义。
-        quote! { ::uix::prelude::BackgroundImage::None }
+        quote! { ::uix_app::prelude::BackgroundImage::None }
     } else if let Some(inner) = function_inner(source, "url") {
         // URL 必须使用成对单引号或双引号包裹。
         let path = quoted_text(inner.trim()).ok_or_else(|| {
@@ -80,17 +80,17 @@ pub(super) fn background_image_field(
         // 为生成代码持有独立路径字符串。
         let path = path.to_owned();
         // 生成公开本地图片来源。
-        quote! { ::uix::prelude::BackgroundImage::Url(::std::string::String::from(#path)) }
+        quote! { ::uix_app::prelude::BackgroundImage::Url(::std::string::String::from(#path)) }
     } else if let Some(inner) = function_inner(source, "linear-gradient") {
         // 解析恰好两个颜色端点。
         let (start, end) = gradient_colors(inner, property)?;
         // 生成固定上下方向的双色线性渐变。
-        quote! { ::uix::prelude::BackgroundImage::LinearGradient { start: #start, end: #end } }
+        quote! { ::uix_app::prelude::BackgroundImage::LinearGradient { start: #start, end: #end } }
     } else if let Some(inner) = function_inner(source, "radial-gradient") {
         // 解析恰好两个颜色端点。
         let (inner, outer) = gradient_colors(inner, property)?;
         // 生成固定中心向外的双色径向渐变。
-        quote! { ::uix::prelude::BackgroundImage::RadialGradient { inner: #inner, outer: #outer } }
+        quote! { ::uix_app::prelude::BackgroundImage::RadialGradient { inner: #inner, outer: #outer } }
     } else {
         // 未登记来源不得静默回退为 none。
         return Err(background_image_diagnostic(
@@ -136,7 +136,7 @@ pub(super) fn background_position_field(
     // 生成显式二维定位字段更新。
     Ok(quote! {
         #style.background_position = ::std::option::Option::Some(
-            ::uix::prelude::BackgroundPosition::new(#x, #y)
+            ::uix_app::prelude::BackgroundPosition::new(#x, #y)
         );
     })
 }
@@ -151,13 +151,13 @@ pub(super) fn background_repeat_field(
     // 只接受文档登记的四种规范关键字。
     let value = match property.value.source.trim() {
         // 两个轴都重复。
-        "repeat" => quote! { ::uix::prelude::BackgroundRepeat::Repeat },
+        "repeat" => quote! { ::uix_app::prelude::BackgroundRepeat::Repeat },
         // 只沿水平轴重复。
-        "repeat-x" => quote! { ::uix::prelude::BackgroundRepeat::RepeatX },
+        "repeat-x" => quote! { ::uix_app::prelude::BackgroundRepeat::RepeatX },
         // 只沿垂直轴重复。
-        "repeat-y" => quote! { ::uix::prelude::BackgroundRepeat::RepeatY },
+        "repeat-y" => quote! { ::uix_app::prelude::BackgroundRepeat::RepeatY },
         // 两个轴都不重复。
-        "no-repeat" => quote! { ::uix::prelude::BackgroundRepeat::NoRepeat },
+        "no-repeat" => quote! { ::uix_app::prelude::BackgroundRepeat::NoRepeat },
         // 未登记关键字必须在编译期明确拒绝。
         _ => {
             // 返回完整支持集合诊断。
@@ -289,22 +289,22 @@ fn keyword_position(source: &str) -> Option<KeywordPosition> {
         // left 对齐水平轴起点。
         "left" => (
             KeywordAxis::Horizontal,
-            quote! { ::uix::prelude::BackgroundAxisPosition::Start },
+            quote! { ::uix_app::prelude::BackgroundAxisPosition::Start },
         ),
         // right 对齐水平轴终点。
         "right" => (
             KeywordAxis::Horizontal,
-            quote! { ::uix::prelude::BackgroundAxisPosition::End },
+            quote! { ::uix_app::prelude::BackgroundAxisPosition::End },
         ),
         // top 对齐垂直轴起点。
         "top" => (
             KeywordAxis::Vertical,
-            quote! { ::uix::prelude::BackgroundAxisPosition::Start },
+            quote! { ::uix_app::prelude::BackgroundAxisPosition::Start },
         ),
         // bottom 对齐垂直轴终点。
         "bottom" => (
             KeywordAxis::Vertical,
-            quote! { ::uix::prelude::BackgroundAxisPosition::End },
+            quote! { ::uix_app::prelude::BackgroundAxisPosition::End },
         ),
         // center 可以补齐任意一个轴。
         "center" => (KeywordAxis::Center, center_position()),
@@ -334,7 +334,7 @@ fn numeric_position(
         // 转换为运行时零到一比例。
         let value = Literal::f32_unsuffixed(value / 100.0);
         // 生成百分比单轴值。
-        return Ok(quote! { ::uix::prelude::BackgroundAxisPosition::Percent(#value) });
+        return Ok(quote! { ::uix_app::prelude::BackgroundAxisPosition::Percent(#value) });
     }
     // 固定长度必须显式使用 px 单位。
     let Some(number) = source.strip_suffix("px") else {
@@ -344,7 +344,7 @@ fn numeric_position(
     // 解析允许正负的有限像素值。
     let value = Literal::f32_unsuffixed(finite_f32(number, property)?);
     // 生成像素单轴值。
-    Ok(quote! { ::uix::prelude::BackgroundAxisPosition::Pixels(#value) })
+    Ok(quote! { ::uix_app::prelude::BackgroundAxisPosition::Pixels(#value) })
 }
 
 // 解析有限 f32 定位分量。
@@ -369,7 +369,7 @@ fn finite_f32(source: &str, property: &StyleProperty) -> Result<f32, Diagnostic>
 // 返回单轴中心枚举表达式。
 fn center_position() -> TokenStream {
     // 使用公开 UI 背景定位契约。
-    quote! { ::uix::prelude::BackgroundAxisPosition::Center }
+    quote! { ::uix_app::prelude::BackgroundAxisPosition::Center }
 }
 
 // 解析双色渐变的两个颜色值。

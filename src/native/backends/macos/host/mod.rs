@@ -279,6 +279,6 @@ mod file_dialog_filters;
 #[path = "../presentation/presenter.rs"]
 mod presenter;
 mod services;
-mod services2;
+pub(crate) mod services2;
 #[path = "../windowing/window_ops.rs"]
 mod window_ops;

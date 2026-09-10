@@ -36,7 +36,7 @@ pub(crate) fn generate_alert(element: &Element) -> Result<TokenStream, Diagnosti
     // 缺省状态遵循文档的 info 契约。
     let status = status_value(element)?;
     // 临时借用消息，让运行时组件复制并独占内容。
-    let mut widget = quote! { ::uix::prelude::Alert::new(&*(#message)).type_(#status) };
+    let mut widget = quote! { ::uix_app::prelude::Alert::new(&*(#message)).type_(#status) };
 
     // 可关闭能力接受布尔简写、字面量或表达式。
     if let Some(attribute) = find_attribute(element, "closable") {
@@ -56,7 +56,7 @@ pub(crate) fn generate_alert(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 先物化公开叶节点，关闭处理器与样式都由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选关闭事件只观察 Alert 已建立的 closed 变更事实。
     if let Some(attribute) = find_attribute(element, "@close") {
         // 事件解析器应始终提供受限表达式。
@@ -103,20 +103,20 @@ fn status_value(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 未声明类型时显式生成公开信息状态。
     let Some(attribute) = find_attribute(element, "type") else {
         // 返回文档缺省状态。
-        return Ok(quote! { ::uix::prelude::StatusLevel::Info });
+        return Ok(quote! { ::uix_app::prelude::StatusLevel::Info });
     };
     // 状态必须在编译期映射为公开枚举。
     let status = literal_string(attribute, "Alert type")?;
     // 把文档关键字映射到公开运行时枚举。
     match status.as_str() {
         // 映射信息提示。
-        "info" => Ok(quote! { ::uix::prelude::StatusLevel::Info }),
+        "info" => Ok(quote! { ::uix_app::prelude::StatusLevel::Info }),
         // 映射成功提示。
-        "success" => Ok(quote! { ::uix::prelude::StatusLevel::Success }),
+        "success" => Ok(quote! { ::uix_app::prelude::StatusLevel::Success }),
         // 映射警告提示。
-        "warning" => Ok(quote! { ::uix::prelude::StatusLevel::Warning }),
+        "warning" => Ok(quote! { ::uix_app::prelude::StatusLevel::Warning }),
         // 映射错误提示。
-        "error" => Ok(quote! { ::uix::prelude::StatusLevel::Error }),
+        "error" => Ok(quote! { ::uix_app::prelude::StatusLevel::Error }),
         // 未登记关键字必须在编译期拒绝。
         _ => Err(Diagnostic::new(
             // 指向非法类型属性。

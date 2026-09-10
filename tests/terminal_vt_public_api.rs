@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 struct TerminalProbe {
     session: TerminalSession,
@@ -303,7 +303,7 @@ fn oversized_grid_is_rejected_without_mutating_either_screen() {
         rows: u16::MAX,
         ..TerminalSessionConfig::default()
     });
-    assert!(matches!(result, Err(error) if error.code() == uix::core::Errc::InsufficientResources));
+    assert!(matches!(result, Err(error) if error.code() == uix_app::core::Errc::InsufficientResources));
 
     let probe = TerminalProbe::new(
         "printf 'MAIN\\033[?1049h\\033[HALT'; read -r step; printf '\\033[?1049l'",
@@ -314,7 +314,7 @@ fn oversized_grid_is_rejected_without_mutating_either_screen() {
     let before = probe.session.rows();
     assert_eq!(
         probe.session.resize(u16::MAX, u16::MAX).unwrap_err().code(),
-        uix::core::Errc::InsufficientResources
+        uix_app::core::Errc::InsufficientResources
     );
     assert_eq!(probe.session.screen_size(), (8, 4));
     assert_eq!(probe.session.rows(), before);
@@ -354,7 +354,7 @@ fn resizing_alternate_does_not_restore_a_half_width_glyph_on_primary() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn terminal_screen_semantics_follow_the_active_buffer_without_recreating_the_session() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'MAIN'; read -r step; printf '\\033[?1049h\\033[HALT'; read -r step; printf '\\033[?1049l'",
         40,
@@ -382,8 +382,8 @@ fn terminal_screen_semantics_follow_the_active_buffer_without_recreating_the_ses
 #[cfg(feature = "test-harness")]
 #[test]
 fn terminal_screen_wheel_can_revisit_output_that_left_the_live_grid() {
-    use uix::core::Point;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::core::Point;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step",
         12,
@@ -435,7 +435,7 @@ fn scrollback_preserves_order_styles_wide_characters_and_bounded_ranges() {
     assert!(probe.session.scrollback_rows(0, 0).is_empty());
     let before = probe.session.rows();
     let err = probe.session.set_scrollback_limit(100001).unwrap_err();
-    assert_eq!(err.code(), uix::core::Errc::InvalidArgument);
+    assert_eq!(err.code(), uix_app::core::Errc::InvalidArgument);
     assert_eq!(probe.session.scrollback_limit(), 1000);
     assert_eq!(probe.history(), ["红Z", "second"]);
     probe.session.set_scrollback_limit(1).unwrap();
@@ -546,7 +546,7 @@ fn erase_saved_lines_and_reset_have_distinct_live_screen_and_host_limit_contract
 #[cfg(feature = "test-harness")]
 #[test]
 fn history_view_stays_anchored_on_output_and_clamps_to_oldest_surviving_row() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step; \
          printf '\\nline5'; read -r step; printf '\\nline6\\nline7\\nline8\\nline9'; read -r step",
@@ -584,7 +584,7 @@ fn history_view_stays_anchored_on_output_and_clamps_to_oldest_surviving_row() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn browsing_keys_stay_local_and_actual_input_returns_to_live_output() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; IFS= read -r value; \
          if [ \"$value\" != 'ok' ]; then exit 23; fi; printf '\\nACCEPT'",
@@ -615,7 +615,7 @@ fn browsing_keys_stay_local_and_actual_input_returns_to_live_output() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn alternate_output_pauses_primary_history_view_and_returns_without_polluting_it() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step; \
          printf '\\033[?1049h\\033[HALT0\\nALT1\\nALT2\\nALT3'; read -r step; \
@@ -638,7 +638,7 @@ fn alternate_output_pauses_primary_history_view_and_returns_without_polluting_it
     assert!(app.text("screen").unwrap().contains("ALT3"));
     assert!(!app.text("screen").unwrap().contains("line0"));
     assert!(
-        app.scroll("screen", uix::core::Point::new(0.0, 1000.0))
+        app.scroll("screen", uix_app::core::Point::new(0.0, 1000.0))
             .is_err(),
         "alternate view must not advertise primary scrollback"
     );
@@ -654,7 +654,7 @@ fn alternate_output_pauses_primary_history_view_and_returns_without_polluting_it
 #[cfg(feature = "test-harness")]
 #[test]
 fn history_rows_keep_original_width_while_the_view_clips_and_pads_on_resize() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new("printf 'ab中\\nnext\\nlive'; read -r step", 6, 2);
     let session = probe.session.clone();
     let mut app = TestApp::new((320.0, 120.0), move || {
@@ -684,7 +684,7 @@ fn history_rows_keep_original_width_while_the_view_clips_and_pads_on_resize() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn views_share_output_but_not_history_navigation_and_rebinding_resets_the_anchor() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let first = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step",
         12,
@@ -735,7 +735,7 @@ fn views_share_output_but_not_history_navigation_and_rebinding_resets_the_anchor
 #[cfg(feature = "test-harness")]
 #[test]
 fn fractional_wheel_motion_accumulates_from_the_live_edge() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step",
         12,
@@ -751,8 +751,8 @@ fn fractional_wheel_motion_accumulates_from_the_live_edge() {
         // Raw SystemEvent is already positive-down (unlike TestApp::scroll's
         // native convention); each event is less than one row.
         app.dispatch_system_event(&SystemEvent::Wheel {
-            pos: uix::core::Point::new(50.0, 50.0),
-            delta: uix::core::Point::new(0.0, -0.05),
+            pos: uix_app::core::Point::new(50.0, 50.0),
+            delta: uix_app::core::Point::new(0.0, -0.05),
         })
         .unwrap();
     }
@@ -768,7 +768,7 @@ fn fractional_wheel_motion_accumulates_from_the_live_edge() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn clearing_history_releases_the_view_anchor_and_new_output_follows_live() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step; printf '\\nline5'; read -r step",
         12,
@@ -797,7 +797,7 @@ fn clearing_history_releases_the_view_anchor_and_new_output_follows_live() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn wheel_targeting_an_offset_view_does_not_scroll_its_sibling() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'line0\\nline1\\nline2\\nline3\\nline4'; read -r step",
         12,
@@ -817,7 +817,7 @@ fn wheel_targeting_an_offset_view_does_not_scroll_its_sibling() {
     probe.wait(|session| session.rows()[2].plain().starts_with("line4"));
     app.settle().unwrap();
     assert!(app.snapshot().find("right").unwrap().frame.x > 0.0);
-    app.scroll("right", uix::core::Point::new(0.0, 1000.0))
+    app.scroll("right", uix_app::core::Point::new(0.0, 1000.0))
         .unwrap();
     assert!(app.text("right").unwrap().contains("line0"));
     assert!(app.text("left").unwrap().contains("line4"));
@@ -828,7 +828,7 @@ fn wheel_targeting_an_offset_view_does_not_scroll_its_sibling() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn application_cursor_key_reaches_the_child_as_ss3_not_csi() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf '\\033[?1hREADY'; IFS= read -r value; printf '\\r\\n'; printf '%s' \"$value\" | od -An -tx1 | tr -d ' \\n'",
         40,
@@ -849,7 +849,7 @@ fn application_cursor_key_reaches_the_child_as_ss3_not_csi() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn bracketed_paste_frames_the_paste_event_but_not_typed_text() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf '\\033[?2004hREADY'; IFS= read -r value; printf '\\r\\n'; printf '%s' \"$value\" | od -An -tx1 | tr -d ' \\n'",
         80,
@@ -969,7 +969,7 @@ fn modes_change_independently_and_survive_returning_to_primary_without_affecting
 #[cfg(feature = "test-harness")]
 #[test]
 fn all_six_cursor_keys_switch_between_normal_and_application_encodings() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     for (mode, expected) in [
         ("\\033[?1l", "1b5b411b5b421b5b431b5b441b5b481b5b46"),
         ("\\033[?1h", "1b4f411b4f421b4f431b4f441b4f481b4f46"),
@@ -1010,7 +1010,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
 #[cfg(feature = "test-harness")]
 #[test]
 fn modified_cursor_function_and_edit_keys_use_xterm_parameters_even_in_application_mode() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf '\\033[?1hREADY'; IFS= read -r value; printf '\\r\\n'; printf '%s' \"$value\" | od -An -tx1 | tr -d ' \\n'",
         1024,
@@ -1050,7 +1050,7 @@ fn modified_cursor_function_and_edit_keys_use_xterm_parameters_even_in_applicati
 #[cfg(feature = "test-harness")]
 #[test]
 fn alt_text_uses_the_platform_text_event_and_super_input_does_not_leak() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'READY'; IFS= read -r value; printf '\\r\\n'; printf '%s' \"$value\" | od -An -tx1 | tr -d ' \\n'",
         80,
@@ -1236,7 +1236,7 @@ fn input_backpressure_rejects_whole_messages_and_recovers_after_the_child_drains
                 accepted.extend_from_slice(text.as_bytes());
                 accepted.extend_from_slice(b"\x1b[201~");
             }
-            Err(error) if error.code() == uix::core::Errc::WouldBlock => {
+            Err(error) if error.code() == uix_app::core::Errc::WouldBlock => {
                 refused = true;
                 break;
             }
@@ -1254,7 +1254,7 @@ fn input_backpressure_rejects_whole_messages_and_recovers_after_the_child_drains
             .write(&vec![b'R'; 1048577])
             .unwrap_err()
             .code(),
-        uix::core::Errc::InsufficientResources
+        uix_app::core::Errc::InsufficientResources
     );
     fixture.release(&accepted);
     probe.wait(|session| session.rows()[1].plain().starts_with("DRAINED"));
@@ -1267,7 +1267,7 @@ fn input_backpressure_rejects_whole_messages_and_recovers_after_the_child_drains
     );
     assert_eq!(
         probe.session.write(b"closed").unwrap_err().code(),
-        uix::core::Errc::InvalidOperation
+        uix_app::core::Errc::InvalidOperation
     );
 }
 
@@ -1282,7 +1282,7 @@ fn oversized_bracketed_paste_is_rejected_before_sending_any_opening_marker() {
     let text = "A".repeat(1048576 - 11);
     assert_eq!(
         probe.session.paste(&text).unwrap_err().code(),
-        uix::core::Errc::InsufficientResources
+        uix_app::core::Errc::InsufficientResources
     );
     probe.session.write(b"OK").unwrap();
     probe.finished();
@@ -1292,7 +1292,7 @@ fn oversized_bracketed_paste_is_rejected_before_sending_any_opening_marker() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn focus_changes_expire_pending_alt_and_suppressed_text_state() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let probe = TerminalProbe::new(
         "printf 'READY'; IFS= read -r value; printf '\\r\\n'; printf '%s' \"$value\" | od -An -tx1 | tr -d ' \\n'",
         80,

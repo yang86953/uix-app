@@ -11,7 +11,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $metadataJson = & cargo metadata --manifest-path (Join-Path $repoRoot 'Cargo.toml') --format-version 1 --no-deps --locked
 if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed.' }
 $metadata = $metadataJson | ConvertFrom-Json
-$rootPackage = @($metadata.packages | Where-Object { $_.name -eq 'uix' })
+$rootPackage = @($metadata.packages | Where-Object { $_.name -eq 'uix-app' })
 if ($rootPackage.Count -ne 1) { throw 'Expected one uix package.' }
 $version = [string]$rootPackage[0].version
 $artifactName = "uix-$version-internal-win-x64.zip"

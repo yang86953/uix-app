@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 
 const TEXT: &str = include_str!("../examples/modules/text_bench.uix");
 
@@ -33,7 +33,7 @@ fn ports(module: &Module, log: Arc<Mutex<Vec<String>>>) -> HostPorts {
 
 #[test]
 fn aot_and_dynamic_text_processing_have_identical_results_state_and_effect_order() {
-    let native = uix::uix_module!("examples/modules/text_bench.uix");
+    let native = uix_app::uix_module!("examples/modules/text_bench.uix");
     let dynamic = load_module(TEXT, "examples/modules/text_bench.uix").expect("动态装载");
     let mut observed = Vec::new();
     for module in [native, dynamic] {
@@ -137,7 +137,7 @@ fn async_boundaries_reject_implicit_or_synchronous_waiting_in_both_entries() {
 #[test]
 fn generated_aot_and_dynamic_signatures_keep_the_synchronous_contract() {
     for module in [
-        uix::uix_module!("examples/modules/text_bench.uix"),
+        uix_app::uix_module!("examples/modules/text_bench.uix"),
         load_module(TEXT, "text_bench.uix").expect("动态模块"),
     ] {
         assert!(module.tasks.is_empty());

@@ -4,7 +4,7 @@
 // 隔离 feedback-modal 围栏中的确认与声明式对话框。
 mod feedback_modal {
     // 引入文档承诺的反馈组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译确认对话框与自定义内容对话框的公开构建器。
     fn compile_example() {
@@ -57,7 +57,7 @@ mod feedback_modal {
 // 隔离 feedback-modal-shortcuts 围栏中的快捷对话框。
 mod feedback_modal_shortcuts {
     // 引入文档承诺的反馈组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译三种快捷状态与关闭策略配置。
     fn compile_example() {
@@ -85,7 +85,7 @@ mod feedback_modal_shortcuts {
 // 隔离 feedback-message 围栏中的消息、通知与气泡确认。
 mod feedback_message {
     // 引入文档承诺的反馈组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译进程内反馈管理器与 Popconfirm 构建器。
     fn compile_example() {
@@ -120,7 +120,7 @@ mod feedback_message {
 // 隔离 feedback-toast-options 围栏中的通知条目配置。
 mod feedback_toast_options {
     // 引入文档承诺的反馈模型公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译通知快捷入口与完整条目提交入口。
     fn compile_example() {
@@ -150,7 +150,7 @@ mod feedback_toast_options {
 // 隔离 feedback-popover-options 围栏中的浮层锚点配置。
 mod feedback_popover_options {
     // 引入文档承诺的浮层组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译受控 Popover 与单触发 View 的 Tooltip。
     fn compile_example() {
@@ -191,7 +191,7 @@ mod feedback_popover_options {
 // 隔离 feedback-alert-options 围栏中的警告状态与操作槽。
 mod feedback_alert_options {
     // 引入文档承诺的 Alert 公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 Alert 的状态构造、操作槽、关闭槽与通栏配置。
     fn compile_example() {
@@ -211,7 +211,7 @@ mod feedback_spin_options {
     // 引入公开时间类型。
     use std::time::Duration;
     // 引入文档承诺的 Spin 公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译显式尺寸与快捷大尺寸加载组件。
     fn compile_example() {
@@ -232,7 +232,7 @@ mod feedback_spin_options {
 // 隔离 feedback-float-group 围栏中的浮动按钮与事件保留组合。
 mod feedback_float_group {
     // 引入文档承诺的浮动按钮与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译独立浮动按钮与保留子节点事件的按钮组。
     fn compile_example() {
@@ -270,7 +270,7 @@ mod feedback_float_group {
 // 隔离 feedback-focustrap 围栏中的焦点作用域。
 mod feedback_focustrap {
     // 引入文档承诺的焦点与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译包裹两个可聚焦后代的稳定焦点作用域。
     fn compile_example() {
@@ -292,7 +292,7 @@ mod feedback_focustrap {
 // 隔离 feedback-controlled-modal 围栏中的受控业务状态。
 mod feedback_controlled_modal {
     // 引入文档承诺的反馈与状态公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译业务 State 与 Modal 可见性回写的单向适配。
     fn compile_example() {
@@ -324,7 +324,7 @@ mod feedback_controlled_modal {
 // 隔离 feedback-window-handle 围栏中的窗口反馈投递。
 mod feedback_window_handle {
     // 引入文档承诺的 AppHandle 与反馈模型公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译向明确窗口宿主投递消息与通知的公开接口。
     fn report_saved(app: &AppHandle) -> std::result::Result<(), Error> {
@@ -360,8 +360,8 @@ mod feedback_window_handle {
 #[cfg(feature = "test-harness")]
 #[test]
 fn modal_common_size_reconciles_and_refollows_surface() {
-    use uix::prelude::*;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::*;
+    use uix_app::ui::test_harness::TestApp;
 
     let open = State::new(true);
     let expanded = State::new(false);

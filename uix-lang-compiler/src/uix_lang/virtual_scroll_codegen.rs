@@ -226,7 +226,7 @@ pub(crate) fn generate_virtual_scroll(element: &Element) -> Result<TokenStream, 
         // 带业务键时为键闭包准备同一已求值数据的独立所有权快照。
         #key_snapshot_setup
         // 运行时 VirtualScroll 继续唯一拥有滚动与物化状态。
-        ::uix::prelude::VirtualScroll::new()
+        ::uix_app::prelude::VirtualScroll::new()
             // 声明本次数据快照的项目总数。
             .item_count(#item_count)
             // 声明固定行高。

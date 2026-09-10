@@ -2,8 +2,8 @@
 #![cfg(feature = "test-harness")]
 
 // 引入文档承诺的无窗口驱动与事件契约。
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 // 验证系统事件注入按逻辑坐标走真实树级分发路径。
 #[test]

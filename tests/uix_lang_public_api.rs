@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 // 引入公开宏与 ViewNode 包装辅助。
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 // 定义 OnlyVisual 的 Rust 字段形状；`.uix` 是取值的唯一事实源。
 struct OnlyVisual {

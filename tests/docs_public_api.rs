@@ -4,7 +4,7 @@
 // 隔离 quick-start-hello 围栏中的 main 名称与公开导入。
 mod quick_start_hello {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用文档中的第一个应用入口。
     fn main() {
@@ -24,7 +24,7 @@ mod quick_start_hello {
 // 隔离 quick-start-counter 围栏中的 main 名称与状态闭包。
 mod quick_start_counter {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用文档中的计数器应用入口。
     fn main() {
@@ -70,7 +70,7 @@ mod quick_start_counter {
 // 隔离 quick-start-typed-route 围栏中的页面类型与辅助函数。
 mod quick_start_typed_route {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 派生文档声明的克隆与相等比较能力。
     #[derive(Clone, PartialEq)]
@@ -139,7 +139,7 @@ mod quick_start_typed_route {
 // 隔离 route-display-derive 围栏中的同名页面类型。
 mod route_display_derive {
     // 引入公开 Display 派生宏及基础 trait。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 验证公开派生宏可与文档声明的 trait 组合。
     #[derive(Clone, PartialEq, Display)]

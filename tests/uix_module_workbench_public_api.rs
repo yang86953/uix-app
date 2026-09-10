@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 
 const WAIT: Duration = Duration::from_secs(3);
 fn text(value: &str) -> Value {
@@ -27,8 +27,8 @@ fn external_workbench_and_aot_share_async_versioned_commit_replacement_and_revoc
             load_module_file(&path.join("v2/main.uix")).unwrap(),
         ),
         (
-            uix::uix_module!("examples/modules/workbench/v1/main.uix"),
-            uix::uix_module!("examples/modules/workbench/v2/main.uix"),
+            uix_app::uix_module!("examples/modules/workbench/v1/main.uix"),
+            uix_app::uix_module!("examples/modules/workbench/v2/main.uix"),
         ),
     ] {
         let store = Arc::new(Mutex::new((" initial ".to_owned(), 1i64)));

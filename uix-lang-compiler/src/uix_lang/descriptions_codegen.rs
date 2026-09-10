@@ -47,7 +47,7 @@ pub(crate) fn generate_descriptions(element: &Element) -> Result<TokenStream, Di
     // 把数组或 Vec 统一收集为公开运行时要求的 Vec 类型。
     let items = quote! {
         ::std::iter::IntoIterator::into_iter((#data).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::DescriptionsItem>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::DescriptionsItem>>()
     };
     // 未声明 columns 时显式采用文档默认的一列。
     let columns = match find_attribute(element, "columns") {
@@ -59,12 +59,12 @@ pub(crate) fn generate_descriptions(element: &Element) -> Result<TokenStream, Di
 
     // 先配置类型化数据，再应用确定列数。
     let widget = quote! {
-        ::uix::prelude::Descriptions::new()
+        ::uix_app::prelude::Descriptions::new()
             .items(#items)
             .column(#columns)
     };
     // 经公开 View 契约进入 Descriptions 自己的同目录 UIX 声明根。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(view, &element.attributes, &["data", "columns"])
     // 结束 Descriptions 生成函数。

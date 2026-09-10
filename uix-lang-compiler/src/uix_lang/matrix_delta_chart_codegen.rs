@@ -67,9 +67,9 @@ pub(crate) fn generate_matrix_delta_chart(
         "Heatmap" => (
             // 生成精确元素类型收集。
             quote! {
-                ::uix::prelude::Heatmap::new().data(
+                ::uix_app::prelude::Heatmap::new().data(
                     ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::HeatmapCell>>()
+                        .collect::<::std::vec::Vec<::uix_app::prelude::HeatmapCell>>()
                 )
             },
             // 登记热力图专有属性。
@@ -98,9 +98,9 @@ pub(crate) fn generate_matrix_delta_chart(
         "WaterfallChart" => (
             // 生成精确元素类型收集。
             quote! {
-                ::uix::prelude::WaterfallChart::new().data(
+                ::uix_app::prelude::WaterfallChart::new().data(
                     ::std::iter::IntoIterator::into_iter((#data).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::WaterfallData>>()
+                        .collect::<::std::vec::Vec<::uix_app::prelude::WaterfallData>>()
                 )
             },
             // 登记瀑布图专有属性。
@@ -139,7 +139,7 @@ pub(crate) fn generate_matrix_delta_chart(
         widget = apply_chart_attribute(widget, attribute)?;
     }
     // 把现有 Chart Widget 物化为叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
 }
@@ -270,14 +270,14 @@ fn apply_heatmap_color_attribute(
     Ok(match attribute.name.as_str() {
         // 两端颜色使用精确 Color 元组。
         "colorRange" => quote! {{
-            let color_range: (::uix::prelude::Color, ::uix::prelude::Color) = (#value).clone();
+            let color_range: (::uix_app::prelude::Color, ::uix_app::prelude::Color) = (#value).clone();
             (#widget).color_range(color_range.0, color_range.1)
         }},
         // 多段色阶按值收集为带归一化位置的 Color 集合。
         "colorStops" => quote! {
             (#widget).color_stops(
                 ::std::iter::IntoIterator::into_iter((#value).clone())
-                    .collect::<::std::vec::Vec<(f32, ::uix::prelude::Color)>>()
+                    .collect::<::std::vec::Vec<(f32, ::uix_app::prelude::Color)>>()
             )
         },
         // 调用方已经收窄为两个颜色属性。

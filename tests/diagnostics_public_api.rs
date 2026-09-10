@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
-use uix::core::{Errc, Error, ErrorSeverity};
-use uix::diagnostics::{
+use uix_app::core::{Errc, Error, ErrorSeverity};
+use uix_app::diagnostics::{
     BacktracePolicy, Diagnostics, DiagnosticsConfig, RecoveryAction, RecoveryOutcome,
 };
 
@@ -254,7 +254,7 @@ fn debug_mode_is_runtime_scoped_shared_and_structured() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].target, "uix::diagnostics");
+    assert_eq!(events[0].target, "uix_app::diagnostics");
     for field in ["debug_event", "runtime_id", "enabled"] {
         assert!(events[0].fields.iter().any(|candidate| candidate == field));
     }
@@ -277,7 +277,7 @@ fn report_emits_one_fixed_target_event_with_contract_fields() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].target, "uix::diagnostics");
+    assert_eq!(events[0].target, "uix_app::diagnostics");
     assert_eq!(events[0].level, tracing::Level::ERROR);
     for field in [
         "uix.report_id",
@@ -434,7 +434,7 @@ fn backtrace_policy_controls_capture_at_the_report_boundary() {
     assert!(disabled.snapshot().reports()[0].backtrace().is_none());
 }
 
-const REBUILD_TEST_TARGET: &str = "uix::diagnostics-rebuild-test";
+const REBUILD_TEST_TARGET: &str = "uix_app::diagnostics-rebuild-test";
 
 #[test]
 fn rebuild_tracing_interest_cache_keeps_callsites_delivering() {
@@ -623,24 +623,24 @@ fn unhandled_error_drop_accounting_respects_disposition() {
     let diagnostics = Diagnostics::new(DiagnosticsConfig::default());
 
     // 基线：直接丢弃一个未处置错误 → 计数 +1。
-    let (before, _) = uix::core::unhandled_error_summary();
+    let (before, _) = uix_app::core::unhandled_error_summary();
     drop(Error::new(Errc::Unknown, "dropped without disposition probe"));
-    let (after, _) = uix::core::unhandled_error_summary();
+    let (after, _) = uix_app::core::unhandled_error_summary();
     assert!(after >= before + 1, "undisposed drop must be accounted");
 
     // 报告完成处置：错误及其原因链 drop 都不再计数。
-    let (before, _) = uix::core::unhandled_error_summary();
+    let (before, _) = uix_app::core::unhandled_error_summary();
     diagnostics.report(
         Error::new(Errc::IoError, "reported error keeps its chain disposed").with_source(
             Error::new(Errc::IoError, "source error rides the parent disposition"),
         ),
     );
-    let (after, _) = uix::core::unhandled_error_summary();
+    let (after, _) = uix_app::core::unhandled_error_summary();
     assert_eq!(after, before, "report must dispose the full cause chain");
 
     // 边界观察与瞬态观察同样完成处置。
-    let (before, _) = uix::core::unhandled_error_summary();
-    uix::diagnostics::observe_boundary_error(
+    let (before, _) = uix_app::core::unhandled_error_summary();
+    uix_app::diagnostics::observe_boundary_error(
         "test/boundary",
         &Error::new(Errc::PlatformError, "boundary observed probe"),
     );
@@ -649,14 +649,14 @@ fn unhandled_error_drop_accounting_respects_disposition() {
         "transient observed probe",
         &Error::new(Errc::Timeout, "transient observed probe"),
     );
-    let (after, _) = uix::core::unhandled_error_summary();
+    let (after, _) = uix_app::core::unhandled_error_summary();
     assert_eq!(after, before, "observation channels must dispose errors");
 
     // 副本是独立的未处置实例：丢弃产生自己的观测记录。
     let original = Error::new(Errc::InvalidState, "clone keeps fresh disposition");
-    let (before, _) = uix::core::unhandled_error_summary();
+    let (before, _) = uix_app::core::unhandled_error_summary();
     drop(original.clone());
-    let (after, _) = uix::core::unhandled_error_summary();
+    let (after, _) = uix_app::core::unhandled_error_summary();
     assert!(after >= before + 1, "clones carry their own disposition duty");
     diagnostics.report(original);
 }

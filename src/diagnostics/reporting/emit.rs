@@ -77,7 +77,7 @@ fn emit_event(report: &ErrorReport) {
 
     match report.severity {
         ErrorSeverity::Info => tracing::event!(
-            target: "uix::diagnostics",
+            target: "uix_app::diagnostics",
             tracing::Level::INFO,
             "uix.report_id" = report_id,
             "uix.error.code" = %code,
@@ -92,7 +92,7 @@ fn emit_event(report: &ErrorReport) {
             "typed error reached its final responsibility boundary"
         ),
         ErrorSeverity::Warning => tracing::event!(
-            target: "uix::diagnostics",
+            target: "uix_app::diagnostics",
             tracing::Level::WARN,
             "uix.report_id" = report_id,
             "uix.error.code" = %code,
@@ -107,7 +107,7 @@ fn emit_event(report: &ErrorReport) {
             "typed error reached its final responsibility boundary"
         ),
         ErrorSeverity::Error | ErrorSeverity::Fatal => tracing::event!(
-            target: "uix::diagnostics",
+            target: "uix_app::diagnostics",
             tracing::Level::ERROR,
             "uix.report_id" = report_id,
             "uix.error.code" = %code,

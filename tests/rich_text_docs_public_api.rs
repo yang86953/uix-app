@@ -4,7 +4,7 @@
 // 隔离 rich-text-basic 围栏中的基础段组合。
 mod rich_text_basic {
     // 引入文档承诺的富文本公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译混合文本、链接、换行与代码段的基础构建器。
     fn compile_example() {
@@ -44,7 +44,7 @@ mod rich_text_basic {
 // 隔离 rich-text-styles 围栏中的段级样式覆盖。
 mod rich_text_styles {
     // 引入文档承诺的富文本与颜色公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译粗体、颜色与删除线的段级样式组合。
     fn compile_example() {
@@ -83,7 +83,7 @@ mod rich_text_styles {
 // 隔离 rich-text-parse 围栏中的 Markdown 解析入口。
 mod rich_text_parse {
     // 引入文档承诺的富文本解析公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 Markdown 到富文本段再到组件的公开数据流。
     fn compile_example() {
@@ -100,7 +100,7 @@ mod rich_text_parse {
 // 隔离 rich-text-layout 围栏中的外部测量入口。
 mod rich_text_layout {
     // 引入文档承诺的富文本布局公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译非组件消费者使用的富文本测量函数。
     fn compile_example() {
@@ -116,7 +116,7 @@ mod rich_text_layout {
 // 隔离 rich-text-on-link 围栏中的应用导航适配器。
 mod rich_text_on_link {
     // 引入文档承诺的富文本与嵌入公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 提供代表应用自有内部路由策略的最小适配器。
     fn open_internal(url: &str) {

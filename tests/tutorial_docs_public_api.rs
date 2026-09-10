@@ -4,7 +4,7 @@
 // 隔离 tutorial-step1 围栏中的窗口入口。
 mod tutorial_step1 {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用教程第一步应用入口。
     fn main() {
@@ -24,7 +24,7 @@ mod tutorial_step1 {
 // 隔离 tutorial-step2 围栏中的待办状态。
 mod tutorial_step2 {
     // 引入文档承诺的公开 State 类型。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用待办状态读写组合。
     fn compile_example() {
@@ -40,7 +40,7 @@ mod tutorial_step2 {
 // 隔离 tutorial-step3 围栏中的完整交互应用入口。
 mod tutorial_step3 {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用完整待办应用入口。
     fn main() {
@@ -138,7 +138,7 @@ mod tutorial_step3 {
 // 隔离 tutorial-step4 围栏中的样式链。
 mod tutorial_step4 {
     // 引入文档承诺的公开 View 与颜色 API。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译教程中的根容器、待办卡片和输入框样式组合。
     fn compile_example() {
@@ -179,7 +179,7 @@ mod tutorial_step4 {
 // 隔离 tutorial-step5 围栏中的动画应用入口。
 mod tutorial_step5 {
     // 引入文档承诺的公开动画与应用 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用动画待办应用入口。
     fn main() {
@@ -216,9 +216,9 @@ mod tutorial_step5 {
 // 隔离 tutorial-step6 围栏中的设置服务应用入口。
 mod tutorial_step6 {
     // 引入文档承诺的公开设置服务路径。
-    use uix::data::SettingsService;
+    use uix_app::data::SettingsService;
     // 引入文档承诺的公开应用 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用持久化待办应用入口。
     fn main() {
@@ -274,7 +274,7 @@ mod tutorial_step6 {
 // 隔离 tutorial-virtualized-todo 围栏中的业务类型与函数。
 mod tutorial_virtualized_todo {
     // 引入文档承诺的公开虚拟滚动、设置与响应式 API。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 派生设置结构体编解码所需的公开 serde trait。
     #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]

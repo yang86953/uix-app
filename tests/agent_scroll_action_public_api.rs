@@ -7,9 +7,9 @@
 //! 曾沿 NotHandled 一路上报成 internal command failure，误导调用方以为
 //! 框架内部故障；实际位移应由调用方经语义快照核对。
 
-use uix::core::Point;
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::core::Point;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 fn scroll_list() -> ViewNode {
     let rows: Vec<ViewNode> = (0..40)

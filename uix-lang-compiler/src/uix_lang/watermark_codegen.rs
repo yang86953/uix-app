@@ -39,11 +39,11 @@ pub(crate) fn generate_watermark(element: &Element) -> Result<TokenStream, Diagn
     };
     // 借用调用方字符串，运行时 Watermark 立即取得文字所有权。
     let widget = quote! {
-        ::uix::prelude::Watermark::new(&*(#text))
+        ::uix_app::prelude::Watermark::new(&*(#text))
             .opacity(#opacity)
     };
     // 经公开 View 契约进入 Watermark 自己的同目录 UIX 声明根。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费专有属性并继续应用统一样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置的水印 View。

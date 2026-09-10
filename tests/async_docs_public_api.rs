@@ -4,7 +4,7 @@
 // 隔离 async-load-state 围栏中的加载三态声明。
 mod async_load_state {
     // 引入文档承诺的公开状态与反馈呈现 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明用户列表中的最小业务记录。
     #[derive(Clone)]
@@ -67,7 +67,7 @@ mod async_load_pattern {
     // 引入标准后台线程入口。
     use std::thread;
     // 引入文档承诺的公开 App、状态和视图 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明完整示例使用的用户业务记录。
     #[derive(Clone)]
@@ -214,7 +214,7 @@ mod async_load_pattern {
 // 隔离 async-optional-state 围栏中的简化状态模型。
 mod async_optional_state {
     // 引入文档承诺的公开状态与反馈呈现 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明简化示例中的用户记录。
     #[derive(Clone)]
@@ -270,7 +270,7 @@ mod async_typed_three_state {
     // 引入标准后台线程入口。
     use std::thread;
     // 引入文档承诺的公开 App、错误、状态和反馈 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明 typed 示例使用的用户记录。
     #[derive(Clone)]

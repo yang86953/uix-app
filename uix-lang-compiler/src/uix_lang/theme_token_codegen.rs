@@ -123,7 +123,7 @@ fn color_update(property: &StyleProperty, field: &str) -> Result<TokenStream, Di
     let field = Ident::new(field, Span::call_site());
     // 返回精确颜色覆盖。
     Ok(quote! {
-        __uix_tokens.#field = ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha);
+        __uix_tokens.#field = ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha);
     })
 }
 
@@ -228,7 +228,7 @@ fn shadow_update(property: &StyleProperty, field: &str) -> Result<TokenStream, D
     let layer_3 = &parsed[2];
     // 返回完整 ShadowToken 覆盖。
     Ok(quote! {
-        __uix_tokens.#field = ::uix::prelude::ShadowToken {
+        __uix_tokens.#field = ::uix_app::prelude::ShadowToken {
             layer_1: #layer_1,
             layer_2: #layer_2,
             layer_3: #layer_3,
@@ -285,7 +285,7 @@ fn parse_shadow_layer(source: &str, property: &StyleProperty) -> Result<TokenStr
     let (red, green, blue, alpha) = parse_color(color, property)?;
     // 返回运行时阴影层元组。
     Ok(quote! {
-        (#x, #y, #blur, ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha))
+        (#x, #y, #blur, ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha))
     })
 }
 
@@ -383,8 +383,8 @@ pub(super) fn color_token_reference(
     let method = Ident::new(method, Span::call_site());
     // 返回当前 Provider 上下文中的主题色值。
     Ok(Some(quote! {{
-        let __uix_theme = ::uix::prelude::use_config().theme.unwrap_or_default();
-        ::uix::prelude::ColorValue::custom(__uix_theme.tokens().#method())
+        let __uix_theme = ::uix_app::prelude::use_config().theme.unwrap_or_default();
+        ::uix_app::prelude::ColorValue::custom(__uix_theme.tokens().#method())
     }}))
 }
 
@@ -422,7 +422,7 @@ fn semantic_color_reference(name: &str) -> Option<TokenStream> {
         let palette = Ident::new(palette, Span::call_site());
         // 返回语义色值。
         return Some(quote! {
-            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::#palette)
+            ::uix_app::prelude::ColorValue::palette(::uix_app::prelude::PaletteColor::#palette)
         });
     }
     // 中性色使用既有 NeutralRole。
@@ -447,7 +447,7 @@ fn semantic_color_reference(name: &str) -> Option<TokenStream> {
     let neutral = Ident::new(neutral, Span::call_site());
     // 返回中性语义色值。
     Some(quote! {
-        ::uix::prelude::ColorValue::neutral(::uix::prelude::NeutralRole::#neutral)
+        ::uix_app::prelude::ColorValue::neutral(::uix_app::prelude::NeutralRole::#neutral)
     })
 }
 
@@ -468,7 +468,7 @@ pub(super) fn number_token_reference(
     let method = Ident::new(method, Span::call_site());
     // 返回当前 Provider 上下文中的主题数值。
     Ok(Some(quote! {{
-        let __uix_theme = ::uix::prelude::use_config().theme.unwrap_or_default();
+        let __uix_theme = ::uix_app::prelude::use_config().theme.unwrap_or_default();
         __uix_theme.tokens().#method()
     }}))
 }

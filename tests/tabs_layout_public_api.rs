@@ -4,8 +4,8 @@
     feature = "agent-control",
     feature = "test-harness"
 ))]
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 fn tabs() -> ViewNode {
     embed(Tabs::new().tab("One", "one").tab("Two", "two")).automation_id("tabs")

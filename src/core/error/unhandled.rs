@@ -53,7 +53,7 @@ pub(crate) fn record_disposed_without_disposition(error: &Error) {
     *occurrences += 1;
     if *occurrences == 1 {
         tracing::debug!(
-            target: "uix::diagnostics",
+            target: "uix_app::diagnostics",
             code = %key.0,
             message_prefix = %key.1,
             "error dropped without diagnostics disposition; this may indicate a swallowed failure"

@@ -4,14 +4,14 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::Duration;
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 
 const LIST: &str = include_str!("../examples/modules/dynamic_list.uix");
 const WAIT: Duration = Duration::from_secs(5);
 
 fn instances() -> Vec<Instance> {
     [
-        uix::uix_module!("examples/modules/dynamic_list.uix"),
+        uix_app::uix_module!("examples/modules/dynamic_list.uix"),
         load_module(LIST, "dynamic_list.uix").unwrap(),
     ]
     .into_iter()
@@ -424,7 +424,7 @@ fn wait_timeout_does_not_claim_business_cancellation() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn projected_inputs_rollback_rejected_drafts_and_apply_acknowledged_authority() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let (instance, entered, gate) = gated_instance();
     let (worker, view) = ModuleView::spawn(instance, 1, || {}).unwrap();
     let handle = view.handle();
@@ -472,7 +472,7 @@ fn projected_inputs_rollback_rejected_drafts_and_apply_acknowledged_authority() 
 #[cfg(feature = "test-harness")]
 #[test]
 fn newer_input_draft_survives_older_completion_until_its_own_acknowledgement() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let (instance, entered, gate) = gated_instance();
     let (worker, view) = ModuleView::spawn(instance, 1, || {}).unwrap();
     let handle = view.handle();

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
-use uix::app::agent_client::{AgentBridgeClient, AgentBridgeClientError};
+use uix_app::app::agent_client::{AgentBridgeClient, AgentBridgeClientError};
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 static NEXT_PEER: AtomicU64 = AtomicU64::new(0);

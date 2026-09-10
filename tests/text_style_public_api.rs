@@ -1,7 +1,7 @@
 #![cfg(feature = "test-harness")]
 
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn dynamic_text_remeasures_declared_line_height_after_content_changes() {

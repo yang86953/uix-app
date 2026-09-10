@@ -47,10 +47,10 @@ pub(crate) fn generate_menu_bar(element: &Element) -> Result<TokenStream, Diagno
     let menus = generate_expression(&menus_expression.expression, None)?;
     // 运行时 owner 接收 keyed 数据并持有完整菜单栏内核。
     let widget = quote! {
-        ::uix::prelude::MenuBar::new().keyed_menus((#menus).clone())
+        ::uix_app::prelude::MenuBar::new().keyed_menus((#menus).clone())
     };
     // MenuBar 物化为公开叶 View。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选变化事件观察运行时已经提交的稳定 key。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

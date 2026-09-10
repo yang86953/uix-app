@@ -1,13 +1,13 @@
 //! 有水平内边距的 flex 行中，grow 兄弟之后的自然宽度尾随子不得塌缩成内边距宽度。
 #![cfg(feature = "test-harness")]
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn padded_row_keeps_natural_width_tail_after_grow_sibling() {
     let mut app = TestApp::new(
         (1536.0, 54.0),
-        move || uix::uix!(
+        move || uix_app::uix!(
             r#"<Container direction="row" height="54" gap="8" align="center" style="paddingLeft: 14px; paddingRight: 14px;">
         <Container flexGrow={1} height="54" automationId="grower" />
         <Container direction="row" gap="2" automationId="tail">

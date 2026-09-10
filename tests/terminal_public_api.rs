@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn terminal_declared_size_updates_without_losing_the_command_draft() {
@@ -299,7 +299,7 @@ fn terminal_session_drop_releases_a_saturated_input_queue_and_all_pty_descriptor
         for _ in 0..64 {
             match session.write(&[b'B'; 65536]) {
                 Ok(()) => {}
-                Err(error) if error.code() == uix::core::Errc::WouldBlock => {
+                Err(error) if error.code() == uix_app::core::Errc::WouldBlock => {
                     full = true;
                     break;
                 }

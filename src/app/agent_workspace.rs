@@ -78,7 +78,8 @@ impl AgentWorkspace {
         self.theme = theme;
         self
     }
-    /// 安装确定性字体；未指定时使用内建位图文本后备，不访问桌面字体服务。
+    /// 安装确定性字体；未指定时通过平台原生字体发现装载系统正文字体（无窗口、
+    /// 不访问用户应用），找不到可加载正文字体时启动返回可识别错误。
     pub fn font_bundle(mut self, fonts: FontBundle) -> Self {
         self.fonts = Some(fonts);
         self

@@ -44,7 +44,7 @@ pub(crate) fn generate_navigation(element: &Element) -> Result<TokenStream, Diag
 
     // 公开组合构造器建立 NavigationShell 与唯一受控 Menu 子树。
     let mut view = quote! {
-        ::uix::prelude::Navigation::controlled(
+        ::uix_app::prelude::Navigation::controlled(
             (#title).to_string(),
             (#items).clone(),
             &(#active),

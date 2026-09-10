@@ -171,23 +171,23 @@ pub(crate) fn typography_value(attribute: &Attribute) -> Result<TokenStream, Dia
     // 映射文档中的公开 TypographyToken 名称。
     match value.as_str() {
         // 映射小号正文。
-        "small" => Ok(quote! { ::uix::prelude::TypographyToken::Small }),
+        "small" => Ok(quote! { ::uix_app::prelude::TypographyToken::Small }),
         // 映射正文。
-        "body" => Ok(quote! { ::uix::prelude::TypographyToken::Body }),
+        "body" => Ok(quote! { ::uix_app::prelude::TypographyToken::Body }),
         // 映射大号正文。
-        "large" => Ok(quote! { ::uix::prelude::TypographyToken::Large }),
+        "large" => Ok(quote! { ::uix_app::prelude::TypographyToken::Large }),
         // 映射超大正文。
-        "xLarge" => Ok(quote! { ::uix::prelude::TypographyToken::XLarge }),
+        "xLarge" => Ok(quote! { ::uix_app::prelude::TypographyToken::XLarge }),
         // 映射一级标题。
-        "heading1" => Ok(quote! { ::uix::prelude::TypographyToken::Heading1 }),
+        "heading1" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading1 }),
         // 映射二级标题。
-        "heading2" => Ok(quote! { ::uix::prelude::TypographyToken::Heading2 }),
+        "heading2" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading2 }),
         // 映射三级标题。
-        "heading3" => Ok(quote! { ::uix::prelude::TypographyToken::Heading3 }),
+        "heading3" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading3 }),
         // 映射四级标题。
-        "heading4" => Ok(quote! { ::uix::prelude::TypographyToken::Heading4 }),
+        "heading4" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading4 }),
         // 映射五级标题。
-        "heading5" => Ok(quote! { ::uix::prelude::TypographyToken::Heading5 }),
+        "heading5" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading5 }),
         // 其他字面量尝试解析为像素数值。
         _ => numeric_literal(&value, attribute.span),
     }
@@ -201,13 +201,13 @@ pub(crate) fn align_value(attribute: &Attribute) -> Result<TokenStream, Diagnost
     // start/end 为旧版兼容驼峰别名（保留以不破坏既有 .uix 源码）。
     match value.as_str() {
         // 映射起始对齐。
-        "flex-start" | "start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
+        "flex-start" | "start" => Ok(quote! { ::uix_app::prelude::AlignItems::Start }),
         // 映射居中对齐。
-        "center" => Ok(quote! { ::uix::prelude::AlignItems::Center }),
+        "center" => Ok(quote! { ::uix_app::prelude::AlignItems::Center }),
         // 映射末端对齐。
-        "flex-end" | "end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
+        "flex-end" | "end" => Ok(quote! { ::uix_app::prelude::AlignItems::End }),
         // 映射拉伸对齐。
-        "stretch" => Ok(quote! { ::uix::prelude::AlignItems::Stretch }),
+        "stretch" => Ok(quote! { ::uix_app::prelude::AlignItems::Stretch }),
         // 未登记值返回诊断。
         _ => Err(Diagnostic::new(
             // 指向完整属性。
@@ -228,28 +228,28 @@ pub(crate) fn justify_value(attribute: &Attribute) -> Result<TokenStream, Diagno
     // 驼峰 start/end/spaceBetween 等为旧版兼容别名（保留以不破坏既有 .uix 源码）。
     match value.as_str() {
         // 映射起始对齐。
-        "flex-start" | "start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
+        "flex-start" | "start" => Ok(quote! { ::uix_app::prelude::JustifyContent::Start }),
         // 映射居中对齐。
-        "center" => Ok(quote! { ::uix::prelude::JustifyContent::Center }),
+        "center" => Ok(quote! { ::uix_app::prelude::JustifyContent::Center }),
         // 映射末端对齐。
-        "flex-end" | "end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
+        "flex-end" | "end" => Ok(quote! { ::uix_app::prelude::JustifyContent::End }),
         // 映射两端分布。
         "space-between" | "spaceBetween" => {
             // 兼容旧驼峰别名，文档登记值为 kebab。
-            Ok(quote! { ::uix::prelude::JustifyContent::SpaceBetween })
+            Ok(quote! { ::uix_app::prelude::JustifyContent::SpaceBetween })
         }
         // 映射环绕分布。
         "space-around" | "spaceAround" => {
             // 兼容旧驼峰别名，文档登记值为 kebab。
-            Ok(quote! { ::uix::prelude::JustifyContent::SpaceAround })
+            Ok(quote! { ::uix_app::prelude::JustifyContent::SpaceAround })
         }
         // 映射均匀分布。
         "space-evenly" | "spaceEvenly" => {
             // 兼容旧驼峰别名，文档登记值为 kebab。
-            Ok(quote! { ::uix::prelude::JustifyContent::SpaceEvenly })
+            Ok(quote! { ::uix_app::prelude::JustifyContent::SpaceEvenly })
         }
         // 映射拉伸。
-        "stretch" => Ok(quote! { ::uix::prelude::JustifyContent::Stretch }),
+        "stretch" => Ok(quote! { ::uix_app::prelude::JustifyContent::Stretch }),
         // 未登记值返回诊断。
         _ => Err(Diagnostic::new(
             // 指向完整属性。

@@ -19,7 +19,7 @@ pub(crate) fn generate_tag(element: &Element) -> Result<TokenStream, Diagnostic>
     // 标签正文复用核心有序文本与插值契约，并拒绝嵌套元素。
     let content = generate_text_content(&element.children, element.span)?;
     // 从公开文本构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Tag::new(#content) };
+    let mut widget = quote! { ::uix_app::prelude::Tag::new(#content) };
     // 可选颜色映射到公开预设枚举或自定义 Color。
     if let Some(attribute) = find_attribute(element, "color") {
         // 生成颜色配置后的 Tag。
@@ -80,7 +80,7 @@ pub(crate) fn generate_tag(element: &Element) -> Result<TokenStream, Diagnostic>
     }
 
     // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Tag 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的标签 View。
@@ -106,35 +106,35 @@ fn apply_color(widget: TokenStream, attribute: &Attribute) -> Result<TokenStream
     // 优先映射公开预设颜色枚举。
     let preset = match color.as_str() {
         // 映射默认标签色。
-        "default" => Some(quote! { ::uix::prelude::TagColor::Default }),
+        "default" => Some(quote! { ::uix_app::prelude::TagColor::Default }),
         // 映射成功标签色。
-        "success" => Some(quote! { ::uix::prelude::TagColor::Success }),
+        "success" => Some(quote! { ::uix_app::prelude::TagColor::Success }),
         // 映射信息标签色。
-        "info" => Some(quote! { ::uix::prelude::TagColor::Info }),
+        "info" => Some(quote! { ::uix_app::prelude::TagColor::Info }),
         // 映射警告标签色。
-        "warning" => Some(quote! { ::uix::prelude::TagColor::Warning }),
+        "warning" => Some(quote! { ::uix_app::prelude::TagColor::Warning }),
         // 映射错误标签色。
-        "error" => Some(quote! { ::uix::prelude::TagColor::Error }),
+        "error" => Some(quote! { ::uix_app::prelude::TagColor::Error }),
         // 映射蓝色标签。
-        "blue" => Some(quote! { ::uix::prelude::TagColor::Blue }),
+        "blue" => Some(quote! { ::uix_app::prelude::TagColor::Blue }),
         // 映射青色标签。
-        "cyan" => Some(quote! { ::uix::prelude::TagColor::Cyan }),
+        "cyan" => Some(quote! { ::uix_app::prelude::TagColor::Cyan }),
         // 映射极客蓝标签。
-        "geekblue" => Some(quote! { ::uix::prelude::TagColor::Geekblue }),
+        "geekblue" => Some(quote! { ::uix_app::prelude::TagColor::Geekblue }),
         // 映射紫色标签。
-        "purple" => Some(quote! { ::uix::prelude::TagColor::Purple }),
+        "purple" => Some(quote! { ::uix_app::prelude::TagColor::Purple }),
         // 映射洋红标签。
-        "magenta" => Some(quote! { ::uix::prelude::TagColor::Magenta }),
+        "magenta" => Some(quote! { ::uix_app::prelude::TagColor::Magenta }),
         // 映射红色标签。
-        "red" => Some(quote! { ::uix::prelude::TagColor::Red }),
+        "red" => Some(quote! { ::uix_app::prelude::TagColor::Red }),
         // 映射橙色标签。
-        "orange" => Some(quote! { ::uix::prelude::TagColor::Orange }),
+        "orange" => Some(quote! { ::uix_app::prelude::TagColor::Orange }),
         // 映射金色标签。
-        "gold" => Some(quote! { ::uix::prelude::TagColor::Gold }),
+        "gold" => Some(quote! { ::uix_app::prelude::TagColor::Gold }),
         // 映射青柠标签。
-        "lime" => Some(quote! { ::uix::prelude::TagColor::Lime }),
+        "lime" => Some(quote! { ::uix_app::prelude::TagColor::Lime }),
         // 映射绿色标签。
-        "green" => Some(quote! { ::uix::prelude::TagColor::Green }),
+        "green" => Some(quote! { ::uix_app::prelude::TagColor::Green }),
         // 其余字面量进入十六进制颜色校验。
         _ => None,
     };
@@ -154,7 +154,7 @@ fn apply_color(widget: TokenStream, attribute: &Attribute) -> Result<TokenStream
         return Err(color_diagnostic(attribute, &color));
     }
     // 生成公开自定义颜色值。
-    let custom = quote! { ::uix::prelude::Color::hex(#color) };
+    let custom = quote! { ::uix_app::prelude::Color::hex(#color) };
     // 返回应用自定义颜色后的 Tag。
     Ok(quote! { (#widget).custom_color(#custom) })
 }

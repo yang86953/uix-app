@@ -54,16 +54,16 @@ pub(crate) fn generate_affix(element: &Element) -> Result<TokenStream, Diagnosti
     // 通过公开组件读取当前状态快照，根 View 依赖负责触发后续 reconcile。
     let widget = quote! {
         // 构造公开 Affix 并声明当前滚动位置。
-        (::uix::prelude::Affix::new(#offset_top)).scroll_y((#scroll_state).get())
+        (::uix_app::prelude::Affix::new(#offset_top)).scroll_y((#scroll_state).get())
     };
     // 用公开 ViewNode 明确建立 Affix 对唯一内容 View 的组合所有权。
     let base = quote! {
         // 物化子 View 后交给公开 Affix 节点。
-        ::uix::prelude::ViewNode::new(
+        ::uix_app::prelude::ViewNode::new(
             // 传入已经配置的公开运行时组件。
             #widget,
             // 保留唯一内容 View 的来源顺序。
-            ::std::vec![::uix::prelude::View::build(#child)],
+            ::std::vec![::uix_app::prelude::View::build(#child)],
         )
     };
     // 专有属性消费后，把尺寸、样式与自动化属性交给统一契约。

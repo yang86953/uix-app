@@ -51,10 +51,10 @@ pub(super) fn apply_event(
         // 选择对应系统事件变体。
         let event_variant = if attribute.name == "@keyDown" {
             // 按键按下变体。
-            quote! { ::uix::prelude::SystemEvent::KeyDown }
+            quote! { ::uix_app::prelude::SystemEvent::KeyDown }
         } else {
             // 按键抬起变体。
-            quote! { ::uix::prelude::SystemEvent::KeyUp }
+            quote! { ::uix_app::prelude::SystemEvent::KeyUp }
         };
         // 返回不截断组件自身键盘处理的观察器。
         return Ok(quote! {
@@ -69,10 +69,10 @@ pub(super) fn apply_event(
                     // 丢弃处理器返回值并保留副作用。
                     let _ = { #handler };
                     // 观察事实仍允许组件处理与冒泡，但不能向 Agent 伪报无人接收。
-                    return ::uix::prelude::EventResult::Bubbled;
+                    return ::uix_app::prelude::EventResult::Bubbled;
                 }
                 // 继续交付组件自身处理器并向父节点冒泡。
-                ::uix::prelude::EventResult::NotHandled
+                ::uix_app::prelude::EventResult::NotHandled
             })
         });
     }
@@ -101,10 +101,10 @@ pub(super) fn apply_event(
         // 选择对应系统指针事件分支。
         let event_variant = if attribute.name == "@mouseEnter" {
             // 鼠标进入映射到 PointerEnter。
-            quote! { ::uix::prelude::SystemEvent::PointerEnter }
+            quote! { ::uix_app::prelude::SystemEvent::PointerEnter }
         } else {
             // 鼠标离开映射到 PointerLeave。
-            quote! { ::uix::prelude::SystemEvent::PointerLeave }
+            quote! { ::uix_app::prelude::SystemEvent::PointerLeave }
         };
         // 返回不会截断组件自身 Enter/Leave 的指针监听器。
         return Ok(quote! {
@@ -116,7 +116,7 @@ pub(super) fn apply_event(
                     let _ = { #handler };
                 }
                 // 继续交付组件自身处理器并向父节点冒泡。
-                ::uix::prelude::EventResult::NotHandled
+                ::uix_app::prelude::EventResult::NotHandled
             })
         });
     }

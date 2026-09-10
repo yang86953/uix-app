@@ -85,7 +85,7 @@ pub(super) fn transform_origin_value(
     let vertical = origin_coordinate_tokens(vertical);
     // 返回由 UI System 根公开的二维原点构造器。
     Ok(quote! {
-        ::uix::prelude::TransformOrigin::new(#horizontal, #vertical)
+        ::uix_app::prelude::TransformOrigin::new(#horizontal, #vertical)
     })
 }
 
@@ -230,12 +230,12 @@ fn origin_coordinate_tokens(value: OriginCoordinate) -> TokenStream {
         // 比例值延迟到布局帧确定后解析。
         OriginCoordinate::Fraction(value) => {
             // 生成比例构造器。
-            quote! { ::uix::prelude::TransformOriginValue::fraction(#value) }
+            quote! { ::uix_app::prelude::TransformOriginValue::fraction(#value) }
         }
         // 像素值相对布局帧起点解析。
         OriginCoordinate::Pixels(value) => {
             // 生成像素构造器。
-            quote! { ::uix::prelude::TransformOriginValue::pixels(#value) }
+            quote! { ::uix_app::prelude::TransformOriginValue::pixels(#value) }
         }
     }
 }
@@ -247,7 +247,7 @@ pub(super) fn transform_value(property: &StyleProperty) -> Result<TokenStream, D
     // none 明确恢复单位变换。
     if source == "none" {
         // 返回公开几何层的单位矩阵构造器。
-        return Ok(quote! { ::uix::draw::Transform::identity() });
+        return Ok(quote! { ::uix_app::draw::Transform::identity() });
     }
     // 空值没有确定变换语义。
     if source.is_empty() {
@@ -261,7 +261,7 @@ pub(super) fn transform_value(property: &StyleProperty) -> Result<TokenStream, D
     // 保存代码生成期的最终矩阵，供有限性与可逆性检查。
     let mut matrix = identity_matrix();
     // 保存与代码生成期组合顺序完全一致的 Rust 表达式。
-    let mut expression = quote! { ::uix::draw::Transform::identity() };
+    let mut expression = quote! { ::uix_app::draw::Transform::identity() };
     // 按源码顺序解析并组合函数。
     for (name, arguments) in parse_functions(source, property)? {
         // 把单个函数转换为矩阵事实和公开构造表达式。
@@ -432,7 +432,7 @@ fn transform_function(
             // 返回代码生成期矩阵与公开构造器。
             Ok((
                 translate_matrix(x, y),
-                quote! { ::uix::draw::Transform::translate(#x, #y) },
+                quote! { ::uix_app::draw::Transform::translate(#x, #y) },
             ))
         }
         // 映射二维缩放。
@@ -444,7 +444,7 @@ fn transform_function(
             // 返回代码生成期矩阵与公开构造器。
             Ok((
                 scale_matrix(x, y),
-                quote! { ::uix::draw::Transform::scale(#x, #y) },
+                quote! { ::uix_app::draw::Transform::scale(#x, #y) },
             ))
         }
         // 映射二维旋转。
@@ -454,7 +454,7 @@ fn transform_function(
             // 返回代码生成期矩阵与公开构造器。
             Ok((
                 rotate_matrix(angle),
-                quote! { ::uix::draw::Transform::rotate(#angle) },
+                quote! { ::uix_app::draw::Transform::rotate(#angle) },
             ))
         }
         // 映射双轴倾斜。
@@ -464,7 +464,7 @@ fn transform_function(
             // 返回代码生成期矩阵与公开构造器。
             Ok((
                 skew_matrix(x, y),
-                quote! { ::uix::draw::Transform::skew(#x, #y) },
+                quote! { ::uix_app::draw::Transform::skew(#x, #y) },
             ))
         }
         // 其他函数不在当前文档映射范围内。

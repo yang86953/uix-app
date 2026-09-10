@@ -58,12 +58,12 @@ pub(crate) fn generate_tree_select(element: &Element) -> Result<TokenStream, Dia
 
     // 运行时先接收树结构，再绑定稳定节点 key 状态。
     let widget = quote! {
-        ::uix::prelude::TreeSelect::new()
+        ::uix_app::prelude::TreeSelect::new()
             .nodes((#options).clone())
             .bind_value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 TreeSelect 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的树形选择器 View。

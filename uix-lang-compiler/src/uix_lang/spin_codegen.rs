@@ -14,7 +14,7 @@ use super::{Diagnostic, Element, boolean_value, string_value};
 // 生成保留运行时动画所有权与可选遮罩子树的 Spin 加载指示器。
 pub(crate) fn generate_spin(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从公开默认构造器开始，保留缺省 spinning=true。
-    let mut widget = quote! { ::uix::prelude::Spin::new() };
+    let mut widget = quote! { ::uix_app::prelude::Spin::new() };
 
     // 可选 spinning 接受布尔简写、字面量或受限表达式。
     if let Some(attribute) = find_attribute(element, "spinning") {

@@ -1,14 +1,14 @@
-use uix::app::{App, Container, WindowConfig};
-use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
+use uix_app::app::{App, Container, WindowConfig};
+use uix_app::diagnostics::{Diagnostics, DiagnosticsConfig};
 // 引入跨平台确定性字体包公开值。
-use uix::draw::FontBundle;
-use uix::ui::label;
+use uix_app::draw::FontBundle;
+use uix_app::ui::label;
 // 引入应用默认注册和 builder 覆盖所需的 UI 服务类型。
-use uix::platform::windowing::{
+use uix_app::platform::windowing::{
     DesktopAnchor, DesktopKeyboardInteractivity, DesktopLayer, DesktopLayerConfig,
     WindowSurfaceRole,
 };
-use uix::ui::{Locale, WidgetConfig, en_us};
+use uix_app::ui::{Locale, WidgetConfig, en_us};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Service(&'static str);

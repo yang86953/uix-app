@@ -4,7 +4,7 @@
 // 隔离 style-semantic 围栏中的语义样式声明。
 mod style_semantic {
     // 引入文档承诺的公开样式 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译文本、按钮和标签的语义样式入口。
     fn compile_example() {
@@ -22,7 +22,7 @@ mod style_semantic {
 // 隔离 style-chain 围栏中的细粒度样式链。
 mod style_chain {
     // 引入文档承诺的公开样式 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译背景、边框、圆角、间距与内边距组合。
     fn compile_example() {
@@ -56,7 +56,7 @@ mod style_chain {
 // 隔离 theme-toggle 围栏中的组件级与应用级切换入口。
 mod theme_toggle {
     // 引入文档承诺的公开主题与应用句柄 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为围栏中的 handle 与 is_dark 上下文提供显式参数。
     fn switch_theme(handle: &AppHandle, is_dark: bool) -> Result<(), Error> {
@@ -72,7 +72,7 @@ mod theme_toggle {
 // 隔离 theme-custom 围栏中的组件令牌窄覆盖。
 mod theme_custom {
     // 引入文档承诺的公开 Provider 与令牌 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译只作用于 ConfigProvider 子树的 Button 令牌补丁。
     fn compile_example() {
@@ -100,7 +100,7 @@ mod theme_custom {
 // 隔离 theme-custom-app 围栏中的自定义主题与令牌消费组件。
 mod theme_custom_app {
     // 引入文档承诺的公开应用、主题与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为围栏中的 render 片段提供最小公开 widget 宿主。
     widget! {
@@ -156,7 +156,7 @@ mod theme_custom_app {
 // 隔离 theme-custom-seed 围栏中的品牌色种子入口。
 mod theme_custom_seed {
     // 引入文档承诺的公开应用与主题 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为文档中的 app_root 提供最小公开 View 根。
     fn app_root() -> ViewNode {

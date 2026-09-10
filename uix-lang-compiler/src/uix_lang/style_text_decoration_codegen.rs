@@ -16,13 +16,13 @@ pub(super) fn text_decoration_field(
     // 规范关键字不允许额外参数或大小写漂移。
     let variant = match property.value.source.trim() {
         // none 显式关闭装饰并可覆盖继承值。
-        "none" => quote! { ::uix::prelude::TextDecoration::None },
+        "none" => quote! { ::uix_app::prelude::TextDecoration::None },
         // underline 在每个视觉行下缘绘制装饰。
-        "underline" => quote! { ::uix::prelude::TextDecoration::Underline },
+        "underline" => quote! { ::uix_app::prelude::TextDecoration::Underline },
         // overline 在每个视觉行上缘绘制装饰。
-        "overline" => quote! { ::uix::prelude::TextDecoration::Overline },
+        "overline" => quote! { ::uix_app::prelude::TextDecoration::Overline },
         // line-through 在每个视觉行中部绘制删除线。
-        "line-through" => quote! { ::uix::prelude::TextDecoration::LineThrough },
+        "line-through" => quote! { ::uix_app::prelude::TextDecoration::LineThrough },
         // 未登记值必须在编译期明确拒绝。
         _ => {
             // 返回指向完整属性值的修复性诊断。

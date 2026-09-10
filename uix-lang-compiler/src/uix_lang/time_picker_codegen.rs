@@ -41,11 +41,11 @@ pub(crate) fn generate_time_picker(element: &Element) -> Result<TokenStream, Dia
     let state = generate_expression(&value_expression.expression, None)?;
     // 绑定时间状态并保持运行时现有受控契约。
     let widget = quote! {
-        ::uix::prelude::TimePicker::new()
+        ::uix_app::prelude::TimePicker::new()
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 TimePicker 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的时间选择 View。

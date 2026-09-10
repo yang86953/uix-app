@@ -45,7 +45,7 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
     // 把数组或 Vec 统一收集为运行时构造器要求的 Vec<Step>。
     let steps = quote! {
         ::std::iter::IntoIterator::into_iter((#items).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::Step>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::Step>>()
     };
 
     // 查找文档要求的 current 双向绑定。
@@ -69,7 +69,7 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
 
     // 先构造步骤集合，再绑定唯一 current 状态，最后应用方向。
     let mut widget = quote! {
-        ::uix::prelude::Steps::new(#steps)
+        ::uix_app::prelude::Steps::new(#steps)
             .current_state(&(#current))
             #direction
     };
@@ -88,7 +88,7 @@ pub(crate) fn generate_steps(element: &Element) -> Result<TokenStream, Diagnosti
         widget = quote! { (#widget).dot(#dot) };
     }
     // Steps 物化为公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Steps 专有属性并应用公共 View 属性。
     apply_common_attributes(
         // 传入已经配置的步骤条 View。

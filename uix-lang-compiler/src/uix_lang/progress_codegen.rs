@@ -30,7 +30,7 @@ pub(crate) fn generate_progress_bar(element: &Element) -> Result<TokenStream, Di
     }
 
     // 从公开默认构造器开始，保留 progress=0 与 line/determinate 默认值。
-    let mut widget = quote! { ::uix::prelude::ProgressBar::new() };
+    let mut widget = quote! { ::uix_app::prelude::ProgressBar::new() };
     // 可选 progress 接受通过静态范围校验的字面量或 f32 表达式。
     if let Some(attribute) = find_attribute(element, "progress") {
         // 生成有限 fraction 或保留动态 Rust 类型检查。
@@ -71,7 +71,7 @@ pub(crate) fn generate_progress_bar(element: &Element) -> Result<TokenStream, Di
     }
 
     // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费专有属性并应用公共尺寸、样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置 fraction、模式与形态的公开 View。

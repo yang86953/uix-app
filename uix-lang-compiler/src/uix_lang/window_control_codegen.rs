@@ -51,7 +51,7 @@ pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, 
         // 指定前景色时把颜色表达式转换为 ColorValue 并进入定制组合。
         quote! {
             // 窗口动作、无障碍语义保持由运行时模块拥有。
-            ::uix::prelude::window_controls_with_icon_color(
+            ::uix_app::prelude::window_controls_with_icon_color(
                 #show_minimize,
                 #show_maximize,
                 #show_close,
@@ -62,7 +62,7 @@ pub(crate) fn generate_window_control(element: &Element) -> Result<TokenStream, 
         // 未指定前景色时保持既有主题文本色组合入口。
         quote! {
             // 保持窗口动作、无障碍语义与默认外观由运行时模块拥有。
-            ::uix::prelude::window_controls(#show_minimize, #show_maximize, #show_close)
+            ::uix_app::prelude::window_controls(#show_minimize, #show_maximize, #show_close)
         }
     };
     // 专有属性消费后继续复用统一样式与未知属性诊断路径。

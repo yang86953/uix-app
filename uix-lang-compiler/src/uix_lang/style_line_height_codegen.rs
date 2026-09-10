@@ -53,10 +53,10 @@ pub(super) fn line_height_field(
     // 选择公开受控构造器，避免 UIX 生成私有单位类型。
     let line_height = if pixels {
         // 固定逻辑像素不随字号变化。
-        quote! { ::uix::prelude::LineHeight::pixels(#value) }
+        quote! { ::uix_app::prelude::LineHeight::pixels(#value) }
     } else {
         // 无单位值在运行时按最终字号相乘。
-        quote! { ::uix::prelude::LineHeight::factor(#value) }
+        quote! { ::uix_app::prelude::LineHeight::factor(#value) }
     };
     // 宏期已经证明构造必定成功，生成显式字段声明。
     Ok(quote! {

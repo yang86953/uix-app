@@ -4,10 +4,10 @@
 use serde_json::{Value, json};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
-use uix::app::agent_client::{AgentBridgeClient, AgentWindowEntry};
-use uix::app::agent_workspace::AgentWorkspace;
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::app::agent_client::{AgentBridgeClient, AgentWindowEntry};
+use uix_app::app::agent_workspace::AgentWorkspace;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 // 文档规定每进程一个操作面，消费者串行持有该公开租约，不重试重复启动。
 static WORKSPACE: Mutex<()> = Mutex::new(());
@@ -15,10 +15,11 @@ static WORKSPACE: Mutex<()> = Mutex::new(());
 #[test]
 fn background_text_hug_measurement_uses_its_rendering_font() {
     let _serial = WORKSPACE.lock().unwrap_or_else(|e| e.into_inner());
-    // 使用独立字体表的 em advance，不把某个旧字体的固定数字宽度当成布局契约。
+    // 该断言使用 fixture 字体表的 em advance；工作区显式注入同一字体包，
+    // 不把某个旧字体的固定数字宽度或系统字体的变化当作布局契约。
     use ab_glyph::{Font, FontRef};
     let font =
-        FontRef::try_from_slice(include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf")).unwrap();
+        FontRef::try_from_slice(include_bytes!("fixtures/fonts/uix-test-body.ttf")).unwrap();
     let one = font.glyph_id('1');
     let expected = (2.0 * font.h_advance_unscaled(one) + font.kern_unscaled(one, one)) * 12.0
         / font.units_per_em().unwrap();
@@ -33,6 +34,10 @@ fn background_text_hug_measurement_uses_its_rendering_font() {
                 .automation_id("dynamic-count"),
         ))
     })
+    .font_bundle(uix_app::draw::FontBundle::from_static(
+        "UIX Test Body",
+        include_bytes!("fixtures/fonts/uix-test-body.ttf"),
+    ))
     .spawn()
     .unwrap();
     let mut client = workspace.client().unwrap();

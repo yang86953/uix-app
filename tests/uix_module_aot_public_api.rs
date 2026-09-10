@@ -3,11 +3,11 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 
 #[test]
 fn aot_module_executes_typed_async_business_through_the_public_worker() {
-    let module = uix::uix_module!("examples/modules/async_bench.uix");
+    let module = uix_app::uix_module!("examples/modules/async_bench.uix");
     let ports = module
         .ports
         .iter()
@@ -50,7 +50,7 @@ fn aot_module_executes_typed_async_business_through_the_public_worker() {
 
 #[test]
 fn aot_only_build_runs_multi_file_composition_without_a_runtime_source_frontend() {
-    let module = uix::uix_module!("examples/modules/composed/main.uix");
+    let module = uix_app::uix_module!("examples/modules/composed/main.uix");
     assert_eq!(module.dependencies.len(), 4);
     let mut ports = HostPorts::new();
     let mut asynchronous = AsyncHostPorts::new();

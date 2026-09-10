@@ -67,16 +67,15 @@ fn run_inner(
     runtime.enable_agent_control();
 
     let mut fonts = FontService::new();
-    let bundle = config.fonts.unwrap_or_else(|| {
-        // CPU 场景呈现需要真实字形资源；位图测量后备不能冒充可绘制字体。
-        // 默认正文使用仓库集成的 LXGW WenKai（OFL，见 assets/fonts/LXGWWenKai-OFL.txt），
-        // 避免访问桌面或先装 Lucide 污染正文索引。
-        crate::draw::FontBundle::from_static(
-            "LXGW WenKai",
-            include_bytes!("../../../assets/fonts/LXGWWenKai-Regular.ttf"),
-        )
-    });
-    fonts.install_font_bundle(&bundle)?;
+    // CPU 场景呈现需要真实字形资源；位图测量后备不能冒充可绘制正文。
+    // 显式 FontBundle 优先；未配置时经平台原生字体发现装载系统正文字体
+    // （只读字体路径，不创建显示连接、窗口或访问用户应用）。缺少可加载
+    // 正文字体时返回可识别错误；Lucide 图标字体不充当正文，仅在其后作为
+    // 图标字体安装。
+    let _deterministic_fonts = fonts.install_body_font(
+        config.fonts,
+        &crate::platform::native_font_system_info(),
+    )?;
     crate::ui::widgets::icon::init_static_lucide_font(
         include_bytes!("../../../assets/fonts/lucide.ttf"),
         &mut fonts,

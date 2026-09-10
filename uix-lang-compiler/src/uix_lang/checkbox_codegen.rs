@@ -38,7 +38,7 @@ pub(crate) fn generate_checkbox(element: &Element) -> Result<TokenStream, Diagno
         quote! { "" }
     };
     // 从公开 Checkbox 构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Checkbox::new(#label) };
+    let mut widget = quote! { ::uix_app::prelude::Checkbox::new(#label) };
     // 禁用状态接受静态或动态布尔值。
     if let Some(attribute) = find_attribute(element, "disabled") {
         // 生成统一布尔属性令牌。
@@ -67,7 +67,7 @@ pub(crate) fn generate_checkbox(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 物化为公开叶 View；Change 处理器由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选勾选提交事件读取统一布尔文本载荷。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

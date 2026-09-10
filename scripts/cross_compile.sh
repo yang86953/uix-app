@@ -57,7 +57,7 @@ cross_check_release_platform() {
     local cross_target="$1"
     (
         cd "$cross_repo_root"
-        cargo check --locked --package uix --target "$cross_target" \
+        cargo check --locked --package uix-app --target "$cross_target" \
             --features agent-control "${cross_profile_args[@]}"
         cargo check --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
             --target "$cross_target" --features agent-control "${cross_profile_args[@]}"
@@ -69,9 +69,9 @@ cross_check_macos() {
     local cross_target="$1"
     (
         cd "$cross_repo_root"
-        cargo check --locked --package uix --target "$cross_target" \
+        cargo check --locked --package uix-app --target "$cross_target" \
             --features agent-control "${cross_profile_args[@]}"
-        cargo check --locked --package uix --target "$cross_target" \
+        cargo check --locked --package uix-app --target "$cross_target" \
             --no-default-features --features "$cross_macos_features" \
             "${cross_profile_args[@]}"
         cargo check --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
@@ -89,7 +89,7 @@ cross_build_linux_x64() {
         || cross_fail "linux-x64 linking requires a $cross_linux_x64_target host; current host is $cross_host"
     (
         cd "$cross_repo_root"
-        cargo build --locked --package uix --target "$cross_linux_x64_target" \
+        cargo build --locked --package uix-app --target "$cross_linux_x64_target" \
             --features agent-control "${cross_profile_args[@]}"
         cargo build --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
             --target "$cross_linux_x64_target" --features agent-control \
@@ -121,7 +121,7 @@ cross_build_windows_x64() {
     fi
     (
         cd "$cross_repo_root"
-        "${cross_windows_driver[@]}" build --locked --package uix \
+        "${cross_windows_driver[@]}" build --locked --package uix-app \
             --target "$cross_windows_x64_target" --features agent-control \
             "${cross_profile_args[@]}"
         "${cross_windows_driver[@]}" build --locked --manifest-path demo/Cargo.toml \
@@ -142,7 +142,7 @@ cross_build_macos() {
         || cross_fail "xcrun cannot resolve the macOS SDK"
     (
         cd "$cross_repo_root"
-        cargo build --locked --package uix --target "$cross_target" \
+        cargo build --locked --package uix-app --target "$cross_target" \
             --no-default-features --features "$cross_macos_features" \
             "${cross_profile_args[@]}"
         cargo build --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \

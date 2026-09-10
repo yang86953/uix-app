@@ -97,7 +97,7 @@ pub(crate) fn generate_popover(element: &Element) -> Result<TokenStream, Diagnos
     // 生成字符串字面量或受限字符串表达式。
     let content = string_value(content_attribute)?;
     // 临时借用内容，让运行时 Popover 复制并独占字符串。
-    let mut widget = quote! { ::uix::prelude::Popover::new(&*(#content)) };
+    let mut widget = quote! { ::uix_app::prelude::Popover::new(&*(#content)) };
     // 可选标题接受字符串字面量或受限字符串表达式。
     if let Some(attribute) = find_attribute(element, "title") {
         // 生成运行时拥有的标题字符串。
@@ -136,7 +136,7 @@ pub(crate) fn generate_popover(element: &Element) -> Result<TokenStream, Diagnos
     // 把唯一静态 View 交给运行时组件拥有触发与显隐生命周期。
     widget = quote! { (#widget).trigger_view(#trigger) };
     // 使用公开叶节点入口物化 Widget，子树仍由运行时提供器构建。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Popover 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(
         // 传入已配置完整运行时契约的 Popover View。
@@ -174,29 +174,29 @@ fn popover_placement(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按公开十二方向生成对应枚举。
     match value.as_str() {
         // 上方居中。
-        "top" => Ok(quote! { ::uix::prelude::PopoverPlacement::Top }),
+        "top" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::Top }),
         // 上方左对齐。
-        "topLeft" => Ok(quote! { ::uix::prelude::PopoverPlacement::TopLeft }),
+        "topLeft" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::TopLeft }),
         // 上方右对齐。
-        "topRight" => Ok(quote! { ::uix::prelude::PopoverPlacement::TopRight }),
+        "topRight" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::TopRight }),
         // 下方居中。
-        "bottom" => Ok(quote! { ::uix::prelude::PopoverPlacement::Bottom }),
+        "bottom" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::Bottom }),
         // 下方左对齐。
-        "bottomLeft" => Ok(quote! { ::uix::prelude::PopoverPlacement::BottomLeft }),
+        "bottomLeft" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::BottomLeft }),
         // 下方右对齐。
-        "bottomRight" => Ok(quote! { ::uix::prelude::PopoverPlacement::BottomRight }),
+        "bottomRight" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::BottomRight }),
         // 左侧居中。
-        "left" => Ok(quote! { ::uix::prelude::PopoverPlacement::Left }),
+        "left" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::Left }),
         // 左侧顶部对齐。
-        "leftTop" => Ok(quote! { ::uix::prelude::PopoverPlacement::LeftTop }),
+        "leftTop" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::LeftTop }),
         // 左侧底部对齐。
-        "leftBottom" => Ok(quote! { ::uix::prelude::PopoverPlacement::LeftBottom }),
+        "leftBottom" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::LeftBottom }),
         // 右侧居中。
-        "right" => Ok(quote! { ::uix::prelude::PopoverPlacement::Right }),
+        "right" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::Right }),
         // 右侧顶部对齐。
-        "rightTop" => Ok(quote! { ::uix::prelude::PopoverPlacement::RightTop }),
+        "rightTop" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::RightTop }),
         // 右侧底部对齐。
-        "rightBottom" => Ok(quote! { ::uix::prelude::PopoverPlacement::RightBottom }),
+        "rightBottom" => Ok(quote! { ::uix_app::prelude::PopoverPlacement::RightBottom }),
         // 其他关键字不能静默回退到 Top。
         _ => Err(Diagnostic::new(
             // 指向完整 placement 属性。
@@ -229,11 +229,11 @@ fn popover_trigger(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按文档登记关键字生成公开枚举。
     match value.as_str() {
         // 点击触发映射到 Click。
-        "click" => Ok(quote! { ::uix::prelude::PopoverTrigger::Click }),
+        "click" => Ok(quote! { ::uix_app::prelude::PopoverTrigger::Click }),
         // 悬停触发映射到 Hover。
-        "hover" => Ok(quote! { ::uix::prelude::PopoverTrigger::Hover }),
+        "hover" => Ok(quote! { ::uix_app::prelude::PopoverTrigger::Hover }),
         // 焦点进入触发映射到 Focus。
-        "focus" => Ok(quote! { ::uix::prelude::PopoverTrigger::Focus }),
+        "focus" => Ok(quote! { ::uix_app::prelude::PopoverTrigger::Focus }),
         // 其他关键字不能静默回退。
         _ => Err(Diagnostic::new(
             // 指向完整 trigger 属性。

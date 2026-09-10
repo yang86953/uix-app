@@ -4,7 +4,7 @@
 // 隔离 data-list-slots 围栏中的列表插槽。
 mod data_list_slots {
     // 引入文档承诺的列表与声明式视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译列表头部、尾部与加载入口的真实子视图。
     fn compile_example() {
@@ -27,7 +27,7 @@ mod data_list_slots {
 // 隔离 data-tree 围栏中的可勾选层级树。
 mod data_tree {
     // 引入文档承诺的树组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译稳定业务 key 驱动的层级树配置。
     fn compile_example() {
@@ -54,7 +54,7 @@ mod data_tree {
 // 隔离 tree-basic 围栏中的最小层级关系。
 mod tree_basic {
     // 引入文档承诺的树组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译最小的父子树结构。
     fn compile_example() {
@@ -71,7 +71,7 @@ mod tree_basic {
 // 隔离 data-qrcode 围栏中的二维码显示配置。
 mod data_qrcode {
     // 引入文档承诺的二维码组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译二维码值、尺寸与纠错等级配置。
     fn compile_example() {
@@ -90,7 +90,7 @@ mod data_qrcode {
 // 隔离 data-result 围栏中的成功结果页。
 mod data_result {
     // 引入文档承诺的结果页公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译具备文字语义的成功结果页。
     fn compile_example() {
@@ -111,7 +111,7 @@ mod data_result {
 // 隔离 data-table-pagination 围栏中的远程分页契约。
 mod data_table_pagination {
     // 引入文档承诺的表格公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译由业务层提供当前页数据的远程分页表格。
     fn compile_example() {
@@ -145,7 +145,7 @@ mod data_table_pagination {
 // 隔离 data-table-row-click 围栏中的行业务回调。
 mod data_table_row_click {
     // 引入文档承诺的表格公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译接收行快照与行索引的点击回调。
     fn compile_example() {
@@ -172,7 +172,7 @@ mod data_table_row_click {
 // 隔离 data-table-span 围栏中的业务行跨度函数。
 mod data_table_span {
     // 引入文档承诺的表格公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译由行内容决定跨度的合并单元格。
     fn compile_example() {
@@ -208,7 +208,7 @@ mod data_table_span {
 // 隔离 data-transfer-advanced 围栏中的穿梭框扩展契约。
 mod data_transfer_advanced {
     // 引入文档承诺的穿梭框公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译源目标列表、自定义行视图与迁移回调。
     fn compile_example() {

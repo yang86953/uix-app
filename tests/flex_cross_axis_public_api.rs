@@ -1,7 +1,7 @@
 //! Flex basis 只影响父主轴，不能清空交叉轴的自然内容尺寸。
 #![cfg(feature = "test-harness")]
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn growing_wrapper_keeps_its_cross_axis_content_height() {

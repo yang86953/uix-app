@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use uix::ui::{
+use uix_app::ui::{
     DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, State,
     ThemeTokens, TokenPatch, TokenProvider,
 };
-use uix::ui::{StyleExt, button, column, embed, label, row, scroll};
+use uix_app::ui::{StyleExt, button, column, embed, label, row, scroll};
 
 #[test]
 fn theme_and_token_contracts_are_owned_by_ui() {
@@ -48,7 +48,7 @@ fn ui_state_and_view_builders_work_from_public_exports() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn ui_test_harness_drives_the_same_public_semantic_path() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
 
     let count = State::new(0_u32);
     let root_count = count.clone();
@@ -73,8 +73,8 @@ fn ui_test_harness_drives_the_same_public_semantic_path() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn button_interaction_gate_preserves_accessibility_override_precedence() {
-    use uix::ui::test_harness::{AutomationError, TestApp};
-    use uix::ui::{AccessibilityExt, AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
+    use uix_app::ui::test_harness::{AutomationError, TestApp};
+    use uix_app::ui::{AccessibilityExt, AccessibilityRole, AccessibilitySnapshot, AccessibilityState};
 
     let count = State::new(0_u32);
     let root_count = count.clone();
@@ -131,7 +131,7 @@ fn button_interaction_gate_preserves_accessibility_override_precedence() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn root_flex_grow_chain_fills_and_refollows_viewport() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
 
     let mut app = TestApp::new((420.0, 280.0), || {
         column((column((label("内容"),))
@@ -160,8 +160,8 @@ fn root_flex_grow_chain_fills_and_refollows_viewport() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn flex_children_honor_their_public_shrink_factors() {
-    use uix::prelude::Container;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::Container;
+    use uix_app::ui::test_harness::TestApp;
 
     let app = TestApp::new((100.0, 40.0), || {
         row((
@@ -186,8 +186,8 @@ fn flex_children_honor_their_public_shrink_factors() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn space_children_honor_their_public_shrink_factors() {
-    use uix::prelude::{Container, Space};
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::{Container, Space};
+    use uix_app::ui::test_harness::TestApp;
 
     let app = TestApp::new((100.0, 40.0), || {
         embed(
@@ -215,8 +215,8 @@ fn space_children_honor_their_public_shrink_factors() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn bidirectional_scroll_preserves_fixed_content_across_coupled_scrollbars() {
-    use uix::prelude::Container;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::Container;
+    use uix_app::ui::test_harness::TestApp;
 
     let app = TestApp::new((100.0, 100.0), || {
         scroll(embed(Container::new().size(100.0, 120.0)).automation_id("layout.scroll-content"))
@@ -237,8 +237,8 @@ fn bidirectional_scroll_preserves_fixed_content_across_coupled_scrollbars() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn variable_virtual_scroll_uses_materialized_row_measurements() {
-    use uix::prelude::VirtualScroll;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::VirtualScroll;
+    use uix_app::ui::test_harness::TestApp;
 
     let app = TestApp::new((100.0, 100.0), || {
         VirtualScroll::new()
@@ -269,8 +269,8 @@ fn variable_virtual_scroll_uses_materialized_row_measurements() {
 #[cfg(all(feature = "test-harness", feature = "navigation"))]
 #[test]
 fn tabs_flex_grow_fills_remaining_column_height() {
-    use uix::prelude::{Tab, Tabs, column_fit, embed, label};
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::{Tab, Tabs, column_fit, embed, label};
+    use uix_app::ui::test_harness::TestApp;
 
     // 契约：column_fit 中声明 flexGrow=1 的 Tabs 底边必须到达 Column 底边，
     // 面板随 Tabs 拉伸；页头保持固有高度并位于 Tabs 之上。

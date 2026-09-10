@@ -481,9 +481,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "uix"
+name = "uix-app"
 version = "0.0.8"
-source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "ab_glyph",
  "ash",
@@ -510,7 +509,6 @@ dependencies = [
 [[package]]
 name = "uix-derive"
 version = "0.0.8"
-source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -522,7 +520,6 @@ dependencies = [
 [[package]]
 name = "uix-lang-compiler"
 version = "0.0.8"
-source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -533,7 +530,6 @@ dependencies = [
 [[package]]
 name = "uix-lang-runtime"
 version = "0.0.8"
-source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 
 [[package]]
 name = "uix-task-list"
@@ -541,7 +537,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "tracing-subscriber",
- "uix",
+ "uix-app",
 ]
 
 [[package]]

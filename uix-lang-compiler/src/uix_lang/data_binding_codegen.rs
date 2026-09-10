@@ -145,11 +145,11 @@ pub(crate) fn step_status_path(value: &str) -> Option<TokenStream> {
     // 按语言面语义值映射枚举变体。
     match value {
         // 映射已完成步骤。
-        "finish" => Some(quote! { ::uix::prelude::StepStatus::Finish }),
+        "finish" => Some(quote! { ::uix_app::prelude::StepStatus::Finish }),
         // 映射进行中步骤。
-        "process" => Some(quote! { ::uix::prelude::StepStatus::Process }),
+        "process" => Some(quote! { ::uix_app::prelude::StepStatus::Process }),
         // 映射等待中步骤。
-        "wait" => Some(quote! { ::uix::prelude::StepStatus::Wait }),
+        "wait" => Some(quote! { ::uix_app::prelude::StepStatus::Wait }),
         // 其他值不在登记表。
         _ => None,
     }

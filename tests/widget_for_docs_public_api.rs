@@ -2,9 +2,9 @@
 #![cfg(feature = "test-harness")]
 
 // 引入 UIX 编译入口、响应式状态、样式扩展与公开 View 类型。
-use uix::prelude::{State, StyleExt, ViewNode, uix};
+use uix_app::prelude::{State, StyleExt, ViewNode, uix};
 // 引入与真实组件事件和协调路径一致的公开测试驱动。
-use uix::ui::test_harness::TestApp;
+use uix_app::ui::test_harness::TestApp;
 
 // 保存测试列表中一行的稳定业务身份与自动化入口。
 #[derive(Clone)]

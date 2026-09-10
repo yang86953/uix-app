@@ -13,8 +13,8 @@ mod native {
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
 
-    use uix::draw::{FrameImage, SurfaceReadback};
-    use uix::prelude::*;
+    use uix_app::draw::{FrameImage, SurfaceReadback};
+    use uix_app::prelude::*;
 
     type ProbeResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 

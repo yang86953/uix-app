@@ -27,7 +27,7 @@ pub(crate) fn generate_input_group(element: &Element) -> Result<TokenStream, Dia
     }
 
     // 从公开复合输入构造器开始配置。
-    let mut group = quote! { ::uix::prelude::InputGroup::new() };
+    let mut group = quote! { ::uix_app::prelude::InputGroup::new() };
     // 可选前置文本映射到公开 addon_before 构建器。
     if let Some(attribute) = find_attribute(element, "addonBefore") {
         // 生成字符串字面量或受限 String 表达式。

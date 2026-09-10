@@ -14,7 +14,7 @@ use super::{Diagnostic, Element, boolean_value};
 // 生成保留幻灯片顺序与运行时计时器所有权的 Carousel 容器。
 pub(crate) fn generate_carousel(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从不启用自动播放的公开构造器开始。
-    let mut widget = quote! { ::uix::prelude::Carousel::new() };
+    let mut widget = quote! { ::uix_app::prelude::Carousel::new() };
     // 可选 autoplay 接受布尔简写、字面量或受限表达式。
     if let Some(attribute) = find_attribute(element, "autoplay") {
         // 复用统一布尔值诊断并保留 Rust 类型检查。

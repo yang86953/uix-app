@@ -72,7 +72,7 @@ pub(crate) fn generate_canvas(element: &Element) -> Result<TokenStream, Diagnost
     };
     // 直接映射公开 canvas 组合器；绘制闭包内的 State 读取
     // 由运行时绑定为该节点的窄 Paint 失效，不形成每帧回调。
-    let base = quote! { ::uix::prelude::canvas(#width as f32, #height as f32, #paint) };
+    let base = quote! { ::uix_app::prelude::canvas(#width as f32, #height as f32, #paint) };
     // 专有属性消费后继续复用统一样式与身份路径。
     apply_common_attributes(
         // 传入 Canvas 基础 View。

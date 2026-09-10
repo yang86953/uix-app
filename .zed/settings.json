@@ -1,8 +1,0 @@
-{
-  "mcp": {
-    "codegraph": {
-      "command": "npx",
-      "args": ["codegraph", "serve", "--mcp", "--path", "$ZED_WORKTREE_ROOT"]
-    }
-  }
-}

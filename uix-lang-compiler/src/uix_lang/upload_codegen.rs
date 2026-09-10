@@ -59,7 +59,7 @@ pub(crate) fn generate_upload(element: &Element) -> Result<TokenStream, Diagnost
     // 生成受限状态表达式并由 Rust 核对最终类型。
     let files = generate_expression(&files_expression.expression, None)?;
     // 从公开构造器和唯一队列绑定开始配置。
-    let mut widget = quote! { ::uix::prelude::Upload::new().files(&(#files)) };
+    let mut widget = quote! { ::uix_app::prelude::Upload::new().files(&(#files)) };
 
     // accept 在 UIX 首版只接受可于宏展开期验证的字符串字面量。
     if let Some(attribute) = find_attribute(element, "accept") {
@@ -143,7 +143,7 @@ pub(crate) fn generate_upload(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 物化已经完成状态和类型化事件配置的公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性后应用统一尺寸、样式与其他公共事件。
     apply_common_attributes(
         // 传入已经配置完成的公开 View。

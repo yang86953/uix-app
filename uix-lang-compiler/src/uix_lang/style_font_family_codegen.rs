@@ -28,7 +28,7 @@ pub(super) fn font_family_field(
         // 通过公开受控构造器建立非空字体族契约。
         #style.font_family = ::std::option::Option::Some(
             // 运行时公开构造器再次守卫名称不变量。
-            ::uix::prelude::FontFamily::from_names([#(#families),*])
+            ::uix_app::prelude::FontFamily::from_names([#(#families),*])
                 // 该分支只由已验证字面量生成。
                 .expect("UIX 已验证 fontFamily 为非空合法列表")
         );

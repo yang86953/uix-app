@@ -2,7 +2,7 @@
 //!
 //! Most apps only need:
 //! ```ignore
-//! use uix::prelude::*;
+//! use uix_app::prelude::*;
 //! ```
 //!
 //! Macro tiers（公开用法见仓库 `docs/使用.md`）：

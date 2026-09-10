@@ -195,8 +195,8 @@ fn apply_border(
     Ok(quote! {
         (#base).border(
             #width,
-            ::uix::prelude::ColorValue::custom(
-                ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
+            ::uix_app::prelude::ColorValue::custom(
+                ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
             )
         )
     })

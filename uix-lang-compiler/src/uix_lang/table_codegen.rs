@@ -45,7 +45,7 @@ pub(crate) fn generate_table(element: &Element) -> Result<TokenStream, Diagnosti
     // 把数组或 Vec 统一收集为运行时拥有的行集合。
     let rows = quote! {
         ::std::iter::IntoIterator::into_iter((#data).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::TableRow>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::TableRow>>()
     };
 
     // 查找必需的列定义表达式。
@@ -67,12 +67,12 @@ pub(crate) fn generate_table(element: &Element) -> Result<TokenStream, Diagnosti
     // 把数组或 Vec 统一收集为运行时拥有的列集合。
     let columns = quote! {
         ::std::iter::IntoIterator::into_iter((#columns).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::TableColumn>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::TableColumn>>()
     };
 
     // 由公开 Table 运行时取得列与行的唯一所有权。
     let mut widget = quote! {
-        ::uix::prelude::Table::new()
+        ::uix_app::prelude::Table::new()
             .columns(#columns)
             .rows(#rows)
     };
@@ -92,7 +92,7 @@ pub(crate) fn generate_table(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // Table 物化为公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Table 专有属性并应用公共 View 属性。
     apply_common_attributes(
         // 传入完整类型化表格 View。

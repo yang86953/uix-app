@@ -30,12 +30,12 @@ pub(crate) fn generate_rich_text(element: &Element) -> Result<TokenStream, Diagn
     let selectable = optional_boolean(element, "selectable")?;
     // 生成层只调用公开解析与组件构建契约，不复制 Markdown 或选择状态。
     let widget = quote! {
-        ::uix::prelude::RichText::new()
-            .content(::uix::prelude::parse_rich_text(&*(#content)))
+        ::uix_app::prelude::RichText::new()
+            .content(::uix_app::prelude::parse_rich_text(&*(#content)))
             .selectable(#selectable)
     };
     // RichText 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性并继续应用统一样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置的富文本 View。

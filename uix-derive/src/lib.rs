@@ -7,7 +7,7 @@
 //! `Navigation<K>` 的语义事件与快照文本，免除手写 `impl Display`。
 //!
 //! ```ignore
-//! #[derive(Clone, PartialEq, uix::Display)]
+//! #[derive(Clone, PartialEq, uix_app::Display)]
 //! enum Page { Home, UserProfile }
 //! ```
 //!
@@ -31,7 +31,7 @@ pub fn derive_display(input: TokenStream) -> TokenStream {
     let Data::Enum(data) = &input.data else {
         return syn::Error::new_spanned(
             name,
-            "uix::Display derive 仅支持枚举（路由 key 通常是单元变体枚举）",
+            "uix_app::Display derive 仅支持枚举（路由 key 通常是单元变体枚举）",
         )
         .to_compile_error()
         .into();
@@ -50,7 +50,7 @@ pub fn derive_display(input: TokenStream) -> TokenStream {
             _ => {
                 return syn::Error::new_spanned(
                     variant,
-                    "uix::Display derive 仅支持单元变体；带字段变体请手写 Display",
+                    "uix_app::Display derive 仅支持单元变体；带字段变体请手写 Display",
                 )
                 .to_compile_error()
                 .into();
@@ -79,7 +79,7 @@ pub fn uix(input: TokenStream) -> TokenStream {
     uix_entry::expand_public(&input).into()
 }
 
-/// 把根为 `<App>` 的 UIX 文档编译为现有 `uix::App` builder。
+/// 把根为 `<App>` 的 UIX 文档编译为现有 `uix_app::App` builder。
 ///
 /// 宏不会调用 `run()`；调用方可继续链式配置启动钩子、Agent 控制或标题栏：
 ///

@@ -9,7 +9,7 @@
 
 use std::cell::RefCell;
 use std::sync::{Mutex, OnceLock};
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 // UI 线程独占的演示状态；跨线程只经 post_to_ui 进入。
 struct LiveTerminalDemo {

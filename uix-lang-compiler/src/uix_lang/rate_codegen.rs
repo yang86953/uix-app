@@ -27,7 +27,7 @@ pub(crate) fn generate_rate(element: &Element) -> Result<TokenStream, Diagnostic
     }
 
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Rate::new() };
+    let mut widget = quote! { ::uix_app::prelude::Rate::new() };
     // 星数必须在评分绑定前建立最大值契约。
     if let Some(attribute) = find_attribute(element, "count") {
         // 生成 usize 字面量或受限表达式。
@@ -72,7 +72,7 @@ pub(crate) fn generate_rate(element: &Element) -> Result<TokenStream, Diagnostic
     }
 
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Rate 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的评分 View。

@@ -1026,190 +1026,190 @@ macro_rules! value_type {
 }
 
 const DATA_CONSTRUCTORS: &[DataConstructorSpec] = &[
-    data_constructor!("SelectOption", "::uix::prelude::SelectOption"),
+    data_constructor!("SelectOption", "::uix_app::prelude::SelectOption"),
     data_constructor!(
         "CascaderOption",
-        "::uix::prelude::CascaderOption",
+        "::uix_app::prelude::CascaderOption",
         "new",
         false,
         Some("tree-widgets")
     ),
     data_constructor!(
         "TreeNode",
-        "::uix::prelude::TreeNode",
+        "::uix_app::prelude::TreeNode",
         "new",
         false,
         Some("tree-widgets")
     ),
     data_constructor!(
         "TerminalLine",
-        "::uix::prelude::TerminalLine",
+        "::uix_app::prelude::TerminalLine",
         "text",
         false,
         Some("terminal")
     ),
-    data_constructor!("TimelineItem", "::uix::prelude::TimelineItem"),
-    data_constructor!("SelectableItem", "::uix::prelude::SelectableItem"),
-    data_constructor!("CollapsePanel", "::uix::prelude::CollapsePanel"),
+    data_constructor!("TimelineItem", "::uix_app::prelude::TimelineItem"),
+    data_constructor!("SelectableItem", "::uix_app::prelude::SelectableItem"),
+    data_constructor!("CollapsePanel", "::uix_app::prelude::CollapsePanel"),
     data_constructor!(
         "Step",
-        "::uix::prelude::Step",
+        "::uix_app::prelude::Step",
         "new",
         false,
         Some("navigation")
     ),
-    data_constructor!("DescriptionsItem", "::uix::prelude::DescriptionsItem"),
+    data_constructor!("DescriptionsItem", "::uix_app::prelude::DescriptionsItem"),
     data_constructor!(
         "BreadcrumbItem",
-        "::uix::prelude::BreadcrumbItem",
+        "::uix_app::prelude::BreadcrumbItem",
         "new",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "AnchorItem",
-        "::uix::prelude::AnchorItem",
+        "::uix_app::prelude::AnchorItem",
         "new",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "Tab",
-        "::uix::prelude::Tab",
+        "::uix_app::prelude::Tab",
         "new",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "MenuItem",
-        "::uix::prelude::MenuItem",
+        "::uix_app::prelude::MenuItem",
         "from_text",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "DropdownItem",
-        "::uix::prelude::DropdownItem",
+        "::uix_app::prelude::DropdownItem",
         "from_text",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "MenuBarMenu",
-        "::uix::prelude::MenuBarMenu",
+        "::uix_app::prelude::MenuBarMenu",
         "from_text",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "MenuBarItem",
-        "::uix::prelude::MenuBarItem",
+        "::uix_app::prelude::MenuBarItem",
         "from_text",
         false,
         Some("navigation")
     ),
     data_constructor!(
         "BarData",
-        "::uix::prelude::BarData",
+        "::uix_app::prelude::BarData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "LineData",
-        "::uix::prelude::LineData",
+        "::uix_app::prelude::LineData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "PieData",
-        "::uix::prelude::PieData",
+        "::uix_app::prelude::PieData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "ScatterData",
-        "::uix::prelude::ScatterData",
+        "::uix_app::prelude::ScatterData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "BubbleData",
-        "::uix::prelude::BubbleData",
+        "::uix_app::prelude::BubbleData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "FunnelData",
-        "::uix::prelude::FunnelData",
+        "::uix_app::prelude::FunnelData",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "TreemapNode",
-        "::uix::prelude::TreemapNode",
+        "::uix_app::prelude::TreemapNode",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "GaugeRange",
-        "::uix::prelude::GaugeRange",
+        "::uix_app::prelude::GaugeRange",
         "new",
         true,
         Some("charts")
     ),
     data_constructor!(
         "HeatmapCell",
-        "::uix::prelude::HeatmapCell",
+        "::uix_app::prelude::HeatmapCell",
         "new",
         false,
         Some("charts")
     ),
     data_constructor!(
         "WaterfallData",
-        "::uix::prelude::WaterfallData",
+        "::uix_app::prelude::WaterfallData",
         "new",
         false,
         Some("charts")
     ),
     data_constructor!(
         "ChartSeries",
-        "::uix::prelude::ChartSeries",
+        "::uix_app::prelude::ChartSeries",
         "new",
         false,
         Some("charts")
     ),
     data_constructor!(
         "ComboSeries",
-        "::uix::prelude::ComboSeries",
+        "::uix_app::prelude::ComboSeries",
         "new",
         false,
         Some("charts")
     ),
     data_constructor!(
         "RadarAxis",
-        "::uix::prelude::RadarAxis",
+        "::uix_app::prelude::RadarAxis",
         "new",
         false,
         Some("charts")
     ),
     data_constructor!(
         "RadarData",
-        "::uix::prelude::RadarData",
+        "::uix_app::prelude::RadarData",
         "new",
         true,
         Some("charts")
     ),
-    data_constructor!("Date", "::uix::prelude::Date"),
-    data_constructor!("Time", "::uix::prelude::Time"),
-    data_constructor!("Color", "::uix::prelude::Color", "hex", false, None),
-    data_constructor!("Point", "::uix::prelude::Point", "new", true, None),
+    data_constructor!("Date", "::uix_app::prelude::Date"),
+    data_constructor!("Time", "::uix_app::prelude::Time"),
+    data_constructor!("Color", "::uix_app::prelude::Color", "hex", false, None),
+    data_constructor!("Point", "::uix_app::prelude::Point", "new", true, None),
 ];
 
 // 核心通用类型在前，组件拥有的类型紧随其后；顺序保持诊断清单稳定。

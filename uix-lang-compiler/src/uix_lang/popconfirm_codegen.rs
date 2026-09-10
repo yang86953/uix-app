@@ -100,7 +100,7 @@ pub(crate) fn generate_popconfirm(element: &Element) -> Result<TokenStream, Diag
     let title = string_value(title_attribute)?;
     // 运行时 owner 接收标题与完整 trigger ViewNode。
     let mut widget = quote! {
-        ::uix::prelude::Popconfirm::new()
+        ::uix_app::prelude::Popconfirm::new()
             .title(#title)
             .trigger_view(#trigger)
     };
@@ -155,7 +155,7 @@ pub(crate) fn generate_popconfirm(element: &Element) -> Result<TokenStream, Diag
     }
 
     // trigger 子树由运行时 build_view_children 提供，因此外层仍是叶声明。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Popconfirm 专有属性并应用公共尺寸、样式、身份与其他公共事件。
     apply_common_attributes(
         // 传入已经配置 trigger、几何和回调的公开 View。
@@ -183,17 +183,17 @@ fn placement_tokens(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按批准文档关键字生成运行时枚举。
     match value.as_str() {
         // 顶部左对齐映射 TopLeft。
-        "topLeft" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::TopLeft }),
+        "topLeft" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::TopLeft }),
         // 顶部默认映射 Top。
-        "top" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::Top }),
+        "top" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::Top }),
         // 顶部右对齐映射 TopRight。
-        "topRight" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::TopRight }),
+        "topRight" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::TopRight }),
         // 底部左对齐映射 BottomLeft。
-        "bottomLeft" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::BottomLeft }),
+        "bottomLeft" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::BottomLeft }),
         // 底部默认映射 Bottom。
-        "bottom" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::Bottom }),
+        "bottom" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::Bottom }),
         // 底部右对齐映射 BottomRight。
-        "bottomRight" => Ok(quote! { ::uix::prelude::PopconfirmPlacement::BottomRight }),
+        "bottomRight" => Ok(quote! { ::uix_app::prelude::PopconfirmPlacement::BottomRight }),
         // 其他关键字不得静默回退为 top。
         _ => Err(Diagnostic::new(
             // 指向完整 placement 属性。

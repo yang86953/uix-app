@@ -47,7 +47,7 @@ pub(crate) fn generate_image(element: &Element) -> Result<TokenStream, Diagnosti
     };
 
     // 构造运行时 Image，并仅在构造期间借用调用方路径。
-    let mut widget = quote! { ::uix::prelude::Image::new(#width, #height).src(&*(#src)) };
+    let mut widget = quote! { ::uix_app::prelude::Image::new(#width, #height).src(&*(#src)) };
     // 可选替代文本继续由运行时持有并投影到语义快照。
     if let Some(attribute) = find_attribute(element, "alt") {
         // 生成字符串字面量或受限字符串表达式。
@@ -102,7 +102,7 @@ pub(crate) fn generate_image(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 经公开 View 契约进入 Image 自己的同目录 UIX 声明根。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Image 专有属性，避免公共属性层重复解释固有尺寸。
     apply_common_attributes(
         // 传入已经配置的图片 View。

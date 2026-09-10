@@ -108,7 +108,7 @@ fn reference_lines(
             .collect::<::std::vec::Vec<(
                 f32,
                 ::std::string::String,
-                ::uix::prelude::LineStyle
+                ::uix_app::prelude::LineStyle
             )>>()
             .into_iter()
             .fold(#widget, |chart, (value, label, style)| {
@@ -126,15 +126,15 @@ fn legend_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
             // 按文档登记值选择枚举成员。
             let mapped = match value.as_str() {
                 // 图例位于顶部。
-                "top" => quote! { ::uix::prelude::LegendPosition::Top },
+                "top" => quote! { ::uix_app::prelude::LegendPosition::Top },
                 // 图例位于底部。
-                "bottom" => quote! { ::uix::prelude::LegendPosition::Bottom },
+                "bottom" => quote! { ::uix_app::prelude::LegendPosition::Bottom },
                 // 图例位于左侧。
-                "left" => quote! { ::uix::prelude::LegendPosition::Left },
+                "left" => quote! { ::uix_app::prelude::LegendPosition::Left },
                 // 图例位于右侧。
-                "right" => quote! { ::uix::prelude::LegendPosition::Right },
+                "right" => quote! { ::uix_app::prelude::LegendPosition::Right },
                 // 显式隐藏图例。
-                "none" => quote! { ::uix::prelude::LegendPosition::None },
+                "none" => quote! { ::uix_app::prelude::LegendPosition::None },
                 // 其他值不在公开契约中。
                 _ => {
                     // 返回完整允许集合诊断。

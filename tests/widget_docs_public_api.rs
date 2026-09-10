@@ -4,7 +4,7 @@
 // 隔离 widget-function 围栏中的函数组件。
 mod widget_function {
     // 引入文档承诺的公开组件 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 组合公开节点并返回无私有状态的用户卡片。
     fn user_card(name: &str, role: &str) -> ViewNode {
@@ -29,7 +29,7 @@ mod widget_function {
 // 隔离 widget-canvas 围栏中的轻量绘制闭包。
 mod widget_canvas {
     // 引入文档承诺的公开绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译固定尺寸 canvas 的公开绘制闭包。
     fn compile_example() {
@@ -46,7 +46,7 @@ mod widget_canvas {
 // 隔离 widget-full 围栏中的完整事件组件。
 mod widget_full {
     // 引入文档承诺的公开组件、事件与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明带计数状态、测量、事件和绘制能力的完整组件。
     widget! {
@@ -109,7 +109,7 @@ mod widget_full {
 // 隔离 widget-paint-context 围栏中的 render 片段。
 mod widget_paint_context {
     // 引入片段宿主所需的公开组件与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为文档中的 render 片段提供最小公开 widget 宿主。
     widget! {
@@ -150,7 +150,7 @@ mod widget_paint_context {
 // 隔离 widget-timer-badge 围栏中的动画脏区组件。
 mod widget_timer_badge {
     // 引入文档承诺的公开组件与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明显式状态、脏区与绘制能力的计时徽标。
     widget! {

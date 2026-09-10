@@ -4,7 +4,7 @@
 // 隔离 app-minimal 围栏中的窗口入口。
 mod app_minimal {
     // 引入文档承诺的公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用最小应用入口。
     fn main() {
@@ -24,7 +24,7 @@ mod app_minimal {
 // 隔离 state-basics 围栏中的局部状态变量。
 mod state_basics {
     // 引入文档承诺的公开 State 类型。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 State 的创建、写入、更新与读取组合。
     fn compile_example() {
@@ -44,7 +44,7 @@ mod state_basics {
 // 隔离 computed-full-name 围栏中的派生状态闭包。
 mod computed_full_name {
     // 引入文档承诺的公开 State、Computed 与样式扩展。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译两个 State 派生完整姓名并映射为文本 View 的组合。
     fn compile_example() {
@@ -62,7 +62,7 @@ mod computed_full_name {
 // 隔离 scoped-subtree 围栏中的子树作用域声明。
 mod scoped_subtree {
     // 引入文档承诺的公开 State、scoped 组合器与布局 API。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译读取 State 的子树作用域公开组合。
     fn compile_example() {
@@ -97,7 +97,7 @@ mod scoped_subtree {
 // 隔离 state-view-mapping 围栏中的两个响应式 View 映射。
 mod state_view_mapping {
     // 引入文档承诺的公开 State、View 与颜色 API。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译通用 map 与条件 map_opt 的公开组合。
     fn compile_example() {
@@ -133,7 +133,7 @@ mod state_view_mapping {
 // 隔离 effect-dependency 围栏中的自动依赖闭包。
 mod effect_dependency {
     // 引入文档承诺的公开 State 与 Effect 类型。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用 Effect 构造，避免测试产生输出副作用。
     fn compile_example() {
@@ -153,7 +153,7 @@ mod effect_dependency {
 // 隔离 conditional-and-list 围栏中的条件与列表组合。
 mod conditional_and_list {
     // 引入文档承诺的公开 View 构造 API。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译少量条件与列表渲染组合。
     fn compile_example() {
@@ -185,7 +185,7 @@ mod conditional_and_list {
 // 隔离 clipboard-event 围栏中的平台剪贴板调用。
 mod clipboard_event {
     // 引入文档承诺的公开剪贴板函数。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 定义但不调用剪贴板读写组合。
     fn compile_example() {
@@ -203,7 +203,7 @@ mod clipboard_event {
 // 隔离 computed-model 围栏中的业务模型名称。
 mod computed_model {
     // 引入文档承诺的公开响应式 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明以 State 持有业务数据的计数模型。
     struct CounterModel {

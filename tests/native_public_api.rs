@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use uix::core::Result;
-use uix::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
-use uix::platform::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
+use uix_app::core::Result;
+use uix_app::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
+use uix_app::platform::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 // 引入系统通知身份、能力状态与通知值公开契约。
-use uix::platform::Platform;
-use uix::platform::services::{
+use uix_app::platform::Platform;
+use uix_app::platform::services::{
     AppUserModelId, SpecialDir, SystemNotification, SystemNotificationCapability,
 };
 

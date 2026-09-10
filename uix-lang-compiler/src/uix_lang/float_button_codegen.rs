@@ -48,7 +48,7 @@ pub(crate) fn generate_float_button(element: &Element) -> Result<TokenStream, Di
     // 图标接受字符串字面量或受限字符串表达式。
     let icon = string_value(icon_attribute)?;
     // UIX 缺省位置显式映射到文档定义的右下角。
-    let mut placement = quote! { ::uix::prelude::Placement::BottomRight };
+    let mut placement = quote! { ::uix_app::prelude::Placement::BottomRight };
     // 保存可选说明文字。
     let mut description = None;
     // 保存可选悬停提示。
@@ -85,7 +85,7 @@ pub(crate) fn generate_float_button(element: &Element) -> Result<TokenStream, Di
     // 从现有公开运行时组件开始构造。
     let mut widget = quote! {
         // UIX 始终显式设置文档默认 Placement。
-        (::uix::prelude::FloatButton::new(#icon)).placement(#placement)
+        (::uix_app::prelude::FloatButton::new(#icon)).placement(#placement)
     };
     // 有说明文字时调用公开构建器。
     if let Some(value) = description {
@@ -108,7 +108,7 @@ pub(crate) fn generate_float_button(element: &Element) -> Result<TokenStream, Di
         widget = quote! { (#widget).badge_dot(#value) };
     }
     // 把运行时 Widget 包装成公开叶 View。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let base = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 继续复用统一样式、事件与未知属性诊断路径。
     apply_common_attributes(
         // 传入 FloatButton 基础 View。
@@ -127,13 +127,13 @@ fn placement_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 映射文档中的四种位置。
     match value.as_str() {
         // 映射左上角。
-        "leftTop" => Ok(quote! { ::uix::prelude::Placement::TopLeft }),
+        "leftTop" => Ok(quote! { ::uix_app::prelude::Placement::TopLeft }),
         // 映射左下角。
-        "leftBottom" => Ok(quote! { ::uix::prelude::Placement::BottomLeft }),
+        "leftBottom" => Ok(quote! { ::uix_app::prelude::Placement::BottomLeft }),
         // 映射右上角。
-        "rightTop" => Ok(quote! { ::uix::prelude::Placement::TopRight }),
+        "rightTop" => Ok(quote! { ::uix_app::prelude::Placement::TopRight }),
         // 映射右下角。
-        "rightBottom" => Ok(quote! { ::uix::prelude::Placement::BottomRight }),
+        "rightBottom" => Ok(quote! { ::uix_app::prelude::Placement::BottomRight }),
         // 未登记位置返回结构化诊断。
         _ => Err(Diagnostic::new(
             // 指向完整 position 属性。

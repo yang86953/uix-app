@@ -27,12 +27,12 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use uix::app::agent_workspace::{AgentWorkspace, AgentWorkspaceHandle};
-use uix::app::extensions::{
+use uix_app::app::agent_workspace::{AgentWorkspace, AgentWorkspaceHandle};
+use uix_app::app::extensions::{
     ExtensionHost, ExtensionPackage, ExtensionPort, ExtensionUiHandle, ExtensionValue, UiNode,
     UiProjector, UiUpdate,
 };
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 /// 宿主领域数据：文档内容与提交版本。
 #[derive(Clone)]
@@ -336,7 +336,7 @@ fn run_manage(action: ManageAction, context: ManageContext) {
 /// 单侧活动实例摘要（handle.list 真实回读）。
 fn side_status(
     handle_slot: &Arc<Mutex<Option<ExtensionUiHandle>>>,
-) -> Result<String, uix::app::extensions::ExtensionError> {
+) -> Result<String, uix_app::app::extensions::ExtensionError> {
     let Some(handle) = handle_slot.lock().expect("扩展句柄锁").clone() else {
         return Ok("worker 不存在".to_string());
     };

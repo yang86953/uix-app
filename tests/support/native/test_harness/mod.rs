@@ -11,7 +11,7 @@
 //! ## 使用方式
 //!
 //! ```ignore
-//! use uix::native::test_harness::FakePlatform;
+//! use uix_app::native::test_harness::FakePlatform;
 //!
 //! let mut pf = FakePlatform::new();
 //! pf.clipboard.set_text("hello");

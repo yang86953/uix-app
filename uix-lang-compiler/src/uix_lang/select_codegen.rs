@@ -66,7 +66,7 @@ pub(crate) fn generate_select(element: &Element) -> Result<TokenStream, Diagnost
 
     // 从公开 Select 构造器和结构化选项入口开始配置。
     let mut widget = quote! {
-        ::uix::prelude::Select::new().select_options((#options).clone())
+        ::uix_app::prelude::Select::new().select_options((#options).clone())
     };
     // 可搜索状态接受静态或动态布尔值。
     if let Some(attribute) = find_attribute(element, "searchable") {
@@ -93,7 +93,7 @@ pub(crate) fn generate_select(element: &Element) -> Result<TokenStream, Diagnost
     widget = quote! { (#widget).value_mode::<#multiple, _>(&(#state)) };
 
     // 物化为公开叶 View；Change 处理器由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选值提交事件读取统一选中值文本载荷。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

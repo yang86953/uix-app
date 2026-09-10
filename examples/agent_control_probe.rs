@@ -7,8 +7,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
-    use uix::app::agent_workspace::AgentWorkspace;
-    use uix::prelude::*;
+    use uix_app::app::agent_workspace::AgentWorkspace;
+    use uix_app::prelude::*;
 
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if arguments.len() != 2 {

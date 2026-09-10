@@ -13,15 +13,15 @@ pub(super) fn cursor_value(property: &StyleProperty) -> Result<TokenStream, Diag
     // 只接受文档登记并且各平台后端已实现的值。
     match source {
         // CSS default 对应平台默认箭头。
-        "default" => Ok(quote! { ::uix::prelude::CursorType::Arrow }),
+        "default" => Ok(quote! { ::uix_app::prelude::CursorType::Arrow }),
         // CSS pointer 对应可点击手形。
-        "pointer" => Ok(quote! { ::uix::prelude::CursorType::Hand }),
+        "pointer" => Ok(quote! { ::uix_app::prelude::CursorType::Hand }),
         // CSS text 对应文字插入光标。
-        "text" => Ok(quote! { ::uix::prelude::CursorType::IBeam }),
+        "text" => Ok(quote! { ::uix_app::prelude::CursorType::IBeam }),
         // CSS move 对应四向移动光标。
-        "move" => Ok(quote! { ::uix::prelude::CursorType::Move }),
+        "move" => Ok(quote! { ::uix_app::prelude::CursorType::Move }),
         // CSS not-allowed 对应平台禁止操作光标。
-        "not-allowed" => Ok(quote! { ::uix::prelude::CursorType::NotAllowed }),
+        "not-allowed" => Ok(quote! { ::uix_app::prelude::CursorType::NotAllowed }),
         // 其他值不得静默退回默认箭头。
         _ => Err(Diagnostic::new(
             // 指向完整 cursor 值。

@@ -22,7 +22,7 @@ pub(crate) fn generate_splitter(element: &Element) -> Result<TokenStream, Diagno
     // 递归生成右侧或下侧面板。
     let second = generate_node_view(second)?;
     // 从公开运行时默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Splitter::new() };
+    let mut widget = quote! { ::uix_app::prelude::Splitter::new() };
     // 可选方向必须在编译期确定组件轴向。
     if let Some(attribute) = find_attribute(element, "direction") {
         // 读取文档登记的方向关键字。
@@ -57,15 +57,15 @@ pub(crate) fn generate_splitter(element: &Element) -> Result<TokenStream, Diagno
     // 明确建立运行时 Splitter 对两个有序内容 View 的组合所有权。
     let base = quote! {
         // 使用公开节点构造器保留组件与子树边界。
-        ::uix::prelude::ViewNode::new(
+        ::uix_app::prelude::ViewNode::new(
             // 传入已经配置的 Splitter 运行时组件。
             #widget,
             // 按来源顺序构建恰好两个面板。
             ::std::vec![
                 // 构建左侧或上侧面板。
-                ::uix::prelude::View::build(#first),
+                ::uix_app::prelude::View::build(#first),
                 // 构建右侧或下侧面板。
-                ::uix::prelude::View::build(#second),
+                ::uix_app::prelude::View::build(#second),
             ],
         )
     };

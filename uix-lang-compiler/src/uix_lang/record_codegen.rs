@@ -80,15 +80,15 @@ pub(crate) fn value_type_tokens(value_type: WidgetValueType) -> TokenStream {
         // i32 对应有符号整数类型。
         WidgetValueType::I32 => quote! { i32 },
         // Date 对应公开日期语义类型。
-        WidgetValueType::Date => quote! { ::uix::prelude::Date },
+        WidgetValueType::Date => quote! { ::uix_app::prelude::Date },
         // Time 对应公开时间语义类型。
-        WidgetValueType::Time => quote! { ::uix::prelude::Time },
+        WidgetValueType::Time => quote! { ::uix_app::prelude::Time },
         // Color 对应公开颜色语义类型。
-        WidgetValueType::Color => quote! { ::uix::prelude::Color },
+        WidgetValueType::Color => quote! { ::uix_app::prelude::Color },
         // Point 对应公开坐标语义类型。
-        WidgetValueType::Point => quote! { ::uix::prelude::Point },
+        WidgetValueType::Point => quote! { ::uix_app::prelude::Point },
         // CascaderValue 对应公开级联路径类型。
-        WidgetValueType::CascaderValue => quote! { ::uix::prelude::CascaderValue },
+        WidgetValueType::CascaderValue => quote! { ::uix_app::prelude::CascaderValue },
         // 多选集合对应字符串 HashSet。
         WidgetValueType::HashSetOfString => {
             quote! { ::std::collections::HashSet<::std::string::String> }
@@ -106,7 +106,7 @@ pub(crate) fn value_type_tokens(value_type: WidgetValueType) -> TokenStream {
         }
         // 上传队列对应 Vec<UploadFile>。
         WidgetValueType::VecOfUploadFile => {
-            quote! { ::std::vec::Vec<::uix::prelude::UploadFile> }
+            quote! { ::std::vec::Vec<::uix_app::prelude::UploadFile> }
         }
         // 可空字符串对应 Option<String>。
         WidgetValueType::OptionalString => {

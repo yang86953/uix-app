@@ -27,27 +27,27 @@
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：Canvas2D 归 painting。
-//! use uix::draw::api::Canvas2D;
+//! use uix_app::draw::api::Canvas2D;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：FrameEncoder 归 painting。
-//! use uix::draw::command::FrameEncoder;
+//! use uix_app::draw::command::FrameEncoder;
 //! ```
 //!
 //! ```compile_fail
 //! // CPU 光栅化器已上移 System 边界，不得经 backend 路径访问。
-//! use uix::draw::backend::cpu::rasterizer::SoftwareRasterizer;
+//! use uix_app::draw::backend::cpu::rasterizer::SoftwareRasterizer;
 //! ```
 //!
 //! ```compile_fail
 //! // NodeId 归 scene，renderer 路径不得复活。
-//! use uix::draw::renderer::NodeId;
+//! use uix_app::draw::renderer::NodeId;
 //! ```
 //!
 //! ```compile_fail
 //! // 自动探测与 CPU fallback 属于框架内部策略，不是第二套公开图形选择入口。
-//! use uix::draw::renderer::bootstrap::bootstrap_renderer;
+//! use uix_app::draw::renderer::bootstrap::bootstrap_renderer;
 //! ```
 
 pub mod backend;

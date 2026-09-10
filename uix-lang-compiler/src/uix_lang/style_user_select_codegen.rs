@@ -16,13 +16,13 @@ pub(super) fn user_select_value(
     // 只接受运行时契约明确实现的四种值。
     match source {
         // auto 保留组件自身的默认选择能力。
-        "auto" => Ok(quote! { ::uix::prelude::UserSelect::Auto }),
+        "auto" => Ok(quote! { ::uix_app::prelude::UserSelect::Auto }),
         // none 禁止普通文字选择并清理既有范围。
-        "none" => Ok(quote! { ::uix::prelude::UserSelect::None }),
+        "none" => Ok(quote! { ::uix_app::prelude::UserSelect::None }),
         // text 为支持文字范围的组件启用选择。
-        "text" => Ok(quote! { ::uix::prelude::UserSelect::Text }),
+        "text" => Ok(quote! { ::uix_app::prelude::UserSelect::Text }),
         // all 将选择边界提升到最近的显式 all 子树。
-        "all" => Ok(quote! { ::uix::prelude::UserSelect::All }),
+        "all" => Ok(quote! { ::uix_app::prelude::UserSelect::All }),
         // 其他值不得静默退回组件默认策略。
         _ => Err(Diagnostic::new(
             // 指向完整 userSelect 值。

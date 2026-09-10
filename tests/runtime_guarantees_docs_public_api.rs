@@ -4,9 +4,9 @@
 // 隔离 diagnostics-report 围栏中的报告与恢复订阅。
 mod diagnostics_report {
     // 引入文档承诺的公开 typed Error prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
     // 引入公开 Diagnostics runtime 与配置。
-    use uix::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
+    use uix_app::diagnostics::{Diagnostics, DiagnosticsConfig, RecoveryAction};
 
     // 编译有界报告与 owner 登记恢复动作的公开路径。
     fn compile_example() {
@@ -45,10 +45,10 @@ mod diagnostics_tracing {
 // 隔离 diagnostics-repro 围栏中的显式复现清单导出。
 mod diagnostics_repro {
     // 引入公开 Diagnostics runtime。
-    use uix::diagnostics::Diagnostics;
+    use uix_app::diagnostics::Diagnostics;
 
     // 编译宿主显式选择目录并处理 typed 写入结果的公开路径。
-    fn save_repro(diagnostics: &Diagnostics) -> Result<(), uix::core::Error> {
+    fn save_repro(diagnostics: &Diagnostics) -> Result<(), uix_app::core::Error> {
         // 原子导出固定 schema 的有界复现清单。
         let path = diagnostics.write_debug_repro_manifest("logs/repro")?;
         // 路径仅由显式调用方使用，不进入复现清单内容。
@@ -61,7 +61,7 @@ mod diagnostics_repro {
 // 隔离 error-typed-business 围栏中的业务错误包装。
 mod error_typed_business {
     // 引入文档承诺的公开 Error 与设置服务 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译保存失败到业务责任边界错误的 typed 转换。
     fn save_document(settings: &SettingsService) -> Result<(), Error> {
@@ -76,9 +76,9 @@ mod error_typed_business {
 // 隔离 diagnostics-app-config 围栏中的 Application 配置。
 mod diagnostics_app_config {
     // 引入文档承诺的公开 Application prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
     // 引入公开回溯策略与诊断配置。
-    use uix::diagnostics::{BacktracePolicy, DiagnosticsConfig};
+    use uix_app::diagnostics::{BacktracePolicy, DiagnosticsConfig};
 
     // 编译有界报告、崩溃目录与回溯策略的组合根配置。
     fn documented_main() {
@@ -103,9 +103,9 @@ mod diagnostics_app_config {
 // 隔离 diagnostics-runtime-inject 围栏中的共享 runtime 注入。
 mod diagnostics_runtime_inject {
     // 引入文档承诺的公开 Application prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
     // 引入宿主显式持有的 Diagnostics runtime 与配置。
-    use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
+    use uix_app::diagnostics::{Diagnostics, DiagnosticsConfig};
 
     // 编译宿主保留共享句柄并向 Application 注入同一 runtime。
     fn documented_main() {

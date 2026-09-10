@@ -59,13 +59,13 @@ pub(super) fn apply_pseudo_style(
             // 为当前实际节点计算稳定身份。
             let #identity = #identity_value;
             // 从最近组件作用域派生 hover 私有子作用域。
-            let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
+            let #node_scope = ::uix_app::ui::__private::uix_widget_child_scope(
                 &#widget_scope,
                 #declaration_id,
                 #identity,
             );
             // 复用窗口私有组件状态存储保存 hover 事实。
-            let #state = ::uix::ui::__private::uix_widget_state(
+            let #state = ::uix_app::ui::__private::uix_widget_state(
                 &#node_scope,
                 0,
                 || false,
@@ -79,20 +79,20 @@ pub(super) fn apply_pseudo_style(
                 // 指针进入时选择 hover 差异层。
                 if matches!(
                     __uix_pseudo_pointer_event,
-                    &::uix::prelude::SystemEvent::PointerEnter
+                    &::uix_app::prelude::SystemEvent::PointerEnter
                 ) {
                     // 写入既有组件私有状态并请求声明式重建。
                     #event_state.set(true);
                 // 指针离开时恢复基础样式。
                 } else if matches!(
                     __uix_pseudo_pointer_event,
-                    &::uix::prelude::SystemEvent::PointerLeave
+                    &::uix_app::prelude::SystemEvent::PointerLeave
                 ) {
                     // 清除 hover 事实。
                     #event_state.set(false);
                 }
                 // 继续交付组件自身处理器并向父节点冒泡。
-                ::uix::prelude::EventResult::NotHandled
+                ::uix_app::prelude::EventResult::NotHandled
             });
             // 状态变体只覆盖自己声明的字段。
             (if #current { #hovered } else { #styled })

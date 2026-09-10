@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use uix::core::{Errc, Error};
-use uix::diagnostics::{Diagnostics, DiagnosticsConfig};
+use uix_app::core::{Errc, Error};
+use uix_app::diagnostics::{Diagnostics, DiagnosticsConfig};
 
 static DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 

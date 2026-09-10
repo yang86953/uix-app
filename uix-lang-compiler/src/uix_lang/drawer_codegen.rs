@@ -17,7 +17,7 @@ use super::{
 // 生成由 State<bool> 唯一控制并保留完整内容子树的 Drawer。
 pub(crate) fn generate_drawer(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从运行时文档默认值构造无标题 Drawer。
-    let mut drawer = quote! { ::uix::prelude::Drawer::new("") };
+    let mut drawer = quote! { ::uix_app::prelude::Drawer::new("") };
 
     // 可选 open 必须保留声明端 State<bool> 句柄。
     if let Some(attribute) = find_attribute(element, "open") {
@@ -44,7 +44,7 @@ pub(crate) fn generate_drawer(element: &Element) -> Result<TokenStream, Diagnost
     // 按源码顺序生成普通节点与 If/For 控制流。
     let children = generate_children(&element.children)?;
     // 通过公开 ViewNode 契约把 Drawer 与完整内容子树物化。
-    let view = quote! { ::uix::prelude::ViewNode::new(#drawer, #children) };
+    let view = quote! { ::uix_app::prelude::ViewNode::new(#drawer, #children) };
     // 消费 Drawer 专有属性后应用其他公共样式、身份与事件。
     apply_common_attributes(
         // 传入已配置受控状态、几何与内容的公开 View。
@@ -81,13 +81,13 @@ fn placement_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 把文档值映射到公开枚举。
     match placement.as_str() {
         // 映射左侧抽屉。
-        "left" => Ok(quote! { ::uix::prelude::DrawerPlacement::Left }),
+        "left" => Ok(quote! { ::uix_app::prelude::DrawerPlacement::Left }),
         // 映射右侧抽屉。
-        "right" => Ok(quote! { ::uix::prelude::DrawerPlacement::Right }),
+        "right" => Ok(quote! { ::uix_app::prelude::DrawerPlacement::Right }),
         // 映射顶部抽屉。
-        "top" => Ok(quote! { ::uix::prelude::DrawerPlacement::Top }),
+        "top" => Ok(quote! { ::uix_app::prelude::DrawerPlacement::Top }),
         // 映射底部抽屉。
-        "bottom" => Ok(quote! { ::uix::prelude::DrawerPlacement::Bottom }),
+        "bottom" => Ok(quote! { ::uix_app::prelude::DrawerPlacement::Bottom }),
         // 拒绝未登记方向。
         _ => Err(Diagnostic::new(
             // 指向完整 placement 属性。

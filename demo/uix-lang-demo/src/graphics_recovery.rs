@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 // 导入 App、AppHandle、State 与声明式 View 入口。
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 // 保存初始等待状态的稳定语义文本。
 const WAITING_STATUS: &str = "图形恢复测试：等待注入";

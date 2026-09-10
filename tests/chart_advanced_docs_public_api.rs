@@ -4,7 +4,7 @@
 // 隔离 chart-radar 围栏中的多维雷达图。
 mod chart_radar {
     // 引入文档承诺的高级图表公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译多维多系列与圆形雷达配置。
     fn compile_example() {
@@ -87,7 +87,7 @@ mod chart_radar {
 // 隔离 chart-heatmap 围栏中的矩阵与日历热力图。
 mod chart_heatmap {
     // 引入文档承诺的热力图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译矩阵标签、颜色范围与日历配置。
     fn compile_example() {
@@ -133,7 +133,7 @@ mod chart_heatmap {
 // 隔离 chart-funnel 围栏中的转化漏斗。
 mod chart_funnel {
     // 引入文档承诺的漏斗图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译转化阶段与对称漏斗配置。
     fn compile_example() {
@@ -175,7 +175,7 @@ mod chart_funnel {
 // 隔离 chart-waterfall 围栏中的累计变化图。
 mod chart_waterfall {
     // 引入文档承诺的瀑布图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译纵向累计分解与横向汇总配置。
     fn compile_example() {
@@ -217,7 +217,7 @@ mod chart_waterfall {
 // 隔离 chart-combo 围栏中的双轴组合图。
 mod chart_combo {
     // 引入文档承诺的组合图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译柱线组合与逐系列类型配置。
     fn compile_example() {
@@ -275,7 +275,7 @@ mod chart_combo {
 // 隔离 chart-treemap 围栏中的层级占比图。
 mod chart_treemap {
     // 引入文档承诺的矩形树图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译嵌套层级、尺寸、间距与标签配置。
     fn compile_example() {
@@ -316,7 +316,7 @@ mod chart_treemap {
 // 隔离 chart-gauge 围栏中的仪表盘。
 mod chart_gauge {
     // 引入文档承诺的仪表盘公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译范围颜色、格式化与仪表盘类型配置。
     fn compile_example() {
@@ -367,7 +367,7 @@ mod chart_gauge {
 // 隔离 chart-common 围栏中的响应式与交互配置。
 mod chart_common {
     // 引入文档承诺的图表交互公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译响应式尺寸、点击、缩放、平移、十字线与刷选配置。
     fn compile_example() {
@@ -410,7 +410,7 @@ mod chart_common {
 // 隔离 chart-state-driven 围栏中的响应式图表组合。
 mod chart_state_driven {
     // 引入文档承诺的图表、状态与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 State 数据快照到响应式图表节点的映射。
     fn compile_example() {
@@ -435,7 +435,7 @@ mod chart_state_driven {
 // 隔离 chart-empty-state 围栏中的数据空态决策。
 mod chart_empty_state {
     // 引入文档承诺的图表、状态与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 把非空业务数据构造成图表节点。
     fn chart_view(data: &[BarData]) -> ViewNode {

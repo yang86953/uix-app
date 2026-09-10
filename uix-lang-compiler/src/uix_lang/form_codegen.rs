@@ -140,7 +140,7 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
     // 生成运行时拥有校验与提交生命周期的 View。
     let view = quote! {{
         // 构建类型化字段与回调。
-        let #form = ::uix::prelude::Form::model(&(#model))
+        let #form = ::uix_app::prelude::Form::model(&(#model))
             #(#fields)*
             #(#model_rules)*
             .on_submit_typed(move |#submitted| { #submit_handler })
@@ -148,10 +148,10 @@ pub(crate) fn generate_form(element: &Element) -> Result<TokenStream, Diagnostic
         // 克隆同一表单句柄供按钮触发。
         let #submit_form = #form.clone();
         // 组合字段区域和唯一提交按钮。
-        ::uix::prelude::column(
+        ::uix_app::prelude::column(
             ::std::vec![
                 #form.view(),
-                ::uix::prelude::View::build(#submit_button).on_click_fn(move || {
+                ::uix_app::prelude::View::build(#submit_button).on_click_fn(move || {
                     let _ = #submit_form.submit_typed();
                 }),
             ]
@@ -279,7 +279,7 @@ fn generate_input_field(element: &Element) -> Result<TokenStream, Diagnostic> {
         .field(
             #field,
             |#model| &mut #model.#field_ident,
-            ::uix::prelude::FormInputItem::new(#field)
+            ::uix_app::prelude::FormInputItem::new(#field)
                 .label(#label)
                 .required(#required)
                 .email(#email),
@@ -351,7 +351,7 @@ fn generate_select_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     }
     // 创建基础选择字段构建链。
     let mut item = quote! {
-        ::uix::prelude::FormSelectItem::new(#field)
+        ::uix_app::prelude::FormSelectItem::new(#field)
             .label(#label)
             .options((#options).clone())
             .required(#required)
@@ -451,7 +451,7 @@ fn generate_checkbox_field(element: &Element) -> Result<TokenStream, Diagnostic>
     }
     // 创建基础复选字段构建链。
     let mut item = quote! {
-        ::uix::prelude::FormCheckboxItem::new(#field)
+        ::uix_app::prelude::FormCheckboxItem::new(#field)
             .field_label(#field_label)
             .required(#required)
     };
@@ -540,7 +540,7 @@ fn generate_switch_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     }
     // 创建基础开关字段构建链。
     let mut item = quote! {
-        ::uix::prelude::FormSwitchItem::new(#field)
+        ::uix_app::prelude::FormSwitchItem::new(#field)
             .label(#label)
             .required(#required)
     };
@@ -627,7 +627,7 @@ fn generate_radio_field(element: &Element) -> Result<TokenStream, Diagnostic> {
     }
     // 创建基础单选组字段构建链。
     let mut item = quote! {
-        ::uix::prelude::FormRadioItem::new(#field)
+        ::uix_app::prelude::FormRadioItem::new(#field)
             .label(#label)
             .options((#options).clone())
             .required(#required)

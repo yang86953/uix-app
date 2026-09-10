@@ -5,8 +5,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::thread::JoinHandle;
-use uix::data::SettingsService;
-use uix::prelude::*;
+use uix_app::data::SettingsService;
+use uix_app::prelude::*;
 
 // 本示例只有一个原生窗口。领域/服务与外部 worker 由组合根持有，UIX 只消费投影。
 #[derive(Clone)]

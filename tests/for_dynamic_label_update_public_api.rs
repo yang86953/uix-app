@@ -4,9 +4,9 @@
 #![cfg(feature = "test-harness")]
 
 // 引入 UIX 编译入口、响应式状态与公开 View 类型。
-use uix::prelude::{State, ViewNode, uix};
+use uix_app::prelude::{State, ViewNode, uix};
 // 引入与真实组件事件和协调路径一致的公开测试驱动。
-use uix::ui::test_harness::TestApp;
+use uix_app::ui::test_harness::TestApp;
 
 // 保存看板卡片的最小投影字段：稳定业务键与可变标题。
 #[derive(Clone)]

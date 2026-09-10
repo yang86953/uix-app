@@ -80,7 +80,7 @@ pub(super) fn animation_color_value(
     let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
     // 生成可直接由 Animated<Color> 插值的具体颜色。
     Ok(quote! {
-        ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
+        ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
     })
 }
 
@@ -283,29 +283,29 @@ pub(super) fn typography_field(
     // 按文档 token 或固定像素生成字号。
     let value = match property.value.source.as_str() {
         // 映射小号正文。
-        "small" => quote! { ::uix::prelude::TypographyToken::Small },
+        "small" => quote! { ::uix_app::prelude::TypographyToken::Small },
         // 映射正文。
-        "body" => quote! { ::uix::prelude::TypographyToken::Body },
+        "body" => quote! { ::uix_app::prelude::TypographyToken::Body },
         // 映射大号正文。
-        "large" => quote! { ::uix::prelude::TypographyToken::Large },
+        "large" => quote! { ::uix_app::prelude::TypographyToken::Large },
         // 映射超大正文。
-        "xlarge" | "xLarge" => quote! { ::uix::prelude::TypographyToken::XLarge },
+        "xlarge" | "xLarge" => quote! { ::uix_app::prelude::TypographyToken::XLarge },
         // 映射一级标题。
-        "heading1" => quote! { ::uix::prelude::TypographyToken::Heading1 },
+        "heading1" => quote! { ::uix_app::prelude::TypographyToken::Heading1 },
         // 映射二级标题。
-        "heading2" => quote! { ::uix::prelude::TypographyToken::Heading2 },
+        "heading2" => quote! { ::uix_app::prelude::TypographyToken::Heading2 },
         // 映射三级标题。
-        "heading3" => quote! { ::uix::prelude::TypographyToken::Heading3 },
+        "heading3" => quote! { ::uix_app::prelude::TypographyToken::Heading3 },
         // 映射四级标题。
-        "heading4" => quote! { ::uix::prelude::TypographyToken::Heading4 },
+        "heading4" => quote! { ::uix_app::prelude::TypographyToken::Heading4 },
         // 映射五级标题。
-        "heading5" => quote! { ::uix::prelude::TypographyToken::Heading5 },
+        "heading5" => quote! { ::uix_app::prelude::TypographyToken::Heading5 },
         // 其他值按固定字号处理。
         _ => {
             // 解析非负字号。
             let size = number_value(property, NumberRule::NonNegative)?;
             // 生成自定义字号。
-            quote! { ::uix::prelude::TypographyToken::Custom(#size) }
+            quote! { ::uix_app::prelude::TypographyToken::Custom(#size) }
         }
     };
     // 更新字号字段。
@@ -360,7 +360,7 @@ pub(super) fn grid_tracks_field(
         // auto 映射到自动轨道。
         if source == "auto" {
             // 保存自动轨道。
-            tracks.push(quote! { ::uix::prelude::GridTrack::Auto });
+            tracks.push(quote! { ::uix_app::prelude::GridTrack::Auto });
             // 继续下一轨道。
             continue;
         }
@@ -384,7 +384,7 @@ pub(super) fn grid_tracks_field(
         // 把构造器名转换为标识符。
         let constructor = Ident::new(constructor, Span::call_site());
         // 保存轨道构造表达式。
-        tracks.push(quote! { ::uix::prelude::GridTrack::#constructor(#value) });
+        tracks.push(quote! { ::uix_app::prelude::GridTrack::#constructor(#value) });
     }
     // 空轨道列表没有布局意义。
     if tracks.is_empty() {
@@ -447,11 +447,11 @@ pub(super) fn display_value(property: &StyleProperty) -> Result<TokenStream, Dia
     // 映射文档登记值。
     match property.value.source.as_str() {
         // 映射 flex。
-        "flex" => Ok(quote! { ::uix::prelude::DisplayMode::Flex }),
+        "flex" => Ok(quote! { ::uix_app::prelude::DisplayMode::Flex }),
         // 映射 grid。
-        "grid" => Ok(quote! { ::uix::prelude::DisplayMode::Grid }),
+        "grid" => Ok(quote! { ::uix_app::prelude::DisplayMode::Grid }),
         // 映射 none。
-        "none" => Ok(quote! { ::uix::prelude::DisplayMode::None }),
+        "none" => Ok(quote! { ::uix_app::prelude::DisplayMode::None }),
         // 拒绝其他显示模式。
         value => Err(value_diagnostic(
             property,
@@ -466,9 +466,9 @@ pub(super) fn flex_direction_value(property: &StyleProperty) -> Result<TokenStre
     // 映射文档登记值。
     match property.value.source.as_str() {
         // 映射行方向。
-        "row" => Ok(quote! { ::uix::prelude::FlexDirection::Row }),
+        "row" => Ok(quote! { ::uix_app::prelude::FlexDirection::Row }),
         // 映射列方向。
-        "column" => Ok(quote! { ::uix::prelude::FlexDirection::Column }),
+        "column" => Ok(quote! { ::uix_app::prelude::FlexDirection::Column }),
         // 拒绝其他方向。
         value => Err(value_diagnostic(
             property,
@@ -483,13 +483,13 @@ pub(super) fn align_value(property: &StyleProperty) -> Result<TokenStream, Diagn
     // 映射文档登记值。
     match property.value.source.as_str() {
         // 映射起始对齐。
-        "flex-start" => Ok(quote! { ::uix::prelude::AlignItems::Start }),
+        "flex-start" => Ok(quote! { ::uix_app::prelude::AlignItems::Start }),
         // 映射末端对齐。
-        "flex-end" => Ok(quote! { ::uix::prelude::AlignItems::End }),
+        "flex-end" => Ok(quote! { ::uix_app::prelude::AlignItems::End }),
         // 映射居中对齐。
-        "center" => Ok(quote! { ::uix::prelude::AlignItems::Center }),
+        "center" => Ok(quote! { ::uix_app::prelude::AlignItems::Center }),
         // 映射拉伸对齐。
-        "stretch" => Ok(quote! { ::uix::prelude::AlignItems::Stretch }),
+        "stretch" => Ok(quote! { ::uix_app::prelude::AlignItems::Stretch }),
         // 拒绝其他对齐值。
         value => Err(value_diagnostic(
             property,
@@ -504,15 +504,15 @@ pub(super) fn justify_value(property: &StyleProperty) -> Result<TokenStream, Dia
     // 映射文档登记值。
     match property.value.source.as_str() {
         // 映射起始对齐。
-        "flex-start" => Ok(quote! { ::uix::prelude::JustifyContent::Start }),
+        "flex-start" => Ok(quote! { ::uix_app::prelude::JustifyContent::Start }),
         // 映射末端对齐。
-        "flex-end" => Ok(quote! { ::uix::prelude::JustifyContent::End }),
+        "flex-end" => Ok(quote! { ::uix_app::prelude::JustifyContent::End }),
         // 映射居中对齐。
-        "center" => Ok(quote! { ::uix::prelude::JustifyContent::Center }),
+        "center" => Ok(quote! { ::uix_app::prelude::JustifyContent::Center }),
         // 映射两端分布。
-        "space-between" => Ok(quote! { ::uix::prelude::JustifyContent::SpaceBetween }),
+        "space-between" => Ok(quote! { ::uix_app::prelude::JustifyContent::SpaceBetween }),
         // 映射环绕分布。
-        "space-around" => Ok(quote! { ::uix::prelude::JustifyContent::SpaceAround }),
+        "space-around" => Ok(quote! { ::uix_app::prelude::JustifyContent::SpaceAround }),
         // 拒绝其他对齐值。
         value => Err(value_diagnostic(
             property,
@@ -560,7 +560,7 @@ fn edge_insets_value(property: &StyleProperty) -> Result<TokenStream, Diagnostic
         }
     };
     // 按 EdgeInsets 构造器的左上右下顺序生成。
-    Ok(quote! { ::uix::prelude::EdgeInsets::new(#left, #top, #right, #bottom) })
+    Ok(quote! { ::uix_app::prelude::EdgeInsets::new(#left, #top, #right, #bottom) })
 }
 
 // 解析一个非负长度分量。
@@ -656,8 +656,8 @@ pub(super) fn color_value(property: &StyleProperty) -> Result<TokenStream, Diagn
     let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
     // 生成公开自定义颜色值。
     Ok(quote! {
-        ::uix::prelude::ColorValue::custom(
-            ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
+        ::uix_app::prelude::ColorValue::custom(
+            ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha)
         )
     })
 }

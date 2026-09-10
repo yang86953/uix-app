@@ -32,7 +32,7 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
     // total 缺省为文档登记的零。
     let total = optional_usize(element, "total", 0)?;
     // 构造器的非受控 pageSize 缺省为文档登记的十。
-    let mut widget = quote! { ::uix::prelude::Pagination::new(#total, 10_usize) };
+    let mut widget = quote! { ::uix_app::prelude::Pagination::new(#total, 10_usize) };
 
     // pageSizeOptions 只适配拥有 usize 元素的声明集合。
     if let Some(attribute) = find_attribute(element, "pageSizeOptions") {
@@ -91,7 +91,7 @@ pub(crate) fn generate_pagination(element: &Element) -> Result<TokenStream, Diag
     }
 
     // 先物化公开叶节点，Change 处理器与样式由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选变化事件读取既有页码或 page_size=<值> 文本载荷。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

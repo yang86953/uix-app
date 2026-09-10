@@ -4,7 +4,7 @@
 // 隔离 form-basic 围栏中的声明式表单树。
 mod form_basic {
     // 引入文档承诺的公开表单、输入与树宏 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译垂直布局下的用户名与密码字段声明。
     fn compile_example() {
@@ -54,7 +54,7 @@ mod form_basic {
 // 隔离 form-model 围栏中的类型化业务模型与字段投影。
 mod form_model {
     // 引入文档承诺的公开类型化表单与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 派生类型化表单构建所需的克隆与默认值能力。
     #[derive(Clone, Default)]

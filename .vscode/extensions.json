@@ -1,4 +1,0 @@
-{
-  // 调试配置依赖 CodeLLDB（.vscode/launch.json 的 type: lldb）
-  "recommendations": ["vadimcn.vscode-lldb"]
-}

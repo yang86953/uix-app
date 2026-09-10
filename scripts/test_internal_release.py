@@ -81,13 +81,13 @@ class CandidateContractTests(unittest.TestCase):
         self.fixture()
         output = self.root / 'consumer'
         assemble(self.stage, output)
-        self.assertTrue((output / 'crates/uix-0.0.8/Cargo.toml').is_file())
+        self.assertTrue((output / 'crates/uix-app-0.0.8/Cargo.toml').is_file())
         with self.assertRaisesRegex(ValueError, 'already exists'):
             assemble(self.stage, output)
 
     def test_consumer_rejects_modified_actual_crate(self):
         self.fixture()
-        (self.stage / 'uix-0.0.8.crate').write_bytes(b'tampered')
+        (self.stage / 'uix-app-0.0.8.crate').write_bytes(b'tampered')
         with self.assertRaisesRegex(ValueError, 'digest mismatch'):
             assemble(self.stage, self.root / 'consumer')
         self.assertFalse((self.root / 'consumer').exists())

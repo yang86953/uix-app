@@ -15,7 +15,7 @@ pub(crate) fn generate_float_button_group(
     // 返回完整公开 View 表达式或结构化诊断。
 ) -> Result<TokenStream, Diagnostic> {
     // 缺省沿用运行时文档定义的悬停展开方式。
-    let mut trigger = quote! { ::uix::prelude::TriggerMode::Hover };
+    let mut trigger = quote! { ::uix_app::prelude::TriggerMode::Hover };
     // 查找可选 trigger 专有属性。
     if let Some(attribute) = element
         // 借用源码顺序属性。
@@ -30,9 +30,9 @@ pub(crate) fn generate_float_button_group(
         // 映射已登记的两种展开方式。
         trigger = match value.as_str() {
             // 点击触发由组父组件拥有。
-            "click" => quote! { ::uix::prelude::TriggerMode::Click },
+            "click" => quote! { ::uix_app::prelude::TriggerMode::Click },
             // 悬停触发由组父组件拥有。
-            "hover" => quote! { ::uix::prelude::TriggerMode::Hover },
+            "hover" => quote! { ::uix_app::prelude::TriggerMode::Hover },
             // 未登记关键字不能静默回退。
             _ => {
                 // 返回精确属性诊断。
@@ -127,9 +127,9 @@ pub(crate) fn generate_float_button_group(
     // 使用运行时窄入口组合父组件与完整子 ViewNode。
     let base = quote! {
         // 先物化包装器为 ViewNode，随后才应用组自身公共属性。
-        ::uix::prelude::View::build(
+        ::uix_app::prelude::View::build(
             // 父组件只接管展开方式与派生几何。
-            (::uix::prelude::FloatButtonGroup::new())
+            (::uix_app::prelude::FloatButtonGroup::new())
                 // 显式传入文档化触发方式。
                 .trigger(#trigger)
                 // 子 ViewNode 原样保留标准事件与协调身份。

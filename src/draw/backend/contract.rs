@@ -206,7 +206,7 @@ pub trait DrawSurface {
 /// cross threads through safe Rust.
 ///
 /// ```compile_fail
-/// use uix::draw::backend::RenderBackend;
+/// use uix_app::draw::backend::RenderBackend;
 ///
 /// fn needs_send<T: Send>(_value: T) {}
 ///

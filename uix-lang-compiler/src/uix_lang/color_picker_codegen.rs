@@ -41,11 +41,11 @@ pub(crate) fn generate_color_picker(element: &Element) -> Result<TokenStream, Di
     let state = generate_expression(&value_expression.expression, None)?;
     // 绑定颜色状态并保持运行时现有受控契约。
     let widget = quote! {
-        ::uix::prelude::ColorPicker::new()
+        ::uix_app::prelude::ColorPicker::new()
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 ColorPicker 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的颜色选择 View。

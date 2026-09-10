@@ -22,22 +22,22 @@
 //! 延迟到运行期 parser。
 //!
 //! ```compile_fail
-//! use uix::prelude::*;
+//! use uix_app::prelude::*;
 //! let _: ViewNode = uix!("tests/fixtures/uix_lang/does_not_exist.uix");
 //! ```
 //!
 //! ```compile_fail
-//! use uix::prelude::*;
+//! use uix_app::prelude::*;
 //! let _: ViewNode = uix!("<Column>\n<Text>x</Column>");
 //! ```
 //!
 //! ```compile_fail
-//! use uix::prelude::*;
+//! use uix_app::prelude::*;
 //! let _: ViewNode = uix!("<Mystery />");
 //! ```
 //!
 //! ```compile_fail
-//! use uix::prelude::*;
+//! use uix_app::prelude::*;
 //! let _: ViewNode = uix!(r#"<Input type="search" />"#);
 //! ```
 //!
@@ -50,151 +50,151 @@
 //!
 //! ```compile_fail
 //! // native 根不可达（SPI、实现与厂商对象一律不允许外部引用）。
-//! use uix::native::factory::create_platform;
+//! use uix_app::native::factory::create_platform;
 //! ```
 //!
 //! ```compile_fail
 //! // 平台 backend SPI 不可达。
-//! use uix::native::backends::windows::clipboard::WindowsClipboard;
+//! use uix_app::native::backends::windows::clipboard::WindowsClipboard;
 //! ```
 //!
 //! ```compile_fail
 //! // 图形 context / 厂商对象不可达（SMC-02 后位于 presentation Module）。
-//! use uix::native::presentation::graphics::d3d11::D3d11Context;
+//! use uix_app::native::presentation::graphics::d3d11::D3d11Context;
 //! ```
 //!
 //! ```compile_fail
 //! // 平台共享事件源实现不可达（SMC-02 后位于 windowing Module）。
-//! use uix::native::windowing::shared::event_loop::OsEventSource;
+//! use uix_app::native::windowing::shared::event_loop::OsEventSource;
 //! ```
 //!
 //! ```compile_fail
 //! // native 私有 Module 边界不可达：capabilities / windowing / presentation。
-//! use uix::native::capabilities;
+//! use uix_app::native::capabilities;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::platform::presentation::GraphicsRecipeContext;
+//! use uix_app::platform::presentation::GraphicsRecipeContext;
 //! ```
 //!
 //! ```compile_fail
 //! // platform 私有 adapter 不可达（feature 启用与否都不允许外部引用）。
-//! use uix::platform::adapters::transport::AgentEndpoint;
+//! use uix_app::platform::adapters::transport::AgentEndpoint;
 //! ```
 //!
 //! ```compile_fail
 //! // 测试平台聚合不可达：native 测试替身已随平台 facade 重构移除。
-//! use uix::native::test_harness::FakePlatform;
+//! use uix_app::native::test_harness::FakePlatform;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧运行保障入口已被删除：`core::log` 不得复活。
-//! use uix::core::log::info_fn;
+//! use uix_app::core::log::info_fn;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧运行保障入口已被删除：`core::diagnostic` 不得复活。
-//! use uix::core::diagnostic::collector::Collector;
+//! use uix_app::core::diagnostic::collector::Collector;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧平台工厂入口不得通过 prelude 恢复。
-//! use uix::prelude::create_platform;
+//! use uix_app::prelude::create_platform;
 //! ```
 //!
 //! SMC-04 后，以下 ui 旧平铺路径不得复活（12 Module 边界与 System 私有边界收口）：
 //!
 //! ```compile_fail
 //! // ui 旧运行时平铺路径归 component Module（SMC-04）。
-//! use uix::ui::core::widget::WidgetTree;
+//! use uix_app::ui::core::widget::WidgetTree;
 //! ```
 //!
 //! ```compile_fail
 //! // foundation 目录已拆解：state 归 reactive、style 归 theme（SMC-04）。
-//! use uix::ui::foundation::state::State;
+//! use uix_app::ui::foundation::state::State;
 //! ```
 //!
 //! ```compile_fail
 //! // traits 目录已拆解：组件契约归 component（SMC-04）。
-//! use uix::ui::traits::Widget;
+//! use uix_app::ui::traits::Widget;
 //! ```
 //!
 //! ```compile_fail
 //! // 表单组件归 form Module，不得经 widgets::input 路径恢复（SMC-04）。
-//! use uix::ui::widgets::input::form::Form;
+//! use uix_app::ui::widgets::input::form::Form;
 //! ```
 //!
 //! ```compile_fail
 //! // view DSL 组合子归 widgets（view 不再构建具体组件，SMC-04）。
-//! use uix::ui::view::combinators::button;
+//! use uix_app::ui::view::combinators::button;
 //! ```
 //!
 //! ```compile_fail
 //! // 语义快照/覆盖归 accessibility Module（SMC-04）。
-//! use uix::ui::semantic_snapshot::SemanticTarget;
+//! use uix_app::ui::semantic_snapshot::SemanticTarget;
 //! ```
 //!
 //! ```compile_fail
 //! // ViewAdapter 是 System 私有边界粘合（SMC-04）。
-//! use uix::ui::adapter::ViewAdapter;
+//! use uix_app::ui::adapter::ViewAdapter;
 //! ```
 //!
 //! ```compile_fail
 //! // 树-组件语义访问点为 System 私有边界（SMC-04）。
-//! use uix::ui::tree_widget_hooks::modal_was_present;
+//! use uix_app::ui::tree_widget_hooks::modal_was_present;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧 ui 根级模块路径不得复活：window_chrome 归 widgets（SMC-04）。
-//! use uix::ui::window_chrome::WindowControl;
+//! use uix_app::ui::window_chrome::WindowControl;
 //! ```
 //!
 //! SMC-05 后，data 私有 Module 边界不得经公开路径访问：
 //!
 //! ```compile_fail
 //! // data settings Module 为私有边界（SMC-05）。
-//! use uix::data::settings::SettingsService;
+//! use uix_app::data::settings::SettingsService;
 //! ```
 //!
 //! SMC-06 后，app 旧平铺路径与 System 私有边界不得复活：
 //!
 //! ```compile_fail
 //! // 旧 shell 目录已拆解为 application / event_loop / window / agent（SMC-06）。
-//! use uix::app::shell::application::App;
+//! use uix_app::app::shell::application::App;
 //! ```
 //!
 //! ```compile_fail
 //! // 组合根 session_runtime 是 System 私有边界（SMC-06）。
-//! use uix::app::session_runtime::AppRuntime;
+//! use uix_app::app::session_runtime::AppRuntime;
 //! ```
 //!
 //! ```compile_fail
 //! // 主循环调度队列是 System 私有边界（SMC-06）。
-//! use uix::app::queues::app_timer::TimerHandle;
+//! use uix_app::app::queues::app_timer::TimerHandle;
 //! ```
 //!
 //! ```compile_fail
 //! // 每窗口语义状态是 System 私有边界（SMC-06）。
-//! use uix::app::window_semantics::WindowSemanticState;
+//! use uix_app::app::window_semantics::WindowSemanticState;
 //! ```
 //!
 //! ```compile_fail
 //! // agent Module 为私有边界，自动化 IPC 不经公开面暴露（SMC-06）。
-//! use uix::app::agent::agent_transport::AgentTransport;
+//! use uix_app::app::agent::agent_transport::AgentTransport;
 //! ```
 //!
 //! ```compile_fail
 //! // frame_scheduler 已归 window Module，旧 event_loop 路径不得复活（SMC-06）。
-//! use uix::app::event_loop::frame_scheduler::FrameScheduler;
+//! use uix_app::app::event_loop::frame_scheduler::FrameScheduler;
 //! ```
 //!
 //! ```compile_fail
 //! // window 内部驱动实现不可达（SMC-06）。
-//! use uix::app::window::window_driver::WindowDriver;
+//! use uix_app::app::window::window_driver::WindowDriver;
 //! ```
 
-// 让派生宏从当前 crate 根通过 `uix` 稳定路径回指自身。
-extern crate self as uix;
+// 让派生宏从当前 crate 根通过 `uix_app` 稳定路径回指自身。
+extern crate self as uix_app;
 // Windows TSF 的 `#[implement]` 宏展开只在 Windows 目标解析此 crate。
 #[cfg(windows)]
 // 宏生成代码从 crate 根查找 `windows_core`。
@@ -279,7 +279,7 @@ pub mod capability_compile_contract;
 /// 按 key 取当前资源表文案（E-08）：`t!("common.save")`。
 ///
 /// 返回 `String`（只影响显示，不改变业务值）；未命中时返回 key 原文。
-/// 资源经 `uix::ui::register_translations` / `set_translations` 注册。
+/// 资源经 `uix_app::ui::register_translations` / `set_translations` 注册。
 #[macro_export]
 macro_rules! t {
     ($key:literal) => {

@@ -17,7 +17,7 @@ use super::{
 // 生成由 State<bool> 唯一控制并保留完整内容子树的 Modal。
 pub(crate) fn generate_modal(element: &Element) -> Result<TokenStream, Diagnostic> {
     // UIX 文档约定页脚缺省可见，因此显式覆盖受控构建器的兼容默认值。
-    let mut builder = quote! { ::uix::prelude::Modal::builder().footer_visible(true) };
+    let mut builder = quote! { ::uix_app::prelude::Modal::builder().footer_visible(true) };
 
     // 可选 open 必须保留声明端 State<bool> 句柄作为唯一可见性事实源。
     if let Some(attribute) = find_attribute(element, "open") {
@@ -67,7 +67,7 @@ pub(crate) fn generate_modal(element: &Element) -> Result<TokenStream, Diagnosti
     // 把完整 View 集合交给 ModalBuilder，避免压缩为单个占位内容。
     builder = quote! { (#builder).content_nodes(#children) };
     // 通过公开 View 契约物化 Modal 与其内容子树。
-    let view = quote! { ::uix::prelude::View::build(#builder) };
+    let view = quote! { ::uix_app::prelude::View::build(#builder) };
     // 消费 Modal 专有属性后应用统一尺寸、样式、身份与其他公共事件。
     apply_common_attributes(
         // 传入已经配置受控状态、回调与内容的公开 View。

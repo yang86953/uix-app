@@ -62,7 +62,7 @@ pub(crate) fn generate_hierarchy_gauge_chart(
         widget = apply_chart_attribute(widget, attribute)?;
     }
     // 把现有 Chart Widget 物化为叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
 }
@@ -94,9 +94,9 @@ fn generate_treemap_start(
     Ok((
         // 收集为运行时公开节点类型。
         quote! {
-            ::uix::prelude::Treemap::new().data(
+            ::uix_app::prelude::Treemap::new().data(
                 ::std::iter::IntoIterator::into_iter((#data).clone())
-                    .collect::<::std::vec::Vec<::uix::prelude::TreemapNode>>()
+                    .collect::<::std::vec::Vec<::uix_app::prelude::TreemapNode>>()
             )
         },
         // 登记矩形树图专有属性。
@@ -128,7 +128,7 @@ fn generate_gauge_start(
     // 返回仪表盘构造器与专有属性集合。
     Ok((
         // 设置必需当前值并固定仪表盘类型。
-        quote! { ::uix::prelude::Gauge::new().value(#value) },
+        quote! { ::uix_app::prelude::Gauge::new().value(#value) },
         // 登记仪表盘专有属性。
         &[
             "value",
@@ -178,11 +178,11 @@ fn apply_chart_attribute(
         // 映射到公开枚举路径。
         let gauge_type = match value.as_str() {
             // 映射半圆仪表盘。
-            "dashboard" => quote! { ::uix::prelude::GaugeType::Dashboard },
+            "dashboard" => quote! { ::uix_app::prelude::GaugeType::Dashboard },
             // 映射整圆仪表盘。
-            "full" => quote! { ::uix::prelude::GaugeType::Full },
+            "full" => quote! { ::uix_app::prelude::GaugeType::Full },
             // 映射环形仪表盘。
-            "ring" => quote! { ::uix::prelude::GaugeType::Ring },
+            "ring" => quote! { ::uix_app::prelude::GaugeType::Ring },
             // 其他值不在登记表。
             _ => {
                 // 返回允许值诊断。
@@ -221,7 +221,7 @@ fn apply_chart_attribute(
         return Ok(quote! {
             (#widget).range_colors(
                 ::std::iter::IntoIterator::into_iter((#ranges).clone())
-                    .collect::<::std::vec::Vec<::uix::prelude::GaugeRange>>()
+                    .collect::<::std::vec::Vec<::uix_app::prelude::GaugeRange>>()
             )
         });
     }

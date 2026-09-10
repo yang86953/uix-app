@@ -1,7 +1,7 @@
 //! 布局引擎与真实布局组件使用同一 border-box 契约。
 #![cfg(feature = "test-harness")]
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 fn check(actual: f32, expected: f32) {
     assert!(

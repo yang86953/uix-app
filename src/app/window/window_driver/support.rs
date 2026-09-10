@@ -398,7 +398,7 @@ fn configured_slow_frame_threshold() -> Option<Duration> {
         let parsed = parse_slow_frame_threshold(&value);
         if parsed.is_none() {
             tracing::warn!(
-                target: "uix::diagnostics",
+                target: "uix_app::diagnostics",
                 debug_event = "invalid_slow_frame_threshold",
                 "UIX_SLOW_FRAME_MS must be a positive integer"
             );
@@ -454,7 +454,7 @@ fn record_slow_frame(
             diag.slow_since = Some(Instant::now());
             // 卡顿开始：立即输出现场详情。
             tracing::warn!(
-                target: "uix::diagnostics",
+                target: "uix_app::diagnostics",
                 debug_event = "slow_frame_start",
                 window_id = ?window_id,
                 correlation_id = correlation_id.unwrap_or(0),
@@ -493,7 +493,7 @@ fn record_slow_frame(
         diag.slow_peak = Duration::ZERO;
         // 卡顿结束：报告持续时长与峰值。
         tracing::warn!(
-            target: "uix::diagnostics",
+            target: "uix_app::diagnostics",
             debug_event = "slow_frame_end",
             window_id = ?window_id,
             correlation_id = correlation_id.unwrap_or(0),
@@ -654,7 +654,7 @@ pub(super) fn accumulate_frame_diagnostics(
     // 读取并清零文本布局调用计数，得到本秒实际 shaping 次数。
     let text_layout_calls = take_text_layout_calls();
     tracing::info!(
-        target: "uix::diagnostics",
+        target: "uix_app::diagnostics",
         debug_event = "frame_summary",
         window_id = ?window_id,
         correlation_id = correlation_id.unwrap_or(0),

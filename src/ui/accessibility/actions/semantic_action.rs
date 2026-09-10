@@ -421,7 +421,7 @@ impl WidgetTree {
                         // internal command failure。实际位移由调用方经快照核对；
                         // 保留告警以区分边界夹取与滚动链路真正断裂。
                         tracing::warn!(
-                            target: "uix::semantic",
+                            target: "uix_app::semantic",
                             node = ?id,
                             "semantic scroll produced no movement"
                         );

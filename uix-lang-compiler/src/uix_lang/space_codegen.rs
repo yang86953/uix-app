@@ -11,7 +11,7 @@ use super::{Diagnostic, Element, boolean_value, literal_string, numeric_value};
 // 生成文档化 Space 标签对应的公开 Rust View。
 pub(crate) fn generate_space(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从现有公开 Space Widget 默认契约开始构建。
-    let mut space = quote! { ::uix::prelude::Space::new() };
+    let mut space = quote! { ::uix_app::prelude::Space::new() };
     // 按源码顺序应用 Space 专有属性。
     for attribute in &element.attributes {
         // 按属性名选择现有公开构建器。
@@ -45,7 +45,7 @@ pub(crate) fn generate_space(element: &Element) -> Result<TokenStream, Diagnosti
                 // 生成有限数值、px 字面量或受限表达式。
                 let gap = numeric_value(attribute)?;
                 // 通过公开 SpaceSize 保留组件对间距的所有权。
-                space = quote! { (#space).size(::uix::prelude::SpaceSize::Custom(#gap)) };
+                space = quote! { (#space).size(::uix_app::prelude::SpaceSize::Custom(#gap)) };
             }
             // 换行状态支持布尔字面量与受限表达式。
             "wrap" => {
@@ -61,7 +61,7 @@ pub(crate) fn generate_space(element: &Element) -> Result<TokenStream, Diagnosti
     // 生成保持源码顺序与控制流语义的子节点向量。
     let children = generate_children(&element.children)?;
     // 由公开 ViewNode 组合 Space 与声明式子树。
-    let base = quote! { ::uix::prelude::ViewNode::new(#space, #children) };
+    let base = quote! { ::uix_app::prelude::ViewNode::new(#space, #children) };
     // 专有属性消费后继续复用统一样式与事件诊断路径。
     apply_common_attributes(
         // 传入 Space 基础 View。

@@ -1,5 +1,5 @@
-use uix::core::Errc;
-use uix::data::SettingsService;
+use uix_app::core::Errc;
+use uix_app::data::SettingsService;
 
 #[test]
 fn data_settings_round_trip_scalars_in_memory() {

@@ -5,12 +5,12 @@ use std::{
     path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
-use uix::draw::resources::font::text_backend::TextLayoutOptions;
-use uix::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
-use uix::draw::{FontService, HAlign, TextBackend, VAlign};
-use uix::platform::services::{FontSystemInfo, SystemFontSource};
+use uix_app::draw::resources::font::text_backend::TextLayoutOptions;
+use uix_app::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
+use uix_app::draw::{FontService, HAlign, TextBackend, VAlign};
+use uix_app::platform::services::{FontSystemInfo, SystemFontSource};
 
-const FONT: &[u8] = include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf");
+const FONT: &[u8] = include_bytes!("fixtures/fonts/uix-test-body.ttf");
 
 fn table(data: &[u8], tag: &[u8]) -> usize {
     let count = u16::from_be_bytes(data[4..6].try_into().unwrap()) as usize;
@@ -194,7 +194,7 @@ struct Provider<'a> {
     reject_first: bool,
 }
 impl FontSystemInfo for Provider<'_> {
-    fn default_font_paths(&self) -> uix::core::Result<Vec<String>> {
+    fn default_font_paths(&self) -> uix_app::core::Result<Vec<String>> {
         Ok(vec![if self.cjk {
             self.fixture.latin.clone()
         } else {
@@ -210,7 +210,7 @@ impl FontSystemInfo for Provider<'_> {
     fn scan_fallback_font_path(&self) -> Option<String> {
         None
     }
-    fn default_font_sources(&self) -> uix::core::Result<Vec<SystemFontSource>> {
+    fn default_font_sources(&self) -> uix_app::core::Result<Vec<SystemFontSource>> {
         Ok(if self.cjk {
             vec![self.fixture.latin.clone().into()]
         } else {

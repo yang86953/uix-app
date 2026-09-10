@@ -315,7 +315,7 @@ impl WidgetExpander {
             // CascaderValue 使用公开固定字段集合。
             WidgetValueType::CascaderValue => Ok((
                 // 生成公开路径令牌。
-                quote! { ::uix::prelude::CascaderValue },
+                quote! { ::uix_app::prelude::CascaderValue },
                 // 固定两个字符串向量字段。
                 vec![
                     // 标签路径字段。
