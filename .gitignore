@@ -44,3 +44,6 @@ Cargo.lock
 
 # 独立任务清单示例按第一方 Git 完整 rev 消费，随应用提交解析锁。
 !demo/task-list/Cargo.lock
+
+# Codex CLI 的本地 MCP 注册，不入公开仓库。
+.codex/
