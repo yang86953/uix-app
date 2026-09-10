@@ -483,7 +483,7 @@ dependencies = [
 [[package]]
 name = "uix"
 version = "0.0.8"
-source = "git+ssh://gitea@100.79.245.29:2222/admin/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
+source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "ab_glyph",
  "ash",
@@ -510,7 +510,7 @@ dependencies = [
 [[package]]
 name = "uix-derive"
 version = "0.0.8"
-source = "git+ssh://gitea@100.79.245.29:2222/admin/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
+source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -522,7 +522,7 @@ dependencies = [
 [[package]]
 name = "uix-lang-compiler"
 version = "0.0.8"
-source = "git+ssh://gitea@100.79.245.29:2222/admin/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
+source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -533,7 +533,7 @@ dependencies = [
 [[package]]
 name = "uix-lang-runtime"
 version = "0.0.8"
-source = "git+ssh://gitea@100.79.245.29:2222/admin/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
+source = "git+https://github.com/yang86953/uix-app.git?rev=e39a2220efdde3e5078e3b919953b4a59e9043b0#e39a2220efdde3e5078e3b919953b4a59e9043b0"
 
 [[package]]
 name = "uix-task-list"
