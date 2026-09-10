@@ -13,8 +13,8 @@ jobs:
 
       - name: 固定 Rust 工具链与目标
         run: |
-          rustup toolchain install 1.97.1 --profile minimal
-          rustup default 1.97.1
+          rustup toolchain install stable --profile minimal
+          rustup default stable
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: 验证 Apple SDK
