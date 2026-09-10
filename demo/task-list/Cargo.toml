@@ -3,8 +3,8 @@ name = "uix-task-list"
 version = "0.1.0"
 edition = "2024"
 publish = false
-license-file = "LICENSE"
-description = "内部授权使用的 UIX Lang 与 Rust 任务清单示例"
+license = "MIT"
+description = "UIX Lang 与 Rust 任务清单示例"
 
 [workspace]
 

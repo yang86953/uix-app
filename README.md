@@ -49,19 +49,27 @@ UIX 仍处于早期阶段。产品方向、源码包含某个后端、交叉编�
 
 ## 包身份与发布状态 / Package identity and status
 
-- Cargo 包名为 **`uix-app`**；在 Rust 代码中通过库名 **`uix_app`** 引用，例如 `use uix_app::prelude::*;`。
-- **尚未上传 crates.io**：当前版本只能以源码方式消费（本仓库的 git 依赖或 path 依赖），
-  不要按 `uix-app = "0.0.8"` 的 registry 写法引用；实际上架后另行公告。
-- The Cargo package is **`uix-app`**; import it in Rust as **`uix_app`** (e.g. `use uix_app::prelude::*;`).
-  It is **not yet published to crates.io** — consume it from this repository (git or path dependency) only.
+- [uix-app 0.0.8](https://crates.io/crates/uix-app/0.0.8) 已发布到 crates.io；Rust 库路径为 `uix_app`。
+- The package is published on crates.io as **uix-app**; import it as **uix_app**.
+- 配套 `uix-derive`、`uix-lang-compiler`、`uix-lang-runtime` 同为 0.0.8。
+
+```toml
+[dependencies]
+uix-app = "=0.0.8"
+```
+
+无需配置私有 Registry。具体接入与验证边界见[快速开始](docs/使用/入门/快速开始.md)
+和[交付与许可](docs/产品/交付与许可.md)。
 
 ## 构建 / Build
 
-需要 Rust 工具链及目标平台所需的原生开发依赖。`rust-toolchain.toml` 固定 Rust 版本。
+需要 Rust 工具链及目标平台所需的原生开发依赖。`rust-toolchain.toml` 跟随最新稳定版（stable），不固定发行号。构建前用 `rustup update stable` 核对更新。
 
 ```bash
 cargo build --release
 ```
+
+### 公开 API 测试
 
 公开 API 回归入口：
 
@@ -90,7 +98,8 @@ UIX 不随仓库或 crate 分发完整正文字体：
 
 UIX does not bundle a body font. Apps default to platform font discovery, or bundle
 their own font via `App::font_bundle` / `AgentWorkspace::font_bundle` (explicit bundles
-take priority). Missing loadable body fonts fail startup with a typed error; the bundled
+take priority). A windowless AgentWorkspace fails with a typed error when no body font is loadable;
+windowed App keeps its existing system-font fallback behavior. The bundled
 `lucide.ttf` is icon-only. `tests/fixtures/fonts/uix-test-body.ttf` is an OFL subset
 fixture used by automated tests only.
 
@@ -128,3 +137,9 @@ fixture used by automated tests only.
 
 以 MIT 许可证授权，见 `LICENSE`。随仓库分发的第三方材料（字体、tree-sitter
 运行时等）仍归各自许可条款约束，详见 `THIRD_PARTY_NOTICES.md`。
+
+## 产品文档 / Documentation
+
+[文档中心](docs/README.md) · [定位与原则](docs/产品/定位与原则.md) · [能力与边界](docs/产品/能力.md) · [快速开始](docs/使用/入门/快速开始.md) · [交付与许可](docs/产品/交付与许可.md)
+
+现行产品、语言、使用和架构文档在本开源仓库维护。项目管理系统保留任务、验收与链接入口，不维护第二份现行正文。
