@@ -1,1 +1,0 @@
-for (const w of workspace.windowList()) { if (w.resourceClass == "uix-app") w.minimized = false; }

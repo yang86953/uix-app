@@ -17,6 +17,6 @@ languages = []
 
 # grammar 源码在本仓库 editors/zed/grammars/uix 子目录；Zed 克隆后本地编译。
 [grammars.uix]
-repository = "ssh://gitea@100.79.245.29:2222/admin/uix-app.git"
+repository = "https://github.com/yang86953/uix-app.git"
 rev = "main"
 path = "editors/zed/grammars/uix"

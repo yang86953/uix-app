@@ -1,6 +1,2 @@
 # 增量缓存策略已由各 manifest 的 [profile.*] 显式声明（根 Cargo.toml 与 demo/Cargo.toml），
 # 此处不再重复配置，避免两处定义互相覆盖时产生歧义。
-
-[registries.gitea]
-# 正式 UIX 包只发布到内部 Gitea Cargo Registry。
-index = "sparse+https://yang-server.tail9d5559.ts.net/api/packages/admin/cargo/"

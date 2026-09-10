@@ -6,13 +6,9 @@ members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-lsp", "u
 name = "uix"
 version = "0.0.8"
 edition = "2024"
-publish = ["gitea"]
-license-file = "LICENSE"
-# 内部 crate 使用与产品定位一致且不泄露私有仓库位置的稳定描述。
-description = "UIX cross-platform native app framework for authorized internal use"
-# 有意省略 documentation/homepage/repository 可选字段（Cargo 警告为受控事实）：
-# 仓库位于内网 SSH 地址，写入 .crate 会泄露内网信息；当前尚未指定获授权的公开主页。
-# 当前按内部候选交付契约接受该受控警告；完成度与任务判定见仓库内各文档事实所有者。
+license = "MIT"
+description = "UIX cross-platform native app framework"
+repository = "https://github.com/yang86953/uix-app"
 
 [profile.dev]
 debug = "line-tables-only"
