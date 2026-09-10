@@ -36,7 +36,7 @@ pub(crate) fn generate_window_drag_region(element: &Element) -> Result<TokenStre
     // 只投影到 ui/window_chrome 已有的公开拖拽能力。
     let base = quote! {
         // 运行时继续拥有窗口动作与命中测试语义。
-        ::uix::prelude::window_drag_region(#child)
+        ::uix_app::prelude::window_drag_region(#child)
     };
     // WindowDragRegion 没有专有属性，统一处理样式与未知属性诊断。
     apply_common_attributes(base, &element.attributes, &[])

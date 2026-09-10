@@ -105,7 +105,7 @@ pub(crate) fn generate_document_app(document: &Document) -> Result<TokenStream, 
         // 收集全部成功条目。
         .collect::<Result<Vec<_>, _>>()?;
     // 从唯一现有 App builder 开始组装。
-    let mut app = quote! { ::uix::prelude::App::new() };
+    let mut app = quote! { ::uix_app::prelude::App::new() };
     // 可选标题只调用现有公开 builder。
     if let Some(title) = attributes.title {
         // 追加标题配置。
@@ -320,7 +320,7 @@ fn generate_named_theme(
                 let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
                 // 生成公开颜色值。
                 let color =
-                    quote! { ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
+                    quote! { ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
                 // 同步更新品牌与信息基元。
                 primitive_updates.push(quote! {
                     __uix_primitives.primary = #color;
@@ -333,7 +333,7 @@ fn generate_named_theme(
                 let (red, green, blue, alpha) = parse_color(&property.value.source, property)?;
                 // 生成公开颜色值。
                 let color =
-                    quote! { ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
+                    quote! { ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha) };
                 // 更新主题明暗推导使用的背景基元。
                 primitive_updates.push(quote! { __uix_primitives.bg = #color; });
                 // 派生后保持兼容别名的精确值。
@@ -351,10 +351,10 @@ fn generate_named_theme(
             // 选择可预测的内建基元作为未声明字段的基线。
             let mut __uix_primitives = if #dark_base {
                 // dark 同名主题继承暗色基元。
-                ::uix::prelude::ThemePrimitives::antd_dark()
+                ::uix_app::prelude::ThemePrimitives::antd_dark()
             } else {
                 // 其他主题继承亮色基元。
-                ::uix::prelude::ThemePrimitives::antd_light()
+                ::uix_app::prelude::ThemePrimitives::antd_light()
             };
             // 应用主题声明的基元覆盖。
             #(#primitive_updates)*
@@ -365,7 +365,7 @@ fn generate_named_theme(
             // 保持作者声明背景色的精确语义。
             #(#token_updates)*
             // 包装为 App 接受的 Theme 值。
-            ::uix::prelude::Theme::new(__uix_tokens)
+            ::uix_app::prelude::Theme::new(__uix_tokens)
         })
     })
 }

@@ -76,7 +76,7 @@ pub(super) fn apply_animation(
             // 生成带统一 timing-function 的 typed 关键帧。
             frames.push(quote! {
                 // 当前简写的 timing-function 应用于每个相邻片段。
-                ::uix::prelude::Keyframe::new(#offset, #value).easing(#easing)
+                ::uix_app::prelude::Keyframe::new(#offset, #value).easing(#easing)
             });
         }
         // 选择当前字段对应的 View Animated 绑定方法。
@@ -86,7 +86,7 @@ pub(super) fn apply_animation(
         // 生成状态复用、首次播放初始化与 View 值绑定。
         property_steps.push(quote! {
             // 在窗口私有组件状态存储中复用当前字段的 Animated 句柄。
-            let #state = ::uix::ui::__private::uix_widget_state(
+            let #state = ::uix_app::ui::__private::uix_widget_state(
                 // 使用实际节点动画子作用域。
                 &#node_scope,
                 // 使用字段稳定编号。
@@ -94,7 +94,7 @@ pub(super) fn apply_animation(
                 // 初始化闭包只在节点首次挂载时执行。
                 || {
                     // 使用最终基础样式值作为 fill-mode 恢复值。
-                    let #source = ::uix::prelude::Animated::new(#baseline);
+                    let #source = ::uix_app::prelude::Animated::new(#baseline);
                     // 编译器已验证非空有限帧，运行时错误代表内部契约破坏。
                     if let ::std::result::Result::Err(__uix_animation_error) =
                         #source.animate_keyframes_with([#(#frames),*], #playback)
@@ -119,7 +119,7 @@ pub(super) fn apply_animation(
         // 组合当前节点在 For 或静态树中的稳定身份。
         let #identity = #identity_value;
         // 从最近组件作用域派生实际节点动画状态作用域。
-        let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
+        let #node_scope = ::uix_app::ui::__private::uix_widget_child_scope(
             // 使用最近组件或文档根作用域。
             &#widget_scope,
             // 使用静态节点声明标识。
@@ -195,7 +195,7 @@ fn playback_tokens(binding: &AnimationBinding) -> TokenStream {
     let fill_mode = fill_mode_tokens(binding.playback.fill_mode);
     // 返回公开播放配置字面量。
     quote! {
-        ::uix::prelude::KeyframePlayback {
+        ::uix_app::prelude::KeyframePlayback {
             // 保存单轮时长。
             duration: #duration,
             // 保存启动延迟。
@@ -215,15 +215,15 @@ pub(super) fn easing_tokens(value: AnimationEasing) -> TokenStream {
     // 按闭合集合映射现有 Easing API。
     match value {
         // 线性插值。
-        AnimationEasing::Linear => quote! { ::uix::prelude::Easing::linear },
+        AnimationEasing::Linear => quote! { ::uix_app::prelude::Easing::linear },
         // CSS 默认 ease 使用标准三次贝塞尔。
-        AnimationEasing::Ease => quote! { ::uix::prelude::Easing::antd_default() },
+        AnimationEasing::Ease => quote! { ::uix_app::prelude::Easing::antd_default() },
         // 缓入使用标准三次贝塞尔。
-        AnimationEasing::EaseIn => quote! { ::uix::prelude::Easing::antd_in() },
+        AnimationEasing::EaseIn => quote! { ::uix_app::prelude::Easing::antd_in() },
         // 缓出使用标准三次贝塞尔。
-        AnimationEasing::EaseOut => quote! { ::uix::prelude::Easing::antd_out() },
+        AnimationEasing::EaseOut => quote! { ::uix_app::prelude::Easing::antd_out() },
         // 缓入缓出使用标准三次贝塞尔。
-        AnimationEasing::EaseInOut => quote! { ::uix::prelude::Easing::antd_in_out() },
+        AnimationEasing::EaseInOut => quote! { ::uix_app::prelude::Easing::antd_in_out() },
     }
 }
 
@@ -232,14 +232,14 @@ fn direction_tokens(value: AnimationDirection) -> TokenStream {
     // 按闭合集合映射公开方向枚举。
     match value {
         // 正向播放。
-        AnimationDirection::Normal => quote! { ::uix::prelude::KeyframeDirection::Normal },
+        AnimationDirection::Normal => quote! { ::uix_app::prelude::KeyframeDirection::Normal },
         // 倒向播放。
-        AnimationDirection::Reverse => quote! { ::uix::prelude::KeyframeDirection::Reverse },
+        AnimationDirection::Reverse => quote! { ::uix_app::prelude::KeyframeDirection::Reverse },
         // 正向交替。
-        AnimationDirection::Alternate => quote! { ::uix::prelude::KeyframeDirection::Alternate },
+        AnimationDirection::Alternate => quote! { ::uix_app::prelude::KeyframeDirection::Alternate },
         // 倒向交替。
         AnimationDirection::AlternateReverse => {
-            quote! { ::uix::prelude::KeyframeDirection::AlternateReverse }
+            quote! { ::uix_app::prelude::KeyframeDirection::AlternateReverse }
         }
     }
 }
@@ -249,12 +249,12 @@ fn fill_mode_tokens(value: AnimationFillMode) -> TokenStream {
     // 按闭合集合映射公开填充枚举。
     match value {
         // 无填充。
-        AnimationFillMode::None => quote! { ::uix::prelude::KeyframeFillMode::None },
+        AnimationFillMode::None => quote! { ::uix_app::prelude::KeyframeFillMode::None },
         // 完成后填充。
-        AnimationFillMode::Forwards => quote! { ::uix::prelude::KeyframeFillMode::Forwards },
+        AnimationFillMode::Forwards => quote! { ::uix_app::prelude::KeyframeFillMode::Forwards },
         // 延迟期填充。
-        AnimationFillMode::Backwards => quote! { ::uix::prelude::KeyframeFillMode::Backwards },
+        AnimationFillMode::Backwards => quote! { ::uix_app::prelude::KeyframeFillMode::Backwards },
         // 双向填充。
-        AnimationFillMode::Both => quote! { ::uix::prelude::KeyframeFillMode::Both },
+        AnimationFillMode::Both => quote! { ::uix_app::prelude::KeyframeFillMode::Both },
     }
 }

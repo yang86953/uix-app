@@ -59,7 +59,7 @@ pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic
     };
 
     // 从公开构造器开始并把文本数据交给运行时持有。
-    let mut widget = quote! { ::uix::prelude::List::new().items(#items) };
+    let mut widget = quote! { ::uix_app::prelude::List::new().items(#items) };
     // 可选页首只声明现有字符串槽位。
     if let Some(attribute) = find_attribute(element, "header") {
         // 生成字符串字面量或受限字符串表达式。
@@ -112,7 +112,7 @@ pub(crate) fn generate_list(element: &Element) -> Result<TokenStream, Diagnostic
     }
 
     // 使用公开 View 契约保留空数据时的 Empty 替代生命周期。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 List 专有属性后应用统一尺寸、样式与自动化属性。
     apply_common_attributes(
         // 传入已经按运行时规则物化的公开 View。
@@ -322,11 +322,11 @@ fn list_size(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按公开三档控件尺寸生成枚举。
     match value.as_str() {
         // 小尺寸映射到 Small。
-        "small" => Ok(quote! { ::uix::prelude::ControlSize::Small }),
+        "small" => Ok(quote! { ::uix_app::prelude::ControlSize::Small }),
         // 文档中尺寸映射到 Medium。
-        "middle" => Ok(quote! { ::uix::prelude::ControlSize::Medium }),
+        "middle" => Ok(quote! { ::uix_app::prelude::ControlSize::Medium }),
         // 大尺寸映射到 Large。
-        "large" => Ok(quote! { ::uix::prelude::ControlSize::Large }),
+        "large" => Ok(quote! { ::uix_app::prelude::ControlSize::Large }),
         // 其他关键字不能静默回退到运行时默认值。
         _ => Err(Diagnostic::new(
             // 指向完整 size 属性。

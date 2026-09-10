@@ -4,7 +4,7 @@
 // 隔离 terminal-basic 围栏中的基础终端配置。
 mod terminal_basic {
     // 引入文档承诺的终端组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带输出行、提示符与命令回调的基础终端。
     fn compile_example() {
@@ -25,7 +25,7 @@ mod terminal_basic {
 // 隔离 terminal-styled 围栏中的语义着色输出行。
 mod terminal_styled {
     // 引入文档承诺的终端着色模型公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译按语义颜色拼接文本段的输出行。
     fn compile_example() {
@@ -54,7 +54,7 @@ mod terminal_styled {
 // 隔离 terminal-command 围栏中的运行期缓冲与提示符替换。
 mod terminal_command {
     // 引入文档承诺的终端运行期公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译运行期提示符替换、缓冲重建与历史读取。
     fn compile_example() {
@@ -72,12 +72,12 @@ mod terminal_command {
 // 隔离 terminal-live-session 围栏中的真实会话启动与投影。
 mod terminal_live_session {
     // 引入文档承诺的真实终端公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译显式 spawn 与纯投影视图构建。
     fn compile_example() {
         // 取得应用句柄即可组装读取唤醒回调。
-        fn spawn_session(handle: &AppHandle) -> Result<TerminalSession, uix::core::Error> {
+        fn spawn_session(handle: &AppHandle) -> Result<TerminalSession, uix_app::core::Error> {
             // 复制窗口句柄供读线程唤醒。
             let wakeup = handle.clone();
             // 使用默认 shell 命令与窗口尺寸。
@@ -98,7 +98,7 @@ mod terminal_live_session {
         }
 
         let _ = (
-            spawn_session as fn(&AppHandle) -> Result<TerminalSession, uix::core::Error>,
+            spawn_session as fn(&AppHandle) -> Result<TerminalSession, uix_app::core::Error>,
             live_view as fn(&TerminalSession) -> ViewNode,
         );
     }
@@ -107,12 +107,12 @@ mod terminal_live_session {
 // 隔离 terminal-live-query 围栏中的读写、尺寸与状态查询。
 mod terminal_live_query {
     // 引入文档承诺的会话运行期公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译写入、resize 与屏幕投影查询。
     fn compile_example() {
         // 查询与驱动只接收已存在的会话句柄。
-        fn inspect_and_drive(session: &TerminalSession) -> Result<(), uix::core::Error> {
+        fn inspect_and_drive(session: &TerminalSession) -> Result<(), uix_app::core::Error> {
             // 按键字节与文本直接写入 PTY。
             session.write(b"ls --color=auto\r")?;
             // 显式同步窗口网格尺寸。
@@ -126,15 +126,15 @@ mod terminal_live_query {
             Ok(())
         }
 
-        let _ = inspect_and_drive as fn(&TerminalSession) -> Result<(), uix::core::Error>;
+        let _ = inspect_and_drive as fn(&TerminalSession) -> Result<(), uix_app::core::Error>;
     }
 }
 
 // 编译公开滚回合同：历史属于会话，滚动位置不属于共享会话。
 mod terminal_scrollback {
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
-    fn inspect_history(session: &TerminalSession) -> Result<(), uix::core::Error> {
+    fn inspect_history(session: &TerminalSession) -> Result<(), uix_app::core::Error> {
         session.set_scrollback_limit(2_000)?;
         let retained = session.scrollback_len();
         let limit = session.scrollback_limit();
@@ -148,9 +148,9 @@ mod terminal_scrollback {
 
 // 编译会话模式查询、受模式控制的粘贴与原始输入的区别。
 mod terminal_input_modes {
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
-    fn inspect_and_paste(session: &TerminalSession) -> Result<(), uix::core::Error> {
+    fn inspect_and_paste(session: &TerminalSession) -> Result<(), uix_app::core::Error> {
         let modes: TerminalModes = session.modes();
         let _ = (
             modes.application_cursor_keys,

@@ -62,7 +62,7 @@ pub(crate) fn generate_series_chart(
         widget = apply_chart_attribute(widget, attribute)?;
     }
     // 把现有 Chart Widget 物化为叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
 }
@@ -84,16 +84,16 @@ fn generate_radar_start(
     Ok((
         // 同时收集轴和雷达系列，避免运行时 Any 错配。
         quote! {
-            ::uix::prelude::RadarChart::new()
+            ::uix_app::prelude::RadarChart::new()
                 .axes(
                     ::std::iter::IntoIterator::into_iter((#axes).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::RadarAxis>>()
+                        .collect::<::std::vec::Vec<::uix_app::prelude::RadarAxis>>()
                 )
                 .series(
                     ::std::iter::IntoIterator::into_iter((#series).clone())
                         .collect::<::std::vec::Vec<
-                            ::uix::prelude::ChartSeries<
-                                ::std::vec::Vec<::uix::prelude::RadarData>
+                            ::uix_app::prelude::ChartSeries<
+                                ::std::vec::Vec<::uix_app::prelude::RadarData>
                             >
                         >>()
                 )
@@ -153,7 +153,7 @@ fn generate_combo_start(
         ));
     }
     // 从现有运行时组合图构造器开始。
-    let mut widget = quote! { ::uix::prelude::ComboChart::new() };
+    let mut widget = quote! { ::uix_app::prelude::ComboChart::new() };
     // 有自定义系列时精确收集 ComboSeries<Vec<LineData>>。
     if let Some(attribute) = custom_attribute {
         // 读取类型化 ComboSeries 集合表达式。
@@ -163,8 +163,8 @@ fn generate_combo_start(
             (#widget).series(
                 ::std::iter::IntoIterator::into_iter((#series).clone())
                     .collect::<::std::vec::Vec<
-                        ::uix::prelude::ComboSeries<
-                            ::std::vec::Vec<::uix::prelude::LineData>
+                        ::uix_app::prelude::ComboSeries<
+                            ::std::vec::Vec<::uix_app::prelude::LineData>
                         >
                     >>()
             )
@@ -179,8 +179,8 @@ fn generate_combo_start(
             (#widget).bar_series(
                 ::std::iter::IntoIterator::into_iter((#series).clone())
                     .collect::<::std::vec::Vec<
-                        ::uix::prelude::ChartSeries<
-                            ::std::vec::Vec<::uix::prelude::BarData>
+                        ::uix_app::prelude::ChartSeries<
+                            ::std::vec::Vec<::uix_app::prelude::BarData>
                         >
                     >>()
             )
@@ -195,8 +195,8 @@ fn generate_combo_start(
             (#widget).line_series(
                 ::std::iter::IntoIterator::into_iter((#series).clone())
                     .collect::<::std::vec::Vec<
-                        ::uix::prelude::ChartSeries<
-                            ::std::vec::Vec<::uix::prelude::LineData>
+                        ::uix_app::prelude::ChartSeries<
+                            ::std::vec::Vec<::uix_app::prelude::LineData>
                         >
                     >>()
             )
@@ -284,9 +284,9 @@ fn apply_chart_attribute(
         // 映射到公开雷达形状枚举。
         let shape = match value.as_str() {
             // 映射多边形网格。
-            "polygon" => quote! { ::uix::prelude::RadarShape::Polygon },
+            "polygon" => quote! { ::uix_app::prelude::RadarShape::Polygon },
             // 映射圆形网格。
-            "circle" => quote! { ::uix::prelude::RadarShape::Circle },
+            "circle" => quote! { ::uix_app::prelude::RadarShape::Circle },
             // 其他值不在登记表。
             _ => {
                 // 返回允许值诊断。

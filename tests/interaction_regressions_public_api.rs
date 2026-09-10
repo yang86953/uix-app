@@ -8,9 +8,9 @@
     feature = "test-harness"
 ))]
 
-use uix::core::Point;
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::core::Point;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn keyed_virtual_scroll_last_row_is_visible_before_invocation() {
@@ -164,7 +164,7 @@ fn empty_tabs_does_not_advertise_select() {
             .find("tabs")
             .unwrap()
             .actions
-            .contains(&uix::ui::SemanticActionKind::Select)
+            .contains(&uix_app::ui::SemanticActionKind::Select)
     );
     assert!(
         app.snapshot()

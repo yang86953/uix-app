@@ -50,7 +50,7 @@ impl WidgetExpander {
             // 静态基座必须在循环外只申请一次，避免出现序号随行顺序漂移。
             self.setup.push(quote! {
                 // 为当前组件声明取得跨 reconcile 稳定的静态作用域基座。
-                let #base_scope_ident = ::uix::ui::__private::uix_widget_scope(
+                let #base_scope_ident = ::uix_app::ui::__private::uix_widget_scope(
                     // 由 Rust 宏调用点区分同一 UIX 文档的不同根工厂。
                     concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
                     // 由 UIX 静态调用位置区分不同组件声明。
@@ -70,7 +70,7 @@ impl WidgetExpander {
             // 在所属 For 的每次迭代中从完整路径派生实际组件实例。
             self.push_setup(quote! {
                 // key 或位置路径变化时建立新的组件私有状态身份。
-                let #scope_ident = ::uix::ui::__private::uix_widget_child_scope(
+                let #scope_ident = ::uix_app::ui::__private::uix_widget_child_scope(
                     // 继承静态调用点、声明与捕获命名空间。
                     &#base_scope_ident,
                     // 继续保留组件调用声明维度。
@@ -83,7 +83,7 @@ impl WidgetExpander {
             // 静态组件在最终 View 之前只申请一次完整作用域。
             self.push_setup(quote! {
                 // 为当前静态组件调用取得可跨 reconcile 复用的私有状态作用域。
-                let #scope_ident = ::uix::ui::__private::uix_widget_scope(
+                let #scope_ident = ::uix_app::ui::__private::uix_widget_scope(
                     // 由 Rust 宏调用点区分同一 UIX 文档的不同根工厂。
                     concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
                     // 由 UIX 静态调用位置区分同一组件的多个实例。

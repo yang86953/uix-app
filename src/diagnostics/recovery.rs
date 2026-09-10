@@ -118,7 +118,7 @@ impl RecoveryModule {
                 Ok(RecoveryAction::NotHandled) => {}
                 Ok(RecoveryAction::Recovered) => {
                     tracing::info!(
-                        target: "uix::diagnostics",
+                        target: "uix_app::diagnostics",
                         error_code = %error.code(),
                         recovery_handler_id = handler_id,
                         "registered recovery restored the error invariant"

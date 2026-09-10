@@ -61,13 +61,13 @@ pub(super) fn generate_dynamic_label(
         quote! {{
             let __uix_content = move || #content;
             if #ellipsis {
-                ::uix::prelude::elided_label(__uix_content)
+                ::uix_app::prelude::elided_label(__uix_content)
             } else {
-                ::uix::prelude::dynamic_label(__uix_content)
+                ::uix_app::prelude::dynamic_label(__uix_content)
             }
         }}
     } else {
-        quote! { ::uix::prelude::dynamic_label(move || #content) }
+        quote! { ::uix_app::prelude::dynamic_label(move || #content) }
     };
     // 返回公开 DynamicLabel 构造器与原公共 View 装饰兼容的表达式。
     Ok(quote! {{

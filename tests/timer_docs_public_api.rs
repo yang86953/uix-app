@@ -6,7 +6,7 @@ mod app_timers {
     // 引入标准时长类型。
     use std::time::Duration;
     // 引入文档承诺的公开 AppHandle prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译一次性与周期计时器的显式所有权策略。
     fn schedule_work(handle: &AppHandle) {
@@ -29,7 +29,7 @@ mod app_timers {
 // 隔离 background-post-to-ui 围栏中的跨线程回 UI 路由。
 mod background_post_to_ui {
     // 引入文档承诺的公开 AppHandle 与 State prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译后台线程只经目标窗口队列更新业务状态的模式。
     fn load_in_background(handle: &AppHandle, data: &State<u32>) {

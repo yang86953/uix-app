@@ -35,7 +35,7 @@ pub(crate) fn generate_range_slider(element: &Element) -> Result<TokenStream, Di
     // 生成显式或默认最大值。
     let maximum = range_endpoint(element, "max", 100.0, "RangeSlider")?;
     // 通过公开构造器一次建立完整范围契约。
-    let mut widget = quote! { ::uix::prelude::RangeSlider::new((#minimum)..=(#maximum)) };
+    let mut widget = quote! { ::uix_app::prelude::RangeSlider::new((#minimum)..=(#maximum)) };
 
     // 步长必须为正的有限数值。
     if let Some(attribute) = find_attribute(element, "step") {
@@ -102,7 +102,7 @@ pub(crate) fn generate_range_slider(element: &Element) -> Result<TokenStream, Di
     }
 
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 RangeSlider 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的区间滑块 View。

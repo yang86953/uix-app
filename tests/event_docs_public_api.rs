@@ -4,7 +4,7 @@
 // 隔离 event-semantic 围栏中的语义事件入口。
 mod event_semantic {
     // 引入文档承诺的公开事件与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译绑定状态、精确语义匹配与无状态点击三种入口。
     fn compile_example() {
@@ -34,7 +34,7 @@ mod event_semantic {
 // 隔离 event-keyboard 围栏中的原始键盘事件组件。
 mod event_keyboard {
     // 引入文档承诺的公开组件、事件与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明只在 Enter 按下后激活的自定义组件。
     widget! {
@@ -93,7 +93,7 @@ mod event_keyboard {
 // 隔离 event-a11y 围栏中的无障碍角色覆写。
 mod event_a11y {
     // 引入文档承诺的公开组件与无障碍 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译图标与进度文本的公开角色声明。
     fn compile_example() {
@@ -107,7 +107,7 @@ mod event_a11y {
 // 隔离 event-semantic-actions 围栏中的统一语义入口。
 mod event_semantic_actions {
     // 引入文档承诺的公开语义动作与组件 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为文档中的业务确认调用提供最小无副作用宿主。
     fn confirm_delete() {}

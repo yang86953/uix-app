@@ -22,7 +22,7 @@ pub use font_cache::{FontFace, GlyphCache};
 use std::sync::Arc;
 
 use crate::core::Error;
-use crate::core::{Point, Size};
+use crate::core::{Errc, Point, Size};
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
 use crate::draw::resources::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
@@ -431,6 +431,30 @@ impl FontService {
         }
 
         tracing::info!("No primary font found, using bitmap fallback");
+    }
+
+    /// 显式字体包优先；未配置时经平台发现装载系统正文字体。
+    ///
+    /// 返回是否使用了显式字体包。发现不到可绘制的正文字体时返回 typed 错误，
+    /// 不把图标字体或位图测量后备冒充正文。
+    pub fn install_body_font(
+        &mut self,
+        bundle: Option<crate::draw::FontBundle>,
+        system_info: &(impl crate::platform::services::FontSystemInfo + ?Sized),
+    ) -> crate::core::Result<bool> {
+        // 显式字体包任一资产无效都原样返回 typed failure，禁止静默改用系统发现。
+        if let Some(bundle) = bundle {
+            self.install_font_bundle(&bundle)?;
+            return Ok(true);
+        }
+        self.load_default_system_font(14.0, system_info);
+        if self.font_family(&self.loaded_font_handle).is_none() {
+            return Err(Error::new(
+                Errc::NotFound,
+                "no loadable system body font; bundle an explicit FontBundle",
+            ));
+        }
+        Ok(false)
     }
 
     /// 加载 CJK 回退字体（通过平台层探测）。

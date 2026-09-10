@@ -6,9 +6,9 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use serde_json::{Value, json};
     use std::path::Path;
-    use uix::app::agent_client::{AgentBridgeClient, AgentWindowEntry};
-    use uix::app::agent_workspace::AgentWorkspace;
-    use uix::prelude::*;
+    use uix_app::app::agent_client::{AgentBridgeClient, AgentWindowEntry};
+    use uix_app::app::agent_workspace::AgentWorkspace;
+    use uix_app::prelude::*;
 
     fn save(name: &str, value: &Value) -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(

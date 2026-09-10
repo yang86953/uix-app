@@ -53,7 +53,7 @@ pub(crate) fn generate_tabs(element: &Element) -> Result<TokenStream, Diagnostic
     // 把数组或 Vec 统一收集为运行时拥有的标签集合。
     let tabs = quote! {
         ::std::iter::IntoIterator::into_iter((#items).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::Tab>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::Tab>>()
     };
 
     // 查找必需的活动 key 状态表达式。
@@ -75,7 +75,7 @@ pub(crate) fn generate_tabs(element: &Element) -> Result<TokenStream, Diagnostic
 
     // 运行时取得静态标签集合并绑定活动 key 状态。
     let mut widget = quote! {
-        ::uix::prelude::Tabs::new()
+        ::uix_app::prelude::Tabs::new()
             .tabs(#tabs)
             .active_key(&(#active_key))
     };
@@ -96,7 +96,7 @@ pub(crate) fn generate_tabs(element: &Element) -> Result<TokenStream, Diagnostic
     // 按源码顺序生成全部静态直接面板。
     let children = generate_children(&element.children)?;
     // 通过公开 ViewNode 让 Tabs 与所有面板共同保留生命周期。
-    let mut view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::new(#widget, #children) };
 
     // 可选变化事件观察 Tabs 已写回的稳定 key。
     if let Some(attribute) = find_attribute(element, "@change") {
@@ -145,13 +145,13 @@ fn tab_position_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic> 
             // 只接受 Rust 运行时已公开的四种方位。
             let position = match value.as_str() {
                 // 标签栏放在内容上方。
-                "top" => quote! { ::uix::prelude::TabPosition::Top },
+                "top" => quote! { ::uix_app::prelude::TabPosition::Top },
                 // 标签栏放在内容下方。
-                "bottom" => quote! { ::uix::prelude::TabPosition::Bottom },
+                "bottom" => quote! { ::uix_app::prelude::TabPosition::Bottom },
                 // 标签栏放在内容左侧。
-                "left" => quote! { ::uix::prelude::TabPosition::Left },
+                "left" => quote! { ::uix_app::prelude::TabPosition::Left },
                 // 标签栏放在内容右侧。
-                "right" => quote! { ::uix::prelude::TabPosition::Right },
+                "right" => quote! { ::uix_app::prelude::TabPosition::Right },
                 // 其他值不属于公开方位契约。
                 _ => {
                     // 返回包含完整允许集合的定向诊断。

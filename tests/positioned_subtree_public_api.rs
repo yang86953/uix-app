@@ -2,9 +2,9 @@
 
 //! 对应 UIX Lang 样式属性中的 absolute/fixed 定位与包含块契约。
 
-use uix::prelude::*;
-use uix::ui::PositionMode;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::PositionMode;
+use uix_app::ui::test_harness::TestApp;
 
 #[test]
 fn lang_dynamic_insets_move_visible_and_clickable_content() {

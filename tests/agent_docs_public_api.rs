@@ -2,12 +2,12 @@
 #![allow(dead_code)]
 
 // 声明式生成模块与手写消费者使用同一公开扩展 trait。
-use uix::prelude::StyleExt;
+use uix_app::prelude::StyleExt;
 
 // 隔离 agent-enable 围栏中的显式应用门禁。
 mod agent_enable {
     // 引入文档承诺的公开 Application 与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 agent-control feature 与 Application 开关的第二层门禁。
     fn documented_main() {
@@ -36,9 +36,9 @@ mod agent_enable {
 // 隔离 agent-policy 围栏中的动作授权策略。
 mod agent_policy {
     // 引入公开语义动作类别。
-    use uix::ui::SemanticActionKind;
+    use uix_app::ui::SemanticActionKind;
     // 引入文档承诺的公开 Application 与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译只读、目标保护、动作拒绝与确认要求的策略链。
     fn documented_main() {
@@ -74,9 +74,9 @@ mod agent_policy {
 // 隔离 agent-confirm-ui 围栏中的用户确认注入。
 mod agent_confirm_ui {
     // 引入公开的 Agent 确认请求值类型。
-    use uix::app::AgentConfirmationRequest;
+    use uix_app::app::AgentConfirmationRequest;
     // 引入文档承诺的公开 Application 与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译确认目标声明与 UI turn 回调注入。
     fn documented_main() {
@@ -111,7 +111,7 @@ mod agent_confirm_ui {
 // 隔离 agent-automation-id 围栏中的稳定语义身份。
 mod agent_automation_id {
     // 引入文档承诺的公开 Application、组件与语义扩展 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译只通过稳定 automation_id 暴露语义目标的根视图。
     fn compile_example() {
@@ -137,8 +137,8 @@ mod agent_automation_id {
 
 // 无窗口宿主示例与 demo 的后台声明共用公开编译入口，不启动进程或端点。
 fn compile_standalone_workspace() -> Result<(), Box<dyn std::error::Error>> {
-    let workspace = uix::app::agent_workspace::AgentWorkspace::new(640, 480, || {
-        uix::uix!("demo/uix-lang-demo/src/agent.uix")
+    let workspace = uix_app::app::agent_workspace::AgentWorkspace::new(640, 480, || {
+        uix_app::uix!("demo/uix-lang-demo/src/agent.uix")
     })
     .spawn()?;
     let mut client = workspace.client()?;

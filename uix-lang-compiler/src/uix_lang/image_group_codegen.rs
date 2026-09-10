@@ -53,7 +53,7 @@ pub(crate) fn generate_image_group(element: &Element) -> Result<TokenStream, Dia
     };
 
     // 由 ImageGroup 运行时取得图片路径集合所有权。
-    let mut widget = quote! { ::uix::prelude::ImageGroup::new().images(#images) };
+    let mut widget = quote! { ::uix_app::prelude::ImageGroup::new().images(#images) };
     // 可选初始索引只配置首次物化位置。
     if let Some(attribute) = find_attribute(element, "startIndex") {
         // 生成 usize 字面量或受限表达式。
@@ -63,7 +63,7 @@ pub(crate) fn generate_image_group(element: &Element) -> Result<TokenStream, Dia
     }
 
     // 先经公开 View 契约进入同目录 UIX 根，Change 处理器与样式由声明节点拥有。
-    let mut view = quote! { ::uix::prelude::View::build(#widget) };
+    let mut view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 可选变化事件只观察运行时已经提交的当前索引事实。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

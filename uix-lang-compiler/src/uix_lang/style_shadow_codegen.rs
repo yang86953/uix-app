@@ -144,8 +144,8 @@ fn box_shadow_value_with_policy(
     // 生成保留完整偏移的阴影定义。
     Ok(quote! {
         ::std::option::Option::Some(
-            ::uix::prelude::BoxShadowDef::new(
-                ::uix::prelude::Color::from_rgba(#red, #green, #blue, #alpha),
+            ::uix_app::prelude::BoxShadowDef::new(
+                ::uix_app::prelude::Color::from_rgba(#red, #green, #blue, #alpha),
                 #blur,
                 #horizontal,
                 #vertical,

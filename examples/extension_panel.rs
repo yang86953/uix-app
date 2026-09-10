@@ -14,11 +14,11 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use uix::app::extensions::{
+use uix_app::app::extensions::{
     AsyncCompletion, ExtensionAsyncPort, ExtensionHost, ExtensionPackage, ExtensionUiHandle,
     ExtensionValue, UiNode, UiProjector, UiUpdate,
 };
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 fn main() {
     let hot_replace = std::env::args().any(|argument| argument == "--hot-replace");

@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use uix::draw::{Color, FrameEncoderError, FrameImage};
-use uix::prelude::*;
+use uix_app::draw::{Color, FrameEncoderError, FrameImage};
+use uix_app::prelude::*;
 
 #[test]
 fn owned_frame_keeps_tightly_packed_premultiplied_pixels() {

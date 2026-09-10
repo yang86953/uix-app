@@ -26,7 +26,7 @@ pub(crate) fn generate_empty(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Empty::new() };
+    let mut widget = quote! { ::uix_app::prelude::Empty::new() };
     // 可选描述接受字符串字面量或受限字符串表达式。
     if let Some(attribute) = find_attribute(element, "description") {
         // 生成描述字符串令牌。
@@ -43,7 +43,7 @@ pub(crate) fn generate_empty(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Empty 专有内容属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的空状态 View。

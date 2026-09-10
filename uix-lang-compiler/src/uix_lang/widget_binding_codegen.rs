@@ -99,7 +99,7 @@ impl WidgetExpander {
                 // 克隆共享句柄但不在组件构建入口读取当前值。
                 self.push_setup(quote! {
                     // 克隆句柄并保持同一底层状态槽。
-                    let #value_ident: ::uix::prelude::State<#rust_type> = (#value).clone();
+                    let #value_ident: ::uix_app::prelude::State<#rust_type> = (#value).clone();
                 });
                 // 登记可读写共享状态。
                 bindings.insert(
@@ -222,15 +222,15 @@ impl WidgetExpander {
             // 写入显式类型准备语句。
             self.push_setup(quote! {
                 // 创建组件私有响应式状态槽。
-                let #state_ident: ::uix::prelude::State<#rust_type> =
+                let #state_ident: ::uix_app::prelude::State<#rust_type> =
                     // 从当前组件实例作用域复用或创建规范化初始值对应的状态槽。
-                    ::uix::ui::__private::uix_widget_state(&#scope, #field_id, || #initial);
+                    ::uix_app::ui::__private::uix_widget_state(&#scope, #field_id, || #initial);
             });
         } else {
             // 复合表达式或空数组由 Rust 推断类型。
             self.push_setup(quote! {
                 // 从当前组件实例作用域复用或创建由 Rust 推断内部类型的状态槽。
-                let #state_ident = ::uix::ui::__private::uix_widget_state(
+                let #state_ident = ::uix_app::ui::__private::uix_widget_state(
                     // 传递当前静态组件实例的运行时作用域。
                     &#scope,
                     // 传递当前私有字段的稳定身份。

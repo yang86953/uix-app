@@ -4,7 +4,7 @@
 // 隔离 menu-bar 围栏中的横向菜单栏。
 mod menu_bar {
     // 引入文档承诺的导航组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带稳定 key 的横向菜单栏构建器。
     fn compile_example() {
@@ -37,7 +37,7 @@ mod menu_bar {
 // 隔离 menu-navigation 围栏中的基础菜单。
 mod menu_navigation {
     // 引入文档承诺的导航组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带稳定 key 的垂直菜单构建器。
     fn compile_example() {
@@ -82,7 +82,7 @@ mod menu_navigation {
 // 隔离 nav-menu-advanced 围栏中的菜单高级配置。
 mod nav_menu_advanced {
     // 引入文档承诺的菜单公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译嵌套、内联、受控 key 与图标配置。
     fn compile_example() {
@@ -115,7 +115,7 @@ mod nav_menu_advanced {
 // 隔离 navigation-sidebar 围栏中的主题化侧边栏。
 mod navigation_sidebar {
     // 引入文档承诺的导航与主题公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带 typed key 的复合侧边栏及其主题节点。
     fn compile_example() {
@@ -143,7 +143,7 @@ mod navigation_sidebar {
 // 隔离 nav-collapse-advanced 围栏中的受控折叠状态。
 mod nav_collapse_advanced {
     // 引入文档承诺的导航与状态公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译受控折叠句柄与变化回调。
     fn compile_example() {
@@ -160,7 +160,7 @@ mod nav_collapse_advanced {
 // 隔离 navigation-group 围栏中的共享选中组。
 mod navigation_group {
     // 引入文档承诺的导航与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 NavGroup 到列视图的公开转换。
     fn compile_example() {
@@ -185,7 +185,7 @@ mod navigation_group {
 // 隔离 pagination 围栏中的基础分页配置。
 mod pagination {
     // 引入文档承诺的分页公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译当前页、总数与页尺寸选项。
     fn compile_example() {
@@ -205,7 +205,7 @@ mod pagination {
 // 隔离 nav-pagination-advanced 围栏中的分页高级配置。
 mod nav_pagination_advanced {
     // 引入文档承诺的分页公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译简洁模式、跳转输入与总数模板。
     fn compile_example() {
@@ -226,7 +226,7 @@ mod nav_pagination_advanced {
 // 隔离 steps-breadcrumb-anchor 围栏中的三类线性导航。
 mod steps_breadcrumb_anchor {
     // 引入文档承诺的线性导航公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译步骤、面包屑与锚点的基础公开构建器。
     fn compile_example() {
@@ -271,7 +271,7 @@ mod steps_breadcrumb_anchor {
 // 隔离 nav-steps-advanced 围栏中的步骤高级配置。
 mod nav_steps_advanced {
     // 引入文档承诺的步骤公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译步骤状态、点击、圆点、图标与回调配置。
     fn compile_example() {
@@ -307,7 +307,7 @@ mod nav_steps_advanced {
 // 隔离 nav-breadcrumb-advanced 围栏中的面包屑高级配置。
 mod nav_breadcrumb_advanced {
     // 引入文档承诺的面包屑公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译条目图标与最大可见项配置。
     fn compile_example() {
@@ -322,7 +322,7 @@ mod nav_breadcrumb_advanced {
 // 隔离 nav-anchor-advanced 围栏中的锚点高级配置。
 mod nav_anchor_advanced {
     // 引入文档承诺的锚点公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译偏移、指示器、边界与自定义容器工厂。
     fn compile_example() {

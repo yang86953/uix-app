@@ -53,7 +53,7 @@ pub(crate) fn generate_tooltip(element: &Element) -> Result<TokenStream, Diagnos
     // 生成字符串字面量或受限字符串表达式。
     let text = string_value(text_attribute)?;
     // 临时借用提示文字，让运行时 Tooltip 复制并独占内容。
-    let mut widget = quote! { ::uix::prelude::Tooltip::new(&*(#text)) };
+    let mut widget = quote! { ::uix_app::prelude::Tooltip::new(&*(#text)) };
     // 可选 placement 在编译期选择四种公开方向之一。
     if let Some(attribute) = find_attribute(element, "placement") {
         // 把文档关键字映射到公开运行时枚举。
@@ -71,7 +71,7 @@ pub(crate) fn generate_tooltip(element: &Element) -> Result<TokenStream, Diagnos
     // 按源码顺序生成唯一触发 View 及其内部控制流。
     let children = generate_children(&element.children)?;
     // 使用公开 ViewNode 子树承载触发器、样式与生命周期身份。
-    let view = quote! { ::uix::prelude::ViewNode::new(#widget, #children) };
+    let view = quote! { ::uix_app::prelude::ViewNode::new(#widget, #children) };
     // 消费 Tooltip 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(view, &element.attributes, &["text", "placement", "trigger"])
     // 结束 Tooltip 生成函数。
@@ -84,13 +84,13 @@ fn tooltip_placement(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按公开四方向生成对应枚举。
     match value.as_str() {
         // 上方提示。
-        "top" => Ok(quote! { ::uix::prelude::TooltipPlacement::Top }),
+        "top" => Ok(quote! { ::uix_app::prelude::TooltipPlacement::Top }),
         // 下方提示。
-        "bottom" => Ok(quote! { ::uix::prelude::TooltipPlacement::Bottom }),
+        "bottom" => Ok(quote! { ::uix_app::prelude::TooltipPlacement::Bottom }),
         // 左侧提示。
-        "left" => Ok(quote! { ::uix::prelude::TooltipPlacement::Left }),
+        "left" => Ok(quote! { ::uix_app::prelude::TooltipPlacement::Left }),
         // 右侧提示。
-        "right" => Ok(quote! { ::uix::prelude::TooltipPlacement::Right }),
+        "right" => Ok(quote! { ::uix_app::prelude::TooltipPlacement::Right }),
         // 其他关键字不能静默回退到 Top。
         _ => Err(Diagnostic::new(
             // 指向完整 placement 属性。
@@ -110,13 +110,13 @@ fn tooltip_trigger(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按公开四种交互生成对应枚举。
     match value.as_str() {
         // 指针悬停触发。
-        "hover" => Ok(quote! { ::uix::prelude::TriggerMode::Hover }),
+        "hover" => Ok(quote! { ::uix_app::prelude::TriggerMode::Hover }),
         // 主按钮点击触发。
-        "click" => Ok(quote! { ::uix::prelude::TriggerMode::Click }),
+        "click" => Ok(quote! { ::uix_app::prelude::TriggerMode::Click }),
         // 键盘焦点进入触发。
-        "focus" => Ok(quote! { ::uix::prelude::TriggerMode::Focus }),
+        "focus" => Ok(quote! { ::uix_app::prelude::TriggerMode::Focus }),
         // 上下文菜单请求触发。
-        "contextMenu" => Ok(quote! { ::uix::prelude::TriggerMode::ContextMenu }),
+        "contextMenu" => Ok(quote! { ::uix_app::prelude::TriggerMode::ContextMenu }),
         // 其他关键字不能静默回退到 Hover。
         _ => Err(Diagnostic::new(
             // 指向完整 trigger 属性。

@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 #[test]
 fn app_registration_and_container_clones_preserve_explicit_service_ownership() {

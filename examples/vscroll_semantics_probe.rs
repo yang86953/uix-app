@@ -16,8 +16,8 @@ mod native {
     };
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
-    use uix::prelude::*;
-    use uix::ui::test_harness::AUTOMATION_DIR_ENV;
+    use uix_app::prelude::*;
+    use uix_app::ui::test_harness::AUTOMATION_DIR_ENV;
 
     uix_items!("examples/fixtures/vscroll_report.uix");
 

@@ -4,7 +4,7 @@
 // 隔离 data-typography 围栏中的排版类型入口。
 mod data_typography {
     // 引入文档承诺的排版组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译标题、段落与可复制文本配置。
     fn compile_example() {
@@ -20,7 +20,7 @@ mod data_typography {
 // 隔离 data-typography-title 围栏中的一级标题入口。
 mod data_typography_title {
     // 引入文档承诺的排版组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译页面标题配置。
     fn compile_example() {
@@ -32,7 +32,7 @@ mod data_typography_title {
 // 隔离 data-typography-text 围栏中的强调与标记入口。
 mod data_typography_text {
     // 引入文档承诺的排版组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译加粗且高亮的普通文本。
     fn compile_example() {
@@ -44,7 +44,7 @@ mod data_typography_text {
 // 隔离 data-typography-paragraph 围栏中的段落装饰入口。
 mod data_typography_paragraph {
     // 引入文档承诺的排版组件公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译斜体且带下划线的段落。
     fn compile_example() {
@@ -56,7 +56,7 @@ mod data_typography_paragraph {
 // 隔离 data-descriptions 围栏中的描述列表与标签。
 mod data_descriptions {
     // 引入文档承诺的描述列表与标签公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译两列描述列表和带文字语义的成功标签。
     fn compile_example() {
@@ -82,7 +82,7 @@ mod data_descriptions {
 // 隔离 data-timeline 围栏中的有序事件快照。
 mod data_timeline {
     // 引入文档承诺的时间轴公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译按顺序展示标题与说明的时间轴。
     fn compile_example() {
@@ -102,7 +102,7 @@ mod data_timeline {
 // 隔离 data-progress-advanced 围栏中的进度显示变体。
 mod data_progress_advanced {
     // 引入文档承诺的进度组件与颜色公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译确定进度、渐变、步骤与仪表盘配置。
     fn compile_example() {
@@ -127,7 +127,7 @@ mod data_progress_advanced {
 // 隔离 data-skeleton-advanced 围栏中的骨架形态。
 mod data_skeleton_advanced {
     // 引入文档承诺的骨架屏公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译矩形、圆形与活动段落骨架。
     fn compile_example() {
@@ -157,7 +157,7 @@ mod data_skeleton_advanced {
 // 隔离 data-watermark-advanced 围栏中的水印绘制配置。
 mod data_watermark_advanced {
     // 引入文档承诺的水印公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译字号、透明度、旋转角和间距配置。
     fn compile_example() {
@@ -180,7 +180,7 @@ mod data_watermark_advanced {
 // 隔离 data-table-model 围栏中的类型化行模型。
 mod data_table_model {
     // 引入文档承诺的类型化表格公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明由应用层拥有的类型化业务行。
     #[derive(Clone, PartialEq)]
@@ -229,7 +229,7 @@ mod data_table_model {
 // 隔离 data-table-virtualized 围栏中的自定义单元格与虚拟化。
 mod data_table_virtualized {
     // 引入文档承诺的类型化表格与标签公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明由应用层拥有的类型化业务行。
     #[derive(Clone, PartialEq)]

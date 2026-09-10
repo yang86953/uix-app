@@ -5,8 +5,8 @@
 // 声明 draw_margin，使 dirty_rect 覆盖边框外溢与 AA 过渡。
 #![cfg(feature = "test-harness")]
 
-use uix::prelude::*;
-use uix::ui::WidgetRender;
+use uix_app::prelude::*;
+use uix_app::ui::WidgetRender;
 
 // 聚焦边框 2px 时外溢至少一个像素，再叠加一个像素的分析 AA 过渡。
 const MIN_OUTSET: f32 = 1.5;
@@ -41,7 +41,7 @@ fn singleline_input_dirty_rect_covers_focus_border_outset() {
 fn focus_transition_layout_rect_stays_inside_dirty_rect() {
     // 走真实焦点切换路径：聚焦前后布局 frame 都必须落在脏矩形内，
     // 保证 clear/clip 不会裁掉新边框或残留旧边框。
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
 
     let mut app = TestApp::new((320.0, 120.0), || {
         column((input().placeholder("焦点边框").automation_id("input.focus"),))

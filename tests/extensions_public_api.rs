@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use uix::app::extensions::{
+use uix_app::app::extensions::{
     ExtensionError, ExtensionHost, ExtensionHostConfig, ExtensionPackage, ExtensionValue,
 };
 
@@ -635,7 +635,7 @@ fn shutdown_releases_all_instances() {
 
 // ---------- P2：动态 UI、事件与受控业务能力 ----------
 
-use uix::app::extensions::{AsyncCompletion, UiUpdate};
+use uix_app::app::extensions::{AsyncCompletion, UiUpdate};
 
 fn ui_package() -> ExtensionPackage {
     let manifest = "(uix-extension (schema-version 1) (id \"panel-ext\") (version \"0.2.0\") \
@@ -688,9 +688,9 @@ fn worker_ui_roundtrip_with_test_app() {
     #[cfg(feature = "test-harness")]
     {
         use std::sync::{Arc, Mutex};
-        use uix::app::extensions::{ExtensionHost, ExtensionHostConfig, UiProjector};
-        use uix::prelude::{State, column};
-        use uix::ui::test_harness::TestApp;
+        use uix_app::app::extensions::{ExtensionHost, ExtensionHostConfig, UiProjector};
+        use uix_app::prelude::{State, column};
+        use uix_app::ui::test_harness::TestApp;
 
         let (updates_tx, updates_rx) = std::sync::mpsc::channel::<UiUpdate>();
         let host = ExtensionHost::new()
@@ -728,7 +728,7 @@ fn worker_ui_roundtrip_with_test_app() {
         assert_eq!(revision, 1);
 
         // 挂载区域：当前声明 + 修订 State 驱动重建。
-        let current: Arc<Mutex<Option<uix::app::extensions::UiNode>>> = Arc::new(Mutex::new(None));
+        let current: Arc<Mutex<Option<uix_app::app::extensions::UiNode>>> = Arc::new(Mutex::new(None));
         *current.lock().unwrap() = Some(node);
         let revision_state = State::new(0u64);
         let projector: Arc<Mutex<UiProjector>> = Arc::new(Mutex::new(UiProjector::new(
@@ -744,7 +744,7 @@ fn worker_ui_roundtrip_with_test_app() {
             let node = build_current.lock().unwrap().clone();
             match node {
                 Some(node) => build_projector.lock().unwrap().project("panel", &node),
-                None => column(Vec::<uix::prelude::ViewNode>::new()),
+                None => column(Vec::<uix_app::prelude::ViewNode>::new()),
             }
         });
         app.settle().expect("初始 settle");
@@ -857,7 +857,7 @@ fn async_port_completes_and_drives_declaration() {
         .expect("状态");
     assert_eq!(status, ExtensionValue::Text("done:analyzed".to_string()));
     // UiNode 校验已通过；节点文本可核对。
-    let uix::app::extensions::UiNode::Column { children, .. } = &node else {
+    let uix_app::app::extensions::UiNode::Column { children, .. } = &node else {
         panic!("声明应为 column")
     };
     assert_eq!(children.len(), 1);
@@ -911,11 +911,11 @@ fn stale_generation_events_are_dropped() {
     // 直接以陈旧代投递事件（模拟旧代回调迟到）。
     let sender = handle.event_sender();
     sender
-        .send(uix::app::extensions::UiEvent {
+        .send(uix_app::app::extensions::UiEvent {
             extension: "panel-ext".to_string(),
             generation: receipt.generation + 100,
             handler: "on-increment".to_string(),
-            payload: uix::app::extensions::UiEventPayload::Click,
+            payload: uix_app::app::extensions::UiEventPayload::Click,
         })
         .expect("投递陈旧事件");
     let clicks = handle
@@ -927,7 +927,7 @@ fn stale_generation_events_are_dropped() {
 
 // ---------- P3：热替换、状态迁移、撤权与失败恢复 ----------
 
-use uix::app::extensions::ReplacementReceipt;
+use uix_app::app::extensions::ReplacementReceipt;
 
 fn counter_package(id: &str, version: &str, schema: i64, step: i64) -> ExtensionPackage {
     let manifest = format!(
@@ -1210,11 +1210,11 @@ fn ui_draft_survives_hot_replace_in_worker() {
     // 输入草稿（经声明更新回投）。
     let sender = handle.event_sender();
     sender
-        .send(uix::app::extensions::UiEvent {
+        .send(uix_app::app::extensions::UiEvent {
             extension: "draft".to_string(),
             generation: receipt.generation,
             handler: "on-field-change".to_string(),
-            payload: uix::app::extensions::UiEventPayload::Change {
+            payload: uix_app::app::extensions::UiEventPayload::Change {
                 text: "保留我".to_string(),
             },
         })
@@ -1233,10 +1233,10 @@ fn ui_draft_survives_hot_replace_in_worker() {
         panic!("替换后应交付新声明：{replaced:?}")
     };
     // 新声明 input 值 = 迁移的 typed。
-    let uix::app::extensions::UiNode::Column { children, .. } = &node else {
+    let uix_app::app::extensions::UiNode::Column { children, .. } = &node else {
         panic!("column")
     };
-    let uix::app::extensions::UiNode::Input { value, .. } = &children[0] else {
+    let uix_app::app::extensions::UiNode::Input { value, .. } = &children[0] else {
         panic!("input")
     };
     assert_eq!(value, "保留我");
@@ -1309,7 +1309,7 @@ fn directory_packages_freeze_into_immutable_snapshots() {
 /// 一律类型化拒绝；不扩大文件访问面。
 #[test]
 fn directory_read_failures_are_typed() {
-    use uix::app::extensions::ExtensionError;
+    use uix_app::app::extensions::ExtensionError;
 
     // 来源不存在（或不是目录）。
     let missing = std::env::temp_dir().join("uix-ext-test-missing-does-not-exist");

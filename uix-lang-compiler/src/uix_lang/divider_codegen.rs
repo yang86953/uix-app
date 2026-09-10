@@ -23,7 +23,7 @@ pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnos
         ));
     }
     // 从现有公开 Divider Widget 默认契约开始构建。
-    let mut divider = quote! { ::uix::prelude::Divider::new() };
+    let mut divider = quote! { ::uix_app::prelude::Divider::new() };
     // 按源码顺序应用 Divider 专有属性。
     for attribute in &element.attributes {
         // 按属性名选择现有公开构建器。
@@ -83,7 +83,7 @@ pub(crate) fn generate_divider(element: &Element) -> Result<TokenStream, Diagnos
         }
     }
     // 通过公开 View 契约进入 Divider 的 UIX 声明壳。
-    let base = quote! { ::uix::prelude::View::build(#divider) };
+    let base = quote! { ::uix_app::prelude::View::build(#divider) };
     // 专有属性消费后继续复用统一样式与事件诊断路径。
     apply_common_attributes(
         // 传入 Divider 基础 View。

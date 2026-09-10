@@ -4,7 +4,7 @@
 // 隔离 tabs 围栏中的基础标签页。
 mod tabs {
     // 引入文档承诺的标签页公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带稳定 key 的非受控标签页构建器。
     fn compile_example() {
@@ -39,7 +39,7 @@ mod tabs {
 // 隔离 nav-tabs-advanced 围栏中的标签页高级配置。
 mod nav_tabs_advanced {
     // 引入文档承诺的标签页公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译位置、编辑、滚动与图标配置。
     fn compile_example() {
@@ -66,7 +66,7 @@ mod nav_tabs_advanced {
 // 隔离 dropdown 围栏中的基础下拉菜单。
 mod dropdown {
     // 引入文档承诺的下拉菜单公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译由字符串选项构造的下拉菜单。
     fn compile_example() {
@@ -78,7 +78,7 @@ mod dropdown {
 // 隔离 nav-dropdown-advanced 围栏中的结构化下拉菜单。
 mod nav_dropdown_advanced {
     // 引入文档承诺的下拉菜单公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译子菜单、分隔线、禁用项、图标与触发模式。
     fn compile_example() {
@@ -113,7 +113,7 @@ mod nav_dropdown_advanced {
 // 隔离 typed-navigation-route 围栏中的枚举页面路由。
 mod typed_navigation_route {
     // 引入文档承诺的导航、状态与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明应用拥有的类型化页面 key。
     #[derive(Clone, PartialEq)]
@@ -180,7 +180,7 @@ mod typed_navigation_route {
 // 隔离 typed-tabs-route 围栏中的枚举标签路由。
 mod typed_tabs_route {
     // 引入文档承诺的标签页、状态与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明应用拥有的类型化标签 key。
     #[derive(Clone, PartialEq)]
@@ -231,7 +231,7 @@ mod typed_tabs_route {
 // 隔离 navigation-typed-route 围栏中的完整 App 构建器。
 mod navigation_typed_route {
     // 引入文档承诺的应用、导航与派生宏公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明应用唯一的类型化路由真值。
     #[derive(Clone, PartialEq, Display)]

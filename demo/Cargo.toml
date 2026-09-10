@@ -14,9 +14,9 @@ resolver = "2"
 debug = "line-tables-only"
 incremental = false
 
-# ── VSCode 调试专用 profile ────────────────────────────────────
+# ── 本机调试专用 profile ──────────────────────────────────────
 # 常规 dev 仅保留行号表（line-tables-only），调试器断点可用但看不到变量值；
-# debug-full 携带完整调试信息，供 .vscode/launch.json 的 CodeLLDB 使用，
+# debug-full 携带完整调试信息，供本机调试器使用，
 # 产物独立输出到 target/debug-full/，不污染常规 dev 产物。
 [profile.debug-full]
 inherits = "dev"

@@ -4,9 +4,9 @@
 use std::time::Duration;
 
 // 引入 App、AppHandle、ViewNode 与声明式 View 入口。
-use uix::prelude::*;
+use uix_app::prelude::*;
 // 引入 Drawing 层 API 无关的回读结果。
-use uix::draw::SurfaceReadback;
+use uix_app::draw::SurfaceReadback;
 
 // 使用专用参考页固定逻辑布局的比例坐标抽样 Shape 与 Gradient。
 const REFERENCE_WIDTH: i32 = 400;

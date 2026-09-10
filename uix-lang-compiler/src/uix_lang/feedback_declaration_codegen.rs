@@ -28,7 +28,7 @@ pub(crate) fn generate_message_declaration(element: &Element) -> Result<TokenStr
     let content = string_value(required_attribute(element, "content")?)?;
     // 从公开声明构造器开始。
     let mut widget = quote! {
-        ::uix::prelude::MessageDeclaration::new(#key, #content)
+        ::uix_app::prelude::MessageDeclaration::new(#key, #content)
     };
     // 应用有限状态关键字。
     if let Some(attribute) = find_attribute(element, "type") {
@@ -80,7 +80,7 @@ pub(crate) fn generate_message_declaration(element: &Element) -> Result<TokenStr
         };
     }
     // 物化为零布局叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // key 同时保留为 View 协调身份，其他专属属性不二次映射。
     apply_common_attributes(
         // 传入已经完成声明配置的 View。
@@ -110,7 +110,7 @@ pub(crate) fn generate_notification_declaration(
     let content = string_value(required_attribute(element, "content")?)?;
     // 从公开声明构造器开始。
     let mut widget = quote! {
-        ::uix::prelude::NotificationDeclaration::new(#key, #title, #content)
+        ::uix_app::prelude::NotificationDeclaration::new(#key, #title, #content)
     };
     // 应用有限状态关键字。
     if let Some(attribute) = find_attribute(element, "type") {
@@ -162,7 +162,7 @@ pub(crate) fn generate_notification_declaration(
         };
     }
     // 物化为零布局叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // key 同时保留为 View 协调身份，其他专属属性不二次映射。
     apply_common_attributes(
         // 传入已经完成声明配置的 View。
@@ -231,13 +231,13 @@ fn status_value(attribute: &Attribute, tag: &str) -> Result<TokenStream, Diagnos
     // 映射到公开状态枚举。
     match status.as_str() {
         // 信息状态。
-        "info" => Ok(quote! { ::uix::prelude::StatusLevel::Info }),
+        "info" => Ok(quote! { ::uix_app::prelude::StatusLevel::Info }),
         // 成功状态。
-        "success" => Ok(quote! { ::uix::prelude::StatusLevel::Success }),
+        "success" => Ok(quote! { ::uix_app::prelude::StatusLevel::Success }),
         // 警告状态。
-        "warning" => Ok(quote! { ::uix::prelude::StatusLevel::Warning }),
+        "warning" => Ok(quote! { ::uix_app::prelude::StatusLevel::Warning }),
         // 错误状态。
-        "error" => Ok(quote! { ::uix::prelude::StatusLevel::Error }),
+        "error" => Ok(quote! { ::uix_app::prelude::StatusLevel::Error }),
         // 其余值拒绝静默回退。
         _ => Err(Diagnostic::new(
             // 指向非法 type。

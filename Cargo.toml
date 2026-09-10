@@ -3,12 +3,16 @@
 members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-lsp", "uix-lang-runtime"]
 
 [package]
-name = "uix"
+name = "uix-app"
 version = "0.0.8"
 edition = "2024"
 license = "MIT"
 description = "UIX cross-platform native app framework"
 repository = "https://github.com/yang86953/uix-app"
+readme = "README.md"
+publish = ["crates-io"]
+# crate 只携带源码与编译/运行必需资源；演示、编辑器扩展与维护脚本随仓库分发，不进包。
+exclude = ["demo", "editors", "extensions", "scripts"]
 
 [profile.dev]
 debug = "line-tables-only"
@@ -156,7 +160,7 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = [
 # 仅由外部消费者测试编译宿主日志配置，不进入 UIX 运行依赖。
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 门禁快照测试直接消费 Compiler System 的公开 check 入口；与生产为同一工作区实现。
-uix-lang-compiler = { path = "uix-lang-compiler" }
+uix-lang-compiler = { path = "uix-lang-compiler", version = "0.0.8" }
 
 [features]
 # 可移植模块的 AOT 执行与运行期源码装载分别按需启用。
@@ -233,6 +237,8 @@ test-harness = []
 extensions = ["dep:num-bigint", "dep:num-rational", "dep:num-integer", "dep:num-traits"]
 
 [lib]
+# 包名 uix-app 对应的 Rust 库名固定为 uix_app，消费者按 `uix_app::` 路径引用。
+name = "uix_app"
 path = "src/lib.rs"
 test = false
 

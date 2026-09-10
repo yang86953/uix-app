@@ -65,11 +65,11 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
             let widget = if is_series {
                 // 多系列固定收集嵌套 BarData 泛型，避免运行时下转静默失败。
                 quote! {
-                    ::uix::prelude::BarChart::new().series(
+                    ::uix_app::prelude::BarChart::new().series(
                         ::std::iter::IntoIterator::into_iter((#payload).clone())
                             .collect::<::std::vec::Vec<
-                                ::uix::prelude::ChartSeries<
-                                    ::std::vec::Vec<::uix::prelude::BarData>
+                                ::uix_app::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix_app::prelude::BarData>
                                 >
                             >>()
                     )
@@ -77,9 +77,9 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
             } else {
                 // 单集合保持既有 BarData 映射。
                 quote! {
-                    ::uix::prelude::BarChart::new().data(
+                    ::uix_app::prelude::BarChart::new().data(
                         ::std::iter::IntoIterator::into_iter((#payload).clone())
-                            .collect::<::std::vec::Vec<::uix::prelude::BarData>>()
+                            .collect::<::std::vec::Vec<::uix_app::prelude::BarData>>()
                     )
                 }
             };
@@ -116,11 +116,11 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
             let widget = if is_series {
                 // 多系列固定收集嵌套 LineData 泛型。
                 quote! {
-                    ::uix::prelude::LineChart::new().series(
+                    ::uix_app::prelude::LineChart::new().series(
                         ::std::iter::IntoIterator::into_iter((#payload).clone())
                             .collect::<::std::vec::Vec<
-                                ::uix::prelude::ChartSeries<
-                                    ::std::vec::Vec<::uix::prelude::LineData>
+                                ::uix_app::prelude::ChartSeries<
+                                    ::std::vec::Vec<::uix_app::prelude::LineData>
                                 >
                             >>()
                     )
@@ -128,9 +128,9 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
             } else {
                 // 单集合保持既有 LineData 映射。
                 quote! {
-                    ::uix::prelude::LineChart::new().data(
+                    ::uix_app::prelude::LineChart::new().data(
                         ::std::iter::IntoIterator::into_iter((#payload).clone())
-                            .collect::<::std::vec::Vec<::uix::prelude::LineData>>()
+                            .collect::<::std::vec::Vec<::uix_app::prelude::LineData>>()
                     )
                 }
             };
@@ -164,9 +164,9 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
         // 饼图取得 PieData 集合所有权。
         "PieChart" => (
             quote! {
-                ::uix::prelude::PieChart::new().data(
+                ::uix_app::prelude::PieChart::new().data(
                     ::std::iter::IntoIterator::into_iter((#payload).clone())
-                        .collect::<::std::vec::Vec<::uix::prelude::PieData>>()
+                        .collect::<::std::vec::Vec<::uix_app::prelude::PieData>>()
                 )
             },
             &[
@@ -206,7 +206,7 @@ pub(crate) fn generate_basic_chart(element: &Element) -> Result<TokenStream, Dia
         widget = apply_chart_attribute(widget, element, attribute)?;
     }
     // 把现有图表 Widget 物化为叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 应用公共尺寸、样式与自动化属性。
     apply_common_attributes(view, &element.attributes, consumed)
 }

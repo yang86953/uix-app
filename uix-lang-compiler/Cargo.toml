@@ -2,8 +2,9 @@
 name = "uix-lang-compiler"
 version = "0.0.8"
 edition = "2024"
-publish = ["gitea"]
-license-file = "../LICENSE"
+publish = ["crates-io"]
+license = "MIT"
+repository = "https://github.com/yang86953/uix-app"
 description = "UIX Lang shared build-time compiler system"
 
 [dependencies]

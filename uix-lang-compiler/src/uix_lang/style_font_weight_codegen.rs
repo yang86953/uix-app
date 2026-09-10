@@ -18,9 +18,9 @@ pub(super) fn font_weight_field(
     // 关键字直接选择公开常量，数值走受控构造器。
     let font_weight = match source {
         // normal 对应四百常规字重并保留显式覆盖身份。
-        "normal" => quote! { ::uix::prelude::FontWeight::NORMAL },
+        "normal" => quote! { ::uix_app::prelude::FontWeight::NORMAL },
         // bold 对应七百粗体字重。
-        "bold" => quote! { ::uix::prelude::FontWeight::BOLD },
+        "bold" => quote! { ::uix_app::prelude::FontWeight::BOLD },
         // 其他值必须解析为文档闭区间内的整数。
         _ => {
             // 小数、负数、单位和未知关键字都会在这里拒绝。
@@ -37,7 +37,7 @@ pub(super) fn font_weight_field(
             // 宏期已经证明构造必定成功。
             quote! {
                 // 运行时公开构造器再次守卫数值不变量。
-                ::uix::prelude::FontWeight::from_numeric(#value)
+                ::uix_app::prelude::FontWeight::from_numeric(#value)
                     // 该分支只由已验证字面量生成。
                     .expect("UIX 已验证 fontWeight 位于 100 到 900")
             }

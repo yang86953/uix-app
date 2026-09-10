@@ -80,12 +80,12 @@ pub(crate) fn generate_date_range_picker(
 
     // 按运行时归一化顺序绑定起点和终点状态。
     let widget = quote! {
-        ::uix::prelude::DateRangePicker::new()
+        ::uix_app::prelude::DateRangePicker::new()
             .start(&(#start_state))
             .end(&(#end_state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 DateRangePicker 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的日期范围 View。

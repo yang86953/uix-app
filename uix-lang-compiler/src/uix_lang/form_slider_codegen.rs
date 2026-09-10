@@ -39,7 +39,7 @@ pub(super) fn generate_form_slider_field(
     let maximum = range_endpoint(element, "max", 100.0, "FormSliderItem")?;
     // 建立类型化字段基础构建链。
     let mut item = quote! {
-        ::uix::prelude::FormSliderItem::new(#field, (#minimum)..=(#maximum))
+        ::uix_app::prelude::FormSliderItem::new(#field, (#minimum)..=(#maximum))
             .label(#label)
     };
     // 可选步长必须为正的有限数值。

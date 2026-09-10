@@ -4,7 +4,7 @@
 // 隔离 multi-window-open 围栏中的次窗创建与共享主题。
 mod multi_window_open {
     // 引入文档承诺的公开 AppHandle、状态与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译回调次窗创建与后续共享主题更新的独立所有权。
     fn compile_example(handle: &AppHandle, dark: bool) {
@@ -35,7 +35,7 @@ mod multi_window_open {
 // 隔离 multi-window-lifecycle 围栏中的窗口存活观测与激活请求。
 mod multi_window_lifecycle {
     // 引入文档承诺的公开 AppHandle 与 typed Result。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译窗口句柄的瞬时存活快照与 owner-thread 激活请求。
     fn compile_example(handle: &AppHandle) -> Result<(), Error> {
@@ -52,7 +52,7 @@ mod multi_window_lifecycle {
 // 隔离 multi-window-control 围栏中的标准窗口交互。
 mod multi_window_control {
     // 引入文档承诺的公开窗口控制与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译标准控制组合、具名关闭控件、拖拽区域与缩放热区。
     fn compile_example() {
@@ -95,7 +95,7 @@ mod multi_window_control {
 // 隔离 multi-window-config 围栏中的延迟窗口配置。
 mod multi_window_config {
     // 引入文档承诺的公开 Application、WindowConfig 与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译拥有型窗口配置到 on_start 延迟打开的移动语义。
     fn documented_main() {

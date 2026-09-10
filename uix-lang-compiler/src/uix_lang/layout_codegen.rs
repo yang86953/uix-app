@@ -51,10 +51,10 @@ pub(crate) fn generate_container(element: &Element) -> Result<TokenStream, Diagn
     // 按已验证方向复用公开 Flex 构造器。
     let mut base = if row {
         // 横向 Container 继续使用公开 row 函数。
-        quote! { ::uix::prelude::row(#children) }
+        quote! { ::uix_app::prelude::row(#children) }
     } else {
         // UIX 默认 flexGrow=0，纵向 Container 必须保持内容固有高度。
-        quote! { ::uix::prelude::column_fit(#children) }
+        quote! { ::uix_app::prelude::column_fit(#children) }
     };
     // 按源码顺序应用 Container 专属简写属性。
     base = apply_container_shorthands(base, element)?;
@@ -76,7 +76,7 @@ pub(crate) fn generate_column(element: &Element) -> Result<TokenStream, Diagnost
     // 生成保持源码顺序的子节点向量。
     let children = generate_children(&element.children)?;
     // UIX 默认 flexGrow=0；显式 flexGrow 属性由公共属性阶段覆盖。
-    let base = quote! { ::uix::prelude::column_fit(#children) };
+    let base = quote! { ::uix_app::prelude::column_fit(#children) };
     // 应用统一公共属性。
     apply_common_attributes(base, &element.attributes, &[])
 }
@@ -88,7 +88,7 @@ pub(crate) fn generate_scroll_view(element: &Element) -> Result<TokenStream, Dia
     // 递归生成唯一内容 View。
     let child = generate_node_view(child)?;
     // 默认方向直接复用公开 scroll 构造器的垂直契约。
-    let mut base = quote! { ::uix::prelude::scroll(#child) };
+    let mut base = quote! { ::uix_app::prelude::scroll(#child) };
     // 可选方向必须在编译期确定。
     if let Some(attribute) = find_attribute(element, "direction") {
         // 读取文档登记的方向关键字。
@@ -196,7 +196,7 @@ pub(crate) fn generate_row(element: &Element) -> Result<TokenStream, Diagnostic>
     // 只通过公开 GridBuilder 组合现有运行时布局能力。
     let base = quote! {
         // 创建源码顺序中的列 View。
-        (::uix::prelude::grid(::std::vec![#(#views),*]))
+        (::uix_app::prelude::grid(::std::vec![#(#views),*]))
             // 启用现有 24 单元响应式轨道。
             .responsive()
             // 绑定与子 View 一一对应的列配置。
@@ -234,7 +234,7 @@ pub(crate) fn generate_grid(element: &Element) -> Result<TokenStream, Diagnostic
     // 先建立公开 GridBuilder 与列轨道。
     let mut base = quote! {
         // 创建源码顺序中的列 View 并声明列轨道。
-        (::uix::prelude::grid(::std::vec![#(#views),*])).columns(#columns)
+        (::uix_app::prelude::grid(::std::vec![#(#views),*])).columns(#columns)
     };
     // 可选 rows 使用同一轨道解析契约。
     if let Some(attribute) = find_attribute(element, "rows") {
@@ -372,7 +372,7 @@ fn direct_columns<'a>(
 // 生成 Row 下响应式 Col 的公开配置链。
 fn generate_responsive_col_config(column: &Element) -> Result<TokenStream, Diagnostic> {
     // 从现有运行时默认 24 跨度开始。
-    let mut config = quote! { ::uix::prelude::Col::new() };
+    let mut config = quote! { ::uix_app::prelude::Col::new() };
     // 按源码顺序应用全部结构属性。
     for attribute in &column.attributes {
         // 映射基础与响应式跨度。
@@ -465,7 +465,7 @@ fn generate_column_view(
     // 生成 Col 内保持源码顺序的子节点。
     let children = generate_children(&column.children)?;
     // Col 内容默认保持固有高度，与 UIX flexGrow=0 契约一致。
-    let base = quote! { ::uix::prelude::column_fit(#children) };
+    let base = quote! { ::uix_app::prelude::column_fit(#children) };
     // 结构属性由父布局消费，其余属性进入统一 View 映射。
     apply_common_attributes(base, &column.attributes, consumed)
 }
@@ -486,7 +486,7 @@ fn generate_track_vector(
         // auto 直接映射自动轨道。
         if track == "auto" {
             // 保存自动轨道表达式。
-            tracks.push(quote! { ::uix::prelude::GridTrack::Auto });
+            tracks.push(quote! { ::uix_app::prelude::GridTrack::Auto });
             // 继续下一轨道。
             continue;
         }
@@ -535,10 +535,10 @@ fn generate_track_vector(
         // 按单位生成公开 GridTrack 变体。
         if constructor == "fr" {
             // 保存弹性轨道。
-            tracks.push(quote! { ::uix::prelude::GridTrack::Fr(#value) });
+            tracks.push(quote! { ::uix_app::prelude::GridTrack::Fr(#value) });
         } else {
             // 保存固定像素轨道。
-            tracks.push(quote! { ::uix::prelude::GridTrack::Px(#value) });
+            tracks.push(quote! { ::uix_app::prelude::GridTrack::Px(#value) });
         }
     }
     // 空轨道列表没有可执行布局语义。

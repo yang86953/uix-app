@@ -54,7 +54,7 @@ impl WidgetExpander {
         // 在展开前取得窗口私有的既有组件状态作用域。
         self.push_setup(quote! {
             // 复用组件状态存储作为文档根样式状态生命周期所有者。
-            let #scope = ::uix::ui::__private::uix_widget_scope(
+            let #scope = ::uix_app::ui::__private::uix_widget_scope(
                 concat!(module_path!(), ":", file!(), ":", line!(), ":", column!()),
                 #declaration_id,
             );

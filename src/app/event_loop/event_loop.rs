@@ -525,7 +525,7 @@ where
                     ev.type_.diagnostic_name(),
                 );
                 tracing::debug!(
-                    target: "uix::diagnostics",
+                    target: "uix_app::diagnostics",
                     debug_event = "input_received",
                     correlation_id,
                     window_id = ?window_id,
@@ -568,7 +568,7 @@ where
                                     debug_mode
                                         .record_debug_hover_changed(window_id, correlation_id);
                                     tracing::debug!(
-                                        target: "uix::diagnostics",
+                                        target: "uix_app::diagnostics",
                                         debug_event = "debug_hover_changed",
                                         correlation_id,
                                         window_id = ?window_id,
@@ -599,7 +599,7 @@ where
                                 debug_correlation_id = Some(debug_mode.next_debug_correlation_id());
                             }
                             tracing::info!(
-                                target: "uix::diagnostics",
+                                target: "uix_app::diagnostics",
                                 debug_event = "shortcut_toggle",
                                 correlation_id = debug_correlation_id.unwrap_or(0),
                                 has_correlation = debug_correlation_id.is_some(),

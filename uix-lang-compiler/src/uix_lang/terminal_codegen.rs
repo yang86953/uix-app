@@ -49,10 +49,10 @@ pub(crate) fn generate_terminal(element: &Element) -> Result<TokenStream, Diagno
     // 把数组或 Vec 统一收集为运行时要求的 Vec<TerminalLine>。
     let lines = quote! {
         ::std::iter::IntoIterator::into_iter((#data).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::TerminalLine>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::TerminalLine>>()
     };
     // 从公开默认构造器开始并绑定输出行。
-    let mut widget = quote! { ::uix::prelude::Terminal::new().lines(#lines) };
+    let mut widget = quote! { ::uix_app::prelude::Terminal::new().lines(#lines) };
     // 可选提示符接受字符串字面量或受限字符串表达式。
     if let Some(attribute) = find_attribute(element, "prompt") {
         // 生成提示符字符串令牌。
@@ -62,7 +62,7 @@ pub(crate) fn generate_terminal(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // Terminal 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性并应用公共尺寸、样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置的终端 View。

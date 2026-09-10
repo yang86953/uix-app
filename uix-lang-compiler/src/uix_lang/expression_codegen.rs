@@ -600,7 +600,7 @@ fn generate_call(
         // 生成主题名称参数。
         let name = generate_expression_inner(&argument.value, event)?;
         // 生成框架主题切换入口调用。
-        return Ok(quote! { ::uix::ui::__private::uix_set_theme(&(#name)) });
+        return Ok(quote! { ::uix_app::ui::__private::uix_set_theme(&(#name)) });
     }
     // 识别不可变数组操作。
     if let ExpressionKind::Member { object, member } = &callee.kind {

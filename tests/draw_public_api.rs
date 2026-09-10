@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use uix::core::{Point, Rect, Result};
-use uix::draw::resources::font::text_backend::TextLayoutOptions;
-use uix::draw::{
+use uix_app::core::{Point, Rect, Result};
+use uix_app::draw::resources::font::text_backend::TextLayoutOptions;
+use uix_app::draw::{
     Color, FontHandle, FontService, GlyphRaster, LineMetrics, PathBuilder, PathSegment,
     PositionedGlyph, TextBackend, TextLayout,
 };
-use uix::platform::services::FontSystemInfo;
+use uix_app::platform::services::FontSystemInfo;
 
 #[test]
 fn draw_color_contract_preserves_channels_and_alpha() {

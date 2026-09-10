@@ -45,12 +45,12 @@ pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diag
     // 把数组或 Vec 统一收集为运行时构造器要求的拥有型集合。
     let breadcrumb_items = quote! {
         ::std::iter::IntoIterator::into_iter((#items).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::BreadcrumbItem>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::BreadcrumbItem>>()
     };
 
     // 由 Breadcrumb 运行时接收条目并落实文档的末项当前页语义。
     let mut widget = quote! {
-        ::uix::prelude::Breadcrumb::new()
+        ::uix_app::prelude::Breadcrumb::new()
             .items(#breadcrumb_items)
             .last_active()
     };
@@ -69,7 +69,7 @@ pub(crate) fn generate_breadcrumb(element: &Element) -> Result<TokenStream, Diag
         widget = quote! { (#widget).max_items(#max_items) };
     }
     // Breadcrumb 物化为公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Breadcrumb 专有属性并应用公共 View 属性。
     apply_common_attributes(
         // 传入已配置路径数据的 Breadcrumb View。

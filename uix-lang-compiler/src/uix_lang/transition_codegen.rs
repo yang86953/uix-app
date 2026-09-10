@@ -69,14 +69,14 @@ pub(super) fn apply_transition(
         // 只求值一次静态位置或实际 For 路径。
         let #instance_path = #instance_path_value;
         // 组合最终 View key，确保换 key 不复用旧动画状态。
-        let #identity = ::uix::ui::__private::uix_transition_identity(
+        let #identity = ::uix_app::ui::__private::uix_transition_identity(
             // 借用已经应用 key 的最终目标 View。
             &#target_view,
             // 借用实例路径文本。
             &#instance_path,
         );
         // 从最近组件作用域派生实际节点 transition 子作用域。
-        let #node_scope = ::uix::ui::__private::uix_widget_child_scope(
+        let #node_scope = ::uix_app::ui::__private::uix_widget_child_scope(
             // 借用最近组件或文档根作用域。
             &#widget_scope,
             // 使用稳定声明编号。
@@ -85,7 +85,7 @@ pub(super) fn apply_transition(
             #identity,
         );
         // 在窗口私有组件状态存储中复用 transition 运行时。
-        let #state = ::uix::ui::__private::uix_widget_state(
+        let #state = ::uix_app::ui::__private::uix_widget_state(
             // 借用实际节点子作用域。
             &#node_scope,
             // 子作用域内 transition 只占用固定字段零。
@@ -93,7 +93,7 @@ pub(super) fn apply_transition(
             // 初始化闭包只在首次挂载时执行。
             || {
                 // 从首次最终目标静止创建全部 typed Animated 源。
-                match ::uix::ui::__private::uix_transition_state(
+                match ::uix_app::ui::__private::uix_transition_state(
                     // 借用首次最终目标。
                     &#target_view,
                     // 传入编译期闭合字段集合。
@@ -112,13 +112,13 @@ pub(super) fn apply_transition(
         // 读取持久化句柄并登记组件结构性状态依赖。
         let #transition = #state.get();
         // 比较本轮最终目标并原位重定向变化字段。
-        let #target_view = match ::uix::ui::__private::uix_apply_transition(
+        let #target_view = match ::uix_app::ui::__private::uix_apply_transition(
             // 消费本轮目标 View。
             #target_view,
             // 借用持久化 transition 状态。
             &#transition,
             // 传入已验证播放配置。
-            ::uix::ui::__private::UixTransitionSpec {
+            ::uix_app::ui::__private::UixTransitionSpec {
                 // 保存单次时长。
                 duration: #duration,
                 // 保存启动延迟。
@@ -146,27 +146,27 @@ fn transition_property_tokens(property: AnimationPropertyKind) -> TokenStream {
     match property {
         // 显式宽度。
         AnimationPropertyKind::Width => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::Width }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::Width }
         }
         // 显式高度。
         AnimationPropertyKind::Height => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::Height }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::Height }
         }
         // 统一圆角。
         AnimationPropertyKind::BorderRadius => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::BorderRadius }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::BorderRadius }
         }
         // 节点透明度。
         AnimationPropertyKind::Opacity => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::Opacity }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::Opacity }
         }
         // 前景颜色。
         AnimationPropertyKind::Color => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::Color }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::Color }
         }
         // 普通背景颜色。
         AnimationPropertyKind::BackgroundColor => {
-            quote! { ::uix::ui::__private::UixTransitionProperty::BackgroundColor }
+            quote! { ::uix_app::ui::__private::UixTransitionProperty::BackgroundColor }
         }
     }
 }

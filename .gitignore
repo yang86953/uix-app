@@ -1,8 +1,12 @@
 # Rust build artifacts
 target/
 
-# IDE（调试配置随 .zed/ 一并入库，仅忽略本地杂项）
+# IDE 个人配置（.vscode/、.zed/、.idea/ 等编辑器本地设置不入公开仓库）
 .idea/
+.vscode/
+.zed/
+.fleet/
+.helix/
 *.swp
 *.swo
 *~
@@ -42,7 +46,7 @@ demo/target/
 # Cargo.lock：默认不入库；下方独立固定依赖应用保留自己的解析锁。
 Cargo.lock
 
-# 独立任务清单示例按第一方 Git 完整 rev 消费，随应用提交解析锁。
+# 独立任务清单示例随公开源码树以 path+version 消费框架，随应用提交解析锁。
 !demo/task-list/Cargo.lock
 
 # Codex CLI 的本地 MCP 注册，不入公开仓库。

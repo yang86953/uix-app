@@ -1,10 +1,10 @@
 //! Regression contract: authored pixels are em units, including fractional DPI.
 use ab_glyph::{Font, FontRef};
-use uix::draw::resources::font::text_backend::{TextLayoutOptions, normal_line_height};
-use uix::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
-use uix::draw::{FontService, HAlign, TextBackend, VAlign};
+use uix_app::draw::resources::font::text_backend::{TextLayoutOptions, normal_line_height};
+use uix_app::draw::resources::font::text_backends::ab_glyph::AbGlyphBackend;
+use uix_app::draw::{FontService, HAlign, TextBackend, VAlign};
 
-const FONT: &[u8] = include_bytes!("../assets/fonts/LXGWWenKai-Regular.ttf");
+const FONT: &[u8] = include_bytes!("fixtures/fonts/uix-test-body.ttf");
 
 fn options(font_size: f32, line_height: f32) -> TextLayoutOptions {
     TextLayoutOptions {

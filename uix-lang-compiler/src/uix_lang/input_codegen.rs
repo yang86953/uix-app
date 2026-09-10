@@ -30,7 +30,7 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 按文档缺省值选择单行文本构造器。
-    let mut widget = quote! { ::uix::prelude::Input::new("") };
+    let mut widget = quote! { ::uix_app::prelude::Input::new("") };
     // 输入类型必须在编译期确定，避免运行时近似未知模式。
     if let Some(attribute) = find_attribute(element, "type") {
         // 读取经过验证的类型字面量。
@@ -38,11 +38,11 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
         // 映射到公开 Input 构造器。
         widget = match kind.as_str() {
             // text 沿用普通单行输入。
-            "text" => quote! { ::uix::prelude::Input::new("") },
+            "text" => quote! { ::uix_app::prelude::Input::new("") },
             // textarea 使用公开多行构造器。
-            "textarea" => quote! { ::uix::prelude::Input::textarea() },
+            "textarea" => quote! { ::uix_app::prelude::Input::textarea() },
             // password 使用公开密码构造器。
-            "password" => quote! { ::uix::prelude::Input::password() },
+            "password" => quote! { ::uix_app::prelude::Input::password() },
             // 未登记模式必须在编译期拒绝。
             _ => {
                 // 返回类型值诊断。
@@ -107,7 +107,7 @@ pub(crate) fn generate_input(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 先物化公开叶节点，Change 处理器与样式都由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选值变化事件读取统一文本载荷。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

@@ -46,7 +46,7 @@ pub(crate) fn generate_collapse(element: &Element) -> Result<TokenStream, Diagno
     // 生成受限类型化面板表达式。
     let panels = generate_expression(&panels_expression.expression, None)?;
     // 从公开构造器和拥有型面板入口开始配置。
-    let mut widget = quote! { ::uix::prelude::Collapse::new().panels((#panels).clone()) };
+    let mut widget = quote! { ::uix_app::prelude::Collapse::new().panels((#panels).clone()) };
 
     // 手风琴配置接受布尔简写、字面量或表达式。
     if let Some(attribute) = find_attribute(element, "accordion") {
@@ -77,7 +77,7 @@ pub(crate) fn generate_collapse(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 物化为公开叶 View，再登记可选变化观察器。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // Change 事件发布本次切换面板的稳定 key。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

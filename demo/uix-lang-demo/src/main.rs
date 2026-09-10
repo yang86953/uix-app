@@ -1,9 +1,5 @@
 // 导入应用组合根与 uix-lang 编译期入口。
-use uix::prelude::*;
-
-// 把主演示正文与中文统一到随应用分发的同一字体字节（LXGW WenKai，OFL）。
-const DETERMINISTIC_UI_FONT: &[u8] =
-    include_bytes!("../../../assets/fonts/LXGWWenKai-Regular.ttf");
+use uix_app::prelude::*;
 
 // 仅在显式测试能力存在时编译专用图形恢复验收组合模块。
 #[cfg(feature = "test-harness")]
@@ -83,20 +79,20 @@ fn main() {
     }
 
     // 声明文件展开出较深视图树；是否换用大栈 UI 线程由平台层决定。
-    uix::platform::run_on_ui_thread("uix-lang-demo-gui", move || run_gui(options));
+    uix_app::platform::run_on_ui_thread("uix-lang-demo-gui", move || run_gui(options));
 }
 
 // 选择普通全组件文档或显式测试页面，并进入唯一应用事件循环。
 fn run_gui(options: LaunchOptions) {
     // Agent 确认回调只取得 Application System 交付的公开句柄。
-    let agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>> =
+    let agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix_app::app::AppHandle>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
     // 保存可 clone 的诊断句柄，供应用退出后消费复现清单与报告摘要。
-    let diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>> =
+    let diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix_app::diagnostics::Diagnostics>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
     // 持有报告即时订阅句柄：订阅随演示会话存活，drop 即注销。
     let report_subscription_slot: std::sync::Arc<
-        std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
+        std::sync::Mutex<Option<uix_app::diagnostics::ReportSubscription>>,
     > = std::sync::Arc::new(std::sync::Mutex::new(None));
 
     // 测试能力存在时按运行时开关选择独立验收组合或普通主演示。
@@ -127,17 +123,17 @@ fn run_gui(options: LaunchOptions) {
         )
     };
 
-    // 所有启动模式都在窗口创建前安装同一正文与 CJK 字体包。
-    let app = with_deterministic_fonts(app);
+    // 演示不注入显式字体包：正文与中文由平台系统字体发现装载（应用可用
+    // App::font_bundle 显式分发随应用携带的字体）。
 
     // feature 与运行参数同时存在时才开放 Agent Bridge。
     #[cfg(feature = "agent-control")]
     let app = if options.agent_control {
         app.enable_agent_control()
             // 专用后台根不捕获主演示的导航、草稿、终端或窗口句柄。
-            .agent_root(|| uix::uix!("src/agent.uix"))
+            .agent_root(|| uix_app::uix!("src/agent.uix"))
             .agent_require_confirm("demo-popconfirm-trigger")
-            .agent_confirm_ui(move |request: uix::app::AgentConfirmationRequest| {
+            .agent_confirm_ui(move |request: uix_app::app::AgentConfirmationRequest| {
                 tracing::warn!(
                     window_id = ?request.window_id,
                     confirm_id = request.confirm_id,
@@ -173,10 +169,10 @@ fn run_gui(options: LaunchOptions) {
 // 只组装语言文档无法拥有的应用生命周期策略；全部界面来自 main.uix。
 fn build_demo_app(
     follow_system_theme: bool,
-    agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix::app::AppHandle>>>,
-    diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>>,
+    agent_handle_slot: std::sync::Arc<std::sync::Mutex<Option<uix_app::app::AppHandle>>>,
+    diagnostics_slot: std::sync::Arc<std::sync::Mutex<Option<uix_app::diagnostics::Diagnostics>>>,
     report_subscription_slot: std::sync::Arc<
-        std::sync::Mutex<Option<uix::diagnostics::ReportSubscription>>,
+        std::sync::Mutex<Option<uix_app::diagnostics::ReportSubscription>>,
     >,
 ) -> App {
     // 宿主显式配置诊断：崩溃报告与复现清单写入固定临时目录。
@@ -184,7 +180,7 @@ fn build_demo_app(
         .custom_title_bar(true)
         .follow_system_theme(follow_system_theme)
         .diagnostics(
-            uix::diagnostics::DiagnosticsConfig::default()
+            uix_app::diagnostics::DiagnosticsConfig::default()
                 .crash_report_directory(demo_diagnostics_directory()),
         )
         .on_start(move |handle| {
@@ -217,7 +213,7 @@ fn demo_diagnostics_directory() -> std::path::PathBuf {
 
 // 应用退出后的宿主诊断消费：写出复现清单并汇总留存报告。
 fn finalize_diagnostics(
-    diagnostics_slot: &std::sync::Arc<std::sync::Mutex<Option<uix::diagnostics::Diagnostics>>>,
+    diagnostics_slot: &std::sync::Arc<std::sync::Mutex<Option<uix_app::diagnostics::Diagnostics>>>,
 ) {
     // 测试验收组合不经过 demo 组装根，没有可消费的诊断句柄。
     let Some(diagnostics) = diagnostics_slot.lock().unwrap().clone() else {
@@ -234,14 +230,6 @@ fn finalize_diagnostics(
         Ok(path) => tracing::info!(manifest = %path.display(), "demo debug repro manifest written"),
         Err(error) => tracing::warn!("demo debug repro manifest write failed: {}", error.what()),
     }
-}
-
-// 将确定性正文资源注入 Application 组合根，不让声明页面接触字体句柄。
-fn with_deterministic_fonts(app: App) -> App {
-    app.font_bundle(uix::draw::FontBundle::from_static(
-        "LXGW WenKai",
-        DETERMINISTIC_UI_FONT,
-    ))
 }
 
 // 初始化演示程序使用的环境过滤日志订阅器。

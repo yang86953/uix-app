@@ -112,7 +112,7 @@ pub(crate) fn generate_dropdown(element: &Element) -> Result<TokenStream, Diagno
     let items = generate_expression(&items_expression.expression, None)?;
     // 运行时 owner 接收 keyed 数据并持有完整 trigger ViewNode。
     let mut widget = quote! {
-        ::uix::prelude::Dropdown::new("")
+        ::uix_app::prelude::Dropdown::new("")
             .keyed_items((#items).clone())
             .trigger_view(#trigger)
     };
@@ -124,7 +124,7 @@ pub(crate) fn generate_dropdown(element: &Element) -> Result<TokenStream, Diagno
         widget = quote! { (#widget).trigger(#trigger_mode) };
     }
     // trigger 子树由运行时 build_view_children 提供，因此外层仍是叶声明。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选变化事件观察运行时已经提交的稳定 key。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。
@@ -170,13 +170,13 @@ fn trigger_tokens(attribute: &Attribute) -> Result<TokenStream, Diagnostic> {
     // 按批准文档关键字生成运行时枚举。
     match value.as_str() {
         // 点击触发映射 Click。
-        "click" => Ok(quote! { ::uix::prelude::TriggerMode::Click }),
+        "click" => Ok(quote! { ::uix_app::prelude::TriggerMode::Click }),
         // 悬停触发映射 Hover。
-        "hover" => Ok(quote! { ::uix::prelude::TriggerMode::Hover }),
+        "hover" => Ok(quote! { ::uix_app::prelude::TriggerMode::Hover }),
         // 焦点范围触发映射 Focus。
-        "focus" => Ok(quote! { ::uix::prelude::TriggerMode::Focus }),
+        "focus" => Ok(quote! { ::uix_app::prelude::TriggerMode::Focus }),
         // 右键触发映射 ContextMenu。
-        "contextMenu" => Ok(quote! { ::uix::prelude::TriggerMode::ContextMenu }),
+        "contextMenu" => Ok(quote! { ::uix_app::prelude::TriggerMode::ContextMenu }),
         // 其他关键字不得静默回退为 click。
         _ => Err(Diagnostic::new(
             // 指向完整 trigger 属性。

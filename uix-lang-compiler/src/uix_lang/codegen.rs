@@ -75,7 +75,7 @@ fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic
         .retain(|attribute| attribute.name != SOURCE_ID_ATTRIBUTE);
     let view = generate_element(&generated_element)?;
     // 通过公开 View trait 统一物化为 ViewNode。
-    let view = quote! { ::uix::prelude::View::build(#view) };
+    let view = quote! { ::uix_app::prelude::View::build(#view) };
     // 把所有嵌套组件的私有状态作用域依次附加到同一个实际根节点。
     let view = apply_widget_scopes(view, &element.widget_scopes)?;
     // reactive 组件根包进独立捕获帧的 scoped 闭包：收归的准备语句在
@@ -86,7 +86,7 @@ fn generate_view_for_source(element: &Element) -> Result<TokenStream, Diagnostic
         // 复用公开 scoped 组合器建立子树作用域。
         quote! {
             // 先重建 props、状态与回调适配器，再构建只含核心元素的 View。
-            ::uix::prelude::scoped(move || { #(#setup)* #view })
+            ::uix_app::prelude::scoped(move || { #(#setup)* #view })
         }
     } else {
         // 普通根保持既有表达式。
@@ -127,9 +127,9 @@ pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic
             let selectable = boolean_value(attribute)?;
             // 使用公开 Label 构造器在布尔两支中保持同一组件类型。
             let base = quote! {
-                ::uix::prelude::ViewNode::leaf({
+                ::uix_app::prelude::ViewNode::leaf({
                     // 构造既有 Label 组件。
-                    let __uix_label = ::uix::prelude::Label::new(#content);
+                    let __uix_label = ::uix_app::prelude::Label::new(#content);
                     // 为真时启用既有选择语义，否则保留默认不可选。
                     if #selectable { __uix_label.selectable() } else { __uix_label }
                 })
@@ -140,9 +140,9 @@ pub(super) fn generate_text(element: &Element) -> Result<TokenStream, Diagnostic
     }
     // Text 的字面量与插值共享折行契约；Label 保持既有不折行标签语义。
     let base = if element.name == "Text" {
-        quote! { ::uix::prelude::View::build(::uix::prelude::Label::new(#content).word_wrap(true)) }
+        quote! { ::uix_app::prelude::View::build(::uix_app::prelude::Label::new(#content).word_wrap(true)) }
     } else {
-        quote! { ::uix::prelude::label(#content) }
+        quote! { ::uix_app::prelude::label(#content) }
     };
     // 应用文本支持的公共属性与事件。
     apply_common_attributes(base, &element.attributes, &[])
@@ -164,7 +164,7 @@ pub(super) fn generate_button_with_group_position(
     // 按钮当前公开 API 只接收文本内容。
     let content = generate_text_content(&element.children, element.span)?;
     // 构造公开按钮构建器。
-    let mut view = quote! { ::uix::prelude::button(#content) };
+    let mut view = quote! { ::uix_app::prelude::button(#content) };
     // 先处理必须在 StyleExt 物化前调用的按钮专有属性。
     for attribute in &element.attributes {
         // 按钮类型选择公开变体方法。
@@ -216,11 +216,11 @@ pub(super) fn generate_button_with_group_position(
             // 选择公开尺寸枚举变体。
             let size = match size.as_str() {
                 // 小尺寸映射到 Small。
-                "small" => quote! { ::uix::prelude::ControlSize::Small },
+                "small" => quote! { ::uix_app::prelude::ControlSize::Small },
                 // 文档默认中尺寸映射到 Medium。
-                "middle" => quote! { ::uix::prelude::ControlSize::Medium },
+                "middle" => quote! { ::uix_app::prelude::ControlSize::Medium },
                 // 大尺寸映射到 Large。
-                "large" => quote! { ::uix::prelude::ControlSize::Large },
+                "large" => quote! { ::uix_app::prelude::ControlSize::Large },
                 // 未登记关键字返回定向诊断。
                 _ => {
                     // 指出实际非法尺寸与合法集合。
@@ -298,7 +298,7 @@ pub(super) fn generate_icon(element: &Element) -> Result<TokenStream, Diagnostic
     // 生成字符串或表达式图标名称。
     let name = string_value(name_attribute)?;
     // 构造公开 Icon 组件。
-    let mut icon = quote! { ::uix::prelude::Icon::new(#name) };
+    let mut icon = quote! { ::uix_app::prelude::Icon::new(#name) };
     // 可选 size 必须在包装为 ViewNode 前应用。
     if let Some(attribute) = element
         // 借用属性列表。
@@ -314,7 +314,7 @@ pub(super) fn generate_icon(element: &Element) -> Result<TokenStream, Diagnostic
         icon = quote! { (#icon).size(#size) };
     }
     // 把 Widget 包装为公开 ViewNode。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#icon) };
+    let base = quote! { ::uix_app::prelude::ViewNode::leaf(#icon) };
     // 应用其余公共属性与事件。
     apply_common_attributes(base, &element.attributes, &["name", "size"])
 }
@@ -506,7 +506,7 @@ pub(super) fn generate_children(children: &[Node]) -> Result<TokenStream, Diagno
     // 返回构建完成的 ViewNode 向量。
     Ok(quote! {{
         // 创建公开 ViewNode 子节点向量。
-        let mut #output = ::std::vec::Vec::<::uix::prelude::ViewNode>::new();
+        let mut #output = ::std::vec::Vec::<::uix_app::prelude::ViewNode>::new();
         // 按源码顺序执行节点追加与控制流。
         #statements
         // 返回有序子节点。
@@ -604,7 +604,7 @@ pub(super) fn generate_node_view(node: &Node) -> Result<TokenStream, Diagnostic>
             // 借用文本值用于字面量生成。
             let value = &text.value;
             // 返回文本 View。
-            Ok(quote! { ::uix::prelude::label(#value) })
+            Ok(quote! { ::uix_app::prelude::label(#value) })
         }
         // 直接插值生成动态字符串 label。
         Node::Interpolation(expression) => {
@@ -613,7 +613,7 @@ pub(super) fn generate_node_view(node: &Node) -> Result<TokenStream, Diagnostic>
             // 返回使用公开 ToString 的文本 View。
             Ok(quote! {
                 // 把插值值转换为拥有所有权的文本。
-                ::uix::prelude::label(::std::string::ToString::to_string(&(#value)))
+                ::uix_app::prelude::label(::std::string::ToString::to_string(&(#value)))
             })
         }
         // 成员声明块是纯语法载体，声明解析阶段已经从模板中剥离。
@@ -725,7 +725,7 @@ pub(super) fn generate_scoped_child_statements(
     // 返回缓冲、标记和追加的完整控制流语句。
     Ok(quote! {
         // 为当前控制分支收集实际生成的 View 根节点。
-        let mut #scoped_output = ::std::vec::Vec::<::uix::prelude::ViewNode>::new();
+        let mut #scoped_output = ::std::vec::Vec::<::uix_app::prelude::ViewNode>::new();
         // 保持分支内部源码顺序生成全部子节点。
         #generated_children
         // 为每个实际根追加控制元素继承的组件作用域标记。

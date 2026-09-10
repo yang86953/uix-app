@@ -16,7 +16,7 @@ pub(crate) fn generate_typography(element: &Element) -> Result<TokenStream, Diag
     // 生成只包含文本与插值的排版内容。
     let content = generate_text_content(&element.children, element.span)?;
     // 从现有公开 Typography 正文构造器开始构建。
-    let mut typography = quote! { ::uix::prelude::Typography::text(&(#content)) };
+    let mut typography = quote! { ::uix_app::prelude::Typography::text(&(#content)) };
     // 按源码顺序应用 Typography 专有属性。
     for attribute in &element.attributes {
         // 按属性名选择公开构建器。
@@ -67,7 +67,7 @@ pub(crate) fn generate_typography(element: &Element) -> Result<TokenStream, Diag
         }
     }
     // Typography 是不持有元素子树的叶组件。
-    let base = quote! { ::uix::prelude::ViewNode::leaf(#typography) };
+    let base = quote! { ::uix_app::prelude::ViewNode::leaf(#typography) };
     // 专有属性消费后继续复用统一样式与事件诊断路径。
     apply_common_attributes(
         // 传入 Typography 基础 View。
@@ -140,22 +140,22 @@ fn semantic_color_value(attribute: &Attribute) -> Result<TokenStream, Diagnostic
         // 次要文字使用中性文字令牌。
         "secondary" => Ok(quote! {
             // 构造主题感知的次要文字颜色。
-            ::uix::prelude::ColorValue::neutral(::uix::prelude::NeutralRole::TextSecondary)
+            ::uix_app::prelude::ColorValue::neutral(::uix_app::prelude::NeutralRole::TextSecondary)
         }),
         // 成功文字使用功能成功色。
         "success" => Ok(quote! {
             // 构造主题感知的成功颜色。
-            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::Success)
+            ::uix_app::prelude::ColorValue::palette(::uix_app::prelude::PaletteColor::Success)
         }),
         // 警告文字使用功能警告色。
         "warning" => Ok(quote! {
             // 构造主题感知的警告颜色。
-            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::Warning)
+            ::uix_app::prelude::ColorValue::palette(::uix_app::prelude::PaletteColor::Warning)
         }),
         // 危险文字使用功能错误色。
         "danger" => Ok(quote! {
             // 构造主题感知的错误颜色。
-            ::uix::prelude::ColorValue::palette(::uix::prelude::PaletteColor::Error)
+            ::uix_app::prelude::ColorValue::palette(::uix_app::prelude::PaletteColor::Error)
         }),
         // 其他角色不能静默近似。
         _ => Err(Diagnostic::new(

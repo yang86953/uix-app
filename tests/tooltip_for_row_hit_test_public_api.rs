@@ -2,9 +2,9 @@
 #![cfg(feature = "test-harness")]
 
 // 引入 UIX 编译入口、响应式状态、公开 View 类型与指针事件。
-use uix::prelude::{KeyMod, MouseButton, Point, State, StyleExt, SystemEvent, ViewNode, uix};
+use uix_app::prelude::{KeyMod, MouseButton, Point, State, StyleExt, SystemEvent, ViewNode, uix};
 // 引入与真实组件事件和协调路径一致的公开测试驱动。
-use uix::ui::test_harness::TestApp;
+use uix_app::ui::test_harness::TestApp;
 
 // 按真实窗口路径驱动一次左键点击手势。
 //

@@ -17,10 +17,10 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use uix::app::agent_workspace::AgentWorkspace;
-use uix::app::modules::Effect as ModuleEffect;
-use uix::app::modules::*;
-use uix::prelude::*;
+use uix_app::app::agent_workspace::AgentWorkspace;
+use uix_app::app::modules::Effect as ModuleEffect;
+use uix_app::app::modules::*;
+use uix_app::prelude::*;
 
 const WAIT: Duration = Duration::from_secs(3);
 const TEXT_LIMIT: usize = 16 * 1024;

@@ -4,14 +4,14 @@
 
 use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 
-use uix::draw::{FontHandle, FontService, HAlign, VAlign};
-use uix::draw::resources::font::text_backend::{PositionedGlyph, TextLayoutOptions};
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::draw::{FontHandle, FontService, HAlign, VAlign};
+use uix_app::draw::resources::font::text_backend::{PositionedGlyph, TextLayoutOptions};
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 const FONT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/assets/fonts/LXGWWenKai-Regular.ttf"
+    "/tests/fixtures/fonts/uix-test-body.ttf"
 );
 
 fn fonts() -> (FontService, FontHandle) {
@@ -225,7 +225,7 @@ fn single_label_change_no_longer_reprobes_unrelated_labels() {
             .height(21.0)
         })
         .collect();
-    let mut tree = uix::ui::__private::build_view_tree_for_test(column_fit(children));
+    let mut tree = uix_app::ui::__private::build_view_tree_for_test(column_fit(children));
     tree.layout();
     for count in counts.iter() {
         count.store(0, Ordering::Relaxed);
@@ -303,7 +303,7 @@ fn shared_state_rebinding_stays_linear_across_label_counts() {
                     .height(21.0)
             })
             .collect();
-        let mut tree = uix::ui::__private::build_view_tree_for_test(column_fit(children));
+        let mut tree = uix_app::ui::__private::build_view_tree_for_test(column_fit(children));
         tree.bind_reactive_widget_states();
         // 公开兼容入口仍保持全树重探测语义。
         tree.bind_reactive_widget_states();

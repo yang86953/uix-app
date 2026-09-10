@@ -7,13 +7,13 @@ use std::sync::{
     mpsc,
 };
 use std::time::Duration;
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 
 const SOURCE: &str = include_str!("../examples/modules/async_bench.uix");
 const WAIT: Duration = Duration::from_secs(5);
 fn modules() -> Vec<Module> {
     vec![
-        uix::uix_module!("examples/modules/async_bench.uix"),
+        uix_app::uix_module!("examples/modules/async_bench.uix"),
         load_module(SOURCE, "async_bench.uix").unwrap(),
     ]
 }
@@ -462,7 +462,7 @@ fn wait_snapshot(
 #[cfg(feature = "test-harness")]
 #[test]
 fn async_button_event_uses_worker_without_blocking_native_view_projection() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     for module in modules() {
         let (send, endpoint) = mpsc::channel::<(String, AsyncCall)>();
         let ports = module
@@ -518,7 +518,7 @@ fn async_button_event_uses_worker_without_blocking_native_view_projection() {
 #[cfg(feature = "test-harness")]
 #[test]
 fn out_of_order_terminal_sequence_does_not_acknowledge_pending_input() {
-    use uix::ui::test_harness::TestApp;
+    use uix_app::ui::test_harness::TestApp;
     let source = r#"<Module name="AsyncInput" version="1" schema="1">
         <State name="draft" type="String" value={'initial'}/>
         <Port name="write" params="value: String" returns="String" effect="command" async="true"/>

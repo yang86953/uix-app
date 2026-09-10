@@ -1,5 +1,5 @@
-use uix::core::Point;
-use uix::draw::debug::DebugHudState;
+use uix_app::core::Point;
+use uix_app::draw::debug::DebugHudState;
 
 #[test]
 fn hud_toggles_between_expanded_and_collapsed() {

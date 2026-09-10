@@ -525,7 +525,7 @@ impl App {
         match requested_debug_mode {
             Some(Ok(enabled)) => diagnostics.set_debug_mode(enabled),
             Some(Err(())) => tracing::warn!(
-                target: "uix::diagnostics",
+                target: "uix_app::diagnostics",
                 debug_event = "invalid_debug_switch",
                 "UIX_DEBUG must be one of 1/0, true/false, yes/no, or on/off"
             ),

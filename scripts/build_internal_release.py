@@ -38,7 +38,7 @@ def source_identity(expected_version):
     root = metadata(ROOT / 'Cargo.toml')
     demo = metadata(ROOT / 'demo/Cargo.toml')
     packages = {p['name']: p for p in root['packages']}
-    version = packages['uix']['version']
+    version = packages['uix-app']['version']
     if not VERSION.fullmatch(version) or (expected_version and version != expected_version):
         raise ValueError(f'version mismatch: source {version}, requested {expected_version}')
     for name in CRATES:

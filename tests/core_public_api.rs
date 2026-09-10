@@ -2,7 +2,7 @@
 use std::io::ErrorKind;
 
 // 引入核心公开值类型以从使用方视角锁定基础契约。
-use uix::core::{
+use uix_app::core::{
     Constraints,
     // 引入边距、错误码、错误值与严重度类型。
     EdgeInsets,

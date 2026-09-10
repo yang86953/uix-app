@@ -10,7 +10,7 @@ use std::{
     },
     time::Duration,
 };
-use uix::app::modules::*;
+use uix_app::app::modules::*;
 use uix_lang_compiler::modules;
 
 const ROOT: &str = include_str!("../examples/modules/composed/main.uix");
@@ -83,7 +83,7 @@ fn instance(module: Module, log: Arc<Mutex<Vec<String>>>) -> Instance {
 #[test]
 fn aot_and_dynamic_link_transitive_private_calls_types_and_isolated_state() {
     let package = Package::new();
-    let native = uix::uix_module!("examples/modules/composed/main.uix");
+    let native = uix_app::uix_module!("examples/modules/composed/main.uix");
     let dynamic = load_module_file(&package.root()).unwrap();
     let mut observations = vec![];
     for module in [native, dynamic] {
@@ -124,7 +124,7 @@ fn aot_and_dynamic_link_transitive_private_calls_types_and_isolated_state() {
 fn imported_async_event_uses_qualified_host_port_and_child_state_in_both_modes() {
     let package = Package::new();
     for module in [
-        uix::uix_module!("examples/modules/composed/main.uix"),
+        uix_app::uix_module!("examples/modules/composed/main.uix"),
         load_module_file(&package.root()).unwrap(),
     ] {
         let owner =

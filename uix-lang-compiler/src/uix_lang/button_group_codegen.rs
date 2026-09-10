@@ -79,28 +79,28 @@ pub(crate) fn generate_button_group(element: &Element) -> Result<TokenStream, Di
         // 根据静态数量与索引选择现有公开位置枚举。
         let position = if button_count <= 1 {
             // 单按钮使用完整圆角。
-            quote! { ::uix::prelude::ButtonGroupPosition::Single }
+            quote! { ::uix_app::prelude::ButtonGroupPosition::Single }
         } else if index == 0 {
             // 首按钮保留左侧圆角。
-            quote! { ::uix::prelude::ButtonGroupPosition::Left }
+            quote! { ::uix_app::prelude::ButtonGroupPosition::Left }
         } else if index + 1 == button_count {
             // 末按钮保留右侧圆角。
-            quote! { ::uix::prelude::ButtonGroupPosition::Right }
+            quote! { ::uix_app::prelude::ButtonGroupPosition::Right }
         } else {
             // 中间按钮移除相邻侧圆角。
-            quote! { ::uix::prelude::ButtonGroupPosition::Middle }
+            quote! { ::uix_app::prelude::ButtonGroupPosition::Middle }
         };
         // 复用完整 Button 属性、事件与公共样式生成路径。
         let generated = generate_button_with_group_position(button, Some(position))?;
         // 专用父子生成路径也要把子 Button 表达式绑定到精确源码跨度。
         let generated = mark_source_tokens(generated, button.span);
         // 统一物化为公开 ViewNode 子项。
-        generated_buttons.push(quote! { ::uix::prelude::View::build(#generated) });
+        generated_buttons.push(quote! { ::uix_app::prelude::View::build(#generated) });
     }
     // 使用零间距行容器组合连体按钮并保持空组合法。
     let base = quote! {
         // 按源码顺序构造静态按钮向量。
-        ::uix::prelude::row(::std::vec![#(#generated_buttons),*]).gap(0.0)
+        ::uix_app::prelude::row(::std::vec![#(#generated_buttons),*]).gap(0.0)
     };
     // ButtonGroup 没有专有属性，统一处理公共样式与未知属性诊断。
     apply_common_attributes(

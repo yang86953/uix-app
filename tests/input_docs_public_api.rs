@@ -4,7 +4,7 @@
 // 隔离 input-basic 围栏中的文本输入模式。
 mod input_basic {
     // 引入文档承诺的公开输入与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译单行、多行和密码输入的受控状态入口。
     fn compile_example() {
@@ -31,7 +31,7 @@ mod input_basic {
 // 隔离 input-number 围栏中的数值与区间选择组件。
 mod input_number {
     // 引入文档承诺的公开数值输入 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译受控数值输入、单值滑块和区间滑块。
     fn compile_example() {
@@ -72,7 +72,7 @@ mod input_number {
 // 隔离 input-choice 围栏中的受控选择组件。
 mod input_choice {
     // 引入文档承诺的公开选择与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译复选框、单选组和开关公开入口。
     fn compile_example() {
@@ -105,7 +105,7 @@ mod input_choice {
 // 隔离 input-select 围栏中的受控下拉选择器。
 mod input_select {
     // 引入文档承诺的公开选择与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译稳定选项与业务值状态绑定。
     fn compile_example() {
@@ -127,7 +127,7 @@ mod input_select {
 // 隔离 input-date 围栏中的日期、时间与颜色选择器。
 mod input_date {
     // 引入文档承诺的公开选择器与状态 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译日期、时间和颜色三种受控值入口。
     fn compile_example() {
@@ -151,8 +151,8 @@ mod input_date {
 #[cfg(feature = "test-harness")]
 #[test]
 fn input_view_width_and_flex_grow_reach_public_layout() {
-    use uix::prelude::*;
-    use uix::ui::test_harness::TestApp;
+    use uix_app::prelude::*;
+    use uix_app::ui::test_harness::TestApp;
 
     let expanded = State::new(false);
     let root_expanded = expanded.clone();
@@ -201,7 +201,7 @@ fn input_view_width_and_flex_grow_reach_public_layout() {
 
 #[test]
 fn controlled_select_keeps_value_and_display_label_distinct() {
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     let selected = State::new("cn".to_owned());
     let select = Select::new()

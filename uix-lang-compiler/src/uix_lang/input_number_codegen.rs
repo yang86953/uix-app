@@ -32,7 +32,7 @@ pub(crate) fn generate_input_number(element: &Element) -> Result<TokenStream, Di
     // 同时为静态范围执行编译期顺序校验。
     validate_literal_range(element)?;
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::InputNumber::new() };
+    let mut widget = quote! { ::uix_app::prelude::InputNumber::new() };
 
     // 先应用最小值，保证后续绑定按范围归一化。
     if let Some(attribute) = find_attribute(element, "min") {
@@ -85,7 +85,7 @@ pub(crate) fn generate_input_number(element: &Element) -> Result<TokenStream, Di
     }
 
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 InputNumber 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的数值输入 View。

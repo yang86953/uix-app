@@ -14,7 +14,7 @@ use super::{AttributeValue, Diagnostic, Element, generate_expression, string_val
 // 生成保留完整 ViewNode 子树的 Card 卡片容器。
 pub(crate) fn generate_card(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从无内部旧式子组件的公开 Card 构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Card::new() };
+    let mut widget = quote! { ::uix_app::prelude::Card::new() };
     // 可选标题接受字符串字面量或受限字符串表达式。
     if let Some(attribute) = find_attribute(element, "title") {
         // 生成统一字符串值令牌。

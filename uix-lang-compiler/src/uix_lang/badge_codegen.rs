@@ -40,7 +40,7 @@ pub(crate) fn generate_badge(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 从公开默认构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::Badge::new() };
+    let mut widget = quote! { ::uix_app::prelude::Badge::new() };
     // 可选数字接受 i32 字面量或受限表达式。
     if let Some(attribute) = find_attribute(element, "count") {
         // 生成类型明确的 i32 值。
@@ -125,7 +125,7 @@ pub(crate) fn generate_badge(element: &Element) -> Result<TokenStream, Diagnosti
     }
 
     // 子树由 Badge 的生命周期端口提供；公开根经组件自己的同目录 UIX 声明构建。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Badge 专有属性并应用公共尺寸、样式、身份与事件。
     apply_common_attributes(
         // 传入已经配置的 Badge View。

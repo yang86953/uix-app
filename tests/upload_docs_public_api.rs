@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 // 引入文档承诺的 UIX 宏、受控状态与上传类型。
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 // 提供应用拥有的类型化上传队列变更处理器。
 fn on_upload_change(change: &UploadChange) {

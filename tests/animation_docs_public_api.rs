@@ -4,7 +4,7 @@
 // 隔离 animation-animated 围栏中的声明式动画值。
 mod animation_animated {
     // 引入文档承诺的公开动画 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译缓动、弹簧和关键帧三种 Animated 目标声明。
     fn compile_example() {
@@ -34,7 +34,7 @@ mod animation_animated {
 // 隔离 animation-bind 围栏中的 View 属性绑定。
 mod animation_bind {
     // 引入文档承诺的公开动画与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 Animated 当前值到 View 透明度属性的绑定。
     fn compile_example() {
@@ -56,7 +56,7 @@ mod animation_bind {
 // 隔离 animation-widget 围栏中的指令式动画组件。
 mod animation_widget {
     // 引入文档承诺的公开组件、动画与绘制 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明由逐窗 frame opportunity 推进的脉冲圆环。
     widget! {
@@ -123,7 +123,7 @@ mod animation_widget {
 // 隔离 animation-enter 围栏中的挂载与离场过渡。
 mod animation_enter {
     // 引入文档承诺的公开过渡与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译进场、离场和列表交错进场声明。
     fn compile_example() {
@@ -148,7 +148,7 @@ mod animation_enter {
 // 隔离 animation-transition 围栏中的属性 Transition。
 mod animation_transition {
     // 引入文档承诺的公开过渡、状态与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译静态淡入与响应式列表交错滑入声明。
     fn transition_view(items: &State<Vec<String>>) -> ViewNode {

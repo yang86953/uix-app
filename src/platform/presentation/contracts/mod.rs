@@ -230,7 +230,7 @@ impl FromStr for GraphicsSelection {
 /// marker prevents safe transfer to another thread.
 ///
 /// ```compile_fail
-/// use uix::platform::presentation::NativeSurfaceHandle;
+/// use uix_app::platform::presentation::NativeSurfaceHandle;
 ///
 /// fn needs_send<T: Send>(_value: T) {}
 ///

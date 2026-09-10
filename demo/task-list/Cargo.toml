@@ -9,12 +9,13 @@ description = "内部授权使用的 UIX Lang 与 Rust 任务清单示例"
 [workspace]
 
 [dependencies]
-uix = { version = "=0.0.8", git = "https://github.com/yang86953/uix-app.git", rev = "e39a2220efdde3e5078e3b919953b4a59e9043b0", default-features = false, features = ["vulkan", "settings-serde"] }
+# 随公开源码树以 path+version 消费框架；不再依赖已清理远程历史的固定 rev。
+uix-app = { path = "../..", version = "0.0.8", default-features = false, features = ["vulkan", "settings-serde"] }
 serde = { version = "1", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
-test-harness = ["uix/test-harness"]
+test-harness = ["uix-app/test-harness"]
 
 [profile.dev]
 debug = "line-tables-only"

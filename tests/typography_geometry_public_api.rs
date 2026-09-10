@@ -1,7 +1,7 @@
 //! Typography uses one em/line-box contract across public declarative controls.
 #![cfg(all(feature = "test-harness", feature = "rich-text"))]
-use uix::prelude::*;
-use uix::ui::test_harness::TestApp;
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::TestApp;
 
 fn near(actual: f32, expected: f32) {
     assert!((actual - expected).abs() < 0.05, "{actual} != {expected}");

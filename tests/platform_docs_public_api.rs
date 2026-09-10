@@ -4,11 +4,11 @@
 // 隔离 platform-query 围栏中的平台信息快照查询。
 mod platform_query {
     // 引入文档承诺的公开平台门面。
-    use uix::platform::Platform;
+    use uix_app::platform::Platform;
     // 引入公开 GPU adapter 与后端值类型。
-    use uix::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
+    use uix_app::platform::graphics::{GpuAdapterInfo, GraphicsBackend};
     // 引入公开系统硬件 owned 描述类型。
-    use uix::platform::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
+    use uix_app::platform::hardware::{CpuInfo, DisplayInfo, MemoryInfo, OsInfo};
 
     // 声明不泄漏任何原生句柄的平台快照。
     type PlatformSnapshot = (
@@ -26,7 +26,7 @@ mod platform_query {
 
     // 编译默认 Vulkan 文档中的 Platform 创建、查询与 owner-thread 析构边界。
     #[cfg(feature = "vulkan")]
-    fn query_platform() -> uix::core::Result<PlatformSnapshot> {
+    fn query_platform() -> uix_app::core::Result<PlatformSnapshot> {
         // 在调用线程创建唯一平台 owner。
         let platform = Platform::new()?;
         // 查询操作系统 typed 信息。
@@ -44,7 +44,7 @@ mod platform_query {
     }
 
     // 编译全部启用后端的公开同步枚举入口，不在测试中触碰原生驱动。
-    fn query_enabled_backends(platform: &Platform) -> uix::core::Result<()> {
+    fn query_enabled_backends(platform: &Platform) -> uix_app::core::Result<()> {
         #[cfg(feature = "vulkan")]
         let _ = platform.gpu_adapters(GraphicsBackend::Vulkan)?;
         #[cfg(feature = "d3d11")]
@@ -64,9 +64,9 @@ mod platform_service {
     // 引入公开 owned 路径类型。
     use std::path::PathBuf;
     // 引入文档承诺的公开平台门面。
-    use uix::platform::Platform;
+    use uix_app::platform::Platform;
     // 引入平台中立的服务值类型。
-    use uix::platform::services::{
+    use uix_app::platform::services::{
         // 引入 Windows 通知身份边界值。
         AppUserModelId,
         // 引入文件对话框过滤器值。
@@ -80,7 +80,7 @@ mod platform_service {
     };
 
     // 编译同步文件对话框的 owned 结果契约。
-    fn choose_images(platform: &mut Platform) -> uix::core::Result<Option<Box<[PathBuf]>>> {
+    fn choose_images(platform: &mut Platform) -> uix_app::core::Result<Option<Box<[PathBuf]>>> {
         // 构造并验证图片文件扩展名过滤器。
         let images = FileDialogFilter::new("Images", ["png", "jpg", "jpeg"])?;
         // 在 Platform owner thread 打开多文件选择面板。
@@ -88,7 +88,7 @@ mod platform_service {
     }
 
     // 编译系统目录查询、通知身份与 capability 分支。
-    fn documents_dir_and_notify(platform: &mut Platform) -> uix::core::Result<PathBuf> {
+    fn documents_dir_and_notify(platform: &mut Platform) -> uix_app::core::Result<PathBuf> {
         // 查询不隐式创建的文档目录 owned 路径。
         let documents = platform.special_dir(SpecialDir::Documents)?;
         // 在进入平台 Adapter 前验证 AUMID 边界。
@@ -110,9 +110,9 @@ mod platform_service {
 // 隔离 platform-system-info 围栏中的 UI 状态摘要。
 mod platform_system_info {
     // 引入文档承诺的公开 State 与错误格式化 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
     // 引入公开平台门面。
-    use uix::platform::Platform;
+    use uix_app::platform::Platform;
 
     // 编译三项系统查询到业务状态的完整穷尽映射。
     fn show_hardware(platform: &Platform, status: &State<String>) {

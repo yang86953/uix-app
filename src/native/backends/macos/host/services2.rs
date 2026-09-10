@@ -2,8 +2,8 @@
 use super::*;
 use crate::platform::system::info::{ISystemInfo, MemoryInfo, OsInfo};
 
-// 系统信息组件仅对 macOS Platform System 内部可见。
-pub(super) struct MacosSystemInfo;
+// 系统信息组件对平台组合根可见（后台无窗口字体发现复用），仍不对应用公开。
+pub(crate) struct MacosSystemInfo;
 
 impl ISystemInfo for MacosSystemInfo {
     fn os_info(&self) -> Result<OsInfo> {

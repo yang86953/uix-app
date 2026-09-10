@@ -47,7 +47,7 @@ pub(crate) fn generate_selectable_list(element: &Element) -> Result<TokenStream,
     let items = generate_expression(&items_expression.expression, None)?;
     // 从公开构造器和拥有型条目入口开始配置。
     let mut widget = quote! {
-        ::uix::prelude::SelectableList::new().items((#items).clone())
+        ::uix_app::prelude::SelectableList::new().items((#items).clone())
     };
 
     // active 出现时必须保留 State<Option<String>> 所有权句柄。
@@ -71,7 +71,7 @@ pub(crate) fn generate_selectable_list(element: &Element) -> Result<TokenStream,
     }
 
     // 物化为公开叶 View，再登记可选变化观察器。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // Change 事件发布已经写回状态的稳定条目 id。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

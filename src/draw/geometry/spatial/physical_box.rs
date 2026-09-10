@@ -9,7 +9,7 @@ use super::unit::PhysicalUnit;
 ///
 /// 允许用不同单位描述各轴尺寸：
 /// ```rust
-/// use uix::draw::geometry::spatial::{PhysicalBox, PhysicalUnitExt};
+/// use uix_app::draw::geometry::spatial::{PhysicalBox, PhysicalUnitExt};
 /// let pb = PhysicalBox::new(10.0.mm(), 5.0.mm(), 0.0.mm(), 5.0.cm(), 3.0.cm(), 1.0.mm());
 /// ```
 #[derive(Debug, Clone, Copy)]

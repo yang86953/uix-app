@@ -1,7 +1,7 @@
 #![cfg(feature = "test-harness")]
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use uix::ui::test_harness::TestApp;
+use uix_app::ui::test_harness::TestApp;
 use uix_task_list::app::TaskApp;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -117,7 +117,7 @@ fn full_bounded_list_scrolls_to_last_task_and_back() {
             .visible_bounds
             .is_none()
     );
-    ui.scroll("task-scroll", uix::core::Point::new(0.0, -100_000.0))
+    ui.scroll("task-scroll", uix_app::core::Point::new(0.0, -100_000.0))
         .unwrap();
     assert!(
         ui.snapshot()
@@ -126,7 +126,7 @@ fn full_bounded_list_scrolls_to_last_task_and_back() {
             .visible_bounds
             .is_some()
     );
-    ui.scroll("task-scroll", uix::core::Point::new(0.0, 100_000.0))
+    ui.scroll("task-scroll", uix_app::core::Point::new(0.0, 100_000.0))
         .unwrap();
     assert!(
         ui.snapshot()

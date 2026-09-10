@@ -16,15 +16,15 @@ pub(super) fn border_style_field(
     // 规范关键字不允许额外参数或大小写漂移。
     let variant = match property.value.source.trim() {
         // none 显式关闭绘制而不修改边框宽度。
-        "none" => quote! { ::uix::prelude::BorderStyle::None },
+        "none" => quote! { ::uix_app::prelude::BorderStyle::None },
         // solid 显式覆盖继承的其他线型。
-        "solid" => quote! { ::uix::prelude::BorderStyle::Solid },
+        "solid" => quote! { ::uix_app::prelude::BorderStyle::Solid },
         // dashed 选择连续相位的虚线绘制。
-        "dashed" => quote! { ::uix::prelude::BorderStyle::Dashed },
+        "dashed" => quote! { ::uix_app::prelude::BorderStyle::Dashed },
         // dotted 选择圆帽点状绘制。
-        "dotted" => quote! { ::uix::prelude::BorderStyle::Dotted },
+        "dotted" => quote! { ::uix_app::prelude::BorderStyle::Dotted },
         // double 选择两道同色描边。
-        "double" => quote! { ::uix::prelude::BorderStyle::Double },
+        "double" => quote! { ::uix_app::prelude::BorderStyle::Double },
         // 未登记值必须在编译期明确拒绝。
         _ => {
             // 返回指向完整属性值的修复性诊断。

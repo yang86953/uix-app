@@ -11,7 +11,7 @@ use super::{Diagnostic, Element, boolean_value};
 // 生成保留完整有序焦点作用域子树的 FocusTrap 容器。
 pub(crate) fn generate_focus_trap(element: &Element) -> Result<TokenStream, Diagnostic> {
     // 从运行时默认启用的焦点陷阱开始构造。
-    let mut widget = quote! { ::uix::prelude::FocusTrap::new() };
+    let mut widget = quote! { ::uix_app::prelude::FocusTrap::new() };
     // 可选 active 只声明当前作用域是否接管焦点循环。
     if let Some(attribute) = element
         // 借用有序属性列表。
@@ -31,7 +31,7 @@ pub(crate) fn generate_focus_trap(element: &Element) -> Result<TokenStream, Diag
     // 使用公开 ViewNode 子树声明稳定焦点作用域身份。
     let view = quote! {
         // 构造默认启用的焦点陷阱并保留全部后代。
-        ::uix::prelude::ViewNode::new(#widget, #children)
+        ::uix_app::prelude::ViewNode::new(#widget, #children)
     };
     // 消费 active 后应用公共样式、身份与事件。
     apply_common_attributes(view, &element.attributes, &["active"])

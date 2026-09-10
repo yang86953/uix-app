@@ -10,7 +10,7 @@ import tempfile
 import tomllib
 from pathlib import Path
 
-CRATES = ('uix', 'uix-derive', 'uix-lang-compiler', 'uix-lang-runtime')
+CRATES = ('uix-app', 'uix-derive', 'uix-lang-compiler', 'uix-lang-runtime')
 
 
 def assemble(candidate, output, portable=False):
@@ -58,10 +58,10 @@ def assemble(candidate, output, portable=False):
                     for val in value:
                         visit(val)
             visit(metadata)
-        dep = f'path = "crates/uix-{version}"'
+        dep = f'path = "crates/uix-app-{version}"'
         if portable:
             dep += ', default-features = false, features = ["uix-dynamic"]'
-        text = '[package]\nname = "uix-candidate-consumer"\nversion = "0.1.0"\nedition = "2024"\n\n[workspace]\n\n[dependencies]\nuix = { ' + dep + ' }\n'
+        text = '[package]\nname = "uix-candidate-consumer"\nversion = "0.1.0"\nedition = "2024"\n\n[workspace]\n\n[dependencies]\nuix-app = { ' + dep + ' }\n'
         for registry in sorted(registries):
             text += '\n[patch.' + json.dumps(registry) + ']\n'
             for name in CRATES:

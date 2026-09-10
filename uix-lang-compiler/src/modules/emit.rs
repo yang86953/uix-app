@@ -64,7 +64,7 @@ pub(super) fn module(module: &Module) -> TokenStream {
         None => quote! { None },
     };
     quote! {{
-        use ::uix::app::modules::__runtime as __uix_module;
+        use ::uix_app::app::modules::__runtime as __uix_module;
         #(#definitions)*
         __uix_module::Module { name: #name.into(), version: #version.into(), state_schema: #schema,
             states: vec![#(#states),*], functions: vec![#(#functions),*], ports: vec![#(#ports),*], view: #view,

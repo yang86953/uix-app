@@ -12,8 +12,8 @@ fn fonts() -> Rc<FontService> {
     let mut fonts = FontService::new();
     fonts
         .install_font_bundle(&FontBundle::from_static(
-            "LXGW WenKai",
-            include_bytes!("../../../../assets/fonts/LXGWWenKai-Regular.ttf"),
+            "UIX Test Body",
+            include_bytes!("../../../../tests/fixtures/fonts/uix-test-body.ttf"),
         ))
         .unwrap();
     Rc::new(fonts)

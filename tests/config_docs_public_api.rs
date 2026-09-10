@@ -4,7 +4,7 @@
 // 隔离 settings-service 围栏中的应用设置服务装配。
 mod settings_service {
     // 引入文档承诺的公开 Application 与数据服务 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译设置路径、服务解析、typed 读写与显式保存链。
     fn documented_main() {
@@ -43,7 +43,7 @@ mod settings_service {
 // 隔离 settings-typed-scalars 围栏中的标量 codec。
 mod settings_typed_scalars {
     // 引入文档承诺的公开 Error 与 SettingsService。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 typed 标量的可选、默认与必需读取路径。
     fn read_launch_count(settings: &SettingsService) -> std::result::Result<u32, Error> {
@@ -66,7 +66,7 @@ mod settings_typed_scalars {
 #[cfg(feature = "settings-serde")]
 mod settings_structured {
     // 引入文档承诺的公开 Error 与 SettingsService。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明按单个设置 key 编解码的应用偏好。
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -104,7 +104,7 @@ mod settings_structured {
 // 隔离 graphics-backend 围栏中的后端选择策略。
 mod graphics_backend {
     // 引入文档承诺的公开 App 与 GraphicsBackend。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译省略后端的自动策略与显式后端选择。
     fn compile_example() {
@@ -134,7 +134,7 @@ mod graphics_backend {
 // 隔离 cli-mode 围栏中的无窗口应用模式。
 mod cli_mode {
     // 引入文档承诺的公开 App 与 AppMode。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 CLI 模式的启动回调与运行入口。
     fn documented_main() {
@@ -156,7 +156,7 @@ mod cli_mode {
 #[cfg(feature = "settings-serde")]
 mod settings_typed_struct {
     // 引入文档承诺的公开 Application 与设置 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 声明组合根示例使用的应用偏好结构体。
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]

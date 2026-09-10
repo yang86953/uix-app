@@ -44,7 +44,7 @@ pub(crate) fn generate_date_picker(element: &Element) -> Result<TokenStream, Dia
     let state = generate_expression(&value_expression.expression, None)?;
     // 先绑定日期状态，保持运行时现有受控契约。
     let mut widget = quote! {
-        ::uix::prelude::DatePicker::new()
+        ::uix_app::prelude::DatePicker::new()
             .value(&(#state))
     };
     // 可选 mode 只接受文档登记的编译期关键字。
@@ -54,13 +54,13 @@ pub(crate) fn generate_date_picker(element: &Element) -> Result<TokenStream, Dia
         // 把文档关键字映射到公开 PickerMode 枚举。
         let mode = match mode.as_str() {
             // date 保持公开默认值。
-            "date" => quote!(::uix::prelude::PickerMode::Date),
+            "date" => quote!(::uix_app::prelude::PickerMode::Date),
             // week 提交命中日期所在周的起点。
-            "week" => quote!(::uix::prelude::PickerMode::Week),
+            "week" => quote!(::uix_app::prelude::PickerMode::Week),
             // month 提交命中月份的起点。
-            "month" => quote!(::uix::prelude::PickerMode::Month),
+            "month" => quote!(::uix_app::prelude::PickerMode::Month),
             // quarter 提交命中季度的起点。
-            "quarter" => quote!(::uix::prelude::PickerMode::Quarter),
+            "quarter" => quote!(::uix_app::prelude::PickerMode::Quarter),
             // 未登记关键字不能静默回退到 date。
             _ => {
                 // 返回带属性跨度的枚举诊断。
@@ -78,7 +78,7 @@ pub(crate) fn generate_date_picker(element: &Element) -> Result<TokenStream, Dia
         widget = quote! { (#widget).mode(#mode) };
     }
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 DatePicker 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的日期选择 View。

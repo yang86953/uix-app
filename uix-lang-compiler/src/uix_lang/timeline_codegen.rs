@@ -45,7 +45,7 @@ pub(crate) fn generate_timeline(element: &Element) -> Result<TokenStream, Diagno
     // 把数组或 Vec 统一收集为公开运行时要求的 Vec 类型。
     let items = quote! {
         ::std::iter::IntoIterator::into_iter((#items_expression).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::TimelineItem>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::TimelineItem>>()
     };
     // 未声明 pending 时显式采用文档默认值。
     let pending = optional_boolean(element, "pending")?;
@@ -54,13 +54,13 @@ pub(crate) fn generate_timeline(element: &Element) -> Result<TokenStream, Diagno
 
     // 按运行时公开构建顺序配置数据与两个布尔能力。
     let widget = quote! {
-        ::uix::prelude::Timeline::new()
+        ::uix_app::prelude::Timeline::new()
             .items(#items)
             .pending(#pending)
             .reverse(#reverse)
     };
     // Timeline 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性并应用公共尺寸、样式、事件与自动化属性。
     apply_common_attributes(
         // 传入已经配置的时间轴 View。

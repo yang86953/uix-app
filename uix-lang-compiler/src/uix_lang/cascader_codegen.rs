@@ -58,11 +58,11 @@ pub(crate) fn generate_cascader(element: &Element) -> Result<TokenStream, Diagno
 
     // 运行时构造器接收选项树和空占位默认值，再绑定选中路径状态。
     let widget = quote! {
-        ::uix::prelude::Cascader::new((#options).clone(), "")
+        ::uix_app::prelude::Cascader::new((#options).clone(), "")
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Cascader 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的级联选择器 View。

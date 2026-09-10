@@ -58,12 +58,12 @@ pub(crate) fn generate_radio(element: &Element) -> Result<TokenStream, Diagnosti
 
     // 先设置选项再绑定状态，确保运行时立即同步选中值。
     let widget = quote! {
-        ::uix::prelude::Radio::new()
+        ::uix_app::prelude::Radio::new()
             .options((#options).clone())
             .value(&(#state))
     };
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 Radio 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的单选组 View。

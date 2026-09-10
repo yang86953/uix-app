@@ -5,8 +5,8 @@
 //! 插入成对标记，有选区时用前缀与后缀包裹选中文本；`InsertText` 保持既有
 //! 光标处插入语义。键位修饰键提供 `has_ctrl` 等便捷判断供键盘事件消费。
 
-use uix::prelude::*;
-use uix::ui::test_harness::{AutomationAction, TestApp};
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::{AutomationAction, TestApp};
 
 fn editor() -> ViewNode {
     // 受控 State 必须由调用方持有：reconcile 重建时不得重置业务值。

@@ -10,7 +10,7 @@
 ///
 /// ```
 /// // 引入最小基础几何值与基础按钮组件。
-/// use uix::prelude::{Button, Point};
+/// use uix_app::prelude::{Button, Point};
 /// // 基础几何构造不依赖任何可选 feature。
 /// let _ = Point::new(1.0, 2.0);
 /// // 基础组件类型在无默认 feature 构建中仍可从 prelude 解析。
@@ -24,7 +24,7 @@ pub struct MinimumBaseEnabledContract;
 ///
 /// ```
 /// // 引入当前构建公开的图形后端选择枚举。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // feature 启用后 Direct3D 11 选择入口必须存在。
 /// let _ = GraphicsBackend::Direct3D11;
 /// ```
@@ -36,7 +36,7 @@ pub struct D3d11EnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的图形后端枚举类型。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // 未启用 d3d11 时不得保留 Direct3D 11 选择入口。
 /// let _ = GraphicsBackend::Direct3D11;
 /// ```
@@ -48,7 +48,7 @@ pub struct D3d11DisabledContract;
 ///
 /// ```
 /// // 引入当前构建公开的图形后端选择枚举。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // feature 启用后 Direct3D 12 选择入口必须存在。
 /// let _ = GraphicsBackend::Direct3D12;
 /// ```
@@ -60,7 +60,7 @@ pub struct D3d12EnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的图形后端枚举类型。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // 未启用 d3d12 时不得保留 Direct3D 12 选择入口。
 /// let _ = GraphicsBackend::Direct3D12;
 /// ```
@@ -72,7 +72,7 @@ pub struct D3d12DisabledContract;
 ///
 /// ```
 /// // 引入当前构建公开的图形后端选择枚举。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // feature 启用后 OpenGL ES 选择入口必须存在。
 /// let _ = GraphicsBackend::OpenGlEs;
 /// ```
@@ -84,7 +84,7 @@ pub struct OpenGlEsEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的图形后端枚举类型。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // 未启用 opengles 时不得保留 OpenGL ES 选择入口。
 /// let _ = GraphicsBackend::OpenGlEs;
 /// ```
@@ -96,7 +96,7 @@ pub struct OpenGlEsDisabledContract;
 ///
 /// ```
 /// // 引入当前构建公开的图形后端选择枚举。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // feature 启用后 Vulkan 选择入口必须存在。
 /// let _ = GraphicsBackend::Vulkan;
 /// ```
@@ -108,7 +108,7 @@ pub struct VulkanEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的图形后端枚举类型。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // 未启用 vulkan 时不得保留 Vulkan 选择入口。
 /// let _ = GraphicsBackend::Vulkan;
 /// ```
@@ -120,7 +120,7 @@ pub struct VulkanDisabledContract;
 ///
 /// ```
 /// // 引入当前构建公开的图形后端选择枚举。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // feature 启用后 Metal 选择入口必须存在。
 /// let _ = GraphicsBackend::Metal;
 /// ```
@@ -132,7 +132,7 @@ pub struct MetalEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的图形后端枚举类型。
-/// use uix::prelude::GraphicsBackend;
+/// use uix_app::prelude::GraphicsBackend;
 /// // 未启用 metal 时不得保留 Metal 选择入口。
 /// let _ = GraphicsBackend::Metal;
 /// ```
@@ -144,7 +144,7 @@ pub struct MetalDisabledContract;
 ///
 /// ```
 /// // 引入始终存在的图片服务公开类型。
-/// use uix::prelude::ImageService;
+/// use uix_app::prelude::ImageService;
 /// // 编译专属字节解码调用而不要求测试执行无效图片数据。
 /// fn accepts_image_codecs(service: &ImageService) {
 ///     // feature 启用后字节解码入口必须存在。
@@ -160,7 +160,7 @@ pub struct ImageCodecsEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然支持原始 RGBA 槽位的基础图片服务。
-/// use uix::prelude::ImageService;
+/// use uix_app::prelude::ImageService;
 /// // 编译调用以确认关闭 feature 后不存在解码入口。
 /// fn rejects_image_codecs(service: &ImageService) {
 ///     // 未启用 image-codecs 时不得保留字节解码方法。
@@ -176,7 +176,7 @@ pub struct ImageCodecsDisabledContract;
 ///
 /// ```
 /// // 引入二维码 capability 的公开组件类型。
-/// use uix::prelude::QRCode;
+/// use uix_app::prelude::QRCode;
 /// // feature 启用后二维码组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<QRCode>();
 /// ```
@@ -188,7 +188,7 @@ pub struct QrCodeEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 qrcode 时公开门面不得导出二维码组件。
-/// use uix::prelude::QRCode;
+/// use uix_app::prelude::QRCode;
 /// ```
 pub struct QrCodeDisabledContract;
 
@@ -198,7 +198,7 @@ pub struct QrCodeDisabledContract;
 ///
 /// ```
 /// // 引入始终存在的基础表单组件。
-/// use uix::prelude::Form;
+/// use uix_app::prelude::Form;
 /// // feature 启用后正则 pattern builder 方法必须可编译。
 /// let _ = Form::new()
 ///     // 建立一个公开字段构建器。
@@ -214,7 +214,7 @@ pub struct FormPatternEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入仍然存在的基础表单组件。
-/// use uix::prelude::Form;
+/// use uix_app::prelude::Form;
 /// // 先建立关闭 feature 后仍然合法的字段构建器。
 /// let field = Form::new().field("code", "Code");
 /// // 未启用 form-pattern 时不得保留正则规则方法。
@@ -228,7 +228,7 @@ pub struct FormPatternDisabledContract;
 ///
 /// ```
 /// // 引入富文本 capability 的公开组件类型。
-/// use uix::prelude::RichText;
+/// use uix_app::prelude::RichText;
 /// // feature 启用后富文本组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<RichText>();
 /// ```
@@ -240,7 +240,7 @@ pub struct RichTextEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 rich-text 时公开门面不得导出富文本组件。
-/// use uix::prelude::RichText;
+/// use uix_app::prelude::RichText;
 /// ```
 pub struct RichTextDisabledContract;
 
@@ -250,7 +250,7 @@ pub struct RichTextDisabledContract;
 ///
 /// ```
 /// // 引入图表 capability 的代表组件类型。
-/// use uix::prelude::AreaChart;
+/// use uix_app::prelude::AreaChart;
 /// // feature 启用后图表组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<AreaChart>();
 /// ```
@@ -262,7 +262,7 @@ pub struct ChartsEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 charts 时公开门面不得导出图表组件。
-/// use uix::prelude::AreaChart;
+/// use uix_app::prelude::AreaChart;
 /// ```
 pub struct ChartsDisabledContract;
 
@@ -272,7 +272,7 @@ pub struct ChartsDisabledContract;
 ///
 /// ```
 /// // 引入表格 capability 的代表组件类型。
-/// use uix::prelude::Table;
+/// use uix_app::prelude::Table;
 /// // feature 启用后表格组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<Table>();
 /// ```
@@ -284,7 +284,7 @@ pub struct TableEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 table 时公开门面不得导出表格组件。
-/// use uix::prelude::Table;
+/// use uix_app::prelude::Table;
 /// ```
 pub struct TableDisabledContract;
 
@@ -294,7 +294,7 @@ pub struct TableDisabledContract;
 ///
 /// ```
 /// // 引入导航 capability 的代表组件类型。
-/// use uix::prelude::Tabs;
+/// use uix_app::prelude::Tabs;
 /// // feature 启用后导航组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<Tabs>();
 /// ```
@@ -306,7 +306,7 @@ pub struct NavigationEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 navigation 时公开门面不得导出导航组件。
-/// use uix::prelude::Tabs;
+/// use uix_app::prelude::Tabs;
 /// ```
 pub struct NavigationDisabledContract;
 
@@ -316,7 +316,7 @@ pub struct NavigationDisabledContract;
 ///
 /// ```
 /// // 引入反馈 capability 的代表组件类型。
-/// use uix::prelude::Alert;
+/// use uix_app::prelude::Alert;
 /// // feature 启用后反馈组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<Alert>();
 /// ```
@@ -328,7 +328,7 @@ pub struct FeedbackEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 feedback 时公开门面不得导出反馈组件。
-/// use uix::prelude::Alert;
+/// use uix_app::prelude::Alert;
 /// ```
 pub struct FeedbackDisabledContract;
 
@@ -338,7 +338,7 @@ pub struct FeedbackDisabledContract;
 ///
 /// ```
 /// // 引入树组件 capability 的代表公开类型。
-/// use uix::prelude::Tree;
+/// use uix_app::prelude::Tree;
 /// // feature 启用后展示树组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<Tree>();
 /// ```
@@ -350,7 +350,7 @@ pub struct TreeWidgetsEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 tree-widgets 时公开门面不得导出树组件。
-/// use uix::prelude::Tree;
+/// use uix_app::prelude::Tree;
 /// ```
 pub struct TreeWidgetsDisabledContract;
 
@@ -360,7 +360,7 @@ pub struct TreeWidgetsDisabledContract;
 ///
 /// ```
 /// // 引入终端 capability 的代表公开类型。
-/// use uix::prelude::Terminal;
+/// use uix_app::prelude::Terminal;
 /// // feature 启用后终端组件类型必须可解析。
 /// let _ = std::any::TypeId::of::<Terminal>();
 /// ```
@@ -372,7 +372,7 @@ pub struct TerminalEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 terminal 时公开门面不得导出终端组件。
-/// use uix::prelude::Terminal;
+/// use uix_app::prelude::Terminal;
 /// ```
 pub struct TerminalDisabledContract;
 
@@ -382,7 +382,7 @@ pub struct TerminalDisabledContract;
 ///
 /// ```
 /// // 引入始终存在的设置服务公开类型。
-/// use uix::prelude::SettingsService;
+/// use uix_app::prelude::SettingsService;
 /// // 建立不执行文件 IO 的设置服务。
 /// let settings = SettingsService::new();
 /// // feature 启用后结构化序列化入口必须可编译。
@@ -396,7 +396,7 @@ pub struct SettingsSerdeEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入关闭 codec 后仍然存在的字符串设置服务。
-/// use uix::prelude::SettingsService;
+/// use uix_app::prelude::SettingsService;
 /// // 建立基础设置服务。
 /// let settings = SettingsService::new();
 /// // 未启用 settings-serde 时不得保留结构化序列化入口。
@@ -410,7 +410,7 @@ pub struct SettingsSerdeDisabledContract;
 ///
 /// ```
 /// // 引入 Agent 确认入口所属句柄与稳定窗口身份。
-/// use uix::prelude::{AppHandle, WindowId};
+/// use uix_app::prelude::{AppHandle, WindowId};
 /// // 只编译公开方法调用，不建立真实 Agent transport。
 /// fn accepts_agent_control(handle: &AppHandle, window_id: WindowId) {
 ///     // feature 启用后确认决定入口必须存在。
@@ -426,7 +426,7 @@ pub struct AgentControlEnabledContract;
 ///
 /// ```compile_fail,E0599
 /// // 引入关闭 Agent transport 后仍然存在的应用句柄与窗口身份。
-/// use uix::prelude::{AppHandle, WindowId};
+/// use uix_app::prelude::{AppHandle, WindowId};
 /// // 编译调用以确认关闭 feature 后不存在高权限入口。
 /// fn rejects_agent_control(handle: &AppHandle, window_id: WindowId) {
 ///     // 未启用 agent-control 时不得保留确认决定方法。
@@ -442,7 +442,7 @@ pub struct AgentControlDisabledContract;
 ///
 /// ```
 /// // 引入运行时扩展宿主与跨边界值。
-/// use uix::app::extensions::{ExtensionHost, ExtensionValue};
+/// use uix_app::app::extensions::{ExtensionHost, ExtensionValue};
 /// // feature 启用后扩展宿主必须可显式构造并接受类型化调用入口。
 /// let host = ExtensionHost::new();
 /// let _ = host.list();
@@ -456,7 +456,7 @@ pub struct ExtensionsEnabledContract;
 ///
 /// ```compile_fail,E0432
 /// // 未启用 extensions 时不得保留解释器与扩展宿主公开面。
-/// use uix::app::extensions::ExtensionHost;
+/// use uix_app::app::extensions::ExtensionHost;
 /// // 结束预期编译失败的引用。
 /// let _ = ExtensionHost::new;
 /// ```

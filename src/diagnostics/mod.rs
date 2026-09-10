@@ -15,27 +15,27 @@
 //! 锁定该边界，任何把私有 Module 提升为公开模块的改动都会编译失败。
 //!
 //! ```compile_fail
-//! use uix::diagnostics::reporting::ReportingModule;
+//! use uix_app::diagnostics::reporting::ReportingModule;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::diagnostics::recovery::RecoveryModule;
+//! use uix_app::diagnostics::recovery::RecoveryModule;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::diagnostics::pending::PendingFailureQueue;
+//! use uix_app::diagnostics::pending::PendingFailureQueue;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::diagnostics::report::ReportOrigin;
+//! use uix_app::diagnostics::report::ReportOrigin;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::diagnostics::config::DiagnosticsConfig;
+//! use uix_app::diagnostics::config::DiagnosticsConfig;
 //! ```
 //!
 //! ```compile_fail
-//! use uix::diagnostics::crash::CrashReport;
+//! use uix_app::diagnostics::crash::CrashReport;
 //! ```
 
 mod config;
@@ -164,7 +164,7 @@ impl Diagnostics {
                 suppressed_in_window,
             } => {
                 tracing::warn!(
-                    target: "uix::diagnostics",
+                    target: "uix_app::diagnostics",
                     transient_target = target,
                     reason,
                     suppressed_in_window,
@@ -190,7 +190,7 @@ impl Diagnostics {
         if self.inner.debugging.set_enabled(enabled) {
             self.inner.repro.record_mode_changed(enabled);
             tracing::info!(
-                target: "uix::diagnostics",
+                target: "uix_app::diagnostics",
                 debug_event = "mode_changed",
                 runtime_id = self.inner.runtime_id,
                 enabled,
@@ -411,7 +411,7 @@ pub fn observe_boundary_error(layer: &'static str, error: &crate::core::Error) {
     // 边界观察同样完成诊断处置：错误已被显式观察而非被吞。
     error.mark_observed();
     tracing::error!(
-        target: "uix::diagnostics",
+        target: "uix_app::diagnostics",
         boundary_layer = layer,
         error = %error.short_what(),
         "boundary failure observed outside diagnostics ownership"

@@ -48,7 +48,7 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 从公开 Calendar 默认构造器开始配置运行时所有权。
-    let mut widget = quote! { ::uix::prelude::Calendar::new() };
+    let mut widget = quote! { ::uix_app::prelude::Calendar::new() };
     // 可选默认日期只建立非受控初值。
     if let Some(attribute) = find_attribute(element, "defaultDate") {
         // 默认日期必须保持调用侧 Date 类型检查。
@@ -108,7 +108,7 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
         // 只求值一次并把年月交给公开默认显示构造器。
         widget = quote! {{
             // 固定调用方表达式的 Date 类型并取得拥有型快照。
-            let #displayed: ::uix::prelude::Date = (#date).clone();
+            let #displayed: ::uix_app::prelude::Date = (#date).clone();
             // 选择日期和显示月份保持两个独立运行时事实。
             (#widget).default_displayed(#displayed.year, #displayed.month)
         }};
@@ -146,7 +146,7 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
         // 把数组或 Vec 统一收集为公开拥有型事件集合。
         let events = quote! {
             ::std::iter::IntoIterator::into_iter((#events).clone())
-                .collect::<::std::vec::Vec<::uix::prelude::CalendarEvent>>()
+                .collect::<::std::vec::Vec<::uix_app::prelude::CalendarEvent>>()
         };
         // 让 Calendar 运行时取得本轮事件数据所有权。
         widget = quote! { (#widget).events(#events) };
@@ -191,7 +191,7 @@ pub(crate) fn generate_calendar(element: &Element) -> Result<TokenStream, Diagno
     }
 
     // 先物化公开叶节点，Change 处理器与公共样式由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选 Change 观察运行时已提交的规范日期文本。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件属性必须由解析器提供受限表达式。

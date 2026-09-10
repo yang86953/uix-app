@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use uix::core::{Rect, WidgetId};
-use uix::draw::debug::DebugFrameSnapshot;
-use uix::draw::renderer::{InvalidationSource, RenderMetrics};
-use uix::draw::scene::{HoverInspectorNode, HoverInspectorSnapshot};
+use uix_app::core::{Rect, WidgetId};
+use uix_app::draw::debug::DebugFrameSnapshot;
+use uix_app::draw::renderer::{InvalidationSource, RenderMetrics};
+use uix_app::draw::scene::{HoverInspectorNode, HoverInspectorSnapshot};
 
 fn node(id: usize, type_name: &'static str, stable_id: &str, frame: Rect) -> HoverInspectorNode {
     HoverInspectorNode {
@@ -32,13 +32,13 @@ fn inspector_snapshot_formats_identity_state_lifecycle_and_geometry() {
         nodes: vec![
             node(
                 0,
-                "uix::ui::containers::RootContainer",
+                "uix_app::ui::containers::RootContainer",
                 "automation:root",
                 Rect::new(0.0, 0.0, 800.0, 600.0),
             ),
             node(
                 1,
-                "uix::ui::general::Button",
+                "uix_app::ui::general::Button",
                 "automation:save",
                 Rect::new(20.0, 30.0, 96.0, 32.0),
             ),

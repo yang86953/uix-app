@@ -47,6 +47,8 @@ pub mod windowing;
 
 pub(crate) use composition::PendingNativeOptions;
 pub(crate) use composition_root::create_platform_with_pending;
+#[cfg(feature = "agent-control")]
+pub(crate) use composition_root::native_font_system_info;
 pub use facade::Platform;
 // 继续从 platform 根公开 UI 线程入口，同时让实现物理归属 windowing 域。
 pub use windowing::ui_thread::run_on_ui_thread;

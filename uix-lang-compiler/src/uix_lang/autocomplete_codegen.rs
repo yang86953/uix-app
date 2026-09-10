@@ -61,7 +61,7 @@ pub(crate) fn generate_autocomplete(element: &Element) -> Result<TokenStream, Di
 
     // 运行时先接收候选，再绑定输入文本状态。
     let mut widget = quote! {
-        ::uix::prelude::AutoComplete::new()
+        ::uix_app::prelude::AutoComplete::new()
             .options((#options).clone())
             .bind_value(&(#state))
     };
@@ -73,7 +73,7 @@ pub(crate) fn generate_autocomplete(element: &Element) -> Result<TokenStream, Di
         widget = quote! { (#widget).placeholder(&(#placeholder)) };
     }
     // 物化为公开叶 View，再应用统一尺寸、样式与自动化属性。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费 AutoComplete 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的自动完成 View。

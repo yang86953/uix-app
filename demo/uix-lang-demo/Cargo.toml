@@ -8,7 +8,7 @@ description = "UIX uix-lang 编译期界面演示"
 
 [dependencies]
 # 与 API GUI Demo 对齐公开组件能力，同时保留声明式入口自己的运行边界。
-uix = { path = "../..", default-features = false, features = [
+uix-app = { path = "../..", default-features = false, features = [
     # 启用图片编解码能力。
     "image-codecs",
     # 启用二维码组件能力。
@@ -40,13 +40,13 @@ default = ["demo-logging", "windows-linux-backends"]
 # 演示二进制日志订阅独占 tracing-subscriber（库侧不再提供订阅器，日志契约仅保留 tracing）。
 demo-logging = ["dep:tracing-subscriber"]
 # Windows/Linux 发布图继续启用 Vulkan 首选及各自兼容后端。
-windows-linux-backends = ["uix/vulkan", "uix/d3d11", "uix/opengles"]
+windows-linux-backends = ["uix-app/vulkan", "uix-app/d3d11", "uix-app/opengles"]
 # macOS 构建只透传原生 Metal 后端，不把 Apple SDK 依赖泄漏到其他目标。
-macos-backend = ["uix/metal"]
+macos-backend = ["uix-app/metal"]
 # 显式透传本机 Agent Bridge 能力，运行时仍需 --agent-control 二次启用。
-agent-control = ["uix/agent-control"]
+agent-control = ["uix-app/agent-control"]
 # 显式透传图形故障注入能力，运行时仍需 --test-graphics-recovery 二次启用。
-test-harness = ["uix/test-harness"]
+test-harness = ["uix-app/test-harness"]
 
 [[bin]]
 name = "uix-lang-demo"

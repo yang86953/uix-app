@@ -6,7 +6,7 @@
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use uix::prelude::*;
+use uix_app::prelude::*;
 
 /// 两条逐帧时间戳流：声明式（根重建）与指令式（widget 动画推进）。
 fn stamps(stream: &str) -> &'static Mutex<Vec<Instant>> {

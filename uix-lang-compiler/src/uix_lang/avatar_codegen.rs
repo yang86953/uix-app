@@ -43,7 +43,7 @@ pub(crate) fn generate_avatar(element: &Element) -> Result<TokenStream, Diagnost
         None => quote! { false },
     };
     // 借用调用方字符串并让运行时 Avatar 取得自己的内容所有权。
-    let mut widget = quote! { ::uix::prelude::Avatar::new(&*(#text)).square(#square) };
+    let mut widget = quote! { ::uix_app::prelude::Avatar::new(&*(#text)).square(#square) };
     // 图片来源只在显式声明时触发 image-codecs capability 下的公开 API。
     if let Some(attribute) = find_attribute(element, "src") {
         // 生成图片来源字面量或受限字符串表达式。
@@ -60,7 +60,7 @@ pub(crate) fn generate_avatar(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 经公开 View 契约进入 Avatar 自己的同目录 UIX 声明根。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 Avatar 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的头像 View。

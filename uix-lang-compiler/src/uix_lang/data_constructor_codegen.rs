@@ -79,7 +79,7 @@ fn generate_radar_axis(
     // 生成规范化后的最大值。
     let max = generate_expression_inner(&max, event)?;
     // 调用公开雷达轴构造器并形成闭区间。
-    Ok(quote! { ::uix::prelude::RadarAxis::new(#label, (#min)..=(#max)) })
+    Ok(quote! { ::uix_app::prelude::RadarAxis::new(#label, (#min)..=(#max)) })
 }
 
 // 生成普通已登记数据类型的公开构造调用。
@@ -158,7 +158,7 @@ fn generate_heatmap_cell(
     // 生成规范化后的热力值。
     let value = generate_expression_inner(&value, event)?;
     // 调用公开热力图单元构造器。
-    Ok(quote! { ::uix::prelude::HeatmapCell::new(#x, #y, #value) })
+    Ok(quote! { ::uix_app::prelude::HeatmapCell::new(#x, #y, #value) })
 }
 
 // 生成 WaterfallData(label, value, kind) 枚举语义构造。
@@ -205,11 +205,11 @@ fn generate_waterfall_data(
     // 把字符串语义值映射为公开枚举。
     let kind = match kind.as_str() {
         // 映射合计柱。
-        "total" => quote! { ::uix::prelude::WaterfallKind::Total },
+        "total" => quote! { ::uix_app::prelude::WaterfallKind::Total },
         // 映射增长柱。
-        "increase" => quote! { ::uix::prelude::WaterfallKind::Increase },
+        "increase" => quote! { ::uix_app::prelude::WaterfallKind::Increase },
         // 映射减少柱。
-        "decrease" => quote! { ::uix::prelude::WaterfallKind::Decrease },
+        "decrease" => quote! { ::uix_app::prelude::WaterfallKind::Decrease },
         // 其他值不在登记表。
         _ => {
             // 返回未知语义值诊断。
@@ -224,5 +224,5 @@ fn generate_waterfall_data(
         }
     };
     // 调用公开瀑布图数据构造器。
-    Ok(quote! { ::uix::prelude::WaterfallData::new(#label, #value, #kind) })
+    Ok(quote! { ::uix_app::prelude::WaterfallData::new(#label, #value, #kind) })
 }

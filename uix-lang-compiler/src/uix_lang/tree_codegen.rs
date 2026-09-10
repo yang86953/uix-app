@@ -43,7 +43,7 @@ pub(crate) fn generate_tree(element: &Element) -> Result<TokenStream, Diagnostic
     // 把数组或 Vec 统一收集为运行时要求的 Vec<TreeNode>。
     let nodes = quote! {
         ::std::iter::IntoIterator::into_iter((#data).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::TreeNode>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::TreeNode>>()
     };
     // 未声明 checkable 时显式采用文档默认值。
     let checkable = optional_boolean(element, "checkable")?;
@@ -52,12 +52,12 @@ pub(crate) fn generate_tree(element: &Element) -> Result<TokenStream, Diagnostic
 
     // 按公开构建顺序配置节点和两项树级能力。
     let widget = quote! {
-        ::uix::prelude::Tree::new(#nodes)
+        ::uix_app::prelude::Tree::new(#nodes)
             .checkable(#checkable)
             .default_expand_all(#default_expand_all)
     };
     // Tree 是公开叶 View。
-    let view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 消费专有属性并应用公共尺寸、样式与自动化属性。
     apply_common_attributes(
         // 传入已经配置的树 View。

@@ -2,8 +2,8 @@
 #![cfg(feature = "test-harness")]
 #![allow(non_snake_case, unused_braces)]
 
-use uix::prelude::*;
-use uix::ui::test_harness::{AutomationSnapshot, TestApp};
+use uix_app::prelude::*;
+use uix_app::ui::test_harness::{AutomationSnapshot, TestApp};
 
 uix_items!("examples/fixtures/vscroll_report.uix");
 

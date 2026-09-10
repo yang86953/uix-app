@@ -2,14 +2,14 @@
 //! 用法见《Agent 独立后台操作面》，不创建隐藏或可见原生窗口。
 
 #[cfg(feature = "agent-control")]
-use uix::prelude::StyleExt;
+use uix_app::prelude::StyleExt;
 
 #[cfg(feature = "agent-control")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::{Duration, Instant};
-    use uix::app::agent_workspace::AgentWorkspace;
+    use uix_app::app::agent_workspace::AgentWorkspace;
 
-    let workspace = AgentWorkspace::new(720, 420, || uix::uix!("demo/uix-lang-demo/src/agent.uix"))
+    let workspace = AgentWorkspace::new(720, 420, || uix_app::uix!("demo/uix-lang-demo/src/agent.uix"))
         .title("UIX isolated workspace example")
         .require_confirm("demo-popconfirm-trigger")
         .spawn()?;

@@ -26,11 +26,11 @@ pub(crate) fn generate_theme_toggle(element: &Element) -> Result<TokenStream, Di
     // uix-lang 唯一的 App 级主题请求通道。
     let base = quote! {
         // 通过公开 View 契约进入 ThemeToggle 的 UIX 声明壳。
-        ::uix::prelude::View::build(::uix::prelude::ThemeToggle::new())
+        ::uix_app::prelude::View::build(::uix_app::prelude::ThemeToggle::new())
             // ThemeToggle 的文本载荷只有 light / dark，两者都由 App 主题表解析。
             .on_change_fn(move |__uix_theme_name| {
                 // 与 setTheme 内置操作复用同一请求入口，禁止组件另存主题状态。
-                ::uix::ui::__private::uix_set_theme(__uix_theme_name);
+                ::uix_app::ui::__private::uix_set_theme(__uix_theme_name);
             })
     };
     // 继续复用统一样式、事件与未知属性诊断路径。

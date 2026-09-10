@@ -20,12 +20,12 @@
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：WidgetId 归 identity 模块。
-//! use uix::core::widget_id::WidgetId;
+//! use uix_app::core::widget_id::WidgetId;
 //! ```
 //!
 //! ```compile_fail
 //! // 旧平铺路径不得复活：WindowId 归 identity 模块。
-//! use uix::core::window_id::WindowId;
+//! use uix_app::core::window_id::WindowId;
 //! ```
 //!
 

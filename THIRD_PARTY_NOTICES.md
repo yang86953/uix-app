@@ -10,15 +10,18 @@ It defines the scope of the third-party carve-out referenced by `LICENSE`.
 
 ## 一、随源码分发的第三方材料 / Bundled third-party materials
 
-### 1. LXGW WenKai（霞鹜文楷）
+### 1. UIX Test Body（测试字体子集 / test-only font subset）
 
-- 文件 / Files：`assets/fonts/LXGWWenKai-Regular.ttf`
+- 文件 / Files：`tests/fixtures/fonts/uix-test-body.ttf`
 - 许可证 / License：SIL Open Font License 1.1（OFL-1.1）
 - 版权 / Copyright：
   - Copyright 2021-2026 LXGW (<https://github.com/lxgw/LxgwWenKai>)，保留字体名称
     '霞鹜'、'霞鶩'、'落霞孤鹜'、'落霞孤鶩'、'LXGW'
   - Copyright 2020 The Klee Project Authors (<https://github.com/fontworks-fonts/Klee>)
-- 说明：本仓库原样分发该字体，未做修改，因此继续使用其保留字体名称。
+- 说明：该文件是从 LXGW WenKai（其本身衍生自 Klee One）子集化并改名的确定性
+  测试 fixture，仅覆盖自动化测试文本所需字形，按 OFL 保留字体名称条款改用
+  "UIX Test Body"。它只用于测试，不是产品默认字体；UIX 不随仓库或 crate 分发
+  完整正文字体，应用按 `README.md` 的字体说明自行选择系统字体或显式字体包。
 
 ### 2. Lucide 图标字体
 
@@ -210,7 +213,7 @@ copyleft. They are not redistributed in this repository but fetched by Cargo at 
 
 ## 三、许可证全文 / Full license texts
 
-### SIL Open Font License 1.1（LXGW WenKai）
+### SIL Open Font License 1.1（UIX Test Body，源自 LXGW WenKai / Klee）
 
 ```text
 Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'. [ADDITIONAL PERMISSION] The Reserved Font Names '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW' may continue to be used in Modified Versions recompiled from the Original Version, without modifications to the font source code; or in Modified Versions subsetted or converted to other formats (e.g., WOFF/WOFF2) solely for web font delivery, provided such Modified Versions are not made available as installable desktop fonts (e.g., on mainstream platforms like Google Fonts, or third-party non-commercial platforms recognized by the author @lxgw; other web font platforms please contact the author @lxgw for confirmation).

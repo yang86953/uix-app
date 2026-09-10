@@ -32,15 +32,15 @@ pub(crate) fn generate_result_view(element: &Element) -> Result<TokenStream, Dia
         // 把文档关键字映射到公开运行时枚举。
         match status.as_str() {
             // 映射成功结果。
-            "success" => quote! { ::uix::prelude::ResultType::Success },
+            "success" => quote! { ::uix_app::prelude::ResultType::Success },
             // 映射错误结果。
-            "error" => quote! { ::uix::prelude::ResultType::Error },
+            "error" => quote! { ::uix_app::prelude::ResultType::Error },
             // 映射信息结果。
-            "info" => quote! { ::uix::prelude::ResultType::Info },
+            "info" => quote! { ::uix_app::prelude::ResultType::Info },
             // 映射警告结果。
-            "warning" => quote! { ::uix::prelude::ResultType::Warning },
+            "warning" => quote! { ::uix_app::prelude::ResultType::Warning },
             // 映射未找到结果。
-            "404" => quote! { ::uix::prelude::ResultType::NotFound },
+            "404" => quote! { ::uix_app::prelude::ResultType::NotFound },
             // 拒绝文档外的状态关键字。
             _ => {
                 // 返回包含合法集合的确定性诊断。
@@ -56,10 +56,10 @@ pub(crate) fn generate_result_view(element: &Element) -> Result<TokenStream, Dia
         }
     } else {
         // 未声明状态时使用成功结果。
-        quote! { ::uix::prelude::ResultType::Success }
+        quote! { ::uix_app::prelude::ResultType::Success }
     };
     // 从公开构造器开始配置。
-    let mut widget = quote! { ::uix::prelude::ResultView::new(#result_type) };
+    let mut widget = quote! { ::uix_app::prelude::ResultView::new(#result_type) };
     // 可选标题接受字符串字面量或受限字符串表达式。
     if let Some(attribute) = find_attribute(element, "title") {
         // 生成标题字符串令牌。
@@ -76,7 +76,7 @@ pub(crate) fn generate_result_view(element: &Element) -> Result<TokenStream, Dia
     }
 
     // 经公开 View 契约进入组件自己的同目录 UIX 声明壳。
-    let view = quote! { ::uix::prelude::View::build(#widget) };
+    let view = quote! { ::uix_app::prelude::View::build(#widget) };
     // 消费 ResultView 专有属性并返回公共 View 表达式。
     apply_common_attributes(
         // 传入已经配置的结果页 View。

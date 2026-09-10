@@ -48,11 +48,11 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
     // 把数组或 Vec 统一收集为运行时构造器要求的拥有型集合。
     let anchor_items = quote! {
         ::std::iter::IntoIterator::into_iter((#items).clone())
-            .collect::<::std::vec::Vec<::uix::prelude::AnchorItem>>()
+            .collect::<::std::vec::Vec<::uix_app::prelude::AnchorItem>>()
     };
 
     // 由 Anchor 运行时取得条目集合所有权。
-    let mut widget = quote! { ::uix::prelude::Anchor::new(#anchor_items) };
+    let mut widget = quote! { ::uix_app::prelude::Anchor::new(#anchor_items) };
     // 显式 offsetTop 映射到组件拥有的滚动定位偏移。
     if let Some(attribute) = find_attribute(element, "offsetTop") {
         // 复用统一像素字面量与数值表达式生成契约。
@@ -69,7 +69,7 @@ pub(crate) fn generate_anchor(element: &Element) -> Result<TokenStream, Diagnost
     }
 
     // 先物化公开叶节点，Change 处理器与样式由 View 契约拥有。
-    let mut view = quote! { ::uix::prelude::ViewNode::leaf(#widget) };
+    let mut view = quote! { ::uix_app::prelude::ViewNode::leaf(#widget) };
     // 可选变化事件观察 Anchor 已建立的 href 选择事实。
     if let Some(attribute) = find_attribute(element, "@change") {
         // 事件解析器应始终提供受限表达式。

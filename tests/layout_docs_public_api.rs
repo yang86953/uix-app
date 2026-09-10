@@ -4,7 +4,7 @@
 // 隔离 layout-grid 围栏中的显式与响应式网格声明。
 mod layout_grid {
     // 引入文档承诺的公开布局 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译显式轨道与响应式二十四栅格两种公开写法。
     fn compile_example() {
@@ -43,7 +43,7 @@ mod layout_grid {
 // 隔离 layout-splitter 围栏中的面板配置。
 mod layout_splitter {
     // 引入文档承诺的公开布局 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译双面板 Splitter 的公开 builder 链。
     fn compile_example() {
@@ -64,7 +64,7 @@ mod layout_splitter {
 // 隔离 layout-affix 围栏中的固钉与回顶组件。
 mod layout_affix {
     // 引入文档承诺的公开布局 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译带子节点的 Affix 与独立 BackTop 公开写法。
     fn compile_example() {
@@ -84,7 +84,7 @@ mod layout_affix {
 // 隔离 layout-scroll 围栏中的普通与虚拟滚动声明。
 mod layout_scroll {
     // 引入文档承诺的公开布局 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译普通滚动容器与固定行高虚拟列表。
     fn compile_example() {
@@ -119,7 +119,7 @@ mod layout_scroll {
 // 隔离 layout-app-shell 围栏中的应用壳辅助函数。
 mod layout_app_shell {
     // 引入文档承诺的公开布局 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为文档中的 cards 调用提供最小拥有型业务卡片集合。
     fn cards() -> Vec<ViewNode> {

@@ -1,5 +1,9 @@
 # UIX
 
+> **⚠️ 早期开发阶段（0.0.8）：API 与功能可能发生不兼容变化，不承诺生产稳定性。**
+>
+> **Early development (0.0.8): APIs and features may change in incompatible ways; production stability is not guaranteed.**
+
 UIX 是一个 **Rust 原生跨平台应用框架**，目标是让同一套界面与应用逻辑运行在多个平台的原生窗口上。
 
 跨平台复用的单位是**完整应用，而不只是组件树或 UI 描述语言**：UIX 统一界面、应用组合根、
@@ -43,6 +47,14 @@ extensions have explicit host capability boundaries.
 UIX 仍处于早期阶段。产品方向、源码包含某个后端、交叉编译通过、目标平台实机验收和正式制品发布
 是不同事实；不能从其中一项推导其余项。仓库中的版本号也不表示已发布对应的公开安装包或 crates.io 包。
 
+## 包身份与发布状态 / Package identity and status
+
+- Cargo 包名为 **`uix-app`**；在 Rust 代码中通过库名 **`uix_app`** 引用，例如 `use uix_app::prelude::*;`。
+- **尚未上传 crates.io**：当前版本只能以源码方式消费（本仓库的 git 依赖或 path 依赖），
+  不要按 `uix-app = "0.0.8"` 的 registry 写法引用；实际上架后另行公告。
+- The Cargo package is **`uix-app`**; import it in Rust as **`uix_app`** (e.g. `use uix_app::prelude::*;`).
+  It is **not yet published to crates.io** — consume it from this repository (git or path dependency) only.
+
 ## 构建 / Build
 
 需要 Rust 工具链及目标平台所需的原生开发依赖。`rust-toolchain.toml` 固定 Rust 版本。
@@ -61,13 +73,33 @@ cargo test --features agent-control,test-harness --test "*_public_api" --quiet
 不进入发布构建。编译或公开 API 测试通过，不代替真实窗口、GPU、输入和跨平台验收。
 纯说明文字修改只需核对内容与链接，无需重跑构建或测试。
 
+## 字体 / Fonts
+
+UIX 不随仓库或 crate 分发完整正文字体：
+
+- 未显式配置字体时，应用通过平台系统字体发现装载正文字体与 CJK 回退
+  （fontconfig / 注册表 / CoreText）；无窗口后台操作面同样只走该窄接口，
+  不创建显示连接、窗口或访问用户应用。
+- 需要确定性正文外观的应用随应用自带字体，并以 `App::font_bundle`（窗口应用）
+  或 `AgentWorkspace::font_bundle`（后台操作面）显式注入；显式字体包优先于系统发现。
+- 找不到可加载的正文字体时，启动返回可识别错误。随包的 `assets/fonts/lucide.ttf`
+  只是图标字体（Lucide，ISC），不会也不得被用作正文字体。
+- `tests/fixtures/fonts/uix-test-body.ttf` 是仅用于自动化测试的 OFL 子集 fixture，
+  详见 `THIRD_PARTY_NOTICES.md`。
+
+UIX does not bundle a body font. Apps default to platform font discovery, or bundle
+their own font via `App::font_bundle` / `AgentWorkspace::font_bundle` (explicit bundles
+take priority). Missing loadable body fonts fail startup with a typed error; the bundled
+`lucide.ttf` is icon-only. `tests/fixtures/fonts/uix-test-body.ttf` is an OFL subset
+fixture used by automated tests only.
+
 ## 工作区构成 / Workspace layout
 
-本仓库是一个 Cargo 工作区，根 crate 为 `uix`，另含五个成员 crate：
+本仓库是一个 Cargo 工作区，根 crate 为 `uix-app`（Rust 库名 `uix_app`），另含五个成员 crate：
 
 | Crate | 说明 |
 | --- | --- |
-| `uix` | 框架本体（根 crate） |
+| `uix-app` | 框架本体（根 crate，Rust 库名 `uix_app`） |
 | `uix-derive` | UIX 过程宏 |
 | `uix-lang-compiler` | 构建期共享编译器 |
 | `uix-lang-runtime` | 可移植的模块执行契约 |
@@ -84,7 +116,7 @@ cargo test --features agent-control,test-harness --test "*_public_api" --quiet
 | `demo/` | 示例应用（含 `task-list` 与 `uix-lang-demo`） |
 | `editors/zed/` | Zed 编辑器扩展（语法高亮 + 语言服务器） |
 | `extensions/` | 扩展样例 |
-| `assets/` | 字体与图片素材（第三方来源见 `THIRD_PARTY_NOTICES.md`） |
+| `assets/` | 图标字体与图片素材（第三方来源见 `THIRD_PARTY_NOTICES.md`） |
 | `scripts/` | 构建与维护脚本 |
 
 ## 编辑器支持 / Editor support

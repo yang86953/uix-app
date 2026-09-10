@@ -16,15 +16,15 @@ pub(super) fn position_value(
     // 只接受运行时完整实现的五种模式。
     match source {
         // static 保持正常流并忽略四边值。
-        "static" => Ok(quote! { ::uix::prelude::PositionMode::Static }),
+        "static" => Ok(quote! { ::uix_app::prelude::PositionMode::Static }),
         // relative 保留槽位并移动视觉子树。
-        "relative" => Ok(quote! { ::uix::prelude::PositionMode::Relative }),
+        "relative" => Ok(quote! { ::uix_app::prelude::PositionMode::Relative }),
         // absolute 相对最近定位祖先脱流。
-        "absolute" => Ok(quote! { ::uix::prelude::PositionMode::Absolute }),
+        "absolute" => Ok(quote! { ::uix_app::prelude::PositionMode::Absolute }),
         // fixed 相对根视口脱流并提升合成路径。
-        "fixed" => Ok(quote! { ::uix::prelude::PositionMode::Fixed }),
+        "fixed" => Ok(quote! { ::uix_app::prelude::PositionMode::Fixed }),
         // sticky 保留槽位并停靠最近滚动视口。
-        "sticky" => Ok(quote! { ::uix::prelude::PositionMode::Sticky }),
+        "sticky" => Ok(quote! { ::uix_app::prelude::PositionMode::Sticky }),
         // 其他值不得静默回退 static。
         _ => Err(Diagnostic::new(
             // 指向完整 position 值。

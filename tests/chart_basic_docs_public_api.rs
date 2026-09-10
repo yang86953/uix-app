@@ -4,7 +4,7 @@
 // 隔离 dynamic-chart 围栏中的响应式数据入口。
 mod dynamic_chart {
     // 引入文档承诺的图表与状态公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译业务 State 到图表数据快照的公开数据流。
     fn compile_example() {
@@ -36,7 +36,7 @@ mod dynamic_chart {
 // 隔离 bar-chart 围栏中的基础柱状图。
 mod bar_chart {
     // 引入文档承诺的柱状图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译固定数据与尺寸配置。
     fn compile_example() {
@@ -61,7 +61,7 @@ mod bar_chart {
 // 隔离 chart-bar-advanced 围栏中的柱状图高级布局。
 mod chart_bar_advanced {
     // 引入文档承诺的柱状图与系列公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译分组、堆叠与横向柱状图配置。
     fn compile_example() {
@@ -137,7 +137,7 @@ mod chart_bar_advanced {
 // 隔离 line-chart 围栏中的基础折线图。
 mod line_chart {
     // 引入文档承诺的折线图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译固定数据、尺寸与数据点半径配置。
     fn compile_example() {
@@ -164,7 +164,7 @@ mod line_chart {
 // 隔离 chart-line-advanced 围栏中的折线与面积高级配置。
 mod chart_line_advanced {
     // 引入文档承诺的折线、面积与系列公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译多系列、面积、堆叠与平滑配置。
     fn compile_example() {
@@ -225,7 +225,7 @@ mod chart_line_advanced {
 // 隔离 pie-chart 围栏中的基础饼图。
 mod pie_chart {
     // 引入文档承诺的饼图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译产品占比环形图配置。
     fn compile_example() {
@@ -250,7 +250,7 @@ mod pie_chart {
 // 隔离 chart-pie-advanced 围栏中的饼图高级配置。
 mod chart_pie_advanced {
     // 引入文档承诺的饼图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译玫瑰图与半圆环配置。
     fn compile_example() {
@@ -281,7 +281,7 @@ mod chart_pie_advanced {
 // 隔离 chart-scatter 围栏中的散点与气泡图。
 mod chart_scatter {
     // 引入文档承诺的散点、气泡与系列公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译单系列、多系列与气泡尺寸配置。
     fn compile_example() {

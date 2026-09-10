@@ -4,7 +4,7 @@
 // 隔离 framework-di 围栏中的组合根依赖注入。
 mod framework_di {
     // 引入文档承诺的公开 DI、AppHandle 与设置服务 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译同一 App 的注册与启动边界解析；独立容器不会自动注入现有 handle。
     fn compile_example() {
@@ -21,7 +21,7 @@ mod framework_di {
 // 隔离 framework-provider 围栏中的子树配置继承。
 mod framework_provider {
     // 引入文档承诺的公开 Provider、控件与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译 Locale 与组件配置在独立子树中的覆写。
     fn compile_example() {
@@ -70,7 +70,7 @@ mod framework_provider {
 // 隔离 framework-overrides 围栏中的组件窄覆盖。
 mod framework_overrides {
     // 引入文档承诺的公开配置、令牌与组件 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译组件构造覆盖与类型索引令牌补丁。
     fn compile_example() {
@@ -115,7 +115,7 @@ mod framework_overrides {
 // 隔离 framework-locale 围栏中的应用语言组合根。
 mod framework_locale {
     // 引入文档承诺的公开 Application、Locale 与 View prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译应用级 Locale 注册与组件内语言消费。
     fn documented_main() {
@@ -146,7 +146,7 @@ mod framework_locale {
 // 隔离 framework-singleton 围栏中的 App builder 单例注册。
 mod framework_singleton {
     // 引入文档承诺的公开 Application 与设置服务 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译组合根单例注册与根视图装配。
     fn documented_main() {
@@ -169,7 +169,7 @@ mod framework_singleton {
 
 // 隔离 framework-services-i18n 围栏；资源表和 Locale 是独立的公开机制。
 mod framework_services_i18n {
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     fn compile_example() {
         // 在构建目标 UI 前注册进程级业务文案；LocaleProvider 不选择这张资源表。

@@ -4,7 +4,7 @@
 // 隔离 data-label 围栏中的短文本与多行文本。
 mod data_label {
     // 引入文档承诺的文本与样式公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译字号与行高样式配置。
     fn compile_example() {
@@ -24,7 +24,7 @@ mod data_label {
 // 隔离 data-avatar 围栏中的文字回退与方形图片头像。
 mod data_avatar {
     // 引入文档承诺的头像公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译文字头像与图片回退配置。
     fn compile_example() {
@@ -45,7 +45,7 @@ mod data_avatar {
 // 隔离 data-badge 围栏中的计数与透明装饰器。
 mod data_badge {
     // 引入文档承诺的徽标与视图公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译颜色、计数上限与唯一子 View 配置。
     fn compile_example() {
@@ -61,7 +61,7 @@ mod data_badge {
 // 隔离 calendar-basic 围栏中的非受控初值。
 mod calendar_basic {
     // 引入文档承诺的日历公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译日期格尺寸与非受控默认日期。
     fn compile_example() {
@@ -80,7 +80,7 @@ mod calendar_basic {
 // 隔离 calendar-controlled 围栏中的受控选择值。
 mod calendar_controlled {
     // 引入文档承诺的日历与状态公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译业务 State 到日历选择值的双向绑定。
     fn compile_example() {
@@ -94,7 +94,7 @@ mod calendar_controlled {
 // 隔离 calendar-policy 围栏中的显示月份与日期策略。
 mod calendar_policy {
     // 引入文档承诺的日历、状态与颜色公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译选择值、显示月份、事件快照与禁用策略。
     fn compile_example() {
@@ -132,7 +132,7 @@ mod calendar_policy {
 // 隔离 calendar-date-cell 围栏中的真实日期格子树。
 mod calendar_date_cell {
     // 引入文档承诺的日期上下文与 View 公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 为一个日期构造由 Calendar 拥有的自定义格子 View。
     fn calendar_date_cell(date: Date, info: CalendarCellInfo) -> ViewNode {
@@ -163,7 +163,7 @@ mod carousel_basic {
     // 引入公开时间类型。
     use std::time::Duration;
     // 引入文档承诺的轮播公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译轮播尺寸与三秒自动播放间隔。
     fn compile_example() {
@@ -182,7 +182,7 @@ mod carousel_basic {
 // 隔离 data-card 围栏中的标题、正文与操作区。
 mod data_card {
     // 引入文档承诺的卡片公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译卡片复合内容配置。
     fn compile_example() {
@@ -203,7 +203,7 @@ mod data_card {
 // 隔离 collapse 围栏中的稳定折叠面板。
 mod collapse {
     // 引入文档承诺的折叠面板公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译展开初值与面板列表。
     fn compile_example() {
@@ -220,7 +220,7 @@ mod collapse {
 // 隔离 data-image-advanced 围栏中的图片与可读回退。
 mod data_image_advanced {
     // 引入文档承诺的图片公开 prelude。
-    use uix::prelude::*;
+    use uix_app::prelude::*;
 
     // 编译资源路径、替代文本、回退、圆角、预览与适配配置。
     fn compile_example() {
