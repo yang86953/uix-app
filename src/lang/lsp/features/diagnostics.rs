@@ -169,7 +169,11 @@ pub(crate) fn publish(session: &mut Session, request_uri_value: &str) -> Vec<Val
         session.check_document_with_overlays(path)
     } else {
         let snapshot = document_snapshot(session, request_uri_value);
-        CompilerSystem::new().check_document_inline(&snapshot.text, &snapshot.name)
+        if session.is_component_document(&snapshot.uri, &snapshot.text) {
+            CompilerSystem::new().check_component_inline(&snapshot.text, &snapshot.name, &BTreeMap::new()).map(DocumentOutput::Component)
+        } else {
+            CompilerSystem::new().check_document_inline(&snapshot.text, &snapshot.name)
+        }
     };
     match &outcome {
         Ok(DocumentOutput::Ui(analysis)) => {

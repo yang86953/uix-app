@@ -6,6 +6,9 @@ use std::collections::BTreeMap;
 
 mod index;
 mod presentation;
+pub(super) fn preview(arguments: std::fmt::Arguments<'_>) -> String {
+    presentation::preview(arguments)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SymbolTarget {

@@ -46,3 +46,28 @@ pub fn method_signature(value: &Type, name: &str) -> Option<(Vec<Type>, Type)> {
         _ => return None,
     })
 }
+
+/// 工具的候选名集合仍由同一签名函数过滤，不另写一份接收者类型规则。
+pub fn method_names(value: &Type) -> impl Iterator<Item = &'static str> + '_ {
+    [
+        "len",
+        "trim",
+        "toUpperCase",
+        "toLowerCase",
+        "chars",
+        "words",
+        "lines",
+        "split",
+        "replace",
+        "contains",
+        "push",
+        "get",
+        "join",
+        "isSome",
+        "isOk",
+        "unwrapOr",
+        "toString",
+    ]
+    .into_iter()
+    .filter(|name| method_signature(value, name).is_some())
+}

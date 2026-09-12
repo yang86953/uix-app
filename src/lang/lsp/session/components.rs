@@ -15,6 +15,23 @@ pub(super) fn covers(output: &ComponentOutput, path: &Path) -> bool {
             .any(|file| same_document_path(file, path))
 }
 impl Session {
+    pub(crate) fn is_component_document(&self, uri: &str, source: &str) -> bool {
+        component_source::editor_source_hint(source).unwrap_or_else(|| {
+            self.component_documents.contains(uri)
+                || uri_to_path(uri).is_some_and(|path| self.is_component_path(&path, source))
+        })
+    }
+    pub(super) fn is_component_path(&self, path: &Path, source: &str) -> bool {
+        component_source::editor_source_hint(source).unwrap_or_else(|| self.component_documents.iter().any(|uri|
+            matches!(self.documents.get(uri), Some(OpenDocument::File(candidate)) if same_document_path(path, candidate))))
+    }
+    pub(crate) fn component_edit_root(&self, path: &Path) -> PathBuf {
+        self.component_roots
+            .values()
+            .filter(|(_, files)| files.iter().any(|file| same_document_path(file, path)))
+            .max_by_key(|(_, files)| files.len())
+            .map_or_else(|| path.to_path_buf(), |(root, _)| root.clone())
+    }
     pub(crate) fn component_analysis(
         &mut self,
         uri: &str,

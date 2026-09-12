@@ -1,9 +1,9 @@
 use super::*;
 
-fn name_start(ch: char) -> bool {
+pub(super) fn name_start(ch: char) -> bool {
     ch == '_' || ch.is_alphabetic()
 }
-fn name_continue(ch: char) -> bool {
+pub(super) fn name_continue(ch: char) -> bool {
     name_start(ch) || ch.is_numeric()
 }
 

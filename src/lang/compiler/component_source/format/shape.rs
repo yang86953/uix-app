@@ -188,6 +188,7 @@ fn expr(value: &mut Expr) {
             }
         }
         ExprKind::Element(value) => {
+            span(&mut value.opening_span);
             if let Some(names) = &mut value.closing_name {
                 names.iter_mut().for_each(name);
             }

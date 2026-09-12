@@ -3,6 +3,11 @@ use std::fmt::{self, Write};
 
 // 大类型/别名按 UTF-8 边界截断展示；身份和查询范围不受展示上限影响。
 struct Preview(String, bool);
+pub(super) fn preview(arguments: fmt::Arguments<'_>) -> String {
+    let mut output = Preview(String::new(), false);
+    let _ = output.write_fmt(arguments);
+    output.0
+}
 impl Write for Preview {
     fn write_str(&mut self, value: &str) -> fmt::Result {
         if self.1 {

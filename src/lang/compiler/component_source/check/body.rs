@@ -124,6 +124,7 @@ impl Checker<'_> {
         parameters: &[Parameter],
         types: &[Type],
     ) -> Result<()> {
+        self.observe_hidden_parameters(scope, parameters)?;
         scope.unavailable.extend(
             parameters
                 .iter()
@@ -141,6 +142,7 @@ impl Checker<'_> {
                     "参数默认值不能写状态或调用有外部效果的函数",
                 );
             }
+            scope.visible_from = parameter.span.end;
             self.declare(
                 scope,
                 &parameter.name,
@@ -193,6 +195,7 @@ impl Checker<'_> {
                 callable,
             },
         );
+        self.observe_binding(scope, name)?;
         Ok(())
     }
 
@@ -209,12 +212,14 @@ impl Checker<'_> {
                     DeclarationKind::Function(function) => {
                         let signature = self.functions[&owner].clone();
                         let mut scope = Scope::new(owner, Some(*signature.returns.clone()));
+                        self.observe_scope(&mut scope, declaration.span)?;
                         self.parameters(&mut scope, &function.parameters, &signature.parameters)?;
                         self.finish_function(&mut scope, &function.body)?;
                     }
                     DeclarationKind::Component { parameters, body } => {
                         let signature = self.components[&id].clone();
                         let mut scope = Scope::new(owner, Some(Type::View));
+                        self.observe_scope(&mut scope, declaration.span)?;
                         self.functions.insert(
                             owner,
                             FunctionSignature {
@@ -271,12 +276,21 @@ impl Checker<'_> {
                                     Effect::Query,
                                     "state 初始化不能写状态或执行外部效果",
                                 );
+                                scope.visible_from = initial.span.end;
                                 self.declare(&mut scope, name, ty, VariableKind::State, None)?;
                             } else {
                                 state_prefix = false;
                             }
                         }
                         // 函数名在组件作用域内可前向引用；函数的局部值捕获仍按声明处词法环境。
+                        scope.visible_from = body
+                            .iter()
+                            .find_map(|member| match member {
+                                ComponentMember::State { .. } => None,
+                                ComponentMember::Function { span, .. } => Some(span.start),
+                                ComponentMember::Statement(statement) => Some(statement.span.start),
+                            })
+                            .unwrap_or(declaration.span.end);
                         for member in body {
                             if let ComponentMember::Function {
                                 name,
@@ -310,6 +324,7 @@ impl Checker<'_> {
                                     inner.locals.clear();
                                     inner.effects = Effects::default();
                                     inner.returns = Some(*signature.returns.clone());
+                                    self.observe_scope(&mut inner, *span)?;
                                     self.parameters(
                                         &mut inner,
                                         &function.parameters,
@@ -330,6 +345,7 @@ impl Checker<'_> {
                                 }
                             }
                         }
+                        self.finish_scope(&scope);
                         if !returns {
                             return Err(self.error(
                                 scope.source,
@@ -355,6 +371,7 @@ impl Checker<'_> {
     }
     fn finish_function(&mut self, scope: &mut Scope, body: &Block) -> Result<()> {
         let returns = self.statements(scope, &body.statements)?;
+        self.finish_scope(scope);
         if scope
             .returns
             .as_ref()
@@ -401,6 +418,7 @@ impl Checker<'_> {
                     .transpose()?;
                 let fact = self.expr(scope, value, ty.as_ref())?;
                 scope.effects.add(&fact.effects);
+                scope.visible_from = value.span.end;
                 self.declare(
                     scope,
                     name,
@@ -504,7 +522,9 @@ impl Checker<'_> {
                 let mut branch = scope.clone();
                 branch.locals.clear();
                 branch.effects = Effects::default();
+                self.observe_scope(&mut branch, then_block.span)?;
                 let then_returns = self.statements(&mut branch, &then_block.statements)?;
+                self.finish_scope(&branch);
                 merge_callable_assignments(scope, &branch);
                 scope.effects.add(&branch.effects);
                 scope.returns = branch.returns;
@@ -512,7 +532,9 @@ impl Checker<'_> {
                     let mut branch = scope.clone();
                     branch.locals.clear();
                     branch.effects = Effects::default();
+                    self.observe_scope(&mut branch, block.span)?;
                     let returns = self.statements(&mut branch, &block.statements)?;
+                    self.finish_scope(&branch);
                     merge_callable_assignments(scope, &branch);
                     scope.effects.add(&branch.effects);
                     scope.returns = branch.returns;

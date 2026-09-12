@@ -9,6 +9,7 @@ impl Checker<'_> {
     ) -> Result<Fact> {
         self.charge(scope.source, expression.span, 1)?;
         let fact = self.expression(scope, expression, expected)?;
+        self.observe_progress(scope, expression.span.end);
         self.charge_type(scope.source, expression.span, &fact.ty)?;
         if self.renderers.contains(&scope.owner)
             && (fact.effects.base > Effect::Pure || !fact.effects.calls.is_empty())
@@ -410,6 +411,8 @@ impl Checker<'_> {
         inner.locals.clear();
         inner.effects = Effects::default();
         inner.returns = expected_return.cloned();
+        self.observe_scope(&mut inner, span)?;
+        self.observe_hidden_parameters(&inner, parameters)?;
         let mut types = Vec::new();
         for (index, parameter) in parameters.iter().enumerate() {
             if parameter.default.is_some() {
@@ -441,6 +444,7 @@ impl Checker<'_> {
                     expected,
                 )?;
             }
+            inner.visible_from = parameter.span.end;
             self.declare(
                 &mut inner,
                 &parameter.name,
@@ -455,10 +459,12 @@ impl Checker<'_> {
             LambdaBody::Expression(expression) => {
                 let fact = self.expr(&mut inner, expression, expected_return)?;
                 inner.effects.add(&fact.effects);
+                self.finish_scope(&inner);
                 fact.ty
             }
             LambdaBody::Block(block) => {
                 let all_return = self.statements(&mut inner, &block.statements)?;
+                self.finish_scope(&inner);
                 let returns = inner.returns.unwrap_or(Type::Data(DataType::Unit));
                 if returns != Type::Data(DataType::Unit) && !all_return {
                     return Err(self.error(
@@ -688,6 +694,7 @@ impl Checker<'_> {
             .iter()
             .cloned()
             .collect::<BTreeMap<_, _>>();
+        self.observe_progress(scope, name.span.end);
         let mut provided = BTreeSet::new();
         let mut fact = Fact::pure(Type::View);
         fact.resolution = Some(resolution);
@@ -725,6 +732,7 @@ impl Checker<'_> {
             };
             fact.effects.add(&value.effects);
         }
+        self.observe_progress(scope, element.opening_span.end);
         let has_children = (!element.children.is_empty()
             && fields.get("children") == Some(&Type::Data(DataType::String)))
             || element.children.iter().any(

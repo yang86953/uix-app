@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 // 生成 textDocument/completion 响应。
 pub(crate) fn complete(session: &Session, request: &Value) -> Value {
-    if super::component_document(session, request) { return json!({"isIncomplete":true,"items":[]}); }
+    if super::component_document(session, request) { return super::component_completion::complete(session, request); }
     if let Some(result) = super::modules::completion(session, request) {
         return result;
     }

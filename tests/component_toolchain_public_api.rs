@@ -328,6 +328,106 @@ fn cli_and_cargo_share_native_signatures_entry_selection_and_dependency_diagnost
     );
 }
 
+#[test]
+fn stdio_completion_uses_current_partial_bindings_and_keeps_the_editor_family() {
+    let project = Project::new();
+    let (root, _, libraries) = project.setup();
+    let root_uri = uri(&root);
+    let disk = fs::read_to_string(&root).unwrap();
+    let partial = "import {Text} from 'native';\nexport component Main(input:String=\"中文😀\"){let draft=in;return <Text>{input}</Text>;}";
+    let position = |source: &str, offset: usize| {
+        let prefix = &source[..offset];
+        json!({"line":prefix.bytes().filter(|b| *b==b'\n').count(),"character":prefix.rsplit('\n').next().unwrap().encode_utf16().count()})
+    };
+    let params = |source: &str, at: usize| json!({"textDocument":{"uri":root_uri},"position":position(source,at)});
+    let mut lsp = Lsp::new();
+    let messages = lsp.change(
+        "textDocument/didOpen",
+        json!({"textDocument":{"uri":root_uri,"text":partial}}),
+    );
+    assert_eq!(
+        diagnostics(&messages, &root_uri)[0]["code"],
+        "component-name"
+    );
+    let start = partial.find("draft=in").unwrap() + 6;
+    let result = lsp.request("textDocument/completion", params(partial, start + 2));
+    assert_eq!(result["items"].as_array().unwrap().len(), 1);
+    assert_eq!(result["items"][0]["label"], "input");
+    assert_eq!(
+        result["items"][0]["textEdit"]["range"],
+        json!({"start":position(partial,start),"end":position(partial,start+2)})
+    );
+    let fixed = format!("{}input{}", &partial[..start], &partial[start + 2..]);
+    assert!(
+        CompilerSystem::new()
+            .check_component_inline(&fixed, &root_uri, &libraries)
+            .is_ok()
+    );
+    assert_eq!(fs::read_to_string(&root).unwrap(), disk); // 补全只发编辑，不回写用户文件。
+    let changed = partial.replace("input", "value");
+    lsp.change(
+        "textDocument/didChange",
+        json!({"textDocument":{"uri":root_uri},"contentChanges":[{"text":changed}]}),
+    );
+    assert!(
+        lsp.request("textDocument/completion", params(&changed, start + 2))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    lsp.change(
+        "textDocument/didChange",
+        json!({"textDocument":{"uri":root_uri},"contentChanges":[{"text":""}]}),
+    );
+    let result = lsp.request("textDocument/completion", params("", 0));
+    let labels = result["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["label"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        labels,
+        ["component", "export", "function", "import", "type"]
+    );
+    assert_eq!(
+        lsp.request(
+            "textDocument/formatting",
+            json!({"textDocument":{"uri":root_uri}})
+        )[0]["newText"],
+        "\n"
+    );
+    for source in ["com", "/* 编辑😀 */ com"] {
+        let changed = lsp.change(
+            "textDocument/didChange",
+            json!({"textDocument":{"uri":root_uri},"contentChanges":[{"text":source}]}),
+        );
+        assert_eq!(
+            diagnostics(&changed, &root_uri)[0]["code"],
+            "component-declaration"
+        );
+        let result = lsp.request("textDocument/completion", params(source, source.len()));
+        assert_eq!(result["items"][0]["label"], "component");
+    }
+    // 显式旧 XML 前缀仍可切换，不让 family 保持变成永久语法锁定。
+    lsp.change(
+        "textDocument/didChange",
+        json!({"textDocument":{"uri":root_uri},"contentChanges":[{"text":"<App/>"}]}),
+    );
+    let formatted = lsp.request(
+        "textDocument/formatting",
+        json!({"textDocument":{"uri":root_uri}}),
+    );
+    assert!(formatted[0]["newText"].as_str().unwrap().contains("<App"));
+    lsp.change(
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":root_uri}}),
+    );
+    lsp.request("shutdown", Value::Null);
+    lsp.send(json!({"jsonrpc":"2.0","method":"exit"}));
+    assert!(lsp.child.wait().unwrap().success());
+}
+
 struct Lsp {
     child: Child,
     output: BufReader<ChildStdout>,

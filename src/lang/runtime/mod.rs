@@ -21,7 +21,7 @@ mod worker;
 #[cfg(any(feature = "lang-build", feature = "uix-modules"))]
 pub use async_port::{AsyncCall, AsyncCompletion, AsyncHostPort, AsyncHostPorts, OperationId};
 pub use control::{Cancellation, Limits};
-pub use data_contract::{binary_signature, method_signature};
+pub use data_contract::{binary_signature, method_names, method_signature};
 #[cfg(any(feature = "lang-build", feature = "uix-modules"))]
 pub use execute::*;
 #[cfg(any(feature = "lang-build", feature = "uix-modules"))]

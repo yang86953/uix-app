@@ -10,12 +10,16 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod body;
 mod expression;
+mod scopes;
+pub(super) use scopes::inspect;
 mod symbols;
 mod types;
+use super::completion::LexicalScope;
 use super::symbols::NameFact;
 pub(super) use types::native_export_cost;
 pub use types::*;
-type Result<T> = std::result::Result<T, CompilerDiagnostic>;
+// 与 parser 相同：递归成功路径不为完整诊断预留大型 Result 错误栈槽。
+type Result<T> = std::result::Result<T, Box<CompilerDiagnostic>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId {
@@ -188,6 +192,8 @@ struct Scope {
     unavailable: BTreeSet<String>,
     returns: Option<Type>,
     effects: Effects,
+    trace: usize,
+    visible_from: usize,
 }
 impl Scope {
     fn new(owner: NodeId, returns: Option<Type>) -> Self {
@@ -199,6 +205,8 @@ impl Scope {
             unavailable: BTreeSet::new(),
             returns,
             effects: Effects::default(),
+            trace: usize::MAX,
+            visible_from: owner.start,
         }
     }
 }
@@ -227,12 +235,17 @@ struct Checker<'a> {
     requirements: Vec<Requirement>,
     work: usize,
     names: BTreeMap<NodeId, NameFact>,
+    scopes: Vec<LexicalScope>,
+    record_scopes: bool,
 }
 
-/// 检查由 link_file 连接的闭包及显式原生导出签名。不读取/猜测官方组件库。
-pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<CheckedSource> {
-    let mut checker = Checker {
-        linked: &linked,
+fn checker<'a>(
+    linked: &'a LinkedSource,
+    libraries: &'a NativeLibraries,
+    record_scopes: bool,
+) -> Checker<'a> {
+    Checker {
+        linked,
         libraries,
         native_imports: BTreeMap::new(),
         aliases: BTreeMap::new(),
@@ -248,7 +261,12 @@ pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<Checke
         requirements: Vec::new(),
         work: 0,
         names: BTreeMap::new(),
-    };
+        scopes: Vec::new(),
+        record_scopes,
+    }
+}
+
+fn analyze(checker: &mut Checker<'_>) -> Result<BTreeMap<NodeId, Effect>> {
     checker.native_interfaces()?;
     checker.signatures()?;
     checker.bodies()?;
@@ -269,6 +287,16 @@ pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<Checke
     for (id, signature) in &mut checker.functions {
         signature.effect = effects[id];
     }
+    Ok(effects)
+}
+
+/// 检查由 link_file 连接的闭包及显式原生导出签名。不读取/猜测官方组件库。
+pub fn check(
+    linked: LinkedSource,
+    libraries: &NativeLibraries,
+) -> std::result::Result<CheckedSource, CompilerDiagnostic> {
+    let mut checker = checker(&linked, libraries, false);
+    let effects = analyze(&mut checker).map_err(|error| *error)?;
     let expressions = checker
         .expressions
         .into_iter()
@@ -320,14 +348,14 @@ impl Checker<'_> {
         span: Span,
         code: &'static str,
         message: impl Into<String>,
-    ) -> CompilerDiagnostic {
+    ) -> Box<CompilerDiagnostic> {
         let file = self
             .linked
             .source_graph
             .file(source)
             .expect("linked source identity");
         let prefix = &file.source[..span.start];
-        CompilerDiagnostic {
+        Box::new(CompilerDiagnostic {
             code,
             phase: DiagnosticPhase::Semantic,
             source_id: source,
@@ -338,7 +366,7 @@ impl Checker<'_> {
             column: prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1,
             message: message.into(),
             suggestion: "使用显式类型、词法名称和受检组件接口；持久状态写入放在事件函数中".into(),
-        }
+        })
     }
     fn charge(&mut self, source: SourceId, span: Span, amount: usize) -> Result<()> {
         self.work = self.work.saturating_add(amount);

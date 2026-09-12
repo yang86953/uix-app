@@ -11,7 +11,10 @@ pub(crate) fn formatting(session: &Session, request: &Value) -> Value {
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     // 格式化失败（语法错误）时返回 null，客户端保持原文。
-    let Ok(output) = CompilerSystem::new().format_inline(&snapshot.text, &snapshot.name) else {
+    let result = if session.is_component_document(&snapshot.uri, &snapshot.text) {
+        crate::lang::compiler::component_source::format(&snapshot.text, &snapshot.name)
+    } else { CompilerSystem::new().format_inline(&snapshot.text, &snapshot.name) };
+    let Ok(output) = result else {
         return Value::Null;
     };
     // 全文替换范围覆盖整份文档的 UTF-16 行列空间。

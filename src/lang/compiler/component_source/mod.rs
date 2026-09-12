@@ -6,6 +6,8 @@
 
 mod ast;
 mod check;
+/// 编辑器补全使用同一检查器的词法可见性，部分分析不构成可执行产物。
+pub mod completion;
 mod emit;
 mod format;
 /// 来自同一 Rust 属性声明的有界原生接口文件；不含调用实现。
@@ -30,6 +32,7 @@ pub use link::{
     link_inline,
 };
 pub use lower::lower;
+pub(crate) use parser::editor_source_hint;
 pub use parser::recognizes_source;
 pub use tools::ComponentOutput;
 pub(crate) use tools::document_prefix;

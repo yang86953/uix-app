@@ -40,6 +40,8 @@ pub(crate) struct Session {
     module_roots: BTreeMap<String, (PathBuf, BTreeSet<PathBuf>)>,
     component_analyses: BTreeMap<String, Arc<ComponentOutput>>,
     component_roots: BTreeMap<String, (PathBuf, BTreeSet<PathBuf>)>,
+    // 仅随打开文档存活，空/部分编辑不误切换到旧 XML；显式旧前缀仍可切回。
+    component_documents: BTreeSet<String>,
     // LSP Adapter 独占编译会话；进程退出或文档关闭时释放对应阶段缓存。
     compiler: CompilerSession,
     // shutdown 已收到但尚未 exit；exit 是否已经请求。
@@ -53,7 +55,7 @@ impl Session {
             .keys()
             .filter(|uri| {
                 self.document_source(uri)
-                    .is_some_and(|source| modules::recognizes_source(source) || component_source::recognizes_source(source))
+                    .is_some_and(|source| modules::recognizes_source(source) || self.is_component_document(uri, source))
             })
             .cloned()
             .collect()
@@ -69,7 +71,7 @@ impl Session {
             .cloned()
             .or_else(|| component_source::document_prefix(path).ok())
             .unwrap_or_default();
-        if component_source::recognizes_source(&source) {
+        if self.is_component_path(path, &source) {
             CompilerSystem::new().check_component_file_with_overlays(path, &self.overlays).map(DocumentOutput::Component)
         } else if modules::recognizes_source(&source) {
             let root = self
@@ -174,8 +176,10 @@ impl Session {
     }
     // 打开或更新一个文档；同一 URI 更新前先释放旧路径快照。
     pub(crate) fn store_document(&mut self, uri: String, source: String) {
+        let component = self.is_component_document(&uri, &source);
         // URI 改类（file ↔ 虚拟）时不能残留旧类快照。
         self.remove_document(&uri);
+        if component { self.component_documents.insert(uri.clone()); }
         if let Some(path) = uri_to_path(&uri) {
             // 内容变化后覆盖该路径的旧分析全部失效。
             self.drop_analyses_covering(&path);
@@ -189,6 +193,7 @@ impl Session {
 
     // 关闭一个文档并返回其文件路径（虚拟文档返回 None）。
     pub(crate) fn remove_document(&mut self, uri: &str) -> Option<PathBuf> {
+        self.component_documents.remove(uri);
         match self.documents.remove(uri) {
             Some(OpenDocument::File(path)) => {
                 // URI 别名仍指向同一路径时保留共享快照，直到最后一个文档所有者关闭。

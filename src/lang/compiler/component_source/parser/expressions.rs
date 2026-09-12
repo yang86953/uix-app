@@ -252,10 +252,13 @@ impl Parser<'_> {
                 },
             });
         }
+        let opening_span;
         let (children, closing_name) = if self.eat_as("/>", Kind::SelfClose)? {
+            opening_span = self.span(start);
             (Vec::new(), None)
         } else {
             self.expect_as(">", Kind::TagEnd)?;
+            opening_span = self.span(start);
             let children = self.view_children()?;
             self.expect_as("</", Kind::CloseTagStart)?;
             let close_start = self.start()?;
@@ -277,6 +280,7 @@ impl Parser<'_> {
         self.checked(Expr {
             kind: ExprKind::Element(Element {
                 name,
+                opening_span,
                 closing_name,
                 attributes,
                 children,

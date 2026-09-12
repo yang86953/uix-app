@@ -5,6 +5,34 @@ pub(super) mod concrete;
 mod expressions;
 mod limits;
 mod tokens;
+pub(super) fn identifier_range(source: &str, offset: usize) -> Span {
+    let offset = offset.min(source.len());
+    let mut start = offset;
+    while let Some(ch) = source[..start]
+        .chars()
+        .next_back()
+        .filter(|ch| tokens::name_continue(*ch))
+    {
+        start -= ch.len_utf8();
+    }
+    if !source[start..]
+        .chars()
+        .next()
+        .is_some_and(tokens::name_start)
+    {
+        return Span {
+            start: offset,
+            end: offset,
+        };
+    }
+    let end = offset
+        + source[offset..]
+            .chars()
+            .take_while(|ch| tokens::name_continue(*ch))
+            .map(char::len_utf8)
+            .sum::<usize>();
+    Span { start, end }
+}
 use concrete::{Kind, Token};
 
 // 完整诊断包含多个 String；递归解析的每个 ? 不应在成功栈帧中预留整份错误。
@@ -13,6 +41,67 @@ type Result<T> = std::result::Result<T, Box<CompilerDiagnostic>>;
 const MAX_SOURCE: usize = 1_048_576;
 const MAX_DEPTH: usize = 64;
 const MAX_NODES: usize = 16_384;
+pub(super) const DECLARATION_WORDS: [&str; 5] =
+    ["import", "export", "component", "function", "type"];
+
+fn prefix_parser(source: &str) -> Parser<'_> {
+    Parser {
+        source,
+        source_name: "<editor>",
+        pos: 0,
+        depth: 0,
+        nodes: 0,
+        concrete: None,
+    }
+}
+/// 只供编辑器保持家族：显式旧 < / @ 前缀可切换，空白/未知片段不抹掉既有身份。
+pub(crate) fn editor_source_hint(source: &str) -> Option<bool> {
+    let mut end = source.len().min(MAX_SOURCE);
+    while !source.is_char_boundary(end) {
+        end -= 1;
+    }
+    let source = &source[..end];
+    let mut parser = prefix_parser(source);
+    let start = parser.start().ok()?;
+    let rest = &source[start..];
+    if rest.starts_with(['<', '@']) {
+        return Some(false);
+    }
+    if recognizes_source(source) {
+        return Some(true);
+    }
+    let word: String = rest
+        .chars()
+        .take_while(|ch| tokens::name_continue(*ch))
+        .collect();
+    if !word.is_empty()
+        && rest[word.len()..].trim().is_empty()
+        && DECLARATION_WORDS
+            .iter()
+            .any(|keyword| keyword.starts_with(&word))
+    {
+        return Some(true);
+    }
+    None
+}
+pub(super) fn declaration_prefix(source: &str, offset: usize) -> Option<Span> {
+    if source.len() > MAX_SOURCE || offset > source.len() || !source.is_char_boundary(offset) {
+        return None;
+    }
+    let mut parser = prefix_parser(source);
+    let start = parser.start().ok()?;
+    let span = identifier_range(source, offset);
+    if start == span.start
+        && source[span.end..].trim().is_empty()
+        && DECLARATION_WORDS
+            .iter()
+            .any(|word| word.starts_with(&source[span.start..offset]))
+    {
+        Some(span)
+    } else {
+        None
+    }
+}
 
 /// 用同一解析器的注释和标识符边界识别组件家族；检查失败不回退旧语法。
 pub fn recognizes_source(source: &str) -> bool {
@@ -24,7 +113,7 @@ pub fn recognizes_source(source: &str) -> bool {
         nodes: 0,
         concrete: None,
     };
-    ["import", "export", "component", "function", "type"]
+    DECLARATION_WORDS
         .into_iter()
         .any(|word| parser.at(word).unwrap_or(false))
 }

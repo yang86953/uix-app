@@ -6,6 +6,7 @@ pub(crate) mod formatting;
 pub(crate) mod hover;
 mod modules;
 mod components;
+mod component_completion;
 pub(crate) mod navigation;
 pub(crate) mod symbols;
 
@@ -18,8 +19,8 @@ use crate::lang::compiler::CheckOutput;
 
 // 按家族选择 Adapter；新组件导航与尚待迁移的补全都不借用旧 XML 扫描。
 pub(crate) fn component_document(session: &Session, request: &Value) -> bool {
-    crate::lang::compiler::component_source::recognizes_source(
-        &document_snapshot(session, &request_uri(request)).text)
+    let snapshot = document_snapshot(session, &request_uri(request));
+    session.is_component_document(&snapshot.uri, &snapshot.text)
 }
 
 // 保存一次特性请求所需的文档快照。
