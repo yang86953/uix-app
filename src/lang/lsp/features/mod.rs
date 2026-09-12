@@ -5,6 +5,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod formatting;
 pub(crate) mod hover;
 mod modules;
+mod components;
 pub(crate) mod navigation;
 pub(crate) mod symbols;
 
@@ -15,7 +16,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use crate::lang::compiler::CheckOutput;
 
-// 新家族未接通的导航能力不使用旧 XML 文本扫描产生看似有效的结果。
+// 按家族选择 Adapter；新组件导航与尚待迁移的补全都不借用旧 XML 扫描。
 pub(crate) fn component_document(session: &Session, request: &Value) -> bool {
     crate::lang::compiler::component_source::recognizes_source(
         &document_snapshot(session, &request_uri(request)).text)

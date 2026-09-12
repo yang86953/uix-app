@@ -334,6 +334,18 @@ struct Lsp {
     next: u64,
 }
 impl Lsp {
+    fn request(&mut self, method: &str, params: Value) -> Value {
+        self.next += 1;
+        let id = self.next;
+        self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}));
+        loop {
+            let response = self.read();
+            if response["id"] == id {
+                assert!(response.get("error").is_none(), "{response}");
+                return response["result"].clone();
+            }
+        }
+    }
     fn new() -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_uix"))
             .arg("lsp")
@@ -410,6 +422,193 @@ fn diagnostics(messages: &[Value], target: &str) -> Vec<Value> {
         .and_then(|value| value["params"]["diagnostics"].as_array())
         .cloned()
         .unwrap()
+}
+
+#[test]
+fn source_query_and_stdio_navigation_share_alias_property_and_overlay_identities() {
+    let project = Project::new();
+    let (root, child, _) = project.setup();
+    let child_text = "import {Text} from 'native';\nexport type Caption = String;\nexport component Child(title: Caption, children: View = <></>){return <><Text>{title}</Text>{children}</>;}";
+    let root_text = "import {Child as Card, Caption as Title} from './child.uix';\nexport component Main(label: Title = \"中文😀\"){let note=\"中文😀\"; return <Card title={(label)}></Card>;}";
+    fs::write(&root, root_text).unwrap();
+    fs::write(&child, child_text).unwrap();
+    let root_uri = uri(&root);
+    let child_uri = uri(&child);
+    let output = CompilerSystem::new().check_component_file(&root).unwrap();
+    let index = output.checked.symbol_index();
+    let position = |source: &str, at: usize| {
+        let prefix = &source[..at];
+        json!({"line":prefix.bytes().filter(|b| *b == b'\n').count(),
+            "character":prefix.rsplit('\n').next().unwrap().encode_utf16().count()})
+    };
+    let range = |source: &str, start: usize, end: usize| json!({"start":position(source,start),"end":position(source,end)});
+    let params =
+        |at: usize| json!({"textDocument":{"uri":root_uri},"position":position(root_text,at)});
+    let mut lsp = Lsp::new();
+    lsp.change(
+        "textDocument/didOpen",
+        json!({"textDocument":{"uri":root_uri,"text":root_text}}),
+    );
+    let def = lsp.request(
+        "textDocument/definition",
+        params(root_text.find("</Card").unwrap() + 2),
+    );
+    let child_start = child_text.find("component Child").unwrap() + 10;
+    assert_eq!(
+        def,
+        json!({"uri":child_uri,"range":range(child_text,child_start,child_start+5)})
+    );
+    let def = lsp.request(
+        "textDocument/definition",
+        params(root_text.find(" title=").unwrap() + 1),
+    );
+    let input = child_text.find("title:").unwrap();
+    assert_eq!(
+        def,
+        json!({"uri":child_uri,"range":range(child_text,input,input+5)})
+    );
+    let def = lsp.request(
+        "textDocument/definition",
+        params(root_text.find("label)}").unwrap()),
+    );
+    let label = root_text.find("label:").unwrap();
+    assert_eq!(
+        def,
+        json!({"uri":root_uri,"range":range(root_text,label,label+5)})
+    );
+    let hover = lsp.request(
+        "textDocument/hover",
+        params(root_text.find("label)}").unwrap()),
+    );
+    assert_eq!(
+        hover["range"],
+        range(
+            root_text,
+            root_text.find("label)}").unwrap(),
+            root_text.find("label)}").unwrap() + 5
+        )
+    );
+    assert!(
+        hover["contents"]["value"]
+            .as_str()
+            .unwrap()
+            .contains("String")
+    );
+    assert!(
+        lsp.request(
+            "textDocument/hover",
+            params(root_text.find("中文").unwrap())
+        )
+        .is_null()
+    );
+    let mut query = params(root_text.find("as Card").unwrap() + 3);
+    query["context"] = json!({"includeDeclaration":false});
+    let refs = lsp.request("textDocument/references", query.clone());
+    assert_eq!(refs.as_array().unwrap().len(), 4); // imported name, alias, open and close tags.
+    query["context"]["includeDeclaration"] = json!(true);
+    assert_eq!(
+        lsp.request("textDocument/references", query)
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    let outline = lsp.request(
+        "textDocument/documentSymbol",
+        json!({"textDocument":{"uri":root_uri}}),
+    );
+    assert_eq!(outline.as_array().unwrap().len(), 1);
+    assert_eq!(outline[0]["name"], "Main");
+    assert_eq!(
+        outline[0]["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["label", "note"]
+    );
+    let query = cli(&project, &["query", "source-symbols", "main.uix", "--json"]);
+    assert!(query.status.success(), "{query:?}");
+    let query: Value = serde_json::from_slice(&query.stdout).unwrap();
+    let definitions = index
+        .symbols()
+        .values()
+        .filter(|s| s.definition.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(query.as_array().unwrap().len(), definitions.len());
+    for symbol in definitions {
+        let at = symbol.definition.unwrap();
+        assert!(
+            query
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["sourceId"] == at.source.value()
+                    && item["start"] == at.start
+                    && item["end"] == at.end
+                    && item["name"] == symbol.name)
+        );
+    }
+    for args in [
+        vec!["query", "source-symbols"],
+        vec!["query", "source-symbols", "main.uix", "child.uix"],
+        vec!["query", "source-symbols", "main.uix", "--project", "."],
+    ] {
+        assert!(!cli(&project, &args).status.success());
+    }
+    // 编辑依赖后采用新来源区间，关闭后恢复磁盘；接口失效时不能返回上一成功位置。
+    let moved = format!("// 中文😀 overlay\n{child_text}");
+    lsp.change(
+        "textDocument/didOpen",
+        json!({"textDocument":{"uri":child_uri,"text":moved}}),
+    );
+    let def = lsp.request(
+        "textDocument/definition",
+        params(root_text.find("<Card").unwrap() + 1),
+    );
+    assert_eq!(
+        def["range"],
+        range(
+            &moved,
+            child_start + "// 中文😀 overlay\n".len(),
+            child_start + "// 中文😀 overlay\n".len() + 5
+        )
+    );
+    lsp.change("textDocument/didChange", json!({"textDocument":{"uri":child_uri},"contentChanges":[{"text":moved.replace("{title}","{absent}")}]}));
+    assert!(
+        lsp.request(
+            "textDocument/definition",
+            params(root_text.find("<Card").unwrap() + 1)
+        )
+        .is_null()
+    );
+    lsp.change(
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":child_uri}}),
+    );
+    assert_eq!(
+        lsp.request(
+            "textDocument/definition",
+            params(root_text.find("<Card").unwrap() + 1)
+        )["range"],
+        range(child_text, child_start, child_start + 5)
+    );
+    // 原生签名可悬停，但不捏造 Rust 定义位置。
+    let native_request = json!({"textDocument":{"uri":child_uri},"position":position(child_text,child_text.find("<Text").unwrap()+1)});
+    assert!(
+        lsp.request("textDocument/definition", native_request.clone())
+            .is_null()
+    );
+    assert!(
+        lsp.request("textDocument/hover", native_request)["contents"]["value"]
+            .as_str()
+            .unwrap()
+            .contains("native")
+    );
+    lsp.request("shutdown", Value::Null);
+    lsp.send(json!({"jsonrpc":"2.0","method":"exit"}));
+    assert!(lsp.child.wait().unwrap().success());
 }
 
 #[test]

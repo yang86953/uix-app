@@ -7,6 +7,8 @@ use uix_app::lang::compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem,
 // 结构体驱动的 Visual 骨架生成。
 #[path = "support/scaffold.rs"]
 mod scaffold;
+#[path = "support/component_query.rs"]
+mod component_query;
 
 fn main() -> ExitCode {
     match run(env::args().skip(1).collect()) {
@@ -231,6 +233,7 @@ fn query(args: &[String]) -> Result<u8, String> {
     let Some(kind) = args.first() else {
         return Err("uix query 需要类别".into());
     };
+    if kind == "source-symbols" { return component_query::run(&args[1..]); }
     let kind = QueryKind::parse(kind).ok_or_else(|| format!("未知 query 类别: {kind}"))?;
     let mut json_output = false;
     let mut project = None;

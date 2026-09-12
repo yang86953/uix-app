@@ -14,6 +14,8 @@ mod link;
 mod lower;
 mod parser;
 mod prune;
+/// 受检符号身份与原来源查询，不扫描同名文本或创建运行实例。
+pub mod symbols;
 mod tools;
 
 pub use ast::*;

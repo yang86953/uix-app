@@ -252,8 +252,8 @@ impl Parser<'_> {
                 },
             });
         }
-        let children = if self.eat_as("/>", Kind::SelfClose)? {
-            Vec::new()
+        let (children, closing_name) = if self.eat_as("/>", Kind::SelfClose)? {
+            (Vec::new(), None)
         } else {
             self.expect_as(">", Kind::TagEnd)?;
             let children = self.view_children()?;
@@ -272,11 +272,12 @@ impl Parser<'_> {
                 ));
             }
             self.expect_as(">", Kind::CloseTagEnd)?;
-            children
+            (children, Some(close))
         };
         self.checked(Expr {
             kind: ExprKind::Element(Element {
                 name,
+                closing_name,
                 attributes,
                 children,
             }),

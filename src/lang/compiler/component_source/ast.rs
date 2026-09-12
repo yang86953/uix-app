@@ -213,6 +213,8 @@ pub enum LambdaBody {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Element {
     pub name: Vec<Name>,
+    /// 成对标签保留闭合名称的真实来源；自闭合标签为 None。
+    pub closing_name: Option<Vec<Name>>,
     pub attributes: Vec<Attribute>,
     pub children: Vec<ViewChild>,
 }

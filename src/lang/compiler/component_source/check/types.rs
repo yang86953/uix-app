@@ -157,6 +157,7 @@ impl Checker<'_> {
                                     format!("未知类型 {name}"),
                                 )
                             })?;
+                        self.record_type_name(source, &path[0], &binding);
                         match binding {
                             Binding::Declaration(id) => self.alias(id, depth + 1)?,
                             Binding::NativeImport { package, name } => {

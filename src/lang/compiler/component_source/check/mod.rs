@@ -10,9 +10,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod body;
 mod expression;
+mod symbols;
 mod types;
-pub use types::*;
+use super::symbols::NameFact;
 pub(super) use types::native_export_cost;
+pub use types::*;
 type Result<T> = std::result::Result<T, CompilerDiagnostic>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -76,6 +78,7 @@ pub struct CheckedSource {
     captures: BTreeMap<NodeId, BTreeSet<NodeId>>,
     bindings: BTreeMap<NodeId, BindingFact>,
     native_imports: NativeLibraries,
+    names: BTreeMap<NodeId, NameFact>,
 }
 impl CheckedSource {
     pub fn source(&self) -> &LinkedSource {
@@ -98,6 +101,9 @@ impl CheckedSource {
     }
     pub fn native_imports(&self) -> &NativeLibraries {
         &self.native_imports
+    }
+    pub fn names(&self) -> &BTreeMap<NodeId, NameFact> {
+        &self.names
     }
 }
 
@@ -220,6 +226,7 @@ struct Checker<'a> {
     bindings: BTreeMap<NodeId, BindingFact>,
     requirements: Vec<Requirement>,
     work: usize,
+    names: BTreeMap<NodeId, NameFact>,
 }
 
 /// 检查由 link_file 连接的闭包及显式原生导出签名。不读取/猜测官方组件库。
@@ -240,6 +247,7 @@ pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<Checke
         bindings: BTreeMap::new(),
         requirements: Vec::new(),
         work: 0,
+        names: BTreeMap::new(),
     };
     checker.native_interfaces()?;
     checker.signatures()?;
@@ -290,6 +298,7 @@ pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<Checke
         captures,
         bindings,
         native_imports,
+        names,
         ..
     } = checker;
     Ok(CheckedSource {
@@ -300,6 +309,7 @@ pub fn check(linked: LinkedSource, libraries: &NativeLibraries) -> Result<Checke
         captures,
         bindings,
         native_imports,
+        names,
     })
 }
 

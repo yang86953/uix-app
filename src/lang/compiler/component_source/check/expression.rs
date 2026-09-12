@@ -24,6 +24,7 @@ impl Checker<'_> {
         if let Some(expected) = expected {
             self.compatible(scope.source, expression.span, &fact, expected)?;
         }
+        self.record_expression_names(scope.source, expression, &fact);
         self.expressions
             .insert(NodeId::new(scope.source, expression.span), fact.clone());
         Ok(fact)
@@ -608,6 +609,7 @@ impl Checker<'_> {
         };
         let mut member = Fact::pure(Type::Function(signature));
         member.resolution = Some(ResolvedName::Method(name.text.clone()));
+        self.record_expression_names(scope.source, callee, &member);
         self.expressions
             .insert(NodeId::new(scope.source, callee.span), member);
         let mut fact = Fact::pure(ty);
