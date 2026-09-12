@@ -6,7 +6,11 @@ pub mod compiler;
 mod include;
 #[cfg(feature = "lang-tools")]
 pub mod lsp;
-#[cfg(any(feature = "lang-build", feature = "uix-modules"))]
+#[cfg(any(
+    feature = "lang-build",
+    feature = "uix-modules",
+    feature = "uix-components"
+))]
 pub mod runtime;
 
 #[cfg(feature = "lang-tools")]

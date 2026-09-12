@@ -6,7 +6,9 @@
 
 mod ast;
 mod check;
+mod emit;
 mod link;
+mod lower;
 mod parser;
 
 pub use ast::*;
@@ -14,9 +16,11 @@ pub use check::{
     BindingFact, BindingKind, CheckedSource, ComponentSignature, ExpressionFact, FunctionSignature,
     NativeExport, NativeLibraries, NativeLibrary, NodeId, ResolvedName, Type, check,
 };
+pub use emit::emit_native;
 pub use link::{
     Binding, DeclarationId, LinkedSource, SourceUnit, link_file, link_file_with_overlays,
 };
+pub use lower::lower;
 
 use super::{CompilerDiagnostic, source_graph::SourceGraph};
 

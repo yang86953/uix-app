@@ -195,7 +195,8 @@ lang-tools = ["lang-build", "dep:serde", "dep:serde_json", "dep:toml", "dep:sha2
 hot-reload = ["application", "lang-build"]
 # 可移植模块的 AOT 执行与运行期源码装载分别按需启用。
 uix-modules = []
-uix-dynamic = ["uix-modules", "lang-build"]
+uix-components = []
+uix-dynamic = ["uix-modules", "uix-components", "lang-build"]
 # 默认提供完整原生应用及首发平台图形后端：
 #   Windows/Linux 优先 Vulkan；Windows 保留 D3D11、Linux 保留 OpenGL ES 兼容回退。
 default = ["application", "vulkan", "d3d11", "opengles", "image-codecs"]

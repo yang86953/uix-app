@@ -2,6 +2,14 @@
 
 use std::collections::BTreeMap;
 
+/// 宿主端口或函数的效果类别。纯函数不读取实例状态或调用宿主。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Effect {
+    Pure,
+    Query,
+    Command,
+}
+
 /// 可跨宿主边界的值；集合复制不共享可变状态。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -73,6 +81,8 @@ pub enum ErrorKind {
     Conflict,
     Closed,
     InvalidModule,
+    InvalidComponent,
+    UnknownEvent,
 }
 
 /// 原始 UIX 来源位置；生成和动态执行保持同一位置。

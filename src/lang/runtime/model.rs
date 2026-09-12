@@ -1,6 +1,6 @@
 //! 编译器输出的可移植执行合同；AOT 和动态产物采用同一函数签名与来源。
 
-use crate::lang::runtime::{Binary, Location, RuntimeResult, Type, Value};
+use crate::lang::runtime::{Binary, Effect, Location, RuntimeResult, Type, Value};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -10,14 +10,6 @@ pub struct StateField {
     pub name: String,
     pub ty: Type,
     pub initial: Value,
-}
-
-/// 宿主端口或函数的效果类别。纯函数不读取实例状态或调用宿主。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Effect {
-    Pure,
-    Query,
-    Command,
 }
 
 /// 名称、类型与顺序形成完整调用合同。
