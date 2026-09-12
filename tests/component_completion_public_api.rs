@@ -173,12 +173,165 @@ fn deep_partial_scopes_and_candidate_caps_stay_bounded_without_fake_success() {
     let comments = "/* */ ".repeat(66_000);
     let source =
         format!("export component Main(input:Int=1){{{comments}let read=input;return <></>;}}");
-    let inspection = inspect_inline(&source, "comments.uix", &BTreeMap::new()).unwrap();
-    let error = inspection
-        .complete(
-            inspection.source().source_graph.root(),
-            source.rfind("input;").unwrap(),
-        )
-        .unwrap_err();
+    let error = inspect_inline(&source, "comments.uix", &BTreeMap::new()).unwrap_err();
     assert_eq!(error.code, "component-token-limit");
+}
+
+#[test]
+fn missing_structure_preserves_original_positions_and_never_becomes_checked_output() {
+    for marked in [
+        "export component Main(input:Int=1){let value=in§",
+        "export component Main(input:Int=1){let value=§",
+        "export component Main(input:Int=1){let value=(in§",
+        "export component Main(input:Int=1){let value=[in§",
+        "export component Main(input:Int=1){if(true){let value=in§",
+        "export component Main(input:Int=1){let value=§;return <></>;}",
+        "export component Main(input:Int=1){let value=(in§;return <></>;}",
+        "export component Main(input:Int=1){let value=[in§;return <></>;}",
+    ] {
+        let offset = marked.find('§').unwrap();
+        let source = marked.replace('§', "");
+        let inspection = inspect_inline(&source, "incomplete.uix", &BTreeMap::new()).unwrap();
+        assert!(inspection.diagnostic().is_some(), "{marked}");
+        assert!(parse(&source, "incomplete.uix").is_err(), "{marked}");
+        assert!(
+            check(inspection.source().clone(), &BTreeMap::new()).is_err(),
+            "{marked}"
+        );
+        let file = inspection.source().source_graph.root();
+        assert_eq!(
+            inspection.source().source_graph.file(file).unwrap().source,
+            source
+        );
+        let output = inspection.complete(file, offset).unwrap();
+        assert!(
+            labels(&output).contains(&"input"),
+            "{marked}: {:?}",
+            labels(&output)
+        );
+        assert!(output.is_incomplete);
+        assert!(output.replacement.end <= source.len());
+    }
+    let output = complete("export component Main(input:Int=1){let broken=;let value=in§");
+    assert!(
+        output.items.is_empty(),
+        "Earlier missing expression must not validate later scopes"
+    );
+}
+
+#[test]
+fn unfinished_members_types_tags_attributes_and_callbacks_use_existing_contracts() {
+    let members = complete("export component Main(label:String=\"😀\"){let value=label.§");
+    assert!(labels(&members).contains(&"toUpperCase"));
+    let fields =
+        complete("export component Main(){let record={alpha:1};let value=record.§;return <></>;}");
+    assert_eq!(labels(&fields), ["alpha"]);
+    let types = complete("type Caption=String;export component Main(){let value:§");
+    assert!(labels(&types).contains(&"Caption"));
+    assert!(labels(&types).contains(&"String"));
+    let types = complete("type Caption=String;function read():§");
+    assert!(labels(&types).contains(&"Caption"));
+    let close =
+        complete("component Card(){return <></>;}export component Main(){return <Card></Ca§");
+    assert_eq!(labels(&close), ["Card"]);
+    for tag in ["<Ca§", "<§"] {
+        let source =
+            format!("component Card(){{return <></>;}}export component Main(){{return {tag}");
+        assert_eq!(
+            labels(&complete(&source)),
+            ["Card", "Main"]
+                .into_iter()
+                .filter(|name| tag == "<§" || name.starts_with("Ca"))
+                .collect::<Vec<_>>()
+        );
+    }
+    let props = complete(
+        "component Card(title:String){return <></>;}export component Main(){return <Card §",
+    );
+    assert_eq!(labels(&props), ["key", "title"]);
+    let value = complete(
+        "component Card(title:String){return <></>;}export component Main(label:String=\"\"){return <Card title={la§",
+    );
+    assert_eq!(labels(&value), ["label"]);
+    let value = complete(
+        "component Card(title:String){return <></>;}export component Main(label:String=\"\"){return <Card title=§",
+    );
+    assert!(
+        value.items.is_empty(),
+        "Bare attribute values do not accept variable syntax"
+    );
+    let lambda = complete("export component Main(input:Int=1){let value=[1].map((item)=>it§");
+    assert_eq!(labels(&lambda), ["item"]);
+}
+
+#[test]
+fn recovery_keeps_limits_and_literal_regions_and_does_not_hide_semantic_failures() {
+    let fifty = format!(
+        "export component Main(input:Int=1){{let value={}in§",
+        "()=>".repeat(50)
+    );
+    assert_eq!(labels(&complete(&fifty)), ["input"]);
+    let source = format!("export component Main(){{return {}", "<><>".repeat(30));
+    assert_eq!(
+        inspect_inline(&source, "limits.uix", &BTreeMap::new())
+            .unwrap_err()
+            .code,
+        "component-recovery-limit"
+    );
+    for source in [
+        "import {Text} from 'native';export component Main(input:Int=1){return <Text>in§",
+        "export component Main(input:Int=1){let value=\"in§\"",
+    ] {
+        assert!(complete(source).items.is_empty(), "{source}");
+    }
+    // Missing final structure must not hide an earlier real error and make later values visible.
+    let value = complete("export component Main(input:Int=1){let value=unknown;let next=in§");
+    assert!(value.items.is_empty());
+    let value = complete(
+        "export component Main(){state count:Int=0;function change():Unit{count=count+1;}let next=cha§",
+    );
+    assert_eq!(labels(&value), ["change"]);
+    assert!(value.items[0].detail.contains("effect: not yet checked"));
+    let value = complete("export component Main(){let callback=()=>1;let next=call§");
+    assert_eq!(labels(&value), ["callback"]);
+    assert!(value.items[0].detail.contains("effect: not yet checked"));
+}
+
+#[test]
+fn editor_truncations_and_interior_deletions_are_bounded_and_preserve_strict_rejection() {
+    let fixture = "type Label=String; component Card(title:Label){return <></>;}export component Main(input:String=\"中文😀\"){state count:Int=1;let read=[1,2].map((item)=>item+count);if(true){let local={name:input};return <Card title={local.name}/>;}return <></>; }";
+    let variants = fixture
+        .char_indices()
+        .map(|(at, _)| fixture[..at].to_owned())
+        .chain(
+            fixture
+                .char_indices()
+                .step_by(3)
+                .map(|(at, ch)| format!("{}{}", &fixture[..at], &fixture[at + ch.len_utf8()..])),
+        );
+    for source in variants {
+        let boundary = |error: &uix_app::lang::compiler::CompilerDiagnostic| {
+            assert!(
+                error.start <= error.end && error.end <= source.len(),
+                "{source}"
+            );
+            assert!(source.is_char_boundary(error.start) && source.is_char_boundary(error.end));
+        };
+        match inspect_inline(&source, "edits.uix", &BTreeMap::new()) {
+            Ok(inspection) => {
+                if let Some(error) = inspection.diagnostic() {
+                    boundary(error);
+                }
+                let result = inspection
+                    .complete(inspection.source().source_graph.root(), source.len())
+                    .unwrap();
+                assert!(result.items.len() <= 256);
+                if parse(&source, "edits.uix").is_err() {
+                    assert!(inspection.diagnostic().is_some());
+                    assert!(check(inspection.source().clone(), &BTreeMap::new()).is_err());
+                }
+            }
+            Err(error) => boundary(&error),
+        }
+    }
 }

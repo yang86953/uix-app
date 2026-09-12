@@ -22,6 +22,7 @@ impl Lower<'_> {
                 .collect::<Result<Vec<_>>>()
         };
         let kind = match &expression.kind {
+            ExprKind::Missing => unreachable!("CheckedSource cannot contain missing expressions"),
             ExprKind::Unit => K::Constant(runtime::Value::Unit),
             ExprKind::Bool(value) => K::Constant(runtime::Value::Bool(*value)),
             ExprKind::Integer(value) => K::Constant(runtime::Value::Int(

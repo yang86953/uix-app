@@ -295,6 +295,13 @@ pub fn check(
     linked: LinkedSource,
     libraries: &NativeLibraries,
 ) -> std::result::Result<CheckedSource, CompilerDiagnostic> {
+    if let Some(error) = linked
+        .editor
+        .as_ref()
+        .and_then(|editor| editor.diagnostics.first())
+    {
+        return Err(error.clone());
+    }
     let mut checker = checker(&linked, libraries, false);
     let effects = analyze(&mut checker).map_err(|error| *error)?;
     let expressions = checker

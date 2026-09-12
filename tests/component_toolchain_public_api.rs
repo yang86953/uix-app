@@ -364,6 +364,36 @@ fn stdio_completion_uses_current_partial_bindings_and_keeps_the_editor_family() 
             .is_ok()
     );
     assert_eq!(fs::read_to_string(&root).unwrap(), disk); // 补全只发编辑，不回写用户文件。
+    let unfinished = "export component Main(input:String=\"中文😀\"){let draft=input.";
+    let messages = lsp.change(
+        "textDocument/didChange",
+        json!({"textDocument":{"uri":root_uri},"contentChanges":[{"text":unfinished}]}),
+    );
+    assert!(!diagnostics(&messages, &root_uri).is_empty());
+    let result = lsp.request(
+        "textDocument/completion",
+        params(unfinished, unfinished.len()),
+    );
+    let item = result["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["label"] == "toUpperCase")
+        .unwrap();
+    assert_eq!(
+        item["textEdit"]["range"],
+        json!({"start":position(unfinished,unfinished.len()),"end":position(unfinished,unfinished.len())})
+    );
+    assert_eq!(item["textEdit"]["newText"], "toUpperCase");
+    assert!(result["isIncomplete"].as_bool().unwrap());
+    assert!(
+        lsp.request(
+            "textDocument/hover",
+            params(unfinished, unfinished.find("input.").unwrap())
+        )
+        .is_null()
+    );
+    assert_eq!(fs::read_to_string(&root).unwrap(), disk);
     let changed = partial.replace("input", "value");
     lsp.change(
         "textDocument/didChange",

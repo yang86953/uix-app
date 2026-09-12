@@ -20,7 +20,7 @@ impl Parser<'_> {
                 let kind = if self.eat(".")? {
                     ExprKind::Member {
                         value: Box::new(left),
-                        name: self.name()?,
+                        name: self.edit_name()?,
                     }
                 } else if self.eat("[")? {
                     let index = self.expression()?;
@@ -32,7 +32,7 @@ impl Parser<'_> {
                 } else {
                     self.expect("(")?;
                     let mut arguments = Vec::new();
-                    while !self.at(")")? {
+                    while !self.at_end(")")? {
                         arguments.push(self.expression()?);
                         if !self.eat(",")? {
                             break;
@@ -110,6 +110,9 @@ impl Parser<'_> {
 
     fn prefix(&mut self) -> Result<Expr> {
         let start = self.start()?;
+        if self.hole_boundary()? {
+            return self.missing_expression();
+        }
         let kind = if self.eat_as("!", Kind::Unary)? {
             ExprKind::Unary {
                 op: UnaryOp::Not,
@@ -147,7 +150,7 @@ impl Parser<'_> {
             }
         } else if self.eat_as("[", Kind::ArrayOpen)? {
             let mut values = Vec::new();
-            while !self.at("]")? {
+            while !self.at_end("]")? {
                 values.push(self.expression()?);
                 if !self.eat(",")? {
                     break;
@@ -157,7 +160,7 @@ impl Parser<'_> {
             ExprKind::Array(values)
         } else if self.eat("{")? {
             let mut fields = Vec::new();
-            while !self.at("}")? {
+            while !self.at_end("}")? {
                 let name = self.name()?;
                 let value = if self.eat(":")? {
                     self.expression()?
@@ -210,10 +213,10 @@ impl Parser<'_> {
                 span: self.span(start),
             });
         }
-        let name = self.path()?;
+        let name = self.edit_path()?;
         let mut end = name.last().unwrap().span.end;
         let mut attributes = Vec::new();
-        while !self.at(">")? && !self.at("/>")? {
+        while !self.at_end(">")? && !self.at("/>")? {
             let attribute_start = self.start()?;
             if attribute_start == end {
                 return Err(self.error("component-attribute", "属性之间需要空白"));
@@ -224,6 +227,8 @@ impl Parser<'_> {
                     let value = self.expression()?;
                     self.expect_as("}", Kind::ChildClose)?;
                     value
+                } else if self.hole_boundary()? {
+                    self.missing_expression()?
                 } else {
                     let (value, span) = self.string()?;
                     Expr {
@@ -260,19 +265,37 @@ impl Parser<'_> {
             self.expect_as(">", Kind::TagEnd)?;
             opening_span = self.span(start);
             let children = self.view_children()?;
+            if self.recover_closing_tag()? {
+                return self.checked(Expr {
+                    kind: ExprKind::Element(Element {
+                        name,
+                        opening_span,
+                        closing_name: None,
+                        attributes,
+                        children,
+                    }),
+                    span: self.span(start),
+                });
+            }
             self.expect_as("</", Kind::CloseTagStart)?;
             let close_start = self.start()?;
-            let close = self.path()?;
-            if !name
-                .iter()
-                .map(|name| &name.text)
-                .eq(close.iter().map(|name| &name.text))
+            let close = self.edit_path()?;
+            if !close.iter().any(|part| part.text.is_empty())
+                && !name
+                    .iter()
+                    .map(|name| &name.text)
+                    .eq(close.iter().map(|name| &name.text))
             {
-                return Err(self.error_at(
+                let error = self.error_at(
                     close_start,
                     "component-closing-tag",
                     "结束标签与开始标签不一致",
-                ));
+                );
+                if self.recovery.is_some() && self.eof()? {
+                    self.recover(error)?;
+                } else {
+                    return Err(error);
+                }
             }
             self.expect_as(">", Kind::CloseTagEnd)?;
             (children, Some(close))
@@ -298,6 +321,9 @@ impl Parser<'_> {
                 return Ok(children);
             }
             if rest.is_empty() {
+                if self.recovery.is_some() {
+                    return Ok(children);
+                }
                 return Err(self.error("component-closing-tag", "标签缺少结束标签"));
             }
             if rest.starts_with('<') {

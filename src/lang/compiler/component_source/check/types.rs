@@ -60,6 +60,9 @@ impl Checker<'_> {
             ));
         }
         let ty = match &node.kind {
+            TypeKind::Missing => {
+                return Err(self.error(source, node.span, "component-type", "此处缺失类型"));
+            }
             TypeKind::Array(ty) => Type::array(self.ty(source, ty, depth + 1)?),
             TypeKind::Record(fields) => {
                 let mut result = BTreeMap::new();

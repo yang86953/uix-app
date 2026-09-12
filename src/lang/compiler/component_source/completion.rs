@@ -18,6 +18,7 @@ pub struct Inspection {
     pub(super) functions: BTreeMap<NodeId, FunctionSignature>,
     pub(super) native_imports: NativeLibraries,
     pub(super) diagnostic: Option<CompilerDiagnostic>,
+    pub(super) checked_diagnostic: Option<CompilerDiagnostic>,
 }
 impl Inspection {
     pub fn source(&self) -> &LinkedSource {
@@ -36,7 +37,10 @@ pub fn inspect_inline(
     name: &str,
     libraries: &NativeLibraries,
 ) -> Result<Inspection, CompilerDiagnostic> {
-    Ok(check::inspect(link_inline(source, name)?, libraries))
+    Ok(check::inspect(
+        link::link_inline_for_editor(source, name)?,
+        libraries,
+    ))
 }
 pub fn inspect_file_with_overlays(
     path: &Path,
@@ -44,7 +48,7 @@ pub fn inspect_file_with_overlays(
 ) -> Result<Inspection, CompilerDiagnostic> {
     let interfaces = interface::load_project(path)?;
     Ok(check::inspect(
-        link_file_with_overlays(path, overlays)?,
+        link::link_file_for_editor(path, overlays)?,
         &interfaces.libraries,
     ))
 }

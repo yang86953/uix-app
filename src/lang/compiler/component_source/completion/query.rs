@@ -63,7 +63,18 @@ impl Inspection {
         {
             return Ok(output);
         }
-        let (_, tokens) = parse_concrete(&file.source, file.path.clone())?;
+        let fallback;
+        let tokens = if let Some(tokens) = self
+            .linked
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.tokens.get(&source))
+        {
+            tokens
+        } else {
+            fallback = parse_concrete(&file.source, file.path.clone())?.1;
+            &fallback
+        };
         if tokens.iter().any(|token| {
             token.span.start <= point
                 && point < token.span.end
@@ -74,20 +85,36 @@ impl Inspection {
         }) {
             return Ok(output);
         }
+        // 引号属性或 {表达式} 尚未选定时，不能插入语法不接受的裸变量。
+        if tokens
+            .iter()
+            .rev()
+            .find(|token| {
+                token.span.end <= point
+                    && !matches!(
+                        token.kind,
+                        Kind::Whitespace | Kind::LineComment | Kind::BlockComment
+                    )
+            })
+            .is_some_and(|token| token.kind == Kind::AttributeEquals)
+        {
+            return Ok(output);
+        }
         let scope = self
             .scopes
             .iter()
             .filter(|scope| {
                 scope.range.source == source
                     && scope.range.start <= point
-                    && point < scope.range.end
+                    && (point < scope.range.end
+                        || point == file.source.len() && point == scope.range.end)
             })
             .min_by_key(|scope| scope.range.end - scope.range.start);
         let usable = scope.filter(|scope| {
             scope.finished
                 || scope.checked_until >= point
                 || self
-                    .diagnostic
+                    .checked_diagnostic
                     .as_ref()
                     .is_none_or(|d| d.source_id == source && d.start >= point)
         });
@@ -226,7 +253,7 @@ impl Inspection {
             Context::Member(receiver) => {
                 if usable.is_some() {
                     if let Some(ty) = self.types.get(&node(source, receiver.span)) {
-                        members(&mut candidates, ty);
+                        members(&mut candidates, ty, self.checked_diagnostic.is_some());
                     }
                 }
             }
@@ -260,11 +287,22 @@ impl Inspection {
         Some(match target {
             SymbolTarget::Binding(id) => (
                 CompletionKind::Variable,
-                preview(format_args!("{:?}", self.bindings.get(id)?.ty)),
+                value_detail(
+                    &self.bindings.get(id)?.ty,
+                    self.checked_diagnostic.is_some(),
+                ),
             ),
             SymbolTarget::Function(id) => (
                 CompletionKind::Function,
-                preview(format_args!("{:?}", self.functions.get(id)?)),
+                if self.checked_diagnostic.is_some() {
+                    let signature = self.functions.get(id)?;
+                    preview(format_args!(
+                        "parameters: {:?}, returns: {:?}; effect: not yet checked",
+                        signature.parameters, signature.returns
+                    ))
+                } else {
+                    preview(format_args!("{:?}", self.functions.get(id)?))
+                },
             ),
             SymbolTarget::Declaration(id) => {
                 let declaration = &self.linked.units[&id.source_id].declarations[id.index];
@@ -339,14 +377,29 @@ fn insert(
         },
     );
 }
-fn members(items: &mut BTreeMap<String, CompletionItem>, ty: &Type) {
+fn value_detail(ty: &Type, partial: bool) -> String {
+    fn callable(ty: &Type) -> bool {
+        match ty {
+            Type::Function(_) => true,
+            Type::Array(value) => callable(value),
+            Type::Record(fields) => fields.values().any(callable),
+            _ => false,
+        }
+    }
+    if partial && callable(ty) {
+        "value containing a callback; effect: not yet checked".into()
+    } else {
+        preview(format_args!("{ty:?}"))
+    }
+}
+fn members(items: &mut BTreeMap<String, CompletionItem>, ty: &Type, partial: bool) {
     if let Some(fields) = ty.fields() {
         for (name, ty) in fields {
             insert(
                 items,
                 &name,
                 CompletionKind::Property,
-                preview(format_args!("{ty:?}")),
+                value_detail(&ty, partial),
                 None,
             );
         }

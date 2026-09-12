@@ -45,6 +45,14 @@ impl Checker<'_> {
             fact
         };
         Ok(match &expression.kind {
+            ExprKind::Missing => {
+                return Err(self.error(
+                    scope.source,
+                    span,
+                    "component-expression",
+                    "此处缺失表达式",
+                ));
+            }
             ExprKind::Unit => literal(DataType::Unit, Value::Unit),
             ExprKind::Bool(value) => literal(DataType::Bool, Value::Bool(*value)),
             ExprKind::Integer(value) => {

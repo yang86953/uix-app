@@ -48,6 +48,13 @@ pub struct SourceUnit {
 pub struct LinkedSource {
     pub source_graph: SourceGraph,
     pub units: BTreeMap<SourceId, SourceUnit>,
+    // 私有恢复标记随 clone 保留；调用方不能清除后冒充严格解析产物。
+    pub(super) editor: Option<EditorSources>,
+}
+#[derive(Debug, Clone, Default)]
+pub(super) struct EditorSources {
+    pub tokens: BTreeMap<SourceId, Vec<parser::concrete::Token>>,
+    pub diagnostics: Vec<CompilerDiagnostic>,
 }
 
 /// 从真实文件连接纯 UIX 导入；裸包导入留给原生签名绑定。
@@ -57,6 +64,19 @@ pub fn link_file(entry: &Path) -> Result<LinkedSource, CompilerDiagnostic> {
 
 /// 无文件基准的缓冲区可导入原生包；相对导入明确报错，不读取猜测路径。
 pub fn link_inline(source: &str, source_name: &str) -> Result<LinkedSource, CompilerDiagnostic> {
+    link_inline_mode(source, source_name, false)
+}
+pub(super) fn link_inline_for_editor(
+    source: &str,
+    source_name: &str,
+) -> Result<LinkedSource, CompilerDiagnostic> {
+    link_inline_mode(source, source_name, true)
+}
+fn link_inline_mode(
+    source: &str,
+    source_name: &str,
+    editor: bool,
+) -> Result<LinkedSource, CompilerDiagnostic> {
     let path = Path::new(source_name);
     let mut linker = Linker {
         graph: SourceGraphBuilder::new(path),
@@ -66,11 +86,13 @@ pub fn link_inline(source: &str, source_name: &str) -> Result<LinkedSource, Comp
         bytes: 0,
         files: 0,
         inline: true,
+        editor: editor.then(EditorSources::default),
     };
     linker.load(path)?;
     Ok(LinkedSource {
         source_graph: linker.graph.finish(),
         units: linker.units,
+        editor: linker.editor,
     })
 }
 
@@ -79,6 +101,19 @@ pub fn link_inline(source: &str, source_name: &str) -> Result<LinkedSource, Comp
 pub fn link_file_with_overlays(
     entry: &Path,
     overlays: &BTreeMap<PathBuf, String>,
+) -> Result<LinkedSource, CompilerDiagnostic> {
+    link_file_mode(entry, overlays, false)
+}
+pub(super) fn link_file_for_editor(
+    entry: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+) -> Result<LinkedSource, CompilerDiagnostic> {
+    link_file_mode(entry, overlays, true)
+}
+fn link_file_mode(
+    entry: &Path,
+    overlays: &BTreeMap<PathBuf, String>,
+    editor: bool,
 ) -> Result<LinkedSource, CompilerDiagnostic> {
     let root = canonical_path(entry).map_err(|message| source_error(entry, message))?;
     let mut normalized = BTreeMap::new();
@@ -106,11 +141,13 @@ pub fn link_file_with_overlays(
         bytes: 0,
         files: 0,
         inline: false,
+        editor: editor.then(EditorSources::default),
     };
     linker.load(&root)?;
     Ok(LinkedSource {
         source_graph: linker.graph.finish(),
         units: linker.units,
+        editor: linker.editor,
     })
 }
 
@@ -174,6 +211,7 @@ struct Linker<'a> {
     bytes: usize,
     files: usize,
     inline: bool,
+    editor: Option<EditorSources>,
 }
 
 impl Linker<'_> {
@@ -208,11 +246,19 @@ impl Linker<'_> {
         if self.bytes > MAX_GRAPH_BYTES {
             return Err(source_error(path, "组件源码闭包超过 8 MiB"));
         }
+        let parsed = if let Some(editor) = &mut self.editor {
+            let (parsed, tokens, diagnostics) = parser::parse_editor(&source, source_name.into())?;
+            editor.tokens.insert(source_id, tokens);
+            editor.diagnostics.extend(diagnostics);
+            parsed
+        } else {
+            parse(&source, source_name)?
+        };
         let ParsedSource {
             imports,
             declarations,
             ..
-        } = parse(&source, source_name)?;
+        } = parsed;
         self.graph.insert_file(path, &source);
         let error = |span, code, message| {
             diagnostic(

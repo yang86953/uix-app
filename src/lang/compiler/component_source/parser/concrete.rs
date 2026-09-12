@@ -65,7 +65,7 @@ impl Parser<'_> {
         if self.eat_as(token, kind)? {
             Ok(())
         } else {
-            Err(self.error("component-token", format!("此处需要 {token}")))
+            self.missing_token(token)
         }
     }
 }
@@ -74,5 +74,7 @@ pub(crate) fn parse_concrete(
     source: &str,
     name: String,
 ) -> std::result::Result<(ParsedSource, Vec<Token>), CompilerDiagnostic> {
-    parse_with_tokens(source, name, true).map_err(|error| *error)
+    parse_with_tokens(source, name, true, false)
+        .map(|(parsed, tokens, _)| (parsed, tokens))
+        .map_err(|error| *error)
 }

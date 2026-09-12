@@ -27,6 +27,7 @@ fn maximum(values: impl IntoIterator<Item = usize>) -> usize {
 impl TreeDepth for TypeNode {
     fn tree_depth(&self) -> usize {
         1 + match &self.kind {
+            TypeKind::Missing => 0,
             TypeKind::Named { arguments, .. } => {
                 maximum(arguments.iter().map(TreeDepth::tree_depth))
             }
@@ -55,7 +56,8 @@ impl TreeDepth for Parameter {
 impl TreeDepth for Expr {
     fn tree_depth(&self) -> usize {
         1 + match &self.kind {
-            ExprKind::Unit
+            ExprKind::Missing
+            | ExprKind::Unit
             | ExprKind::Bool(_)
             | ExprKind::Integer(_)
             | ExprKind::Float(_)

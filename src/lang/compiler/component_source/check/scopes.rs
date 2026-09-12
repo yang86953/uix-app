@@ -100,6 +100,20 @@ pub(crate) fn inspect(
 ) -> super::super::completion::Inspection {
     let mut checker = super::checker(&linked, libraries, true);
     let diagnostic = super::analyze(&mut checker).err().map(|error| *error);
+    let checked_diagnostic = diagnostic.clone();
+    let diagnostic = if diagnostic
+        .as_ref()
+        .is_some_and(|error| error.code.ends_with("-limit"))
+    {
+        diagnostic
+    } else {
+        linked
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.diagnostics.first())
+            .cloned()
+            .or(diagnostic)
+    };
     let Checker {
         scopes,
         bindings,
@@ -121,5 +135,6 @@ pub(crate) fn inspect(
         functions,
         native_imports,
         diagnostic,
+        checked_diagnostic,
     }
 }

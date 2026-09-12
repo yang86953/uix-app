@@ -85,6 +85,8 @@ pub struct TypeNode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
+    /// 编辑器恢复节点，不代表任何类型；严格检查必须拒绝。
+    Missing,
     Named {
         path: Vec<Name>,
         arguments: Vec<TypeNode>,
@@ -137,6 +139,8 @@ pub struct Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
+    /// 原文此处缺失表达式；不是 Unit、未知类型或可执行占位值。
+    Missing,
     Unit,
     Bool(bool),
     /// 保留正数字面量的幅度，允许语义阶段处理 `-9223372036854775808`。

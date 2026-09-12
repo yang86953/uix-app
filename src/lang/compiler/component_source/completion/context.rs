@@ -91,6 +91,7 @@ impl<'a> Cursor<'a> {
         }
         self.context = Context::Type;
         match &ty.kind {
+            TypeKind::Missing => {}
             TypeKind::Named { arguments, .. } => {
                 for ty in arguments {
                     self.ty(ty);
@@ -116,7 +117,7 @@ impl<'a> Cursor<'a> {
         }
     }
     fn block(&mut self, block: &'a Block) {
-        if self.inside(block.span) {
+        if self.inside(block.span) && block.span.start < block.span.end {
             self.context = Context::Statement;
         }
         for statement in &block.statements {
@@ -170,7 +171,7 @@ impl<'a> Cursor<'a> {
             | ExprKind::Float(_)
             | ExprKind::Bool(_)
             | ExprKind::Unit => self.context = Context::None,
-            ExprKind::Name(_) => {}
+            ExprKind::Name(_) | ExprKind::Missing => {}
             ExprKind::Array(values) => {
                 for value in values {
                     self.expr(value);

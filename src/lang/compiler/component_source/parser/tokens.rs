@@ -81,7 +81,7 @@ impl Parser<'_> {
         if self.eat(token)? {
             Ok(())
         } else {
-            Err(self.error("component-token", format!("此处需要 {token}")))
+            self.missing_token(token)
         }
     }
 

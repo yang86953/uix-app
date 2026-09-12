@@ -4,6 +4,7 @@ use crate::lang::compiler::{DiagnosticPhase, source_graph::SourceId};
 pub(super) mod concrete;
 mod expressions;
 mod limits;
+mod recovery;
 mod tokens;
 pub(super) fn identifier_range(source: &str, offset: usize) -> Span {
     let offset = offset.min(source.len());
@@ -52,6 +53,7 @@ fn prefix_parser(source: &str) -> Parser<'_> {
         depth: 0,
         nodes: 0,
         concrete: None,
+        recovery: None,
     }
 }
 /// 只供编辑器保持家族：显式旧 < / @ 前缀可切换，空白/未知片段不抹掉既有身份。
@@ -112,6 +114,7 @@ pub fn recognizes_source(source: &str) -> bool {
         depth: 0,
         nodes: 0,
         concrete: None,
+        recovery: None,
     };
     DECLARATION_WORDS
         .into_iter()
@@ -122,16 +125,24 @@ pub(super) fn parse(
     source: &str,
     source_name: String,
 ) -> std::result::Result<ParsedSource, CompilerDiagnostic> {
-    parse_with_tokens(source, source_name, false)
-        .map(|(parsed, _)| parsed)
+    parse_with_tokens(source, source_name, false, false)
+        .map(|(parsed, _, _)| parsed)
         .map_err(|error| *error)
+}
+
+pub(super) fn parse_editor(
+    source: &str,
+    name: String,
+) -> std::result::Result<(ParsedSource, Vec<Token>, Vec<CompilerDiagnostic>), CompilerDiagnostic> {
+    parse_with_tokens(source, name, true, true).map_err(|error| *error)
 }
 
 fn parse_with_tokens(
     source: &str,
     source_name: String,
     record: bool,
-) -> Result<(ParsedSource, Vec<Token>)> {
+    recover: bool,
+) -> Result<(ParsedSource, Vec<Token>, Vec<CompilerDiagnostic>)> {
     let mut parser = Parser {
         source,
         source_name: &source_name,
@@ -139,6 +150,7 @@ fn parse_with_tokens(
         depth: 0,
         nodes: 0,
         concrete: record.then(Vec::new),
+        recovery: recover.then(Vec::new),
     };
     if source.len() > MAX_SOURCE {
         return Err(parser.error_at(0, "component-source-limit", "组件源码不能超过 1 MiB"));
@@ -153,6 +165,7 @@ fn parse_with_tokens(
         }
     }
     let tokens = parser.concrete.unwrap_or_default();
+    let diagnostics = parser.recovery.unwrap_or_default();
     Ok((
         ParsedSource {
             source_graph: SourceGraph::inline(source_name, source),
@@ -160,6 +173,7 @@ fn parse_with_tokens(
             declarations,
         },
         tokens,
+        diagnostics,
     ))
 }
 
@@ -170,6 +184,7 @@ struct Parser<'a> {
     depth: usize,
     nodes: usize,
     concrete: Option<Vec<Token>>,
+    recovery: Option<Vec<CompilerDiagnostic>>,
 }
 
 impl Parser<'_> {
@@ -233,7 +248,7 @@ impl Parser<'_> {
         self.expect("import")?;
         self.expect("{")?;
         let mut names = Vec::new();
-        while !self.at("}")? {
+        while !self.at_end("}")? {
             let imported = self.name()?;
             let local = if self.eat("as")? {
                 self.name()?
@@ -266,7 +281,7 @@ impl Parser<'_> {
             let parameters = self.parameters(false)?;
             self.expect_as("{", Kind::BlockOpen)?;
             let mut body = Vec::new();
-            while !self.at("}")? {
+            while !self.at_end("}")? {
                 let member_start = self.start()?;
                 if self.eat("state")? {
                     let name = self.name()?;
@@ -321,7 +336,7 @@ impl Parser<'_> {
     fn parameters(&mut self, inferred: bool) -> Result<Vec<Parameter>> {
         self.expect("(")?;
         let mut parameters = Vec::new();
-        while !self.at(")")? {
+        while !self.at_end(")")? {
             let start = self.start()?;
             let name = self.name()?;
             let ty = if self.eat(":")? {
@@ -370,10 +385,13 @@ impl Parser<'_> {
 
     fn type_inner(&mut self) -> Result<TypeNode> {
         self.node()?;
+        if self.hole_boundary()? {
+            return self.missing_type();
+        }
         let start = self.start()?;
         let kind = if self.eat("{")? {
             let mut fields = Vec::new();
-            while !self.at("}")? {
+            while !self.at_end("}")? {
                 let name = self.name()?;
                 self.expect(":")?;
                 fields.push((name, self.ty()?));
@@ -385,7 +403,7 @@ impl Parser<'_> {
             TypeKind::Record(fields)
         } else if self.eat("(")? {
             let mut parameters = Vec::new();
-            while !self.at(")")? {
+            while !self.at_end(")")? {
                 let name = self.name()?;
                 self.expect(":")?;
                 parameters.push((name, self.ty()?));
@@ -435,7 +453,7 @@ impl Parser<'_> {
             let start = parser.start()?;
             parser.expect_as("{", Kind::BlockOpen)?;
             let mut statements = Vec::new();
-            while !parser.at("}")? {
+            while !parser.at_end("}")? {
                 statements.push(parser.statement()?);
             }
             parser.expect_as("}", Kind::BlockClose)?;

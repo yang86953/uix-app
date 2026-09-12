@@ -70,6 +70,7 @@ fn function(value: &mut Function) {
 fn ty(value: &mut TypeNode) {
     span(&mut value.span);
     match &mut value.kind {
+        TypeKind::Missing => {}
         TypeKind::Named { path, arguments } => {
             path.iter_mut().for_each(name);
             arguments.iter_mut().for_each(ty);
@@ -145,7 +146,8 @@ fn children(values: &mut [ViewChild]) {
 fn expr(value: &mut Expr) {
     span(&mut value.span);
     match &mut value.kind {
-        ExprKind::Unit
+        ExprKind::Missing
+        | ExprKind::Unit
         | ExprKind::Bool(_)
         | ExprKind::Integer(_)
         | ExprKind::Float(_)
