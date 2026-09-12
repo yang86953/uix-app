@@ -455,6 +455,82 @@ fn budget_matrix() -> String {
     }
     results.join("\n")
 }
+fn host_prepare_failure_retires_candidate_tokens_and_rolls_back() {
+    let mut engine = engine("counter.uix", "Counter", BTreeMap::new());
+    let token = events(&engine, "Button", "onClick")[0];
+    let revision = engine.snapshot().revision;
+    let mut escaped = None;
+    let error = engine
+        .dispatch_with(
+            token,
+            vec![],
+            &Cancellation::default(),
+            |snapshot| -> runtime::RuntimeResult<()> {
+                fn event(nodes: &[NativeNode]) -> Option<EventToken> {
+                    for node in nodes {
+                        for value in node.properties.values() {
+                            match value {
+                                ProjectedValue::Event(token) => return Some(*token),
+                                ProjectedValue::View(nodes) => {
+                                    if let Some(token) = event(nodes) {
+                                        return Some(token);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    None
+                }
+                escaped = event(&snapshot.roots);
+                Err(runtime::RuntimeError::new(
+                    ErrorKind::HostFailure,
+                    "拒绝候选原生控件",
+                ))
+            },
+        )
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::HostFailure);
+    assert_eq!(texts(&engine), ["0"]);
+    assert_eq!(engine.snapshot().revision, revision);
+    engine
+        .dispatch(token, vec![], &Cancellation::default())
+        .unwrap();
+    assert_eq!(texts(&engine), ["1"]);
+    assert_eq!(
+        engine
+            .dispatch(escaped.unwrap(), vec![], &Cancellation::default())
+            .unwrap_err()
+            .kind,
+        ErrorKind::Conflict,
+        "失败候选 token 不能复用为后来事件"
+    );
+    let token = events(&engine, "Button", "onClick")[0];
+    let error = engine
+        .dispatch_with(
+            token,
+            vec![],
+            &Cancellation::default(),
+            |_| -> runtime::RuntimeResult<()> { panic!("controlled prepare panic") },
+        )
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::HostFailure);
+    assert_eq!(texts(&engine), ["1"]);
+    let cancellation = Cancellation::default();
+    let cancelled = cancellation.clone();
+    let error = engine
+        .dispatch_with(token, vec![], &cancellation, |_| {
+            cancelled.cancel();
+            Ok(())
+        })
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Cancelled);
+    assert_eq!(texts(&engine), ["1"]);
+    engine
+        .dispatch(token, vec![], &Cancellation::default())
+        .unwrap();
+    assert_eq!(texts(&engine), ["2"]);
+}
 pub fn run() -> String {
     counter_state_input_defaults_cache_and_close();
     editable_list_imports_owner_callbacks_and_local_rerender();
@@ -464,5 +540,6 @@ pub fn run() -> String {
     empty_views_key_failure_and_remount();
     native_error_panic_limits_and_release();
     named_slots_mount_shared_blueprints_as_distinct_instances();
+    host_prepare_failure_retires_candidate_tokens_and_rolls_back();
     budget_matrix()
 }

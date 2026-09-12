@@ -5,10 +5,14 @@ mod engine;
 #[cfg(any(feature = "lang-build", feature = "uix-dynamic"))]
 pub mod ir;
 mod model;
+mod native;
 mod types;
 mod value;
 
 pub use engine::*;
+pub use native::*;
+#[cfg(feature = "ui")]
+pub mod ui;
 pub use model::*;
 pub use types::*;
 pub use value::*;

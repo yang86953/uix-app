@@ -727,7 +727,7 @@ impl Drop for DependencyTrackingGuard {
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
 /// 支持嵌套：内层 collect_deps 保存并恢复外层追踪上下文，使 `Computed` 在其 get()
 /// 内部也能被外层正确追踪。
-fn collect_deps<F, R>(f: F) -> (R, Vec<EffectDependency>)
+pub(crate) fn collect_deps<F, R>(f: F) -> (R, Vec<EffectDependency>)
 where
     F: FnOnce() -> R,
 {

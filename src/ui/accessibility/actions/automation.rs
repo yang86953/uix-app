@@ -478,6 +478,21 @@ impl TestApp {
         Ok(())
     }
 
+    /// 按原生事件循环的一批输入派发，批内不插入声明协调；最后统一收敛。
+    /// 返回每个事件的真实处理结果，不把未处理事件改写成成功。
+    pub fn dispatch_batch(
+        &mut self,
+        events: &[SystemEvent],
+    ) -> Result<Vec<EventResult>, AutomationError> {
+        self.settle()?;
+        let results = events
+            .iter()
+            .map(|event| self.tree.dispatch_event(event))
+            .collect();
+        self.settle()?;
+        Ok(results)
+    }
+
     pub fn resize(&mut self, width: f32, height: f32) -> Result<(), AutomationError> {
         self.settle()?;
         self.viewport = (width.max(1.0), height.max(1.0));

@@ -227,16 +227,16 @@ where
 }
 
 // 作用域捕获帧守卫：正常路径显式结束，panic 展开时恢复线程捕获栈深度。
-struct ScopedCaptureFrame {
+pub(crate) struct ScopedCaptureFrame {
     finished: bool,
 }
 
 impl ScopedCaptureFrame {
-    fn begin() -> Self {
+    pub(crate) fn begin() -> Self {
         crate::ui::reactive::state::begin_state_capture();
         Self { finished: false }
     }
-    fn finish(mut self) -> crate::ui::reactive::state::StateCaptureOutput {
+    pub(crate) fn finish(mut self) -> crate::ui::reactive::state::StateCaptureOutput {
         let output = crate::ui::reactive::state::end_state_capture();
         self.finished = true;
         output

@@ -191,6 +191,14 @@ fn expr(expression: &rt::ir::Expr) -> TokenStream {
             attributes,
         } => {
             let target = target_code(target);
+            let key = if attributes
+                .iter()
+                .any(|attribute| matches!(attribute, rt::ir::Attribute::Key(_)))
+            {
+                quote! {let key;}
+            } else {
+                quote! {let key=None;}
+            };
             let attributes = attributes.iter().map(|attribute| match attribute {
                 rt::ir::Attribute::Key(value) => {
                     let value = expr(value);
@@ -201,7 +209,7 @@ fn expr(expression: &rt::ir::Expr) -> TokenStream {
                     quote! {properties.push((#name.into(),#value?));}
                 }
             });
-            quote! {{#[allow(unused_mut)]let mut key=None;#[allow(unused_mut)]let mut properties=Vec::new();#(#attributes)* frame.element(&#location,#site,#target,key,properties)}}
+            quote! {{#key #[allow(unused_mut)]let mut properties=Vec::new();#(#attributes)* frame.element(&#location,#site,#target,key,properties)}}
         }
     };
     quote! {frame.scope(&#location,|frame|->R::RuntimeResult<C::Value>{let value=(#kind)?;frame.checked(value)})}

@@ -29,6 +29,7 @@ pub struct Engine {
     events: BTreeMap<u64, Arc<Callback>>,
     snapshot: Snapshot,
     next_instance: u64,
+    next_revision: u64,
     closed: bool,
 }
 
@@ -45,10 +46,24 @@ impl Engine {
         inputs: BTreeMap<String, Value>,
         limits: ComponentLimits,
     ) -> RuntimeResult<Self> {
+        Self::new_with(program, natives, inputs, limits, |_| Ok(())).map(|(engine, _)| engine)
+    }
+    /// 在提交前准备宿主投影；prepare 只构造候选，不应发布界面或执行业务外部效果。
+    pub fn new_with<T>(
+        program: Program,
+        natives: NativeBindings,
+        inputs: BTreeMap<String, Value>,
+        limits: ComponentLimits,
+        prepare: impl FnOnce(&Snapshot) -> RuntimeResult<T>,
+    ) -> RuntimeResult<(Self, T)> {
         validate::program(&program, &natives, &limits)?;
         static NEXT_ENGINE: AtomicU64 = AtomicU64::new(1);
         let mut engine = Self {
-            id: NEXT_ENGINE.fetch_add(1, Ordering::Relaxed),
+            id: NEXT_ENGINE
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                    value.checked_add(1)
+                })
+                .map_err(|_| invalid("组件 owner 身份耗尽"))?,
             program: Arc::new(program),
             natives,
             limits,
@@ -62,10 +77,11 @@ impl Engine {
                 instances: 0,
             },
             next_instance: 1,
+            next_revision: 1,
             closed: false,
         };
-        engine.update(inputs, &Cancellation::default())?;
-        Ok(engine)
+        let (_, prepared) = engine.update_with(inputs, &Cancellation::default(), prepare)?;
+        Ok((engine, prepared))
     }
     pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
@@ -78,8 +94,18 @@ impl Engine {
         inputs: BTreeMap<String, Value>,
         cancellation: &Cancellation,
     ) -> RuntimeResult<UpdateStats> {
-        self.transact(inputs, None, cancellation)
-            .map(|(_, stats)| stats)
+        self.update_with(inputs, cancellation, |_| Ok(()))
+            .map(|(stats, _)| stats)
+    }
+    /// 宿主准备失败、panic 或准备后已取消时，不提交组件候选状态与事件。
+    pub fn update_with<T>(
+        &mut self,
+        inputs: BTreeMap<String, Value>,
+        cancellation: &Cancellation,
+        prepare: impl FnOnce(&Snapshot) -> RuntimeResult<T>,
+    ) -> RuntimeResult<(UpdateStats, T)> {
+        self.transact(inputs, None, cancellation, prepare)
+            .map(|(_, stats, prepared)| (stats, prepared))
     }
     pub fn dispatch(
         &mut self,
@@ -87,6 +113,17 @@ impl Engine {
         arguments: Vec<Value>,
         cancellation: &Cancellation,
     ) -> RuntimeResult<DispatchResult> {
+        self.dispatch_with(token, arguments, cancellation, |_| Ok(()))
+            .map(|(result, _)| result)
+    }
+    /// 事件和宿主候选使用同一提交边界；不回滚已经执行的外部函数。
+    pub fn dispatch_with<T>(
+        &mut self,
+        token: EventToken,
+        arguments: Vec<Value>,
+        cancellation: &Cancellation,
+        prepare: impl FnOnce(&Snapshot) -> RuntimeResult<T>,
+    ) -> RuntimeResult<(DispatchResult, T)> {
         self.ensure_open()?;
         if token.engine != self.id || token.revision != self.snapshot.revision {
             return Err(RuntimeError::new(
@@ -99,12 +136,45 @@ impl Engine {
             .get(&token.index)
             .cloned()
             .ok_or_else(|| RuntimeError::new(ErrorKind::UnknownEvent, "事件已卸载或未登记"))?;
-        let (value, stats) = self.transact(
+        let (value, stats, prepared) = self.transact(
             self.root_inputs.clone(),
             Some((callback, arguments)),
             cancellation,
+            prepare,
         )?;
-        Ok(DispatchResult { value, stats })
+        Ok((DispatchResult { value, stats }, prepared))
+    }
+    /// 仅供原生挂载适配器保留当前树回调；公开 Snapshot token 仍逐版本失效。
+    #[cfg(feature = "ui")]
+    pub(super) fn mounted_event(&self, token: EventToken) -> RuntimeResult<Arc<Callback>> {
+        self.ensure_open()?;
+        if token.engine != self.id || token.revision != self.snapshot.revision {
+            return Err(RuntimeError::new(
+                ErrorKind::Conflict,
+                "挂载事件不属于当前投影",
+            ));
+        }
+        self.events
+            .get(&token.index)
+            .cloned()
+            .ok_or_else(|| RuntimeError::new(ErrorKind::UnknownEvent, "挂载事件不存在"))
+    }
+    #[cfg(feature = "ui")]
+    pub(super) fn dispatch_mounted_with<T>(
+        &mut self,
+        callback: Arc<Callback>,
+        arguments: Vec<Value>,
+        cancellation: &Cancellation,
+        prepare: impl FnOnce(&Snapshot) -> RuntimeResult<T>,
+    ) -> RuntimeResult<(DispatchResult, T)> {
+        // Session 仍验证 owner 存活、捕获、参数与效果；UI 适配器另管理事件槽的挂载租期。
+        let (value, stats, prepared) = self.transact(
+            self.root_inputs.clone(),
+            Some((callback, arguments)),
+            cancellation,
+            prepare,
+        )?;
+        Ok((DispatchResult { value, stats }, prepared))
     }
     /// 幂等关闭会释放状态、捕获与事件；旧 token 不能恢复关闭的 owner。
     pub fn close(&mut self) {
@@ -124,16 +194,16 @@ impl Engine {
             Ok(())
         }
     }
-    fn transact(
+    fn transact<T>(
         &mut self,
         inputs: BTreeMap<String, Value>,
         event: Option<(Arc<Callback>, Vec<Value>)>,
         cancellation: &Cancellation,
-    ) -> RuntimeResult<(Value, UpdateStats)> {
+        prepare: impl FnOnce(&Snapshot) -> RuntimeResult<T>,
+    ) -> RuntimeResult<(Value, UpdateStats, T)> {
         self.ensure_open()?;
-        let revision = self
-            .snapshot
-            .revision
+        let revision = self.next_revision;
+        self.next_revision = revision
             .checked_add(1)
             .ok_or_else(|| invalid("投影版本耗尽"))?;
         // 候选仅复制 Arc 索引；实际写入/失效的实例按需复制。失败不提交状态或事件表。
@@ -170,16 +240,23 @@ impl Engine {
             session.callback_signature(callback)?;
         }
         session.stats.unmounted_instances = before - session.records.len();
-        self.snapshot = Snapshot {
+        let snapshot = Snapshot {
             revision,
             roots,
             instances: session.records.len(),
         };
+        let prepared =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prepare(&snapshot)))
+                .map_err(|_| {
+                    RuntimeError::new(ErrorKind::HostFailure, "宿主投影准备 panic；组件候选未提交")
+                })??;
+        session.step(&Location::default())?;
+        self.snapshot = snapshot;
         self.records = session.records;
         self.identities = session.identities;
         self.events = session.events;
         self.root_inputs = inputs;
-        Ok((result, session.stats))
+        Ok((result, session.stats, prepared))
     }
 }
 

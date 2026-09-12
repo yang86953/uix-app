@@ -174,6 +174,7 @@ pub enum ProjectedValue {
 
 #[derive(Debug, Clone)]
 pub struct NativeNode {
+    pub location: Location,
     pub identity: Identity,
     pub export: ExportKey,
     pub properties: BTreeMap<String, ProjectedValue>,

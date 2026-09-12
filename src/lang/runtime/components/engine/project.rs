@@ -206,6 +206,7 @@ impl Session<'_> {
                         properties.insert(name.clone(), self.project_value(&slot, value)?);
                     }
                     roots.push(NativeNode {
+                        location: element.location.clone(),
                         identity,
                         export: export.clone(),
                         properties,
