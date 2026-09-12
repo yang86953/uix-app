@@ -14,7 +14,7 @@ fn generates_controlled_modal_contract() {
     // open 必须借用声明端 State<bool> 句柄。
     assert!(snapshot.contains("open (& (modal_open))"));
     // 动态标题必须临时借用并由运行时复制。
-    assert!(snapshot.contains("title (& * (modal_title))"));
+    assert!(snapshot.chars().filter(|ch| !ch.is_whitespace()).collect::<String>().contains(".title(&*(modal_title))"));
     // 两个动态布尔配置必须进入运行时构建器。
     assert!(snapshot.contains("mask_closable (can_mask_close)"));
     // 页脚显隐必须进入运行时构建器。
@@ -53,7 +53,7 @@ fn generates_modal_defaults_and_static_values() {
     assert!(!defaults.contains(". open"));
     // 生成静态标题和关闭配置。
     let configured =
-        generate(r#"<Modal title="确认删除" maskClosable="false" footerVisible="false" />"#)
+        generate(r#"<Modal title="确认删除" maskClosable="false" footerVisible="false" triggerVisible="false" />"#)
             // 合法静态配置必须成功生成。
             .expect("Modal 静态配置应生成");
     // 静态标题必须映射。
@@ -62,6 +62,7 @@ fn generates_modal_defaults_and_static_values() {
     assert!(configured.contains("mask_closable (false)"));
     // 静态页脚隐藏必须覆盖缺省值。
     assert!(configured.contains("footer_visible (false)"));
+    assert!(configured.contains("trigger_visible (false)"));
 }
 
 // 验证 Modal 受控状态与布尔值诊断。
@@ -79,13 +80,16 @@ fn rejects_invalid_modal_values() {
         // 非布尔字面量必须失败。
         .expect_err("Modal 非布尔 maskClosable 必须被拒绝");
     // 诊断必须点明布尔值要求。
-    assert!(mask.message.contains("布尔"));
+    assert!(mask.message.contains("布尔"), "{mask:?}");
+    let trigger = generate(r#"<Modal triggerVisible="sometimes" />"#)
+        .expect_err("内置入口显隐必须使用布尔值");
+    assert!(trigger.message.contains("布尔"), "{trigger:?}");
     // 非布尔页脚策略必须失败。
     let footer = generate(r#"<Modal footerVisible="sometimes" />"#)
         // 非布尔字面量必须失败。
         .expect_err("Modal 非布尔 footerVisible 必须被拒绝");
     // 诊断必须点明布尔值要求。
-    assert!(footer.message.contains("布尔"));
+    assert!(footer.message.contains("布尔"), "{footer:?}");
 }
 
 // 验证 Modal 未登记属性与事件边界。

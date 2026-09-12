@@ -552,7 +552,15 @@ impl WidgetExpander {
             // 为当前 For 建立独立的逐迭代准备语句收集区。
             self.for_iteration_setup_stack.push(Vec::new());
             // 为当前 For 建立独立的组件级引用名收集区。
-            self.for_iteration_capture_stack.push(Vec::new());
+            // 行中的伪类、transition 和 animation 会引用外层组件作用域。
+            // 惰性工厂必须克隆它，不能让 move 闭包夺走组件根的生命周期标记。
+            self.for_iteration_capture_stack.push(
+                self.widget_scope_stack
+                    .last()
+                    .map(ToString::to_string)
+                    .into_iter()
+                    .collect(),
+            );
         }
         // 展开全部有序子节点并暂存诊断以确保作用域恢复。
         let expanded_children = self.expand_nodes(&element.children, bindings, child_inside_for);

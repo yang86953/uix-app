@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::source_graph::SourceId;
+use crate::lang::compiler::source_graph::SourceId;
 
 use super::{
     Declaration, VisualValue, generate_document_items, parse_document, with_source_markers,

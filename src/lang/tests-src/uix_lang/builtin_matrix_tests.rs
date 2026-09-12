@@ -1,6 +1,6 @@
 //! `uix-lang-compiler/uix_lang/builtin_matrix.rs` 的 cfg(test) 单元测试体；模块层级不变，经 #[path] 引用，不进发布包。
 
-use crate::projection_schema::{RegistrationStatus, UI_PROJECTION_SCHEMA};
+use crate::lang::compiler::projection_schema::{RegistrationStatus, UI_PROJECTION_SCHEMA};
 
 use super::supported_builtin_hint;
 

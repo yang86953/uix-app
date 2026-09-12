@@ -21,6 +21,7 @@ publish = ["crates-io"]
 # 字体使用说明与全部产品文档不进包，第三方许可通知随包以满足署名义务。
 include = [
     "src/**",
+    "!src/lang/tests-src/**",
     "/uix-library.json",
     "/LICENSE",
     "/THIRD_PARTY_NOTICES.md",

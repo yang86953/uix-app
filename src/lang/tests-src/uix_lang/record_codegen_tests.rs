@@ -2,7 +2,7 @@
 use std::collections::BTreeMap;
 
 // 引入 Compiler System 的稳定源码身份。
-use crate::source_graph::SourceId;
+use crate::lang::compiler::source_graph::SourceId;
 // 引入 record 生成、来源上下文、文档解析与表达式解析入口。
 use super::{
     Declaration, ExpressionKind, SourceSpan, generate_record_items, parse_document,

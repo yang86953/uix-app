@@ -1040,4 +1040,4 @@ mod uix_import_inner_tests;
 
 // 增量缓存观测方法位于 tests-src（同模块 include!）。
 #[cfg(test)]
-include!("../../uix-lang-compiler/tests-src/uix_import_probe_fns.rs");
+include!("../tests-src/uix_import_probe_fns.rs");

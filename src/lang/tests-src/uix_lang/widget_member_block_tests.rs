@@ -1,6 +1,6 @@
 // 集中验证 Widget 成员声明块的解析、双写拒绝与等价展开。
 
-use crate::uix_lang::{Declaration, Node, WidgetMemberKind, parse_document};
+use crate::lang::compiler::uix_lang::{Declaration, Node, WidgetMemberKind, parse_document};
 
 // 解析文档并返回唯一 Widget 声明（已剥离空白文本与跨度细节）。
 fn widget_of(source: &str) -> String {
@@ -13,7 +13,7 @@ fn widget_of(source: &str) -> String {
 }
 
 // 解析文档并克隆返回唯一 Widget 声明本体。
-fn raw_widget_of(source: &str) -> crate::uix_lang::WidgetDeclaration {
+fn raw_widget_of(source: &str) -> crate::lang::compiler::uix_lang::WidgetDeclaration {
     // 先成功解析。
     let document = parse_document(source).expect("成员块文档必须可解析");
     // 取出唯一 Widget 声明。

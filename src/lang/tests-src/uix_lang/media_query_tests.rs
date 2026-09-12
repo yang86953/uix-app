@@ -90,10 +90,10 @@ fn semantic_model_lists_media_blocks() {
         <Container class="card" />
     "#;
     let document = parse_document(source).expect("@media 语法应合法");
-    let source_id = crate::source_graph::SourceId::from_source_name("media.uix");
-    let model = crate::semantic_ir::lower_document(
+    let source_id = crate::lang::compiler::source_graph::SourceId::from_source_name("media.uix");
+    let model = crate::lang::compiler::semantic_ir::lower_document(
         document,
-        crate::CompileTarget::View,
+        crate::lang::compiler::CompileTarget::View,
         source_id,
         &[source_id],
     )
@@ -101,7 +101,7 @@ fn semantic_model_lists_media_blocks() {
     let media = model
         .declarations()
         .iter()
-        .find(|declaration| declaration.kind == crate::semantic_ir::TypedDeclarationKind::Media)
+        .find(|declaration| declaration.kind == crate::lang::compiler::semantic_ir::TypedDeclarationKind::Media)
         .expect("应登记 @media 声明");
     assert_eq!(
         media.name,

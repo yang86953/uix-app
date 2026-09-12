@@ -73,7 +73,7 @@ widget! {
         pub(crate) visual: &'static ContainerVisual,
     }
 
-    visible => (&self) -> bool { self.style.visible }
+    visible => (&self) -> bool { self.style.visible && self.style.display != DisplayMode::None }
 
     on_children_changed => (&mut self, _child_count: usize) {
         // 任意子树拓扑变化都会使旧内容尺寸失效；嵌套 If 保留兄弟节点时也必须清空。

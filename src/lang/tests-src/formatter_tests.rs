@@ -1,7 +1,7 @@
 //! `uix-lang-compiler/formatter.rs` 的 cfg(test) 单元测试体；模块层级不变，经 #[path] 引用，不进发布包。
 
 use super::format_source;
-use crate::source_graph::SourceId;
+use crate::lang::compiler::source_graph::SourceId;
 
 #[test]
 fn formatter_is_idempotent_and_preserves_semantic_ast() {

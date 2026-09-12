@@ -316,6 +316,31 @@ impl WidgetTree {
         result
     }
 
+    /// 已授权的完整点击序列：Down 未消费仍保留手势到同次 Up。
+    pub(crate) fn dispatch_agent_click(&mut self, position: Point) -> EventResult {
+        let down = self.dispatch_event_with_focus_policy(
+            &SystemEvent::PointerDown {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+            true,
+        );
+        let up = self.dispatch_event_with_focus_policy(
+            &SystemEvent::PointerUp {
+                pos: position,
+                button: MouseButton::Left,
+                mods: KeyMod::NONE,
+            },
+            true,
+        );
+        if up == EventResult::NotHandled {
+            down
+        } else {
+            up
+        }
+    }
+
     fn dispatch_event_with_focus_policy(
         &mut self,
         event: &SystemEvent,
@@ -703,4 +728,3 @@ impl WidgetTree {
 #[cfg(test)]
 #[path = "../../../../../tests-src/ui/widget_runtime/widget/tree_events/events_tests.rs"]
 mod agent_pointer_tests;
-

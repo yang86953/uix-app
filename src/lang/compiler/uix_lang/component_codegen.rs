@@ -348,7 +348,14 @@ fn property_value_with_event(attribute: &Attribute, property: &PropertyDeclarati
             template(rust, &BTreeMap::new(), attribute.span)
         }
         PropertyKind::Expression | PropertyKind::State => {
-            let AttributeValue::Expression(expression) = &attribute.value else { return Err(error(attribute.span, format!("{} requires an expression", attribute.name))); };
+            let AttributeValue::Expression(expression) = &attribute.value else {
+                let expected = if matches!(property.kind, PropertyKind::State) {
+                    format!("a {} expression", property.state_handle.as_deref().unwrap_or("State<_>"))
+                } else {
+                    "an expression".to_owned()
+                };
+                return Err(error(attribute.span, format!("{} requires {expected}", attribute.name)));
+            };
             let value = super::generate_expression(&expression.expression, event)?;
             if matches!(property.kind, PropertyKind::State) { Ok(quote! { &(#value) }) } else { Ok(value) }
         }

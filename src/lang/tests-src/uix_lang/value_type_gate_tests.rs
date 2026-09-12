@@ -1,8 +1,8 @@
 //! `uix-lang-compiler/uix_lang/value_type_gate.rs` 的 cfg(test) 单元测试体；模块层级不变，经 #[path] 引用，不进发布包。
 
 use super::{validate_value_type_capabilities, value_type_capability};
-use crate::uix_lang::widget_parser::registered_value_type;
-use crate::uix_lang::{Document, WidgetValueType, parse_document};
+use crate::lang::compiler::uix_lang::widget_parser::registered_value_type;
+use crate::lang::compiler::uix_lang::{Document, WidgetValueType, parse_document};
 
 // 构造仅包含单个 Widget 的最小文档并取回解析结果。
 fn widget_document(state_source: &str) -> Document {
@@ -27,11 +27,11 @@ fn core_value_types_never_require_capability() {
 #[test]
 fn component_payload_types_map_to_owner_capability() {
     assert_eq!(
-        value_type_capability(&WidgetValueType::CascaderValue),
+        value_type_capability(&WidgetValueType::Library("CascaderValue".into())),
         Some("tree-widgets")
     );
     assert_eq!(
-        value_type_capability(&WidgetValueType::VecOfUploadFile),
+        value_type_capability(&WidgetValueType::Library("Vec<UploadFile>".into())),
         Some("form-pattern")
     );
 }
@@ -76,7 +76,7 @@ fn record_fields_share_the_same_gate() {
 // 反向映射闭包：schema 登记的组件专属类型必须能还原为对应变体。
 #[test]
 fn schema_registry_round_trips_payload_variants() {
-    for spec in crate::projection_schema::UI_PROJECTION_SCHEMA.value_types() {
+    for spec in crate::lang::compiler::projection_schema::UI_PROJECTION_SCHEMA.value_types() {
         if spec.capability.is_some() {
             let variant = registered_value_type(spec.name);
             assert!(variant.is_some(), "{} 登记缺少 lowering 映射", spec.name);

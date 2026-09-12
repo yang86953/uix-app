@@ -169,23 +169,12 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
                     }
                 }
                 AgentWindowAction::ClickAt { position } => {
-                    // 点击落在空白处（无组件消费）对 agent 而言动作未生效，报告失败。
-                    dispatch_window_event(
-                        tree,
-                        &SystemEvent::PointerDown {
-                            pos: position,
-                            button: MouseButton::Left,
-                            mods: KeyMod::NONE,
-                        },
-                    )?;
-                    dispatch_window_event(
-                        tree,
-                        &SystemEvent::PointerUp {
-                            pos: position,
-                            button: MouseButton::Left,
-                            mods: KeyMod::NONE,
-                        },
-                    )?;
+                    // 单次 Click 必须成对分发，不采用单独 PointerDown 的失败清理。
+                    if tree.dispatch_agent_click(position) == crate::ui::EventResult::NotHandled {
+                        return Err(AgentCommandError::NotInteractable(format!(
+                            "click_at {position:?}"
+                        )));
+                    }
                 }
                 AgentWindowAction::PointerMove { position } => {
                     // 指针移动的动作效果是悬停事实更新（enter/leave 与悬停目标切换），

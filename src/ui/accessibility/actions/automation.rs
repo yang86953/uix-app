@@ -309,16 +309,9 @@ impl TestApp {
     /// 按逐窗调度语义推进已注册动画源一次（`delta_seconds` 秒）并收敛
     /// 声明重建；返回推进后仍请求后续帧的活动源数量（零即帧静止）。
     pub fn advance_frame(&mut self, delta_seconds: f64) -> Result<usize, AutomationError> {
-        // 与生产调度相同：注册表身份按序交付给真实推进路径。
-        let ids = self
-            .tree
-            .animated_source_registrations()
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<Vec<_>>();
-        let updates = self
-            .tree
-            .update_animation_nodes_at(&ids, std::time::Instant::now(), delta_seconds);
+        // 复用生产发现路径，同时推进组件动画、视图过渡与声明式动画源。
+        // 只读取 animated_sources 会漏掉 Modal 等组件的进出场工作。
+        let updates = self.tree.update_animations(delta_seconds);
         self.settle()?;
         Ok(updates.into_iter().filter(|(_, active)| *active).count())
     }

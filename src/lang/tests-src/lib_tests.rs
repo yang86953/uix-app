@@ -6,7 +6,7 @@ use super::{
     CompileTarget, CompilerSystem, DiagnosticPhase, QueryEntry, QueryKind, check_inline,
     compile_inline, format_inline,
 };
-use crate::source_graph::SourceId;
+use crate::lang::compiler::source_graph::SourceId;
 
 #[test]
 fn shared_commands_compile_all_public_target_shapes() {

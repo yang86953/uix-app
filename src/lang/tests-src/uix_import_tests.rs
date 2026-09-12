@@ -6,11 +6,11 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // 引入被测导入 resolver 与内嵌拒绝 Gate。
-use crate::uix_import::{reject_inline_imports, resolve_file};
+use crate::lang::compiler::uix_import::{reject_inline_imports, resolve_file};
 // 引入纯文档生成与解析入口。
-use crate::uix_lang::{Declaration, generate_document_app, parse_document};
+use crate::lang::compiler::uix_lang::{Declaration, generate_document_app, parse_document};
 // 引入完整 Compiler System 入口与公开诊断契约。
-use crate::{CompileTarget, DiagnosticPhase, check_file, compile_file};
+use crate::lang::compiler::{CompileTarget, DiagnosticPhase, check_file, compile_file};
 
 // 唯一拥有一组导入测试文件。
 struct Fixture {
@@ -179,7 +179,7 @@ fn imported_visual_declarations_generate_items_from_their_source_file() {
         .expect("TypedUiIr 必须保留 Visual 声明");
     assert_eq!(
         visual.span.source_id,
-        crate::source_graph::SourceId::from_source_name(&library.to_string_lossy())
+        crate::lang::compiler::source_graph::SourceId::from_source_name(&library.to_string_lossy())
     );
 }
 
@@ -326,7 +326,7 @@ fn imported_codegen_diagnostics_keep_their_source_identity() {
         assert_eq!(error.source_name, helper.to_string_lossy());
         assert_eq!(
             error.source_id,
-            crate::source_graph::SourceId::from_source_name(&helper.to_string_lossy())
+            crate::lang::compiler::source_graph::SourceId::from_source_name(&helper.to_string_lossy())
         );
         // 行列与字节范围必须能直接高亮真实非法属性。
         assert_eq!(error.start, expected_start);

@@ -14,7 +14,7 @@ fn import_fixture() -> (PathBuf, PathBuf) {
     (root, helper)
 }
 
-fn ready(result: HotReloadResult) -> crate::CompileOutput {
+fn ready(result: HotReloadResult) -> crate::lang::compiler::CompileOutput {
     match result {
         HotReloadResult::Ready(output) => output,
         HotReloadResult::Unchanged { .. } => panic!("预期新的 AOT UI 结果"),

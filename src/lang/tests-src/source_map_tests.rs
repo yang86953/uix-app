@@ -1,10 +1,10 @@
 //! `uix-lang-compiler/source_map.rs` 的 cfg(test) 单元测试体；模块层级不变，经 #[path] 引用，不进发布包。
 
 use super::SourceMap;
-use crate::CompileTarget;
-use crate::semantic_ir::lower_document;
-use crate::source_graph::{SourceGraph, SourceId};
-use crate::uix_lang::parse_document;
+use crate::lang::compiler::CompileTarget;
+use crate::lang::compiler::semantic_ir::lower_document;
+use crate::lang::compiler::source_graph::{SourceGraph, SourceId};
+use crate::lang::compiler::uix_lang::parse_document;
 
 #[test]
 fn source_map_resolves_marker_to_attribute_semantic_node() {

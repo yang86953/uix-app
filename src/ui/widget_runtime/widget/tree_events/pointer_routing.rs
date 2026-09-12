@@ -172,7 +172,12 @@ impl WidgetTree {
                     modifiers: mods,
                 };
                 // Click 是可选观察事件；零订阅者必须安静地保留 NotHandled 契约。
-                let _ = self.dispatch_semantic(SemanticEvent::click(target, click));
+                let click_result = self.dispatch_semantic(SemanticEvent::click(target, click));
+                // 无原始 PointerUp handler 的组合 View 也可能已消费 Click。
+                // 保留该结果，避免公共点击入口报告失败后调用方重复执行副作用。
+                if result == EventResult::NotHandled {
+                    result = click_result;
+                }
                 if button == MouseButton::Right {
                     // ContextMenu 语义是纯通知：菜单一律由消费者自建，框架不提供默认菜单。
                     // 零消费者是合法状态，只记诊断，不弹任何覆盖层。

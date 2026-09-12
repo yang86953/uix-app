@@ -9,21 +9,21 @@ fn schema_entries_have_unique_stable_identities() {
     let component_ids = UI_PROJECTION_SCHEMA
         .components()
         .iter()
-        .map(|entry| entry.id)
+        .map(|entry| entry.id.to_owned())
         .collect::<BTreeSet<_>>();
     assert_eq!(component_ids.len(), UI_PROJECTION_SCHEMA.components().len());
 
     let event_ids = UI_PROJECTION_SCHEMA
         .events()
         .iter()
-        .map(|entry| entry.id)
+        .map(|entry| entry.id.to_owned())
         .collect::<BTreeSet<_>>();
     assert_eq!(event_ids.len(), UI_PROJECTION_SCHEMA.events().len());
 
     let data_ids = UI_PROJECTION_SCHEMA
         .data_constructors()
         .iter()
-        .map(|entry| entry.id)
+        .map(|entry| entry.id.to_owned())
         .collect::<BTreeSet<_>>();
     assert_eq!(
         data_ids.len(),
@@ -33,7 +33,7 @@ fn schema_entries_have_unique_stable_identities() {
     let value_type_ids = UI_PROJECTION_SCHEMA
         .value_types()
         .iter()
-        .map(|entry| entry.id)
+        .map(|entry| entry.id.to_owned())
         .collect::<BTreeSet<_>>();
     assert_eq!(
         value_type_ids.len(),
@@ -44,41 +44,41 @@ fn schema_entries_have_unique_stable_identities() {
         UI_PROJECTION_SCHEMA
             .common_attributes()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .style_properties()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .theme_tokens()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .handle_slots()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .slots()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .capabilities()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
         UI_PROJECTION_SCHEMA
             .attribute_capabilities()
             .iter()
-            .map(|entry| entry.id)
+            .map(|entry| entry.id.to_owned())
             .collect::<Vec<_>>(),
     ] {
         assert_eq!(
-            entries.iter().copied().collect::<BTreeSet<_>>().len(),
+            entries.iter().cloned().collect::<BTreeSet<_>>().len(),
             entries.len()
         );
     }
@@ -115,7 +115,7 @@ fn schema_exposes_style_theme_handle_slot_and_capability_queries() {
         UI_PROJECTION_SCHEMA
             .theme_token("primaryColor")
             .and_then(|entry| entry.alias_for),
-        Some("colorPrimary")
+        Some("colorPrimary".to_owned())
     );
     assert_eq!(
         UI_PROJECTION_SCHEMA

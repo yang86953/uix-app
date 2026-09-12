@@ -537,11 +537,14 @@ impl WindowDriver {
         if self.frame_scheduler.is_renderable()
             && !self.frame_scheduler.has_outstanding_request()
             && active_work.animation_ids().next().is_some()
-            && platform_window
-                .capabilities()
-                .supports(WindowCapability::RequestNativeFrame)
         {
-            if let Some(token) = self.frame_scheduler.request_animation_frame(frame_time) {
+            // 所有可呈现后端都需要 cadence fallback；CPU 后台面没有原生帧回调，
+            // 不能因此丢弃组件动画的下一帧。原生请求只作为可选唤醒优化。
+            if let Some(token) = self.frame_scheduler.request_animation_frame(frame_time)
+                && platform_window
+                    .capabilities()
+                    .supports(WindowCapability::RequestNativeFrame)
+            {
                 animation_frame_token = Some(token);
                 match platform_window.request_native_frame(NativeFrameRequest::after_present(token))
                 {

@@ -260,7 +260,7 @@ impl ViewAdapter {
             for (rank, child) in children.iter_mut().enumerate() {
                 ViewAdapter::configure_staggered_child(child, stagger_enter, anchor, rank);
             }
-            let visible = style.visible;
+            let visible = style.visible && style.display != crate::ui::theme::style::DisplayMode::None;
             let declared_opacity = style.opacity;
             Frame {
                 widget,
@@ -488,7 +488,7 @@ impl ViewAdapter {
                 tree.replace_node_captured_state_binds(id, captured_state_binds);
             }
         }
-        if !style.visible {
+        if !style.visible || style.display == crate::ui::theme::style::DisplayMode::None {
             tree.set_node_visibility(id, false);
         }
         let widget = Self::apply_style(
@@ -567,7 +567,7 @@ impl ViewAdapter {
         let constraints_changed = tree.set_node_size_constraints(id, style.size_constraints());
         // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
         tree.set_node_user_select(id, user_select);
-        if style.visible {
+        if style.visible && style.display != crate::ui::theme::style::DisplayMode::None {
             tree.set_node_visibility(id, true);
         }
         tree.set_tab_index_override(id, tab_index);
