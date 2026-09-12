@@ -62,7 +62,7 @@ pub use self::length::{PercentReference, ResolvedSizeBounds, SizeConstraints, St
 pub use self::text_align::TextAlign;
 // 公开 UI System 自有的文本装饰契约。
 pub use self::text_decoration::TextDecoration;
-pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, PaletteColor, TypographyToken};
+pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, TypographyToken};
 
 pub use crate::ui::style_paint::apply_style;
 pub use diff::StyleDiff;
@@ -70,7 +70,7 @@ pub use variant::{DeclaredStyleSet, StateFlags, StyleSet, StyleState};
 
 use crate::core::EdgeInsets;
 use crate::draw::Color;
-use crate::ui::theme::NeutralRole;
+
 use crate::ui::theme::traits::ThemeTokens;
 // Re-export layout enums so crate::ui::theme::style::FlexDirection etc. work
 pub use crate::ui::layout::{
@@ -262,8 +262,8 @@ impl Default for Style {
             background_hover: None,
             background_focus: None,
             background_active: None,
-            color: ColorValue::Neutral(NeutralRole::Text),
-            font_size: TypographyToken::Body,
+            color: ColorValue::default(),
+            font_size: TypographyToken::default(),
             // 未声明时保留绘制上下文当前系统字体。
             font_family: None,
             // 未声明时由各文本组件保留常规、标题或 strong 字重。

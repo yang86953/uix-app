@@ -152,11 +152,9 @@ pub(super) fn create_secondary_window(
 
     // 副窗从 Application 容器取得同一个反馈 owner。
     let feedback = container.resolve_clone::<AppExtensions>();
-    let locale = window_assembly::resolve_or_default::<Locale>(container);
-    let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(container);
+    let context = window_assembly::resolve_or_default::<ProviderContext>(container);
     // 根包装顺序（WidgetConfig → Locale → prepare_app_root）与主窗共用同一原语。
-    let wrapped_root =
-        window_assembly::wrap_app_root(&widget_config, &locale, window_id, feedback, root);
+    let wrapped_root = window_assembly::wrap_app_root(&context, window_id, feedback, root);
     // 副窗初始捕获与主窗共用当前循环主题，暗色窗口首挂不经历亮色中间态。
     let mut session = WindowSession::from_root_factory_for_window(
         window_id,
@@ -207,8 +205,7 @@ pub(super) fn recreate_exact_graphics_recipe(
     graphics_tests: GraphicsFaultSignal,
 ) -> Result<Box<dyn RenderTarget>, Error> {
     // native factory 在返回前已经把兼容 context 收敛为 recipe owner。
-    let owner =
-        try_create_gpu_recipe_with_queue(recipe, surface, width, height)?;
+    let owner = try_create_gpu_recipe_with_queue(recipe, surface, width, height)?;
     // 恢复路径与首次 bootstrap 复用同一个 owner 装配入口。
     let renderer =
         assemble_renderer(owner, width, height).map_err(|failure| failure.into_error())?;

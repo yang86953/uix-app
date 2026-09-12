@@ -28,7 +28,6 @@ pub(crate) mod focus_handle;
 /// 键盘焦点陷阱的生命周期与树内导航接口。
 pub mod focus_trap;
 /// 组件本地化语言与翻译资源接口。
-pub mod locale;
 pub(crate) mod managers;
 pub(crate) mod measurement;
 pub(crate) mod provider_context;

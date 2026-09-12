@@ -152,7 +152,7 @@ impl AnimationConfig {
                     Point::new(0.0, 0.0),
                     self.duration,
                 )
-                .easing(crate::ui::animation::easing::Easing::antd_out()),
+                .easing(crate::ui::animation::easing::Easing::css_ease_out()),
             ),
             AnimationKind::SlideOut(placement) => Some(
                 Animation::new(
@@ -160,7 +160,7 @@ impl AnimationConfig {
                     placement_offset(placement, self.distance),
                     self.duration,
                 )
-                .easing(crate::ui::animation::easing::Easing::antd_in()),
+                .easing(crate::ui::animation::easing::Easing::css_ease_in()),
             ),
             _ => None,
         }
@@ -170,11 +170,11 @@ impl AnimationConfig {
         match self.kind {
             AnimationKind::ZoomIn => Some(
                 Animation::new(0.8, 1.0, self.duration)
-                    .easing(crate::ui::animation::easing::Easing::antd_default()),
+                    .easing(crate::ui::animation::easing::Easing::css_ease()),
             ),
             AnimationKind::ZoomOut => Some(
                 Animation::new(1.0, 0.8, self.duration)
-                    .easing(crate::ui::animation::easing::Easing::antd_default()),
+                    .easing(crate::ui::animation::easing::Easing::css_ease()),
             ),
             _ => None,
         }

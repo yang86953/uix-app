@@ -104,7 +104,8 @@ pub struct StyleSpec {
 }
 
 /// 区分运行时设计 token 的闭合字段类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ThemeTokenKind {
     Color,
     String,
@@ -114,12 +115,28 @@ pub enum ThemeTokenKind {
 }
 
 /// 描述 `@theme` 可写和样式可引用的设计 token。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ThemeTokenSpec {
-    pub id: &'static str,
-    pub name: &'static str,
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
     pub kind: ThemeTokenKind,
-    pub alias_for: Option<&'static str>,
+    #[serde(default)]
+    pub alias_for: Option<String>,
+    pub key: String,
+    pub unit: String,
+    #[serde(default)]
+    pub allow_px: bool,
+    #[serde(default)]
+    pub minimum: Option<f32>,
+    #[serde(default)]
+    pub shadow_layers: Option<usize>,
+    #[serde(default)]
+    pub typography: Vec<String>,
+    #[serde(default)]
+    pub fallback: f32,
 }
 
 /// 描述必须接收 `State<T>` 而不是普通值的组件属性位。
@@ -273,14 +290,16 @@ impl UiProjectionSchema {
         STYLE_PROPERTIES.iter().find(|entry| entry.name == name)
     }
 
-    /// 返回完整主题 token 表。
-    pub const fn theme_tokens(self) -> &'static [ThemeTokenSpec] {
-        THEME_TOKENS
+    /// Returns token declarations from the current library catalog.
+    pub fn theme_tokens(self) -> Vec<ThemeTokenSpec> {
+        super::components::current()
+            .theme_tokens
+            .values()
+            .cloned()
+            .collect()
     }
-
-    /// 按名称查询主题 token 或兼容别名。
-    pub fn theme_token(self, name: &str) -> Option<&'static ThemeTokenSpec> {
-        THEME_TOKENS.iter().find(|entry| entry.name == name)
+    pub fn theme_token(self, name: &str) -> Option<ThemeTokenSpec> {
+        super::components::current().theme_tokens.get(name).cloned()
     }
 
     /// 返回全部 State 句柄位。
@@ -494,118 +513,6 @@ const STYLE_PROPERTIES: &[StyleSpec] = &[
     style!("left", Any),
 ];
 
-macro_rules! theme_token {
-    ($name:literal, $kind:ident) => {
-        ThemeTokenSpec {
-            id: concat!("theme.", $name),
-            name: $name,
-            kind: ThemeTokenKind::$kind,
-            alias_for: None,
-        }
-    };
-    ($name:literal, $kind:ident, $target:literal) => {
-        ThemeTokenSpec {
-            id: concat!("theme.", $name),
-            name: $name,
-            kind: ThemeTokenKind::$kind,
-            alias_for: Some($target),
-        }
-    };
-}
-
-const THEME_TOKENS: &[ThemeTokenSpec] = &[
-    theme_token!("colorPrimary", Color),
-    theme_token!("colorPrimaryHover", Color),
-    theme_token!("colorPrimaryActive", Color),
-    theme_token!("colorPrimaryBg", Color),
-    theme_token!("colorPrimaryBorder", Color),
-    theme_token!("colorBgContainer", Color),
-    theme_token!("colorBgElevated", Color),
-    theme_token!("colorBgRaised", Color),
-    theme_token!("colorBgOverlay", Color),
-    theme_token!("colorBgLayout", Color),
-    theme_token!("colorBgSpotlight", Color),
-    theme_token!("colorBgMask", Color),
-    theme_token!("colorBorder", Color),
-    theme_token!("colorBorderSecondary", Color),
-    theme_token!("colorFill", Color),
-    theme_token!("colorFillSecondary", Color),
-    theme_token!("colorFillTertiary", Color),
-    theme_token!("colorFillQuaternary", Color),
-    theme_token!("colorText", Color),
-    theme_token!("colorTextSecondary", Color),
-    theme_token!("colorTextTertiary", Color),
-    theme_token!("colorTextQuaternary", Color),
-    theme_token!("colorWhite", Color),
-    theme_token!("colorBlack", Color),
-    theme_token!("colorShadow", Color),
-    theme_token!("colorShadowSecondary", Color),
-    theme_token!("colorSuccess", Color),
-    theme_token!("colorSuccessBg", Color),
-    theme_token!("colorSuccessBorder", Color),
-    theme_token!("colorWarning", Color),
-    theme_token!("colorWarningBg", Color),
-    theme_token!("colorWarningBorder", Color),
-    theme_token!("colorError", Color),
-    theme_token!("colorErrorBg", Color),
-    theme_token!("colorErrorBorder", Color),
-    theme_token!("colorInfo", Color),
-    theme_token!("colorInfoBg", Color),
-    theme_token!("colorInfoBorder", Color),
-    theme_token!("colorLink", Color),
-    theme_token!("colorLinkHover", Color),
-    theme_token!("colorLinkActive", Color),
-    theme_token!("fontFamily", String),
-    theme_token!("motionEasingDefault", String),
-    theme_token!("motionEasingIn", String),
-    theme_token!("motionEasingOut", String),
-    theme_token!("motionEasingInOut", String),
-    theme_token!("fontSizeSM", Number),
-    theme_token!("fontSize", Number),
-    theme_token!("fontSizeLG", Number),
-    theme_token!("fontSizeXL", Number),
-    theme_token!("fontSizeHeading1", Number),
-    theme_token!("fontSizeHeading2", Number),
-    theme_token!("fontSizeHeading3", Number),
-    theme_token!("fontSizeHeading4", Number),
-    theme_token!("fontSizeHeading5", Number),
-    theme_token!("fontWeightRegular", Number),
-    theme_token!("fontWeightMedium", Number),
-    theme_token!("fontWeightSemibold", Number),
-    theme_token!("fontWeightBold", Number),
-    theme_token!("lineHeight", Number),
-    theme_token!("paddingXXS", Number),
-    theme_token!("paddingXS", Number),
-    theme_token!("paddingSM", Number),
-    theme_token!("padding", Number),
-    theme_token!("paddingMD", Number),
-    theme_token!("paddingLG", Number),
-    theme_token!("paddingXL", Number),
-    theme_token!("borderRadius", Number),
-    theme_token!("borderRadiusSM", Number),
-    theme_token!("borderRadiusLG", Number),
-    theme_token!("borderRadiusXL", Number),
-    theme_token!("borderRadiusRound", Number),
-    theme_token!("controlHeightSM", Number),
-    theme_token!("controlHeight", Number),
-    theme_token!("controlHeightLG", Number),
-    theme_token!("backdropBlurRadius", Number),
-    theme_token!("motionDurationFast", Number),
-    theme_token!("motionDurationMid", Number),
-    theme_token!("motionDurationSlow", Number),
-    theme_token!("screenXS", Number),
-    theme_token!("screenSM", Number),
-    theme_token!("screenMD", Number),
-    theme_token!("screenLG", Number),
-    theme_token!("screenXL", Number),
-    theme_token!("screenXXL", Number),
-    theme_token!("boxShadow", Shadow),
-    theme_token!("boxShadowSecondary", Shadow),
-    theme_token!("isDark", Boolean),
-    theme_token!("primaryColor", Color, "colorPrimary"),
-    theme_token!("backgroundColor", Color, "colorBgLayout"),
-];
-
 // Library-owned handles and slots are queried from the active catalog.
 const HANDLE_SLOTS: &[HandleSpec] = &[];
 const SLOTS: &[SlotSpec] = &[];
@@ -731,10 +638,8 @@ const VALUE_TYPES: &[ValueTypeSpec] = &[
     value_type!("Vec<String>", Collection, false, None, None, true),
     value_type!("Vec<number>", Collection, false, None, None, true),
     value_type!("Option<String>", Optional, true, None),
-
 ];
 
 #[cfg(test)]
 #[path = "../tests-src/projection_schema_tests.rs"]
 mod tests;
-

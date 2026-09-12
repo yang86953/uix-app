@@ -15,9 +15,8 @@
 
 use super::Style;
 use super::StyleDiff;
-use super::{ColorValue, PaletteColor, TypographyToken};
+use super::{ColorValue, TypographyToken};
 use crate::core::EdgeInsets;
-use crate::ui::theme::NeutralRole;
 
 /// 组件交互态，用于从样式集合中解析最终样式。
 ///
@@ -174,7 +173,8 @@ impl DeclaredStyleSet {
         {
             diff.clone().apply_to(&mut style);
         }
-        if state.pressed && !state.disabled
+        if state.pressed
+            && !state.disabled
             && let Some(diff) = &self.active
         {
             diff.clone().apply_to(&mut style);
@@ -209,14 +209,6 @@ impl DeclaredStyleSet {
             disabled,
         })
     }
-
-
-
-
-
-
-
-
 }
 
 impl From<&StyleSet> for DeclaredStyleSet {
@@ -320,12 +312,4 @@ impl StyleSet {
             disabled,
         })
     }
-
-
-
-
-
-
-
-
 }

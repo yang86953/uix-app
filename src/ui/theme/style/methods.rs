@@ -28,10 +28,6 @@ impl Style {
         }
     }
 
-
-
-
-
     /// 默认容器样式。
     pub fn container() -> Self {
         Self {
@@ -285,10 +281,10 @@ impl Style {
         if other.background_active.is_some() {
             self.background_active = other.background_active;
         }
-        if other.color != ColorValue::Neutral(NeutralRole::Text) {
+        if other.color != ColorValue::default() {
             self.color = other.color;
         }
-        if other.font_size != TypographyToken::Body {
+        if other.font_size != TypographyToken::default() {
             self.font_size = other.font_size;
         }
         // 只有显式字体族列表覆盖继承值。
@@ -376,10 +372,7 @@ impl Style {
     pub fn effective_border_radius(&self) -> Option<Radius> {
         if let Some(corners) = self.border_radius_corners {
             let radius = corners.to_radius();
-            return (radius.tl > 0.0
-                || radius.tr > 0.0
-                || radius.br > 0.0
-                || radius.bl > 0.0)
+            return (radius.tl > 0.0 || radius.tr > 0.0 || radius.br > 0.0 || radius.bl > 0.0)
                 .then_some(radius);
         }
         (self.border_radius > 0.0 && self.border_radius.is_finite())

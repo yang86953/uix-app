@@ -295,36 +295,25 @@ fn app_child(app: &Element) -> Result<Element, Diagnostic> {
 fn generate_named_theme(theme: &super::ThemeDeclaration) -> Result<TokenStream, Diagnostic> {
     let dark = theme.name == "dark";
     let mut updates = Vec::new();
-    let mut primary = quote! { None::<::uix_app::prelude::Color> };
-    let mut background = primary.clone();
     for property in &theme.properties {
-        match property.name.as_str() {
-            "primaryColor" | "backgroundColor" => {
-                let (r, g, b, a) = parse_color(&property.value.source, property)?;
-                let color = quote! { ::uix_app::prelude::Color::from_rgba(#r, #g, #b, #a) };
-                if property.name == "primaryColor" {
-                    primary = quote! { Some(#color) };
-                    updates.push(quote! { __uix_tokens.color_primary = Some(#color); __uix_tokens.color_info = Some(#color); });
-                } else {
-                    background = quote! { Some(#color) };
-                    updates.push(quote! { __uix_tokens.color_bg_layout = Some(#color); });
-                }
-            }
-            _ => updates.push(theme_token_update(property)?),
-        }
+        updates.push(theme_token_update(property)?);
     }
     let name = &theme.name;
     let value = if let Some(factory) = crate::lang::compiler::components::theme_factory() {
         crate::lang::compiler::components::use_unit(&factory.unit);
-        super::component_codegen::template(&factory.rust, &std::collections::BTreeMap::from([
-            ("dark".into(), quote! { #dark }), ("primary".into(), primary),
-            ("background".into(), background), ("patch".into(), quote! { __uix_tokens }),
-        ]), theme.span)?
+        super::component_codegen::template(
+            &factory.rust,
+            &std::collections::BTreeMap::from([
+                ("dark".into(), quote! { #dark }),
+                ("patch".into(), quote! { __uix_tokens }),
+            ]),
+            theme.span,
+        )?
     } else {
         quote! { (if #dark { ::uix_app::prelude::Theme::dark() } else { ::uix_app::prelude::Theme::light() }).patched(__uix_tokens) }
     };
     Ok(quote! { (#name, {
-        let mut __uix_tokens = ::uix_app::ui::TokenPatch::default();
+        let mut __uix_tokens = ::uix_app::ui::tokens::TokenPatch::default();
         #(#updates)*
         #value
     }) })

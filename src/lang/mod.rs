@@ -14,3 +14,7 @@ pub mod demand;
 
 #[cfg(feature = "uix-modules")]
 pub mod modules;
+
+/// Descriptor shipped by the framework, usable by library build scripts.
+#[cfg(feature = "lang-build")]
+pub const FRAMEWORK_LIBRARY: &str = include_str!("../../uix-library.json");

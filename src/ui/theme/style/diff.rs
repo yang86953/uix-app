@@ -789,8 +789,7 @@ impl From<Style> for StyleDiff {
             margin: (style.margin != EdgeInsets::zero()).then_some(style.margin),
             padding: (style.padding != EdgeInsets::zero()).then_some(style.padding),
             border_color: style.border_color.map(Some),
-            border_width: (style.border_width != EdgeInsets::zero())
-                .then_some(style.border_width),
+            border_width: (style.border_width != EdgeInsets::zero()).then_some(style.border_width),
             border_style: style.border_style.map(Some),
             border_radius: (style.border_radius != 0.0).then_some(style.border_radius),
             border_radius_corners: style.border_radius_corners.map(Some),
@@ -808,8 +807,7 @@ impl From<Style> for StyleDiff {
             clip_content: style.clip_content.map(Some),
             justify_content: (style.justify_content != JustifyContent::default())
                 .then_some(style.justify_content),
-            align_items: (style.align_items != AlignItems::default())
-                .then_some(style.align_items),
+            align_items: (style.align_items != AlignItems::default()).then_some(style.align_items),
             gap: (style.gap != 0.0).then_some(style.gap),
             grid_template_columns: (!style.grid_template_columns.is_empty())
                 .then_some(style.grid_template_columns),
@@ -832,9 +830,8 @@ impl From<Style> for StyleDiff {
             background_hover: style.background_hover.map(Some),
             background_focus: style.background_focus.map(Some),
             background_active: style.background_active.map(Some),
-            color: (style.color != ColorValue::Neutral(NeutralRole::Text))
-                .then_some(style.color),
-            font_size: (style.font_size != TypographyToken::Body).then_some(style.font_size),
+            color: (style.color != ColorValue::default()).then_some(style.color),
+            font_size: (style.font_size != TypographyToken::default()).then_some(style.font_size),
             font_family: style.font_family.map(Some),
             font_weight: style.font_weight.map(Some),
             line_height: style.line_height.map(Some),

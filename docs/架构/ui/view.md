@@ -37,3 +37,9 @@ adapter 把声明属性分类为结构、Layout、Paint 或 Composite patch；�
 - View build 可捕获 State/Provider 依赖，但不执行 present、平台 I/O、阻塞业务 I/O 或启动后台任务；失败发生在预检阶段时不得部分改写持久树。
 - 业务闭包只进入所属树管理的 side table，ViewNode/组件快照只保存签名或稳定登记身份；节点销毁、换根和 generation 变化同步释放登记。
 - adapter 输出 patch 只表示声明差异已分类；协调发布、布局、绘制和呈现各自由后续结果建立。
+
+## 中性 View 原语
+
+`src/ui/primitives/` 提供 `Container`、`Label`、`ScrollView`、`row`、`column`、`column_fit`、`label`、`grid`、`scroll`。框架的 Grid 组合子使用通用 `Style` 轨道配置；24 栅格、断点、Col 等设计系统布局策略由组件库提供。
+
+`TextEditState` / `TextEditor` 提供字素边界上的光标、选择、插入和删除。输入控件继续拥有装饰、校验、受控绑定、IME 事件与视觉命中策略。基础节点快照为 `PrimitiveSnapshot`，无需依赖任何具体控件枚举。

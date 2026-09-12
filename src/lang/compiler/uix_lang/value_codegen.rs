@@ -168,29 +168,10 @@ pub(crate) fn typography_value(attribute: &Attribute) -> Result<TokenStream, Dia
     }
     // 字号令牌必须是普通字面量。
     let value = literal_string(attribute, "fontSize")?;
-    // 映射文档中的公开 TypographyToken 名称。
-    match value.as_str() {
-        // 映射小号正文。
-        "small" => Ok(quote! { ::uix_app::prelude::TypographyToken::Small }),
-        // 映射正文。
-        "body" => Ok(quote! { ::uix_app::prelude::TypographyToken::Body }),
-        // 映射大号正文。
-        "large" => Ok(quote! { ::uix_app::prelude::TypographyToken::Large }),
-        // 映射超大正文。
-        "xLarge" => Ok(quote! { ::uix_app::prelude::TypographyToken::XLarge }),
-        // 映射一级标题。
-        "heading1" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading1 }),
-        // 映射二级标题。
-        "heading2" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading2 }),
-        // 映射三级标题。
-        "heading3" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading3 }),
-        // 映射四级标题。
-        "heading4" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading4 }),
-        // 映射五级标题。
-        "heading5" => Ok(quote! { ::uix_app::prelude::TypographyToken::Heading5 }),
-        // 其他字面量尝试解析为像素数值。
-        _ => numeric_literal(&value, attribute.span),
+    if let Some(value) = super::theme_token_codegen::typography_reference(&value) {
+        return Ok(value);
     }
+    numeric_literal(&value, attribute.span)
 }
 
 // 生成交叉轴对齐枚举。

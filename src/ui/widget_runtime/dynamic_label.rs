@@ -52,13 +52,23 @@ impl DynamicLabel {
 }
 
 impl Widget for DynamicLabel {
-    fn apply_declaration_style(&mut self, style: &crate::ui::Style, declared: &crate::ui::StyleDiff, flex_grow_override: Option<f32>, flex_shrink_override: Option<f32>) {
+    fn apply_declaration_style(
+        &mut self,
+        style: &crate::ui::Style,
+        declared: &crate::ui::StyleDiff,
+        flex_grow_override: Option<f32>,
+        flex_shrink_override: Option<f32>,
+    ) {
         let dl = self;
         let style_is_default = style == &crate::ui::Style::default();
-        let _ = (style_is_default, declared, flex_grow_override, flex_shrink_override);
+        let _ = (
+            style_is_default,
+            declared,
+            flex_grow_override,
+            flex_shrink_override,
+        );
 
-                dl.set_style(style.clone());
-
+        dl.set_style(style.clone());
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -136,7 +146,7 @@ impl DynamicLabel {
             self.style
                 .as_ref()
                 .map(|s| s.resolve_font_size(tokens))
-                .unwrap_or_else(|| tokens.font_size())
+                .unwrap_or_else(|| tokens.number("uix.font-size", 14.0))
         });
         let fs = normalized_font_size(fs);
         // 换行宽度：显式样式宽度优先，否则用布局约束的有限宽度参与估算；
@@ -193,10 +203,13 @@ impl WidgetRender for DynamicLabel {
         let style = self.style.as_ref();
         let color = style
             .map(|s| s.resolve_color(ctx.tokens()))
-            .unwrap_or_else(|| ctx.tokens().color_text());
+            .unwrap_or_else(|| {
+                ctx.tokens()
+                    .color("uix.foreground", crate::draw::Color::black())
+            });
         let font_size = style
             .map(|s| s.resolve_font_size(ctx.tokens()))
-            .unwrap_or_else(|| ctx.tokens().font_size());
+            .unwrap_or_else(|| ctx.tokens().number("uix.font-size", 14.0));
         let font_size = normalized_font_size(font_size);
         let padding = style.map(|s| s.padding).unwrap_or_default();
         // 约束矩形内自动换行；首行顶左位置与单行绘制保持一致。

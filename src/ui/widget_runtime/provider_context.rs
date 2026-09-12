@@ -1,65 +1,76 @@
-use crate::ui::widget_runtime::config::WidgetConfig;
-use crate::ui::widget_runtime::locale::Locale;
-use std::cell::RefCell;
-use std::ptr::NonNull;
-use std::sync::{Arc, OnceLock};
-
-/// 在 View 构建时捕获、由同一子树节点共享的 Provider 上下文快照。
-#[derive(Clone)]
-pub struct ProviderContext {
-    values: Arc<ProviderContextValues>,
+//! Type-indexed context snapshots owned and propagated by the view runtime.
+use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
+    collections::HashMap,
+    ptr::NonNull,
+    sync::{Arc, OnceLock},
+};
+trait Entry: Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn equal(&self, other: &dyn Entry) -> bool;
 }
-
-/// 配置与语言共同组成一次不可变 Provider 快照。
-#[derive(Clone, Default, PartialEq)]
-struct ProviderContextValues {
-    config: WidgetConfig,
-    locale: Locale,
-}
-
-impl PartialEq for ProviderContext {
-    fn eq(&self, other: &Self) -> bool {
-        // 同一不可变快照必定未变；仅不同快照继续保留完整值比较语义。
-        Arc::ptr_eq(&self.values, &other.values) || self.values == other.values
+impl<T: Any + Send + Sync + PartialEq> Entry for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn equal(&self, other: &dyn Entry) -> bool {
+        other.as_any().downcast_ref::<T>() == Some(self)
     }
 }
-
+#[derive(Clone)]
+pub struct ProviderContext {
+    values: Arc<HashMap<TypeId, Arc<dyn Entry>>>,
+}
 impl Default for ProviderContext {
     fn default() -> Self {
-        // 默认快照跨节点共享，避免每次脱离 Provider 构造组件时复制完整语言表。
-        static DEFAULT_VALUES: OnceLock<Arc<ProviderContextValues>> = OnceLock::new();
+        static EMPTY: OnceLock<Arc<HashMap<TypeId, Arc<dyn Entry>>>> = OnceLock::new();
         Self {
-            values: Arc::clone(
-                DEFAULT_VALUES.get_or_init(|| Arc::new(ProviderContextValues::default())),
-            ),
+            values: EMPTY.get_or_init(Default::default).clone(),
         }
     }
 }
-
-impl ProviderContext {
-    pub(crate) fn config(&self) -> &WidgetConfig {
-        &self.values.config
-    }
-
-    pub(crate) fn locale(&self) -> &Locale {
-        &self.values.locale
-    }
-
-    fn with_config(&self, config: &WidgetConfig) -> Self {
-        let mut context = self.clone();
-        // Provider 覆写生成新快照，既有节点继续读取捕获时的不可变值。
-        Arc::make_mut(&mut context.values).config = config.clone();
-        context
-    }
-
-    fn with_locale(&self, locale: &Locale) -> Self {
-        let mut context = self.clone();
-        // Locale 与配置共同保持同一次子树快照的值语义。
-        Arc::make_mut(&mut context.values).locale = locale.clone();
-        context
+impl PartialEq for ProviderContext {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.values, &other.values)
+            || (self.values.len() == other.values.len()
+                && self.values.iter().all(|(key, value)| {
+                    other
+                        .values
+                        .get(key)
+                        .is_some_and(|v| value.equal(v.as_ref()))
+                }))
     }
 }
-
+impl ProviderContext {
+    pub fn get<T: Any>(&self) -> Option<&T> {
+        self.values.get(&TypeId::of::<T>())?.as_any().downcast_ref()
+    }
+    pub fn with<T: Clone + PartialEq + Send + Sync + 'static>(&self, value: T) -> Self {
+        let mut next = self.clone();
+        if self.get::<T>() != Some(&value) {
+            Arc::make_mut(&mut next.values).insert(TypeId::of::<T>(), Arc::new(value));
+        }
+        next
+    }
+    pub(crate) fn style_scope(&self) -> super::config::StyleScope {
+        self.get().cloned().unwrap_or_default()
+    }
+}
+/// Reads the nearest value of this type, falling back to its own default.
+pub fn use_context<T: Clone + Default + 'static>() -> T {
+    current_provider_context()
+        .get()
+        .cloned()
+        .unwrap_or_default()
+}
+/// Installs an immutable value for synchronous view construction; nested scopes and unwinding restore the caller.
+pub fn with_context<T: Clone + PartialEq + Send + Sync + 'static, R>(
+    value: &T,
+    f: impl FnOnce() -> R,
+) -> R {
+    with_provider_context(&current_provider_context().with(value.clone()), f)
+}
 thread_local! {
     #[allow(
         clippy::missing_const_for_thread_local,
@@ -93,7 +104,7 @@ impl Drop for ProviderContextGuard {
     }
 }
 
-pub(crate) fn current_provider_context() -> ProviderContext {
+pub fn current_provider_context() -> ProviderContext {
     PROVIDER_CONTEXT_STACK.with(|stack| {
         stack
             .borrow()
@@ -110,18 +121,3 @@ pub fn with_provider_context<T>(context: &ProviderContext, f: impl FnOnce() -> T
     let _guard = ProviderContextGuard { frame };
     f()
 }
-
-pub(crate) fn with_widget_config<T>(config: &WidgetConfig, f: impl FnOnce() -> T) -> T {
-    let context = current_provider_context().with_config(config);
-    with_provider_context(&context, f)
-}
-
-pub(crate) fn with_widget_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
-    let context = current_provider_context().with_locale(locale);
-    with_provider_context(&context, f)
-}
-
-#[cfg(test)]
-#[path = "../../../tests-src/ui/widget_runtime/provider_context_tests.rs"]
-mod tests;
-

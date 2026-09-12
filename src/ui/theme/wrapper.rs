@@ -1,27 +1,8 @@
-//! Theme wrapper and TokenProvider supertrait — aggregates all token sub-traits.
-//!
-//! `TokenProvider` combines `IColorTokens`, `ITypographyTokens`,
-//! `ISpacingTokens`, and `IBoxShadowTokens` into a single supertrait
-//! with the `is_dark()` mode query. `Theme` wraps an `Arc<dyn TokenProvider>`
-//! for runtime-polymorphic token injection.
+//! Runtime-polymorphic theme injection through an open token provider.
 
 use std::sync::Arc;
 
-
-
-use crate::ui::theme::traits::{
-    ThemeTokens, TokenProvider,
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-// TokenProvider — supertrait 聚合全部子 trait
-// ════════════════════════════════════════════════════════════════════════════
-
-// TokenProvider trait 定义已迁移至 ui::traits::theme。
-
-// ════════════════════════════════════════════════════════════════════════════
-// Theme
-// ════════════════════════════════════════════════════════════════════════════
+use crate::ui::theme::traits::{ThemeTokens, TokenProvider};
 
 /// Theme wraps a token provider with light/dark mode.
 /// Custom themes are injected by providing a `TokenProvider` implementation.
@@ -45,14 +26,18 @@ impl Theme {
     }
 
     /// Creates a neutral light theme without component library resources.
-    pub fn light() -> Self { Self::new(super::neutral::NeutralTokens(false)) }
+    pub fn light() -> Self {
+        Self::new(super::neutral::NeutralTokens(false))
+    }
     /// Creates a neutral dark theme without component library resources.
-    pub fn dark() -> Self { Self::new(super::neutral::NeutralTokens(true)) }
+    pub fn dark() -> Self {
+        Self::new(super::neutral::NeutralTokens(true))
+    }
 
     /// Overrides selected tokens while delegating every other value to this theme.
-    pub fn patched(self, patch: super::TokenPatch) -> Self {
+    pub fn patched(self, patch: impl Into<super::TokenPatch>) -> Self {
         let mut tokens = super::token_patch::ScopedThemeTokens::new(self.tokens_arc());
-        tokens.replace_scope(None, Some(Arc::new(patch)));
+        tokens.replace_scope(None, Some(Arc::new(patch.into())));
         Self::new(tokens)
     }
 
@@ -70,8 +55,14 @@ impl Theme {
         ThemeTokens::is_dark(self.provider.as_ref())
     }
 
-    pub(crate) fn is_same_provider(&self, other: &Self) -> bool {
+    pub fn is_same_provider(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.provider, &other.provider)
+    }
+}
+
+impl PartialEq for Theme {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_same_provider(other)
     }
 }
 

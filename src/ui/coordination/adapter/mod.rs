@@ -491,7 +491,13 @@ impl ViewAdapter {
         if !style.visible {
             tree.set_node_visibility(id, false);
         }
-        let widget = Self::apply_style(widget, &style, &style_decl, flex_grow_override, flex_shrink_override);
+        let widget = Self::apply_style(
+            widget,
+            &style,
+            &style_decl,
+            flex_grow_override,
+            flex_shrink_override,
+        );
         // 外层包装器已读取一次 incoming TypeId；const 模式直接复用该值。
         // reconcile_existing 的 can_reuse_current/can_reuse 前置已确认两侧具体 TypeId 相同；
         // apply_style 只修改组件样式，不替换具体类型，因此纯类型 owner 可直接看 incoming。
@@ -500,19 +506,33 @@ impl ViewAdapter {
         // reconcile them after `sync_from` has patched the live Calendar instead.
         // Calendar 是例外：仍需读取 live runtime 的 custom/materialized 状态，但仅在 incoming
         // 确为 Calendar 时进入该 fallback，避免无谓的树查找。
-        let deferred_children = widget.dynamic_children_coordinator().is_some_and(|coordinator| {
-            tree.get(id).is_some_and(|current| coordinator.defer_view_children(current.widget(), widget.as_ref()))
-        });
-        let widget_view_children = if deferred_children { Vec::new() } else { view_children(widget.as_ref()) };
-        let (next_fields, next_disabled) = if let Some(disabled) = widget.interaction_disabled().filter(|_| SNAPSHOT_FREE) {
-            let disabled = accessibility_override.as_ref().and_then(|state| state.disabled_override()).unwrap_or(disabled);
-            (None, disabled)
+        let deferred_children = widget
+            .dynamic_children_coordinator()
+            .is_some_and(|coordinator| {
+                tree.get(id).is_some_and(|current| {
+                    coordinator.defer_view_children(current.widget(), widget.as_ref())
+                })
+            });
+        let widget_view_children = if deferred_children {
+            Vec::new()
         } else {
-            let fields = widget.snapshot_fields();
-            let disabled = accessibility_override.as_ref().and_then(|state| state.disabled_override())
-                .unwrap_or_else(|| fields.accessibility().state.disabled);
-            (Some(fields), disabled)
+            view_children(widget.as_ref())
         };
+        let (next_fields, next_disabled) =
+            if let Some(disabled) = widget.interaction_disabled().filter(|_| SNAPSHOT_FREE) {
+                let disabled = accessibility_override
+                    .as_ref()
+                    .and_then(|state| state.disabled_override())
+                    .unwrap_or(disabled);
+                (None, disabled)
+            } else {
+                let fields = widget.snapshot_fields();
+                let disabled = accessibility_override
+                    .as_ref()
+                    .and_then(|state| state.disabled_override())
+                    .unwrap_or_else(|| fields.accessibility().state.disabled);
+                (Some(fields), disabled)
+            };
         if next_disabled {
             // PointerLeave / DragEnd 必须在旧组件仍启用时交付，随后再 patch disabled。
             tree.cancel_pointer_hover_in_subtree(id);
@@ -592,10 +612,16 @@ impl ViewAdapter {
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
         tree.replace_system_event_handlers(id, system_event_handlers);
         tree.replace_render_handlers(id, render_handlers);
-        let input = crate::ui::DynamicChildInput { authored: children, built: widget_view_children, deferred: deferred_children };
+        let input = crate::ui::DynamicChildInput {
+            authored: children,
+            built: widget_view_children,
+            deferred: deferred_children,
+        };
         let coordinated = if let Some(coordinator) = tree.dynamic_children_coordinator(id) {
-            coordinator.reconcile(tree, id, input)
-        } else { Err(input) };
+            coordinator.reconcile(&mut crate::ui::ComponentContext::new(tree, id), input)
+        } else {
+            Err(input)
+        };
         let mut children_changed = match coordinated {
             Ok(changed) => changed,
             Err(input) => {
@@ -604,7 +630,8 @@ impl ViewAdapter {
                 Self::reconcile_children(tree, id, children, stagger_enter)
             }
         };
-        children_changed |= tree.refresh_dynamic_children(id, crate::ui::DynamicRefresh::AfterReconcile, None);
+        children_changed |=
+            tree.refresh_dynamic_children(id, crate::ui::DynamicRefresh::AfterReconcile, None);
         if children_changed {
             paint_changed = true;
             layout_changed = true;
@@ -728,9 +755,13 @@ impl ViewAdapter {
         };
 
         let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
-        let authored_changed = builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref()).unwrap_or(true);
+        let authored_changed =
+            builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
+                .unwrap_or(true);
         let config_changed = authored_changed || runtime_changed;
-        let layout_changed = config_changed && builtin_widget_layout_changed_without_snapshot(current.widget(), widget.as_ref()).unwrap_or(true);
+        let layout_changed = config_changed
+            && builtin_widget_layout_changed_without_snapshot(current.widget(), widget.as_ref())
+                .unwrap_or(true);
 
         // 只有实际完成原位 patch 或替换后才报告失效影响。
         match patch_builtin_widget(current.widget_mut(), widget) {

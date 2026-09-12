@@ -1,4 +1,4 @@
-//! Easing — 缓动曲线，支持 antd 5 主题令牌中的 cubic-bezier 以及经典预设。
+//! Easing — 缓动曲线，支持 CSS cubic-bezier 以及经典预设。
 
 use crate::draw::Color;
 use crate::ui::animation::traits::Animatable;
@@ -125,25 +125,25 @@ impl Easing {
         }
     }
 
-    // ── 常用 antd 5 预设（与 TokenProvider 中的 easing 字符串对应）──
+    // ── 标准 CSS 缓动预设──
 
-    /// Ant Design 5 默认缓动: `cubic-bezier(0.25, 0.1, 0.25, 1)`
-    pub const fn antd_default() -> Self {
+    /// CSS 默认缓动: `cubic-bezier(0.25, 0.1, 0.25, 1)`
+    pub const fn css_ease() -> Self {
         Self::CubicBezier(0.25, 0.1, 0.25, 1.0)
     }
 
-    /// Ant Design 5 缓入: `cubic-bezier(0.42, 0, 1, 1)`
-    pub const fn antd_in() -> Self {
+    /// CSS 缓入: `cubic-bezier(0.42, 0, 1, 1)`
+    pub const fn css_ease_in() -> Self {
         Self::CubicBezier(0.42, 0.0, 1.0, 1.0)
     }
 
-    /// Ant Design 5 缓出: `cubic-bezier(0, 0, 0.58, 1)`
-    pub const fn antd_out() -> Self {
+    /// CSS 缓出: `cubic-bezier(0, 0, 0.58, 1)`
+    pub const fn css_ease_out() -> Self {
         Self::CubicBezier(0.0, 0.0, 0.58, 1.0)
     }
 
-    /// Ant Design 5 缓入缓出: `cubic-bezier(0.42, 0, 0.58, 1)`
-    pub const fn antd_in_out() -> Self {
+    /// CSS 缓入缓出: `cubic-bezier(0.42, 0, 0.58, 1)`
+    pub const fn css_ease_in_out() -> Self {
         Self::CubicBezier(0.42, 0.0, 0.58, 1.0)
     }
 }
@@ -175,7 +175,7 @@ fn sample_elastic_out(t: f64) -> f64 {
 
 impl Default for Easing {
     fn default() -> Self {
-        Self::antd_default()
+        Self::css_ease()
     }
 }
 

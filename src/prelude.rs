@@ -37,3 +37,13 @@ pub use crate::{
     impl_widget, keyframe, semantic_handler, t, t_fmt_arg, tree, uix, uix_items, uix_module, views,
     widget, with_cloned,
 };
+
+#[cfg(feature = "ui")]
+pub use crate::ui::{
+    Container, ContextProvider, IntoLabelContent, Label, ProviderContext, ScrollView, StyleScope,
+    TextEditState, TextEditor, TokenValue, column, column_fit, label, row, use_context,
+    with_context,
+};
+
+#[cfg(feature = "ui")]
+pub use crate::ui::{PrimitiveSnapshot, grid, scroll};

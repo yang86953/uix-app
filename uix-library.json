@@ -315,5 +315,150 @@
         "App"
       ]
     }
+  },
+  "theme_tokens": {
+    "foreground": {
+      "kind": "color",
+      "key": "uix.foreground",
+      "unit": "uix-app/ui"
+    },
+    "background": {
+      "kind": "color",
+      "key": "uix.background",
+      "unit": "uix-app/ui"
+    },
+    "textSize": {
+      "kind": "number",
+      "key": "uix.font-size",
+      "unit": "uix-app/ui",
+      "fallback": 14.0,
+      "minimum": 0.0,
+      "allow_px": true
+    },
+    "textFamily": {
+      "kind": "string",
+      "key": "uix.font-family",
+      "unit": "uix-app/ui"
+    },
+    "textLineHeight": {
+      "kind": "number",
+      "key": "uix.line-height",
+      "unit": "uix-app/ui",
+      "fallback": 1.5,
+      "minimum": 0.0
+    },
+    "darkMode": {
+      "kind": "boolean",
+      "key": "uix.dark",
+      "unit": "uix-app/ui"
+    }
+  },
+  "components": {
+    "Column": {
+      "unit": "uix-app/ui",
+      "constructor": "::uix_app::prelude::column_fit($children)",
+      "properties": {},
+      "children": {
+        "kind": "views"
+      },
+      "events": {},
+      "category": "layout",
+      "module_view": {
+        "properties": {
+          "gap": 8.0,
+          "padding": 12.0
+        },
+        "event": null,
+        "event_fields": {},
+        "children": true
+      }
+    },
+    "Container": {
+      "unit": "uix-app/ui",
+      "constructor": "{ let children = $children; if $direction { ::uix_app::prelude::row(children) } else { ::uix_app::prelude::column_fit(children) } }",
+      "properties": {
+        "direction": {
+          "kind": "enumeration",
+          "values": {
+            "row": "true",
+            "column": "false"
+          },
+          "default": "false"
+        }
+      },
+      "children": {
+        "kind": "views"
+      },
+      "events": {},
+      "category": "layout"
+    },
+    "Text": {
+      "unit": "uix-app/ui",
+      "constructor": "{ let content = $children; if $ellipsis { ::uix_app::prelude::elided_label(content) } else { ::uix_app::prelude::dynamic_label(content) } }",
+      "properties": {
+        "ellipsis": {
+          "kind": "boolean",
+          "default": "false"
+        }
+      },
+      "children": {
+        "kind": "text-function"
+      },
+      "events": {},
+      "category": "general",
+      "module_view": {
+        "properties": {
+          "text": ""
+        },
+        "event": null,
+        "event_fields": {},
+        "children": false
+      }
+    },
+    "Label": {
+      "unit": "uix-app/ui",
+      "constructor": "::uix_app::prelude::Label::new($children)",
+      "properties": {
+        "selectable": {
+          "kind": "boolean",
+          "rust": "{ let widget = $widget; if $value { widget.selectable() } else { widget } }"
+        }
+      },
+      "children": {
+        "kind": "text"
+      },
+      "events": {},
+      "finish": "::uix_app::prelude::View::build($widget)",
+      "category": "general"
+    },
+    "ScrollView": {
+      "unit": "uix-app/ui",
+      "constructor": "::uix_app::prelude::scroll($children)",
+      "properties": {
+        "direction": {
+          "kind": "enumeration",
+          "values": {
+            "vertical": "0",
+            "horizontal": "1",
+            "both": "2"
+          },
+          "rust": "{ let widget = $widget; match $value { 1 => widget.horizontal(), 2 => widget.both(), _ => widget.vertical() } }"
+        },
+        "offset": {
+          "kind": "state",
+          "method": "scroll_offset",
+          "state_handle": "State<Point>"
+        }
+      },
+      "children": {
+        "kind": "single"
+      },
+      "events": {},
+      "category": "layout"
+    }
+  },
+  "text_factory": {
+    "unit": "uix-app/ui",
+    "rust": "::uix_app::ui::View::build(::uix_app::ui::Label::new($content))"
   }
 }

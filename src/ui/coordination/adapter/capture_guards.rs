@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 // 保存由宿主树验证后签发的动态 View 捕获能力，避免 renderer 接触状态存储细节。
 pub struct DynamicViewCaptureContext {
+    provider: crate::ui::ProviderContext,
     // 保存所属 WidgetTree 的唯一组件状态存储句柄。
     store: crate::ui::widget_state::WidgetStateStore,
     // 保存实际拥有延迟 renderer 的运行时组件身份。
@@ -53,17 +54,20 @@ impl DynamicViewCaptureContext {
         let _build_theme =
             crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(self.theme.clone());
         // 延迟工厂同样按宿主窗口宽度评估 @media。
-        let _build_viewport =
-            crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(self.viewport_width);
+        let _build_viewport = crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(
+            self.viewport_width,
+        );
         // 复用完整根捕获流水线，并让每次捕获共享宿主树状态存储。
-        crate::ui::adapter::ViewAdapter::capture_root_with_optional_namespace(
-            // 克隆轻量存储句柄供一次性捕获拥有。
-            self.store.clone(),
-            // 安装本次动态实例命名空间。
-            Some(namespace),
-            // 执行用户延迟工厂。
-            build_root,
-        )
+        crate::ui::with_provider_context(&self.provider, || {
+            crate::ui::adapter::ViewAdapter::capture_root_with_optional_namespace(
+                // 克隆轻量存储句柄供一次性捕获拥有。
+                self.store.clone(),
+                // 安装本次动态实例命名空间。
+                Some(namespace),
+                // 执行用户延迟工厂。
+                build_root,
+            )
+        })
     }
 }
 
@@ -118,6 +122,11 @@ impl crate::ui::adapter::ViewAdapter {
         );
         // 固定本次能力的树私有 store 与实际 owner，后续调用不能替换任一身份。
         DynamicViewCaptureContext {
+            provider: tree
+                .get(owner)
+                .expect("validated owner")
+                .provider_context()
+                .clone(),
             // 仅从已验证 owner 的宿主树取得唯一状态存储。
             store: tree.widget_state_store(),
             // 保存已经通过当前树 generation 校验的 owner。

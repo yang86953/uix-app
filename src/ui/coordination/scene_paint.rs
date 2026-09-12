@@ -212,7 +212,7 @@ impl ScenePaint for WidgetTree {
             return None;
         }
         // 读取本帧已安装的主题 token。
-        let theme_radius = self.theme_tokens().backdrop_blur_radius();
+        let theme_radius = self.theme_tokens().number("uix.backdrop-blur", 0.0);
         // 由 OverlayStack 聚合所有显式请求。
         self.overlay_stack().backdrop_effect(theme_radius)
     }

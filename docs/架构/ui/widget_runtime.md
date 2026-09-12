@@ -61,3 +61,9 @@ handle 只保存带 generation 的目标身份和所属窗口投递能力，不�
 - 同父级“同类型 + 同 key”保留组件身份，类型或 key 改变才执行销毁与重建。
 - present 成功前不消费相应 dirty；节点销毁前完成所有树级引用清理。
 - fail-stop 状态不可重置；恢复只能由窗口 owner 丢弃旧树并建立新的独占运行态。
+
+## 外部组件动态协调
+
+`DynamicChildrenCoordinator` 接收 `&mut ComponentContext`。上下文由框架创建并固定 owner，`get(id)` 只读取 owner 和它的后代，渲染器访问只定位该 owner。`capture_context()` 捕获所属节点的类型化上下文、主题和私有状态命名空间；`reconcile_children`、`append_child`、`remove_child`、`cancel_child_removal` 交由框架现有事务执行。
+
+组件协调器不接收 `&mut WidgetTree`，不能越过 owner 修改根、兄弟子树或全局渲染器表。只读布局树仍用于测量、绘制和命中；持久树身份、挂载、离场、状态回执与失败后关闭由框架拥有。

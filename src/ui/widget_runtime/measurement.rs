@@ -36,7 +36,7 @@ impl Drop for LayoutThemeScope {
 
 pub fn with_measurement_tokens<W: 'static, R>(f: impl FnOnce(&dyn ThemeTokens) -> R) -> R {
     let context = super::provider_context::current_provider_context();
-    let config = context.config();
+    let config = context.style_scope();
     let theme = config.theme.as_ref().map(Theme::tokens_arc);
     let root = theme
         .clone()
@@ -53,19 +53,8 @@ pub fn with_measurement_tokens<W: 'static, R>(f: impl FnOnce(&dyn ThemeTokens) -
 
 // 字号令牌变化会改变测量结果；仅色板变化仍走既有重绘路径。
 pub(crate) fn font_sizes_changed(current: &dyn ThemeTokens, next: &dyn ThemeTokens) -> bool {
-    use crate::ui::theme::style::TypographyToken;
-    [
-        TypographyToken::Small,
-        TypographyToken::Body,
-        TypographyToken::Large,
-        TypographyToken::XLarge,
-        TypographyToken::Heading1,
-        TypographyToken::Heading2,
-        TypographyToken::Heading3,
-        TypographyToken::Heading4,
-        TypographyToken::Heading5,
-    ]
-    .into_iter()
-    // 按位比较让相同的非有限输入也保持稳定，不反复请求布局。
-    .any(|token| token.resolve(current).to_bits() != token.resolve(next).to_bits())
+    match (current.layout_fingerprint(), next.layout_fingerprint()) {
+        (Some(a), Some(b)) => a != b,
+        _ => true,
+    }
 }

@@ -62,9 +62,7 @@ use crate::ui::semantic_action::SemanticActionKind;
 use crate::ui::theme::traits::TokenProvider;
 use crate::ui::theme::{ModeTokens, Theme};
 use crate::ui::view::ViewNode;
-use crate::ui::{
-    AppState, Locale, SystemEvent, WidgetConfig, WidgetTree, with_config, with_locale,
-};
+use crate::ui::{AppState, ProviderContext, SystemEvent, WidgetTree, with_provider_context};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -191,15 +189,14 @@ impl App {
         self
     }
 
-    /// 设置所有窗口根 View 的默认语言；子树可由 `LocaleProvider` 覆写。
-    pub fn locale(mut self, locale: Locale) -> Self {
-        self.container.singleton(locale);
-        self
-    }
-
-    /// 设置所有窗口根 View 的组件默认配置；子树可由 `ConfigProvider` 覆写。
-    pub fn config(mut self, config: WidgetConfig) -> Self {
-        self.container.singleton(config);
+    /// Installs a typed context value for every window root.
+    pub fn context<T: Clone + PartialEq + Send + Sync + 'static>(mut self, value: T) -> Self {
+        let context = self
+            .container
+            .resolve_clone::<ProviderContext>()
+            .unwrap_or_default()
+            .with(value);
+        self.container.singleton(context);
         self
     }
 
@@ -383,7 +380,10 @@ impl App {
     /// Install a component-library or application service through generic lifecycle hooks.
     pub fn extension<T: crate::app::AppExtension>(mut self, extension: T) -> Self {
         extension.install(&mut self.container);
-        let mut extensions = self.container.resolve_clone::<crate::app::AppExtensions>().unwrap_or_default();
+        let mut extensions = self
+            .container
+            .resolve_clone::<crate::app::AppExtensions>()
+            .unwrap_or_default();
         extensions.insert(extension);
         self.container.singleton(extensions);
         self
@@ -681,8 +681,12 @@ impl App {
                 false
             });
             let tokens = Arc::new(ModeTokens::new(
-                self.named_themes.resolve("light").unwrap_or_else(Theme::light),
-                self.named_themes.resolve("dark").unwrap_or_else(Theme::dark),
+                self.named_themes
+                    .resolve("light")
+                    .unwrap_or_else(Theme::light),
+                self.named_themes
+                    .resolve("dark")
+                    .unwrap_or_else(Theme::dark),
                 is_dark,
             ));
             let provider: Arc<dyn TokenProvider> = tokens.clone();
@@ -693,19 +697,20 @@ impl App {
         };
 
         // Application System 创建唯一反馈 owner，所有窗口只分配各自句柄组。
-        let feedback = self.container.resolve_clone::<AppExtensions>().unwrap_or_default();
+        let feedback = self
+            .container
+            .resolve_clone::<AppExtensions>()
+            .unwrap_or_default();
         // 通过 DI 共享同一个 owner，不向组件暴露全局注册表。
         self.container.singleton(feedback.clone());
-        let locale = window_assembly::resolve_or_default::<Locale>(&self.container);
-        let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(&self.container);
+        let context = window_assembly::resolve_or_default::<ProviderContext>(&self.container);
 
         let root_window_id = platform_window.window_id();
         // 根窗口工厂捕获 owner，而不是捕获某个临时 Host 实例；包装顺序
         // （WidgetConfig → Locale → prepare_app_root）与副窗共用同一原语。
         let root_feedback = feedback.clone();
         let wrapped_root = window_assembly::wrap_app_root(
-            &widget_config,
-            &locale,
+            &context,
             root_window_id,
             Some(root_feedback),
             move || root_factory(),

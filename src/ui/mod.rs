@@ -79,7 +79,9 @@ pub(crate) mod theme;
 #[cfg(feature = "ui")]
 pub(crate) mod transform_origin;
 #[cfg(feature = "ui")]
-pub use dynamic_children::{DynamicChildInput, DynamicChildrenCoordinator, DynamicRefresh};
+pub use dynamic_children::{
+    ComponentContext, DynamicChildInput, DynamicChildrenCoordinator, DynamicRefresh,
+};
 #[path = "coordination/tree_widget_hooks.rs"]
 #[cfg(feature = "ui")]
 pub(crate) mod tree_widget_hooks;
@@ -111,13 +113,14 @@ pub(crate) use widget_runtime::children;
 #[cfg(feature = "ui")]
 pub use widget_runtime::clipboard::{copy_to_clipboard, read_text_from_clipboard};
 #[cfg(feature = "ui")]
-pub use widget_runtime::config::{
-    Config, WidgetConfig, WidgetOverrides, WidgetTokenOverrides, use_config, with_config,
-};
+pub use widget_runtime::config::{StyleScope, WidgetTokenOverrides};
 #[cfg(feature = "ui")]
 pub use widget_runtime::focus_trap::FocusTrap;
 #[cfg(feature = "ui")]
-pub use widget_runtime::locale::{Locale, en_us, use_locale, with_locale, zh_cn};
+pub use widget_runtime::provider_context::{
+    ProviderContext, use_context, with_context, with_provider_context,
+};
+#[cfg(feature = "ui")]
 #[cfg(feature = "ui")]
 pub use widget_runtime::traits::{
     EventHandler, IntoWidgetNode, TextEditSnapshot, Widget, WidgetAnimation, WidgetCapabilities,
@@ -157,12 +160,11 @@ pub use overlay::{
 pub use position::{PositionInsets, PositionMode};
 
 #[cfg(feature = "ui")]
-pub use render_handler::{EmptyContext, EmptyRenderer, render_empty_for};
 #[cfg(feature = "ui")]
 pub use semantic_action::{SemanticAction, SemanticActionKind};
 #[cfg(feature = "ui")]
 pub use theme::style::{
-    ColorValue, DeclaredStyleSet, PaletteColor, StateFlags, Style, StyleDiff, StyleSet, StyleState,
+    ColorValue, DeclaredStyleSet, StateFlags, Style, StyleDiff, StyleSet, StyleState,
     TypographyToken,
 };
 // 公开 UI System 自有的背景图层值契约。
@@ -193,11 +195,9 @@ pub use theme::style::TextAlign;
 #[cfg(feature = "ui")]
 pub use theme::style::TextDecoration;
 #[cfg(feature = "ui")]
-pub use theme::traits::{
-    IBoxShadowTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
-};
+pub use theme::traits::{ThemeTokens, TokenProvider};
 #[cfg(feature = "ui")]
-pub use theme::{IColorTokens, ModeTokens, NeutralRole, ShadowToken, Theme, TokenPatch};
+pub use theme::{ModeTokens, Theme, TokenPatch, TokenValue};
 // 导出由 UI System 拥有的二维变换原点公开值契约。
 #[cfg(feature = "ui")]
 pub use transform_origin::{TransformOrigin, TransformOriginValue};
@@ -205,9 +205,8 @@ pub use transform_origin::{TransformOrigin, TransformOriginValue};
 #[cfg(feature = "ui")]
 pub use user_select::UserSelect;
 #[cfg(feature = "ui")]
-pub use view::providers::ConfigProvider;
+pub use view::providers::ContextProvider;
 #[cfg(feature = "ui")]
-pub use view::providers::LocaleProvider;
 #[cfg(feature = "ui")]
 pub use view::{AccessibilityExt, EventExt, StyleExt, TransitionExt, View, ViewNode};
 
@@ -226,7 +225,6 @@ pub use widget_runtime::config;
 #[cfg(feature = "ui")]
 pub use widget_runtime::focus_trap;
 #[cfg(feature = "ui")]
-pub use widget_runtime::locale;
 #[cfg(feature = "ui")]
 pub use widget_runtime::managers::{DragManager, FocusManager, InteractionManager, WidgetManagers};
 // 为内联组件宏提供窗口私有状态的隐藏运行时实现。
@@ -373,3 +371,23 @@ mod invalidation;
 #[cfg(feature = "ui")]
 #[path = "coordination/scene_paint.rs"]
 mod scene_paint;
+
+#[cfg(feature = "ui")]
+pub(crate) mod primitives;
+#[cfg(feature = "ui")]
+pub use primitives::{
+    Container, IntoLabelContent, Label, ScrollView, TextEditState, TextEditor, column, column_fit,
+    label, row,
+};
+
+#[cfg(feature = "ui")]
+pub use primitives::PrimitiveSnapshot;
+
+#[cfg(feature = "ui")]
+pub use primitives::{grid, scroll};
+
+/// Schema-neutral token values and overlays for library-generated code.
+#[cfg(feature = "ui")]
+pub mod tokens {
+    pub use super::{ThemeTokens, TokenPatch, TokenProvider, TokenValue};
+}

@@ -39,7 +39,7 @@ fn default_build_tokens() -> &'static Arc<dyn ThemeTokens> {
 /// 返回当前构建期有效主题令牌：局部 Provider 主题优先，其次窗口主题，
 /// 脱离窗口的构建使用稳定默认亮色。
 pub fn uix_effective_build_tokens() -> Arc<dyn ThemeTokens> {
-    if let Some(theme) = crate::ui::widget_runtime::config::use_config().theme {
+    if let Some(theme) = crate::ui::use_context::<crate::ui::StyleScope>().theme {
         return theme.tokens_arc();
     }
     BUILD_THEME
@@ -50,4 +50,3 @@ pub fn uix_effective_build_tokens() -> Arc<dyn ThemeTokens> {
 #[cfg(test)]
 #[path = "../../../tests-src/ui/widget_runtime/build_theme_tests.rs"]
 mod tests;
-

@@ -1,12 +1,12 @@
 //! 补全特性：按光标语法上下文从共享 schema 与文档声明生成补全项。
 
 use super::{document_snapshot, offset_at, request_position, request_uri};
+use crate::lang::compiler::CompilerSystem;
+use crate::lang::compiler::projection_schema::RegistrationStatus;
 use crate::lang::lsp::scanner::{self, CompletionContext, ScanSymbolKind};
 use crate::lang::lsp::session::Session;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use crate::lang::compiler::CompilerSystem;
-use crate::lang::compiler::projection_schema::RegistrationStatus;
 
 // 生成 textDocument/completion 响应。
 pub(crate) fn complete(session: &Session, request: &Value) -> Value {
@@ -16,7 +16,10 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
     let uri = request_uri(request);
     let snapshot = document_snapshot(session, &uri);
     if !crate::lang::compiler::components::has_scope() {
-        let path = snapshot.path.as_deref().unwrap_or(std::path::Path::new("."));
+        let path = snapshot
+            .path
+            .as_deref()
+            .unwrap_or(std::path::Path::new("."));
         return match crate::lang::compiler::components::ComponentCatalog::for_project(path) {
             Ok(catalog) => std::sync::Arc::new(catalog).with(|| complete(session, request)),
             Err(_) => json!({"isIncomplete":true,"items":[]}),
@@ -33,7 +36,19 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
     match context {
         CompletionContext::TagName => {
             for (name, component) in catalog.declarations() {
-                push_item(&mut items, &mut seen, item(name, 7, format!("组件 · {} · {}", component.category.as_deref().unwrap_or("library"), component.unit)));
+                push_item(
+                    &mut items,
+                    &mut seen,
+                    item(
+                        name,
+                        7,
+                        format!(
+                            "组件 · {} · {}",
+                            component.category.as_deref().unwrap_or("library"),
+                            component.unit
+                        ),
+                    ),
+                );
             }
             // 内置组件 + 控制元素 + 文档闭包内自定义组件。
             for entry in schema.components() {
@@ -93,7 +108,19 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
         CompletionContext::AttributeName { component } => {
             if let Some(component) = catalog.declarations().get(&component) {
                 for (name, property) in &component.properties {
-                    push_item(&mut items, &mut seen, item(name, 10, format!("属性 · {:?}{}", property.kind, if property.required { " · 必填" } else { "" })));
+                    push_item(
+                        &mut items,
+                        &mut seen,
+                        item(
+                            name,
+                            10,
+                            format!(
+                                "属性 · {:?}{}",
+                                property.kind,
+                                if property.required { " · 必填" } else { "" }
+                            ),
+                        ),
+                    );
                 }
             }
             // 共用属性是唯一 schema 契约；结构属性按标签补充。
@@ -120,7 +147,15 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
         CompletionContext::EventName { component } => {
             if let Some(component) = catalog.declarations().get(&component) {
                 for (name, event) in &component.events {
-                    push_item(&mut items, &mut seen, item(name, 23, format!("事件 · $event 字段: {}", event.fields.join(", "))));
+                    push_item(
+                        &mut items,
+                        &mut seen,
+                        item(
+                            name,
+                            23,
+                            format!("事件 · $event 字段: {}", event.fields.join(", ")),
+                        ),
+                    );
                 }
             }
             for entry in schema.events() {
@@ -148,7 +183,7 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
         // 样式值位：主题 token 以 # 前缀插入，样式类用于 extends 等引用。
         CompletionContext::StyleValue => {
             for entry in schema.theme_tokens() {
-                let mut completion = item(entry.name, 21, token_detail(entry));
+                let mut completion = item(&entry.name, 21, token_detail(&entry));
                 completion["insertText"] = json!(format!("#{}", entry.name));
                 push_item(&mut items, &mut seen, completion);
             }
@@ -162,7 +197,7 @@ pub(crate) fn complete(session: &Session, request: &Value) -> Value {
                 push_item(
                     &mut items,
                     &mut seen,
-                    item(entry.name, 21, token_detail(entry)),
+                    item(&entry.name, 21, token_detail(&entry)),
                 );
             }
         }
@@ -213,6 +248,7 @@ fn push_item(items: &mut Vec<Value>, seen: &mut BTreeSet<String>, entry: Value) 
 fn token_detail(entry: &crate::lang::compiler::projection_schema::ThemeTokenSpec) -> String {
     let alias = entry
         .alias_for
+        .as_ref()
         .map(|alias| format!(" · 兼容别名 {alias}"))
         .unwrap_or_default();
     format!("主题 token · {:?}{alias}", entry.kind)

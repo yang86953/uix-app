@@ -20,11 +20,18 @@ use crate::ui::adapter::ViewAdapter;
 use crate::ui::theme::style::ColorValue;
 use crate::ui::view::{View, ViewNode};
 // 引入应用状态、主题与布局背景语义角色。
-use crate::ui::{AppState, NeutralRole, Theme};
+use crate::ui::{AppState, Theme};
 
-pub(crate) fn prepare_app_root(root: ViewNode, extensions: Option<crate::app::AppExtensions>, window_id: WindowId) -> ViewNode {
+pub(crate) fn prepare_app_root(
+    root: ViewNode,
+    extensions: Option<crate::app::AppExtensions>,
+    window_id: WindowId,
+) -> ViewNode {
     let root = apply_default_app_root_background(root);
-    match extensions { Some(extensions) => extensions.prepare_root(root, window_id), None => root }
+    match extensions {
+        Some(extensions) => extensions.prepare_root(root, window_id),
+        None => root,
+    }
 }
 
 // 为没有显式背景的应用根节点补充主题布局背景。
@@ -32,7 +39,10 @@ fn apply_default_app_root_background(mut root: ViewNode) -> ViewNode {
     // 用户未声明背景时才写入 App 级默认值。
     if root.style.background.is_none() {
         // 使用语义令牌，使背景继续跟随当前应用主题解析。
-        root.style.background = Some(ColorValue::Neutral(NeutralRole::BgLayout));
+        root.style.background = Some(ColorValue::Token(
+            "uix.background",
+            crate::draw::Color::white(),
+        ));
     }
     // 保留根组件身份、子树以及全部其他声明属性。
     root
@@ -232,8 +242,6 @@ impl AppHandle {
             .request_surface_readback_for_test(self.window_id)
     }
 
-
-
     /// 交回一次 Agent 确认的用户决定（确认 UI 回调收到
     /// [`AgentConfirmationRequest`] 后调用）。
     ///
@@ -261,18 +269,6 @@ impl AppHandle {
                 )
             })
     }
-
-
-
-
-
-
-
-
-
-
-
-
 
     /// 在窗口 UI turn 内按 automationId 定位唯一节点并执行语义动作。
     ///

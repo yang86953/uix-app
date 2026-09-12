@@ -30,8 +30,7 @@ where
 /// 两个窗口来源（编译期根工厂 / `WindowRootFactory`）都经此包装，
 /// 保证逐窗反馈浮层与默认值注入只有一套组装逻辑。
 pub(super) fn wrap_app_root<R>(
-    widget_config: &WidgetConfig,
-    locale: &Locale,
+    context: &ProviderContext,
     window_id: WindowId,
     feedback: Option<AppExtensions>,
     root: R,
@@ -39,13 +38,10 @@ pub(super) fn wrap_app_root<R>(
 where
     R: Fn() -> ViewNode + Send + Sync + 'static,
 {
-    let widget_config = widget_config.clone();
-    let locale = locale.clone();
+    let context = context.clone();
     move || {
-        with_config(&widget_config, || {
-            with_locale(&locale, || {
-                prepare_app_root(root(), feedback.clone(), window_id)
-            })
+        with_provider_context(&context, || {
+            prepare_app_root(root(), feedback.clone(), window_id)
         })
     }
 }

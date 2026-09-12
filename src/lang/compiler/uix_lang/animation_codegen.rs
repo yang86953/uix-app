@@ -217,13 +217,13 @@ pub(super) fn easing_tokens(value: AnimationEasing) -> TokenStream {
         // 线性插值。
         AnimationEasing::Linear => quote! { ::uix_app::prelude::Easing::linear },
         // CSS 默认 ease 使用标准三次贝塞尔。
-        AnimationEasing::Ease => quote! { ::uix_app::prelude::Easing::antd_default() },
+        AnimationEasing::Ease => quote! { ::uix_app::prelude::Easing::css_ease() },
         // 缓入使用标准三次贝塞尔。
-        AnimationEasing::EaseIn => quote! { ::uix_app::prelude::Easing::antd_in() },
+        AnimationEasing::EaseIn => quote! { ::uix_app::prelude::Easing::css_ease_in() },
         // 缓出使用标准三次贝塞尔。
-        AnimationEasing::EaseOut => quote! { ::uix_app::prelude::Easing::antd_out() },
+        AnimationEasing::EaseOut => quote! { ::uix_app::prelude::Easing::css_ease_out() },
         // 缓入缓出使用标准三次贝塞尔。
-        AnimationEasing::EaseInOut => quote! { ::uix_app::prelude::Easing::antd_in_out() },
+        AnimationEasing::EaseInOut => quote! { ::uix_app::prelude::Easing::css_ease_in_out() },
     }
 }
 
@@ -236,7 +236,9 @@ fn direction_tokens(value: AnimationDirection) -> TokenStream {
         // 倒向播放。
         AnimationDirection::Reverse => quote! { ::uix_app::prelude::KeyframeDirection::Reverse },
         // 正向交替。
-        AnimationDirection::Alternate => quote! { ::uix_app::prelude::KeyframeDirection::Alternate },
+        AnimationDirection::Alternate => {
+            quote! { ::uix_app::prelude::KeyframeDirection::Alternate }
+        }
         // 倒向交替。
         AnimationDirection::AlternateReverse => {
             quote! { ::uix_app::prelude::KeyframeDirection::AlternateReverse }

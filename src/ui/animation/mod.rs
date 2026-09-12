@@ -1,7 +1,7 @@
 //! UIX Animation — 动画模块。
 //!
 //! 提供声明式动画值 `Animated<T>`、泛型动画 `Animation<T>`、typed keyframe、Spring、缓动曲线
-//! `Easing`（含 antd 5 预设），以及进出场过渡系统。
+//! `Easing`（含标准 CSS 预设），以及进出场过渡系统。
 //!
 //! ## 架构
 //!

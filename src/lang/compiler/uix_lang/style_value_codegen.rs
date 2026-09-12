@@ -281,32 +281,13 @@ pub(super) fn typography_field(
     property: &StyleProperty,
 ) -> Result<TokenStream, Diagnostic> {
     // 按文档 token 或固定像素生成字号。
-    let value = match property.value.source.as_str() {
-        // 映射小号正文。
-        "small" => quote! { ::uix_app::prelude::TypographyToken::Small },
-        // 映射正文。
-        "body" => quote! { ::uix_app::prelude::TypographyToken::Body },
-        // 映射大号正文。
-        "large" => quote! { ::uix_app::prelude::TypographyToken::Large },
-        // 映射超大正文。
-        "xlarge" | "xLarge" => quote! { ::uix_app::prelude::TypographyToken::XLarge },
-        // 映射一级标题。
-        "heading1" => quote! { ::uix_app::prelude::TypographyToken::Heading1 },
-        // 映射二级标题。
-        "heading2" => quote! { ::uix_app::prelude::TypographyToken::Heading2 },
-        // 映射三级标题。
-        "heading3" => quote! { ::uix_app::prelude::TypographyToken::Heading3 },
-        // 映射四级标题。
-        "heading4" => quote! { ::uix_app::prelude::TypographyToken::Heading4 },
-        // 映射五级标题。
-        "heading5" => quote! { ::uix_app::prelude::TypographyToken::Heading5 },
-        // 其他值按固定字号处理。
-        _ => {
-            // 解析非负字号。
-            let size = number_value(property, NumberRule::NonNegative)?;
-            // 生成自定义字号。
-            quote! { ::uix_app::prelude::TypographyToken::Custom(#size) }
-        }
+    let value = if let Some(value) =
+        super::theme_token_codegen::typography_reference(&property.value.source)
+    {
+        value
+    } else {
+        let size = number_value(property, NumberRule::NonNegative)?;
+        quote! {::uix_app::ui::TypographyToken::Custom(#size)}
     };
     // 更新字号字段。
     Ok(quote! { #style.font_size = #value; })

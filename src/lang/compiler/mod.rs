@@ -115,12 +115,17 @@ impl QueryKind {
 /// 保存 query 命令返回的一条只读 schema 登记。
 #[derive(Debug, Clone)]
 pub enum QueryEntry {
-    Library { id: String, name: String, unit: String, declaration: serde_json::Value },
+    Library {
+        id: String,
+        name: String,
+        unit: String,
+        declaration: serde_json::Value,
+    },
     Component(&'static projection_schema::ComponentSpec),
     Attribute(&'static projection_schema::AttributeSpec),
     Event(&'static projection_schema::EventSpec),
     Style(&'static projection_schema::StyleSpec),
-    Theme(&'static projection_schema::ThemeTokenSpec),
+    Theme(projection_schema::ThemeTokenSpec),
     Handle(&'static projection_schema::HandleSpec),
     Slot(&'static projection_schema::SlotSpec),
     Capability(&'static projection_schema::CapabilitySpec),
@@ -288,7 +293,11 @@ impl CompilerSystem {
         path: &Path,
         overlays: &BTreeMap<PathBuf, String>,
     ) -> Result<DocumentOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.check_document_file_with_overlays(path, overlays))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || {
+                self.check_document_file_with_overlays(path, overlays)
+            })?;
+        }
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let source = overlays
             .get(path)
@@ -334,14 +343,18 @@ impl CompilerSystem {
         path: &Path,
         target: CompileTarget,
     ) -> Result<CompileOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.compile_file(path, target))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || self.compile_file(path, target))?;
+        }
         let analyzed = analyze_file(path, Some(target))?;
         compile_analyzed(analyzed)
     }
 
     /// Compiles a file with its root selecting the View or App target.
     pub fn compile_file_auto(self, path: &Path) -> Result<CompileOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.compile_file_auto(path))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || self.compile_file_auto(path))?;
+        }
         compile_analyzed(analyze_file(path, None)?)
     }
 
@@ -372,14 +385,18 @@ impl CompilerSystem {
         path: &Path,
         target: CompileTarget,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.check_file(path, target))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || self.check_file(path, target))?;
+        }
         let analyzed = analyze_file(path, Some(target))?;
         check_analyzed(analyzed)
     }
 
     /// 按根元素自动选择 View 或 App 并检查真实文件。
     pub fn check_file_auto(self, path: &Path) -> Result<CheckOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.check_file_auto(path))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || self.check_file_auto(path))?;
+        }
         let analyzed = analyze_file(path, None)?;
         check_analyzed(analyzed)
     }
@@ -391,7 +408,11 @@ impl CompilerSystem {
         overlays: &BTreeMap<PathBuf, String>,
         target: CompileTarget,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.check_file_with_overlays(path, overlays, target))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || {
+                self.check_file_with_overlays(path, overlays, target)
+            })?;
+        }
         let analyzed = analyze_file_with_overlays(path, overlays, Some(target))?;
         check_analyzed(analyzed)
     }
@@ -402,7 +423,11 @@ impl CompilerSystem {
         path: &Path,
         overlays: &BTreeMap<PathBuf, String>,
     ) -> Result<CheckOutput, CompilerDiagnostic> {
-        if !components::has_scope() { return components::with_project(path, || self.check_file_with_overlays_auto(path, overlays))?; }
+        if !components::has_scope() {
+            return components::with_project(path, || {
+                self.check_file_with_overlays_auto(path, overlays)
+            })?;
+        }
         let analyzed = analyze_file_with_overlays(path, overlays, None)?;
         check_analyzed(analyzed)
     }
@@ -426,7 +451,11 @@ impl CompilerSystem {
     }
 
     /// 查询共享 UI 投影 schema，不允许 Adapter 维护副本。
-    pub fn query_for_project(self, path: &Path, kind: QueryKind) -> Result<QueryOutput, CompilerDiagnostic> {
+    pub fn query_for_project(
+        self,
+        path: &Path,
+        kind: QueryKind,
+    ) -> Result<QueryOutput, CompilerDiagnostic> {
         components::with_project(path, || self.query(kind))
     }
 
@@ -454,7 +483,7 @@ impl CompilerSystem {
             QueryKind::Themes => self
                 .schema
                 .theme_tokens()
-                .iter()
+                .into_iter()
                 .map(QueryEntry::Theme)
                 .collect(),
             QueryKind::Handles => self
@@ -785,7 +814,11 @@ pub(crate) fn compile_analyzed(
 // 把共享 lowering Gate 投影为可被会话缓存的稳定结果。
 pub(crate) fn lower_analyzed(analyzed: &AnalyzedUnit) -> Result<RustUiPlan, CompilerDiagnostic> {
     let (plan, units) = components::capture_units(|| lower_rust_plan(&analyzed.ir));
-    plan.map(|mut plan| { plan.required_units = units; plan }).map_err(|failure| {
+    plan.map(|mut plan| {
+        plan.required_units = units;
+        plan
+    })
+    .map_err(|failure| {
         semantic_diagnostic(
             &analyzed.source_graph,
             Path::new("<unknown>"),
@@ -973,13 +1006,15 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
     }
     let document = ir.emission_document();
     // 组件专属值类型在任何生成目标前统一执行 capability 门禁；check 与 AOT 共享同一诊断。
-    crate::lang::compiler::uix_lang::validate_value_type_capabilities(&document, capability_enabled).map_err(
-        |diagnostic| LoweringDiagnostic {
-            code: "UIX2000",
-            source_id: diagnostic.source_id.unwrap_or(ir.root().span.source_id),
-            diagnostic,
-        },
-    )?;
+    crate::lang::compiler::uix_lang::validate_value_type_capabilities(
+        &document,
+        capability_enabled,
+    )
+    .map_err(|diagnostic| LoweringDiagnostic {
+        code: "UIX2000",
+        source_id: diagnostic.source_id.unwrap_or(ir.root().span.source_id),
+        diagnostic,
+    })?;
     let root_source = ir.root().span.source_id;
     let widget_sources = ir.widget_source_ids();
     let record_sources = ir.record_source_ids();
@@ -1015,7 +1050,10 @@ fn lower_rust_plan(ir: &TypedUiIr) -> Result<RustUiPlan, LoweringDiagnostic> {
             diagnostic,
         }
     })?;
-    Ok(RustUiPlan { tokens, required_units: Default::default() })
+    Ok(RustUiPlan {
+        tokens,
+        required_units: Default::default(),
+    })
 }
 
 // 只负责把已验证计划物化为公开 Rust 输出及 SourceMap。
@@ -1057,7 +1095,10 @@ fn enabled_capabilities() -> Vec<&'static str> {
 fn capability_enabled(name: &str) -> bool {
     // Host compiler availability is a declaration property. The production
     // planner selects target capabilities before Cargo resolves target edges.
-    UI_PROJECTION_SCHEMA.capabilities().iter().any(|capability| capability.name == name)
+    UI_PROJECTION_SCHEMA
+        .capabilities()
+        .iter()
+        .any(|capability| capability.name == name)
 }
 
 #[cfg(test)]

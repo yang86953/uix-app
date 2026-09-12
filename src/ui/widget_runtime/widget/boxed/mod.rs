@@ -490,7 +490,10 @@ impl BoxedWidget {
         self.apply_accessibility_override(base)
     }
 
-    fn widget_accessibility(widget: &dyn Widget, fields: &WidgetSnapshotFields) -> AccessibilitySnapshot {
+    fn widget_accessibility(
+        widget: &dyn Widget,
+        fields: &WidgetSnapshotFields,
+    ) -> AccessibilitySnapshot {
         let mut accessibility = fields.accessibility();
         if let Some(label) = widget
             .as_any()
@@ -959,7 +962,7 @@ impl BoxedWidget {
         ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext,
         tree: &WidgetTree,
     ) {
-        let config = self.provider_context.config();
+        let config = self.provider_context.style_scope();
         let theme = config.theme.as_ref().map(|theme| theme.tokens_arc());
         let patch = config.widget_tokens.get(self.widget.as_any().type_id());
         let previous_scope = ctx.replace_token_scope(theme, patch);
@@ -1033,10 +1036,22 @@ impl WidgetCore for BoxedWidget {
 }
 
 impl BoxedWidget {
-    pub fn parent(&self) -> Option<WidgetId> { super::WidgetCore::parent(self) }
-    pub fn children(&self) -> &[WidgetId] { super::WidgetCore::children(self) }
-    pub fn frame(&self) -> Rect { super::WidgetCore::frame(self) }
-    pub fn visible(&self) -> bool { super::WidgetCore::visible(self) }
-    pub fn z_index(&self) -> i32 { super::WidgetCore::z_index(self) }
-    pub fn tab_index(&self) -> i32 { super::WidgetCore::tab_index(self) }
+    pub fn parent(&self) -> Option<WidgetId> {
+        super::WidgetCore::parent(self)
+    }
+    pub fn children(&self) -> &[WidgetId] {
+        super::WidgetCore::children(self)
+    }
+    pub fn frame(&self) -> Rect {
+        super::WidgetCore::frame(self)
+    }
+    pub fn visible(&self) -> bool {
+        super::WidgetCore::visible(self)
+    }
+    pub fn z_index(&self) -> i32 {
+        super::WidgetCore::z_index(self)
+    }
+    pub fn tab_index(&self) -> i32 {
+        super::WidgetCore::tab_index(self)
+    }
 }

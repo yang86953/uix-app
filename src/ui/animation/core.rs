@@ -37,7 +37,7 @@ impl<T: Animatable> Animation<T> {
             to,
             duration: duration.max(0.0),
             elapsed: 0.0,
-            easing: Easing::antd_default(),
+            easing: Easing::css_ease(),
             running: true,
             finish_callback: None,
         }
@@ -175,23 +175,23 @@ where
 impl Animation<f32> {
     /// 创建一个从不透明度 0→1 的渐入动画。
     pub fn fade_in(duration: f64) -> Self {
-        Self::new(0.0, 1.0, duration).easing(Easing::antd_default())
+        Self::new(0.0, 1.0, duration).easing(Easing::css_ease())
     }
 
     /// 创建一个从不透明度 1→0 的渐出动画。
     pub fn fade_out(duration: f64) -> Self {
-        Self::new(1.0, 0.0, duration).easing(Easing::antd_default())
+        Self::new(1.0, 0.0, duration).easing(Easing::css_ease())
     }
 }
 
 impl Animation<f64> {
     /// 从不透明度 0→1 的渐入动画。
     pub fn fade_in(duration: f64) -> Self {
-        Self::new(0.0, 1.0, duration).easing(Easing::antd_default())
+        Self::new(0.0, 1.0, duration).easing(Easing::css_ease())
     }
 
     /// 从不透明度 1→0 的渐出动画。
     pub fn fade_out(duration: f64) -> Self {
-        Self::new(1.0, 0.0, duration).easing(Easing::antd_default())
+        Self::new(1.0, 0.0, duration).easing(Easing::css_ease())
     }
 }
