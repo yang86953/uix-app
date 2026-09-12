@@ -36,55 +36,10 @@ impl Checker<'_> {
                                 format!("原生库 {package} 未提供受检导出 {exported}"),
                             )
                         })?;
-                    match export {
-                        NativeExport::Component(signature) => {
-                            let mut fields = BTreeSet::new();
-                            for (field, ty) in &signature.parameters {
-                                if field == "key" || !fields.insert(field.as_str()) {
-                                    return Err(self.error(
-                                        unit.source_id,
-                                        name.imported.span,
-                                        "component-native-signature",
-                                        "原生组件不能重复参数或声明业务 key",
-                                    ));
-                                }
-                                self.charge_type(unit.source_id, name.imported.span, ty)?;
-                            }
-                            if signature
-                                .required
-                                .iter()
-                                .any(|name| !fields.contains(name.as_str()))
-                            {
-                                return Err(self.error(
-                                    unit.source_id,
-                                    name.imported.span,
-                                    "component-native-signature",
-                                    "原生组件的 required 引用了未声明参数",
-                                ));
-                            }
-                        }
-                        NativeExport::Function(signature) => {
-                            if signature.minimum_arguments > signature.parameters.len() {
-                                return Err(self.error(
-                                    unit.source_id,
-                                    name.imported.span,
-                                    "component-native-signature",
-                                    "原生函数最小参数数目无效",
-                                ));
-                            }
-                            for ty in &signature.parameters {
-                                self.charge_type(unit.source_id, name.imported.span, ty)?;
-                            }
-                            self.charge_type(
-                                unit.source_id,
-                                name.imported.span,
-                                &signature.returns,
-                            )?;
-                        }
-                        NativeExport::Type(ty) => {
-                            self.charge_type(unit.source_id, name.imported.span, ty)?
-                        }
-                    }
+                    let cost = native_export_cost(export).map_err(|(code, message)| {
+                        self.error(unit.source_id, name.imported.span, code, message)
+                    })?;
+                    self.charge(unit.source_id, name.imported.span, cost)?;
                     self.native_imports
                         .entry(package.clone())
                         .or_default()
@@ -296,6 +251,47 @@ fn canonical_export(export: &NativeExport) -> NativeExport {
         NativeExport::Function(signature) => NativeExport::Function(canonical_signature(signature)),
         NativeExport::Type(ty) => NativeExport::Type(canonical_type(ty)),
     }
+}
+
+// 原生接口文件和源码检查共用同一形状/类型预算，不维护第二套签名规则。
+pub(crate) fn native_export_cost(
+    export: &NativeExport,
+) -> std::result::Result<usize, (&'static str, &'static str)> {
+    let signature_error = |message| ("component-native-signature", message);
+    let mut types = Vec::new();
+    match export {
+        NativeExport::Component(signature) => {
+            let mut fields = BTreeSet::new();
+            for (field, ty) in &signature.parameters {
+                if field == "key" || !fields.insert(field.as_str()) {
+                    return Err(signature_error("原生组件不能重复参数或声明业务 key"));
+                }
+                types.push(ty);
+            }
+            if signature
+                .required
+                .iter()
+                .any(|name| !fields.contains(name.as_str()))
+            {
+                return Err(signature_error("原生组件的 required 引用了未声明参数"));
+            }
+        }
+        NativeExport::Function(signature) => {
+            if signature.minimum_arguments > signature.parameters.len() {
+                return Err(signature_error("原生函数最小参数数目无效"));
+            }
+            types.extend(&signature.parameters);
+            types.push(&signature.returns);
+        }
+        NativeExport::Type(ty) => types.push(ty),
+    }
+    let mut total = 0_usize;
+    for ty in types {
+        let cost =
+            type_cost(ty).ok_or(("component-type-limit", "展开后的类型超过 4096 节点或 64 层"))?;
+        total = total.saturating_add(cost);
+    }
+    Ok(total)
 }
 
 impl Checker<'_> {

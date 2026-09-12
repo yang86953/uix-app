@@ -12,6 +12,7 @@ use crate::lang::compiler::semantic_ir::IrSpan;
 
 // 生成 textDocument/definition 响应：单一 Location 或 null。
 pub(crate) fn definition(session: &mut Session, request: &Value) -> Value {
+    if super::component_document(session, request) { return Value::Null; }
     if let Some(result) = super::modules::definition(session, request) {
         return result;
     }
@@ -46,6 +47,7 @@ pub(crate) fn definition(session: &mut Session, request: &Value) -> Value {
 
 // 生成 textDocument/references 响应：闭包内全词边界出现位置。
 pub(crate) fn references(session: &mut Session, request: &Value) -> Value {
+    if super::component_document(session, request) { return json!([]); }
     if let Some(result) = super::modules::references(session, request) {
         return result;
     }

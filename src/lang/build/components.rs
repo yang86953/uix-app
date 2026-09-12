@@ -4,6 +4,26 @@ use crate::lang::compiler::component_source::{self, NativeLibraries};
 use std::path::{Path, PathBuf};
 
 impl Builder {
+    /// 把同一原生签名导出到 OUT_DIR/uix/interfaces/<name>；不自动改写源码。
+    pub fn export_component_interfaces(
+        &self,
+        name: impl AsRef<Path>,
+        libraries: &NativeLibraries,
+    ) -> Result<PathBuf, String> {
+        let name = name.as_ref();
+        validate_source(name)?;
+        if name.extension().is_none_or(|extension| extension != "json") {
+            return Err("组件接口输出必须为 .json 文件".into());
+        }
+        let content = component_source::interface::encode(libraries).map_err(diagnostic)?;
+        let destination = self.output_root.join("uix/interfaces").join(name);
+        if std::fs::read_to_string(&destination).ok().as_deref() != Some(&content) {
+            std::fs::create_dir_all(destination.parent().ok_or("组件接口输出缺少父目录")?)
+                .map_err(|error| error.to_string())?;
+            std::fs::write(&destination, content).map_err(|error| error.to_string())?;
+        }
+        Ok(destination)
+    }
     /// 检查同一来源闭包并生成真正原生 Program；不同导出写入不同文件。
     /// 输出为 OUT_DIR/uix/component/<source>.<entry_export>.rs。
     pub fn compile_component(

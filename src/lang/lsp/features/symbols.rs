@@ -9,6 +9,7 @@ use crate::lang::compiler::semantic_ir::{TypedDeclarationKind, TypedNode};
 
 // 生成 textDocument/documentSymbol 响应。
 pub(crate) fn document_symbols(session: &mut Session, request: &Value) -> Value {
+    if super::component_document(session, request) { return json!([]); }
     if let Some(result) = super::modules::symbols(session, request) {
         return result;
     }

@@ -75,6 +75,7 @@ pub enum QueryKind {
     CapabilityUses,
     Data,
     Modules,
+    NativeExports,
 }
 
 impl QueryKind {
@@ -92,6 +93,7 @@ impl QueryKind {
             "capability-uses" => Some(Self::CapabilityUses),
             "data" => Some(Self::Data),
             "modules" => Some(Self::Modules),
+            "native-exports" => Some(Self::NativeExports),
             _ => None,
         }
     }
@@ -110,6 +112,7 @@ impl QueryKind {
             Self::CapabilityUses => "capability-uses",
             Self::Data => "data",
             Self::Modules => "modules",
+            Self::NativeExports => "native-exports",
         }
     }
 }
@@ -117,6 +120,7 @@ impl QueryKind {
 /// 保存 query 命令返回的一条只读 schema 登记。
 #[derive(Debug, Clone)]
 pub enum QueryEntry {
+    NativeExport { package: String, name: String, signature: component_source::NativeExport },
     Library {
         id: String,
         name: String,
@@ -143,11 +147,12 @@ pub struct QueryOutput {
     pub entries: Vec<QueryEntry>,
 }
 
-/// 工具自动入口区分两种产物，不把业务模块伪装成 UI IR。
+/// 工具自动入口区分三种源码家族，不把模块或组件伪装成旧 UI IR。
 #[derive(Debug, Clone)]
 pub enum DocumentOutput {
     Ui(CheckOutput),
     Module(modules::ModuleOutput),
+    Component(component_source::ComponentOutput),
 }
 
 /// 保存可用于阶段缓存与增量失效判定的完整编译身份。
@@ -276,7 +281,9 @@ impl CompilerSystem {
         source: &str,
         source_name: &str,
     ) -> Result<DocumentOutput, CompilerDiagnostic> {
-        if modules::recognizes_source(source) {
+        if component_source::recognizes_source(source) {
+            self.check_component_inline(source, source_name, &BTreeMap::new()).map(DocumentOutput::Component)
+        } else if modules::recognizes_source(source) {
             modules::check_inline(source, source_name).map(DocumentOutput::Module)
         } else {
             self.check_inline_auto(source, source_name)
@@ -289,27 +296,22 @@ impl CompilerSystem {
         self.check_document_file_with_overlays(path, &BTreeMap::new())
     }
 
-    /// 自动识别覆盖后的根家族，分别产出模块或 UI 的受检结果。
+    /// 自动识别覆盖后的根家族，返回该前端的受检结果。
     pub fn check_document_file_with_overlays(
         self,
         path: &Path,
         overlays: &BTreeMap<PathBuf, String>,
     ) -> Result<DocumentOutput, CompilerDiagnostic> {
-        if !components::has_scope() {
-            return components::with_project(path, || {
-                self.check_document_file_with_overlays(path, overlays)
-            })?;
-        }
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let source = overlays
             .get(path)
             .or_else(|| overlays.get(&canonical))
             .cloned()
             .map(Ok)
-            .unwrap_or_else(|| {
-                fs::read_to_string(path).map_err(|error| source_io_diagnostic(path, error))
-            })?;
-        if modules::recognizes_source(&source) {
+            .unwrap_or_else(|| component_source::document_prefix(path))?;
+        if component_source::recognizes_source(&source) {
+            self.check_component_file_with_overlays(path, overlays).map(DocumentOutput::Component)
+        } else if modules::recognizes_source(&source) {
             modules::check_file_with_overlays(path, overlays).map(DocumentOutput::Module)
         } else {
             self.check_file_with_overlays_auto(path, overlays)
@@ -458,11 +460,19 @@ impl CompilerSystem {
         path: &Path,
         kind: QueryKind,
     ) -> Result<QueryOutput, CompilerDiagnostic> {
+        if kind == QueryKind::NativeExports {
+            let libraries = component_source::interface::for_file(path)?;
+            let entries = libraries.into_iter().flat_map(|(package, exports)| {
+                exports.into_iter().map(move |(name, signature)| QueryEntry::NativeExport { package: package.clone(), name, signature })
+            }).collect();
+            return Ok(QueryOutput { kind, entries });
+        }
         components::with_project(path, || self.query(kind))
     }
 
     pub fn query(self, kind: QueryKind) -> QueryOutput {
         let mut entries: Vec<QueryEntry> = match kind {
+            QueryKind::NativeExports => Vec::new(),
             QueryKind::Components => self
                 .schema
                 .components()

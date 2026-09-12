@@ -55,6 +55,25 @@ pub fn link_file(entry: &Path) -> Result<LinkedSource, CompilerDiagnostic> {
     link_file_with_overlays(entry, &BTreeMap::new())
 }
 
+/// 无文件基准的缓冲区可导入原生包；相对导入明确报错，不读取猜测路径。
+pub fn link_inline(source: &str, source_name: &str) -> Result<LinkedSource, CompilerDiagnostic> {
+    let path = Path::new(source_name);
+    let mut linker = Linker {
+        graph: SourceGraphBuilder::new(path),
+        units: BTreeMap::new(),
+        visiting: BTreeSet::new(),
+        normalized: BTreeMap::from([(path.to_path_buf(), source)]),
+        bytes: 0,
+        files: 0,
+        inline: true,
+    };
+    linker.load(path)?;
+    Ok(LinkedSource {
+        source_graph: linker.graph.finish(),
+        units: linker.units,
+    })
+}
+
 /// 使用编辑器缓冲区替换对应文件。新文件允许尚未保存，但父目录须可定位。
 /// 检查与生成消费返回的同一源码快照，不在后续阶段重新读取磁盘。
 pub fn link_file_with_overlays(
@@ -86,6 +105,7 @@ pub fn link_file_with_overlays(
         normalized,
         bytes: 0,
         files: 0,
+        inline: false,
     };
     linker.load(&root)?;
     Ok(LinkedSource {
@@ -153,6 +173,7 @@ struct Linker<'a> {
     normalized: BTreeMap<PathBuf, &'a str>,
     bytes: usize,
     files: usize,
+    inline: bool,
 }
 
 impl Linker<'_> {
@@ -222,6 +243,13 @@ impl Linker<'_> {
         for import in &imports {
             let relative = import.source.starts_with("./") || import.source.starts_with("../");
             let dependency = if relative {
+                if self.inline {
+                    return Err(error(
+                        import.source_span,
+                        "component-inline-import",
+                        "相对组件导入需要真实文件基准，请保存文件或使用文件 overlay 入口".into(),
+                    ));
+                }
                 let requested = path.parent().unwrap().join(&import.source);
                 if requested
                     .extension()

@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use crate::lang::compiler::{CheckOutput, CompilerSession, CompilerSystem, DocumentOutput, modules};
+use crate::lang::compiler::component_source::{self, ComponentOutput};
+mod components;
 
 // 编辑器只保留工具所需的来源与符号，及时释放运行执行产物。
 #[derive(Debug)]
@@ -36,6 +38,8 @@ pub(crate) struct Session {
     // 最多缓存 32 份模块分析；失效后保留有界根闭包身份以定位依赖编辑上下文。
     module_analyses: BTreeMap<String, Arc<ModuleAnalysis>>,
     module_roots: BTreeMap<String, (PathBuf, BTreeSet<PathBuf>)>,
+    component_analyses: BTreeMap<String, Arc<ComponentOutput>>,
+    component_roots: BTreeMap<String, (PathBuf, BTreeSet<PathBuf>)>,
     // LSP Adapter 独占编译会话；进程退出或文档关闭时释放对应阶段缓存。
     compiler: CompilerSession,
     // shutdown 已收到但尚未 exit；exit 是否已经请求。
@@ -44,12 +48,12 @@ pub(crate) struct Session {
 }
 
 impl Session {
-    pub(crate) fn module_uris(&self) -> Vec<String> {
+    pub(crate) fn declaration_uris(&self) -> Vec<String> {
         self.documents
             .keys()
             .filter(|uri| {
                 self.document_source(uri)
-                    .is_some_and(modules::recognizes_source)
+                    .is_some_and(|source| modules::recognizes_source(source) || component_source::recognizes_source(source))
             })
             .cloned()
             .collect()
@@ -63,9 +67,11 @@ impl Session {
             .overlays
             .get(path)
             .cloned()
-            .or_else(|| std::fs::read_to_string(path).ok())
+            .or_else(|| component_source::document_prefix(path).ok())
             .unwrap_or_default();
-        if modules::recognizes_source(&source) {
+        if component_source::recognizes_source(&source) {
+            CompilerSystem::new().check_component_file_with_overlays(path, &self.overlays).map(DocumentOutput::Component)
+        } else if modules::recognizes_source(&source) {
             let root = self
                 .module_roots
                 .values()
@@ -83,6 +89,7 @@ impl Session {
     }
 
     pub(crate) fn set_module_analysis(&mut self, uri: &str, output: modules::ModuleOutput) {
+        self.forget_component_root(uri);
         if self.module_analyses.len() >= 32 && !self.module_analyses.contains_key(uri) {
             if let Some(oldest) = self.module_analyses.keys().next().cloned() {
                 self.module_analyses.remove(&oldest);
@@ -147,7 +154,7 @@ impl Session {
                 self.set_module_analysis(uri, output);
                 self.module_analysis(uri)
             }
-            DocumentOutput::Ui(_) => None,
+            DocumentOutput::Ui(_) | DocumentOutput::Component(_) => None,
         }
     }
 
@@ -258,6 +265,7 @@ impl Session {
     // 登记一次诊断流程产出的成功分析。
     pub(crate) fn set_analysis(&mut self, uri: &str, analysis: CheckOutput) {
         self.forget_module_root(uri);
+        self.forget_component_root(uri);
         self.analyses.insert(uri.to_string(), analysis);
     }
 
@@ -287,6 +295,7 @@ impl Session {
 
     // 丢弃源码图覆盖指定路径的全部分析。
     pub(crate) fn drop_analyses_covering(&mut self, path: &Path) {
+        self.component_analyses.retain(|_, output| !components::covers(output, path));
         self.module_analyses.retain(|_, analysis| {
             !analysis
                 .source_graph
@@ -313,6 +322,7 @@ impl Session {
     pub(crate) fn drop_analyses_covering_uri(&mut self, uri: &str) {
         self.analyses.remove(uri);
         self.module_analyses.remove(uri);
+        self.component_analyses.remove(uri);
     }
 
     // 释放直接或递归依赖指定文件的全部根流水线，并丢弃受影响分析。
@@ -324,6 +334,9 @@ impl Session {
                 .filter(|(_, files)| files.iter().any(|file| same_document_path(file, path)))
                 .map(|(root, _)| root.clone()),
         );
+        affected_roots.extend(self.component_roots.values()
+            .filter(|(_, files)| files.iter().any(|file| same_document_path(file, path)))
+            .map(|(root, _)| root.clone()));
         self.drop_analyses_covering(path);
         affected_roots
     }

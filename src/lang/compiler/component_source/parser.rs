@@ -10,6 +10,20 @@ const MAX_SOURCE: usize = 1_048_576;
 const MAX_DEPTH: usize = 64;
 const MAX_NODES: usize = 16_384;
 
+/// 用同一解析器的注释和标识符边界识别组件家族；检查失败不回退旧语法。
+pub fn recognizes_source(source: &str) -> bool {
+    let mut parser = Parser {
+        source,
+        source_name: "<document>",
+        pos: 0,
+        depth: 0,
+        nodes: 0,
+    };
+    ["import", "export", "component", "function", "type"]
+        .into_iter()
+        .any(|word| parser.at(word).unwrap_or(false))
+}
+
 pub(super) fn parse(source: &str, source_name: String) -> Result<ParsedSource> {
     let mut parser = Parser {
         source,

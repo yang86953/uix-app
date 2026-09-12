@@ -12,6 +12,7 @@ mod body;
 mod expression;
 mod types;
 pub use types::*;
+pub(super) use types::native_export_cost;
 type Result<T> = std::result::Result<T, CompilerDiagnostic>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

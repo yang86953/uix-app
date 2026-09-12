@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// 数据图使用已有运行时类型；函数和 View 不得偷渡进数据/宿主值图。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "lang-build", derive(serde::Serialize, serde::Deserialize))]
 pub enum Type {
     Data(DataType),
     View,
@@ -14,6 +15,11 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "lang-build",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
 pub struct FunctionSignature {
     pub minimum_arguments: usize,
     pub parameters: Vec<Type>,
@@ -23,12 +29,18 @@ pub struct FunctionSignature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "lang-build",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(deny_unknown_fields)
+)]
 pub struct ComponentSignature {
     pub parameters: Vec<(String, Type)>,
     pub required: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "lang-build", derive(serde::Serialize, serde::Deserialize))]
 pub enum NativeExport {
     Component(ComponentSignature),
     Function(FunctionSignature),

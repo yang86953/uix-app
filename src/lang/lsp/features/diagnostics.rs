@@ -33,7 +33,7 @@ pub(crate) fn did_change_document(session: &mut Session, params: &Value) -> Vec<
     if let Some(text) = text {
         session.store_document(uri.clone(), text);
     }
-    let mut roots = session.module_uris();
+    let mut roots = session.declaration_uris();
     roots.push(uri);
     publish_roots(session, roots)
 }
@@ -47,6 +47,7 @@ pub(crate) fn close(session: &mut Session, uri: &str) -> Vec<Value> {
         .map(|path| session.evict_file(path))
         .unwrap_or_default();
     session.forget_module_root(uri);
+    session.forget_component_root(uri);
     // 关闭依赖 overlay 后立即按落盘内容复核仍打开的根，不能等待下一次编辑才失效。
     let mut affected_uris = session
         .open_file_documents()
@@ -58,7 +59,7 @@ pub(crate) fn close(session: &mut Session, uri: &str) -> Vec<Value> {
         })
         .map(|(candidate_uri, _)| candidate_uri)
         .collect::<Vec<_>>();
-    affected_uris.extend(session.module_uris());
+    affected_uris.extend(session.declaration_uris());
     let mut notifications = BTreeMap::<String, Value>::new();
     for root_uri in affected_uris {
         for message in publish(session, &root_uri) {
@@ -124,7 +125,7 @@ pub(crate) fn watched_changed(session: &mut Session, params: &Value) -> Vec<Valu
         .map(|(root_uri, _)| root_uri)
         .collect::<Vec<_>>();
     // 模块检查失败时仍可能缺少完整来源图；显式文件事件复核打开的模块根，不扫描磁盘。
-    roots_to_recheck.extend(session.module_uris());
+    roots_to_recheck.extend(session.declaration_uris());
     let mut notifications = BTreeMap::<String, Value>::new();
     for root_uri in roots_to_recheck {
         // 变化路径的编译缓存先行失效。
@@ -176,6 +177,9 @@ pub(crate) fn publish(session: &mut Session, request_uri_value: &str) -> Vec<Val
         }
         Ok(DocumentOutput::Module(analysis)) => {
             session.set_module_analysis(request_uri_value, analysis.clone())
+        }
+        Ok(DocumentOutput::Component(analysis)) => {
+            session.set_component_analysis(request_uri_value, analysis.clone())
         }
         Err(_) => session.drop_analyses_covering_uri(request_uri_value),
     }

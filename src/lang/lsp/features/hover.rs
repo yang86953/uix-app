@@ -10,6 +10,7 @@ use crate::lang::compiler::{CompilerSystem, projection_schema::UiProjectionSchem
 
 // 生成 textDocument/hover 响应。
 pub(crate) fn hover(session: &mut Session, request: &Value) -> Value {
+    if super::component_document(session, request) { return Value::Null; }
     if let Some(result) = super::modules::hover(session, request) {
         return result;
     }

@@ -7,10 +7,13 @@
 mod ast;
 mod check;
 mod emit;
+/// 来自同一 Rust 属性声明的有界原生接口文件；不含调用实现。
+pub mod interface;
 mod link;
 mod lower;
 mod parser;
 mod prune;
+mod tools;
 
 pub use ast::*;
 pub use check::{
@@ -20,8 +23,12 @@ pub use check::{
 pub use emit::emit_native;
 pub use link::{
     Binding, DeclarationId, LinkedSource, SourceUnit, link_file, link_file_with_overlays,
+    link_inline,
 };
 pub use lower::lower;
+pub use parser::recognizes_source;
+pub use tools::ComponentOutput;
+pub(crate) use tools::document_prefix;
 
 use super::{CompilerDiagnostic, source_graph::SourceGraph};
 

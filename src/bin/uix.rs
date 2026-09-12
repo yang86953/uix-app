@@ -2,7 +2,7 @@
 
 use serde_json::json;
 use std::{env, fs, path::PathBuf, process::ExitCode};
-use uix_app::lang::compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem, QueryEntry, QueryKind};
+use uix_app::lang::compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem, QueryEntry, QueryKind, component_source};
 
 // 结构体驱动的 Visual 骨架生成。
 #[path = "support/scaffold.rs"]
@@ -51,10 +51,12 @@ fn scaffold(args: &[String]) -> Result<u8, String> {
 }
 
 fn check(args: &[String]) -> Result<u8, String> {
-    let (target, json_output, files) = parse_target_json(args, true)?;
+    let TargetOptions { target, json_output, files, .. } = parse_target_json(args, true)?;
     let system = CompilerSystem::new();
     for file in files {
-        let result = if target == TargetArg::Module {
+        let result = if target == TargetArg::Component {
+            system.check_component_file(&file).map(|_| ())
+        } else if target == TargetArg::Module {
             uix_app::lang::compiler::modules::check_file(&file).map(|_| ())
         } else if target == TargetArg::Auto {
             system.check_document_file(&file).map(|_| ())
@@ -101,12 +103,20 @@ fn format_files(args: &[String]) -> Result<u8, String> {
 }
 
 fn compile(args: &[String]) -> Result<u8, String> {
-    let (target, _, files) = parse_target_json(args, false)?;
+    let TargetOptions { target, files, entry, .. } = parse_target_json(args, false)?;
     let Some(file) = files.first() else {
         return Err("uix compile 需要一个文件".into());
     };
     if files.len() != 1 {
         return Err("uix compile 只接收一个根文件".into());
+    }
+    if target == TargetArg::Component {
+        let output = CompilerSystem::new().check_component_file(file)
+            .map_err(|error| diagnostic_text(&error))?;
+        let tokens = component_source::emit_native(&output.checked, entry.as_deref().expect("validated entry"))
+            .map_err(|error| diagnostic_text(&error))?;
+        println!("{tokens}");
+        return Ok(0);
     }
     if target == TargetArg::Module {
         let tokens = uix_app::lang::compiler::modules::compile_file(file)
@@ -129,11 +139,12 @@ enum TargetArg {
     App,
     Items,
     Module,
+    Component,
 }
 impl TargetArg {
     fn compile_target(self) -> Option<CompileTarget> {
         match self {
-            Self::Auto | Self::Module => None,
+            Self::Auto | Self::Module | Self::Component => None,
             Self::View => Some(CompileTarget::View),
             Self::App => Some(CompileTarget::App),
             Self::Items => Some(CompileTarget::Items),
@@ -141,14 +152,22 @@ impl TargetArg {
     }
 }
 
+struct TargetOptions {
+    target: TargetArg,
+    json_output: bool,
+    files: Vec<PathBuf>,
+    entry: Option<String>,
+}
+
 fn parse_target_json(
     args: &[String],
     allow_auto: bool,
-) -> Result<(TargetArg, bool, Vec<PathBuf>), String> {
+) -> Result<TargetOptions, String> {
     let mut target = TargetArg::Auto;
     let mut json_output = false;
     let mut files = Vec::new();
     let mut i = 0;
+    let mut entry = None;
     while i < args.len() {
         match args[i].as_str() {
             "--json" => json_output = true,
@@ -156,18 +175,30 @@ fn parse_target_json(
                 i += 1;
                 target = parse_target(args.get(i).ok_or("--target 缺少值")?)?;
             }
+            "--entry" => {
+                i += 1;
+                if entry.is_some() { return Err("--entry 不能重复".into()); }
+                entry = Some(args.get(i).ok_or("--entry 缺少值")?.clone());
+            }
             value if value.starts_with('-') => return Err(format!("未知选项: {value}")),
             value => files.push(PathBuf::from(value)),
         }
         i += 1;
     }
     if !allow_auto && target == TargetArg::Auto {
-        return Err("该命令必须指定 --target view|app|items|module".into());
+        return Err("该命令必须指定 --target view|app|items|module|component".into());
     }
+    if entry.is_some() && (allow_auto || target != TargetArg::Component) {
+        return Err("--entry 仅用于 compile --target component".into());
+    }
+    if !allow_auto && target == TargetArg::Component && entry.as_deref().is_none_or(str::is_empty) {
+        return Err("组件编译必须指定 --entry <导出组件名>".into());
+    }
+    if !allow_auto && json_output { return Err("compile 输出 Rust，不接受 --json".into()); }
     if files.is_empty() {
         return Err("缺少输入文件".into());
     }
-    Ok((target, json_output, files))
+    Ok(TargetOptions { target, json_output, files, entry })
 }
 
 fn parse_target(value: &str) -> Result<TargetArg, String> {
@@ -177,6 +208,7 @@ fn parse_target(value: &str) -> Result<TargetArg, String> {
         "app" => Ok(TargetArg::App),
         "items" => Ok(TargetArg::Items),
         "module" => Ok(TargetArg::Module),
+        "component" => Ok(TargetArg::Component),
         _ => Err(format!("未知 target: {value}")),
     }
 }
@@ -199,9 +231,22 @@ fn query(args: &[String]) -> Result<u8, String> {
     let Some(kind) = args.first() else {
         return Err("uix query 需要类别".into());
     };
-    let json_output = args.iter().any(|arg| arg == "--json");
     let kind = QueryKind::parse(kind).ok_or_else(|| format!("未知 query 类别: {kind}"))?;
-    let project = args.windows(2).find(|pair| pair[0] == "--project").map(|pair| PathBuf::from(&pair[1])).unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
+    let mut json_output = false;
+    let mut project = None;
+    let mut rest = args[1..].iter();
+    while let Some(argument) = rest.next() {
+        match argument.as_str() {
+            "--json" => json_output = true,
+            "--project" => {
+                if project.is_some() { return Err("--project 不能重复".into()); }
+                let path = rest.next().filter(|path| !path.starts_with('-')).ok_or("--project 缺少路径")?;
+                project = Some(PathBuf::from(path));
+            }
+            _ => return Err(format!("未知 query 选项: {argument}")),
+        }
+    }
+    let project = project.unwrap_or(std::env::current_dir().map_err(|error| error.to_string())?);
     let entries = CompilerSystem::new()
         .query_for_project(&project, kind).map_err(|e| format!("{e:?}"))?
         .entries
@@ -223,6 +268,7 @@ fn query(args: &[String]) -> Result<u8, String> {
 
 fn query_entry_json(entry: QueryEntry) -> serde_json::Value {
     match entry {
+        QueryEntry::NativeExport { package, name, signature } => json!({"package":package,"name":name,"signature":signature}),
         QueryEntry::Library { id, name, unit, mut declaration } => {
             declaration["id"] = json!(id); declaration["name"] = json!(name); declaration["unit"] = json!(unit); declaration
         }

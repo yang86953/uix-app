@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 /// 宿主端口或函数的效果类别。纯函数不读取实例状态或调用宿主。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "lang-build", derive(serde::Serialize, serde::Deserialize))]
 pub enum Effect {
     Pure,
     Query,
@@ -27,6 +28,7 @@ pub enum Value {
 
 /// 可移植值类型；整数固定为 i64，浮点固定为有限 f64。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "lang-build", derive(serde::Serialize, serde::Deserialize))]
 pub enum Type {
     Unit,
     Bool,
