@@ -111,6 +111,8 @@ pub(crate) struct GpuLinearGradientRect {
     pub(crate) mask: Option<([f32; 4], [f32; 6])>,
     /// 记录水平、垂直或两条对角线方向枚举值。
     pub(crate) dir: u32,
+    /// 可选多色标载荷；None 保留既有双色方向。
+    pub(crate) stops: Option<crate::platform::presentation::rhi::RhiLinearGradientStops>,
 }
 
 // 为径向渐变提供可复制、可比较的值语义。

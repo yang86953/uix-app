@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GPU 离屏像素一致性验证的仓库专用入口（不占用 crates.io 发布包的公开 feature）。
+# GPU 离屏像素一致性验证的仓库专用集成测试入口（不占用 crates.io 发布包的公开 feature）。
 # 用法：scripts/run_gpu_parity.sh {vulkan|opengl|d3d11} [额外 cargo test 参数...]
 # 三个专用 cfg 键只在本脚本显式设置，普通构建与发布包内恒为关闭，无悬空模块。
 set -euo pipefail
@@ -36,7 +36,7 @@ fi
 # 与仓库其余验证一致：显式本仓 target、双任务并行、稳定工具链。
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$(cd "$(dirname "$0")/.." && pwd)/target}"
 if [[ -n "$features" ]]; then
-    exec env RUSTFLAGS="--cfg ${cfg_key}" cargo test -p uix-app --lib --features "$features" -j2 "$@"
+    exec env RUSTFLAGS="--cfg ${cfg_key}" cargo test -p uix-app --test gpu_parity --features "$features" -j2 "$@"
 else
-    exec env RUSTFLAGS="--cfg ${cfg_key}" cargo test -p uix-app --lib -j2 "$@"
+    exec env RUSTFLAGS="--cfg ${cfg_key}" cargo test -p uix-app --test gpu_parity -j2 "$@"
 fi

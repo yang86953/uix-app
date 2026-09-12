@@ -217,6 +217,8 @@ cbuffer GradCB : register(b0)
     float4 u_mask_radius;
     float4 u_quad_mask;
     float4 u_mask_size;
+    float4 u_stop_colors[16];
+    float4 u_stop_offsets[4];
 };
 
 struct VSIn {
@@ -257,6 +259,24 @@ float4 PSMain(VSOut input) : SV_Target
         if (coverage <= 0.0)
             discard;
     }
+    // S4 angular/multistop: at most sixteen straight-alpha stops.
+    if (u_params.x > 1.5) {
+        float t = 0.5 + dot(u_params.zw, input.local - float2(0.5, 0.5));
+        float4 sampled = u_stop_colors[0];
+        float left_offset = u_stop_offsets[(0) / 4][(0) % 4];
+        for (int i = 1; i < 16; ++i) {
+            if (i >= int(u_params.y)) break;
+            float right_offset = u_stop_offsets[(i) / 4][(i) % 4];
+            if (t < right_offset) {
+                float ratio = right_offset > left_offset ? clamp((t - left_offset) / (right_offset - left_offset), 0.0, 1.0) : 0.0;
+                sampled = lerp(sampled, u_stop_colors[i], ratio);
+                break;
+            }
+            sampled = u_stop_colors[i];
+            left_offset = right_offset;
+        }
+        return float4(sampled.rgb, sampled.a * coverage);
+    }
     float mode = u_params.x;
     if (mode < 0.5)
     {
@@ -274,7 +294,9 @@ float4 PSMain(VSOut input) : SV_Target
         else
             t = (local.x * size.x - local.y * size.y + size.y) / max(size.x + size.y, 1e-6);
         t = saturate(t);
-        return lerp(u_color_a, u_color_b, t) * coverage;
+        float4 linear_color = lerp(u_color_a, u_color_b, t);
+        // StraightAlpha 契约：coverage 只缩 alpha，RGB 直通混合器。
+        return float4(linear_color.rgb, linear_color.a * coverage);
     }
     else
     {
@@ -287,7 +309,8 @@ float4 PSMain(VSOut input) : SV_Target
             discard;
         float range = max(outer_r - inner_r, 1e-6);
         float t = saturate((dist - inner_r) / range);
-        return lerp(u_color_a, u_color_b, t) * coverage;
+        float4 radial_color = lerp(u_color_a, u_color_b, t);
+        return float4(radial_color.rgb, radial_color.a * coverage);
     }
 }
 "#,

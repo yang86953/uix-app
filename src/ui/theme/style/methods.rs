@@ -146,6 +146,7 @@ impl Style {
         self.text_decoration = s.text_decoration;
         self.opacity = s.opacity;
         self.box_shadow = s.box_shadow;
+        self.box_shadows = s.box_shadows;
         self.visible = s.visible;
         self
     }
@@ -315,8 +316,9 @@ impl Style {
         if other.opacity != 1.0 {
             self.opacity = other.opacity;
         }
-        if other.box_shadow.is_some() {
+        if other.box_shadow.is_some() || other.box_shadows.is_some() {
             self.box_shadow = other.box_shadow;
+            self.box_shadows = other.box_shadows;
         }
         if !other.visible {
             self.visible = other.visible;
@@ -651,8 +653,29 @@ impl Style {
     /// 设置盒阴影。
     pub fn with_shadow(mut self, shadow: BoxShadowDef) -> Self {
         self.box_shadow = Some(shadow);
+        self.box_shadows = None;
         self
     }
+    /// 设置多外阴影，首项在最上层；空列表清除全部阴影。
+    pub fn with_shadows(mut self, shadows: Vec<BoxShadowDef>) -> Self {
+        self.box_shadow = None;
+        self.box_shadows = Some(shadows);
+        self
+    }
+
+    /// 返回兼容入口归一后的阴影列表；非法或超预算列表不产生绘制。
+    pub fn effective_box_shadows(&self) -> &[BoxShadowDef] {
+        let shadows = self.box_shadows.as_deref().unwrap_or_else(|| self.box_shadow.as_slice());
+        if shadows.len() > 8 || shadows.iter().any(|s| {
+            !s.blur.is_finite() || s.blur < 0.0 || !s.offset_x.is_finite()
+                || !s.offset_y.is_finite() || !s.spread.is_finite()
+        }) {
+            tracing::warn!("boxShadow 要求至多八层有限外阴影，blur 不得为负；忽略无效列表");
+            return &[];
+        }
+        shadows
+    }
+
     /// 设置样式可见性。
     pub fn with_visible(mut self, v: bool) -> Self {
         self.visible = v;

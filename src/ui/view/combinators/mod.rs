@@ -303,3 +303,7 @@ pub fn dynamic_label<F: Fn() -> String + 'static>(value: F) -> ViewNode {
 pub fn elided_label<F: Fn() -> String + 'static>(value: F) -> ViewNode {
     ViewNode::leaf(crate::ui::widget_runtime::dynamic_label::DynamicLabel::new(value).elided())
 }
+
+// 真实 GPU 验证仍经过框架 Canvas 的 WidgetRender 入口。
+#[cfg(any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11))]
+include!("../../../../tests-src/ui/widgets/combinators_parity_fns.rs");

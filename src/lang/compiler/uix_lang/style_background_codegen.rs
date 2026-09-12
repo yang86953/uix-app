@@ -44,7 +44,7 @@ pub(super) fn background_image_field(
             // 传入原始属性跨度。
             property,
             // 说明不支持多层。
-            "backgroundImage 首批只支持单个本地 url 或单个双色渐变",
+            "backgroundImage 只支持单个本地 url 或单个渐变",
         ));
     }
     // 按闭合背景来源语法生成公开运行时值。
@@ -82,10 +82,7 @@ pub(super) fn background_image_field(
         // 生成公开本地图片来源。
         quote! { ::uix_app::prelude::BackgroundImage::Url(::std::string::String::from(#path)) }
     } else if let Some(inner) = function_inner(source, "linear-gradient") {
-        // 解析恰好两个颜色端点。
-        let (start, end) = gradient_colors(inner, property)?;
-        // 生成固定上下方向的双色线性渐变。
-        quote! { ::uix_app::prelude::BackgroundImage::LinearGradient { start: #start, end: #end } }
+        linear_gradient_value(inner, property)?
     } else if let Some(inner) = function_inner(source, "radial-gradient") {
         // 解析恰好两个颜色端点。
         let (inner, outer) = gradient_colors(inner, property)?;
@@ -415,7 +412,7 @@ fn color_from_source(
 }
 
 // 在嵌套颜色函数外切分逗号。
-fn split_top_level_commas<'a>(
+pub(super) fn split_top_level_commas<'a>(
     // 接收渐变内部文本。
     source: &'a str,
     // 接收诊断所属属性。
@@ -655,4 +652,61 @@ fn background_size_diagnostic(property: &StyleProperty, message: &str) -> Diagno
         message.to_owned(),
         "使用 backgroundSize: cover、contain、auto、60px 40px 或 50% auto",
     )
+}
+
+// 线性渐变语法：可选 deg 角度与 2..=16 个颜色/百分比色标。
+fn linear_gradient_value(source: &str, property: &StyleProperty) -> Result<TokenStream, Diagnostic> {
+    let mut parts = split_top_level_commas(source, property)?;
+    let explicit_angle = parts.first().is_some_and(|s| s.ends_with("deg"));
+    let angle = if explicit_angle {
+        let number = parts.remove(0).trim_end_matches("deg");
+        let angle = number.parse::<f32>().ok().filter(|v| v.is_finite()).ok_or_else(||
+            background_image_diagnostic(property, "linear-gradient 角度必须是有限 deg 值"))?;
+        angle.rem_euclid(360.0)
+    } else { 180.0 };
+    if !(2..=16).contains(&parts.len()) || parts.iter().any(|s| s.is_empty()) {
+        return Err(background_image_diagnostic(property, "linear-gradient 要求 2..=16 个色标"));
+    }
+    let mut colors = Vec::with_capacity(parts.len());
+    let mut offsets = Vec::with_capacity(parts.len());
+    for part in parts {
+        // 仅把颜色后的独立百分比识别为位置，rgba 内部空白不影响解析。
+        let (color, offset) = if let Some((color, offset)) = part.rsplit_once(char::is_whitespace)
+            && let Some(number) = offset.strip_suffix('%') {
+            let value = number.parse::<f32>().ok().filter(|v| v.is_finite() && (0.0..=100.0).contains(v))
+                .ok_or_else(|| background_image_diagnostic(property, "linear-gradient 色标必须在 0%..=100% 之间"))?;
+            (color.trim(), Some(value / 100.0))
+        } else { (part, None) };
+        colors.push(color_from_source(color, property)?);
+        offsets.push(offset);
+    }
+    // 未扩展的双色声明保持旧公开枚举，避免改变已有 Rust 模式匹配与绘制结果。
+    if !explicit_angle && colors.len() == 2 && offsets.iter().all(Option::is_none) {
+        let (start, end) = (&colors[0], &colors[1]);
+        return Ok(quote! { ::uix_app::prelude::BackgroundImage::LinearGradient { start: #start, end: #end } });
+    }
+    let last = offsets.len() - 1;
+    offsets[0].get_or_insert(0.0);
+    offsets[last].get_or_insert(1.0);
+    let mut left = 0;
+    while left < last {
+        let right = (left + 1..=last).find(|i| offsets[*i].is_some()).expect("末端位置已补齐");
+        let start = offsets[left].expect("当前锚点已定位");
+        let end = offsets[right].expect("下一锚点已定位");
+        if start > end {
+            return Err(background_image_diagnostic(property, "linear-gradient 色标位置必须非递减"));
+        }
+        for i in left + 1..right {
+            offsets[i] = Some(start + (end - start) * (i - left) as f32 / (right - left) as f32);
+        }
+        left = right;
+    }
+    let angle = Literal::f32_unsuffixed(angle);
+    let stops = colors.iter().zip(offsets).map(|(color, offset)| {
+        let offset = Literal::f32_unsuffixed(offset.expect("全部位置已定位"));
+        quote! { ::uix_app::prelude::GradientStopValue::new(#offset, #color) }
+    });
+    Ok(quote! { ::uix_app::prelude::BackgroundImage::LinearGradientStops {
+        angle_degrees: #angle, stops: ::std::vec![#(#stops),*],
+    } })
 }

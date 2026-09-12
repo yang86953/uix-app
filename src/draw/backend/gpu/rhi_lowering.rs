@@ -415,6 +415,7 @@ fn lower_operation(
                 // params[2]/[3] 携带渐变局部矩形宽高，shader 的对角插值与
                 // CPU linear_gradient_t 在任意仿射下同源。
                 params: [0.0, value.dir as f32, value.local_w, value.local_h],
+                stops: value.stops,
                 // 圆角掩码已在 queue 期按逻辑空间预计算。
                 mask_radius: value.mask.map(|(radius, _)| radius).unwrap_or([0.0; 4]),
                 mask: value.mask.map(|(_, mask)| mask).unwrap_or([
@@ -470,6 +471,7 @@ fn lower_operation(
                 color_a: value.color_inner,
                 color_b: value.color_outer,
                 params: [1.0, inner_ratio * 0.5, 0.5, 0.0],
+                stops: None,
                 // 圆角掩码已在 queue 期按逻辑空间预计算。
                 mask_radius: value.mask.map(|(radius, _)| radius).unwrap_or([0.0; 4]),
                 mask: value.mask.map(|(_, mask)| mask).unwrap_or([

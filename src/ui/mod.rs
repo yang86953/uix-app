@@ -170,7 +170,7 @@ pub use theme::style::{
 // 公开 UI System 自有的背景图层值契约。
 #[cfg(feature = "ui")]
 pub use theme::style::{
-    BackgroundAxisPosition, BackgroundAxisSize, BackgroundImage, BackgroundPosition,
+    GradientStopValue, BackgroundAxisPosition, BackgroundAxisSize, BackgroundImage, BackgroundPosition,
     BackgroundRepeat, BackgroundSize,
 };
 // 公开 UI System 自有的边框线型契约。

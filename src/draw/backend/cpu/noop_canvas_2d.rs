@@ -25,6 +25,7 @@ impl Canvas2D for NoopCanvas2D {
     fn stroke_circle(&mut self, _: f32, _: f32, _: f32, _: Color, _: f32) {}
     fn stroke_path(&mut self, _: &Path, _: Color, _: &StrokeOptions) {}
     fn draw_line(&mut self, _: f32, _: f32, _: f32, _: f32, _: Color, _: f32) {}
+    fn fill_linear_gradient_stops(&mut self, _: Rect, _: crate::draw::LinearGradient, _: Option<Radius>) {}
     fn fill_linear_gradient(&mut self, _: Rect, _: Color, _: Color, _: GradientDirection) {}
     fn fill_radial_gradient(&mut self, _: f32, _: f32, _: f32, _: f32, _: Color, _: Color) {}
     fn draw_box_shadow(&mut self, _: Rect, _: f32, _: f32, _: f32, _: Color, _: Option<Radius>) {}

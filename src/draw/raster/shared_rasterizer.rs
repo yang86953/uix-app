@@ -175,6 +175,10 @@ impl Canvas2D for SharedRasterizer {
             .draw_line(pixels, w, h, x1, y1, x2, y2, color, width);
     }
 
+    fn fill_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>) {
+        let (width, height) = (self.surface.width(), self.surface.height());
+        self.renderer.fill_linear_gradient_stops(self.surface.pixels_mut(), width, height, rect, gradient, radius.unwrap_or_else(Radius::zero));
+    }
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
         // 无圆角声明保持旧绘制语义。
         self.fill_linear_gradient_rounded(rect, ca, cb, dir, Radius::zero());

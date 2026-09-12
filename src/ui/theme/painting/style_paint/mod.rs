@@ -55,11 +55,11 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
     // 单值与四角两种输入统一经有效值入口解析（S4）。
     let radius = style.effective_border_radius();
 
-    if let Some(shadow) = style.box_shadow.as_ref()
-        // 只在 spread 后仍有正面积时提交阴影。
-        && let Some((shadow_rect, shadow_radius)) =
-            spread_shadow_geometry(rect, radius, shadow.spread)
-    {
+    // 首项是最上层，按反向 painter order 复用已有原语与脏区计算。
+    for shadow in style.effective_box_shadows().iter().rev() {
+        let Some((shadow_rect, shadow_radius)) = spread_shadow_geometry(rect, radius, shadow.spread) else {
+            continue;
+        };
         // 复用现有 CPU/GPU 阴影原语绘制扩张后的基准盒。
         ctx.draw_box_shadow(
             // 传入应用 spread 后的阴影矩形。

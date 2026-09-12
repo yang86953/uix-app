@@ -14,7 +14,7 @@ pub use crate::core::{
 pub use crate::data::SettingsService;
 #[cfg(feature = "graphics")]
 pub use crate::draw::{
-    BlendMode, Color, FillRule, FontBundle, FontService, ImageService, Path, PathBuilder, Radius,
+    GradientStop, LinearGradient, MAX_GRADIENT_STOPS, BlendMode, Color, FillRule, FontBundle, FontService, ImageService, Path, PathBuilder, Radius,
     Renderer, StrokeOptions, colors,
 };
 #[cfg(feature = "platform-contracts")]

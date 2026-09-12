@@ -16,11 +16,15 @@ pub(super) fn box_shadow_field(
     style: &Ident,
     // 接收结构化阴影属性。
     property: &StyleProperty,
+    decl: &Ident,
 ) -> Result<TokenStream, Diagnostic> {
-    // 生成完整可选阴影值。
-    let value = box_shadow_value(property)?;
-    // 把解析结果写入样式字段。
-    Ok(quote! { #style.box_shadow = #value; })
+    let layers = super::style_background_codegen::split_top_level_commas(&property.value.source, property)?;
+    if layers.len() == 1 {
+        let value = box_shadow_value(property)?;
+        return Ok(quote! { #style.box_shadow = #value; #style.box_shadows = ::std::option::Option::None; #decl.box_shadows = ::std::option::Option::Some(::std::option::Option::None); });
+    }
+    let value = box_shadow_layers(property, false)?;
+    Ok(quote! { #style.box_shadow = ::std::option::Option::None; #style.box_shadows = ::std::option::Option::Some(#value); #decl.box_shadows = ::std::option::Option::Some(#style.box_shadows.clone()); })
 }
 
 // 生成允许既有颜色名称的通用盒阴影值。
@@ -166,4 +170,19 @@ fn is_signed_length(source: &str) -> bool {
 fn is_concrete_color(source: &str) -> bool {
     // 只允许十六进制、rgb 与 rgba 字面量。
     source.starts_with('#') || source.starts_with("rgb(") || source.starts_with("rgba(")
+}
+
+// 外阴影复合属性与内联样式共用同一有界列表解析。
+pub(super) fn box_shadow_layers(property: &StyleProperty, concrete_color: bool) -> Result<TokenStream, Diagnostic> {
+    let sources = super::style_background_codegen::split_top_level_commas(&property.value.source, property)?;
+    if sources.len() > 8 || sources.iter().any(|s| s.is_empty() || (sources.len() > 1 && *s == "none")) {
+        return Err(value_diagnostic(property, "boxShadow 只支持一至八层外阴影，none 只能单独使用", "用逗号分隔阴影，首项在最上层"));
+    }
+    let mut layers = Vec::with_capacity(sources.len());
+    for source in sources {
+        let mut layer = property.clone();
+        layer.value.source = source.to_owned();
+        layers.push(box_shadow_value_with_policy(&layer, concrete_color)?);
+    }
+    Ok(quote! { [#(#layers),*].into_iter().flatten().collect::<::std::vec::Vec<::uix_app::prelude::BoxShadowDef>>() })
 }

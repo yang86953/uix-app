@@ -2,6 +2,8 @@
 
 /// 颜色表示、解析与混合运算。
 pub mod color;
+/// 有界线性渐变值与色标。
+pub mod gradient;
 pub mod flattener;
 pub mod path;
 pub mod spatial;

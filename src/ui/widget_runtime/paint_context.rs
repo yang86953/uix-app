@@ -298,6 +298,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
         stroke_polygon(points: &[Point], color: Color, options: &StrokeOptions);
         stroke_ellipse(rect: Rect, color: Color, options: &StrokeOptions);
         draw_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32);
+        fill_linear_gradient_stops(rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>);
         fill_linear_gradient(rect: Rect, color_a: Color, color_b: Color, dir: GradientDirection);
         fill_radial_gradient(cx: f32, cy: f32, inner_r: f32, outer_r: f32, inner_color: Color, outer_color: Color);
         draw_box_shadow(rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32, color: Color, corner_radius: Option<Radius>);

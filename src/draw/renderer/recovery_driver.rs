@@ -614,6 +614,6 @@ impl Drop for RecoveryDriver {
 mod recovery_driver_tests;
 
 // GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
-// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
-#[cfg(test)]
+// 仅测试或显式 RUSTFLAGS parity 配置读取；默认生产构建不读取，发布包不携带。
+#[cfg(any(test, uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11))]
 include!("../../../tests-src/draw/renderer/recovery_driver_parity_fns.rs");

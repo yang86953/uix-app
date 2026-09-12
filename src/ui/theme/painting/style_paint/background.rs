@@ -23,6 +23,8 @@ pub(super) enum ResolvedBackground<'a> {
     Url(&'a str),
     /// 绘制上下方向的双色线性渐变。
     Linear(Color, Color),
+    /// 已验证的多色标线性渐变。
+    LinearStops(crate::draw::LinearGradient),
     /// 绘制从中心向外的双色径向渐变。
     Radial(Color, Color),
 }
@@ -45,6 +47,20 @@ pub(super) fn resolve_background<'a>(
         Some(BackgroundImage::LinearGradient { start, end }) => {
             // 将两个端点转换为 draw 颜色。
             ResolvedBackground::Linear(start.resolve(tokens), end.resolve(tokens))
+        }
+        Some(BackgroundImage::LinearGradientStops { angle_degrees, stops }) => {
+            // 固定栈容量，不按未验证 Rust 输入分配或截断。
+            let mut resolved = [crate::draw::GradientStop::new(0.0, Color::TRANSPARENT); crate::draw::MAX_GRADIENT_STOPS];
+            if stops.len() <= resolved.len() {
+                for (out, stop) in resolved.iter_mut().zip(stops) {
+                    *out = crate::draw::GradientStop::new(stop.offset, stop.color.resolve(tokens));
+                }
+                if let Some(gradient) = crate::draw::LinearGradient::new(*angle_degrees, &resolved[..stops.len()]) {
+                    return ResolvedBackground::LinearStops(gradient);
+                }
+            }
+            tracing::warn!("linear-gradient 要求有限角度与 2..=16 个非递减的 0..=1 色标；忽略无效背景");
+            ResolvedBackground::None
         }
         // 径向渐变在 UI 边界解析主题颜色。
         Some(BackgroundImage::RadialGradient { inner, outer }) => {
@@ -140,6 +156,7 @@ pub(super) fn paint_background(
                 }
             }
         }
+        ResolvedBackground::LinearStops(gradient) => ctx.fill_linear_gradient_stops(rect, gradient, radius),
         // 径向渐变始终从背景盒中心覆盖到最远角。
         ResolvedBackground::Radial(inner, outer) => {
             // 计算背景盒中心横坐标。

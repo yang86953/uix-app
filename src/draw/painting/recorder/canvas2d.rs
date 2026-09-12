@@ -372,6 +372,9 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.draw_line(x1, y1, x2, y2, color, width)
         });
     }
+    fn fill_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>) {
+        self.draw_cpu_source(rect, 1.0, |scratch| scratch.fill_linear_gradient_stops(rect, gradient, radius));
+    }
     fn fill_linear_gradient(
         &mut self,
         rect: Rect,

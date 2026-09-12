@@ -416,6 +416,12 @@ impl<'a> PaintContext<'a> {
             .fill_linear_gradient(rect, color_a, color_b, dir);
     }
 
+    /// 填充带角度的多色标线性渐变，录制与立即绘制保持相同参数。
+    pub fn fill_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>) {
+        self.record_op(PaintOp::FillLinearGradientStops { rect, gradient, radius });
+        self.spatial.canvas_2d().fill_linear_gradient_stops(rect, gradient, radius);
+    }
+
     /// 填充带四角圆角裁剪的线性渐变（S4）。
     #[inline(always)]
     pub fn fill_linear_gradient_rounded(

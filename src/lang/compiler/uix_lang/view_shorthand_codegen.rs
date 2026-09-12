@@ -218,6 +218,11 @@ fn apply_shadow(
     // 构造与 boxShadow 共用的结构化样式属性。
     let property = style_property("boxShadow", source, attribute);
     // 解析 none 或完整双轴偏移阴影定义。
+    let layers = super::style_background_codegen::split_top_level_commas(source, &property)?;
+    if layers.len() > 1 {
+        let value = super::style_shadow_codegen::box_shadow_layers(&property, true)?;
+        return Ok(quote! { (#base).box_shadows(#value) });
+    }
     let value = concrete_box_shadow_value(&property)?;
     // 应用公开完整阴影入口。
     Ok(quote! { (#base).box_shadow(#value) })

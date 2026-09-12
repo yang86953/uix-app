@@ -19,6 +19,13 @@ pub enum BackgroundImage {
         /// 渐变结束颜色。
         end: ColorValue,
     },
+    /// 带角度和已定位色标的线性渐变；2..=16 项，位置非递减且在 0..=1。
+    LinearGradientStops {
+        /// 0° 向上，90° 向右；接受任意有限角度。
+        angle_degrees: f32,
+        /// 色标顺序；相同位置后项覆盖前项。
+        stops: Vec<GradientStopValue>,
+    },
     /// 使用从中心向外的双色径向渐变。
     RadialGradient {
         /// 渐变中心颜色。
@@ -26,6 +33,19 @@ pub enum BackgroundImage {
         /// 渐变外缘颜色。
         outer: ColorValue,
     },
+}
+
+/// 可解析主题颜色的线性渐变色标。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GradientStopValue {
+    /// 渐变轴上的位置，合法范围 0..=1。
+    pub offset: f32,
+    /// 在绘制时解析的主题颜色或具体颜色。
+    pub color: ColorValue,
+}
+impl GradientStopValue {
+    /// 创建待验证色标；绘制入口统一验证完整列表。
+    pub const fn new(offset: f32, color: ColorValue) -> Self { Self { offset, color } }
 }
 
 /// 单轴背景定位值。
@@ -174,20 +194,16 @@ impl BackgroundSize {
 
     /// 按背景盒与图片固有尺寸解析为最终平铺尺寸。
     ///
-    /// 返回 `None` 表示无有效输入（非有限盒或图片尺寸），调用方不产生图层。
+    /// 返回 `None` 表示无有效输入或显式零轴尺寸；调用方不产生图层。
     pub(crate) fn resolve_tile(self, box_size: Size, image_size: Size) -> Option<Size> {
-        let scale_of = |axis: BackgroundAxisSize, box_axis: f32, image_axis: f32| -> Option<f32> {
+        // 外层 None 是无效值，内层 None 才是 Auto；显式零必须保留为零。
+        let scale_of = |axis: BackgroundAxisSize, box_axis: f32, image_axis: f32| -> Option<Option<f32>> {
             match axis {
-                BackgroundAxisSize::Auto => None,
-                BackgroundAxisSize::Px(value) if value.is_finite() && value > 0.0 => {
-                    Some(value / image_axis)
-                }
-                // 百分比按背景盒同轴换算为目标尺寸后再取缩放比例。
-                BackgroundAxisSize::Percent(value)
-                    if value.is_finite() && value > 0.0 =>
-                {
-                    Some(box_axis * value / image_axis)
-                }
+                BackgroundAxisSize::Auto => Some(None),
+                BackgroundAxisSize::Px(value) if value.is_finite() && value >= 0.0 =>
+                    Some(Some(value / image_axis)),
+                BackgroundAxisSize::Percent(value) if value.is_finite() && value >= 0.0 =>
+                    Some(Some(box_axis * value / image_axis)),
                 _ => None,
             }
         };
@@ -213,8 +229,8 @@ impl BackgroundSize {
                 Some(Size::new(image_size.w * scale, image_size.h * scale))
             }
             Self::Explicit(width_axis, height_axis) => {
-                let width_scale = scale_of(width_axis, box_size.w, image_size.w);
-                let height_scale = scale_of(height_axis, box_size.h, image_size.h);
+                let width_scale = scale_of(width_axis, box_size.w, image_size.w)?;
+                let height_scale = scale_of(height_axis, box_size.h, image_size.h)?;
                 let (scale_x, scale_y) = match (width_scale, height_scale) {
                     // 两轴显式：允许非等比拉伸。
                     (Some(sx), Some(sy)) => (sx, sy),
@@ -224,7 +240,8 @@ impl BackgroundSize {
                     // 双 Auto 与 Self::Auto 等价。
                     (None, None) => (1.0, 1.0),
                 };
-                Some(Size::new(image_size.w * scale_x, image_size.h * scale_y))
+                let tile = Size::new(image_size.w * scale_x, image_size.h * scale_y);
+                (tile.w.is_finite() && tile.h.is_finite() && tile.w > 0.0 && tile.h > 0.0).then_some(tile)
             }
         }
     }

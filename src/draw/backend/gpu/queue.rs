@@ -320,20 +320,39 @@ impl NativeGpuCanvas2D {
         dir: GradientDirection,
         radius: Option<Radius>,
     ) {
+        self.queue_linear_gradient_impl(rect, ca, cb, dir, radius, None);
+    }
+
+    pub(super) fn queue_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>) {
+        self.queue_linear_gradient_impl(rect, Color::TRANSPARENT, Color::TRANSPARENT, GradientDirection::Vertical, radius, Some(gradient));
+    }
+
+    fn queue_linear_gradient_impl(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection,
+        radius: Option<Radius>, gradient: Option<crate::draw::LinearGradient>) {
+        let stops = if let Some(gradient) = gradient {
+            let Some(axis) = gradient.axis(rect.w, rect.h) else { return; };
+            let mut data = crate::platform::presentation::rhi::RhiLinearGradientStops {
+                count: gradient.stops().len() as u8, axis, colors: [[0.0; 4]; 16], offsets: [0.0; 16],
+            };
+            for (i, stop) in gradient.stops().iter().enumerate() {
+                data.colors[i] = self.rgba(stop.color);
+                data.offsets[i] = stop.offset;
+            }
+            Some(data)
+        } else { None };
+        let draw_soft = |soft: &mut crate::draw::raster::shared_rasterizer::SharedRasterizer| {
+            if let Some(gradient) = gradient {
+                soft.fill_linear_gradient_stops(rect, gradient, radius);
+            } else {
+                soft.fill_linear_gradient_rounded(rect, ca, cb, dir, radius.unwrap_or_else(Radius::zero));
+            }
+        };
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
-            self.with_soft_clip(|soft| {
-                soft.fill_linear_gradient_rounded(
-                    rect,
-                    ca,
-                    cb,
-                    dir,
-                    radius.unwrap_or_else(Radius::zero),
-                )
-            });
+            self.with_soft_clip(draw_soft);
             self.mark_soft();
             return;
         }
@@ -343,15 +362,7 @@ impl NativeGpuCanvas2D {
             // 奇异变换不能稳定地映射单位渐变 quad。
             self.soft_or_reject_transform("degenerate linear gradient transform");
             if !self.gpu_only {
-                self.with_soft_clip(|soft| {
-                    soft.fill_linear_gradient_rounded(
-                        rect,
-                        ca,
-                        cb,
-                        dir,
-                        radius.unwrap_or_else(Radius::zero),
-                    )
-                });
+                self.with_soft_clip(draw_soft);
                 self.mark_soft();
             }
             return;
@@ -383,6 +394,7 @@ impl NativeGpuCanvas2D {
                     color_a: self.rgba(ca),
                     color_b: self.rgba(cb),
                     dir: dir_u,
+                    stops,
                     // 掩码在逻辑空间预计算，避免设备坐标换算歧义。
                     mask: radius.map(|value| {
                         super::geometry::gradient_linear_mask(Some(value), rect.w, rect.h)

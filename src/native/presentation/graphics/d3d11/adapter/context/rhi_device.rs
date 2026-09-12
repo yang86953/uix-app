@@ -748,7 +748,7 @@ pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
 
-// 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
+// 把真实 GPU parity harness 实现统一存放在根 tests-src 目录。
 #[cfg(uix_gpu_parity_d3d11)]
-#[path = "../../../../../../../tests/support/native/gpu_parity/d3d11_rhi_device.rs"]
+#[path = "../../../../../../../tests-src/native/gpu_parity/d3d11_rhi_device.rs"]
 mod gpu_parity_tests;

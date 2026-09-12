@@ -51,6 +51,8 @@ layout(set = 0, binding = 0, std140) uniform GradientUniforms {
     vec4 mask_radius;
     vec4 quad_mask;
     vec4 mask_size;
+    vec4 stop_colors[16];
+    vec4 stop_offsets[4];
 } u;
 layout(location = 0) in vec2 a_pos;
 layout(location = 0) out vec2 v_local;

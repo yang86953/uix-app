@@ -840,7 +840,7 @@ pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
 
-// 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
+// 把真实 GPU parity harness 实现统一存放在根 tests-src 目录。
 #[cfg(all(target_os = "linux", uix_gpu_parity_opengl))]
-#[path = "../../../../../../tests/support/native/gpu_parity/opengl_rhi_device.rs"]
+#[path = "../../../../../../tests-src/native/gpu_parity/opengl_rhi_device.rs"]
 mod gpu_parity_tests;

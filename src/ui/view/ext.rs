@@ -340,7 +340,22 @@ pub trait StyleExt: Into<ViewNode> + Sized {
     /// 设置或清除保留完整偏移的盒阴影定义。
     fn box_shadow(self, shadow: Option<crate::ui::theme::style::BoxShadowDef>) -> ViewNode {
         // 通过受控样式更新入口保留其他声明字段。
-        self.into().map_style(|style| style.box_shadow = shadow)
+        self.into().map_style_declared(|style, decl| {
+            style.box_shadow = shadow;
+            style.box_shadows = None;
+            decl.box_shadow = Some(shadow);
+            decl.box_shadows = Some(None);
+        })
+    }
+
+    /// 设置多外阴影，首项在最上层；空列表显式清除。
+    fn box_shadows(self, shadows: Vec<crate::ui::theme::style::BoxShadowDef>) -> ViewNode {
+        self.into().map_style_declared(|style, decl| {
+            style.box_shadow = None;
+            style.box_shadows = Some(shadows.clone());
+            decl.box_shadow = Some(None);
+            decl.box_shadows = Some(Some(shadows));
+        })
     }
 
     /// 设置单值圆角半径；显式覆盖任何既有四角声明。

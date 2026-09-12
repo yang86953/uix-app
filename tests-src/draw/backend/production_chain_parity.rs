@@ -58,7 +58,7 @@ pub(crate) fn execute_ui_production_chain(
         paint_ui(&mut draw_context);
     }
     let mut renderer = RhiRenderer::default();
-    let submitted = canvas.submit_rhi_solid(
+    let submitted = canvas.submit_rhi_mixed(
         &mut renderer,
         device,
         extent,

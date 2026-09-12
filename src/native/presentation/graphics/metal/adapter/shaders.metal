@@ -124,6 +124,24 @@ fragment float4 gradient_fs(UnitOut input [[stage_in]], constant float4* c [[buf
         coverage = clamp(0.5 - sdf, 0.0, 1.0);
         if (coverage <= 0.0) discard_fragment();
     }
+    // S4 angular/multistop: at most sixteen straight-alpha stops.
+    if (params.x > 1.5) {
+        float t = 0.5 + dot(params.zw, input.local - float2(0.5, 0.5));
+        float4 sampled = c[9 + 0];
+        float left_offset = c[25 + (0) / 4][(0) % 4];
+        for (int i = 1; i < 16; ++i) {
+            if (i >= int(params.y)) break;
+            float right_offset = c[25 + (i) / 4][(i) % 4];
+            if (t < right_offset) {
+                float ratio = right_offset > left_offset ? clamp((t - left_offset) / (right_offset - left_offset), 0.0, 1.0) : 0.0;
+                sampled = mix(sampled, c[9 + i], ratio);
+                break;
+            }
+            sampled = c[9 + i];
+            left_offset = right_offset;
+        }
+        return float4(sampled.rgb, sampled.a * coverage);
+    }
     if (params.x < 0.5) {
         float2 local = input.local;
         float2 size = params.zw;
@@ -132,12 +150,15 @@ fragment float4 gradient_fs(UnitOut input [[stage_in]], constant float4* c [[buf
             : params.y < 2.5
                 ? (local.x * size.x + local.y * size.y) / max(size.x + size.y, 1e-6)
                 : (local.x * size.x - local.y * size.y + size.y) / max(size.x + size.y, 1e-6);
-        return mix(c[3], c[4], clamp(t, 0.0, 1.0)) * coverage;
+        float4 linear_color = mix(c[3], c[4], clamp(t, 0.0, 1.0));
+        // StraightAlpha 契约：coverage 只缩 alpha，RGB 直通混合器。
+        return float4(linear_color.rgb, linear_color.a * coverage);
     }
     float distance = length(input.local - 0.5);
     if (distance > params.z) discard_fragment();
     float t = clamp((distance - params.y) / max(params.z - params.y, 1e-6), 0.0, 1.0);
-    return mix(c[3], c[4], t) * coverage;
+    float4 radial_color = mix(c[3], c[4], t);
+    return float4(radial_color.rgb, radial_color.a * coverage);
 }
 
 vertex UnitOut shape_vs(UnitVertex input [[stage_in]], constant float4* c [[buffer(1)]]) {

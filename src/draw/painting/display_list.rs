@@ -264,6 +264,15 @@ pub enum PaintOp {
         /// 后端字体句柄。
         font: FontHandle,
     },
+    /// 填充带角度的多色标线性渐变。
+    FillLinearGradientStops {
+        /// 目标逻辑矩形。
+        rect: Rect,
+        /// 已验证的渐变值。
+        gradient: crate::draw::LinearGradient,
+        /// 可选四角掩码。
+        radius: Option<Radius>,
+    },
     /// 填充线性渐变矩形。
     FillLinearGradient {
         /// 目标逻辑矩形。
@@ -590,6 +599,7 @@ impl DisplayList {
                 // 字体状态切换。
                 PaintOp::SetFont { font } => ctx.set_font(*font),
                 // 渐变：线性与径向。
+                PaintOp::FillLinearGradientStops { rect, gradient, radius } => ctx.fill_linear_gradient_stops(*rect, *gradient, *radius),
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,
@@ -831,6 +841,7 @@ impl DisplayList {
                     text.set_font(*font);
                 }
                 // 渐变：线性与径向。
+                PaintOp::FillLinearGradientStops { rect, gradient, radius } => canvas.fill_linear_gradient_stops(*rect, *gradient, *radius),
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,

@@ -47,6 +47,7 @@ pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
 pub use backend::SurfaceReadback;
 pub use geometry::color::{Color, colors};
+pub use geometry::gradient::{GradientStop, LinearGradient, MAX_GRADIENT_STOPS};
 pub use geometry::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
 pub use geometry::spatial::unit::AngleExt;
 pub use geometry::spatial::{

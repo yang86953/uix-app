@@ -119,6 +119,9 @@ pub trait Canvas2D {
     }
 
     // ── 渐变 ──
+    /// 填充已验证的带角度多色标渐变；半径与色彩使用同一局部坐标。
+    fn fill_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>);
+
     /// 使用两种颜色填充线性渐变矩形。
     fn fill_linear_gradient(
         &mut self,

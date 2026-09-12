@@ -154,14 +154,14 @@ pub(crate) use render_target::RenderTargetHandle;
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
 pub(crate) use gradient::{
     GRADIENT_MASK_RADIUS_FLOAT_OFFSET, GRADIENT_MASK_SIZE_FLOAT_OFFSET,
-    GRADIENT_QUAD_SIZE_FLOAT_OFFSET, GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams,
+    GRADIENT_QUAD_SIZE_FLOAT_OFFSET, GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams, RhiLinearGradientStops,
 };
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
 #[cfg(feature = "opengles")]
 pub(crate) use gradient::{
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
-    GRADIENT_VIEWPORT_FLOAT_OFFSET,
+    GRADIENT_VIEWPORT_FLOAT_OFFSET, GRADIENT_STOP_COLORS_FLOAT_OFFSET, GRADIENT_STOP_OFFSETS_FLOAT_OFFSET,
 };
 // 向 Drawing System 与 probe 暴露同一 Shape ABI 值对象和总尺寸。
 pub(crate) use shape::{RhiShapeRasterParams, SHAPE_UNIFORM_BYTES};

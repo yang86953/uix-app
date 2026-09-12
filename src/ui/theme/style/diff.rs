@@ -109,6 +109,8 @@ pub struct StyleDiff {
     pub opacity: Option<f32>,
     /// 显式盒阴影；`Some(None)` 表示显式清除阴影。
     pub box_shadow: Option<Option<BoxShadowDef>>,
+    /// 多外阴影整体替换；Some(None) 清除阴影，同属性覆盖单层入口。
+    pub box_shadows: Option<Option<Vec<BoxShadowDef>>>,
     /// 显式可见性；true 也可作为恢复声明。
     pub visible: Option<bool>,
 }
@@ -184,7 +186,11 @@ impl StyleDiff {
         overlay_optional_field(&mut self.text_align, &top.text_align);
         overlay_optional_field(&mut self.text_decoration, &top.text_decoration);
         overlay_optional_field(&mut self.opacity, &top.opacity);
-        overlay_optional_field(&mut self.box_shadow, &top.box_shadow);
+        // 两个兼容入口代表同一属性；高层任一声明覆盖低层另一入口。
+        if top.box_shadow.is_some() || top.box_shadows.is_some() {
+            self.box_shadow = Some(top.box_shadow.unwrap_or(None));
+            self.box_shadows = Some(top.box_shadows.clone().unwrap_or(None));
+        }
         overlay_optional_field(&mut self.visible, &top.visible);
     }
 
@@ -256,7 +262,8 @@ impl StyleDiff {
             text_align: changed_field(&before.text_align, &after.text_align),
             text_decoration: changed_field(&before.text_decoration, &after.text_decoration),
             opacity: changed_field(&before.opacity, &after.opacity),
-            box_shadow: changed_field(&before.box_shadow, &after.box_shadow),
+            box_shadow: (before.box_shadow != after.box_shadow || before.box_shadows != after.box_shadows).then_some(after.box_shadow),
+            box_shadows: (before.box_shadow != after.box_shadow || before.box_shadows != after.box_shadows).then(|| after.box_shadows.clone()),
             visible: changed_field(&before.visible, &after.visible),
         }
     }
@@ -409,8 +416,9 @@ impl StyleDiff {
         if let Some(v) = diff.opacity {
             style.opacity = v;
         }
-        if let Some(v) = diff.box_shadow {
-            style.box_shadow = v;
+        if diff.box_shadow.is_some() || diff.box_shadows.is_some() {
+            style.box_shadow = diff.box_shadow.unwrap_or(None);
+            style.box_shadows = diff.box_shadows.unwrap_or(None);
         }
         if let Some(v) = diff.visible {
             style.visible = v;
@@ -764,11 +772,19 @@ impl StyleDiff {
     /// 声明显式盒阴影。
     pub fn shadow(mut self, s: BoxShadowDef) -> Self {
         self.box_shadow = Some(Some(s));
+        self.box_shadows = Some(None);
+        self
+    }
+    /// 声明多外阴影，首项在最上层；空列表清除全部阴影。
+    pub fn shadows(mut self, shadows: Vec<BoxShadowDef>) -> Self {
+        self.box_shadow = Some(None);
+        self.box_shadows = Some(Some(shadows));
         self
     }
     /// 声明显式清除盒阴影。
     pub fn shadow_none(mut self) -> Self {
         self.box_shadow = Some(None);
+        self.box_shadows = Some(None);
         self
     }
     /// 声明显式可见性；true 表示恢复可见。
@@ -839,6 +855,7 @@ impl From<Style> for StyleDiff {
             text_decoration: style.text_decoration.map(Some),
             opacity: (style.opacity != 1.0).then_some(style.opacity),
             box_shadow: style.box_shadow.map(Some),
+            box_shadows: style.box_shadows.map(Some),
             visible: (!style.visible).then_some(false),
         }
     }

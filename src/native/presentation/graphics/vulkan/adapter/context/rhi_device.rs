@@ -930,7 +930,7 @@ pub(super) fn readback_production_texture(
     gpu_parity_tests::readback_production_texture(context, texture)
 }
 
-// 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
+// 把真实 GPU parity harness 实现统一存放在根 tests-src 目录。
 #[cfg(uix_gpu_parity_vulkan)]
-#[path = "../../../../../../../tests/support/native/gpu_parity/vulkan_rhi_device.rs"]
+#[path = "../../../../../../../tests-src/native/gpu_parity/vulkan_rhi_device.rs"]
 mod gpu_parity_tests;

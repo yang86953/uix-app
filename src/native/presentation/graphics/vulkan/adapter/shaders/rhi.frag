@@ -80,6 +80,8 @@ layout(set = 0, binding = 0, std140) uniform GradientUniforms {
     vec4 mask_radius;
     vec4 quad_mask;
     vec4 mask_size;
+    vec4 stop_colors[16];
+    vec4 stop_offsets[4];
 } u;
 layout(location = 0) in vec2 v_local;
 
@@ -98,6 +100,25 @@ void main() {
             discard;
         }
     }
+    // S4 angular/multistop: at most sixteen straight-alpha stops.
+    if (u.params.x > 1.5) {
+        float t = 0.5 + dot(u.params.zw, v_local - vec2(0.5, 0.5));
+        vec4 sampled = u.stop_colors[0];
+        float left_offset = u.stop_offsets[(0) / 4][(0) % 4];
+        for (int i = 1; i < 16; ++i) {
+            if (i >= int(u.params.y)) break;
+            float right_offset = u.stop_offsets[(i) / 4][(i) % 4];
+            if (t < right_offset) {
+                float ratio = right_offset > left_offset ? clamp((t - left_offset) / (right_offset - left_offset), 0.0, 1.0) : 0.0;
+                sampled = mix(sampled, u.stop_colors[i], ratio);
+                break;
+            }
+            sampled = u.stop_colors[i];
+            left_offset = right_offset;
+        }
+        out_color = vec4(sampled.rgb, sampled.a * coverage);
+        return;
+    }
     if (u.params.x < 0.5) {
         float direction = u.params.y;
         float t;
@@ -112,7 +133,10 @@ void main() {
             t = (v_local.x * u.params.z - v_local.y * u.params.w + u.params.w)
                 / max(u.params.z + u.params.w, 0.000001);
         }
-        out_color = mix(u.color_a, u.color_b, clamp(t, 0.0, 1.0)) * coverage;
+        vec4 gradient_color = mix(u.color_a, u.color_b, clamp(t, 0.0, 1.0));
+        // StraightAlpha 契约：RGB 保持直通，只把 coverage 折入 alpha，
+        // 由混合器完成 rgb*a*q 的单次相乘（整乘 RGB 会得到 a*q²暗边）。
+        out_color = vec4(gradient_color.rgb, gradient_color.a * coverage);
         return;
     }
 
@@ -123,7 +147,9 @@ void main() {
     }
     float range = max(outer_radius - u.params.y, 0.000001);
     float t = clamp((distance_to_center - u.params.y) / range, 0.0, 1.0);
-    out_color = mix(u.color_a, u.color_b, t) * coverage;
+    vec4 radial_color = mix(u.color_a, u.color_b, t);
+    // 与线性分支同一 StraightAlpha 契约：coverage 只缩 alpha。
+    out_color = vec4(radial_color.rgb, radial_color.a * coverage);
 }
 
 #elif defined(UIX_SHAPE)

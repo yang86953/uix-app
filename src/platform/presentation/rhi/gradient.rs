@@ -3,8 +3,8 @@
 // 引入共享物理视口值，避免 Gradient 契约依赖任何平台 API 类型。
 use super::RhiViewport;
 
-// 固定 Gradient uniform 的九个 float4 ABI 总字节数（S4 圆角掩码扩展）。
-pub(crate) const GRADIENT_UNIFORM_BYTES: usize = 144;
+// 固定 Gradient uniform 的二十九个 float4 ABI 总字节数（基础九组 + 十六色 + 四组位置）。
+pub(crate) const GRADIENT_UNIFORM_BYTES: usize = 464;
 
 // 固定 Gradient uniform 的 float 数量。
 const GRADIENT_UNIFORM_FLOATS: usize =
@@ -40,7 +40,7 @@ pub(crate) const GRADIENT_MASK_SIZE_FLOAT_OFFSET: usize = 32;
 // 保存已经冻结的平台无关 Gradient 仿射几何、颜色与采样参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct RhiGradientRasterParams {
-    // 六个 float4 依次保存 viewport、origin/edge_x、edge_y、两色与参数。
+    // 固定 float4 保存几何、颜色、掩码及可选色标。
     values: [f32; GRADIENT_UNIFORM_FLOATS],
 }
 
@@ -82,8 +82,8 @@ impl RhiGradientRasterParams {
             // 保存 Y 边的物理纵向分量。
             corners[3][1] - origin[1],
         ];
-        // 按固定六个 float4 ABI 构造不可分叉的 Gradient 参数。
-        let values = [
+        // 按固定九个基础 float4 构造 Gradient 参数，色标区稍后零初始化。
+        let base = [
             // viewport.width。
             viewport.width,
             // viewport.height。
@@ -157,7 +157,21 @@ impl RhiGradientRasterParams {
             0.0,
         ];
         // 返回已经冻结的共享 Gradient 值对象。
+        let mut values = [0.0; GRADIENT_UNIFORM_FLOATS];
+        values[..36].copy_from_slice(&base);
         Self { values }
+    }
+
+    // 追加多色标常量，传统模式保留其原有前九组 float4。
+    pub(crate) fn with_linear_stops(mut self, stops: Option<RhiLinearGradientStops>) -> Self {
+        if let Some(stops) = stops {
+            self.values[20..24].copy_from_slice(&[2.0, stops.count as f32, stops.axis[0], stops.axis[1]]);
+            for (i, color) in stops.colors.iter().enumerate() {
+                self.values[36 + i * 4..40 + i * 4].copy_from_slice(color);
+            }
+            self.values[100..116].copy_from_slice(&stops.offsets);
+        }
+        self
     }
 
     // 返回 Adapter 可按共享字段索引读取的 float ABI。
@@ -175,10 +189,17 @@ impl RhiGradientRasterParams {
         }
         // 读取共享 ABI 中唯一的模式字段。
         let mode = self.values[GRADIENT_PARAMS_FLOAT_OFFSET];
-        // 模式只允许线性零或径向一，禁止 Adapter 解释未知模式。
-        if mode != 0.0 && mode != 1.0 {
+        // 模式只允许传统线性零、径向一或多色标二，禁止 Adapter 解释未知模式。
+        if mode != 0.0 && mode != 1.0 && mode != 2.0 {
             // 未知模式属于共享参数错误。
             return false;
+        }
+        if mode == 2.0 {
+            let count = self.values[21];
+            return (2.0..=16.0).contains(&count) && count.fract() == 0.0
+                && (0.99999..=1.00001).contains(&(self.values[22].abs() + self.values[23].abs()))
+                && self.values[100..100 + count as usize].iter().all(|v| (0.0..=1.0).contains(v))
+                && self.values[100..100 + count as usize].windows(2).all(|w| w[0] <= w[1]);
         }
         // 线性模式保持既有有限值语义，不额外改变其长度规则。
         if mode == 0.0 {
@@ -204,3 +225,16 @@ impl RhiGradientRasterParams {
         bytes
     }
 }
+
+// RHI 多色标的有界 straight-alpha 载荷，颜色在 lowering 前已解析并应用 opacity。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RhiLinearGradientStops {
+    pub(crate) count: u8,
+    pub(crate) axis: [f32; 2],
+    pub(crate) colors: [[f32; 4]; 16],
+    pub(crate) offsets: [f32; 16],
+}
+
+// OpenGL 将同一紧密 ABI 映射到 uniform 数组。
+pub(crate) const GRADIENT_STOP_COLORS_FLOAT_OFFSET: usize = 36;
+pub(crate) const GRADIENT_STOP_OFFSETS_FLOAT_OFFSET: usize = 100;

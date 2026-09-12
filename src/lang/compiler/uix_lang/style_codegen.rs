@@ -487,7 +487,7 @@ fn generate_style_statement(
         // overflow 映射到内容溢出开关。
         "overflow" => overflow_field(style, property),
         // 阴影映射到 BoxShadowDef。
-        "boxShadow" => box_shadow_field(style, property),
+        "boxShadow" => box_shadow_field(style, property, decl),
         // 可见性映射到布尔值。
         "visible" => boolean_field(style, property, "visible"),
         // UIX 不建立第二套 CSS 浮动格式上下文。

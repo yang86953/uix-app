@@ -47,6 +47,7 @@ pub use self::border::BorderStyle;
 pub use self::corners::CornerRadii;
 // 公开 UI System 自有的背景图层值契约。
 pub use self::background::{
+    GradientStopValue,
     BackgroundAxisPosition, BackgroundAxisSize, BackgroundImage, BackgroundPosition,
     BackgroundRepeat, BackgroundSize,
 };
@@ -202,6 +203,8 @@ pub struct Style {
     pub opacity: f32,
     /// 盒阴影
     pub box_shadow: Option<BoxShadowDef>,
+    /// 多外阴影，首项在最上层；Some(empty) 显式清除，优先于单阴影。最多八层。
+    pub box_shadows: Option<Vec<BoxShadowDef>>,
 
     // ── 显示 ────────────────────────────────────────────────
     /// 是否可见（不可见时不参与布局也不渲染）
@@ -276,6 +279,7 @@ impl Default for Style {
             text_decoration: None,
             opacity: 1.0,
             box_shadow: None,
+            box_shadows: None,
 
             visible: true,
         }

@@ -95,6 +95,24 @@ impl SoftwareRasterizer {
         // 圆角裁剪半径；零值保持无掩码旧行为。
         radius: Radius,
     ) {
+        self.fill_gradient(pixels, surface_w, surface_h, rect, radius, |local_rect, x, y| {
+            mix_color(color_a, color_b, linear_gradient_t(local_rect, x, y, direction))
+        });
+    }
+
+    // 多色标与旧双色共享扫描、变换、覆盖与混合。
+    pub(crate) fn fill_linear_gradient_stops(&self, pixels: &mut [u32], surface_w: i32, surface_h: i32,
+        rect: Rect, gradient: crate::draw::LinearGradient, radius: Radius) {
+        let Some(axis) = gradient.axis(rect.w, rect.h) else { return; };
+        self.fill_gradient(pixels, surface_w, surface_h, rect, radius, |local, x, y| {
+            gradient.sample(0.5 + axis[0] * ((x - local.x) / local.w - 0.5)
+                + axis[1] * ((y - local.y) / local.h - 0.5))
+        });
+    }
+
+    // 单一软件渐变执行内核；采样器只接收局部坐标。
+    fn fill_gradient(&self, pixels: &mut [u32], surface_w: i32, surface_h: i32,
+        rect: Rect, radius: Radius, sample: impl Fn(Rect, f32, f32) -> Color) {
         // Canvas2D 约定先应用像素 offset，再执行 transform。
         let local_rect = Rect::new(
             // 水平 offset 属于局部几何。
@@ -136,10 +154,8 @@ impl SoftwareRasterizer {
                     // 跳过原矩形外的设备像素。
                     continue;
                 }
-                // 在逆映射后的局部点计算方向参数。
-                let t = linear_gradient_t(local_rect, local_x, local_y, direction);
-                // 先插值非预乘颜色以保持既有通道规则。
-                let color = mix_color(color_a, color_b, t);
+                // 先在统一局部坐标中插值非预乘颜色，再应用 opacity 与覆盖。
+                let color = sample(local_rect, local_x, local_y);
                 // 再按当前有限 opacity 生成预乘源贡献。
                 let premultiplied = self.apply_opa(Self::premul(color));
                 // 圆角掩码与渐变色在同一局部空间求值；零半径保持满覆盖。

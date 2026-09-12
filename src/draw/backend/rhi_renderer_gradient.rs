@@ -190,6 +190,6 @@ impl RhiRenderer {
                 gradient.mask[4],
                 gradient.mask[5],
             ],
-        )
+        ).with_linear_stops(gradient.stops)
     }
 }

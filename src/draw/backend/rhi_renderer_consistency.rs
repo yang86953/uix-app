@@ -14,8 +14,8 @@ use crate::platform::presentation::rhi::{
     RhiShapeRasterParams, RhiTextureRegion, RhiViewport, SamplerDesc, TextureFormat,
 };
 
-// 使用三行四列固定画布隔离十二类 pipeline，同时只需一次真实 GPU 提交和回读。
-pub(crate) const CONSISTENCY_EXTENT: RhiExtent = RhiExtent::new(64, 48);
+// 使用四行四列固定画布隔离十二类 pipeline 与渐变边缘场景，同时只需一次真实 GPU 提交和回读。
+pub(crate) const CONSISTENCY_EXTENT: RhiExtent = RhiExtent::new(64, 72);
 // 所有场景共享一个不透明背景，便于同时区分 SrcOver、Additive、裁剪和 discard。
 pub(crate) const CONSISTENCY_BACKGROUND: [u8; 4] = [16, 32, 48, 255];
 // 当前 PipelineKind 的完整闭集；scene_for_pipeline 的穷尽 match 是新增变体门禁。
@@ -173,19 +173,19 @@ pub(crate) struct ProductionChainScene {
     // 使用不透明颜色避免把 alpha 舍入误判为调用链断裂。
     pub(crate) color: Color,
     // 期望与容差继续由 Drawing 一处持有，Vulkan 只执行和回读。
-    pub(crate) samples: [ConsistencySample; 2],
+    pub(crate) samples: Vec<ConsistencySample>,
 }
 
 // 返回 UI → Drawing → FramePlan 生产链唯一共享验收场景。
 pub(crate) fn production_chain_scene() -> ProductionChainScene {
-    let extent = RhiExtent::new(32, 24);
+    let extent = RhiExtent::new(80, 48);
     let color = Color::from_rgb(36, 144, 220);
     ProductionChainScene {
         extent,
         frame: Rect::new(0.0, 0.0, extent.width as f32, extent.height as f32),
         rect: Rect::new(8.0, 6.0, 16.0, 12.0),
         color,
-        samples: [
+        samples: vec![
             ConsistencySample::exact(
                 12,
                 10,
@@ -200,6 +200,16 @@ pub(crate) fn production_chain_scene() -> ProductionChainScene {
                 ConsistencyTolerance::Exact,
                 "FramePlan transparent clear",
             ),
+            ConsistencySample::exact(36, 7, [112, 143, 0, 255], ConsistencyTolerance::Filtered, "UI multistop first segment"),
+            ConsistencySample::exact(44, 7, [0, 112, 143, 255], ConsistencyTolerance::Filtered, "UI multistop second segment"),
+            ConsistencySample::exact(39, 19, [255, 0, 0, 255], ConsistencyTolerance::Quantized, "UI hard stop left"),
+            ConsistencySample::exact(40, 19, [0, 0, 255, 255], ConsistencyTolerance::Quantized, "UI hard stop right"),
+            ConsistencySample::exact(62, 12, [132, 8, 76, 255], ConsistencyTolerance::Filtered, "UI multiple shadows first layer on top"),
+            ConsistencySample::exact(36, 33, [26, 74, 36, 255], ConsistencyTolerance::Filtered, "UI 45deg non-square gradient and opacity"),
+            ConsistencySample::exact(33, 28, [16, 42, 46, 255], ConsistencyTolerance::Filtered, "UI multistop translucent partial arc"),
+            ConsistencySample::exact(32, 28, [16, 32, 48, 255], ConsistencyTolerance::Exact, "UI multistop clipped corner"),
+            ConsistencySample::exact(47, 34, [16, 32, 48, 255], ConsistencyTolerance::Exact, "UI multistop scissor"),
+            ConsistencySample::exact(69, 32, [135, 135, 135, 255], ConsistencyTolerance::Filtered, "UI sixteenth stop bound"),
         ],
     }
 }
@@ -217,7 +227,7 @@ pub(crate) fn validate_production_chain_readback(
             pixels.len()
         ));
     }
-    for sample in scene.samples {
+    for sample in &scene.samples {
         if sample.x >= scene.extent.width || sample.y >= scene.extent.height {
             return Err(format!(
                 "production-chain sample {} is outside {}x{}",
@@ -245,21 +255,20 @@ pub(crate) fn validate_production_chain_readback(
 }
 
 // 返回十二类 pipeline 的唯一规范场景；顺序同时固定真实 GPU 诊断输出。
-pub(crate) fn canonical_scenes() -> [ConsistencyScene; 12] {
-    CONSISTENCY_PIPELINES.map(scene_for_pipeline)
+pub(crate) fn canonical_scenes() -> Vec<ConsistencyScene> {
+    let mut scenes = CONSISTENCY_PIPELINES.map(scene_for_pipeline).to_vec();
+    scenes.extend(gradient_mask_scenes());
+    scenes
 }
 
 // 在任一原生 harness 执行前验证闭集唯一性、共享 ABI、采样资源和采样点边界。
 pub(crate) fn validate_canonical_scenes(scenes: &[ConsistencyScene]) -> Result<(), &'static str> {
-    if scenes.len() != CONSISTENCY_PIPELINES.len() {
+    if scenes.len() < CONSISTENCY_PIPELINES.len() {
         return Err("canonical scene count does not match PipelineKind coverage");
     }
     for (index, scene) in scenes.iter().enumerate() {
-        if scenes[..index]
-            .iter()
-            .any(|previous| previous.kind == scene.kind)
-        {
-            return Err("canonical PipelineKind scene is duplicated");
+        if index < CONSISTENCY_PIPELINES.len() && scene.kind != CONSISTENCY_PIPELINES[index] {
+            return Err("canonical PipelineKind coverage is incomplete or reordered");
         }
         let contract = scene.kind.contract();
         if scene.vertex.layout() != contract.vertex
@@ -542,6 +551,55 @@ fn textured_scene(additive: bool) -> ConsistencyScene {
             background(18, 3, "sampled scissor clip"),
         ],
     }
+}
+
+// 部分覆盖率按独立圆心距离和 source-over 代数冻结；不以 CPU/GPU 相等代替正确性。
+// 一组不透明线性端点、一组半透明径向端点，全部在同一不透明底色上合成。
+fn gradient_mask_scenes() -> [ConsistencyScene; 2] {
+    let linear = ConsistencyScene {
+        name: "GradientRectLinearMaskBlend",
+        kind: PipelineKind::GradientRect,
+        source: ConsistencySource::PendingAndRhi,
+        vertex: RhiRenderer::unit_quad_vertex_payload(),
+        uniform: FrameUniformPayload::Gradient(RhiGradientRasterParams::new(
+            viewport(),
+            [[2.0, 50.0], [18.0, 50.0], [18.0, 62.0], [2.0, 62.0]],
+            [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0],
+            [0.0, 1.0, 16.0, 12.0], [4.0; 4], [16.0, 12.0],
+            [0.0, 0.0, 1.0, 1.0],
+        )),
+        texture: None,
+        scissor: None,
+        samples: vec![
+            ConsistencySample::exact(10, 59, [53, 0, 202, 255], ConsistencyTolerance::Filtered, "linear opaque interior"),
+            ConsistencySample::exact(3, 50, [61, 26, 41, 255], ConsistencyTolerance::Filtered, "linear opaque shallow arc"),
+            ConsistencySample::exact(3, 51, [216, 1, 32, 255], ConsistencyTolerance::Filtered, "linear opaque near-full arc"),
+            background(2, 50, "linear corner fully clipped"),
+        ],
+    };
+    let radial = ConsistencyScene {
+        name: "GradientRectRadialMaskBlend",
+        kind: PipelineKind::GradientRect,
+        source: ConsistencySource::PendingAndRhi,
+        vertex: RhiRenderer::unit_quad_vertex_payload(),
+        uniform: FrameUniformPayload::Gradient(RhiGradientRasterParams::new(
+            viewport(),
+            [[24.0, 50.0], [36.0, 50.0], [36.0, 62.0], [24.0, 62.0]],
+            [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 0.5],
+            // outer=1 让圆角部分覆盖区处于渐变内部，而不被圆形 discard 掩盖。
+            [1.0, 0.0, 1.0, 0.0], [3.0; 4], [12.0, 12.0],
+            [0.0, 0.0, 1.0, 1.0],
+        )),
+        texture: None,
+        scissor: None,
+        samples: vec![
+            ConsistencySample::exact(30, 53, [181, 3, 54, 255], ConsistencyTolerance::Filtered, "radial translucent interior"),
+            ConsistencySample::exact(25, 50, [52, 19, 90, 255], ConsistencyTolerance::Filtered, "radial translucent partial arc"),
+            background(24, 50, "radial corner fully clipped"),
+            background(23, 56, "radial quad exterior"),
+        ],
+    };
+    [linear, radial]
 }
 
 fn gradient_scene() -> ConsistencyScene {

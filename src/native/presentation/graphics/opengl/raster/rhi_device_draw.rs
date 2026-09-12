@@ -14,6 +14,7 @@ use crate::platform::presentation::rhi::{
     GRADIENT_MASK_RADIUS_FLOAT_OFFSET, GRADIENT_MASK_SIZE_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
     GRADIENT_QUAD_SIZE_FLOAT_OFFSET, GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat,
+    GRADIENT_STOP_COLORS_FLOAT_OFFSET, GRADIENT_STOP_OFFSETS_FLOAT_OFFSET,
     MESH_COLOR_FLOAT_OFFSET,
     MESH_VIEWPORT_FLOAT_OFFSET, MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET,
     MSDF_VIEWPORT_FLOAT_OFFSET, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
@@ -281,9 +282,9 @@ impl OpenGlRhiDevice {
                     bind_sampled(gl, self, program, packet.sampling())?;
                 }
             }
-            // 线性/径向渐变使用单位 float2 quad 和 24-float affine constants。
+            // 线性/径向渐变使用单位 float2 quad 和共享 116-float affine constants。
             PipelineKind::GradientRect => {
-                // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
+                // SAFETY: 该分支已校验 stride=8、uniform=464 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     set_vec2(
                         gl,
@@ -331,6 +332,19 @@ impl OpenGlRhiDevice {
                         "u_params",
                         read_vec4(&uniform, GRADIENT_PARAMS_FLOAT_OFFSET)?,
                     );
+                    // 固定数组直接从共享 ABI 解码，不分配逐色标 uniform 名称。
+                    let mut colors = [0.0f32; 64];
+                    for (i, color) in colors.iter_mut().enumerate() {
+                        *color = read_f32(&uniform, GRADIENT_STOP_COLORS_FLOAT_OFFSET + i)?;
+                    }
+                    let color_location = gl.get_uniform_location(program, "u_stop_colors[0]");
+                    gl.uniform_4_f32_slice(color_location.as_ref(), &colors);
+                    let mut offsets = [0.0f32; 16];
+                    for (i, offset) in offsets.iter_mut().enumerate() {
+                        *offset = read_f32(&uniform, GRADIENT_STOP_OFFSETS_FLOAT_OFFSET + i)?;
+                    }
+                    let offset_location = gl.get_uniform_location(program, "u_stop_offsets[0]");
+                    gl.uniform_4_f32_slice(offset_location.as_ref(), &offsets);
                     // S4 圆角掩码三组常量与共享 ABI 偏移一一对应。
                     set_vec4(
                         gl,
@@ -528,7 +542,7 @@ impl OpenGlRhiDevice {
             }
             // 仿射阴影使用 96 字节 AffineShadowConstants 和 straight-alpha blend。
             PipelineKind::BoxShadow => {
-                // SAFETY: 该分支已校验 stride=8、uniform=96 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
+                // SAFETY: 该分支已校验 stride=8、uniform=464 字节且 vertex_count>0；program/vao/vertex 存活；uniform 解码有边界检查；context 保持 current。
                 unsafe {
                     set_vec2(
                         gl,

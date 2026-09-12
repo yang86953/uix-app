@@ -9,17 +9,23 @@ use crate::ui::theme::style::BorderStyle;
 
 // 避免退化线段和浮点循环无法收敛。
 const GEOMETRY_EPSILON: f32 = 1e-4;
-// 圆角弧采样的最小与最大段数；实际按半径自适应，公开契约只锁轮廓误差。
+// 单角最多 2048 段；以 0.25 的弦高预算为最终 0.5 轮廓误差保留浮点余量。
 const CORNER_STEPS_MIN: usize = 4;
-const CORNER_STEPS_MAX: usize = 64;
+const CORNER_STEPS_MAX: usize = 2048;
+const CORNER_SAGITTA: f64 = 0.25;
+const MAX_PATTERN_STROKES: usize = 16_384;
 
-// 按半径自适应九十度弧的采样段数；弦高 r(1-cos(45deg/N)) 在 N=ceil(r/8)
-// 时约为 2pi^2/r，任意半径都远低于 0.5 逻辑像素的公开轮廓误差。
-fn corner_steps(radius: f32) -> usize {
-    if !radius.is_finite() || radius <= GEOMETRY_EPSILON {
-        return CORNER_STEPS_MIN;
+fn corner_steps(radius: f32) -> Option<usize> {
+    if !radius.is_finite() || radius < 0.0 {
+        return None;
     }
-    ((radius / 8.0).ceil() as usize).clamp(CORNER_STEPS_MIN, CORNER_STEPS_MAX)
+    if radius as f64 <= CORNER_SAGITTA {
+        return Some(CORNER_STEPS_MIN);
+    }
+    // r(1-cos(pi/(4n))) <= e；asin 形式避免大半径下 1-e/r 舍入到 1。
+    let half_angle = (CORNER_SAGITTA / (2.0 * radius as f64)).sqrt().asin();
+    let steps = (std::f64::consts::PI / (8.0 * half_angle)).ceil() as usize;
+    (steps <= CORNER_STEPS_MAX).then_some(steps.max(CORNER_STEPS_MIN))
 }
 
 // 把 UI 边框线型映射为 draw System 已公开的描边能力。
@@ -182,7 +188,7 @@ fn paint_patterned_border(
 
 // 生成矩形中心线的闭合圆角周长折线（逐角半径，S4）。
 //
-// 公开契约：折线顶点距真实圆角轮廓不超过 0.5 逻辑像素；内部采样段数
+// 公开契约：整条折线（包括线段中点）距真实圆角轮廓不超过 0.5 逻辑像素；内部采样段数
 // 自适应于半径，不构成公开语义。半径先按相邻和规则归一化。
 fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
     // 拒绝非有限或无面积矩形。
@@ -205,6 +211,10 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
     let corner = radius
         .map(|value| value.normalized(rect.w, rect.h))
         .unwrap_or_else(Radius::zero);
+    if [corner.tl, corner.tr, corner.br, corner.bl].into_iter().any(|r| corner_steps(r).is_none()) {
+        tracing::warn!(target: "uix_app::drawing", "patterned border exceeds the rounded contour segment budget; layer omitted");
+        return Vec::new();
+    }
     // 计算右侧坐标。
     let right = rect.x + rect.w;
     // 计算底部坐标。
@@ -244,7 +254,7 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         // 右上角半径。
         corner.tr,
         // 从顶部方向开始。
-        -std::f32::consts::FRAC_PI_2,
+        -std::f64::consts::FRAC_PI_2,
         // 到右侧方向结束。
         0.0,
     );
@@ -262,7 +272,7 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         // 从右侧方向开始。
         0.0,
         // 到底部方向结束。
-        std::f32::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
     );
     // 追加底部直线终点。
     points.push(Point::new(rect.x + corner.bl, bottom));
@@ -276,9 +286,9 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         // 左下角半径。
         corner.bl,
         // 从底部方向开始。
-        std::f32::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
         // 到左侧方向结束。
-        std::f32::consts::PI,
+        std::f64::consts::PI,
     );
     // 追加左侧直线终点。
     points.push(Point::new(rect.x, rect.y + corner.tl));
@@ -292,9 +302,9 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         // 左上角半径。
         corner.tl,
         // 从左侧方向开始。
-        std::f32::consts::PI,
+        std::f64::consts::PI,
         // 到顶部方向结束。
-        std::f32::consts::PI * 1.5,
+        std::f64::consts::PI * 1.5,
     );
     // 返回完整闭合周长。
     points
@@ -311,24 +321,24 @@ fn append_corner(
     // 接收半径。
     radius: f32,
     // 接收起始角。
-    start: f32,
+    start: f64,
     // 接收结束角。
-    end: f32,
+    end: f64,
 ) {
     // 按半径选择本段弧的采样段数。
-    let steps = corner_steps(radius);
+    let Some(steps) = corner_steps(radius) else { return; };
     // 跳过起点以避免与前一条直线终点重复。
     for step in 1..=steps {
         // 计算当前圆角归一化进度。
-        let progress = step as f32 / steps as f32;
+        let progress = step as f64 / steps as f64;
         // 线性插值角度。
         let angle = start + (end - start) * progress;
         // 追加圆周采样点。
         points.push(Point::new(
             // 计算 X 坐标。
-            cx + radius * angle.cos(),
+            (cx as f64 + radius as f64 * angle.cos()) as f32,
             // 计算 Y 坐标。
-            cy + radius * angle.sin(),
+            (cy as f64 + radius as f64 * angle.sin()) as f32,
         ));
     }
 }
@@ -345,6 +355,13 @@ fn patterned_subpaths(points: &[Point], on_length: f32, off_length: f32) -> Vec<
         || off_length <= GEOMETRY_EPSILON
     {
         // 返回空分段。
+        return Vec::new();
+    }
+    let perimeter: f64 = points.windows(2).map(|pair| {
+        (pair[1].x as f64 - pair[0].x as f64).hypot(pair[1].y as f64 - pair[0].y as f64)
+    }).sum();
+    if !perimeter.is_finite() || perimeter / (on_length as f64 + off_length as f64) > MAX_PATTERN_STROKES as f64 - 1.0 {
+        tracing::warn!(target: "uix_app::drawing", "patterned border exceeds the dash segment budget; layer omitted");
         return Vec::new();
     }
     // 保存已经完成的开启区间。

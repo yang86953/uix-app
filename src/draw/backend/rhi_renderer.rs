@@ -215,6 +215,8 @@ pub(crate) struct RhiGradientRect {
     pub(crate) color_b: [f32; 4],
     // 保存 mode、方向或半径参数，布局与固定 shader ABI 对齐。
     pub(crate) params: [f32; 4],
+    // 多色标载荷在共享 uniform 编码时替换模式与采样常量。
+    pub(crate) stops: Option<crate::platform::presentation::rhi::RhiLinearGradientStops>,
     // 保存已归一化的四角掩码半径（tl/tr/br/bl，逻辑像素）；全零关闭掩码。
     pub(crate) mask_radius: [f32; 4],
     // 保存 quad 逻辑宽高与掩码单位矩形 x/y/w/h（S4）。

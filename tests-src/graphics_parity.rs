@@ -41,7 +41,7 @@ fn run_headless_ui_production_chain_test<A: HeadlessUiParityAdapter>() {
     let rect = scene.rect;
     let color = scene.color;
     let target = execute_ui_production_chain(context.device(), scene.extent, |draw_context| {
-        crate::ui::widgets::combinators::render_shared_production_scene(
+        crate::ui::view::combinators::render_shared_production_scene(
             draw_context,
             frame,
             rect,
@@ -64,6 +64,7 @@ fn run_headless_ui_production_chain_test<A: HeadlessUiParityAdapter>() {
 // 显式 API 入口只选择 Adapter 实现，具体 fixture 与诊断留在 native 边界。
 #[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_vulkan_ui_production_chain_test() {
+    run_cpu_ui_production_chain_test();
     run_headless_ui_production_chain_test::<VulkanHeadlessUiParityAdapter>();
 }
 
@@ -85,7 +86,7 @@ impl WsiParityFramePresenter for SharedUiSurfacePresenter<'_> {
         let presented = execute_ui_production_surface_chain_with_present_hook(
             context,
             |draw_context| {
-                crate::ui::widgets::combinators::render_shared_production_scene(
+                crate::ui::view::combinators::render_shared_production_scene(
                     draw_context,
                     self.scene.frame,
                     self.scene.rect,
@@ -477,4 +478,25 @@ pub(crate) fn run_opengl_wsi_production_chain_profile(
         Some(before_profiled_frame),
         Some(after_profiled_frame),
     );
+}
+
+// 在共享软件光栅化中执行真实 UI 绘制与相同独立像素断言。
+#[cfg(uix_gpu_parity_vulkan)]
+fn run_cpu_ui_production_chain_test() {
+    use crate::draw::raster::{pixel_surface::PixelSurface, shared_rasterizer::SharedRasterizer};
+    use crate::draw::painting::{PaintContext, PaintSurfaceConfig};
+    use crate::draw::{FontHandle, FontService, ImageService};
+    let scene = production_chain_scene();
+    let width = scene.extent.width as i32;
+    let height = scene.extent.height as i32;
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(width, height));
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let mut context = PaintContext::new(&mut canvas, FontHandle::new(0), &fonts, &images,
+        PaintSurfaceConfig { dpi: 96.0, device_pixel_ratio: 1.0, orientation: Default::default(), surface_w: width, surface_h: height });
+    crate::ui::view::combinators::render_shared_production_scene(&mut context, scene.frame, scene.rect, scene.color);
+    drop(context);
+    let rgba: Vec<u8> = canvas.surface().pixels().iter().flat_map(|p| [((p >> 16) & 255) as u8, ((p >> 8) & 255) as u8, (p & 255) as u8, ((p >> 24) & 255) as u8]).collect();
+    let count = validate_production_chain_readback(&scene, &rgba).expect("CPU UI production pixels must satisfy independent invariants");
+    eprintln!("CPU UI production pixels verified: {count}/{}", scene.samples.len());
 }

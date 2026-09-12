@@ -119,6 +119,9 @@ impl Canvas2D for NativeGpuCanvas2D {
         self.mark_soft();
     }
 
+    fn fill_linear_gradient_stops(&mut self, rect: Rect, gradient: crate::draw::LinearGradient, radius: Option<Radius>) {
+        self.queue_linear_gradient_stops(rect, gradient, radius);
+    }
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
         self.queue_linear_gradient(rect, ca, cb, dir, None);
     }

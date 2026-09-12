@@ -171,8 +171,8 @@ fn style_background_rejects_unsupported_image_sources() {
         "url(image.png)",
         // 多背景层。
         "url('a.png'), url('b.png')",
-        // 带角度的扩展线性渐变。
-        "linear-gradient(45deg, red, blue)",
+        // 非有限角度必须拒绝。
+        "linear-gradient(NaNdeg, red, blue)",
         // 三个颜色端点。
         "radial-gradient(red, green, blue)",
     ] {
@@ -186,7 +186,7 @@ fn style_background_rejects_unsupported_image_sources() {
         // 映射层必须拒绝超出首批契约的来源。
         let error = generate_view(&document.root).expect_err("不支持的背景来源必须失败");
         // 诊断必须明确指向 backgroundImage 能力。
-        assert!(error.message.contains("backgroundImage") || error.message.contains("背景渐变"));
+        assert!(error.message.contains("backgroundImage") || error.message.contains("背景渐变") || error.message.contains("linear-gradient"));
     }
 }
 

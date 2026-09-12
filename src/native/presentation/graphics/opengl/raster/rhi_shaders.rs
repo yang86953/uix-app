@@ -236,7 +236,7 @@ void main() {
 }
 "#;
 
-// 渐变 shader 使用 144 字节 affine GradientConstants 语义（S4 圆角掩码扩展）。
+// 渐变 shader 使用 464 字节 affine GradientConstants 语义（S4 圆角掩码扩展）。
 pub(super) const GRADIENT_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
@@ -270,6 +270,8 @@ uniform vec4 u_params;
 uniform vec4 u_mask_radius;
 uniform vec4 u_quad_mask;
 uniform vec4 u_mask_size;
+uniform vec4 u_stop_colors[16];
+uniform vec4 u_stop_offsets[4];
 in vec2 v_gradient_uv;
 out vec4 fragColor;
 "#,
@@ -288,6 +290,25 @@ void main() {
         if (coverage <= 0.0)
             discard;
     }
+    // S4 angular/multistop: at most sixteen straight-alpha stops.
+    if (u_params.x > 1.5) {
+        float t = 0.5 + dot(u_params.zw, v_gradient_uv - vec2(0.5, 0.5));
+        vec4 sampled = u_stop_colors[0];
+        float left_offset = u_stop_offsets[(0) / 4][(0) % 4];
+        for (int i = 1; i < 16; ++i) {
+            if (i >= int(u_params.y)) break;
+            float right_offset = u_stop_offsets[(i) / 4][(i) % 4];
+            if (t < right_offset) {
+                float ratio = right_offset > left_offset ? clamp((t - left_offset) / (right_offset - left_offset), 0.0, 1.0) : 0.0;
+                sampled = mix(sampled, u_stop_colors[i], ratio);
+                break;
+            }
+            sampled = u_stop_colors[i];
+            left_offset = right_offset;
+        }
+        fragColor = vec4(sampled.rgb, sampled.a * coverage);
+        return;
+    }
     float mode = u_params.x;
     if (mode < 0.5) {
         float direction = u_params.y;
@@ -302,7 +323,9 @@ void main() {
         else
             t = (v_gradient_uv.x * u_params.z - v_gradient_uv.y * u_params.w + u_params.w)
                 / max(u_params.z + u_params.w, 1e-6);
-        fragColor = mix(u_color_a, u_color_b, clamp(t, 0.0, 1.0)) * coverage;
+        vec4 gradient_color = mix(u_color_a, u_color_b, clamp(t, 0.0, 1.0));
+        // StraightAlpha 契约：coverage 只缩 alpha，RGB 直通混合器。
+        fragColor = vec4(gradient_color.rgb, gradient_color.a * coverage);
     } else {
         vec2 center = vec2(0.5);
         float distance_to_center = distance(v_gradient_uv, center);
@@ -314,8 +337,9 @@ void main() {
         float range = max(outer_radius - inner_radius, 1e-6);
         float t = clamp((distance_to_center - inner_radius) / range, 0.0, 1.0);
         vec4 color = mix(u_color_a, u_color_b, t);
-        // GradientRect 契约统一输出 straight-alpha，避免混合器再次乘源 alpha。
-        fragColor = color * coverage;
+        // GradientRect 契约统一输出 straight-alpha：coverage 只缩 alpha，
+        // 由混合器完成 rgb*a*q 的单次相乘。
+        fragColor = vec4(color.rgb, color.a * coverage);
     }
 }
 "#,

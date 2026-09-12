@@ -631,6 +631,8 @@ impl ViewNode {
     /// 设置以节点边界为中心、无偏移的盒阴影。
     pub fn shadow(mut self, blur: f32, color: impl Into<Color>) -> Self {
         self.style.box_shadow = Some(BoxShadowDef::new(color.into(), blur, 0.0, 0.0));
+        self.style.box_shadows = None;
+        self.style_decl.box_shadows = Some(None);
         self.style_decl.box_shadow = Some(self.style.box_shadow.clone());
         self
     }
