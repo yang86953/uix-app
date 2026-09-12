@@ -99,23 +99,8 @@ impl Scope<'_> {
                 };
                 let left = self.expr(left, None)?;
                 let right = self.expr(right, Some(&left.ty))?;
-                use Binary::*;
-                let ty = match op {
-                    And | Or if left.ty == Type::Bool => Type::Bool,
-                    Equal | NotEqual => Type::Bool,
-                    Less | LessEqual | Greater | GreaterEqual
-                        if matches!(left.ty, Type::Int | Type::Float | Type::String) =>
-                    {
-                        Type::Bool
-                    }
-                    Add if left.ty == Type::String => Type::String,
-                    Add | Subtract | Multiply | Divide | Remainder
-                        if matches!(left.ty, Type::Int | Type::Float) =>
-                    {
-                        left.ty.clone()
-                    }
-                    _ => return Err(fail(span, "二元运算不支持该类型")),
-                };
+                let ty = crate::lang::runtime::binary_signature(op, &left.ty, &right.ty)
+                    .ok_or_else(|| fail(span, "二元运算不支持该类型"))?;
                 (
                     ExprKind::Binary {
                         op,
@@ -391,26 +376,8 @@ impl Scope<'_> {
                 ty,
             ));
         }
-        let (inputs, result) = match (&value.ty, name) {
-            (Type::String | Type::Array(_) | Type::Bytes, "len") => (vec![], Type::Int),
-            (Type::String, "trim" | "toUpperCase" | "toLowerCase") => (vec![], Type::String),
-            (Type::String, "chars" | "words" | "lines") => {
-                (vec![], Type::Array(Box::new(Type::String)))
-            }
-            (Type::String, "split") => (vec![Type::String], Type::Array(Box::new(Type::String))),
-            (Type::String, "replace") => (vec![Type::String, Type::String], Type::String),
-            (Type::String, "contains") => (vec![Type::String], Type::Bool),
-            (Type::Array(t), "contains") => (vec![*t.clone()], Type::Bool),
-            (Type::Array(t), "push") => (vec![*t.clone()], value.ty.clone()),
-            (Type::Array(t), "get") => (vec![Type::Int], Type::Optional(t.clone())),
-            (Type::Array(t), "join") if **t == Type::String => (vec![Type::String], Type::String),
-            (Type::Optional(_), "isSome") | (Type::Result(_, _), "isOk") => (vec![], Type::Bool),
-            (Type::Optional(t) | Type::Result(t, _), "unwrapOr") => (vec![*t.clone()], *t.clone()),
-            (Type::String | Type::Int | Type::Float | Type::Bool, "toString") => {
-                (vec![], Type::String)
-            }
-            _ => return Err(fail(span, format!("类型 {:?} 不支持方法 {name}", value.ty))),
-        };
+        let (inputs, result) = crate::lang::runtime::method_signature(&value.ty, name)
+            .ok_or_else(|| fail(span, format!("类型 {:?} 不支持方法 {name}", value.ty)))?;
         if inputs.len() != arguments.len() {
             return Err(fail(span, "方法参数数量不符"));
         }

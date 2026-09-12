@@ -5,10 +5,15 @@
 //! 编码成旧 XML 字符串属性。所有区间为原文件 UTF-8 字节半开区间。
 
 mod ast;
+mod check;
 mod link;
 mod parser;
 
 pub use ast::*;
+pub use check::{
+    BindingFact, BindingKind, CheckedSource, ComponentSignature, ExpressionFact, FunctionSignature,
+    NativeExport, NativeLibraries, NativeLibrary, NodeId, ResolvedName, Type, check,
+};
 pub use link::{
     Binding, DeclarationId, LinkedSource, SourceUnit, link_file, link_file_with_overlays,
 };
