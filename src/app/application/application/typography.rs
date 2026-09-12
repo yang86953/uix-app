@@ -67,13 +67,9 @@ where
     let started_at = std::time::Instant::now();
     // 先建立正文与 fallback 的单一来源。
     let (mut font_service, deterministic) = initialize_text_font_service(container, system_info)?;
-    // Icon 依赖仓库随包 Lucide PUA 字形，且不改变正文主字体句柄。
-    crate::ui::widgets::icon::init_static_lucide_font(
-        // 所有平台编译同一份已纳入仓库的图标字体数据。
-        include_bytes!("../../../../assets/fonts/lucide.ttf"),
-        // 图标字体进入同一个 FontService 生命周期。
-        &mut font_service,
-    );
+    if let Some(extensions) = container.resolve::<crate::app::AppExtensions>() {
+        extensions.initialize_fonts(&mut font_service)?;
+    }
     // 记录字体来源，便于跨平台验收区分确定性模式与 OS-native 模式。
     tracing::info!(
         // 使用稳定布尔字段供结构化日志与测试环境采集。

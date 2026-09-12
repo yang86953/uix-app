@@ -46,7 +46,6 @@ impl Default for ParentClipRegions {
 
 impl ParentClipRegions {
     // 覆盖内联片段并保留固定容量，不产生第二次堆申请。
-    #[cfg(feature = "table")]
     fn set(&mut self, regions: impl IntoIterator<Item = Rect>) {
         let mut next = [Rect::zero(); 3];
         let mut len = 0;
@@ -82,6 +81,8 @@ pub struct BoxedWidget {
     visual_transform: ViewTransform,
     // 保存当前运行时节点的定位模式与四边值。
     position: crate::ui::position::PositionedLayout,
+    // 保存声明节点交付的 min/max 尺寸约束，父布局解析百分比后消费。
+    size_constraints: crate::ui::theme::style::SizeConstraints,
     // 保存当前节点自己的文字选择声明。
     declared_user_select: crate::ui::UserSelect,
     // 保存结合祖先边界解析后的最终文字选择策略。
@@ -190,6 +191,8 @@ impl BoxedWidget {
             visual_transform: ViewTransform::default(),
             // 新节点默认参与正常布局流。
             position: crate::ui::position::PositionedLayout::default(),
+            // 新节点默认不施加尺寸约束。
+            size_constraints: crate::ui::theme::style::SizeConstraints::NONE,
             // 新节点默认没有选择策略覆盖。
             declared_user_select: crate::ui::UserSelect::Auto,
             // 没有父节点时 auto 保持组件默认能力。
@@ -229,7 +232,7 @@ impl BoxedWidget {
         &mut *self.widget
     }
 
-    pub(crate) fn provider_context(&self) -> &ProviderContext {
+    pub fn provider_context(&self) -> &ProviderContext {
         &self.provider_context
     }
 
@@ -487,7 +490,7 @@ impl BoxedWidget {
         self.apply_accessibility_override(base)
     }
 
-    fn widget_accessibility(widget: &dyn Widget, fields: &SnapshotFields) -> AccessibilitySnapshot {
+    fn widget_accessibility(widget: &dyn Widget, fields: &WidgetSnapshotFields) -> AccessibilitySnapshot {
         let mut accessibility = fields.accessibility();
         if let Some(label) = widget
             .as_any()
@@ -601,8 +604,7 @@ impl BoxedWidget {
     }
     // 更新父布局为当前节点子树提供的可见片段。
     // 该写入口只由 table 的跨单元格子布局消费。
-    #[cfg(feature = "table")]
-    pub(crate) fn set_parent_clip_regions(&self, regions: Option<Vec<Rect>>) {
+    pub fn set_parent_clip_regions(&self, regions: Option<Vec<Rect>>) {
         let mut slot = self.parent_clip_regions.borrow_mut();
         match regions {
             Some(regions) => slot
@@ -617,8 +619,7 @@ impl BoxedWidget {
         }
     }
     // 把父布局片段写入节点自有数组，稳定帧保留既有容量。
-    #[cfg(feature = "table")]
-    pub(crate) fn set_parent_clip_regions_reusing(&self, regions: impl Iterator<Item = Rect>) {
+    pub fn set_parent_clip_regions_reusing(&self, regions: impl Iterator<Item = Rect>) {
         let mut slot = self.parent_clip_regions.borrow_mut();
         slot.get_or_insert_with(|| Box::new(ParentClipRegions::default()))
             .set(regions);
@@ -1029,4 +1030,13 @@ impl WidgetCore for BoxedWidget {
     fn set_tab_index(&mut self, v: i32) {
         self.set_tab_index_override(Some(v));
     }
+}
+
+impl BoxedWidget {
+    pub fn parent(&self) -> Option<WidgetId> { super::WidgetCore::parent(self) }
+    pub fn children(&self) -> &[WidgetId] { super::WidgetCore::children(self) }
+    pub fn frame(&self) -> Rect { super::WidgetCore::frame(self) }
+    pub fn visible(&self) -> bool { super::WidgetCore::visible(self) }
+    pub fn z_index(&self) -> i32 { super::WidgetCore::z_index(self) }
+    pub fn tab_index(&self) -> i32 { super::WidgetCore::tab_index(self) }
 }

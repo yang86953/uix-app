@@ -170,7 +170,7 @@ mod rhi_device;
 mod rhi_health;
 
 // 真实 GPU parity runner 由 RHI device 子模块拥有，确保可机械访问原生资源而不扩大生产公开面。
-#[cfg(feature = "d3d11-parity-test")]
+#[cfg(uix_gpu_parity_d3d11)]
 pub(crate) fn run_gpu_parity_test() {
     rhi_device::run_gpu_parity_test();
 }

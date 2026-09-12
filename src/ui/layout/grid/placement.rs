@@ -20,15 +20,6 @@ pub(super) struct CellAssignment {
     pub(super) row_span: u32,
 }
 
-// 保存有界放置阶段的完整结果。
-#[cfg(test)]
-pub(super) struct PlacementPlan {
-    // 记录真正用于后续求解的行数。
-    pub(super) row_count: usize,
-    // 保持所有成功放置子项的定位账本。
-    pub(super) assignments: Vec<CellAssignment>,
-}
-
 // 把外部列定义收敛到单轴轨道资源上限。
 pub(super) fn bounded_column_count(requested: usize) -> usize {
     // 空列保持为空，非空列最多保留单轴预算。
@@ -138,30 +129,6 @@ fn find_available_rect(
 
     // 当前已物化行中没有完整空闲矩形。
     None
-}
-
-// 在统一轨道与单元格预算内完成显式和自动放置。
-#[cfg(test)]
-pub(super) fn place_grid_children(
-    column_count: usize,
-    explicit_row_count: usize,
-    children: &[GridChild],
-) -> PlacementPlan {
-    let mut occupied = Vec::new();
-    let mut assignments = Vec::new();
-    let mut prefix = Vec::new();
-    let row_count = place_grid_children_into(
-        column_count,
-        explicit_row_count,
-        children,
-        &mut occupied,
-        &mut assignments,
-        &mut prefix,
-    );
-    PlacementPlan {
-        row_count,
-        assignments,
-    }
 }
 
 // 在调用方拥有的工作区内完成放置，避免布局收敛轮次重复申请账本。
@@ -300,3 +267,8 @@ pub(super) fn place_grid_children_into(
     // 定位账本保留在调用方工作区，只返回不超过轨道预算的行数。
     used_rows
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/layout/grid/placement_tests.rs"]
+mod placement_tests;

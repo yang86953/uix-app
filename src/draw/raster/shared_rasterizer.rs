@@ -176,22 +176,49 @@ impl Canvas2D for SharedRasterizer {
     }
 
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
+        // 无圆角声明保持旧绘制语义。
+        self.fill_linear_gradient_rounded(rect, ca, cb, dir, Radius::zero());
+    }
+    fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
+        // 无参考矩形时退化为外圆包围盒，圆角为零即旧行为。
+        let bounds = Rect::new(cx - or, cy - or, or * 2.0, or * 2.0);
+        self.fill_radial_gradient_rounded(cx, cy, ir, or, ic, oc, bounds, Radius::zero());
+    }
+    fn fill_linear_gradient_rounded(
+        &mut self,
+        rect: Rect,
+        ca: Color,
+        cb: Color,
+        dir: GradientDirection,
+        radius: Radius,
+    ) {
         // 共享执行器统一应用 offset、仿射、clip、opacity 与 blend。
         let (width, height) = (self.surface.width(), self.surface.height());
         // 借用像素目标后直接进入状态完整的软件渐变路径。
         let pixels = self.surface.pixels_mut();
-        // 线性渐变在局部空间求值并写回设备像素。
+        // 线性渐变在局部空间求值并写回设备像素，圆角在同一空间掩码。
         self.renderer
-            .fill_linear_gradient(pixels, width, height, rect, ca, cb, dir);
+            .fill_linear_gradient(pixels, width, height, rect, ca, cb, dir, radius);
     }
-    fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
+    fn fill_radial_gradient_rounded(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        ir: f32,
+        or: f32,
+        ic: Color,
+        oc: Color,
+        clip_rect: Rect,
+        radius: Radius,
+    ) {
         // 读取目标尺寸供共享像素入口做边界校验。
         let (width, height) = (self.surface.width(), self.surface.height());
         // 借用目标像素缓冲。
         let pixels = self.surface.pixels_mut();
-        // 径向渐变复用同一仿射与混合状态。
-        self.renderer
-            .fill_radial_gradient(pixels, width, height, cx, cy, ir, or, ic, oc);
+        // 径向渐变复用同一仿射与混合状态，圆角按参考矩形掩码。
+        self.renderer.fill_radial_gradient(
+            pixels, width, height, cx, cy, ir, or, ic, oc, clip_rect, radius,
+        );
     }
 
     fn draw_box_shadow(
@@ -282,10 +309,6 @@ impl Canvas2D for SharedRasterizer {
         self.surface.pixels()
     }
 
-    #[cfg(test)]
-    fn pixels_mut(&mut self) -> &mut [u32] {
-        self.surface.pixels_mut()
-    }
     fn surface_size(&self) -> crate::core::Size {
         self.surface.surface_size()
     }
@@ -308,4 +331,14 @@ impl Canvas2D for SharedRasterizer {
         self.surface
             .copy_region(src, viewport.x as i32, viewport.y as i32);
     }
+        #[cfg(test)]
+        shared_rasterizer_pixels_mut_impl!();
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/raster/shared_rasterizer_tests.rs"]
+mod shared_rasterizer_tests;
+
+#[cfg(test)]
+use crate::draw::painting::canvas::canvas2d_test_macros::shared_rasterizer_pixels_mut_impl;

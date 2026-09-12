@@ -7,6 +7,7 @@ pub(super) fn create_secondary_window(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
+    theme: &Theme,
     graphics_backend: GraphicsSelection,
     recovery_request: RebuildRequest,
     request: OpenWindowRequest,
@@ -150,14 +151,21 @@ pub(super) fn create_secondary_window(
     // 与主窗一致：首帧 present 成功后再 show，避免空窗白屏。
 
     // 副窗从 Application 容器取得同一个反馈 owner。
-    let feedback = container.resolve_clone::<AppFeedbackState>();
+    let feedback = container.resolve_clone::<AppExtensions>();
     let locale = window_assembly::resolve_or_default::<Locale>(container);
     let widget_config = window_assembly::resolve_or_default::<WidgetConfig>(container);
     // 根包装顺序（WidgetConfig → Locale → prepare_app_root）与主窗共用同一原语。
     let wrapped_root =
         window_assembly::wrap_app_root(&widget_config, &locale, window_id, feedback, root);
-    let mut session =
-        WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);
+    // 副窗初始捕获与主窗共用当前循环主题，暗色窗口首挂不经历亮色中间态。
+    let mut session = WindowSession::from_root_factory_for_window(
+        window_id,
+        wrapped_root,
+        engine,
+        width,
+        height,
+        theme,
+    );
     // 新建副窗在收到自身原生焦点事件前保持未聚焦（同步 IME 门控与树内投影）。
     session.set_window_focused(false);
     // 会话资源接线与 Agent 注册经共享装配原语执行（与主窗同序）。

@@ -33,40 +33,6 @@ impl<'a> PaintContext<'a> {
         }
     }
 
-    /// crate 内部测试的紧凑构造。
-    #[cfg(test)]
-    // 测试目标保留显式依赖注入构造器，供形状绘制契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "test fixtures keep surface values inline for readability"
-    )]
-    pub(crate) fn new_for_test(
-        canvas_2d: &'a mut dyn Canvas2D,
-        font: FontHandle,
-        font_service: &'a FontService,
-        image_service: &'a ImageService,
-        dpi: f32,
-        device_pixel_ratio: f32,
-        orientation: Orientation,
-        surface_w: i32,
-        surface_h: i32,
-    ) -> Self {
-        Self::new(
-            canvas_2d,
-            font,
-            font_service,
-            image_service,
-            PaintSurfaceConfig {
-                dpi,
-                device_pixel_ratio,
-                orientation,
-                surface_w,
-                surface_h,
-            },
-        )
-    }
-
     /// 当前绘制阶段。
     pub fn paint_pass(&self) -> PaintPass {
         self.paint_pass
@@ -443,10 +409,33 @@ impl<'a> PaintContext<'a> {
             color_a,
             color_b,
             dir,
+            radius: None,
         });
         self.spatial
             .canvas_2d()
             .fill_linear_gradient(rect, color_a, color_b, dir);
+    }
+
+    /// 填充带四角圆角裁剪的线性渐变（S4）。
+    #[inline(always)]
+    pub fn fill_linear_gradient_rounded(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+        radius: Radius,
+    ) {
+        self.record_op(PaintOp::FillLinearGradient {
+            rect,
+            color_a,
+            color_b,
+            dir,
+            radius: Some(radius),
+        });
+        self.spatial
+            .canvas_2d()
+            .fill_linear_gradient_rounded(rect, color_a, color_b, dir, radius);
     }
 
     /// 径向渐变填充。
@@ -467,6 +456,8 @@ impl<'a> PaintContext<'a> {
             outer_r,
             inner_color,
             outer_color,
+            clip_rect: None,
+            radius: None,
         });
         self.spatial.canvas_2d().fill_radial_gradient(
             cx,
@@ -475,6 +466,41 @@ impl<'a> PaintContext<'a> {
             outer_r,
             inner_color,
             outer_color,
+        );
+    }
+
+    /// 填充带四角圆角裁剪的径向渐变（S4）；clip_rect 为掩码参考矩形。
+    #[inline(always)]
+    pub fn fill_radial_gradient_rounded(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+        clip_rect: Rect,
+        radius: Radius,
+    ) {
+        self.record_op(PaintOp::FillRadialGradient {
+            cx,
+            cy,
+            inner_r,
+            outer_r,
+            inner_color,
+            outer_color,
+            clip_rect: Some(clip_rect),
+            radius: Some(radius),
+        });
+        self.spatial.canvas_2d().fill_radial_gradient_rounded(
+            cx,
+            cy,
+            inner_r,
+            outer_r,
+            inner_color,
+            outer_color,
+            clip_rect,
+            radius,
         );
     }
 
@@ -540,3 +566,7 @@ impl<'a> PaintContext<'a> {
 
     // ── 渲染状态 ──
 }
+
+// 测试构造器位于 tests-src（同模块 include! 保持私有作用域与生命周期参数）。
+#[cfg(test)]
+include!("../../../../tests-src/draw/painting/paint_context/shapes_test_fns.rs");

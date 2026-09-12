@@ -42,13 +42,6 @@ impl RebuildRequest {
         self.requested.store(true, Ordering::Release);
     }
 
-    /// Read-only check whether a rebuild is currently requested.
-    // 该读取入口只服务同模块单元测试，生产路径通过 take 消费请求。
-    #[cfg(test)]
-    pub(crate) fn is_requested(&self) -> bool {
-        self.requested.load(Ordering::Acquire)
-    }
-
     fn take(&self) -> bool {
         self.requested.swap(false, Ordering::AcqRel)
     }
@@ -614,88 +607,13 @@ impl Drop for RecoveryDriver {
     }
 }
 
-// 确定性验证共享 device loss 仍由两个窗口各自消费一次，不引入全局恢复协调。
-#[cfg(feature = "graphics-parity-test")]
-pub(crate) fn run_multi_window_device_loss_contract_test() {
-    use crate::core::Errc;
-    use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
-    use std::sync::atomic::AtomicUsize;
 
-    struct WindowTarget {
-        shared_lost: Arc<AtomicBool>,
-        canvas: NoopCanvas2D,
-    }
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/renderer/recovery_driver_tests.rs"]
+mod recovery_driver_tests;
 
-    impl RenderTarget for WindowTarget {
-        fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
-            Ok(())
-        }
-
-        fn try_shutdown(&mut self) -> Result<(), Error> {
-            Ok(())
-        }
-
-        fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
-            Ok(())
-        }
-
-        fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
-            if self.shared_lost.load(Ordering::Acquire) {
-                return RenderOutcome::Failed(GraphicsFailure::DeviceLost(Error::new(
-                    Errc::GraphicsDeviceLost,
-                    "shared graphics device lost in deterministic window test",
-                )));
-            }
-            RenderOutcome::FrameReady(DamageRegion::full())
-        }
-
-        fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
-            RenderOutcome::Present(DamageRegion::full())
-        }
-
-        fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
-            &mut self.canvas
-        }
-    }
-
-    fn driver(shared_lost: Arc<AtomicBool>, rebuilds: Arc<AtomicUsize>) -> RecoveryDriver {
-        let rebuilder = Box::new(move |_action, _width, _height| {
-            rebuilds.fetch_add(1, Ordering::AcqRel);
-            Ok(Box::new(WindowTarget {
-                shared_lost: Arc::new(AtomicBool::new(false)),
-                canvas: NoopCanvas2D,
-            }) as Box<dyn RenderTarget>)
-        });
-        RecoveryDriver::new(
-            Box::new(WindowTarget {
-                shared_lost,
-                canvas: NoopCanvas2D,
-            }),
-            rebuilder,
-        )
-        .with_extent(64, 64)
-    }
-
-    let shared_lost = Arc::new(AtomicBool::new(true));
-    let first_rebuilds = Arc::new(AtomicUsize::new(0));
-    let second_rebuilds = Arc::new(AtomicUsize::new(0));
-    let mut first = driver(Arc::clone(&shared_lost), Arc::clone(&first_rebuilds));
-    let mut second = driver(shared_lost, Arc::clone(&second_rebuilds));
-
-    for window in [&mut first, &mut second] {
-        assert!(matches!(
-            window.begin_frame(UpdateStrategy::FullRedraw),
-            RenderOutcome::Failed(GraphicsFailure::DeviceLost(_))
-        ));
-        assert!(matches!(
-            window.begin_frame(UpdateStrategy::FullRedraw),
-            RenderOutcome::FrameReady(_)
-        ));
-        assert!(matches!(
-            window.begin_frame(UpdateStrategy::FullRedraw),
-            RenderOutcome::FrameReady(_)
-        ));
-    }
-    assert_eq!(first_rebuilds.load(Ordering::Acquire), 1);
-    assert_eq!(second_rebuilds.load(Ordering::Acquire), 1);
-}
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../tests-src/draw/renderer/recovery_driver_parity_fns.rs");

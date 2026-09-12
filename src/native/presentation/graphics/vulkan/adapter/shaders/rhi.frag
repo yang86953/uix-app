@@ -76,10 +76,28 @@ layout(set = 0, binding = 0, std140) uniform GradientUniforms {
     vec4 color_a;
     vec4 color_b;
     vec4 params;
+    // S4 圆角掩码：与顶点阶段同布局。
+    vec4 mask_radius;
+    vec4 quad_mask;
+    vec4 mask_size;
 } u;
 layout(location = 0) in vec2 v_local;
 
 void main() {
+    // S4 圆角掩码在 quad 单位坐标换算的局部像素空间求值，与 CPU 掩码同式。
+    float coverage = 1.0;
+    if (any(greaterThan(u.mask_radius, vec4(0.0)))) {
+        vec2 quad_size = u.quad_mask.xy;
+        vec2 mask_origin = u.quad_mask.zw;
+        vec2 mask_px = (v_local - mask_origin) * quad_size;
+        vec2 mask_wh = u.mask_size.xy * quad_size;
+        // rounded_rect_sdf 由 glsl_common_sdf.frag 在 #version 后统一注入。
+        float sdf = rounded_rect_sdf(mask_px, mask_wh, u.mask_radius);
+        coverage = clamp(0.5 - sdf, 0.0, 1.0);
+        if (coverage <= 0.0) {
+            discard;
+        }
+    }
     if (u.params.x < 0.5) {
         float direction = u.params.y;
         float t;
@@ -94,7 +112,7 @@ void main() {
             t = (v_local.x * u.params.z - v_local.y * u.params.w + u.params.w)
                 / max(u.params.z + u.params.w, 0.000001);
         }
-        out_color = mix(u.color_a, u.color_b, clamp(t, 0.0, 1.0));
+        out_color = mix(u.color_a, u.color_b, clamp(t, 0.0, 1.0)) * coverage;
         return;
     }
 
@@ -105,7 +123,7 @@ void main() {
     }
     float range = max(outer_radius - u.params.y, 0.000001);
     float t = clamp((distance_to_center - u.params.y) / range, 0.0, 1.0);
-    out_color = mix(u.color_a, u.color_b, t);
+    out_color = mix(u.color_a, u.color_b, t) * coverage;
 }
 
 #elif defined(UIX_SHAPE)

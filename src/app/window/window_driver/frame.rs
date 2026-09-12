@@ -275,6 +275,16 @@ impl WindowDriver {
             let mut reconcile_ran = false;
             if *reconcile_pending {
                 let root = pending_root.take().or_else(|| {
+                    // 根构建在所属窗口主题作用域内读取 token，与绘制期一致。
+                    let _build_theme =
+                        crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(
+                            tree.theme_tokens(),
+                        );
+                    // @media 按当前窗口树根 frame 的逻辑宽度评估。
+                    let _build_viewport =
+                        crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(
+                            tree.viewport_width_for_build(),
+                        );
                     view_factory.and_then(|factory| factory.build(tree.widget_state_store()))
                 });
                 if let Some(root) = root {
@@ -560,6 +570,16 @@ impl WindowDriver {
                 .take()
                 // 让根工厂在协调时复用该窗口树拥有的组件私有状态。
                 .or_else(|| {
+                    // 根构建在所属窗口主题作用域内读取 token，与绘制期一致。
+                    let _build_theme =
+                        crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(
+                            tree.theme_tokens(),
+                        );
+                    // @media 按当前窗口树根 frame 的逻辑宽度评估。
+                    let _build_viewport =
+                        crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(
+                            tree.viewport_width_for_build(),
+                        );
                     view_factory.and_then(|factory| factory.build(tree.widget_state_store()))
                 });
             if let Some(root) = root {

@@ -79,6 +79,19 @@ impl RhiRenderer {
                     "RhiRenderer gradient geometry is invalid",
                 ));
             }
+            // S4 圆角掩码字段必须有限、半径非负且单位矩形位于 quad 内。
+            if gradient
+                .mask_radius
+                .iter()
+                .chain(gradient.mask.iter())
+                .any(|value| !value.is_finite())
+                || gradient.mask_radius.iter().any(|value| *value < 0.0)
+            {
+                // 返回稳定的参数错误。
+                return Err(super::rhi_invalid(
+                    "RhiRenderer gradient mask constants are invalid",
+                ));
+            }
             // 两端颜色和 shader 参数必须保持有限。
             if gradient
                 .color_a
@@ -166,6 +179,17 @@ impl RhiRenderer {
             gradient.color_b,
             // 保留模式、方向或半径参数。
             gradient.params,
+            // 保留四角掩码半径（tl/tr/br/bl）。
+            gradient.mask_radius,
+            // 保留 quad 逻辑宽高。
+            [gradient.mask[0], gradient.mask[1]],
+            // 保留掩码单位矩形 x/y/w/h。
+            [
+                gradient.mask[2],
+                gradient.mask[3],
+                gradient.mask[4],
+                gradient.mask[5],
+            ],
         )
     }
 }

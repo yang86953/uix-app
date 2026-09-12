@@ -123,8 +123,7 @@ impl AnimationConfig {
     }
 
     // Drawer capability 启用时才保留其私有滑动距离配置入口。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn with_distance(mut self, distance: f32) -> Self {
+    pub fn with_distance(mut self, distance: f32) -> Self {
         if matches!(
             self.kind,
             AnimationKind::SlideIn(_) | AnimationKind::SlideOut(_)
@@ -200,55 +199,51 @@ fn placement_offset(placement: Placement, distance: f32) -> Point {
 }
 
 /// 内建组件使用的动画预设。
-pub(crate) mod presets {
+pub mod presets {
     use super::*;
 
     // Modal 组件属于 feedback capability。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn modal_enter() -> AnimationConfig {
+    pub fn modal_enter() -> AnimationConfig {
         // Modal 默认瞬时出现；需要缩放进场时由调用方显式配置 duration。
         AnimationConfig::zoom_in(0.0)
     }
 
     // Modal 退场预设只由 feedback capability 消费。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn modal_exit() -> AnimationConfig {
+    pub fn modal_exit() -> AnimationConfig {
         AnimationConfig::zoom_out(0.2)
     }
 
     // Drawer 组件属于 feedback capability。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn drawer_enter(placement: Placement) -> AnimationConfig {
+    pub fn drawer_enter(placement: Placement) -> AnimationConfig {
         // Drawer 默认瞬时滑入到终态；需要过渡时由调用方显式配置 duration。
         AnimationConfig::slide_in(placement, 0.0).with_distance(180.0)
     }
 
     // Drawer 退场预设只由 feedback capability 消费。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn drawer_exit(placement: Placement) -> AnimationConfig {
+    pub fn drawer_exit(placement: Placement) -> AnimationConfig {
         AnimationConfig::slide_out(placement, 0.2).with_distance(180.0)
     }
 
-    pub(crate) fn tooltip_enter() -> AnimationConfig {
+    pub fn tooltip_enter() -> AnimationConfig {
         AnimationConfig::fade_in(0.15)
     }
 
-    pub(crate) fn tooltip_exit() -> AnimationConfig {
+    pub fn tooltip_exit() -> AnimationConfig {
         AnimationConfig::fade_out(0.1)
     }
 
-    pub(crate) fn collapse_expand() -> AnimationConfig {
+    pub fn collapse_expand() -> AnimationConfig {
         AnimationConfig::fade_in(0.15)
     }
 
-    pub(crate) fn collapse_collapse() -> AnimationConfig {
+    pub fn collapse_collapse() -> AnimationConfig {
         AnimationConfig::fade_out(0.1)
     }
 }
 
 /// 管理单个 widget 的一次进场或离场动画状态。
 #[derive(Debug, Clone)]
-pub(crate) struct TransitionPlayer {
+pub struct TransitionPlayer {
     config: AnimationConfig,
     /// 当前透明度进度 [0, 1]。
     pub opacity_progress: f32,
@@ -266,7 +261,7 @@ pub(crate) struct TransitionPlayer {
 }
 
 impl TransitionPlayer {
-    pub(crate) fn new(config: AnimationConfig) -> Self {
+    pub fn new(config: AnimationConfig) -> Self {
         let opacity_anim = config.opacity_animation();
         let offset_anim = config.offset_animation();
         let scale_anim = config.scale_animation();
@@ -288,7 +283,7 @@ impl TransitionPlayer {
         }
     }
 
-    pub(crate) fn new_from_current(
+    pub fn new_from_current(
         config: AnimationConfig,
         opacity: f32,
         offset: Point,
@@ -308,7 +303,7 @@ impl TransitionPlayer {
         player
     }
 
-    pub(crate) fn hold_at_start(&mut self) {
+    pub fn hold_at_start(&mut self) {
         self.opacity_progress = self.opacity_anim.from;
         self.offset = self
             .offset_anim
@@ -323,7 +318,7 @@ impl TransitionPlayer {
     /// 重置动画以重新播放。
     /// 原公开面遗留（SMC-04 模块收口后无内部消费方；保留供外部集成）。
     #[allow(dead_code)]
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.opacity_anim = self.config.opacity_animation();
         self.offset_anim = self.config.offset_animation();
         self.scale_anim = self.config.scale_animation();
@@ -337,8 +332,7 @@ impl TransitionPlayer {
     }
 
     // 只有 feedback 浮层布局需要观察动画端点几何。
-    #[cfg(feature = "feedback")]
-    pub(crate) fn offset_endpoints(&self) -> (Point, Point) {
+    pub fn offset_endpoints(&self) -> (Point, Point) {
         self.offset_anim
             .as_ref()
             .map_or((Point::new(0.0, 0.0), Point::new(0.0, 0.0)), |animation| {
@@ -347,7 +341,7 @@ impl TransitionPlayer {
     }
 
     /// 按帧推进动画。
-    pub(crate) fn update(&mut self, dt: f64) {
+    pub fn update(&mut self, dt: f64) {
         if self.finished {
             return;
         }

@@ -1,9 +1,0 @@
-<Visual
-  name="SIDER_VISUAL"
-  type="SiderVisual"
-  defaultWidth={200.0}
-  defaultCollapsedWidth={80.0}
-  childDirection={sider_child_direction()}
-/>
-
-<KernelView value={build_sider_view(kernel, SIDER_VISUAL_REF)} />

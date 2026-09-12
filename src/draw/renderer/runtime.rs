@@ -8,6 +8,7 @@ use std::time::Instant;
 use crate::core::{Errc, Error, PresentDamageTracker, Rect};
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 // 引入唯一通用 GPU backend，避免经由单函数兼容 factory 转发。
+#[cfg(feature = "graphics-gpu")]
 use crate::draw::backend::gpu::GpuBackend;
 use crate::draw::geometry::color::Color;
 use crate::draw::geometry::types::ImageHandle;
@@ -137,14 +138,26 @@ impl Renderer {
             // GPU recipe 已经完成 thin RHI 与 lifecycle 构造门禁。
             GraphicsRecipeOwner::Gpu(owner) => {
                 // 所有具体 GraphicsApi 共用同一个薄 RHI GPU backend。
-                let backend = GpuBackend::new_gpu_only(owner)?;
-                // 将唯一 GPU backend 直接注入通用会话。
-                Ok(Self::with_session(
-                    // RenderSession 只接收已经完成 recipe 门禁的 backend。
-                    RenderSession::with_backend(Box::new(backend)),
-                    // GPU recipe 的最终呈现由 backend 管理。
-                    Presentation::BackendManaged,
-                ))
+                #[cfg(not(feature = "graphics-gpu"))]
+                {
+                    let mut owner = owner;
+                    owner.try_shutdown()?;
+                    Err(Error::new(
+                        Errc::NotImplemented,
+                        "GPU capability is disabled",
+                    ))
+                }
+                #[cfg(feature = "graphics-gpu")]
+                {
+                    let backend = GpuBackend::new_gpu_only(owner)?;
+                    // 将唯一 GPU backend 直接注入通用会话。
+                    Ok(Self::with_session(
+                        // RenderSession 只接收已经完成 recipe 门禁的 backend。
+                        RenderSession::with_backend(Box::new(backend)),
+                        // GPU recipe 的最终呈现由 backend 管理。
+                        Presentation::BackendManaged,
+                    ))
+                }
             }
             // PixelUpload recipe 已经完成 CPU raster 与专用 surface 构造门禁。
             GraphicsRecipeOwner::PixelUpload(owner) => {
@@ -178,13 +191,6 @@ impl Renderer {
     /// 返回运行时持有的统一渲染会话。
     pub fn session(&self) -> &RenderSession {
         &self.session
-    }
-
-    // 测试目标保留渲染 session 可变观测入口，供 renderer 契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn session_mut(&mut self) -> &mut RenderSession {
-        &mut self.session
     }
 
     fn with_session(session: RenderSession, presentation: Presentation) -> Self {
@@ -498,18 +504,27 @@ impl RenderTarget for Renderer {
     }
 
     fn note_presented_at(&mut self, now: Instant) {
+        #[cfg(feature = "graphics-gpu")]
         if let Some(backend) = self.session.gpu_backend_mut() {
             backend.note_presented_at(now);
         }
     }
 
     fn idle_resource_deadline(&self) -> Option<Instant> {
-        self.session
-            .gpu_backend()
-            .and_then(|backend| backend.idle_resource_deadline())
+        #[cfg(feature = "graphics-gpu")]
+        {
+            self.session
+                .gpu_backend()
+                .and_then(|backend| backend.idle_resource_deadline())
+        }
+        #[cfg(not(feature = "graphics-gpu"))]
+        {
+            None
+        }
     }
 
     fn release_idle_resources(&mut self, now: Instant) {
+        #[cfg(feature = "graphics-gpu")]
         if let Some(backend) = self.session.gpu_backend_mut() {
             backend.release_idle_resources(now);
         }
@@ -704,3 +719,8 @@ impl Drop for Renderer {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/renderer/runtime_tests.rs"]
+mod runtime_tests;

@@ -27,6 +27,14 @@ impl Radius {
     pub const fn zero() -> Self {
         Self::uniform(0.0)
     }
+    /// 按 CSS 式相邻和规则归一化：任一相邻半径之和超出对应边长时，
+    /// 全部半径按同一比例缩小，保持圆角轮廓不相交。
+    ///
+    /// 这是 CPU 与 GPU 各绘制入口共用的唯一归一化规则；上层在生成
+    /// 自行采样几何（如圆角周长折线）前应先调用本方法。
+    pub fn normalized(self, width: f32, height: f32) -> Self {
+        crate::draw::raster::rasterizer::core::normalize_corner_radius(width, height, self)
+    }
 }
 
 impl Default for Radius {

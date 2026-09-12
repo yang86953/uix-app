@@ -206,24 +206,8 @@ fn engine_logical_extent(engine: &mut dyn RenderTarget) -> Option<(f32, f32)> {
 // 将根节点对齐到最新 Surface，并把尺寸变化发布为真正的布局失效。
 // 主窗会显式携带 had_layout_event，副窗则依赖本失效进入同一布局事务。
 fn sync_root_surface_frame(tree: &mut WidgetTree, width: f32, height: f32) -> bool {
-    let Some(root_id) = tree.root_id() else {
-        return false;
-    };
-    let mismatched = tree.get(root_id).is_some_and(|root| {
-        let frame = root.frame();
-        (frame.w - width).abs() > 0.5 || (frame.h - height).abs() > 0.5
-    });
-    if !mismatched {
-        return false;
-    }
-    let Some(root) = tree.get_mut(root_id) else {
-        return false;
-    };
-    root.set_frame(Rect::new(0.0, 0.0, width, height));
-    tree.tree_version = tree.tree_version.wrapping_add(1);
-    tree.push_layout_invalidation(root_id);
-    tree.mark_full_frame_dirty();
-    true
+    // 树级入口负责失效、版本推进与 @media 断点跨越检测。
+    tree.set_root_frame(Rect::new(0.0, 0.0, width, height))
 }
 
 /// 读取平台窗口协议提供的当前逻辑客户区。

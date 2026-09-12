@@ -10,8 +10,6 @@ use crate::platform::presentation::{
     GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps, PresentCoherency,
 };
 // WARP 测试入口返回类型化 GPU context trait object。
-#[cfg(all(test, feature = "d3d12"))]
-use crate::platform::presentation::GpuRecipeContext;
 
 #[cfg(all(windows, feature = "d3d12"))]
 pub(crate) mod adapter;
@@ -72,39 +70,6 @@ pub(crate) fn create(
     })
 }
 
-#[cfg(all(test, windows, feature = "d3d12"))]
-pub(crate) fn create_warp_test_context(
-    surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn GpuRecipeContext>, Error> {
-    D3d12Context::new_with_driver(surface, width, height, adapter::D3d12DriverKind::Warp)
-        .map(|context| Box::new(context) as _)
-}
-
-#[cfg(all(test, windows, feature = "d3d12"))]
-pub(crate) const fn warp_test_context_available() -> bool {
-    true
-}
-
-#[cfg(all(test, not(windows), feature = "d3d12"))]
-pub(crate) fn create_warp_test_context(
-    _surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn GpuRecipeContext>, Error> {
-    use crate::core::Errc;
-
-    Err(Error::new(
-        Errc::PlatformError,
-        "D3D12 WARP tests are only supported on Windows",
-    ))
-}
-
-#[cfg(all(test, not(windows), feature = "d3d12"))]
-pub(crate) const fn warp_test_context_available() -> bool {
-    false
-}
 
 #[cfg(not(all(windows, feature = "d3d12")))]
 pub(crate) fn create(
@@ -122,3 +87,7 @@ pub(crate) fn create(
     };
     Err(Error::new(Errc::PlatformError, reason))
 }
+
+// 仅测试构建的 WARP/绘制辅助位于 tests-src，经模块级 include! 保持原作用域。
+#[cfg(test)]
+include!("../../../../../../tests-src/native/presentation/graphics/d3d12/adapter/warp_test_fns.rs");

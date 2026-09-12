@@ -146,13 +146,6 @@ impl TsfStoreState {
         })
     }
 
-    // 测试目标保留 composition 状态观测入口，供 TSF 文档契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn composition_active(&self) -> bool {
-        self.composition.active
-    }
-
     pub(crate) fn begin_lock(&mut self, flags: u32) -> TsfLockRequest {
         self.document_lock.begin(flags)
     }
@@ -291,3 +284,8 @@ impl TsfDocumentLock {
         self.granted == Some(TsfLockKind::ReadWrite)
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/backends/windows/tsf_document_tests.rs"]
+mod tsf_document_tests;

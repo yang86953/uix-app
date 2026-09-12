@@ -176,13 +176,6 @@ impl WindowsTextInput {
         self.tsf.is_some() && self.window_id == Some(window_id)
     }
 
-    // 测试目标保留 TSF client id 观测入口，供输入会话契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn tsf_client_id(&self) -> Option<u32> {
-        self.tsf.as_ref().map(TsfSession::client_id)
-    }
-
     fn require_hwnd(&self, operation: &str) -> Result<*mut std::ffi::c_void> {
         if self.hwnd.is_null() {
             Err(Error::new(
@@ -348,3 +341,8 @@ impl ITextInput for WindowsTextInput {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/backends/windows/text_input_tests.rs"]
+mod text_input_tests;

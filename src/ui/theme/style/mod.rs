@@ -19,6 +19,8 @@ pub mod edge_insets;
 mod methods;
 // 定义背景图来源、定位与重复的纯值契约。
 mod background;
+// 定义四角圆角半径的纯值契约。
+mod corners;
 // 定义边框线型及其有效默认语义。
 mod border;
 // 定义有序字体族列表及其显式覆盖语义。
@@ -27,6 +29,8 @@ mod font_family;
 mod font_weight;
 // 定义行高单位与字体尺寸解析语义。
 mod line_height;
+// 定义保留单位的长度、尺寸约束与百分比参照语义。
+mod length;
 // 定义闭合文本水平对齐及显式 left 语义。
 mod text_align;
 // 定义闭合文本装饰及显式 none 语义。
@@ -34,11 +38,17 @@ mod text_decoration;
 mod types;
 mod variant;
 
+// 公开逐字段类型化差异声明，供状态层与覆盖层区分未声明与显式默认值。
+mod diff;
+
 // 公开 UI System 自有的边框线型契约。
 pub use self::border::BorderStyle;
+// 公开 UI System 自有的四角圆角值契约。
+pub use self::corners::CornerRadii;
 // 公开 UI System 自有的背景图层值契约。
 pub use self::background::{
-    BackgroundAxisPosition, BackgroundImage, BackgroundPosition, BackgroundRepeat,
+    BackgroundAxisPosition, BackgroundAxisSize, BackgroundImage, BackgroundPosition,
+    BackgroundRepeat, BackgroundSize,
 };
 // 公开 UI System 自有的字体族列表契约。
 pub use self::font_family::FontFamily;
@@ -46,6 +56,8 @@ pub use self::font_family::FontFamily;
 pub use self::font_weight::FontWeight;
 // 公开 UI System 自有的行高值契约。
 pub use self::line_height::LineHeight;
+// 公开保留单位的长度与尺寸约束契约。
+pub use self::length::{PercentReference, ResolvedSizeBounds, SizeConstraints, StyleLength};
 // 公开 UI System 自有的文本水平对齐契约。
 pub use self::text_align::TextAlign;
 // 公开 UI System 自有的文本装饰契约。
@@ -53,14 +65,17 @@ pub use self::text_decoration::TextDecoration;
 pub use self::types::{BoxShadowDef, ColorValue, DisplayMode, PaletteColor, TypographyToken};
 
 pub use crate::ui::style_paint::apply_style;
-pub use variant::{StyleSet, StyleState};
+pub use diff::StyleDiff;
+pub use variant::{DeclaredStyleSet, StateFlags, StyleSet, StyleState};
 
 use crate::core::EdgeInsets;
 use crate::draw::Color;
 use crate::ui::theme::NeutralRole;
 use crate::ui::theme::traits::ThemeTokens;
 // Re-export layout enums so crate::ui::theme::style::FlexDirection etc. work
-pub use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
+pub use crate::ui::layout::{
+    AlignItems, FlexDirection, GridTrack, GridTrackMax, GridTrackMin, JustifyContent,
+};
 
 /// 类 CSS 视觉样式——覆盖 widget 常见的视觉属性。
 ///
@@ -82,14 +97,32 @@ pub struct Style {
     pub border_width: EdgeInsets,
     /// 显式边框线型；None 表示使用 CSS 默认 solid。
     pub border_style: Option<BorderStyle>,
-    /// 边框圆角
+    /// 边框圆角（单值形式；显式写入该值会覆盖四角声明）。
+    ///
+    /// 与 `border_radius_corners` 表示同一个 `borderRadius` 属性的两种输入，
+    /// 不做叠加：任一形式的显式声明都使另一形式失效；最终有效圆角统一由
+    /// [`Style::effective_border_radius`] 解析。
     pub border_radius: f32,
+    /// 四角圆角半径（tl/tr/br/bl）；`None` 表示未使用四角形式。
+    ///
+    /// 迁移说明（S4 新增公开字段）：`Style`/`StyleDiff` 的全字段结构体字面量
+    /// 构造需要补齐本字段或改用 `..Default::default()`；builder 与字段读写
+    /// 不受影响。
+    pub border_radius_corners: Option<CornerRadii>,
 
     // ── 尺寸 ────────────────────────────────────────────────
     /// 固定宽度（None = 由子内容决定）
     pub width: Option<f32>,
     /// 固定高度（None = 由子内容决定）
     pub height: Option<f32>,
+    /// 最小宽度；`Auto` 表示不约束，百分比参照父内容盒宽度。
+    pub min_width: StyleLength,
+    /// 最大宽度；`Auto` 表示不约束，百分比参照父内容盒宽度。
+    pub max_width: StyleLength,
+    /// 最小高度；`Auto` 表示不约束，百分比参照父内容盒高度。
+    pub min_height: StyleLength,
+    /// 最大高度；`Auto` 表示不约束，百分比参照父内容盒高度。
+    pub max_height: StyleLength,
 
     // ── 弹性布局（容器属性）──
     /// 显示模式
@@ -140,6 +173,11 @@ pub struct Style {
     pub background_position: Option<BackgroundPosition>,
     /// 显式背景重复方式；None 表示两个轴重复。
     pub background_repeat: Option<BackgroundRepeat>,
+    /// 背景图尺寸策略；`Auto`（默认）表示固有尺寸，也是显式恢复值。
+    ///
+    /// 只作用于图片来源；渐变始终填满背景盒。S4 新增公开字段，全字段
+    /// 字面量构造的迁移说明同 `border_radius_corners`。
+    pub background_size: BackgroundSize,
     /// 悬停状态背景色
     pub background_hover: Option<ColorValue>,
     /// 焦点状态背景色
@@ -180,9 +218,16 @@ impl Default for Style {
             // 未显式声明时保持 CSS 默认实线。
             border_style: None,
             border_radius: 0.0,
+            // 未使用四角形式时由单值或直角默认值表达。
+            border_radius_corners: None,
 
             width: None,
             height: None,
+            // 未声明时四个方向都不施加尺寸约束。
+            min_width: StyleLength::Auto,
+            max_width: StyleLength::Auto,
+            min_height: StyleLength::Auto,
+            max_height: StyleLength::Auto,
 
             display: DisplayMode::default(),
             flex_direction: FlexDirection::default(),
@@ -212,6 +257,8 @@ impl Default for Style {
             background_position: None,
             // 未声明时由有效值方法提供双轴重复。
             background_repeat: None,
+            // 未声明尺寸策略时图片保持固有尺寸。
+            background_size: BackgroundSize::Auto,
             background_hover: None,
             background_focus: None,
             background_active: None,

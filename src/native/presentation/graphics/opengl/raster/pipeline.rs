@@ -48,22 +48,6 @@ impl OpenGlRasterPipeline {
         self.runtime.context()
     }
 
-    // 为显式 parity 返回当前 window context 的真实 GPU 身份，不进入生产接口。
-    #[cfg(feature = "opengl-parity-test")]
-    pub(crate) fn parity_gpu_diagnostic(&self) -> String {
-        // 诊断调用方保证当前 owner-thread GLES context 已经 current。
-        let gl = self.runtime.context();
-        // SAFETY: 三个字符串查询只读取当前有效 GLES context 的驱动常量。
-        let (vendor, renderer, version) = unsafe {
-            (
-                gl.get_parameter_string(glow::VENDOR),
-                gl.get_parameter_string(glow::RENDERER),
-                gl.get_parameter_string(glow::VERSION),
-            )
-        };
-        // 保留驱动原始身份，供真机验收区分软件或错误设备。
-        format!("GLES vendor={vendor}; renderer={renderer}; version={version}")
-    }
 
     // 更新 swapchain target 的尺寸与默认 viewport。
     pub(crate) fn resize_swapchain(
@@ -89,3 +73,8 @@ impl OpenGlRasterPipeline {
         }
     }
 }
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../tests-src/native/presentation/graphics/opengl/raster/pipeline_parity_fns.rs");

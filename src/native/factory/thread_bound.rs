@@ -126,21 +126,6 @@ impl<T: GraphicsContextLifecycle + ?Sized> ThreadBoundGraphicsContext<T> {
         let _ = operation;
     }
 
-    // 为单元测试注入不同 owner thread 身份。
-    #[cfg(test)]
-    fn with_test_owner(
-        // 接收测试仍唯一拥有的类型化 context。
-        inner: Box<T>,
-        // 接收测试要模拟的 owner thread。
-        owner_thread: ThreadId,
-    ) -> Self {
-        // 先按生产路径构造 wrapper。
-        let mut bound = Self::new(inner);
-        // 仅在测试构建覆盖线程身份。
-        bound.owner_thread = owner_thread;
-        // 返回可验证错误线程门禁的 wrapper。
-        bound
-    }
 }
 
 // 确保原生 owner 只在正确线程执行 checked shutdown。
@@ -247,3 +232,8 @@ impl PixelUploadSurface for ThreadBoundGraphicsContext<dyn PixelUploadSurface> {
         })
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/native/factory/thread_bound_tests.rs"]
+mod thread_bound_tests;

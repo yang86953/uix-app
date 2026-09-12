@@ -1,6 +1,0 @@
-<Visual
-  name="FLOAT_BUTTON_BACK_TOP_VISUAL"
-  type="FloatButtonBackTopVisual"
-  icon="chevron-up"
-  tooltip="回到顶部"
-/>

@@ -48,6 +48,6 @@ impl Drop for PaintWidgetScope {
 }
 
 /// 读取当前绘制 widget id。
-pub(crate) fn current_paint_widget() -> Option<WidgetId> {
+pub fn current_paint_widget() -> Option<WidgetId> {
     CURRENT_PAINT_WIDGET.with(|slot| *slot.borrow())
 }

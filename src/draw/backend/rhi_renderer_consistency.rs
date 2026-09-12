@@ -560,6 +560,11 @@ fn gradient_scene() -> ConsistencyScene {
             // DiagonalTLBR + 局部宽高：t = (u + v) / 2，与 CPU
             // linear_gradient_t 在剪切变换下同源。
             [0.0, 2.0, 8.0, 8.0],
+            // S4 圆角掩码开启：8x8 局部空间统一半径 3（归一化相邻和 3+5=8
+            // 恰好相切），quad 自身单位矩形。
+            [3.0; 4],
+            [8.0, 8.0],
+            [0.0, 0.0, 1.0, 1.0],
         )),
         texture: None,
         scissor: None,
@@ -569,8 +574,20 @@ fn gradient_scene() -> ConsistencyScene {
                 5,
                 [140, 0, 116, 255],
                 ConsistencyTolerance::Filtered,
-                "affine diagonal gradient",
+                "affine diagonal gradient inside mask",
             ),
+            // 顶直边中点：local (4.25,0.5) 在掩码直线段内满覆盖，
+            // t=(0.53125+0.0625)/2=0.296875 → (179,0,76)。
+            ConsistencySample::exact(
+                38,
+                2,
+                [179, 0, 76, 255],
+                ConsistencyTolerance::Filtered,
+                "gradient top straight edge keeps mask coverage",
+            ),
+            // 圆角像素：local 中心 (0.25,0.5) 距 tl 圆心 (3,3) 为 3.715，
+            // SDF=+0.715 → 覆盖为 0，应保持背景。
+            background(34, 2, "gradient rounded corner clipped"),
             background(36, 8, "affine quad outside"),
         ],
     }

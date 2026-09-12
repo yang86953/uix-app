@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "package": "uix-app",
+  "always": [],
+  "units": {
+    "lang-build": {
+      "requires": [],
+      "features": [
+        "lang-build"
+      ],
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn",
+        "serde",
+        "serde_json",
+        "regex"
+      ]
+    },
+    "lang-tools": {
+      "requires": [
+        "lang-build"
+      ],
+      "features": [
+        "lang-tools"
+      ],
+      "dependencies": [
+        "serde",
+        "serde_json",
+        "toml",
+        "sha2"
+      ]
+    },
+    "hot-reload": {
+      "requires": [
+        "application",
+        "lang-build"
+      ],
+      "features": [
+        "hot-reload"
+      ],
+      "dependencies": []
+    },
+    "uix-modules": {
+      "requires": [],
+      "features": [
+        "uix-modules"
+      ],
+      "dependencies": [],
+      "tags": [
+        "Module"
+      ]
+    },
+    "uix-dynamic": {
+      "requires": [
+        "uix-modules",
+        "lang-build"
+      ],
+      "features": [
+        "uix-dynamic"
+      ],
+      "dependencies": []
+    },
+    "d3d11": {
+      "requires": [
+        "platform",
+        "graphics-gpu"
+      ],
+      "features": [
+        "d3d11"
+      ],
+      "dependencies": []
+    },
+    "d3d12": {
+      "requires": [
+        "platform",
+        "graphics-gpu"
+      ],
+      "features": [
+        "d3d12"
+      ],
+      "dependencies": []
+    },
+    "opengles": {
+      "requires": [
+        "platform",
+        "graphics-gpu"
+      ],
+      "features": [
+        "opengles"
+      ],
+      "dependencies": [
+        "glow",
+        "khronos-egl"
+      ]
+    },
+    "vulkan": {
+      "requires": [
+        "platform",
+        "graphics-gpu"
+      ],
+      "features": [
+        "vulkan"
+      ],
+      "dependencies": [
+        "ash"
+      ]
+    },
+    "metal": {
+      "requires": [
+        "platform",
+        "graphics-gpu"
+      ],
+      "features": [
+        "metal"
+      ],
+      "dependencies": [
+        "objc2",
+        "objc2-foundation",
+        "objc2-metal",
+        "objc2-quartz-core"
+      ]
+    },
+    "settings-serde": {
+      "requires": [
+        "data"
+      ],
+      "features": [
+        "settings-serde"
+      ],
+      "dependencies": [
+        "serde",
+        "serde_json"
+      ]
+    },
+    "image-codecs": {
+      "requires": [
+        "graphics"
+      ],
+      "features": [
+        "image-codecs"
+      ],
+      "dependencies": [
+        "image"
+      ]
+    },
+    "agent-control": {
+      "requires": [
+        "application"
+      ],
+      "features": [
+        "agent-control"
+      ],
+      "dependencies": [
+        "serde_json",
+        "png"
+      ]
+    },
+    "test-harness": {
+      "requires": [
+        "ui"
+      ],
+      "features": [
+        "test-harness"
+      ],
+      "dependencies": []
+    },
+    "extensions": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "extensions"
+      ],
+      "dependencies": [
+        "num-bigint",
+        "num-rational",
+        "num-integer",
+        "num-traits"
+      ]
+    },
+    "core": {
+      "requires": [],
+      "features": [
+        "core"
+      ],
+      "dependencies": []
+    },
+    "reactive": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "reactive"
+      ],
+      "dependencies": []
+    },
+    "layout": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "layout"
+      ],
+      "dependencies": []
+    },
+    "diagnostics": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "diagnostics"
+      ],
+      "dependencies": [
+        "tracing"
+      ]
+    },
+    "data": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "data"
+      ],
+      "dependencies": [
+        "tracing"
+      ]
+    },
+    "platform-contracts": {
+      "requires": [
+        "core"
+      ],
+      "features": [
+        "platform-contracts"
+      ],
+      "dependencies": []
+    },
+    "graphics": {
+      "requires": [
+        "core",
+        "diagnostics",
+        "platform-contracts"
+      ],
+      "features": [
+        "graphics"
+      ],
+      "dependencies": [
+        "earcut",
+        "ab_glyph",
+        "rustybuzz",
+        "unicode-bidi",
+        "unicode-segmentation",
+        "unicode-linebreak",
+        "memmap2"
+      ]
+    },
+    "graphics-gpu": {
+      "requires": [
+        "graphics"
+      ],
+      "features": [
+        "graphics-gpu"
+      ],
+      "dependencies": [
+        "bytemuck"
+      ]
+    },
+    "ui": {
+      "requires": [
+        "reactive",
+        "layout",
+        "graphics",
+        "platform-contracts"
+      ],
+      "features": [
+        "ui"
+      ],
+      "dependencies": [],
+      "tags": [
+        "Canvas",
+        "FocusTrap",
+        "KernelView",
+        "KernelHost"
+      ]
+    },
+    "platform": {
+      "requires": [
+        "platform-contracts",
+        "diagnostics"
+      ],
+      "features": [
+        "platform"
+      ],
+      "dependencies": [
+        "windows-core",
+        "windows",
+        "libc",
+        "wayland-client",
+        "wayland-protocols",
+        "wayland-protocols-plasma",
+        "wayland-protocols-wlr"
+      ]
+    },
+    "application": {
+      "requires": [
+        "ui",
+        "platform",
+        "data"
+      ],
+      "features": [
+        "application"
+      ],
+      "dependencies": [],
+      "tags": [
+        "App"
+      ]
+    }
+  }
+}

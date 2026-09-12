@@ -21,32 +21,32 @@ impl ViewNode {
     }
 
     // 设置节点顶边定位值。
-    pub fn top(mut self, value: f32) -> Self {
-        // 复用公开值对象的有限数值验证。
+    pub fn top(mut self, value: impl Into<crate::ui::theme::style::StyleLength>) -> Self {
+        // 复用公开值对象的有限数值验证；接受 px 数值或保留单位的 StyleLength。
         self.position.insets = self.position.insets.top(value);
         // 返回可继续链式声明的节点。
         self
     }
 
     // 设置节点右边定位值。
-    pub fn right(mut self, value: f32) -> Self {
-        // 复用公开值对象的有限数值验证。
+    pub fn right(mut self, value: impl Into<crate::ui::theme::style::StyleLength>) -> Self {
+        // 复用公开值对象的有限数值验证；接受 px 数值或保留单位的 StyleLength。
         self.position.insets = self.position.insets.right(value);
         // 返回可继续链式声明的节点。
         self
     }
 
     // 设置节点底边定位值。
-    pub fn bottom(mut self, value: f32) -> Self {
-        // 复用公开值对象的有限数值验证。
+    pub fn bottom(mut self, value: impl Into<crate::ui::theme::style::StyleLength>) -> Self {
+        // 复用公开值对象的有限数值验证；接受 px 数值或保留单位的 StyleLength。
         self.position.insets = self.position.insets.bottom(value);
         // 返回可继续链式声明的节点。
         self
     }
 
     // 设置节点左边定位值。
-    pub fn left(mut self, value: f32) -> Self {
-        // 复用公开值对象的有限数值验证。
+    pub fn left(mut self, value: impl Into<crate::ui::theme::style::StyleLength>) -> Self {
+        // 复用公开值对象的有限数值验证；接受 px 数值或保留单位的 StyleLength。
         self.position.insets = self.position.insets.left(value);
         // 返回可继续链式声明的节点。
         self

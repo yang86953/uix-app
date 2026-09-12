@@ -24,13 +24,25 @@ float2 uix_ndc(float2 pixel, float2 viewport) {
 }
 
 float uix_rounded_rect_sdf(float2 local, float2 size, float4 radius) {
-    float2 half_size = size * 0.5;
-    float2 q = local - half_size;
-    float corner = q.x < 0.0
-        ? (q.y < 0.0 ? radius.x : radius.w)
-        : (q.y < 0.0 ? radius.y : radius.z);
-    float2 d = abs(q) - half_size + corner;
-    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - corner;
+    // 直角矩形与各角圆弧约束的交集：直边距离为基线，落入切线方形的
+    // 每个角弧距离（圆外为正）取最大。归一化只保证相邻切线方形不相交，
+    // 对角方形可重叠（重叠区须同时满足两角约束）。local 为左上角原点，
+    // radius 分量顺序 tl/tr/br/bl。
+    float2 q = abs(local - size * 0.5) - size * 0.5;
+    float combined = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+    if (radius.x > 0.0 && local.x < radius.x && local.y < radius.x) {
+        combined = max(combined, distance(local, float2(radius.x)) - radius.x);
+    }
+    if (radius.y > 0.0 && local.x > size.x - radius.y && local.y < radius.y) {
+        combined = max(combined, distance(local, float2(size.x - radius.y, radius.y)) - radius.y);
+    }
+    if (radius.z > 0.0 && local.x > size.x - radius.z && local.y > size.y - radius.z) {
+        combined = max(combined, distance(local, size - radius.z) - radius.z);
+    }
+    if (radius.w > 0.0 && local.x < radius.w && local.y > size.y - radius.w) {
+        combined = max(combined, distance(local, float2(radius.w, size.y - radius.w)) - radius.w);
+    }
+    return combined;
 }
 
 float4 uix_quantized_premul(float4 color, float coverage) {
@@ -101,6 +113,17 @@ vertex UnitOut gradient_vs(UnitVertex input [[stage_in]], constant float4* c [[b
 
 fragment float4 gradient_fs(UnitOut input [[stage_in]], constant float4* c [[buffer(1)]]) {
     float4 params = c[5];
+    // S4 圆角掩码：c[6]=四角半径，c[7]=quad 宽高+掩码单位起点，c[8]=掩码单位宽高。
+    float coverage = 1.0;
+    if (any(c[6] > float4(0.0))) {
+        float2 quad_size = c[7].xy;
+        float2 mask_origin = c[7].zw;
+        float2 mask_px = (input.local - mask_origin) * quad_size;
+        float2 mask_wh = c[8].xy * quad_size;
+        float sdf = uix_rounded_rect_sdf(mask_px, mask_wh, c[6]);
+        coverage = clamp(0.5 - sdf, 0.0, 1.0);
+        if (coverage <= 0.0) discard_fragment();
+    }
     if (params.x < 0.5) {
         float2 local = input.local;
         float2 size = params.zw;
@@ -109,12 +132,12 @@ fragment float4 gradient_fs(UnitOut input [[stage_in]], constant float4* c [[buf
             : params.y < 2.5
                 ? (local.x * size.x + local.y * size.y) / max(size.x + size.y, 1e-6)
                 : (local.x * size.x - local.y * size.y + size.y) / max(size.x + size.y, 1e-6);
-        return mix(c[3], c[4], clamp(t, 0.0, 1.0));
+        return mix(c[3], c[4], clamp(t, 0.0, 1.0)) * coverage;
     }
     float distance = length(input.local - 0.5);
     if (distance > params.z) discard_fragment();
     float t = clamp((distance - params.y) / max(params.z - params.y, 1e-6), 0.0, 1.0);
-    return mix(c[3], c[4], t);
+    return mix(c[3], c[4], t) * coverage;
 }
 
 vertex UnitOut shape_vs(UnitVertex input [[stage_in]], constant float4* c [[buffer(1)]]) {

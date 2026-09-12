@@ -68,14 +68,7 @@ pub(crate) fn fill_secure_random(_output: &mut [u8]) -> io::Result<()> {
     ))
 }
 
+// 平台不支持时的 owner-only 验收占位探针位于 tests-src，仅测试构建编译。
 #[cfg(test)]
-pub(super) fn discovery_permissions_are_private_for_test(_path: &Path) -> io::Result<Option<bool>> {
-    Ok(None)
-}
-
-#[cfg(test)]
-pub(super) fn endpoint_permissions_are_private_for_test(
-    _endpoint: &str,
-) -> io::Result<Option<bool>> {
-    Ok(None)
-}
+#[path = "../../../../tests-src/platform/adapters/transport/unsupported_tests.rs"]
+mod tests;

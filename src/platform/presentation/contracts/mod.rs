@@ -123,17 +123,6 @@ impl GraphicsContextCaps {
         }
     }
 
-    /// Legal combo: [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`].
-    // CPU PixelUpload recipe 目前没有生产 registry 消费者，只保留内部测试构造入口。
-    #[cfg(test)]
-    pub(crate) fn cpu_pixel_upload(backend: GraphicsApi) -> Self {
-        Self {
-            backend,
-            raster: RasterMode::Cpu,
-            present: PresentMode::PixelUpload,
-            present_coherency: PresentCoherency::FullOnly,
-        }
-    }
 }
 
 /// 原生工厂内部使用的具体 GPU API 身份。
@@ -229,14 +218,6 @@ impl FromStr for GraphicsSelection {
 /// the graphics lifecycle requires this explicit unsafe conversion, and the
 /// marker prevents safe transfer to another thread.
 ///
-/// ```compile_fail
-/// use uix_app::platform::presentation::NativeSurfaceHandle;
-///
-/// fn needs_send<T: Send>(_value: T) {}
-///
-/// let handle = unsafe { NativeSurfaceHandle::from_raw(std::ptr::null_mut()) };
-/// needs_send(handle);
-/// ```
 #[derive(Clone, Copy)]
 pub(crate) struct NativeSurfaceHandle {
     raw: *mut std::ffi::c_void,
@@ -371,3 +352,8 @@ pub(crate) use gpu_recipe_owner::GpuRecipeOwner;
 pub(crate) use pixel_upload_recipe_owner::PixelUploadRecipeOwner;
 // 只向 crate 内 factory 与 renderer 暴露正交 recipe owner。
 pub(crate) use recipe_owner::GraphicsRecipeOwner;
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/platform/presentation/contracts/mod_tests.rs"]
+mod mod_tests;

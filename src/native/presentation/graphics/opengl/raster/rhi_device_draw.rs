@@ -11,8 +11,10 @@ use crate::platform::presentation::rhi::{
     BLUR_TEXEL_STEP_TAPS_FLOAT_OFFSET, BLUR_UV_BOUNDS_FLOAT_OFFSET, BLUR_WEIGHT_COUNT,
     BLUR_WEIGHTS_FLOAT_OFFSET, BufferUsage, DrawPacket, DrawSamplingBinding,
     GRADIENT_COLOR_A_FLOAT_OFFSET, GRADIENT_COLOR_B_FLOAT_OFFSET, GRADIENT_EDGE_Y_FLOAT_OFFSET,
+    GRADIENT_MASK_RADIUS_FLOAT_OFFSET, GRADIENT_MASK_SIZE_FLOAT_OFFSET,
     GRADIENT_ORIGIN_EDGE_X_FLOAT_OFFSET, GRADIENT_PARAMS_FLOAT_OFFSET,
-    GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat, MESH_COLOR_FLOAT_OFFSET,
+    GRADIENT_QUAD_SIZE_FLOAT_OFFSET, GRADIENT_VIEWPORT_FLOAT_OFFSET, IndexFormat,
+    MESH_COLOR_FLOAT_OFFSET,
     MESH_VIEWPORT_FLOAT_OFFSET, MSDF_RANGE_FLOAT_OFFSET, MSDF_TEXTURE_SIZE_FLOAT_OFFSET,
     MSDF_VIEWPORT_FLOAT_OFFSET, PipelineBlend, PipelineBlendFactor, PipelineBlendOperation,
     PipelineColorWriteMask, PipelineCullMode, PipelineDepthClip, PipelineDepthState,
@@ -328,6 +330,25 @@ impl OpenGlRhiDevice {
                         program,
                         "u_params",
                         read_vec4(&uniform, GRADIENT_PARAMS_FLOAT_OFFSET)?,
+                    );
+                    // S4 圆角掩码三组常量与共享 ABI 偏移一一对应。
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_mask_radius",
+                        read_vec4(&uniform, GRADIENT_MASK_RADIUS_FLOAT_OFFSET)?,
+                    );
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_quad_mask",
+                        read_vec4(&uniform, GRADIENT_QUAD_SIZE_FLOAT_OFFSET)?,
+                    );
+                    set_vec4(
+                        gl,
+                        program,
+                        "u_mask_size",
+                        read_vec4(&uniform, GRADIENT_MASK_SIZE_FLOAT_OFFSET)?,
                     );
                 }
             }

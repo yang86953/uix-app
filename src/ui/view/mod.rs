@@ -23,7 +23,10 @@ use crate::ui::widget_state::{
 };
 // 引入声明根显式交接的 State 绑定与 Effect 类型。
 use crate::ui::reactive::state::{Effect, StatePaintBind};
-use crate::ui::theme::style::{BoxShadowDef, ColorValue, Style, TypographyToken};
+use crate::ui::theme::style::{
+    BackgroundSize, BoxShadowDef, ColorValue, CornerRadii, Style, StyleDiff, StyleLength,
+    TypographyToken,
+};
 use crate::ui::{
     AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AriaAttribute, EventResult,
     FocusHandle, SystemEvent,
@@ -60,6 +63,9 @@ pub struct ViewNode {
     pub(crate) animated_sources: Vec<std::sync::Arc<dyn crate::ui::animation::AnimatedSource>>,
     pub(crate) provider_context: ProviderContext,
     pub(crate) style: Style,
+    // 保存本节点显式声明过的字段；与 `style` 值快照并行维护，
+    // 使显式 0/1/false/none/auto 经协调适配后仍能在控件内核恢复。
+    pub(crate) style_decl: StyleDiff,
     pub(crate) visual_transform: ViewTransform,
     // 保存由组件树布局 Module 求解的节点定位元数据。
     pub(crate) position: crate::ui::position::PositionedLayout,
@@ -91,6 +97,11 @@ pub struct ViewNode {
     pub(crate) widget_state_store: Option<WidgetStateStore>,
     // 保存尚未由成功树事务接纳的组件状态写入回执。
     pub(crate) widget_state_receipts: Vec<WidgetStateCaptureReceipt>,
+    // 保存本次捕获评估过的 @media 断点，建树或协调时交给所属树。
+    pub(crate) captured_media_breakpoints:
+        Vec<crate::ui::widget_runtime::build_viewport::MediaBreakpoint>,
+    // 保存本次捕获评估条件时使用的窗口宽度；None 表示脱离窗口构建。
+    pub(crate) captured_viewport_width: Option<f32>,
 }
 
 impl View for ViewNode {
@@ -118,6 +129,7 @@ impl ViewNode {
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
+            style_decl: StyleDiff::default(),
             visual_transform: ViewTransform::default(),
             // 新声明节点默认参与正常布局流且四边均为 auto。
             position: crate::ui::position::PositionedLayout::default(),
@@ -144,6 +156,9 @@ impl ViewNode {
             widget_state_store: None,
             // 非捕获构造路径没有需要延迟提交的私有状态写入。
             widget_state_receipts: Vec::new(),
+            // 非捕获构造路径不携带 @media 断点记录。
+            captured_media_breakpoints: Vec::new(),
+            captured_viewport_width: None,
         }
     }
 
@@ -161,6 +176,7 @@ impl ViewNode {
             animated_sources: Vec::new(),
             provider_context: current_provider_context(),
             style: Style::default(),
+            style_decl: StyleDiff::default(),
             visual_transform: ViewTransform::default(),
             // 新声明子树默认参与正常布局流且四边均为 auto。
             position: crate::ui::position::PositionedLayout::default(),
@@ -187,6 +203,9 @@ impl ViewNode {
             widget_state_store: None,
             // 非捕获构造路径没有需要延迟提交的私有状态写入。
             widget_state_receipts: Vec::new(),
+            // 非捕获构造路径不携带 @media 断点记录。
+            captured_media_breakpoints: Vec::new(),
+            captured_viewport_width: None,
         }
     }
 
@@ -214,28 +233,62 @@ impl ViewNode {
 
     /// 设置文本颜色。
     pub fn color(mut self, color: impl Into<ColorValue>) -> Self {
-        self.style.color = color.into();
+        let value: ColorValue = color.into();
+        self.style.color = value;
+        self.style_decl.color = Some(value);
         self
     }
 
     /// 设置背景颜色。
     pub fn background_color(mut self, color: impl Into<ColorValue>) -> Self {
         // 保存可在主题解析阶段统一求值的背景色。
-        self.style.background = Some(color.into());
+        let value: ColorValue = color.into();
+        self.style.background = Some(value);
+        self.style_decl.background = Some(Some(value));
         // 返回完成样式更新的节点。
+        self
+    }
+
+    /// 设置背景图尺寸策略（cover/contain/auto/显式尺寸）；只作用于图片来源。
+    pub fn background_size(mut self, size: BackgroundSize) -> Self {
+        // Auto 是显式恢复值，与未声明共用同一默认。
+        self.style.background_size = size;
+        self.style_decl.background_size = Some(size);
         self
     }
 
     /// 设置字体大小令牌。
     pub fn font_size(mut self, size: impl Into<TypographyToken>) -> Self {
-        self.style.font_size = size.into();
+        let value: TypographyToken = size.into();
+        self.style.font_size = value;
+        self.style_decl.font_size = Some(value);
+        self
+    }
+
+    /// 通过受控闭包同时更新值样式与显式声明；闭包写过的字段由调用方
+    /// 登记进声明差异（含与当前值相同的显式默认值）。
+    ///
+    /// 代码生成的 class/内联/状态层样式使用本入口：显式 0/1/none/auto
+    /// 即使与当前值相同，也必须作为声明贯通到控件内核恢复预设值。
+    pub fn map_style_declared(
+        mut self,
+        update: impl FnOnce(&mut Style, &mut StyleDiff),
+    ) -> Self {
+        // 把值样式与声明差异一并借给同步闭包。
+        update(&mut self.style, &mut self.style_decl);
+        // 返回完成样式更新的节点。
         self
     }
 
     /// 通过受控闭包精确更新节点样式，供声明式转换器保留未声明字段。
     pub fn map_style(mut self, update: impl FnOnce(&mut Style)) -> Self {
+        // 快照更新前样式，闭包内实际变化的字段进入声明存在性。
+        let before = self.style.clone();
         // 只把当前节点的样式借给同步更新闭包。
         update(&mut self.style);
+        // 写回相同值不视为新声明。
+        self.style_decl
+            .overlay(&StyleDiff::changes_between(&before, &self.style));
         // 返回完成样式更新的节点。
         self
     }
@@ -250,7 +303,9 @@ impl ViewNode {
 
     /// 设置常态背景色。
     pub fn bg(mut self, color: impl Into<ColorValue>) -> Self {
-        self.style.background = Some(color.into());
+        let value: ColorValue = color.into();
+        self.style.background = Some(value);
+        self.style_decl.background = Some(Some(value));
         self
     }
 
@@ -261,25 +316,32 @@ impl ViewNode {
 
     /// 设置指针悬停时的背景色；未设置时沿用普通背景。
     pub fn bg_hover(mut self, color: impl Into<ColorValue>) -> Self {
-        self.style.background_hover = Some(color.into());
+        let value: ColorValue = color.into();
+        self.style.background_hover = Some(value);
+        self.style_decl.background_hover = Some(Some(value));
         self
     }
 
     /// 设置焦点状态的背景色；未设置时沿用悬停或普通背景。
     pub fn bg_focus(mut self, color: impl Into<ColorValue>) -> Self {
-        self.style.background_focus = Some(color.into());
+        let value: ColorValue = color.into();
+        self.style.background_focus = Some(value);
+        self.style_decl.background_focus = Some(Some(value));
         self
     }
 
     /// 设置按压或键盘激活期间的背景色；未设置时沿用普通背景。
     pub fn bg_active(mut self, color: impl Into<ColorValue>) -> Self {
-        self.style.background_active = Some(color.into());
+        let value: ColorValue = color.into();
+        self.style.background_active = Some(value);
+        self.style_decl.background_active = Some(Some(value));
         self
     }
 
     /// 设置四边内边距。
     pub fn padding(mut self, p: impl Into<EdgeInsets>) -> Self {
         self.style.padding = p.into();
+        self.style_decl.padding = Some(self.style.padding);
         self
     }
 
@@ -287,6 +349,7 @@ impl ViewNode {
     pub fn padding_h(mut self, value: f32) -> Self {
         self.style.padding.left = value;
         self.style.padding.right = value;
+        self.style_decl.padding = Some(self.style.padding);
         self
     }
 
@@ -294,24 +357,60 @@ impl ViewNode {
     pub fn padding_v(mut self, value: f32) -> Self {
         self.style.padding.top = value;
         self.style.padding.bottom = value;
+        self.style_decl.padding = Some(self.style.padding);
         self
     }
 
     /// 设置四边外边距。
     pub fn margin(mut self, m: impl Into<EdgeInsets>) -> Self {
         self.style.margin = m.into();
+        self.style_decl.margin = Some(self.style.margin);
         self
     }
 
     /// 设置显式宽度。
     pub fn width(mut self, w: f32) -> Self {
         self.style.width = Some(w);
+        self.style_decl.width = Some(Some(w));
         self
     }
 
     /// 设置显式高度。
     pub fn height(mut self, h: f32) -> Self {
         self.style.height = Some(h);
+        self.style_decl.height = Some(Some(h));
+        self
+    }
+
+    /// 设置最小宽度；接受 px 数值或 [`StyleLength`]，百分比参照父内容盒宽度。
+    pub fn min_width(mut self, length: impl Into<StyleLength>) -> Self {
+        let length = length.into().expect_size_bound("min_width");
+        self.style.min_width = length;
+        self.style_decl.min_width = Some(length);
+        self
+    }
+
+    /// 设置最大宽度；接受 px 数值或 [`StyleLength`]，百分比参照父内容盒宽度。
+    pub fn max_width(mut self, length: impl Into<StyleLength>) -> Self {
+        let length = length.into().expect_size_bound("max_width");
+        self.style.max_width = length;
+        self.style_decl.max_width = Some(length);
+        self
+    }
+
+    /// 设置最小高度；接受 px 数值或 [`StyleLength`]，百分比参照父内容盒高度。
+    pub fn min_height(mut self, length: impl Into<StyleLength>) -> Self {
+        let length = length.into().expect_size_bound("min_height");
+        self.style.min_height = length;
+        self.style_decl.min_height = Some(length);
+        self
+    }
+
+    /// 设置最大高度；接受 px 数值或 [`StyleLength`]，百分比参照父内容盒高度。
+    pub fn max_height(mut self, length: impl Into<StyleLength>) -> Self {
+        let length = length.into().expect_size_bound("max_height");
+        self.style.max_height = length;
+        self.style_decl.max_height = Some(length);
         self
     }
 
@@ -414,6 +513,7 @@ impl ViewNode {
     /// 设置 Flex 扩展系数并保留显式覆盖语义。
     pub fn flex_grow(mut self, g: f32) -> Self {
         self.style.flex_grow = g;
+        self.style_decl.flex_grow = Some(g);
         self.flex_grow_override = Some(g);
         self
     }
@@ -421,6 +521,7 @@ impl ViewNode {
     /// 设置 Flex 收缩系数并保留显式覆盖语义。
     pub fn flex_shrink(mut self, s: f32) -> Self {
         self.style.flex_shrink = s;
+        self.style_decl.flex_shrink = Some(s);
         self.flex_shrink_override = Some(s);
         self
     }
@@ -428,29 +529,35 @@ impl ViewNode {
     /// 交叉轴对齐（flex `align-items`）。
     pub fn align(mut self, a: crate::ui::layout::AlignItems) -> Self {
         self.style.align_items = a;
+        self.style_decl.align_items = Some(a);
         self
     }
 
     /// 主轴对齐（flex `justify-content`）。
     pub fn justify(mut self, j: crate::ui::layout::JustifyContent) -> Self {
         self.style.justify_content = j;
+        self.style_decl.justify_content = Some(j);
         self
     }
 
     /// 设置当前子项的交叉轴覆盖对齐方式。
     pub fn align_self(mut self, a: crate::ui::layout::AlignItems) -> Self {
         self.style.align_self = Some(a);
+        self.style_decl.align_self = Some(Some(a));
         self
     }
 
     /// 设置兼容的一维 Grid 单元索引。
     pub fn grid_cell(mut self, cell: usize) -> Self {
         self.style.grid_cell = Some(cell);
+        self.style_decl.grid_cell = Some(Some(cell));
         self
     }
 
     /// 设置至少为一的 Grid 跨列数和跨行数。
     pub fn grid_span(mut self, columns: u32, rows: u32) -> Self {
+        self.style_decl.grid_column_span = Some(columns.max(1));
+        self.style_decl.grid_row_span = Some(rows.max(1));
         self.style.grid_column_span = columns.max(1);
         self.style.grid_row_span = rows.max(1);
         self
@@ -459,12 +566,14 @@ impl ViewNode {
     /// 设置直接子项的统一间距。
     pub fn gap(mut self, g: f32) -> Self {
         self.style.gap = g;
+        self.style_decl.gap = Some(g);
         self
     }
 
     /// 保留子项的自然主轴尺寸，用于 ScrollView 的内容容器。
     pub fn overflow_content(mut self) -> Self {
         self.style.overflow_content = true;
+        self.style_decl.overflow_content = Some(true);
         self
     }
 
@@ -472,38 +581,57 @@ impl ViewNode {
     pub fn clip_content(mut self, clip: bool) -> Self {
         // 保存显式真假值以支持状态样式清除旧裁剪。
         self.style.clip_content = Some(clip);
+        self.style_decl.clip_content = Some(Some(clip));
         // 返回节点以继续声明式链式配置。
         self
     }
 
     /// 设置统一宽度和颜色的边框。
     pub fn border(mut self, width: f32, color: impl Into<ColorValue>) -> Self {
+        let value: ColorValue = color.into();
+        self.style_decl.border_width = Some(EdgeInsets::uniform(width));
+        self.style_decl.border_color = Some(Some(value));
         self.style.border_width = EdgeInsets::uniform(width);
-        self.style.border_color = Some(color.into());
+        self.style.border_color = Some(value);
         self
     }
 
-    /// 设置圆角半径。
+    /// 设置单值圆角半径；显式覆盖任何既有四角声明。
     pub fn radius(mut self, r: f32) -> Self {
         self.style.border_radius = r;
+        // 单值与四角是同一属性的不叠加输入，单值落地时清除四角形式；
+        // 声明同步登记显式清角，供状态层与覆盖层恢复单值输入。
+        self.style.border_radius_corners = None;
+        self.style_decl.border_radius = Some(r);
+        self.style_decl.border_radius_corners = Some(None);
+        self
+    }
+
+    /// 设置四角圆角半径；覆盖任何既有单值或四角声明。
+    pub fn radius_corners(mut self, corners: CornerRadii) -> Self {
+        self.style.border_radius_corners = Some(corners);
+        self.style_decl.border_radius_corners = Some(Some(corners));
         self
     }
 
     /// 设置节点透明度。
     pub fn opacity(mut self, o: f32) -> Self {
         self.style.opacity = o;
+        self.style_decl.opacity = Some(o);
         self
     }
 
     /// 保留节点身份，但让整棵子树退出布局、绘制、命中与焦点候选。
     pub fn visible(mut self, visible: bool) -> Self {
         self.style.visible = visible;
+        self.style_decl.visible = Some(visible);
         self
     }
 
     /// 设置以节点边界为中心、无偏移的盒阴影。
     pub fn shadow(mut self, blur: f32, color: impl Into<Color>) -> Self {
         self.style.box_shadow = Some(BoxShadowDef::new(color.into(), blur, 0.0, 0.0));
+        self.style_decl.box_shadow = Some(self.style.box_shadow.clone());
         self
     }
 
@@ -726,7 +854,7 @@ impl ViewNode {
 
     /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（公开用法见仓库 `docs/使用/事件.md`）。
     ///
-    /// 与 [`crate::ui::widgets::general::button::Button`] 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
+    /// 与 组件库按钮 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
     pub fn on_click<T, F>(mut self, state: &crate::ui::reactive::state::State<T>, mut f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,
@@ -865,3 +993,20 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 mod ext;
 
 pub use self::ext::*;
+
+pub(crate) mod combinators;
+
+impl ViewNode {
+    pub fn declared_key(&self) -> Option<&str> { self.key.as_deref() }
+    pub fn widget_ref(&self) -> &dyn Widget { self.widget.as_ref() }
+    pub fn declared_children(&self) -> &[ViewNode] { &self.children }
+    pub fn declared_style(&self) -> &Style { &self.style }
+    pub fn set_event_handlers(&mut self, handlers: Vec<HandlerRegistration>) { self.handlers = handlers; }
+    pub fn add_render_handlers(&mut self, handlers: impl IntoIterator<Item = RenderHandlerRegistration>) { self.render_handlers.extend(handlers); }
+}
+
+impl ViewNode {
+    pub fn widget_mut(&mut self) -> &mut dyn Widget { self.widget.as_mut() }
+    pub fn declared_children_mut(&mut self) -> &mut Vec<ViewNode> { &mut self.children }
+    pub fn set_declared_style(&mut self, style: Style) { self.style = style; }
+}

@@ -401,6 +401,46 @@ impl Canvas2D for FrameRecordingCanvas {
             scratch.fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color)
         });
     }
+    fn fill_linear_gradient_rounded(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+        radius: Radius,
+    ) {
+        // 圆角渐变仍是可结合的纯源贡献，进入 Additive sampled scratch。
+        self.draw_cpu_source(rect, 1.0, |scratch| {
+            // 软件渐变在局部空间求值圆角掩码。
+            scratch.fill_linear_gradient_rounded(rect, color_a, color_b, dir, radius)
+        });
+    }
+    fn fill_radial_gradient_rounded(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+        clip_rect: Rect,
+        radius: Radius,
+    ) {
+        // 外圆包围盒覆盖掩码边界，保持与无圆角路径相同的源贡献边界。
+        let bounds = Rect::new(cx - outer_r, cy - outer_r, outer_r * 2.0, outer_r * 2.0);
+        self.draw_cpu_source(bounds, 1.0, |scratch| {
+            scratch.fill_radial_gradient_rounded(
+                cx,
+                cy,
+                inner_r,
+                outer_r,
+                inner_color,
+                outer_color,
+                clip_rect,
+                radius,
+            )
+        });
+    }
     fn draw_box_shadow(
         &mut self,
         rect: Rect,
@@ -611,19 +651,6 @@ impl Canvas2D for FrameRecordingCanvas {
         self.scratch.surface().pixels()
     }
 
-    /// 测试用可变像素入口（标记批次并沿用当前 blend 事实）。
-    #[cfg(test)]
-    fn pixels_mut(&mut self) -> &mut [u32] {
-        if let Err(error) = self.ensure_scratch() {
-            self.remember_error(error);
-            return self.scratch.pixels_mut();
-        }
-        self.scratch_dirty = true;
-        // 测试直接写像素时沿用当前 blend 的最终合成事实。
-        self.scratch_additive = self.blend_mode == BlendMode::Additive;
-        self.scratch.pixels_mut()
-    }
-
     /// 读取 surface 尺寸。
     fn surface_size(&self) -> crate::core::Size {
         crate::core::Size::new(self.width as f32, self.height as f32)
@@ -658,4 +685,14 @@ impl Canvas2D for FrameRecordingCanvas {
             self.remember_error(error);
         }
     }
+        #[cfg(test)]
+        recorder_canvas2d_pixels_mut_impl!();
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/painting/recorder/canvas2d_tests.rs"]
+mod canvas2d_tests;
+
+#[cfg(test)]
+use crate::draw::painting::canvas::canvas2d_test_macros::recorder_canvas2d_pixels_mut_impl;

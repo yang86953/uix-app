@@ -7,18 +7,6 @@
 //!    `EventHandler` / `WidgetLifecycle`；未实现的方法走 trait 默认行为。
 //! 3. **`Widget` 胶水** — 用 `impl_widget!` 声明实现了哪些能力。
 //!
-//! ```ignore
-//! pub struct Button { text: String, ... }
-//!
-//! impl_widget!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
-//!
-//! impl WidgetLayout for Button {
-//!     fn measure(&self, constraints: Constraints) -> Size { ... }
-//! }
-//! impl WidgetRender for Button {
-//!     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
-//! }
-//! ```
 
 use crate::core::{Constraints, EdgeInsets, Rect, Size, WidgetId};
 use crate::draw::geometry::spatial::{Ray3D, SpatialContext};
@@ -79,6 +67,68 @@ impl WidgetCapabilities {
 
 /// 组件核心标识 — 所有 widget 必须实现。
 pub trait Widget: 'static {
+    /// Opt into declaration comparison without allocating an owned snapshot.
+    /// Implement declaration_config_changed and interaction_disabled when enabled.
+    fn reconciles_without_snapshot(&self) -> bool { false }
+    /// Cheap effective interaction gate, when available without capturing a snapshot.
+    fn interaction_disabled(&self) -> Option<bool> { None }
+
+    /// Optional tree-owned dynamic child coordination.
+    fn dynamic_children_coordinator(&self) -> Option<&'static dyn crate::ui::DynamicChildrenCoordinator> { None }
+
+    /// Adopt a new declaration while preserving this instance's runtime state.
+    /// Return the declaration unchanged when this widget does not support patching.
+    fn reconcile_from(&mut self, next: Box<dyn Widget>) -> Result<bool, Box<dyn Widget>> {
+        Err(next)
+    }
+    /// Compare authored configuration omitted from or mixed with runtime snapshot fields.
+    fn declaration_config_changed(&self, _next: &dyn Widget) -> Option<bool> {
+        None
+    }
+    /// Classify geometry changes that cannot be inferred from a public snapshot.
+    fn declaration_layout_changed(&self, _next: &dyn Widget) -> Option<bool> {
+        None
+    }
+    /// Compare controlled state and private layout inputs across declarations.
+    fn declaration_runtime_changed(&self, _next: &dyn Widget) -> bool {
+        false
+    }
+    /// Apply authored style to the component's own layout and visual configuration.
+    fn apply_declaration_style(
+        &mut self,
+        _style: &crate::ui::Style,
+        _declared: &crate::ui::StyleDiff,
+        _flex_grow: Option<f32>,
+        _flex_shrink: Option<f32>,
+    ) {}
+    /// Axes in which a clipping viewport allows content overflow.
+    fn viewport_overflow_axes(&self) -> (bool, bool) { (false, false) }
+    /// Explicit width and height constraints owned by this component.
+    fn layout_size_locks(&self) -> (bool, bool) { (false, false) }
+    /// Whether this component currently owns a present overlay.
+    fn overlay_is_present(&self) -> bool { false }
+    /// Whether absent overlay content must be destroyed.
+    fn overlay_destroy_on_close(&self) -> bool { false }
+    /// Consume and apply a component-context close request.
+    fn consume_context_close(&mut self) -> bool { false }
+    /// Handle an outside-click dismissal for this overlay owner.
+    fn dismiss_overlay(&mut self) {  }
+    /// Restore pointer focus to a focusable descendant.
+    fn pointer_focus_descendant(&self) -> bool { false }
+    /// Expose the current editable value to semantic consumers.
+    fn semantic_text_value(&self) -> Option<String> { None }
+    /// Declare a native window drag region.
+    fn window_drag_region(&self) -> bool { false }
+    /// Invalidate the parent subtree after an action changes shared sibling state.
+    fn invalidate_action_siblings(&self) -> bool { false }
+    /// Select a child subtree for focus after child visibility changes.
+    fn preferred_focus_child(&self) -> Option<usize> { None }
+    /// Optional participation in cross-node text selection.
+    fn as_text_selection(&self) -> Option<&dyn WidgetTextSelection> { None }
+    /// Optional mutable text-selection policy port.
+    fn as_text_selection_mut(&mut self) -> Option<&mut dyn WidgetTextSelection> { None }
+    /// Mutable platform text editor port.
+    fn as_text_input_mut(&mut self) -> Option<&mut dyn WidgetTextInput> { None }
     /// 以动态类型借用组件。
     fn as_any(&self) -> &dyn Any;
     /// 以动态类型可变借用组件。
@@ -90,9 +140,9 @@ pub trait Widget: 'static {
         std::any::type_name::<Self>()
     }
     /// 返回自动化和语义快照使用的稳定字段。
-    fn snapshot_fields(&self) -> crate::ui::widget_snapshot::SnapshotFields {
+    fn snapshot_fields(&self) -> crate::ui::widget_snapshot::WidgetSnapshotFields {
         // 未登记的自定义组件没有类型化快照，直接返回未知，避免扫描全部内置类型。
-        crate::ui::widget_snapshot::SnapshotFields::Unknown
+        crate::ui::widget_snapshot::WidgetSnapshotFields::UNKNOWN
     }
     /// 返回此 widget 实现了哪些能力。
     fn capabilities(&self) -> WidgetCapabilities;
@@ -219,6 +269,11 @@ pub trait Widget: 'static {
 /// text editor and to position the native composition/candidate UI without
 /// depending on a concrete widget type.
 pub trait WidgetTextInput: Widget {
+    /// Capture text and character-indexed selection without exposing editor storage.
+    fn text_edit_snapshot(&self) -> Option<TextEditSnapshot> { None }
+    /// Restore a character-indexed selection after a synthetic editing operation.
+    fn restore_text_edit_selection(&mut self, _start: usize, _end: usize) {}
+
     /// 判断组件当前是否接受平台文本输入。
     fn accepts_text_input(&self) -> bool {
         true
@@ -261,6 +316,13 @@ pub trait WidgetLayout: Widget {
     /// 不可被 Flex 收缩或 Stretch 压破的 border-box 最小尺寸。
     fn minimum_size(&self) -> Size {
         Size::zero()
+    }
+    /// 组件内核自有样式声明的 min/max 尺寸约束；未声明项由声明节点元数据补足。
+    ///
+    /// 只有持有完整 [`crate::ui::Style`] 的容器需要实现；其余组件的约束经
+    /// 声明节点统一交付到布局子项，无需逐个复制。
+    fn size_constraints(&self) -> crate::ui::theme::style::SizeConstraints {
+        crate::ui::theme::style::SizeConstraints::NONE
     }
     /// 返回 Flex 扩展系数。
     fn flex_grow(&self) -> f32 {
@@ -567,4 +629,24 @@ impl IntoWidgetNode for WidgetNode {
     fn into_node(self) -> WidgetNode {
         self
     }
+}
+
+/// Character-indexed editing state shared with semantic editing commands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextEditSnapshot {
+    pub value: String,
+    pub selection: Option<(usize, usize)>,
+    pub caret: usize,
+}
+
+/// A component's text-selection capability, independent of its concrete type.
+pub trait WidgetTextSelection {
+    fn selection_enabled(&self) -> bool;
+    fn selection_dragging(&self) -> bool;
+    fn selection_len(&self) -> usize;
+    fn selection_anchor(&self) -> usize;
+    fn set_selection_range(&self, range: Option<(usize, usize)>);
+    fn selection_char_at(&self, point: crate::core::Point) -> usize;
+    fn selection_text(&self) -> Option<String>;
+    fn set_selection_policy(&mut self, policy: crate::ui::UserSelect);
 }

@@ -92,13 +92,6 @@ fn gaussian_kernel(radius: f32) -> Arc<[f32]> {
     })
 }
 
-// 测试目标保留线程本地 kernel cache 长度观测入口，供模糊缓存测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn kernel_cache_len_for_test() -> usize {
-    KERNEL_CACHE.with(|cache| cache.borrow().len())
-}
-
 /// 对像素缓冲执行高斯模糊。
 ///
 /// `pixels`: BGRA 32bit premultiplied 像素缓冲。
@@ -206,3 +199,8 @@ pub(crate) fn gaussian_blur(pixels: &mut [u32], width: i32, height: i32, rect: R
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/raster/rasterizer/blur_tests.rs"]
+mod blur_tests;

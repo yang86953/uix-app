@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use crate::draw::Color;
 // 引入既有声明式动画源与缓动曲线。
 use crate::ui::animation::{Animated, Easing};
-// 引入样式颜色值以拒绝尚未解析的主题 token。
+// 引入样式颜色值与主题令牌解析，支持语义主题目标。
 use crate::ui::theme::style::ColorValue;
 
 // 引入最终目标声明节点。
@@ -49,10 +49,8 @@ pub enum UixTransitionError {
     MissingWidth,
     /// 目标节点没有可插值的固定高度。
     MissingHeight,
-    /// 前景颜色仍是主题语义值。
-    NonConcreteColor,
-    /// 目标节点没有具体背景颜色。
-    NonConcreteBackgroundColor,
+    /// 目标节点没有可插值的背景颜色。
+    MissingBackgroundColor,
 }
 
 // 为生成代码的受控 panic 提供稳定错误文本。
@@ -70,12 +68,19 @@ impl std::fmt::Display for UixTransitionError {
             Self::MissingWidth => "transition width 缺少固定目标值",
             // 高度缺少固定目标。
             Self::MissingHeight => "transition height 缺少固定目标值",
-            // 前景色尚未变成具体颜色。
-            Self::NonConcreteColor => "transition color 不是具体颜色",
-            // 背景色尚未变成具体颜色。
-            Self::NonConcreteBackgroundColor => "transition backgroundColor 不是具体颜色",
+            // 背景字段缺少可解析值。
+            Self::MissingBackgroundColor => "transition backgroundColor 缺少背景颜色值",
         })
     }
+}
+
+// 把样式颜色值解析为当前构建期有效主题下的具体颜色。
+//
+// 具体颜色原样返回；语义主题色经局部 Provider 与窗口主题作用域解析，
+// 让主题切换在下一轮声明构建中形成新目标并从当前呈现值续播。
+fn resolved_color(value: ColorValue) -> Color {
+    let tokens = crate::ui::__private::uix_effective_build_tokens();
+    value.resolve(tokens.as_ref())
 }
 
 // 保存单个 typed 动画源与最近声明目标。
@@ -108,11 +113,15 @@ where
         }
     }
 
-    // 仅在目标真正变化时从当前值重定向。
+    // 目标变化时从当前值重定向；同目标通常不重启动画。
     fn value_for(&mut self, target: T, spec: UixTransitionSpec) -> T {
-        // 相同目标沿用当前播放进度，不重启动画。
-        if self.target != target {
-            // 从 source 当前值过渡到新目标并复用同一活动源身份。
+        // 立即完成策略：零时长零延迟或减少动效开启。进行中的同目标过渡
+        // 也必须收束到目标并释放定时帧，不能因目标相等被跳过。
+        let immediate_finish =
+            crate::ui::animation::reduced_motion() || (spec.duration <= 0.0 && spec.delay <= 0.0);
+        if self.target != target || (immediate_finish && !self.source.is_finished()) {
+            // 从 source 当前值过渡到新目标并复用同一活动源身份；
+            // 立即完成策略由播放层落到目标值。
             self.source
                 .animate_to_after(spec.delay, target, spec.duration, spec.easing);
             // 保存新目标供下一次 reconcile 比较。
@@ -203,22 +212,21 @@ pub fn uix_transition_state(
                 // 从首次透明度创建静止源。
                 values.opacity = Some(TransitionSlot::new(view.style.opacity));
             }
-            // 前景颜色必须已是可直接插值的具体颜色。
+            // 前景颜色按当前有效主题解析为具体颜色。
             UixTransitionProperty::Color => {
-                // 提取具体前景颜色或报告主题值错配。
-                let target =
-                    concrete_color(view.style.color).ok_or(UixTransitionError::NonConcreteColor)?;
+                // 语义主题色与具体颜色都经有效令牌快照解析。
+                let target = resolved_color(view.style.color);
                 // 从首次前景色创建静止源。
                 values.color = Some(TransitionSlot::new(target));
             }
-            // 背景颜色必须存在且已是具体颜色。
+            // 背景颜色必须存在并按当前有效主题解析。
             UixTransitionProperty::BackgroundColor => {
-                // 提取具体背景颜色或报告缺失/主题值错配。
+                // 缺失背景返回契约错配；主题语义值正常解析。
                 let target = view
                     .style
                     .background
-                    .and_then(concrete_color)
-                    .ok_or(UixTransitionError::NonConcreteBackgroundColor)?;
+                    .map(resolved_color)
+                    .ok_or(UixTransitionError::MissingBackgroundColor)?;
                 // 从首次背景色创建静止源。
                 values.background_color = Some(TransitionSlot::new(target));
             }
@@ -229,6 +237,9 @@ pub fn uix_transition_state(
         // 只创建一个短期互斥内部值容器。
         inner: Arc::new(Mutex::new(values)),
     })
+}
+
+impl UixDeclarativeTransition {
 }
 
 /// 比较最终声明目标、原位重定向变化字段并写回当前帧值。
@@ -254,63 +265,74 @@ pub fn uix_apply_transition(
         // 目标节点必须继续提供固定宽度。
         let target = view.style.width.ok_or(UixTransitionError::MissingWidth)?;
         // 原位重定向后覆盖声明目标宽度。
-        view.style.width = Some(slot.value_for(target, spec));
+        let frame = slot.value_for(target, spec);
+        // 帧值是最终有效值：值样式与显式声明快照同步，避免 S1 的
+        // 声明最后覆盖把过渡帧值盖回静态声明。
+        view.style.width = Some(frame);
+        view.style_decl.width = Some(Some(frame));
     }
     // 选中高度时读取目标并写回当前帧值。
     if let Some(slot) = values.height.as_mut() {
         // 目标节点必须继续提供固定高度。
         let target = view.style.height.ok_or(UixTransitionError::MissingHeight)?;
         // 原位重定向后覆盖声明目标高度。
-        view.style.height = Some(slot.value_for(target, spec));
+        let frame = slot.value_for(target, spec);
+        // 与宽度同理：声明快照跟随最终帧值。
+        view.style.height = Some(frame);
+        view.style_decl.height = Some(Some(frame));
     }
     // 选中圆角时读取目标并写回当前帧值。
     if let Some(slot) = values.border_radius.as_mut() {
         // 保存状态分支叠加后的目标圆角。
         let target = view.style.border_radius;
         // 原位重定向后覆盖声明目标圆角。
-        view.style.border_radius = slot.value_for(target, spec);
+        let frame = slot.value_for(target, spec);
+        // 标量圆角动画按单值输入落地，显式清除四角形式。
+        view.style.border_radius = frame;
+        view.style.border_radius_corners = None;
+        view.style_decl.border_radius = Some(frame);
+        view.style_decl.border_radius_corners = Some(None);
     }
     // 选中透明度时读取目标并写回当前帧值。
     if let Some(slot) = values.opacity.as_mut() {
         // 保存状态分支叠加后的目标透明度。
         let target = view.style.opacity;
         // 原位重定向后覆盖声明目标透明度。
-        view.style.opacity = slot.value_for(target, spec);
+        let frame = slot.value_for(target, spec);
+        view.style.opacity = frame;
+        view.style_decl.opacity = Some(frame);
     }
-    // 选中前景色时读取具体目标并写回当前帧值。
+    // 选中前景色时解析目标并写回当前帧值。
     if let Some(slot) = values.color.as_mut() {
-        // 主题语义色不得绕过编译期具体值约束。
-        let target =
-            concrete_color(view.style.color).ok_or(UixTransitionError::NonConcreteColor)?;
+        // 语义主题色按当前有效主题解析，主题切换在下一轮构建形成新目标。
+        let target = resolved_color(view.style.color);
         // 原位重定向后覆盖声明目标前景色。
-        view.style.color = ColorValue::Custom(slot.value_for(target, spec));
+        let frame = ColorValue::Custom(slot.value_for(target, spec));
+        view.style.color = frame;
+        view.style_decl.color = Some(frame);
     }
-    // 选中背景色时读取具体目标并写回当前帧值。
+    // 选中背景色时解析目标并写回当前帧值。
     if let Some(slot) = values.background_color.as_mut() {
-        // 缺失或主题背景色不得绕过编译期具体值约束。
+        // 缺失背景不得绕过编译期值约束。
         let target = view
             // 借用目标样式。
             .style
             // 读取可选背景。
             .background
-            // 只保留具体颜色。
-            .and_then(concrete_color)
+            // 按当前有效主题解析具体颜色。
+            .map(resolved_color)
             // 否则报告契约错配。
-            .ok_or(UixTransitionError::NonConcreteBackgroundColor)?;
+            .ok_or(UixTransitionError::MissingBackgroundColor)?;
         // 原位重定向后覆盖声明目标背景色。
-        view.style.background = Some(ColorValue::Custom(slot.value_for(target, spec)));
+        let frame = ColorValue::Custom(slot.value_for(target, spec));
+        view.style.background = Some(frame);
+        view.style_decl.background = Some(Some(frame));
     }
     // 返回写入当前动画帧值的同一节点。
     Ok(view)
 }
 
-// 从样式颜色值提取可直接插值的具体颜色。
-const fn concrete_color(value: ColorValue) -> Option<Color> {
-    // 主题语义颜色要到 WidgetTree token 快照才能解析，不能在 View 构建期伪装插值。
-    match value {
-        // 具体颜色可直接进入 Animated<Color>。
-        ColorValue::Custom(color) => Some(color),
-        // 调色板与中性色角色由编译器提前拒绝。
-        ColorValue::Palette(_) | ColorValue::Neutral(_) => None,
-    }
-}
+#[cfg(test)]
+#[path = "../../../tests-src/ui/view/declarative_transition_tests.rs"]
+mod tests;
+

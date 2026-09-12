@@ -7,7 +7,7 @@ use crate::ui::theme::style::TextDecoration;
 
 // 保存移动拥有型文本布局前计算出的装饰线段。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct DecorationSegment {
+pub struct DecorationSegment {
     // 线段的绝对水平起点。
     start_x: f32,
     // 线段的绝对水平终点。
@@ -17,7 +17,7 @@ pub(crate) struct DecorationSegment {
 }
 
 // 按最终视觉布局生成每行文本装饰线段。
-pub(crate) fn segments(
+pub fn segments(
     // 借用与文字绘制相同的排版结果。
     layout: &TextLayout,
     // 接收文字绘制的绝对原点。
@@ -83,7 +83,7 @@ pub(crate) fn segments(
 }
 
 // 使用 draw System 的中性直线 API 绘制预计算文本装饰。
-pub(crate) fn paint(
+pub fn paint(
     // 借用当前 UI 绘制上下文。
     ctx: &mut PaintContext<'_, '_>,
     // 借用预计算的绝对坐标线段。

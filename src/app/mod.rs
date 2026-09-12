@@ -39,10 +39,6 @@ pub mod agent_client;
 #[cfg(feature = "agent-control")]
 pub mod agent_workspace;
 pub(crate) mod event_loop;
-#[cfg(feature = "uix-modules")]
-pub mod modules;
-#[cfg(feature = "extensions")]
-pub mod extensions;
 pub(crate) mod queues;
 pub(crate) mod session_runtime;
 pub(crate) mod window;
@@ -54,7 +50,8 @@ pub use agent_client::AgentBridgeClient;
 pub use application::app_handle::AppHandle;
 pub use application::application::{App, AppMode, map_ui_event};
 pub use application::cli::{Cli, CliArgs};
-pub use application::di::Container;
+pub use application::di::Container as DiContainer;
+pub use application::extensions::{AppExtension, AppExtensions};
 pub use queues::agent_command_queue::AgentConfirmationRequest;
 pub use queues::app_timer::TimerHandle;
 pub use window::window::Window;

@@ -54,10 +54,6 @@ impl Canvas2D for NoopCanvas2D {
     fn pixels(&self) -> &[u32] {
         &[]
     }
-    #[cfg(test)]
-    fn pixels_mut(&mut self) -> &mut [u32] {
-        &mut []
-    }
     fn surface_size(&self) -> Size {
         Size::new(0.0, 0.0)
     }
@@ -68,4 +64,14 @@ impl Canvas2D for NoopCanvas2D {
     // prevents a production Canvas2D implementation from inheriting no-op
     // scroll-copy semantics by accident.
     fn scroll_region(&mut self, _: Rect, _: f32, _: f32) {}
+        #[cfg(test)]
+        noop_canvas2d_pixels_mut_impl!();
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/backend/cpu/noop_canvas_2d_tests.rs"]
+mod noop_canvas_2d_tests;
+
+#[cfg(test)]
+use crate::draw::painting::canvas::canvas2d_test_macros::noop_canvas2d_pixels_mut_impl;

@@ -14,9 +14,7 @@ use crate::core::{Point, WidgetId};
 use crate::platform::windowing::{KeyCode, KeyMod, MouseButton};
 use crate::ui::event::{ClickEvent, SemanticEvent, SemanticKind, SystemEvent};
 use crate::ui::widget_runtime::widget::{EventResult, WidgetTree};
-use crate::ui::widget_snapshot::{AccessibilityRole, SnapshotFields};
-use crate::ui::widgets::Input;
-use crate::ui::widgets::window_chrome::WindowInteractionRegion;
+use crate::ui::widget_snapshot::{AccessibilityRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// 不携带动作载荷的稳定语义动作种类。
@@ -194,7 +192,7 @@ impl WidgetTree {
         let accepts_text = node
             .as_text_input()
             .is_some_and(|client| client.accepts_text_input());
-        let is_input = node.widget().as_any().is::<Input>();
+        let is_input = node.widget().as_text_input().and_then(|input| input.text_edit_snapshot()).is_some();
         let can_focus = node.is_focusable()
             || (node.accepts_events()
                 && matches!(
@@ -307,10 +305,7 @@ impl WidgetTree {
         let accessibility = widget_snapshot.accessibility();
         // 原生窗口控件的 Invoke 是类型化窗口动作，不应绕经键盘事件再猜测
         // 默认行为。先复制公开枚举，释放节点借用后由 WidgetTree 唯一队列提交。
-        let window_control = match widget_snapshot.fields {
-            SnapshotFields::WindowControl { control, .. } => Some(control),
-            _ => None,
-        };
+        let window_control = widget_snapshot.fields.invoke_window_action();
         let role = accessibility.role;
         let actions = self.supported_semantic_actions(id);
         if !actions.contains(&action_kind) {
@@ -336,7 +331,7 @@ impl WidgetTree {
             SemanticAction::Invoke => {
                 if let Some(control) = window_control {
                     self.pending_window_actions
-                        .push(WindowInteractionRegion::window_action(control));
+                        .push(control);
                     EventResult::Handled
                 } else {
                     let keyboard = if role == AccessibilityRole::Button {
@@ -594,14 +589,8 @@ impl WidgetTree {
         allow_unfocused_input: bool,
     ) -> EventResult {
         // 先在不可变借用内取出值、光标与选区，释放借用后再执行替换写入。
-        let edit = self.get(id).and_then(|node| {
-            let input = node.widget().as_any().downcast_ref::<Input>()?;
-            let value = input.current_value().to_owned();
-            let selection = input.selection.get();
-            let caret = input.cursor_char;
-            Some((value, selection, caret))
-        });
-        let Some((value, selection, caret)) = edit else {
+        let edit = self.get(id).and_then(|node| node.widget().as_text_input()?.text_edit_snapshot());
+        let Some(crate::ui::TextEditSnapshot { value, selection, caret }) = edit else {
             return EventResult::NotHandled;
         };
         let (start, end) = selection.unwrap_or((caret, caret));
@@ -656,9 +645,9 @@ impl WidgetTree {
         if result == EventResult::Handled {
             if let Some(input) = self
                 .get_mut(id)
-                .and_then(|node| node.widget_mut().as_any_mut().downcast_mut::<Input>())
+                .and_then(|node| node.widget_mut().as_text_input_mut())
             {
-                input.restore_edit_selection(inner_range.0, inner_range.1);
+                input.restore_text_edit_selection(inner_range.0, inner_range.1);
             }
         }
         result
@@ -671,10 +660,7 @@ impl WidgetTree {
         allow_unfocused_input: bool,
     ) -> EventResult {
         let Some(current_value) = self.get(id).and_then(|node| {
-            node.widget()
-                .as_any()
-                .downcast_ref::<Input>()
-                .map(|input| input.current_value().to_owned())
+            node.widget().as_text_input()?.text_edit_snapshot().map(|edit| edit.value)
         }) else {
             return EventResult::NotHandled;
         };

@@ -518,23 +518,6 @@ pub(crate) fn read_bounded_line<R: BufRead>(
 // 帧划分纯逻辑专项测试（仅 agent-control 能力下编译，不启动线程与 IO）。
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "../../../tests-src/app/agent/agent_transport_tests.rs"]
+mod tests;
 
-    struct NoopCancel;
-
-    impl AgentStreamCancelIo for NoopCancel {
-        fn cancel(&self) {}
-    }
-
-    #[test]
-    fn terminal_reply_drain_is_immediate_when_empty_and_bounded_when_busy() {
-        let connections: ConnectionRegistry = Arc::new(Mutex::new(BTreeMap::new()));
-        assert!(wait_for_connections_to_drain(&connections, Duration::ZERO));
-        connections
-            .lock()
-            .expect("fixture registry must lock")
-            .insert(1, Arc::new(NoopCancel));
-        assert!(!wait_for_connections_to_drain(&connections, Duration::ZERO));
-    }
-}

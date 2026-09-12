@@ -8,10 +8,6 @@ use super::unit::PhysicalUnit;
 /// 带物理单位的 3D 盒子。
 ///
 /// 允许用不同单位描述各轴尺寸：
-/// ```rust
-/// use uix_app::draw::geometry::spatial::{PhysicalBox, PhysicalUnitExt};
-/// let pb = PhysicalBox::new(10.0.mm(), 5.0.mm(), 0.0.mm(), 5.0.cm(), 3.0.cm(), 1.0.mm());
-/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicalBox {
     /// 盒子最小角的 X 轴坐标。

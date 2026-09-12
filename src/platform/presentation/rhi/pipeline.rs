@@ -56,12 +56,6 @@ impl PipelineBinding {
         Self { handle, kind }
     }
 
-    // 仅为共享 RHI 单元测试构造可控的句柄与语义组合。
-    #[cfg(test)]
-    pub(crate) const fn for_test(handle: PipelineHandle, kind: PipelineKind) -> Self {
-        // 测试伪造入口不向生产 Module 暴露资源创建能力。
-        Self { handle, kind }
-    }
 
     // 返回只允许 Adapter 资源表消费的不透明句柄。
     pub(crate) const fn handle(self) -> PipelineHandle {
@@ -623,3 +617,7 @@ pub(crate) struct PipelineDesc {
     // 使用封闭类型标识通用 renderer 选定的 pipeline 语义。
     pub(crate) kind: PipelineKind,
 }
+
+#[cfg(test)]
+#[path = "../../../../tests-src/platform/presentation/rhi/pipeline_tests.rs"]
+mod pipeline_tests;

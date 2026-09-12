@@ -37,7 +37,7 @@ fn estimated_scalar_width(ch: char, font_size: f32) -> f32 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct EstimatedTextMetrics {
+pub struct EstimatedTextMetrics {
     pub max_line_width: f32,
     pub line_count: usize,
     pub width_wrapped: bool,
@@ -70,7 +70,7 @@ fn estimate_unwrapped_text_metrics(text: &str, font_size: f32) -> EstimatedTextM
 }
 
 /// 无字体上下文时使用的文本尺寸估算；显式换行与 CJK 行首禁则须与真实布局一致。
-pub(crate) fn estimate_text_metrics(
+pub fn estimate_text_metrics(
     text: &str,
     max_width: f32,
     font_size: f32,
@@ -211,7 +211,7 @@ pub(crate) fn estimate_text_metrics(
 /// 单个字形的最大光栅化字号，限制异常输入导致的面积型内存增长。
 pub(crate) const MAX_RASTER_PIXEL_SIZE: f32 = 512.0;
 
-pub(crate) fn bounded_font_size(pixel_size: f32) -> f32 {
+pub fn bounded_font_size(pixel_size: f32) -> f32 {
     if pixel_size.is_finite() {
         pixel_size.clamp(1.0, MAX_RASTER_PIXEL_SIZE)
     } else {
@@ -267,7 +267,7 @@ pub struct PositionedGlyph {
 }
 
 /// 返回逻辑选择区在视觉行中的全部连续水平片段。
-pub(crate) fn visit_glyph_selection_x_ranges(
+pub fn visit_glyph_selection_x_ranges(
     // 借用按视觉顺序排列的行字形。
     glyphs: &[PositionedGlyph],
     // 指定逻辑选择起点。
@@ -308,7 +308,7 @@ pub(crate) fn visit_glyph_selection_x_ranges(
 }
 
 /// 返回逻辑选择区在视觉行中的全部连续水平片段。
-pub(crate) fn glyph_selection_x_ranges(
+pub fn glyph_selection_x_ranges(
     // 借用按视觉顺序排列的行字形。
     glyphs: &[PositionedGlyph],
     // 指定逻辑选择起点。
@@ -328,7 +328,7 @@ pub(crate) fn glyph_selection_x_ranges(
 }
 
 /// 在一行视觉字形中命中逻辑光标边界。
-pub(crate) fn glyph_hit_test_index(glyphs: &[PositionedGlyph], x: f32) -> Option<usize> {
+pub fn glyph_hit_test_index(glyphs: &[PositionedGlyph], x: f32) -> Option<usize> {
     // 空视觉行没有可命中的 cluster。
     if glyphs.is_empty() {
         // 返回空值交由行信息兜底。

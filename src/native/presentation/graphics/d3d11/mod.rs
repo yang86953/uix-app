@@ -6,8 +6,6 @@ use crate::core::{Error, Result};
 use crate::platform::graphics::GpuAdapterInfo;
 use crate::platform::presentation::GraphicsContextCandidate;
 // D3D11 WARP 测试入口返回类型化 GPU context trait object。
-#[cfg(all(test, feature = "d3d11"))]
-use crate::platform::presentation::GpuRecipeContext;
 
 #[path = "adapter/mod.rs"]
 pub(crate) mod platform;
@@ -28,25 +26,11 @@ pub(crate) fn enumerate_adapters() -> Result<Box<[GpuAdapterInfo]>> {
 }
 
 // 显式 Windows parity feature 只转发生产 D3D11 Adapter 的真实 GPU harness。
-#[cfg(all(windows, feature = "d3d11-parity-test"))]
+#[cfg(all(windows, uix_gpu_parity_d3d11))]
 pub(crate) fn run_gpu_parity_test() {
     platform::run_gpu_parity_test();
 }
 
-// 测试目标保留 D3D11 WARP 包装入口，供显式后端矩阵按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, feature = "d3d11"))]
-pub(crate) fn create_warp_test_context(
-    surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn GpuRecipeContext>, Error> {
-    platform::create_warp_test_context(surface, width, height)
-}
-
-// 测试目标保留 D3D11 WARP 可用性包装入口，供显式后端矩阵按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, feature = "d3d11"))]
-pub(crate) fn warp_test_context_available() -> bool {
-    platform::warp_test_context_available()
-}
+// 仅测试构建的 WARP/绘制辅助位于 tests-src，经模块级 include! 保持原作用域。
+#[cfg(test)]
+include!("../../../../../tests-src/native/presentation/graphics/d3d11/warp_test_fns.rs");

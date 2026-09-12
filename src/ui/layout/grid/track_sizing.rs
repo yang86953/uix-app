@@ -1,6 +1,6 @@
 // 拆分自 grid.rs：Auto/Fr 轨道尺寸求解与有限化辅助。
 // 引入轨道、放置账本与子项类型。
-use super::{CellAssignment, EdgeInsets, GridChild, GridTrack};
+use super::{CellAssignment, EdgeInsets, GridChild, GridTrack, GridTrackMax, GridTrackMin};
 
 // 混合 Auto/Fr 跨轨约束只做固定轮数的单调松弛，避免病理输入形成无界循环。
 const FRACTION_SPAN_RELAXATION_LIMIT: usize = 64;
@@ -30,6 +30,50 @@ pub(super) fn finite_insets(insets: EdgeInsets) -> EdgeInsets {
         finite_or_zero(insets.right),
         finite_or_zero(insets.bottom),
     )
+}
+
+// 在进入求解前拒绝绕过 GridTrack::minmax 构造器的非法分量，与构造器同一契约。
+pub(super) fn expect_legal_tracks(tracks: &[GridTrack]) {
+    for track in tracks {
+        if let GridTrack::MinMax(min, max) = track {
+            let (GridTrackMin::Px(lower) | GridTrackMin::Percent(lower)) = *min;
+            let (GridTrackMax::Px(upper) | GridTrackMax::Fr(upper)) = *max;
+            assert!(
+                lower.is_finite() && lower >= 0.0 && upper.is_finite() && upper >= 0.0,
+                "GridTrack::MinMax requires finite, non-negative bounds"
+            );
+        }
+    }
+}
+
+// 把 minmax 下界按容器同轴内容盒解析为像素；百分比参照未定时为 0。
+fn minmax_floor(min: GridTrackMin, available: Option<f32>) -> f32 {
+    match min {
+        GridTrackMin::Px(px) => finite_non_negative(px),
+        GridTrackMin::Percent(percent) => available
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map(|value| finite_non_negative(value * finite_non_negative(percent) / 100.0))
+            .unwrap_or(0.0),
+    }
+}
+
+// 轨道在剩余空间分配中的 fr 权重：Fr 与 fr 上界的 minmax 参与，其他为 0。
+fn fraction_weight(track: &GridTrack) -> f64 {
+    match track {
+        GridTrack::Fr(weight) | GridTrack::MinMax(_, GridTrackMax::Fr(weight)) => {
+            finite_non_negative(*weight) as f64
+        }
+        GridTrack::Px(_) | GridTrack::Auto | GridTrack::MinMax(_, GridTrackMax::Px(_)) => 0.0,
+    }
+}
+
+// 轨道在固有尺寸账本中保证占用的像素：Px 用自身，minmax 用下界，Auto/Fr 由调用方处理。
+fn guaranteed_extent(track: &GridTrack, available: Option<f32>) -> f64 {
+    match track {
+        GridTrack::Px(px) => finite_non_negative(*px) as f64,
+        GridTrack::MinMax(min, _) => minmax_floor(*min, available) as f64,
+        GridTrack::Auto | GridTrack::Fr(_) => 0.0,
+    }
 }
 
 // 计算单个子项在指定轴上的有限外尺寸。
@@ -201,11 +245,10 @@ pub(super) fn intrinsic_auto_track_sizes_into(
             };
             // 将结束位置限制在实际轨道数量内。
             let end = start.saturating_add(span).min(tracks.len());
-            // 含正比例 Fr 的 span 由后续剩余空间分配承担。
-            let contains_fraction = tracks[start..end].iter().any(|track| {
-                // 只有正且有限的 Fr 权重会参与空间分配。
-                matches!(track, GridTrack::Fr(fr) if finite_non_negative(*fr) > 0.0)
-            });
+            // 含正比例 Fr（含 fr 上界 minmax）的 span 由后续剩余空间分配承担。
+            let contains_fraction = tracks[start..end]
+                .iter()
+                .any(|track| fraction_weight(track) > 0.0);
             // 保留 Fr 轨道吸收剩余空间的既有语义。
             if contains_fraction {
                 // 这类 span 不额外扩张 Auto 轨道。
@@ -234,12 +277,11 @@ pub(super) fn intrinsic_auto_track_sizes_into(
                 .map(|(offset, track)| {
                     // 固定轨道计入自身宽高，Auto 计入批次开始时的尺寸。
                     match track {
-                        // 固定轨道使用安全化后的像素值。
-                        GridTrack::Px(px) => finite_non_negative(*px) as f64,
                         // 当前 Auto 轨道使用上一批已确定的尺寸。
                         GridTrack::Auto => sizes[start + offset] as f64,
+                        // 固定轨道用像素值，minmax 用下界（此阶段无容器参照，百分比为 0），
                         // 非正 Fr 在这一固有尺寸账本中不占空间。
-                        GridTrack::Fr(_) => 0.0,
+                        other => guaranteed_extent(other, None),
                     }
                 })
                 // 汇总整个 span 已有的轨道尺寸。
@@ -305,13 +347,8 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
     let total_fraction_weight = tracks
         // 遍历有界轨道定义。
         .iter()
-        // 只有 Fr 轨道贡献权重。
-        .map(|track| match track {
-            // 正且有限的权重参与剩余空间分配。
-            GridTrack::Fr(weight) => finite_non_negative(*weight) as f64,
-            // Px 与 Auto 不参与 Fr 权重。
-            _ => 0.0,
-        })
+        // Fr 与 fr 上界的 minmax 贡献权重。
+        .map(fraction_weight)
         // 使用 f64 避免极大权重求和溢出。
         .sum::<f64>();
     // 没有有效 Fr 时，前一阶段已经完成全部 Auto 跨轨贡献。
@@ -393,12 +430,10 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
         .enumerate()
         // 汇总固定与内容轨道占用。
         .map(|(index, track)| match track {
-            // 固定轨道使用有限非负像素值。
-            GridTrack::Px(size) => finite_non_negative(*size) as f64,
             // Auto 轨道使用前一阶段的固有尺寸。
             GridTrack::Auto => auto_sizes.get(index).copied().unwrap_or(0.0) as f64,
-            // Fr 留到剩余空间阶段分配。
-            GridTrack::Fr(_) => 0.0,
+            // 固定轨道与 minmax 下界是保证占用；纯 Fr 留到剩余空间阶段分配。
+            other => guaranteed_extent(other, Some(available)),
         })
         // 使用 f64 累加避免多轨道求和溢出。
         .sum::<f64>();
@@ -446,13 +481,8 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
             let span_fraction_weight = tracks[start..end]
                 // 遍历当前 span 的轨道定义。
                 .iter()
-                // 只提取有效 Fr 权重。
-                .map(|track| match track {
-                    // 正且有限的 Fr 参与当前 span 的剩余份额。
-                    GridTrack::Fr(weight) => finite_non_negative(*weight) as f64,
-                    // 其他轨道不贡献 Fr 权重。
-                    _ => 0.0,
-                })
+                // 提取 Fr 与 fr 上界 minmax 的有效权重。
+                .map(fraction_weight)
                 // 使用 f64 汇总权重。
                 .sum::<f64>();
             // 不含正 Fr 的 span 已由前一阶段处理。
@@ -483,16 +513,12 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
                 .enumerate()
                 // 逐轨道建立当前尺寸。
                 .map(|(offset, track)| match track {
-                    // 固定轨道使用安全化像素值。
-                    GridTrack::Px(size) => finite_non_negative(*size) as f64,
                     // Auto 轨道使用当前松弛后的尺寸。
                     GridTrack::Auto => auto_sizes[start + offset] as f64,
-                    // Fr 轨道按全局权重分享当前剩余空间。
-                    GridTrack::Fr(weight) => {
-                        // 收敛当前轨道权重。
-                        let weight = finite_non_negative(*weight) as f64;
-                        // 按全局单位换算当前 Fr 尺寸。
-                        remaining * weight / total_fraction_weight
+                    // 其他轨道取保证占用与按全局权重分享的剩余空间之大者。
+                    other => {
+                        let share = remaining * fraction_weight(other) / total_fraction_weight;
+                        guaranteed_extent(other, Some(available)).max(share)
                     }
                 })
                 // 汇总当前 span 的轨道尺寸。
@@ -553,7 +579,7 @@ pub(super) fn fit_fraction_spanning_auto_tracks(
     }
 }
 
-// 在固定与 Auto 尺寸确定后把剩余空间分配给 Fr 轨道。
+// 在固定与 Auto 尺寸确定后，先让固定上界的 minmax 轨道增长，再把剩余空间分配给 fr 轨道。
 pub(super) fn resolve_tracks_into(
     tracks: &[GridTrack],
     available: f32,
@@ -564,63 +590,140 @@ pub(super) fn resolve_tracks_into(
     // 为每条轨道建立最终尺寸账本。
     sizes.clear();
     sizes.resize(tracks.len(), 0.0);
+    let available = finite_non_negative(available);
+    // 百分比下界只参照已确定（正有限）的容器轴。
+    let reference = (available > 0.0).then_some(available);
     // 使用 f64 累加已确定尺寸，避免多轨道求和溢出。
     let mut used = 0.0f64;
     // 使用 f64 累加比例权重，避免极大权重求和溢出。
     let mut total_fr = 0.0f64;
 
-    // 先锁定 Px 和 Auto 轨道，并汇总有效 Fr 权重。
+    // 阶段一：锁定 Px、Auto 与全部 minmax 下界，并汇总有效 fr 权重。
     for (index, track) in tracks.iter().enumerate() {
-        // 按轨道类型建立基础尺寸。
         match track {
-            // 固定轨道直接使用有限非负像素值。
             GridTrack::Px(px) => {
-                // 收敛外部传入的固定尺寸。
                 let size = finite_non_negative(*px);
-                // 写入当前轨道的最终尺寸。
                 sizes[index] = size;
-                // 固定尺寸优先占用可用空间。
                 used += size as f64;
             }
-            // 自动轨道使用上一阶段的内容尺寸。
             GridTrack::Auto => {
-                // 缺失的账本项安全回退为零。
                 let size = auto_sizes
                     .get(index)
                     .copied()
                     .map(finite_non_negative)
                     .unwrap_or(0.0);
-                // 写入当前 Auto 轨道的最终尺寸。
                 sizes[index] = size;
-                // Auto 内容尺寸先于 Fr 占用可用空间。
                 used += size as f64;
             }
-            // 比例轨道留到第二轮分配剩余空间。
+            GridTrack::MinMax(min, max) => {
+                // 下界先于一切分配占用空间；fr 上界的下界同样是保证占用。
+                let floor = minmax_floor(*min, reference);
+                sizes[index] = floor;
+                used += floor as f64;
+                if let GridTrackMax::Fr(weight) = max {
+                    total_fr += finite_non_negative(*weight) as f64;
+                }
+            }
             GridTrack::Fr(fr) => {
-                // 仅累加正且有限的比例权重。
                 total_fr += finite_non_negative(*fr) as f64;
             }
         }
     }
 
-    // 可用空间先扣除 gap、固定轨道和 Auto 内容尺寸。
-    let remaining =
-        (finite_non_negative(available) as f64 - finite_non_negative(total_gap) as f64 - used)
-            .max(0.0);
-    // 没有可分配空间或有效 Fr 权重时直接保留基础尺寸。
+    // 可用空间先扣除 gap 与全部保证占用。
+    let mut remaining = (available as f64 - finite_non_negative(total_gap) as f64 - used).max(0.0);
+
+    // 阶段二：把剩余空间均匀分给尚未触顶的固定上界 minmax 轨道；上界低于下界时抬到下界。
+    loop {
+        let growable: Vec<usize> = tracks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, track)| match track {
+                GridTrack::MinMax(_, GridTrackMax::Px(cap)) => {
+                    let cap = finite_non_negative(*cap).max(sizes[index]);
+                    (cap > sizes[index] + 1.0e-6).then_some(index)
+                }
+                _ => None,
+            })
+            .collect();
+        if growable.is_empty() || remaining <= 1.0e-6 {
+            break;
+        }
+        let share = remaining / growable.len() as f64;
+        let mut applied = 0.0f64;
+        for index in growable {
+            let GridTrack::MinMax(_, GridTrackMax::Px(cap)) = tracks[index] else {
+                continue;
+            };
+            let cap = finite_non_negative(cap).max(sizes[index]);
+            let next = finite_non_negative(((sizes[index] as f64) + share).min(cap as f64) as f32);
+            applied += (next - sizes[index]) as f64;
+            sizes[index] = next;
+        }
+        remaining = (remaining - applied).max(0.0);
+        if applied <= 1.0e-6 {
+            break;
+        }
+    }
+
+    // 没有可分配空间或有效 fr 权重时，弹性轨道停在各自下界（纯 Fr 为 0）。
     if remaining <= 0.0 || total_fr <= 0.0 {
         // 纯 Auto 网格因此不会无条件填满父容器。
         return;
     }
 
-    // 按权重将全部剩余空间分配给 Fr 轨道。
-    for (index, track) in tracks.iter().enumerate() {
-        // 只有 Fr 轨道需要在这一轮更新。
-        if let GridTrack::Fr(fr) = track {
-            // 将当前轨道权重收敛为有限非负值。
-            let weight = finite_non_negative(*fr) as f64;
-            // 按权重比例写入该 Fr 轨道的最终尺寸。
-            sizes[index] = finite_non_negative((remaining * weight / total_fr) as f32);
+    // 阶段三：fr 分配。下界高于自身份额的 minmax 轨道按下界冻结并让出份额，
+    // 直到剩余弹性轨道都能得到不低于下界的尺寸；有界轮数保证终止。
+    let mut frozen = vec![false; tracks.len()];
+    let mut pool_weight = total_fr;
+    // 真正参与 fr 分配（权重为正）的轨道，其下界已计入 used，分配时放回可分配空间；
+    // 0fr 等零权重轨道不参与分配，下界只保留占用，不得重复送入分配池。
+    let flexible_floors: f64 = tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, track)| fraction_weight(track) > 0.0)
+        .map(|(index, _)| sizes[index] as f64)
+        .sum();
+    let mut distributable = remaining + flexible_floors;
+    for _ in 0..=tracks.len() {
+        if pool_weight <= 0.0 {
+            break;
+        }
+        let unit = distributable / pool_weight;
+        let mut changed = false;
+        for (index, track) in tracks.iter().enumerate() {
+            if frozen[index] {
+                continue;
+            }
+            let weight = fraction_weight(track);
+            if weight <= 0.0 {
+                continue;
+            }
+            let floor = sizes[index] as f64;
+            if floor > unit * weight + 1.0e-6 {
+                // 份额不足下界：按下界冻结，并从可分配空间与权重池中移除。
+                frozen[index] = true;
+                distributable = (distributable - floor).max(0.0);
+                pool_weight -= weight;
+                changed = true;
+            }
+        }
+        if !changed {
+            for (index, track) in tracks.iter().enumerate() {
+                if frozen[index] {
+                    continue;
+                }
+                let weight = fraction_weight(track);
+                if weight > 0.0 {
+                    sizes[index] = finite_non_negative((unit * weight) as f32);
+                }
+            }
+            break;
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/layout/grid/track_sizing_tests.rs"]
+mod tests;
+

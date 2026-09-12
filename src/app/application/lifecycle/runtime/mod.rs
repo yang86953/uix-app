@@ -87,34 +87,12 @@ fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsSe
     }
 }
 
-// 测试目标保留默认图形后端的 pending-window 便捷入口，供外部 GUI 测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn drain_pending_open_windows(
-    platform: &mut dyn PlatformSystem,
-    runtime: &AppRuntime,
-    app_state: &AppState,
-    container: &Container,
-    on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
-    secondary_windows: &mut Vec<SecondaryWindowSession>,
-) -> usize {
-    drain_pending_open_windows_with_backend(
-        platform,
-        runtime,
-        app_state,
-        container,
-        GraphicsSelection::Automatic,
-        RebuildRequest::default(),
-        on_window_start,
-        secondary_windows,
-    )
-}
-
 pub(crate) fn drain_pending_open_windows_with_backend(
     platform: &mut dyn PlatformSystem,
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
+    theme: &Theme,
     graphics_backend: GraphicsSelection,
     recovery_request: RebuildRequest,
     on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
@@ -129,6 +107,7 @@ pub(crate) fn drain_pending_open_windows_with_backend(
             runtime,
             app_state,
             container,
+            theme,
             graphics_backend,
             recovery_request.clone(),
             request,
@@ -142,30 +121,6 @@ pub(crate) fn drain_pending_open_windows_with_backend(
         }
     }
     created
-}
-
-// 测试目标保留无平台参数的 secondary-window 帧便捷入口，供外部 GUI 测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn drain_secondary_window_frames(
-    secondary_windows: &mut [SecondaryWindowSession],
-    font_service: &FontService,
-    image_service: &ImageService,
-    theme: &RefCell<Theme>,
-    debug_mode: &Diagnostics,
-    cursor_pos: &Cell<Point>,
-    clock: &dyn AppClock,
-) -> bool {
-    drain_secondary_window_frames_impl(
-        None,
-        secondary_windows,
-        font_service,
-        image_service,
-        theme,
-        debug_mode,
-        cursor_pos,
-        clock,
-    )
 }
 
 #[allow(
@@ -537,3 +492,8 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
 mod create;
 
 pub(crate) use self::create::*;
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/app/application/lifecycle/runtime/mod_tests.rs"]
+mod mod_tests;

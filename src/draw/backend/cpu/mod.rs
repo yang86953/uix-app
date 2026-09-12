@@ -2,7 +2,7 @@
 
 pub(crate) mod canvas_2d;
 // 测试支撑使用 API 无关空实现，避免 Drawing 因目标系统产生不同源码分支。
-#[cfg(any(test, feature = "test-harness", feature = "graphics-parity-test"))]
+#[cfg(any(test, feature = "test-harness", any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11)))]
 pub(crate) mod noop_canvas_2d;
 pub(crate) mod offscreen;
 

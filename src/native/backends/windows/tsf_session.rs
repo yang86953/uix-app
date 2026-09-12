@@ -50,23 +50,6 @@ pub(crate) struct TsfSession {
 }
 
 impl TsfSession {
-    // 测试目标保留 TSF client id 观测入口，供输入会话契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn client_id(&self) -> u32 {
-        self.client_id
-    }
-
-    // 测试目标保留 composition 状态观测入口，供输入会话契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn composition_active(&self) -> bool {
-        self.store_state
-            .read()
-            .map(|s| s.composition_active())
-            .unwrap_or(false)
-    }
-
     pub(crate) fn set_cursor_rect(&self, rect: windows::Win32::Foundation::RECT) -> Result<()> {
         let mut state = self.store_state.write().map_err(|error| {
             windows_diag(
@@ -259,3 +242,8 @@ pub(crate) fn tsf_composition_events(
         .map(|mut q| q.drain(..).collect())
         .unwrap_or_default()
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/backends/windows/tsf_session_tests.rs"]
+mod tsf_session_tests;

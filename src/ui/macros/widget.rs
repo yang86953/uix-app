@@ -75,18 +75,19 @@ macro_rules! widget {
 
         $crate::__widget_snapshot_impl! {
             $name { $($field)* }
+            ; [$(($method; ($($params)*) $(-> $ret)? $body))*]
         }
 
         impl $crate::ui::__private::traits::Widget for $name {
             fn as_any(&self) -> &dyn std::any::Any { self }
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
-            $crate::__widget_widget_snapshot_method!($name);
+            $crate::__widget_widget_snapshot_method!($name; $(($method; ($($params)*) $(-> $ret)? $body))*);
             fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
                 let mut c = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "flex_basis" | "minimum_size" | "flex_layout_axes" | "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
+                        "flex_basis" | "minimum_size" | "size_constraints" | "flex_layout_axes" | "measure" | "measure_natural" | "measure_from_children" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "child_overflow_expands_parent" | "child_visible" | "measure_children" | "layout_children" | "build" | "build_view_children" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "children_transform" | "children_opacity" | "paint_after_children" | "overlay_entry" | "overlay_entry_for_surface" | "draw_margin" =>
                             c.insert($crate::ui::__private::traits::WidgetCapabilities::RENDER),
@@ -141,7 +142,7 @@ macro_rules! widget {
         $crate::__widget_grouped_impl! {
             WidgetLayout,
             $name,
-            [flex_basis minimum_size flex_layout_axes measure measure_natural measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
+            [flex_basis minimum_size size_constraints flex_layout_axes measure measure_natural measure_from_children flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin child_overflow_expands_parent child_visible measure_children layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -181,7 +182,7 @@ macro_rules! widget {
         $crate::__widget_grouped_impl! {
             WidgetTextInput,
             $name,
-            [accepts_text_input text_input_cursor_rect],
+            [accepts_text_input text_input_cursor_rect text_edit_snapshot restore_text_edit_selection],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -267,35 +268,18 @@ macro_rules! __widget_struct {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __widget_widget_snapshot_method {
-    (Label) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            $crate::ui::SnapshotSource::snapshot_fields(self)
+    ($name:ident; (snapshot; ($($p:tt)*) -> $ret:ty $body:block) $($rest:tt)*) => {
+        fn snapshot_fields($($p)*) -> $crate::ui::WidgetSnapshotFields {
+            let fields: $ret = $body;
+            fields.into()
         }
     };
-    (Input) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            $crate::ui::SnapshotSource::snapshot_fields(self)
-        }
+    ($name:ident; ($($other:tt)*) $($rest:tt)*) => {
+        $crate::__widget_widget_snapshot_method!($name; $($rest)*);
     };
-    (Container) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            $crate::ui::SnapshotSource::snapshot_fields(self)
-        }
-    };
-    (Grid) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            $crate::ui::SnapshotSource::snapshot_fields(self)
-        }
-    };
-    ($name:ident) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            let typed = $crate::ui::__private::snapshot_fields_from_any(self.as_any());
-            match typed {
-                $crate::ui::SnapshotFields::Unknown => {
-                    $crate::ui::SnapshotSource::snapshot_fields(self)
-                }
-                fields => fields,
-            }
+    ($name:ident;) => {
+        fn snapshot_fields(&self) -> $crate::ui::WidgetSnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self).into()
         }
     };
 }
@@ -303,21 +287,21 @@ macro_rules! __widget_widget_snapshot_method {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __widget_snapshot_impl {
-    (Label { $($field:tt)* }) => {};
-    (Input { $($field:tt)* }) => {};
-    (Container { $($field:tt)* }) => {};
-    (Grid { $($field:tt)* }) => {};
+    ($name:ident { $($field:tt)* }; [(snapshot; $($spec:tt)*) $($rest:tt)*]) => {};
+    ($name:ident { $($field:tt)* }; [($($other:tt)*) $($rest:tt)*]) => {
+        $crate::__widget_snapshot_impl!($name { $($field)* }; [$($rest)*]);
+    };
+    ($name:ident { $($field:tt)* }; []) => {
+        $crate::__widget_snapshot_impl!($name { $($field)* });
+    };
     ($name:ident { $($field:tt)* }) => {
         impl $crate::ui::SnapshotSource for $name {
             #[allow(clippy::vec_init_then_push)]
-            fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            fn snapshot_fields(&self) -> $crate::ui::WidgetSnapshotFields {
                 #[allow(unused_mut, clippy::vec_init_then_push)]
                 let mut fields = Vec::new();
                 $crate::__widget_snapshot_collect_fields!(fields, self, $($field)*);
-                $crate::ui::SnapshotFields::Custom {
-                    widget: stringify!($name),
-                    fields,
-                }
+                $crate::ui::WidgetSnapshotFields::custom(stringify!($name), fields)
             }
         }
     };
@@ -368,6 +352,9 @@ macro_rules! __widget_method_builder {
     };
     (minimum_size; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn minimum_size($($p)*) -> $ret $body
+    };
+    (size_constraints; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn size_constraints($($p)*) -> $ret $body
     };
     (flex_layout_axes; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_layout_axes($($p)*) -> $ret $body
@@ -558,6 +545,9 @@ macro_rules! __match_trait_method {
     (WidgetLayout, minimum_size, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn minimum_size($($p)*) -> $ret $body
     };
+    (WidgetLayout, size_constraints, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn size_constraints($($p)*) -> $ret $body
+    };
     (WidgetLayout, flex_layout_axes, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_layout_axes($($p)*) -> $ret $body
     };
@@ -732,6 +722,12 @@ macro_rules! __match_trait_method {
     };
     (WidgetTextInput, text_input_cursor_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn text_input_cursor_rect($($p)*) -> $ret $body
+    };
+    (WidgetTextInput, text_edit_snapshot, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn text_edit_snapshot($($p)*) -> $ret $body
+    };
+    (WidgetTextInput, restore_text_edit_selection, ($($p:tt)*) $body:block) => {
+        fn restore_text_edit_selection($($p)*) $body
     };
     // ── 不属于此 trait：跳过 ──
     ($trait:ident, $method:ident, $($rest:tt)*) => {};

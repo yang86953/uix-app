@@ -78,16 +78,7 @@ impl WidgetTree {
         }
         // 公开直接换根不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
-            // 此时 root 已注册为真实 Transfer owner，可安全捕获自定义条目。
-            self.refresh_transfer_item_widget(id);
-            // 此时 root 已注册为真实 Carousel owner，可安全捕获自定义箭头。
-            self.refresh_carousel_custom_arrows_widget(id);
-            // 此时 root 已注册为真实 owner，动态捕获可以安全绑定树私有 store。
-            self.refresh_calendar_cell_widget(id);
-            // 导航 capability 启用时也物化 root Anchor 的首次动态容器。
-            #[cfg(feature = "navigation")]
-            // 此时 root 已是 live owner，捕获能力绑定本树私有状态存储。
-            self.refresh_anchor_container_widget(id);
+            self.refresh_dynamic_children(id, crate::ui::DynamicRefresh::DirectMount, None);
         }
         self.push_layout_invalidation(id);
         id
@@ -147,16 +138,7 @@ impl WidgetTree {
         }
         // 公开直接加子节点不会经过 build_node，仅在该路径补做 Calendar 首次动态物化。
         if include_view_children {
-            // 此时 child 已连接父树，可安全捕获 Transfer 自定义条目。
-            self.refresh_transfer_item_widget(child_id);
-            // 此时 child 已连接父树，可安全捕获 Carousel 自定义箭头。
-            self.refresh_carousel_custom_arrows_widget(child_id);
-            // 此时 child 已连接父树，动态捕获与离场判断均使用真实 owner。
-            self.refresh_calendar_cell_widget(child_id);
-            // 导航 capability 启用时也物化直接追加 Anchor 的首次动态容器。
-            #[cfg(feature = "navigation")]
-            // 此时 child 已连接父树，捕获与离场检查使用真实 owner。
-            self.refresh_anchor_container_widget(child_id);
+            self.refresh_dynamic_children(child_id, crate::ui::DynamicRefresh::DirectMount, None);
         }
 
         // 结构变化：Layout 失效向上传播。
@@ -255,6 +237,7 @@ impl WidgetTree {
             visible,
             visual_transform,
             position,
+            size_constraints,
             user_select,
             cursor,
             enter_animation,
@@ -295,6 +278,8 @@ impl WidgetTree {
             node.set_visual_transform(visual_transform);
             // 在首次布局前安装节点完整定位声明。
             node.set_position(position);
+            // 在首次布局前安装声明节点交付的尺寸约束。
+            node.set_size_constraints(size_constraints);
             // 先安装节点声明，随后结合真实父链解析 used-value。
             node.set_declared_user_select(user_select);
             // 把声明节点的可继承光标覆盖安装到运行时节点。
@@ -346,61 +331,18 @@ impl WidgetTree {
         }
         self.render_handler_table
             .replace_widget(id, render_handlers);
-        // 初建 authored slide 不得占用 Carousel 固定动态箭头的保留 key。
-        assert!(
-            // 非 Carousel 节点不受该专属身份约束。
-            !self.is_carousel_custom_arrows_widget(id)
-                // Carousel 的全部 authored 直接子节点必须避开框架固定 key。
-                || children.iter().all(|child| {
-                    // 只比较同一父级 keyed 协调使用的直接根 key。
-                    child.key.as_deref()
-                        // 拒绝与动态箭头命名空间相同的 authored 身份。
-                        != Some(
-                            // 引用产品唯一公开给 crate 的固定身份常量。
-                            crate::ui::widgets::display::Carousel::CUSTOM_ARROWS_CHILD_KEY,
-                        )
-                }),
-            // 在执行任何箭头工厂前给出稳定冲突诊断。
-            "Carousel authored child 不得使用保留 key uix:carousel:custom-arrows"
-        );
-        // 导航 capability 启用时拒绝初建 authored child 占用 Anchor 容器保留 key。
-        #[cfg(feature = "navigation")]
-        assert!(
-            // 非 Anchor 节点不受该专属动态容器身份约束。
-            !self.is_anchor_container_widget(id)
-                // Anchor 的声明直接子节点不得伪装为框架动态容器。
-                || children.iter().all(|child| {
-                    // 只比较同一父级 keyed 协调使用的直接根 key。
-                    child.key.as_deref()
-                        != Some(crate::ui::widgets::navigation::Anchor::CONTAINER_CHILD_KEY)
-                }),
-            // 让初建与父级 reconcile 使用同一明确的失败语义。
-            "Anchor authored child 不得使用保留 key uix:anchor:container"
-        );
+        if let Some(coordinator) = self.dynamic_children_coordinator(id) {
+            let reserved = coordinator.reserved_child_keys();
+            assert!(children.iter().all(|child| child.key.as_deref().is_none_or(|key| !reserved.contains(&key))),
+                "authored child uses a component-reserved dynamic key");
+        }
         for child in children {
             self.build_node(child, Some(id));
         }
         for child in widget_view_children {
             self.build_node(ViewAdapter::expand(child), Some(id));
         }
-        self.refresh_virtual_scroll_widget(id, None);
-        // 表格 capability 启用时才刷新泛型单元格子树。
-        #[cfg(feature = "table")]
-        self.refresh_table_cell_widget(id);
-        // 表格 capability 启用时才刷新扩展行子树。
-        #[cfg(feature = "table")]
-        self.refresh_table_expand_widget(id);
-        self.refresh_select_option_widget(id);
-        // Transfer 注册为真实 owner 后立即物化自定义条目并交接私有运行时输出。
-        self.refresh_transfer_item_widget(id);
-        // Carousel 注册为真实 owner 后立即物化固定自定义箭头。
-        self.refresh_carousel_custom_arrows_widget(id);
-        // Calendar 注册为真实 owner 后立即物化日期格，避免初建路径绕过动态状态捕获。
-        self.refresh_calendar_cell_widget(id);
-        // 导航 capability 启用时在 authored children 挂载后物化 Anchor 动态容器。
-        #[cfg(feature = "navigation")]
-        // 初建路径使用窄追加，绝不以仅含容器的 reconcile 吞掉 authored children。
-        self.refresh_anchor_container_widget(id);
+        self.refresh_dynamic_children(id, crate::ui::DynamicRefresh::Mount, None);
         // 节点及其所有递归子树成功建立后，才提交该节点捕获的动画源所有权。
         self.replace_node_animated_sources(id, animated_sources);
         id

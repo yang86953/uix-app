@@ -220,23 +220,8 @@ impl WidgetTree {
             self.pending_window_actions.push(action);
         }
         self.apply_event_layout_request(id);
-        // 表格 capability 启用时才刷新扩展行与泛型单元格子树。
-        #[cfg(feature = "table")]
-        let table_children_changed =
-            self.refresh_table_expand_widget(id) | self.refresh_table_cell_widget(id);
-        // 表格 capability 关闭时不保留专属动态刷新分支。
-        #[cfg(not(feature = "table"))]
-        let table_children_changed = false;
-        // 使用事件完成时的真实组件高度计算 VirtualScroll 当前物化窗口。
-        let virtual_scroll_viewport_height = self.get(id).map(|node| node.frame().h);
-        // 合并可选表格刷新与常驻动态组件刷新结果。
-        let dynamic_children_changed = table_children_changed
-            | self.refresh_select_option_widget(id)
-            // Transfer 的选择或跨 pane 移动必须在同一事件内重建动态条目身份。
-            | self.refresh_transfer_item_widget(id)
-            | self.refresh_calendar_cell_widget(id)
-            // Wheel 改变偏移后必须在同一事件中物化新窗口，不能等待无关布局。
-            | self.refresh_virtual_scroll_widget(id, virtual_scroll_viewport_height);
+        let viewport_height = self.get(id).map(|node| node.frame().h);
+        let dynamic_children_changed = self.refresh_dynamic_children(id, crate::ui::DynamicRefresh::Event, viewport_height);
         if dynamic_children_changed {
             self.push_layout_invalidation(id);
             self.propagate_layout_invalidation(id);

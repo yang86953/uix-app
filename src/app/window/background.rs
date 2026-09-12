@@ -76,10 +76,7 @@ fn run_inner(
         config.fonts,
         &crate::platform::native_font_system_info(),
     )?;
-    crate::ui::widgets::icon::init_static_lucide_font(
-        include_bytes!("../../../assets/fonts/lucide.ttf"),
-        &mut fonts,
-    );
+    config.extensions.initialize_fonts(&mut fonts)?;
     // 后台操作面同样让布局与 CPU 绘制共享本线程的字体权威。
     let fonts = std::rc::Rc::new(fonts);
     let _layout_fonts = crate::ui::widget_runtime::measurement::LayoutFontScope::enter(
@@ -92,12 +89,16 @@ fn run_inner(
     renderer.initialize(config.width, config.height)?;
     let mut window = OffscreenWindow::new(id, config.width, config.height, signal)?;
     let root = config.root;
+    let extensions = config.extensions;
+    // 后台初始捕获与每帧驱动共用本工作区自身配置主题：不绑定前台全局
+    // 主题，也不回退默认亮色；首帧 set_theme_tokens 与快照一致无变化。
     let mut session = WindowSession::from_root_factory_for_window(
         id,
-        move || prepare_app_root(root(), None, id),
+        move || prepare_app_root(root(), Some(extensions.clone()), id),
         Box::new(renderer),
         config.width,
         config.height,
+        &theme.borrow(),
     );
     session.set_window_focused(false);
     session.set_app_state(state);

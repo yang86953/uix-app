@@ -26,11 +26,11 @@ impl WidgetTree {
         let (width_locked, height_locked) = self.phase2_explicit_size_locks(id);
         (
             !width_locked
-                && !(position.insets.left_value().is_some()
-                    && position.insets.right_value().is_some()),
+                && !(!position.insets.left_length().is_auto()
+                    && !position.insets.right_length().is_auto()),
             !height_locked
-                && !(position.insets.top_value().is_some()
-                    && position.insets.bottom_value().is_some()),
+                && !(!position.insets.top_length().is_auto()
+                    && !position.insets.bottom_length().is_auto()),
         )
     }
 
@@ -156,6 +156,24 @@ impl WidgetTree {
         true
     }
 
+    // 动态替换节点 min/max 尺寸约束并报告是否发生变化；调用方负责触发 Layout。
+    pub(crate) fn set_node_size_constraints(
+        &mut self,
+        id: WidgetId,
+        constraints: crate::ui::theme::style::SizeConstraints,
+    ) -> bool {
+        if self
+            .get(id)
+            .is_none_or(|node| node.size_constraints() == constraints)
+        {
+            return false;
+        }
+        if let Some(node) = self.get_mut(id) {
+            node.set_size_constraints(constraints);
+        }
+        true
+    }
+
     // 判断节点是否是相对根视口合成的 fixed 根。
     pub(crate) fn node_is_fixed(&self, id: WidgetId) -> bool {
         // 只有显式 Fixed 模式截断祖先滚动与裁剪路径。
@@ -207,36 +225,55 @@ impl WidgetTree {
         // 根据模式选择最近定位祖先或根视口。
         let block = self.position_containing_block(id, position.mode)?;
         // 脱流子项不参与 Flex 空间分配，不能沿用 grow 的零 basis。
-        // 统一自然测量入口也保留透明包装节点的子树代理契约。
-        let measured =
-            crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints(
-                id,
-                self,
-                Constraints::loose(Size::new(block.w.max(0.0), block.h.max(0.0))),
-            )
-            .measured_size;
-        // 提取四边显式值。
-        let top = position.insets.top_value();
-        // 提取右边显式值。
-        let right = position.insets.right_value();
-        // 提取底边显式值。
-        let bottom = position.insets.bottom_value();
-        // 提取左边显式值。
-        let left = position.insets.left_value();
+        // 统一自然测量入口也保留透明包装节点的子树代理契约；百分比约束参照包含块。
+        let child = crate::ui::widget_runtime::tree_measure::child_from_tree_with_natural_constraints_in(
+            id,
+            self,
+            Constraints::loose(Size::new(block.w.max(0.0), block.h.max(0.0))),
+            crate::ui::theme::style::PercentReference::definite(Size::new(
+                block.w.max(0.0),
+                block.h.max(0.0),
+            )),
+        );
+        let measured = child.measured_size;
+        // 双侧锚定拉伸出的尺寸同样受 min/max 钳制，min 优先于 max。
+        let clamp_axis = |value: f32, minimum: f32, maximum: f32| {
+            let maximum = if maximum.is_finite() && maximum < f32::MAX {
+                maximum.max(minimum)
+            } else {
+                f32::MAX
+            };
+            value.max(minimum).min(maximum)
+        };
+        // 四边按包含块解析：水平边参照宽度，垂直边参照高度；百分比与 calc 同路径。
+        let insets = position.insets.resolve(block.w.max(0.0), block.h.max(0.0));
+        // 提取四边解析值。
+        let top = insets.top;
+        let right = insets.right;
+        let bottom = insets.bottom;
+        let left = insets.left;
         // 双侧都声明时由包含块剩余宽度决定 border-box 宽度。
-        let width = match (left, right) {
-            // 左右同时锚定时拉伸，并把负结果收敛为空宽度。
-            (Some(left), Some(right)) => (block.w - left - right).max(0.0),
-            // 只有单侧或均为 auto 时保留自然宽度。
-            _ => measured.w.max(0.0),
-        };
+        let width = clamp_axis(
+            match (left, right) {
+                // 左右同时锚定时拉伸，并把负结果收敛为空宽度。
+                (Some(left), Some(right)) => (block.w - left - right).max(0.0),
+                // 只有单侧或均为 auto 时保留自然宽度。
+                _ => measured.w.max(0.0),
+            },
+            child.min_size.w.max(0.0),
+            child.max_size.w,
+        );
         // 双侧都声明时由包含块剩余高度决定 border-box 高度。
-        let height = match (top, bottom) {
-            // 上下同时锚定时拉伸，并把负结果收敛为空高度。
-            (Some(top), Some(bottom)) => (block.h - top - bottom).max(0.0),
-            // 只有单侧或均为 auto 时保留自然高度。
-            _ => measured.h.max(0.0),
-        };
+        let height = clamp_axis(
+            match (top, bottom) {
+                // 上下同时锚定时拉伸，并把负结果收敛为空高度。
+                (Some(top), Some(bottom)) => (block.h - top - bottom).max(0.0),
+                // 只有单侧或均为 auto 时保留自然高度。
+                _ => measured.h.max(0.0),
+            },
+            child.min_size.h.max(0.0),
+            child.max_size.h,
+        );
         // 水平优先使用 left，其次使用 right，均 auto 时贴包含块起点。
         let x = if let Some(left) = left {
             // 从包含块左边向内偏移。
@@ -303,8 +340,8 @@ impl WidgetTree {
         };
         // static、absolute 与 fixed 的 frame 已经包含全部布局位置。
         match position.mode {
-            // relative 直接使用四边优先级计算视觉平移。
-            PositionMode::Relative => Self::relative_offset(position),
+            // relative 直接使用四边优先级计算视觉平移；百分比参照直接父节点 frame。
+            PositionMode::Relative => self.relative_offset(id, position),
             // sticky 结合最近 viewport 和父级边界计算平移。
             PositionMode::Sticky => self.sticky_offset(id, position),
             // 其余模式没有额外视觉平移。
@@ -312,26 +349,29 @@ impl WidgetTree {
         }
     }
 
-    // 计算 relative 的左右、上下互斥优先级。
-    fn relative_offset(position: PositionedLayout) -> Point {
+    // 计算 relative 的左右、上下互斥优先级；百分比参照直接父节点 frame。
+    fn relative_offset(&self, id: WidgetId, position: PositionedLayout) -> Point {
+        // 直接父节点 border-box 是 relative 的包含块；根节点回退自身 frame。
+        let block = self
+            .get(id)
+            .and_then(|node| node.parent())
+            .and_then(|parent| self.get(parent))
+            .or_else(|| self.get(id))
+            .map(|node| node.frame())
+            .unwrap_or_default();
+        let insets = position.insets.resolve(block.w.max(0.0), block.h.max(0.0));
         // left 优先；未声明 left 时 right 产生反向平移。
-        let x = position
-            // 读取左边值。
-            .insets
-            // 复制显式左边。
-            .left_value()
+        let x = insets
+            .left
             // 没有 left 时把 right 转为负方向。
-            .or_else(|| position.insets.right_value().map(|right| -right))
+            .or_else(|| insets.right.map(|right| -right))
             // 两边均 auto 时不平移。
             .unwrap_or(0.0);
         // top 优先；未声明 top 时 bottom 产生反向平移。
-        let y = position
-            // 读取顶边值。
-            .insets
-            // 复制显式顶边。
-            .top_value()
+        let y = insets
+            .top
             // 没有 top 时把 bottom 转为负方向。
-            .or_else(|| position.insets.bottom_value().map(|bottom| -bottom))
+            .or_else(|| insets.bottom.map(|bottom| -bottom))
             // 两边均 auto 时不平移。
             .unwrap_or(0.0);
         // 返回不改变正常流占位的视觉偏移。
@@ -357,6 +397,8 @@ impl WidgetTree {
             .unwrap_or(frame);
         // 查找最近 viewport，同时累计全部祖先滚动偏移。
         let (viewport, scroll) = self.nearest_position_viewport(id);
+        // sticky 四边参照最近滚动视口尺寸解析百分比。
+        let insets = position.insets.resolve(viewport.w.max(0.0), viewport.h.max(0.0));
         // 当前正常流 frame 投影到屏幕后的起点。
         let visual_x = frame.x - scroll.x;
         // 当前正常流 frame 投影到屏幕后的起点。
@@ -364,12 +406,12 @@ impl WidgetTree {
         // 没有左右 inset 时保持水平正常流位置。
         let mut dx: f32 = 0.0;
         // left 建立 viewport 左侧下限。
-        if let Some(left) = position.insets.left_value() {
+        if let Some(left) = insets.left {
             // 只在内容滚过下限时向右补偿。
             dx = dx.max(viewport.x + left - visual_x);
         }
         // right 建立 viewport 右侧上限。
-        if let Some(right) = position.insets.right_value() {
+        if let Some(right) = insets.right {
             // 把当前补偿限制到右侧可见边界。
             dx = dx.min(viewport.x + viewport.w - right - frame.w - visual_x);
         }
@@ -380,12 +422,12 @@ impl WidgetTree {
         // 没有上下 inset 时保持垂直正常流位置。
         let mut dy: f32 = 0.0;
         // top 建立 viewport 顶部下限。
-        if let Some(top) = position.insets.top_value() {
+        if let Some(top) = insets.top {
             // 只在内容滚过下限时向下补偿。
             dy = dy.max(viewport.y + top - visual_y);
         }
         // bottom 建立 viewport 底部上限。
-        if let Some(bottom) = position.insets.bottom_value() {
+        if let Some(bottom) = insets.bottom {
             // 把当前补偿限制到底部可见边界。
             dy = dy.min(viewport.y + viewport.h - bottom - frame.h - visual_y);
         }

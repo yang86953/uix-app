@@ -97,12 +97,6 @@ impl Add for PhysicalUnit {
 /// 物理单位便捷构造器。
 ///
 /// 允许使用字面量直接构造 PhysicalUnit：
-/// ```rust
-/// use uix_app::draw::geometry::spatial::PhysicalUnitExt;
-/// let w = 10.0.mm();
-/// let h = 5.0.cm();
-/// let fs = 12.0.pt();
-/// ```
 pub trait PhysicalUnitExt {
     /// 把数值包装为设备无关像素单位。
     fn px(self) -> PhysicalUnit;
@@ -165,11 +159,6 @@ impl PhysicalUnitExt for i32 {
 /// 角度便捷构造器。
 ///
 /// 允许使用度数或弧度构造角度：
-/// ```rust
-/// use uix_app::draw::geometry::spatial::AngleExt;
-/// let a = 45.0.deg();  // 度 → 弧度
-/// let b = 0.5.rad();   // 弧度
-/// ```
 pub trait AngleExt {
     /// 度 → 弧度
     fn deg(self) -> f32;

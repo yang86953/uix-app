@@ -43,11 +43,15 @@ impl WidgetTree {
         live_scopes
     }
 
-    pub(crate) fn keyboard_focus_visible(&self) -> bool {
+    pub fn keyboard_focus_visible(&self) -> bool {
         self.window_focused && self.keyboard_focus_visible
     }
 
     pub(crate) fn set_keyboard_focus_visible(&mut self, visible: bool) {
+        // 事实按树归属同步到本树存储；其他树/窗口各自持有事实，
+        // 键盘焦点可见翻转不跨树传播。
+        self.widget_state_store
+            .sync_keyboard_focus_visible_fact(self.window_focused && visible);
         if self.keyboard_focus_visible == visible {
             return;
         }
@@ -66,6 +70,10 @@ impl WidgetTree {
             tokens.as_ref(),
         );
         self.theme_tokens = tokens;
+        // 令牌实际变化请求一次根声明协调：构建期 token 读取与 token
+        // transition 目标经下一轮根构建重新解析；值未变的目标不重启动画。
+        self.reconcile_requested
+            .store(true, std::sync::atomic::Ordering::Release);
         if font_sizes_changed {
             if let Some(root) = self.root_id() {
                 // 包含首帧前按默认主题预布局的情况，整棵子树重新测量。
@@ -77,6 +85,65 @@ impl WidgetTree {
     /// 当前 UI 域主题令牌根。
     pub(crate) fn theme_tokens(&self) -> std::sync::Arc<dyn ThemeTokens> {
         self.theme_tokens.clone()
+    }
+
+    /// 构建期 `@media` 使用的逻辑客户区宽度：根 frame 宽度，无根时为 0。
+    pub(crate) fn viewport_width_for_build(&self) -> f32 {
+        self.root().map(|root| root.frame().w).unwrap_or(0.0)
+    }
+
+    /// 用一次完整根构建评估过的 `@media` 断点替换树记录。
+    pub(crate) fn replace_media_breakpoints(
+        &mut self,
+        breakpoints: Vec<crate::ui::widget_runtime::build_viewport::MediaBreakpoint>,
+        built_width: Option<f32>,
+    ) {
+        self.media_breakpoints.replace(breakpoints, built_width);
+    }
+
+    /// 合并局部（作用域重建或动态子树）构建评估过的 `@media` 断点。
+    pub(crate) fn merge_media_breakpoints(
+        &mut self,
+        breakpoints: Vec<crate::ui::widget_runtime::build_viewport::MediaBreakpoint>,
+        built_width: Option<f32>,
+    ) {
+        self.media_breakpoints.merge(breakpoints, built_width);
+    }
+
+    /// 同步根 frame 到窗口逻辑客户区；宽度跨越任一已评估 `@media` 阈值时
+    /// 请求一次根协调。返回 frame 是否实际改变。
+    ///
+    /// 只由窗口 resize、初始建树与测试驾驭调用，不轮询。
+    pub(crate) fn set_root_frame(&mut self, frame: crate::core::Rect) -> bool {
+        let Some(root_id) = self.root_id() else {
+            return false;
+        };
+        let mismatched = self.get(root_id).is_some_and(|root| {
+            let current = root.frame();
+            (current.w - frame.w).abs() > 0.5 || (current.h - frame.h).abs() > 0.5
+        });
+        if !mismatched {
+            return false;
+        }
+        if let Some(root) = self.get_mut(root_id) {
+            root.set_frame(frame);
+        }
+        self.tree_version = self.tree_version.wrapping_add(1);
+        self.push_layout_invalidation(root_id);
+        self.mark_full_frame_dirty();
+        self.request_reconcile_if_media_crosses(frame.w);
+        true
+    }
+
+    /// 根逻辑宽度变为 `width` 且跨越任一已评估 `@media` 阈值时请求一次根协调。
+    ///
+    /// 由全部根 frame 写入口（窗口 resize 同步、Resize 系统事件、测试驾驭）调用。
+    pub(crate) fn request_reconcile_if_media_crosses(&self, width: f32) {
+        if self.media_breakpoints.crosses(width) {
+            // 断点翻转后由下一轮根构建按新宽度重新评估条件层。
+            self.reconcile_requested
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
     }
 
     /// 创建拥有独立树作用域、管理器和失效状态的空组件树。
@@ -917,13 +984,6 @@ impl WidgetTree {
         damage.prepainted.clear();
     }
 
-    // 测试目标保留布局帧 trace 取出入口，供布局收敛测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn take_layout_frame_trace(&self) -> Vec<(u8, WidgetId, i32, i32)> {
-        std::mem::take(&mut *self.layout_frame_trace.borrow_mut())
-    }
-
     pub(crate) fn apply_frame_paint(&mut self, id: WidgetId, new_frame: Rect) -> bool {
         // 比较与脏区计算前先归一，避免等价非法输入制造重复失效。
         let new_frame = crate::ui::layout::engine::normalize_layout_rect(new_frame);
@@ -949,31 +1009,11 @@ impl WidgetTree {
         true
     }
 
-    // 测试目标保留布局写入计数取出入口，供布局收敛测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn take_layout_frame_writes(&self) -> u32 {
-        self.layout_frame_writes.replace(0)
-    }
-
-    // 测试目标保留 shrink 操作计数取出入口，供布局收敛测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn take_layout_shrink_ops(&self) -> u32 {
-        self.layout_shrink_ops.replace(0)
-    }
-
-    // 测试目标保留收敛 pass 计数取出入口，供布局收敛测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn take_layout_converge_passes(&self) -> u32 {
-        self.layout_converge_passes.replace(0)
-    }
-
-    // 测试目标保留 expand 操作计数取出入口，供布局收敛测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn take_layout_expand_ops(&self) -> u32 {
-        self.layout_expand_ops.replace(0)
-    }
 }
+
+#[cfg(test)]
+#[path = "../../../../../tests-src/ui/widget_runtime/widget/tree_core/methods_tests.rs"]
+mod theme_reconcile_tests;
+
+// —— 自源文件移入的自由 cfg(test) 项 ——
+

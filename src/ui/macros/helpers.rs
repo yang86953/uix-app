@@ -38,12 +38,6 @@ macro_rules! semantic_handler {
 
 /// 将异质 View 子节点收成 `Vec<ViewNode>`，供 `column` / `row` / `grid` 使用（[#178]）。
 ///
-/// ```ignore
-/// column(views![
-///     label("Hello"),
-///     button("+1").primary().on_click(&count, |c| c.set(c.get() + 1)),
-/// ])
-/// ```
 ///
 /// 两三个子节点时优先元组：`column((a, b))`。
 #[macro_export]
@@ -64,15 +58,6 @@ macro_rules! views {
 /// `Animated<T>` / `KeyframeAnimation<T>` 的值，即可让全部属性由一个
 /// source 和一条时间线推进。
 ///
-/// ```ignore
-/// keyframe! {
-///     #[derive(Debug, PartialEq)]
-///     pub struct EnterFrame {
-///         pub opacity: f32,
-///         pub offset_y: f32,
-///     }
-/// }
-/// ```
 #[macro_export]
 macro_rules! keyframe {
     (
@@ -126,15 +111,6 @@ macro_rules! keyframe {
 /// 外层 clone 进闭包；每次调用再 clone 供 body 使用（root 重建需要）。
 /// 不消除 Rust `'static` 固有 clone，只去掉手写 `*_for_root` 样板（[#180]）。
 ///
-/// ```ignore
-/// .root(with_cloned!(active, count, theme; {
-///     shell(active, &count, &theme)
-/// }))
-/// .on_start(with_cloned!(theme, ticks; |handle| {
-///     theme.set_handle(handle.clone());
-///     // …
-/// }))
-/// ```
 #[macro_export]
 macro_rules! with_cloned {
     // 带参数闭包体采用 Rust 2024 表达式片段语义。

@@ -1,8 +1,0 @@
-<Visual
-  name="FOOTER_VISUAL"
-  type="FooterVisual"
-  defaultHeight={48.0}
-  childDirection={footer_child_direction()}
-/>
-
-<KernelView value={build_footer_view(kernel, FOOTER_VISUAL_REF)} />

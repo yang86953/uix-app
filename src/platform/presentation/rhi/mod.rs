@@ -10,10 +10,11 @@
 // Drawing 的唯一向下入口同时暴露 recipe 选择值与 opaque owner；具体实现仍由
 // native factory 创建，Drawing 不能越过本门面取得任何 Adapter 类型。
 pub(crate) use super::{
-    GpuRecipeOwner, GraphicsApi, GraphicsRecipe, GraphicsRecipeOwner, GraphicsSelection,
-    NativeSurfaceHandle, PixelUploadRecipeOwner, PresentTestResult, describe_backend_availability,
-    gpu_recipe_candidates, try_create_gpu_recipe_with_queue,
+    GpuRecipeOwner, GraphicsApi, GraphicsRecipeOwner, GraphicsSelection,
+    NativeSurfaceHandle, PixelUploadRecipeOwner, PresentTestResult,
 };
+#[cfg(feature = "platform")]
+pub(crate) use super::{GraphicsRecipe, describe_backend_availability, gpu_recipe_candidates, try_create_gpu_recipe_with_queue};
 // 使用框架统一错误类型，保证 surface、device 和资源失败保持 typed error。
 use crate::core::error::{Errc, Error, Result};
 // 将 Shape 像素语义拆到独立共享契约文件，避免主 RHI 文件越过行数边界。
@@ -39,7 +40,8 @@ mod multisample;
 // 将颜色编码与混合值域拆到独立契约，禁止 Adapter 启用隐藏颜色转换。
 mod color;
 // 显式 parity feature 才编译 API 中立测试端口，不进入生产合同表面。
-#[cfg(feature = "graphics-parity-test")]
+#[cfg(any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11))]
+#[path = "../../../../tests-src/platform/presentation/rhi/parity.rs"]
 mod parity;
 // 将 Device 与 Surface 能力拆到独立契约，禁止两种角色反向读取彼此状态。
 mod capabilities;
@@ -97,7 +99,7 @@ pub(crate) use color::{
     RhiColorClearContract, RhiColorContract, UIX_COLOR_CLEAR_CONTRACT, UIX_COLOR_CONTRACT,
 };
 // 向显式 parity 组合根与原生 Adapter 暴露同一套测试端口。
-#[cfg(feature = "graphics-parity-test")]
+#[cfg(any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11))]
 pub(crate) use parity::{
     HeadlessUiParityAdapter, WsiParityAdapter, WsiParityFramePresenter, WsiParityProfile,
 };
@@ -145,12 +147,15 @@ pub(crate) use surface_lifecycle::{
     RhiSurfaceRecreateTransaction,
 };
 // 显式 Vulkan 验证 feature 复用同一共享状态机，不复制测试实现。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) use surface_lifecycle::run_surface_lifecycle_contract_test;
 // 向 FramePlan、pass 状态与 Adapter 暴露不含裸哨兵的目标身份。
 pub(crate) use render_target::RenderTargetHandle;
 // 向 Drawing System 暴露唯一 Gradient 常量构造器和固定字节数。
-pub(crate) use gradient::{GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams};
+pub(crate) use gradient::{
+    GRADIENT_MASK_RADIUS_FLOAT_OFFSET, GRADIENT_MASK_SIZE_FLOAT_OFFSET,
+    GRADIENT_QUAD_SIZE_FLOAT_OFFSET, GRADIENT_UNIFORM_BYTES, RhiGradientRasterParams,
+};
 // 只有 OpenGL Adapter 需要把共享 Gradient 字节 ABI 映射为逐个原生 uniform。
 #[cfg(feature = "opengles")]
 pub(crate) use gradient::{

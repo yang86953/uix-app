@@ -18,6 +18,7 @@ pub(crate) mod blur;
 pub(crate) mod core;
 #[cfg(test)]
 #[doc(hidden)]
+#[path = "../../../../tests-src/draw/raster/rasterizer/fill.rs"]
 pub mod fill;
 pub(crate) mod glyph;
 pub(crate) mod polygon;

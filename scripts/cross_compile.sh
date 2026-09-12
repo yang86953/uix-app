@@ -13,7 +13,7 @@ readonly cross_windows_x64_target="x86_64-pc-windows-msvc"
 readonly cross_macos_arm64_target="aarch64-apple-darwin"
 readonly cross_macos_x64_target="x86_64-apple-darwin"
 # macOS 构建只选择原生 Metal 与当前公开组件能力，不借用 Windows/Linux 后端。
-readonly cross_macos_features="metal,agent-control,image-codecs,qrcode,form-pattern,rich-text,charts,table,navigation,feedback,tree-widgets"
+readonly cross_macos_features="application,metal,agent-control,image-codecs"
 
 # 输出稳定错误并终止，避免部分目标通过时被误认为完整矩阵成功。
 cross_fail() {
@@ -59,8 +59,8 @@ cross_check_release_platform() {
         cd "$cross_repo_root"
         cargo check --locked --package uix-app --target "$cross_target" \
             --features agent-control "${cross_profile_args[@]}"
-        cargo check --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
-            --target "$cross_target" --features agent-control "${cross_profile_args[@]}"
+        cargo check --locked --manifest-path "$cross_repo_root/../uix-widgets/Cargo.toml" --example showcase \
+            --target "$cross_target" --features examples,agent-control,vulkan,opengles,d3d11 "${cross_profile_args[@]}"
     )
 }
 
@@ -74,9 +74,9 @@ cross_check_macos() {
         cargo check --locked --package uix-app --target "$cross_target" \
             --no-default-features --features "$cross_macos_features" \
             "${cross_profile_args[@]}"
-        cargo check --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
+        cargo check --locked --manifest-path "$cross_repo_root/../uix-widgets/Cargo.toml" --example showcase \
             --target "$cross_target" --no-default-features \
-            --features demo-logging,agent-control,macos-backend \
+            --features examples,agent-control,metal \
             "${cross_profile_args[@]}"
     )
 }
@@ -91,8 +91,8 @@ cross_build_linux_x64() {
         cd "$cross_repo_root"
         cargo build --locked --package uix-app --target "$cross_linux_x64_target" \
             --features agent-control "${cross_profile_args[@]}"
-        cargo build --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
-            --target "$cross_linux_x64_target" --features agent-control \
+        cargo build --locked --manifest-path "$cross_repo_root/../uix-widgets/Cargo.toml" --example showcase \
+            --target "$cross_linux_x64_target" --features examples,agent-control,vulkan,opengles,d3d11 \
             "${cross_profile_args[@]}"
     )
 }
@@ -124,9 +124,9 @@ cross_build_windows_x64() {
         "${cross_windows_driver[@]}" build --locked --package uix-app \
             --target "$cross_windows_x64_target" --features agent-control \
             "${cross_profile_args[@]}"
-        "${cross_windows_driver[@]}" build --locked --manifest-path demo/Cargo.toml \
-            --bin uix-lang-demo --target "$cross_windows_x64_target" \
-            --features agent-control "${cross_profile_args[@]}"
+        "${cross_windows_driver[@]}" build --locked --manifest-path "$cross_repo_root/../uix-widgets/Cargo.toml" \
+            --example showcase --target "$cross_windows_x64_target" \
+            --features examples,agent-control,vulkan,opengles,d3d11 "${cross_profile_args[@]}"
     )
 }
 
@@ -145,9 +145,9 @@ cross_build_macos() {
         cargo build --locked --package uix-app --target "$cross_target" \
             --no-default-features --features "$cross_macos_features" \
             "${cross_profile_args[@]}"
-        cargo build --locked --manifest-path demo/Cargo.toml --bin uix-lang-demo \
+        cargo build --locked --manifest-path "$cross_repo_root/../uix-widgets/Cargo.toml" --example showcase \
             --target "$cross_target" --no-default-features \
-            --features demo-logging,agent-control,macos-backend \
+            --features examples,agent-control,metal \
             "${cross_profile_args[@]}"
     )
 }

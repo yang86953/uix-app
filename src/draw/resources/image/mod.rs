@@ -9,7 +9,9 @@
 pub(crate) mod decode;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+// 引入共享圆角值与圆角 SDF，供背景瓦片盒相对掩码复用。
+use crate::draw::geometry::types::Radius;
 use std::sync::Arc;
 // 图片编解码 capability 启用时才需要读取文件。
 #[cfg(feature = "image-codecs")]
@@ -109,6 +111,23 @@ impl ImageSlot {
 }
 
 type RoundedRectCache = HashMap<(BitmapHandle, u32, u32, u32, bool), BitmapHandle>;
+// 盒相对圆角背景瓦片派生缓存：句柄、设备宽高、量化盒/瓦几何与四个量化半径。
+type RoundedBackgroundKey = (
+    BitmapHandle,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+);
+// 派生瓦片缓存上限：resize/动画下按 LRU 淘汰并释放槽位，保持资源有界。
+pub(crate) const ROUNDED_BACKGROUND_CACHE_CAP: usize = 48;
 
 // 保存后台图片解码任务的 typed 结果。
 #[cfg(feature = "image-codecs")]
@@ -123,6 +142,10 @@ pub struct ImageService {
     circular_cache: RefCell<HashMap<(BitmapHandle, u32), BitmapHandle>>,
     rounded_square_cache: RefCell<HashMap<(BitmapHandle, u32, u32), BitmapHandle>>,
     rounded_rect_cache: RefCell<RoundedRectCache>,
+    rounded_background_cache: RefCell<(
+        HashMap<RoundedBackgroundKey, BitmapHandle>,
+        VecDeque<RoundedBackgroundKey>,
+    )>,
     // 按规范化路径保存仍在后台读取或解码的单次任务。
     #[cfg(feature = "image-codecs")]
     pending_path_decodes: RefCell<HashMap<String, Receiver<AsyncDecodeResult>>>,
@@ -145,6 +168,7 @@ impl ImageService {
             circular_cache: RefCell::new(HashMap::new()),
             rounded_square_cache: RefCell::new(HashMap::new()),
             rounded_rect_cache: RefCell::new(HashMap::new()),
+            rounded_background_cache: RefCell::new((HashMap::new(), VecDeque::new())),
             // 新服务初始没有后台图片任务。
             #[cfg(feature = "image-codecs")]
             pending_path_decodes: RefCell::new(HashMap::new()),
@@ -364,7 +388,7 @@ impl ImageService {
     }
 
     /// 按目标物理像素生成居中裁切的圆形派生图，避免低分辨率源图放大后遮罩失真。
-    pub(crate) fn circular_crop_sized(
+    pub fn circular_crop_sized(
         &self,
         handle: BitmapHandle,
         target_side: u32,
@@ -400,7 +424,7 @@ impl ImageService {
     }
 
     /// 按目标物理像素生成带圆角遮罩的居中正方形派生图。
-    pub(crate) fn rounded_square_crop_sized(
+    pub fn rounded_square_crop_sized(
         &self,
         handle: BitmapHandle,
         target_side: u32,
@@ -434,7 +458,7 @@ impl ImageService {
     }
 
     /// 按目标物理像素生成带圆角遮罩的矩形派生图，并保留 fit / stretch 契约。
-    pub(crate) fn rounded_rect_sized(
+    pub fn rounded_rect_sized(
         &self,
         handle: BitmapHandle,
         target_width: u32,
@@ -478,6 +502,122 @@ impl ImageService {
         ));
         self.rounded_rect_cache.borrow_mut().insert(key, derived);
         Some(derived)
+    }
+
+    /// 按背景盒坐标生成精确圆角裁剪的瓦片派生图（盒相对掩码）。
+    ///
+    /// `tile`/`box_rect`/`corner` 同为逻辑坐标且 `corner` 已按盒尺寸归一化：
+    /// 每个设备像素逆映射回逻辑空间后，用共享 `rounded_rect_sdf` 相对
+    /// 背景盒求值，整层所有相交瓦片获得同一圆角边界（直边部分与盒边
+    /// 重合，由外层矩形裁剪负责）。设备宽高按 `device_pixel_ratio` 换算
+    /// 并钳制到 4096；钳制后的有效缩放同时作用于掩码求值与抗锯齿带，
+    /// 不静默改变逻辑圆角形状。缓存按量化几何键 LRU 有界（resize/动画
+    /// 下淘汰最旧并释放槽位）。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn rounded_background_tile(
+        &self,
+        handle: BitmapHandle,
+        tile: Rect,
+        box_rect: Rect,
+        corner: Radius,
+        device_pixel_ratio: f32,
+    ) -> Option<BitmapHandle> {
+        let dpr = if device_pixel_ratio.is_finite() && device_pixel_ratio > 0.0 {
+            device_pixel_ratio
+        } else {
+            1.0
+        };
+        let target_width = ((tile.w * dpr).round() as i32).clamp(1, 4096) as u32;
+        let target_height = ((tile.h * dpr).round() as i32).clamp(1, 4096) as u32;
+        // 钳制后的有效缩放：设备像素 ↔ 逻辑像素的真实比例。
+        let scale_x = target_width as f32 / tile.w;
+        let scale_y = target_height as f32 / tile.h;
+        let ramp_scale = (scale_x + scale_y) * 0.5;
+        // 量化几何键：偏移、盒尺寸与半径按 1/64 逻辑像素离散。
+        let quantize = |value: f32| (value * 64.0).round() as i32 as u32;
+        let key = (
+            handle,
+            target_width,
+            target_height,
+            quantize(box_rect.x - tile.x),
+            quantize(box_rect.y - tile.y),
+            quantize(box_rect.w),
+            quantize(box_rect.h),
+            quantize(corner.tl),
+            quantize(corner.tr),
+            quantize(corner.br),
+            quantize(corner.bl),
+            quantize(ramp_scale * 64.0),
+        );
+        {
+            let mut cache = self.rounded_background_cache.borrow_mut();
+            if let Some(cached) = cache.0.get(&key).copied() {
+                if self.is_valid(cached) {
+                    // 命中即提升为最新使用。
+                    if let Some(index) = cache.1.iter().position(|k| *k == key) {
+                        cache.1.remove(index);
+                    }
+                    cache.1.push_back(key);
+                    return Some(cached);
+                }
+                cache.0.remove(&key);
+                if let Some(index) = cache.1.iter().position(|k| *k == key) {
+                    cache.1.remove(index);
+                }
+            }
+        }
+        let mut pixels = self.resized_rect_pixels(handle, target_width, target_height, false)?;
+        // 设备像素逆映射回逻辑空间后按背景盒求值共享圆角 SDF。
+        for py in 0..target_height as usize {
+            for px in 0..target_width as usize {
+                let logical_x = tile.x + (px as f32 + 0.5) / scale_x;
+                let logical_y = tile.y + (py as f32 + 0.5) / scale_y;
+                let sdf = crate::draw::raster::rasterizer::core::rounded_rect_sdf(
+                    logical_x, logical_y, &box_rect, &corner,
+                );
+                let coverage = (0.5 - sdf * ramp_scale).clamp(0.0, 1.0);
+                let pixel = &mut pixels[py * target_width as usize + px];
+                *pixel = apply_pixel_coverage(*pixel, coverage);
+            }
+        }
+        let derived = self.insert_slot(ImageSlot::from_decoded(
+            target_width as i32,
+            target_height as i32,
+            pixels,
+            None,
+        ));
+        let evicted = {
+            let mut cache = self.rounded_background_cache.borrow_mut();
+            cache.0.insert(key, derived);
+            cache.1.push_back(key);
+            // 淘汰最旧条目并同步释放其派生槽位，保证资源有界。
+            let mut evicted = Vec::new();
+            while cache.1.len() > ROUNDED_BACKGROUND_CACHE_CAP {
+                let Some(oldest) = cache.1.pop_front() else {
+                    break;
+                };
+                if let Some(handle) = cache.0.remove(&oldest) {
+                    evicted.push(handle);
+                }
+            }
+            evicted
+        };
+        for handle in evicted {
+            self.invalidate_slot(handle);
+        }
+        Some(derived)
+    }
+
+    /// 派生瓦片缓存当前条目数（cfg(test) 观测有界性）。
+    #[cfg(test)]
+    pub(crate) fn rounded_background_cache_len(&self) -> usize {
+        self.rounded_background_cache.borrow().0.len()
+    }
+
+    /// 派生瓦片缓存上限（cfg(test) 与断言共享同一常量）。
+    #[cfg(test)]
+    pub(crate) fn rounded_background_cache_cap(&self) -> usize {
+        ROUNDED_BACKGROUND_CACHE_CAP
     }
 
     // 居中像素提取是图片裁切的兼容辅助入口，当前测试矩阵按需调用。
@@ -587,6 +727,10 @@ impl ImageService {
             let mut cache = self.rounded_rect_cache.borrow_mut();
             take_derived_handles(&mut cache, handle, |key| key.0)
         };
+        let rounded_background = {
+            let mut cache = self.rounded_background_cache.borrow_mut();
+            take_derived_handles(&mut cache.0, handle, |key| key.0)
+        };
         let square = {
             let mut cache = self.square_cache.borrow_mut();
             take_derived_handles(&mut cache, handle, |key| *key)
@@ -596,6 +740,7 @@ impl ImageService {
             .into_iter()
             .chain(rounded_square)
             .chain(rounded_rect)
+            .chain(rounded_background)
             .chain(square)
         {
             self.invalidate_slot(derived);
@@ -758,3 +903,7 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
 }
 
 // 图片异步加载契约测试独立存放，避免资源模块继续增长。
+
+#[cfg(all(test, feature = "image-codecs"))]
+#[path = "../../../../tests-src/draw/resources/s4_rounded_tile_tests.rs"]
+mod s4_rounded_tile_tests;

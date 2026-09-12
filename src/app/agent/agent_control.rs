@@ -63,10 +63,7 @@ impl AgentCommandExecutor for AgentCommandExecutorImpl {
         if self.isolated
             && matches!(action, SemanticAction::Invoke)
             && tree.get(node_id).is_some_and(|node| {
-                matches!(
-                    node.widget_snapshot(node_id).fields,
-                    crate::ui::widget_snapshot::SnapshotFields::WindowControl { .. }
-                )
+                node.widget_snapshot(node_id).fields.invoke_window_action().is_some()
             })
         {
             return Err(AgentCommandError::UnsupportedAction {

@@ -1,6 +1,7 @@
 //! 单一 Renderer、帧生命周期与调度状态。
 
 pub mod animation;
+#[cfg(feature = "platform")]
 pub(crate) mod bootstrap;
 pub mod invalidation;
 pub mod lifecycle;
@@ -11,8 +12,7 @@ mod runtime;
 pub mod scene_pipeline;
 pub mod session;
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
-// 将测试支撑实现统一存放在根 tests 目录。
-#[path = "../../../tests/support/draw/renderer/test_harness.rs"]
+// agent-control 的协议截屏与 test-harness 的规范像素回读共用本实现。
 pub(crate) mod test_harness;
 
 pub use crate::draw::outcome::{GraphicsFailure, RenderOutcome};

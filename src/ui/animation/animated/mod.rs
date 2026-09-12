@@ -13,9 +13,27 @@ use crate::ui::animation::traits::Animatable;
 use crate::ui::reactive::state::State;
 use std::cell::RefCell;
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+// 减少动效全局开关：开启后过渡重定向直接落到目标值，不申请动画帧。
+static REDUCED_MOTION: AtomicBool = AtomicBool::new(false);
+
+/// 返回减少动效是否已开启。
+pub fn reduced_motion() -> bool {
+    REDUCED_MOTION.load(Ordering::Acquire)
+}
+
+/// 设置进程级减少动效开关。
+///
+/// 范围（诚实边界）：只影响声明式定时 transition 的重定向——开启后的
+/// 新过渡与仍在进行中的同目标过渡会立即落到目标值并释放定时帧；进行中
+/// 的其他播放（spring、keyframes、进出场 `enter`/`leave`）不被强制跳帧，
+/// 照常自然完成。本开关不自动检测 OS 无障碍偏好，由宿主应用显式设置。
+pub fn set_reduced_motion(reduced: bool) {
+    REDUCED_MOTION.store(reduced, Ordering::Release);
+}
 
 static NEXT_ANIMATED_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -324,7 +342,8 @@ impl<T: Animatable + Sync> Animated<T> {
     fn replace_playback(&self, target: T, duration: f64, easing: Easing, delay: Duration) {
         let from = self.inner.current.get_untracked();
         let mut next = Animation::new(from, target, duration).easing(easing);
-        let immediate = delay.is_zero() && next.duration <= 0.0;
+        // 减少动效与零时长同路：立即落到目标值，不登记帧截止。
+        let immediate = reduced_motion() || (delay.is_zero() && next.duration <= 0.0);
         if immediate {
             next.stop();
         }

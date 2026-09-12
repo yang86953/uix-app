@@ -17,6 +17,9 @@ pub(crate) mod paint_scope;
 pub(crate) mod widget;
 
 pub(crate) mod app_state;
+pub(crate) mod build_theme;
+// 构建期窗口视口作用域与 @media 断点记录。
+pub(crate) mod build_viewport;
 pub mod clipboard;
 /// 全局组件配置及其作用域访问接口。
 pub mod config;

@@ -139,17 +139,6 @@ impl BackendCapabilities {
         }
     }
 
-    // 测试目标保留独立的最小能力配置，供后端契约测试按需构造。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn test() -> Self {
-        Self {
-            presentation_mode: PresentationMode::ExternalPresenter,
-            partial_redraw: true,
-            offscreen: false,
-            scroll_memmove: false,
-        }
-    }
 }
 
 impl From<BackendCapabilities> for crate::draw::GraphicsCapabilities {
@@ -205,15 +194,6 @@ pub trait DrawSurface {
 /// Live backends may own thread-affine graphics contexts and therefore cannot
 /// cross threads through safe Rust.
 ///
-/// ```compile_fail
-/// use uix_app::draw::backend::RenderBackend;
-///
-/// fn needs_send<T: Send>(_value: T) {}
-///
-/// fn backend_cannot_cross_threads(backend: Box<dyn RenderBackend>) {
-///     needs_send(backend);
-/// }
-/// ```
 pub trait RenderBackend {
     /// 返回后端偏好的软件或 GPU 栅格路径。
     fn kind(&self) -> BackendKind;
@@ -489,3 +469,8 @@ pub trait RenderBackend {
     /// 返回用于唯一 Renderer 下行查询具体后端的可变类型擦除借用。
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/backend/contract_tests.rs"]
+mod contract_tests;

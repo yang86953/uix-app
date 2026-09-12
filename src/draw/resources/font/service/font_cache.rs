@@ -78,13 +78,6 @@ impl GlyphCache {
         Self::with_limits(2048, 8 * 1024 * 1024)
     }
 
-    // 测试目标保留按条目数配置缓存的构造器，供淘汰策略测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn with_max_entries(max_entries: usize) -> Self {
-        Self::with_limits(max_entries, usize::MAX)
-    }
-
     pub(crate) fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
         Self {
             inner: Mutex::new(GlyphCacheState::default()),
@@ -193,3 +186,8 @@ impl GlyphCache {
             .unwrap_or(0)
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/draw/resources/font/service/font_cache_tests.rs"]
+mod font_cache_tests;

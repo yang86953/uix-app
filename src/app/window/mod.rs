@@ -6,9 +6,6 @@
 //! （渲染/事件泵）、window_session（会话状态机）、window_actions（窗口动作
 //! 窄适配）、window_config、text_input（输入法协调）与 bridge（UI↔Draw 桥接）。
 
-// 保留 `window::bridge` 逻辑路径，呈现桥接物理归入 presentation_bridge。
-#[path = "presentation_bridge/mod.rs"]
-pub(crate) mod bridge;
 pub(crate) mod frame_scheduler;
 pub(crate) mod text_input;
 #[allow(clippy::module_inception)]

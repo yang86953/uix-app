@@ -7,7 +7,7 @@ use unicode_bidi::{BidiInfo, Level};
 
 /// 描述一个段落在完整源文本中的逻辑字符范围与基准级别。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BidiParagraph {
+pub struct BidiParagraph {
     // 保存段落的逻辑字符范围。
     pub char_range: Range<usize>,
     // 保存段落基准嵌入级别。
@@ -16,7 +16,7 @@ pub(crate) struct BidiParagraph {
 
 /// 描述一组逻辑对象经过 UAX #9 L1/L2 后的视觉顺序。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BidiLineOrder {
+pub struct BidiLineOrder {
     // 以视觉顺序保存输入逻辑对象的下标。
     pub visual_to_logical: Vec<usize>,
     // 按输入逻辑对象顺序保存应用 L1 后的嵌入级别。
@@ -25,7 +25,7 @@ pub(crate) struct BidiLineOrder {
 
 /// 保存可跨字体与样式分段复用的段落级 UAX #9 结果。
 #[derive(Debug, Clone)]
-pub(crate) struct BidiAnalysis {
+pub struct BidiAnalysis {
     // 保存原始完整源文本以便视觉行应用 UAX #9 L1。
     text: String,
     // 保存每个逻辑字符起点及文本尾部的 UTF-8 字节偏移。
@@ -37,7 +37,7 @@ pub(crate) struct BidiAnalysis {
 }
 
 /// 保存一次布局周期内可复用的第三方双向分析。
-pub(crate) struct BidiLineOrderContext<'a> {
+pub struct BidiLineOrderContext<'a> {
     // 借用字符索引、段落与安全退化结果。
     analysis: &'a BidiAnalysis,
     // 只在当前布局周期构造一次完整文本分析。
@@ -45,7 +45,7 @@ pub(crate) struct BidiLineOrderContext<'a> {
 }
 
 /// 保存一个视觉行的 L1 级别，允许多个对象粒度共享同一结果。
-pub(crate) struct BidiLineOrderLine<'a> {
+pub struct BidiLineOrderLine<'a> {
     // 借用完整双向分析以支持异常范围的安全退化。
     analysis: &'a BidiAnalysis,
     // unicode-bidi 已对当前行应用 L1 的逐字节级别；缺失表示退化路径。
@@ -55,7 +55,7 @@ pub(crate) struct BidiLineOrderLine<'a> {
 // 为共享双向分析实现构造、查询与视觉行重排。
 impl BidiAnalysis {
     /// 对完整源文本执行段落级 UAX #9 分析。
-    pub(crate) fn new(text: &str) -> Self {
+    pub fn new(text: &str) -> Self {
         // 使用首个强字符自动确定每个段落的基准方向。
         let info = BidiInfo::new(text, None);
         // 收集每个 Unicode 标量的 UTF-8 字节起点。
@@ -107,20 +107,13 @@ impl BidiAnalysis {
     }
 
     /// 返回完整源文本中的逻辑字符数量。
-    pub(crate) fn char_count(&self) -> usize {
+    pub fn char_count(&self) -> usize {
         // 逐字符级别与源字符一一对应。
         self.levels.len()
     }
 
-    /// 返回全部段落及其自动解析的基准级别。
-    #[cfg(test)]
-    pub(crate) fn paragraphs(&self) -> &[BidiParagraph] {
-        // 只读借用稳定段落表。
-        &self.paragraphs
-    }
-
     /// 返回指定逻辑字符的段落级嵌入级别。
-    pub(crate) fn level_at(&self, char_index: usize) -> u8 {
+    pub fn level_at(&self, char_index: usize) -> u8 {
         // 越界查询使用最接近段落或默认 LTR 的稳定级别。
         self.levels
             // 首选精确字符级别。
@@ -131,24 +124,8 @@ impl BidiAnalysis {
             .unwrap_or_else(|| self.levels.last().copied().unwrap_or(0))
     }
 
-    /// 按逻辑字符索引输入对象，返回应用 L1/L2 后的视觉顺序与级别。
-    #[cfg(test)]
-    pub(crate) fn line_order(
-        // 借用共享段落分析。
-        &self,
-        // 当前视觉行覆盖的逻辑字符范围。
-        line_range: Range<usize>,
-        // 每个待排对象对应的逻辑字符起点，必须按逻辑顺序输入。
-        logical_char_indices: &[usize],
-    ) -> BidiLineOrder {
-        // 兼容单次调用方，同时让多行调用方可以显式复用上下文。
-        self.line_order_context()
-            .line(line_range)
-            .order(logical_char_indices)
-    }
-
     /// 为一次连续布局创建可复用的完整文本双向分析。
-    pub(crate) fn line_order_context(&self) -> BidiLineOrderContext<'_> {
+    pub fn line_order_context(&self) -> BidiLineOrderContext<'_> {
         BidiLineOrderContext {
             // 保留自有字符索引与段落表。
             analysis: self,
@@ -196,7 +173,7 @@ impl BidiAnalysis {
 // 在同一布局周期内复用完整 BidiInfo，并按视觉行按需执行 L1。
 impl<'a> BidiLineOrderContext<'a> {
     /// 为指定逻辑字符范围准备一次可供多个对象粒度复用的行级 L1 结果。
-    pub(crate) fn line(&self, line_range: Range<usize>) -> BidiLineOrderLine<'a> {
+    pub fn line(&self, line_range: Range<usize>) -> BidiLineOrderLine<'a> {
         // 将调用方范围限制在真实字符边界内。
         let bounded_start = line_range.start.min(self.analysis.char_count());
         // 排他终点不得早于起点。
@@ -253,7 +230,7 @@ impl<'a> BidiLineOrderContext<'a> {
 // 将同一行的 L1 级别映射到字符、run 或 shaping cluster 对象并执行 L2。
 impl<'a> BidiLineOrderLine<'a> {
     /// 按输入对象的逻辑字符起点返回视觉顺序与行级别。
-    pub(crate) fn order(&self, logical_char_indices: &[usize]) -> BidiLineOrder {
+    pub fn order(&self, logical_char_indices: &[usize]) -> BidiLineOrder {
         // 空对象无需执行第三方算法。
         if logical_char_indices.is_empty() {
             // 返回稳定空映射。
@@ -300,3 +277,8 @@ impl<'a> BidiLineOrderLine<'a> {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/resources/font/bidi_tests.rs"]
+mod bidi_tests;

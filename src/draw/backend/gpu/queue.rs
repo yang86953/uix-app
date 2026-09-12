@@ -318,13 +318,22 @@ impl NativeGpuCanvas2D {
         ca: Color,
         cb: Color,
         dir: GradientDirection,
+        radius: Option<Radius>,
     ) {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
-            self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
+            self.with_soft_clip(|soft| {
+                soft.fill_linear_gradient_rounded(
+                    rect,
+                    ca,
+                    cb,
+                    dir,
+                    radius.unwrap_or_else(Radius::zero),
+                )
+            });
             self.mark_soft();
             return;
         }
@@ -334,7 +343,15 @@ impl NativeGpuCanvas2D {
             // 奇异变换不能稳定地映射单位渐变 quad。
             self.soft_or_reject_transform("degenerate linear gradient transform");
             if !self.gpu_only {
-                self.with_soft_clip(|soft| soft.fill_linear_gradient(rect, ca, cb, dir));
+                self.with_soft_clip(|soft| {
+                    soft.fill_linear_gradient_rounded(
+                        rect,
+                        ca,
+                        cb,
+                        dir,
+                        radius.unwrap_or_else(Radius::zero),
+                    )
+                });
                 self.mark_soft();
             }
             return;
@@ -366,6 +383,10 @@ impl NativeGpuCanvas2D {
                     color_a: self.rgba(ca),
                     color_b: self.rgba(cb),
                     dir: dir_u,
+                    // 掩码在逻辑空间预计算，避免设备坐标换算歧义。
+                    mask: radius.map(|value| {
+                        super::geometry::gradient_linear_mask(Some(value), rect.w, rect.h)
+                    }),
                 },
                 scissor: self.scissor_aabb(),
             }));
@@ -379,13 +400,26 @@ impl NativeGpuCanvas2D {
         or: f32,
         ic: Color,
         oc: Color,
+        clip_rect: Rect,
+        radius: Option<Radius>,
     ) {
         if or <= 0.0 {
             return;
         }
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.retained_color_target || !native_blend {
-            self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
+            self.with_soft_clip(|soft| {
+                soft.fill_radial_gradient_rounded(
+                    cx,
+                    cy,
+                    ir,
+                    or,
+                    ic,
+                    oc,
+                    clip_rect,
+                    radius.unwrap_or_else(Radius::zero),
+                )
+            });
             self.mark_soft();
             return;
         }
@@ -396,7 +430,18 @@ impl NativeGpuCanvas2D {
             // 奇异变换不能稳定地恢复局部圆盘坐标。
             self.soft_or_reject_transform("degenerate radial gradient transform");
             if !self.gpu_only {
-                self.with_soft_clip(|soft| soft.fill_radial_gradient(cx, cy, ir, or, ic, oc));
+                self.with_soft_clip(|soft| {
+                    soft.fill_radial_gradient_rounded(
+                        cx,
+                        cy,
+                        ir,
+                        or,
+                        ic,
+                        oc,
+                        clip_rect,
+                        radius.unwrap_or_else(Radius::zero),
+                    )
+                });
                 self.mark_soft();
             }
             return;
@@ -419,6 +464,10 @@ impl NativeGpuCanvas2D {
                     corners,
                     color_inner: self.rgba(ic),
                     color_outer: self.rgba(oc),
+                    // 掩码参考矩形与外圆包围盒都在逻辑空间预计算单位坐标。
+                    mask: radius.map(|value| {
+                        super::geometry::gradient_radial_mask(Some(value), bb, clip_rect)
+                    }),
                 },
                 scissor: self.scissor_aabb(),
             }));

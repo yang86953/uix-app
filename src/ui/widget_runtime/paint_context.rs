@@ -209,7 +209,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
     }
 
     /// 返回真实字体度量与无字体估算中的较大文本宽度。
-    pub(crate) fn conservative_text_width(&mut self, text: &str, font_size: f32) -> f32 {
+    pub fn conservative_text_width(&mut self, text: &str, font_size: f32) -> f32 {
         // 从当前字体后端获取真实测量宽度。
         let measured_width = self.measure_text(text, font_size).w;
         // 与稳定后备估算合并，保留字体缺失时的布局语义。
@@ -218,7 +218,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
     }
 
     /// 将换行规范化为空格，并按保守宽度生成可选的单行省略文本。
-    pub(crate) fn elide_single_line(
+    pub fn elide_single_line(
         &mut self,
         text: &str,
         font_size: f32,
@@ -232,7 +232,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
     }
 
     /// 规范化换行并执行单行省略；无换行且完整容纳时直接借用输入。
-    pub(crate) fn elide_single_line_cow<'c>(
+    pub fn elide_single_line_cow<'c>(
         &mut self,
         text: &'c str,
         font_size: f32,
@@ -256,7 +256,7 @@ impl<'a, 'b> PaintContext<'a, 'b> {
     }
 
     /// 对已规范化文本执行单行省略，完整容纳时直接借用输入。
-    pub(crate) fn elide_normalized_single_line_cow<'c>(
+    pub fn elide_normalized_single_line_cow<'c>(
         &mut self,
         text: &'c str,
         font_size: f32,
@@ -344,17 +344,17 @@ impl<'a, 'b> PaintContext<'a, 'b> {
     }
 
     /// 当前绘制表面的设备像素比（UI 内部使用）。
-    pub(crate) fn device_pixel_ratio(&self) -> f32 {
+    pub fn device_pixel_ratio(&self) -> f32 {
         self.inner.device_pixel_ratio()
     }
 
     /// 当前绘制表面的逻辑尺寸（UI 内部使用）。
-    pub(crate) fn logical_surface_size(&self) -> Size {
+    pub fn logical_surface_size(&self) -> Size {
         self.inner.logical_surface_size()
     }
 
     /// 返回映射到当前组件绘制坐标的逻辑表面矩形。
-    pub(crate) fn logical_surface_rect(&mut self) -> Rect {
+    pub fn logical_surface_rect(&mut self) -> Rect {
         self.inner.logical_surface_rect()
     }
 

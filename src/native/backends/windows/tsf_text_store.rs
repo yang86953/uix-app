@@ -29,20 +29,6 @@ use crate::platform::windowing::event::UiEvent;
 
 const VIEW_ID: u32 = 0;
 
-#[cfg(test)]
-static TEST_PANIC_NEXT_CALLBACK: AtomicBool = AtomicBool::new(false);
-
-#[cfg(test)]
-fn panic_if_requested(operation: &str) {
-    if TEST_PANIC_NEXT_CALLBACK.swap(false, Ordering::SeqCst) {
-        panic!("test panic in TSF ABI callback: {operation}");
-    }
-}
-
-#[cfg(not(test))]
-#[inline]
-fn panic_if_requested(_: &str) {}
-
 macro_rules! ffi_guard {
     // 事件接收器参数采用 Rust 2024 表达式片段语义。
     ($event_sink:expr, $operation:literal, $body:block) => {{
@@ -789,3 +775,17 @@ impl ITfContextOwnerCompositionSink_Impl for TsfTextStore_Impl {
         )
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/backends/windows/tsf_text_store_tests.rs"]
+mod tsf_text_store_tests;
+
+// 宏依赖的 panic 注入钩子：测试版位于 tests-src（模块级 include! 保持宏体作用域），
+// 生产空钩子留在源内。
+#[cfg(test)]
+include!("../../../../tests-src/native/backends/windows/tsf_panic_hook_test.rs");
+
+#[cfg(not(test))]
+#[inline]
+fn panic_if_requested(_: &str) {}

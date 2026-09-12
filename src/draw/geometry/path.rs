@@ -167,14 +167,6 @@ use crate::core::Rect;
 /// 路径构建器。调用 move_to / line_to / quad_to / cubic_to / close 构建路径。
 ///
 /// # 示例
-/// ```ignore
-/// let mut pb = PathBuilder::new();
-/// pb.move_to(10.0, 10.0);
-/// pb.line_to(100.0, 10.0);
-/// pb.line_to(100.0, 100.0);
-/// pb.close();
-/// let path = pb.build();
-/// ```
 #[derive(Debug, Clone)]
 pub struct PathBuilder {
     segments: Vec<PathSegment>,

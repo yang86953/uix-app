@@ -263,32 +263,65 @@ impl RhiShapeRasterParams {
 }
 
 // 计算左上、右上、右下、左下四角顺序的圆角矩形有符号距离。
+//
+// 与 draw 层共享语义：直角矩形与各角圆弧约束的交集——直边距离为基线，
+// 采样点落入切线方形的每个角弧距离（圆外为正）取最大。归一化只保证
+// 相邻切线方形不相交，对角方形可重叠（重叠区须同时满足两角约束）。
 fn rounded_rect_sdf(local: [f32; 2], size: [f32; 2], radius: [f32; 4]) -> f32 {
     // 计算矩形半尺寸。
     let half_size = [size[0] * 0.5, size[1] * 0.5];
-    // 把局部采样点转换到矩形中心坐标。
+    // 直边矩形的内外距离作为合成基线。
     let q = [local[0] - half_size[0], local[1] - half_size[1]];
-    // 按采样点象限选择对应圆角半径。
-    let corner_radius = if q[0] < 0.0 {
-        // 左侧按纵向选择左上或左下圆角。
-        if q[1] < 0.0 { radius[0] } else { radius[3] }
-    } else {
-        // 右侧按纵向选择右上或右下圆角。
-        if q[1] < 0.0 { radius[1] } else { radius[2] }
+    let base = {
+        let d = [q[0].abs() - half_size[0], q[1].abs() - half_size[1]];
+        d[0].max(0.0).hypot(d[1].max(0.0)) + d[0].max(d[1]).min(0.0)
     };
-    // 计算减去半尺寸并加回圆角半径的距离向量。
-    let d = [
-        // 横向圆角距离。
-        q[0].abs() - half_size[0] + corner_radius,
-        // 纵向圆角距离。
-        q[1].abs() - half_size[1] + corner_radius,
+    // 各角切线方形内的弧距离约束（圆外为正），与基线取最大。
+    let mut combined = base;
+    let corners = [
+        // 左上：圆心 (r0, r0)，方形 x<r0 且 y<r0。
+        (radius[0], radius[0], radius[0], radius[0]),
+        // 右上：圆心 (w-r1, r1)。
+        (
+            size[0] - radius[1],
+            radius[1],
+            size[0] - radius[1],
+            radius[1],
+        ),
+        // 右下：圆心 (w-r2, h-r2)。
+        (
+            size[0] - radius[2],
+            size[1] - radius[2],
+            size[0] - radius[2],
+            size[1] - radius[2],
+        ),
+        // 左下：圆心 (r3, h-r3)。
+        (
+            radius[3],
+            size[1] - radius[3],
+            radius[3],
+            size[1] - radius[3],
+        ),
     ];
-    // 计算圆角外部的欧氏距离。
-    let outside = d[0].max(0.0).hypot(d[1].max(0.0));
-    // 计算矩形内部的负距离。
-    let inside = d[0].max(d[1]).min(0.0);
-    // 合并内外距离并移除圆角半径偏置。
-    outside + inside - corner_radius
+    for (index, (cx, cy, ex, ey)) in corners.into_iter().enumerate() {
+        let r = radius[index];
+        if r <= 0.0 {
+            continue;
+        }
+        // 切线方形判定：x 在 [cx 与对面切线] 之间、y 同理；用圆心与
+        // 半径直接表达（左上/左下 x<r；右上/右下 x>w-r 等）。
+        let in_square = match index {
+            0 => local[0] < ex && local[1] < ey,
+            1 => local[0] > ex && local[1] < ey,
+            2 => local[0] > ex && local[1] > ey,
+            _ => local[0] < ex && local[1] > ey,
+        };
+        if in_square {
+            let arc = (local[0] - cx).hypot(local[1] - cy) - r;
+            combined = combined.max(arc);
+        }
+    }
+    combined
 }
 
 // 把有符号距离转换为固定一像素线性 coverage。

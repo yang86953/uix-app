@@ -8,18 +8,26 @@
 // 与 CPU `rasterizer/core.rs` 的 rounded_rect_sdf / shadow coverage 曲线逐式对应。
 
 float rounded_rect_sdf(vec2 local, vec2 size, vec4 radius) {
-    vec2 half_size = size * 0.5;
-    vec2 q = local - half_size;
-    float corner_radius;
-    if (q.x < 0.0) {
-        corner_radius = q.y < 0.0 ? radius.x : radius.w;
-    } else {
-        corner_radius = q.y < 0.0 ? radius.y : radius.z;
+    // 圆角轮廓是直角矩形与各角圆弧约束的交集：先取直边矩形距离，再对
+    // 采样点落入切线方形的每个角取圆弧距离（圆外为正），取最大者。
+    // 归一化只保证相邻切线方形不相交，对角方形可重叠（如 100x100 的
+    // tl=br=80），重叠区须同时满足两角弧约束。`local` 为相对矩形左上角
+    // 坐标，radius 分量顺序 tl/tr/br/bl。
+    vec2 q = abs(local - size * 0.5) - size * 0.5;
+    float combined = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
+    if (radius.x > 0.0 && local.x < radius.x && local.y < radius.x) {
+        combined = max(combined, distance(local, vec2(radius.x)) - radius.x);
     }
-    vec2 distance = abs(q) - half_size + corner_radius;
-    float outside = length(max(distance, vec2(0.0)));
-    float inside = min(max(distance.x, distance.y), 0.0);
-    return outside + inside - corner_radius;
+    if (radius.y > 0.0 && local.x > size.x - radius.y && local.y < radius.y) {
+        combined = max(combined, distance(local, vec2(size.x - radius.y, radius.y)) - radius.y);
+    }
+    if (radius.z > 0.0 && local.x > size.x - radius.z && local.y > size.y - radius.z) {
+        combined = max(combined, distance(local, size - radius.z) - radius.z);
+    }
+    if (radius.w > 0.0 && local.x < radius.w && local.y > size.y - radius.w) {
+        combined = max(combined, distance(local, vec2(radius.w, size.y - radius.w)) - radius.w);
+    }
+    return combined;
 }
 
 float shadow_coverage(float signed_distance, float blur) {

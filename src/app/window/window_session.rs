@@ -9,7 +9,6 @@ use crate::draw::scene::NodeId;
 use crate::draw::target::RenderTarget;
 use crate::ui::adapter::ViewAdapter;
 use crate::ui::view::ViewNode;
-use crate::ui::widget_runtime::widget::WidgetCore;
 use crate::ui::{AppState, WidgetTree};
 use std::sync::{Arc, Mutex};
 
@@ -129,16 +128,29 @@ impl WindowSession {
         engine: Box<dyn RenderTarget>,
         width: i32,
         height: i32,
+        initial_theme: &crate::ui::theme::Theme,
     ) -> Self
     where
         F: Fn() -> ViewNode + Send + Sync + 'static,
     {
         let factory: ViewFactory = Arc::new(build_root);
-        let root = ViewAdapter::capture_root(|| factory());
+        // 初始捕获在树存在前执行：先安装窗口主题作用域，让构建期 token
+        // 读取与首帧一致，暗色首挂不得先按亮色静止再伪装一次主题切换。
+        let root = {
+            let _build_theme =
+                crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(
+                    initial_theme.tokens_arc(),
+                );
+            // 初始捕获按配置的逻辑客户区宽度评估 @media，与首帧根 frame 一致。
+            let _build_viewport =
+                crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(width as f32);
+            ViewAdapter::capture_root(|| factory())
+        };
         let mut tree = ViewAdapter::build_nodes(root);
-        if let Some(r) = tree.root_mut() {
-            r.set_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
-        }
+        // 声明捕获与树主题安装使用同一主题快照，首帧 set_theme_tokens 无变化。
+        tree.set_theme_tokens(initial_theme.tokens_arc());
+        // 首帧根 frame 与初始捕获宽度一致，不触发断点协调。
+        tree.set_root_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
         tree.layout();
         tree.mark_full_frame_dirty();
         #[cfg(feature = "test-harness")]

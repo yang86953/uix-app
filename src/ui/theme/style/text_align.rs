@@ -15,7 +15,7 @@ pub enum TextAlign {
 // 提供到 draw System 中性排版值的单向适配。
 impl TextAlign {
     // 将 UI 语义转换为不引用 UI 类型的 draw 对齐值。
-    pub(crate) fn to_draw(self) -> crate::draw::HAlign {
+    pub fn to_draw(self) -> crate::draw::HAlign {
         // 闭合映射全部公开 UI 变体。
         match self {
             // 左对齐映射到 draw 左对齐。

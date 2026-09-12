@@ -8,9 +8,11 @@ use crate::ui::ThemeTokens;
 use crate::ui::theme::{ScopedThemeTokens, Theme};
 
 mod fonts;
-pub(crate) use fonts::{LayoutFontScope, text_metrics};
+pub(crate) use fonts::LayoutFontScope;
+pub use fonts::text_metrics;
 
 #[cfg(test)]
+#[path = "../../../tests-src/ui/widget_runtime/measurement_tests.rs"]
 mod tests;
 
 thread_local! {
@@ -32,7 +34,7 @@ impl Drop for LayoutThemeScope {
     }
 }
 
-pub(crate) fn with_measurement_tokens<W: 'static, R>(f: impl FnOnce(&dyn ThemeTokens) -> R) -> R {
+pub fn with_measurement_tokens<W: 'static, R>(f: impl FnOnce(&dyn ThemeTokens) -> R) -> R {
     let context = super::provider_context::current_provider_context();
     let config = context.config();
     let theme = config.theme.as_ref().map(Theme::tokens_arc);
@@ -42,7 +44,7 @@ pub(crate) fn with_measurement_tokens<W: 'static, R>(f: impl FnOnce(&dyn ThemeTo
     let root = root.unwrap_or_else(|| {
         // 脱离窗口的公开 measure 调用使用稳定默认值，不逐次构建主题。
         static DEFAULT_THEME: OnceLock<Arc<dyn ThemeTokens>> = OnceLock::new();
-        Arc::clone(DEFAULT_THEME.get_or_init(|| Theme::antd_light().tokens_arc()))
+        Arc::clone(DEFAULT_THEME.get_or_init(|| Theme::light().tokens_arc()))
     });
     let mut tokens = ScopedThemeTokens::new(root);
     tokens.replace_scope(theme, config.widget_tokens.get(TypeId::of::<W>()));

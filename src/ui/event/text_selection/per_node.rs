@@ -26,7 +26,7 @@ struct TextLineHit {
 }
 
 /// 单节点共用的文字选区状态：布局缓存 + 选区 + 拖选锚点 + 绘制偏移。
-pub(crate) struct PerNodeTextSelection {
+pub struct PerNodeTextSelection {
     /// 渲染时缓存的字形 x 位置（文本局部坐标）。
     glyph_xs: RefCell<Vec<f32>>,
     /// 与 glyph_xs 平行的字形 advance，用于按中点选择最近光标边界。
@@ -46,7 +46,7 @@ pub(crate) struct PerNodeTextSelection {
 }
 
 impl PerNodeTextSelection {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         // 全部初始化为空状态。
         Self {
             glyph_xs: RefCell::new(Vec::new()),
@@ -61,7 +61,7 @@ impl PerNodeTextSelection {
     }
 
     /// 从单次布局结果重建字形与行缓存（渲染阶段调用一次）。
-    pub(crate) fn cache_layout(&self, layout: &TextLayout) {
+    pub fn cache_layout(&self, layout: &TextLayout) {
         // 缓存字形 x、advance 与字符下标（选区/命中用字符序）。
         let mut xs = self.glyph_xs.borrow_mut();
         let mut widths = self.glyph_widths.borrow_mut();
@@ -89,7 +89,7 @@ impl PerNodeTextSelection {
     }
 
     /// 清空字形与行缓存（文本变更后重建）。
-    pub(crate) fn clear_caches(&self) {
+    pub fn clear_caches(&self) {
         self.glyph_xs.borrow_mut().clear();
         self.glyph_widths.borrow_mut().clear();
         self.glyph_char_indices.borrow_mut().clear();
@@ -97,29 +97,29 @@ impl PerNodeTextSelection {
     }
 
     /// 清空选区、锚点与拖选状态（文本变更 / 失焦 / 关闭可选中）。
-    pub(crate) fn reset_selection(&self) {
+    pub fn reset_selection(&self) {
         self.selection.set(None);
         self.sel_anchor.set(0);
         self.sel_dragging.set(false);
     }
 
     /// 当前选区（字符边界，起点小于终点；无选区为 None）。
-    pub(crate) fn selection(&self) -> Option<(usize, usize)> {
+    pub fn selection(&self) -> Option<(usize, usize)> {
         self.selection.get()
     }
 
     /// 是否正在拖选。
-    pub(crate) fn is_dragging(&self) -> bool {
+    pub fn is_dragging(&self) -> bool {
         self.sel_dragging.get()
     }
 
     /// 记录本次渲染的文本绘制起点（事件命中测试换算用）。
-    pub(crate) fn set_draw_pos(&self, draw_pos: Point) {
+    pub fn set_draw_pos(&self, draw_pos: Point) {
         self.draw_pos.set(draw_pos);
     }
 
     /// PointerDown 的选区起始处理：Shift 按锚点扩展，否则重设锚点并清空选区。
-    pub(crate) fn pointer_down(&self, text: &str, pos: Point, shift: bool) {
+    pub fn pointer_down(&self, text: &str, pos: Point, shift: bool) {
         // 命中当前位置对应的字符下标。
         let ci = self.hit_char_at(text, pos);
         if shift {
@@ -136,7 +136,7 @@ impl PerNodeTextSelection {
     }
 
     /// PointerMove 的拖选扩展；非拖选中的移动返回 false 表示未消费。
-    pub(crate) fn pointer_move(&self, text: &str, pos: Point) -> bool {
+    pub fn pointer_move(&self, text: &str, pos: Point) -> bool {
         // 非拖选中的移动不消费事件。
         if !self.sel_dragging.get() {
             return false;
@@ -149,7 +149,7 @@ impl PerNodeTextSelection {
     }
 
     /// PointerUp：结束拖选，起点终点重合的拖选视为未选中。
-    pub(crate) fn pointer_up(&self) {
+    pub fn pointer_up(&self) {
         self.sel_dragging.set(false);
         // 空选择（起点 == 终点）不保留选区。
         if let Some((s, e)) = self.selection.get() {
@@ -160,31 +160,31 @@ impl PerNodeTextSelection {
     }
 
     /// Ctrl+A 全选：锚点置于行首并选中全部字符。
-    pub(crate) fn select_all(&self, text: &str) {
+    pub fn select_all(&self, text: &str) {
         let len = text.chars().count();
         self.sel_anchor.set(0);
         self.set_selection_range(text, 0, len);
     }
 
     /// 当前选区文本；无选区或选区为空时返回 `None`。
-    pub(crate) fn selected_text(&self, text: &str) -> Option<String> {
+    pub fn selected_text(&self, text: &str) -> Option<String> {
         self.selection
             .get()
             .map(|(s, e)| self.slice_range(text, s, e))
     }
 
     /// 跨节点选区使用的字符长度（`chars()` 序）。
-    pub(crate) fn cross_text_len(&self, text: &str) -> usize {
+    pub fn cross_text_len(&self, text: &str) -> usize {
         text.chars().count()
     }
 
     /// 跨节点选区使用的锚点。
-    pub(crate) fn cross_text_anchor(&self) -> usize {
+    pub fn cross_text_anchor(&self) -> usize {
         self.sel_anchor.get()
     }
 
     /// 设置跨节点选区范围；仍复用本节点完整字素簇归一规则。
-    pub(crate) fn set_cross_text_range(&self, text: &str, range: Option<(usize, usize)>) {
+    pub fn set_cross_text_range(&self, text: &str, range: Option<(usize, usize)>) {
         match range {
             // 跨节点选择仍复用本节点完整字素簇归一规则。
             Some((a, b)) if a != b => self.set_selection_range(text, a, b),
@@ -193,22 +193,8 @@ impl PerNodeTextSelection {
     }
 
     /// 跨节点命中：把节点帧内坐标换算到文本局部坐标后做字符命中。
-    pub(crate) fn cross_text_char_at(&self, text: &str, frame_local: Point) -> usize {
+    pub fn cross_text_char_at(&self, text: &str, frame_local: Point) -> usize {
         self.hit_char_at(text, frame_local)
-    }
-
-    // 测试目标保留渲染行起点观测入口，供排版布局测试按需调用。
-    #[cfg(test)]
-    pub(crate) fn rendered_line_origins_for_test(&self) -> Vec<Point> {
-        let glyph_xs = self.glyph_xs.borrow();
-        self.line_info
-            .borrow()
-            .iter()
-            .map(|line| {
-                let x = glyph_xs.get(line.glyph_start).copied().unwrap_or_default();
-                Point::new(x, line.y)
-            })
-            .collect()
     }
 
     /// 把节点帧内坐标换算到文本局部坐标并返回命中字符下标。
@@ -315,3 +301,8 @@ impl PerNodeTextSelection {
         text[byte_start.0..byte_end.0].to_owned()
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/event/text_selection/per_node_tests.rs"]
+mod per_node_tests;

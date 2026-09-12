@@ -14,7 +14,7 @@ use crate::ui::widget_runtime::provider_context::{
     ProviderContext, current_provider_context, with_provider_context,
 };
 use crate::ui::widget_runtime::view_transform::ViewTransform;
-use crate::ui::widget_snapshot::{AccessibilitySnapshot, SnapshotFields, WidgetConfigSnapshot};
+use crate::ui::widget_snapshot::{AccessibilitySnapshot, WidgetSnapshotFields, WidgetConfigSnapshot};
 
 // EventResult 归 event Module（事件处理结果契约）；此处重导出保持树内路径不变。
 pub(crate) use crate::ui::event::EventResult;

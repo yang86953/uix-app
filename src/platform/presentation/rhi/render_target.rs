@@ -39,12 +39,6 @@ impl RenderTargetHandle {
         Ok(Self::Texture(texture))
     }
 
-    // 测试 fixture 使用显式入口构造稳定目标身份。
-    #[cfg(test)]
-    pub(crate) const fn for_test(texture: TextureHandle) -> Self {
-        // 测试不代表真实资源表的可渲染能力证明。
-        Self::Texture(texture)
-    }
 
     // 判断当前目标是否为原生 Surface。
     pub(crate) const fn is_surface(self) -> bool {
@@ -63,3 +57,7 @@ impl RenderTargetHandle {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../../tests-src/platform/presentation/rhi/render_target_tests.rs"]
+mod render_target_tests;

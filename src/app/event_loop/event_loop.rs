@@ -19,7 +19,7 @@ use crate::platform::platform::PlatformSystem;
 use crate::platform::windowing::MouseButton;
 use crate::platform::windowing::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::windowing::window::PlatformWindow;
-use crate::ui::theme::{DynTokens, Theme};
+use crate::ui::theme::{ModeTokens, Theme};
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::{SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
@@ -121,90 +121,6 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-// 测试目标保留默认时钟的窗口循环入口，供外部 GUI 测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn run_window_session_loop<M, X, F>(
-    platform: &mut dyn PlatformSystem,
-    platform_window: &mut dyn PlatformWindow,
-    session: &mut WindowSession,
-    font_service: &FontService,
-    image_service: &ImageService,
-    theme: &RefCell<Theme>,
-    debug_mode: &Diagnostics,
-    cursor_pos: &Cell<Point>,
-    metrics: Option<&Cell<RenderMetrics>>,
-    map_event: M,
-    on_exit: X,
-    on_frame: F,
-) -> i32
-where
-    M: Fn(&UiEvent) -> Option<SystemEvent>,
-    X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
-{
-    run_window_session_loop_with_system_theme(
-        platform,
-        platform_window,
-        session,
-        font_service,
-        image_service,
-        theme,
-        None,
-        debug_mode,
-        cursor_pos,
-        metrics,
-        map_event,
-        on_exit,
-        on_frame,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-// 测试目标保留系统主题兼容窗口循环入口，供外部 GUI 测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
-    platform: &mut dyn PlatformSystem,
-    platform_window: &mut dyn PlatformWindow,
-    session: &mut WindowSession,
-    font_service: &FontService,
-    image_service: &ImageService,
-    theme: &RefCell<Theme>,
-    system_theme_tokens: Option<&DynTokens>,
-    debug_mode: &Diagnostics,
-    cursor_pos: &Cell<Point>,
-    metrics: Option<&Cell<RenderMetrics>>,
-    map_event: M,
-    on_exit: X,
-    on_frame: F,
-) -> i32
-where
-    M: Fn(&UiEvent) -> Option<SystemEvent>,
-    X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
-{
-    run_window_session_loop_with_system_theme_and_tasks(
-        platform,
-        platform_window,
-        session,
-        font_service,
-        image_service,
-        theme,
-        system_theme_tokens,
-        debug_mode,
-        cursor_pos,
-        metrics,
-        map_event,
-        on_exit,
-        |_, _| {},
-        |_, _| {},
-        || None,
-        on_frame,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D, F>(
     platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
@@ -212,7 +128,7 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D,
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    system_theme_tokens: Option<&DynTokens>,
+    system_theme_tokens: Option<&ModeTokens>,
     debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     metrics: Option<&Cell<RenderMetrics>>,
@@ -253,51 +169,6 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-// 测试目标保留可注入时钟的窗口循环入口，供外部 GUI 测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
-    platform: &mut dyn PlatformSystem,
-    platform_window: &mut dyn PlatformWindow,
-    session: &mut WindowSession,
-    font_service: &FontService,
-    image_service: &ImageService,
-    theme: &RefCell<Theme>,
-    clock: std::sync::Arc<dyn AppClock>,
-    debug_mode: &Diagnostics,
-    cursor_pos: &Cell<Point>,
-    metrics: Option<&Cell<RenderMetrics>>,
-    map_event: M,
-    on_exit: X,
-    on_frame: F,
-) -> i32
-where
-    M: Fn(&UiEvent) -> Option<SystemEvent>,
-    X: Fn(&UiEvent) -> bool,
-    F: Fn(&mut WidgetTree, &mut dyn RenderTarget, &mut dyn PlatformSystem),
-{
-    run_window_session_loop_with_system_theme_and_clock(
-        platform,
-        platform_window,
-        session,
-        font_service,
-        image_service,
-        theme,
-        None,
-        clock,
-        debug_mode,
-        cursor_pos,
-        metrics,
-        map_event,
-        on_exit,
-        |_, _| {},
-        |_, _| {},
-        || None,
-        on_frame,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
 fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
     platform: &mut dyn PlatformSystem,
     platform_window: &mut dyn PlatformWindow,
@@ -305,7 +176,7 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    system_theme_tokens: Option<&DynTokens>,
+    system_theme_tokens: Option<&ModeTokens>,
     clock: std::sync::Arc<dyn AppClock>,
     debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
@@ -380,7 +251,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     font_service: &FontService,
     image_service: &ImageService,
     theme: &RefCell<Theme>,
-    system_theme_tokens: Option<&DynTokens>,
+    system_theme_tokens: Option<&ModeTokens>,
     debug_mode: &Diagnostics,
     cursor_pos: &Cell<Point>,
     hud_state: &DebugHudState,
@@ -625,7 +496,7 @@ where
                             false
                         });
                         tokens.set_mode(is_dark);
-                        *theme.borrow_mut() = Theme::new(tokens.snapshot());
+                        *theme.borrow_mut() = tokens.snapshot();
                         clipboard::with_clipboard(platform.clipboard(), || {
                             tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
                         });
@@ -803,3 +674,8 @@ fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLo
         *slot = state;
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/app/event_loop/event_loop_tests.rs"]
+mod event_loop_tests;

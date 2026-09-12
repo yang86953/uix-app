@@ -1,2 +1,0 @@
-// InputGroup 不拥有独立外观；它声明复用唯一 Input 节点，视觉继续由 Input 的 UIX 拥有。
-<KernelView value={grouped_input} />

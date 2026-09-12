@@ -103,30 +103,6 @@ impl CommandRecorder {
         self.canvas.record_picture_blit(image, rect, rect)
     }
 
-    // 测试目标保留 scratch surface 尺寸观测入口，供 recorder 生命周期测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn scratch_surface_size(&self) -> (i32, i32) {
-        (
-            self.canvas.scratch.surface().width(),
-            self.canvas.scratch.surface().height(),
-        )
-    }
-
-    // 测试目标保留 offscreen scratch 尺寸观测入口，供 recorder 生命周期测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn offscreen_scratch_surface_size(
-        &self,
-        handle: &ImageHandle,
-    ) -> Option<(i32, i32)> {
-        let picture = self.offscreens.get(handle)?;
-        Some((
-            picture.canvas.scratch.surface().width(),
-            picture.canvas.scratch.surface().height(),
-        ))
-    }
-
     /// 录制主画布上的 Picture blit：可 splice 时复用命令流，否则物化为图片。
     fn record_main_picture_blit(
         &mut self,
@@ -505,3 +481,8 @@ impl RenderTarget for CommandRecorder {
             .saturating_add(self.canvas.scratch.memory_usage())
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/painting/recorder/mod_tests.rs"]
+mod mod_tests;

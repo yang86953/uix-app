@@ -47,6 +47,7 @@ pub struct AgentWorkspace {
     pub(crate) title: String,
     pub(crate) theme: Theme,
     pub(crate) fonts: Option<FontBundle>,
+    pub(crate) extensions: crate::app::AppExtensions,
     pub(crate) policy: AgentPolicy,
     pub(crate) confirmation: Option<Arc<dyn Fn(AgentConfirmationRequest) + Send + Sync>>,
 }
@@ -62,11 +63,17 @@ impl AgentWorkspace {
             height,
             root: Arc::new(root),
             title: "UIX Agent Workspace".into(),
-            theme: Theme::antd_light(),
+            theme: Theme::light(),
             fonts: None,
+            extensions: crate::app::AppExtensions::default(),
             policy: AgentPolicy::default(),
             confirmation: None,
         }
+    }
+    /// Install optional resource and root-view lifecycle hooks for this workspace.
+    pub fn extension<T: crate::app::AppExtension>(mut self, extension: T) -> Self {
+        self.extensions.insert(extension);
+        self
     }
     /// 设置 Hub 枚举中的操作面显示名。
     pub fn title(mut self, title: impl Into<String>) -> Self {

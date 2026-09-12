@@ -1,22 +1,6 @@
 // 引入父模块的组件树核心类型。
 use super::*;
 
-// 测试只统计当前线程确有隐藏子项时的过滤分配，避免并行测试相互污染。
-#[cfg(test)]
-thread_local! {
-    static FILTERED_CHILD_ALLOCATION_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-pub(crate) fn reset_filtered_child_allocation_count() {
-    FILTERED_CHILD_ALLOCATION_COUNT.set(0);
-}
-
-#[cfg(test)]
-pub(crate) fn filtered_child_allocation_count() -> usize {
-    FILTERED_CHILD_ALLOCATION_COUNT.get()
-}
-
 impl BoxedWidget {
     /// 在树级复用工作区中测量并排列当前节点的可见直接子节点。
     pub(crate) fn layout_children_into(
@@ -87,6 +71,19 @@ impl BoxedWidget {
         self.position = position;
     }
 
+    // 读取声明节点交付的 min/max 尺寸约束。
+    pub(crate) const fn size_constraints(&self) -> crate::ui::theme::style::SizeConstraints {
+        self.size_constraints
+    }
+
+    // 替换声明节点交付的 min/max 尺寸约束。
+    pub(crate) fn set_size_constraints(
+        &mut self,
+        constraints: crate::ui::theme::style::SizeConstraints,
+    ) {
+        self.size_constraints = constraints;
+    }
+
     // 测量并排列当前节点的全部有效可见直接子节点。
     pub fn layout_children(
         // 读取当前父组件的布局能力。
@@ -134,3 +131,13 @@ impl BoxedWidget {
         })
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/ui/widget_runtime/widget/boxed/position_layout_tests.rs"]
+mod position_layout_tests;
+
+// 以下完整测试实现位于 tests-src，经模块级 include! 保持原私有作用域；
+// 文件内各项自带 cfg(test)，生产构建展开为空。
+#[cfg(test)]
+include!("../../../../../tests-src/ui/widget_runtime/widget/boxed/position_layout_test_fns.rs");

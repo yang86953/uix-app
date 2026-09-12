@@ -743,12 +743,12 @@ fn d3d_error(operation: &'static str, error: ::windows::core::Error) -> Error {
 }
 
 // 只向 D3D11 context 组合边界转发 runner，不暴露原生资源。
-#[cfg(feature = "d3d11-parity-test")]
+#[cfg(uix_gpu_parity_d3d11)]
 pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
 
 // 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
-#[cfg(feature = "d3d11-parity-test")]
+#[cfg(uix_gpu_parity_d3d11)]
 #[path = "../../../../../../../tests/support/native/gpu_parity/d3d11_rhi_device.rs"]
 mod gpu_parity_tests;

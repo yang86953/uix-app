@@ -197,7 +197,9 @@ float4 PSMain(VSOut input) : SV_Target
 "#;
 
 // GRADIENT_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
-pub(super) const GRADIENT_HLSL: &str = r#"
+pub(super) const GRADIENT_HLSL: &str = concat!(
+    include_str!("d3d_common_sdf.hlsl"),
+    r#"
 cbuffer GradCB : register(b0)
 {
     float2 u_viewport;
@@ -211,6 +213,10 @@ cbuffer GradCB : register(b0)
     // z = radial outer radius in local space OR linear local rect width
     // w = linear local rect height
     float4 u_params;
+    // S4 rounded-corner mask: per-corner radii, quad size + unit origin, unit size.
+    float4 u_mask_radius;
+    float4 u_quad_mask;
+    float4 u_mask_size;
 };
 
 struct VSIn {
@@ -238,6 +244,19 @@ VSOut VSMain(VSIn input)
 
 float4 PSMain(VSOut input) : SV_Target
 {
+    // S4 rounded-corner mask evaluated in unit-quad pixel space.
+    float coverage = 1.0;
+    if (any(u_mask_radius > float4(0.0, 0.0, 0.0, 0.0)))
+    {
+        float2 quad_size = u_quad_mask.xy;
+        float2 mask_origin = u_quad_mask.zw;
+        float2 mask_px = (input.local - mask_origin) * quad_size;
+        float2 mask_wh = u_mask_size.xy * quad_size;
+        float sdf = rounded_rect_sdf(mask_px, mask_wh, u_mask_radius);
+        coverage = saturate(0.5 - sdf);
+        if (coverage <= 0.0)
+            discard;
+    }
     float mode = u_params.x;
     if (mode < 0.5)
     {
@@ -255,7 +274,7 @@ float4 PSMain(VSOut input) : SV_Target
         else
             t = (local.x * size.x - local.y * size.y + size.y) / max(size.x + size.y, 1e-6);
         t = saturate(t);
-        return lerp(u_color_a, u_color_b, t);
+        return lerp(u_color_a, u_color_b, t) * coverage;
     }
     else
     {
@@ -268,10 +287,11 @@ float4 PSMain(VSOut input) : SV_Target
             discard;
         float range = max(outer_r - inner_r, 1e-6);
         float t = saturate((dist - inner_r) / range);
-        return lerp(u_color_a, u_color_b, t);
+        return lerp(u_color_a, u_color_b, t) * coverage;
     }
 }
-"#;
+"#,
+);
 
 // MESH_HLSL 是 D3D11 与 D3D12 共用的唯一原生 shader 语义源码。
 pub(super) const MESH_HLSL: &str = r#"

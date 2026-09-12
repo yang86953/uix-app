@@ -2,5 +2,3 @@
 
 #[cfg(feature = "agent-control")]
 pub(crate) mod transport;
-
-pub(crate) mod desktop_cursor;

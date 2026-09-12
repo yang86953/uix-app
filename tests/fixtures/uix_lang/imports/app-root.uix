@@ -1,4 +1,0 @@
-// 从应用根文件导入页面及其依赖闭包。
-@import('./pages/page.uix', 'Page')
-// 使用导入页面作为应用唯一内容。
-<App><Page /></App>

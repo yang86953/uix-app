@@ -49,7 +49,7 @@ impl WidgetTree {
         true
     }
 
-    pub(crate) fn is_pending_removal_subtree(&self, id: WidgetId) -> bool {
+    pub fn is_pending_removal_subtree(&self, id: WidgetId) -> bool {
         let mut current = Some(id);
         while let Some(current_id) = current {
             let Some(node) = self.get(current_id) else {

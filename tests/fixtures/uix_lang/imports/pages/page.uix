@@ -1,8 +1,0 @@
-// 相对当前页面文件导入共享组件。
-@import('../shared/helper.uix', 'Helper')
-// 只向调用方公开页面组件。
-@export('Page')
-// 页面组件持有对私有导入依赖的引用。
-<Widget name="Page"><Column><Text>嵌套页面</Text><Helper /></Column></Widget>
-// 提供页面文件独立检查所需的唯一根。
-<Page />

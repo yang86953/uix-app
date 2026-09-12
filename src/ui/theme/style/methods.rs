@@ -1,4 +1,6 @@
 use super::*;
+// 有效圆角解析产出的 draw System 公开圆角值。
+use crate::draw::Radius;
 
 impl Style {
     /// 创建一个空样式（所有字段使用默认值）。
@@ -26,33 +28,9 @@ impl Style {
         }
     }
 
-    /// 默认按钮样式（白色背景 + 灰色边框）。
-    pub fn button_default() -> Self {
-        Self {
-            background: None,
-            border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
-            border_width: EdgeInsets::uniform(1.0),
-            border_radius: 6.0,
-            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: ColorValue::Neutral(NeutralRole::Text),
-            font_size: TypographyToken::Body,
-            ..Self::default()
-        }
-    }
 
-    /// 主按钮样式（主题色背景 + 白色文字）。
-    pub fn button_primary() -> Self {
-        Self {
-            background: Some(ColorValue::Palette(PaletteColor::Primary)),
-            border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
-            border_width: EdgeInsets::uniform(1.0),
-            border_radius: 6.0,
-            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: ColorValue::Palette(PaletteColor::White),
-            font_size: TypographyToken::Body,
-            ..Self::default()
-        }
-    }
+
+
 
     /// 默认容器样式。
     pub fn container() -> Self {
@@ -119,8 +97,14 @@ impl Style {
         // 完整替换保留显式 solid 与未声明之间的差异。
         self.border_style = s.border_style;
         self.border_radius = s.border_radius;
+        self.border_radius_corners = s.border_radius_corners;
         self.width = s.width;
         self.height = s.height;
+        // 完整替换保留未声明与显式尺寸约束之间的差异。
+        self.min_width = s.min_width;
+        self.max_width = s.max_width;
+        self.min_height = s.min_height;
+        self.max_height = s.max_height;
         self.display = s.display;
         self.flex_direction = s.flex_direction;
         self.flex_wrap = s.flex_wrap;
@@ -147,6 +131,8 @@ impl Style {
         self.background_position = s.background_position;
         // 完整替换保留未声明与显式 repeat 之间的差异。
         self.background_repeat = s.background_repeat;
+        // 完整替换保留未声明 Auto 与显式尺寸策略之间的差异。
+        self.background_size = s.background_size;
         self.background_hover = s.background_hover;
         self.background_focus = s.background_focus;
         self.background_active = s.background_active;
@@ -187,14 +173,30 @@ impl Style {
             // Option 内的 BorderStyle::None 仍会作为显式值复制。
             self.border_style = other.border_style;
         }
-        if other.border_radius != 0.0 {
+        // 圆角按一个属性整体覆盖：任一形式声明都替换两种表示；
+        // 显式 0 的恢复语义请使用 StyleDiff（本入口无法区分 0 与未声明）。
+        if other.border_radius != 0.0 || other.border_radius_corners.is_some() {
             self.border_radius = other.border_radius;
+            self.border_radius_corners = other.border_radius_corners;
         }
         if other.width.is_some() {
             self.width = other.width;
         }
         if other.height.is_some() {
             self.height = other.height;
+        }
+        // 只有非 Auto 的尺寸约束覆盖既有值；显式恢复 auto 请使用 StyleDiff。
+        if !other.min_width.is_auto() {
+            self.min_width = other.min_width;
+        }
+        if !other.max_width.is_auto() {
+            self.max_width = other.max_width;
+        }
+        if !other.min_height.is_auto() {
+            self.min_height = other.min_height;
+        }
+        if !other.max_height.is_auto() {
+            self.max_height = other.max_height;
         }
         if other.display != DisplayMode::default() {
             self.display = other.display;
@@ -269,6 +271,10 @@ impl Style {
         if other.background_repeat.is_some() {
             // 保存闭合重复枚举。
             self.background_repeat = other.background_repeat;
+        }
+        // 只有显式非 Auto 的尺寸策略覆盖；显式恢复 auto 请使用 StyleDiff。
+        if other.background_size != BackgroundSize::Auto {
+            self.background_size = other.background_size;
         }
         if other.background_hover.is_some() {
             self.background_hover = other.background_hover;
@@ -352,10 +358,32 @@ impl Style {
         // 返回可继续链式设置的样式。
         self
     }
-    /// 设置圆角半径。
+    /// 设置单值圆角半径；显式覆盖任何既有四角声明。
     pub fn with_rounded(mut self, r: f32) -> Self {
         self.border_radius = r;
+        self.border_radius_corners = None;
         self
+    }
+    /// 设置四角圆角半径；覆盖任何既有单值或四角声明。
+    pub fn with_border_radius_corners(mut self, corners: CornerRadii) -> Self {
+        self.border_radius_corners = Some(corners);
+        self
+    }
+    /// 解析最终有效圆角；直角（含收敛后的非法值）返回 `None`。
+    ///
+    /// 这是单值与四角两种输入的唯一消费入口；归一化（相邻半径之和超出
+    /// 边长时按比例缩小）由 draw System 在绘制前统一执行，不在本层重复。
+    pub fn effective_border_radius(&self) -> Option<Radius> {
+        if let Some(corners) = self.border_radius_corners {
+            let radius = corners.to_radius();
+            return (radius.tl > 0.0
+                || radius.tr > 0.0
+                || radius.br > 0.0
+                || radius.bl > 0.0)
+                .then_some(radius);
+        }
+        (self.border_radius > 0.0 && self.border_radius.is_finite())
+            .then(|| Radius::uniform(self.border_radius))
     }
 
     // ── 尺寸链式方法 ──
@@ -375,6 +403,37 @@ impl Style {
         self.width = Some(w);
         self.height = Some(h);
         self
+    }
+    /// 设置最小宽度；接受 px 数值或 [`StyleLength`]。
+    pub fn with_min_width(mut self, length: impl Into<StyleLength>) -> Self {
+        self.min_width = length.into().expect_size_bound("min_width");
+        self
+    }
+    /// 设置最大宽度；接受 px 数值或 [`StyleLength`]。
+    pub fn with_max_width(mut self, length: impl Into<StyleLength>) -> Self {
+        self.max_width = length.into().expect_size_bound("max_width");
+        self
+    }
+    /// 设置最小高度；接受 px 数值或 [`StyleLength`]。
+    pub fn with_min_height(mut self, length: impl Into<StyleLength>) -> Self {
+        self.min_height = length.into().expect_size_bound("min_height");
+        self
+    }
+    /// 设置最大高度；接受 px 数值或 [`StyleLength`]。
+    pub fn with_max_height(mut self, length: impl Into<StyleLength>) -> Self {
+        self.max_height = length.into().expect_size_bound("max_height");
+        self
+    }
+    /// 返回四个方向的尺寸约束声明；直接写入字段的非法值（负单值 px/%、非有限
+    /// 分量）在此与便捷入口同样被拒绝。
+    pub fn size_constraints(&self) -> SizeConstraints {
+        SizeConstraints {
+            min_width: self.min_width,
+            max_width: self.max_width,
+            min_height: self.min_height,
+            max_height: self.max_height,
+        }
+        .expect_legal()
     }
 
     // ── 布局链式方法 ──
@@ -499,6 +558,17 @@ impl Style {
     pub fn effective_background_repeat(&self) -> BackgroundRepeat {
         // 公共 Style 层只提供稳定默认值。
         self.background_repeat.unwrap_or_default()
+    }
+    /// 设置显式背景图尺寸策略。
+    pub fn with_background_size(mut self, size: BackgroundSize) -> Self {
+        // Auto 是显式恢复值，与非声明共用同一默认。
+        self.background_size = size;
+        self
+    }
+    /// 返回最终背景图尺寸策略；未声明时为固有尺寸。
+    pub fn effective_background_size(&self) -> BackgroundSize {
+        // 公共 Style 层只提供稳定默认值。
+        self.background_size
     }
     /// 设置悬停态背景色。
     pub fn with_bg_hover(mut self, c: impl Into<ColorValue>) -> Self {

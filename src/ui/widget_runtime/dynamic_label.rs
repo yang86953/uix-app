@@ -17,14 +17,14 @@ use crate::ui::widget_runtime::traits::{Widget, WidgetCapabilities, WidgetLayout
 use crate::ui::widget_runtime::widget::WidgetTree;
 
 /// 响应式标签的内部 Widget 实现。
-pub(crate) struct DynamicLabel {
+pub struct DynamicLabel {
     text_fn: Box<dyn Fn() -> String>,
     style: Option<Style>,
     ellipsis: bool,
 }
 
 impl DynamicLabel {
-    pub(crate) fn new<F: Fn() -> String + 'static>(f: F) -> Self {
+    pub fn new<F: Fn() -> String + 'static>(f: F) -> Self {
         Self {
             text_fn: Box::new(f),
             style: None,
@@ -32,7 +32,7 @@ impl DynamicLabel {
         }
     }
 
-    pub(crate) fn elided(mut self) -> Self {
+    pub fn elided(mut self) -> Self {
         self.ellipsis = true;
         self
     }
@@ -52,6 +52,15 @@ impl DynamicLabel {
 }
 
 impl Widget for DynamicLabel {
+    fn apply_declaration_style(&mut self, style: &crate::ui::Style, declared: &crate::ui::StyleDiff, flex_grow_override: Option<f32>, flex_shrink_override: Option<f32>) {
+        let dl = self;
+        let style_is_default = style == &crate::ui::Style::default();
+        let _ = (style_is_default, declared, flex_grow_override, flex_shrink_override);
+
+                dl.set_style(style.clone());
+
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

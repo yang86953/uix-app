@@ -266,3 +266,52 @@ pub(super) fn outline_uses_area_r8(
     let ch = cov_h as f32;
     (device_w - cw).abs() <= 0.51 && (device_h - ch).abs() <= 0.51
 }
+
+// 计算线性渐变圆角掩码的 ABI 字段：归一化半径与 quad 自身单位矩形。
+//
+// 返回 (mask_radius[tl,tr,br,bl], mask[quad_w,quad_h,unit_x,unit_y,unit_w,unit_h])。
+pub(super) fn gradient_linear_mask(
+    radius: Option<Radius>,
+    local_w: f32,
+    local_h: f32,
+) -> ([f32; 4], [f32; 6]) {
+    // 相邻和归一化与 CPU 掩码保持同一规则；None 即全零关闭掩码。
+    let corner = radius
+        .map(|value| value.normalized(local_w, local_h))
+        .unwrap_or_else(Radius::zero);
+    (
+        [corner.tl, corner.tr, corner.br, corner.bl],
+        [local_w, local_h, 0.0, 0.0, 1.0, 1.0],
+    )
+}
+
+// 计算径向渐变圆角掩码的 ABI 字段：掩码矩形按外圆包围盒换算单位坐标。
+pub(super) fn gradient_radial_mask(
+    radius: Option<Radius>,
+    circle_bounds: Rect,
+    clip_rect: Rect,
+) -> ([f32; 4], [f32; 6]) {
+    let corner = radius
+        .map(|value| value.normalized(clip_rect.w, clip_rect.h))
+        .unwrap_or_else(Radius::zero);
+    // 外圆包围盒的两个轴尺寸用于单位坐标换算与像素空间还原。
+    let (bw, bh) = (circle_bounds.w, circle_bounds.h);
+    let unit = |value: f32, extent: f32| {
+        if extent > 0.0 && value.is_finite() && extent.is_finite() {
+            value / extent
+        } else {
+            0.0
+        }
+    };
+    (
+        [corner.tl, corner.tr, corner.br, corner.bl],
+        [
+            bw,
+            bh,
+            unit(clip_rect.x - circle_bounds.x, bw),
+            unit(clip_rect.y - circle_bounds.y, bh),
+            unit(clip_rect.w, bw),
+            unit(clip_rect.h, bh),
+        ],
+    )
+}

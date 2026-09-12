@@ -26,7 +26,7 @@ impl Drop for LayoutFontScope {
 }
 
 /// 与绘制共享字体族、fallback、shaping 和 UAX #14；无窗口字体时才允许估算。
-pub(crate) fn text_metrics(
+pub fn text_metrics(
     text: &str,
     max_width: f32,
     font_size: f32,

@@ -52,6 +52,7 @@ pub(crate) fn record_disposed_without_disposition(error: &Error) {
     let occurrences = distinct.entry(key.clone()).or_insert(0);
     *occurrences += 1;
     if *occurrences == 1 {
+        #[cfg(feature = "diagnostics")]
         tracing::debug!(
             target: "uix_app::diagnostics",
             code = %key.0,

@@ -11,7 +11,7 @@ use crate::app::application::app_handle::{AppHandle, prepare_app_root};
 use crate::app::application::cli::Cli;
 use crate::app::application::di::Container;
 // 引入 Application System 私有逐窗反馈 owner。
-use crate::app::application::feedback_state::AppFeedbackState;
+use crate::app::AppExtensions;
 // 引入 App 作用域的 UIX 具名主题表。
 use crate::app::application::named_themes::NamedThemes;
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
@@ -60,7 +60,7 @@ use crate::platform::windowing::window::{PlatformWindow, WindowOcclusionState};
 use crate::platform::{PendingNativeOptions, create_platform_with_pending};
 use crate::ui::semantic_action::SemanticActionKind;
 use crate::ui::theme::traits::TokenProvider;
-use crate::ui::theme::{DesignTokens, DynTokens, Theme};
+use crate::ui::theme::{ModeTokens, Theme};
 use crate::ui::view::ViewNode;
 use crate::ui::{
     AppState, Locale, SystemEvent, WidgetConfig, WidgetTree, with_config, with_locale,
@@ -370,13 +370,6 @@ impl App {
         self
     }
 
-    // 测试目标保留根窗口句柄快捷入口，供外部 GUI 测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn app_handle(&self) -> AppHandle {
-        self.app_handle_for_window(WindowId::ROOT)
-    }
-
     pub(crate) fn app_handle_for_window(&self, window_id: WindowId) -> AppHandle {
         AppHandle::new(
             window_id,
@@ -385,6 +378,15 @@ impl App {
             self.container.clone(),
             self.handle_alive.clone(),
         )
+    }
+
+    /// Install a component-library or application service through generic lifecycle hooks.
+    pub fn extension<T: crate::app::AppExtension>(mut self, extension: T) -> Self {
+        extension.install(&mut self.container);
+        let mut extensions = self.container.resolve_clone::<crate::app::AppExtensions>().unwrap_or_default();
+        extensions.insert(extension);
+        self.container.singleton(extensions);
+        self
     }
 
     /// 注册全局单例。
@@ -678,11 +680,11 @@ impl App {
                 );
                 false
             });
-            let tokens = Arc::new(DynTokens::new(if is_dark {
-                DesignTokens::antd_dark()
-            } else {
-                DesignTokens::antd_light()
-            }));
+            let tokens = Arc::new(ModeTokens::new(
+                self.named_themes.resolve("light").unwrap_or_else(Theme::light),
+                self.named_themes.resolve("dark").unwrap_or_else(Theme::dark),
+                is_dark,
+            ));
             let provider: Arc<dyn TokenProvider> = tokens.clone();
             self.theme = Theme::from_arc(provider);
             Some(tokens)
@@ -691,7 +693,7 @@ impl App {
         };
 
         // Application System 创建唯一反馈 owner，所有窗口只分配各自句柄组。
-        let feedback = AppFeedbackState::new();
+        let feedback = self.container.resolve_clone::<AppExtensions>().unwrap_or_default();
         // 通过 DI 共享同一个 owner，不向组件暴露全局注册表。
         self.container.singleton(feedback.clone());
         let locale = window_assembly::resolve_or_default::<Locale>(&self.container);
@@ -708,8 +710,20 @@ impl App {
             Some(root_feedback),
             move || root_factory(),
         );
-        let mut session =
-            WindowSession::from_root_factory_for_window(root_window_id, wrapped_root, engine, w, h);
+        // 主窗初始捕获与首帧使用同一主题：启动前提交的 pending 主题一次
+        // 消费，暗色首挂从声明构建起就按暗色解析 token。
+        let initial_theme = self
+            .runtime
+            .take_pending_theme()
+            .unwrap_or_else(|| self.theme.clone());
+        let mut session = WindowSession::from_root_factory_for_window(
+            root_window_id,
+            wrapped_root,
+            engine,
+            w,
+            h,
+            &initial_theme,
+        );
         #[cfg(any(feature = "test-harness", feature = "agent-control"))]
         self.runtime.register_session_with_graphics_faults(
             root_window_id,
@@ -828,17 +842,20 @@ impl App {
                     return 1;
                 }
             };
+        // 主窗循环主题与初始捕获共享同一快照；pending 已在初始捕获处消费。
+        // 副窗创建在此之前即可发生，主题提前定义供 open-window 通道复用。
+        let theme = RefCell::new(initial_theme);
         drain_pending_open_windows_with_backend(
             &mut *platform,
             &self.runtime,
             &self.app_state,
             &self.container,
+            &theme.borrow(),
             graphics_backend,
             recovery_request.clone(),
             self.on_window_start.as_ref(),
             &mut secondary_windows.borrow_mut(),
         );
-        let theme = RefCell::new(self.runtime.take_pending_theme().unwrap_or(self.theme));
         // Diagnostics System 是全部窗口调试状态的唯一所有者。
         let debug_mode = diagnostics.clone();
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
@@ -910,6 +927,7 @@ impl App {
                     &runtime,
                     &app_state,
                     &container,
+                    &theme.borrow(),
                     graphics_backend,
                     recovery_request.clone(),
                     on_window_start.as_ref(),
@@ -1004,3 +1022,8 @@ use runtime::{
     create_preferred_engine, drain_platform_pending_failures,
     drain_secondary_window_frames_with_platform,
 };
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/app/application/application/mod_tests.rs"]
+mod mod_tests;

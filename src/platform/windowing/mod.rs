@@ -298,7 +298,7 @@ impl KeyMod {
     /// 系统或 Command 修饰键位。
     pub const SUPER: Self = Self(1 << 3);
     /// 框架内部合成的按键事件；平台 backend 不得设置。
-    pub(crate) const SYNTHETIC: Self = Self(1 << 31);
+    pub const SYNTHETIC: Self = Self(1 << 31);
 
     /// 判断是否完整包含指定修饰键集合。
     pub const fn contains(self, other: Self) -> bool {
@@ -395,5 +395,3 @@ pub trait IClipboard {
     /// 判断剪贴板是否包含可读取文本。
     fn has_text(&self) -> Result<bool>;
 }
-
-pub mod desktop_cursor;

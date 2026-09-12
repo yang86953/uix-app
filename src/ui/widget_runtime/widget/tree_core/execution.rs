@@ -72,7 +72,7 @@ impl WidgetTree {
     }
 
     // 返回树是否仍可接受新的或嵌套的协调事务。
-    pub(crate) fn accepts_coordination_work(&self) -> bool {
+    pub fn accepts_coordination_work(&self) -> bool {
         // 只有运行态与现有协调态可以继续协调。
         self.execution_state.accepts_coordination_work()
     }

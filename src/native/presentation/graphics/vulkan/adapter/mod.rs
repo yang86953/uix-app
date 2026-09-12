@@ -33,13 +33,14 @@ mod drawable;
 #[cfg(any(unix, windows))]
 pub(crate) mod surface;
 
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
+#[path = "../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/parity.rs"]
 mod parity;
 
 #[cfg(any(unix, windows))]
 pub use context::VulkanContext;
 // 显式 parity 根只选择中立 Adapter 实现，不取得具体故障值。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) use parity::{VulkanHeadlessUiParityAdapter, VulkanWsiParityAdapter};
 
 // 组装 Vulkan GPU-native swapchain adapter 的静态 recipe 能力。
@@ -66,19 +67,19 @@ pub(crate) fn create(
 }
 
 // 显式测试 feature 才允许 crate 根调用真实 GPU 离屏 parity harness。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_gpu_parity_test() {
     context::run_gpu_parity_test();
 }
 
 // 显式测试 feature 执行不创建原生对象的连续帧同步契约。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_present_completion_contract_test() {
     context::run_present_completion_contract_test();
 }
 
 // 显式测试 feature 验证真实共享 device 与每窗口恢复边界。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_shared_device_contract_test() {
     device::run_shared_device_contract_test();
     crate::draw::renderer::recovery_driver::run_multi_window_device_loss_contract_test();

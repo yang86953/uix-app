@@ -78,13 +78,6 @@ pub(crate) struct NativeGpuCanvas2D {
 }
 
 impl NativeGpuCanvas2D {
-    // hybrid canvas 只作为 soft fallback 参考语义的回归测试 fixture 保留。
-    #[cfg(test)]
-    // 创建允许测试显式进入 hybrid 分支的 canvas。
-    pub(crate) fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
-        Self::new_with_mode(width, height, native_caps, false)
-    }
-
     pub(crate) fn new_gpu_only(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
         Self::new_with_mode(width, height, native_caps, true)
     }
@@ -137,16 +130,6 @@ impl NativeGpuCanvas2D {
         } else {
             1.0
         };
-    }
-
-    // 原生测试目标保留 mesh 数量观测入口，供提交顺序测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn pending_mesh_count(&self) -> usize {
-        self.pending_native
-            .iter()
-            .filter(|op| matches!(op, PendingNativeOp::SolidMesh(_)))
-            .count()
     }
 
     pub(crate) fn ensure_soft(&mut self) -> &mut SharedRasterizer {
@@ -397,3 +380,8 @@ impl NativeGpuCanvas2D {
         soft.pop_clip();
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/backend/gpu/canvas_tests.rs"]
+mod canvas_tests;

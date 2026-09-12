@@ -1,17 +1,21 @@
 //! 渲染后端模块。
 
 // 通用 GPU Renderer 的有限帧计划，供 backend 内部迁移使用。
+#[cfg(feature = "graphics-gpu")]
 pub(crate) mod frame_plan;
 // 显式 GPU parity 通过真实 PaintContext/Canvas2D 入口验收共享 FramePlan。
-#[cfg(feature = "graphics-parity-test")]
+#[cfg(any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11))]
+#[path = "../../../tests-src/draw/backend/production_chain_parity.rs"]
 pub(crate) mod production_chain_parity;
 // CPU/GPU 离屏 Picture 池共用的槽位簿记。
 pub(crate) mod slot_pool;
 // 通用 RHI lowering，逐步替代 GPU backend 的逐 UI native submit。
+#[cfg(feature = "graphics-gpu")]
 pub(crate) mod rhi_renderer;
 
 pub mod contract;
 pub mod cpu;
+#[cfg(feature = "graphics-gpu")]
 pub mod gpu;
 
 pub use crate::core::DamageRegion;
@@ -20,6 +24,7 @@ pub use contract::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend}
 #[cfg(any(feature = "test-harness", feature = "agent-control"))]
 pub use contract::SurfaceReadback;
 pub use cpu::CpuBackend;
+#[cfg(feature = "graphics-gpu")]
 pub use gpu::GpuBackend;
 
 use crate::core::{Errc, Error};

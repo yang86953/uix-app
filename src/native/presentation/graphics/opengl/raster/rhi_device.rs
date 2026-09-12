@@ -835,12 +835,12 @@ fn rhi_invalid(message: impl Into<String>) -> Error {
 }
 
 // 只向父 raster Module 暴露无参数测试入口，原生资源和视觉事实继续保持私有。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[cfg(all(target_os = "linux", uix_gpu_parity_opengl))]
 pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
 
 // 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[cfg(all(target_os = "linux", uix_gpu_parity_opengl))]
 #[path = "../../../../../../tests/support/native/gpu_parity/opengl_rhi_device.rs"]
 mod gpu_parity_tests;

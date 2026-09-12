@@ -5,7 +5,7 @@ pub(crate) struct PaintBindLease {
     // 保存所属实际组件的代际身份。
     widget_id: crate::core::WidgetId,
     // 保存用于精确区分窗口端点的失效队列。
-    queue: crate::draw::renderer::InvalidationQueueHandle,
+    queue: super::InvalidationHandle,
     // 标记状态变化是否需要重新测量，而不是只重绘旧 frame。
     layout: bool,
 }
@@ -19,7 +19,7 @@ impl PaintBindLease {
         // 接收当前实际组件的代际身份。
         widget_id: crate::core::WidgetId,
         // 接收所属窗口的失效队列。
-        queue: crate::draw::renderer::InvalidationQueueHandle,
+        queue: super::InvalidationHandle,
         // 接收当前布局解析出的绘制范围。
         rect: Option<crate::core::Rect>,
     ) -> Self {
@@ -42,7 +42,7 @@ impl PaintBindLease {
     pub(super) fn bind_layout(
         source: std::sync::Arc<dyn super::StatePaintBind>,
         widget_id: crate::core::WidgetId,
-        queue: crate::draw::renderer::InvalidationQueueHandle,
+        queue: super::InvalidationHandle,
     ) -> Self {
         source.bind_layout_site(widget_id, queue.clone());
         Self {
@@ -82,7 +82,7 @@ impl StateBindCaptureGuard {
         // 接收当前实际组件的代际身份。
         widget_id: crate::core::WidgetId,
         // 接收所属窗口失效队列。
-        queue: crate::draw::renderer::InvalidationQueueHandle,
+        queue: super::InvalidationHandle,
         // 接收当前组件可精确失效的绘制范围。
         rect: Option<crate::core::Rect>,
     ) -> Self {

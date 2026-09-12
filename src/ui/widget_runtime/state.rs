@@ -9,7 +9,7 @@ use std::any::Any;
 // 维护作用域映射与未决捕获 claim 集合。
 use std::collections::{HashMap, HashSet};
 // 让窗口树和捕获上下文安全共享状态存储。
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 // 标识动态构建在特定宿主内复用私有状态的稳定命名空间。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -119,12 +119,24 @@ struct WidgetStateClaim {
 }
 
 // 保存一个窗口树拥有的全部组件私有状态。
-#[derive(Default)]
 struct WidgetStateStoreInner {
     // 按组件作用域再按字段标识隔离状态。
     fields: HashMap<UixWidgetScope, HashMap<u64, WidgetStateValue>>,
     // 为此窗口存储中的捕获分配不重复 claim token。
     next_claim_token: u64,
+    // 本树共享的键盘焦点可见响应式事实；初始值与树核心默认
+    // （窗口聚焦且键盘可见）一致，按树隔离，不跨窗口共享。
+    keyboard_focus_visible_fact: State<bool>,
+}
+
+impl Default for WidgetStateStoreInner {
+    fn default() -> Self {
+        Self {
+            fields: HashMap::new(),
+            next_claim_token: 0,
+            keyboard_focus_visible_fact: State::new(true),
+        }
+    }
 }
 
 // 让单个 WidgetTree 拥有并在其所有捕获之间共享私有状态。
@@ -241,6 +253,26 @@ thread_local! {
 
 // 为给定窗口树创建独立的组件私有状态存储。
 impl WidgetStateStore {
+    // 取得本树共享的键盘焦点可见响应式事实。
+    //
+    // 生成的 `:focus-visible` 状态层在所属树捕获内读取本事实，
+    // 事实翻转只重建本树命中的声明式视图。
+    pub(crate) fn keyboard_focus_visible_fact(&self) -> State<bool> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .keyboard_focus_visible_fact
+            .clone()
+    }
+
+    // 由树核心在有效事实变化时同步本树响应式槽。
+    pub(crate) fn sync_keyboard_focus_visible_fact(&self, visible: bool) {
+        // 值未变化时跳过，避免无谓推进代数触发重建。
+        if self.keyboard_focus_visible_fact().get_untracked() != visible {
+            self.keyboard_focus_visible_fact().set(visible);
+        }
+    }
+
     // 创建空存储以供一个 WidgetTree 独占。
     pub(crate) fn new() -> Self {
         // 返回默认的并发安全状态容器。
@@ -850,6 +882,7 @@ where
             .map(|capture| (capture.store.clone(), capture.claim_token))
     });
     // 有捕获上下文时在窗口私有存储中取得或建立字段状态。
+    // 有捕获上下文时在窗口私有存储中取得或建立字段状态。
     if let Some((store, claim_token)) = capture_context {
         // 保留跨 reconcile 的组件私有 State 身份。
         return store.state(scope, field, claim_token, init);
@@ -859,3 +892,25 @@ where
 }
 
 // 仅在库单元测试中编译组件状态回滚门禁。
+
+// 供生成的 `:focus-visible` 状态层读取键盘焦点可见事实。
+//
+// 事实按既有 WidgetTree/窗口归属提供：有捕获上下文时返回所属树
+// 状态存储共享的树级事实句柄，键盘焦点可见翻转只重建本树命中的
+// 视图，多树/多窗口互不污染；在视图构建中调用 `get()` 会登记重建
+// 依赖。无捕获的直接 View 构建没有跨重建所有者，仅提供本次事实。
+pub fn uix_keyboard_focus_visible_fact() -> State<bool> {
+    // 复制当前捕获的存储句柄后释放线程局部借用。
+    let capture_context = COMPONENT_STATE_CAPTURE.with(|capture| {
+        capture
+            .borrow()
+            .as_ref()
+            .map(|capture| capture.store.clone())
+    });
+    // 有捕获上下文时返回当前树共享的树级事实。
+    if let Some(store) = capture_context {
+        return store.keyboard_focus_visible_fact();
+    }
+    // 无捕获的直接 View 构建只创建本次状态，绝不引入全局缓存。
+    State::new(true)
+}

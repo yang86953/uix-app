@@ -15,7 +15,7 @@ pub(crate) mod raster;
 pub(crate) mod rhi_host;
 
 // 显式测试 feature 只转发真实 EGL/GLES harness，不扩大生产 Adapter 接口。
-#[cfg(all(target_os = "linux", feature = "opengl-parity-test"))]
+#[cfg(all(target_os = "linux", uix_gpu_parity_opengl))]
 pub(crate) fn run_gpu_parity_test() {
     raster::run_gpu_parity_test();
 }

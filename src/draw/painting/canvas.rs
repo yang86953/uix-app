@@ -137,6 +137,40 @@ pub trait Canvas2D {
         inner_color: Color,
         outer_color: Color,
     );
+    /// 填充带四角圆角裁剪的线性渐变（S4）。
+    ///
+    /// 半径按相邻和规则归一化后与渐变在同一局部空间掩码；零半径等价
+    /// [`Canvas2D::fill_linear_gradient`]。默认实现退回无圆角路径，仅
+    /// 供不参与 UIX 渲染的外部画布保持可编译。
+    fn fill_linear_gradient_rounded(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+        radius: Radius,
+    ) {
+        let _ = radius;
+        self.fill_linear_gradient(rect, color_a, color_b, dir);
+    }
+    /// 填充带四角圆角裁剪的径向渐变（S4）。
+    ///
+    /// `clip_rect` 是圆角掩码的参考矩形（调用方的背景盒）；零半径等价
+    /// [`Canvas2D::fill_radial_gradient`]。默认实现退回无圆角路径。
+    fn fill_radial_gradient_rounded(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+        clip_rect: Rect,
+        radius: Radius,
+    ) {
+        let _ = (clip_rect, radius);
+        self.fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color);
+    }
 
     // ── 阴影 ──
     /// 绘制单个矩形投影。
@@ -275,8 +309,7 @@ pub trait Canvas2D {
     /// 借用当前表面的只读像素。
     fn pixels(&self) -> &[u32];
     #[cfg(test)]
-    /// 在测试构建中借用当前表面的可变像素。
-    fn pixels_mut(&mut self) -> &mut [u32];
+    canvas2d_pixels_mut_decl!();
     /// 返回当前表面的物理尺寸。
     fn surface_size(&self) -> Size;
     /// 返回当前表面的物理宽度。
@@ -299,3 +332,10 @@ pub trait Canvas2D {
     /// 调用者只需重绘新暴露的 strip 区域（与滚动方向相反的一侧）。
     fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32);
 }
+
+// pixels_mut 测试声明宏位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/painting/canvas2d_test_macros.rs"]
+pub(crate) mod canvas2d_test_macros;
+#[cfg(test)]
+use canvas2d_test_macros::canvas2d_pixels_mut_decl;

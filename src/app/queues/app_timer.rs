@@ -98,22 +98,6 @@ impl AppTimerQueue {
         self.insert(interval, Some(interval), f)
     }
 
-    // 测试目标保留完整 deadline 快照入口，供时钟行为测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
-        let mut deadlines = Vec::new();
-        let Some(_) = self.deadlines_into_if_changed(None, &mut deadlines) else {
-            // 已知修订为空时必返回新修订；返回 None 说明内部修订状态异常，
-            // 附带当前已收集条目数便于定位。
-            panic!(
-                "initial timer deadline snapshot must report a revision (collected={})",
-                deadlines.len()
-            );
-        };
-        deadlines
-    }
-
     pub(crate) fn deadlines_into_if_changed(
         &self,
         known_revision: Option<u64>,
@@ -173,17 +157,6 @@ impl AppTimerQueue {
         }
 
         true
-    }
-
-    // 测试目标保留队列长度观测入口，供定时器行为测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entries
-            .len()
     }
 
     fn insert<F>(&self, delay: Duration, interval: Option<Duration>, f: F) -> TimerHandle
@@ -270,3 +243,8 @@ impl Drop for TimerHandle {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/app/queues/app_timer_tests.rs"]
+mod app_timer_tests;

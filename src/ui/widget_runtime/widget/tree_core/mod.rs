@@ -56,16 +56,6 @@ impl Drop for BoundAnimatedSource {
     }
 }
 
-#[cfg(test)]
-thread_local! {
-    /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
-    #[allow(
-        clippy::missing_const_for_thread_local,
-        reason = "the initializer is already const and the lint fires through thread_local"
-    )]
-    pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
-}
-
 // 节点构建：换根、加子节点与构建入口（文件名避开 Cargo 构建脚本约定名 build.rs）。
 mod tree_ops;
 // 保存 WidgetTree 私有的运行与 fail-stop 执行状态。
@@ -126,6 +116,8 @@ pub struct WidgetTree {
     pub(crate) scoped_rebuild_pending: Arc<std::sync::Mutex<Vec<WidgetId>>>,
     // 保存声明根持有的结构性 State 订阅租约。
     pub(crate) root_reconcile_state_binds: Vec<crate::ui::reactive::state::ReconcileBindLease>,
+    // 保存根构建评估过的 @media 断点与当时宽度；根 frame 跨越阈值时请求一次协调。
+    pub(crate) media_breakpoints: crate::ui::widget_runtime::build_viewport::MediaBreakpoints,
     pub(crate) effects: Vec<crate::ui::reactive::state::Effect>,
     pub(crate) animated_sources: BTreeMap<WidgetId, BoundAnimatedSource>,
     // 记录每个所有者声明的工作身份，以在最后一个所有者离开时才解绑。
@@ -191,7 +183,7 @@ impl Default for WidgetTree {
             generations: Vec::new(),
             next_slot: 0,
             root_id: None,
-            theme_tokens: Theme::antd_light().tokens_arc(),
+            theme_tokens: Theme::light().tokens_arc(),
             scroll_region_moves: Vec::new(),
             pending_window_actions: Vec::new(),
             tree_version: 0,
@@ -217,6 +209,8 @@ impl Default for WidgetTree {
             scoped_rebuild_pending,
             // 初始树尚未接纳任何声明根结构性 State 绑定。
             root_reconcile_state_binds: Vec::new(),
+            // 初始树没有评估过任何 @media 断点。
+            media_breakpoints: Default::default(),
             effects: Vec::new(),
             animated_sources: BTreeMap::new(),
             // 初始树没有任何根或节点动画源所有者。
@@ -259,3 +253,17 @@ impl Default for WidgetTree {
 
 mod focus;
 mod methods;
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/ui/widget_runtime/widget/tree_core/mod_tests.rs"]
+mod mod_tests;
+#[cfg(test)]
+thread_local! {
+    /// 1=Phase1 2=Phase2 4=Phase4；0=不记录。
+    #[allow(
+        clippy::missing_const_for_thread_local,
+        reason = "the initializer is already const and the lint fires through thread_local"
+    )]
+    pub(crate) static LAYOUT_TRACE_PHASE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}

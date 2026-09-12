@@ -72,7 +72,7 @@ pub enum AlignItems {
 
 /// 单个 flex 子项的弹性属性。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct FlexChild {
+pub struct FlexChild {
     pub flex_grow: f32,
     pub flex_shrink: f32,
     pub flex_basis: Option<f32>,
@@ -100,7 +100,7 @@ impl Default for FlexChild {
 
 /// flex 布局输入。
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct FlexInput<'a> {
+pub struct FlexInput<'a> {
     pub direction: FlexDirection,
     pub wrap: bool,
     pub gap: f32,
@@ -133,22 +133,15 @@ impl Default for FlexInput<'_> {
     }
 }
 
-/// flex 布局输出。
-#[cfg(test)]
-#[derive(Debug, Clone)]
-pub(crate) struct FlexOutput {
-    pub child_rects: Vec<Rect>,
-}
-
 /// 同一布局帧内复用的 Flex 求解工作区。
 #[derive(Default)]
-pub(crate) struct FlexComputeScratch {
+pub struct FlexComputeScratch {
     pub(crate) base_main_sizes: Vec<f32>,
     pub(crate) cross_sizes: Vec<f32>,
     pub(crate) lines: Vec<FlexLine>,
     pub(crate) line_cross_positions: Vec<f32>,
     pub(crate) line_max_cross: Vec<f32>,
-    pub(crate) child_rects: Vec<Rect>,
+    pub child_rects: Vec<Rect>,
 }
 
 /// 换行 Flex 求解器复用的子项半开区间。
@@ -169,16 +162,62 @@ pub enum GridTrack {
     Fr(f32),
     /// 根据轨道内容的固有尺寸自动确定大小。
     Auto,
+    /// 有界轨道 `minmax(min, max)`：下界为固定 px 或容器内容盒百分比，
+    /// 上界为固定 px 或 fr 权重。
+    ///
+    /// 规则：轨道先占用下界；固定上界的轨道在 fr 分配前用剩余空间均匀增长到
+    /// 上界；fr 上界的轨道参与剩余空间分配，但不低于下界（下界高于份额时按下界
+    /// 冻结并把剩余份额让给其他 fr 轨道；`0fr` 上界合法，轨道保留下界且不参与
+    /// 分配）。固定上界小于下界时上界抬到下界；百分比下界在容器轴未定时按 0
+    /// 处理；剩余空间不足时全部轨道停在下界，允许溢出而不收缩。不支持 auto
+    /// 下界/上界、fr 下界与嵌套 minmax。
+    ///
+    /// 直接构造枚举而绕过 [`GridTrack::minmax`] 校验的负数或非有限分量，进入求解
+    /// 时按无效分量处理：下界与权重按 0、固定上界抬到下界。
+    MinMax(GridTrackMin, GridTrackMax),
+}
+
+impl GridTrack {
+    /// 构造有界轨道；分量必须有限且非负，否则与编译期诊断一致直接拒绝。
+    pub fn minmax(min: GridTrackMin, max: GridTrackMax) -> Self {
+        let (GridTrackMin::Px(lower) | GridTrackMin::Percent(lower)) = min;
+        let (GridTrackMax::Px(upper) | GridTrackMax::Fr(upper)) = max;
+        assert!(
+            lower.is_finite() && lower >= 0.0 && upper.is_finite() && upper >= 0.0,
+            "GridTrack::minmax requires finite, non-negative bounds"
+        );
+        Self::MinMax(min, max)
+    }
+}
+
+/// `minmax()` 的下界：固定像素或容器内容盒百分比。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GridTrackMin {
+    /// 固定逻辑像素下界。
+    Px(f32),
+    /// 容器内容盒同轴百分比下界；`50.0` 表示 50%。
+    Percent(f32),
+}
+
+/// `minmax()` 的上界：固定像素或 fr 权重。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GridTrackMax {
+    /// 固定逻辑像素上界。
+    Px(f32),
+    /// 参与剩余空间分配的 fr 权重。
+    Fr(f32),
 }
 
 /// grid 布局子项。
 #[derive(Debug, Clone)]
-pub(crate) struct GridChild {
+pub struct GridChild {
     pub cell: Option<usize>,
     pub col_span: u32,
     pub row_span: u32,
     pub measured_size: Size,
     pub min_size: Size,
+    /// border-box 上限；无上限用 [`Size::infinite`]。
+    pub max_size: Size,
     pub margin: EdgeInsets,
     pub align: Option<AlignItems>,
     pub justify: Option<JustifyContent>,
@@ -192,6 +231,7 @@ impl Default for GridChild {
             row_span: 1,
             measured_size: Size::zero(),
             min_size: Size::zero(),
+            max_size: Size::infinite(),
             margin: EdgeInsets::zero(),
             align: None,
             justify: None,
@@ -233,10 +273,7 @@ impl Default for GridInput<'_> {
     }
 }
 
-/// grid 布局输出。
+// 以下完整测试实现位于 tests-src，经模块级 include! 保持原私有作用域；
+// 文件内各项自带 cfg(test)，生产构建展开为空。
 #[cfg(test)]
-#[derive(Debug, Clone)]
-pub(crate) struct GridOutput {
-    pub child_rects: Vec<Rect>,
-    pub total_size: Size,
-}
+include!("../../../tests-src/ui/layout/layout_test_types.rs");

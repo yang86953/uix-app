@@ -2,6 +2,8 @@
 
 // 引入背景图颜色端点值。
 use super::ColorValue;
+// 引入背景尺寸解析使用的二维尺寸。
+use crate::core::Size;
 
 /// 单层背景图来源。
 #[derive(Debug, Clone, PartialEq)]
@@ -123,5 +125,107 @@ impl BackgroundRepeat {
     pub(crate) fn repeats_y(self) -> bool {
         // 只有 repeat 与 repeat-y 开启垂直重复。
         matches!(self, Self::Repeat | Self::RepeatY)
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 背景尺寸（S4）
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 背景图单轴尺寸。
+///
+/// `Auto` 轴保持图片固有比例：另一轴给出显式尺寸时按该轴的缩放比例
+/// 推导本轴；两轴都是 `Auto` 时使用固有尺寸（与未声明 `backgroundSize`
+/// 完全一致）。百分比参照当前绘制的 border-box（与背景定位共用同一盒）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BackgroundAxisSize {
+    /// 按固有比例或固有尺寸解析。
+    Auto,
+    /// 显式逻辑像素尺寸。
+    Px(f32),
+    /// 相对背景盒同轴尺寸的比例，合法范围 0.0 到 1.0 之外的值由解析层拒绝。
+    Percent(f32),
+}
+
+/// 背景图整体尺寸策略；只作用于图片来源，渐变始终填满背景盒。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BackgroundSize {
+    /// 固有尺寸（默认值，也是显式恢复关键字 `auto`）。
+    Auto,
+    /// 等比缩放到完全覆盖背景盒，允许单侧溢出（剩余空间可为负）。
+    Cover,
+    /// 等比缩放到完整包含在背景盒内，允许单侧留白。
+    Contain,
+    /// 逐轴显式尺寸；单轴 `Auto` 时按另一轴比例保持宽高比，两轴显式时允许拉伸。
+    Explicit(BackgroundAxisSize, BackgroundAxisSize),
+}
+
+impl Default for BackgroundSize {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+impl BackgroundSize {
+    /// 显式两轴尺寸的便捷构造。
+    pub const fn explicit(width: BackgroundAxisSize, height: BackgroundAxisSize) -> Self {
+        Self::Explicit(width, height)
+    }
+
+    /// 按背景盒与图片固有尺寸解析为最终平铺尺寸。
+    ///
+    /// 返回 `None` 表示无有效输入（非有限盒或图片尺寸），调用方不产生图层。
+    pub(crate) fn resolve_tile(self, box_size: Size, image_size: Size) -> Option<Size> {
+        let scale_of = |axis: BackgroundAxisSize, box_axis: f32, image_axis: f32| -> Option<f32> {
+            match axis {
+                BackgroundAxisSize::Auto => None,
+                BackgroundAxisSize::Px(value) if value.is_finite() && value > 0.0 => {
+                    Some(value / image_axis)
+                }
+                // 百分比按背景盒同轴换算为目标尺寸后再取缩放比例。
+                BackgroundAxisSize::Percent(value)
+                    if value.is_finite() && value > 0.0 =>
+                {
+                    Some(box_axis * value / image_axis)
+                }
+                _ => None,
+            }
+        };
+        if !box_size.w.is_finite()
+            || !box_size.h.is_finite()
+            || box_size.w <= 0.0
+            || box_size.h <= 0.0
+            || !image_size.w.is_finite()
+            || !image_size.h.is_finite()
+            || image_size.w <= 0.0
+            || image_size.h <= 0.0
+        {
+            return None;
+        }
+        match self {
+            Self::Auto => Some(image_size),
+            Self::Cover => {
+                let scale = (box_size.w / image_size.w).max(box_size.h / image_size.h);
+                Some(Size::new(image_size.w * scale, image_size.h * scale))
+            }
+            Self::Contain => {
+                let scale = (box_size.w / image_size.w).min(box_size.h / image_size.h);
+                Some(Size::new(image_size.w * scale, image_size.h * scale))
+            }
+            Self::Explicit(width_axis, height_axis) => {
+                let width_scale = scale_of(width_axis, box_size.w, image_size.w);
+                let height_scale = scale_of(height_axis, box_size.h, image_size.h);
+                let (scale_x, scale_y) = match (width_scale, height_scale) {
+                    // 两轴显式：允许非等比拉伸。
+                    (Some(sx), Some(sy)) => (sx, sy),
+                    // 单轴显式：另一轴按同一比例保持固有宽高比。
+                    (Some(sx), None) => (sx, sx),
+                    (None, Some(sy)) => (sy, sy),
+                    // 双 Auto 与 Self::Auto 等价。
+                    (None, None) => (1.0, 1.0),
+                };
+                Some(Size::new(image_size.w * scale_x, image_size.h * scale_y))
+            }
+        }
     }
 }

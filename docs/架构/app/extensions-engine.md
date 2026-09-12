@@ -86,7 +86,7 @@
 ### 4.1 构建能力与模块
 
 - Cargo feature：**`extensions`**，默认关闭；不进入默认图、最小图与 demo 默认图（最小图编译失败为既有 `MenuBar` 问题，与本能力无关）。
-- 模块：`uix_app::app::extensions`（app 私有 Module，引擎为其私有子模块）；能力合同测试按 `capability_compile_contract.rs` 惯例补 `extensions` 一对 doctest。
+- 模块：`uix_app::extensions`（app 私有 Module，引擎为其私有子模块）；能力合同测试按 `capability_compile_contract.rs` 惯例补 `extensions` 一对 doctest。
 - 依赖登记（P4 实测）：新增可选依赖 `num-bigint`、`num-rational`、`num-integer`、`num-traits`；三口径基线复核不变（默认 75 / 最小 51 / demo 82，与基线一致），启用 `extensions` 后图为 78（净增 3：num-bigint、num-rational、num-integer）。替代方案论证见 §1（Steel 依赖面不可治理、自研大数正确性风险高于复用 num 系）。不引入 thiserror、GC 库或任何解释器外部依赖。
 
 ### 4.2 Rust 门面（P1 最小闭环）

@@ -16,11 +16,6 @@ use super::unhandled;
 ///
 /// # 构造示例
 ///
-/// ```ignore
-/// let err = Error::new(Errc::NotFound, "资源未找到");
-/// let err = Error::fatal(Errc::OutOfRange, "数组越界");
-/// let err = Error::invalid_arg("参数 id 不能为空");
-/// ```
 #[must_use = "框架错误必须经诊断系统处置（report / observe / enqueue / recovery），丢弃会留下未处置观测记录"]
 pub struct Error {
     code: Errc,

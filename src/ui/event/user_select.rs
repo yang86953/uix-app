@@ -37,7 +37,7 @@ impl UserSelect {
     }
 
     // 判断最终策略是否允许组件建立普通文字选区。
-    pub(crate) fn allows_text(self, widget_default: bool) -> bool {
+    pub fn allows_text(self, widget_default: bool) -> bool {
         // auto 保留组件默认，其余三值直接表达允许或禁止。
         match self {
             // auto 不篡改 Label 或 RichText 的显式构建器能力。

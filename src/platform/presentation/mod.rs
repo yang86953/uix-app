@@ -16,6 +16,7 @@ pub(crate) use contracts::*;
 pub(crate) mod rhi;
 
 // recipe 装配输入与 backend 描述只供 crate 内部启动路径消费。
+#[cfg(feature = "platform")]
 pub(crate) use super::composition_root::{
     GraphicsRecipe, describe_backend_availability, gpu_recipe_candidates,
     graphics_runtime_platform, try_create_gpu_recipe_with_queue,

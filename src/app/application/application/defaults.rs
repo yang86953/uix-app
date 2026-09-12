@@ -68,7 +68,7 @@ impl Default for App {
             size: (800, 600),
             custom_title_bar: false,
             surface_role: WindowSurfaceRole::Toplevel,
-            theme: Theme::antd_light(),
+            theme: Theme::light(),
             // 为普通 Rust App 保留 light 与 dark 内建名称。
             named_themes: NamedThemes::default(),
             follow_system_theme: false,

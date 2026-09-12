@@ -5,7 +5,7 @@ use unicode_linebreak::{BreakClass, BreakOpportunity, break_property, linebreaks
 
 // 从文本中切出下一个 CRLF、CR 或 LF 强制换行前的逻辑行。
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn split_once_mandatory(text: &str) -> (&str, Option<&str>) {
+pub fn split_once_mandatory(text: &str) -> (&str, Option<&str>) {
     // 查找首个强制换行标量的 UTF-8 字节起点。
     let Some((byte_index, separator)) = text
         // 枚举全部 Unicode 标量字节起点。
@@ -36,7 +36,7 @@ pub(crate) fn split_once_mandatory(text: &str) -> (&str, Option<&str>) {
 
 // 保存按 Unicode 标量边界索引的断行机会。
 #[derive(Debug, Clone)]
-pub(crate) struct LineBreakMap {
+pub struct LineBreakMap {
     // 每个字符边界保存 UAX #14 的强制或允许机会。
     opportunities: Vec<Option<BreakOpportunity>>,
     // 只为超长字母数字词保存受控紧急断行边界。
@@ -46,7 +46,7 @@ pub(crate) struct LineBreakMap {
 // 提供共享断行查询。
 impl LineBreakMap {
     // 从完整 UTF-8 文本构建字符索引口径的断行表。
-    pub(crate) fn new(text: &str) -> Self {
+    pub fn new(text: &str) -> Self {
         // 为每个字符边界预留一个断行机会槽位，并保留文本末尾边界。
         let char_count = text.chars().count();
         let mut opportunities = vec![None; char_count + 1];
@@ -107,7 +107,7 @@ impl LineBreakMap {
     }
 
     // 查询边界是否允许标准自动断行。
-    pub(crate) fn allows_at(&self, char_index: usize) -> bool {
+    pub fn allows_at(&self, char_index: usize) -> bool {
         // 强制与允许机会都可以作为宽度折行的候选边界。
         self.opportunities
             // 读取目标字符边界。
@@ -116,26 +116,14 @@ impl LineBreakMap {
             .is_some_and(Option::is_some)
     }
 
-    // 查询边界是否是 UAX 强制断行。
-    #[cfg(test)]
-    pub(crate) fn mandatory_at(&self, char_index: usize) -> bool {
-        // 精确匹配强制断行类型。
-        matches!(
-            // 读取目标字符边界并复制轻量枚举。
-            self.opportunities.get(char_index).copied().flatten(),
-            // 只接受 Mandatory。
-            Some(BreakOpportunity::Mandatory)
-        )
-    }
-
     // 查询超长字母数字词是否可在目标边界紧急断行。
-    pub(crate) fn emergency_allows_at(&self, char_index: usize) -> bool {
+    pub fn emergency_allows_at(&self, char_index: usize) -> bool {
         // 越界边界默认不允许。
         self.emergency.get(char_index).copied().unwrap_or(false)
     }
 
     // 判断字符是否是自动换行时可折叠的空白。
-    pub(crate) fn collapsible_whitespace(ch: char) -> bool {
+    pub fn collapsible_whitespace(ch: char) -> bool {
         // NBSP/NNBSP 的 NonBreakingGlue 属性必须保留不可断语义。
         ch == '\u{200b}'
             // 普通 Unicode 空白可以在自动行首折叠。
@@ -144,3 +132,8 @@ impl LineBreakMap {
                 && break_property(ch as u32) != BreakClass::NonBreakingGlue)
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/resources/font/line_break_tests.rs"]
+mod line_break_tests;

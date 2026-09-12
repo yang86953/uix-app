@@ -348,19 +348,6 @@ impl DeviceLossState {
         })
     }
 
-    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
-    pub(super) fn mark_for_test(&self, device_fault_supported: bool) {
-        let diagnostic = if device_fault_supported {
-            "ERROR_DEVICE_LOST; VK_EXT_device_fault: synthetic external reset"
-        } else {
-            "ERROR_DEVICE_LOST"
-        };
-        let error = Error::new(
-            Errc::GraphicsDeviceLost,
-            format!("VulkanContext: shared logical device marked lost by test ({diagnostic})"),
-        );
-        let _ = self.record_with(error, |error| error);
-    }
 
     pub(super) fn is_lost(&self) -> bool {
         self.first_error.borrow().is_some()
@@ -413,3 +400,8 @@ fn instance_has_extension(entry: &Entry, name: &CStr) -> bool {
         unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) == name }
     })
 }
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/fault_parity_fns.rs");

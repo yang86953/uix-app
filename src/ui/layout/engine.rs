@@ -10,7 +10,6 @@ use super::grid::{GridComputeScratch, compute_grid_layout_into};
 use super::{AlignItems, FlexChild, FlexComputeScratch, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use crate::core::{EdgeInsets, Rect, Size, WidgetId};
-use crate::draw::geometry::spatial::AABB3D;
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
@@ -75,7 +74,7 @@ impl BoxModel {
     }
 
     // 声明宽高统一指 border-box；零仍保留 UIX 既有 auto 哨兵语义。
-    pub(crate) fn preferred_size(
+    pub fn preferred_size(
         &self,
         content: Size,
         width: Option<f32>,
@@ -93,7 +92,7 @@ impl BoxModel {
     }
 
     // 零内容基值仍占用不可压缩的 padding 与 border，仅由已知父主轴选择分量。
-    pub(crate) fn flex_basis(
+    pub fn flex_basis(
         &self,
         direction: FlexDirection,
         grows: bool,
@@ -142,6 +141,8 @@ pub struct LayoutChild {
     pub flex_basis: Option<f32>,
     /// border-box 不可收缩的最小尺寸（例如 padding + border）。
     pub min_size: Size,
+    /// border-box 不可拉伸超过的最大尺寸；无上限用 [`Size::infinite`]。
+    pub max_size: Size,
     /// 主轴存在剩余空间时的伸展权重。
     pub flex_grow: f32,
     /// 主轴空间不足时的收缩权重。
@@ -166,6 +167,7 @@ impl LayoutChild {
             measured_size,
             flex_basis: None,
             min_size: Size::zero(),
+            max_size: Size::infinite(),
             flex_grow: 0.0,
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
@@ -246,30 +248,30 @@ pub struct LayoutOutput {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct LayoutEngineScratch {
-    pub(crate) flex_children: Vec<FlexChild>,
-    pub(crate) flex: FlexComputeScratch,
+    pub flex_children: Vec<FlexChild>,
+    pub flex: FlexComputeScratch,
     grid: Option<Box<GridLayoutScratch>>,
 }
 
 /// 仅在组件树实际包含 Grid 时创建的树级求解工作区。
 #[derive(Default)]
-pub(crate) struct GridLayoutScratch {
-    pub(crate) layout_children: Vec<LayoutChild>,
-    pub(crate) visual_order: Vec<usize>,
-    pub(crate) children: Vec<GridChild>,
-    pub(crate) compute: GridComputeScratch,
+pub struct GridLayoutScratch {
+    pub layout_children: Vec<LayoutChild>,
+    pub visual_order: Vec<usize>,
+    pub children: Vec<GridChild>,
+    pub compute: GridComputeScratch,
 }
 
 impl LayoutEngineScratch {
     /// 惰性取得 Grid 工作区，避免普通 Flex 树承担全部 Grid 缓冲头。
-    pub(crate) fn grid(&mut self) -> &mut GridLayoutScratch {
+    pub fn grid(&mut self) -> &mut GridLayoutScratch {
         self.grid
             .get_or_insert_with(|| Box::new(GridLayoutScratch::default()))
     }
 }
 
 /// 从已放置子 frame 与物理尾侧 margin 计算内容占用尺寸。
-pub(crate) fn content_size_from_children(
+pub fn content_size_from_children(
     origin: Rect,
     positions: &[Rect],
     children: &[LayoutChild],
@@ -301,7 +303,7 @@ pub(crate) fn content_size_from_children(
 }
 
 // 把坐标值限制为有限且不是 f32::MAX 测量哨兵的实际值。
-pub(crate) fn finite_or_zero(value: f32) -> f32 {
+pub fn finite_or_zero(value: f32) -> f32 {
     // f32::MAX 及其负值不能进入实际 frame，非有限值同样回退为零。
     if value.is_finite() && value.abs() < f32::MAX {
         // 有效坐标保留原值，允许布局溢出产生有限负位置。
@@ -313,7 +315,7 @@ pub(crate) fn finite_or_zero(value: f32) -> f32 {
 }
 
 // 把尺寸值限制为有限、非负且不是无界哨兵的实际值。
-pub(crate) fn finite_non_negative(value: f32) -> f32 {
+pub fn finite_non_negative(value: f32) -> f32 {
     // 先清除非有限值和测量哨兵，再钳制负尺寸。
     finite_or_zero(value).max(0.0)
 }
@@ -342,13 +344,13 @@ pub(crate) fn normalize_layout_rect(rect: Rect) -> Rect {
 }
 
 // 归一最终或待求解的尺寸。
-pub(crate) fn normalize_layout_size(size: Size) -> Size {
+pub fn normalize_layout_size(size: Size) -> Size {
     // 两个轴都不得把测量阶段的无界哨兵写入实际输出。
     Size::new(finite_non_negative(size.w), finite_non_negative(size.h))
 }
 
 // 归一允许负值语义的外边距。
-pub(crate) fn normalize_margin(insets: EdgeInsets) -> EdgeInsets {
+pub fn normalize_margin(insets: EdgeInsets) -> EdgeInsets {
     // 负外边距保持既有语义，只清除非有限值和无界哨兵。
     EdgeInsets::new(
         finite_or_zero(insets.left),
@@ -404,14 +406,6 @@ impl LayoutOutput3D {
         }
     }
 
-    /// 转换为 AABB3D 列表（所有盒子 d=0）。
-    pub(crate) fn to_aabbs(&self) -> Vec<AABB3D> {
-        self.positions
-            .iter()
-            .zip(self.z_values.iter())
-            .map(|(r, z)| AABB3D::from_rect_z(r.x, r.y, r.w, r.h, *z, 0.0))
-            .collect()
-    }
 }
 
 // ── FlexBox 布局引擎 ───────────────────────────────────────────────
@@ -499,7 +493,7 @@ impl Default for FlexLayout {
 
 impl FlexLayout {
     /// 把布局结果写入调用方持有的工作区，避免稳定布局逐容器申请数组。
-    pub(crate) fn layout_into(
+    pub fn layout_into(
         &self,
         content_rect: Rect,
         children: &[LayoutChild],
@@ -545,6 +539,8 @@ impl FlexLayout {
                     child.flex_basis
                 },
                 min_size: normalize_layout_size(child.min_size),
+                // 上限保留无界哨兵，由求解器按轴归一。
+                max_size: child.max_size,
                 align_self: child.align_self,
                 measured_size: normalize_layout_size(child.measured_size),
                 margin: normalize_margin(child.margin),
@@ -682,7 +678,7 @@ impl GridLayout {
         }
     }
 
-    pub(crate) fn layout_with_tracks_into(
+    pub fn layout_with_tracks_into(
         &self,
         content_rect: Rect,
         columns: &[GridTrack],
@@ -707,6 +703,8 @@ impl GridLayout {
             // 子项测量哨兵不能进入 cell 尺寸与对齐算术。
             measured_size: normalize_layout_size(c.measured_size),
             min_size: normalize_layout_size(c.min_size),
+            // 上限保留无界哨兵，由单元格对齐按轴归一。
+            max_size: c.max_size,
             // 外边距保留有限负值语义并清除非法分量。
             margin: normalize_margin(c.margin),
             // Grid 交叉轴继承公开 LayoutChild 的逐项对齐覆盖。

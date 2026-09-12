@@ -4,8 +4,10 @@
 use crate::core::Rect;
 // 引入渐变端点颜色。
 use crate::draw::geometry::color::Color;
-// 引入有限的线性渐变方向集合。
-use crate::draw::geometry::types::GradientDirection;
+// 引入有限的线性渐变方向集合与圆角值。
+use crate::draw::geometry::types::{GradientDirection, Radius};
+// 引入与填充/阴影共用的圆角归一化与覆盖曲线。
+use super::rasterizer::core::{normalize_corner_radius, rounded_rect_sdf};
 
 // 复用持有 transform、clip、opacity 与 blend 状态的软件执行器。
 use super::software_rasterizer::SoftwareRasterizer;
@@ -90,6 +92,8 @@ impl SoftwareRasterizer {
         color_b: Color,
         // 渐变推进方向。
         direction: GradientDirection,
+        // 圆角裁剪半径；零值保持无掩码旧行为。
+        radius: Radius,
     ) {
         // Canvas2D 约定先应用像素 offset，再执行 transform。
         let local_rect = Rect::new(
@@ -111,6 +115,10 @@ impl SoftwareRasterizer {
         };
         // 只遍历变换后写区覆盖的设备像素。
         let (x0, y0, x1, y1) = scan_bounds(clipped);
+        // 掩码半径按相邻和规则归一化，与填充/阴影轮廓保持同一规则。
+        let corner = normalize_corner_radius(rect.w, rect.h, radius);
+        let has_radius =
+            corner.tl > 0.0 || corner.tr > 0.0 || corner.br > 0.0 || corner.bl > 0.0;
         // 逐行保持稳定的 painter 顺序。
         for py in y0..y1 {
             // 逐列采样设备像素中心。
@@ -134,6 +142,16 @@ impl SoftwareRasterizer {
                 let color = mix_color(color_a, color_b, t);
                 // 再按当前有限 opacity 生成预乘源贡献。
                 let premultiplied = self.apply_opa(Self::premul(color));
+                // 圆角掩码与渐变色在同一局部空间求值；零半径保持满覆盖。
+                let coverage = if has_radius {
+                    Self::sdf_to_coverage(rounded_rect_sdf(local_x, local_y, &local_rect, &corner))
+                } else {
+                    1.0
+                };
+                // 完全落在圆角外的像素不产生源贡献。
+                if coverage <= 0.0 {
+                    continue;
+                }
                 // 统一入口负责矩形/path clip 与 SrcOver/Additive 混合。
                 self.put_pixel_aa(
                     // 目标像素缓冲。
@@ -148,8 +166,8 @@ impl SoftwareRasterizer {
                     py,
                     // 已烘焙 opacity 的预乘颜色。
                     premultiplied,
-                    // 渐变内部保持完整 coverage。
-                    1.0,
+                    // 圆角掩码覆盖与既有渐变满覆盖共用同一入口。
+                    coverage,
                 );
             }
         }
@@ -184,6 +202,10 @@ impl SoftwareRasterizer {
         inner_color: Color,
         // 外圈颜色。
         outer_color: Color,
+        // 圆角裁剪的参考矩形（局部坐标）。
+        clip_rect: Rect,
+        // 圆角裁剪半径；零值保持无掩码旧行为。
+        radius: Radius,
     ) {
         // 非正外半径沿用既有安全 no-op 行为。
         if outer_r <= 0.0 {
@@ -214,6 +236,17 @@ impl SoftwareRasterizer {
         };
         // 半径差与既有渐变公式一致。
         let range = outer_r - inner_r;
+        // 参考矩形与圆心一样先叠加 offset，保持同一局部空间。
+        let mask_rect = Rect::new(
+            clip_rect.x + self.offset_x,
+            clip_rect.y + self.offset_y,
+            clip_rect.w,
+            clip_rect.h,
+        );
+        // 掩码半径按相邻和规则归一化，与填充/阴影轮廓保持同一规则。
+        let corner = normalize_corner_radius(clip_rect.w, clip_rect.h, radius);
+        let has_radius =
+            corner.tl > 0.0 || corner.tr > 0.0 || corner.br > 0.0 || corner.bl > 0.0;
         // 取得不会截断仿射边缘的设备扫描区间。
         let (x0, y0, x1, y1) = scan_bounds(clipped);
         // 按稳定行序扫描设备目标。
@@ -239,6 +272,21 @@ impl SoftwareRasterizer {
                     // 跳过 AABB 中的圆外区域。
                     continue;
                 }
+                // 圆角掩码在参考矩形局部空间求值；零半径保持满覆盖。
+                let coverage = if has_radius {
+                    Self::sdf_to_coverage(rounded_rect_sdf(
+                        local_x,
+                        local_y,
+                        &mask_rect,
+                        &corner,
+                    ))
+                } else {
+                    1.0
+                };
+                // 完全落在圆角外的像素不产生源贡献。
+                if coverage <= 0.0 {
+                    continue;
+                }
                 // 把局部距离映射到内外圈之间。
                 let t = ((distance - inner_r) / range).clamp(0.0, 1.0);
                 // 按既有非预乘通道插值生成颜色。
@@ -259,10 +307,14 @@ impl SoftwareRasterizer {
                     py,
                     // 已预乘并应用 opacity 的源颜色。
                     premultiplied,
-                    // 外圆内部使用完整 coverage。
-                    1.0,
+                    // 圆角掩码覆盖；无掩码时保持完整 coverage。
+                    coverage,
                 );
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests-src/draw/raster/s4_gradient_mask_tests.rs"]
+mod s4_gradient_mask_tests;

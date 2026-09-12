@@ -9,24 +9,8 @@ mod sizing;
 // 在当前求解器内复用统一的尺寸边界归一入口。
 use sizing::normalized_axis_bounds;
 
-/// Compute flex layout from input constraints.
-///
-/// Pure function with no side effects. Handles all justify-content modes,
-/// cross-axis alignment via AlignItems and per-child align_self,
-/// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
-/// and multi-line wrapping.
-#[cfg(test)]
-pub(crate) fn compute_flex_layout(input: &FlexInput<'_>) -> FlexOutput {
-    // 兼容独立求解调用方：临时工作区的所有权随返回结果移交。
-    let mut scratch = FlexComputeScratch::default();
-    let _ = compute_flex_layout_into(input, &mut scratch);
-    FlexOutput {
-        child_rects: std::mem::take(&mut scratch.child_rects),
-    }
-}
-
 /// 把 Flex 结果写入调用方持有的工作区，供真实布局帧跨容器复用。
-pub(crate) fn compute_flex_layout_into(
+pub fn compute_flex_layout_into(
     input: &FlexInput<'_>,
     scratch: &mut FlexComputeScratch,
 ) -> Size {
@@ -905,3 +889,8 @@ fn compute_wrapped(
     };
     Size::new(total_w, total_h)
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/layout/flex/mod_tests.rs"]
+mod mod_tests;

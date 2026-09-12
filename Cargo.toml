@@ -1,18 +1,30 @@
 [workspace]
-# 过程宏 crate 作为工作区成员，与库共享同一锁文件与解析图。
-members = ["uix-derive", "uix-lang-compiler", "uix-lang-cli", "uix-lang-lsp", "uix-lang-runtime"]
+# 语言与工具同属此包；组件库是独立仓库中的第二个包。
+members = []
+resolver = "3"
 
 [package]
 name = "uix-app"
+autobins = false
 version = "0.0.8"
 edition = "2024"
 license = "MIT"
 description = "UIX cross-platform native app framework"
 repository = "https://github.com/yang86953/uix-app"
-readme = "README.md"
+# crates.io 只放纯净源码：禁用 README 自动发现（官方 readme=false 机制），
+# 产品文档仅随源码仓库分发。
+readme = false
 publish = ["crates-io"]
-# crate 只携带源码与编译/运行必需资源；演示、编辑器扩展与维护脚本随仓库分发，不进包。
-exclude = ["demo", "editors", "extensions", "scripts"]
+# include 白名单限定源码、能力声明与许可文件；根路径以 / 锚定避免同名
+# 文件跨目录匹配。src 内独立 cfg(test) 测试文件移至 tests-src/、GPU parity 测试
+# 支撑留在 tests/support/（经仓库专用 cfg 入口启用），均不入包；
+# 字体使用说明与全部产品文档不进包，第三方许可通知随包以满足署名义务。
+include = [
+    "src/**",
+    "/uix-library.json",
+    "/LICENSE",
+    "/THIRD_PARTY_NOTICES.md",
+]
 
 [profile.dev]
 debug = "line-tables-only"
@@ -27,42 +39,41 @@ opt-level = "s"
 strip = "symbols"
 lto = "fat"
 codegen-units = 1
-# 过程宏（uix-derive、windows_implement 等）与构建脚本不受 LTO 收益，
+# 第三方过程宏与构建脚本不受目标 LTO 收益，
 # 单独提速：保持多 codegen 单元并行，避免被 fat LTO 拖慢全量构建。
 [profile.release.build-override]
 opt-level = 3
 codegen-units = 16
 
 [dependencies]
-uix-lang-runtime = { path = "uix-lang-runtime", version = "0.0.8", optional = true }
-uix-lang-compiler = { path = "uix-lang-compiler", version = "0.0.8", default-features = false, optional = true }
-uix-derive = { path = "uix-derive", version = "0.0.8", default-features = false }
-ab_glyph = "0.2.32"
+toml = { version = "0.9.12", optional = true }
+sha2 = { version = "0.10.9", optional = true }
+proc-macro2 = { version = "1", optional = true }
+quote = { version = "1", optional = true }
+regex = { version = "1", optional = true }
+syn = { version = "3", features = ["full", "visit", "visit-mut"], optional = true }
+ab_glyph = { version = "0.2.32", optional = true }
 # 小端 RHI 图片上传以安全切片转换借用既有 u32 像素，不扩大 unsafe 边界。
-bytemuck = "1.25.2"
+bytemuck = { version = "1.25.2", optional = true }
 # 使用纯 Rust OpenType shaping，保留源文本 cluster 与复杂脚本定位。
-rustybuzz = "0.20.1"
+rustybuzz = { version = "0.20.1", optional = true }
 # 使用完整 UAX #9 算法解析段落方向、嵌入级别与视觉顺序。
-unicode-bidi = "0.3.18"
+unicode-bidi = { version = "0.3.18", optional = true }
 # 使用扩展字素簇边界，确保字体回退不拆开组合文本。
-unicode-segmentation = "1.13.3"
+unicode-segmentation = { version = "1.13.3", optional = true }
 # 使用 Unicode 15 默认 UAX #14 算法生成强制与允许断行机会。
-unicode-linebreak = "0.1.5"
-# 真实终端 VT 状态机解析（Apache-2.0 OR MIT），仅随 terminal capability 进入解析图。
-vte = { version = "0.15.0", optional = true }
-# 终端屏幕字符列宽（MIT OR Apache-2.0），仅随 terminal capability 进入解析图。
-unicode-width = { version = "0.1.14", optional = true }
-memmap2 = "0.9"
-earcut = "0.4.11"
+unicode-linebreak = { version = "0.1.5", optional = true }
+
+
+memmap2 = { version = "0.9", optional = true }
+earcut = { version = "0.4.11", optional = true }
 glow = { version = "0.18.0", optional = true }
 # 图片文件编解码依赖仅随对应 capability 进入使用方解析图。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"], optional = true }
 # Agent 截屏的 PNG 编码依赖仅随 agent-control 进入使用方解析图。
 png = { version = "0.18", default-features = false, optional = true }
-# 二维码编码依赖仅随对应组件 capability 进入使用方解析图。
-qrcode = { version = "0.14.1", default-features = false, optional = true }
-# 表单正则 pattern 规则仅随对应 capability 进入使用方解析图。
-regex = { version = "1", optional = true }
+
+
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 # 软件动态扩展引擎的数值塔（MIT OR Apache-2.0），仅随 extensions capability
@@ -71,17 +82,18 @@ num-bigint = { version = "0.4", optional = true }
 num-rational = { version = "0.4", optional = true }
 num-integer = { version = "0.1", optional = true }
 num-traits = { version = "0.2", optional = true }
-tracing = "0.1"
+tracing = { version = "0.1", optional = true }
 # Shared by Linux Wayland and Windows Win32 Vulkan adapters (feature = "vulkan").
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
 
 # Windows TSF 的 `#[implement]` 宏只在 Windows target 需要根依赖。
 [target.'cfg(windows)'.dependencies]
 # 宏生成代码从 crate 根解析精确的 `windows_core` package。
-windows-core = "0.62.2"
+windows-core = { version = "0.62.2", optional = true }
 
 # Windows 原生后端按需启用 Win32 API 集合。
 [target.'cfg(windows)'.dependencies.windows]
+optional = true
 version = "0.62.2"
 features = [
     "Win32_Foundation",
@@ -109,15 +121,15 @@ features = [
 ]
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.189"
+libc = { version = "0.2.189", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Linux backend uses the current 0.31 callback-dispatch API.
-wayland-client = { version = "0.31.15", features = ["dlopen", "system"] }
-wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] }
-wayland-protocols-plasma = { version = "0.3.12", features = ["client"] }
+wayland-client = { version = "0.31.15", features = ["dlopen", "system"] , optional = true }
+wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "staging"] , optional = true }
+wayland-protocols-plasma = { version = "0.3.12", features = ["client"] , optional = true }
 # UIX OS 桌面组件使用 wlr layer-shell；普通应用窗口仍走 xdg_toplevel。
-wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
+wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] , optional = true }
 khronos-egl = { version = "6", features = ["static", "no-pkg-config"], optional = true }
 
 # 原生 Metal Adapter 只在 macOS 目标和显式 metal feature 下进入解析图。
@@ -160,23 +172,40 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = [
 # 仅由外部消费者测试编译宿主日志配置，不进入 UIX 运行依赖。
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # 门禁快照测试直接消费 Compiler System 的公开 check 入口；与生产为同一工作区实现。
-uix-lang-compiler = { path = "uix-lang-compiler", version = "0.0.8" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+zed_extension_api = { version = "0.7", optional = true }
 
 [features]
+zed-extension = ["dep:zed_extension_api"]
+core = []
+reactive = ["core"]
+layout = ["core"]
+diagnostics = ["core", "dep:tracing"]
+data = ["core", "dep:tracing"]
+platform-contracts = ["core"]
+graphics = ["core", "diagnostics", "platform-contracts", "dep:ab_glyph", "dep:rustybuzz", "dep:unicode-bidi", "dep:unicode-segmentation", "dep:unicode-linebreak", "dep:memmap2", "dep:earcut"]
+graphics-gpu = ["graphics", "dep:bytemuck"]
+ui = ["reactive", "layout", "graphics", "platform-contracts"]
+platform = ["platform-contracts", "diagnostics", "dep:windows-core", "dep:windows", "dep:libc", "dep:wayland-client", "dep:wayland-protocols", "dep:wayland-protocols-plasma", "dep:wayland-protocols-wlr"]
+application = ["ui", "platform", "data"]
+lang-build = ["dep:regex", "dep:serde", "dep:serde_json", "dep:proc-macro2", "dep:quote", "dep:syn"]
+lang-tools = ["lang-build", "dep:serde", "dep:serde_json", "dep:toml", "dep:sha2"]
+hot-reload = ["application", "lang-build"]
 # 可移植模块的 AOT 执行与运行期源码装载分别按需启用。
-uix-modules = ["dep:uix-lang-runtime"]
-uix-dynamic = ["uix-modules", "dep:uix-lang-compiler"]
-# 默认启用首发平台图形矩阵与九项使用方能力：
+uix-modules = []
+uix-dynamic = ["uix-modules", "lang-build"]
+# 默认提供完整原生应用及首发平台图形后端：
 #   Windows/Linux 优先 Vulkan；Windows 保留 D3D11、Linux 保留 OpenGL ES 兼容回退。
-default = ["vulkan", "d3d11", "opengles", "image-codecs", "qrcode", "form-pattern", "rich-text", "charts", "table", "navigation", "feedback", "tree-widgets", "terminal"]
-d3d11 = [
+default = ["application", "vulkan", "d3d11", "opengles", "image-codecs"]
+d3d11 = ["platform", "graphics-gpu",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D11",
     "windows/Win32_Graphics_Dxgi",
     "windows/Win32_Graphics_Dxgi_Common",
 ]
-d3d12 = [
+d3d12 = ["platform", "graphics-gpu",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D12",
@@ -184,45 +213,21 @@ d3d12 = [
     "windows/Win32_Graphics_Dxgi_Common",
     "windows/Win32_Security",
 ]
-opengles = ["dep:glow", "dep:khronos-egl"]
-vulkan = ["dep:ash"]
-# 仅为真实 GPU 离屏像素一致性测试开放 crate 内 Vulkan harness。
-vulkan-parity-test = ["vulkan", "graphics-parity-test"]
-# 仅为 Linux 真实 EGL/GLES parity 开放 crate 内 OpenGL harness 与故障注入。
-opengl-parity-test = ["opengles", "test-harness", "graphics-parity-test"]
-# 仅为 Windows 真实 D3D11 离屏像素一致性测试开放 crate 内生产 Adapter harness。
-d3d11-parity-test = ["d3d11", "test-harness", "graphics-parity-test"]
-# 三套原生 parity harness 共享的 Drawing 规范开关，不选择任何具体 API。
-graphics-parity-test = []
-metal = [
+opengles = ["platform", "graphics-gpu", "dep:glow", "dep:khronos-egl"]
+vulkan = ["platform", "graphics-gpu", "dep:ash"]
+# GPU 离屏像素一致性验证不占用公开 feature：实现留在仓库 tests/support/，经仓库
+# 专用 cfg 键（uix_gpu_parity_vulkan/opengl/d3d11）启用，见 scripts/run_gpu_parity.sh。
+metal = ["platform", "graphics-gpu",
     "dep:objc2",
     "dep:objc2-foundation",
     "dep:objc2-metal",
     "dep:objc2-quartz-core",
 ]
-settings-serde = ["dep:serde", "dep:serde_json"]
+settings-serde = ["data", "dep:serde", "dep:serde_json"]
 # 图片路径与字节解码入口独占 image 依赖，核心 RGBA 位图契约不受影响。
-image-codecs = ["dep:image", "uix-derive/image-codecs"]
-# 二维码组件独占编码依赖，关闭后同时收缩模块与公开门面。
-qrcode = ["dep:qrcode", "uix-derive/qrcode"]
-# 表单正则 pattern 规则独占 regex 依赖，基础校验能力不受影响。
-form-pattern = ["dep:regex", "uix-derive/form-pattern"]
-# 富文本组件、解析布局与快照公开面作为一个可独立关闭的源码能力。
-# 注意：富文本的图片插入需同时启用 image-codecs，否则对应构建/渲染路径不可用。
-rich-text = ["uix-derive/rich-text"]
-# 图表组件族、数据模型、patch 与快照公开面作为一个可独立关闭的源码能力。
-charts = ["uix-derive/charts"]
-# 数据表格组件族、泛型数据模型、动态渲染与快照公开面作为一个可独立关闭的源码能力。
-table = ["uix-derive/table"]
-# 导航组件族、交互联动、patch 与快照公开面作为一个可独立关闭的源码能力。
-navigation = ["uix-derive/navigation"]
-# 反馈组件族、全局门面、应用通知浮层与 Modal 树钩子作为一个可独立关闭的源码能力。
-feedback = ["uix-derive/feedback"]
-# 树展示、树节点模型、树选择器、patch 与快照公开面作为一个可独立关闭的源码能力。
-tree-widgets = ["uix-derive/tree-widgets"]
-# 终端组件族、行缓冲模型、命令输入、真实 PTY 会话与快照公开面作为一个可独立关闭的源码能力。
-terminal = ["uix-derive/terminal", "dep:vte", "dep:unicode-width"]
+image-codecs = ["graphics", "dep:image"]
 agent-control = [
+    "application",
     "dep:serde_json",
     "dep:png",
     "windows/Win32_Security",
@@ -231,10 +236,10 @@ agent-control = [
     "windows/Win32_System_IO",
     "windows/Win32_System_Pipes",
 ]
-test-harness = []
+test-harness = ["ui"]
 # 运行时软件动态扩展（Scheme R7RS-small 受限宿主环境）：默认关闭，
 # 未启用者不承担解释器、包扫描或额外运行成本。
-extensions = ["dep:num-bigint", "dep:num-rational", "dep:num-integer", "dep:num-traits"]
+extensions = ["core", "dep:num-bigint", "dep:num-rational", "dep:num-integer", "dep:num-traits"]
 
 [lib]
 # 包名 uix-app 对应的 Rust 库名固定为 uix_app，消费者按 `uix_app::` 路径引用。
@@ -243,39 +248,14 @@ path = "src/lib.rs"
 test = false
 
 # Agent 文档消费者只在显式控制面 capability 下进入测试图。
-[[test]]
-# 固定 Cargo 自动发现时使用的测试目标名称。
-name = "agent_docs_public_api"
-# 指向 Agent 使用文档的外部消费者入口。
-path = "tests/agent_docs_public_api.rs"
-# 未启用控制面时跳过整个专属消费者目标。
-required-features = ["agent-control"]
-
-# 文本处理工作台示例同时需要动态扩展与 Agent 后台操作面能力。
-[[example]]
-name = "text_workbench"
-required-features = ["extensions", "agent-control"]
-
-# 可移植模块工作台独立于 Scheme 示例；源码装载与后台面均显式启用。
-[[example]]
-name = "module_workbench"
-required-features = ["uix-dynamic", "agent-control"]
-
-# 外部扩展面板同样依赖可选的扩展运行器；默认测试图不得编译此示例。
-[[example]]
-name = "extension_panel"
-required-features = ["extensions"]
-
-# 软件动态扩展公开 API 消费者只在显式扩展 capability 下进入测试图。
-[[test]]
-name = "extensions_public_api"
-path = "tests/extensions_public_api.rs"
-required-features = ["extensions"]
-
-[[test]]
-name = "uix_modules_public_api"
-path = "tests/uix_modules_public_api.rs"
-required-features = ["uix-dynamic"]
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(uix_gpu_parity_vulkan)',
+    'cfg(uix_gpu_parity_opengl)',
+    'cfg(uix_gpu_parity_d3d11)',
+    'cfg(uix_repo_doc_contract)',
+]
 
 [lints.clippy]
 unwrap_used = "warn"
@@ -288,3 +268,39 @@ spec_revision = "84a99b0166f68b60ca9bf996199748d300acacb2"
 spec_repository = "../smc"
 scope = "all-first-party-rust"
 adoption_document = "docs/架构/SMC采用.md"
+
+[[bin]]
+name = "uix"
+path = "src/bin/uix.rs"
+required-features = ["lang-tools"]
+
+[[bin]]
+name = "uix-lang-ls"
+path = "src/bin/uix-lang-ls.rs"
+required-features = ["lang-tools"]
+
+[[example]]
+name = "zed_extension"
+path = "examples/zed_extension.rs"
+crate-type = ["cdylib"]
+required-features = ["zed-extension"]
+
+[[example]]
+name = "reactive"
+path = "examples/reactive.rs"
+required-features = ["reactive"]
+
+[[example]]
+name = "layout"
+path = "examples/layout.rs"
+required-features = ["layout"]
+
+[[example]]
+name = "offscreen"
+path = "examples/offscreen.rs"
+required-features = ["graphics"]
+
+[[example]]
+name = "headless_ui"
+path = "examples/headless_ui.rs"
+required-features = ["test-harness"]

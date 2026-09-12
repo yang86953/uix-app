@@ -215,7 +215,7 @@ impl SemanticEvent {
         Self::new(SemanticKind::Click, target, SemanticPayload::Click(payload))
     }
 
-    pub(crate) fn is_primary_click(&self) -> bool {
+    pub fn is_primary_click(&self) -> bool {
         matches!(
             &self.payload,
             SemanticPayload::Click(ClickEvent {

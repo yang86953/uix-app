@@ -2,42 +2,11 @@ use std::any::TypeId;
 use std::fmt;
 
 use crate::core::WidgetId;
-use crate::ui::widgets::TransferItem;
-// 反馈 capability 启用时才引入气泡确认框专属方位类型。
-#[cfg(feature = "feedback")]
-// 该类型只服务同步门控的公开快照模型。
-use crate::ui::widgets::PopconfirmPlacement;
-// 表格 capability 启用时才引入专属列配置类型。
-#[cfg(feature = "table")]
-// 这些类型仅用于同步门控的公开快照列模型。
-use crate::ui::widgets::{Fixed, SortDirection, TableColumn};
-// 树组件 capability 启用时才引入树节点公开模型。
-#[cfg(feature = "tree-widgets")]
-// 该类型只服务同步门控的树快照模型。
-use crate::ui::widgets::TreeNode;
-
-mod accessibility;
-mod fields;
-mod selection;
 mod source;
+mod payload;
+pub use payload::{SnapshotModel, WidgetSnapshotFields};
 
-pub use fields::SnapshotFields;
-pub use source::{SnapshotSource, snapshot_fields_from_any};
-
-// 反馈 capability 关闭时同步收缩气泡确认框快照模型。
-#[cfg(feature = "feedback")]
-#[doc(hidden)]
-#[derive(Debug, Clone, PartialEq)]
-pub struct SnapshotPopconfirm {
-    pub title: String,
-    pub confirm_text: String,
-    pub cancel_text: String,
-    pub placement: PopconfirmPlacement,
-    pub arrow: bool,
-    pub icon: bool,
-    pub visible: bool,
-    pub focused_action: Option<usize>,
-}
+pub use source::SnapshotSource;
 
 fn non_empty(value: String) -> Option<String> {
     if value.is_empty() { None } else { Some(value) }
@@ -51,7 +20,7 @@ pub struct WidgetConfigSnapshot {
     /// 组件具体 Rust 类型的运行时标识。
     pub widget_type: TypeId,
     /// 组件类型专属的可比较配置字段。
-    pub fields: SnapshotFields,
+    pub fields: WidgetSnapshotFields,
     #[doc(hidden)]
     pub accessibility_override: Option<AccessibilitySnapshot>,
 }
@@ -69,7 +38,7 @@ impl WidgetConfigSnapshot {
     pub(crate) fn from_widget_fields(
         id: WidgetId,
         widget: &dyn crate::ui::widget_runtime::traits::Widget,
-        fields: SnapshotFields,
+        fields: WidgetSnapshotFields,
     ) -> Self {
         Self {
             id,
@@ -437,141 +406,6 @@ impl SnapshotField {
         Self {
             name,
             value: SnapshotValue::Debug(format!("{value:?}")),
-        }
-    }
-}
-
-// 树组件 capability 关闭时同步收缩树节点快照模型。
-#[cfg(feature = "tree-widgets")]
-#[derive(Debug, Clone, PartialEq)]
-/// 与组件生命周期解耦的递归树节点配置快照。
-pub struct SnapshotTreeNode {
-    /// 节点向用户显示的标题。
-    pub title: String,
-    /// 节点在树数据中的稳定业务键。
-    pub key: String,
-    /// 节点声明的图标名称。
-    pub icon: String,
-    /// 按声明顺序保存的子节点快照。
-    pub children: Vec<SnapshotTreeNode>,
-    /// 节点是否禁止交互。
-    pub disabled: bool,
-    /// 节点是否显示可勾选状态。
-    pub checkable: bool,
-    /// 节点当前是否勾选。
-    pub checked: bool,
-    /// 节点是否允许拖动。
-    pub draggable: bool,
-    /// 节点是否被声明为叶节点。
-    pub is_leaf: bool,
-}
-
-// 树组件 capability 启用时才提供树节点快照转换。
-#[cfg(feature = "tree-widgets")]
-impl SnapshotTreeNode {
-    /// 递归复制树节点及其子节点的公开配置。
-    pub fn from_tree_node(node: &TreeNode) -> Self {
-        Self {
-            title: node.title.clone(),
-            key: node.key.clone(),
-            icon: node.icon.clone(),
-            children: node.children.iter().map(Self::from_tree_node).collect(),
-            disabled: node.disabled,
-            checkable: node.checkable,
-            checked: node.checked,
-            draggable: node.draggable,
-            is_leaf: node.is_leaf,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-/// 折叠面板在捕获时刻的标题、内容与展开状态。
-pub struct SnapshotCollapsePanel {
-    /// 面板标题文本。
-    pub header: String,
-    /// 面板内容的快照文本。
-    pub content: String,
-    /// 面板当前是否展开。
-    pub expanded: bool,
-}
-
-// 表格 capability 关闭时同步收缩公开列快照模型。
-#[cfg(feature = "table")]
-#[derive(Debug, Clone, PartialEq)]
-/// 与渲染回调解耦的表格列配置快照。
-pub struct SnapshotTableColumn {
-    /// 列标题文本。
-    pub title: String,
-    /// 列声明宽度。
-    pub width: f32,
-    /// 列是否允许排序。
-    pub sortable: bool,
-    /// 列当前排序方向。
-    pub sort_direction: SortDirection,
-    /// 列是否允许筛选。
-    pub filterable: bool,
-    /// 按声明顺序保存的筛选项标签。
-    pub filters: Vec<String>,
-    /// 列可选的固定侧。
-    pub fixed: Option<Fixed>,
-    /// 列宽是否允许由用户调整。
-    pub resizable: bool,
-}
-
-// 表格 capability 启用时才提供列配置到快照的转换。
-#[cfg(feature = "table")]
-impl SnapshotTableColumn {
-    /// 复制表格列的公开配置并丢弃筛选运行态与回调。
-    pub fn from_table_column(column: &TableColumn) -> Self {
-        Self {
-            title: column.title.clone(),
-            width: column.width,
-            sortable: column.sortable,
-            sort_direction: column.sort_direction,
-            filterable: column.filterable,
-            filters: column
-                .filters
-                .iter()
-                .map(|(label, _active)| label.clone())
-                .collect(),
-            fixed: column.fixed,
-            resizable: column.resizable,
-        }
-    }
-}
-
-// 表格 capability 关闭时同步收缩公开列组快照模型。
-#[cfg(feature = "table")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// 表头中一段连续列范围的分组快照。
-pub struct SnapshotTableColumnGroup {
-    /// 可选的分组标题。
-    pub title: Option<String>,
-    /// 分组在扁平列序列中的起始索引。
-    pub start: usize,
-    /// 分组覆盖的连续列数量。
-    pub len: usize,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-/// 穿梭框条目的稳定业务身份、标题与选择状态快照。
-pub struct SnapshotTransferItem {
-    /// 条目的稳定业务键。
-    pub key: String,
-    /// 条目向用户显示的标题。
-    pub title: String,
-    /// 条目当前是否被选中以等待移动。
-    pub selected: bool,
-}
-
-impl SnapshotTransferItem {
-    /// 从穿梭框条目复制可序列化、可比较的公开状态。
-    pub fn from_transfer_item(item: &TransferItem) -> Self {
-        Self {
-            key: item.key.clone(),
-            title: item.title.clone(),
-            selected: item.selected,
         }
     }
 }

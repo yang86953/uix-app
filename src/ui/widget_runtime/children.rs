@@ -9,20 +9,10 @@
 //! # Usage
 //!
 //! In your `widget!` struct, include a field:
-//! ```ignore
-//! children: WidgetChildren,
-//! ```
 //!
 //! In `build()`:
-//! ```ignore
-//! build => (&self) -> Vec<Box<dyn Widget>> { self.children.take() }
-//! ```
 //!
 //! In the manual `impl` block (for builder pattern):
-//! ```ignore
-//! pub fn child(self, w: impl Widget + 'static) -> Self { self.children.add(self, w) }
-//! pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self { self.children.set_all(self, widgets) }
-//! ```
 
 use crate::ui::Widget;
 use std::cell::RefCell;

@@ -18,9 +18,9 @@ impl Default for NamedThemes {
         // 创建空的确定性映射。
         let mut themes = BTreeMap::new();
         // 登记内建亮色主题。
-        themes.insert("light".to_string(), Theme::antd_light());
+        themes.insert("light".to_string(), Theme::light());
         // 登记内建暗色主题。
-        themes.insert("dark".to_string(), Theme::antd_dark());
+        themes.insert("dark".to_string(), Theme::dark());
         // 返回完整默认表。
         Self { themes }
     }

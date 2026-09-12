@@ -120,14 +120,6 @@ pub(crate) fn priority_result_has_text(result: i32) -> bool {
     result > 0
 }
 
-// 测试目标保留全局内存文本往返入口，供 Windows 剪贴板契约测试按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(test)]
-pub(crate) fn global_memory_text_round_trip(text: &str) -> Option<String> {
-    let memory = OwnedGlobalMemory::from_text(text)?;
-    LockedGlobalMemory::lock(memory.handle()).map(|locked| locked.text())
-}
-
 // Windows 剪贴板所有者只在 crate 内部平台注册表中构造。
 pub(crate) struct WindowsClipboard {
     hwnd: *mut std::ffi::c_void,
@@ -210,3 +202,8 @@ const CF_UNICODETEXT: u32 = 13;
 const CF_TEXT: u32 = 1;
 const GMEM_MOVEABLE: u32 = 0x0002;
 const GMEM_ZEROINIT: u32 = 0x0040;
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/backends/windows/clipboard_tests.rs"]
+mod clipboard_tests;

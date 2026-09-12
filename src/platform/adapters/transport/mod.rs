@@ -27,54 +27,18 @@ pub(crate) struct AcceptedAgentStream {
 #[cfg(any(unix, test))]
 mod user_identity;
 
-#[cfg(test)]
-pub(crate) fn peer_user_ids_match_for_test(current: u32, peer: u32) -> bool {
-    user_identity::UnixUserId::from_raw(current).admits(user_identity::UnixUserId::from_raw(peer))
-}
-
-#[cfg(test)]
-pub(crate) fn connect_for_test(endpoint: &str) -> std::io::Result<AgentStream> {
-    connect(endpoint)
-}
-
-#[cfg(test)]
-pub(crate) fn discovery_permissions_are_private_for_test(
-    path: &std::path::Path,
-) -> std::io::Result<Option<bool>> {
-    platform_discovery_permissions_are_private_for_test(path)
-}
-
-#[cfg(test)]
-pub(crate) fn endpoint_permissions_are_private_for_test(
-    endpoint: &str,
-) -> std::io::Result<Option<bool>> {
-    platform_endpoint_permissions_are_private_for_test(endpoint)
-}
-
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
 pub(crate) use unix::{
     AgentEndpoint, AgentEndpointWake, agent_hub_endpoint_name, connect, fill_secure_random,
 };
-#[cfg(all(test, unix))]
-use unix::{
-    discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
-    endpoint_permissions_are_private_for_test as platform_endpoint_permissions_are_private_for_test,
-};
-
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub(crate) use windows::{
     AgentEndpoint, AgentEndpointWake, agent_hub_endpoint_name, connect, fill_secure_random,
 };
-#[cfg(all(test, windows))]
-use windows::{
-    discovery_permissions_are_private_for_test as platform_discovery_permissions_are_private_for_test,
-    endpoint_permissions_are_private_for_test as platform_endpoint_permissions_are_private_for_test,
-};
-
 #[cfg(not(any(unix, windows)))]
 mod unsupported;
 #[cfg(not(any(unix, windows)))]

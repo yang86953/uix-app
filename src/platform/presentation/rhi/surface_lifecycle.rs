@@ -231,50 +231,7 @@ impl RhiSurfaceLifecycle {
     }
 }
 
-// 让显式 Vulkan 验证 feature 在不创建窗口或原生对象时执行共享状态机。
-#[cfg(feature = "vulkan-parity-test")]
-pub(crate) fn run_surface_lifecycle_contract_test() {
-    let initial_extent = RhiExtent::new(640, 480);
-    let mut lifecycle = RhiSurfaceLifecycle::uninitialized(initial_extent);
-    let initial = lifecycle
-        .begin_recreate(initial_extent, RhiSurfaceRecreateReason::Initialize)
-        .unwrap_or_else(|error| panic!("surface initialize transaction failed: {error}"));
-    let ready = lifecycle
-        .commit_recreate(initial, initial_extent)
-        .unwrap_or_else(|error| panic!("surface initialize commit failed: {error}"));
-    assert!(matches!(ready, RhiSurfaceRecreateCommit::Ready(_)));
-
-    let out_of_date = lifecycle
-        .begin_recreate(
-            initial_extent,
-            RhiSurfaceRecreateReason::AcquisitionRejected,
-        )
-        .unwrap_or_else(|error| panic!("OUT_OF_DATE transaction failed: {error}"));
-    let retry = lifecycle
-        .commit_recreate(out_of_date, initial_extent)
-        .unwrap_or_else(|error| panic!("OUT_OF_DATE commit failed: {error}"));
-    let retry_error = retry
-        .complete_frame(Error::new(
-            Errc::GraphicsSurfaceLost,
-            "deterministic OUT_OF_DATE status",
-        ))
-        .expect_err("OUT_OF_DATE must preserve dirty state and retry");
-    assert_eq!(retry_error.code(), Errc::GraphicsSurfaceChanged);
-
-    let suboptimal = lifecycle
-        .begin_recreate(
-            initial_extent,
-            RhiSurfaceRecreateReason::PresentedNeedsRecreate,
-        )
-        .unwrap_or_else(|error| panic!("SUBOPTIMAL transaction failed: {error}"));
-    let presented = lifecycle
-        .commit_recreate(suboptimal, initial_extent)
-        .unwrap_or_else(|error| panic!("SUBOPTIMAL commit failed: {error}"));
-    presented
-        .complete_frame(Error::new(
-            Errc::GraphicsSurfaceLost,
-            "deterministic SUBOPTIMAL status",
-        ))
-        .expect("SUBOPTIMAL must keep the already-presented frame successful");
-    assert_eq!(lifecycle.token().generation, 2);
-}
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../tests-src/platform/presentation/rhi/surface_lifecycle_parity_fns.rs");

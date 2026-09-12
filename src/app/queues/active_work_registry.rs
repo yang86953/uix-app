@@ -188,14 +188,6 @@ impl ActiveWorkRegistry {
         self.next_deadline_cache.set(None);
     }
 
-    #[cfg(test)]
-    pub(crate) fn drain_due(&mut self, now: Instant) -> Vec<ActiveWorkKind> {
-        let mut due = Vec::new();
-        // 测试便捷入口保持“取出全部到期工作”的既有语义。
-        self.drain_due_into_with_budget(now, &mut due, usize::MAX);
-        due
-    }
-
     pub(crate) fn drain_due_into(&mut self, now: Instant, due: &mut Vec<ActiveWorkKind>) {
         // 生产路径统一采用逐类固定预算，调用方不能绕过公平调度策略。
         self.drain_due_into_with_budget(now, due, TIMER_CALLBACK_BUDGET_PER_KIND);
@@ -327,3 +319,8 @@ impl ActiveWorkRegistry {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/app/queues/active_work_registry_tests.rs"]
+mod active_work_registry_tests;

@@ -252,10 +252,35 @@ impl TestApp {
     where
         F: Fn() -> ViewNode + 'static,
     {
+        // 默认亮色与既有测试驱动行为一致。
+        Self::with_theme(size, build_root, crate::ui::theme::Theme::light())
+    }
+
+    /// 以指定初始主题构建测试窗口：初始捕获与树主题安装使用同一快照，
+    /// 与真实窗口的首挂边界一致（暗色首挂不经历亮色中间态）。
+    pub fn with_theme<F>(
+        size: (f32, f32),
+        build_root: F,
+        initial_theme: crate::ui::theme::Theme,
+    ) -> Self
+    where
+        F: Fn() -> ViewNode + 'static,
+    {
         let viewport = (size.0.max(1.0), size.1.max(1.0));
         let build_root: Box<dyn Fn() -> ViewNode> = Box::new(build_root);
-        let root = capture_root(build_root.as_ref());
+        let root = {
+            let _build_theme =
+                crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(
+                    initial_theme.tokens_arc(),
+                );
+            // 测试窗口的初始捕获按声明视口宽度评估 @media。
+            let _build_viewport =
+                crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(viewport.0);
+            capture_root(build_root.as_ref())
+        };
         let mut tree = ViewAdapter::build_nodes(root);
+        // 树主题与初始捕获同源，首帧不把初始安装当作主题切换。
+        tree.set_theme_tokens(initial_theme.tokens_arc());
         tree.set_app_state(crate::ui::AppState::new());
         set_root_frame(&mut tree, viewport);
         tree.layout();
@@ -269,6 +294,33 @@ impl TestApp {
 
     pub fn snapshot(&self) -> AutomationSnapshot {
         self.tree.automation_snapshot(WindowId::ROOT)
+    }
+
+    /// 按真实窗口 owner 的主题应用顺序切换主题：先安装树令牌（触发声明
+    /// 协调与按需布局失效），再向节点广播 `ThemeChanged`，最后收敛重建。
+    pub fn set_theme(&mut self, theme: crate::ui::theme::Theme) -> Result<(), AutomationError> {
+        let is_dark = theme.is_dark();
+        self.tree.set_theme_tokens(theme.tokens_arc());
+        self.tree
+            .dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+        self.settle().map(|_| ())
+    }
+
+    /// 按逐窗调度语义推进已注册动画源一次（`delta_seconds` 秒）并收敛
+    /// 声明重建；返回推进后仍请求后续帧的活动源数量（零即帧静止）。
+    pub fn advance_frame(&mut self, delta_seconds: f64) -> Result<usize, AutomationError> {
+        // 与生产调度相同：注册表身份按序交付给真实推进路径。
+        let ids = self
+            .tree
+            .animated_source_registrations()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        let updates = self
+            .tree
+            .update_animation_nodes_at(&ids, std::time::Instant::now(), delta_seconds);
+        self.settle()?;
+        Ok(updates.into_iter().filter(|(_, active)| *active).count())
     }
 
     /// 返回 selector 对应节点当前对外可见的语义文本。
@@ -504,10 +556,21 @@ impl TestApp {
                     return Err(AutomationError::NotHandled("widget_tree".to_owned()));
                 }
                 // 复用测试窗口树拥有的状态存储以模拟真实窗口协调。
-                let root =
+                let root = {
+                    // 捕获在窗口主题作用域内读取 token，与真实窗口协调一致。
+                    let _build_theme =
+                        crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(
+                            self.tree.theme_tokens(),
+                        );
+                    // @media 按测试窗口当前逻辑视口宽度评估。
+                    let _build_viewport =
+                        crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(
+                            self.viewport.0,
+                        );
                     ViewAdapter::capture_root_with_store(self.tree.widget_state_store(), || {
                         (self.build_root)()
-                    });
+                    })
+                };
                 ViewAdapter::reconcile_nodes(&mut self.tree, root);
             }
             set_root_frame(&mut self.tree, self.viewport);
@@ -517,6 +580,64 @@ impl TestApp {
                 return Err(AutomationError::DidNotSettle { passes });
             }
         }
+    }
+
+    /// doc(hidden) 测试观察口：用真实组件 render 入口按树序整树录制绘制指令。
+    ///
+    /// 只录制（父先子后），不做裁剪、透明度与脏区合成，不创建渲染后端；
+    /// 供测试断言组件最终可绘制值（填充/描边颜色、文本内容与位置）。
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-harness"))]
+    pub fn rendered_ops(&mut self) -> Vec<crate::draw::painting::PaintOp> {
+        use crate::draw::backend::cpu::noop_canvas_2d::NoopCanvas2D;
+        use crate::draw::painting::{DisplayList, PaintSurfaceConfig};
+        use crate::draw::resources::{FontService, ImageService};
+        use crate::ui::widget_runtime::paint_context::PaintContext as UiPaintContext;
+
+        let TestApp { tree, .. } = self;
+        let mut canvas = NoopCanvas2D;
+        let fonts = FontService::new();
+        let images = ImageService::new();
+        let mut list = DisplayList::new();
+        let mut draw = crate::draw::painting::PaintContext::new(
+            &mut canvas,
+            crate::draw::FontHandle::new(0),
+            &fonts,
+            &images,
+            PaintSurfaceConfig {
+                dpi: 96.0,
+                device_pixel_ratio: 1.0,
+                orientation: Default::default(),
+                surface_w: 1,
+                surface_h: 1,
+            },
+        );
+        // 按被测树的实际主题令牌录制，主题相关断言不退化为固定亮色。
+        let tokens = tree.theme_tokens();
+        let root = tree.root_id();
+        draw.with_recorder(&mut list, |draw| {
+            let mut ctx = UiPaintContext::new(draw, tokens);
+            if let Some(root) = root {
+                paint_display_list_subtree(tree, root, &mut ctx);
+            }
+        });
+        list.ops().to_vec()
+    }
+}
+
+#[cfg(any(test, feature = "test-harness"))]
+fn paint_display_list_subtree(
+    tree: &WidgetTree,
+    id: WidgetId,
+    ctx: &mut crate::ui::widget_runtime::paint_context::PaintContext<'_, '_>,
+) {
+    let Some(boxed) = tree.get(id) else {
+        return;
+    };
+    let frame = boxed.frame();
+    boxed.render(frame, ctx, tree);
+    for child in boxed.children() {
+        paint_display_list_subtree(tree, *child, ctx);
     }
 }
 
@@ -554,9 +675,8 @@ fn capture_root(build_root: &dyn Fn() -> ViewNode) -> ViewNode {
 }
 
 fn set_root_frame(tree: &mut WidgetTree, viewport: (f32, f32)) {
-    if let Some(root) = tree.root_mut() {
-        root.set_frame(Rect::new(0.0, 0.0, viewport.0, viewport.1));
-    }
+    // 经树级入口同步根 frame，宽度跨越 @media 阈值时由树请求协调。
+    tree.set_root_frame(Rect::new(0.0, 0.0, viewport.0, viewport.1));
 }
 
 impl WidgetTree {

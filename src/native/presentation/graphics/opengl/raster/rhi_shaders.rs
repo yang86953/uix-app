@@ -236,7 +236,7 @@ void main() {
 }
 "#;
 
-// 渐变 shader 使用 96 字节 affine GradientConstants 语义。
+// 渐变 shader 使用 144 字节 affine GradientConstants 语义（S4 圆角掩码扩展）。
 pub(super) const GRADIENT_VERTEX: &str = r#"#version 300 es
 precision highp float;
 layout(location = 0) in vec2 a_pos;
@@ -259,15 +259,35 @@ void main() {
 }
 "#;
 
-// 渐变 fragment 在归一化局部坐标中执行 linear/radial 采样。
-pub(super) const GRADIENT_FRAGMENT: &str = r#"#version 300 es
+// 渐变 fragment 在归一化局部坐标中执行 linear/radial 采样与 S4 圆角掩码。
+pub(super) const GRADIENT_FRAGMENT: &str = concat!(
+    r#"#version 300 es
 precision highp float;
 uniform vec4 u_color_a;
 uniform vec4 u_color_b;
 uniform vec4 u_params;
+// S4 圆角掩码：四角半径、quad 宽高+掩码单位起点、掩码单位宽高。
+uniform vec4 u_mask_radius;
+uniform vec4 u_quad_mask;
+uniform vec4 u_mask_size;
 in vec2 v_gradient_uv;
 out vec4 fragColor;
+"#,
+    include_str!("../../glsl_common_sdf.frag"),
+    r#"
 void main() {
+    // 圆角掩码与共享 SDF 同式；半径全零保持 1.0 覆盖。
+    float coverage = 1.0;
+    if (any(greaterThan(u_mask_radius, vec4(0.0)))) {
+        vec2 quad_size = u_quad_mask.xy;
+        vec2 mask_origin = u_quad_mask.zw;
+        vec2 mask_px = (v_gradient_uv - mask_origin) * quad_size;
+        vec2 mask_wh = u_mask_size.xy * quad_size;
+        float sdf = rounded_rect_sdf(mask_px, mask_wh, u_mask_radius);
+        coverage = clamp(0.5 - sdf, 0.0, 1.0);
+        if (coverage <= 0.0)
+            discard;
+    }
     float mode = u_params.x;
     if (mode < 0.5) {
         float direction = u_params.y;
@@ -282,7 +302,7 @@ void main() {
         else
             t = (v_gradient_uv.x * u_params.z - v_gradient_uv.y * u_params.w + u_params.w)
                 / max(u_params.z + u_params.w, 1e-6);
-        fragColor = mix(u_color_a, u_color_b, clamp(t, 0.0, 1.0));
+        fragColor = mix(u_color_a, u_color_b, clamp(t, 0.0, 1.0)) * coverage;
     } else {
         vec2 center = vec2(0.5);
         float distance_to_center = distance(v_gradient_uv, center);
@@ -295,10 +315,11 @@ void main() {
         float t = clamp((distance_to_center - inner_radius) / range, 0.0, 1.0);
         vec4 color = mix(u_color_a, u_color_b, t);
         // GradientRect 契约统一输出 straight-alpha，避免混合器再次乘源 alpha。
-        fragColor = color;
+        fragColor = color * coverage;
     }
 }
-"#;
+"#,
+);
 
 // 圆角矩形与描边的 SDF fragment 阶段。
 // rounded_rect_sdf 与 shadow coverage 由 glsl_common_sdf.frag 唯一提供。

@@ -101,19 +101,27 @@ $cargoVersion = Get-NativeText 'cargo' @('--version') 'Unable to read cargo vers
 
 Push-Location $repoRoot
 try {
+    # GPU parity 验证走仓库专用 cfg 键（与 scripts/run_gpu_parity.sh 同一入口语义），
+    # 不占用 crates.io 发布包公开 feature；测试体挂在 lib 的 cfg(test) 模块。
     # Vulkan 共享场景、资源与 surface 生命周期必须在真实 Windows 驱动上通过。
-    Invoke-NativeChecked 'cargo' @(
-        'test', '--locked', '--no-default-features',
-        '--features', 'vulkan-parity-test',
-        '--test', 'vulkan_gpu_parity', '--', '--nocapture'
-    ) 'Windows Vulkan parity failed'
+    $previousRustFlags = $env:RUSTFLAGS
+    try {
+        $env:RUSTFLAGS = '--cfg uix_gpu_parity_vulkan'
+        Invoke-NativeChecked 'cargo' @(
+            'test', '--locked', '-p', 'uix-app', '--no-default-features',
+            '--features', 'vulkan', '--lib', '--', '--nocapture'
+        ) 'Windows Vulkan parity failed'
 
-    # D3D11 兼容回退必须在同一真实 Windows 主机上通过共享规范验收。
-    Invoke-NativeChecked 'cargo' @(
-        'test', '--locked', '--no-default-features',
-        '--features', 'd3d11-parity-test',
-        '--test', 'd3d11_gpu_parity', '--', '--nocapture'
-    ) 'Windows D3D11 parity failed'
+        # D3D11 兼容回退必须在同一真实 Windows 主机上通过共享规范验收。
+        $env:RUSTFLAGS = '--cfg uix_gpu_parity_d3d11'
+        Invoke-NativeChecked 'cargo' @(
+            'test', '--locked', '-p', 'uix-app', '--no-default-features',
+            '--features', 'd3d11,test-harness', '--lib', '--', '--nocapture'
+        ) 'Windows D3D11 parity failed'
+    }
+    finally {
+        $env:RUSTFLAGS = $previousRustFlags
+    }
 
     # 主演示按默认 registry 自动选择 Vulkan，并对真实最终 surface 执行像素与搬移验收。
     $readbackLines = @(& cargo run --release --locked --manifest-path demo\Cargo.toml `

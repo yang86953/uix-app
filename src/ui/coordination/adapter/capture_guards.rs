@@ -6,23 +6,28 @@ use crate::ui::reactive::state::{StateCaptureOutput, begin_state_capture, end_st
 use std::sync::Arc;
 
 // 保存由宿主树验证后签发的动态 View 捕获能力，避免 renderer 接触状态存储细节。
-pub(crate) struct DynamicViewCaptureContext {
+pub struct DynamicViewCaptureContext {
     // 保存所属 WidgetTree 的唯一组件状态存储句柄。
     store: crate::ui::widget_state::WidgetStateStore,
     // 保存实际拥有延迟 renderer 的运行时组件身份。
     owner: crate::ui::WidgetId,
+    // 保存宿主树签发能力时的主题令牌快照，让延迟工厂的 token 读取
+    // 与所属窗口一致。
+    theme: std::sync::Arc<dyn crate::ui::ThemeTokens>,
+    // 保存签发时宿主树的根 frame 逻辑宽度，让延迟工厂的 @media 评估与窗口一致。
+    viewport_width: f32,
 }
 
 // 只通过已验证能力执行动态 View 捕获，调用方不能自行组合 store 与 owner。
 impl DynamicViewCaptureContext {
     // 返回签发能力时已经校验的 renderer 宿主身份。
-    pub(crate) fn owner(&self) -> crate::ui::WidgetId {
+    pub fn owner(&self) -> crate::ui::WidgetId {
         // 调用方只能读取固定 owner，不能替换其状态存储归属。
         self.owner
     }
 
     // 在当前宿主与稳定业务键限定的命名空间内同步执行一次延迟工厂。
-    pub(crate) fn capture<F>(
+    pub fn capture<F>(
         // 借用已经由 WidgetTree 验证的捕获能力。
         &self,
         // 接收区分同一宿主下不同 renderer 的静态槽位。
@@ -44,6 +49,12 @@ impl DynamicViewCaptureContext {
             slot,       // 消费本次捕获的稳定业务键。
             stable_key,
         );
+        // 延迟工厂在宿主树主题作用域内构建，token 读取与窗口一致。
+        let _build_theme =
+            crate::ui::widget_runtime::build_theme::BuildThemeScope::enter(self.theme.clone());
+        // 延迟工厂同样按宿主窗口宽度评估 @media。
+        let _build_viewport =
+            crate::ui::widget_runtime::build_viewport::BuildViewportScope::enter(self.viewport_width);
         // 复用完整根捕获流水线，并让每次捕获共享宿主树状态存储。
         crate::ui::adapter::ViewAdapter::capture_root_with_optional_namespace(
             // 克隆轻量存储句柄供一次性捕获拥有。
@@ -59,7 +70,7 @@ impl DynamicViewCaptureContext {
 // 把 View 捕获入口放在独立模块，避免适配器主体超过规模上限。
 impl crate::ui::adapter::ViewAdapter {
     /// Builds a ViewNode while capturing State bindings.
-    pub(crate) fn capture_root<F>(build_root: F) -> crate::ui::view::ViewNode
+    pub fn capture_root<F>(build_root: F) -> crate::ui::view::ViewNode
     where
         // 接收任意一次性根工厂闭包。
         F: FnOnce() -> crate::ui::view::ViewNode,
@@ -75,7 +86,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     // 使用既有窗口树存储捕获根，供每次 reconcile 复用状态身份。
-    pub(crate) fn capture_root_with_store<F>(
+    pub fn capture_root_with_store<F>(
         // 接收所属窗口树的状态存储。
         store: crate::ui::widget_state::WidgetStateStore,
         // 接收根 View 构建闭包。
@@ -90,7 +101,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     // 从当前宿主树签发一个只能用于该运行时 owner 的动态捕获能力。
-    pub(crate) fn dynamic_capture_context(
+    pub fn dynamic_capture_context(
         // 接收同时拥有运行时节点与组件状态存储的宿主树。
         tree: &crate::ui::WidgetTree,
         // 接收实际拥有延迟 renderer 的运行时组件身份。
@@ -111,11 +122,15 @@ impl crate::ui::adapter::ViewAdapter {
             store: tree.widget_state_store(),
             // 保存已经通过当前树 generation 校验的 owner。
             owner,
+            // 随能力固定宿主树当前主题快照。
+            theme: tree.theme_tokens(),
+            // 随能力固定宿主树当前根 frame 宽度。
+            viewport_width: tree.viewport_width_for_build(),
         }
     }
 
     // 在宿主树的稳定动态实例命名空间内捕获一次延迟 View 工厂。
-    pub(crate) fn capture_dynamic_root<F>(
+    pub fn capture_dynamic_root<F>(
         // 接收同时拥有运行时节点与唯一组件状态存储的宿主树。
         tree: &crate::ui::WidgetTree,
         // 接收实际拥有该延迟工厂实例的运行时节点。
@@ -179,6 +194,11 @@ impl crate::ui::adapter::ViewAdapter {
         node.captured_effects.extend(output.state.effects);
         // 追加当前帧动画源，保留 build_root 已携带的内层捕获输出。
         node.animated_sources.extend(output.animated_sources);
+        // 追加当前帧评估过的 @media 断点，并记录评估使用的窗口宽度。
+        node.captured_media_breakpoints
+            .extend(output.media_breakpoints);
+        node.captured_viewport_width =
+            crate::ui::widget_runtime::build_viewport::current_build_viewport_width();
         // 返回完成所有捕获的声明根。
         node
     }
@@ -203,6 +223,27 @@ pub(super) fn take_widget_state_receipts(
     }
     // 交还完整的成功提交候选集。
     receipts
+}
+
+// 迭代取走一个声明根及全部后代评估过的 @media 断点，并返回根记录的构建宽度。
+pub(super) fn take_media_breakpoints(
+    root: &mut crate::ui::view::ViewNode,
+) -> (
+    Vec<crate::ui::widget_runtime::build_viewport::MediaBreakpoint>,
+    Option<f32>,
+) {
+    let built_width = root.captured_viewport_width.take();
+    let mut nodes = vec![root];
+    let mut breakpoints = Vec::new();
+    while let Some(node) = nodes.pop() {
+        for breakpoint in node.captured_media_breakpoints.drain(..) {
+            if !breakpoints.contains(&breakpoint) {
+                breakpoints.push(breakpoint);
+            }
+        }
+        nodes.extend(node.children.iter_mut());
+    }
+    (breakpoints, built_width)
 }
 
 // 逐个取走一组动态子树尚未提交的组件状态回执。
@@ -234,6 +275,8 @@ pub(super) struct ViewCaptureOutput {
     pub(super) state: StateCaptureOutput,
     // 保存当前根专属的动画源输出。
     pub(super) animated_sources: Vec<Arc<dyn AnimatedSource>>,
+    // 保存当前根评估过的 @media 断点。
+    pub(super) media_breakpoints: Vec<crate::ui::widget_runtime::build_viewport::MediaBreakpoint>,
 }
 
 // 为一次 View 捕获安装所有临时运行时上下文。
@@ -244,13 +287,17 @@ impl ViewCaptureGuard {
         begin_state_capture();
         // 开始收集本次根构建创建的动画源。
         begin_animated_capture();
+        // 开始记录本次根构建评估过的 @media 断点。
+        crate::ui::widget_runtime::build_viewport::begin_media_capture();
         // 返回负责异常恢复的作用域守卫。
         Self { finished: false }
     }
 
     // 正常结束捕获并返回本轮所有显式输出。
     pub(super) fn finish(mut self) -> ViewCaptureOutput {
-        // 先取出当前动画捕获栈顶。
+        // 先取出本层 @media 断点记录。
+        let media_breakpoints = crate::ui::widget_runtime::build_viewport::end_media_capture();
+        // 再取出当前动画捕获栈顶。
         let animated_sources = end_animated_capture();
         // 再关闭 State 依赖捕获。
         let state = end_state_capture();
@@ -262,6 +309,8 @@ impl ViewCaptureGuard {
             state,
             // 转交当前根的动画源输出。
             animated_sources,
+            // 转交当前根评估过的断点。
+            media_breakpoints,
         }
     }
 }
@@ -275,6 +324,8 @@ impl Drop for ViewCaptureGuard {
             // 提前返回保持配对调用唯一。
             return;
         }
+        // 丢弃异常构建期间登记的 @media 断点并恢复栈深度。
+        let _ = crate::ui::widget_runtime::build_viewport::end_media_capture();
         // 丢弃异常构建期间登记的动画源并恢复栈深度。
         let _ = end_animated_capture();
         // 关闭异常构建遗留的 State 捕获标志。

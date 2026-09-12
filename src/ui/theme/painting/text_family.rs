@@ -4,7 +4,7 @@ use crate::{draw::FontHandle, ui::widget_runtime::paint_context::PaintContext};
 use crate::ui::theme::style::FontFamily;
 
 // 把可选 UI 字体族列表单向解析为 draw System 字体句柄。
-pub(crate) fn resolve(
+pub fn resolve(
     // 接收当前绘制上下文以访问字体服务和稳定后备句柄。
     ctx: &mut PaintContext<'_, '_>,
     // 借用显式字体族列表；None 保留当前系统字体。

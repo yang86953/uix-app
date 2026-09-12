@@ -168,11 +168,9 @@ impl WidgetTree {
         layout_damage.roots.clear();
         layout_damage.prepainted.clear();
 
-        self.refresh_collapse_content_children(order);
-        self.refresh_image_error_children(order);
-        // 表格 capability 启用时才在布局前刷新泛型单元格。
-        #[cfg(feature = "table")]
-        self.refresh_table_cell_children(order);
+        self.refresh_dynamic_phase(order, crate::ui::DynamicRefresh::Content);
+        self.refresh_dynamic_phase(order, crate::ui::DynamicRefresh::Fallback);
+        self.refresh_dynamic_phase(order, crate::ui::DynamicRefresh::VirtualCells);
         self.take_layout_traversal(order, traversal);
         if order.is_empty() {
             // 根节点已有有效 frame 但子树尚未布局时（如 bind_invalidation / reset 清空队列），
@@ -374,10 +372,8 @@ impl WidgetTree {
         self.layout_viewports(order, arrange);
         // 只发布布局开始前与最终稳定 frame 的视觉脏区，忽略未上屏的中间状态。
         self.flush_layout_frame_damage(layout_damage);
-        self.refresh_virtual_scroll_children(order);
-        // 表格 capability 启用时才用最终 viewport 再刷新泛型单元格。
-        #[cfg(feature = "table")]
-        self.refresh_table_cell_children(order);
+        self.refresh_dynamic_phase(order, crate::ui::DynamicRefresh::Viewport);
+        self.refresh_dynamic_phase(order, crate::ui::DynamicRefresh::VirtualCells);
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect。
         // 只重探测本轮布局失效子树内的标签，未失效标签复用既有租约。
         self.bind_reactive_widget_states_for_layout(&traversal.roots);

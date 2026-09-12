@@ -1,6 +1,7 @@
 //! 绘图层会话 — Pipeline + Backend 组合入口（Phase 1 骨架）。
 
 use crate::core::Error;
+#[cfg(feature = "graphics-gpu")]
 use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
     BackendCapabilities, BackendKind, CpuBackend, RenderBackend, create_backend,
@@ -208,10 +209,12 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
+    #[cfg(feature = "graphics-gpu")]
     pub(crate) fn gpu_backend(&self) -> Option<&GpuBackend> {
         self.backend.as_any().downcast_ref()
     }
 
+    #[cfg(feature = "graphics-gpu")]
     pub(crate) fn gpu_backend_mut(&mut self) -> Option<&mut GpuBackend> {
         self.backend.as_any_mut().downcast_mut()
     }
@@ -222,14 +225,24 @@ impl RenderSession {
         // 先验证调用线程，避免测试入口绕过 native context 亲和性。
         self.require_owner("inject_graphics_device_lost_for_test")?;
         // 只有薄 RHI GPU backend 能把注入推进到 adapter 维护边界。
-        let Some(backend) = self.gpu_backend_mut() else {
-            return Err(Error::new(
+        #[cfg(not(feature = "graphics-gpu"))]
+        {
+            Err(Error::new(
                 crate::core::Errc::NotImplemented,
-                "render session does not own a GPU backend",
-            ));
-        };
-        // 交给 GPU backend 选择具体的 RHI adapter。
-        backend.inject_graphics_device_lost_for_test()
+                "GPU capability is disabled",
+            ))
+        }
+        #[cfg(feature = "graphics-gpu")]
+        {
+            let Some(backend) = self.gpu_backend_mut() else {
+                return Err(Error::new(
+                    crate::core::Errc::NotImplemented,
+                    "render session does not own a GPU backend",
+                ));
+            };
+            // 交给 GPU backend 选择具体的 RHI adapter。
+            backend.inject_graphics_device_lost_for_test()
+        }
     }
 
     // 把测试 surface-lost 注入限制在当前图形 owner thread 和 GPU backend。
@@ -238,14 +251,24 @@ impl RenderSession {
         // 先验证调用线程，避免测试入口绕过 native context 亲和性。
         self.require_owner("inject_graphics_surface_lost_for_test")?;
         // 只有薄 RHI GPU backend 能把注入推进到 surface acquire 边界。
-        let Some(backend) = self.gpu_backend_mut() else {
-            return Err(Error::new(
+        #[cfg(not(feature = "graphics-gpu"))]
+        {
+            Err(Error::new(
                 crate::core::Errc::NotImplemented,
-                "render session does not own a GPU backend",
-            ));
-        };
-        // 交给 GPU backend 选择具体的 RHI surface。
-        backend.inject_graphics_surface_lost_for_test()
+                "GPU capability is disabled",
+            ))
+        }
+        #[cfg(feature = "graphics-gpu")]
+        {
+            let Some(backend) = self.gpu_backend_mut() else {
+                return Err(Error::new(
+                    crate::core::Errc::NotImplemented,
+                    "render session does not own a GPU backend",
+                ));
+            };
+            // 交给 GPU backend 选择具体的 RHI surface。
+            backend.inject_graphics_surface_lost_for_test()
+        }
     }
 
     // 在图形 owner thread 上安排最终 composite 与 present 之间的回读。

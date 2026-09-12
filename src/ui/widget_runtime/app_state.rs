@@ -145,16 +145,6 @@ impl AppState {
             .is_empty()
     }
 
-    // 测试目标保留语义事件队列长度观测入口，供语义事件测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn pending_semantic_event_count(&self) -> usize {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .semantic_events
-            .len()
-    }
 }
 
 impl Default for AppStateInner {
@@ -315,3 +305,8 @@ impl AppStateInner {
         self.widgets.is_empty()
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/ui/widget_runtime/app_state_tests.rs"]
+mod app_state_tests;

@@ -8,7 +8,7 @@ use crate::{core::Point, draw::Color, ui::widget_runtime::paint_context::PaintCo
 use crate::ui::theme::style::FontWeight;
 
 // 按最终字重选择当前字体后端可提供的最接近字体面并提交字形。
-pub(crate) fn paint(
+pub fn paint(
     // 接收 UI 绘制上下文，但不向 draw System 泄漏 FontWeight。
     ctx: &mut PaintContext<'_, '_>,
     // 借用测量、选择与装饰共用的字形布局。

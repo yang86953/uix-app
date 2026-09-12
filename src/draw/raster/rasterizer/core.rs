@@ -31,7 +31,13 @@ pub(crate) fn normalize_corner_radii(
     bl: f32,
 ) -> (f32, f32, f32, f32) {
     // 异常半径先收敛，避免非有限值污染缩放比例。
-    let finite = |value: f32| if value.is_finite() { value.max(0.0) } else { 0.0 };
+    let finite = |value: f32| {
+        if value.is_finite() {
+            value.max(0.0)
+        } else {
+            0.0
+        }
+    };
     let tl = finite(tl);
     let tr = finite(tr);
     let br = finite(br);
@@ -53,10 +59,10 @@ pub(crate) fn normalize_corner_radii(
 
 /// 对 [`Radius`] 应用 CSS 式规范化，返回不会相交的圆角半径。
 pub(crate) fn normalize_corner_radius(width: f32, height: f32, radius: Radius) -> Radius {
-    let (tl, tr, br, bl) = normalize_corner_radii(width, height, radius.tl, radius.tr, radius.br, radius.bl);
+    let (tl, tr, br, bl) =
+        normalize_corner_radii(width, height, radius.tl, radius.tr, radius.br, radius.bl);
     Radius { tl, tr, br, bl }
 }
-
 
 #[inline]
 pub(crate) fn blend_srcover(
@@ -202,71 +208,6 @@ pub(crate) fn put_pixel(
     pixels[idx] = out;
 }
 
-// 仅剩 cfg(test) 的参考填充实现（rasterizer::fill）消费；生产路径统一走 SoftwareRasterizer。
-#[cfg(test)]
-#[inline]
-pub(crate) fn put_pixel_aa(
-    pixels: &mut [u32],
-    stride: i32,
-    x: i32,
-    y: i32,
-    clip_x0: i32,
-    clip_y0: i32,
-    clip_x1: i32,
-    clip_y1: i32,
-    premul_color: u32,
-    coverage: f32,
-) {
-    if x < clip_x0 || y < clip_y0 || x >= clip_x1 || y >= clip_y1 {
-        return;
-    }
-    if coverage >= 1.0 - 1e-6 {
-        put_pixel(
-            pixels,
-            stride,
-            x,
-            y,
-            clip_x0,
-            clip_y0,
-            clip_x1,
-            clip_y1,
-            premul_color,
-        );
-        return;
-    }
-    if coverage <= 0.0 {
-        return;
-    }
-    let src_a = ((premul_color >> 24) & 0xFF) as f32;
-    if src_a <= 0.0 {
-        return;
-    }
-    let src_r_p = ((premul_color >> 16) & 0xFF) as f32 * coverage;
-    let src_g_p = ((premul_color >> 8) & 0xFF) as f32 * coverage;
-    let src_b_p = (premul_color & 0xFF) as f32 * coverage;
-    let src_a_s = src_a * coverage;
-
-    let Some(idx) = pixel_index(pixels.len(), stride, x, y) else {
-        return;
-    };
-    let dst = pixels[idx];
-    let dst_a = ((dst >> 24) & 0xFF) as f32;
-    let dst_r_p = ((dst >> 16) & 0xFF) as f32;
-    let dst_g_p = ((dst >> 8) & 0xFF) as f32;
-    let dst_b_p = (dst & 0xFF) as f32;
-
-    let inv = 1.0 - (src_a_s / 255.0);
-    let out_a = src_a_s + dst_a * inv;
-    let out_r_p = src_r_p + dst_r_p * inv;
-    let out_g_p = src_g_p + dst_g_p * inv;
-    let out_b_p = src_b_p + dst_b_p * inv;
-
-    pixels[idx] = ((out_a.round() as u32).min(255) << 24)
-        | ((out_r_p.round() as u32).min(255) << 16)
-        | ((out_g_p.round() as u32).min(255) << 8)
-        | (out_b_p.round() as u32).min(255);
-}
-
 #[inline]
 pub(crate) fn fill_span(
     pixels: &mut [u32],
@@ -300,62 +241,6 @@ pub(crate) fn fill_span(
             );
         }
     }
-}
-
-#[cfg(test)]
-#[inline]
-pub(crate) fn fill_rect_raw(
-    pixels: &mut [u32],
-    stride: i32,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    clip_x0: i32,
-    clip_y0: i32,
-    clip_x1: i32,
-    clip_y1: i32,
-    color: u32,
-) {
-    if stride <= 0 || w <= 0 || h <= 0 {
-        return;
-    }
-    let surface_height = pixels.len() / stride as usize;
-    let x_start = (x as i64).max(clip_x0 as i64).max(0);
-    let x_end = (x as i64 + w as i64).min(clip_x1 as i64).min(stride as i64);
-    let y_start = (y as i64).max(clip_y0 as i64).max(0);
-    let y_end = (y as i64 + h as i64)
-        .min(clip_y1 as i64)
-        .min(surface_height as i64);
-    if x_start >= x_end || y_start >= y_end {
-        return;
-    }
-
-    for row in y_start..y_end {
-        fill_span(
-            pixels,
-            stride,
-            x_start as i32,
-            x_end as i32,
-            row as i32,
-            clip_x0,
-            clip_y0,
-            clip_x1,
-            clip_y1,
-            color,
-        );
-    }
-}
-
-#[inline]
-#[cfg(test)]
-#[doc(hidden)]
-pub fn rect_to_pixels(r: &Rect) -> (i32, i32, i32, i32) {
-    let x0 = (r.x + 0.5).floor() as i32;
-    let y0 = (r.y + 0.5).floor() as i32;
-    let x1 = (r.x + r.w + 0.5).floor() as i32;
-    let y1 = (r.y + r.h + 0.5).floor() as i32;
-    (x0, y0, x1 - x0, y1 - y0)
 }
 
 #[inline]
@@ -401,6 +286,7 @@ pub(crate) fn align_rounded_rect(rect: Rect) -> Option<Rect> {
 
 #[inline]
 pub(crate) fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
+    // 直角矩形共享直边分支。
     if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
         let dx = (r.x - ux).max(ux - (r.x + r.w)).max(0.0);
         let dy = (r.y - uy).max(uy - (r.y + r.h)).max(0.0);
@@ -411,28 +297,35 @@ pub(crate) fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 
         return if inside < 0.0 { inside } else { outside };
     }
 
-    let cx = r.x + r.w * 0.5;
-    let cy = r.y + r.h * 0.5;
-    let half_w = r.w * 0.5;
-    let half_h = r.h * 0.5;
-    let px = ux - cx;
-    let py = uy - cy;
-
-    let cr = if px < 0.0 {
-        if py < 0.0 { rad.tl } else { rad.bl }
-    } else if py < 0.0 {
-        rad.tr
-    } else {
-        rad.br
+    // 圆角轮廓是直角矩形与各角圆弧约束的交集：对每个采样点，先取直边
+    // 矩形的距离，再对采样点落入切线方形的每个角取"圆外为正"的弧距离，
+    // 以最大者作为合成有符号距离。归一化只保证相邻角切线方形不相交，
+    // 对角方形可以重叠（如 100x100 的 tl=br=80），重叠区域必须同时满足
+    // 两个角的弧约束——这正是形状定义，不是实现选择。
+    let lx = ux - r.x;
+    let ly = uy - r.y;
+    let mut combined = {
+        let dx = (r.x - ux).max(ux - (r.x + r.w)).max(0.0);
+        let dy = (r.y - uy).max(uy - (r.y + r.h)).max(0.0);
+        let outside = (dx * dx + dy * dy).sqrt();
+        let inside = (r.x - ux)
+            .max(ux - (r.x + r.w))
+            .max((r.y - uy).max(uy - (r.y + r.h)));
+        if inside < 0.0 { inside } else { outside }
     };
-
-    let qx = px.abs() - half_w + cr;
-    let qy = py.abs() - half_h + cr;
-    let qx_clamped = qx.max(0.0);
-    let qy_clamped = qy.max(0.0);
-    let outside = (qx_clamped * qx_clamped + qy_clamped * qy_clamped).sqrt();
-    let inside = qx.max(qy).min(0.0);
-    outside + inside - cr
+    if rad.tl > 0.0 && lx < rad.tl && ly < rad.tl {
+        combined = combined.max((lx - rad.tl).hypot(ly - rad.tl) - rad.tl);
+    }
+    if rad.tr > 0.0 && lx > r.w - rad.tr && ly < rad.tr {
+        combined = combined.max((lx - (r.w - rad.tr)).hypot(ly - rad.tr) - rad.tr);
+    }
+    if rad.br > 0.0 && lx > r.w - rad.br && ly > r.h - rad.br {
+        combined = combined.max((lx - (r.w - rad.br)).hypot(ly - (r.h - rad.br)) - rad.br);
+    }
+    if rad.bl > 0.0 && lx < rad.bl && ly > r.h - rad.bl {
+        combined = combined.max((lx - rad.bl).hypot(ly - (r.h - rad.bl)) - rad.bl);
+    }
+    combined
 }
 
 #[inline]
@@ -475,3 +368,13 @@ pub(crate) fn shadow_coverage_ambient(sd: f32, blur: f32) -> f32 {
     let t2 = t * t;
     t2 * t2 * (5.0 - 4.0 * t)
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/raster/rasterizer/core_tests.rs"]
+mod core_tests;
+
+// 以下完整测试实现位于 tests-src，经模块级 include! 保持原私有作用域；
+// 文件内各项自带 cfg(test)，生产构建展开为空。
+#[cfg(test)]
+include!("../../../../tests-src/draw/raster/rasterizer/core_test_fns.rs");

@@ -25,7 +25,8 @@ use super::surface::{
 mod construction;
 mod graphics;
 // 显式 Vulkan parity 使用无窗口生产 Device 角色执行真实 FramePlan。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
+#[path = "../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/headless_parity.rs"]
 mod headless_parity;
 mod methods;
 mod rhi_device;
@@ -43,13 +44,13 @@ use rhi_device::VulkanRhiDevice;
 use rhi_surface_readback::VulkanSurfaceReadbackBuffer;
 
 // 测试 harness 仍复用私有 RHI Device，不扩大生产 Adapter 接口。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_gpu_parity_test() {
     rhi_device::run_gpu_parity_test();
 }
 
 // 显式测试 feature 复用 Vulkan 每图像 present 完成状态机。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(crate) fn run_present_completion_contract_test() {
     swapchain::run_present_completion_contract_test();
 }
@@ -112,18 +113,6 @@ pub(crate) fn accept_device_wait_for_shutdown(
     }
 }
 
-/// 架构守卫的拆分后源边界：`surface.rs` 持有 `create_win32_surface`、
-/// `create_wayland_surface`、`create_metal_surface` 与 `portability_enumeration`；
-/// `adapter.rs` 持有 `portability_subset`。返回源码仅供测试核对真实所有权。
-#[cfg(test)]
-pub(crate) const fn platform_contract_sources() -> (&'static str, &'static str) {
-    (include_str!("../surface.rs"), include_str!("../adapter.rs"))
-}
-
-#[cfg(test)]
-pub(crate) const fn drawable_contract_source() -> &'static str {
-    include_str!("../drawable.rs")
-}
 
 pub(super) fn loader_err(operation: &str, err: impl std::fmt::Debug) -> Error {
     Error::new(
@@ -190,19 +179,6 @@ struct VulkanSubmittedFrame {
     submission: crate::platform::presentation::rhi::SubmissionHandle,
 }
 
-// 显式 parity feature 可安排的一次性 Vulkan Surface 原生结果。
-#[cfg(feature = "vulkan-parity-test")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VulkanSurfaceFaultForParity {
-    // 在调用 vkAcquireNextImageKHR 前模拟旧 swapchain 已失效。
-    AcquireOutOfDate,
-    // 保留真实 acquire image，只把其返回状态提升为 SUBOPTIMAL。
-    AcquireSuboptimal,
-    // 在调用 vkQueuePresentKHR 前模拟当前 swapchain 已失效。
-    PresentOutOfDate,
-    // 保留真实 queue present，只把其返回状态提升为 SUBOPTIMAL。
-    PresentSuboptimal,
-}
 
 pub struct VulkanContext {
     runtime: Option<Rc<VulkanRuntime>>,
@@ -245,10 +221,10 @@ pub struct VulkanContext {
     acquired_frame: Option<VulkanAcquiredFrame>,
     submitted_frame: Option<VulkanSubmittedFrame>,
     // 一次只允许 parity 组合根安排一个 Surface 原生结果，不进入生产 feature。
-    #[cfg(feature = "vulkan-parity-test")]
+    #[cfg(uix_gpu_parity_vulkan)]
     surface_fault_for_parity: Option<VulkanSurfaceFaultForParity>,
     // 跳过 present 后禁止复用仍为 signaled 的旧代 render-finished semaphore。
-    #[cfg(feature = "vulkan-parity-test")]
+    #[cfg(uix_gpu_parity_vulkan)]
     replace_present_sync_for_parity: bool,
     // API 无关状态机唯一拥有 Surface generation、extent 与重建事务顺序。
     surface_lifecycle: crate::platform::presentation::rhi::RhiSurfaceLifecycle,
@@ -379,3 +355,12 @@ pub(crate) fn allocate_readback_output(pixel_count: usize) -> Result<Vec<u32>> {
     })?;
     Ok(output)
 }
+
+#[cfg(test)]
+#[path = "../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/mod_tests.rs"]
+mod mod_tests;
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/parity_types.rs");

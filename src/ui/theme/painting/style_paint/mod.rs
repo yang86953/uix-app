@@ -52,11 +52,8 @@ fn spread_shadow_geometry(
 
 /// Applies a `Style` to a rectangular area.
 pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
-    let radius = if style.border_radius > 0.0 {
-        Some(Radius::uniform(style.border_radius))
-    } else {
-        None
-    };
+    // 单值与四角两种输入统一经有效值入口解析（S4）。
+    let radius = style.effective_border_radius();
 
     if let Some(shadow) = style.box_shadow.as_ref()
         // 只在 spread 后仍有正面积时提交阴影。
@@ -89,6 +86,8 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
     let background_position = style.effective_background_position();
     // 未声明重复时使用双轴平铺有效默认值。
     let background_repeat = style.effective_background_repeat();
+    // 未声明尺寸策略时图片保持固有尺寸。
+    let background_size = style.effective_background_size();
     let border_color = style.border_color.map(|bc| bc.resolve(ctx.tokens()));
     let paint_surface = |ctx: &mut crate::draw::painting::PaintContext| {
         if let Some(background) = background {
@@ -106,6 +105,10 @@ pub fn apply_style(ctx: &mut PaintContext, rect: Rect, style: &Style) {
             background_position,
             // 传入确定的重复方式。
             background_repeat,
+            // 传入尺寸化平铺策略。
+            background_size,
+            // 传入有效圆角，背景图与渐变同一边界裁剪。
+            radius,
         );
         if style.has_border() {
             if let Some(border_color) = border_color {

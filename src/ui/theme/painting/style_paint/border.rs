@@ -9,8 +9,18 @@ use crate::ui::theme::style::BorderStyle;
 
 // 避免退化线段和浮点循环无法收敛。
 const GEOMETRY_EPSILON: f32 = 1e-4;
-// 每个九十度圆角使用固定八段近似，误差远低于单个逻辑像素。
-const CORNER_STEPS: usize = 8;
+// 圆角弧采样的最小与最大段数；实际按半径自适应，公开契约只锁轮廓误差。
+const CORNER_STEPS_MIN: usize = 4;
+const CORNER_STEPS_MAX: usize = 64;
+
+// 按半径自适应九十度弧的采样段数；弦高 r(1-cos(45deg/N)) 在 N=ceil(r/8)
+// 时约为 2pi^2/r，任意半径都远低于 0.5 逻辑像素的公开轮廓误差。
+fn corner_steps(radius: f32) -> usize {
+    if !radius.is_finite() || radius <= GEOMETRY_EPSILON {
+        return CORNER_STEPS_MIN;
+    }
+    ((radius / 8.0).ceil() as usize).clamp(CORNER_STEPS_MIN, CORNER_STEPS_MAX)
+}
 
 // 把 UI 边框线型映射为 draw System 已公开的描边能力。
 pub(super) fn paint_border(
@@ -170,7 +180,10 @@ fn paint_patterned_border(
     }
 }
 
-// 生成矩形中心线的闭合圆角周长折线。
+// 生成矩形中心线的闭合圆角周长折线（逐角半径，S4）。
+//
+// 公开契约：折线顶点距真实圆角轮廓不超过 0.5 逻辑像素；内部采样段数
+// 自适应于半径，不构成公开语义。半径先按相邻和规则归一化。
 fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
     // 拒绝非有限或无面积矩形。
     if !rect.x.is_finite()
@@ -188,22 +201,20 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         // 无效输入不产生几何。
         return Vec::new();
     }
-    // 现有 Style 只产生 uniform Radius，读取左上值作为统一半径。
-    let requested = radius.map_or(0.0, |value| value.tl);
-    // 半径必须有限并限制在半宽、半高内。
-    let corner = if requested.is_finite() {
-        // 截断负值与过大值。
-        requested.max(0.0).min(rect.w * 0.5).min(rect.h * 0.5)
-    } else {
-        // 非有限半径退回直角矩形。
-        0.0
-    };
+    // 逐角半径先做相邻和归一化，保持与其他绘制入口同一轮廓。
+    let corner = radius
+        .map(|value| value.normalized(rect.w, rect.h))
+        .unwrap_or_else(Radius::zero);
     // 计算右侧坐标。
     let right = rect.x + rect.w;
     // 计算底部坐标。
     let bottom = rect.y + rect.h;
-    // 直角矩形使用最小五点闭合周长。
-    if corner <= GEOMETRY_EPSILON {
+    // 全直角矩形使用最小五点闭合周长。
+    if corner.tl <= GEOMETRY_EPSILON
+        && corner.tr <= GEOMETRY_EPSILON
+        && corner.br <= GEOMETRY_EPSILON
+        && corner.bl <= GEOMETRY_EPSILON
+    {
         // 按顺时针顺序返回并重复起点闭合。
         return vec![
             // 左上角。
@@ -219,70 +230,67 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
         ];
     }
     // 从顶部左圆角终点开始，避免闭合缝落在圆角。
-    let mut points = vec![Point::new(rect.x + corner, rect.y)];
+    let mut points = vec![Point::new(rect.x + corner.tl, rect.y)];
     // 追加顶部直线终点。
-    points.push(Point::new(right - corner, rect.y));
+    points.push(Point::new(right - corner.tr, rect.y));
     // 追加右上圆角。
     append_corner(
         // 转交输出点列。
         &mut points,
         // 右上圆心 X。
-        right - corner,
+        right - corner.tr,
         // 右上圆心 Y。
-        rect.y + corner,
-        // 统一半径。
-        corner,
+        rect.y + corner.tr,
+        // 右上角半径。
+        corner.tr,
         // 从顶部方向开始。
         -std::f32::consts::FRAC_PI_2,
         // 到右侧方向结束。
         0.0,
     );
     // 追加右侧直线终点。
-    points.push(Point::new(right, bottom - corner));
+    points.push(Point::new(right, bottom - corner.br));
     // 追加右下圆角。
     append_corner(
-        // 转交输出点列。
         &mut points,
         // 右下圆心 X。
-        right - corner,
+        right - corner.br,
         // 右下圆心 Y。
-        bottom - corner,
-        // 统一半径。
-        corner,
+        bottom - corner.br,
+        // 右下角半径。
+        corner.br,
         // 从右侧方向开始。
         0.0,
         // 到底部方向结束。
         std::f32::consts::FRAC_PI_2,
     );
     // 追加底部直线终点。
-    points.push(Point::new(rect.x + corner, bottom));
+    points.push(Point::new(rect.x + corner.bl, bottom));
     // 追加左下圆角。
     append_corner(
-        // 转交输出点列。
         &mut points,
         // 左下圆心 X。
-        rect.x + corner,
+        rect.x + corner.bl,
         // 左下圆心 Y。
-        bottom - corner,
-        // 统一半径。
-        corner,
+        bottom - corner.bl,
+        // 左下角半径。
+        corner.bl,
         // 从底部方向开始。
         std::f32::consts::FRAC_PI_2,
         // 到左侧方向结束。
         std::f32::consts::PI,
     );
     // 追加左侧直线终点。
-    points.push(Point::new(rect.x, rect.y + corner));
+    points.push(Point::new(rect.x, rect.y + corner.tl));
     // 追加左上圆角并回到起点。
     append_corner(
-        // 转交输出点列。
         &mut points,
         // 左上圆心 X。
-        rect.x + corner,
+        rect.x + corner.tl,
         // 左上圆心 Y。
-        rect.y + corner,
-        // 统一半径。
-        corner,
+        rect.y + corner.tl,
+        // 左上角半径。
+        corner.tl,
         // 从左侧方向开始。
         std::f32::consts::PI,
         // 到顶部方向结束。
@@ -292,7 +300,7 @@ fn rounded_rect_perimeter(rect: Rect, radius: Option<Radius>) -> Vec<Point> {
     points
 }
 
-// 追加一个顺时针九十度圆角的采样点。
+// 追加一个顺时针九十度圆角的采样点；段数随半径自适应。
 fn append_corner(
     // 接收目标点列。
     points: &mut Vec<Point>,
@@ -307,10 +315,12 @@ fn append_corner(
     // 接收结束角。
     end: f32,
 ) {
+    // 按半径选择本段弧的采样段数。
+    let steps = corner_steps(radius);
     // 跳过起点以避免与前一条直线终点重复。
-    for step in 1..=CORNER_STEPS {
+    for step in 1..=steps {
         // 计算当前圆角归一化进度。
-        let progress = step as f32 / CORNER_STEPS as f32;
+        let progress = step as f32 / steps as f32;
         // 线性插值角度。
         let angle = start + (end - start) * progress;
         // 追加圆周采样点。

@@ -182,14 +182,6 @@ impl PixelSurface {
         self.clear_color = color;
     }
 
-    /// 当前清除颜色。
-    // 测试目标保留清除颜色观测入口，供像素表面契约测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn clear_color(&self) -> Color {
-        self.clear_color
-    }
-
     /// 获取表面宽度。
     pub(crate) fn width(&self) -> i32 {
         self.width
@@ -263,3 +255,8 @@ impl PixelSurface {
         );
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/raster/pixel_surface_tests.rs"]
+mod pixel_surface_tests;

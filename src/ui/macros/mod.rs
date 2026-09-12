@@ -5,18 +5,6 @@
 /// 组件本身是数据 struct；按需 `impl WidgetLayout / WidgetRender / …`，
 /// 未覆盖的方法使用 trait 默认实现。
 ///
-/// ```ignore
-/// pub struct Button { text: String, ... }
-///
-/// impl_widget!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
-///
-/// impl WidgetLayout for Button {
-///     fn measure(&self, constraints: Constraints) -> Size { ... }
-/// }
-/// impl WidgetRender for Button {
-///     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
-/// }
-/// ```
 #[macro_export]
 macro_rules! impl_widget {
     (
@@ -32,6 +20,13 @@ macro_rules! impl_widget {
         $(; requires_extended_event_finish => $requires_extended_event_finish:expr)?
         // 已有直接 SnapshotSource 实现的组件可显式接入类型化快照。
         $(; snapshot_source => $snapshot_source:ident)?
+        $(; reconcile_sync => $reconcile_sync:ident)?
+        $(; reconcile_config => $reconcile_config:expr)?
+        $(; reconcile_layout => $reconcile_layout:expr)?
+        $(; reconcile_runtime => $reconcile_runtime:expr)?
+        $(; declaration_style => $declaration_style:expr)?
+        $(; snapshot_free_reconcile => $snapshot_free_reconcile:expr)?
+        $(; interaction_disabled => $interaction_disabled:expr)?
     ) => {
         impl $crate::ui::__private::traits::Widget for $T {
             fn as_any(&self) -> &dyn std::any::Any {
@@ -44,6 +39,21 @@ macro_rules! impl_widget {
                 self
             }
             $crate::impl_widget!(@snapshot_method $T $(, $snapshot_source)?);
+            $(fn reconciles_without_snapshot(&self) -> bool { $snapshot_free_reconcile })?
+            $(fn interaction_disabled(&self) -> Option<bool> { ($interaction_disabled)(self) })?
+            $( $crate::__widget_reconcile_method!($reconcile_sync); )?
+            $(fn declaration_config_changed(&self, next: &dyn $crate::ui::Widget) -> Option<bool> {
+                ($reconcile_config)(self, next)
+            })?
+            $(fn declaration_layout_changed(&self, next: &dyn $crate::ui::Widget) -> Option<bool> {
+                ($reconcile_layout)(self, next)
+            })?
+            $(fn declaration_runtime_changed(&self, next: &dyn $crate::ui::Widget) -> bool {
+                ($reconcile_runtime)(self, next)
+            })?
+            $(fn apply_declaration_style(&mut self, style: &$crate::ui::Style, declared: &$crate::ui::StyleDiff, flex_grow: Option<f32>, flex_shrink: Option<f32>) {
+                ($declaration_style)(self, style, declared, flex_grow, flex_shrink)
+            })?
             fn capabilities(&self) -> $crate::ui::__private::traits::WidgetCapabilities {
                 let mut caps = $crate::ui::__private::traits::WidgetCapabilities::new();
                 $(
@@ -77,16 +87,16 @@ macro_rules! impl_widget {
         }
     };
     (@snapshot_method $T:ty, $snapshot_source:ident) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+        fn snapshot_fields(&self) -> $crate::ui::WidgetSnapshotFields {
             // 标记只负责选择直接端口；具体快照仍由组件自己的 SnapshotSource 拥有。
             let _ = stringify!($snapshot_source);
-            <$T as $crate::ui::SnapshotSource>::snapshot_fields(self)
+            <$T as $crate::ui::SnapshotSource>::snapshot_fields(self).into()
         }
     };
     (@snapshot_method $T:ty) => {
-        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+        fn snapshot_fields(&self) -> $crate::ui::WidgetSnapshotFields {
             // 普通手写组件未登记类型化快照，保持 Unknown 语义并跳过全表扫描。
-            $crate::ui::SnapshotFields::Unknown
+            $crate::ui::WidgetSnapshotFields::UNKNOWN
         }
     };
     (@insert_cap $caps:ident Layout) => {
@@ -146,6 +156,9 @@ macro_rules! impl_widget {
     };
     (@upcast TextInput) => {
         fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
+            Some(self)
+        }
+        fn as_text_input_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetTextInput> {
             Some(self)
         }
     };
@@ -218,6 +231,9 @@ macro_rules! wc_upcast {
         fn as_text_input(&self) -> Option<&dyn $crate::ui::__private::traits::WidgetTextInput> {
             Some(self)
         }
+        fn as_text_input_mut(&mut self) -> Option<&mut dyn $crate::ui::__private::traits::WidgetTextInput> {
+            Some(self)
+        }
     };
 }
 
@@ -249,6 +265,61 @@ macro_rules! __widget_view_children_impl {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __widget_build_method {
+    (dynamic_children; ($coordinator:expr) $body:block) => {
+        fn dynamic_children_coordinator(&self) -> Option<&'static dyn $crate::ui::DynamicChildrenCoordinator> { Some($coordinator) }
+    };
+    (text_selection; ($($ignored:tt)*) $body:block) => {
+        fn as_text_selection(&self) -> Option<&dyn $crate::ui::WidgetTextSelection> { Some(self) }
+        fn as_text_selection_mut(&mut self) -> Option<&mut dyn $crate::ui::WidgetTextSelection> { Some(self) }
+    };
+    (viewport_overflow_axes; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn viewport_overflow_axes($($p)*) -> $ret $body
+    };
+    (layout_size_locks; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn layout_size_locks($($p)*) -> $ret $body
+    };
+    (overlay_is_present; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn overlay_is_present($($p)*) -> $ret $body
+    };
+    (overlay_destroy_on_close; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn overlay_destroy_on_close($($p)*) -> $ret $body
+    };
+    (consume_context_close; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn consume_context_close($($p)*) -> $ret $body
+    };
+    (dismiss_overlay; ($($p:tt)*) $body:block) => {
+        fn dismiss_overlay($($p)*) $body
+    };
+    (pointer_focus_descendant; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn pointer_focus_descendant($($p)*) -> $ret $body
+    };
+    (semantic_text_value; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn semantic_text_value($($p)*) -> $ret $body
+    };
+    (window_drag_region; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn window_drag_region($($p)*) -> $ret $body
+    };
+    (invalidate_action_siblings; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn invalidate_action_siblings($($p)*) -> $ret $body
+    };
+    (preferred_focus_child; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn preferred_focus_child($($p)*) -> $ret $body
+    };
+    (declaration_style; ($($p:tt)*) $body:block) => {
+        fn apply_declaration_style($($p)*) $body
+    };
+    (reconcile_config; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn declaration_config_changed($($p)*) -> $ret $body
+    };
+    (reconcile_layout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn declaration_layout_changed($($p)*) -> $ret $body
+    };
+    (reconcile_runtime; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn declaration_runtime_changed($($p)*) -> $ret $body
+    };
+    (reconcile_sync; ($sync:ident) $body:block) => {
+        $crate::__widget_reconcile_method!($sync);
+    };
     (__semantic_actions_decl; ($($actions:tt)*) $body:block) => {
         // E-05：`semantic_actions => [...]` 槽位生成的声明方法；$actions 为
         // `&[...]` 表达式（由前置分支包装），直接作为返回值。
@@ -341,3 +412,23 @@ macro_rules! __widget_upcast_method {
 
 mod helpers;
 mod widget;
+
+/// Generate an opt-in, type-checked reconciliation port for a component.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __widget_reconcile_method {
+    ($sync:ident) => {
+        fn reconcile_from(
+            &mut self,
+            next: Box<dyn $crate::ui::Widget>,
+        ) -> Result<bool, Box<dyn $crate::ui::Widget>> {
+            if !next.as_any().is::<Self>() {
+                return Err(next);
+            }
+            let next = next.into_any().downcast::<Self>()
+                .expect("widget type checked before consuming declaration");
+            self.$sync(*next);
+            Ok(true)
+        }
+    };
+}

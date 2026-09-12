@@ -18,165 +18,31 @@ use crate::core::Rect;
 use crate::ui::widget_runtime::clipboard;
 use crate::ui::widget_runtime::widget::tree_core::WidgetTree;
 use crate::ui::widget_runtime::widget::{BoxedWidget, WidgetCore, WidgetId};
-use crate::ui::widgets::general::label::Label;
-use crate::ui::widgets::general::typography::Typography;
-// 引入 UI System 公开的闭合选择策略值。
 use crate::ui::UserSelect;
-// 富文本 capability 关闭时不引用已裁剪的组件模块。
-#[cfg(feature = "rich-text")]
-use crate::ui::widgets::other::rich_text::RichText;
 
 pub(crate) fn participates(node: &BoxedWidget) -> bool {
-    let c = node.widget();
-    if let Some(typography) = c.as_any().downcast_ref::<Typography>() {
-        // Typography 默认可选，但仍必须服从树级 none 策略。
-        return typography.selection_enabled();
-    }
-    // 启用富文本后只把显式可选择的 RichText 纳入跨节点参与者。
-    #[cfg(feature = "rich-text")]
-    if let Some(rich_text) = c.as_any().downcast_ref::<RichText>() {
-        // 参与资格由 RichText 自身的公开配置拥有。
-        return rich_text.participates_in_cross_text_selection();
-    }
-    if let Some(label) = c.as_any().downcast_ref::<Label>() {
-        return label.participates_in_cross_text_selection();
-    }
-    false
+    node.widget().as_text_selection().is_some_and(|text| text.selection_enabled())
 }
-
 pub(crate) fn is_dragging(node: &BoxedWidget) -> bool {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        return t.is_cross_text_dragging();
-    }
-    // 启用富文本后才读取 RichText 的拖选状态。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        return r.is_cross_text_dragging();
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        return l.is_cross_text_dragging();
-    }
-    false
+    node.widget().as_text_selection().is_some_and(|text| text.selection_dragging())
 }
-
 fn text_len(node: &BoxedWidget) -> usize {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        return t.cross_text_len();
-    }
-    // 启用富文本后才读取 RichText 的字符长度。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        return r.cross_text_len();
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        return l.cross_text_len();
-    }
-    0
+    node.widget().as_text_selection().map(|text| text.selection_len()).unwrap_or(0)
 }
-
 fn text_anchor(node: &BoxedWidget) -> usize {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        return t.cross_text_anchor();
-    }
-    // 启用富文本后才读取 RichText 的选择锚点。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        return r.cross_text_anchor();
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        return l.cross_text_anchor();
-    }
-    0
+    node.widget().as_text_selection().map(|text| text.selection_anchor()).unwrap_or(0)
 }
-
 fn set_range(node: &BoxedWidget, range: Option<(usize, usize)>) {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        t.set_cross_text_range(range);
-        return;
-    }
-    // 启用富文本后才同步 RichText 的跨节点选区。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        r.set_cross_text_range(range);
-        return;
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        l.set_cross_text_range(range);
-    }
+    if let Some(text) = node.widget().as_text_selection() { text.set_selection_range(range); }
 }
-
-fn char_at(node: &BoxedWidget, frame_local: Point) -> usize {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        return t.cross_text_char_at(frame_local);
-    }
-    // 启用富文本后才执行 RichText 的字符命中测试。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        return r.cross_text_char_at(frame_local);
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        return l.cross_text_char_at(frame_local);
-    }
-    0
+fn char_at(node: &BoxedWidget, point: Point) -> usize {
+    node.widget().as_text_selection().map(|text| text.selection_char_at(point)).unwrap_or(0)
 }
-
 fn node_selected_text(node: &BoxedWidget) -> Option<String> {
-    let c = node.widget();
-    if let Some(t) = c.as_any().downcast_ref::<Typography>() {
-        return t.selected_text();
-    }
-    // 启用富文本后才聚合 RichText 的已选文字。
-    #[cfg(feature = "rich-text")]
-    if let Some(r) = c.as_any().downcast_ref::<RichText>() {
-        return r.selected_text();
-    }
-    if let Some(l) = c.as_any().downcast_ref::<Label>() {
-        return l.selected_text();
-    }
-    None
+    node.widget().as_text_selection()?.selection_text()
 }
-
-// 把树级最终策略同步到实际文本组件的私有选择状态。
 fn apply_widget_policy(node: &mut BoxedWidget, policy: UserSelect) {
-    // Label 保留自身 selectable 构建器并叠加树级策略。
-    if let Some(label) = node.widget_mut().as_any_mut().downcast_mut::<Label>() {
-        // 交给组件清理策略关闭时的局部选区。
-        label.set_user_select_policy(policy);
-        // 一个实际节点只持有一种具体组件。
-        return;
-    }
-    // Typography 默认允许选择，但仍接受 none/all 的结构约束。
-    if let Some(typography) = node
-        // 取得组件可变借用。
-        .widget_mut()
-        // 访问动态具体类型。
-        .as_any_mut()
-        // 尝试排版组件下转型。
-        .downcast_mut::<Typography>()
-    {
-        // 交给组件清理策略关闭时的局部选区。
-        typography.set_user_select_policy(policy);
-        // 一个实际节点只持有一种具体组件。
-        return;
-    }
-    // 富文本 capability 启用时同步相同结构策略。
-    #[cfg(feature = "rich-text")]
-    if let Some(rich_text) = node
-        // 取得组件可变借用。
-        .widget_mut()
-        // 访问动态具体类型。
-        .as_any_mut()
-        // 尝试富文本组件下转型。
-        .downcast_mut::<RichText>()
-    {
-        // 交给组件清理策略关闭时的局部选区。
-        rich_text.set_user_select_policy(policy);
-    }
+    if let Some(text) = node.widget_mut().as_text_selection_mut() { text.set_selection_policy(policy); }
 }
 
 impl WidgetTree {

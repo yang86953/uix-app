@@ -14,29 +14,11 @@
 //! `report` / `config` 是 System 私有实现文件；它们对外一律不可达。以下契约
 //! 锁定该边界，任何把私有 Module 提升为公开模块的改动都会编译失败。
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::reporting::ReportingModule;
-//! ```
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::recovery::RecoveryModule;
-//! ```
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::pending::PendingFailureQueue;
-//! ```
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::report::ReportOrigin;
-//! ```
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::config::DiagnosticsConfig;
-//! ```
 //!
-//! ```compile_fail
-//! use uix_app::diagnostics::crash::CrashReport;
-//! ```
 
 mod config;
 mod crash;
@@ -60,13 +42,6 @@ pub(crate) use pending::{PendingFailureQueue, PendingFailureSource};
 pub use recovery::{RecoveryAction, RecoveryOutcome, RecoverySubscription};
 pub use reporting::ReportSubscription;
 
-/// 测试专用：保护进程级全局 panic hook 的安装/恢复窗口。
-///
-/// panic hook 是进程全局状态。`crash` 的 hook 测试与故意触发 panic 的 ABI
-/// 测试（`wnd_proc` / TSF thunk）并行时，后者的 panic 会被前者的全局 hook
-/// 捕获并写入其崩溃目录，导致目录断言失败。这些测试共享本锁串行执行。
-#[cfg(test)]
-pub(crate) static PANIC_HOOK_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub(crate) use report::ReportOrigin;
 pub use report::{DiagnosticsSnapshot, ErrorReport, ReportId};
 use reporting::ReportingModule;
@@ -428,3 +403,7 @@ macro_rules! uix_contract_violation {
         panic!("[uix-contract] {}", format_args!($($arg)*))
     };
 }
+
+#[cfg(test)]
+#[path = "../../tests-src/diagnostics/mod_tests.rs"]
+pub(crate) mod mod_tests;

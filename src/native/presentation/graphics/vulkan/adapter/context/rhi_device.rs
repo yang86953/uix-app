@@ -916,13 +916,13 @@ fn buffer_shadow_oom() -> Error {
 }
 
 // 把真实 GPU 测试入口限制在显式 feature 内，并保持实现为当前模块私有子组件。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(super) fn run_gpu_parity_test() {
     gpu_parity_tests::run_gpu_parity_test();
 }
 
 // 真实 UI/Drawing 生产链只复用 Adapter 的机械回读，不在此定义期望或容差。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 pub(super) fn readback_production_texture(
     context: &mut VulkanContext,
     texture: TextureHandle,
@@ -931,6 +931,6 @@ pub(super) fn readback_production_texture(
 }
 
 // 把真实 GPU parity harness 实现统一存放在根 tests/support 目录。
-#[cfg(feature = "vulkan-parity-test")]
+#[cfg(uix_gpu_parity_vulkan)]
 #[path = "../../../../../../../tests/support/native/gpu_parity/vulkan_rhi_device.rs"]
 mod gpu_parity_tests;

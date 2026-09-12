@@ -1,6 +1,7 @@
 //! 宿主机信息与 OS 服务功能域。
 
 // OS 能力采集与系统服务实现只在 host 功能域内部可见。
+#[cfg(feature = "platform")]
 pub(crate) mod providers;
 
 /// 通用状态级别。

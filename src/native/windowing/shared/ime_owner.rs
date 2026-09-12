@@ -50,11 +50,6 @@ impl NativeImeOwner {
         self.selected = Some(target);
     }
 
-    #[cfg(test)]
-    pub(crate) fn selected(&self) -> Option<NativeImeTarget> {
-        self.selected
-    }
-
     pub(crate) fn active(&self) -> Option<NativeImeSession> {
         self.active
     }
@@ -130,3 +125,8 @@ impl NativeImeOwner {
         self.generation
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/native/windowing/shared/ime_owner_tests.rs"]
+mod ime_owner_tests;

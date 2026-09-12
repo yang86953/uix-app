@@ -153,30 +153,6 @@ impl SoftwareRasterizer {
         self.trim_snapshot_pool();
     }
 
-    #[cfg(test)]
-    pub(crate) fn transient_stack_capacities(&self) -> (usize, usize, usize) {
-        (
-            self.clip_stack.capacity(),
-            self.clip_mask_stack.capacity(),
-            self.state_stack.capacity(),
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn snapshot_slot_count(&self) -> usize {
-        self.state_stack.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn snapshot_clip_stack_allocation(
-        &self,
-        index: usize,
-    ) -> Option<(*const Rect, usize)> {
-        self.state_stack
-            .get(index)
-            .map(|snapshot| (snapshot.clip_stack.as_ptr(), snapshot.clip_stack.capacity()))
-    }
-
     // ═══ 状态访问器 ═══
 
     pub(crate) fn clip_rect(&self) -> Rect {
@@ -608,3 +584,8 @@ impl SoftwareRasterizer {
 
 // draw_box_shadow 等由 Canvas2D trait 默认实现调用 rasterizer，
 // SoftwareRasterizer 不重复实现——默认方法已经够用。
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/raster/software_rasterizer_tests.rs"]
+mod software_rasterizer_tests;

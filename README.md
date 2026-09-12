@@ -1,13 +1,15 @@
 # UIX
 
+当前代码由 `uix-app`（机制、原生平台、语言与工具）和独立 `uix-widgets`（具体控件、主题与资源）组成。见 [两包迁移](docs/使用/两包迁移.md)与[框架能力拆分](docs/架构/框架能力拆分.md)。历史目录说明中的具体控件职责已迁至组件库。
+
 > **⚠️ 早期开发阶段（0.0.8）：API 与功能可能发生不兼容变化，不承诺生产稳定性。**
 >
 > **Early development (0.0.8): APIs and features may change in incompatible ways; production stability is not guaranteed.**
 
 UIX 是一个 **Rust 原生跨平台应用框架**，目标是让同一套界面与应用逻辑运行在多个平台的原生窗口上。
 
-跨平台复用的单位是**完整应用，而不只是组件树或 UI 描述语言**：UIX 统一界面、应用组合根、
-生命周期、窗口与事件循环、平台能力、本地数据和运行保障。框架通过自身图形管线绘制到原生窗口，
+UIX 支持完整应用的跨平台复用，也支持独立使用状态、布局、离屏绘制与无窗口 UI。
+框架提供界面、应用组合根、生命周期、窗口与事件循环、平台能力、本地数据和运行保障。框架通过自身图形管线绘制到原生窗口，
 不把浏览器或 WebView 作为界面运行时。
 
 UIX is a **Rust-native, cross-platform application framework**. Its goal is to reuse
@@ -52,6 +54,9 @@ UIX 仍处于早期阶段。产品方向、源码包含某个后端、交叉编�
 - [uix-app 0.0.8](https://crates.io/crates/uix-app/0.0.8) 已发布到 crates.io；Rust 库路径为 `uix_app`。
 - The package is published on crates.io as **uix-app**; import it as **uix_app**.
 - 配套 `uix-derive`、`uix-lang-compiler`、`uix-lang-runtime` 同为 0.0.8。
+- 已发布的 0.0.8 对应历史源码快照；本仓库当前源码树包含其后的开发进展
+  （样式系统、有限 Grid minmax、窗口断点等），这些能力尚未随任何已发布
+  版本提供，版本号仍为 0.0.8 只表示本地候选。
 
 ```toml
 [dependencies]
@@ -80,6 +85,17 @@ cargo test --features agent-control,test-harness --test "*_public_api" --quiet
 日常修改只运行受影响的 `--test <目标名>`；`test-harness` 用于无窗口的公开行为测试，
 不进入发布构建。编译或公开 API 测试通过，不代替真实窗口、GPU、输入和跨平台验收。
 纯说明文字修改只需核对内容与链接，无需重跑构建或测试。
+
+GPU 离屏像素一致性验证走仓库专用入口（不占用 crates.io 包的公开 feature）：
+
+```bash
+scripts/run_gpu_parity.sh vulkan   # 或 opengl / d3d11（后者需 Windows 目标）
+RUSTDOCFLAGS='--cfg uix_repo_doc_contract' cargo test -p uix-app --doc
+```
+
+发布包不携带这些验证实现，也不声明对应 feature；普通运行、`test-harness` 与
+`agent-control` 等框架能力在源码树与发布包中保持一致。已发布的 0.0.8 制品不可变，
+本仓库当前版本号为未发布候选，能力以源码树为准。
 
 ## 字体 / Fonts
 

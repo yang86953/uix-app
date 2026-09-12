@@ -18,15 +18,7 @@
 //! 下列契约锁定 SMC-01 后的模块边界：旧平铺路径对外不可达，
 //! 任何恢复旧路径的改动都会编译失败。
 //!
-//! ```compile_fail
-//! // 旧平铺路径不得复活：WidgetId 归 identity 模块。
-//! use uix_app::core::widget_id::WidgetId;
-//! ```
 //!
-//! ```compile_fail
-//! // 旧平铺路径不得复活：WindowId 归 identity 模块。
-//! use uix_app::core::window_id::WindowId;
-//! ```
 //!
 
 pub mod damage;

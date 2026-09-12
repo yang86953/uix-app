@@ -4,7 +4,7 @@ use crate::ui::widget_runtime::widget::WidgetCore;
 // 动态子树协调沿用 ViewAdapter 的私有身份与事务契约。
 impl crate::ui::adapter::ViewAdapter {
     // 让一个直接动态子节点进入离场或立即释放，并保留其生命周期语义。
-    pub(crate) fn remove_dynamic_child(
+    pub fn remove_dynamic_child(
         // 接收拥有动态子节点的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子节点的实际父节点身份。
@@ -54,7 +54,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     // 取消一个直接动态子节点的离场，使同 key 错误重入复用原节点。
-    pub(crate) fn cancel_dynamic_child_removal(
+    pub fn cancel_dynamic_child_removal(
         // 接收拥有动态子节点的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子节点的实际父节点身份。
@@ -101,7 +101,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     // 在成功的 WidgetTree 事务后才追加一个动态声明子树的私有状态写入。
-    pub(crate) fn append_dynamic_child(
+    pub fn append_dynamic_child(
         // 接收将被追加子树的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子树所属的运行时父节点。
@@ -127,12 +127,16 @@ impl crate::ui::adapter::ViewAdapter {
             // 让动态子树及其全部后代共用同一提交批次。
             &mut child,
         );
+        // 动态子树评估过的 @media 断点合并到宿主树记录。
+        let (media_breakpoints, built_width) =
+            crate::ui::adapter::capture_guards::take_media_breakpoints(&mut child);
         // 在事务发布线前完成纯声明展开，异常时既有运行时树仍可继续服务。
         let child = Self::expand(child);
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
         tree.with_widget_state_transaction(receipts, |tree| {
             // 动态子树的首个结构改写进入不可逆发布区，panic 后必须 fail-stop。
             tree.mark_coordination_publish_started();
+            tree.merge_media_breakpoints(media_breakpoints, built_width);
             // 追加已经完成纯展开的错误子树。
             tree.build_child_node(parent_id, child);
         });
@@ -141,7 +145,7 @@ impl crate::ui::adapter::ViewAdapter {
     }
 
     // 在成功的 WidgetTree 事务后才接纳动态声明子树的私有状态写入。
-    pub(crate) fn reconcile_dynamic_children(
+    pub fn reconcile_dynamic_children(
         // 接收将被协调的目标运行时树。
         tree: &mut crate::ui::WidgetTree,
         // 接收动态子树所属的运行时父节点。
@@ -167,10 +171,20 @@ impl crate::ui::adapter::ViewAdapter {
             // 让动态子树及其全部后代共用同一提交批次。
             &mut children,
         );
+        // 动态子树评估过的 @media 断点合并到宿主树记录。
+        let mut media_breakpoints = Vec::new();
+        let mut built_width = None;
+        for child in &mut children {
+            let (breakpoints, width) =
+                crate::ui::adapter::capture_guards::take_media_breakpoints(child);
+            media_breakpoints.extend(breakpoints);
+            built_width = width.or(built_width);
+        }
         // 先让 WidgetTree 完整结束事务，异常时外层 receipts 的 Drop 会回滚。
         let changed = tree.with_widget_state_transaction(receipts, |tree| {
             // 动态子树的首个结构改写进入不可逆发布区，panic 后必须 fail-stop。
             tree.mark_coordination_publish_started();
+            tree.merge_media_breakpoints(media_breakpoints, built_width);
             // 协调动态子树并保留既有的无动画替换语义。
             Self::reconcile_children(tree, parent_id, children, None)
         });

@@ -70,15 +70,6 @@ impl DependencySubscriberSnapshot {
         }
     }
 
-    // 暴露窄计数供私有生命周期回归使用。
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        match self {
-            Self::Empty => 0,
-            Self::One(_) => 1,
-            Self::Many(subscribers) => subscribers.len(),
-        }
-    }
 }
 
 // 保存一次订阅的精确注销责任。
@@ -275,14 +266,6 @@ pub(crate) fn refresh_dependency_leases(
     *snapshots.write().unwrap_or_else(|error| error.into_inner()) = next_snapshots;
 }
 
-// 统计存活订阅，供私有生命周期回归使用。
-#[cfg(test)]
-// 不扩展公开响应式 API。
-pub(crate) fn subscriber_count(registry: &DependencySubscriberRegistry) -> usize {
-    // 快照函数同时完成死亡弱引用清理。
-    collect_subscribers(registry).len()
-}
-
 // 保存 Effect 的闭包、快照、租约与并发状态。
 struct EffectInner {
     // 用户副作用始终在所有内部锁外调用。
@@ -426,3 +409,8 @@ impl Effect {
         true
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/reactive/state/effect_tests.rs"]
+pub(crate) mod effect_tests;

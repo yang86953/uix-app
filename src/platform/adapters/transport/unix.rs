@@ -137,18 +137,6 @@ pub(crate) fn connect(endpoint: &str) -> io::Result<super::AgentStream> {
     Ok(Box::new(UnixStream::connect(endpoint)?))
 }
 
-#[cfg(test)]
-pub(super) fn discovery_permissions_are_private_for_test(path: &Path) -> io::Result<Option<bool>> {
-    Ok(Some(fs::metadata(path)?.permissions().mode() & 0o077 == 0))
-}
-
-#[cfg(test)]
-pub(super) fn endpoint_permissions_are_private_for_test(
-    endpoint: &str,
-) -> io::Result<Option<bool>> {
-    discovery_permissions_are_private_for_test(Path::new(endpoint))
-}
-
 fn private_discovery_directory() -> io::Result<PathBuf> {
     let effective_uid = unsafe {
         // SAFETY: `geteuid` has no arguments and no memory safety preconditions.
@@ -244,3 +232,8 @@ fn peer_is_current_user(_stream: &UnixStream) -> io::Result<bool> {
         "agent peer credentials are unavailable on this Unix target",
     ))
 }
+
+// owner-only ACL 验收探针位于 tests-src，仅测试构建编译（历史消费者见 windows_tests 注记）。
+#[cfg(test)]
+#[path = "../../../../tests-src/platform/adapters/transport/unix_tests.rs"]
+mod tests;

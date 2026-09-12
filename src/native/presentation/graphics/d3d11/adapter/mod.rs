@@ -5,8 +5,6 @@ use std::ffi::c_void;
 use crate::core::{Error, Result};
 use crate::platform::presentation::{GraphicsApi, GraphicsContextCandidate, GraphicsContextCaps};
 // WARP 测试入口返回类型化 GPU context trait object。
-#[cfg(all(test, feature = "d3d11"))]
-use crate::platform::presentation::GpuRecipeContext;
 
 #[cfg(windows)]
 pub(crate) mod context;
@@ -22,7 +20,7 @@ pub(crate) use context::D3d11Context;
 pub(crate) use enumeration::enumerate_adapters;
 
 // 显式 parity feature 保持测试入口在 D3D11 platform Adapter 内。
-#[cfg(all(windows, feature = "d3d11-parity-test"))]
+#[cfg(all(windows, uix_gpu_parity_d3d11))]
 pub(crate) fn run_gpu_parity_test() {
     context::run_gpu_parity_test();
 }
@@ -58,46 +56,6 @@ pub(crate) fn create(
     })
 }
 
-// Windows 测试目标保留 D3D11 WARP 平台入口，供显式后端矩阵按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, windows, feature = "d3d11"))]
-pub(crate) fn create_warp_test_context(
-    surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn GpuRecipeContext>, Error> {
-    D3d11Context::new_warp_test_context(surface, width, height).map(|ctx| Box::new(ctx) as _)
-}
-
-// Windows 测试目标保留 D3D11 WARP 可用性探测，供显式后端矩阵按需调用。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, windows, feature = "d3d11"))]
-pub(crate) const fn warp_test_context_available() -> bool {
-    true
-}
-
-// 非 Windows 测试目标保留明确的 D3D11 WARP 不支持入口。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, not(windows), feature = "d3d11"))]
-pub(crate) fn create_warp_test_context(
-    _surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn GpuRecipeContext>, Error> {
-    use crate::core::Errc;
-
-    Err(Error::new(
-        Errc::PlatformError,
-        "D3D11 WARP tests are only supported on Windows",
-    ))
-}
-
-// 非 Windows 测试目标保留明确的 D3D11 WARP 不可用性探测。
-#[cfg_attr(test, allow(dead_code))]
-#[cfg(all(test, not(windows), feature = "d3d11"))]
-pub(crate) const fn warp_test_context_available() -> bool {
-    false
-}
 
 #[cfg(not(windows))]
 pub(crate) fn create(
@@ -113,3 +71,7 @@ pub(crate) fn create(
         "GraphicsBackend d3d11 is only supported on Windows",
     ))
 }
+
+// 仅测试构建的 WARP 辅助位于 tests-src，经模块级 include! 保持原作用域。
+#[cfg(test)]
+include!("../../../../../../tests-src/native/presentation/graphics/d3d11/adapter/warp_test_fns.rs");

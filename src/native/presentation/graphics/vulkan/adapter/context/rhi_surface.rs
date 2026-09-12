@@ -29,40 +29,6 @@ impl VulkanContext {
         self.ensure_rhi_frame_prepared()
     }
 
-    // 只允许显式 parity 组合根在无在途 frame 时安排一个原生 Surface 结果。
-    #[cfg(feature = "vulkan-parity-test")]
-    pub(crate) fn inject_surface_fault_for_parity_test(
-        &mut self,
-        fault: super::VulkanSurfaceFaultForParity,
-    ) -> Result<()> {
-        self.active_device()?;
-        if self.acquired_frame.is_some() || self.submitted_frame.is_some() {
-            return Err(invalid_state(
-                "Vulkan Surface parity fault requires an idle frame boundary",
-            ));
-        }
-        if self.surface_fault_for_parity.is_some() {
-            return Err(invalid_state(
-                "Vulkan Surface parity fault is already pending",
-            ));
-        }
-        self.surface_fault_for_parity = Some(fault);
-        Ok(())
-    }
-
-    // 只在对应原生调用边界消费一次匹配的 parity 故障。
-    #[cfg(feature = "vulkan-parity-test")]
-    fn take_surface_fault_for_parity_test(
-        &mut self,
-        fault: super::VulkanSurfaceFaultForParity,
-    ) -> bool {
-        if self.surface_fault_for_parity == Some(fault) {
-            self.surface_fault_for_parity = None;
-            true
-        } else {
-            false
-        }
-    }
 
     // 在复用唯一 command buffer 前等待上一提交，并重置单帧原生资源。
     pub(super) fn ensure_rhi_frame_prepared(&mut self) -> Result<()> {
@@ -235,11 +201,11 @@ impl GraphicsSurface for VulkanContext {
         }
         owner.observe(self.ensure_rhi_frame_prepared())?;
         // OUT_OF_DATE 注入发生在真实 acquire 前，因此不会产生可被旧 token 提交的 image。
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         let reject_acquire_for_parity = self.take_surface_fault_for_parity_test(
             super::VulkanSurfaceFaultForParity::AcquireOutOfDate,
         );
-        #[cfg(not(feature = "vulkan-parity-test"))]
+        #[cfg(not(uix_gpu_parity_vulkan))]
         let reject_acquire_for_parity = false;
         // SAFETY: swapchain、semaphore 与 device 存活，Surface owner 串行调用 acquire。
         let acquire_result = if reject_acquire_for_parity {
@@ -272,7 +238,7 @@ impl GraphicsSurface for VulkanContext {
             Err(error) => return Err(owner.error("vkAcquireNextImageKHR RHI", error)),
         };
         // acquire SUBOPTIMAL 仍必须持有真实 WSI image，并由成功 present 后的共享语义重建。
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         let acquire_suboptimal = acquire_suboptimal
             || self.take_surface_fault_for_parity_test(
                 super::VulkanSurfaceFaultForParity::AcquireSuboptimal,
@@ -438,13 +404,13 @@ impl GraphicsSurface for VulkanContext {
         let indices = [submitted.image_index];
         let semaphores = [submitted.render_finished];
         // OUT_OF_DATE 注入发生在真实 present 前，旧 frame 只完成 GPU submit，不进入 WSI。
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         let reject_present_for_parity = self.take_surface_fault_for_parity_test(
             super::VulkanSurfaceFaultForParity::PresentOutOfDate,
         );
-        #[cfg(not(feature = "vulkan-parity-test"))]
+        #[cfg(not(uix_gpu_parity_vulkan))]
         let reject_present_for_parity = false;
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         if reject_present_for_parity {
             self.replace_present_sync_for_parity = true;
         }
@@ -473,7 +439,7 @@ impl GraphicsSurface for VulkanContext {
             })?
         };
         // present SUBOPTIMAL 注入保留上面的真实 queue present 与同步所有权，只改写状态映射。
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         let present_result = if self.take_surface_fault_for_parity_test(
             super::VulkanSurfaceFaultForParity::PresentSuboptimal,
         ) {
@@ -541,3 +507,8 @@ impl GpuRecipeContext for VulkanContext {
 fn invalid_state(message: &'static str) -> Error {
     Error::new(Errc::InvalidState, message)
 }
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/rhi_surface_parity_fns.rs");

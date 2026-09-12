@@ -73,7 +73,7 @@ mod uniform;
 mod mesh;
 
 // 在测试构建中提供 API 无关的全图元像素规范；原生 Adapter 只能执行和回读。
-#[cfg(any(test, feature = "graphics-parity-test"))]
+#[cfg(any(test, any(uix_gpu_parity_vulkan, uix_gpu_parity_opengl, uix_gpu_parity_d3d11)))]
 #[path = "rhi_renderer_consistency.rs"]
 pub(crate) mod consistency;
 
@@ -215,6 +215,10 @@ pub(crate) struct RhiGradientRect {
     pub(crate) color_b: [f32; 4],
     // 保存 mode、方向或半径参数，布局与固定 shader ABI 对齐。
     pub(crate) params: [f32; 4],
+    // 保存已归一化的四角掩码半径（tl/tr/br/bl，逻辑像素）；全零关闭掩码。
+    pub(crate) mask_radius: [f32; 4],
+    // 保存 quad 逻辑宽高与掩码单位矩形 x/y/w/h（S4）。
+    pub(crate) mask: [f32; 6],
     // 保存当前渐变的物理裁剪矩形。
     pub(crate) scissor: Option<RhiScissor>,
 }
@@ -634,15 +638,6 @@ impl RhiRenderer {
         }
     }
 
-    #[cfg(any(test, target_endian = "big"))]
-    fn encode_u32s_big_endian(values: &[u32]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(std::mem::size_of_val(values));
-        for value in values {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-        bytes
-    }
-
     // 构造并执行一帧 solid mesh RHI 计划。
     pub(crate) fn execute_solid_meshes(
         &mut self,
@@ -972,3 +967,8 @@ pub(super) fn warn_destroy_textures(device: &mut dyn GraphicsDevice, textures: &
         crate::diagnostics::observe_boundary_error("rhi/texture_cleanup", &error);
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/draw/backend/rhi_renderer_tests.rs"]
+mod rhi_renderer_tests;

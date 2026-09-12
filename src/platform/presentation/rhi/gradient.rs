@@ -3,8 +3,8 @@
 // 引入共享物理视口值，避免 Gradient 契约依赖任何平台 API 类型。
 use super::RhiViewport;
 
-// 固定 Gradient uniform 的六个 float4 ABI 总字节数。
-pub(crate) const GRADIENT_UNIFORM_BYTES: usize = 96;
+// 固定 Gradient uniform 的九个 float4 ABI 总字节数（S4 圆角掩码扩展）。
+pub(crate) const GRADIENT_UNIFORM_BYTES: usize = 144;
 
 // 固定 Gradient uniform 的 float 数量。
 const GRADIENT_UNIFORM_FLOATS: usize =
@@ -28,6 +28,14 @@ pub(crate) const GRADIENT_COLOR_B_FLOAT_OFFSET: usize = 16;
 
 // mode、方向或半径参数 float4 在 Gradient ABI 中的起始索引。
 pub(crate) const GRADIENT_PARAMS_FLOAT_OFFSET: usize = 20;
+// 四角圆角掩码半径（tl/tr/br/bl，逻辑像素）float4 的起始索引。
+pub(crate) const GRADIENT_MASK_RADIUS_FLOAT_OFFSET: usize = 24;
+
+// quad 逻辑宽高与掩码单位矩形起点 float4 的起始索引。
+pub(crate) const GRADIENT_QUAD_SIZE_FLOAT_OFFSET: usize = 28;
+
+// 掩码单位矩形宽高 float4 的起始索引。
+pub(crate) const GRADIENT_MASK_SIZE_FLOAT_OFFSET: usize = 32;
 
 // 保存已经冻结的平台无关 Gradient 仿射几何、颜色与采样参数。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -51,6 +59,12 @@ impl RhiGradientRasterParams {
         // 接收 mode、方向或径向半径参数；线性模式的 params[2]/[3] 由 graphics
         // lowering 按渐变局部矩形宽高填入，与 CPU `linear_gradient_t` 同源。
         params: [f32; 4],
+        // 接收已归一化的四角掩码半径（tl/tr/br/bl，逻辑像素）；全零关闭掩码。
+        mask_radius: [f32; 4],
+        // 接收 quad 的逻辑宽高，供掩码把单位局部坐标换算为像素空间。
+        quad_size: [f32; 2],
+        // 接收掩码参考矩形在 quad 单位坐标空间中的 x/y/w/h。
+        mask_rect: [f32; 4],
     ) -> Self {
         // TL 是单位 quad 仿射映射的唯一物理原点。
         let origin = corners[0];
@@ -118,6 +132,29 @@ impl RhiGradientRasterParams {
             params[2],
             // params.linear_local_height。
             params[3],
+            // mask_radius.tl。
+            mask_radius[0],
+            // mask_radius.tr。
+            mask_radius[1],
+            // mask_radius.br。
+            mask_radius[2],
+            // mask_radius.bl。
+            mask_radius[3],
+            // quad 逻辑宽度。
+            quad_size[0],
+            // quad 逻辑高度。
+            quad_size[1],
+            // mask_rect 单位 x。
+            mask_rect[0],
+            // mask_rect 单位 y。
+            mask_rect[1],
+            // mask_rect 单位宽度。
+            mask_rect[2],
+            // mask_rect 单位高度。
+            mask_rect[3],
+            // 掩码尺寸 float4 保留填充。
+            0.0,
+            0.0,
         ];
         // 返回已经冻结的共享 Gradient 值对象。
         Self { values }

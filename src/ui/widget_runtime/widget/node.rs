@@ -11,6 +11,8 @@ pub struct WidgetNode {
     pub(crate) visual_transform: ViewTransform,
     // 保存待挂载节点的完整定位声明。
     pub(crate) position: crate::ui::position::PositionedLayout,
+    // 保存声明节点样式中的 min/max 尺寸约束，供父布局统一消费。
+    pub(crate) size_constraints: crate::ui::theme::style::SizeConstraints,
     // 保存待挂载节点声明的文字选择策略。
     pub(crate) user_select: crate::ui::UserSelect,
     // 保存待挂载节点显式声明的指针光标；None 表示继承。
@@ -60,6 +62,8 @@ impl WidgetNode {
             visual_transform: ViewTransform::default(),
             // 命令式节点默认参与正常布局流。
             position: crate::ui::position::PositionedLayout::default(),
+            // 命令式节点默认不施加尺寸约束。
+            size_constraints: crate::ui::theme::style::SizeConstraints::NONE,
             // 命令式节点默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 命令式节点默认不覆盖父节点光标。
@@ -109,6 +113,8 @@ impl WidgetNode {
             visual_transform: ViewTransform::default(),
             // 命令式叶节点默认参与正常布局流。
             position: crate::ui::position::PositionedLayout::default(),
+            // 命令式叶节点默认不施加尺寸约束。
+            size_constraints: crate::ui::theme::style::SizeConstraints::NONE,
             // 命令式叶节点默认保留组件自身选择能力。
             user_select: crate::ui::UserSelect::Auto,
             // 命令式叶节点默认不覆盖父节点光标。
@@ -156,6 +162,14 @@ impl WidgetNode {
         // 保留模式与四边值供组件树统一求解。
         self.position = position;
         // 返回可继续组装的节点。
+        self
+    }
+    // 设置待挂载节点声明的 min/max 尺寸约束。
+    pub(crate) fn with_size_constraints(
+        mut self,
+        constraints: crate::ui::theme::style::SizeConstraints,
+    ) -> Self {
+        self.size_constraints = constraints;
         self
     }
     // 设置待挂载节点声明的文字选择策略。

@@ -18,7 +18,7 @@ use crate::ui::accessibility::accessibility_override::AccessibilityOverride;
 use crate::ui::event::system_event_handler::SystemEventHandlerRegistration;
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::render_handler::RenderHandlerRegistration;
-use crate::ui::theme::style::Style;
+use crate::ui::theme::style::{Style, StyleDiff};
 use crate::ui::view::ViewNode;
 use crate::ui::widget_patch::{
     builtin_widget_config_changed, builtin_widget_config_changed_without_snapshot,
@@ -28,12 +28,8 @@ use crate::ui::widget_patch::{
 use crate::ui::widget_runtime::focus_handle::FocusHandle;
 use crate::ui::widget_runtime::traits::Widget;
 use crate::ui::widget_runtime::widget::{WidgetCore, WidgetNode};
-use crate::ui::widget_snapshot::SnapshotFields;
+use crate::ui::widget_snapshot::WidgetSnapshotFields;
 // 引入动态子树组件及 Button 的无快照协调窄端口。
-use crate::ui::widgets::{Button, Calendar, Carousel, Image, Transfer};
-// 导航 capability 启用时才识别 Anchor 的专属动态容器协调边界。
-#[cfg(feature = "navigation")]
-use crate::ui::widgets::navigation::Anchor;
 use crate::ui::{WidgetId, WidgetTree};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -42,7 +38,7 @@ use std::hash::{Hash, Hasher};
 // 编译捕获守卫与回执转移的私有实现模块。
 mod capture_guards;
 // 仅向 UI 内部 renderer 边界重导出不可伪造的动态捕获能力。
-pub(crate) use capture_guards::DynamicViewCaptureContext;
+pub use capture_guards::DynamicViewCaptureContext;
 // 拆分交错入场计算，保持适配器主体在文件规模约束内。
 #[path = "stagger.rs"]
 // 编译交错入场配置的私有实现模块。
@@ -76,7 +72,7 @@ pub(crate) fn view_children(widget: &dyn Widget) -> Vec<ViewNode> {
         .unwrap_or_default()
 }
 /// View tree adapter.
-pub(crate) struct ViewAdapter;
+pub struct ViewAdapter;
 /// 组件原位 patch 对后续流水线的精细失效影响。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct WidgetPatchImpact {
@@ -171,11 +167,13 @@ pub(crate) fn set_reconcile_key_fingerprint_mask_for_test(mask: u64) -> u64 {
 impl ViewAdapter {
     /// Expands a ViewNode tree into a WidgetNode tree using explicit stack
     /// traversal to avoid stack overflow on deep trees in debug builds.
-    pub(crate) fn expand(root: ViewNode) -> WidgetNode {
+    pub fn expand(root: ViewNode) -> WidgetNode {
         // Decompose a ViewNode to keep traversal state on the heap.
         struct Frame {
             widget: Box<dyn Widget>,
             style: Style,
+            // 保存本节点显式声明过的样式字段，交付到控件内核保留存在性。
+            style_decl: StyleDiff,
             // 保存非根声明节点交接给运行时树的 State 绑定。
             captured_state_binds:
                 Vec<std::sync::Arc<dyn crate::ui::reactive::state::StatePaintBind>>,
@@ -229,6 +227,7 @@ impl ViewAdapter {
                 animated_sources,
                 provider_context,
                 style,
+                style_decl,
                 visual_transform,
                 position,
                 user_select,
@@ -253,6 +252,9 @@ impl ViewAdapter {
                 widget_state_receipts: _,
                 // 捕获根的状态存储已经在建树入口接管，子树展开不再传播。
                 widget_state_store: _,
+                // @media 断点已在建树或协调入口整体取走，展开不再传播。
+                captured_media_breakpoints: _,
+                captured_viewport_width: _,
             } = node;
             let anchor = std::time::Instant::now();
             for (rank, child) in children.iter_mut().enumerate() {
@@ -263,6 +265,7 @@ impl ViewAdapter {
             Frame {
                 widget,
                 style,
+                style_decl,
                 // 保留本声明节点的结构性 State 输出。
                 captured_state_binds,
                 // 保留本声明节点的作用域重建工厂。
@@ -299,9 +302,12 @@ impl ViewAdapter {
             }
         }
         fn build_widget(frame: Frame) -> WidgetNode {
+            // 声明节点的尺寸约束在样式移交内核前先行快照，父布局按统一路径消费。
+            let size_constraints = frame.style.size_constraints();
             let widget = ViewAdapter::apply_style(
                 frame.widget,
                 &frame.style,
+                &frame.style_decl,
                 frame.flex_grow_override,
                 frame.flex_shrink_override,
             );
@@ -338,6 +344,8 @@ impl ViewAdapter {
             }
             // 所有定位值交给实际树统一求解正常流、包含块和视口语义。
             wnode = wnode.with_position(frame.position);
+            // min/max 约束交给父布局按父内容盒解析百分比后消费。
+            wnode = wnode.with_size_constraints(size_constraints);
             // 所有值都保留给实际树执行父子 used-value 解析。
             wnode = wnode.with_user_select(frame.user_select);
             // 显式光标覆盖需要随声明节点进入运行时树。
@@ -401,21 +409,18 @@ impl ViewAdapter {
 
     #[inline]
     fn reconcile_existing(tree: &mut WidgetTree, id: WidgetId, node: ViewNode) {
-        // 调度包装器只读取一次具体类型，把 Button 与非 Button 隔离到独立实例。
-        let widget_type_id = node.widget.as_any().type_id();
-        if widget_type_id == std::any::TypeId::of::<Button>() {
-            Self::reconcile_existing_mode::<true>(tree, id, node, widget_type_id);
+        if node.widget.reconciles_without_snapshot() {
+            Self::reconcile_existing_mode::<true>(tree, id, node);
         } else {
-            Self::reconcile_existing_mode::<false>(tree, id, node, widget_type_id);
+            Self::reconcile_existing_mode::<false>(tree, id, node);
         }
     }
 
     #[inline(never)]
-    fn reconcile_existing_mode<const BUTTON: bool>(
+    fn reconcile_existing_mode<const SNAPSHOT_FREE: bool>(
         tree: &mut WidgetTree,
         id: WidgetId,
         node: ViewNode,
-        widget_type_id: std::any::TypeId,
     ) {
         let ViewNode {
             widget,
@@ -430,6 +435,7 @@ impl ViewAdapter {
             animated_sources,
             provider_context,
             style,
+            style_decl,
             visual_transform,
             position,
             user_select,
@@ -453,6 +459,9 @@ impl ViewAdapter {
             // 回执已经在建树或协调入口转移，原位协调不能提前提交或回滚它们。
             widget_state_receipts: _,
             widget_state_store: _,
+            // @media 断点已在协调入口整体取走。
+            captured_media_breakpoints: _,
+            captured_viewport_width: _,
         } = node;
         let context_changed = if let Some(current) = tree.get_mut(id) {
             let context_changed = current.provider_context() != &provider_context;
@@ -482,7 +491,7 @@ impl ViewAdapter {
         if !style.visible {
             tree.set_node_visibility(id, false);
         }
-        let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
+        let widget = Self::apply_style(widget, &style, &style_decl, flex_grow_override, flex_shrink_override);
         // 外层包装器已读取一次 incoming TypeId；const 模式直接复用该值。
         // reconcile_existing 的 can_reuse_current/can_reuse 前置已确认两侧具体 TypeId 相同；
         // apply_style 只修改组件样式，不替换具体类型，因此纯类型 owner 可直接看 incoming。
@@ -491,78 +500,18 @@ impl ViewAdapter {
         // reconcile them after `sync_from` has patched the live Calendar instead.
         // Calendar 是例外：仍需读取 live runtime 的 custom/materialized 状态，但仅在 incoming
         // 确为 Calendar 时进入该 fallback，避免无谓的树查找。
-        let calendar_cells = widget_type_id == std::any::TypeId::of::<Calendar>()
-            && widget
-                .as_any()
-                .downcast_ref::<Calendar>()
-                .is_some_and(|calendar| {
-                    calendar.owns_custom_cell_children() || tree.is_calendar_cell_widget(id)
-                });
-        // Anchor 容器必须在 live owner 完成原位同步后动态捕获，不能调用新声明组件的工厂。
-        // 类型复用前置使 incoming 足够识别原位复用的 live owner。
-        let anchor_container = {
-            // 导航 capability 启用时识别新声明或 live 节点中的 Anchor owner。
-            #[cfg(feature = "navigation")]
-            {
-                // 新声明与原位复用均需进入 Anchor 专属协调边界。
-                widget_type_id == std::any::TypeId::of::<Anchor>()
-            }
-            // 导航 capability 关闭时没有 Anchor owner，保留普通子树协调语义。
-            #[cfg(not(feature = "navigation"))]
-            {
-                // 固定为假以避免 feature 关闭时引用导航组件类型。
-                false
-            }
-        };
-        // Transfer 条目必须在 live owner 完成原位同步后由所属树动态捕获。
-        // 类型复用前置使 incoming 足够识别原位复用的 live owner。
-        let transfer_items = widget_type_id == std::any::TypeId::of::<Transfer>();
-        // Carousel 自定义箭头必须在 live owner patch 后与 authored slides 一次性协调。
-        let carousel_custom_arrows = widget_type_id == std::any::TypeId::of::<Carousel>();
-        // Image 的占位与错误 View 共同属于同一专属动态子树协调边界。
-        let image_children = widget_type_id == std::any::TypeId::of::<Image>();
-        // 专属 owner 的延迟子树不能再由无树 store 的通用 ViewChildren 入口执行。
-        let widget_view_children = if calendar_cells || anchor_container || carousel_custom_arrows {
-            Vec::new()
+        let deferred_children = widget.dynamic_children_coordinator().is_some_and(|coordinator| {
+            tree.get(id).is_some_and(|current| coordinator.defer_view_children(current.widget(), widget.as_ref()))
+        });
+        let widget_view_children = if deferred_children { Vec::new() } else { view_children(widget.as_ref()) };
+        let (next_fields, next_disabled) = if let Some(disabled) = widget.interaction_disabled().filter(|_| SNAPSHOT_FREE) {
+            let disabled = accessibility_override.as_ref().and_then(|state| state.disabled_override()).unwrap_or(disabled);
+            (None, disabled)
         } else {
-            view_children(widget.as_ref())
-        };
-        // Button 通过窄端口直接读取作者禁用语义，不再构造包含字符串的快照。
-        let (next_fields, next_disabled) = if let Some(button) = widget
-            .as_any()
-            .downcast_ref::<Button>()
-            .filter(|_| BUTTON)
-        {
-            let button_disabled = button.reconcile_disabled();
-            let next_disabled = accessibility_override
-                .as_ref()
-                .and_then(|override_state| override_state.disabled_override())
-                .unwrap_or(button_disabled);
-            (None, next_disabled)
-        } else {
-            // 类型前置与实际组件不一致（理论不可达）或非 Button：记录一次
-            // 可观测错误并回退通用快照路径，协调继续而不中断帧。
-            if BUTTON {
-                tracing::error!(
-                    "Button reconciliation received a non-Button widget; \
-                     falling back to snapshot reconciliation"
-                );
-            }
-            // 非 Button 恢复原有快照观察时机，enabled 路径可在 patch 前复用字段。
-            let next_fields = widget.snapshot_fields();
-            let next_disabled = accessibility_override
-                .as_ref()
-                .and_then(|override_state| override_state.disabled_override())
-                // 自定义组件若公开 Button 快照，保留原有的无名称副本门禁。
-                .or_else(|| match &next_fields {
-                    SnapshotFields::Button {
-                        disabled, loading, ..
-                    } => Some(*disabled || *loading),
-                    _ => None,
-                })
-                // 其余非 Button 组件沿用完整无障碍快照的既有语义。
-                .unwrap_or_else(|| next_fields.accessibility().state.disabled);
-            (Some(next_fields), next_disabled)
+            let fields = widget.snapshot_fields();
+            let disabled = accessibility_override.as_ref().and_then(|state| state.disabled_override())
+                .unwrap_or_else(|| fields.accessibility().state.disabled);
+            (Some(fields), disabled)
         };
         if next_disabled {
             // PointerLeave / DragEnd 必须在旧组件仍启用时交付，随后再 patch disabled。
@@ -580,9 +529,9 @@ impl ViewAdapter {
             // 随后的 patch 才写入 disabled，避免 disabled 早退吞掉清理事件。
             tree.set_focus(None);
         }
-        let widget_impact = if BUTTON {
+        let widget_impact = if SNAPSHOT_FREE {
             // Button 已走无快照专用 patch，避免非 Button 共用热路的增量分支。
-            Self::patch_button_without_snapshot(tree, id, widget)
+            Self::patch_without_snapshot(tree, id, widget)
         } else {
             // 非 Button disabled 路径必须丢弃预计算字段，让 patch 在清理后重新观察新版组件。
             let next_fields_for_patch = if next_disabled {
@@ -594,6 +543,8 @@ impl ViewAdapter {
         };
         // 定位变化需要重排父槽位并重建绘制与命中投影。
         let position_changed = tree.set_node_position(id, position);
+        // 尺寸约束变化改变父布局分配，必须触发 Layout 而非只改绘制表象。
+        let constraints_changed = tree.set_node_size_constraints(id, style.size_constraints());
         // patch 可能替换具体组件，因此在其后重算子树并同步最终选择策略。
         tree.set_node_user_select(id, user_select);
         if style.visible {
@@ -606,8 +557,10 @@ impl ViewAdapter {
         }
 
         let mut paint_changed = widget_impact.paint_changed || context_changed || position_changed;
-        let mut layout_changed =
-            widget_impact.layout_changed || context_changed || position_changed;
+        let mut layout_changed = widget_impact.layout_changed
+            || context_changed
+            || position_changed
+            || constraints_changed;
         if tree.set_visual_transform(id, visual_transform) {
             paint_changed = true;
         }
@@ -639,117 +592,19 @@ impl ViewAdapter {
         let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
         tree.replace_system_event_handlers(id, system_event_handlers);
         tree.replace_render_handlers(id, render_handlers);
-        // 表格 capability 启用时才协调泛型单元格或扩展行动态子树。
-        #[cfg(feature = "table")]
-        let table_children_changed = if tree.has_table_cell_renderer(id) {
-            Some(tree.refresh_table_cell_widget(id))
-        } else if tree.has_table_expand_renderer(id) {
-            // 交给动态刷新入口，确保扩展行 receipt 进入独立事务协调。
-            Some(tree.refresh_table_expand_widget(id))
-        } else {
-            None
+        let input = crate::ui::DynamicChildInput { authored: children, built: widget_view_children, deferred: deferred_children };
+        let coordinated = if let Some(coordinator) = tree.dynamic_children_coordinator(id) {
+            coordinator.reconcile(tree, id, input)
+        } else { Err(input) };
+        let mut children_changed = match coordinated {
+            Ok(changed) => changed,
+            Err(input) => {
+                let mut children = input.authored;
+                children.extend(input.built);
+                Self::reconcile_children(tree, id, children, stagger_enter)
+            }
         };
-        // 表格 capability 关闭时不保留专属动态子树协调结果。
-        #[cfg(not(feature = "table"))]
-        let table_children_changed = None::<bool>;
-        let select_options = tree.has_select_option_renderer(id);
-        // VirtualScroll 的物化行由专用 keyed 动态协调器拥有。
-        let virtual_scroll_items = tree.has_virtual_scroll_renderer(id);
-        let collapse_content = tree.is_collapse_content_widget(id);
-        // 在 live Image 完成 patch 后捕获错误 View，避免用新声明的默认加载状态覆盖运行时失败。
-        let image_error_view = if image_children {
-            // 只为当前活跃 Image owner 请求完整的动态捕获输出。
-            tree.image_error_view_for_reconcile(id)
-        } else {
-            // 非 Image 保持既有普通子节点协调语义。
-            None
-        };
-        if select_options {
-            tree.invalidate_select_option_widget(id);
-        }
-        let mut children_changed = if let Some(changed) = table_children_changed {
-            changed
-        } else if select_options {
-            tree.refresh_select_option_widget(id)
-        } else if collapse_content {
-            tree.refresh_collapse_content_widget(id)
-        } else if calendar_cells {
-            tree.refresh_calendar_cell_widget(id)
-        } else if anchor_container {
-            // 导航 capability 启用时由 live Anchor 统一协调 authored 与动态容器。
-            #[cfg(feature = "navigation")]
-            {
-                // live Anchor 已完成 patch，此处才捕获最新工厂并合并 authored children。
-                tree.reconcile_anchor_container_widget(id, children)
-            }
-            // 导航 capability 关闭时该分支不可达，保留穷尽表达式类型。
-            #[cfg(not(feature = "navigation"))]
-            {
-                // 不消费 children，避免 feature 边界外产生动态协调。
-                false
-            }
-        } else if transfer_items {
-            // live Transfer 已完成 patch，此处以 pane 与业务 key 协调全部自定义条目。
-            tree.refresh_transfer_item_widget(id)
-        } else if carousel_custom_arrows {
-            // live Carousel 已完成 patch，此处合并 authored slides 与固定自定义箭头。
-            tree.reconcile_carousel_custom_arrows_widget(id, children)
-        } else if image_children {
-            // 先保留本轮 authored 与 fresh placeholder，再追加同一失败实例的完整动态错误 View。
-            let mut children = children;
-            // placeholder 仍由声明 Image 的一次性 build_view_children 语义提供。
-            children.extend(widget_view_children);
-            // 运行时错误 View 只在 Image 失败且 handler 启用时参与完整子树协调。
-            let has_error_view = image_error_view.is_some();
-            // 保持当前错误实例的 State、Effect、动画与 receipt 作为同一嵌套事务交接。
-            children.extend(image_error_view);
-            // 让 keyed reconcile 复用错误子树而不是父级声明更新时将其删除。
-            let changed = Self::reconcile_dynamic_children(tree, id, children);
-            // 成功协调后才让 live Image 接纳本轮错误子树物化真相。
-            if let Some(image) = tree
-                // 节点仍可能因错误工厂 panic 前的外部重入而不可寻址。
-                .get(id)
-                // 只允许当前运行时 Image 接收物化事实。
-                .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
-            {
-                // 有错误声明时标记已物化，避免 layout 重复执行用户工厂。
-                if has_error_view {
-                    // keyed 协调已经复用或建立当前错误子树。
-                    image.mark_error_view_materialized();
-                }
-            }
-            // 只有固定 key 错误子树已实际缺席时才清理物化标记，pending leave 必须保留。
-            let error_child_still_exists = tree.get(id).is_some_and(|node| {
-                // 遍历 Image 的实际直接子节点，包括仍在 leave 的墓碑节点。
-                node.children().iter().copied().any(|child_id| {
-                    // 以运行时 key 判断错误子树实际存在性。
-                    tree.get(child_id).and_then(|child| child.key()) == Some(Image::ERROR_CHILD_KEY)
-                })
-            });
-            // 无错误声明且固定 key 子树已完成真实移除时才允许下一次重新捕获。
-            if !has_error_view && !error_child_still_exists {
-                // 只更新仍属于当前 owner 的 live Image 私有派生状态。
-                if let Some(image) = tree
-                    // 读取协调后仍存活的父组件。
-                    .get(id)
-                    // 确认类型未因生命周期回调重入发生变化。
-                    .and_then(|node| node.widget().as_any().downcast_ref::<Image>())
-                {
-                    // 与 on_children_changed 的真实缺席清理语义保持一致。
-                    image.clear_error_view_materialized();
-                }
-            }
-            // 向父级报告本轮专属动态协调是否改写结构。
-            changed
-        } else if virtual_scroll_items {
-            // 保留旧物化窗口，随后用新版 renderer 按稳定 key 原位协调。
-            false
-        } else {
-            let mut children = children;
-            children.extend(widget_view_children);
-            Self::reconcile_children(tree, id, children, stagger_enter)
-        };
-        children_changed |= tree.refresh_virtual_scroll_widget(id, None);
+        children_changed |= tree.refresh_dynamic_children(id, crate::ui::DynamicRefresh::AfterReconcile, None);
         if children_changed {
             paint_changed = true;
             layout_changed = true;
@@ -862,7 +717,7 @@ impl ViewAdapter {
         groups
     }
 
-    fn patch_button_without_snapshot(
+    fn patch_without_snapshot(
         tree: &mut WidgetTree,
         id: WidgetId,
         widget: Box<dyn Widget>,
@@ -872,21 +727,10 @@ impl ViewAdapter {
             return WidgetPatchImpact::default();
         };
 
-        // 已由 reconcile_existing 的类型前置确认 Button，直接比较窄配置与运行态。
         let runtime_changed = builtin_widget_runtime_changed(current.widget(), widget.as_ref());
-        // downcast 失配只可能来自类型复用前置破坏；保守视为配置已变化强制
-        // 失效，实际同步交由下方 patch 的替换路径完成，而不是 panic。
-        let authored_changed =
-            builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
-                .unwrap_or_else(|| {
-                    tracing::error!(
-                        "Button patch boundary received a non-Button current widget"
-                    );
-                    true
-                });
-        // Button 作者配置变化始终保守归入 Layout，与通用 patch 语义一致。
+        let authored_changed = builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref()).unwrap_or(true);
         let config_changed = authored_changed || runtime_changed;
-        let layout_changed = config_changed;
+        let layout_changed = config_changed && builtin_widget_layout_changed_without_snapshot(current.widget(), widget.as_ref()).unwrap_or(true);
 
         // 只有实际完成原位 patch 或替换后才报告失效影响。
         match patch_builtin_widget(current.widget_mut(), widget) {
@@ -912,7 +756,7 @@ impl ViewAdapter {
         tree: &mut WidgetTree,
         id: WidgetId,
         widget: Box<dyn Widget>,
-        next_fields: Option<&SnapshotFields>,
+        next_fields: Option<&WidgetSnapshotFields>,
     ) -> WidgetPatchImpact {
         let Some(current) = tree.get_mut(id) else {
             // 节点已不存在时没有可上报的 patch 影响。
@@ -937,7 +781,7 @@ impl ViewAdapter {
             builtin_widget_config_changed_without_snapshot(current.widget(), widget.as_ref())
                 .or_else(|| builtin_widget_config_changed(&current_fields, next_fields))
                 .unwrap_or_else(|| current_fields != *next_fields)
-                || *next_fields == SnapshotFields::Unknown
+                || next_fields.is_unknown()
                 || runtime_changed;
         // 已审计类型按字段分类，其余类型由显式保守分类请求布局。
         let layout_changed = config_changed

@@ -14,14 +14,14 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 // 引入绘制失效端点类型。
 use crate::core::{Rect, WidgetId};
 // 引入绘制失效队列句柄类型。
-use crate::draw::renderer::InvalidationQueueHandle;
+use super::InvalidationHandle;
 
 // 引入通用依赖订阅与租约私有契约。
 use super::effect::{self, DependencySource, DependencySubscriber, EffectDependency, EffectLease};
 // 引入父模块拥有的依赖追踪和绘制辅助函数。
 use super::{
-    NEXT_STATE_SLOT, StateSlotId, bind_persistent_paint_site, collect_deps,
-    fire_paint_bindings, state_bind_capture_active, state_capture_active, track_dep,
+    NEXT_STATE_SLOT, StateSlotId, bind_persistent_paint_site, collect_deps, fire_paint_bindings,
+    state_bind_capture_active, state_capture_active, track_dep,
 };
 
 // 保存当前线程正在执行用户计算函数的 Computed 槽路径。
@@ -239,7 +239,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     pub fn bind_paint_invalidation(
         &self,
         widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
+        queue: InvalidationHandle,
         rect: Option<Rect>,
     ) {
         // 公开直接绑定保留既有持续站点语义。
@@ -253,7 +253,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 接收实际组件的代际身份。
         widget_id: WidgetId,
         // 接收所属窗口失效队列。
-        queue: InvalidationQueueHandle,
+        queue: InvalidationHandle,
         // 接收当前精确绘制范围。
         rect: Option<Rect>,
     ) {
@@ -268,7 +268,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 接收正在离开的组件身份。
         widget_id: WidgetId,
         // 接收用于区分窗口端点的失效队列。
-        queue: &InvalidationQueueHandle,
+        queue: &InvalidationHandle,
     ) {
         // 最后一份租约离开时移除站点和窗口队列强引用。
         super::release_paint_site(&self.inner.paint_sites, widget_id, queue);
@@ -278,7 +278,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     pub(super) fn bind_layout_site_invalidation(
         &self,
         widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
+        queue: InvalidationHandle,
     ) {
         super::retain_layout_site(&self.inner.paint_sites, widget_id, queue);
     }
@@ -287,7 +287,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     pub(super) fn unbind_layout_site_invalidation(
         &self,
         widget_id: WidgetId,
-        queue: &InvalidationQueueHandle,
+        queue: &InvalidationHandle,
     ) {
         super::release_layout_site(&self.inner.paint_sites, widget_id, queue);
     }
@@ -442,36 +442,6 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         // 首轮必须强制重算。
         let _ = self.value_with_generation(true);
     }
-
-    // 暴露私有下游计数供生命周期回归验证。
-    #[cfg(test)]
-    // 不形成公开 API。
-    pub(crate) fn effect_subscriber_count(&self) -> usize {
-        // 委托通用弱订阅表统计。
-        effect::subscriber_count(&self.inner.subscribers)
-    }
-
-    // 暴露私有绘制端点计数供节点生命周期回归验证。
-    #[cfg(test)]
-    // 不形成公开 Computed API。
-    pub(crate) fn paint_site_count(&self) -> usize {
-        // 读取派生源当前仍保留的绘制端点数量。
-        self.inner
-            .paint_sites
-            .lock()
-            .map(|sites| sites.len())
-            .unwrap_or_default()
-    }
-
-    // 读取同锁缓存条目供私有并发回归验证。
-    #[cfg(test)]
-    // 不形成公开 API。
-    pub(crate) fn cache_snapshot(&self) -> (T, u64) {
-        // 构造后缓存必定存在，若 panic 则暴露违反的内部不变量。
-        let entry = self.cache_entry().expect("Computed 缓存应在构造后存在");
-        // 返回同一锁快照中的值和 revision。
-        (entry.value, entry.generation)
-    }
 }
 
 impl<T> Clone for Computed<T> {
@@ -498,3 +468,8 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
             .finish()
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/reactive/state/computed_tests.rs"]
+mod computed_tests;

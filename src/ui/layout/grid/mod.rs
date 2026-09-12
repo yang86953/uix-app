@@ -10,7 +10,7 @@ mod justify;
 use placement::{CellAssignment, bounded_column_count, place_grid_children_into};
 // 引入拆分后的轨道尺寸求解与有限化辅助。
 use track_sizing::{
-    finite_insets, finite_non_negative, fit_fraction_spanning_auto_tracks,
+    expect_legal_tracks, finite_insets, finite_non_negative, fit_fraction_spanning_auto_tracks,
     intrinsic_auto_track_sizes_into, resolve_tracks_into,
 };
 // 引入拆分后的列轨内容对齐入口。
@@ -18,7 +18,7 @@ use justify::justify_grid_content;
 
 /// Grid 求解器在布局树生命周期内复用的全部动态账本。
 #[derive(Default)]
-pub(crate) struct GridComputeScratch {
+pub struct GridComputeScratch {
     occupied: Vec<bool>,
     assignments: Vec<CellAssignment>,
     prefix: Vec<usize>,
@@ -31,18 +31,7 @@ pub(crate) struct GridComputeScratch {
     row_sizes: Vec<f32>,
     col_positions: Vec<(f32, f32)>,
     row_positions: Vec<(f32, f32)>,
-    pub(crate) child_rects: Vec<Rect>,
-}
-
-/// 测试兼容入口把临时工作区的结果所有权移交给调用方。
-#[cfg(test)]
-pub(crate) fn compute_grid_layout(input: &GridInput<'_>) -> GridOutput {
-    let mut scratch = GridComputeScratch::default();
-    let total_size = compute_grid_layout_into(input, &mut scratch);
-    GridOutput {
-        child_rects: std::mem::take(&mut scratch.child_rects),
-        total_size,
-    }
+    pub child_rects: Vec<Rect>,
 }
 
 /// 在调用方工作区内求解 Grid；几何语义与独立入口保持一致。
@@ -81,6 +70,9 @@ pub(crate) fn compute_grid_layout_into(
 
     // 后续所有列尺寸与索引都只能使用收敛后的列窗口。
     let columns = &input.columns[..n_cols];
+    // 有界轨道的非法分量在消费边界与构造器同样被拒绝，不静默按 0。
+    expect_legal_tracks(columns);
+    expect_legal_tracks(input.rows);
     // ── Phase 1: resolve bounded explicit and automatic placements ──
     // 统一收敛 cell、span、行数、占用矩阵与自动搜索。
     let n_rows = place_grid_children_into(
@@ -249,6 +241,18 @@ pub(crate) fn compute_grid_layout_into(
             finite_non_negative(child.min_size.w),
             finite_non_negative(child.min_size.h),
         );
+        // 上限低于下限时下限优先；无界哨兵保持不钳制。
+        let bound = |maximum: f32, minimum: f32| {
+            if maximum.is_finite() && maximum < f32::MAX {
+                maximum.max(0.0).max(minimum)
+            } else {
+                f32::MAX
+            }
+        };
+        let maximum = Size::new(
+            bound(child.max_size.w, minimum.w),
+            bound(child.max_size.h, minimum.h),
+        );
         let pref = Size::new(
             finite_non_negative(child.measured_size.w).max(minimum.w),
             finite_non_negative(child.measured_size.h).max(minimum.h),
@@ -257,18 +261,21 @@ pub(crate) fn compute_grid_layout_into(
         let available_w = (cell_w - margin.horizontal()).max(0.0);
         let available_h = (cell_h - margin.vertical()).max(0.0);
 
+        // Stretch 触及上限后停在上限并保持起点对齐，与 Flex 交叉轴规则一致。
         let child_w = (match h_align {
             JustifyContent::Start | JustifyContent::Center | JustifyContent::End => {
                 pref.w.min(available_w)
             }
             _ => available_w,
         })
-        .max(minimum.w);
+        .max(minimum.w)
+        .min(maximum.w);
         let child_h = (match v_align {
             AlignItems::Start | AlignItems::Center | AlignItems::End => pref.h.min(available_h),
             AlignItems::Stretch => available_h,
         })
-        .max(minimum.h);
+        .max(minimum.h)
+        .min(maximum.h);
         let child_x = match h_align {
             JustifyContent::Start => cell_x + margin.left,
             JustifyContent::Center => cell_x + margin.left + (available_w - child_w) * 0.5,
@@ -289,3 +296,8 @@ pub(crate) fn compute_grid_layout_into(
 }
 
 // 计算整组 Grid 列轨的水平内容偏移、附加间距与占用边界。
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/layout/grid/mod_tests.rs"]
+mod mod_tests;

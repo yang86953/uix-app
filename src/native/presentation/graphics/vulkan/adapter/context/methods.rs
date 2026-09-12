@@ -134,9 +134,9 @@ impl VulkanContext {
             frame_fence,
             acquired_frame: None,
             submitted_frame: None,
-            #[cfg(feature = "vulkan-parity-test")]
+            #[cfg(uix_gpu_parity_vulkan)]
             surface_fault_for_parity: None,
-            #[cfg(feature = "vulkan-parity-test")]
+            #[cfg(uix_gpu_parity_vulkan)]
             replace_present_sync_for_parity: false,
             surface_lifecycle:
                 crate::platform::presentation::rhi::RhiSurfaceLifecycle::uninitialized(
@@ -187,33 +187,6 @@ impl VulkanContext {
             .is_some_and(|device| device.swapchain_maintenance1_enabled())
     }
 
-    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
-    pub(crate) fn shared_device_identity(&self) -> usize {
-        self.device_lease
-            .as_ref()
-            .map_or(0, |device| Rc::as_ptr(device) as usize)
-    }
-
-    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
-    pub(crate) fn device_fault_reporting_enabled_for_test(&self) -> bool {
-        self.device_lease
-            .as_ref()
-            .is_some_and(|device| device.fault_reporting_enabled())
-    }
-
-    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
-    pub(crate) fn swapchain_maintenance1_enabled_for_test(&self) -> bool {
-        self.device_lease
-            .as_ref()
-            .is_some_and(|device| device.swapchain_maintenance1_enabled())
-    }
-
-    #[cfg(any(test, feature = "vulkan-parity-test", all(windows, feature = "vulkan")))]
-    pub(crate) fn mark_shared_device_lost_for_test(&self) {
-        if let Some(device) = self.device_lease.as_ref() {
-            device.mark_lost();
-        }
-    }
 
     pub(super) fn resize_active(&mut self, width: i32, height: i32) -> Result<()> {
         let drawable = drawable_size(self.native_surface, width, height);
@@ -432,7 +405,7 @@ impl VulkanContext {
             && self.present_fences.len() == new_images.len();
         // parity 的 present OUT_OF_DATE 在 queue present 前返回；旧代 signaled semaphore
         // 没有 presentation wait 消费，因此只能在 frame fence 完成后随旧代销毁。
-        #[cfg(feature = "vulkan-parity-test")]
+        #[cfg(uix_gpu_parity_vulkan)]
         let reuse_present_sync =
             reuse_present_sync && !std::mem::take(&mut self.replace_present_sync_for_parity);
         let new_render_finished = if reuse_present_sync {
@@ -745,3 +718,8 @@ impl VulkanContext {
         Ok(())
     }
 }
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/methods_parity_fns.rs");

@@ -223,6 +223,26 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().height_animated(height)
     }
 
+    /// 设置最小宽度；接受 px 数值或 `StyleLength`。
+    fn min_width(self, length: impl Into<crate::ui::theme::style::StyleLength>) -> ViewNode {
+        self.into().min_width(length)
+    }
+
+    /// 设置最大宽度；接受 px 数值或 `StyleLength`。
+    fn max_width(self, length: impl Into<crate::ui::theme::style::StyleLength>) -> ViewNode {
+        self.into().max_width(length)
+    }
+
+    /// 设置最小高度；接受 px 数值或 `StyleLength`。
+    fn min_height(self, length: impl Into<crate::ui::theme::style::StyleLength>) -> ViewNode {
+        self.into().min_height(length)
+    }
+
+    /// 设置最大高度；接受 px 数值或 `StyleLength`。
+    fn max_height(self, length: impl Into<crate::ui::theme::style::StyleLength>) -> ViewNode {
+        self.into().max_height(length)
+    }
+
     /// 设置绘制与命中偏移。
     fn offset(self, offset: Point) -> ViewNode {
         self.into().offset(offset)
@@ -323,9 +343,22 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         self.into().map_style(|style| style.box_shadow = shadow)
     }
 
-    /// 设置圆角半径。
+    /// 设置单值圆角半径；显式覆盖任何既有四角声明。
     fn radius(self, r: f32) -> ViewNode {
         self.into().radius(r)
+    }
+
+    /// 设置四角圆角半径；覆盖任何既有单值或四角声明。
+    fn radius_corners(self, corners: crate::ui::theme::style::CornerRadii) -> ViewNode {
+        self.into().radius_corners(corners)
+    }
+
+    /// 设置背景图尺寸策略（cover/contain/auto/显式尺寸）。
+    fn background_size(
+        self,
+        size: crate::ui::theme::style::BackgroundSize,
+    ) -> ViewNode {
+        self.into().background_size(size)
     }
 
     /// 绑定动画圆角半径。

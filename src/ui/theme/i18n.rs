@@ -2,10 +2,6 @@
 //!
 //! 文案集中在进程级资源表（key → 文案），组件按 key 取用，不各自维护字符串：
 //!
-//! ```ignore
-//! register_translations(&[("common.save", "保存"), ("common.cancel", "取消")]);
-//! embed(label(t!("common.save")));
-//! ```
 //!
 //! - `t!` 返回 `String`（显示用途），不改变业务值。
 //! - 未命中 key 时返回 key 原文（容错：不 panic、不静默吞错）。

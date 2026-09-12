@@ -57,6 +57,8 @@ impl WidgetTree {
             return;
         }
         self.window_focused = false;
+        // 窗口失焦即键盘焦点不可见，同步本树响应式事实。
+        self.widget_state_store.sync_keyboard_focus_visible_fact(false);
         // 无聚焦组件时无需下发失焦事件。
         let Some(focused) = self.managers().focus.focused_widget() else {
             return;
@@ -78,6 +80,9 @@ impl WidgetTree {
             return;
         }
         self.window_focused = true;
+        // 恢复窗口聚焦后按键盘可见标志同步本树响应式事实。
+        self.widget_state_store
+            .sync_keyboard_focus_visible_fact(self.keyboard_focus_visible());
         // 聚焦组件需仍然可聚焦（如未被禁用），否则跳过激活。
         let Some(focused) = self
             .managers()

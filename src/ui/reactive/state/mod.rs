@@ -8,15 +8,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::{Rect, WidgetId};
-use crate::draw::renderer::{
-    InvalidationQueueHandle, invalidate_layout_handle, invalidate_paint_handle,
-};
+/// A thread-safe destination for state-driven UI invalidation.
+/// Implementations receive notifications after the state value lock is released.
+pub trait InvalidationTarget: Send + Sync {
+    fn invalidate_paint(&self, widget: WidgetId, rect: Option<Rect>);
+    fn invalidate_layout(&self, widget: WidgetId);
+}
+/// Shared destination identity; subscriptions retain it until their leases expire.
+pub type InvalidationHandle = Arc<dyn InvalidationTarget>;
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
 type StateWatcher<T> = Arc<dyn Fn(&T) + Send + Sync>;
 type StateBindCapture = (
     WidgetId,
-    InvalidationQueueHandle,
+    InvalidationHandle,
     Option<Rect>,
     Vec<Arc<dyn StatePaintBind>>,
 );
@@ -70,12 +75,12 @@ impl PaintSiteKey {
     // 由节点身份与队列句柄构造站点键。
     pub(crate) fn new(
         widget_id: WidgetId,
-        queue: &InvalidationQueueHandle,
+        queue: &InvalidationHandle,
         invalidation: StateBindInvalidation,
     ) -> Self {
         Self {
             widget_id,
-            queue: Arc::as_ptr(queue) as usize,
+            queue: Arc::as_ptr(queue) as *const () as usize,
             invalidation,
         }
     }
@@ -87,7 +92,7 @@ pub(crate) type PaintSiteMap = std::collections::BTreeMap<PaintSiteKey, PaintBin
 #[derive(Clone)]
 pub(crate) struct PaintBindSite {
     widget_id: WidgetId,
-    queue: InvalidationQueueHandle,
+    queue: InvalidationHandle,
     rect: Option<Rect>,
     // 区分只重绘与需要重新测量的动态依赖站点。
     invalidation: StateBindInvalidation,
@@ -205,11 +210,7 @@ fn state_capture_active() -> bool {
 }
 
 // 开始探测组件测量或绘制时读取的 State / Computed。
-fn begin_state_bind_capture(
-    widget_id: WidgetId,
-    queue: InvalidationQueueHandle,
-    rect: Option<Rect>,
-) {
+fn begin_state_bind_capture(widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>) {
     // 将本层捕获压栈，使嵌套绘制不会覆盖外层上下文。
     STATE_BIND_CAPTURE_STACK.with(|stack| {
         // 新捕获只接收本层后续读取的依赖。
@@ -231,6 +232,7 @@ fn end_state_bind_capture(widget_id: WidgetId, layout: bool) -> Vec<PaintBindLea
     // 身份失配说明捕获作用域没有按后进先出结束。
     if id != widget_id {
         // 保留诊断但仍按实际捕获身份建立租约，避免跨节点投递。
+        #[cfg(feature = "diagnostics")]
         tracing::warn!("State 绑定探测 widget_id 不一致: 期望 {widget_id}, 实际 {id}");
     }
     // 将每个读取源转换为由实际节点拥有的窄绘制租约。
@@ -258,6 +260,7 @@ fn discard_state_bind_capture(widget_id: WidgetId) {
         && id != widget_id
     {
         // 捕获栈失配属于内部生命周期错误，但析构路径不得再次 panic。
+        #[cfg(feature = "diagnostics")]
         tracing::warn!("State 绑定捕获清理 widget_id 不一致: 期望 {widget_id}, 实际 {id}");
     }
 }
@@ -328,7 +331,7 @@ fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Comput
 fn bind_persistent_paint_site(
     sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
-    queue: InvalidationQueueHandle,
+    queue: InvalidationHandle,
     rect: Option<Rect>,
 ) {
     if let Ok(mut guard) = sites.lock() {
@@ -365,7 +368,7 @@ fn retain_paint_site(
     // 接收当前节点的代际身份。
     widget_id: WidgetId,
     // 接收所属窗口失效队列。
-    queue: InvalidationQueueHandle,
+    queue: InvalidationHandle,
     // 接收当前布局解析出的绘制区域。
     rect: Option<Rect>,
 ) {
@@ -376,7 +379,7 @@ fn retain_paint_site(
 fn retain_layout_site(
     sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
-    queue: InvalidationQueueHandle,
+    queue: InvalidationHandle,
 ) {
     retain_state_site(sites, widget_id, queue, None, StateBindInvalidation::Layout);
 }
@@ -385,7 +388,7 @@ fn retain_layout_site(
 fn retain_state_site(
     sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
-    queue: InvalidationQueueHandle,
+    queue: InvalidationHandle,
     rect: Option<Rect>,
     invalidation: StateBindInvalidation,
 ) {
@@ -428,7 +431,7 @@ fn release_paint_site(
     // 接收正在离开的组件身份。
     widget_id: WidgetId,
     // 接收用于区分窗口端点的队列句柄。
-    queue: &InvalidationQueueHandle,
+    queue: &InvalidationHandle,
 ) {
     release_state_site(sites, widget_id, queue, StateBindInvalidation::Paint);
 }
@@ -437,7 +440,7 @@ fn release_paint_site(
 fn release_layout_site(
     sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
-    queue: &InvalidationQueueHandle,
+    queue: &InvalidationHandle,
 ) {
     release_state_site(sites, widget_id, queue, StateBindInvalidation::Layout);
 }
@@ -446,7 +449,7 @@ fn release_layout_site(
 fn release_state_site(
     sites: &Arc<std::sync::Mutex<PaintSiteMap>>,
     widget_id: WidgetId,
-    queue: &InvalidationQueueHandle,
+    queue: &InvalidationHandle,
     invalidation: StateBindInvalidation,
 ) {
     // 只在站点集合可访问时执行计数递减。
@@ -466,19 +469,22 @@ fn release_state_site(
 }
 
 fn fire_paint_bindings(sites: &Arc<std::sync::Mutex<PaintSiteMap>>) {
-    let sites = sites.lock().ok().map(|guard| guard.values().cloned().collect::<Vec<_>>());
+    let sites = sites
+        .lock()
+        .ok()
+        .map(|guard| guard.values().cloned().collect::<Vec<_>>());
     let Some(sites) = sites else {
         return;
     };
     for site in &sites {
         match site.invalidation {
             StateBindInvalidation::Paint => {
-                invalidate_paint_handle(&site.queue, site.widget_id, site.rect);
+                site.queue.invalidate_paint(site.widget_id, site.rect);
             }
             StateBindInvalidation::Layout => {
-                invalidate_layout_handle(&site.queue, site.widget_id);
+                site.queue.invalidate_layout(site.widget_id);
                 // 文本内容即使尺寸不变也必须重绘，Layout 不替代 Paint。
-                invalidate_paint_handle(&site.queue, site.widget_id, None);
+                site.queue.invalidate_paint(site.widget_id, None);
             }
         }
     }
@@ -563,20 +569,15 @@ pub trait StatePaintBind: Send + Sync {
     /// 释放指定树站点持有的一份结构协调订阅。
     fn unbind_reconcile_site(&self, _key: usize) {}
     /// 注册状态变化时向指定组件队列推送的精确绘制失效。
-    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationQueueHandle, rect: Option<Rect>);
+    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>);
     /// 增加一份由实际节点生命周期持有的绘制订阅。
-    fn bind_paint_site(
-        &self,
-        widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    );
+    fn bind_paint_site(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>);
     /// 释放一份实际节点持有的绘制订阅。
-    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle);
+    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationHandle);
     /// 增加一份由实际节点生命周期持有的布局订阅。
-    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle);
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationHandle);
     /// 释放一份实际节点持有的布局订阅。
-    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle);
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationHandle);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
@@ -593,32 +594,27 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
         self.unbind_reconcile_invalidation(key);
     }
 
-    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationQueueHandle, rect: Option<Rect>) {
+    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 
     // 增加 State 的节点绘制订阅计数。
-    fn bind_paint_site(
-        &self,
-        widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    ) {
+    fn bind_paint_site(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>) {
         // 把租约登记到共享状态槽的绘制站点集合。
         retain_paint_site(&self.paint_sites, widget_id, queue, rect);
     }
 
     // 释放 State 的节点绘制订阅计数。
-    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationHandle) {
         // 最后一份租约离开时移除站点和窗口队列强引用。
         release_paint_site(&self.paint_sites, widget_id, queue);
     }
 
-    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle) {
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationHandle) {
         retain_layout_site(&self.paint_sites, widget_id, queue);
     }
 
-    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationHandle) {
         release_layout_site(&self.paint_sites, widget_id, queue);
     }
 }
@@ -626,32 +622,27 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     fn bind_reconcile(&self, _reconcile: ReconcileCallback) {}
 
-    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationQueueHandle, rect: Option<Rect>) {
+    fn bind_paint(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 
     // 增加 Computed 的节点绘制订阅计数。
-    fn bind_paint_site(
-        &self,
-        widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    ) {
+    fn bind_paint_site(&self, widget_id: WidgetId, queue: InvalidationHandle, rect: Option<Rect>) {
         // 委托 Computed 内部对象登记派生槽的绘制站点。
         self.bind_paint_site_invalidation(widget_id, queue, rect);
     }
 
     // 释放 Computed 的节点绘制订阅计数。
-    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+    fn unbind_paint_site(&self, widget_id: WidgetId, queue: &InvalidationHandle) {
         // 委托 Computed 内部对象释放派生槽的绘制站点。
         self.unbind_paint_site_invalidation(widget_id, queue);
     }
 
-    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationQueueHandle) {
+    fn bind_layout_site(&self, widget_id: WidgetId, queue: InvalidationHandle) {
         self.bind_layout_site_invalidation(widget_id, queue);
     }
 
-    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationQueueHandle) {
+    fn unbind_layout_site(&self, widget_id: WidgetId, queue: &InvalidationHandle) {
         self.unbind_layout_site_invalidation(widget_id, queue);
     }
 }
@@ -834,7 +825,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn bind_paint_invalidation(
         &self,
         widget_id: WidgetId,
-        queue: InvalidationQueueHandle,
+        queue: InvalidationHandle,
         rect: Option<Rect>,
     ) {
         bind_persistent_paint_site(&self.paint_sites, widget_id, queue, rect);
@@ -897,7 +888,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         value
     }
 
-    pub(crate) fn get_untracked(&self) -> T {
+    pub fn get_untracked(&self) -> T {
         self.source
             .inner
             .read()
@@ -981,25 +972,6 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         Arc::make_mut(watchers).push(Arc::new(f));
     }
 
-    // 暴露测试专用的活跃 Effect 订阅数量以验证租约生命周期。
-    #[cfg(test)]
-    // 此计数仅用于模块私有测试，不构成公开 State 契约。
-    pub(crate) fn effect_subscriber_count(&self) -> usize {
-        // 委托独立注册表清理死亡弱引用并读取精确数量。
-        effect::subscriber_count(&self.source.subscribers)
-    }
-
-    // 暴露测试专用的活跃绘制站点数量以验证节点租约释放。
-    #[cfg(test)]
-    // 此计数仅用于模块私有回归，不构成公开 State 契约。
-    pub(crate) fn paint_site_count(&self) -> usize {
-        // 读取当前共享状态槽仍保留的绘制端点数量。
-        self.paint_sites
-            .lock()
-            .map(|sites| sites.len())
-            .unwrap_or_default()
-    }
-
     /// 返回每次 [`Self::set`] 或 [`Self::update`] 后递增的状态代数。
     pub fn generation(&self) -> u64 {
         self.source
@@ -1046,3 +1018,8 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
             .finish()
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/ui/reactive/state/mod_tests.rs"]
+mod mod_tests;

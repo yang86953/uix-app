@@ -33,7 +33,7 @@ pub(super) fn wrap_app_root<R>(
     widget_config: &WidgetConfig,
     locale: &Locale,
     window_id: WindowId,
-    feedback: Option<AppFeedbackState>,
+    feedback: Option<AppExtensions>,
     root: R,
 ) -> impl Fn() -> ViewNode + Send + Sync + 'static
 where

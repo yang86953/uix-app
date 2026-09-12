@@ -381,26 +381,6 @@ impl DrawPacket {
         self.range
     }
 
-    // 仅为共享契约测试保留完整 Buffer 角色并替换 pipeline 事实。
-    #[cfg(test)]
-    pub(crate) const fn with_pipeline(self, pipeline: PipelineBinding) -> Self {
-        // 测试变体仍保留全部资源与范围事实。
-        Self { pipeline, ..self }
-    }
-
-    // 仅为共享契约测试保留其它事实并替换条件采样角色。
-    #[cfg(test)]
-    pub(crate) const fn with_sampling(self, sampling: DrawSamplingBinding) -> Self {
-        // 测试变体仍只能产生字段完整、但可由门禁判定组合关系的 packet。
-        Self { sampling, ..self }
-    }
-
-    // 仅为共享契约测试保留 pipeline 与 Buffer 角色并替换范围事实。
-    #[cfg(test)]
-    pub(crate) const fn with_range(self, range: DrawRange) -> Self {
-        // 测试变体仍保留 pipeline 与全部资源事实。
-        Self { range, ..self }
-    }
 
     // 判断 packet 的条件采样资源是否与 pipeline 契约一致。
     pub(crate) fn has_valid_sampling(self) -> bool {
@@ -548,3 +528,7 @@ fn draw_resource_error(message: &'static str) -> Error {
     // 所有资源角色和容量违例统一属于参数错误。
     Error::new(Errc::InvalidArgument, message)
 }
+
+#[cfg(test)]
+#[path = "../../../../tests-src/platform/presentation/rhi/draw_packet_tests.rs"]
+mod draw_packet_tests;

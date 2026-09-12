@@ -235,13 +235,6 @@ impl GpuBackend {
         ))
     }
 
-    // 测试目标保留 soft upload 字节数观测入口，供 GPU 诊断测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn last_soft_upload_bytes(&self) -> usize {
-        self.surface.canvas.last_soft_upload_bytes
-    }
-
     pub(super) fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
         self.offscreen_flush_committed = false;
@@ -353,3 +346,8 @@ impl GpuBackend {
         )
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/draw/backend/gpu/execution/impl_main_tests.rs"]
+mod impl_main_tests;

@@ -97,7 +97,7 @@ impl WidgetConfig {
 /// 应用级组件默认配置。
 pub type Config = WidgetConfig;
 
-pub(crate) const fn control_height(size: ControlSize) -> f32 {
+pub const fn control_height(size: ControlSize) -> f32 {
     match size {
         ControlSize::Small => 24.0,
         ControlSize::Medium => 32.0,

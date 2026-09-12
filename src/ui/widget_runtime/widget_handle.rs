@@ -12,7 +12,7 @@ use crate::ui::widget_runtime::widget::EventResult;
 #[cfg(test)]
 use crate::ui::widget_runtime::widget::WidgetTree;
 use crate::ui::widget_snapshot::{
-    AccessibilitySnapshot, AriaAttribute, SnapshotFields, WidgetConfigSnapshot,
+    AccessibilitySnapshot, AriaAttribute, WidgetSnapshotFields, WidgetConfigSnapshot,
 };
 
 #[derive(Clone)]
@@ -25,16 +25,6 @@ pub struct WidgetHandle {
 }
 
 impl WidgetHandle {
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn new(id: WidgetId, tree: &Rc<RefCell<WidgetTree>>) -> Self {
-        Self {
-            id,
-            tree: Some(Rc::downgrade(tree)),
-            app_state: None,
-        }
-    }
-
     pub(crate) fn from_app_state(id: WidgetId, app_state: SyncWeak<Mutex<AppStateInner>>) -> Self {
         Self {
             id,
@@ -99,11 +89,11 @@ impl WidgetHandle {
     }
 
     /// 返回当前组件类型专属的快照字段。
-    pub fn snapshot_fields(&self) -> Option<SnapshotFields> {
+    pub fn snapshot_fields(&self) -> Option<WidgetSnapshotFields> {
         self.map_snapshot_fields(Clone::clone)
     }
 
-    fn map_snapshot_fields<R>(&self, map: impl Fn(&SnapshotFields) -> R) -> Option<R> {
+    fn map_snapshot_fields<R>(&self, map: impl Fn(&WidgetSnapshotFields) -> R) -> Option<R> {
         self.map_snapshot(|snapshot| map(&snapshot.fields))
     }
 
@@ -125,13 +115,7 @@ impl WidgetHandle {
 
     /// 返回按钮或标签组件的显示文本。
     pub fn text(&self) -> Option<String> {
-        self.map_snapshot_fields(|fields| match fields {
-            SnapshotFields::Button { text, .. } | SnapshotFields::Label { text, .. } => {
-                Some(text.clone())
-            }
-            _ => None,
-        })
-        .flatten()
+        self.map_snapshot_fields(WidgetSnapshotFields::text).flatten()
     }
 
     /// 返回按钮或标签组件的显示文本，等价于 [`Self::text`]。
@@ -141,67 +125,22 @@ impl WidgetHandle {
 
     /// 返回支持占位文本的输入或选择组件当前占位内容。
     pub fn placeholder(&self) -> Option<String> {
-        self.map_snapshot_fields(|fields| match fields {
-            SnapshotFields::Input { placeholder, .. }
-            | SnapshotFields::InputNumber { placeholder, .. }
-            | SnapshotFields::Select { placeholder, .. }
-            | SnapshotFields::AutoComplete { placeholder, .. }
-            | SnapshotFields::Cascader { placeholder, .. }
-            | SnapshotFields::DatePicker { placeholder, .. }
-            | SnapshotFields::DateRangePicker { placeholder, .. }
-            | SnapshotFields::TimePicker { placeholder, .. }
-            | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder.clone()),
-            // 树组件 capability 启用时才读取树选择器占位文本。
-            #[cfg(feature = "tree-widgets")]
-            SnapshotFields::TreeSelect { placeholder, .. } => Some(placeholder.clone()),
-            _ => None,
-        })
-        .flatten()
+        self.map_snapshot_fields(WidgetSnapshotFields::placeholder).flatten()
     }
 
     /// 返回支持禁用状态的组件当前是否禁用。
     pub fn disabled(&self) -> Option<bool> {
-        self.map_snapshot_fields(|fields| match fields {
-            SnapshotFields::Button { disabled, .. }
-            | SnapshotFields::Input { disabled, .. }
-            | SnapshotFields::Checkbox { disabled, .. }
-            | SnapshotFields::Radio { disabled, .. }
-            | SnapshotFields::Switch { disabled, .. }
-            | SnapshotFields::Rate { disabled, .. }
-            | SnapshotFields::InputNumber { disabled, .. }
-            | SnapshotFields::Select { disabled, .. }
-            | SnapshotFields::Segmented { disabled, .. }
-            | SnapshotFields::Typography { disabled, .. } => Some(*disabled),
-            _ => None,
-        })
-        .flatten()
+        self.map_snapshot_fields(WidgetSnapshotFields::disabled).flatten()
     }
 
     /// 返回复选框或开关组件当前是否选中。
     pub fn checked(&self) -> Option<bool> {
-        self.map_snapshot_fields(|fields| match fields {
-            SnapshotFields::Checkbox { checked, .. } | SnapshotFields::Switch { checked, .. } => {
-                Some(*checked)
-            }
-            _ => None,
-        })
-        .flatten()
+        self.map_snapshot_fields(WidgetSnapshotFields::checked).flatten()
     }
 
     /// 返回支持数值快照的组件当前数值。
     pub fn numeric_value(&self) -> Option<f64> {
-        self.map_snapshot_fields(|fields| match fields {
-            SnapshotFields::Slider { value, .. } => Some(*value),
-            // 反馈 capability 启用时才读取同步存在的进度条快照。
-            #[cfg(feature = "feedback")]
-            SnapshotFields::ProgressBar {
-                progress: value, ..
-            } => Some(f64::from(*value)),
-            SnapshotFields::Rate { value, .. } => Some(*value as f64),
-            SnapshotFields::InputNumber { value, .. } => Some(*value),
-            _ => None,
-        })
-        .flatten()
+        self.map_snapshot_fields(WidgetSnapshotFields::numeric_value).flatten()
     }
 
     /// 请求此组件重绘，并在应用运行时中唤醒事件循环。
@@ -263,3 +202,8 @@ impl WidgetHandle {
         EventResult::NotHandled
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../tests-src/ui/widget_runtime/widget_handle_tests.rs"]
+mod widget_handle_tests;

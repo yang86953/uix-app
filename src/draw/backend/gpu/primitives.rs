@@ -107,6 +107,8 @@ pub(crate) struct GpuLinearGradientRect {
     pub(crate) color_a: [f32; 4],
     /// 记录渐变终止颜色。
     pub(crate) color_b: [f32; 4],
+    /// 预计算的圆角掩码 ABI 字段（归一化半径与 quad/单位矩形）；None 关闭掩码。
+    pub(crate) mask: Option<([f32; 4], [f32; 6])>,
     /// 记录水平、垂直或两条对角线方向枚举值。
     pub(crate) dir: u32,
 }
@@ -129,6 +131,8 @@ pub(crate) struct GpuRadialGradient {
     pub(crate) color_inner: [f32; 4],
     /// 记录外圈颜色。
     pub(crate) color_outer: [f32; 4],
+    /// 预计算的圆角掩码 ABI 字段（归一化半径与 quad/单位矩形）；None 关闭掩码。
+    pub(crate) mask: Option<([f32; 4], [f32; 6])>,
 }
 
 // 为扇形提供可复制、可比较的值语义。

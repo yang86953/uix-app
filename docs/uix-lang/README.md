@@ -1,5 +1,7 @@
 # UIX Lang 语言首页
 
+当前代码由 `uix-app`（机制、原生平台、语言与工具）和独立 `uix-widgets`（具体控件、主题与资源）组成。见 [两包迁移](../使用/两包迁移.md)。历史目录说明中的具体控件职责已迁至组件库。
+
 [← 返回文档中心](../README.md)
 
 > **文档角色**：入口——提供定位、事实所有者、阅读路径和当前能力摘要；不替代规范、参考或版本记录。
@@ -109,7 +111,7 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 当前发布基线包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`（泛型含精确整数、`Option<String>` 与 `Vec<String>` / `Vec<number>` 集合）、`reactive` 子树作用域、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、`Canvas` 绘制组件、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。旧 UI 同步 action 只组合局部更新和转发 Rust 回调；应用模块的 AsyncCommand/Port 另按模块规范，不扩张此 UI action。组件专属状态值类型由 schema 登记 capability 门禁。
 
-公开 `uix!` 支持内嵌源码与 `.uix` 文件并生成 `ViewNode`；`uix_app!` 读取 `<App>` 根并返回尚未运行的现有 `App` builder；`uix_items!` 生成模块级 Record 结构体与 Visual 静态项。文件入口支持递归 `@import`、显式 `@export` 和依赖追踪。
+公开 `uix!` 接收经 build.rs 编译的 `.uix` 文件路径并生成 `ViewNode`；`uix_app!` 读取 `<App>` 根并返回尚未运行的现有 `App` builder；`uix_items!` 生成模块级 Record 结构体与 Visual 静态项。文件入口支持递归 `@import`、显式 `@export` 和依赖追踪。
 
 具体标签、属性、事件、样式和限制只在上方参考文档维护。语言面的版本基线与变更日期见[版本策略](变更/版本策略.md)。
 

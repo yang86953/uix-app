@@ -357,31 +357,6 @@ impl WidgetTree {
         (view_transition || widget_animation).then_some(node.frame())
     }
 
-    // 测试目标保留活动过渡 id 观测入口，供动画生命周期测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn active_view_transition_ids(&self) -> Vec<WidgetId> {
-        self.traverse()
-            .iter()
-            .copied()
-            .filter(|&id| {
-                self.get(id)
-                    .is_some_and(BoxedWidget::view_transition_active)
-                    && (self.get(id).is_some_and(BoxedWidget::pending_removal)
-                        || self.is_effectively_visible(id))
-            })
-            .collect()
-    }
-
-    // 测试目标保留过渡注册观测入口，供动画生命周期测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn view_transition_registrations(&self) -> Vec<(WidgetId, Option<Instant>)> {
-        let mut registrations = Vec::new();
-        self.extend_view_transition_registrations(&mut registrations);
-        registrations
-    }
-
     pub(crate) fn extend_view_transition_registrations(
         &self,
         registrations: &mut Vec<(WidgetId, Option<Instant>)>,
@@ -397,17 +372,6 @@ impl WidgetTree {
                 && (node.pending_removal() || self.is_effectively_visible(id)))
             .then_some((id, node.view_transition_deadline()))
         }));
-    }
-
-    // 测试目标保留动画节点更新便捷入口，供时间推进测试按需调用。
-    #[cfg_attr(test, allow(dead_code))]
-    #[cfg(test)]
-    pub(crate) fn update_animation_nodes(
-        &mut self,
-        ids: &[WidgetId],
-        dt: f64,
-    ) -> Vec<(WidgetId, bool)> {
-        self.update_animation_nodes_at(ids, Instant::now(), dt)
     }
 
     pub(crate) fn update_animation_nodes_at(
@@ -586,7 +550,7 @@ impl WidgetTree {
                 // 停止态不得调用应用提供的动态 renderer。
                 break;
             }
-            let dynamic_children_changed = self.refresh_select_option_widget(id);
+            let dynamic_children_changed = self.refresh_dynamic_children(id, crate::ui::DynamicRefresh::Animation, None);
             // 动态刷新可能捕获协调 panic，因此返回后必须复核树状态。
             if !self.accepts_external_work() {
                 // 首个停止态不得继续处理当前或后续动画身份。
@@ -694,3 +658,8 @@ impl WidgetTree {
         }
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../tests-src/ui/widget_runtime/widget/tree_layout/animate_tests.rs"]
+mod animate_tests;

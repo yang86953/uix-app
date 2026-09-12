@@ -160,14 +160,6 @@ pub(crate) struct PresentCompletion {
 }
 
 impl PresentCompletion {
-    #[cfg(any(test, feature = "vulkan-parity-test"))]
-    pub(crate) fn new(image_count: usize) -> Result<Self> {
-        Ok(Self {
-            presented_images: allocate_presented_images(image_count)?,
-            release_after_submission: 0,
-        })
-    }
-
     fn empty() -> Self {
         Self {
             presented_images: Vec::new(),
@@ -221,43 +213,6 @@ impl PresentCompletion {
     }
 }
 
-// 确定性验证连续帧与代际切换的 present 完成所有权，不创建原生对象。
-#[cfg(feature = "vulkan-parity-test")]
-pub(crate) fn run_present_completion_contract_test() {
-    let mut completion = PresentCompletion::new(3)
-        .unwrap_or_else(|error| panic!("present completion initialization failed: {error}"));
-    assert_eq!(
-        completion
-            .release_count_for_acquire(0, 2)
-            .unwrap_or_else(|error| panic!("first image acquire failed: {error}")),
-        0
-    );
-    completion
-        .mark_presented(1)
-        .unwrap_or_else(|error| panic!("present history update failed: {error}"));
-    assert_eq!(
-        completion
-            .release_count_for_acquire(1, 2)
-            .unwrap_or_else(|error| panic!("reacquired image lookup failed: {error}")),
-        2
-    );
-    completion.on_submission_queued(2);
-    completion.on_submission_queued(1);
-    assert_eq!(completion.completed_submission_count(), 2);
-    assert_eq!(completion.completed_submission_count(), 0);
-
-    completion.replace_generation(
-        allocate_presented_images(2)
-            .unwrap_or_else(|error| panic!("replacement generation failed: {error}")),
-    );
-    assert_eq!(
-        completion
-            .release_count_for_acquire(0, 3)
-            .unwrap_or_else(|error| panic!("new generation acquire failed: {error}")),
-        0
-    );
-    assert!(completion.release_count_for_acquire(2, 3).is_err());
-}
 
 struct RetiredSwapchain {
     handle: vk::SwapchainKHR,
@@ -471,3 +426,13 @@ pub(super) fn destroy_semaphores(device: &ash::Device, semaphores: &mut Vec<vk::
         unsafe { device.destroy_semaphore(semaphore, None) };
     }
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/swapchain_tests.rs"]
+mod swapchain_tests;
+
+// GPU 验证专用实现位于 tests-src（模块级 include! 保持原作用域与 cfg），
+// 仅 cargo test（含 RUSTFLAGS parity 入口）构建读取，发布包不携带。
+#[cfg(test)]
+include!("../../../../../../../tests-src/native/presentation/graphics/vulkan/adapter/context/swapchain_parity_fns.rs");

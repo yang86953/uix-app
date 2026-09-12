@@ -46,6 +46,11 @@ layout(set = 0, binding = 0, std140) uniform GradientUniforms {
     vec4 color_a;
     vec4 color_b;
     vec4 params;
+    // S4 圆角掩码：四角半径（tl/tr/br/bl 逻辑像素）、quad 逻辑宽高与
+    // 掩码单位矩形起点、掩码单位矩形宽高；半径全零关闭掩码。
+    vec4 mask_radius;
+    vec4 quad_mask;
+    vec4 mask_size;
 } u;
 layout(location = 0) in vec2 a_pos;
 layout(location = 0) out vec2 v_local;

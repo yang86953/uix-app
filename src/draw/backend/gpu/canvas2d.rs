@@ -120,11 +120,36 @@ impl Canvas2D for NativeGpuCanvas2D {
     }
 
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
-        self.queue_linear_gradient(rect, ca, cb, dir);
+        self.queue_linear_gradient(rect, ca, cb, dir, None);
+    }
+    fn fill_linear_gradient_rounded(
+        &mut self,
+        rect: Rect,
+        ca: Color,
+        cb: Color,
+        dir: GradientDirection,
+        radius: Radius,
+    ) {
+        self.queue_linear_gradient(rect, ca, cb, dir, Some(radius));
     }
 
     fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
-        self.queue_radial_gradient(cx, cy, ir, or, ic, oc);
+        // 无圆角时参考矩形退化为外圆包围盒，保持旧绘制语义。
+        let bounds = Rect::new(cx - or, cy - or, or * 2.0, or * 2.0);
+        self.queue_radial_gradient(cx, cy, ir, or, ic, oc, bounds, None);
+    }
+    fn fill_radial_gradient_rounded(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        ir: f32,
+        or: f32,
+        ic: Color,
+        oc: Color,
+        clip_rect: Rect,
+        radius: Radius,
+    ) {
+        self.queue_radial_gradient(cx, cy, ir, or, ic, oc, clip_rect, Some(radius));
     }
 
     fn draw_box_shadow(
@@ -517,19 +542,6 @@ impl Canvas2D for NativeGpuCanvas2D {
             .map_or(&[], |soft| soft.surface().pixels())
     }
 
-    #[cfg(test)]
-    fn pixels_mut(&mut self) -> &mut [u32] {
-        if self.gpu_only {
-            self.reject_unsupported("direct CPU pixel access in GPU-only mode");
-            return &mut self.rejected_pixels;
-        }
-        // 测试直写像素也必须先建立与当前 blend 一致的 soft 段。
-        self.prepare_soft_segment(self.blend_mode);
-        self.mark_soft();
-        self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
-        self.ensure_soft().pixels_mut()
-    }
-
     fn surface_size(&self) -> crate::core::Size {
         crate::core::Size::new(self.surface_w as f32, self.surface_h as f32)
     }
@@ -568,4 +580,14 @@ impl Canvas2D for NativeGpuCanvas2D {
                 dy: dy as i32,
             }));
     }
+        #[cfg(test)]
+        gpu_canvas2d_pixels_mut_impl!();
 }
+
+// cfg(test) 完整辅助实现位于 tests-src，仅测试构建编译。
+#[cfg(test)]
+#[path = "../../../../tests-src/draw/backend/gpu/canvas2d_tests.rs"]
+mod canvas2d_tests;
+
+#[cfg(test)]
+use crate::draw::painting::canvas::canvas2d_test_macros::gpu_canvas2d_pixels_mut_impl;

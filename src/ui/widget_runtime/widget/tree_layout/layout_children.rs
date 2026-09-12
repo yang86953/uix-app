@@ -78,48 +78,17 @@ impl WidgetTree {
         }
     }
 
-    /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
-    pub(crate) fn refresh_virtual_scroll_children(&mut self, ids: &mut Vec<WidgetId>) {
+    /// Schedule component-owned child factories at a deterministic layout phase.
+    pub(crate) fn refresh_dynamic_phase(&mut self, ids: &mut Vec<WidgetId>, phase: crate::ui::DynamicRefresh) {
         ids.clear();
         ids.extend(self.traverse().iter().copied());
         for id in ids.iter().copied() {
-            let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
-            if viewport_h <= 0.0 {
-                continue;
-            }
-            self.refresh_virtual_scroll_widget(id, Some(viewport_h));
-        }
-    }
-
-    // 表格 capability 启用时才扫描并刷新泛型单元格子树。
-    #[cfg(feature = "table")]
-    pub(crate) fn refresh_table_cell_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_table_cell_widget(id) {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-        }
-    }
-
-    pub(crate) fn refresh_image_error_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_image_error_widget(id) {
-                self.push_layout_invalidation(id);
-                self.propagate_layout_invalidation(id);
-            }
-        }
-    }
-
-    pub(crate) fn refresh_collapse_content_children(&mut self, ids: &mut Vec<WidgetId>) {
-        ids.clear();
-        ids.extend(self.traverse().iter().copied());
-        for id in ids.iter().copied() {
-            if self.refresh_collapse_content_widget(id) {
+            let viewport = if phase == crate::ui::DynamicRefresh::Viewport {
+                let height = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
+                if height <= 0.0 { continue; }
+                Some(height)
+            } else { None };
+            if self.refresh_dynamic_children(id, phase, viewport) && phase != crate::ui::DynamicRefresh::Viewport {
                 self.push_layout_invalidation(id);
                 self.propagate_layout_invalidation(id);
             }

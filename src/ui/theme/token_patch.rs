@@ -392,3 +392,5 @@ impl ThemeTokens for ScopedThemeTokens {
         patched_copy!(self, is_dark)
     }
 }
+
+impl crate::ui::theme::traits::TokenProvider for ScopedThemeTokens {}
