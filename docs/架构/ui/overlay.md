@@ -2,7 +2,7 @@
 
 [← 返回架构索引](../../架构.md)
 
-> **接口**：声明 ui System 的窗口内浮层栈、层叠、焦点陷阱和进退场。与[组件运行时框架](widget_runtime.md)、[event](event.md)和[animation](animation.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：所有内置与自定义浮层共享的栈契约；公开用法见[使用 · 反馈](../../使用/交互与反馈/反馈.md)。
+> **接口**：声明 ui System 的窗口内浮层栈、层叠、焦点陷阱和进退场。与[组件运行时框架](widget_runtime.md)、[event](event.md)和[animation](animation.md)的协作由 ui System 编排，Module 间不直接持有实例。导出：所有内置与自定义浮层共享的栈契约；本页维护框架的浮层栈机制，具体弹窗与提示组件由其实现库维护。
 >
 > **当前实现线索**：栈与 entry 位于 `src/ui/overlay/mod.rs`，组件树在 `src/ui/widget_runtime/widget/tree_layout/layout.rs` 重建登记，焦点陷阱位于 `src/ui/widget_runtime/focus_trap.rs`，具体 placement 由各浮层组件持有。
 

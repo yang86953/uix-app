@@ -56,7 +56,7 @@ workspace.close()?;
 Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`AgentWorkspace` 的 `title`、`theme`、`font_bundle` 设置后台资源。显式 FontBundle 优先；未配置时通过平台字体发现装载正文与 CJK 回退，不创建显示连接或前台窗口。找不到可加载正文时返回 typed 错误，不使用 Lucide 图标字体充当正文。框架不再内置 WenKai；字体与测试 fixture 许可见[字体材料](../../../assets/fonts/README.md)。CPU 与 GPU 可能有栅格化差异，不承诺跨后端截图字节一致。
+`AgentWorkspace` 的 `title`、`theme`、`font_bundle` 设置后台资源。显式 FontBundle 优先；未配置时通过平台字体发现装载正文与 CJK 回退，不创建显示连接或前台窗口。找不到可加载正文时返回 typed 错误，不使用 Lucide 图标字体充当正文。框架不再内置 WenKai；字体与测试 fixture 许可见[第三方材料](../../../THIRD_PARTY_NOTICES.md)。CPU 与 GPU 可能有栅格化差异，不承诺跨后端截图字节一致。
 
 `spawn()` 成功表示首帧已经真实离屏绘制且本机端点就绪；非法尺寸、重复启动、字体错误或端点失败返回 typed `Error`。`workspace.client()` 只连接此租约的端点并检查发现文件身份，不扫描“最新实例”。`AgentBridgeClient::capabilities()` 返回握手能力；`request(JSON object)` 原样交付业务响应信封并校验传输 schema / request_id，非 object 在本地拒绝，不自动重试动作。
 

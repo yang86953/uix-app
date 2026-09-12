@@ -32,7 +32,7 @@
 |---|---|---|
 | UIX [`AppHandle::update_view` / `set_root`](../../../src/app/application/app_handle.rs) | 向所属窗口投递新声明树 | 当前 `update_view` 返回 `()`，不提供扩展事务、替换完成或呈现回执 |
 | UIX [View 与 reconcile](../ui/view.md) | 同父范围内同类型、同 key 复用 WidgetId 与运行态 | 没有跨扩展代的状态迁移或任意树改写原子性保证 |
-| UIX [`HotReloadAdapter`](../../../uix-lang-compiler/src/hot_reload.rs) | 源码快照、依赖身份、失败保留上次成功编译身份 | 只重新运行 AOT 编译链，不加载产物、不执行新增逻辑、不改变运行中应用 |
+| UIX [`HotReloadAdapter`](../../../src/lang/compiler/hot_reload.rs) | 源码快照、依赖身份、失败保留上次成功编译身份 | 只重新运行 AOT 编译链，不加载产物、不执行新增逻辑、不改变运行中应用 |
 | 小贝 `agent/src/contracts/plugin.rs`、`adapters/filesystem_plugin_store.rs` | 声明式清单、内容摘要、入口校验、不可变包、单包失败隔离；已有 `.scm` 入口检查 | 不等于长期实例热替换；启停按新运行快照生效 |
 | 小贝 `agent/src/scheme/` | Rust 实现的 Scheme 求值、标准语法方向、宿主函数注入、配额与取消、类型化失败 | 不把其现有覆盖程度当成完整 R7RS-small 合规证明 |
 | 小贝 `agent/src/adapters/script_tool.rs` | 脚本投影为宿主能力并沿正常调用管线执行 | 当前每次执行新建 `SchemeEngine`，宿主函数表为空，工具只做纯计算；没有持久 UI 扩展实例 |

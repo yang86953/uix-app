@@ -1,6 +1,6 @@
 # UIX Lang 语言首页
 
-当前代码由 `uix-app`（机制、原生平台、语言与工具）和独立 `uix-widgets`（具体控件、主题与资源）组成。见 [两包迁移](../使用/两包迁移.md)。历史目录说明中的具体控件职责已迁至组件库。
+本目录维护 `uix-app` 的 UIX 语言、编译与工具合同。具体组件标签的用法由提供它们的组件库独立维护。
 
 [← 返回文档中心](../README.md)
 
@@ -32,7 +32,7 @@ Rust Application System
 Rust UI 代码 ──cargo──> 原生可执行文件
 ```
 
-不启用动态能力的 UI 描述正式产物不携带 UIX Lang 动态前端；语言服务器会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。共享 `uix-lang-compiler` Compiler System 统一提供 `compile`、`check`、`format`、`query`，语言服务器（`uix-lang-ls`）与 `uix` CLI 另提供 `lsp` 入口。
+不启用动态能力的 UI 描述正式产物不携带 UIX Lang 动态前端；语言服务器会话、文件监听器也只属于开发工具。每个已登记结构都有确定的 Rust UI 映射；未登记输入在编译期拒绝，不做动态降级。`uix_app::lang::compiler` 中的 Compiler System 统一提供 `compile`、`check`、`format`、`query`，语言服务器（`uix-lang-ls`）与 `uix` CLI 另提供 `lsp` 入口。
 
 框架的[标准 Lisp 软件动态扩展](../架构/app/extensions.md)已有独立公开实现；它可承载扩展业务与动态界面，不解释 `.uix`，也不由 AOT 编译失败自动启用。
 
@@ -52,18 +52,18 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 |---|---|---|
 | 产品定位、UI/Rust 职责与非目标 | [语言边界](设计/语言边界.md) | 规范和指南只引用，不重新定义 |
 | 当前词法、语法、语义与编译契约 | [规范](规范/总览.md) | 参考列举登记项，指南提供用法 |
-| 当前标签、属性、事件和样式登记 | [参考](#参考) | 首页只摘要，不维护平行清单 |
+| 框架节点、通用事件和样式 | [参考](#参考) | 首页只摘要；组件库具体标签不在框架重复列举 |
 | 数据构造语法与共享构造登记 | [词法](规范/词法.md#32-数据类型构造) | 组件专用构造和适用位置由对应组件参考补充 |
 | Rust 运行行为和完整 API | [Rust 使用文档](../使用.md) | UIX Lang 文档只说明文本投影 |
 | 目标编译器结构 | [编译器架构](设计/编译器架构.md) | 不产生当前可用性承诺 |
 | 当前实施与完成门禁 | 项目任务（内部历史记录，不作为公开版本说明）及TASK-066（内部历史记录，不作为公开版本说明） | 历史语言计划只保留设计依据，不覆盖当前范围 |
-| 兼容承诺和已发生变化 | [版本策略](变更/版本策略.md)与[版本策略](变更/版本策略.md) | 历史设计只保存理由 |
+| 兼容承诺和已发生变化 | [版本策略](变更/版本策略.md) | 历史设计只保存理由 |
 
 发生冲突时，以对应事实所有者为准，并同步修正派生文档；指南示例和首页摘要从不反向定义语言。
 
 ## 阅读路径
 
-- **第一次使用**：[快速开始](指南/快速开始.md) → [教程](指南/教程.md) → 按需查[组件](#参考)和[样式](参考/样式属性.md)。
+- **第一次使用**：[快速开始](指南/快速开始.md) → [教程](指南/教程.md) → 按需查[框架节点](参考/框架节点.md)和[样式](参考/样式属性.md)。
 - **查语言规则**：[规范总览](规范/总览.md) → 对应专题规范 → [编译契约](规范/编译契约.md)。
 - **设计或演进语言**：[语言边界](设计/语言边界.md) → [编译器架构](设计/编译器架构.md) → 当前项目任务（内部历史记录，不作为公开版本说明） → [版本策略](变更/版本策略.md)。
 - **核对历史**：[版本策略](变更/版本策略.md)；只在需要设计理由时阅读[历史设计记录](变更/目标设计.md)。
@@ -87,13 +87,11 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ### 参考
 
+[框架节点](参考/框架节点.md) 维护 App、Canvas 和结构入口；[组件库登记](规范/组件库登记.md) 维护外部组件如何接入编译器。
+
 | 分类 | 文档 |
 |---|---|
 | 样式与事件 | [样式属性](参考/样式属性.md)、[事件](参考/事件.md) |
-| 通用与布局 | [通用组件](参考/组件/通用组件.md)、[布局组件](参考/组件/布局组件.md) |
-| 输入与展示 | [输入组件](参考/组件/输入组件.md)、[展示组件](参考/组件/展示组件.md) |
-| 反馈与导航 | [反馈组件](参考/组件/反馈组件.md)、[导航组件](参考/组件/导航组件.md) |
-| 图表 | [图表组件](参考/组件/图表组件.md) |
 
 ### 设计、指南与变更
 
@@ -109,16 +107,16 @@ Rust UI 代码 ──cargo──> 原生可执行文件
 
 ### UI 描述基线
 
-当前发布基线包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`（泛型含精确整数、`Option<String>` 与 `Vec<String>` / `Vec<number>` 集合）、`reactive` 子树作用域、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、`Canvas` 绘制组件、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。旧 UI 同步 action 只组合局部更新和转发 Rust 回调；应用模块的 AsyncCommand/Port 另按模块规范，不扩张此 UI action。组件专属状态值类型由 schema 登记 capability 门禁。
+当前源码包含：界面声明、自定义 Widget（成员声明支持字符串属性与 `@props`/`@state`/`@computed`/`@actions` 块级两种等价形式）、props、私有与外部 `State<T>`（泛型含精确整数、`Option<String>` 与 `Vec<String>` / `Vec<number>` 集合）、`reactive` 子树作用域、computed、Slot、If / For、样式主题、事件表达式、Record、静态 Visual、`Canvas` 绘制组件、模块导入导出，以及无参数同步 action 的单表达式和 `do` 块。旧 UI 同步 action 只组合局部更新和转发 Rust 回调；应用模块的 AsyncCommand/Port 另按模块规范，不扩张此 UI action。组件专属状态值类型由 schema 登记 capability 门禁。
 
 公开 `uix!` 接收经 build.rs 编译的 `.uix` 文件路径并生成 `ViewNode`；`uix_app!` 读取 `<App>` 根并返回尚未运行的现有 `App` builder；`uix_items!` 生成模块级 Record 结构体与 Visual 静态项。文件入口支持递归 `@import`、显式 `@export` 和依赖追踪。
 
-具体标签、属性、事件、样式和限制只在上方参考文档维护。语言面的版本基线与变更日期见[版本策略](变更/版本策略.md)。
+框架节点、通用事件与样式限制在本仓库维护；具体组件标签、属性与展示数据由组件库声明提供。语言面的版本基线与变更日期见[版本策略](变更/版本策略.md)。
 
 ## 与 Rust 的映射
 
-共享 `uix-lang-compiler` Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`scaffold visual`；语言服务器 `uix-lang-ls` 提供诊断、补全、导航与格式化（`uix lsp` 委托同一实现），三个公开宏均有真实 consumer 验证。
+`uix_app::lang::compiler` 中的 Compiler System 已贯通 SourceGraph、无损 CST/AST、TypedUiIr 与 Rust Emitter，并为同名 `.uixmap.json` 提供源码映射；schema v3 统一组件、属性和 capability 门禁。`uix` CLI 提供 `check`、`fmt`、`compile`、`query`、`scaffold visual`；语言服务器 `uix-lang-ls` 提供诊断、补全、导航与格式化（`uix lsp` 委托同一实现），三个公开宏均有真实 consumer 验证。
 
-UI 描述层是 UIX Rust API 的编译期文本投影；可移植应用模块的执行映射另见模块规范。公开宏与 `uix` CLI 均通过共享 `uix-lang-compiler` Compiler System；三个宏已有真实 consumer 验证。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部边界以[编译器架构](设计/编译器架构.md)为准。
+UI 描述层是 UIX Rust API 的编译期文本投影；可移植应用模块的执行映射另见模块规范。公开宏与 `uix` CLI 均通过`uix_app::lang::compiler` 中的 Compiler System；三个宏已有真实 consumer 验证。宏返回值、生成文件、源码映射和失败语义以[编译契约](规范/编译契约.md)为准；编译器内部边界以[编译器架构](设计/编译器架构.md)为准。
 
 历史语言完善计划与独立 CHANGELOG 已从当前工作区移除；以上使用当前任务与版本策略入口，不补造历史验收或发布日期。

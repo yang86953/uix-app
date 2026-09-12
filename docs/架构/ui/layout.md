@@ -58,7 +58,6 @@
 ### Scroll 与虚拟范围
 
 - ScrollView 的内容边界统一包含子项 margin 与已占用滚动条沟槽；`max_scroll`、绘制、命中和无障碍 bounds 使用同一 content-to-viewport 变换。
-- VirtualScroll 只接受有限正估算高度和 viewport；offset 先夹到内容边界，单次物化有硬上限且可见内容优先于 overscan。详细身份与测量缓存契约由 [virtualization](virtualization.md) 持有。
 - CSS `float` / `clear` 不属于 UIX 目标布局模型；贴靠、换行分组和二维分区分别用 Flex、Row/Column 与 Grid 表达，不建立平行浮动格式上下文。
 
 ### 文本与复合几何
