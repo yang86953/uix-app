@@ -705,6 +705,9 @@ fn format_named_source(
     source: &str,
     source_name: String,
 ) -> Result<FormatOutput, CompilerDiagnostic> {
+    if component_source::recognizes_source(source) {
+        return component_source::format(source, &source_name);
+    }
     let source_id = SourceId::from_source_name(&source_name);
     let formatted = formatter::format_source(source, source_id).map_err(|failure| {
         CompilerDiagnostic::from_language(

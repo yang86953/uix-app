@@ -20,22 +20,29 @@ impl Parser<'_> {
 
     pub(super) fn trivia(&mut self) -> Result<()> {
         loop {
+            let start = self.pos;
             while let Some(ch) = self.source[self.pos..].chars().next() {
                 if !ch.is_whitespace() {
                     break;
                 }
                 self.pos += ch.len_utf8();
             }
+            if self.pos > start {
+                self.token(start, Kind::Whitespace)?;
+            }
             if self.source[self.pos..].starts_with("//") {
+                let start = self.pos;
                 self.pos += self.source[self.pos..]
                     .find('\n')
                     .unwrap_or(self.source.len() - self.pos);
+                self.token(start, Kind::LineComment)?;
             } else if self.source[self.pos..].starts_with("/*") {
                 let start = self.pos;
                 let Some(end) = self.source[self.pos + 2..].find("*/") else {
                     return Err(self.error_at(start, "component-comment", "块注释缺少 */"));
                 };
                 self.pos += end + 4;
+                self.token(start, Kind::BlockComment)?;
             } else {
                 return Ok(());
             }
@@ -61,7 +68,9 @@ impl Parser<'_> {
 
     pub(super) fn eat(&mut self, token: &str) -> Result<bool> {
         if self.at(token)? {
+            let start = self.pos;
             self.pos += token.len();
+            self.token(start, Kind::Code)?;
             Ok(true)
         } else {
             Ok(false)
@@ -115,6 +124,7 @@ impl Parser<'_> {
                 format!("{text} 是保留字，不能用作标识符"),
             ));
         }
+        self.token(start, Kind::Code)?;
         Ok(Name {
             text: text.into(),
             span: self.span(start),
@@ -140,6 +150,7 @@ impl Parser<'_> {
         while let Some(ch) = self.source[self.pos..].chars().next() {
             self.pos += ch.len_utf8();
             if ch == quote {
+                self.token(start, Kind::Literal)?;
                 return Ok((value, self.span(start)));
             }
             if ch.is_control() {
@@ -249,6 +260,7 @@ impl Parser<'_> {
             }
         }
         let text = &self.source[start..self.pos];
+        self.token(start, Kind::Literal)?;
         if float {
             let value: f64 = text
                 .parse()
@@ -275,39 +287,37 @@ impl Parser<'_> {
             .count();
     }
 
-    // 只观察括号后的箭头，不投机建立/丢弃整棵语法树。
+    // 参数前缀已能区分大部分 lambda；仅 () / (name) 需要看紧随的箭头。
+    // 不扫描整个括号内容，以免把 JSX 文本当代码字符串，也不试建/丢弃 AST。
     pub(super) fn lambda_ahead(&mut self) -> Result<bool> {
         let saved = self.pos;
+        let concrete = self.concrete.take();
         let result = self.lambda_ahead_inner();
         self.pos = saved;
+        self.concrete = concrete;
         result
     }
 
     fn lambda_ahead_inner(&mut self) -> Result<bool> {
-        let mut depth = 0;
-        loop {
-            self.trivia()?;
-            match self.source[self.pos..].chars().next() {
-                Some('(') => {
-                    depth += 1;
-                    self.pos += 1;
-                    self.chain_limit(depth)?;
-                }
-                Some(')') => {
-                    depth -= 1;
-                    self.pos += 1;
-                    if depth == 0 {
-                        return self.at("=>");
-                    }
-                }
-                Some('\'' | '"') => {
-                    self.string()?;
-                }
-                Some(ch) => {
-                    self.pos += ch.len_utf8();
-                }
-                None => return Ok(false),
-            }
+        self.expect("(")?;
+        if self.eat(")")? {
+            return self.at("=>");
         }
+        if !self.source[self.pos..]
+            .chars()
+            .next()
+            .is_some_and(name_start)
+        {
+            return Ok(false);
+        }
+        self.pos += self.source[self.pos..]
+            .chars()
+            .take_while(|ch| name_continue(*ch))
+            .map(char::len_utf8)
+            .sum::<usize>();
+        if self.eat(")")? {
+            return self.at("=>");
+        }
+        Ok(self.at(":")? || self.at("=")? || self.at(",")?)
     }
 }

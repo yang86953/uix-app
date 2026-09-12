@@ -229,8 +229,30 @@ fn cli_and_cargo_share_native_signatures_entry_selection_and_dependency_diagnost
             .success()
     );
     let before = fs::read_to_string(&root).unwrap();
-    assert!(!cli(&project, &["fmt", "main.uix"]).status.success());
-    assert_eq!(fs::read_to_string(&root).unwrap(), before);
+    assert!(
+        !cli(&project, &["fmt", "--check", "main.uix"])
+            .status
+            .success()
+    );
+    assert!(cli(&project, &["fmt", "main.uix"]).status.success());
+    assert_eq!(
+        fs::read_to_string(&root).unwrap(),
+        system
+            .format_inline(&before, root.display().to_string())
+            .unwrap()
+            .formatted
+    );
+    assert!(
+        cli(&project, &["fmt", "--check", "main.uix"])
+            .status
+            .success()
+    );
+    let invalid = project.write("bad-format.uix", "export component Main(){");
+    assert!(!cli(&project, &["fmt", "bad-format.uix"]).status.success());
+    assert_eq!(
+        fs::read_to_string(invalid).unwrap(),
+        "export component Main(){"
+    );
     assert_eq!(
         query[0]["signature"],
         serde_json::to_value(&libraries["native"]["Text"]).unwrap()
@@ -428,6 +450,19 @@ fn stdio_lsp_rechecks_dependency_overlays_and_interface_watches_with_utf16_range
             prefix.rsplit('\n').next().unwrap().encode_utf16().count()
         );
     }
+    lsp.send(json!({"jsonrpc":"2.0","id":800,"method":"textDocument/formatting","params":{"textDocument":{"uri":child_uri}}}));
+    let response = lsp.read();
+    assert_eq!(response["id"], 800);
+    let formatted = CompilerSystem::new()
+        .format_inline(&broken, &child_uri)
+        .unwrap()
+        .formatted;
+    assert_eq!(response["result"][0]["newText"], formatted);
+    assert_eq!(
+        response["result"][0]["range"]["end"],
+        json!({"line":2,"character":0})
+    );
+    assert_eq!(fs::read_to_string(&child).unwrap(), CHILD); // LSP 返回编辑，不直接写磁盘。
     let closed = lsp.change(
         "textDocument/didClose",
         json!({"textDocument":{"uri":child_uri}}),

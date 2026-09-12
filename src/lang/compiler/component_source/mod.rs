@@ -7,6 +7,7 @@
 mod ast;
 mod check;
 mod emit;
+mod format;
 /// 来自同一 Rust 属性声明的有界原生接口文件；不含调用实现。
 pub mod interface;
 mod link;
@@ -21,6 +22,7 @@ pub use check::{
     NativeExport, NativeLibraries, NativeLibrary, NodeId, ResolvedName, Type, check,
 };
 pub use emit::emit_native;
+pub use format::format;
 pub use link::{
     Binding, DeclarationId, LinkedSource, SourceUnit, link_file, link_file_with_overlays,
     link_inline,

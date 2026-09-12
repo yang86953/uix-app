@@ -5,6 +5,10 @@ use crate::lang::compiler::source_graph::SourceId;
 /// 区分格式化器需要理解的具体词法形状。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CstTokenKind {
+    /// 新组件语言的非字面量代码 token。
+    Code,
+    /// 由组件解析器确认的字符串或数字，原字节保留。
+    Literal,
     OpeningTag,
     ClosingTag,
     SelfClosingTag,
@@ -32,6 +36,10 @@ pub struct LosslessCst {
 }
 
 impl LosslessCst {
+    /// 接收已验证连续覆盖的共享解析器 token，不重新按 XML 规则切分。
+    pub(crate) fn from_tokens(source_id: SourceId, source: String, tokens: Vec<CstToken>) -> Self {
+        Self { source_id, source, tokens }
+    }
     /// 为已通过 UIX parser 的源码建立无损具体语法流。
     pub(crate) fn from_source(source_id: SourceId, source: impl Into<String>) -> Self {
         let source = source.into();
@@ -211,4 +219,3 @@ fn push_token(
 #[cfg(test)]
 #[path = "../tests-src/lossless_cst_tests.rs"]
 mod tests;
-

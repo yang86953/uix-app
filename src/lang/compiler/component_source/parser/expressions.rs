@@ -110,12 +110,12 @@ impl Parser<'_> {
 
     fn prefix(&mut self) -> Result<Expr> {
         let start = self.start()?;
-        let kind = if self.eat("!")? {
+        let kind = if self.eat_as("!", Kind::Unary)? {
             ExprKind::Unary {
                 op: UnaryOp::Not,
                 value: Box::new(self.precedence(7)?),
             }
-        } else if self.eat("-")? {
+        } else if self.eat_as("-", Kind::Unary)? {
             ExprKind::Unary {
                 op: UnaryOp::Negate,
                 value: Box::new(self.precedence(7)?),
@@ -145,7 +145,7 @@ impl Parser<'_> {
                     return Ok(value);
                 }
             }
-        } else if self.eat("[")? {
+        } else if self.eat_as("[", Kind::ArrayOpen)? {
             let mut values = Vec::new();
             while !self.at("]")? {
                 values.push(self.expression()?);
@@ -200,11 +200,11 @@ impl Parser<'_> {
     fn element_inner(&mut self) -> Result<Expr> {
         self.node()?;
         let start = self.start()?;
-        self.expect("<")?;
-        if self.eat(">")? {
+        self.expect_as("<", Kind::TagStart)?;
+        if self.eat_as(">", Kind::TagEnd)? {
             let children = self.view_children()?;
-            self.expect("</")?;
-            self.expect(">")?;
+            self.expect_as("</", Kind::CloseTagStart)?;
+            self.expect_as(">", Kind::CloseTagEnd)?;
             return self.checked(Expr {
                 kind: ExprKind::Fragment(children),
                 span: self.span(start),
@@ -219,10 +219,10 @@ impl Parser<'_> {
                 return Err(self.error("component-attribute", "属性之间需要空白"));
             }
             let name = self.name()?;
-            let value = if self.eat("=")? {
-                if self.eat("{")? {
+            let value = if self.eat_as("=", Kind::AttributeEquals)? {
+                if self.eat_as("{", Kind::ChildOpen)? {
                     let value = self.expression()?;
-                    self.expect("}")?;
+                    self.expect_as("}", Kind::ChildClose)?;
                     value
                 } else {
                     let (value, span) = self.string()?;
@@ -252,12 +252,12 @@ impl Parser<'_> {
                 },
             });
         }
-        let children = if self.eat("/>")? {
+        let children = if self.eat_as("/>", Kind::SelfClose)? {
             Vec::new()
         } else {
-            self.expect(">")?;
+            self.expect_as(">", Kind::TagEnd)?;
             let children = self.view_children()?;
-            self.expect("</")?;
+            self.expect_as("</", Kind::CloseTagStart)?;
             let close_start = self.start()?;
             let close = self.path()?;
             if !name
@@ -271,7 +271,7 @@ impl Parser<'_> {
                     "结束标签与开始标签不一致",
                 ));
             }
-            self.expect(">")?;
+            self.expect_as(">", Kind::CloseTagEnd)?;
             children
         };
         self.checked(Expr {
@@ -298,17 +298,20 @@ impl Parser<'_> {
             if rest.starts_with('<') {
                 children.push(ViewChild::Expression(self.element()?));
             } else if rest.starts_with('{') {
+                let start = self.pos;
                 self.pos += 1;
-                if self.eat("}")? {
+                self.token(start, Kind::ChildOpen)?;
+                if self.eat_as("}", Kind::ChildClose)? {
                     continue;
                 } // JSX 空表达式或注释。
                 let value = self.expression()?;
-                self.expect("}")?;
+                self.expect_as("}", Kind::ChildClose)?;
                 children.push(ViewChild::Expression(value));
             } else {
                 self.node()?;
                 let start = self.pos;
                 self.pos += rest.find(['<', '{']).unwrap_or(rest.len());
+                self.token(start, Kind::Text)?;
                 children.push(ViewChild::Text {
                     value: self.source[start..self.pos].into(),
                     span: self.span(start),

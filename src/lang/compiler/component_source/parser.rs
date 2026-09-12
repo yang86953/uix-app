@@ -1,11 +1,15 @@
 use super::*;
 use crate::lang::compiler::{DiagnosticPhase, source_graph::SourceId};
 
+pub(super) mod concrete;
 mod expressions;
 mod limits;
 mod tokens;
+use concrete::{Kind, Token};
 
-type Result<T> = std::result::Result<T, CompilerDiagnostic>;
+// 完整诊断包含多个 String；递归解析的每个 ? 不应在成功栈帧中预留整份错误。
+// 仅失败时分配一次，公开边界仍返回原来的 CompilerDiagnostic。
+type Result<T> = std::result::Result<T, Box<CompilerDiagnostic>>;
 const MAX_SOURCE: usize = 1_048_576;
 const MAX_DEPTH: usize = 64;
 const MAX_NODES: usize = 16_384;
@@ -18,19 +22,34 @@ pub fn recognizes_source(source: &str) -> bool {
         pos: 0,
         depth: 0,
         nodes: 0,
+        concrete: None,
     };
     ["import", "export", "component", "function", "type"]
         .into_iter()
         .any(|word| parser.at(word).unwrap_or(false))
 }
 
-pub(super) fn parse(source: &str, source_name: String) -> Result<ParsedSource> {
+pub(super) fn parse(
+    source: &str,
+    source_name: String,
+) -> std::result::Result<ParsedSource, CompilerDiagnostic> {
+    parse_with_tokens(source, source_name, false)
+        .map(|(parsed, _)| parsed)
+        .map_err(|error| *error)
+}
+
+fn parse_with_tokens(
+    source: &str,
+    source_name: String,
+    record: bool,
+) -> Result<(ParsedSource, Vec<Token>)> {
     let mut parser = Parser {
         source,
         source_name: &source_name,
         pos: 0,
         depth: 0,
         nodes: 0,
+        concrete: record.then(Vec::new),
     };
     if source.len() > MAX_SOURCE {
         return Err(parser.error_at(0, "component-source-limit", "组件源码不能超过 1 MiB"));
@@ -44,11 +63,15 @@ pub(super) fn parse(source: &str, source_name: String) -> Result<ParsedSource> {
             declarations.push(parser.declaration()?);
         }
     }
-    Ok(ParsedSource {
-        source_graph: SourceGraph::inline(source_name, source),
-        imports,
-        declarations,
-    })
+    let tokens = parser.concrete.unwrap_or_default();
+    Ok((
+        ParsedSource {
+            source_graph: SourceGraph::inline(source_name, source),
+            imports,
+            declarations,
+        },
+        tokens,
+    ))
 }
 
 struct Parser<'a> {
@@ -57,6 +80,7 @@ struct Parser<'a> {
     pos: usize,
     depth: usize,
     nodes: usize,
+    concrete: Option<Vec<Token>>,
 }
 
 impl Parser<'_> {
@@ -86,7 +110,7 @@ impl Parser<'_> {
         }
     }
 
-    fn error(&self, code: &'static str, message: impl Into<String>) -> CompilerDiagnostic {
+    fn error(&self, code: &'static str, message: impl Into<String>) -> Box<CompilerDiagnostic> {
         self.error_at(self.pos, code, message)
     }
 
@@ -95,9 +119,9 @@ impl Parser<'_> {
         start: usize,
         code: &'static str,
         message: impl Into<String>,
-    ) -> CompilerDiagnostic {
+    ) -> Box<CompilerDiagnostic> {
         let prefix = &self.source[..start];
-        CompilerDiagnostic {
+        Box::new(CompilerDiagnostic {
             code,
             phase: DiagnosticPhase::Syntax,
             source_id: SourceId::from_source_name(self.source_name),
@@ -112,7 +136,7 @@ impl Parser<'_> {
             column: prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1,
             message: message.into(),
             suggestion: "按类型化组件语法修改此处；此入口不接受旧 XML 声明或 Rust 表达式".into(),
-        }
+        })
     }
 
     fn import(&mut self) -> Result<Import> {
@@ -151,7 +175,7 @@ impl Parser<'_> {
         let (name, kind) = if self.eat("component")? {
             let name = self.name()?;
             let parameters = self.parameters(false)?;
-            self.expect("{")?;
+            self.expect_as("{", Kind::BlockOpen)?;
             let mut body = Vec::new();
             while !self.at("}")? {
                 let member_start = self.start()?;
@@ -180,7 +204,7 @@ impl Parser<'_> {
                     body.push(ComponentMember::Statement(self.statement()?));
                 }
             }
-            self.expect("}")?;
+            self.expect_as("}", Kind::BlockClose)?;
             (name, DeclarationKind::Component { parameters, body })
         } else if self.eat("function")? {
             let name = self.name()?;
@@ -289,14 +313,14 @@ impl Parser<'_> {
         } else {
             let path = self.path()?;
             let mut arguments = Vec::new();
-            if self.eat("<")? {
+            if self.eat_as("<", Kind::GenericOpen)? {
                 loop {
                     arguments.push(self.ty()?);
                     if !self.eat(",")? {
                         break;
                     }
                 }
-                self.expect(">")?;
+                self.expect_as(">", Kind::GenericClose)?;
             }
             TypeKind::Named { path, arguments }
         };
@@ -320,12 +344,12 @@ impl Parser<'_> {
     fn block(&mut self) -> Result<Block> {
         self.nested(|parser| {
             let start = parser.start()?;
-            parser.expect("{")?;
+            parser.expect_as("{", Kind::BlockOpen)?;
             let mut statements = Vec::new();
             while !parser.at("}")? {
                 statements.push(parser.statement()?);
             }
-            parser.expect("}")?;
+            parser.expect_as("}", Kind::BlockClose)?;
             parser.checked(Block {
                 statements,
                 span: parser.span(start),
