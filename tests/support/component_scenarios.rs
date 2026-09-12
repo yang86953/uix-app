@@ -531,6 +531,84 @@ fn host_prepare_failure_retires_candidate_tokens_and_rolls_back() {
         .unwrap();
     assert_eq!(texts(&engine), ["2"]);
 }
+fn entry_prunes_unreachable_declarations_but_preserves_defaults_state_and_captures() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = calls.clone();
+    let mut interfaces = natives();
+    interfaces.insert(
+        ExportKey::new("service", "load"),
+        NativeBinding::Function {
+            signature: function(vec![], Type::Data(runtime::Type::Int), Effect::Query),
+            call: Arc::new(move |_| Ok(int(10 + counted.fetch_add(1, Ordering::SeqCst) as i64))),
+        },
+    );
+    interfaces.insert(
+        ExportKey::new("service", "write"),
+        NativeBinding::Function {
+            signature: function(vec![], Type::Data(runtime::Type::Unit), Effect::Command),
+            call: Arc::new(|_| panic!("unreachable native capability")),
+        },
+    );
+    let program = compile(&fixture("pruning.uix"), "Main", &interfaces);
+    assert_eq!(program.components.len(), 1);
+    assert!(program.components[0].name.ends_with("::Main"));
+    assert!(
+        program
+            .bindings
+            .iter()
+            .any(|binding| binding.name == "initializedEvenWhenUnread")
+    );
+    assert!(
+        program
+            .bindings
+            .iter()
+            .all(|binding| binding.name != "unusedCommand" && binding.name != "unused")
+    );
+    assert_eq!(
+        program
+            .natives
+            .keys()
+            .map(|key| key.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Button", "Column", "Text", "load"]
+    );
+    // 宿主不必开放只出现在未选入口的能力；仍必须开放可达初始化依赖。
+    interfaces.retain(|key, _| program.natives.contains_key(key));
+    let mut missing = interfaces.clone();
+    missing.remove(&ExportKey::new("service", "load"));
+    assert_eq!(
+        Engine::new(
+            program.clone(),
+            missing,
+            BTreeMap::new(),
+            ComponentLimits::default()
+        )
+        .err()
+        .unwrap()
+        .kind,
+        ErrorKind::CapabilityDenied
+    );
+    let mut engine = Engine::new(
+        program,
+        interfaces,
+        BTreeMap::new(),
+        ComponentLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "输入默认值与未读取 state 的初始化不得被消除"
+    );
+    assert_eq!(texts(&engine), ["保留:10"]);
+    click(&mut engine, 0);
+    assert_eq!(texts(&engine), ["保留:11"]);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
 pub fn run() -> String {
     counter_state_input_defaults_cache_and_close();
     editable_list_imports_owner_callbacks_and_local_rerender();
@@ -541,5 +619,6 @@ pub fn run() -> String {
     native_error_panic_limits_and_release();
     named_slots_mount_shared_blueprints_as_distinct_instances();
     host_prepare_failure_retires_candidate_tokens_and_rolls_back();
+    entry_prunes_unreachable_declarations_but_preserves_defaults_state_and_captures();
     budget_matrix()
 }

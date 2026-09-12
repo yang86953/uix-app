@@ -2,6 +2,7 @@
 
 use super::compiler::{CompileTarget, CompilerDiagnostic, CompilerSystem};
 use std::path::{Path, PathBuf};
+mod components;
 
 /// 一份 UIX 文件的生成形状。
 #[derive(Debug, Clone, Copy)]
@@ -129,19 +130,7 @@ impl Builder {
     }
 
     fn compile_inner(&self, source: &Path, kind: OutputKind) -> Result<PathBuf, String> {
-        if source.is_absolute()
-            || source.components().any(|part| {
-                matches!(
-                    part,
-                    std::path::Component::ParentDir | std::path::Component::Prefix(_)
-                )
-            })
-        {
-            return Err(format!(
-                "UIX 入口必须是源码根内的相对路径：{}",
-                source.display()
-            ));
-        }
+        validate_source(source)?;
         let path = self.source_root.join(source);
         let tokens = match kind {
             OutputKind::Module => {
@@ -187,6 +176,23 @@ impl Builder {
         }
         Ok(destination)
     }
+}
+
+fn validate_source(source: &Path) -> Result<(), String> {
+    if source.is_absolute()
+        || source.components().any(|part| {
+            matches!(
+                part,
+                std::path::Component::ParentDir | std::path::Component::Prefix(_)
+            )
+        })
+    {
+        return Err(format!(
+            "UIX 入口必须是源码根内的相对路径：{}",
+            source.display()
+        ));
+    }
+    Ok(())
 }
 
 // Preserve Rust token boundaries while giving diagnostics bounded source lines.

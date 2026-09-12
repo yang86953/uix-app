@@ -1,0 +1,22 @@
+import { Column, Text, Button, Input } from "sample-native";
+import { load, write } from "service";
+
+component Unused(value: Int = load()) {
+  state unused: Int = load();
+  return <Input value={orphan()} onChange={(text: String) => { write(); }} />;
+}
+function orphan(): String { return "UNREACHABLE_COMPONENT_SENTINEL"; }
+function label(value: Int = load()): String { return value.toString(); }
+
+export component Main(initial: Int = load()) {
+  state count: Int = initial;
+  state initializedEvenWhenUnread: Int = load();
+  function unusedCommand(): Unit { write(); }
+  function increment(delta: Int = 1): Unit { count = count + delta; }
+  let prefix: String = "保留:";
+  let format = (value: Int) => prefix + label(value);
+  return <Column>
+    <Text>{format(count)}</Text>
+    <Button onClick={() => { increment(); }}>增加</Button>
+  </Column>;
+}

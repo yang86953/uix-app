@@ -10,6 +10,7 @@ mod emit;
 mod link;
 mod lower;
 mod parser;
+mod prune;
 
 pub use ast::*;
 pub use check::{

@@ -13,6 +13,9 @@ fn compile(path: &std::path::Path, entry: &str, natives: &NativeBindings) -> Pro
     }
     let checked = source::check(source::link_file(path).unwrap(), &interfaces).unwrap();
     let code = source::emit_native(&checked, entry).unwrap();
+    if path.ends_with("pruning.uix") && entry == "Main" {
+        assert!(!code.to_string().contains("UNREACHABLE_COMPONENT_SENTINEL"));
+    }
     syn::parse2::<syn::Expr>(code.clone()).unwrap();
     GENERATED.lock().unwrap().push(code.to_string());
     source::lower(&checked, entry).unwrap()

@@ -227,13 +227,13 @@ pub fn lower(checked: &CheckedSource, entry_export: &str) -> Result<rt::Program>
                 .map(move |(name, export)| (rt::ExportKey::new(package, name), export.clone()))
         })
         .collect();
-    Ok(rt::Program {
+    Ok(super::prune::reachable(rt::Program {
         components,
         functions,
         bindings,
         natives,
         entry: lower.components[&entry],
-    })
+    }))
 }
 
 struct Lower<'a> {
