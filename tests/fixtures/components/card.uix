@@ -1,0 +1,12 @@
+import { Column, Text } from "sample-native";
+
+export component Card(title: String, children: View) {
+  return <Column>
+    <Text>{title}</Text>
+    {children}
+  </Column>;
+}
+
+export function caption(value: String): String {
+  return "当前：" + value;
+}

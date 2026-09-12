@@ -1,0 +1,14 @@
+import { Column, Text, Button } from "sample-native";
+
+export component Counter(initial: Int = 0) {
+  state count: Int = initial;
+
+  function increment(): Unit {
+    count = count + 1;
+  }
+
+  return <Column>
+    <Text>{count.toString()}</Text>
+    <Button onClick={increment}>增加</Button>
+  </Column>;
+}

@@ -14,6 +14,8 @@ use source_graph::SourceId;
 use source_map::SourceMap;
 
 mod compiler_session;
+/// 实验中的类型化组件源码入口；与旧文档语法分开选择，不静默换义。
+pub mod component_source;
 pub mod components;
 mod formatter;
 /// 可移植应用模块与原有 UI 入口共享词法、语法、来源与表达式事实。

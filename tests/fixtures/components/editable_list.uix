@@ -1,0 +1,28 @@
+import { Column, Text, Input, Button } from "sample-native";
+import { Card } from "./card.uix";
+import { Counter as Count } from "./counter.uix";
+
+export type Item = { id: Int, title: String };
+
+component Row(item: Item, onSave: (id: Int, title: String) => Unit) {
+  state draft: String = item.title;
+  return <Card title={item.title}>
+    <Input value={draft} onChange={(value: String) => { draft = value; }} />
+    <Button onClick={() => { onSave(item.id, draft); }}>保存</Button>
+    <Count initial={item.id} />
+  </Card>;
+}
+
+export component EditableList(initial: Item[]) {
+  state items: Item[] = initial;
+
+  function save(id: Int, title: String): Unit {
+    items = items.map((item) => item.id == id ? { id, title } : item);
+  }
+
+  return <Column>
+    {items.length == 0 ? <Text>暂无记录</Text> : <>
+      {items.map((item) => <Row key={item.id} item={item} onSave={save} />)}
+    </>}
+  </Column>;
+}
